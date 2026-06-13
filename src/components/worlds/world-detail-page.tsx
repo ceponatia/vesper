@@ -8,6 +8,7 @@ import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
@@ -26,6 +27,10 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
   const [togglingLoreId, setTogglingLoreId] = useState<string | null>(null);
   const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
   const [deletingSession, setDeletingSession] = useState(false);
+  // Collapsed by default: production worlds have many locations, so this column
+  // grows tall. A visual map node/path view will replace the list later
+  // (deferred.plan.md §Visual world map).
+  const [mapOpen, setMapOpen] = useState(false);
 
   if (world.loading) {
     return (
@@ -184,38 +189,60 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
           )}
         </section>
 
-        {/* Map */}
+        {/* Map — collapsed by default; long location lists otherwise dominate the page. */}
         <section>
-          <h2 className="mb-3 text-xs font-medium tracking-wide text-paper-400 uppercase">Map</h2>
-          {detail.locations.length === 0 ? (
-            <p className="text-sm text-paper-500">No locations.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {detail.locations.map((loc) => {
-                const connected = detail.links
-                  .filter((l) => l.fromWorldLocationId === loc.id || l.toWorldLocationId === loc.id)
-                  .map((l) =>
-                    locationNameById.get(l.fromWorldLocationId === loc.id ? l.toWorldLocationId : l.fromWorldLocationId),
-                  )
-                  .filter((n): n is string => Boolean(n));
-                return (
-                  <li key={loc.id}>
-                    <Card className="p-3">
-                      <p className="text-sm font-medium text-paper-100">{loc.name}</p>
-                      {loc.description ? (
-                        <p className="mt-0.5 line-clamp-2 text-xs text-paper-400">{loc.description}</p>
-                      ) : null}
-                      {connected.length > 0 ? (
-                        <p className="mt-1.5 text-xs text-paper-500">
-                          ↔ {connected.join(" · ")}
-                        </p>
-                      ) : null}
-                    </Card>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <button
+            type="button"
+            onClick={() => setMapOpen((o) => !o)}
+            aria-expanded={mapOpen}
+            aria-controls={mapOpen ? "world-map-list" : undefined}
+            className="mb-3 flex w-full cursor-pointer items-center gap-1.5 text-left"
+          >
+            <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Map</h2>
+            <span className="text-[11px] text-paper-500">({detail.locations.length})</span>
+            <span
+              aria-hidden
+              className={cx(
+                "ml-auto inline-block text-[10px] text-paper-500 transition-transform duration-100",
+                mapOpen && "rotate-180",
+              )}
+            >
+              ▾
+            </span>
+          </button>
+          {mapOpen ? (
+            <div id="world-map-list">
+              {detail.locations.length === 0 ? (
+                <p className="text-sm text-paper-500">No locations.</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {detail.locations.map((loc) => {
+                    const connected = detail.links
+                      .filter((l) => l.fromWorldLocationId === loc.id || l.toWorldLocationId === loc.id)
+                      .map((l) =>
+                        locationNameById.get(
+                          l.fromWorldLocationId === loc.id ? l.toWorldLocationId : l.fromWorldLocationId,
+                        ),
+                      )
+                      .filter((n): n is string => Boolean(n));
+                    return (
+                      <li key={loc.id}>
+                        <Card className="p-3">
+                          <p className="text-sm font-medium text-paper-100">{loc.name}</p>
+                          {loc.description ? (
+                            <p className="mt-0.5 line-clamp-2 text-xs text-paper-400">{loc.description}</p>
+                          ) : null}
+                          {connected.length > 0 ? (
+                            <p className="mt-1.5 text-xs text-paper-500">↔ {connected.join(" · ")}</p>
+                          ) : null}
+                        </Card>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : null}
         </section>
       </div>
 

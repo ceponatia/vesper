@@ -8,7 +8,7 @@ Next.js App Router pages + React 19 + Tailwind 4. Aesthetic: quiet dark "reading
 /                        Dashboard: continue-session hero, recent worlds, cast strip
 /worlds                  Library grid (search/tags)
 /worlds/forge            Prose prompt → draft review (tabs: premise/map/lore/cast/items) → save
-/worlds/:id              Detail: synopsis, cast, map, lore, sessions; "Begin session"
+/worlds/:id              Detail: synopsis, cast, map (collapsible, default collapsed), lore, sessions; "Begin session"
 /worlds/:id/edit         Same review UI as forge, loaded from saved world
 /characters              Library grid
 /characters/forge        Prose prompt → draft review → save
@@ -20,6 +20,8 @@ Next.js App Router pages + React 19 + Tailwind 4. Aesthetic: quiet dark "reading
 ```
 
 The world review/editor map tab (`components/worlds/world-editor.tsx`) renders each location as a collapsible card — the header is a real button (`aria-expanded`, caret) showing name, tags, and a scale/area hint; multiple cards can be open at once, existing cards load collapsed, and new/copied cards open expanded. Cards reorder by native HTML5 drag (grip handle, drop-indicator line) with per-card move up/down buttons as the keyboard-accessible path; the order is authored data, written as the array index to `world_locations.sort` on save and read back ordered everywhere (detail, edit, spawn). A per-card Copy duplicates the place itself (description, tags, scale, area, ambient) but not the name (left empty — duplicates break save resolution), links, or the library/world row references. Links are undirected at runtime, so each card also lists incoming connections added on other locations as read-only text, and adding a link whose reverse already exists is refused with a brief inline note instead of creating a doubled edge.
+
+The read-only world **detail** page (`components/worlds/world-detail-page.tsx`) shows the same sections; its **Map** section is a flat location list made **collapsible and collapsed by default** (production worlds have many locations, so the column otherwise dominates the page), the header carrying a count and caret. A visual node/path map is the planned replacement, not just a decoration ([developer-notes/deferred.plan.md](developer-notes/deferred.plan.md) §Visual world map).
 
 The world review/editor cast tab (`components/worlds/world-editor.tsx`) carries per-member relationship rows — a `toward` select (other cast names + "player", with a "(missing)" option keeping unresolved names visible) and a stage select fed by the `contracts/relationships/stages` registry (stages, never numbers), with add/remove affordances. Renaming a cast member rewrites other members' `toward` pointers, the same way map renames follow location links. When the cast would spawn more than `MAJOR_TIER_SOFT_CAP` (6) major-tier members, the tab shows a non-blocking warn-toned notice — the count uses `lib/cast-tiers.ts` (the same rule `engine/spawn.ts` applies: companions left at the default minor tier spawn as major), and spawn emits the matching `spawn.cast.major_soft_cap` diagnostic; nothing is ever blocked or trimmed. Scale and tier select options are derived from the contract enums in `lib/client/api.ts` (`worldLocationScaleSchema` / `worldCastTierSchema`), not inline literals.
 
