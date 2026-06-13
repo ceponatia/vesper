@@ -1,3 +1,4 @@
+CREATE EXTENSION IF NOT EXISTS vector;--> statement-breakpoint
 CREATE TABLE "characters" (
 	"id" text PRIMARY KEY NOT NULL,
 	"owner_id" text NOT NULL,
@@ -17,6 +18,7 @@ CREATE TABLE "episodes" (
 	"turn_number" integer NOT NULL,
 	"summary" text NOT NULL,
 	"thread_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"witnessed_by" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"embedding" vector(1536),
 	"embedder" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -41,6 +43,8 @@ CREATE TABLE "facts" (
 	"text" text NOT NULL,
 	"tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"confidence" real DEFAULT 0.5 NOT NULL,
+	"canon" boolean DEFAULT true NOT NULL,
+	"witnessed_by" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"status" text DEFAULT 'active' NOT NULL,
 	"superseded_by_id" text,
 	"source_turn_id" text,
@@ -123,6 +127,8 @@ CREATE TABLE "locations" (
 	"name" text NOT NULL,
 	"description" text DEFAULT '' NOT NULL,
 	"ambient" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"scale" text DEFAULT 'room' NOT NULL,
+	"affordances" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"image_id" text,
 	"search_embedding" vector(1536),
@@ -149,12 +155,27 @@ CREATE TABLE "lore_chunks" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "participant_relationships" (
+	"id" text PRIMARY KEY NOT NULL,
+	"session_id" text NOT NULL,
+	"from_participant_id" text NOT NULL,
+	"to_participant_id" text NOT NULL,
+	"kind" text DEFAULT 'feeling' NOT NULL,
+	"value" integer DEFAULT 0 NOT NULL,
+	"stage" text DEFAULT 'stranger' NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "session_links" (
 	"id" text PRIMARY KEY NOT NULL,
 	"session_id" text NOT NULL,
 	"from_id" text NOT NULL,
 	"to_id" text NOT NULL,
-	"label" text
+	"label" text,
+	"travel_minutes" integer DEFAULT 1 NOT NULL,
+	"audibility" text,
+	"access" jsonb DEFAULT '{"kind":"public"}'::jsonb NOT NULL,
+	"door_item_id" text
 );
 --> statement-breakpoint
 CREATE TABLE "session_locations" (
@@ -164,6 +185,9 @@ CREATE TABLE "session_locations" (
 	"name" text NOT NULL,
 	"description" text DEFAULT '' NOT NULL,
 	"ambient" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"scale" text DEFAULT 'room' NOT NULL,
+	"area" text,
+	"affordances" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"emergent" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -175,6 +199,7 @@ CREATE TABLE "session_participants" (
 	"is_user" boolean DEFAULT false NOT NULL,
 	"display_name" text NOT NULL,
 	"role" text DEFAULT 'npc' NOT NULL,
+	"tier" text DEFAULT 'minor' NOT NULL,
 	"snapshot" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"state" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"location_id" text,
@@ -240,7 +265,9 @@ CREATE TABLE "world_cast" (
 	"world_id" text NOT NULL,
 	"character_id" text NOT NULL,
 	"role" text DEFAULT 'npc' NOT NULL,
-	"start_world_location_id" text
+	"tier" text DEFAULT 'minor' NOT NULL,
+	"start_world_location_id" text,
+	"relationships" jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "world_items" (
@@ -259,14 +286,19 @@ CREATE TABLE "world_links" (
 	"world_id" text NOT NULL,
 	"from_world_location_id" text NOT NULL,
 	"to_world_location_id" text NOT NULL,
-	"label" text
+	"label" text,
+	"travel_minutes" integer DEFAULT 1 NOT NULL,
+	"audibility" text,
+	"access" jsonb DEFAULT '{"kind":"public"}'::jsonb NOT NULL,
+	"door_item_id" text
 );
 --> statement-breakpoint
 CREATE TABLE "world_locations" (
 	"id" text PRIMARY KEY NOT NULL,
 	"world_id" text NOT NULL,
 	"location_id" text NOT NULL,
-	"overrides" jsonb DEFAULT '{}'::jsonb NOT NULL
+	"overrides" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"sort" integer DEFAULT 0 NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "worlds" (
@@ -278,6 +310,7 @@ CREATE TABLE "worlds" (
 	"lore" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"narrative_model" text DEFAULT '' NOT NULL,
 	"image_id" text,
+	"player_start_world_location_id" text,
 	"duplicated_from_world_id" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -297,6 +330,9 @@ ALTER TABLE "items" ADD CONSTRAINT "items_owner_id_users_id_fk" FOREIGN KEY ("ow
 ALTER TABLE "jobs" ADD CONSTRAINT "jobs_session_id_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "locations" ADD CONSTRAINT "locations_owner_id_users_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lore_chunks" ADD CONSTRAINT "lore_chunks_world_id_worlds_id_fk" FOREIGN KEY ("world_id") REFERENCES "public"."worlds"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "participant_relationships" ADD CONSTRAINT "participant_relationships_session_id_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "participant_relationships" ADD CONSTRAINT "participant_relationships_from_participant_id_session_participants_id_fk" FOREIGN KEY ("from_participant_id") REFERENCES "public"."session_participants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "participant_relationships" ADD CONSTRAINT "participant_relationships_to_participant_id_session_participants_id_fk" FOREIGN KEY ("to_participant_id") REFERENCES "public"."session_participants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session_links" ADD CONSTRAINT "session_links_session_id_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session_links" ADD CONSTRAINT "session_links_from_id_session_locations_id_fk" FOREIGN KEY ("from_id") REFERENCES "public"."session_locations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session_links" ADD CONSTRAINT "session_links_to_id_session_locations_id_fk" FOREIGN KEY ("to_id") REFERENCES "public"."session_locations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -343,6 +379,8 @@ CREATE INDEX "jobs_session_idx" ON "jobs" USING btree ("session_id");--> stateme
 CREATE INDEX "locations_owner_idx" ON "locations" USING btree ("owner_id");--> statement-breakpoint
 CREATE INDEX "lore_chunks_world_idx" ON "lore_chunks" USING btree ("world_id");--> statement-breakpoint
 CREATE INDEX "lore_chunks_embedding_idx" ON "lore_chunks" USING hnsw ("embedding" vector_cosine_ops);--> statement-breakpoint
+CREATE INDEX "participant_relationships_session_idx" ON "participant_relationships" USING btree ("session_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "participant_relationships_edge_unique" ON "participant_relationships" USING btree ("session_id","from_participant_id","to_participant_id","kind");--> statement-breakpoint
 CREATE INDEX "session_links_session_idx" ON "session_links" USING btree ("session_id");--> statement-breakpoint
 CREATE INDEX "session_locations_session_idx" ON "session_locations" USING btree ("session_id");--> statement-breakpoint
 CREATE INDEX "session_participants_session_idx" ON "session_participants" USING btree ("session_id");--> statement-breakpoint

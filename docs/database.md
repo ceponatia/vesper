@@ -7,8 +7,8 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
 - Schema lives in `src/server/db/schema.ts` (one file until it hurts). snake_case columns, cuid2 text PKs (`src/lib/ids.ts`), `created_at`/`updated_at` timestamptz.
 - **JSONB columns are typed at the boundary**: every JSONB read goes through `parseOr` with its contract schema ([resilience.md](resilience.md)). Drizzle's `$type<T>()` documents the intent; zod enforces it.
 - Embeddings are `vector(1536)` columns **on the owning table** (no polymorphic embedding table — supersede/delete the row and the embedding goes with it). HNSW cosine indexes where scale warrants it (see Indexes below).
-- Bootstrap: `pnpm db:create` (idempotent — creates the database and the pgvector extension via `scripts/db-create.ts`).
-- Migrations: `pnpm db:generate` (drizzle-kit generate) → review SQL in `drizzle/` → `pnpm db:migrate` (`scripts/db-migrate.ts`, the drizzle migrator). Never `drizzle-kit push` outside local experiments. (Drizzle replaces the old prisma-migrate-hangs workflow entirely.)
+- Bootstrap: the baseline migration (`drizzle/0000_*.sql`) opens with `CREATE EXTENSION IF NOT EXISTS vector`, so `pnpm db:migrate` self-enables pgvector and works against a fresh, empty database with no prior steps. `pnpm db:create` (idempotent, `scripts/db-create.ts`) remains for environments where the database itself doesn't exist yet — the docker container already creates `vesper_dev` on first init, so it's optional there.
+- Migrations: `pnpm db:generate` (drizzle-kit generate) → review SQL in `drizzle/` → `pnpm db:migrate` (`scripts/db-migrate.ts`, the drizzle migrator). Never `drizzle-kit push` outside local experiments. (Drizzle replaces the old prisma-migrate-hangs workflow entirely.) drizzle-kit does **not** emit the `CREATE EXTENSION` line on its own — if the baseline migration is ever regenerated, re-add it as the first statement.
 
 ## Tables
 

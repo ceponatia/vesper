@@ -1,5 +1,5 @@
 {
-  "id": "69d4150d-47f1-4f39-9612-684e62b08a7a",
+  "id": "0fa75256-fa64-4793-b744-d7b6abf73d53",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -141,6 +141,13 @@
         },
         "thread_ids": {
           "name": "thread_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "witnessed_by": {
+          "name": "witnessed_by",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
@@ -388,6 +395,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0.5
+        },
+        "canon": {
+          "name": "canon",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "witnessed_by": {
+          "name": "witnessed_by",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "status": {
           "name": "status",
@@ -1178,6 +1199,20 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
+        "scale": {
+          "name": "scale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'room'"
+        },
+        "affordances": {
+          "name": "affordances",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
         "tags": {
           "name": "tags",
           "type": "jsonb",
@@ -1414,6 +1449,160 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.participant_relationships": {
+      "name": "participant_relationships",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_participant_id": {
+          "name": "from_participant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_participant_id": {
+          "name": "to_participant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'feeling'"
+        },
+        "value": {
+          "name": "value",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "stage": {
+          "name": "stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'stranger'"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "participant_relationships_session_idx": {
+          "name": "participant_relationships_session_idx",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "participant_relationships_edge_unique": {
+          "name": "participant_relationships_edge_unique",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "from_participant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "to_participant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "participant_relationships_session_id_sessions_id_fk": {
+          "name": "participant_relationships_session_id_sessions_id_fk",
+          "tableFrom": "participant_relationships",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "participant_relationships_from_participant_id_session_participants_id_fk": {
+          "name": "participant_relationships_from_participant_id_session_participants_id_fk",
+          "tableFrom": "participant_relationships",
+          "tableTo": "session_participants",
+          "columnsFrom": [
+            "from_participant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "participant_relationships_to_participant_id_session_participants_id_fk": {
+          "name": "participant_relationships_to_participant_id_session_participants_id_fk",
+          "tableFrom": "participant_relationships",
+          "tableTo": "session_participants",
+          "columnsFrom": [
+            "to_participant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.session_links": {
       "name": "session_links",
       "schema": "",
@@ -1444,6 +1633,32 @@
         },
         "label": {
           "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "travel_minutes": {
+          "name": "travel_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "audibility": {
+          "name": "audibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access": {
+          "name": "access",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"kind\":\"public\"}'::jsonb"
+        },
+        "door_item_id": {
+          "name": "door_item_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -1555,6 +1770,26 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
+        "scale": {
+          "name": "scale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'room'"
+        },
+        "area": {
+          "name": "area",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "affordances": {
+          "name": "affordances",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
         "emergent": {
           "name": "emergent",
           "type": "boolean",
@@ -1662,6 +1897,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'npc'"
+        },
+        "tier": {
+          "name": "tier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'minor'"
         },
         "snapshot": {
           "name": "snapshot",
@@ -2275,11 +2517,25 @@
           "notNull": true,
           "default": "'npc'"
         },
+        "tier": {
+          "name": "tier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'minor'"
+        },
         "start_world_location_id": {
           "name": "start_world_location_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "relationships": {
+          "name": "relationships",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
         }
       },
       "indexes": {
@@ -2511,6 +2767,32 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "travel_minutes": {
+          "name": "travel_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "audibility": {
+          "name": "audibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access": {
+          "name": "access",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"kind\":\"public\"}'::jsonb"
+        },
+        "door_item_id": {
+          "name": "door_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2605,6 +2887,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "sort": {
+          "name": "sort",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         }
       },
       "indexes": {
@@ -2710,6 +2999,12 @@
         },
         "image_id": {
           "name": "image_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "player_start_world_location_id": {
+          "name": "player_start_world_location_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
