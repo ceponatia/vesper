@@ -208,6 +208,20 @@ dislike the result; click the image to enlarge.
   reclaim for item; location establishing image). docs/images.md +
   ui.md updated.
 
-Parts 2–4 follow in their own commits.
+**Part 3 + library batch implemented (2026-06-13).** The Items library
+gains an **All / Clothing / Object / Container** segmented bucket filter
+(live counts, shadcn-informed segmented control; client-side filter by
+`kind`). The Items and Locations libraries gain a **Generate images**
+button beside "New blank": it gathers the ids visible under the active
+filter still missing an image, confirms via a dialog naming the count
+(Ok/Cancel), then `POST /api/{items,locations}/images` (id-scoped) runs
+`generateEntityImagesBatch` in parallel batches of 5 in a background job;
+the grid polls so images appear as they land. `missingEntityImageIds`
+gained an `ids` scope; +1 integration test (only-missing batch). User
+follow-ons folded in: batch respects the selected bucket; confirm modal.
 
-Status: **part 1 closed; parts 2–4 in progress.**
+Remaining: **Part 2** (location fields scale/area/connections +
+migration + world propagation) and **Part 4** (auto-generate every
+missing image — `imageId` null only — on new-world save, background).
+
+Status: **parts 1, 3 + library batch closed; parts 2 & 4 in progress.**

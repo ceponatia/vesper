@@ -583,6 +583,9 @@ export const charactersApi = {
 /** Wrapper for the entity-image GET (`{ image }`, nullable) used by the studio. */
 const entityImageSchema = z.object({ image: imageRecordSchema.nullable().catch(null) });
 
+/** Batch image-generation response: how many entities were queued. */
+const batchImageSchema = z.object({ queued: z.number().catch(0) }).catch({ queued: 0 });
+
 export const locationsApi = {
   list: (params: ListParams = {}) =>
     apiGet(listOf(locationSummarySchema, "locations"), withQuery("/api/locations", params)),
@@ -592,6 +595,8 @@ export const locationsApi = {
   remove: (id: string) => apiDelete(`/api/locations/${id}`),
   image: (id: string) => apiGet(entityImageSchema, `/api/locations/${id}/image`),
   generateImage: (id: string) => apiPost(z.unknown(), `/api/locations/${id}/image`, {}),
+  generateMissingImages: (ids?: readonly string[]) =>
+    apiPost(batchImageSchema, "/api/locations/images", ids ? { ids } : {}),
 };
 
 export const itemsApi = {
@@ -602,6 +607,8 @@ export const itemsApi = {
   remove: (id: string) => apiDelete(`/api/items/${id}`),
   image: (id: string) => apiGet(entityImageSchema, `/api/items/${id}/image`),
   generateImage: (id: string) => apiPost(z.unknown(), `/api/items/${id}/image`, {}),
+  generateMissingImages: (ids?: readonly string[]) =>
+    apiPost(batchImageSchema, "/api/items/images", ids ? { ids } : {}),
 };
 
 export const worldsApi = {
@@ -645,4 +652,6 @@ export const sessionsApi = {
       { text },
     ),
   remove: (id: string) => apiDelete(`/api/sessions/${id}`),
+  /** Dev-only: force-close a story thread (admin) — it drops from the status payload. */
+  closeThread: (id: string, threadId: string) => apiDelete(`/api/sessions/${id}/threads/${threadId}`),
 };

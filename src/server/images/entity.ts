@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { generateImage } from "ai";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
 import { imageModel, imageModelId, isDemoMode } from "../ai";
 import { logEvent } from "../events";
@@ -156,4 +156,59 @@ async function reclaimOldImages(kind: EntityImageKind, id: string, ownerId: stri
 async function generateEntityBuffer(prompt: string, aspectRatio: `${number}:${number}`): Promise<Buffer> {
   const result = await generateImage({ model: imageModel(), prompt, aspectRatio });
   return Buffer.from(result.image.uint8Array);
+}
+
+/** How many entity images generate concurrently in a batch (user spec). */
+export const ENTITY_IMAGE_BATCH_SIZE = 5;
+
+/**
+ * The owner's items/locations that still lack an image — the batch candidates.
+ * `opts.ids` intersects with a caller-supplied scope (the library sends the
+ * ids visible under the active type/search filter, so "Generate images"
+ * covers exactly the selected bucket); omit it to mean every missing entity.
+ */
+export async function missingEntityImageIds(
+  entityKind: EntityImageKind,
+  ownerId: string,
+  opts?: { ids?: readonly string[] },
+): Promise<string[]> {
+  const table = entityKind === "item" ? items : locations;
+  const scope = opts?.ids;
+  if (scope && scope.length === 0) return [];
+  const conds = [eq(table.ownerId, ownerId), isNull(table.imageId)];
+  if (scope) conds.push(inArray(table.id, [...scope]));
+  const rows = await db()
+    .select({ id: table.id })
+    .from(table)
+    .where(and(...conds));
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Generate images for many entities in parallel batches of
+ * ENTITY_IMAGE_BATCH_SIZE (docs/images.md §Entity images). Used by the library
+ * "Generate images" button and new-world auto-generation. A single failure
+ * never aborts the batch — each entity degrades independently. Returns how many
+ * completed. Run inside a background job so it survives client navigation.
+ */
+export async function generateEntityImagesBatch(
+  entityKind: EntityImageKind,
+  ids: readonly string[],
+  userId: string,
+  sink?: DiagnosticSink,
+): Promise<number> {
+  let done = 0;
+  for (let i = 0; i < ids.length; i += ENTITY_IMAGE_BATCH_SIZE) {
+    const chunk = ids.slice(i, i + ENTITY_IMAGE_BATCH_SIZE);
+    await Promise.all(
+      chunk.map((entityId) =>
+        generateEntityImage({ entityKind, entityId, userId, sink })
+          .then(() => {
+            done += 1;
+          })
+          .catch(() => undefined),
+      ),
+    );
+  }
+  return done;
 }

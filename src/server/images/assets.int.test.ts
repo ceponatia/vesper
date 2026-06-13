@@ -15,7 +15,7 @@ import {
 } from "./assets";
 import { monogramSvg } from "./monogram";
 import { generateAvatar } from "./avatar";
-import { generateEntityImage } from "./entity";
+import { generateEntityImage, generateEntityImagesBatch, missingEntityImageIds } from "./entity";
 import { uploadAvatar } from "./upload";
 import { generateVariant, promoteVariant } from "./variants";
 import { renderSceneImage } from "./scene";
@@ -256,6 +256,32 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(img?.entityKind).toBe("location");
     const [row] = await db().select().from(locations).where(eq(locations.id, loc.id)).limit(1);
     expect(row?.imageId).toBe(imageId);
+  });
+
+  it("generateEntityImagesBatch fills only the entities missing an image", async (ctx) => {
+    if (!available) return ctx.skip();
+    const made = await db()
+      .insert(items)
+      .values([
+        { ownerId: userId, kind: "object", name: "Already Pictured", imageId: "img-placeholder" },
+        { ownerId: userId, kind: "object", name: "Needs One" },
+        { ownerId: userId, kind: "clothing", name: "Needs Two" },
+      ])
+      .returning();
+    const pictured = made.find((m) => m.name === "Already Pictured");
+
+    const missing = await missingEntityImageIds("item", userId);
+    expect(missing).not.toContain(pictured?.id); // entities with an image are skipped
+    const needy = made.filter((m) => m.name !== "Already Pictured").map((m) => m.id);
+    for (const id of needy) expect(missing).toContain(id);
+
+    const count = await generateEntityImagesBatch("item", needy, userId);
+    expect(count).toBe(needy.length);
+    const stillMissing = await missingEntityImageIds("item", userId);
+    for (const id of needy) expect(stillMissing).not.toContain(id); // all filled now
+    // the pre-pictured item keeps its original image, untouched
+    const [after] = await db().select().from(items).where(eq(items.id, pictured?.id ?? "")).limit(1);
+    expect(after?.imageId).toBe("img-placeholder");
   });
 
   it("renderSceneImage attaches a ready demo scene to the session gallery", async (ctx) => {

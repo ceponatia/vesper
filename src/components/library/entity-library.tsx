@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   charactersApi,
   itemsApi,
@@ -16,6 +16,7 @@ import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cx } from "@/components/ui/cx";
+import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
@@ -46,6 +47,11 @@ interface EntityConfig {
   square: boolean;
   list: (q: string, tag: string) => Promise<ApiResult<LibraryCard[]>>;
   create: () => Promise<ApiResult<CreatedRef>>;
+  /** Optional segmented type-buckets over a card field (items use `kind`). */
+  buckets?: { field: (card: LibraryCard) => string | undefined; options: { id: string; label: string }[] };
+  /** Optional batch image generation for the given entity ids (those visible
+   *  under the active filter) that are still missing an image. */
+  generateImages?: (ids: readonly string[]) => Promise<ApiResult<{ queued: number }>>;
 }
 
 const configs: Record<LibraryEntity, EntityConfig> = {
@@ -93,6 +99,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     square: false,
     list: (q, tag) => locationsApi.list({ q, tag }),
     create: () => locationsApi.create({ name: "Untitled location" }),
+    generateImages: (ids) => locationsApi.generateMissingImages(ids),
   },
   items: {
     title: "Items",
@@ -104,6 +111,15 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     square: true,
     list: (q, tag) => itemsApi.list({ q, tag }),
     create: () => itemsApi.create({ name: "Untitled item", kind: "object" }),
+    buckets: {
+      field: (card) => card.kind,
+      options: [
+        { id: "clothing", label: "Clothing" },
+        { id: "object", label: "Object" },
+        { id: "container", label: "Container" },
+      ],
+    },
+    generateImages: (ids) => itemsApi.generateMissingImages(ids),
   },
 };
 
@@ -116,8 +132,14 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const [search, setSearch] = useState(""); // debounced
   const [tag, setTag] = useState("");
   const [creating, setCreating] = useState(false);
+  const [bucket, setBucket] = useState("all");
+  const [generatingBatch, setGeneratingBatch] = useState(false);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [confirmGen, setConfirmGen] = useState(false);
+  const [batchIds, setBatchIds] = useState<ReadonlySet<string>>(new Set());
 
   const list = useAsyncData(() => config.list(search, tag), [entity, search, tag]);
+  const { reload } = list;
 
   // Debounce: schedule the search update on input.
   const [timer, setTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -141,8 +163,69 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
     else toast.push({ title: "Couldn't create", description: result.error.message, tone: "error" });
   };
 
-  const cards = list.data ?? [];
-  const fresh = !list.loading && !list.error && cards.length === 0 && search === "" && tag === "";
+  const cardsAll = list.data ?? [];
+  const cards = config.buckets && bucket !== "all" ? cardsAll.filter((c) => config.buckets?.field(c) === bucket) : cardsAll;
+  const fresh = !list.loading && !list.error && cardsAll.length === 0 && search === "" && tag === "";
+  // Entities visible under the active filter that still lack an image — the
+  // exact scope the "Generate images" button (and its confirm count) act on.
+  const missingIds = cards.flatMap((c) => (c.imageId ? [] : [c.id]));
+
+  // Singular noun for the confirm copy, scoped to the active bucket.
+  const entitySingular = config.title.toLowerCase().replace(/s$/, "");
+  const bucketLabel =
+    config.buckets && bucket !== "all" ? config.buckets.options.find((o) => o.id === bucket)?.label.toLowerCase() : null;
+  const scopeNoun = bucketLabel ? `${bucketLabel} ${entitySingular}` : entitySingular;
+
+  const requestGenerate = () => {
+    if (missingIds.length === 0) {
+      toast.push({ title: `Every visible ${entitySingular} already has an image`, tone: "success" });
+      return;
+    }
+    setConfirmGen(true);
+  };
+
+  const confirmGenerate = async () => {
+    if (!config.generateImages || missingIds.length === 0) return;
+    setConfirmGen(false);
+    setBatchIds(new Set(missingIds));
+    setGeneratingBatch(true);
+    const result = await config.generateImages(missingIds);
+    setGeneratingBatch(false);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't start image generation", description: result.error.message, tone: "error" });
+      return;
+    }
+    if (result.data.queued === 0) {
+      toast.push({ title: "Those already have images", tone: "success" });
+      return;
+    }
+    toast.push({
+      title: `Generating ${result.data.queued} image${result.data.queued === 1 ? "" : "s"}`,
+      description: "They’ll appear as they finish — you can keep working or leave this page.",
+    });
+    setBatchRunning(true);
+    reload({ silent: true });
+  };
+
+  // Refresh the grid while a batch runs so images appear as they land; stop
+  // once every entity in the running batch has one, or after a safety cap. The
+  // scoped-missing count is read through a ref so the interval sees fresh data.
+  const scopedMissing =
+    batchIds.size === 0 ? 0 : cardsAll.filter((c) => batchIds.has(c.id) && !c.imageId).length;
+  const missingRef = useRef(scopedMissing);
+  useEffect(() => {
+    missingRef.current = scopedMissing;
+  });
+  useEffect(() => {
+    if (!batchRunning) return;
+    let polls = 0;
+    const timer = setInterval(() => {
+      polls += 1;
+      reload({ silent: true });
+      if ((polls >= 2 && missingRef.current === 0) || polls >= 90) setBatchRunning(false);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [batchRunning, reload]);
 
   return (
     <PageContainer wide>
@@ -155,6 +238,11 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
           <Button onClick={createBlank} busy={creating}>
             New blank
           </Button>
+          {config.generateImages ? (
+            <Button onClick={requestGenerate} busy={generatingBatch} disabled={batchRunning}>
+              {batchRunning ? "Generating…" : "Generate images"}
+            </Button>
+          ) : null}
           {config.forgePath ? (
             <Link
               href={config.forgePath}
@@ -165,6 +253,36 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
           ) : null}
         </div>
       </div>
+
+      {config.buckets ? (
+        <div
+          role="tablist"
+          aria-label="Filter by type"
+          className="mb-4 inline-flex gap-1 rounded-md border border-ink-600 bg-ink-850 p-1"
+        >
+          {[{ id: "all", label: "All" }, ...config.buckets.options].map((opt) => {
+            const count =
+              opt.id === "all" ? cardsAll.length : cardsAll.filter((c) => config.buckets?.field(c) === opt.id).length;
+            const active = bucket === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setBucket(opt.id)}
+                className={cx(
+                  "cursor-pointer rounded px-3 py-1 text-xs transition-colors",
+                  active ? "bg-ink-700 text-paper-50" : "text-paper-400 hover:text-paper-200",
+                )}
+              >
+                {opt.label}
+                <span className={cx("ml-1.5 tabular-nums", active ? "text-paper-400" : "text-paper-500")}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <Input
@@ -220,7 +338,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
           }
         />
       ) : cards.length === 0 ? (
-        <EmptyState title="Nothing matches" description="Try a different search or clear the tag filter." />
+        <EmptyState title="Nothing matches" description="Try a different search, type, or tag filter." />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((card) => (
@@ -248,6 +366,24 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
           ))}
         </div>
       )}
+      {config.generateImages ? (
+        <Dialog
+          open={confirmGen}
+          onClose={() => setConfirmGen(false)}
+          title="Generate images?"
+          footer={
+            <>
+              <Button onClick={() => setConfirmGen(false)}>Cancel</Button>
+              <Button variant="primary" busy={generatingBatch} onClick={confirmGenerate}>
+                Ok
+              </Button>
+            </>
+          }
+        >
+          This will generate {missingIds.length} image{missingIds.length === 1 ? "" : "s"} — one for each {scopeNoun}{" "}
+          without one. It runs in the background, so you can keep working or leave this page.
+        </Dialog>
+      ) : null}
     </PageContainer>
   );
 }
