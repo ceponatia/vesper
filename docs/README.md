@@ -1,8 +1,8 @@
 # Vesper documentation
 
-Vesper is an LLM-powered roleplaying engine: a web app where you forge worlds and characters (AI-drafted, human-edited), then play turn-based sessions in which a narrative model writes the story while a fan-out of parallel state agents keeps a persistent, queryable world model in sync — locations, wardrobe, meters, conditions, facts, story threads, and generated imagery.
+Vesper is an LLM-powered romance roleplaying game: a web app where you forge worlds and characters (AI-drafted, human-edited), then play turn-based sessions with an AI companion in which a narrative model writes the story while a fan-out of parallel state agents keeps a persistent, queryable world model in sync — locations, wardrobe, meters, conditions, facts, story threads, and generated imagery.
 
-It is a ground-up rewrite of the original companion-app. The premise is unchanged — dynamic state management, RAG memory, multi-agent parallel orchestration feeding facts to the narrative model — but every system is redesigned.
+It is a fork of reverie — itself a ground-up rewrite of the original companion-app — and shares reverie's full engine: dynamic state management, RAG memory, and multi-agent parallel orchestration feeding facts to the narrative model. The difference is focus. Reverie is a broadly-scoped roleplaying engine — it *can* host romantic and adult play, but as one mode among many. Vesper forks that engine to develop in a single direction: intimate, character-driven romance, optimized for mature, adult scenarios. Freed from staying general-purpose, the systems behind those scenarios — relationship and affinity progression, per-sense exposure gating, intimacy staging, and uncensored imagery — are first-class here and free to evolve as the product's core rather than incidental features.
 
 ## Reading order
 
