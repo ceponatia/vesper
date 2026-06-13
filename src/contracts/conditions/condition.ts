@@ -10,6 +10,18 @@ export type ConditionEffect = z.infer<typeof conditionEffectSchema>;
 
 export const conditionSeveritySchema = z.enum(["minor", "moderate", "severe"]);
 
+/**
+ * How a condition impairs perception while active (presence-and-perception-spec
+ * §Environment, decision 24): blindfolded ⇒ sight blocked, drunk ⇒ both reduced.
+ * Optional — most conditions have none, and known labels (blindfolded, deaf, …)
+ * map to effects without authoring (see contracts/perception/darkness.ts).
+ */
+export const senseEffectsSchema = z.object({
+  sight: z.enum(["reduced", "blocked"]).optional(),
+  hearing: z.enum(["reduced", "blocked"]).optional(),
+});
+export type SenseEffects = z.infer<typeof senseEffectsSchema>;
+
 export const activeConditionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -26,6 +38,8 @@ export const activeConditionSchema = z.object({
     .optional(),
   /** Overlaid while active with source "condition", sourceId = condition id. */
   attributeEffects: z.array(conditionEffectSchema).default([]),
+  /** Perception impairment while active (presence-spec §Environment). */
+  senseEffects: senseEffectsSchema.optional(),
   promptHint: z.string().optional(),
 });
 

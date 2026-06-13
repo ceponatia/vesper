@@ -159,6 +159,7 @@ function simulant(overrides: Partial<SimulantResult> = {}): SimulantResult {
     attributeChanges: [],
     affinityAdjustments: [],
     activityUpdates: [],
+    commsEvents: [],
     ...overrides,
   };
 }
@@ -933,8 +934,8 @@ describe("buildNextBrief", () => {
       director: director(),
       continuity: {
         violations: [
-          { subject: "Maya", claim: "minor slip", canonical: "canon A", severity: "minor" },
-          { subject: "Maya", claim: "big slip", canonical: "canon B", severity: "major" },
+          { subject: "Maya", claim: "minor slip", canonical: "canon A", severity: "minor", kind: "general" },
+          { subject: "Maya", claim: "big slip", canonical: "canon B", severity: "major", kind: "general" },
         ],
         normBreaches: [
           { normRule: "no magic in public", byName: "Rhett", witnessNames: ["Maya"], suggestedReaction: "Maya recoils." },

@@ -1042,6 +1042,7 @@ const SIMULANT_FALLBACK: SimulantResult = {
   attributeChanges: [],
   activityUpdates: [],
   affinityAdjustments: [],
+  commsEvents: [],
 };
 
 const CONTINUITY_FALLBACK: ContinuityResult = { violations: [], normBreaches: [], driftNotes: [] };

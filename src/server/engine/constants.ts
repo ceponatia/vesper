@@ -43,6 +43,13 @@ export const THREAD_COOLING_TURNS = 8;
 /** Top open threads riding in every turn context. */
 export const OPEN_THREADS_IN_CONTEXT = 3;
 
+/**
+ * Max NPC↔NPC awareness lines in the turn context per turn (defaults doc §witness
+ * matrix budget) — only non-obvious blindspots earn a line; a guard against
+ * ensemble-scene prompt bloat.
+ */
+export const MAX_NPC_PAIR_AWARENESS_LINES = 4;
+
 /** Heartbeats older than this mark a turn/job as abandoned (recovery). */
 export const HEARTBEAT_STALE_MS = 60_000;
 /** Heartbeat refresh cadence while streaming/processing. */

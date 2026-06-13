@@ -103,6 +103,7 @@ export function demoAgentResults(input: string, opts: DemoAgentOptions): AgentRe
       conditionEvents: [],
       attributeChanges: [],
       activityUpdates: [],
+      commsEvents: [],
     },
     archivist: {
       episodeSummary: summary,

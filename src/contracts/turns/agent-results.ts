@@ -2,6 +2,7 @@ import { z } from "zod";
 import { factDraftSchema } from "../facts/taxonomy";
 import { conditionSeveritySchema } from "../conditions/condition";
 import { exposureMaskSchema, defaultExposureMask } from "../state/brief";
+import { salienceSchema } from "../perception/salience";
 
 /**
  * Post-turn agent output schemas (docs/turn-engine.md §Post-turn agents).
@@ -43,6 +44,8 @@ export const simulantResultSchema = z.object({
         locationName: z.string().optional(),
         containerName: z.string().optional(),
         stateNote: z.string().optional(),
+        /** How noticeable this action was (presence-spec); absent ⇒ obvious/quiet in the reducer. */
+        salience: salienceSchema.optional(),
       }),
     )
     .default([]),
@@ -84,6 +87,8 @@ export const simulantResultSchema = z.object({
         participantName: z.string().min(1),
         activity: z.string().min(1),
         posture: z.string().optional(),
+        /** How noticeable this activity is to others (presence-spec); absent ⇒ obvious/quiet. */
+        salience: salienceSchema.optional(),
       }),
     )
     .default([]),
@@ -100,6 +105,20 @@ export const simulantResultSchema = z.object({
         towardName: z.string().min(1),
         delta: z.number().catch(0),
         reason: z.string().optional(),
+      }),
+    )
+    .default([]),
+  /**
+   * Comms links opened or closed this turn (presence-spec §comms). "I call Mara"
+   * opens a call; hanging up closes it. The merge persists open links to
+   * `runtime.commsLinks`, making that NPC comms-present on later turns.
+   */
+  commsEvents: z
+    .array(
+      z.object({
+        op: z.enum(["open", "close"]),
+        kind: z.enum(["call", "text"]).catch("call"),
+        withName: z.string().min(1),
       }),
     )
     .default([]),
@@ -125,6 +144,16 @@ export const continuityResultSchema = z.object({
         claim: z.string().min(1),
         canonical: z.string().min(1),
         severity: z.enum(["minor", "major"]).catch("minor"),
+        /**
+         * Presence/perception violation classes (presence-spec §Enforcement):
+         * `narrated_absent_character` (an Elsewhere character acted/spoke) and
+         * `reacted_to_unperceived_event` (a character responded to something they
+         * could not perceive). Both are major. `general` is any other continuity error.
+         */
+        kind: z
+          .enum(["general", "narrated_absent_character", "reacted_to_unperceived_event"])
+          .catch("general")
+          .default("general"),
       }),
     )
     .default([]),

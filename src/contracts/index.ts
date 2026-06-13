@@ -8,6 +8,7 @@ export * from "./relationships/stages";
 export * from "./relationships/authored";
 export * from "./relationships/bond";
 export * from "./conditions/condition";
+export * from "./perception";
 export * from "./items/item";
 export * from "./items/coverage";
 export * from "./items/clothing-categories";

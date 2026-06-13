@@ -101,6 +101,7 @@ function simulant(overrides: Partial<SimulantResult> = {}): SimulantResult {
     attributeChanges: [],
     affinityAdjustments: [],
     activityUpdates: [],
+    commsEvents: [],
     ...overrides,
   };
 }

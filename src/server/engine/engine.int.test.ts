@@ -320,6 +320,7 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
             attributeChanges: [],
             activityUpdates: [],
             affinityAdjustments: [{ fromName: "Maya", towardName: "Brian", delta, reason: "shared confidence" }],
+            commsEvents: [],
           },
           archivist: null,
           continuity: null,

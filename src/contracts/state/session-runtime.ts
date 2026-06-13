@@ -1,5 +1,32 @@
 import { z } from "zod";
 
+/**
+ * An active comms link the player holds (presence-and-perception-spec §comms):
+ * a call or text with an NPC who is otherwise absent. While the link is open the
+ * NPC is `comms`-present — they may speak, but are not physically here. Opened and
+ * closed by the simulant's `commsEvents`; persists in runtime across turns.
+ */
+export const commsLinkSchema = z.object({
+  kind: z.enum(["call", "text"]),
+  withParticipantId: z.string().min(1),
+  /** Session clock-minutes when the link opened. */
+  since: z.number().int().min(0).default(0),
+});
+export type CommsLink = z.infer<typeof commsLinkSchema>;
+
+/**
+ * An NPC-initiated message awaiting the player. The renderer (pending-messages
+ * context line) ships in v1; population by the director / world-tick is phase 4
+ * (NPC-initiated comms), so this is an empty seam until then.
+ */
+export const pendingCommsSchema = z.object({
+  fromParticipantId: z.string().min(1),
+  kind: z.enum(["call", "text"]),
+  gist: z.string().default(""),
+  urgency: z.enum(["low", "normal", "high"]).catch("normal").default("normal"),
+});
+export type PendingComms = z.infer<typeof pendingCommsSchema>;
+
 export const storyThreadSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -22,6 +49,10 @@ export const sessionRuntimeSchema = z.object({
   lastInteractedTurn: z.record(z.string(), z.number().int()).default({}),
   /** Session clock-minutes up to which affinity decay has been applied (whole weeks only). Absent until the first post-turn merge seeds it. */
   lastAffinityDecayAt: z.number().int().min(0).optional().catch(undefined),
+  /** Active player comms links (presence-spec §comms). */
+  commsLinks: z.array(commsLinkSchema).default([]),
+  /** NPC-initiated messages awaiting the player (phase-4 populates; renderer ships v1). */
+  pendingComms: z.array(pendingCommsSchema).default([]),
   flags: z.record(z.string(), z.boolean()).default({}),
 });
 

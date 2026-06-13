@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attentionHintSchema } from "../perception/attention";
 
 export const itemKinds = ["clothing", "object", "container"] as const;
 export const itemKindSchema = z.enum(itemKinds);
@@ -31,6 +32,13 @@ export const itemDefinitionSchema = z.object({
   layer: clothingLayerSchema.optional(),
   opacity: z.enum(["opaque", "sheer"]).default("opaque"),
   sensory: itemSensorySchema.default({}),
+  /**
+   * Perception hint (presence-spec §Attention × salience): using this item shapes
+   * a character's attention — a sink/desk faces them away from the room
+   * (`faces_away`), a task absorbs them (`absorbing`), a lookout faces outward
+   * (`outward`). Sharpens derived attention; neutral where unset.
+   */
+  attentionHint: attentionHintSchema.optional(),
   /** Kind-specific extras: { capacity }, { wearableContainer: true }, … */
   fields: z.record(z.string(), z.unknown()).default({}),
   tags: z.array(z.string()).default([]),
