@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { eq, sql } from "drizzle-orm";
 import { characters, db, images, sessions, users, worlds } from "../db";
 import {
@@ -14,6 +15,7 @@ import {
 } from "./assets";
 import { monogramSvg } from "./monogram";
 import { generateAvatar } from "./avatar";
+import { uploadAvatar } from "./upload";
 import { generateVariant, promoteVariant } from "./variants";
 import { renderSceneImage } from "./scene";
 import { emptySceneRenderPlan } from "./prompts";
@@ -171,6 +173,43 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     const imageId = await generateAvatar({ characterId: "missing-character", userId });
     const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
     expect(row?.status).toBe("failed");
+  });
+
+  it("uploadAvatar crops a user image to 768×1024, saves it, and promotes it to the avatar", async (ctx) => {
+    if (!available) return ctx.skip();
+    const [character] = await db()
+      .insert(characters)
+      .values({ ownerId: userId, name: "Upload Sub", profile: { bio: "Has a real photo." } })
+      .returning();
+    if (!character) throw new Error("failed to create character");
+
+    // A 1200×800 landscape source — cover-resize must crop it to the 3:4 portrait.
+    const png = await sharp({ create: { width: 1200, height: 800, channels: 3, background: { r: 12, g: 120, b: 200 } } })
+      .png()
+      .toBuffer();
+    const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
+
+    const result = await uploadAvatar({ characterId: character.id, userId, dataUrl });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const [row] = await db().select().from(images).where(eq(images.id, result.avatarImageId)).limit(1);
+    expect(row?.status).toBe("ready");
+    expect(row?.kind).toBe("avatar");
+    expect(row?.meta).toMatchObject({ source: "upload", width: 768, height: 1024 });
+    await expect(fs.access(absoluteImagePath(row ?? { path: "missing" }))).resolves.toBeUndefined();
+
+    const [updated] = await db().select().from(characters).where(eq(characters.id, character.id)).limit(1);
+    expect(updated?.avatarImageId).toBe(result.avatarImageId);
+  });
+
+  it("uploadAvatar rejects a non-image payload without writing a row", async (ctx) => {
+    if (!available) return ctx.skip();
+    const before = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, userId));
+    const result = await uploadAvatar({ characterId: "anything", userId, dataUrl: "not a data url" });
+    expect(result.ok).toBe(false);
+    const after = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, userId));
+    expect(after.length).toBe(before.length); // bailed before creating an asset
   });
 
   it("renderSceneImage attaches a ready demo scene to the session gallery", async (ctx) => {

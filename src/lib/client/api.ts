@@ -569,6 +569,8 @@ export const charactersApi = {
   forge: (body: { prompt: string; section?: CharacterForgeSection; draft?: CharacterDraft }) =>
     apiPost(forgeResponseSchema(characterDraftSchema), "/api/characters/forge", body),
   generateAvatar: (id: string) => apiPost(z.unknown(), `/api/characters/${id}/avatar`, {}),
+  uploadAvatar: (id: string, image: string) =>
+    apiPost(z.object({ avatarImageId: idSchema }), `/api/characters/${id}/avatar/upload`, { image }),
   portraits: (id: string) =>
     apiGet(listOf(imageRecordSchema, "portraits", "images"), `/api/characters/${id}/portraits`),
   createPortrait: (id: string, body: { kind: PortraitVariantKind; instruction: string }) =>

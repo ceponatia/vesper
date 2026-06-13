@@ -81,3 +81,60 @@ garments staying, and description+appearance rendering across the
 avatar, composer, and render prompts; docs/images.md updated.
 
 Status: **closed (implemented).**
+
+## 2. Portrait studio: upload a profile image with crop/reposition (2026-06-13)
+
+**Request (user).** Let users upload their own picture in the
+characters portrait studio. Scale and crop it to the avatar
+dimensions; if it needs cropping, show a modal where the user can
+resize and move the image inside a crop window. The upload modal's
+helper text should state the target dimensions and that cropping is
+available.
+
+**Assessment.** The avatar is 3:4. The whole pipeline already exists
+(row-before-file assets, sharp webp conversion, `promoteVariant`) — an
+upload is just a new buffer source that skips the model, so it also
+works in demo mode / offline. Cropping is best done client-side (the
+user frames it visually); the server re-fits as defense in depth.
+
+**Implemented (2026-06-13).**
+
+- *Shared dimensions + pure crop geometry* —
+  `src/lib/images/crop.ts`: `AVATAR_WIDTH=768`, `AVATAR_HEIGHT=1024`,
+  and pure helpers (`coverScale`, `displaySize`, `clampOffset`,
+  `centeredOffset`, `sourceRect`, `aspectMatches`) so the live CSS
+  preview and the output canvas are computed from the same numbers —
+  what the user frames is exactly what is saved. 7 pure tests
+  (`crop.test.ts`).
+- *Crop dialog* — `components/characters/avatar-upload-dialog.tsx`: a
+  `Dialog` that opens on a file picker (drop-zone + helper text naming
+  the 768×1024 / 3:4 target), then — only when the file isn't already
+  3:4 (`aspectMatches`) — shows a 3:4 crop window with pointer-drag
+  pan, a zoom slider, and non-passive wheel zoom. "Use image" renders
+  the framed region to a JPEG data URL. An already-3:4 image skips the
+  crop step and uploads directly.
+- *Server* — `server/images/upload.ts` `uploadAvatar`: decode the data
+  URL, sharp `cover` resize to 768×1024 with EXIF `rotate()`, save via
+  the normal row-before-file path (`kind: "avatar"`,
+  `meta.source: "upload"`), promote to the character's avatar.
+  Degrades with diagnostics on a bad data URL / undecodable image
+  (`images.upload.bad_data_url`, `images.upload.decode_failed`) — the
+  asset row is marked failed, never thrown.
+- *Route + client* — `POST /api/characters/:id/avatar/upload`
+  (synchronous, returns the new `avatarImageId`, 201);
+  `charactersApi.uploadAvatar`. The studio refetches immediately, no
+  polling.
+- 2 integration tests (`assets.int.test.ts`): a 1200×800 source
+  cropped to 768×1024 + promoted, and a non-image payload rejected
+  without writing a row.
+
+**Design notes / deviations.** Transport is a base64 JPEG data URL over
+the existing JSON `apiPost` (the client always sends a small cropped
+~768×1024 image, never the raw file), avoiding a multipart helper. An
+upload becomes the canonical avatar immediately (the obvious intent of
+"upload a profile picture"); a later generate/upload pushes the prior
+one into the variant grid. The portrait-variant "outfit" path's
+wardrobe-reconciliation gap (followups §earlier note) is unrelated and
+untouched.
+
+Status: **closed (implemented).**

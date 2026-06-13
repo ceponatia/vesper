@@ -7,6 +7,7 @@ import {
   type PortraitVariantKind,
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { AvatarUploadDialog } from "./avatar-upload-dialog";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
@@ -42,6 +43,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const [submittingVariant, setSubmittingVariant] = useState(false);
   const [busyImageId, setBusyImageId] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState<{ id: string; caption: string | null } | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   // Once the avatar id changes (a generate finished or a variant was
   // promoted), stop treating the avatar job as pending. Adjusted during
@@ -147,9 +149,14 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           <p className="text-sm text-paper-400">
             Generated from this character&apos;s attributes — the registry phrasing is the prompt.
           </p>
-          <Button variant="primary" onClick={generateAvatar} busy={generatingAvatar} className="w-fit">
-            {avatarImageId ? "Regenerate avatar" : "Generate avatar"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" onClick={generateAvatar} busy={generatingAvatar}>
+              {avatarImageId ? "Regenerate avatar" : "Generate avatar"}
+            </Button>
+            <Button variant="ghost" onClick={() => setUploadOpen(true)}>
+              Upload image
+            </Button>
+          </div>
           {generatingAvatar ? <p className="text-xs text-paper-500">Working — this can take a minute…</p> : null}
         </div>
       </div>
@@ -250,6 +257,19 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           </div>
         )}
       </div>
+
+      <AvatarUploadDialog
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        characterId={characterId}
+        name={name}
+        onUploaded={() => {
+          setGeneratingAvatar(false);
+          toast.push({ title: "Avatar updated", description: "Set from your uploaded image.", tone: "success" });
+          onAvatarChanged();
+          portraits.reload({ silent: true });
+        }}
+      />
 
       <ImageLightbox
         imageId={enlarged?.id ?? null}

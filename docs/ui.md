@@ -23,6 +23,8 @@ The world review/editor map tab (`components/worlds/world-editor.tsx`) renders e
 
 The world review/editor cast tab (`components/worlds/world-editor.tsx`) carries per-member relationship rows — a `toward` select (other cast names + "player", with a "(missing)" option keeping unresolved names visible) and a stage select fed by the `contracts/relationships/stages` registry (stages, never numbers), with add/remove affordances. Renaming a cast member rewrites other members' `toward` pointers, the same way map renames follow location links. When the cast would spawn more than `MAJOR_TIER_SOFT_CAP` (6) major-tier members, the tab shows a non-blocking warn-toned notice — the count uses `lib/cast-tiers.ts` (the same rule `engine/spawn.ts` applies: companions left at the default minor tier spawn as major), and spawn emits the matching `spawn.cast.major_soft_cap` diagnostic; nothing is ever blocked or trimmed. Scale and tier select options are derived from the contract enums in `lib/client/api.ts` (`worldLocationScaleSchema` / `worldCastTierSchema`), not inline literals.
 
+The character portrait studio (`components/characters/portrait-studio.tsx`) generates the canonical avatar from attributes, accumulates Venice pose/outfit/expression/setting variants, and promotes any variant to canonical. **Upload image** opens the crop dialog (`avatar-upload-dialog.tsx`): a modal whose helper text states the 768×1024 (3:4) target, then — unless the chosen file is already 3:4 — lets the user drag to reposition and a slider/scroll to zoom inside a 3:4 crop window before the framed region is scaled, saved, and set as the avatar (synchronous, demo-safe — [images.md](images.md) §Avatar upload).
+
 ## The play screen
 
 Three regions:

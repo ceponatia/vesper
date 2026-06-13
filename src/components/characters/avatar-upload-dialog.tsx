@@ -1,0 +1,313 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { charactersApi } from "@/lib/client/api";
+import {
+  AVATAR_HEIGHT,
+  AVATAR_WIDTH,
+  MAX_ZOOM,
+  aspectMatches,
+  centeredOffset,
+  clampOffset,
+  displaySize,
+  sourceRect,
+  type Offset,
+} from "@/lib/images/crop";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
+
+export interface AvatarUploadDialogProps {
+  open: boolean;
+  onClose: () => void;
+  characterId: string;
+  name: string;
+  /** Called with the new avatar image id once the upload + promotion succeed. */
+  onUploaded: (avatarImageId: string) => void;
+}
+
+/** The crop window's on-screen size (3:4, matches AVATAR_WIDTH:AVATAR_HEIGHT). */
+const FRAME = { fw: 288, fh: 384 };
+
+interface LoadedImage {
+  el: HTMLImageElement;
+  url: string;
+  nw: number;
+  nh: number;
+}
+
+type Stage = "pick" | "crop" | "uploading";
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/**
+ * Upload a profile image (docs/images.md, followups.phase3.md): pick a file,
+ * then — only when it isn't already 3:4 — pan/zoom it inside a crop window
+ * before it is scaled to the canonical 768×1024 portrait and promoted to the
+ * character's avatar. No model runs, so this works in demo mode and offline.
+ */
+export function AvatarUploadDialog({ open, onClose, characterId, name, onUploaded }: AvatarUploadDialogProps) {
+  const [stage, setStage] = useState<Stage>("pick");
+  const [image, setImage] = useState<LoadedImage | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState<Offset>({ x: 0, y: 0 });
+  const [error, setError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; base: Offset } | null>(null);
+  // Latest values for the imperative wheel/drag handlers (refs updated post-commit).
+  const latest = useRef({ zoom, offset, image });
+  useEffect(() => {
+    latest.current = { zoom, offset, image };
+  });
+
+  const revoke = useCallback((img: LoadedImage | null) => {
+    if (img) URL.revokeObjectURL(img.url);
+  }, []);
+
+  // Reset to a clean picker whenever the dialog opens, and release the object
+  // URL when it closes — either way the next open starts fresh.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setStage("pick");
+      setError(null);
+      setZoom(1);
+      setOffset({ x: 0, y: 0 });
+    }
+    setImage((prev) => {
+      revoke(prev);
+      return null;
+    });
+  }
+
+  // Release the object URL if the component unmounts mid-flow.
+  useEffect(() => () => revoke(latest.current.image), [revoke]);
+
+  const renderToDataUrl = useCallback((img: LoadedImage, z: number, off: Offset): string => {
+    const rect = sourceRect(FRAME, img, z, off);
+    const canvas = document.createElement("canvas");
+    canvas.width = AVATAR_WIDTH;
+    canvas.height = AVATAR_HEIGHT;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas 2d context unavailable");
+    ctx.drawImage(img.el, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, AVATAR_WIDTH, AVATAR_HEIGHT);
+    return canvas.toDataURL("image/jpeg", 0.92);
+  }, []);
+
+  const upload = useCallback(
+    async (dataUrl: string) => {
+      setStage("uploading");
+      setError(null);
+      const result = await charactersApi.uploadAvatar(characterId, dataUrl);
+      if (result.ok) {
+        revoke(latest.current.image);
+        onUploaded(result.data.avatarImageId);
+        onClose();
+      } else {
+        setError(result.error.message || "Upload failed.");
+        setStage(latest.current.image ? "crop" : "pick");
+      }
+    },
+    [characterId, onClose, onUploaded, revoke],
+  );
+
+  const onFile = useCallback(
+    (file: File | undefined) => {
+      if (!file) return;
+      setError(null);
+      if (!file.type.startsWith("image/")) {
+        setError("Please choose an image file.");
+        return;
+      }
+      if (file.size > 30 * 1024 * 1024) {
+        setError("That image is too large (max 30 MB).");
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const el = new Image();
+      el.onload = () => {
+        if (!el.naturalWidth || !el.naturalHeight) {
+          setError("Could not read that image — try a different file.");
+          URL.revokeObjectURL(url);
+          return;
+        }
+        const img: LoadedImage = { el, url, nw: el.naturalWidth, nh: el.naturalHeight };
+        const disp = displaySize(FRAME, img, 1);
+        const off = centeredOffset(FRAME, disp.width, disp.height);
+        revoke(latest.current.image);
+        setImage(img);
+        setZoom(1);
+        setOffset(off);
+        if (aspectMatches(img)) {
+          void upload(renderToDataUrl(img, 1, off)); // already 3:4 — scale, no crop step
+        } else {
+          setStage("crop");
+        }
+      };
+      el.onerror = () => {
+        setError("Could not load that image — try a different file.");
+        URL.revokeObjectURL(url);
+      };
+      el.src = url;
+    },
+    [renderToDataUrl, revoke, upload],
+  );
+
+  // Zoom around the frame's center so the focal point stays put, then re-clamp.
+  const zoomTo = useCallback((nextZoom: number) => {
+    const { zoom: z0, offset: o0, image: img } = latest.current;
+    if (!img) return;
+    const z = clamp(nextZoom, 1, MAX_ZOOM);
+    const oldDisp = displaySize(FRAME, img, z0);
+    const newDisp = displaySize(FRAME, img, z);
+    const fx = (FRAME.fw / 2 - o0.x) / oldDisp.width;
+    const fy = (FRAME.fh / 2 - o0.y) / oldDisp.height;
+    setZoom(z);
+    setOffset(
+      clampOffset(FRAME, newDisp.width, newDisp.height, {
+        x: FRAME.fw / 2 - fx * newDisp.width,
+        y: FRAME.fh / 2 - fy * newDisp.height,
+      }),
+    );
+  }, []);
+
+  // Non-passive wheel zoom (passive listeners can't preventDefault page scroll).
+  const frameRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || stage !== "crop") return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      zoomTo(latest.current.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+    };
+    frame.addEventListener("wheel", onWheel, { passive: false });
+    return () => frame.removeEventListener("wheel", onWheel);
+  }, [stage, zoomTo]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!image) return;
+    dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, base: latest.current.offset };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const drag = dragRef.current;
+    const img = latest.current.image;
+    if (!drag || drag.pointerId !== e.pointerId || !img) return;
+    const disp = displaySize(FRAME, img, latest.current.zoom);
+    setOffset(
+      clampOffset(FRAME, disp.width, disp.height, {
+        x: drag.base.x + (e.clientX - drag.startX),
+        y: drag.base.y + (e.clientY - drag.startY),
+      }),
+    );
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
+  };
+
+  const disp = image ? displaySize(FRAME, image, zoom) : { width: 0, height: 0 };
+
+  const footer =
+    stage === "crop" ? (
+      <>
+        <Button variant="ghost" onClick={() => setStage("pick")}>
+          Choose another
+        </Button>
+        <Button variant="primary" onClick={() => image && void upload(renderToDataUrl(image, zoom, offset))}>
+          Use image
+        </Button>
+      </>
+    ) : (
+      <Button variant="ghost" onClick={onClose} disabled={stage === "uploading"}>
+        Cancel
+      </Button>
+    );
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Upload profile image" footer={footer}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(e) => {
+          onFile(e.target.files?.[0]);
+          e.target.value = ""; // allow re-picking the same file
+        }}
+      />
+
+      {stage === "pick" ? (
+        <div className="flex flex-col gap-4">
+          <p>
+            Profile images are{" "}
+            <span className="font-medium text-paper-200">
+              {AVATAR_WIDTH} × {AVATAR_HEIGHT} px
+            </span>{" "}
+            — a 3:4 portrait. Upload any photo or artwork and we&apos;ll scale it to fit; if it isn&apos;t already 3:4
+            you can reposition and zoom it in a crop window.
+          </p>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              onFile(e.dataTransfer.files?.[0]);
+            }}
+            className="flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-ink-500 bg-ink-900/40 px-4 py-10 text-center text-paper-400 transition-colors hover:border-accent-500 hover:text-paper-200"
+          >
+            <span className="text-2xl leading-none">↑</span>
+            <span className="text-sm">Choose an image or drop one here</span>
+          </button>
+          {error ? <p className="text-xs text-danger-400">{error}</p> : null}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-4">
+          <div
+            ref={frameRef}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            aria-label="Drag to reposition the crop"
+            className="relative cursor-move touch-none overflow-hidden rounded-card border border-ink-600 bg-ink-950 select-none"
+            style={{ width: FRAME.fw, height: FRAME.fh }}
+          >
+            {image ? (
+              // eslint-disable-next-line @next/next/no-img-element -- local object URL; next/image cannot size a draggable canvas-bound preview
+              <img
+                src={image.url}
+                alt={name}
+                draggable={false}
+                className="pointer-events-none absolute max-w-none"
+                style={{ left: offset.x, top: offset.y, width: disp.width, height: disp.height }}
+              />
+            ) : null}
+            {stage === "uploading" ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-ink-950/60 text-sm text-paper-300">
+                Saving…
+              </div>
+            ) : null}
+          </div>
+
+          <label className="flex w-full items-center gap-3 text-xs text-paper-400">
+            <span className="shrink-0">Zoom</span>
+            <Slider
+              value={zoom}
+              min={1}
+              max={MAX_ZOOM}
+              step={0.01}
+              onChange={zoomTo}
+              disabled={stage === "uploading"}
+              className="flex-1"
+            />
+          </label>
+          <p className="text-xs text-paper-500">Drag to reposition · scroll or use the slider to zoom.</p>
+          {error ? <p className="text-xs text-danger-400">{error}</p> : null}
+        </div>
+      )}
+    </Dialog>
+  );
+}
