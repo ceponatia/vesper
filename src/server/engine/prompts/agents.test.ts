@@ -19,9 +19,15 @@ const SYSTEMS = {
 };
 
 describe("agent system prompts", () => {
-  it("stays under the ~600-token budget (≈4 chars/token)", () => {
+  it("stays within each agent's prompt budget (≈4 chars/token)", () => {
+    // The others hug ~600 tokens. The director carries the richest output
+    // contract (7 fields) plus the four thread signals (touch/develop/propose/
+    // resolve), the thread-lifecycle rules, and three worked examples (develop,
+    // typed-propose+resolve, and one-subject-one-thread consolidation), so it
+    // gets a larger ceiling (~1.1k tokens) — see docs/story-threads.md.
+    const budget = (name: string) => (name === "DIRECTOR_SYSTEM" ? 4600 : 2600);
     for (const [name, text] of Object.entries(SYSTEMS)) {
-      expect(text.length, name).toBeLessThan(2600);
+      expect(text.length, name).toBeLessThan(budget(name));
     }
   });
 
@@ -78,10 +84,28 @@ describe("agent system prompts", () => {
     expect(CONTINUITY_SYSTEM).toMatch(/comms-present character speaking/i);
   });
 
-  it("spells out the threadSignals shape: touch carries id + title, resolve is ids only", () => {
-    expect(DIRECTOR_SYSTEM).toContain("touch = listed threads advanced this turn (give each thread's listed id plus its title)");
-    expect(DIRECTOR_SYSTEM).toContain("propose = new threads to open sparingly ({title, summary})");
-    expect(DIRECTOR_SYSTEM).toContain("resolve = listed ids of threads that concluded");
+  it("spells out the four threadSignals: touch keep-warm, develop logs a beat, propose is typed, resolve is ids", () => {
+    expect(DIRECTOR_SYSTEM).toContain("touch = a listed thread is still live but nothing major happened");
+    expect(DIRECTOR_SYSTEM).toContain("develop = a MAJOR beat advanced a listed thread");
+    expect(DIRECTOR_SYSTEM).toContain("propose = open a genuinely new thread");
+    expect(DIRECTOR_SYSTEM).toContain("kind: investigation|ongoing");
+    expect(DIRECTOR_SYSTEM).toContain("resolve = listed ids of investigations now finished");
+  });
+
+  it("teaches the director to resolve a finished thread rather than re-touch it (the stale-thread loop fix)", () => {
+    // A finished need left "open" rides every future context and gets re-raised
+    // as if new — the Council Chamber Wi-Fi bug. Resolve must win over touch.
+    expect(DIRECTOR_SYSTEM).toContain("Resolve an investigation the moment its need is met");
+    expect(DIRECTOR_SYSTEM).toContain("mundane completion counts");
+    expect(DIRECTOR_SYSTEM).toContain("Never keep touching/developing a finished thread");
+  });
+
+  it("teaches one-subject-one-thread consolidation via develop (the duplicate-threads fix)", () => {
+    // Captain Thorne spawned three near-identical threads; develop must win over
+    // a near-duplicate propose. Rule 5 + Example C carry the lesson.
+    expect(DIRECTOR_SYSTEM).toContain("One subject, one thread");
+    expect(DIRECTOR_SYSTEM).toContain("never open a near-duplicate");
+    expect(DIRECTOR_SYSTEM).toContain('"develop":[{"id":"th_thorne"');
   });
 });
 
@@ -216,8 +240,15 @@ describe("buildDirectorPrompt", () => {
           id: "th_brother",
           title: "Maya's missing brother",
           summary: "Unanswered letters.",
+          kind: "investigation",
           status: "open",
           source: "anchor",
+          question: "Where did Maya's brother go?",
+          closeConditions: [],
+          developments: [
+            { turn: 2, text: "Found an unanswered letter.", kind: "evidence" },
+            { turn: 3, text: "Maya deflected the question.", kind: "statement" },
+          ],
           openedAtTurn: 1,
           lastTouchedTurn: 3,
           touchCount: 2,
@@ -227,7 +258,9 @@ describe("buildDirectorPrompt", () => {
       presentNames: ["Maya"],
     });
     expect(text).toContain("Turn number: 5");
-    expect(text).toContain("- [th_brother] Maya's missing brother (open; last touched turn 3) — Unanswered letters.");
+    expect(text).toContain(
+      "- [th_brother] Maya's missing brother (investigation, open; opened turn 1, last touched turn 3, touched 2×, 2 developments) — Unanswered letters.",
+    );
     expect(text).toContain("- Scene: Tea in the kitchen.");
     expect(text).toContain("- Story so far: Two days at the inn.");
     expect(text).toContain("- Exposure: appearance ambient, scent none, touch none");

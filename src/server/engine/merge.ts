@@ -18,7 +18,13 @@ import {
 } from "@/contracts/perception";
 import { emptyBrief, nextTurnBriefSchema, type NextTurnBrief } from "@/contracts/state/brief";
 import type { ParticipantState } from "@/contracts/state/participant-state";
-import { storyThreadSchema, type CommsLink, type SessionRuntime, type StoryThread } from "@/contracts/state/session-runtime";
+import {
+  storyThreadSchema,
+  type CommsLink,
+  type SessionRuntime,
+  type StoryThread,
+  type StoryThreadDevelopment,
+} from "@/contracts/state/session-runtime";
 import type {
   AgentResults,
   ArchivistResult,
@@ -34,7 +40,16 @@ import { newId } from "@/lib/ids";
 import { parseOrNull } from "@/lib/parse";
 import { clampAffinity, stageForValue } from "@/contracts/relationships/stages";
 import { db, events, itemInstances, participantRelationships, sessionParticipants, sessions, turns } from "../db";
-import { addFacts, appendEpisode, computeUnlocks, deleteEpisodeForTurn, fuzzyResolve, type FactDraftInput } from "../memory";
+import { embedTexts } from "../ai";
+import {
+  addFacts,
+  appendEpisode,
+  computeUnlocks,
+  cosineSimilarity,
+  deleteEpisodeForTurn,
+  fuzzyResolve,
+  type FactDraftInput,
+} from "../memory";
 import { activeLocationId, type BundlePlace, type BundleRelationship, type SessionBundle } from "./bundle";
 import { declaredRestMinutes, detectDeclaredRest, detectIntent, isOocInput } from "./intent";
 import {
@@ -47,6 +62,8 @@ import {
   REST_CLAMP_MINUTES,
   SCHEDULE_JITTER_MINUTES,
   THREAD_COOLING_TURNS,
+  THREAD_DEDUPE_MIN_SCORE,
+  THREAD_DEVELOPMENTS_CAP,
 } from "./constants";
 import { effectiveMeterDefinitions, type SceneLinkInput } from "./scene";
 
@@ -103,6 +120,11 @@ export interface GroundingDeps {
   resolveLibraryItem?: (name: string) => Promise<{ id: string } | null>;
   /** Library fuzzy match for a location name (maps via session_locations.location_id). */
   resolveLibraryLocation?: (name: string) => Promise<{ id: string } | null>;
+  /**
+   * Batch-embed thread texts for semantic dedup of proposals (docs/story-threads.md).
+   * Injected so the planner stays testable; absent ⇒ exact-title dedup only.
+   */
+  embedThreadTexts?: (texts: string[]) => Promise<number[][]>;
 }
 
 export interface PlanInput {
@@ -940,20 +962,23 @@ export interface ThreadSignalResult {
 }
 
 /**
- * Thread lifecycle (docs/turn-engine.md step 6): touch reopens and refreshes,
- * propose adds (deduped by title — a duplicate proposal is a touch), resolve
- * closes. Unknown references degrade to diagnostics.
+ * Thread lifecycle (docs/story-threads.md): touch keeps a thread warm (no log
+ * entry), develop appends an accumulated development on a major beat, propose
+ * opens a new thread (deduped by exact title here as the innermost guard;
+ * semantic dedup runs upstream in dedupeThreadProposals), resolve closes an
+ * investigation. Unknown references degrade to diagnostics. Signals are
+ * partial-tolerant so callers (and tests) may omit empty channels.
  */
 export function applyThreadSignals(
   threads: readonly StoryThread[],
-  signals: ThreadSignals,
+  signals: Partial<ThreadSignals>,
   turnNumber: number,
   sink?: DiagnosticSink,
 ): ThreadSignalResult {
   const next = threads.map((t) => ({ ...t }));
   const touchedIds = new Set<string>();
 
-  const touchThread = (thread: StoryThread, summary?: string) => {
+  const refresh = (thread: StoryThread, summary?: string) => {
     thread.status = "open";
     thread.lastTouchedTurn = turnNumber;
     thread.touchCount += 1;
@@ -961,30 +986,62 @@ export function applyThreadSignals(
     touchedIds.add(thread.id);
   };
 
-  const byTitle = (title: string) => next.find((t) => t.title.trim().toLowerCase() === title.trim().toLowerCase());
+  // develop = refresh + append an accumulated development (capped, oldest dropped).
+  const develop = (thread: StoryThread, entry: string, entryKind: StoryThreadDevelopment["kind"] | undefined, summary?: string) => {
+    refresh(thread, summary);
+    const text = entry.trim();
+    if (!text) return;
+    thread.developments = [...thread.developments, { turn: turnNumber, text, kind: entryKind ?? "update" }].slice(
+      -THREAD_DEVELOPMENTS_CAP,
+    );
+  };
 
-  for (const touch of signals.touch) {
-    const thread = (touch.id ? next.find((t) => t.id === touch.id) : undefined) ?? byTitle(touch.title);
+  const byTitle = (title: string) => next.find((t) => t.title.trim().toLowerCase() === title.trim().toLowerCase());
+  const find = (id?: string, title?: string) =>
+    (id ? next.find((t) => t.id === id) : undefined) ?? (title ? byTitle(title) : undefined);
+
+  for (const touch of signals.touch ?? []) {
+    const thread = find(touch.id, touch.title);
     if (!thread) {
       sink?.push(diag("info", "merge.thread.unmatched", `touched thread "${touch.title}" not found`, { context: { id: touch.id } }));
       continue;
     }
-    touchThread(thread, touch.summary);
+    refresh(thread, touch.summary);
   }
 
-  for (const proposal of signals.propose) {
+  for (const entry of signals.develop ?? []) {
+    const thread = find(entry.id, entry.title);
+    if (!thread) {
+      sink?.push(
+        diag("info", "merge.thread.unmatched", `developed thread "${entry.title ?? entry.id ?? ""}" not found`, {
+          context: { id: entry.id },
+        }),
+      );
+      continue;
+    }
+    develop(thread, entry.entry, entry.entryKind, entry.summary);
+  }
+
+  for (const proposal of signals.propose ?? []) {
     if (!proposal.title.trim()) continue;
     const existing = byTitle(proposal.title);
     if (existing) {
-      touchThread(existing, proposal.summary);
+      // Exact-title re-proposal of a live thread is a development, not a duplicate.
+      develop(existing, proposal.summary, "update", proposal.summary);
       continue;
     }
+    const summary = proposal.summary.trim();
     const thread = storyThreadSchema.parse({
       id: newId(),
       title: proposal.title.trim(),
-      summary: proposal.summary,
+      summary,
+      kind: proposal.kind,
       status: "open",
       source: "emergent",
+      question: proposal.question ?? "",
+      closeConditions: proposal.closeConditions ?? [],
+      // Seed the timeline with the opening beat so the modal isn't empty.
+      developments: summary ? [{ turn: turnNumber, text: summary, kind: "update" }] : [],
       openedAtTurn: turnNumber,
       lastTouchedTurn: turnNumber,
       touchCount: 1,
@@ -993,7 +1050,7 @@ export function applyThreadSignals(
     touchedIds.add(thread.id);
   }
 
-  for (const id of signals.resolve) {
+  for (const id of signals.resolve ?? []) {
     const thread = next.find((t) => t.id === id);
     if (!thread) {
       sink?.push(diag("info", "merge.thread.unmatched", `resolved thread "${id}" not found`));
@@ -1005,6 +1062,79 @@ export function applyThreadSignals(
   }
 
   return { threads: next, touchedIds: [...touchedIds] };
+}
+
+/** Text a thread/proposal embeds as for dedup: title, question, and synopsis together. */
+function threadDedupText(t: { title: string; question?: string; summary?: string }): string {
+  return [t.title, t.question, t.summary].map((s) => s?.trim()).filter(Boolean).join(" — ");
+}
+
+/**
+ * Semantic dedup backstop (docs/story-threads.md): a proposed thread whose
+ * title+question+summary is near-identical to an existing open/cooling thread is
+ * rewritten into a `develop` on that thread instead of opening a duplicate —
+ * the same belt-and-suspenders idiom as the item-dedupe ladder. Conservative
+ * threshold (THREAD_DEDUPE_MIN_SCORE) so only obvious dupes merge; the director
+ * prompt is the primary consolidation. Resolved/archived threads are never
+ * candidates (a closed thread must not resurrect). Embedding failure degrades
+ * to the exact-title guard in applyThreadSignals.
+ */
+export async function dedupeThreadProposals(
+  threads: readonly StoryThread[],
+  signals: ThreadSignals,
+  embed: (texts: string[]) => Promise<number[][]>,
+  turnNumber: number,
+  sink?: DiagnosticSink,
+): Promise<ThreadSignals> {
+  void turnNumber; // reserved for future recency-aware tie-breaks; keeps the call signature stable
+  if (signals.propose.length === 0) return signals;
+  const candidates = threads.filter((t) => t.status === "open" || t.status === "cooling");
+  if (candidates.length === 0) return signals;
+
+  let vectors: number[][];
+  try {
+    vectors = await embed([...candidates.map(threadDedupText), ...signals.propose.map(threadDedupText)]);
+  } catch (err) {
+    sink?.push(
+      diag("warn", "merge.thread.dedup_embed_failed", `thread dedup embedding failed: ${err instanceof Error ? err.message : String(err)}`),
+    );
+    return signals;
+  }
+  const candVecs = vectors.slice(0, candidates.length);
+  const propVecs = vectors.slice(candidates.length);
+
+  const extraDevelop: ThreadSignals["develop"] = [];
+  const keptProposals: ThreadSignals["propose"] = [];
+  signals.propose.forEach((proposal, i) => {
+    const pv = propVecs[i];
+    let bestScore = -1;
+    let bestIdx = -1;
+    if (pv) {
+      candVecs.forEach((cv, j) => {
+        const score = cosineSimilarity(pv, cv);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = j;
+        }
+      });
+    }
+    const match = bestIdx >= 0 ? candidates[bestIdx] : undefined;
+    if (match && bestScore >= THREAD_DEDUPE_MIN_SCORE) {
+      sink?.push(
+        diag(
+          "info",
+          "merge.thread.dedup_merged",
+          `proposed thread "${proposal.title}" folded into "${match.title}" (${bestScore.toFixed(2)})`,
+        ),
+      );
+      extraDevelop.push({ id: match.id, entry: proposal.summary.trim() || proposal.title.trim(), summary: proposal.summary });
+    } else {
+      keptProposals.push(proposal);
+    }
+  });
+
+  if (extraDevelop.length === 0) return signals;
+  return { ...signals, propose: keptProposals, develop: [...signals.develop, ...extraDevelop] };
 }
 
 /** Open threads untouched for THREAD_COOLING_TURNS move to cooling. */
@@ -1528,7 +1658,12 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   let threads = bundle.runtime.storyThreads;
   let touchedThreadIds: string[] = [];
   if (!reconcile) {
-    const signals = results.director?.threadSignals ?? { touch: [], propose: [], resolve: [] };
+    const raw = results.director?.threadSignals ?? { touch: [], develop: [], propose: [], resolve: [] };
+    // Conservative semantic dedup folds near-duplicate proposals into develops
+    // before the pure reducer runs (degrades to exact-title dedup if no embedder).
+    const signals = input.deps?.embedThreadTexts
+      ? await dedupeThreadProposals(threads, raw, input.deps.embedThreadTexts, turn.number, sink)
+      : raw;
     const applied = applyThreadSignals(threads, signals, turn.number, sink);
     threads = coolThreads(applied.threads, turn.number);
     touchedThreadIds = applied.touchedIds;
@@ -1790,6 +1925,7 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
   const deps: GroundingDeps = input.deps ?? {
     resolveLibraryItem: (name) => fuzzyResolve("item", ownerId, name, { sink }),
     resolveLibraryLocation: (name) => fuzzyResolve("location", ownerId, name, { sink }),
+    embedThreadTexts: async (texts) => (await embedTexts(texts)).map((e) => e.vector),
   };
 
   const plan = await planTurnEffects({

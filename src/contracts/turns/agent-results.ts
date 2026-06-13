@@ -179,13 +179,41 @@ export const directorResultSchema = z.object({
   directives: z.array(z.string()).default([]),
   memoryQueries: z.array(z.string()).default([]),
   exposure: exposureMaskSchema.default(defaultExposureMask()),
+  /**
+   * Story-thread lifecycle signals (docs/story-threads.md):
+   * - touch: keep-warm only — the thread is still live but nothing major happened (no log entry).
+   * - develop: a major beat contributed — append a development entry (and optionally revise the summary).
+   * - propose: open a genuinely new thread (kind defaults to investigation; set closeConditions for those).
+   * - resolve: ids of investigations that concluded (ongoing threads are never resolved).
+   */
   threadSignals: z
     .object({
       touch: z.array(z.object({ id: z.string().optional(), title: z.string(), summary: z.string().optional() })).default([]),
-      propose: z.array(z.object({ title: z.string().min(1), summary: z.string().default("") })).default([]),
+      develop: z
+        .array(
+          z.object({
+            id: z.string().optional(),
+            title: z.string().optional(),
+            entry: z.string().min(1),
+            entryKind: z.enum(["evidence", "statement", "event", "lead", "update"]).optional().catch(undefined),
+            summary: z.string().optional(),
+          }),
+        )
+        .default([]),
+      propose: z
+        .array(
+          z.object({
+            title: z.string().min(1),
+            kind: z.enum(["investigation", "ongoing"]).catch("investigation").default("investigation"),
+            question: z.string().optional(),
+            summary: z.string().default(""),
+            closeConditions: z.array(z.string()).default([]),
+          }),
+        )
+        .default([]),
       resolve: z.array(z.string()).default([]),
     })
-    .default({ touch: [], propose: [], resolve: [] }),
+    .default({ touch: [], develop: [], propose: [], resolve: [] }),
   imageMoment: z
     .object({ worthIt: z.boolean().default(false), description: z.string().default("") })
     .optional(),

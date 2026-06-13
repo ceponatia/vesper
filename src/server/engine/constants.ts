@@ -42,6 +42,14 @@ export const FACTS_CAP = 8;
 export const THREAD_COOLING_TURNS = 8;
 /** Top open threads riding in every turn context. */
 export const OPEN_THREADS_IN_CONTEXT = 3;
+/**
+ * Cosine cutoff for collapsing a proposed thread into an existing one
+ * (docs/story-threads.md). Conservative — matches the fact-supersede bar — so
+ * only obvious duplicates merge; the director prompt is the primary dedup.
+ */
+export const THREAD_DEDUPE_MIN_SCORE = 0.86;
+/** Max accumulated developments kept per thread (oldest dropped). */
+export const THREAD_DEVELOPMENTS_CAP = 20;
 
 /**
  * Max NPC↔NPC awareness lines in the turn context per turn (defaults doc §witness

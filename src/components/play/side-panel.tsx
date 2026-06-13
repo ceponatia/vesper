@@ -35,7 +35,7 @@ export function SidePanel({ session, isAdmin }: { session: UseSession; isAdmin: 
         ) : active === "cast" ? (
           <CastTab session={session} />
         ) : active === "world" ? (
-          <WorldTab session={session} />
+          <WorldTab session={session} isAdmin={isAdmin} />
         ) : (
           <InspectorTab session={session} />
         )}

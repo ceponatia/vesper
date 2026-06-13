@@ -122,7 +122,7 @@ export function demoAgentResults(input: string, opts: DemoAgentOptions): AgentRe
       directives: [],
       memoryQueries: [echoOf(input, 60), ...(opts.priorBrief?.memoryQueries.slice(0, 2) ?? [])],
       exposure: opts.priorBrief?.exposure ?? defaultExposureMask(),
-      threadSignals: { touch: [], propose: [], resolve: [] },
+      threadSignals: { touch: [], develop: [], propose: [], resolve: [] },
     },
   };
 }

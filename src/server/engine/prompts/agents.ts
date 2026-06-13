@@ -87,19 +87,28 @@ Produce:
 - directives: 0-3 tone/pacing constraints for the next turn.
 - memoryQueries: 2-4 short retrieval phrases for what to remember next turn.
 - exposure: per-sense proximity for next turn (appearance ambient|close|intimate; scent none|ambient|close|intimate; touch none|close|intimate) — raise with intimacy, lower when distance returns.
-- threadSignals: touch = listed threads advanced this turn (give each thread's listed id plus its title), propose = new threads to open sparingly ({title, summary}), resolve = listed ids of threads that concluded.
+- threadSignals — keep the thread list in sync (Rules 4-5):
+  · touch = a listed thread is still live but nothing major happened ({id, title}; no log entry).
+  · develop = a MAJOR beat advanced a listed thread — new evidence, a meaningful statement, a real development (NOT flavor dialogue) — ({id, entry: one line, entryKind?: evidence|statement|event|lead}).
+  · propose = open a genuinely new thread, sparingly ({title, kind: investigation|ongoing, question?, summary, closeConditions?}). Set closeConditions for investigations; ongoing threads (e.g. a person's social life) are never resolved.
+  · resolve = listed ids of investigations now finished.
 - imageMoment: worthIt true only for a strikingly visual beat, one-sentence description.
 
 Rules:
 1. Names exactly as written; threads by their listed ids; never invent entities.
 2. Directives shape tone and focus — never dictate exact lines or invent unearned plot.
 3. Quoted or hypothetical speech is not a story event.
+4. Resolve an investigation the moment its need is met — task finished, question answered, problem fixed; mundane completion counts as much as dramatic payoff. Never keep touching/developing a finished thread: an open thread re-enters every future turn's context and is otherwise raised again as if unsettled. Ongoing threads and long-running arcs still in motion stay open.
+5. One subject, one thread. Before proposing, scan the listed threads: if the beat belongs to an existing one, develop THAT thread — never open a near-duplicate (don't add "X's odd behavior" when "Investigating X" already exists).
 
-Example A — quiet kitchen scene, rain starting:
-{"sceneSummary":"Maya and the player linger over tea in the kitchen as rain starts.","storySoFar":"The player has spent two days at the inn earning Maya's trust. Tonight they shared tea while a storm rolled in.","characterNotes":["Maya deflects questions about her brother."],"directives":["Keep the pace slow; let the rain set the mood."],"memoryQueries":["Maya's brother","storm roof"],"exposure":{"appearance":"close","scent":"ambient","touch":"none"},"threadSignals":{"touch":[{"id":"th_brother","title":"Maya's missing brother"}],"propose":[],"resolve":[]},"imageMoment":{"worthIt":false,"description":""}}
+Example A — keep one thread warm, develop another with a real clue:
+{"sceneSummary":"Over tea, Maya lets slip her brother sailed for Tamis.","storySoFar":"Two days earning Maya's trust; tonight she named where her brother went.","characterNotes":["Maya is softening."],"directives":["Keep the pace slow."],"memoryQueries":["Maya's brother Tamis"],"exposure":{"appearance":"close","scent":"ambient","touch":"none"},"threadSignals":{"touch":[{"id":"th_innkeep","title":"Earning Maya's trust"}],"develop":[{"id":"th_brother","entry":"Maya let slip her brother sailed for Tamis.","entryKind":"evidence"}],"propose":[],"resolve":[]},"imageMoment":{"worthIt":false,"description":""}}
 
-Example B — confession resolves a thread:
-{"sceneSummary":"Rhett admitted forging the letter; Maya stormed out.","storySoFar":"The forged letter was traced to Rhett. Confronted, he confessed; Maya left furious.","characterNotes":["Rhett is guilt-ridden","Maya needs space"],"directives":["Open on Maya alone; let anger cool into hurt."],"memoryQueries":["forged letter","Maya stables"],"exposure":{"appearance":"ambient","scent":"none","touch":"none"},"threadSignals":{"touch":[],"propose":[{"title":"Repairing Maya's trust","summary":"Fallout of the confession."}],"resolve":["th_letter"]},"imageMoment":{"worthIt":true,"description":"Maya silhouetted in the stable doorway, rain behind her."}}`;
+Example B — open a typed investigation (with close conditions) and resolve a finished one:
+{"sceneSummary":"Rhett confessed to forging the letter; Maya stormed out.","storySoFar":"The forgery traced to Rhett; confronted, he confessed; Maya left furious.","characterNotes":["Maya needs space."],"directives":["Open on Maya alone."],"memoryQueries":["forged letter"],"exposure":{"appearance":"ambient","scent":"none","touch":"none"},"threadSignals":{"touch":[],"develop":[],"propose":[{"title":"Repairing Maya's trust","kind":"investigation","question":"Can the player win Maya back?","summary":"Fallout of the confession.","closeConditions":["Maya forgives","Maya cuts ties for good"]}],"resolve":["th_letter"]},"imageMoment":{"worthIt":true,"description":"Maya in the stable doorway, rain behind her."}}
+
+Example C — one subject, one thread: a new Thorne beat folds into the EXISTING investigation via develop, NOT a new propose (Rule 5):
+{"sceneSummary":"Gruff Thorne greets the player warmly, then goes quiet; Brian starts asking around.","storySoFar":"Thorne keeps acting out of character; the player is quietly digging into why.","characterNotes":["Thorne is hiding something."],"directives":["Let suspicion build."],"memoryQueries":["Captain Thorne"],"exposure":{"appearance":"ambient","scent":"none","touch":"none"},"threadSignals":{"touch":[],"develop":[{"id":"th_thorne","entry":"Warm-then-withdrawn greeting; Brian begins asking around.","entryKind":"statement"}],"propose":[],"resolve":[]},"imageMoment":{"worthIt":false,"description":""}}`;
 
 // ---------------------------------------------------------------------------
 // Per-agent user prompts (state slices)
@@ -222,7 +231,12 @@ export interface DirectorPromptInput {
 
 export function buildDirectorPrompt(input: DirectorPromptInput): string {
   const threads = input.threads.map(
-    (t) => `- [${t.id}] ${t.title} (${t.status}; last touched turn ${t.lastTouchedTurn})${t.summary ? ` — ${t.summary}` : ""}`,
+    // kind + development count + age let the director consolidate (develop an
+    // existing thread, Rule 5) and judge staleness (resolve a met need, Rule 4).
+    (t) =>
+      `- [${t.id}] ${t.title} (${t.kind}, ${t.status}; opened turn ${t.openedAtTurn}, last touched turn ${t.lastTouchedTurn}, touched ${t.touchCount}×, ${t.developments.length} developments)${
+        t.summary ? ` — ${t.summary}` : ""
+      }`,
   );
   return [
     `Turn number: ${input.turnNumber}`,

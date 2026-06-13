@@ -16,6 +16,7 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 | [turn-engine.md](turn-engine.md) | The turn lifecycle: pre-turn assembly, narrative streaming, post-turn agent fan-out |
 | [prompts.md](prompts.md) | Prompt architecture: static rulebook, turn context, caching, speaker tags |
 | [memory.md](memory.md) | Episodes, semantic facts + supersedence, lore tiers, retrieval |
+| [story-threads.md](story-threads.md) | Thread kinds, lifecycle, semantic dedup, accumulated developments, the detail modal |
 | [perception.md](perception.md) | Presence channels, the attention × salience witness matrix, awareness blocks, darkness, comms |
 | [streaming-api.md](streaming-api.md) | HTTP API surface and the SSE turn-streaming protocol |
 | [images.md](images.md) | Avatar generation, Venice reference editing, scene images, asset storage |

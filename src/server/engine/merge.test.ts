@@ -14,6 +14,7 @@ import {
   MIN_MINUTES_ADVANCED,
   REST_CLAMP_MINUTES,
   THREAD_COOLING_TURNS,
+  THREAD_DEVELOPMENTS_CAP,
 } from "./constants";
 import type { SceneLinkInput } from "./scene";
 import {
@@ -25,6 +26,7 @@ import {
   buildNextBrief,
   clampMinutes,
   coolThreads,
+  dedupeThreadProposals,
   expireConditions,
   findParticipant,
   isAdjacent,
@@ -176,7 +178,7 @@ function director(overrides: Partial<DirectorResult> = {}): DirectorResult {
     directives: [],
     memoryQueries: ["tea"],
     exposure: { appearance: "ambient", scent: "none", touch: "none" },
-    threadSignals: { touch: [], propose: [], resolve: [] },
+    threadSignals: { touch: [], develop: [], propose: [], resolve: [] },
     ...overrides,
   };
 }
@@ -840,8 +842,12 @@ describe("scheduleMoveStaging", () => {
 function thread(overrides: Partial<StoryThread> & Pick<StoryThread, "id" | "title">): StoryThread {
   return {
     summary: "",
+    kind: "investigation",
     status: "open",
     source: "emergent",
+    question: "",
+    closeConditions: [],
+    developments: [],
     openedAtTurn: 0,
     lastTouchedTurn: 0,
     touchCount: 0,
@@ -865,18 +871,78 @@ describe("thread lifecycle", () => {
     expect(touchedIds).toEqual(["th1"]);
   });
 
-  it("proposals dedupe by title (a duplicate proposal is a touch)", () => {
+  it("exact-title re-proposal folds into the existing thread as a development, not a duplicate", () => {
     const sink = new DiagnosticCollector();
     const { threads } = applyThreadSignals(
       [thread({ id: "th1", title: "The letter" })],
-      { touch: [], propose: [{ title: "the LETTER", summary: "again" }, { title: "New mystery", summary: "" }], resolve: [] },
+      {
+        propose: [
+          { title: "the LETTER", kind: "investigation", summary: "again", closeConditions: [] },
+          { title: "New mystery", kind: "investigation", summary: "", closeConditions: [] },
+        ],
+      },
       4,
       sink,
     );
     expect(threads).toHaveLength(2);
     expect(threads[0]?.touchCount).toBe(1);
+    expect(threads[0]?.summary).toBe("again");
+    expect(threads[0]?.developments).toEqual([{ turn: 4, text: "again", kind: "update" }]);
     expect(threads[1]?.title).toBe("New mystery");
+    expect(threads[1]?.kind).toBe("investigation");
     expect(threads[1]?.source).toBe("emergent");
+  });
+
+  it("propose seeds kind, question, closeConditions, and an opening development", () => {
+    const { threads } = applyThreadSignals(
+      [],
+      {
+        propose: [
+          {
+            title: "Maya's social life",
+            kind: "ongoing",
+            question: "Who does Maya spend time with?",
+            summary: "Local gossip about Maya.",
+            closeConditions: [],
+          },
+        ],
+      },
+      2,
+    );
+    expect(threads[0]?.kind).toBe("ongoing");
+    expect(threads[0]?.question).toBe("Who does Maya spend time with?");
+    expect(threads[0]?.developments).toEqual([{ turn: 2, text: "Local gossip about Maya.", kind: "update" }]);
+  });
+
+  it("develop appends an accumulated entry and revises the summary; touch logs nothing", () => {
+    const base = thread({ id: "th1", title: "Investigating Thorne", developments: [{ turn: 1, text: "First oddity.", kind: "event" }] });
+    const developed = applyThreadSignals(
+      [base],
+      { develop: [{ id: "th1", entry: "Thorne dodged a direct question.", entryKind: "statement", summary: "Suspicion grows." }] },
+      5,
+    ).threads[0];
+    expect(developed?.summary).toBe("Suspicion grows.");
+    expect(developed?.developments).toEqual([
+      { turn: 1, text: "First oddity.", kind: "event" },
+      { turn: 5, text: "Thorne dodged a direct question.", kind: "statement" },
+    ]);
+
+    // touch keeps the thread warm but never writes to the log.
+    const touched = applyThreadSignals([base], { touch: [{ id: "th1", title: "Investigating Thorne" }] }, 6).threads[0];
+    expect(touched?.lastTouchedTurn).toBe(6);
+    expect(touched?.developments).toHaveLength(1);
+  });
+
+  it("develop caps the accumulated log at THREAD_DEVELOPMENTS_CAP, dropping the oldest", () => {
+    const many = Array.from({ length: THREAD_DEVELOPMENTS_CAP }, (_, i) => ({ turn: i, text: `dev ${i}`, kind: "update" as const }));
+    const developed = applyThreadSignals(
+      [thread({ id: "th1", title: "Long arc", developments: many })],
+      { develop: [{ id: "th1", entry: "newest" }] },
+      99,
+    ).threads[0];
+    expect(developed?.developments).toHaveLength(THREAD_DEVELOPMENTS_CAP);
+    expect(developed?.developments.at(-1)?.text).toBe("newest");
+    expect(developed?.developments.at(0)?.text).toBe("dev 1"); // "dev 0" dropped
   });
 
   it("resolve closes by id; unknown references degrade to diagnostics", () => {
@@ -898,6 +964,66 @@ describe("thread lifecycle", () => {
     );
     expect(cooled[0]?.status).toBe("cooling");
     expect(cooled[1]?.status).toBe("open");
+  });
+});
+
+describe("dedupeThreadProposals (semantic backstop)", () => {
+  // Fake embedder: texts mentioning the same subject get identical vectors
+  // (cosine 1.0); unrelated subjects are orthogonal (cosine 0). Deterministic,
+  // no real embedding API — the demo-mode discipline.
+  const fakeEmbed = (texts: string[]): Promise<number[][]> =>
+    Promise.resolve(
+      texts.map((t) => (/thorne/i.test(t) ? [1, 0, 0] : /weather/i.test(t) ? [0, 1, 0] : [0, 0, 1])),
+    );
+  const signals = (propose: { title: string; summary: string }[]) => ({
+    touch: [],
+    develop: [],
+    propose: propose.map((p) => ({ title: p.title, kind: "investigation" as const, summary: p.summary, closeConditions: [] })),
+    resolve: [],
+  });
+
+  it("folds a near-duplicate proposal into the matching thread as a develop; keeps a distinct one", async () => {
+    const sink = new DiagnosticCollector();
+    const out = await dedupeThreadProposals(
+      [thread({ id: "th_thorne", title: "Investigating Thorne", summary: "Thorne is acting strange." })],
+      signals([
+        { title: "Thorne's odd mood", summary: "Thorne brooded all evening." },
+        { title: "The strange weather", summary: "Storms out of season." },
+      ]),
+      fakeEmbed,
+      7,
+      sink,
+    );
+    expect(out.propose.map((p) => p.title)).toEqual(["The strange weather"]); // distinct one survives
+    expect(out.develop).toEqual([
+      { id: "th_thorne", entry: "Thorne brooded all evening.", summary: "Thorne brooded all evening." },
+    ]);
+    expect(codes(sink).filter((c) => c === "merge.thread.dedup_merged")).toHaveLength(1);
+  });
+
+  it("never folds into a resolved thread (a closed thread must not resurrect)", async () => {
+    const out = await dedupeThreadProposals(
+      [thread({ id: "th_thorne", title: "Investigating Thorne", status: "resolved" })],
+      signals([{ title: "Thorne again", summary: "Thorne resurfaced." }]),
+      fakeEmbed,
+      9,
+    );
+    expect(out.propose).toHaveLength(1); // stays a fresh proposal, not a develop
+    expect(out.develop).toHaveLength(0);
+  });
+
+  it("degrades to leaving proposals untouched when embedding fails", async () => {
+    const sink = new DiagnosticCollector();
+    const boom = () => Promise.reject(new Error("embed down"));
+    const out = await dedupeThreadProposals(
+      [thread({ id: "th_thorne", title: "Investigating Thorne" })],
+      signals([{ title: "Thorne's odd mood", summary: "again" }]),
+      boom,
+      3,
+      sink,
+    );
+    expect(out.propose).toHaveLength(1);
+    expect(codes(sink).filter((c) => c === "merge.thread.dedup_embed_failed")).toHaveLength(1);
   });
 });
 
@@ -1117,7 +1243,7 @@ describe("director integration", () => {
         archivist: { episodeSummary: "Maya found the letter.", facts: [], supersedeHints: [] },
         director: director({
           sceneSummary: "Maya holds the letter.",
-          threadSignals: { touch: [{ id: "th1", title: "The letter" }], propose: [], resolve: [] },
+          threadSignals: { touch: [{ id: "th1", title: "The letter" }], develop: [], propose: [], resolve: [] },
         }),
       }),
     );

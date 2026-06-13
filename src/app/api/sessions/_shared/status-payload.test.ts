@@ -134,7 +134,16 @@ function fakeBundle(): SessionBundle {
     runtime: {
       ...emptySessionRuntime(),
       storyThreads: [
-        storyThreadSchema.parse({ id: "t-open", title: "The missing brother", status: "open" }),
+        storyThreadSchema.parse({
+          id: "t-open",
+          title: "The missing brother",
+          status: "open",
+          kind: "investigation",
+          question: "Where did he go?",
+          closeConditions: ["He is found"],
+          developments: [{ turn: 1, text: "A letter surfaced.", kind: "evidence" }],
+        }),
+        storyThreadSchema.parse({ id: "t-cooling", title: "Town gossip", status: "cooling", kind: "ongoing" }),
         storyThreadSchema.parse({ id: "t-resolved", title: "Done", status: "resolved" }),
       ],
     },
@@ -229,11 +238,16 @@ describe("buildStatusPayload", () => {
     expect(withoutDelta.clock.delta).toBeNull();
   });
 
-  it("carries scene-gen state with the latest image id and only open threads", () => {
+  it("carries scene-gen state with the latest image id and active (open + cooling) threads with full detail", () => {
     expect(payload.sceneGen.latestImageId).toBe("img-scene");
     expect(payload.sceneGen.gallery.map((g) => g.id)).toEqual(["img-old", "img-scene"]);
     expect(payload.sceneGen.status).toBe("idle");
-    expect(payload.threads.map((t) => t.id)).toEqual(["t-open"]);
+    // Open + cooling ride to the client; resolved threads are dropped.
+    expect(payload.threads.map((t) => t.id)).toEqual(["t-open", "t-cooling"]);
+    const open = payload.threads.find((t) => t.id === "t-open");
+    expect(open?.kind).toBe("investigation");
+    expect(open?.closeConditions).toEqual(["He is found"]);
+    expect(open?.developments).toEqual([{ turn: 1, text: "A letter surfaced.", kind: "evidence" }]);
   });
 });
 

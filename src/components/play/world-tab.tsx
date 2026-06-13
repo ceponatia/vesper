@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
+import { ThreadModal } from "./thread-modal";
 
 /**
  * Narrator model dropdown over the curated list (lib/narrative-models.ts);
@@ -82,7 +83,9 @@ function ItemLine({ item, note }: { item: StatusItem; note?: string | null }) {
 }
 
 /** World tab: clock, location, items, containers, open threads (docs/ui.md). */
-export function WorldTab({ session }: { session: UseSession }) {
+export function WorldTab({ session, isAdmin }: { session: UseSession; isAdmin: boolean }) {
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+
   if (session.statusLoading) {
     return (
       <div className="flex flex-col gap-3 p-4">
@@ -183,19 +186,37 @@ export function WorldTab({ session }: { session: UseSession }) {
         ) : (
           <ul className="flex flex-col gap-2">
             {openThreads.map((thread, i) => (
-              <li key={thread.id || i} className="rounded-md border border-ink-600 px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-xs font-medium text-paper-100">{thread.title}</p>
-                  {thread.status === "cooling" ? <Tag>cooling</Tag> : null}
-                </div>
-                {thread.summary ? (
-                  <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-paper-400">{thread.summary}</p>
-                ) : null}
+              <li key={thread.id || i}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedThreadId(thread.id)}
+                  className="w-full cursor-pointer rounded-md border border-ink-600 px-3 py-2 text-left transition-colors hover:border-ink-500 hover:bg-ink-800"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-xs font-medium text-paper-100">{thread.title}</p>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {thread.kind === "ongoing" ? <Tag>ongoing</Tag> : null}
+                      {thread.status === "cooling" ? <Tag>cooling</Tag> : null}
+                    </span>
+                  </div>
+                  {thread.summary ? (
+                    <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-paper-400">{thread.summary}</p>
+                  ) : null}
+                </button>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      <ThreadModal
+        key={selectedThreadId ?? "none"}
+        thread={openThreads.find((t) => t.id === selectedThreadId) ?? null}
+        sessionId={session.sessionId}
+        isAdmin={isAdmin}
+        onClose={() => setSelectedThreadId(null)}
+        onClosed={() => session.refresh()}
+      />
     </div>
   );
 }

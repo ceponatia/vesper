@@ -267,6 +267,10 @@ export function buildStatusPayload(
     location,
     exposure: bundle.brief.exposure,
     sceneGen: { ...bundle.scene, latestImageId: extras.latestSceneImageId, gallery: extras.sceneGallery },
-    threads: bundle.runtime.storyThreads.filter((t) => t.status === "open"),
+    // Active threads (open + cooling) with their full detail (kind, question,
+    // closeConditions, developments) so the World-tab cards and detail modal
+    // can render everything gleaned (docs/story-threads.md). Resolved/archived
+    // threads are intentionally dropped — closing one removes it from the UI.
+    threads: bundle.runtime.storyThreads.filter((t) => t.status === "open" || t.status === "cooling"),
   };
 }

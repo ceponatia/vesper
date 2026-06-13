@@ -296,11 +296,24 @@ export const statusItemSchema = z.preprocess(
 );
 export type StatusItem = z.infer<typeof statusItemSchema>;
 
+const statusThreadDevelopmentSchema = z.object({
+  turn: z.number().catch(0),
+  text: z.string().catch(""),
+  kind: z.enum(["evidence", "statement", "event", "lead", "update"]).catch("update"),
+});
+export type StatusThreadDevelopment = z.infer<typeof statusThreadDevelopmentSchema>;
+
 const statusThreadSchema = z.object({
   id: z.string().catch(""),
   title: z.string().min(1),
   summary: z.string().catch(""),
+  kind: z.enum(["investigation", "ongoing"]).catch("investigation"),
   status: z.enum(["open", "cooling", "resolved", "archived"]).catch("open"),
+  question: z.string().catch(""),
+  closeConditions: z.array(z.string()).catch([]),
+  developments: z.array(statusThreadDevelopmentSchema).catch([]),
+  openedAtTurn: z.number().catch(0),
+  lastTouchedTurn: z.number().catch(0),
 });
 export type StatusThread = z.infer<typeof statusThreadSchema>;
 
