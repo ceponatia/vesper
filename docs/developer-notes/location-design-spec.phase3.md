@@ -46,7 +46,13 @@ migration, no new entity.
   districts from first segments for free.
 - Editor: area input gains autocomplete over the world's existing
   paths. Forge: location agent may suggest nested paths when the
-  premise implies containment.
+  premise implies containment — **with guardrails (ruled 2026-06-13):
+  an interior/building implies its rooms take nested segments, but an
+  outdoor/open area needs no nesting; the agent must not invent
+  gratuitous depth.** Nesting stays **implicit** — a path-based folder
+  model the travel rule and district seed read, with no folder-tree UI
+  built yet. Separator is `/` (ruled); segment casing follows the
+  location-naming style, settled at implementation.
 - Alternative considered: multiple area tags per location (set
   membership; share-any-tag ⇒ intra). Simpler mental model, but
   loses the district seed and makes "inside" inexpressible. Rejected
@@ -70,7 +76,12 @@ structure, not prose.
     ownership vocabulary that does not exist yet — proposal: nullable
     `owner_participant_id` on `item_instances`, set **only at spawn**.
     Play-time placements and drops never auto-assign ownership
-    (ruled by user). Write-only until consumers land.
+    (ruled by user). Write-only until consumers land. **Confirmed
+    2026-06-13:** spawn-only writes. Future (deferred, needs its own
+    design): characters *acquire* items in play — purchases, gifts —
+    that become owned at acquisition time, a second provenance path the
+    items model doesn't have yet; tracked in
+    [deferred.plan.md](deferred.plan.md).
 - **Phase-later consumers:**
   - Norms: taking an owned item / entering an owned space uninvited
     becomes a detectable breach candidate (the continuity agent gets
@@ -80,8 +91,11 @@ structure, not prose.
     invite drift. Proposal: location owner is the source of truth and
     a private link *derives* its owners from the location it guards;
     hand-authored `ownerParticipantIds` stays only for links guarding
-    nothing (a private footpath). Needs a ruling before phase-4
-    enforcement builds on either.
+    nothing (a private footpath). **Ruled 2026-06-13:** adopt this —
+    the location owner is the source of truth and the private link
+    derives its owners from the location it guards; keep the derivation
+    a thin, swappable seam so that if testing shows independently-authored
+    link owners are wanted, it's a small change, not a migration.
   - Drives/off-screen: owners act freely in their space; "home" is an
     affordance anchor for needs/schedule drives.
 
@@ -108,6 +122,12 @@ ambient: {
   directly ("lamplit" at night ⇒ lit) — the defaults doc's keyword
   list becomes the fallback for unbanded locations.
 - Backward compatible: `byBand` optional, old rows parse unchanged.
+- **Ruled 2026-06-13:** the four daylight bands (dawn / day / dusk /
+  night) are the v1 vocabulary. Design them **customizable later** —
+  worlds on other planets or dimensions won't share Earth's day scale,
+  so the band set must be overridable per world / `style` (the defaults
+  doc already flags bands as `style`-overridable), never hard-coded as a
+  universal four.
 - Editor: compact band column per ambient field, or a "varies by time
   of day" toggle revealing the grid. Forge fills bands when the
   description implies them.
@@ -141,20 +161,22 @@ answer to "an hour for 6 locations": copy + forge gets a room to
   the kettle she keeps by the window" without an author writing that
   sentence.
 
-## Open questions
+## Rulings (2026-06-13)
 
-(Restated in [phase-3-plan.md](phase-3-plan.md) per the repo rule.)
+All four open questions are resolved; detail is folded into the sections
+above.
 
-1. Area path separator (`/` proposed) and whether the forge suggests
-   nested paths from day one.
-2. Owner ↔ private-link reconciliation: does `private` derive its
-   owners from the guarded location's owner (proposed) or stay
-   independently authored?
-3. Banded-ambient vocabulary: reuse the four daylight bands (proposed)
-   vs the user's simpler morning/afternoon/evening three.
-4. Item-instance ownership shape (`owner_participant_id`, spawn-only
-   writes) — confirm before the items data model grows a second
-   provenance mechanism.
+1. **Area paths** — separator `/`; implicit path-based nesting (no
+   folder-tree UI yet); forge suggests nested paths with guardrails
+   (buildings nest rooms, outdoor areas don't).
+2. **Owner ↔ private-link** — location owner is the source of truth; a
+   private link derives its owners from the location it guards; kept a
+   swappable seam.
+3. **Banded ambients** — four daylight bands, designed overridable per
+   world / `style` for non-Earth time scales.
+4. **Item-instance ownership** — `owner_participant_id`, spawn-only
+   writes; play-time acquisition deferred to
+   [deferred.plan.md](deferred.plan.md).
 
 ## Testing sketch
 

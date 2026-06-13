@@ -5,6 +5,23 @@ plan. It says how to cut the overloaded `.phase3.md` corpus into a strict
 phase 3 plus a real phase 4 (and to push the steps-5/6 specs out of phase 3's
 way). Execute the steps below, then delete this file or mark it completed.
 
+## Update 2026-06-13 (open-question rulings)
+
+The phase-3-plan open questions were answered. Net effect on this plan:
+
+- **Scope narrowed.** Phase 3 is now settled as **presence & perception v1
+  only** — narrower than this plan's original "presence + romance-core
+  proximity." The romance-core proximity slice (tiers / engagement / scale
+  gating / staging) moves to **phase 4**, *except* whatever minimal proximity
+  *primitive* presence's `sight` channel strictly needs (the tier ladder +
+  scale-derived tier existence) — that boundary is an open phase-start question
+  (see phase-3-plan).
+- **Pairwise NPC↔NPC awareness (co-located)** is confirmed **in phase 3** and
+  maintained every turn; cross-location off-camera awareness defers to phase 5.
+- **Product direction:** Vesper stays able to be a **full NSFW RPG** when a user
+  wants one. The Bucket-1 items below are therefore *deferred / deprioritized
+  for the romance-first path, not deleted from the engine.*
+
 ## Why this exists
 
 The `.phase3.md` suffix is **overloaded**. Per the naming convention a
@@ -33,7 +50,8 @@ phase 4+.
 
 Vesper is an intimate-romance product, not a broad-cast/combat RPG. Several
 specs inherit reverie's general-engine ambition. Flag these **before** moving
-them, because cruft should be descoped (not faithfully carried into phase 4):
+them, because they should be deprioritized for the romance-first path (deferred,
+**not deleted** — see the 2026-06-13 note above):
 
 **Keep — core to romance** (these justify the whole presence/proximity build):
 - Attention × salience witness matrix — *who perceives what during intimacy* is
@@ -53,8 +71,10 @@ them, because cruft should be descoped (not faithfully carried into phase 4):
   of an intimate moment. Highest romance value in the late phases.
 - Per-location forge, ownership cheap uses ("her apartment" for consent framing).
 
-**Cut or defer indefinitely — general-RPG cruft for Vesper** (do *not* carry
-into a phase-4 plan; record the descope in the owning spec):
+**Defer — lower priority for the romance-first cut, kept on the roadmap** (don't
+carry into the phase-4 plan as committed scope; record as deferred in the owning
+spec — Vesper stays able to be a full NSFW *RPG*, so these are deprioritized, not
+deleted):
 - Non-human senses (scent/tremorsense), sense-acuity profiles.
 - Full NPC-side sound channel (hear-through-walls, eavesdropping, guard-
   investigates) — keep only the cheap *player-side* adjacent-sound line.
@@ -209,5 +229,6 @@ Not everything stays in phase 3 — the corpus is four phases wide. The clean cu
 banded ambients**, **phase 4 = movement + the movement-coupled proximity/location/
 time leftovers + (demand-permitting) provisional emergent cast**, with off-screen
 sim and character memory re-suffixed to phases 5–6 so they stop hiding inside
-phase 3. Descope the general-RPG cruft (Bucket 1) at the spec level rather than
-carrying it forward.
+phase 3. Defer the general-RPG-heavy items (Bucket 1) at the spec level rather
+than carrying them into committed phase-4 scope — but keep them on the roadmap;
+Vesper stays a capable NSFW RPG.

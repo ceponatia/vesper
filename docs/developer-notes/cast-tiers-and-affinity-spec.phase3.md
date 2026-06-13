@@ -64,6 +64,13 @@ a fixture. Design the tier field and promotion path assuming drift
 arrives (e.g. track `lastEngagedTurn` per participant from day one —
 it's one timestamp and the drift rule needs the history).
 
+**Ruled 2026-06-13 (engagement signal):** deferred. Tier modelling is
+too thin to commit a signal yet — `runtime.lastInteractedTurn`
+(player-targeting semantics) may not suffice, and a broader
+`lastEngagedTurn` or composite engagement score may be wanted; decide
+when algorithmic tier drift is actually designed (phase 4+). Keep
+recording `lastInteractedTurn` from day one regardless.
+
 **Template-instanced extras**: an extra can be spawned N times ("wolf"
 ×3) — one participant row per instance (each holds position/conditions),
 all pointing at a shared template snapshot instead of a forged one.

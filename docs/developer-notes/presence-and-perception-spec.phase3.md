@@ -131,8 +131,16 @@ Attention-derivation table, salience defaults, awareness-block budget —
   react within the same narration to a subtle NPC action they shouldn't
   have seen, and only continuity catches it a turn later. Mitigation:
   awareness blocks should state pairwise NPC awareness too ("Tom cannot
-  see what happens near the sink"), not just NPC-of-player. Residual risk
-  accepted; measure before adding machinery.
+  see what happens near the sink"), not just NPC-of-player.
+
+  **Ruled 2026-06-13:** build it. Awareness blocks maintain *pairwise*
+  NPC awareness, recomputed every turn, so the narrator always knows
+  where each NPC is and what each can see or hear — and that state
+  *governs* narrator-invented NPC actions pre-turn, not merely a
+  post-hoc continuity catch. Co-located pairs are phase-3 scope; scaling
+  awareness to NPC↔NPC pairs in *different* locations (two NPCs
+  interacting off-camera) defers to off-screen simulation (phase 5),
+  which owns absent-character activity.
 - **No environmental or condition modifiers on senses.** Darkness,
   candlelight, a deafening forge, fog; conditions like blindfolded,
   earmuffed, drunk. The sight channel is binary and eternal noon. The
@@ -149,7 +157,11 @@ Attention-derivation table, salience defaults, awareness-block budget —
   of the kitchen-sink bug. Possible shape: simulant may emit
   player-unperceived events that skip narration and land only in state +
   witness sets ("you find out later"). Flag as opportunity; it has POV
-  and fairness implications worth a dedicated think.
+  and fairness implications worth a dedicated think. **Ruled
+  2026-06-13:** ships v2, confirmed — not phase 3. Vesper keeps core
+  RPG mechanics so it can serve as a full NSFW *RPG* when the player
+  wants one; hidden acts against the player are part of that capability,
+  just not the first cut.
 - **Glance impressions ignore channel fidelity.** First-encounter
   impressions render full appearance — but a character first met at
   `distant` (silhouette down the beach) or via `comms` (voice only)

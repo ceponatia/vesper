@@ -22,8 +22,12 @@ Build order from
    off-screen simulation → character memory. Emergent cast phases 1–3
    slot in after their dependencies.
 
-Whether phase 3 takes only presence & perception or bites off more is a
-phase-start decision.
+**Settled 2026-06-13: phase 3 is presence & perception v1 only**
+(build-order step 2 plus the minimal primitives presence depends on);
+proximity, movement, and everything downstream become phase 4+. See
+[phase-3-to-4.md](phase-3-to-4.md) for the split. The exact proximity
+*primitive* boundary presence needs is the one remaining scope question
+below.
 
 ## Already done — do not re-plan
 
@@ -82,51 +86,42 @@ Carried forward from the 2026-06-12 phase-2 review:
 
 ## Open questions
 
-Restated from the phase-3 doc set per the repo rule. The specs' gap
-sections carry inline rulings, so only genuinely undecided items appear
-here — follow the links for detail; remove entries when resolved:
+The nine questions raised across the phase-3 doc set were answered
+2026-06-13; rulings live in the detail docs:
 
-- **Phase-3 scope.** Presence & perception v1 only, or more of the
-  build order (§Candidate scope above) — decided at phase start.
-- **Tier-drift engagement signal.** Does `runtime.lastInteractedTurn`
-  suffice as the drift history, or does drift need a broader
-  `lastEngagedTurn`?
-  [cast-tiers-and-affinity-spec.phase3.md](cast-tiers-and-affinity-spec.phase3.md)
-  (§Design: tiers).
-- **Player-unperceived events** (hidden acts against the player).
-  Designed alongside perception, ships v2 — the POV and fairness shape
-  still needs a dedicated think.
-  [presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
-  (§Gaps & opportunities).
-- **Narrator-invented NPC actions are checked only post-hoc.** Pairwise
-  NPC awareness lines are the proposed mitigation — measure before
-  adding machinery.
-  [presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
-  (§Gaps & opportunities).
-- **Comms scope.** Group calls, voicemail content, persistent text
-  history (the first thing players will ask for) — all deferred, none
-  designed.
-  [presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
-  (§Gaps & opportunities).
-- **Area path hierarchy.** Separator choice and whether the forge
-  suggests nested paths from day one.
-  [location-design-spec.phase3.md](location-design-spec.phase3.md)
-  (§Area hierarchy, §Open questions).
-- **Owner ↔ private-link reconciliation.** Does `private` link access
-  derive its owners from the guarded location's owner (proposed), or
-  stay independently authored? Rule before phase-4 enforcement builds
-  on either. [location-design-spec.phase3.md](location-design-spec.phase3.md)
-  (§Ownership).
-- **Banded-ambient vocabulary.** Reuse the four daylight bands
-  (proposed — one time vocabulary) vs the simpler
-  morning/afternoon/evening three the request used.
-  [location-design-spec.phase3.md](location-design-spec.phase3.md)
-  (§Time-banded ambients).
-- **Item-instance ownership shape.** `owner_participant_id` on
-  instances, written only at spawn — confirm before the items model
-  grows a second provenance mechanism.
-  [location-design-spec.phase3.md](location-design-spec.phase3.md)
-  (§Ownership).
+- **Phase-3 scope** → presence & perception v1 only (§Candidate scope).
+- **Tier-drift engagement signal** → deferred (phase 4+)
+  ([cast-tiers-and-affinity-spec.phase3.md](cast-tiers-and-affinity-spec.phase3.md)
+  §Problem).
+- **Player-unperceived events** → ships v2; Vesper keeps full-RPG
+  capability
+  ([presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
+  §Gaps & opportunities).
+- **Narrator-invented NPC actions** → build pairwise NPC awareness,
+  maintained every turn; cross-location scaling defers to phase 5
+  ([presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
+  §Gaps & opportunities).
+- **Comms scope** (group calls / voicemail / text history) → tracked in
+  [deferred.plan.md](deferred.plan.md).
+- **Area path hierarchy / Owner↔private-link / Banded vocabulary /
+  Item-instance ownership** → all resolved
+  ([location-design-spec.phase3.md](location-design-spec.phase3.md)
+  §Rulings).
+
+Newly surfaced for phase-start (raised 2026-06-13, awaiting ruling):
+
+- **Minimal proximity primitives.** Presence's `sight` channel is gated
+  on "perceivable proximity" and references the `distant` tier. With
+  proximity deferred to phase 4, does phase 3 pull in just the tier
+  ladder + scale-derived tier existence (the primitive presence needs),
+  or run a coarse co-located / adjacent / absent model until proximity
+  lands?
+- **NPC-initiated comms.** Ship the comms *channel* + player-side +
+  pending-messages line in phase 3, but defer NPC-*initiated* calls/texts
+  (they need the director / world-tick to emit intents) to phase 4?
+- **Observer / god-mode sessions.** Presence assumes a player POV;
+  observer sessions have none (followups.phase2.md #10). Stance:
+  narrator-omniscient, no awareness blocks?
 
 ## Naming note
 
