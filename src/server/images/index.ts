@@ -4,4 +4,5 @@ export * from "./prompts";
 export * from "./avatar";
 export * from "./variants";
 export * from "./upload";
+export * from "./entity";
 export * from "./scene";

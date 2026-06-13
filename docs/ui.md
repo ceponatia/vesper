@@ -13,8 +13,8 @@ Next.js App Router pages + React 19 + Tailwind 4. Aesthetic: quiet dark "reading
 /characters              Library grid
 /characters/forge        Prose prompt → draft review → save
 /characters/:id          Editor: profile · attributes (registry picker) · outfit · portrait studio
-/locations, /locations/:id   Lean library + editor
-/items, /items/:id           Lean library + editor
+/locations, /locations/:id   Lean library + editor (Details · Image tabs)
+/items, /items/:id           Lean library + editor (Details · Image tabs)
 /sessions/new            Wizard: world → embodiment (play a character / observer) → title
 /sessions/:id            The play screen
 ```
@@ -26,6 +26,8 @@ The read-only world **detail** page (`components/worlds/world-detail-page.tsx`) 
 The world review/editor cast tab (`components/worlds/world-editor.tsx`) carries per-member relationship rows — a `toward` select (other cast names + "player", with a "(missing)" option keeping unresolved names visible) and a stage select fed by the `contracts/relationships/stages` registry (stages, never numbers), with add/remove affordances. Renaming a cast member rewrites other members' `toward` pointers, the same way map renames follow location links. When the cast would spawn more than `MAJOR_TIER_SOFT_CAP` (6) major-tier members, the tab shows a non-blocking warn-toned notice — the count uses `lib/cast-tiers.ts` (the same rule `engine/spawn.ts` applies: companions left at the default minor tier spawn as major), and spawn emits the matching `spawn.cast.major_soft_cap` diagnostic; nothing is ever blocked or trimmed. Scale and tier select options are derived from the contract enums in `lib/client/api.ts` (`worldLocationScaleSchema` / `worldCastTierSchema`), not inline literals.
 
 The character portrait studio (`components/characters/portrait-studio.tsx`) generates the canonical avatar from attributes, accumulates Venice pose/outfit/expression/setting variants, and promotes any variant to canonical. **Upload image** opens the crop dialog (`avatar-upload-dialog.tsx`): a modal whose helper text states the 768×1024 (3:4) target, then — unless the chosen file is already 3:4 — lets the user drag to reposition and a slider/scroll to zoom inside a 3:4 crop window before the framed region is scaled, saved, and set as the avatar (synchronous, demo-safe — [images.md](images.md) §Avatar upload).
+
+The library **item** and **location** editors are split into **Details · Image** tabs (`components/ui/tabs.tsx`). The Image tab is a minimal studio (`components/library/entity-image-studio.tsx`, shared by both): a Generate/Regenerate button and the current image with click-to-enlarge — no variants, no upload (regenerate if you dislike it). Generation runs as a background job and the tab polls until it lands, so leaving the page never interrupts it. Items get a 1:1 product photo; locations a 3:2 establishing shot whose type follows the location's scale ([images.md](images.md) §Entity images).
 
 ## The play screen
 

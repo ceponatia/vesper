@@ -33,6 +33,9 @@ Pipeline (a `scene_image` job):
 
 Failures mark the job + image row `failed` with the error; the session is never blocked by image work.
 
+### Entity images (items & locations)
+Library items and locations each carry one image (their `imageId` column), generated from the entity's own fields — no character-style variants, no upload, no gallery. `generateEntityImage({ entityKind, entityId, userId })` (`server/images/entity.ts`) builds the prompt, creates a `kind: "entity"` asset, generates (demo monogram fallback), and on success sets the row's `imageId` and **reclaims every other image for that entity** (a regenerate replaces the old one — single image per entity, no orphans). Prompt builders (`prompts.ts`): `buildItemImagePrompt` is a catalog product shot (clothing on a ghost mannequin, objects isolated on a seamless surface; aspect 1:1); `buildLocationImagePrompt` is an establishing shot whose type follows the location's **scale** — `open`/`expanse` → outdoor landscape, otherwise an architectural interior (aspect 3:2), always empty (no people). Triggered by `POST /api/{items,locations}/:id/image` as a background `entity_image` job (survives navigation); the editor's **Image** tab polls `GET /api/{items,locations}/:id/image` (latest row) until it leaves `pending`, shows the result with click-to-enlarge, and offers Regenerate. Entity deletion already drops these via `deleteEntityImages`.
+
 ## Demo mode
 
 No keys → SVG monogram placeholder (deterministic gradient from the entity name) saved through the same registry path, flagged `meta.demo: true`. Every pipeline is exercisable in CI.

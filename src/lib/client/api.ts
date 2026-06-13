@@ -580,6 +580,9 @@ export const charactersApi = {
   deletePortrait: (id: string, imageId: string) => apiDelete(`/api/characters/${id}/portraits/${imageId}`),
 };
 
+/** Wrapper for the entity-image GET (`{ image }`, nullable) used by the studio. */
+const entityImageSchema = z.object({ image: imageRecordSchema.nullable().catch(null) });
+
 export const locationsApi = {
   list: (params: ListParams = {}) =>
     apiGet(listOf(locationSummarySchema, "locations"), withQuery("/api/locations", params)),
@@ -587,6 +590,8 @@ export const locationsApi = {
   create: (body: unknown) => apiPost(createdRefSchema, "/api/locations", body),
   update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/locations/${id}`, body),
   remove: (id: string) => apiDelete(`/api/locations/${id}`),
+  image: (id: string) => apiGet(entityImageSchema, `/api/locations/${id}/image`),
+  generateImage: (id: string) => apiPost(z.unknown(), `/api/locations/${id}/image`, {}),
 };
 
 export const itemsApi = {
@@ -595,6 +600,8 @@ export const itemsApi = {
   create: (body: unknown) => apiPost(createdRefSchema, "/api/items", body),
   update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/items/${id}`, body),
   remove: (id: string) => apiDelete(`/api/items/${id}`),
+  image: (id: string) => apiGet(entityImageSchema, `/api/items/${id}/image`),
+  generateImage: (id: string) => apiPost(z.unknown(), `/api/items/${id}/image`, {}),
 };
 
 export const worldsApi = {

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { locationsApi, type Ambient } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { EntityImageStudio } from "@/components/library/entity-image-studio";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -13,6 +14,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SaveBar } from "@/components/ui/save-bar";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { TagInput } from "@/components/ui/tag-input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -34,8 +36,14 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<"details" | "image">("details");
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
   const editGenRef = useRef(0);
+
+  const editorTabs: TabDef<"details" | "image">[] = [
+    { id: "details", label: "Details" },
+    { id: "image", label: "Image" },
+  ];
 
   // Seed the form from the loaded location during render (the React "adjust
   // state while rendering" pattern). Each location is seeded exactly once, so
@@ -112,6 +120,19 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   return (
     <PageContainer>
       <h1 className="prose-display mb-6 text-2xl">{form.name || "Untitled location"}</h1>
+
+      <Tabs tabs={editorTabs} value={tab} onChange={setTab} className="mb-6" />
+
+      {tab === "image" ? (
+        <EntityImageStudio
+          entityKind="location"
+          entityId={locationId}
+          name={form.name}
+          imageId={detail.data?.imageId ?? null}
+          onImageChanged={() => detail.reload({ silent: true })}
+        />
+      ) : (
+        <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Name">
           {(id) => <Input id={id} value={form.name} onChange={(e) => patch({ name: e.target.value })} />}
@@ -136,6 +157,9 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
           </Field>
         ))}
       </div>
+        </>
+      )}
+
       <SaveBar
         dirty={dirty}
         saving={saving}

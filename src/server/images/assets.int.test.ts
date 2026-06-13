@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { eq, sql } from "drizzle-orm";
-import { characters, db, images, sessions, users, worlds } from "../db";
+import { and, eq, sql } from "drizzle-orm";
+import { characters, db, images, items, locations, sessions, users, worlds } from "../db";
 import {
   absoluteImagePath,
   createImageAsset,
@@ -15,6 +15,7 @@ import {
 } from "./assets";
 import { monogramSvg } from "./monogram";
 import { generateAvatar } from "./avatar";
+import { generateEntityImage } from "./entity";
 import { uploadAvatar } from "./upload";
 import { generateVariant, promoteVariant } from "./variants";
 import { renderSceneImage } from "./scene";
@@ -55,6 +56,8 @@ afterAll(async () => {
   await db().delete(sessions).where(eq(sessions.ownerId, userId));
   await db().delete(worlds).where(eq(worlds.ownerId, userId));
   await db().delete(characters).where(eq(characters.ownerId, userId));
+  await db().delete(items).where(eq(items.ownerId, userId));
+  await db().delete(locations).where(eq(locations.ownerId, userId));
   await db().delete(users).where(eq(users.id, userId));
   await globalThis.__vesperPool?.end();
 });
@@ -210,6 +213,49 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(result.ok).toBe(false);
     const after = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, userId));
     expect(after.length).toBe(before.length); // bailed before creating an asset
+  });
+
+  it("generateEntityImage paints an item product image, sets imageId, and reclaims the old one on regenerate", async (ctx) => {
+    if (!available) return ctx.skip();
+    const [item] = await db()
+      .insert(items)
+      .values({ ownerId: userId, kind: "object", name: "Brass Compass", description: "a worn navigator's compass" })
+      .returning();
+    if (!item) throw new Error("failed to create item");
+
+    const firstId = await generateEntityImage({ entityKind: "item", entityId: item.id, userId });
+    const [first] = await db().select().from(images).where(eq(images.id, firstId)).limit(1);
+    expect(first?.status).toBe("ready");
+    expect(first?.kind).toBe("entity");
+    expect(first?.entityKind).toBe("item");
+    const [afterFirst] = await db().select().from(items).where(eq(items.id, item.id)).limit(1);
+    expect(afterFirst?.imageId).toBe(firstId);
+
+    // Regenerate: the new image becomes canonical; the old row+file are reclaimed.
+    const secondId = await generateEntityImage({ entityKind: "item", entityId: item.id, userId });
+    expect(secondId).not.toBe(firstId);
+    const [afterSecond] = await db().select().from(items).where(eq(items.id, item.id)).limit(1);
+    expect(afterSecond?.imageId).toBe(secondId);
+    const remaining = await db()
+      .select({ id: images.id })
+      .from(images)
+      .where(and(eq(images.entityKind, "item"), eq(images.entityId, item.id)));
+    expect(remaining.map((r) => r.id)).toEqual([secondId]); // single image per entity
+  });
+
+  it("generateEntityImage paints a location establishing image and sets imageId", async (ctx) => {
+    if (!available) return ctx.skip();
+    const [loc] = await db()
+      .insert(locations)
+      .values({ ownerId: userId, name: "Tidal Flats", description: "a windswept salt marsh", scale: "expanse" })
+      .returning();
+    if (!loc) throw new Error("failed to create location");
+    const imageId = await generateEntityImage({ entityKind: "location", entityId: loc.id, userId });
+    const [img] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
+    expect(img?.status).toBe("ready");
+    expect(img?.entityKind).toBe("location");
+    const [row] = await db().select().from(locations).where(eq(locations.id, loc.id)).limit(1);
+    expect(row?.imageId).toBe(imageId);
   });
 
   it("renderSceneImage attaches a ready demo scene to the session gallery", async (ctx) => {

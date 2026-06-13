@@ -165,3 +165,49 @@ Gates: typecheck + lint clean, full pure suite green. docs/ui.md
 updated.
 
 Status: **closed (implemented).**
+
+## 4. Image generators for items & locations + library/location follow-ons (2026-06-13)
+
+**Request (user).** A larger batch, delivered in parts:
+
+1. Add a portrait-studio-style **image generator** to the Items and
+   Locations editors. Items → product photos (clothing/objects/
+   furniture); locations → the right kind of shot (landscape outdoors,
+   interior indoors), using the location **scale** to decide.
+2. Add the **missing location-design fields** from the Worlds map tab
+   to the standalone Locations editor — **connections, area, scale** —
+   and (user ruling) **propagate connections into a world** when those
+   locations are imported.
+3. The Items **library** needs **Clothing / Object / Container** tabs
+   (shadcn-informed design) for visual browsing.
+4. On **saving a new world**, auto-generate every missing image
+   (avatars, items, locations) in **background** jobs that survive
+   navigation — and (user ruling) only for entities whose `imageId` is
+   **null**, so reused library entities keep their existing image.
+
+**Ruling (user).** The per-entity studios stay minimal: **generate
+only** (Flux-2), no Venice variant edits, no upload; regenerate if you
+dislike the result; click the image to enlarge.
+
+**Part 1 implemented (2026-06-13) — entity image studios.**
+
+- `server/images/entity.ts` `generateEntityImage({ entityKind, entityId,
+  userId })`: prompt from fields → `kind: "entity"` asset → generate
+  (demo monogram) → set the row's `imageId` and reclaim all other images
+  for that entity (single image, no gallery). Prompt builders in
+  `prompts.ts`: `buildItemImagePrompt` (catalog product shot; clothing
+  on a ghost mannequin, 1:1) and `buildLocationImagePrompt` (landscape
+  for `open`/`expanse`, interior otherwise; 3:2, no people).
+- `POST/GET /api/{items,locations}/:id/image` (background `entity_image`
+  job + latest-row poll); `itemsApi`/`locationsApi` `.image`/
+  `.generateImage`.
+- `components/library/entity-image-studio.tsx` (shared): Generate/
+  Regenerate + click-to-enlarge, polls while pending. Wired into the
+  item/location editors behind new **Details · Image** tabs.
+- Tests: 4 pure (prompt builders), 2 integration (generate + regenerate
+  reclaim for item; location establishing image). docs/images.md +
+  ui.md updated.
+
+Parts 2–4 follow in their own commits.
+
+Status: **part 1 closed; parts 2–4 in progress.**
