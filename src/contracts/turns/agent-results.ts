@@ -214,6 +214,40 @@ export const directorResultSchema = z.object({
       resolve: z.array(z.string()).default([]),
     })
     .default({ touch: [], develop: [], propose: [], resolve: [] }),
+  /**
+   * Off-screen staged beats (phase-4 npc-movement, minimal slice — see
+   * docs/developer-notes/npc-movement-spec.phase3.md). A pure story decision: the
+   * director never moves anyone, it hands a goal to the movement system. Use ONLY
+   * when a beat needs an ABSENT NPC physically relocated first (e.g. they want to
+   * ask the player to come somewhere they aren't yet at). The movement system
+   * walks them there invisibly over several turns; the message/beat fires on arrival.
+   * - stage: open a staged intent (npcName + destinationName required; destinationName
+   *   from the listed locations). onArrivalComms = the text/call they send on arrival.
+   * - cancel: ids of active staged intents to abandon (a newer beat supersedes it, or it's moot).
+   */
+  stageMovement: z
+    .object({
+      stage: z
+        .array(
+          z.object({
+            npcName: z.string().min(1),
+            destinationName: z.string().min(1),
+            reason: z.string().default(""),
+            threadTitle: z.string().optional(),
+            onArrivalComms: z
+              .object({
+                kind: z.enum(["call", "text"]).catch("text").default("text"),
+                gist: z.string().default(""),
+                urgency: z.enum(["low", "normal", "high"]).catch("normal").default("normal"),
+              })
+              .optional(),
+            onArrivalDirective: z.string().optional(),
+          }),
+        )
+        .default([]),
+      cancel: z.array(z.string()).default([]),
+    })
+    .default({ stage: [], cancel: [] }),
   imageMoment: z
     .object({ worthIt: z.boolean().default(false), description: z.string().default("") })
     .optional(),

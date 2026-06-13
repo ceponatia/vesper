@@ -19,9 +19,13 @@ import {
 import { emptyBrief, nextTurnBriefSchema, type NextTurnBrief } from "@/contracts/state/brief";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import {
+  pendingCommsSchema,
+  stagedIntentSchema,
   storyThreadSchema,
   type CommsLink,
+  type PendingComms,
   type SessionRuntime,
+  type StagedIntent,
   type StoryThread,
   type StoryThreadDevelopment,
 } from "@/contracts/state/session-runtime";
@@ -34,7 +38,7 @@ import type {
 } from "@/contracts/turns/agent-results";
 import type { TurnAuthor } from "@/contracts/turns/stream";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { checkLinkAccess } from "@/contracts/world/access";
+import { checkLinkAccess, type DoorState } from "@/contracts/world/access";
 import { daylightBand, minuteOfDay, resolveGameTime, type DaylightBand } from "@/lib/clock";
 import { newId } from "@/lib/ids";
 import { parseOrNull } from "@/lib/parse";
@@ -59,12 +63,15 @@ import {
   FALLBACK_MINUTES_ADVANCED,
   MAX_MINUTES_ADVANCED,
   MIN_MINUTES_ADVANCED,
+  PENDING_COMMS_CAP,
   REST_CLAMP_MINUTES,
   SCHEDULE_JITTER_MINUTES,
+  STAGED_INTENT_DEFAULT_BUDGET,
   THREAD_COOLING_TURNS,
   THREAD_DEDUPE_MIN_SCORE,
   THREAD_DEVELOPMENTS_CAP,
 } from "./constants";
+import { applyStagedIntents } from "./movement";
 import { effectiveMeterDefinitions, type SceneLinkInput } from "./scene";
 
 /**
@@ -1155,6 +1162,8 @@ export interface BriefBuildInput {
   /** Schedule-tick staging lines (scheduleMoveStaging) — per-turn, never carried forward. */
   arrivals?: readonly string[];
   departures?: readonly string[];
+  /** On-arrival directives from staged beats that fired this turn — play the beat next turn. */
+  stagedDirectives?: readonly string[];
 }
 
 /**
@@ -1209,6 +1218,7 @@ export function buildNextBrief(input: BriefBuildInput): NextTurnBrief {
 
   const directives = dedupe([
     ...base.directives,
+    ...(input.stagedDirectives ?? []),
     ...corrections.slice(0, CORRECTION_CAP),
     ...input.thresholdHints.slice(0, THRESHOLD_HINT_CAP),
   ]).slice(0, DIRECTIVE_CAP);
@@ -1593,13 +1603,118 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   // next brief (phase-2-plan T9) — co-located ⇒ perceived, interim rule.
   const arrivals: string[] = [];
   const departures: string[] = [];
+  // Director-staged off-screen movement (phase-4 npc-movement minimal slice):
+  // carried across turns, fired beats appended to pendingComms / the next brief.
+  let stagedIntents = bundle.runtime.stagedIntents;
+  const firedComms: PendingComms[] = [];
+  const stagedDirectives: string[] = [];
   if (!reconcile) {
     const activeLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
     const locationNameById = new Map(bundle.locations.map((l) => [l.id, l.name]));
     const gameTime = resolveGameTime(clockMinutes, bundle.style.calendarStart);
     const minute = minuteOfDay(gameTime);
+
+    // Staged-intent tick — runs BEFORE the schedule tick so a committed NPC is
+    // not yanked back to its routine. The director only decides (proposes the
+    // goal); this advances the NPC one hop and fires the on-arrival beat. New
+    // intents the director just authored are appended AFTER the advance, so
+    // their first hop is next turn (they have to set out).
+    const stagedThisTick = new Set<string>();
+    const cancelIds = new Set(results.director?.stageMovement?.cancel ?? []);
+    const surviving = stagedIntents.filter((s) => !cancelIds.has(s.id));
+    const itemById = new Map(items.map((i) => [i.id, i] as const));
+    const doorStateForLink = (link: SceneLinkInput): DoorState | null =>
+      link.doorItemId ? (itemById.get(link.doorItemId)?.state ?? null) : null;
+    const tick = applyStagedIntents({
+      intents: surviving,
+      locationByParticipant: new Map(parts.map((p) => [p.id, p.locationId] as const)),
+      knownParticipantIds: new Set(parts.map((p) => p.id)),
+      links: bundle.links,
+      doorStateForLink,
+      minuteOfDay: minute,
+      turnNumber: turn.number,
+      sink,
+    });
+    for (const move of tick.moves) {
+      const p = parts.find((x) => x.id === move.participantId);
+      if (!p) continue;
+      const staged = scheduleMoveStaging({
+        displayName: p.displayName,
+        fromLocationId: move.fromLocationId,
+        toLocationId: move.toLocationId,
+        activeLocationId: activeLoc,
+        locationNameById,
+      });
+      if (staged.arrival) arrivals.push(staged.arrival);
+      if (staged.departure) departures.push(staged.departure);
+      p.locationId = move.toLocationId;
+      // In-transit hop: a "heading toward X" activity keeps the Cast tab honest
+      // (no stale clinic activity at a node that isn't the clinic). On the hop
+      // that arrives, leave activity to the fired beat / narrator.
+      if (!move.reachedDestination) {
+        const dest = locationNameById.get(move.destinationLocationId);
+        p.state.activity = dest ? `heading toward ${dest}` : "on the move";
+      }
+      stagedThisTick.add(p.id);
+      touchedParticipantIds.add(p.id);
+    }
+    for (const f of tick.fired) {
+      stagedThisTick.add(f.participantId);
+      if (f.comms) {
+        const pc = parseOrNull(
+          pendingCommsSchema,
+          { fromParticipantId: f.participantId, kind: f.comms.kind, gist: f.comms.gist, urgency: f.comms.urgency },
+          sink,
+          "merge.movement.pending_comms",
+        );
+        if (pc) firedComms.push(pc);
+      }
+      if (f.directive?.trim()) stagedDirectives.push(f.directive.trim());
+    }
+
+    // Open new staged intents from the director's story decision (names → ids).
+    const newIntents: StagedIntent[] = [];
+    for (const stage of results.director?.stageMovement?.stage ?? []) {
+      const npc = findParticipant(stage.npcName, parts);
+      const dest = resolveSessionLocation(stage.destinationName, bundle.locations);
+      if (!npc || npc.isUser || !dest) {
+        sink.push(
+          diag("warn", "merge.movement.intent_unresolved", `staged movement "${stage.npcName}" → "${stage.destinationName}" dropped`, {
+            context: { npcResolved: !!npc, destResolved: !!dest },
+          }),
+        );
+        continue;
+      }
+      const dup = [...tick.intents, ...newIntents].some(
+        (s) => s.participantId === npc.id && s.destinationLocationId === dest.id,
+      );
+      if (dup) continue;
+      const threadId = stage.threadTitle
+        ? bundle.runtime.storyThreads.find((t) => t.title.trim().toLowerCase() === stage.threadTitle?.trim().toLowerCase())?.id
+        : undefined;
+      const parsed = parseOrNull(
+        stagedIntentSchema,
+        {
+          id: newId(),
+          participantId: npc.id,
+          destinationLocationId: dest.id,
+          reason: stage.reason,
+          threadId,
+          onArrival: { comms: stage.onArrivalComms, directive: stage.onArrivalDirective },
+          status: "active",
+          openedAtTurn: turn.number,
+          expiresInTurns: STAGED_INTENT_DEFAULT_BUDGET,
+        },
+        sink,
+        "merge.movement.intent",
+      );
+      if (parsed) newIntents.push(parsed);
+    }
+    stagedIntents = [...tick.intents, ...newIntents];
+
     for (const participant of parts) {
       if (participant.isUser) continue;
+      if (stagedThisTick.has(participant.id)) continue;
       if (participant.locationId !== null && participant.locationId === activeLoc) continue;
       if (touchedParticipantIds.has(participant.id) && simulantTouchedPlacement(participant, simulant, parts)) continue;
       // Per-character daily jitter: shifting the compared minute by -j makes
@@ -1755,7 +1870,11 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     unlockedLoreIds: [...new Set([...bundle.runtime.unlockedLoreIds, ...newlyUnlocked])],
     lastInteractedTurn,
     commsLinks: comms.links,
-    pendingComms: bundle.runtime.pendingComms,
+    // Surface-once: pending messages were rendered in this turn's pre-turn
+    // context already, so they clear here; only beats fired THIS merge ride to
+    // the next turn (reconcile leaves the queue untouched). Capped as a guard.
+    pendingComms: reconcile ? bundle.runtime.pendingComms : firedComms.slice(-PENDING_COMMS_CAP),
+    stagedIntents,
     ...(affinityDecay ? { lastAffinityDecayAt: affinityDecay.lastAffinityDecayAt } : {}),
   };
 
@@ -1781,6 +1900,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
         thresholdHints,
         arrivals,
         departures,
+        stagedDirectives,
       });
 
   return {

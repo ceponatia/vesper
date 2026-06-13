@@ -20,12 +20,14 @@ const SYSTEMS = {
 
 describe("agent system prompts", () => {
   it("stays within each agent's prompt budget (≈4 chars/token)", () => {
-    // The others hug ~600 tokens. The director carries the richest output
-    // contract (7 fields) plus the four thread signals (touch/develop/propose/
-    // resolve), the thread-lifecycle rules, and three worked examples (develop,
-    // typed-propose+resolve, and one-subject-one-thread consolidation), so it
-    // gets a larger ceiling (~1.1k tokens) — see docs/story-threads.md.
-    const budget = (name: string) => (name === "DIRECTOR_SYSTEM" ? 4600 : 2600);
+    // Simulant/archivist hug ~600 tokens. The director carries the richest
+    // contract — seven fields, four thread signals, the stageMovement channel
+    // (phase-4 npc-movement), the thread-lifecycle rules, and four worked
+    // examples — so it gets a larger ceiling (~1.5k tokens). Continuity earns a
+    // little extra over the base for the comms-location-contradiction clause
+    // (npc-movement-spec) — see docs/story-threads.md, docs/perception.md.
+    const budget = (name: string) =>
+      name === "DIRECTOR_SYSTEM" ? 6000 : name === "CONTINUITY_SYSTEM" ? 2900 : 2600;
     for (const [name, text] of Object.entries(SYSTEMS)) {
       expect(text.length, name).toBeLessThan(budget(name));
     }
@@ -256,8 +258,13 @@ describe("buildDirectorPrompt", () => {
       ],
       turnNumber: 5,
       presentNames: ["Maya"],
+      absentNpcs: [{ name: "Rhett", locationName: "The Docks" }],
+      locationNames: ["The Kitchen", "The Docks", "Apartment Hallway"],
+      stagedIntents: [],
     });
     expect(text).toContain("Turn number: 5");
+    expect(text).toContain("Absent characters (off-screen — where they are now): Rhett (The Docks)");
+    expect(text).toContain("Locations you can send someone to: The Kitchen, The Docks, Apartment Hallway");
     expect(text).toContain(
       "- [th_brother] Maya's missing brother (investigation, open; opened turn 1, last touched turn 3, touched 2×, 2 developments) — Unanswered letters.",
     );

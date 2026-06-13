@@ -270,13 +270,17 @@ export function buildPresenceRoster(
   const commsLines: string[] = [];
   const commsNames = new Set<string>();
   if (channels) {
+    const locById = new Map(bundle.locations.map((l) => [l.id, l.name]));
     const presentSet = new Set(groups?.present ?? []);
     for (const npc of npcs(bundle)) {
       if (channels.get(npc.id) !== "comms" || presentSet.has(npc.displayName)) continue;
       commsNames.add(npc.displayName);
       const link = bundle.runtime.commsLinks.find((c) => c.withParticipantId === npc.id);
       const kind = link?.kind ?? "call";
-      commsLines.push(`${npc.displayName} (${kind === "text" ? "by text" : "on a call"})`);
+      // Carry where they physically are so the narrator can't have them claim a
+      // contradicted location over the line (Presence fidelity rules 5-6).
+      const where = npc.locationId ? locById.get(npc.locationId) : null;
+      commsLines.push(`${npc.displayName} (${kind === "text" ? "by text" : "on a call"}${where ? `, at ${where}` : ""})`);
     }
   }
 
@@ -291,7 +295,7 @@ export function buildPresenceRoster(
     '## Who is where (authoritative presence roster this turn — see the "Presence fidelity" rules)',
     groups?.present.length ? `Present: ${groups.present.join(", ")}` : "",
     commsLines.length
-      ? `On call/text (present by voice only — may speak, but is NOT physically here; no actions, no appearance, no being touched): ${commsLines.join(", ")}`
+      ? `On call/text (present by voice only — may speak, but is NOT physically here; no actions, no appearance, no being touched; their words must fit where they actually are): ${commsLines.join(", ")}`
       : "",
     nearby.length
       ? `Nearby (one room away — may join this turn ONLY if narrated physically arriving before any dialogue): ${nearby.join(", ")}`

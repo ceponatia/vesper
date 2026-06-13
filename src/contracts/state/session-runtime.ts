@@ -69,6 +69,50 @@ export const storyThreadSchema = z.object({
 
 export type StoryThread = z.infer<typeof storyThreadSchema>;
 
+/**
+ * A director-authored, off-screen staged beat (phase-4 npc-movement, minimal
+ * slice — docs/developer-notes/npc-movement-spec.phase3.md): pre-position an NPC
+ * toward a destination over several ticks, invisibly, and only once they
+ * physically arrive fire an on-arrival payload (a pending message and/or a
+ * next-turn directive). Lets the director set up a beat the narrator cannot
+ * legally play yet — an absent NPC must not text "come to my place" while still
+ * at the clinic; they walk there first. Stored on runtime (JSONB) — no DB
+ * migration. The movement system (server/engine/movement.applyStagedIntents)
+ * owns the lifecycle; the director only proposes (the story decision).
+ */
+export const stagedIntentSchema = z.object({
+  id: z.string().min(1),
+  /** The NPC being moved — resolved participant id (the director names them, the merge resolves). */
+  participantId: z.string().min(1),
+  /** Destination session-location id (resolved from the director's location name). */
+  destinationLocationId: z.string().min(1),
+  /** The verifiable reason this NPC is moving (propose-and-audit) — display + diagnostics. */
+  reason: z.string().default(""),
+  /** Optional link to the narrative thread this beat serves. */
+  threadId: z.string().optional(),
+  /** Fired once, the tick the destination is reached. At least one field is meaningful. */
+  onArrival: z
+    .object({
+      /** Enqueued to runtime.pendingComms — the NPC messages/calls the player. */
+      comms: z
+        .object({
+          kind: z.enum(["call", "text"]).catch("text").default("text"),
+          gist: z.string().default(""),
+          urgency: z.enum(["low", "normal", "high"]).catch("normal").default("normal"),
+        })
+        .optional(),
+      /** A one-line directive pushed into the next brief so the narrator plays the beat. */
+      directive: z.string().optional(),
+    })
+    .default({}),
+  status: z.enum(["active", "resolved", "cancelled"]).catch("active").default("active"),
+  openedAtTurn: z.number().int().min(0).default(0),
+  /** Give-up budget: cancelled if not arrived within this many turns of openedAtTurn. */
+  expiresInTurns: z.number().int().positive().catch(6).default(6),
+});
+
+export type StagedIntent = z.infer<typeof stagedIntentSchema>;
+
 export const sessionRuntimeSchema = z.object({
   storyThreads: z.array(storyThreadSchema).default([]),
   visitedLocationIds: z.array(z.string()).default([]),
@@ -82,6 +126,8 @@ export const sessionRuntimeSchema = z.object({
   commsLinks: z.array(commsLinkSchema).default([]),
   /** NPC-initiated messages awaiting the player (phase-4 populates; renderer ships v1). */
   pendingComms: z.array(pendingCommsSchema).default([]),
+  /** Director-authored off-screen staged beats (phase-4 npc-movement minimal slice). */
+  stagedIntents: z.array(stagedIntentSchema).default([]),
   flags: z.record(z.string(), z.boolean()).default({}),
 });
 

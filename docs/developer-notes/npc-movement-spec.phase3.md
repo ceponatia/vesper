@@ -19,6 +19,24 @@ the brainstorm §Movement / §Stay-follow-approach.
 > started: drives, traversal, world-tick proposals, approach scores,
 > the schedule-conflict follow term, "I follow her", companion
 > full-path atomicity (waits for multi-hop traversal).
+>
+> **Update 2026-06-13 — director-staged movement slice shipped.** A minimal
+> vertical slice landed to ground director-decided beats that need an absent
+> NPC relocated first (the Eastport "Maya texts she's locked out, but is still
+> at the clinic" bug). Now built: **multi-hop traversal** (`engine/movement.ts`
+> `nextHopToward` — BFS over `session_links`, reusing `checkLinkAccess`,
+> nodes-only, one hop/tick); a **narrow world-tick proposal channel** — the
+> director's `stageMovement` signal (propose-and-audit: names resolve or drop,
+> unreachable/expired/orphaned destinations cancel with `merge.movement.*`);
+> **commitment** (a staged NPC overrides its schedule tick); and **NPC-initiated
+> comms** on arrival (`runtime.pendingComms`, surface-once). The narrator is
+> constrained to quick-chat self-initiated texts (no location claims / meet-ups),
+> with a continuity backstop — see [../perception.md](../perception.md) §Comms,
+> [../turn-engine.md](../turn-engine.md) §Director-staged movement. **Still not
+> started** (the full engine): autonomous drives (schedule-as-drive replacement,
+> needs/affordance/social/goal scoring), approach scores, follow-score changes /
+> "I follow her", companion full-path atomicity, travel-weighted pathfinding,
+> in-transit encounters / LOD.
 
 ## Problem
 

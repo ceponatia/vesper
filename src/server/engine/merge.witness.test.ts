@@ -332,11 +332,28 @@ describe("comms link persistence in planTurnEffects", () => {
     expect(codes(sink)).toContain("merge.comms.unresolved");
   });
 
-  it("carries pendingComms through unchanged", async () => {
+  it("clears surfaced pendingComms after a post-turn merge (surface-once)", async () => {
     const bundle = makeBundle();
     bundle.runtime = { ...emptySessionRuntime(), pendingComms: [{ fromParticipantId: "p-maya", kind: "text", gist: "call me", urgency: "normal" }] };
     const { plan } = await planWith(bundle, results({ simulant: simulant() }));
-    expect(plan.runtime.pendingComms).toEqual(bundle.runtime.pendingComms);
+    // The message already rode in this turn's pre-turn context, so it clears
+    // (no staged beat fired a fresh one this turn).
+    expect(plan.runtime.pendingComms).toEqual([]);
+  });
+
+  it("carries pendingComms through unchanged in reconcile mode", async () => {
+    const bundle = makeBundle();
+    const pending = [{ fromParticipantId: "p-maya", kind: "text" as const, gist: "call me", urgency: "normal" as const }];
+    bundle.runtime = { ...emptySessionRuntime(), pendingComms: pending };
+    const sink = new DiagnosticCollector();
+    const plan = await planTurnEffects({
+      bundle: { ...bundle, participants: [...bundle.participants] },
+      turn: makeTurn(),
+      results: results({ simulant: simulant() }),
+      sink,
+      mode: "reconcile",
+    });
+    expect(plan.runtime.pendingComms).toEqual(pending);
   });
 
   it("leaves comms links untouched in reconcile mode", async () => {

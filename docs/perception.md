@@ -50,11 +50,30 @@ A player can call or text an otherwise-absent character. The flow:
    with `merge.comms.unresolved`; opens/closes log `comms_link_opened` /
    `comms_link_closed` events.
 3. **Surface**: a "Messages & calls" turn-context line lists active links and any
-   `runtime.pendingComms` gists.
+   `runtime.pendingComms` gists. The "On call/text" roster line now carries where
+   the voiced character physically **is** (`Maya (by text, at the clinic)`) so the
+   narrator cannot have them claim a contradicted location over the line.
 
-NPC-*initiated* comms (a character calling the player unprompted), escalation,
-group calls, voicemail content, and rereadable text history are **phase 4 /
-deferred** — `pendingComms` is the empty seam the renderer already reads.
+### NPC-initiated comms (phase-4 staged beats)
+
+A character can now reach the player unprompted — but only as a *grounded* beat,
+set up by the director and walked into place by the movement system, never
+fabricated by the narrator:
+
+- The narrator may have a character text/call the player **on its own** only as a
+  **quick chat** (a passing thought, a check-in) that asserts no physical location
+  and asks for no meeting (Presence fidelity rule 6). A "come over / meet me / I'm
+  locked out, come let me in" beat is not the narrator's to invent.
+- Those location-dependent beats are **director-staged**: the director stages an
+  NPC's off-screen move (see [turn-engine.md](turn-engine.md) §Director-staged
+  movement) and, on arrival, the movement system writes a `runtime.pendingComms`
+  entry. It surfaces **once** on the next "Messages & calls" line, then clears.
+- The continuity checker backstops it: a call/text whose words place the speaker
+  somewhere the roster contradicts, or summon the player to meet them, is a
+  `general` violation (it is fed each absent NPC's location via the roster).
+
+Escalation, group calls, voicemail content, and rereadable text history remain
+**deferred** — see [developer-notes/npc-movement-spec.phase3.md](developer-notes/npc-movement-spec.phase3.md).
 
 ## Symmetric perception (NPC-side)
 

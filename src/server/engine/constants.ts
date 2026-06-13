@@ -65,3 +65,8 @@ export const HEARTBEAT_INTERVAL_MS = 5_000;
 
 /** Minimum cosine similarity for embedding-fuzzy name grounding. */
 export const FUZZY_RESOLVE_MIN = 0.75;
+
+/** Give-up budget (turns) for a director-staged movement intent that never arrives. */
+export const STAGED_INTENT_DEFAULT_BUDGET = 6;
+/** Max NPC-initiated pending messages kept in runtime — surface-once, a runaway guard. */
+export const PENDING_COMMS_CAP = 8;

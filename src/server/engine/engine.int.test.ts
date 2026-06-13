@@ -197,6 +197,53 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     expect(runtime.storyThreads).toEqual([expect.objectContaining({ id: "anchor-1", status: "open", source: "anchor" })]);
   });
 
+  it("walks a director-staged NPC to its destination and fires the pending message on arrival", async () => {
+    const created = await createSessionFromWorld({ worldId, userId: ownerId, title: "Staged beat", embodied: true });
+    if (!created) throw new Error("spawn failed");
+    const sessionId = created.sessionId;
+
+    const parts = await db().select().from(sessionParticipants).where(eq(sessionParticipants.sessionId, sessionId));
+    const maya = parts.find((p) => p.displayName === "Maya");
+    const locs = await db().select().from(sessionLocations).where(eq(sessionLocations.sessionId, sessionId));
+    const garden = locs.find((l) => l.name === "Walled Garden");
+    if (!maya || !garden) throw new Error("fixture lookup failed");
+
+    // Inject a director-staged intent onto the runtime JSONB (the movement
+    // system's input; here we seed it directly to exercise the full pipeline).
+    // Walled Garden is one adjacent hop from the Kitchen, so she arrives + the
+    // text fires in this single turn.
+    const [before] = await db().select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const seeded = {
+      ...(before?.runtime as Record<string, unknown>),
+      stagedIntents: [
+        {
+          id: "si-int",
+          participantId: maya.id,
+          destinationLocationId: garden.id,
+          reason: "heading out to the garden",
+          onArrival: { comms: { kind: "text", gist: "I'm out in the garden — come find me?", urgency: "normal" } },
+          status: "active",
+          openedAtTurn: 0,
+          expiresInTurns: 6,
+        },
+      ],
+    };
+    await db().update(sessions).set({ runtime: seeded }).where(eq(sessions.id, sessionId));
+
+    await drain(submitTurn({ sessionId, userId: ownerId, body: { input: "I tidy the kitchen.", author: "player" } }));
+    await waitForReady(sessionId);
+
+    const [after] = await db().select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const rt = after?.runtime as { stagedIntents: unknown[]; pendingComms: Array<{ fromParticipantId: string; gist: string }> };
+    const [mayaAfter] = await db().select().from(sessionParticipants).where(eq(sessionParticipants.id, maya.id)).limit(1);
+
+    expect(mayaAfter?.locationId).toBe(garden.id); // walked the one hop, off-screen
+    expect(rt.stagedIntents).toEqual([]); // resolved + pruned on arrival
+    expect(rt.pendingComms).toEqual([
+      expect.objectContaining({ fromParticipantId: maya.id, gist: "I'm out in the garden — come find me?" }),
+    ]);
+  });
+
   it("plays a full demo turn: stream, merge, episode, clock, session ready", async () => {
     const created = await createSessionFromWorld({ worldId, userId: ownerId, title: "Full turn", embodied: true });
     if (!created) throw new Error("spawn failed");

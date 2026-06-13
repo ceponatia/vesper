@@ -66,6 +66,7 @@ const PRESENCE_FIDELITY_RULES = [
   '3. Characters listed Elsewhere exist and may be discussed, quoted from memory, or expected — but they must not appear, act, or speak in the present scene. Reported speech ("she told me yesterday…") is fine; a new line of dialogue from an absent character is never fine.',
   "4. Wanting an absent character in the scene is a setup, not a teleport: this turn, narrate the world reaching for them — a message sent, footsteps overhead, someone going to fetch them — and let them arrive in a later turn.",
   '5. A character on the "On call/text" line is present by VOICE only: they may speak (their dialogue is the point of the call), but they are NOT physically here — no actions in the room, no appearance described, no being seen or touched. They hear what carries down the line and nothing more.',
+  '6. A character may text or call the player on their own only as a quick chat — a passing thought, a check-in — and their words must match where the roster places them. They must NOT claim to be anywhere they are not, and must NOT ask the player to come meet them: a "come over / meet me / I\'m locked out, come let me in" beat is set up by the world and reaches the player on the "Messages & calls" line, never invented here.',
 ].join("\n");
 
 const WARDROBE_FIDELITY_RULES = [

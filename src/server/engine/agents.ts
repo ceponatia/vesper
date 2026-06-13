@@ -165,6 +165,19 @@ export async function runPostTurnAgents(
     threads: bundle.runtime.storyThreads.filter((t) => t.status === "open" || t.status === "cooling"),
     turnNumber: turn.number,
     presentNames,
+    // Off-screen NPCs the director may pre-position (the Cast-tab notion of "elsewhere").
+    absentNpcs: bundle.participants
+      .filter((p) => !p.isUser && p.locationId !== anchorLoc)
+      .map((p) => ({ name: p.displayName, locationName: p.locationId ? (locationNameById.get(p.locationId) ?? null) : null })),
+    locationNames: bundle.locations.map((l) => l.name),
+    stagedIntents: bundle.runtime.stagedIntents
+      .filter((s) => s.status === "active")
+      .map((s) => ({
+        id: s.id,
+        npcName: bundle.participants.find((p) => p.id === s.participantId)?.displayName ?? s.participantId,
+        destinationName: locationNameById.get(s.destinationLocationId) ?? s.destinationLocationId,
+        reason: s.reason,
+      })),
   });
 
   const [simulant, archivist, continuity, director] = await Promise.allSettled([

@@ -234,8 +234,21 @@ type SessionRuntime = {
   unlockedLoreIds: string[];
   lastInteractedTurn: Record<string, number>;  // participantId → turn number of last targeted interaction
   commsLinks: Array<{ kind: "call" | "text"; withParticipantId: string; since: number }>;  // active call/text links (perception.md §Comms)
-  pendingComms: Array<{ fromParticipantId: string; kind: "call" | "text"; gist: string; urgency: "low"|"normal"|"high" }>;  // NPC-initiated comms is phase 4; empty seam in v1, renderer reads it
+  pendingComms: Array<{ fromParticipantId: string; kind: "call" | "text"; gist: string; urgency: "low"|"normal"|"high" }>;  // NPC-initiated messages, surface-once; written by the movement system on a staged beat's arrival (turn-engine.md §Director-staged movement)
+  stagedIntents: StagedIntent[];                 // director-staged off-screen NPC moves + on-arrival beats (phase-4 npc-movement minimal slice; turn-engine.md)
   flags: Record<string, boolean>;
+};
+
+type StagedIntent = {                            // a director story decision, executed by engine/movement.ts
+  id: string;
+  participantId: string;                         // the NPC being walked off-screen
+  destinationLocationId: string;
+  reason: string;                                // the verifiable reason (propose-and-audit)
+  threadId?: string;                             // optional link to the narrative thread it serves
+  onArrival: { comms?: { kind: "call" | "text"; gist: string; urgency: "low"|"normal"|"high" }; directive?: string };
+  status: "active" | "resolved" | "cancelled";
+  openedAtTurn: number;
+  expiresInTurns: number;                        // give-up budget (STAGED_INTENT_DEFAULT_BUDGET)
 };
 
 type ExposureMask = {                          // per-sense narration proximity gate, set by the director

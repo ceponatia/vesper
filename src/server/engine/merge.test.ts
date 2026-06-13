@@ -4,7 +4,7 @@ import { emptyItemDefinition, emptyItemInstanceState, type ItemDefinition } from
 import { emptyBrief, type NextTurnBrief } from "@/contracts/state/brief";
 import { emptyParticipantState } from "@/contracts/state/participant-state";
 import { emptySceneGenState } from "@/contracts/state/scene-gen";
-import { emptySessionRuntime, type StoryThread } from "@/contracts/state/session-runtime";
+import { emptySessionRuntime, stagedIntentSchema, type StagedIntent, type StoryThread } from "@/contracts/state/session-runtime";
 import type { AgentResults, DirectorResult, SimulantResult } from "@/contracts/turns/agent-results";
 import { emptyCharacterProfile, emptyWorldLore, emptyWorldStyle } from "@/contracts/world/profile";
 import type { BundleItem, BundleParticipant, BundlePlace, SessionBundle } from "./bundle";
@@ -179,6 +179,7 @@ function director(overrides: Partial<DirectorResult> = {}): DirectorResult {
     memoryQueries: ["tea"],
     exposure: { appearance: "ambient", scent: "none", touch: "none" },
     threadSignals: { touch: [], develop: [], propose: [], resolve: [] },
+    stageMovement: { stage: [], cancel: [] },
     ...overrides,
   };
 }
@@ -1298,5 +1299,103 @@ describe("stagedLocationAnchor", () => {
     expect(anchor.staged).toBeNull();
     expect(anchor.blocked?.target.id).toBe("loc-garden");
     expect(anchor.blocked?.reason).toContain("locked");
+  });
+});
+
+describe("director-staged movement", () => {
+  // Rhett starts in the Garden; the Garden is one adjacent hop from the
+  // (player-occupied) Kitchen, so an intent to the Kitchen arrives in one tick.
+  const stagedIntent = (over: Partial<StagedIntent> = {}): StagedIntent =>
+    stagedIntentSchema.parse({
+      id: "si-rhett",
+      participantId: "p-rhett",
+      destinationLocationId: "loc-kitchen",
+      onArrival: { comms: { kind: "text", gist: "locked out, can I use your phone?" } },
+      openedAtTurn: 1,
+      expiresInTurns: 6,
+      ...over,
+    });
+  const rhettAt = (p: { participants: WorkingParticipant[] }) => p.participants.find((x) => x.id === "p-rhett")?.locationId;
+
+  it("opens an intent from the director's stageMovement (names → ids); the first hop waits for next turn", async () => {
+    const { plan: p } = await plan(
+      {},
+      results({
+        director: director({
+          stageMovement: {
+            stage: [{ npcName: "Rhett", destinationName: "Kitchen", reason: "coming over", onArrivalComms: { kind: "text", gist: "on my way", urgency: "normal" } }],
+            cancel: [],
+          },
+        }),
+      }),
+    );
+    expect(p.runtime.stagedIntents).toHaveLength(1);
+    expect(p.runtime.stagedIntents[0]).toMatchObject({ participantId: "p-rhett", destinationLocationId: "loc-kitchen", status: "active" });
+    expect(rhettAt(p)).toBe("loc-garden"); // created this turn ⇒ has not set out yet
+  });
+
+  it("drops a stage signal naming an unknown NPC or location", async () => {
+    const { plan: p, sink } = await plan(
+      {},
+      results({ director: director({ stageMovement: { stage: [{ npcName: "Nobody", destinationName: "Kitchen", reason: "" }], cancel: [] } }) }),
+    );
+    expect(p.runtime.stagedIntents).toEqual([]);
+    expect(codes(sink)).toContain("merge.movement.intent_unresolved");
+  });
+
+  it("advances a pending intent one hop, then on arrival fires pendingComms + a directive and prunes it", async () => {
+    const { plan: p } = await plan(
+      {
+        runtime: {
+          ...emptySessionRuntime(),
+          stagedIntents: [
+            stagedIntent({ onArrival: { comms: { kind: "text", gist: "locked out, can I use your phone?", urgency: "normal" }, directive: "Rhett is at the door, locked out." } }),
+          ],
+        },
+      },
+      results({}),
+    );
+    expect(rhettAt(p)).toBe("loc-kitchen"); // walked the one hop and arrived
+    expect(p.runtime.stagedIntents).toEqual([]); // resolved on arrival
+    expect(p.runtime.pendingComms).toEqual([
+      { fromParticipantId: "p-rhett", kind: "text", gist: "locked out, can I use your phone?", urgency: "normal" },
+    ]);
+    expect(p.brief.directives).toContain("Rhett is at the door, locked out.");
+    expect(p.brief.arrivals.some((a) => a.includes("Rhett"))).toBe(true); // staged into the player's room
+  });
+
+  it("cancels a pending intent whose destination is unreachable, without marching at the wall", async () => {
+    const { plan: p, sink } = await plan(
+      { runtime: { ...emptySessionRuntime(), stagedIntents: [stagedIntent({ destinationLocationId: "loc-attic" })] } },
+      results({}),
+    );
+    expect(p.runtime.stagedIntents).toEqual([]);
+    expect(rhettAt(p)).toBe("loc-garden");
+    expect(codes(sink)).toContain("merge.movement.unreachable");
+  });
+
+  it("cancels a pending intent by id on the director's signal", async () => {
+    const { plan: p } = await plan(
+      { runtime: { ...emptySessionRuntime(), stagedIntents: [stagedIntent({ id: "si-x" })] } },
+      results({ director: director({ stageMovement: { stage: [], cancel: ["si-x"] } }) }),
+    );
+    expect(p.runtime.stagedIntents).toEqual([]);
+    expect(rhettAt(p)).toBe("loc-garden");
+  });
+
+  it("commitment: a staged NPC is not yanked away by their schedule that turn", async () => {
+    const rhett = participant("p-rhett", "Rhett", "loc-garden", { role: "npc" });
+    rhett.snapshot.schedule = [{ startMinute: 0, endMinute: 1439, locationName: "Attic", activity: "brooding" }];
+    const participants = [
+      participant("p-player", "Brian", "loc-kitchen", { isUser: true, role: "player" }),
+      participant("p-maya", "Maya Brennan", "loc-kitchen", { role: "companion", aliases: ["May"] }),
+      rhett,
+    ];
+    const { plan: p } = await plan(
+      { participants, runtime: { ...emptySessionRuntime(), stagedIntents: [stagedIntent()] } },
+      results({}),
+    );
+    // The intent (→ Kitchen) wins over the schedule (→ Attic).
+    expect(rhettAt(p)).toBe("loc-kitchen");
   });
 });

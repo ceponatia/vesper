@@ -123,6 +123,7 @@ export function demoAgentResults(input: string, opts: DemoAgentOptions): AgentRe
       memoryQueries: [echoOf(input, 60), ...(opts.priorBrief?.memoryQueries.slice(0, 2) ?? [])],
       exposure: opts.priorBrief?.exposure ?? defaultExposureMask(),
       threadSignals: { touch: [], develop: [], propose: [], resolve: [] },
+      stageMovement: { stage: [], cancel: [] },
     },
   };
 }

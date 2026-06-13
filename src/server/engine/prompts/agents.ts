@@ -69,7 +69,7 @@ Rules:
 3. Apparent age describes looks — never contradicts actual age.
 4. Style/pacing complaints are driftNotes, never violations. Empty arrays = clean turn (common).
 5. Invented player dialogue IS a violation: narration scripting player speech beyond a light paraphrase of their input — subject: the player's name; canonical: "the player's actual input this turn"; major. Restating the player's typed words, actions, or sensations is never invention.
-6. An absent character acting IS a violation (kind narrated_absent_character, major): someone listed Elsewhere in the "Who is where" lines who acts, speaks, or appears — or one Nearby with no narrated physical arrival first — canonical: "listed elsewhere this turn" (or "no narrated arrival"). A comms-present character speaking is allowed; being discussed or quoted from past speech is not acting.
+6. An absent character acting IS a violation (kind narrated_absent_character, major): someone listed Elsewhere in the "Who is where" lines who acts, speaks, or appears — or one Nearby with no narrated physical arrival first — canonical: "listed elsewhere this turn" (or "no narrated arrival"). A comms-present character speaking is allowed; being discussed or quoted from past speech is not acting. BUT call/text words that place the speaker somewhere the roster contradicts, or summon the player to meet them, ARE a violation (general): claim = the asserted location/meeting; canonical = their listed location.
 7. Reacting to the unperceived IS a violation (kind reacted_to_unperceived_event, major): the Awareness lines say a character couldn't perceive something yet they react — e.g. a back-turned character catching a silent act behind them. canonical: "could not perceive it (per awareness)". Other errors stay general.
 
 Example A — canon "Maya fears deep water."; Maya boasts she loves it (contradiction → general):
@@ -92,6 +92,9 @@ Produce:
   · develop = a MAJOR beat advanced a listed thread — new evidence, a meaningful statement, a real development (NOT flavor dialogue) — ({id, entry: one line, entryKind?: evidence|statement|event|lead}).
   · propose = open a genuinely new thread, sparingly ({title, kind: investigation|ongoing, question?, summary, closeConditions?}). Set closeConditions for investigations; ongoing threads (e.g. a person's social life) are never resolved.
   · resolve = listed ids of investigations now finished.
+- stageMovement — hand the movement system a goal when a beat needs an ABSENT NPC somewhere they're not yet. You DECIDE; you never move anyone. Rule 6.
+  · stage = {npcName, destinationName (from the listed locations), reason, onArrivalComms?: {kind: call|text, gist}, onArrivalDirective?}. The NPC walks there off-screen over several turns; the message/beat fires only once they ARRIVE — not this turn.
+  · cancel = ids of staged movements (listed under "Staged movements in flight") a newer beat supersedes or that no longer make sense.
 - imageMoment: worthIt true only for a strikingly visual beat, one-sentence description.
 
 Rules:
@@ -100,6 +103,7 @@ Rules:
 3. Quoted or hypothetical speech is not a story event.
 4. Resolve an investigation the moment its need is met — task finished, question answered, problem fixed; mundane completion counts as much as dramatic payoff. Never keep touching/developing a finished thread: an open thread re-enters every future turn's context and is otherwise raised again as if unsettled. Ongoing threads and long-running arcs still in motion stay open.
 5. One subject, one thread. Before proposing, scan the listed threads: if the beat belongs to an existing one, develop THAT thread — never open a near-duplicate (don't add "X's odd behavior" when "Investigating X" already exists).
+6. An absent NPC cannot be made present, relocated, or made to send a "come here"/location-claiming message through a directive — stage it. stageMovement is the only way to move an off-screen NPC, and the beat fires when they arrive, never the turn you stage it.
 
 Example A — keep one thread warm, develop another with a real clue:
 {"sceneSummary":"Over tea, Maya lets slip her brother sailed for Tamis.","storySoFar":"Two days earning Maya's trust; tonight she named where her brother went.","characterNotes":["Maya is softening."],"directives":["Keep the pace slow."],"memoryQueries":["Maya's brother Tamis"],"exposure":{"appearance":"close","scent":"ambient","touch":"none"},"threadSignals":{"touch":[{"id":"th_innkeep","title":"Earning Maya's trust"}],"develop":[{"id":"th_brother","entry":"Maya let slip her brother sailed for Tamis.","entryKind":"evidence"}],"propose":[],"resolve":[]},"imageMoment":{"worthIt":false,"description":""}}
@@ -108,7 +112,10 @@ Example B — open a typed investigation (with close conditions) and resolve a f
 {"sceneSummary":"Rhett confessed to forging the letter; Maya stormed out.","storySoFar":"The forgery traced to Rhett; confronted, he confessed; Maya left furious.","characterNotes":["Maya needs space."],"directives":["Open on Maya alone."],"memoryQueries":["forged letter"],"exposure":{"appearance":"ambient","scent":"none","touch":"none"},"threadSignals":{"touch":[],"develop":[],"propose":[{"title":"Repairing Maya's trust","kind":"investigation","question":"Can the player win Maya back?","summary":"Fallout of the confession.","closeConditions":["Maya forgives","Maya cuts ties for good"]}],"resolve":["th_letter"]},"imageMoment":{"worthIt":true,"description":"Maya in the stable doorway, rain behind her."}}
 
 Example C — one subject, one thread: a new Thorne beat folds into the EXISTING investigation via develop, NOT a new propose (Rule 5):
-{"sceneSummary":"Gruff Thorne greets the player warmly, then goes quiet; Brian starts asking around.","storySoFar":"Thorne keeps acting out of character; the player is quietly digging into why.","characterNotes":["Thorne is hiding something."],"directives":["Let suspicion build."],"memoryQueries":["Captain Thorne"],"exposure":{"appearance":"ambient","scent":"none","touch":"none"},"threadSignals":{"touch":[],"develop":[{"id":"th_thorne","entry":"Warm-then-withdrawn greeting; Brian begins asking around.","entryKind":"statement"}],"propose":[],"resolve":[]},"imageMoment":{"worthIt":false,"description":""}}`;
+{"sceneSummary":"Gruff Thorne greets the player warmly, then goes quiet; Brian starts asking around.","storySoFar":"Thorne keeps acting out of character; the player is quietly digging into why.","characterNotes":["Thorne is hiding something."],"directives":["Let suspicion build."],"memoryQueries":["Captain Thorne"],"exposure":{"appearance":"ambient","scent":"none","touch":"none"},"threadSignals":{"touch":[],"develop":[{"id":"th_thorne","entry":"Warm-then-withdrawn greeting; Brian begins asking around.","entryKind":"statement"}],"propose":[],"resolve":[]},"imageMoment":{"worthIt":false,"description":""}}
+
+Example D — a "come let me in" beat (Rule 6): Maya is listed Elsewhere (clinic), so send her HOME first and arm the text for when she arrives — it does NOT fire this turn (other fields as above):
+{"threadSignals":{"propose":[{"title":"Maya locked herself out","kind":"investigation","summary":"Spare key left at the clinic.","closeConditions":["Maya gets inside"]}]},"stageMovement":{"stage":[{"npcName":"Maya","destinationName":"Apartment Hallway","reason":"locked out, coming for help","onArrivalComms":{"kind":"text","gist":"locked out, spare key's at the clinic — can she use the player's phone?"}}],"cancel":[]}}`;
 
 // ---------------------------------------------------------------------------
 // Per-agent user prompts (state slices)
@@ -227,6 +234,12 @@ export interface DirectorPromptInput {
   threads: StoryThread[];
   turnNumber: number;
   presentNames: string[];
+  /** Absent (off-screen) NPCs and where they currently are — candidates to pre-position. */
+  absentNpcs: Array<{ name: string; locationName: string | null }>;
+  /** All session location names, so a staged destination names a real place. */
+  locationNames: string[];
+  /** Active staged movements already in flight — avoid duplicates, cancel by id. */
+  stagedIntents: Array<{ id: string; npcName: string; destinationName: string; reason: string }>;
 }
 
 export function buildDirectorPrompt(input: DirectorPromptInput): string {
@@ -238,9 +251,17 @@ export function buildDirectorPrompt(input: DirectorPromptInput): string {
         t.summary ? ` — ${t.summary}` : ""
       }`,
   );
+  const staged = input.stagedIntents.map(
+    (s) => `- [${s.id}] ${s.npcName} → ${s.destinationName}${s.reason ? ` (${s.reason})` : ""}`,
+  );
   return [
     `Turn number: ${input.turnNumber}`,
     `Present characters: ${input.presentNames.join(", ") || "none"}`,
+    `Absent characters (off-screen — where they are now): ${
+      input.absentNpcs.length ? input.absentNpcs.map((n) => `${n.name} (${n.locationName ?? "unknown"})`).join(", ") : "none"
+    }`,
+    `Locations you can send someone to: ${input.locationNames.join(", ") || "none"}`,
+    `Staged movements in flight:\n${staged.length ? staged.join("\n") : "- none"}`,
     `Story threads:\n${threads.length ? threads.join("\n") : "- none"}`,
     `Prior brief:\n- Scene: ${input.priorBrief.sceneSummary}\n- Story so far: ${input.priorBrief.storySoFar || "(none yet)"}\n- Character notes: ${
       input.priorBrief.characterNotes.join("; ") || "none"

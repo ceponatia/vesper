@@ -651,7 +651,6 @@ const gameTimeAt = (clockMinutes: number) =>
 
 /** Maya at the kitchen with an active comms link to Rhett (in the garden). */
 function commsBundle(over: Partial<SceneBundleInput> = {}): SceneBundleInput {
-  const base = makeBundle();
   return makeBundle({
     runtime: { ...emptySessionRuntime(), commsLinks: [{ kind: "call", withParticipantId: "p_rhett", since: 0 }] },
     ...over,
@@ -690,7 +689,8 @@ describe("buildPresenceRoster channel awareness", () => {
     const block = buildPresenceRoster(bundle, "loc_kitchen", channels);
     expect(block).toContain("Present: Maya");
     expect(block).toContain("On call/text (present by voice only");
-    expect(block).toContain("Rhett (on a call)");
+    // The comms line carries where they physically are (Presence fidelity 5-6).
+    expect(block).toContain("Rhett (on a call, at Garden)");
     // Rhett is voiced over the phone; he must NOT also be listed Nearby.
     expect(block).not.toContain("Nearby");
   });
@@ -700,7 +700,7 @@ describe("buildPresenceRoster channel awareness", () => {
       runtime: { ...emptySessionRuntime(), commsLinks: [{ kind: "text", withParticipantId: "p_rhett", since: 0 }] },
     });
     const channels = classifyPresenceChannels(bundle, "loc_kitchen");
-    expect(buildPresenceRoster(bundle, "loc_kitchen", channels)).toContain("Rhett (by text)");
+    expect(buildPresenceRoster(bundle, "loc_kitchen", channels)).toContain("Rhett (by text, at Garden)");
   });
 
   it("without a channel map, behaves exactly as the legacy roster", () => {

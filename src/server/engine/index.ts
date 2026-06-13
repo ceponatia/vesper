@@ -2,6 +2,7 @@ export * from "./constants";
 export * from "./intent";
 export * from "./segmenter";
 export * from "./scene";
+export * from "./movement";
 export * from "./demo";
 export * from "./bundle";
 export * from "./relationship-seeds";
