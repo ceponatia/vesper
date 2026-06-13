@@ -12,10 +12,13 @@ import {
   groundAttributeValues,
   groundOutfitItems,
   matchOutfitAgainstLibrary,
+  partitionOutfitReuse,
+  type OutfitItem,
 } from "./character-forge";
-import type { LibraryLookup } from "./library";
+import type { ClothingCandidateLookup, LibraryLookup } from "./library";
 
 const noLibrary: LibraryLookup = async () => [];
+const noCandidates: ClothingCandidateLookup = async () => [];
 
 describe("registry-derived attribute section schema", () => {
   it("accepts registered attribute ids", () => {
@@ -326,16 +329,66 @@ describe("outfit library matching", () => {
   });
 });
 
+describe("partitionOutfitReuse", () => {
+  const candidateIds = new Set(["item_tee", "item_jeans"]);
+  const garment = (over: Partial<OutfitItem> & { name: string }): OutfitItem => ({
+    description: "",
+    coverage: [],
+    opacity: "opaque",
+    sensory: {},
+    tags: [],
+    ...over,
+  });
+
+  it("turns a valid reuseId into a library reference and drops it from fresh garments", () => {
+    const sink = new DiagnosticCollector();
+    const { reuseIds, fresh } = partitionOutfitReuse(
+      { outfit: [garment({ name: "Plain tee", reuseId: "item_tee" }), garment({ name: "Leather jacket" })] },
+      candidateIds,
+      sink,
+    );
+    expect(reuseIds).toEqual(["item_tee"]);
+    expect(fresh.outfit.map((i) => i.name)).toEqual(["Leather jacket"]);
+    expect(sink.items).toEqual([]);
+  });
+
+  it("degrades an unknown reuseId to a fresh garment with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const { reuseIds, fresh } = partitionOutfitReuse(
+      { outfit: [garment({ name: "Mystery hat", reuseId: "item_ghost" })] },
+      candidateIds,
+      sink,
+    );
+    expect(reuseIds).toEqual([]);
+    expect(fresh.outfit.map((i) => i.name)).toEqual(["Mystery hat"]);
+    expect(sink.items.some((d) => d.code === "forge.character.outfit.unknown_reuse" && d.severity === "warn")).toBe(true);
+  });
+
+  it("dedupes a reuseId chosen more than once", () => {
+    const { reuseIds } = partitionOutfitReuse(
+      { outfit: [garment({ name: "Tee A", reuseId: "item_tee" }), garment({ name: "Tee B", reuseId: "item_tee" })] },
+      candidateIds,
+    );
+    expect(reuseIds).toEqual(["item_tee"]);
+  });
+
+  it("leaves every garment fresh when none carry a reuseId", () => {
+    const { reuseIds, fresh } = partitionOutfitReuse({ outfit: [garment({ name: "Wool coat" })] }, candidateIds);
+    expect(reuseIds).toEqual([]);
+    expect(fresh.outfit).toHaveLength(1);
+  });
+});
+
 describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
   it("is deterministic: same input, identical draft", async () => {
-    const input = { prompt: "a weary harbor-master in her forties", userId: "user_1", findItems: noLibrary };
+    const input = { prompt: "a weary harbor-master in her forties", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates };
     const a = await forgeCharacter(input);
     const b = await forgeCharacter(input);
     expect(a).toEqual(b);
   });
 
   it("produces a schema-valid draft with registry-valid creation attributes", async () => {
-    const draft = await forgeCharacter({ prompt: "a weary harbor-master", userId: "user_1", findItems: noLibrary });
+    const draft = await forgeCharacter({ prompt: "a weary harbor-master", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
     expect(characterDraftSchema.safeParse(draft).success).toBe(true);
     expect(draft.name.length).toBeGreaterThan(0);
     expect(draft.profile.bio.length).toBeGreaterThan(0);
@@ -357,7 +410,7 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
   });
 
   it("each section regenerates independently as a patch", async () => {
-    const context = { prompt: "a harbor-master", userId: "user_1", findItems: noLibrary };
+    const context = { prompt: "a harbor-master", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates };
     const profile = await forgeCharacterSection("profile", context);
     expect(profile.name).toBeDefined();
     expect(profile.profile?.attributes).toBeUndefined();

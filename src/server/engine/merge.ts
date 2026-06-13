@@ -1788,8 +1788,8 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
   };
 
   const deps: GroundingDeps = input.deps ?? {
-    resolveLibraryItem: (name) => fuzzyResolve("item", ownerId, name, sink),
-    resolveLibraryLocation: (name) => fuzzyResolve("location", ownerId, name, sink),
+    resolveLibraryItem: (name) => fuzzyResolve("item", ownerId, name, { sink }),
+    resolveLibraryLocation: (name) => fuzzyResolve("location", ownerId, name, { sink }),
   };
 
   const plan = await planTurnEffects({

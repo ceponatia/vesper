@@ -57,23 +57,34 @@ export async function refreshSearchEmbedding(kind: LibraryKind, id: string, sink
   return true;
 }
 
+export interface FuzzyResolveOptions {
+  sink?: DiagnosticSink;
+  /** Minimum similarity to accept an embedding hit (default FUZZY_MIN_SCORE). */
+  minScore?: number;
+  /** items-only: restrict matches to this item kind (e.g. dedupe clothing against clothing). */
+  itemKind?: string;
+}
+
 /**
  * Fuzzy name resolution: exact name (case-insensitive) → character alias →
- * embedding similarity ≥ FUZZY_MIN_SCORE. Returns null rather than a bad
- * guess; an embedding failure degrades to the exact/alias result only.
+ * embedding similarity ≥ minScore (default FUZZY_MIN_SCORE). Returns null rather
+ * than a bad guess; an embedding failure degrades to the exact/alias result only.
  */
 export async function fuzzyResolve(
   kind: LibraryKind,
   ownerId: string,
   name: string,
-  sink?: DiagnosticSink,
+  opts: FuzzyResolveOptions = {},
 ): Promise<FuzzyMatch | null> {
+  const { sink } = opts;
+  const minScore = opts.minScore ?? FUZZY_MIN_SCORE;
+  const kindFilter = kind === "item" && opts.itemKind ? sql` and kind = ${opts.itemKind}` : sql``;
   const normalized = name.trim().toLowerCase();
   if (!normalized) return null;
 
   const exactResult = await db().execute(
     sql`select id, name from ${sql.identifier(TABLE_NAMES[kind])}
-        where owner_id = ${ownerId} and lower(name) = ${normalized}
+        where owner_id = ${ownerId} and lower(name) = ${normalized}${kindFilter}
         limit 1`,
   );
   const exact = parseOrNull(matchRowSchema, exactResult.rows[0] ?? null);
@@ -100,12 +111,12 @@ export async function fuzzyResolve(
   const result = await db().execute(
     sql`select id, name, 1 - (search_embedding <=> ${vec}::vector) as score
         from ${sql.identifier(TABLE_NAMES[kind])}
-        where owner_id = ${ownerId} and embedder = ${currentEmbedder()} and search_embedding is not null
+        where owner_id = ${ownerId} and embedder = ${currentEmbedder()} and search_embedding is not null${kindFilter}
         order by search_embedding <=> ${vec}::vector
         limit 1`,
   );
   const best = parseOrNull(scoredRowSchema, result.rows[0] ?? null);
-  if (!best || best.score < FUZZY_MIN_SCORE) return null;
+  if (!best || best.score < minScore) return null;
   return best;
 }
 

@@ -7,7 +7,7 @@ import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral } from "@/server/ai";
 import { db, images, items } from "@/server/db";
 import { escapeLikePattern } from "@/server/authoring";
-import { refreshSearchEmbedding, type LibraryKind } from "@/server/memory";
+import { fuzzyResolve, ITEM_DEDUPE_MIN_SCORE, refreshSearchEmbedding, type LibraryKind } from "@/server/memory";
 import { absoluteImagePath, type ImageEntityKind } from "@/server/images";
 import { startJob } from "./jobs";
 import { errorText } from "./respond";
@@ -137,6 +137,27 @@ export async function materializeSuggestedItems(
     if (match) {
       sink.push(diag("info", "api.library.suggested_item.reused", `"${name}" matched an existing library item`));
       ids.push(match.id);
+      continue;
+    }
+
+    // Backstop for the agent's reuse pass (docs/authoring.md): a fresh garment
+    // whose name is near-identical to an existing same-kind item collapses into
+    // it rather than spawning a near-duplicate. Conservative threshold so only
+    // obvious dupes merge; an embedding failure degrades to a new insert.
+    const fuzzy = await fuzzyResolve("item", ownerId, name, {
+      minScore: ITEM_DEDUPE_MIN_SCORE,
+      itemKind: def.kind,
+      sink,
+    });
+    if (fuzzy) {
+      sink.push(
+        diag(
+          "info",
+          "api.library.suggested_item.fuzzy_reused",
+          `"${name}" reused near-identical existing item "${fuzzy.name}" (${fuzzy.score.toFixed(2)})`,
+        ),
+      );
+      ids.push(fuzzy.id);
       continue;
     }
 

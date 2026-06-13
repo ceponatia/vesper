@@ -15,7 +15,14 @@ import {
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { generateChecked } from "@/server/ai";
-import { findItemsByName, type LibraryLookup } from "./library";
+import {
+  CANDIDATE_LIMIT,
+  findItemsByName,
+  listClothingCandidates,
+  type ClothingCandidate,
+  type ClothingCandidateLookup,
+  type LibraryLookup,
+} from "./library";
 import { emptyCharacterDraft, type CharacterDraft } from "./drafts";
 
 /**
@@ -36,6 +43,8 @@ export interface CharacterForgeContext {
   draft?: CharacterDraft;
   /** Item-library lookup; defaults to an ILIKE query against the items table. */
   findItems?: LibraryLookup;
+  /** Wardrobe reuse candidates for the outfit agent; defaults to a DB query. */
+  listCandidates?: ClothingCandidateLookup;
   /**
    * Set false to disable the demo fallbacks: failed sections degrade to empty
    * defaults instead of sample content. Use wherever the result is persisted
@@ -67,6 +76,7 @@ export interface ForgeCharacterInput {
   userId: string;
   sink?: DiagnosticSink;
   findItems?: LibraryLookup;
+  listCandidates?: ClothingCandidateLookup;
   useFallbacks?: boolean;
 }
 
@@ -430,6 +440,8 @@ export function fillCoreVisualDefaults(
 
 const outfitItemSchema = z.object({
   name: z.string().min(1),
+  /** Reuse an existing wardrobe item by its candidate id instead of defining a new garment. */
+  reuseId: z.string().optional().catch(undefined),
   description: z.string().default(""),
   /** Coverage template id (contracts/items/clothing-categories.ts); anchors coverage + layer. */
   category: z.string().optional().catch(undefined),
@@ -451,6 +463,46 @@ const outfitSectionSchema = z.object({
 });
 
 export type OutfitSection = z.infer<typeof outfitSectionSchema>;
+export type OutfitItem = z.infer<typeof outfitItemSchema>;
+
+export interface OutfitReusePartition {
+  /** Existing library item ids the agent chose to reuse (deduped, in order). */
+  reuseIds: string[];
+  /** Entries with no valid reuse, to be grounded as new garments. */
+  fresh: OutfitSection;
+}
+
+/**
+ * Split the agent's outfit into reuse references and fresh garments. A reuseId
+ * naming a real candidate becomes a library reference; an unknown reuseId
+ * (the model hallucinated it) degrades to a fresh garment grounded from its own
+ * fields, with a diagnostic (docs/resilience.md §1) — never a failed forge.
+ */
+export function partitionOutfitReuse(
+  section: OutfitSection,
+  candidateIds: ReadonlySet<string>,
+  sink?: DiagnosticSink,
+  code = "forge.character.outfit",
+): OutfitReusePartition {
+  const reuseIds: string[] = [];
+  const fresh: OutfitItem[] = [];
+  for (const item of section.outfit) {
+    const reuseId = item.reuseId?.trim();
+    if (reuseId) {
+      if (candidateIds.has(reuseId)) {
+        if (!reuseIds.includes(reuseId)) reuseIds.push(reuseId);
+        continue;
+      }
+      sink?.push(
+        diag("warn", `${code}.unknown_reuse`, `ignored unknown reuse id "${reuseId}" on "${item.name}"; drafting it as a new garment`, {
+          context: { item: item.name, reuseId },
+        }),
+      );
+    }
+    fresh.push(item);
+  }
+  return { reuseIds, fresh: { outfit: fresh } };
+}
 
 /**
  * Validate coverage against the body-location registry (unknown ids drop with
@@ -507,7 +559,7 @@ export function groundOutfitItems(section: OutfitSection, sink?: DiagnosticSink,
 const OUTFIT_SYSTEM =
   "You design a character's default outfit for a roleplaying engine. Each garment lists which body locations it covers and which layer it sits on. Layers: 0 underwear, 1 base, 2 mid, 3 outerwear.";
 
-function outfitPrompt(context: CharacterForgeContext): string {
+function outfitPrompt(context: CharacterForgeContext, candidates: readonly ClothingCandidate[]): string {
   const locationIds = bodyLocationRegistry.all
     .filter((l) => l.coverageRelevant)
     .map((l) => l.id)
@@ -524,6 +576,21 @@ function outfitPrompt(context: CharacterForgeContext): string {
     `Clothing categories (set one per garment where it fits; it anchors coverage): ${clothingCategories.map((c) => c.id).join(", ")}`,
     "",
     "Cover only what the garment really covers. A t-shirt covers chest, back, shoulders, waist, upper_arms — never forearms or hands. Note that arms includes hands and torso includes neck, so prefer the specific parts.",
+  );
+  if (candidates.length > 0) {
+    lines.push(
+      "",
+      'You may reuse a wardrobe item this character already owns instead of inventing one: set that garment\'s "reuseId" to the listed id. Prefer reusing an existing generic basic that fits (any t-shirt, jeans, sweater, plain footwear) — minor colour or detail differences do not matter. Define a NEW garment (leave reuseId unset) for a signature or character-defining piece, or when nothing listed fits.',
+      "",
+      "Existing wardrobe you can reuse:",
+      ...candidates.map((c) => {
+        const coverage = c.coverage.length > 0 ? ` — covers ${c.coverage.join(", ")}` : "";
+        const layer = c.layer === undefined ? "" : ` (layer ${c.layer})`;
+        return `- ${c.id}: ${c.name}${layer}${coverage}`;
+      }),
+    );
+  }
+  lines.push(
     "",
     "Suggest 3-6 garments for the character's everyday default outfit, with a short sensory description each.",
   );
@@ -531,24 +598,45 @@ function outfitPrompt(context: CharacterForgeContext): string {
 }
 
 async function forgeOutfitSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
+  const listCandidates = context.listCandidates ?? listClothingCandidates;
+  let candidates: ClothingCandidate[] = [];
+  try {
+    candidates = await listCandidates(context.userId, CANDIDATE_LIMIT);
+  } catch (err) {
+    context.sink?.push(
+      diag("warn", "forge.character.outfit.candidates_failed", `wardrobe candidate lookup failed: ${errorText(err)}`),
+    );
+  }
+  if (candidates.length >= CANDIDATE_LIMIT) {
+    context.sink?.push(
+      diag(
+        "info",
+        "forge.character.outfit.candidates_capped",
+        `offered the ${CANDIDATE_LIMIT} most-recent wardrobe items as reuse candidates; older items were not shown to the agent`,
+      ),
+    );
+  }
+
   const { value } = await generateChecked({
     schema: outfitSectionSchema,
     system: OUTFIT_SYSTEM,
-    prompt: outfitPrompt(context),
+    prompt: outfitPrompt(context, candidates),
     temperature: 0.5,
     code: "forge.character.outfit",
     sink: context.sink,
     fallback: context.useFallbacks === false ? undefined : demoCharacterOutfitSection,
   });
   const section = value ?? outfitSectionSchema.parse({});
-  const items = groundOutfitItems(section, context.sink);
+  const { reuseIds, fresh } = partitionOutfitReuse(section, new Set(candidates.map((c) => c.id)), context.sink);
+  const items = groundOutfitItems(fresh, context.sink);
   const { defaultOutfit, suggested } = await matchOutfitAgainstLibrary(
     items,
     context.userId,
     context.findItems ?? findItemsByName,
     context.sink,
   );
-  return { profile: { defaultOutfit }, suggestedItems: suggested };
+  // Explicit reuses lead; library name-matches on fresh garments follow (deduped).
+  return { profile: { defaultOutfit: [...new Set([...reuseIds, ...defaultOutfit])] }, suggestedItems: suggested };
 }
 
 /**

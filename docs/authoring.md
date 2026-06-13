@@ -13,11 +13,11 @@
    3. **Seeded pick** — anything still unset gets a default drawn from its surviving range (`fillCoreVisualDefaults`; FNV-1a over concept+id, so different concepts vary while the same input forges the same draft). No range ⇒ the pick falls through to the full `allowedValues` plus an info diagnostic (`forge.character.attributes.unconstrained_default`).
 
    Everything else stays sparse-is-correct: unfillable attributes are simply omitted.
-3. **Outfit agent**: suggests a default outfit as item drafts (clothing kind, coverage, layer) matched against the caller's item library by name/embedding; unmatched suggestions become new item drafts flagged `suggested`.
+3. **Outfit agent**: suggests a default outfit as item drafts (clothing kind, coverage, layer). It is shown the caller's existing clothing as **reuse candidates** (`listClothingCandidates`: most-recently-updated first, capped at `CANDIDATE_LIMIT`) and may set a garment's `reuseId` to one of them instead of inventing it. The prompt's policy is *reuse generic basics (any t-shirt/jeans/sweater — colour differences don't matter), define a new garment for a signature/character-defining piece*; per-garment judgment lives with the model, not a fixed threshold. A hallucinated `reuseId` degrades to a fresh garment (`forge.character.outfit.unknown_reuse`); the remaining new garments are still name-matched against the library, and unmatched ones become new item drafts flagged `suggested`.
 
 The forge returns a **draft** (never auto-saves). The forge UI renders it as the same form used for manual editing — accept, tweak any field, regenerate any single section (each agent can re-run independently), then save. After save, the avatar pipeline can run from the attributes.
 
-On save, `suggestedItems` in the create body are materialized as real library items (`materializeSuggestedItems` in `server/api/library.ts`): a suggestion whose name matches an existing item reuses it — never a duplicate — and new rows keep the `suggested` tag; the resulting ids are appended to `profile.defaultOutfit`. A bad suggestion degrades (invalid coverage ids dropped with a diagnostic) and never fails the save.
+On save, `suggestedItems` in the create body are materialized as real library items (`materializeSuggestedItems` in `server/api/library.ts`): a suggestion whose name matches an existing item reuses it — never a duplicate. Failing an exact-name match, a **conservative embedding backstop** (`fuzzyResolve` at `ITEM_DEDUPE_MIN_SCORE`, same item kind) collapses a near-identical garment the agent missed (`api.library.suggested_item.fuzzy_reused`); an embedding failure degrades to a fresh insert. New rows keep the `suggested` tag; the resulting ids are appended to `profile.defaultOutfit`. A bad suggestion degrades (invalid coverage ids dropped with a diagnostic) and never fails the save.
 
 ## World forge
 
@@ -35,7 +35,7 @@ Draft → review UI (tabbed: premise / map / lore / cast / items) → edit anyth
 
 A forge **draft** and a create endpoint's **input** are different shapes by design (drafts use names and suggestions; inputs use ids and definitions). Every forge ships a typed conversion, and the create endpoints use `.strict()` bodies — a draft posted to a create route is a loud 400 (`invalid_body`), never a silently empty save. Don't add a forge without its conversion path.
 
-- **Character**: the create body carries `suggestedItems`; `materializeSuggestedItems` (server/api/library.ts) turns them into library items (reuse-by-name, `suggested` tag) and appends ids to `profile.defaultOutfit`.
+- **Character**: the create body carries `suggestedItems`; `materializeSuggestedItems` (server/api/library.ts) turns them into library items (reuse-by-name, then a conservative embedding backstop, `suggested` tag) and appends ids to `profile.defaultOutfit`.
 - **World**: `createWorldFromDraft` (server/api/world-from-draft.ts) resolves the draft server-side:
   - Cast suggestions with `existingCharacterId` link directly; unlinked names are re-matched against the library (existing characters are never regenerated); the rest are **forged into real character rows** at save time, capped at `MAX_GENERATED_CAST` (3).
   - Cast generation runs with `useFallbacks: false` — persisted rows must never get demo sample content. A failed generation degrades to a skeletal stub (conceptNote as bio, tagged `stub`) with a diagnostic; the save itself never fails on a bad generation. Recovery is post-save: edit/regenerate from the library, or relink from the world editor.

@@ -26,6 +26,16 @@ export const EPISODE_MIN_SCORE = 0.55;
 /** Library fuzzy name resolution (merge grounding, forge dedup, search). */
 export const FUZZY_MIN_SCORE = 0.75;
 
+/**
+ * Save-time outfit dedupe backstop: collapse a freshly-drafted garment into an
+ * existing library item only when the names are near-identical. Higher than
+ * FUZZY_MIN_SCORE on purpose — the outfit agent already makes the nuanced reuse
+ * calls (docs/authoring.md); the server only catches obvious duplicates it
+ * missed and must not merge two deliberately-distinct pieces (a crimson vs an
+ * emerald gown).
+ */
+export const ITEM_DEDUPE_MIN_SCORE = 0.9;
+
 /** Retrieval fan-out limits (docs/memory.md). */
 export const EPISODE_RETRIEVAL_LIMIT = 5;
 export const FACT_RETRIEVAL_LIMIT = 5;
