@@ -21,6 +21,10 @@ the brainstorm §Proximity. Decisions 15–18 apply.
 > the primitive the perception `sight` channel needs. Engagement,
 > `proximityEvents`, the movement lock, contested checks, and the
 > staging surface are **phase 4**.
+> **Shipped 2026-06-13**: the tier-ladder primitive + scale helpers
+> (`defaultEntryTier`, `distantExists` — the `sight`-channel dependency)
+> landed with phase 3 in `contracts/perception/proximity.ts`; see
+> [../perception.md](../perception.md). Everything else here is phase 4.
 
 ## Problem
 

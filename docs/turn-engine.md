@@ -13,7 +13,8 @@ submitTurn(sessionId, input, author)
       b. fact retrieve               (same queries, facts table)
       c. lore retrieve               (retrieval-tier chunks, eligibility-filtered FIRST)
       d. deterministic, no LLM: intent detection · scene snapshot ·
-         presence roster (Present/Nearby/Elsewhere, see prompts.md) ·
+         presence channels + roster (sight/comms/absent, see perception.md) ·
+         per-NPC awareness blocks · darkness read · comms staging ·
          wardrobe visibility · movement intent + follow scores ·
          canonical character facts · meter/condition surface · NPC affordances
  4. assemble prompt (see prompts.md) → streamText (per-world narrative model)
@@ -33,6 +34,7 @@ Steps 1–5 happen inside the request (the SSE response), but **client disconnec
 - **Movement staging + access**: an enter intent toward an adjacent location stages that location in the prompt — unless the connecting link fails the same `checkLinkAccess` rule the merge enforces (locked, closed time window, sealed door), in which case the movement-guidance block tells the narrator to play the blocked threshold and never describe the far side. The merge re-checks and drops the move regardless (belt and suspenders; the narrator is guidance, the merge is law).
 - **Follow scores**: when the player moves, each co-located NPC gets a deterministic follow likelihood from: relationship **stage** when a `participant_relationships` edge exists (active `relationship` fact count is the fallback; hostile/wary/stranger are gated below likely-follows regardless of score), interaction recency (`runtime.lastInteractedTurn`), activity stickiness (busy NPCs stay), and whether the input addressed them. Surfaced as movement guidance for the narrator, not a hard rule.
 - **Relationship stages**: present NPCs get a stage line in the turn context (feeling toward the player + the perceived edge) — stages, never raw affinity values, go in prompts.
+- **Presence & perception** (`contracts/perception/` + `engine/scene.ts`, see [perception.md](perception.md)): every participant is classified into a presence **channel** (`sight` co-located · `comms` active call/text link · `absent`); the roster renders Present / On call/text / Nearby / Elsewhere. Per sight-present NPC a deterministic **awareness block** (attention × salience) tells the narrator what they can perceive, plus capped pairwise NPC↔NPC blindspot lines. A **comms** staging step: a detected "I call/text X" intent (`detectCommsIntent`) stages that NPC as `comms`-present for the turn and adds them to the speaker-tag list. A **darkness** read (`darknessVerdict(band, ambient.light)`) downgrades visual salience and adds a scene line.
 - **Chain cap**: player input matching ≥ `MAX_CHAINED_ACTIONS` registered actions adds a pacing directive — narrate at most the first two, end the beat there (stop, don't compress).
 - **NPC schedules**: `CharacterProfile.schedule` entries (start/end minute-of-day → location, activity, optional `days` weekday mask) apply to **off-screen** NPCs on clock advance, shifted by a seeded per-character daily jitter (±`SCHEDULE_JITTER_MINUTES`, FNV-1a over `participantId::dayIndex`); on-screen NPCs are never teleported by schedule.
 
@@ -47,12 +49,15 @@ All four: AI SDK `generateChecked` (validate → 1 repair → degraded default, 
   minutesAdvanced: number,                       // clamped 1–480 in reducer
   movements: [{ participantName, toLocationName, reason? }],
   itemEvents: [{ action: "wear"|"remove"|"pick_up"|"drop"|"place"|"store_in"|"take_from"|"open"|"close"|"alter",
-                 itemName, byName?, locationName?, containerName?, stateNote? }],
+                 itemName, byName?, locationName?, containerName?, stateNote?,
+                 salience?: { visual: "obvious"|"subtle", audible: "loud"|"quiet"|"silent" } }],
   meterAdjustments: [{ participantName, meterId, delta, reason? }],          // −1–1
   conditionEvents: [{ op: "add"|"end", participantName, label, severity?, durationMinutes?, promptHint? }],
   attributeChanges: [{ participantName, attributeId, value, note? }],        // rare: haircut, injury
-  activityUpdates: [{ participantName, activity, posture? }],
+  activityUpdates: [{ participantName, activity, posture?,
+                      salience?: { visual: "obvious"|"subtle", audible: "loud"|"quiet"|"silent" } }],
   affinityAdjustments: [{ fromName, towardName, delta, reason? }],            // clamped ±AFFINITY_DELTA_CLAMP per edge per turn in reducer
+  commsEvents: [{ op: "open"|"close", kind: "call"|"text", withName }],       // call/text links → runtime.commsLinks (see perception.md)
 }
 ```
 
@@ -70,7 +75,8 @@ All four: AI SDK `generateChecked` (validate → 1 repair → degraded default, 
 
 ```ts
 {
-  violations: [{ subject, claim, canonical, severity: "minor"|"major" }],
+  violations: [{ subject, claim, canonical, severity: "minor"|"major",
+                 kind: "general" | "narrated_absent_character" | "reacted_to_unperceived_event" }],
   normBreaches: [{ normRule, byName, witnessNames: string[], suggestedReaction }],
   driftNotes: string[],                          // style/POV drift observations
 }
@@ -101,8 +107,8 @@ Violations become next-turn correction directives (self-expiring — the brief i
 3. **Apply item events** to placement/state; wear/remove recompute wardrobe visibility. Placement exclusivity (held / worn / in-location / in-container) is asserted here **and** by a DB CHECK constraint.
 4. **Clock**: resolve turn minutes (`resolveTurnMinutes`) as the **max** — never sum — of travel (the moved player's link `travelMinutes`), registered actions (action-duration registry, matched in the player's input via `matchActions`), **declared rest**, and the clamped `minutesAdvanced` estimate; the dominant cause persists as `agentResults.clock = { minutes, cause }`. Declared rest (`detectDeclaredRest` in `engine/intent.ts`, deterministic regex like the rest of intent detection): "I sleep" / "I go to bed" / "I sleep until morning" / "I wait until evening" resolve to a schedule-aware endpoint — an explicit wake time when stated ("until 7am", ambiguous 12-hour times pick the sooner occurrence; "for 2 hours" is a duration), else the next dawn band start (`DAYLIGHT_BAND_START_MINUTES` in `lib/clock.ts`), wrapping past midnight from the turn-start time. Its minutes clamp to `REST_CLAMP_MINUTES = 960` (`merge.clock.rest_clamped`) — the estimate keeps the normal 480 clamp — and the cause reads as rest ("slept until morning"). Bare "wait" without a parseable time, negations ("I can't sleep"), and registered actions ("I take a nap") never trigger it. Apply meter drift (`perHour × hours` — a rest span drifts in full), then registered-action `meterEffects` (sleep/nap effects still apply), **then** agent meter deltas — agents ground their deltas in the narration, which already reflects elapsed time, so corrections win; expire conditions past duration; tick off-screen NPC schedules (day mask + jitter, see pre-turn). Schedules apply **once, at the post-turn clock**: intermediate slots across a rest span are skipped, not simulated — world-tick batching across the span is reserved for the offscreen-simulation phase. A tick that moves an NPC into or out of the player's location stages an arrival/departure line for the brief (step 8); ticks elsewhere stage nothing.
 5. **Affinity**: decay first — 1 point per whole elapsed in-game week toward 0, never crossing a stage boundary (it stops at the current stage's zero-side edge; a stop logs an `events` row, `type: "affinity_decay_clamped"`), tracked via `runtime.lastAffinityDecayAt` (a backwards marker resets with `merge.affinity.decay_marker_reset`). Then resolve `affinityAdjustments` pairs → upsert `participant_relationships` rows (value + denormalized stage; player-as-`fromName` writes the NPC's *perceived* edge — decision 41); stage transitions log an `events` row (`type: "affinity_stage"`); unresolved pairs → diagnostic (`merge.affinity.unresolved_pair`), dropped.
-6. **Facts**: embed drafts (batch); supersede same-subject actives with cosine ≥ 0.86 (subject compared lowercased); insert, stamped `witnessed_by` (participants co-located with the player — interim semantics, see [memory.md](memory.md)).
-7. **Episode** insert + embed (same `witnessed_by` stamp). **Threads**: apply signals to `runtime.storyThreads` (lifecycle: open → cooling after 8 untouched turns → resolved/archived). Threads are seeded at session spawn from world plot anchors; the top 3 open threads ride in every turn context. Runtime also records `lastInteractedTurn` per NPC (intent targets, the companion speaker, co-located NPCs addressed by name — never mere co-presence), which feeds the follow-score recency term.
+6. **Facts**: embed drafts (batch); supersede same-subject actives with cosine ≥ 0.86 (subject compared lowercased); insert, stamped `witnessed_by` — the **perception-based witness set** (`[player, ...perceivers]`, attention × salience over the turn's salient actions, see [perception.md](perception.md) and [memory.md](memory.md)), not interim co-location.
+7. **Episode** insert + embed (same `witnessed_by` stamp). **Threads**: apply signals to `runtime.storyThreads` (lifecycle: open → cooling after 8 untouched turns → resolved/archived). Threads are seeded at session spawn from world plot anchors; the top 3 open threads ride in every turn context. Runtime also records `lastInteractedTurn` per NPC (intent targets, the companion speaker, co-located NPCs addressed by name — never mere co-presence), which feeds the follow-score recency term. **Comms links**: the simulant's `commsEvents` open/close `runtime.commsLinks` so a call/text survives across turns (`planCommsEvents`); names resolve like other agent refs (unresolved → `merge.comms.unresolved`, dropped), and open/close log `comms_link_opened` / `comms_link_closed` events (see [perception.md](perception.md)).
 8. **Brief**: build `NextTurnBrief` from director output + continuity corrections & norm-breach reactions (max 2, prefixed `Correction:`) + crossed meter thresholds + dropped events + schedule-tick staging (`brief.arrivals`/`brief.departures` — "Mara arrived from the market." / "Tom left toward the docks.", rendered as the turn context's "Comings and goings" block). Staging lines are per-turn and never carry forward from the prior brief; v1 assumes co-located ⇒ perceived (the same interim rule as `witnessed_by`) — the presence phase's witness machinery gates these lines when it ships.
 9. Single transaction commit; persist raw `agent_results` + diagnostics on the turn.
 
@@ -110,7 +116,7 @@ Violations become next-turn correction directives (self-expiring — the brief i
 
 | Agent | Fallback |
 | --- | --- |
-| simulant | `{ minutesAdvanced: 30, movements: [], itemEvents: [], meterAdjustments: [], conditionEvents: [], attributeChanges: [], activityUpdates: [], affinityAdjustments: [] }` — clock still advances, drift still applies |
+| simulant | `{ minutesAdvanced: 30, movements: [], itemEvents: [], meterAdjustments: [], conditionEvents: [], attributeChanges: [], activityUpdates: [], affinityAdjustments: [], commsEvents: [] }` — clock still advances, drift still applies |
 | archivist | `{ episodeSummary: first ~300 chars of narration, facts: [], supersedeHints: [] }` + diagnostic |
 | continuity | `{ violations: [], normBreaches: [], driftNotes: [] }` |
 | director | previous brief with `sceneSummary` replaced by the episode summary; `memoryQueries` carried forward |

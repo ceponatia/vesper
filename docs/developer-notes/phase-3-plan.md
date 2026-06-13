@@ -1,11 +1,16 @@
 # Phase 3 plan — presence & perception v1
 
-Status: **in progress** (2026-06-13). Scope settled (presence &
-perception v1 only — see §Candidate scope and the resolved questions
-below); built in waves by the task plan below. Phases 1–2
-([phase-2-plan.md](phase-2-plan.md)) shipped. The `.phase3.md` doc set
-remains the supporting specs; the phase-4+ split is planned in
-[phase-3-to-4.md](phase-3-to-4.md).
+Status: **completed** (2026-06-13). Presence & perception v1 shipped —
+all waves landed (W0 contracts + T1 merge/witness+comms, T2 pre-turn
+prompt blocks, T3 agent prompts, T4 integration); gates at completion:
+typecheck + lint clean, 937 pure + 89 integration tests green; no DB
+migration (all state is JSONB). System documented in
+[../perception.md](../perception.md). Leftovers all deferred by design to
+phase 4+ (full sound channel, NPC-initiated comms + escalation, per-pair
+proximity tracking / engagement / movement lock / contested transitions,
+banded ambient light, player-unperceived hidden acts v2) — tracked in
+[phase-3-to-4.md](phase-3-to-4.md). Phases 1–2
+([phase-2-plan.md](phase-2-plan.md)) shipped earlier.
 
 ## Candidate scope (decide at authoring time)
 

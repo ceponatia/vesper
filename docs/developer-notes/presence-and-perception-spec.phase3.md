@@ -36,6 +36,15 @@ the brainstorm §Presence / §Symmetric perception. Decisions 8, 11, 13,
 > channel + player-side + pending-messages line; NPC-*initiated* comms
 > defers to phase 4. Observer / god-mode POV is deferred (see
 > [deferred.plan.md](deferred.plan.md)).
+>
+> **Shipped 2026-06-13** ([phase-3-plan.md](phase-3-plan.md) completed):
+> presence channels, the attention × salience witness matrix + awareness
+> blocks (incl. pairwise NPC↔NPC lines), the two continuity violation
+> kinds, darkness + `senseEffects`, comms v1 (player-side), and
+> first-impression channel fidelity. System doc:
+> [../perception.md](../perception.md). The §Gaps items above tagged
+> v2 / phase-4 (full sound channel, NPC-initiated comms, player-unperceived
+> path) stayed deferred.
 
 ## Problem
 

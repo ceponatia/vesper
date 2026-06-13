@@ -153,9 +153,21 @@ type ActiveCondition = {
   durationMinutes?: number;         // engine expires it
   source?: { kind: "narrative" | "item" | "environment" | "manual"; id?: string };
   attributeEffects?: ConditionEffect[];  // overlaid while active with source: "condition", sourceId: condition id
+  senseEffects?: { sight?: "reduced" | "blocked"; hearing?: "reduced" | "blocked" };  // perception impairment (see Perception §darkness)
   promptHint?: string;
 };
 ```
+
+## Perception
+
+`contracts/perception/` — the pure rules answering "who is present" and "who perceived what" each turn; behavior and the engine seams that consume these live in [perception.md](perception.md). Shapes and extension points:
+
+- **Presence channels** (`channels.ts`): every participant is classified relative to the player's scene into `sight` (co-located, full presence), `sound` (audibility-linked — reserved enum slot, the cross-location sound channel is phase 4), `comms` (active call/text link — may speak, not physically present), or `absent` (referenced/remembered only). `classifyPresenceChannels`, `buildPresenceRoster`.
+- **Attention** (`attention.ts`): `deriveAttention({ activity, posture, hint? })` → `{ state, facesAway }` over states `engaged_with | absorbed | idle_alert | asleep_or_impaired` (`idle_alert` = neutral/degraded default). The optional hint comes from `ItemDefinition.attentionHint` (`absorbing | faces_away | outward`).
+- **Salience** (`salience.ts`): every notable action carries `{ visual: obvious | subtle, audible: loud | quiet | silent }` (default obvious + quiet). A stealth marker lowers salience only when a **concealment target** exists ("quietly" to a lover is tone; the same with her unaware mother present is a sneak).
+- **Witness matrix** (`witness.ts`): `perceives(observer, salience, mods?)` is the single arbiter — an observer perceives an action if attention admits its visual **or** audible channel. `mods` stack environmental/per-observer effects (`dark`, per-sense `reduced`/`blocked`, `proximityOverride`).
+- **Darkness** (`darkness.ts`): `darknessVerdict(band, ambient.light)` — a v1 keyword heuristic over daylight `band` × authored `ambient.light`; dark downgrades visual `obvious`→`subtle`. Per-observer sense impairment derives from conditions (`senseModsFromConditions`, reading `ActiveCondition.senseEffects` or a known label map).
+- **Proximity primitive** (`proximity.ts`): the tier ladder (`distant → apart → near → close → contact → entwined`) plus scale helpers `defaultEntryTier(scale)` and `distantExists(scale)`. Phase 3 uses only what `sight` needs (co-located ⇒ `sight`); per-pair tracking is phase 4.
 
 ## Items and wardrobe
 
@@ -167,6 +179,7 @@ type ItemDefinition = {
   layer?: 0 | 1 | 2 | 3;            // 0 underwear … 3 outerwear
   opacity?: "opaque" | "sheer";
   sensory?: { appearance?: string; scent?: string; tactile?: string };
+  attentionHint?: "absorbing" | "faces_away" | "outward";  // perception hint for deriveAttention (see Perception)
   fields?: Record<string, unknown>; // kind-specific extras (capacity, wearable container…)
   tags: string[];
 };
@@ -217,9 +230,11 @@ type StoryThread = {
 type SessionRuntime = {
   storyThreads: StoryThread[];
   visitedLocationIds: string[];
-  encounteredParticipantIds: string[];
+  encounteredParticipantIds: string[];           // full (sight) encounters only — see perception.md first-impression fidelity
   unlockedLoreIds: string[];
   lastInteractedTurn: Record<string, number>;  // participantId → turn number of last targeted interaction
+  commsLinks: Array<{ kind: "call" | "text"; withParticipantId: string; since: number }>;  // active call/text links (perception.md §Comms)
+  pendingComms: Array<{ fromParticipantId: string; kind: "call" | "text"; gist: string; urgency: "low"|"normal"|"high" }>;  // NPC-initiated comms is phase 4; empty seam in v1, renderer reads it
   flags: Record<string, boolean>;
 };
 
@@ -287,6 +302,7 @@ Rules:
 
 - Agent schemas reference world entities **by display name**, never db ids — models are bad at ids; deterministic resolvers ground names to rows (with embedding-fuzzy fallback) and emit diagnostics for misses (`merge.<agent>.unresolved_*` codes).
 - Every agent schema field is `.default()`ed; the schemas double as their own degraded fallbacks ([turn-engine.md](turn-engine.md) §Degraded defaults).
+- Perception (phase 3, see [perception.md](perception.md)): `SimulantResult` item/activity events may carry optional `salience: { visual, audible }`, and the result has a top-level `commsEvents` (`open`/`close`, `call`/`text`, `withName` → `runtime.commsLinks`); each `ContinuityResult.violations[]` entry carries `kind: "general" | "narrated_absent_character" | "reacted_to_unperceived_event"`.
 
 ## Extension checklist
 
