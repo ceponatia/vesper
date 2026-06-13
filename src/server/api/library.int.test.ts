@@ -91,6 +91,21 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
     expect(row?.tags).toContain("suggested");
   });
 
+  it("persists the clothing category into the stored definition", async () => {
+    // Regression: the category template anchors coverage semantics and must
+    // survive materialization, not get dropped on insert (docs/contracts.md).
+    const suggestion = itemDefinitionSchema.parse({
+      kind: "clothing",
+      name: "Forge Category Probe Garment",
+      category: "bra",
+    });
+    const sink = new DiagnosticCollector();
+    const ids = await materializeSuggestedItems(ownerId, [suggestion], sink);
+    expect(ids).toHaveLength(1);
+    const [row] = await db().select({ definition: items.definition }).from(items).where(eq(items.id, ids[0]!));
+    expect((row?.definition as { category?: string }).category).toBe("bra");
+  });
+
   it("does not collapse a deliberately-distinct same-kind garment (conservative threshold)", async () => {
     const sink = new DiagnosticCollector();
     const ids = await materializeSuggestedItems(ownerId, [suggest("Heavy Leather Trench Coat")], sink);

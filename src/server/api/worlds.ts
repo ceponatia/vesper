@@ -355,6 +355,10 @@ async function materializeWorldEntities(
           tags: def.tags,
           definition: {
             coverage: def.coverage,
+            // category template anchors coverage semantics (docs/contracts.md) —
+            // must be persisted so clothing reads as Top/Bra/Footwear/etc.
+            category: def.category,
+            subtype: def.subtype,
             layer: def.layer,
             opacity: def.opacity,
             sensory: def.sensory,

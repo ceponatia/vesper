@@ -181,6 +181,10 @@ export async function materializeSuggestedItems(
         tags: def.tags.includes("suggested") ? def.tags : [...def.tags, "suggested"],
         definition: {
           coverage: def.coverage.filter((id) => !invalid.includes(id)),
+          // category template anchors coverage semantics (docs/contracts.md) —
+          // must be persisted so clothing reads as Top/Bra/Footwear/etc.
+          category: def.category,
+          subtype: def.subtype,
           layer: def.layer,
           opacity: def.opacity,
           sensory: def.sensory,
