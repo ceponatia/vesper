@@ -24,7 +24,7 @@ import { runPostTurnAgents } from "./agents";
 import { activeLocationId, bundlePlayerName, loadSessionBundle, type SessionBundle } from "./bundle";
 import { EPISODE_WINDOW, FACTS_CAP, HEARTBEAT_INTERVAL_MS, MAX_CHAINED_ACTIONS, NARRATIVE_HISTORY_TURNS, OPEN_THREADS_IN_CONTEXT } from "./constants";
 import { demoNarrative } from "./demo";
-import { detectIntent, isOocInput, type SceneIntent } from "./intent";
+import { detectCommsIntent, detectIntent, isOocInput, type SceneIntent } from "./intent";
 import { enqueueJob, registerJobHandler, sessionBusy } from "./jobs";
 import { applyTurnResults, stagedLocationAnchor } from "./merge";
 import { buildStaticRulebook, buildTurnContext } from "./prompts/narrative";
@@ -32,7 +32,10 @@ import { recoverAbandonedTurns } from "./recovery";
 import {
   buildAbsenceNotice,
   buildAffordancesBlock,
+  buildAwarenessBlocks,
   buildCanonicalFactsBlock,
+  buildCommsLine,
+  buildDarknessLine,
   buildFollowGuidance,
   buildGlanceImpressions,
   buildMeterConditionBlock,
@@ -41,7 +44,9 @@ import {
   buildSceneSnapshot,
   buildTurnDigest,
   buildWardrobeBlock,
+  classifyPresenceChannels,
   excerptBio,
+  type CommsStaging,
 } from "./scene";
 import { createSegmenter, parseSegments } from "./segmenter";
 import { resolveWardrobeVisibility } from "@/contracts/items/visibility";
@@ -428,6 +433,24 @@ async function assemblePreTurn(
   const ooc = body.author === "player" && isOocInput(body.input);
   const intent = ooc ? {} : detectIntent(body.input, npcNames, inScopeItemNames);
 
+  // Comms staging (presence-spec §comms): "I call/text X" against ANY session
+  // NPC (the target is usually absent) stages that NPC as comms-present THIS
+  // turn so the narrator may voice them over the line. The simulant persists
+  // the link post-turn; here we only stage + display. A target who is already
+  // sight-present (co-located) is not staged — they are right there to talk to.
+  const sessionNpcs = bundle.participants.filter((p) => !p.isUser);
+  const commsStaging: CommsStaging[] = [];
+  if (!ooc && body.author === "player") {
+    const commsIntent = detectCommsIntent(body.input, sessionNpcs.map((p) => p.displayName));
+    if (commsIntent) {
+      const target = sessionNpcs.find((p) => p.displayName.toLowerCase() === commsIntent.targetName.toLowerCase());
+      const alreadyLinked = target ? bundle.runtime.commsLinks.some((c) => c.withParticipantId === target.id) : false;
+      if (target && target.locationId !== activeLoc && !alreadyLinked) {
+        commsStaging.push({ participantId: target.id, kind: commsIntent.kind });
+      }
+    }
+  }
+
   // Chain cap (docs/developer-notes/time-and-travel-spec.phase3.md §Action durations):
   // when the input stacks several timed activities, the narrator ends the beat
   // after the cap instead of compressing a whole evening into one turn.
@@ -576,6 +599,23 @@ async function assemblePreTurn(
   const gameTime = resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart);
   const lastMinutes = history.at(-1)?.minutes ?? 0;
 
+  // Presence channels anchored on the room being narrated (promptLocationId),
+  // like the roster/snapshot: sight = co-located & perceivable; comms = an
+  // active link or this-turn staging; else absent. Drives the channel-aware
+  // roster + glance impressions, and which absent NPCs may be voiced by phone.
+  const channels = classifyPresenceChannels(bundle, promptLocationId, commsStaging);
+  const commsPresentNames = sessionNpcs.filter((p) => channels.get(p.id) === "comms").map((p) => p.displayName);
+  // Comms-present NPCs join the present speaker list so their down-the-line
+  // dialogue segments into speaker bubbles even though their body is elsewhere.
+  const speakerNpcNames = dedupeStrings([...npcNames, ...commsPresentNames]);
+
+  // Darkness: turn-start clock; an info diagnostic when the light text was
+  // ambiguous so the keyword lists can be tuned (optional, per the task).
+  const darkness = buildDarknessLine(bundle, promptLocationId, gameTime);
+  if (darkness.miss) {
+    sink.push(diag("info", "pipeline.perception.darkness_miss", "night ambient light matched no keyword; defaulting dark"));
+  }
+
   const turnContext = buildTurnContext({
     clockLine: formatGameClock(gameTime),
     elapsedLine: lastMinutes > 0 ? `${formatElapsed(lastMinutes)} since the previous turn` : undefined,
@@ -592,7 +632,8 @@ async function assemblePreTurn(
     // move the roster must describe the room being narrated (its occupants are
     // Present; the room being left becomes Nearby — followers arrive, per the
     // Presence fidelity rules).
-    presenceRoster: buildPresenceRoster(bundle, promptLocationId),
+    presenceRoster: buildPresenceRoster(bundle, promptLocationId, channels),
+    commsBlock: buildCommsLine(bundle, commsStaging),
     wardrobeBlock: buildWardrobeBlock(bundle, { includeSensory }),
     stateBlock: [
       buildMeterConditionBlock(bundle),
@@ -607,7 +648,9 @@ async function assemblePreTurn(
     ]
       .filter(Boolean)
       .join("\n\n"),
-    glanceBlock: buildGlanceImpressions(bundle, intent),
+    glanceBlock: buildGlanceImpressions(bundle, intent, channels),
+    awarenessBlock: buildAwarenessBlocks(bundle, promptLocationId, intent, gameTime, body.input),
+    darknessLine: darkness.line,
     affordancesBlock: buildAffordancesBlock(bundle, promptLocationId),
     followGuidance,
     absenceNotice,
@@ -636,7 +679,9 @@ async function assemblePreTurn(
   }
   messages.push({ role: "user", content: turnContext });
 
-  return { system, messages, npcNames, allNpcNames, ooc };
+  // The present-speaker vocabulary includes comms-present NPCs (they speak down
+  // the line); the segmenter vocabulary (allNpcNames) is every session NPC.
+  return { system, messages, npcNames: speakerNpcNames, allNpcNames, ooc };
 }
 
 function isUnlocked(chunk: { visibility: "public" | "secret"; manuallyUnlocked: boolean; id: string }, unlockedIds: readonly string[]): boolean {

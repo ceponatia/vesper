@@ -6,9 +6,19 @@ import { isConditionExpired, type ActiveCondition } from "@/contracts/conditions
 import { diag, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { ItemDefinition, ItemInstanceState } from "@/contracts/items/item";
 import { applyMeterDrift, crossedThresholdHints, type MeterDefinition } from "@/contracts/meters/registry";
+import {
+  concealedSalience,
+  darknessVerdict,
+  defaultSalience,
+  deriveAttention,
+  hasStealthMarker,
+  perceives,
+  senseModsFromConditions,
+  type Salience,
+} from "@/contracts/perception";
 import { emptyBrief, nextTurnBriefSchema, type NextTurnBrief } from "@/contracts/state/brief";
 import type { ParticipantState } from "@/contracts/state/participant-state";
-import { storyThreadSchema, type SessionRuntime, type StoryThread } from "@/contracts/state/session-runtime";
+import { storyThreadSchema, type CommsLink, type SessionRuntime, type StoryThread } from "@/contracts/state/session-runtime";
 import type {
   AgentResults,
   ArchivistResult,
@@ -19,7 +29,7 @@ import type {
 import type { TurnAuthor } from "@/contracts/turns/stream";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { checkLinkAccess } from "@/contracts/world/access";
-import { minuteOfDay, resolveGameTime } from "@/lib/clock";
+import { daylightBand, minuteOfDay, resolveGameTime, type DaylightBand } from "@/lib/clock";
 import { newId } from "@/lib/ids";
 import { parseOrNull } from "@/lib/parse";
 import { clampAffinity, stageForValue } from "@/contracts/relationships/stages";
@@ -127,8 +137,18 @@ export interface MergePlan {
   affinityUpdates: AffinityUpdate[];
   /** Time-driven affinity decay applied by this merge (post_turn only; always empty in reconcile). */
   affinityDecay: AffinityDecayEdge[];
-  /** Participant ids co-located with the player this turn (interim witness semantics). */
+  /**
+   * Participant ids who perceived this turn (presence-spec §witness sets): the
+   * placed player plus every co-located NPC whose attention let them perceive a
+   * salient action this turn. One set per turn, stamped on every fact draft.
+   */
   witnessedBy: string[];
+  /**
+   * Comms links opened/closed this turn, for the events log (post_turn only;
+   * always empty in reconcile). The persisted link state already lives in
+   * `runtime.commsLinks`; this is just the per-turn audit trail.
+   */
+  commsChanges: CommsChange[];
 }
 
 const SYNTHETIC_EPISODE_CHARS = 300;
@@ -781,6 +801,90 @@ export function planAffinityDecay(
     });
   }
   return { edges, lastAffinityDecayAt: last + weeks * AFFINITY_DECAY_WEEK_MINUTES };
+}
+
+export interface CommsChange {
+  op: "open" | "close";
+  kind: "call" | "text";
+  withParticipantId: string;
+}
+
+export interface CommsPlanResult {
+  /** The merged link list to persist to runtime.commsLinks. */
+  links: CommsLink[];
+  /** Per-turn opens/closes, for the events log. */
+  changes: CommsChange[];
+}
+
+/**
+ * Comms link persistence (presence-and-perception-spec §comms). `open` resolves
+ * `withName` to a participant and adds/replaces that NPC's link (one link per
+ * participant — re-opening replaces in place); `close` removes any link to that
+ * participant. Unresolved names drop with a diagnostic. Pure given the resolver.
+ */
+export function planCommsEvents(
+  events: SimulantResult["commsEvents"],
+  prior: readonly CommsLink[],
+  clockMinutes: number,
+  parts: readonly WorkingParticipant[],
+  sink?: DiagnosticSink,
+): CommsPlanResult {
+  const links = prior.map((l) => ({ ...l }));
+  const changes: CommsChange[] = [];
+  for (const event of events) {
+    const target = findParticipant(event.withName, parts);
+    if (!target) {
+      sink?.push(
+        diag("warn", "merge.comms.unresolved", `comms ${event.op} target "${event.withName}" not found`, {
+          context: { withName: event.withName, op: event.op, kind: event.kind },
+        }),
+      );
+      continue;
+    }
+    const idx = links.findIndex((l) => l.withParticipantId === target.id);
+    if (event.op === "open") {
+      const link: CommsLink = { kind: event.kind, withParticipantId: target.id, since: clockMinutes };
+      if (idx >= 0) links[idx] = link;
+      else links.push(link);
+      changes.push({ op: "open", kind: event.kind, withParticipantId: target.id });
+    } else {
+      if (idx >= 0) {
+        const [removed] = links.splice(idx, 1);
+        changes.push({ op: "close", kind: removed?.kind ?? event.kind, withParticipantId: target.id });
+      }
+      // Closing a link that was never open is a no-op (no diagnostic — benign).
+    }
+  }
+  return { links, changes };
+}
+
+/**
+ * The set of saliences the player's actions carried this turn (presence-spec
+ * §witness sets). The baseline is `obvious/quiet` — a plainly visible turn —
+ * unless the player declared stealth AND there is someone present to hide from
+ * (a co-located non-user participant not named/targeted in the input), in which
+ * case the baseline is concealed. Each player-actor item/activity event that
+ * tagged its own salience joins the set; untagged events fall back to the
+ * baseline. Returns at least the baseline.
+ */
+export function turnSalienceSet(input: {
+  inputText: string;
+  /** Saliences explicitly tagged on the player's own item/activity events. */
+  explicit: readonly Salience[];
+  /** A co-located non-user participant is present who is NOT named/targeted in the input. */
+  hasConcealmentTarget: boolean;
+}): Salience[] {
+  const baseline =
+    hasStealthMarker(input.inputText) && input.hasConcealmentTarget ? concealedSalience() : defaultSalience();
+  const set: Salience[] = [baseline];
+  const seen = new Set<string>([`${baseline.visual}::${baseline.audible}`]);
+  for (const s of input.explicit) {
+    const key = `${s.visual}::${s.audible}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    set.push(s);
+  }
+  return set;
 }
 
 /**
@@ -1437,12 +1541,47 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     sessionId: input.logMissesForSessionId,
   });
 
-  // Witness stamp (decision 3, interim co-location semantics): everyone at
-  // the active location when the turn's facts/episode are written. Write-only
-  // until the knowledge ledger ships; perception refines this to true witness
-  // sets in phase 2.
   const witnessLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
-  const witnessedBy = parts.filter((p) => p.locationId !== null && p.locationId === witnessLoc).map((p) => p.id);
+  const coLocatedNpcs = parts.filter((p) => !p.isUser && p.locationId !== null && p.locationId === witnessLoc);
+
+  // Targeted interactions (decision: co-presence alone never counts):
+  // intent-detected targets, the speaking NPC on companion turns, and
+  // co-located NPCs addressed by name in the player's input. Computed here so
+  // both the witness perception read (engagedWithActor) and the
+  // lastInteractedTurn follow-score recency can reuse it.
+  const interacted = new Set<string>();
+  if (!reconcile) {
+    if (turn.author === "player") {
+      const intent = detectIntent(turn.input, coLocatedNpcs.map((p) => p.displayName), []);
+      for (const name of [intent.lookTarget, intent.touchTarget, intent.smellTarget]) {
+        if (!name) continue;
+        const target = findParticipant(name, parts);
+        if (target && !target.isUser) interacted.add(target.id);
+      }
+      for (const npc of coLocatedNpcs) {
+        if (mentionsParticipant(turn.input, npc)) interacted.add(npc.id);
+      }
+    }
+    if (turn.author === "companion" && turn.speakerParticipantId) interacted.add(turn.speakerParticipantId);
+  }
+
+  // Witness set (presence-and-perception-spec §witness sets): the placed player
+  // plus every co-located NPC who perceived a salient action this turn. Falls
+  // back to interim co-location semantics when there is no placed player to
+  // anchor the turn's salience on. One set per turn, stamped on every draft.
+  const witnessedBy = computeWitnessSet({
+    player,
+    coLocatedNpcs,
+    witnessLoc,
+    parts,
+    simulant,
+    turn,
+    interacted,
+    witnessLight: witnessLoc ? bundle.locations.find((l) => l.id === witnessLoc)?.ambient?.light : undefined,
+    // Turn-START clock for darkness, matching the pre-turn awareness blocks.
+    band: daylightBand(resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart)),
+    sink,
+  });
   for (const draft of factDrafts) draft.witnessedBy = witnessedBy;
 
   // Runtime: visited locations + encountered participants follow the camera.
@@ -1454,27 +1593,15 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     if (!p.isUser && p.locationId !== null && p.locationId === finalActiveLoc) encountered.add(p.id);
   }
 
-  // Targeted interactions (decision: co-presence alone never counts):
-  // intent-detected targets, the speaking NPC on companion turns, and
-  // co-located NPCs addressed by name in the player's input.
   const lastInteractedTurn = { ...bundle.runtime.lastInteractedTurn };
-  if (!reconcile) {
-    const interacted = new Set<string>();
-    if (turn.author === "player") {
-      const coLocated = parts.filter((p) => !p.isUser && p.locationId !== null && p.locationId === witnessLoc);
-      const intent = detectIntent(turn.input, coLocated.map((p) => p.displayName), []);
-      for (const name of [intent.lookTarget, intent.touchTarget, intent.smellTarget]) {
-        if (!name) continue;
-        const target = findParticipant(name, parts);
-        if (target && !target.isUser) interacted.add(target.id);
-      }
-      for (const npc of coLocated) {
-        if (mentionsParticipant(turn.input, npc)) interacted.add(npc.id);
-      }
-    }
-    if (turn.author === "companion" && turn.speakerParticipantId) interacted.add(turn.speakerParticipantId);
-    for (const id of interacted) lastInteractedTurn[id] = turn.number;
-  }
+  for (const id of interacted) lastInteractedTurn[id] = turn.number;
+
+  // Comms links (presence-spec §comms): persist opens/closes to runtime, log
+  // per-turn changes. Post_turn only — reconcile leaves the link state alone
+  // (consistent with affinity/schedule gating).
+  const comms = reconcile
+    ? { links: bundle.runtime.commsLinks, changes: [] as CommsChange[] }
+    : planCommsEvents(simulant.commsEvents, bundle.runtime.commsLinks, clockMinutes, parts, sink);
 
   // Affinity decay (defaults doc §Affinity stages): time-driven, so it only
   // runs when the clock advances — reconcile leaves edges and marker alone.
@@ -1492,6 +1619,8 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     encounteredParticipantIds: [...encountered],
     unlockedLoreIds: [...new Set([...bundle.runtime.unlockedLoreIds, ...newlyUnlocked])],
     lastInteractedTurn,
+    commsLinks: comms.links,
+    pendingComms: bundle.runtime.pendingComms,
     ...(affinityDecay ? { lastAffinityDecayAt: affinityDecay.lastAffinityDecayAt } : {}),
   };
 
@@ -1526,6 +1655,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     affinityUpdates: reconcile ? [] : planAffinityUpdates(simulant.affinityAdjustments, parts, sink),
     affinityDecay: affinityDecay?.edges ?? [],
     witnessedBy,
+    commsChanges: comms.changes,
     participants: parts,
     items,
     touchedItemIds: [...touchedItemIds],
@@ -1548,6 +1678,85 @@ function simulantTouchedPlacement(
   const moved = simulant.movements.some((m) => findParticipant(m.participantName, parts)?.id === participant.id);
   const reTasked = simulant.activityUpdates.some((u) => findParticipant(u.participantName, parts)?.id === participant.id);
   return moved || reTasked;
+}
+
+/**
+ * Compute this turn's witness set (presence-and-perception-spec §witness sets).
+ * Gathers the saliences the player's salient actions carried, then asks
+ * `perceives` per co-located NPC whether any of them got through their
+ * attention/conditions/darkness. Result = the placed player + every NPC who
+ * perceived. Degrades to interim co-location semantics when no placed player
+ * anchors the turn (a companion/director turn with no embodied player). Pushes
+ * `merge.perception.darkness_miss` (info) for ambiguous ambient light; never throws.
+ */
+function computeWitnessSet(input: {
+  player: WorkingParticipant | null;
+  coLocatedNpcs: readonly WorkingParticipant[];
+  witnessLoc: string | null;
+  parts: readonly WorkingParticipant[];
+  simulant: SimulantResult;
+  turn: MergeTurn;
+  interacted: ReadonlySet<string>;
+  witnessLight: string | undefined;
+  band: DaylightBand;
+  sink: DiagnosticSink;
+}): string[] {
+  const { player, coLocatedNpcs, witnessLoc, parts, simulant, turn, interacted, witnessLight, band, sink } = input;
+
+  // No placed player to anchor the turn's salience on: fall back to the interim
+  // co-location stamp (everyone at the witness location perceives).
+  if (!player || player.locationId === null) {
+    return parts.filter((p) => p.locationId !== null && p.locationId === witnessLoc).map((p) => p.id);
+  }
+
+  // Saliences explicitly tagged on the player's own item/activity events.
+  const explicit: Salience[] = [];
+  for (const e of simulant.itemEvents) {
+    if (!e.salience) continue;
+    const actor = e.byName ? findParticipant(e.byName, parts) : player;
+    if (actor?.id === player.id) explicit.push(e.salience);
+  }
+  for (const u of simulant.activityUpdates) {
+    if (!u.salience) continue;
+    if (findParticipant(u.participantName, parts)?.id === player.id) explicit.push(u.salience);
+  }
+
+  // Concealment target: a co-located NPC NOT named/targeted in the input — so a
+  // stealth marker actually has someone to hide from (intimate "quietly" to the
+  // only person present is tone, not a sneak).
+  const hasConcealmentTarget = coLocatedNpcs.some(
+    (npc) => !interacted.has(npc.id) && !mentionsParticipant(turn.input, npc),
+  );
+  const salienceSet = turnSalienceSet({ inputText: turn.input, explicit, hasConcealmentTarget });
+
+  const darkness = darknessVerdict(band, witnessLight);
+  if (darkness.miss) {
+    sink.push(
+      diag("info", "merge.perception.darkness_miss", `ambient light "${witnessLight ?? ""}" matched no keyword — defaulting dark`, {
+        context: { locationId: witnessLoc, light: witnessLight ?? null },
+      }),
+    );
+  }
+
+  const witnessIds: string[] = [player.id];
+  for (const npc of coLocatedNpcs) {
+    const attention = deriveAttention({ activity: npc.state.activity, posture: npc.state.posture });
+    const engagedWithActor =
+      attention.state === "engaged_with" &&
+      (interacted.has(npc.id) || mentionsActorFirstName(npc.state.activity, player));
+    const observer = { attention: attention.state, facesAway: attention.facesAway, engagedWithActor };
+    const mods = { dark: darkness.dark, ...senseModsFromConditions(npc.state.conditions) };
+    if (salienceSet.some((s) => perceives(observer, s, mods))) witnessIds.push(npc.id);
+  }
+  return witnessIds;
+}
+
+/** Does the NPC's activity text mention the player's first name (whole-word, ci)? */
+function mentionsActorFirstName(activity: string, player: WorkingParticipant): boolean {
+  const first = (player.displayName.split(/\s+/)[0] ?? player.displayName).trim().toLowerCase();
+  if (!first) return false;
+  const re = new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+  return re.test(activity.toLowerCase());
 }
 
 // ---------------------------------------------------------------------------
@@ -1697,6 +1906,17 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
         });
       }
     }
+
+    // Comms link opens/closes (presence-spec §comms): the link state itself is
+    // already in plan.runtime.commsLinks; these rows are the per-turn audit log.
+    for (const change of plan.commsChanges) {
+      await tx.insert(events).values({
+        sessionId: bundle.session.id,
+        type: change.op === "open" ? "comms_link_opened" : "comms_link_closed",
+        payload: { withParticipantId: change.withParticipantId, kind: change.kind, turnId: turn.id },
+      });
+    }
+
     for (const item of plan.items) {
       if (!touchedItems.has(item.id)) continue;
       await tx

@@ -11,29 +11,31 @@ import { AGENT_INPUT_CAP, AGENT_NARRATION_CAP } from "./constants";
  * agent's state slice (docs/turn-engine.md §Post-turn agents).
  */
 
-export const SIMULANT_SYSTEM = `You are the simulant: you read one story turn and report what PHYSICALLY changed, as structured data.
+export const SIMULANT_SYSTEM = `You are the simulant: you read one story turn and report what PHYSICALLY changed.
 
 Extract:
-- minutesAdvanced: realistic elapsed game minutes (dialogue 2-5; a meal 30-45; a night's sleep ~480).
-- movements: who ended the turn in a different location (toLocationName from the listed locations).
-- itemEvents: wear/remove/pick_up/drop/place/store_in/take_from/open/close/alter — only items from the listed items. Completed wardrobe changes matter most, however gradual or tender the prose ("I unwrap her scarf and lay it on the table" → remove + place). Fumbling with a garment is not removal; finishing the act is.
+- minutesAdvanced: realistic elapsed minutes (dialogue 2-5; a meal 30-45; sleep ~480).
+- movements: who ended the turn elsewhere (toLocationName from listed locations).
+- itemEvents: wear/remove/pick_up/drop/place/store_in/take_from/open/close/alter — listed items only. Completed wardrobe changes matter most, however gradual the prose ("unwrap her scarf, lay it down" → remove + place). Fumbling isn't removal; finishing is.
 - meterAdjustments: deltas in -1..1 for listed meter ids, justified by events (a shower raises hygiene; a sprint drains energy).
-- conditionEvents: add/end short-lived physical states ("soaked", "sprained ankle"), optional severity/durationMinutes/promptHint.
-- attributeChanges: rare lasting bodily changes only (a haircut, an injury).
-- activityUpdates: each named character's end-of-turn activity (and posture when clear).
-- affinityAdjustments: feeling shifts evidenced by words or deeds (fromName toward towardName; integer delta ±1-2 ordinary, ±4-5 betrayal/confession/rescue). Most turns: none. E.g. the player quietly covers Maya's debt → {"fromName":"Maya","towardName":"Brian","delta":3,"reason":"covered her debt"}.
+- conditionEvents: add/end short-lived states ("soaked", "sprained ankle"); optional severity/durationMinutes/promptHint.
+- attributeChanges: rare lasting bodily changes only (haircut, injury).
+- activityUpdates: each named character's end-of-turn activity (posture when clear).
+- commsEvents: phone/text links opened/closed this turn ({op:"open"|"close", kind:"call"|"text", withName: other party}). "She picks up" → open call; "hangs up" → close; "texts back" → open text. Never invent comms not shown.
+- affinityAdjustments: feeling shifts shown by words or deeds (fromName toward towardName; ±1-2 ordinary, ±4-5 betrayal/rescue). Often none.
 
 Rules:
 1. Use names EXACTLY as written in the lists. Never invent characters, items, or locations.
-2. Ignore quoted, imagined, hypothetical, or remembered speech for physical events — only what actually happened in the scene counts.
-3. Report end-state, not intent ("she reaches for the coat" is not wearing it).
+2. Ignore quoted, imagined, hypothetical, or remembered speech — only what happened counts.
+3. Report end-state, not intent ("reaches for the coat" isn't wearing it).
 4. Empty arrays are correct when nothing changed.
+5. Tag notable itemEvents/activityUpdates with salience {visual, audible}. Default obvious + quiet. visual subtle ONLY for a deliberate sneak with someone present to hide from; "quietly" to a lover stays obvious. audible loud = shouts/crashes; silent = soundless acts.
 
-Example A — input: "I hand Maya the lantern and we walk to the cellar."; narration ends with both in the Cellar:
-{"minutesAdvanced":5,"movements":[{"participantName":"Maya","toLocationName":"Cellar"},{"participantName":"Brian","toLocationName":"Cellar"}],"itemEvents":[{"action":"pick_up","itemName":"lantern","byName":"Maya"}],"meterAdjustments":[],"conditionEvents":[],"attributeChanges":[],"activityUpdates":[{"participantName":"Maya","activity":"exploring the cellar"}],"affinityAdjustments":[]}
+Example A — input: "I quietly pocket the ring while Maya's back is turned"; her phone rings, she answers Rhett (sneak → subtle, answer → obvious; omitted arrays empty):
+{"minutesAdvanced":2,"movements":[],"itemEvents":[{"action":"store_in","itemName":"ring","byName":"Brian","salience":{"visual":"subtle","audible":"silent"}}],"activityUpdates":[{"participantName":"Maya","activity":"on the phone","salience":{"visual":"obvious","audible":"quiet"}}],"commsEvents":[{"op":"open","kind":"call","withName":"Rhett"}]}
 
-Example B — narration: Maya laughs "Imagine if I shaved my head!" and keeps cooking (quoted hypothetical → no attribute change):
-{"minutesAdvanced":3,"movements":[],"itemEvents":[],"meterAdjustments":[],"conditionEvents":[],"attributeChanges":[],"activityUpdates":[{"participantName":"Maya","activity":"cooking"}],"affinityAdjustments":[]}`;
+Example B — Maya laughs "Imagine if I shaved my head!" and keeps cooking (quoted hypothetical → no change):
+{"minutesAdvanced":3,"activityUpdates":[{"participantName":"Maya","activity":"cooking"}]}`;
 
 export const ARCHIVIST_SYSTEM = `You are the archivist: you condense one story turn into memory.
 
@@ -54,26 +56,27 @@ Example A — Maya promises to teach the player to fish tomorrow:
 Example B — Maya turns on Rhett; active facts list contains "Maya trusts Rhett completely.":
 {"episodeSummary":"Maya found the forged letter in Rhett's coat and confronted him; he denied nothing. She left the room without a word.","facts":[{"kind":"relationship","subjectName":"Maya","subjectKind":"character","text":"Maya no longer trusts Rhett after finding the forged letter.","tags":["trust","rhett"],"confidence":0.85}],"supersedeHints":[{"factIndex":0,"oldFactText":"Maya trusts Rhett completely."}]}`;
 
-export const CONTINUITY_SYSTEM = `You are the continuity checker: you audit one turn of narration against canonical truth and world norms. You change nothing; you only flag.
+export const CONTINUITY_SYSTEM = `You are the continuity checker: you audit one turn of narration against canon and norms. You only flag.
 
 Produce:
-- violations: direct contradictions of the provided canonical facts. claim = what the narration asserted; canonical = the contradicted fact; severity minor|major.
-- normBreaches: witnessed breaches of the listed world norms. normRule exactly as listed; byName the breaching character; witnessNames who saw it; suggestedReaction one short in-character beat.
-- driftNotes: brief style/POV drift observations (tense slips, AI-speak).
+- violations: contradictions of the provided canon. claim = what the narration asserted; canonical = the contradicted fact; severity minor|major; kind (see rules 5-7, default general).
+- normBreaches: witnessed breaches of listed norms. normRule exactly as listed; byName the breacher; witnessNames who saw it; suggestedReaction one in-character beat.
+- driftNotes: brief style/POV drift (tense slips, AI-speak).
 
 Rules:
 1. Names exactly as written; never invent entities or norms.
-2. Quoted or hypothetical speech is not a physical breach ("imagine walking in naked" breaks no norm) and not a violation unless it contradicts canon as a claim of fact.
-3. Apparent age describes looks — it never contradicts actual age.
-4. Style or pacing complaints are driftNotes, never violations. Empty arrays = clean turn (the common case).
-5. Invented player dialogue IS a violation: when the narration scripts speech for the player beyond a light paraphrase of their typed input, flag it — subject: the player's name; claim: the invented speech, summarized; canonical: "the player's actual input this turn"; severity major. Restating the player's typed words, actions, or sensations is never invention.
-6. An absent character acting IS a violation: when a character listed Elsewhere in the "Who is where" lines acts or speaks in the scene — or one listed Nearby acts or speaks with no narrated physical arrival (theirs, or the scene moving to them) before their first action or line — flag it: subject: the character's name; claim: what they did, summarized; canonical: "listed elsewhere this turn" (or "no narrated arrival"); severity major. Being discussed, remembered, or quoted from past speech is not acting — never flag those.
+2. Quoted or hypothetical speech is not a breach/violation unless it contradicts canon as a claim of fact.
+3. Apparent age describes looks — never contradicts actual age.
+4. Style/pacing complaints are driftNotes, never violations. Empty arrays = clean turn (common).
+5. Invented player dialogue IS a violation: narration scripting player speech beyond a light paraphrase of their input — subject: the player's name; canonical: "the player's actual input this turn"; major. Restating the player's typed words, actions, or sensations is never invention.
+6. An absent character acting IS a violation (kind narrated_absent_character, major): someone listed Elsewhere in the "Who is where" lines who acts, speaks, or appears — or one Nearby with no narrated physical arrival first — canonical: "listed elsewhere this turn" (or "no narrated arrival"). A comms-present character speaking is allowed; being discussed or quoted from past speech is not acting.
+7. Reacting to the unperceived IS a violation (kind reacted_to_unperceived_event, major): the Awareness lines say a character couldn't perceive something yet they react — e.g. a back-turned character catching a silent act behind them. canonical: "could not perceive it (per awareness)". Other errors stay general.
 
-Example A — canon: "Maya — appears mid twenties. Bio: grew up coastal, fears deep water."; narration has Maya boasting she loves diving in the deep:
-{"violations":[{"subject":"Maya","claim":"Maya loves diving in deep water","canonical":"Maya fears deep water","severity":"major"}],"normBreaches":[],"driftNotes":[]}
+Example A — canon "Maya fears deep water."; Maya boasts she loves it (contradiction → general):
+{"violations":[{"subject":"Maya","claim":"loves deep water","canonical":"Maya fears deep water","severity":"major","kind":"general"}]}
 
-Example B — norm: "public displays of magic are outrageous"; narration: Rhett lights his pipe with a spark spell in the market square while Maya watches:
-{"violations":[],"normBreaches":[{"normRule":"public displays of magic are outrageous","byName":"Rhett","witnessNames":["Maya"],"suggestedReaction":"Maya stiffens and pulls Rhett's arm down, glancing at the crowd."}],"driftNotes":[]}`;
+Example B — roster lists Fatima Elsewhere; she strides in and scolds Rhett, while Maya (awareness: absorbed, back turned) spins to a silent wink behind her:
+{"violations":[{"subject":"Fatima","claim":"scolded Rhett","canonical":"listed elsewhere this turn","severity":"major","kind":"narrated_absent_character"},{"subject":"Maya","claim":"reacted to a wink she couldn't see","canonical":"could not perceive it (per awareness)","severity":"major","kind":"reacted_to_unperceived_event"}],"normBreaches":[]}`;
 
 export const DIRECTOR_SYSTEM = `You are the director: you steer the NEXT turn of the story.
 
@@ -189,6 +192,8 @@ export interface ContinuityPromptInput {
   presenceRoster: string;
   norms: WorldNorm[];
   presentNames: string[];
+  /** Per-character awareness/perception lines rule 7 audits; "" omits the heading (set at integration). */
+  awarenessBlocks?: string;
 }
 
 export function buildContinuityPrompt(input: ContinuityPromptInput): string {
@@ -196,6 +201,7 @@ export function buildContinuityPrompt(input: ContinuityPromptInput): string {
   return [
     `Present characters: ${input.presentNames.join(", ") || "none"}`,
     input.presenceRoster,
+    input.awarenessBlocks ? `Awareness (who can perceive what):\n${input.awarenessBlocks}` : "",
     input.canonicalFactsBlock || "Canonical character facts: none recorded.",
     `World norms:\n${norms.length ? norms.join("\n") : "- none"}`,
     turnSection(input.playerInput, input.narration, input.author),

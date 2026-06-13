@@ -132,6 +132,26 @@ describe("buildStaticRulebook", () => {
     expect(text).toContain("no errands, reminders, logistics, or unrelated topics");
   });
 
+  it("extends presence fidelity with comms (voice-only) rules", () => {
+    const text = buildStaticRulebook(rulebookInput());
+    expect(text).toContain('A character on the "On call/text" line is present by VOICE only');
+    expect(text).toContain("no actions in the room, no appearance described, no being seen or touched");
+  });
+
+  it("ties perception to the Awareness block (react only to what is perceived)", () => {
+    const text = buildStaticRulebook(rulebookInput());
+    expect(text).toContain('the Turn context carries an "Awareness" block, it is authoritative');
+    expect(text).toContain("a character reacts ONLY to what their Awareness line says they notice");
+    expect(text).toContain("Do not have them notice a concealed or unperceived action");
+  });
+
+  it("keeps the new presence/perception rules name-free (cache-stable)", () => {
+    const a = buildStaticRulebook(rulebookInput({ npcNames: ["Maya"] }));
+    const b = buildStaticRulebook(rulebookInput({ npcNames: ["Fatima"] }));
+    const slice = (text: string) => text.slice(text.indexOf("Presence fidelity:"), text.indexOf("Prose style:"));
+    expect(slice(a)).toBe(slice(b));
+  });
+
   it("references the exits lists by their exact rendered heading text", () => {
     // Must match the literal prefixes rendered by scene.buildSceneSnapshot and
     // scene.buildAffordancesBlock (docs/prompts.md §Style rules).
@@ -289,6 +309,42 @@ describe("buildTurnContext", () => {
     expect(text).toContain("No scene narration");
     expect(text).not.toContain("## Player input");
     expect(text).toContain("(OOC: what exits are there?)");
+  });
+
+  it("renders the comms block right after the presence roster", () => {
+    const text = buildTurnContext(
+      contextInput({ commsBlock: "## Messages & calls\nOn a call with Rhett — voice only; they are not physically here." }),
+    );
+    const roster = text.indexOf("## Who is where");
+    const comms = text.indexOf("## Messages & calls");
+    const state = text.indexOf("## Current state");
+    expect(comms).toBeGreaterThan(roster);
+    expect(comms).toBeLessThan(state);
+    expect(text).toContain("On a call with Rhett");
+  });
+
+  it("renders the awareness block after the character impressions", () => {
+    const text = buildTurnContext(
+      contextInput({ awarenessBlock: "## Awareness (who can perceive what this turn)\n- Maya — absorbed in a task:" }),
+    );
+    expect(text.indexOf("## Awareness")).toBeGreaterThan(text.indexOf("## Character impressions"));
+    expect(text).toContain("- Maya — absorbed in a task:");
+  });
+
+  it("weaves the darkness line into the sensory rules and omits it when lit", () => {
+    const text = buildTurnContext(
+      contextInput({ darknessLine: "It is dark here — only obvious, close movement is visible; rely on sound and touch." }),
+    );
+    const sensory = text.indexOf("Sensory rules (this turn):");
+    const dark = text.indexOf("It is dark here");
+    expect(dark).toBeGreaterThan(sensory);
+    expect(buildTurnContext(contextInput())).not.toContain("It is dark here");
+  });
+
+  it("omits the comms and awareness blocks when empty", () => {
+    const text = buildTurnContext(contextInput({ commsBlock: "", awarenessBlock: "" }));
+    expect(text).not.toContain("## Messages & calls");
+    expect(text).not.toContain("## Awareness");
   });
 });
 

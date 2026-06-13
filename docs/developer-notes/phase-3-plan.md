@@ -1,11 +1,11 @@
-# Phase 3 plan — multi-character continuation (skeleton)
+# Phase 3 plan — presence & perception v1
 
-Status: **draft** — placeholder, do not start. Phase 2
-([phase-2-plan.md](phase-2-plan.md)) is in flight; per the program rule
-(later phases get their plan authored at phase start), this file is only
-the nesting anchor for the `.phase3.md` docs below and a parking spot
-for scope notes until phase 2 ships. Author the real plan from the specs
-when phase 3 begins.
+Status: **in progress** (2026-06-13). Scope settled (presence &
+perception v1 only — see §Candidate scope and the resolved questions
+below); built in waves by the task plan below. Phases 1–2
+([phase-2-plan.md](phase-2-plan.md)) shipped. The `.phase3.md` doc set
+remains the supporting specs; the phase-4+ split is planned in
+[phase-3-to-4.md](phase-3-to-4.md).
 
 ## Candidate scope (decide at authoring time)
 
@@ -28,6 +28,56 @@ proximity, movement, and everything downstream become phase 4+. See
 [phase-3-to-4.md](phase-3-to-4.md) for the split. The exact proximity
 *primitive* boundary presence needs is the one remaining scope question
 below.
+
+## Task plan
+
+Built in dependency waves. Wave 0 is the shared contract substrate; the
+three Wave-1 streams are mostly file-disjoint and built in parallel
+(merge.ts · scene/narrative/pipeline/intent · agents.ts), then integrated.
+
+**Wave 0 — perception contracts foundation (shipped 2026-06-13).** New
+`src/contracts/perception/` (pure, tested): presence channels, attention
+derivation, salience + stealth markers, the witness matrix (`perceives`),
+darkness (band × ambient.light + condition `senseEffects`), proximity
+primitive (tier ladder + scale helpers). Schema extensions: simulant
+(per-event salience, `commsEvents`), continuity (violation `kind`),
+`SessionRuntime` (`commsLinks`, `pendingComms`), item (`attentionHint`),
+condition (`senseEffects`); `MAX_NPC_PAIR_AWARENESS_LINES`. No DB
+migration — all runtime state is JSONB.
+
+**T1 (Wave 1A) — merge / post-turn witness + comms.** Compute per-turn
+witness sets from attention × salience (the union of perceivers across
+the turn's salient events + the player), stamp real `witnessed_by`
+(replacing the interim co-location stamp), open/close `runtime.commsLinks`
+from `commsEvents`, log perception `events` rows. Diagnostics:
+`merge.comms.*`, `merge.witness.*`.
+
+**T2 (Wave 1B) — pre-turn / prompt.** Channel computation per participant
+(sight = co-located & perceivable; comms = active link or comms intent
+this turn; else absent); a channel-aware "Who is where" roster; per-NPC
+**awareness blocks** (attention + what they will/won't perceive) incl.
+≤`MAX_NPC_PAIR_AWARENESS_LINES` pairwise NPC↔NPC lines; darkness woven
+into the scene/sensory rules; first-impression **channel fidelity**
+(sight ⇒ full, comms ⇒ voice-only); comms intent detection + same-turn
+staging + a "Messages & calls" line; the proximity primitive wiring for
+the sight channel.
+
+**T3 (Wave 1C) — agent prompts.** Simulant emits per-event `salience`
+(default obvious/quiet; lower only with a concealment target) and
+`commsEvents`; continuity sets the two violation kinds
+(`narrated_absent_character`, `reacted_to_unperceived_event`) with worked
+examples and the awareness/roster inputs.
+
+**T4 — integration + tests.** Typecheck/lint clean; pure + integration
+tests green; cross-cutting tests (absent enacted ⇒ violation; subtle act
+behind an absorbed/back-turned NPC excluded from the witness set;
+comms-present character tags dialogue; darkness degrades sight).
+
+Out of scope (→ phase 4, per [phase-3-to-4.md](phase-3-to-4.md)): the
+full sound channel (cross-location hearing), NPC-initiated comms +
+escalation, per-pair proximity tracking / engagement / movement lock /
+contested transitions, banded ambient light, player-unperceived hidden
+acts (v2).
 
 ## Already done — do not re-plan
 

@@ -9,11 +9,27 @@ import {
   meterDefinitions,
   type MeterDefinition,
 } from "@/contracts/meters/registry";
+import {
+  concealedSalience,
+  darknessVerdict,
+  defaultSalience,
+  deriveAttention,
+  describeAttention,
+  hasStealthMarker,
+  isPresent,
+  perceives,
+  senseModsFromConditions,
+  type DerivedAttention,
+  type PresenceChannel,
+  type Salience,
+} from "@/contracts/perception";
+import { daylightBand, type GameTime } from "@/lib/clock";
 import type { LinkAccess } from "@/contracts/world/access";
 import type { NextTurnBrief } from "@/contracts/state/brief";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
+import { MAX_NPC_PAIR_AWARENESS_LINES } from "./constants";
 import type { SceneIntent } from "./intent";
 
 /**
@@ -238,17 +254,49 @@ export function buildSceneSnapshot(
  * renders nothing. The static rulebook's "Presence fidelity" rules reference
  * this block by heading name.
  */
-export function buildPresenceRoster(bundle: SceneBundleInput, activeLocationId: string | null): string {
+export function buildPresenceRoster(
+  bundle: SceneBundleInput,
+  activeLocationId: string | null,
+  channels?: Map<string, PresenceChannel>,
+): string {
   const groups = groupPresence(bundle, activeLocationId);
-  if (!groups) return "";
+
+  // Comms-present characters (an active link or a comms intent staged this turn)
+  // are present-for-the-narrator regardless of where their body is — they may
+  // be voiced over the phone — so they get their own "On call/text" line even
+  // when they are not co-located. They are surfaced HERE and pulled out of the
+  // Nearby/Elsewhere groups (listing the same NPC twice contradicts itself —
+  // "present by voice" supersedes their physical whereabouts for the narrator).
+  const commsLines: string[] = [];
+  const commsNames = new Set<string>();
+  if (channels) {
+    const presentSet = new Set(groups?.present ?? []);
+    for (const npc of npcs(bundle)) {
+      if (channels.get(npc.id) !== "comms" || presentSet.has(npc.displayName)) continue;
+      commsNames.add(npc.displayName);
+      const link = bundle.runtime.commsLinks.find((c) => c.withParticipantId === npc.id);
+      const kind = link?.kind ?? "call";
+      commsLines.push(`${npc.displayName} (${kind === "text" ? "by text" : "on a call"})`);
+    }
+  }
+
+  // A grouped entry is "Name (Location)" — strip the suffix to test membership.
+  const isComms = (entry: string) => commsNames.has(entry.replace(/\s*\([^)]*\)\s*$/, ""));
+  const nearby = (groups?.nearby ?? []).filter((e) => !isComms(e));
+  const elsewhere = (groups?.elsewhere ?? []).filter((e) => !isComms(e));
+
+  if (!groups && commsLines.length === 0) return "";
 
   return [
     '## Who is where (authoritative presence roster this turn — see the "Presence fidelity" rules)',
-    groups.present.length ? `Present: ${groups.present.join(", ")}` : "",
-    groups.nearby.length
-      ? `Nearby (one room away — may join this turn ONLY if narrated physically arriving before any dialogue): ${groups.nearby.join(", ")}`
+    groups?.present.length ? `Present: ${groups.present.join(", ")}` : "",
+    commsLines.length
+      ? `On call/text (present by voice only — may speak, but is NOT physically here; no actions, no appearance, no being touched): ${commsLines.join(", ")}`
       : "",
-    groups.elsewhere.length ? `Elsewhere: ${groups.elsewhere.join(", ")}` : "",
+    nearby.length
+      ? `Nearby (one room away — may join this turn ONLY if narrated physically arriving before any dialogue): ${nearby.join(", ")}`
+      : "",
+    elsewhere.length ? `Elsewhere: ${elsewhere.join(", ")}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -286,6 +334,259 @@ function groupPresence(
     }
   }
   return { present, nearby, elsewhere };
+}
+
+// ---------------------------------------------------------------------------
+// Presence channels (presence-and-perception-spec.phase3.md §presence channels)
+// ---------------------------------------------------------------------------
+
+/** participantId → which channel a comms intent / staged link opens this turn. */
+export interface CommsStaging {
+  participantId: string;
+  kind: "call" | "text";
+}
+
+/**
+ * Classify every session NPC by presence channel for the active location
+ * (T2 channel computation). v1 has no per-pair tracking, so co-location ⇒
+ * `sight` (simple rule, decision 11 interim): even at open/expanse scale a
+ * co-located NPC is sight-present — possibly distant (see `distantExists`), but
+ * still on the visual channel. `comms` is an active `runtime.commsLinks` entry
+ * OR a comms intent staged THIS turn; `absent` is everyone else (Nearby and
+ * Elsewhere stay absent for channel purposes — they enter only via the Presence
+ * fidelity rules). Returns a map keyed by participant id; the player is never
+ * included.
+ */
+export function classifyPresenceChannels(
+  bundle: SceneBundleInput,
+  activeLocationId: string | null,
+  staged?: readonly CommsStaging[],
+): Map<string, PresenceChannel> {
+  const channels = new Map<string, PresenceChannel>();
+  const loc = bundle.locations.find((l) => l.id === activeLocationId);
+  const linkedIds = new Set(bundle.runtime.commsLinks.map((c) => c.withParticipantId));
+  const stagedIds = new Set((staged ?? []).map((s) => s.participantId));
+
+  for (const npc of npcs(bundle)) {
+    if (loc && npc.locationId === loc.id) {
+      channels.set(npc.id, "sight");
+    } else if (linkedIds.has(npc.id) || stagedIds.has(npc.id)) {
+      channels.set(npc.id, "comms");
+    } else {
+      channels.set(npc.id, "absent");
+    }
+  }
+  return channels;
+}
+
+// ---------------------------------------------------------------------------
+// Awareness blocks (presence-and-perception-spec.phase3.md §Attention × salience)
+// ---------------------------------------------------------------------------
+
+/**
+ * The player's action salience THIS turn — the prediction half of the witness
+ * rule. Default is obvious/quiet (`defaultSalience`); a stealth marker only
+ * conceals when there is a present NPC who is NOT the intent target to hide
+ * from (a concealment target). This MUST mirror the merge's witness-set logic
+ * so the awareness blocks predict exactly what the merge will apply (one rule,
+ * prompt and memory never disagree). `presentNpcNames` is the sight-present
+ * cast; `intent` supplies the addressed target (look/touch/smell) excluded as
+ * the audience the action is FOR.
+ */
+export function deriveActionSalience(
+  input: string,
+  intent: SceneIntent,
+  presentNpcNames: readonly string[],
+): Salience {
+  if (!hasStealthMarker(input)) return defaultSalience();
+  const target = (intent.touchTarget ?? intent.lookTarget ?? intent.smellTarget ?? "").toLowerCase();
+  const hasConcealmentTarget = presentNpcNames.some((name) => name.toLowerCase() !== target);
+  return hasConcealmentTarget ? concealedSalience() : defaultSalience();
+}
+
+/**
+ * Tight, deterministic phrasing for what an attention state will/won't catch —
+ * the perception verdict only (the attention descriptor is rendered as the line
+ * prefix via describeAttention, so this never restates it).
+ */
+function awarenessVerdictLine(attention: DerivedAttention): string {
+  switch (attention.state) {
+    case "asleep_or_impaired":
+      return "will NOT notice anything but a loud disturbance.";
+    case "engaged_with":
+      return "will NOT notice subtle or quiet actions elsewhere; WILL react to anything loud or plainly visible.";
+    case "absorbed":
+      return attention.facesAway
+        ? "will NOT see anything, even plain movement; WILL react only to loud sound."
+        : "will NOT notice subtle or quiet actions; WILL react to anything loud or plainly visible.";
+    case "idle_alert":
+      return "WILL notice plainly visible actions and any sound, loud or quiet.";
+  }
+}
+
+interface AwarenessNpc {
+  id: string;
+  displayName: string;
+  attention: DerivedAttention;
+  mods: { sight: "normal" | "reduced" | "blocked"; hearing: "normal" | "reduced" | "blocked" };
+}
+
+/**
+ * Per-NPC + pairwise awareness lines (T2 centerpiece). For each SIGHT-present
+ * NPC: derive attention from activity/posture, fold in darkness + per-NPC
+ * condition sense mods, and state what they will/won't notice of the player's
+ * action THIS turn (via `perceives`, so the prediction matches the merge).
+ * Then up to MAX_NPC_PAIR_AWARENESS_LINES pairwise NPC↔NPC blindspot lines for
+ * non-obvious cases (an absorbed/back-turned or asleep NPC who would miss a
+ * subtle action by another) — obvious cases (two alert NPCs) generate nothing.
+ * Renders nothing when there is no SIGHT-present NPC.
+ */
+export function buildAwarenessBlocks(
+  bundle: SceneBundleInput,
+  activeLocationId: string | null,
+  intent: SceneIntent,
+  gameTime: GameTime,
+  playerInput = "",
+): string {
+  const loc = bundle.locations.find((l) => l.id === activeLocationId);
+  const channels = classifyPresenceChannels(bundle, activeLocationId);
+  const sightNpcs = npcs(bundle).filter((p) => channels.get(p.id) === "sight");
+  if (!loc || sightNpcs.length === 0) return "";
+
+  const dark = darknessVerdict(daylightBand(gameTime), loc.ambient.light).dark;
+  const observers: AwarenessNpc[] = sightNpcs.map((p) => {
+    const active = p.state.conditions.filter((c) => !isConditionExpired(c, bundle.clockMinutes));
+    const senseMods = senseModsFromConditions(active);
+    return {
+      id: p.id,
+      displayName: p.displayName,
+      attention: deriveAttention({ activity: p.state.activity, posture: p.state.posture }),
+      mods: { sight: senseMods.sight ?? "normal", hearing: senseMods.hearing ?? "normal" },
+    };
+  });
+
+  // The player's action salience this turn, used per-NPC to decide perception.
+  const salience = deriveActionSalience(playerInput, intent, sightNpcs.map((p) => p.displayName));
+
+  const npcLines = observers.map((o) => {
+    const willPerceive = perceives(
+      { attention: o.attention.state, facesAway: o.attention.facesAway },
+      salience,
+      { dark, sight: o.mods.sight, hearing: o.mods.hearing },
+    );
+    const descriptor = describeAttention(o.attention);
+    const sightNote = o.mods.sight === "blocked" ? " (sight blocked)" : o.mods.sight === "reduced" ? " (sight reduced)" : "";
+    const verdict = o.mods.sight === "blocked" || o.mods.hearing === "blocked"
+      ? `${o.displayName} — ${descriptor}${sightNote}: ${awarenessVerdictLine(o.attention)}`
+      : `${o.displayName} — ${descriptor}: ${awarenessVerdictLine(o.attention)}`;
+    const stealthNote =
+      salience.visual === "subtle" && !willPerceive
+        ? " The player's concealed action this turn goes UNNOTICED by them."
+        : "";
+    return `- ${verdict}${stealthNote}`;
+  });
+
+  // Pairwise blindspots: an actor NPC doing a subtle/quiet thing that an
+  // observer NPC would miss. Only non-obvious cases earn a line — an observer
+  // who is asleep, absorbed, or facing away (and not proximity-overridden).
+  const pairLines: string[] = [];
+  const subtleAct: Salience = concealedSalience();
+  outer: for (const actor of observers) {
+    for (const observer of observers) {
+      if (actor.id === observer.id) continue;
+      if (pairLines.length >= MAX_NPC_PAIR_AWARENESS_LINES) break outer;
+      const blind = !perceives(
+        { attention: observer.attention.state, facesAway: observer.attention.facesAway },
+        subtleAct,
+        { dark, sight: observer.mods.sight, hearing: observer.mods.hearing },
+      );
+      // Skip obvious cases: only flag an observer whose attention genuinely
+      // blinds them (asleep / absorbed / facing away / sense-impaired), not a
+      // merely idle_alert one (who would catch a loud or visible act anyway).
+      const nonObvious =
+        observer.attention.state === "asleep_or_impaired" ||
+        observer.attention.state === "absorbed" ||
+        observer.attention.facesAway ||
+        observer.mods.sight !== "normal" ||
+        observer.mods.hearing !== "normal";
+      if (blind && nonObvious) {
+        pairLines.push(
+          `- ${observer.displayName} (${describeAttention(observer.attention)}) would NOT notice a subtle, quiet move by ${actor.displayName}.`,
+        );
+      }
+    }
+  }
+
+  return [
+    "## Awareness (who can perceive what this turn — characters react ONLY to what they perceive)",
+    ...npcLines,
+    ...(pairLines.length ? ["Between characters:", ...pairLines] : []),
+  ].join("\n");
+}
+
+/**
+ * Darkness sensory line for the turn context (T2 darkness). When the active
+ * location is dark right now — night daylight band AND no lit-leaning
+ * `ambient.light` (`darknessVerdict`) — the narrator is told sight is
+ * unreliable and to lean on other senses. Renders "" when the scene is lit.
+ * Uses the turn-start clock (gameTime). Also reports the verdict's `miss` flag
+ * so the caller can log `pipeline.perception.darkness_miss`.
+ */
+export function buildDarknessLine(
+  bundle: SceneBundleInput,
+  activeLocationId: string | null,
+  gameTime: GameTime,
+): { line: string; miss: boolean } {
+  const loc = bundle.locations.find((l) => l.id === activeLocationId);
+  if (!loc) return { line: "", miss: false };
+  const verdict = darknessVerdict(daylightBand(gameTime), loc.ambient.light);
+  if (!verdict.dark) return { line: "", miss: false };
+  return {
+    line: "It is dark here — only obvious, close movement is visible; rely on sound and touch.",
+    miss: verdict.miss,
+  };
+}
+
+/**
+ * "Messages & calls" turn-context block (T2 comms): active `runtime.commsLinks`
+ * (ids resolved → names), any comms link staged THIS turn (a fresh call/text
+ * the player just placed), and any NPC-initiated `runtime.pendingComms` gists
+ * ("Your phone buzzes: a text from Mara — …"). Renders nothing when there is
+ * no active, staged, or pending comms. Staged entries already present in
+ * `commsLinks` are not duplicated.
+ */
+export function buildCommsLine(bundle: SceneBundleInput, staged?: readonly CommsStaging[]): string {
+  const nameById = new Map(npcs(bundle).map((p) => [p.id, p.displayName]));
+  const lines: string[] = [];
+  const seen = new Set<string>();
+
+  for (const link of bundle.runtime.commsLinks) {
+    const name = nameById.get(link.withParticipantId);
+    if (!name) continue;
+    seen.add(link.withParticipantId);
+    lines.push(`On a ${link.kind} with ${name} — voice only; they are not physically here.`);
+  }
+  for (const s of staged ?? []) {
+    if (seen.has(s.participantId)) continue;
+    const name = nameById.get(s.participantId);
+    if (!name) continue;
+    seen.add(s.participantId);
+    lines.push(
+      s.kind === "text"
+        ? `The player is texting ${name} — voice them by text only; they are not physically here.`
+        : `The player is calling ${name} — voice them over the phone only; they are not physically here.`,
+    );
+  }
+  for (const pending of bundle.runtime.pendingComms) {
+    const name = nameById.get(pending.fromParticipantId);
+    if (!name) continue;
+    const verb = pending.kind === "call" ? "a call from" : "a text from";
+    const gist = pending.gist.trim();
+    lines.push(`Your phone buzzes: ${verb} ${name}${gist ? ` — ${gist}` : ""}.`);
+  }
+
+  if (!lines.length) return "";
+  return ["## Messages & calls", ...lines].join("\n");
 }
 
 /**
@@ -397,18 +698,55 @@ function attributePhrase(def: AttributeDefinition, value: unknown): string | nul
 /**
  * Per-NPC appearance reference: a full attribute impression (plus registry
  * promptHints as phrasing guidance) on first encounter or when intent marks
- * the NPC as a look target; a one-liner otherwise.
+ * the NPC as a look target; a one-liner otherwise. Channel-aware (T2 first-
+ * impression fidelity): a SIGHT-present first encounter gets the full physical
+ * impression; a COMMS-present first encounter gets a VOICE-ONLY impression
+ * (voice-category attributes only — pitch, timbre, accent, cadence; never
+ * physical appearance), labeled "(first contact by voice — voice impression)".
+ * When `channels` is omitted every NPC is treated as sight (legacy behavior).
  */
-export function buildGlanceImpressions(bundle: SceneBundleInput, intent: SceneIntent): string {
-  const present = npcs(bundle);
-  if (!present.length) return "";
+export function buildGlanceImpressions(
+  bundle: SceneBundleInput,
+  intent: SceneIntent,
+  channels?: Map<string, PresenceChannel>,
+): string {
+  const cast = npcs(bundle);
+  if (!cast.length) return "";
 
   const lines: string[] = [];
   const hints = new Set<string>();
 
-  for (const p of present) {
+  for (const p of cast) {
+    const channel = channels?.get(p.id) ?? "sight";
+    if (!isPresent(channel)) continue; // absent NPCs get no impression line
+
     const firstEncounter = !bundle.runtime.encounteredParticipantIds.includes(p.id);
     const isLookTarget = intent.lookTarget?.toLowerCase() === p.displayName.toLowerCase();
+
+    // Comms-present: never a physical impression. First voice contact earns a
+    // voice-only impression; afterward, a one-liner noting they're on the line.
+    if (channel === "comms") {
+      if (!firstEncounter) {
+        lines.push(`- ${p.displayName} — on the line (voice already familiar; no physical presence)`);
+        continue;
+      }
+      const effective = resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays);
+      const phrases: string[] = [];
+      for (const value of effective) {
+        const def = attributeRegistry.byId(value.id);
+        if (!def || def.category !== "voice") continue;
+        const phrase = attributePhrase(def, value.value);
+        if (!phrase) continue;
+        phrases.push(phrase);
+        for (const hint of def.promptHints ?? []) hints.add(hint);
+      }
+      lines.push(
+        `- ${p.displayName} (first contact by voice — voice impression): ${phrases.length ? phrases.join("; ") : "no recorded voice details"}`,
+      );
+      continue;
+    }
+
+    // Sight-present: full physical impression on first encounter / look target.
     if (!firstEncounter && !isLookTarget) {
       lines.push(`- ${p.displayName} — present (appearance already established; mention only changes)`);
       continue;
@@ -428,6 +766,7 @@ export function buildGlanceImpressions(bundle: SceneBundleInput, intent: SceneIn
     lines.push(`- ${p.displayName} (${label}): ${phrases.length ? phrases.join("; ") : "no recorded appearance details"}`);
   }
 
+  if (!lines.length) return "";
   const block = [
     "## Character impressions (reference — weave into natural prose, never quote labels verbatim)",
     ...lines,

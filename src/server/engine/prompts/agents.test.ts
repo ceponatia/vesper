@@ -60,6 +60,24 @@ describe("agent system prompts", () => {
     expect(DIRECTOR_SYSTEM).toContain('"memoryQueries"');
   });
 
+  it("simulant teaches salience tagging, the obvious default, and comms events", () => {
+    expect(SIMULANT_SYSTEM).toContain("salience");
+    expect(SIMULANT_SYSTEM).toMatch(/default obvious/i);
+    expect(SIMULANT_SYSTEM).toContain("subtle");
+    expect(SIMULANT_SYSTEM).toContain("commsEvents");
+    // Example A demonstrates a concealed (subtle) act, a normal (obvious) one, and a comms open.
+    expect(SIMULANT_SYSTEM).toContain('"visual":"subtle"');
+    expect(SIMULANT_SYSTEM).toContain('"visual":"obvious"');
+    expect(SIMULANT_SYSTEM).toContain('"op":"open","kind":"call"');
+  });
+
+  it("continuity teaches the two new presence/perception violation kinds", () => {
+    expect(CONTINUITY_SYSTEM).toContain("narrated_absent_character");
+    expect(CONTINUITY_SYSTEM).toContain("reacted_to_unperceived_event");
+    // A comms-present character speaking is explicitly allowed.
+    expect(CONTINUITY_SYSTEM).toMatch(/comms-present character speaking/i);
+  });
+
   it("spells out the threadSignals shape: touch carries id + title, resolve is ids only", () => {
     expect(DIRECTOR_SYSTEM).toContain("touch = listed threads advanced this turn (give each thread's listed id plus its title)");
     expect(DIRECTOR_SYSTEM).toContain("propose = new threads to open sparingly ({title, summary})");
@@ -152,6 +170,37 @@ describe("buildContinuityPrompt", () => {
     expect(text).toContain("Canonical character facts: none recorded.");
     expect(text).toContain("World norms:\n- none");
     expect(text).not.toContain("Who is where");
+    // awarenessBlocks defaults to "" → no awareness heading.
+    expect(text).not.toContain("Awareness (who can perceive what)");
+  });
+
+  it("renders the awareness block under a heading when provided", () => {
+    const text = buildContinuityPrompt({
+      playerInput: "input",
+      narration: "narration",
+      author: "player",
+      canonicalFactsBlock: "",
+      presenceRoster: "",
+      norms: [],
+      presentNames: ["Maya"],
+      awarenessBlocks: "Maya: absorbed in cooking, back to the door (cannot see behind her).",
+    });
+    expect(text).toContain("Awareness (who can perceive what):");
+    expect(text).toContain("Maya: absorbed in cooking, back to the door (cannot see behind her).");
+  });
+
+  it("omits the awareness heading when awarenessBlocks is empty", () => {
+    const text = buildContinuityPrompt({
+      playerInput: "input",
+      narration: "narration",
+      author: "player",
+      canonicalFactsBlock: "",
+      presenceRoster: "",
+      norms: [],
+      presentNames: ["Maya"],
+      awarenessBlocks: "",
+    });
+    expect(text).not.toContain("Awareness (who can perceive what)");
   });
 });
 

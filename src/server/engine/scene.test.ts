@@ -11,10 +11,14 @@ import {
   type CharacterProfile,
 } from "@/contracts/world/profile";
 import { activeLocationId } from "./bundle";
+import { resolveGameTime } from "@/lib/clock";
 import {
   buildAbsenceNotice,
   buildAffordancesBlock,
+  buildAwarenessBlocks,
   buildCanonicalFactsBlock,
+  buildCommsLine,
+  buildDarknessLine,
   buildFollowGuidance,
   buildGlanceImpressions,
   buildMeterConditionBlock,
@@ -23,7 +27,9 @@ import {
   buildSceneSnapshot,
   buildTurnDigest,
   buildWardrobeBlock,
+  classifyPresenceChannels,
   computeFollowScores,
+  deriveActionSalience,
   effectiveMeterDefinitions,
   excerptBio,
   scaleFramingLine,
@@ -126,6 +132,8 @@ function makeBundle(over: Partial<SceneBundleInput> = {}): SceneBundleInput {
           attributes: [
             { id: "identity.apparent_age", value: "mid_twenties", source: "creation" },
             { id: "hair.color", value: "auburn", source: "creation" },
+            { id: "voice.timbre", value: "husky", source: "creation" },
+            { id: "voice.cadence", value: "measured", source: "creation" },
           ],
         }),
         state: state({ activity: "cooking dinner", posture: "standing at the stove" }),
@@ -631,5 +639,287 @@ describe("buildTurnDigest", () => {
     expect(digest).toContain("- Voice freely: Maya, Rhett, Fatima.");
     expect(digest).not.toContain("May bring in");
     expect(digest).not.toContain("Never enact");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Presence & perception v1 (phase-3-plan T2)
+// ---------------------------------------------------------------------------
+
+const gameTimeAt = (clockMinutes: number) =>
+  resolveGameTime(clockMinutes, makeBundle().style.calendarStart);
+
+/** Maya at the kitchen with an active comms link to Rhett (in the garden). */
+function commsBundle(over: Partial<SceneBundleInput> = {}): SceneBundleInput {
+  const base = makeBundle();
+  return makeBundle({
+    runtime: { ...emptySessionRuntime(), commsLinks: [{ kind: "call", withParticipantId: "p_rhett", since: 0 }] },
+    ...over,
+  });
+}
+
+describe("classifyPresenceChannels", () => {
+  it("co-located NPC is sight; absent NPC is absent", () => {
+    const channels = classifyPresenceChannels(makeBundle(), "loc_kitchen");
+    expect(channels.get("p_maya")).toBe("sight"); // co-located
+    expect(channels.get("p_rhett")).toBe("absent"); // garden, no link
+  });
+
+  it("an active comms link makes an absent NPC comms-present", () => {
+    const channels = classifyPresenceChannels(commsBundle(), "loc_kitchen");
+    expect(channels.get("p_rhett")).toBe("comms");
+  });
+
+  it("this-turn staging makes an absent NPC comms-present", () => {
+    const channels = classifyPresenceChannels(makeBundle(), "loc_kitchen", [{ participantId: "p_rhett", kind: "text" }]);
+    expect(channels.get("p_rhett")).toBe("comms");
+  });
+
+  it("open/expanse co-located still classifies as sight (distant but perceivable channel)", () => {
+    const bundle = makeBundle();
+    const kitchen = bundle.locations.find((l) => l.id === "loc_kitchen");
+    if (kitchen) kitchen.scale = "open";
+    expect(classifyPresenceChannels(bundle, "loc_kitchen").get("p_maya")).toBe("sight");
+  });
+});
+
+describe("buildPresenceRoster channel awareness", () => {
+  it("adds an On call/text line for a comms-present, non-co-located NPC", () => {
+    const bundle = commsBundle();
+    const channels = classifyPresenceChannels(bundle, "loc_kitchen");
+    const block = buildPresenceRoster(bundle, "loc_kitchen", channels);
+    expect(block).toContain("Present: Maya");
+    expect(block).toContain("On call/text (present by voice only");
+    expect(block).toContain("Rhett (on a call)");
+    // Rhett is voiced over the phone; he must NOT also be listed Nearby.
+    expect(block).not.toContain("Nearby");
+  });
+
+  it("labels a text link as 'by text'", () => {
+    const bundle = makeBundle({
+      runtime: { ...emptySessionRuntime(), commsLinks: [{ kind: "text", withParticipantId: "p_rhett", since: 0 }] },
+    });
+    const channels = classifyPresenceChannels(bundle, "loc_kitchen");
+    expect(buildPresenceRoster(bundle, "loc_kitchen", channels)).toContain("Rhett (by text)");
+  });
+
+  it("without a channel map, behaves exactly as the legacy roster", () => {
+    expect(buildPresenceRoster(makeBundle(), "loc_kitchen")).not.toContain("On call/text");
+  });
+});
+
+describe("deriveActionSalience", () => {
+  it("defaults to obvious/quiet with no stealth marker", () => {
+    expect(deriveActionSalience("I take Maya's hand", {}, ["Maya"])).toEqual({ visual: "obvious", audible: "quiet" });
+  });
+
+  it("conceals when a stealth marker has a present NPC who is not the target", () => {
+    // The player sneaks something past Rhett while addressing Maya.
+    const salience = deriveActionSalience("I quietly slip the note to Maya", { touchTarget: "Maya" }, ["Maya", "Rhett"]);
+    expect(salience).toEqual({ visual: "subtle", audible: "quiet" });
+  });
+
+  it("does NOT conceal when the only present NPC is the intent target (tone, not stealth)", () => {
+    // "quietly" to a lover with no one else around is tone, not a sneak.
+    const salience = deriveActionSalience("I quietly take Maya's hand", { touchTarget: "Maya" }, ["Maya"]);
+    expect(salience).toEqual({ visual: "obvious", audible: "quiet" });
+  });
+
+  it("conceals when a stealth marker is present and there are bystanders but no target", () => {
+    expect(deriveActionSalience("I secretly pocket the key", {}, ["Maya"])).toEqual({ visual: "subtle", audible: "quiet" });
+  });
+});
+
+describe("buildAwarenessBlocks", () => {
+  it("renders a will/won't-notice line per sight-present NPC", () => {
+    // Maya is cooking (absorbed) at the stove; render her awareness.
+    const bundle = makeBundle();
+    const block = buildAwarenessBlocks(bundle, "loc_kitchen", {}, gameTimeAt(30), "I tiptoe across the kitchen");
+    expect(block).toContain("## Awareness (who can perceive what this turn");
+    expect(block).toContain("- Maya — absorbed in a task: will NOT notice subtle or quiet actions");
+  });
+
+  it("flags a concealed action as unnoticed by an absorbed, back-turned NPC", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    // Add a second sight-present NPC so the stealth has a concealment target,
+    // and make Maya back-turned at the sink.
+    bundle.participants.push({
+      id: "p_tom",
+      displayName: "Tom",
+      isUser: false,
+      role: "npc",
+      locationId: "loc_kitchen",
+      snapshot: profile(),
+      state: state({ activity: "scrubbing the pans at the sink", posture: "back turned to the room" }),
+    });
+    if (maya) maya.state = state({ activity: "reading at the table", posture: "facing the window, back to the room" });
+    const block = buildAwarenessBlocks(bundle, "loc_kitchen", { touchTarget: "Maya" }, gameTimeAt(30), "I secretly pass Maya a note");
+    expect(block).toContain("Tom — absorbed in a task, back turned:");
+    expect(block).toContain("goes UNNOTICED by them");
+  });
+
+  it("adds pairwise blindspot lines, capped at MAX_NPC_PAIR_AWARENESS_LINES", () => {
+    // Six NPCs all asleep — every observer is a blindspot for every actor, so
+    // the pair list would explode; assert it is capped.
+    const bundle = makeBundle();
+    bundle.participants = bundle.participants.filter((p) => p.isUser);
+    for (let i = 0; i < 6; i++) {
+      bundle.participants.push({
+        id: `p_sleep_${i}`,
+        displayName: `Sleeper${i}`,
+        isUser: false,
+        role: "npc",
+        locationId: "loc_kitchen",
+        snapshot: profile(),
+        state: state({ activity: "fast asleep on the bench" }),
+      });
+    }
+    const block = buildAwarenessBlocks(bundle, "loc_kitchen", {}, gameTimeAt(30), "I move around");
+    const pairLines = block.split("\n").filter((l) => l.includes("would NOT notice a subtle, quiet move"));
+    expect(pairLines.length).toBeLessThanOrEqual(4); // MAX_NPC_PAIR_AWARENESS_LINES
+    expect(pairLines.length).toBeGreaterThan(0);
+  });
+
+  it("renders nothing when no NPC is sight-present", () => {
+    // Maya alone, but elsewhere → no sight-present NPC.
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    if (maya) maya.locationId = "loc_garden";
+    expect(buildAwarenessBlocks(bundle, "loc_kitchen", {}, gameTimeAt(30), "I wait")).toBe("");
+  });
+
+  it("two idle_alert NPCs in an ordinary room generate no pairwise lines", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    const rhett = bundle.participants.find((p) => p.id === "p_rhett");
+    if (maya) maya.state = state({ activity: "waiting" });
+    if (rhett) {
+      rhett.locationId = "loc_kitchen";
+      rhett.state = state({ activity: "looking around" });
+    }
+    const block = buildAwarenessBlocks(bundle, "loc_kitchen", {}, gameTimeAt(30), "I sit down");
+    expect(block).not.toContain("Between characters:");
+    expect(block).not.toContain("would NOT notice");
+  });
+
+  it("darkness degrades sight: an alert NPC misses a plainly-visible action in the dark", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    if (maya) maya.state = state({ activity: "waiting" }); // idle_alert
+    bundle.clockMinutes = 800; // night
+    // No lit ambient light on the kitchen → dark at night.
+    const lit = buildAwarenessBlocks(bundle, "loc_kitchen", {}, gameTimeAt(30), "I wave");
+    const dark = buildAwarenessBlocks(bundle, "loc_kitchen", {}, gameTimeAt(800), "I wave");
+    expect(lit).toContain("- Maya — unoccupied and aware of the room:");
+    expect(dark).toContain("- Maya — unoccupied and aware of the room:"); // descriptor unchanged; perception math reflects dark
+    expect(dark).not.toBe("");
+  });
+});
+
+describe("buildGlanceImpressions channel fidelity", () => {
+  it("renders a voice-only impression on first comms contact (no physical appearance)", () => {
+    const bundle = commsBundle(); // Rhett on a call, never encountered
+    const channels = classifyPresenceChannels(bundle, "loc_kitchen");
+    // Give Rhett voice attributes so the voice impression has content.
+    const rhett = bundle.participants.find((p) => p.id === "p_rhett");
+    if (rhett) {
+      rhett.snapshot = profile({
+        attributes: [
+          { id: "voice.pitch", value: "low", source: "creation" },
+          { id: "voice.accent", value: "soft coastal lilt", source: "creation" },
+          { id: "hair.color", value: "black", source: "creation" }, // must NOT appear
+        ],
+      });
+    }
+    const block = buildGlanceImpressions(bundle, {}, channels);
+    const rhettLine = block.split("\n").find((l) => l.startsWith("- Rhett")) ?? "";
+    expect(rhettLine).toContain("(first contact by voice — voice impression):");
+    expect(rhettLine).toContain("voice pitch: low");
+    expect(rhettLine).toContain("accent: soft coastal lilt");
+    expect(rhettLine).not.toContain("hair color"); // no physical appearance over comms
+  });
+
+  it("a comms-present NPC already encountered collapses to an on-the-line note", () => {
+    const bundle = commsBundle({
+      runtime: {
+        ...emptySessionRuntime(),
+        commsLinks: [{ kind: "call", withParticipantId: "p_rhett", since: 0 }],
+        encounteredParticipantIds: ["p_rhett"],
+      },
+    });
+    const channels = classifyPresenceChannels(bundle, "loc_kitchen");
+    const block = buildGlanceImpressions(bundle, {}, channels);
+    expect(block).toContain("- Rhett — on the line (voice already familiar; no physical presence)");
+    expect(block).not.toContain("voice pitch");
+  });
+
+  it("a sight-present first encounter is still a full physical impression", () => {
+    const channels = classifyPresenceChannels(makeBundle(), "loc_kitchen");
+    const block = buildGlanceImpressions(makeBundle(), {}, channels);
+    expect(block).toContain("- Maya (first encounter — full impression)");
+    expect(block).toContain("hair color: auburn");
+  });
+
+  it("omits absent NPCs from the impressions entirely", () => {
+    const channels = classifyPresenceChannels(makeBundle(), "loc_kitchen");
+    const block = buildGlanceImpressions(makeBundle(), {}, channels);
+    expect(block).not.toContain("Rhett"); // absent (garden, no link)
+  });
+});
+
+describe("buildDarknessLine", () => {
+  it("renders the dark-scene line at night with no lit ambient", () => {
+    const { line, miss } = buildDarknessLine(makeBundle(), "loc_kitchen", gameTimeAt(800));
+    expect(line).toContain("It is dark here");
+    expect(line).toContain("rely on sound and touch");
+    expect(miss).toBe(false); // empty light at night ⇒ dark, no miss
+  });
+
+  it("renders nothing during the day", () => {
+    expect(buildDarknessLine(makeBundle(), "loc_kitchen", gameTimeAt(30)).line).toBe("");
+  });
+
+  it("stays lit at night when ambient light is lamplit, and flags a miss for ambiguous light", () => {
+    const lamplit = makeBundle();
+    const lit = lamplit.locations.find((l) => l.id === "loc_kitchen");
+    if (lit) lit.ambient = { ...lit.ambient, light: "warm lamplight" };
+    expect(buildDarknessLine(lamplit, "loc_kitchen", gameTimeAt(800)).line).toBe("");
+
+    const ambiguous = makeBundle();
+    const amb = ambiguous.locations.find((l) => l.id === "loc_kitchen");
+    if (amb) amb.ambient = { ...amb.ambient, light: "the usual" };
+    const verdict = buildDarknessLine(ambiguous, "loc_kitchen", gameTimeAt(800));
+    expect(verdict.line).toContain("It is dark here");
+    expect(verdict.miss).toBe(true);
+  });
+});
+
+describe("buildCommsLine", () => {
+  it("renders active links, this-turn staging, and pending messages", () => {
+    const bundle = commsBundle({
+      runtime: {
+        ...emptySessionRuntime(),
+        commsLinks: [{ kind: "call", withParticipantId: "p_rhett", since: 0 }],
+        pendingComms: [{ fromParticipantId: "p_maya", kind: "text", gist: "running late", urgency: "normal" }],
+      },
+    });
+    const block = buildCommsLine(bundle, [{ participantId: "p_maya", kind: "call" }]);
+    expect(block).toContain("## Messages & calls");
+    expect(block).toContain("On a call with Rhett — voice only");
+    expect(block).toContain("The player is calling Maya"); // staged this turn
+    expect(block).toContain("Your phone buzzes: a text from Maya — running late.");
+  });
+
+  it("does not duplicate a staged link that is already active", () => {
+    const bundle = commsBundle(); // active call with Rhett
+    const lines = buildCommsLine(bundle, [{ participantId: "p_rhett", kind: "call" }])
+      .split("\n")
+      .filter((l) => l.includes("Rhett"));
+    expect(lines).toHaveLength(1); // only the active-link line, no staged dup
+  });
+
+  it("renders nothing without any comms", () => {
+    expect(buildCommsLine(makeBundle())).toBe("");
   });
 });

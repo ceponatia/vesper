@@ -235,6 +235,49 @@ export function declaredRestMinutes(rest: DeclaredRest, currentMinuteOfDay: numb
   return { minutes, cause: `${verb} until ${rest.label}` };
 }
 
+// ---------------------------------------------------------------------------
+// Comms intent (presence-and-perception-spec.phase3.md §comms)
+// ---------------------------------------------------------------------------
+
+export interface CommsIntent {
+  kind: "call" | "text";
+  /** Display name of the NPC the player is calling/texting. */
+  targetName: string;
+}
+
+/**
+ * "I call/phone/ring/dial X" — a voice link. Text verbs route to "text".
+ * "call out (to)" / "call for" are in-room shouts, not phone calls — excluded
+ * via a negative lookahead so "I call out to Maya" never stages a comms link.
+ */
+const CALL_RE =
+  /\b(?:call(?:s|ed|ing)?(?!\s+(?:out|for)\b)|phon(?:e|es|ed|ing)|ring(?:s|ing)?|rang|dial(?:s|ed|ing)?|video[- ]?call(?:s|ed|ing)?|facetime(?:s|d|ing)?)\b/;
+
+/** "I text/message/dm/email/write to X" — a written link. */
+const TEXT_RE =
+  /\b(?:text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|dm(?:s|ed|ing)?|email(?:s|ed|ing)?|write(?:s)? to|writes? a (?:text|message) to|send(?:s)? (?:a )?(?:text|message|note) to)\b/;
+
+/**
+ * Comms intent (presence-and-perception-spec.phase3.md §comms): "I call Mara",
+ * "I text Rhett". Deterministic — regex + name match, like the rest of intent
+ * detection; quoted speech is stripped first so a quoted "call Mara" is inert.
+ * Call verbs win over text verbs when both match (a video call is still a call).
+ * The pipeline stages the named NPC as comms-present for this turn so the
+ * narrator may voice them; the simulant persists the link post-turn.
+ */
+export function detectCommsIntent(input: string, npcNames: readonly string[]): CommsIntent | null {
+  const lower = stripQuoted(input).toLowerCase();
+  const call = CALL_RE.exec(lower);
+  const text = TEXT_RE.exec(lower);
+  // The earlier verb (and call over text on a tie) decides the channel kind.
+  const callFirst = call !== null && (text === null || call.index <= text.index);
+  const verbMatch = callFirst ? call : text;
+  if (!verbMatch) return null;
+  const targetName = findName(lower, npcNames, verbMatch.index + verbMatch[0].length);
+  if (!targetName) return null;
+  return { kind: callFirst ? "call" : "text", targetName };
+}
+
 /**
  * Out-of-character input: the player is asking the game, not acting. Matches
  * a leading OOC marker — "(OOC: …)", "[ooc] …", "OOC: …" — never mid-text

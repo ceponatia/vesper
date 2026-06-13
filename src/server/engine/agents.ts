@@ -28,7 +28,9 @@ import {
   DIRECTOR_SYSTEM,
   SIMULANT_SYSTEM,
 } from "./prompts/agents";
-import { buildCanonicalFactsBlock, buildPresenceRoster, effectiveMeterDefinitions } from "./scene";
+import { buildAwarenessBlocks, buildCanonicalFactsBlock, buildPresenceRoster, effectiveMeterDefinitions } from "./scene";
+import { detectIntent } from "./intent";
+import { resolveGameTime } from "@/lib/clock";
 
 /**
  * Post-turn agent fan-out (docs/turn-engine.md §Post-turn agents): four
@@ -134,6 +136,13 @@ export async function runPostTurnAgents(
     };
   }
 
+  // Awareness blocks the continuity agent audits `reacted_to_unperceived_event`
+  // against — same builder, anchor, and turn-start clock the pre-turn prompt used,
+  // so the auditor sees exactly what the narrator was told who could perceive.
+  const continuityIntent = detectIntent(turn.input, presentNames, []);
+  const continuityGameTime = resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart);
+  const awarenessBlocks = buildAwarenessBlocks(bundle, anchorLoc, continuityIntent, continuityGameTime, turn.input);
+
   const continuityPrompt = buildContinuityPrompt({
     playerInput: turn.input,
     narration,
@@ -143,6 +152,7 @@ export async function runPostTurnAgents(
     // move target when the player entered a room) — the roster rule 6 audits
     // against must be the one the narrator actually saw.
     presenceRoster: buildPresenceRoster(bundle, anchorLoc),
+    awarenessBlocks,
     norms: bundle.style.norms,
     presentNames,
   });

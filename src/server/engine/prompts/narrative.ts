@@ -65,6 +65,7 @@ const PRESENCE_FIDELITY_RULES = [
   "2. A character listed Nearby may join this turn ONLY by first being narrated physically arriving — the door opening, footsteps, stepping in — before their first line. The arrival is what brings them; dialogue without a narrated arrival is forbidden.",
   '3. Characters listed Elsewhere exist and may be discussed, quoted from memory, or expected — but they must not appear, act, or speak in the present scene. Reported speech ("she told me yesterday…") is fine; a new line of dialogue from an absent character is never fine.',
   "4. Wanting an absent character in the scene is a setup, not a teleport: this turn, narrate the world reaching for them — a message sent, footsteps overhead, someone going to fetch them — and let them arrive in a later turn.",
+  '5. A character on the "On call/text" line is present by VOICE only: they may speak (their dialogue is the point of the call), but they are NOT physically here — no actions in the room, no appearance described, no being seen or touched. They hear what carries down the line and nothing more.',
 ].join("\n");
 
 const WARDROBE_FIDELITY_RULES = [
@@ -91,6 +92,7 @@ const PERCEPTION_RULES = [
   "1. Characters notice only what they could plausibly perceive given body orientation, gaze, and current activity.",
   "2. A character facing away cannot see expressions, glances, or actions behind them; do not have anyone react to sights or gestures they cannot see without a plausible cue (a sound, a reflection, turning around).",
   "3. Knowledge stays personal: characters do not know things they were never told or never witnessed.",
+  '4. When the Turn context carries an "Awareness" block, it is authoritative for what each character perceives this turn: a character reacts ONLY to what their Awareness line says they notice. Do not have them notice a concealed or unperceived action — an unnoticed move draws no reaction at all.',
 ].join("\n");
 
 const PROSE_STYLE_RULES = [
@@ -207,9 +209,15 @@ export interface TurnContextInput {
   sceneSnapshot: string;
   /** Output of scene.buildPresenceRoster ("" when the session has no NPCs). */
   presenceRoster: string;
+  /** Output of scene.buildCommsLine ("" when no active/staged/pending comms). */
+  commsBlock?: string;
   wardrobeBlock: string;
   stateBlock: string;
   glanceBlock: string;
+  /** Output of scene.buildAwarenessBlocks ("" when no sight-present NPC). */
+  awarenessBlock?: string;
+  /** Output of scene.buildDarknessLine ("" when the scene is lit). */
+  darknessLine?: string;
   affordancesBlock: string;
   followGuidance?: string;
   /** Output of scene.buildAbsenceNotice ("" when nobody absent is addressed). */
@@ -288,8 +296,10 @@ export function buildTurnContext(input: TurnContextInput): string {
     input.wardrobeBlock,
     input.sceneSnapshot,
     input.presenceRoster,
+    input.commsBlock ?? "",
     input.stateBlock,
     input.glanceBlock,
+    input.awarenessBlock ?? "",
     input.brief.sceneSummary ? `Scene context: ${input.brief.sceneSummary}` : "",
     input.brief.storySoFar ? `Story so far: ${input.brief.storySoFar}` : "",
     input.brief.characterNotes.length ? `Character notes: ${input.brief.characterNotes.join("; ")}` : "",
@@ -312,7 +322,7 @@ export function buildTurnContext(input: TurnContextInput): string {
     input.followGuidance ?? "",
     input.absenceNotice ?? "",
     input.pacingGuidance ?? "",
-    `Sensory rules (this turn):\n${exposureRules(input.exposure)
+    `Sensory rules (this turn):\n${[...(input.darknessLine ? [input.darknessLine] : []), ...exposureRules(input.exposure)]
       .map((r) => `- ${r}`)
       .join("\n")}`,
     `${inputHeading(input.author, input.speakerName, input.ooc)}\n${input.playerInput}`,
