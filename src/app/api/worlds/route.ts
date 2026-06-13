@@ -8,6 +8,7 @@ import {
   jsonError,
   jsonOk,
   LIST_LIMIT,
+  queueWorldImageGeneration,
   readBody,
   withUser,
   worldCreateSchema,
@@ -32,6 +33,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
   if (!body.ok) return body.response;
   const result = await createWorld(user.id, body.value);
   if (!result.ok) return jsonError(result.code, result.message, 400);
+  queueWorldImageGeneration(user.id, result.worldId); // backfill any missing images for nested entities
   const detail = await getWorldDetail(user.id, result.worldId);
   if (!detail) return jsonError("create_failed", "world vanished after create", 500);
   return jsonOk({ ...detail, diagnostics: result.diagnostics }, 201);

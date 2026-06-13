@@ -5,6 +5,7 @@ import {
   FORGE_RATE_LIMIT,
   jsonError,
   jsonOk,
+  queueWorldImageGeneration,
   rateLimit,
   readBody,
   withUser,
@@ -26,5 +27,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
 
   const result = await createWorldFromDraft(user.id, body.value);
   if (!result.ok) return jsonError(result.code, result.message, result.code === "not_found" ? 404 : 400);
+  // New world: auto-generate every still-missing image (avatars, items, locations) in the background.
+  queueWorldImageGeneration(user.id, result.worldId);
   return jsonOk({ id: result.worldId, diagnostics: result.diagnostics }, 201);
 });

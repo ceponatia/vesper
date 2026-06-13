@@ -220,8 +220,53 @@ the grid polls so images appear as they land. `missingEntityImageIds`
 gained an `ids` scope; +1 integration test (only-missing batch). User
 follow-ons folded in: batch respects the selected bucket; confirm modal.
 
-Remaining: **Part 2** (location fields scale/area/connections +
-migration + world propagation) and **Part 4** (auto-generate every
-missing image — `imageId` null only — on new-world save, background).
+**Part 4 implemented (2026-06-13) — new-world auto-generation.** The two
+world-create routes (`POST /api/worlds/from-draft`, `POST /api/worlds`)
+fire `queueWorldImageGeneration` (worlds.ts): one background job that
+backfills every still-missing image the new world references — cast
+avatars (`generateAvatarsBatch`, new in avatar.ts) + item/location images
+(`generateEntityImagesBatch`) — in parallel batches of 5, **only where
+the image is null** (reused library entities keep theirs; a reused entity
+with no image still gets one — user ruling). Fired from the route, not
+`createWorld`, so direct-call tests don't spawn image work. +1
+integration test (avatar batch). docs/images.md updated.
 
-Status: **parts 1, 3 + library batch closed; parts 2 & 4 in progress.**
+Remaining: **Part 2** (location fields scale/area/connections +
+migration + world propagation).
+
+Status: **parts 1, 3, 4 + library batch closed; part 2 in progress.**
+
+## 5. World edit-save duplicates library locations (queued fix, 2026-06-13)
+
+**Observed (user).** Many duplicate library locations — "Bayview Clinic
+Exam Room 2" (×6), "Bayview Clinic Break Room" (×4) — all with images.
+
+**Investigation (read-only, prod DB).** The image-generation button is
+**not** the cause: the entity-image pipeline only `SELECT`s locations and
+`UPDATE`s `imageId`; it never inserts a `locations` row. The owner has **1
+world but 28 library locations, 10 orphaned** (no `world_locations`
+link); the orphans are exactly the redundant copies (Exam Room 2 ×5,
+Break Room ×3, a renamed "Breakroom", a stray "Brian's Office"). The
+still-linked copy was created on a later re-save, not at world creation.
+
+**Root cause (committed code).** `updateWorld` (worlds.ts:511) **deletes
+all `world_locations` and re-materializes** on every save;
+`materializeLocations` reuses a library row **only when the draft location
+carries a `locationId`** (line 229), else `INSERT`s a new one (235). The
+world **edit page seeds its draft exactly once** (`world-edit-page.tsx`)
+and never re-seeds after a save — so a location **added in the editor**
+(or renamed) has no `locationId`, never learns the id its first save
+assigned, and is re-created (and the prior copy orphaned) on every
+subsequent save. The "Generate images" batch then filled images for all
+the orphans, which is why they became newly visible.
+
+**Fix (queued — same file set as Part 2's world propagation, do
+together on a clean tree).** Options: after a save, re-seed the editor
+draft with the returned location ids; and/or make `materializeLocations`
+reuse an existing library location by name within the world instead of
+blind-inserting; plus a one-off cleanup of the orphaned duplicate rows
+(library locations with no `world_locations` link whose name matches a
+still-linked one). Cleanup not run — the Postgres tool used was
+read-only; offered to the user.
+
+Status: **open (queued).**

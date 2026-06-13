@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { characters, db, images, items, locations, sessions, users, worlds } from "../db";
 import {
   absoluteImagePath,
@@ -14,7 +14,7 @@ import {
   sweepOrphans,
 } from "./assets";
 import { monogramSvg } from "./monogram";
-import { generateAvatar } from "./avatar";
+import { generateAvatar, generateAvatarsBatch } from "./avatar";
 import { generateEntityImage, generateEntityImagesBatch, missingEntityImageIds } from "./entity";
 import { uploadAvatar } from "./upload";
 import { generateVariant, promoteVariant } from "./variants";
@@ -256,6 +256,25 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(img?.entityKind).toBe("location");
     const [row] = await db().select().from(locations).where(eq(locations.id, loc.id)).limit(1);
     expect(row?.imageId).toBe(imageId);
+  });
+
+  it("generateAvatarsBatch fills avatars for the given characters (new-world backfill)", async (ctx) => {
+    if (!available) return ctx.skip();
+    const made = await db()
+      .insert(characters)
+      .values([
+        { ownerId: userId, name: "Batch One", profile: { bio: "first" } },
+        { ownerId: userId, name: "Batch Two", profile: { bio: "second" } },
+      ])
+      .returning();
+    const ids = made.map((m) => m.id);
+    const count = await generateAvatarsBatch(ids, userId);
+    expect(count).toBe(ids.length);
+    const rows = await db()
+      .select({ id: characters.id, avatarImageId: characters.avatarImageId })
+      .from(characters)
+      .where(inArray(characters.id, ids));
+    expect(rows.every((r) => r.avatarImageId)).toBe(true);
   });
 
   it("generateEntityImagesBatch fills only the entities missing an image", async (ctx) => {

@@ -1,4 +1,4 @@
-import { asc, eq, inArray, and } from "drizzle-orm";
+import { asc, eq, inArray, isNull, and } from "drizzle-orm";
 import { z } from "zod";
 import {
   authoredRelationshipListSchema,
@@ -31,8 +31,10 @@ import {
   type Db,
 } from "@/server/db";
 import { DEFAULT_INTER_AREA_TRAVEL_MINUTES } from "@/server/engine";
+import { generateAvatarsBatch, generateEntityImagesBatch, missingEntityImageIds } from "@/server/images";
 import { indexLoreChunks } from "@/server/memory";
 import { log } from "@/lib/log";
+import { startJob } from "./jobs";
 import { queueEmbedRefresh } from "./library";
 import { errorText } from "./respond";
 import { ambientSchema, nameSchema, partialWithoutDefaults, tagsSchema } from "./schemas";
@@ -449,6 +451,53 @@ function afterWorldWrite(worldId: string, materialized: MaterializeResult, loreT
       log.warn("api.worlds", "lore indexing failed", { worldId, error: errorText(err) });
     });
   }
+}
+
+/**
+ * Auto-generate every still-missing image for a freshly saved world
+ * (followups.phase3.md §4): avatars for cast characters, product/scene images
+ * for the world's items and locations — but only where the image is null, so
+ * reused library entities keep the image they already have (user ruling). Runs
+ * as one background job (parallel batches of 5), so it never blocks the save
+ * and survives the author navigating away. Best-effort: failures are logged,
+ * never surfaced to the save. Called from the world-create routes (real saves),
+ * not from createWorld itself, so direct-call tests don't spawn image work.
+ */
+export function queueWorldImageGeneration(ownerId: string, worldId: string): void {
+  void startJob({
+    type: "entity_image",
+    payload: { worldId, kind: "world_backfill" },
+    run: async () => {
+      const [locRows, itemRows, castRows] = await Promise.all([
+        db().select({ id: worldLocations.locationId }).from(worldLocations).where(eq(worldLocations.worldId, worldId)),
+        db().select({ id: worldItems.itemId }).from(worldItems).where(eq(worldItems.worldId, worldId)),
+        db().select({ id: worldCast.characterId }).from(worldCast).where(eq(worldCast.worldId, worldId)),
+      ]);
+      const [locationIds, itemIds, characterIds] = await Promise.all([
+        missingEntityImageIds("location", ownerId, { ids: locRows.map((r) => r.id) }),
+        missingEntityImageIds("item", ownerId, { ids: itemRows.map((r) => r.id) }),
+        missingAvatarCharacterIds(ownerId, castRows.map((r) => r.id)),
+      ]);
+      const [locationCount, itemCount, avatarCount] = await Promise.all([
+        generateEntityImagesBatch("location", locationIds, ownerId),
+        generateEntityImagesBatch("item", itemIds, ownerId),
+        generateAvatarsBatch(characterIds, ownerId),
+      ]);
+      return { locations: locationCount, items: itemCount, avatars: avatarCount };
+    },
+  }).catch((err: unknown) => {
+    log.warn("api.worlds", "world image generation failed to enqueue", { worldId, error: errorText(err) });
+  });
+}
+
+/** Cast character ids that still lack an avatar — the auto-generation candidates. */
+async function missingAvatarCharacterIds(ownerId: string, ids: readonly string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await db()
+    .select({ id: characters.id })
+    .from(characters)
+    .where(and(eq(characters.ownerId, ownerId), isNull(characters.avatarImageId), inArray(characters.id, [...ids])));
+  return rows.map((r) => r.id);
 }
 
 // ---------------------------------------------------------------------------

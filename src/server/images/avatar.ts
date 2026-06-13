@@ -144,3 +144,32 @@ async function generateAvatarBuffer(prompt: string): Promise<Buffer> {
   });
   return Buffer.from(result.image.uint8Array);
 }
+
+/** Concurrency for batched avatar generation — matches the entity-image batch. */
+const AVATAR_BATCH_SIZE = 5;
+
+/**
+ * Generate avatars for many characters in parallel batches of AVATAR_BATCH_SIZE
+ * (new-world auto-generation, followups.phase3.md §4). One failure never aborts
+ * the batch. Run inside a background job; returns how many completed.
+ */
+export async function generateAvatarsBatch(
+  characterIds: readonly string[],
+  userId: string,
+  sink?: DiagnosticSink,
+): Promise<number> {
+  let done = 0;
+  for (let i = 0; i < characterIds.length; i += AVATAR_BATCH_SIZE) {
+    const chunk = characterIds.slice(i, i + AVATAR_BATCH_SIZE);
+    await Promise.all(
+      chunk.map((characterId) =>
+        generateAvatar({ characterId, userId, sink })
+          .then(() => {
+            done += 1;
+          })
+          .catch(() => undefined),
+      ),
+    );
+  }
+  return done;
+}
