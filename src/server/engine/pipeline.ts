@@ -830,6 +830,7 @@ export function buildSceneComposerContext(
     .filter((p) => !p.isUser && p.locationId === povLocationId)
     .map((p) => {
       const worn = bundle.items.filter((i) => i.holderParticipantId === p.id && i.worn);
+      const wornById = new Map(worn.map((i) => [i.id, i]));
       const views = resolveWardrobeVisibility(
         worn.map((i) => ({
           instanceId: i.id,
@@ -845,7 +846,15 @@ export function buildSceneComposerContext(
         posture: p.state.posture,
         wornVisible: views
           .filter((v) => v.visibility !== "hidden")
-          .map((v) => ({ name: v.name, visibility: v.visibility === "hinted" ? ("hinted" as const) : ("visible" as const) })),
+          .map((v) => {
+            const def = wornById.get(v.instanceId)?.definition;
+            return {
+              name: v.name,
+              visibility: v.visibility === "hinted" ? ("hinted" as const) : ("visible" as const),
+              ...(def?.description ? { description: def.description } : {}),
+              ...(def?.sensory.appearance ? { appearance: def.sensory.appearance } : {}),
+            };
+          }),
         appearance: characterAppearanceSummary(resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays)),
       };
     });

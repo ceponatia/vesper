@@ -77,6 +77,17 @@ describe("buildAvatarPrompt", () => {
     expect(prompt).toContain("Wearing (authoritative — depict exactly this clothing): Black abaya (flowing black fabric); Hijab.");
   });
 
+  it("prefers the garment description over its name and never truncates clothing detail", () => {
+    const longAppearance = "deep crimson silk shot through with gold thread ".repeat(8).trim();
+    const prompt = buildAvatarPrompt("Mira", profile, "realistic", [
+      { name: "Coat", description: "a heavy charcoal wool overcoat with a fur collar", appearance: longAppearance },
+      { name: "Brooch" }, // no description — falls back to the name
+    ]);
+    expect(prompt).toContain(`a heavy charcoal wool overcoat with a fur collar (${longAppearance})`);
+    expect(prompt).toContain("Brooch");
+    expect(prompt).not.toContain("…"); // appearance is passed whole, not excerpted
+  });
+
   it("omits the wearing line without an outfit", () => {
     expect(buildAvatarPrompt("Mira", profile, "realistic")).not.toContain("Wearing");
   });
@@ -118,6 +129,30 @@ describe("visibleAvatarOutfit", () => {
       { name: "Locket", coverage: [] },
     ]);
     expect(outfit.map((o) => o.name)).toContain("Locket");
+  });
+
+  it("omits garments worn entirely below the waist (waist-up framing) but keeps props", () => {
+    const outfit = visibleAvatarOutfit([
+      { name: "Blouse", coverage: ["shoulders", "chest"], layer: 1 },
+      { name: "Jeans", coverage: ["pelvis", "thighs", "calves", "ankles"], layer: 1 },
+      { name: "Sneakers", coverage: ["feet"], layer: 1 },
+      { name: "Necklace", coverage: [] },
+    ]);
+    expect(outfit.map((o) => o.name)).toEqual(["Blouse", "Necklace"]);
+  });
+
+  it("keeps a full-length garment that also covers the torso", () => {
+    const outfit = visibleAvatarOutfit([
+      { name: "Evening gown", coverage: ["chest", "waist", "thighs", "calves", "ankles"], layer: 1 },
+    ]);
+    expect(outfit.map((o) => o.name)).toEqual(["Evening gown"]);
+  });
+
+  it("carries description and appearance through for visible garments", () => {
+    const outfit = visibleAvatarOutfit([
+      { name: "Coat", coverage: ["chest", "back"], layer: 3, description: "a wool overcoat", appearance: "storm-grey" },
+    ]);
+    expect(outfit[0]).toEqual({ name: "Coat", description: "a wool overcoat", appearance: "storm-grey" });
   });
 });
 
@@ -212,6 +247,21 @@ describe("buildSceneComposerPrompt", () => {
     const bare = buildSceneComposerPrompt({ present: [{ name: "Mira", wornVisible: [] }] });
     expect(bare).toContain("visible wardrobe (authoritative): none recorded");
   });
+
+  it("renders garment description and appearance for visible wardrobe, name-only for hints", () => {
+    const prompt = buildSceneComposerPrompt({
+      present: [
+        {
+          name: "Mira",
+          wornVisible: [
+            { name: "linen shirt", description: "a pale linen shirt", appearance: "rumpled", visibility: "visible" },
+            { name: "silk camisole", description: "an ivory silk camisole", visibility: "hinted" },
+          ],
+        },
+      ],
+    });
+    expect(prompt).toContain("visible wardrobe (authoritative): a pale linen shirt (rumpled); silk camisole (hinted beneath sheer layers)");
+  });
 });
 
 describe("wardrobeOutfitSummary", () => {
@@ -224,6 +274,15 @@ describe("wardrobeOutfitSummary", () => {
       ]),
     ).toBe("linen shirt, wool skirt; hints of silk camisole beneath");
     expect(wardrobeOutfitSummary([])).toBe("");
+  });
+
+  it("uses description and appearance for visible garments, name-only for hints", () => {
+    expect(
+      wardrobeOutfitSummary([
+        { name: "shirt", description: "a pale linen shirt", appearance: "rumpled", visibility: "visible" },
+        { name: "camisole", description: "an ivory silk camisole", visibility: "hinted" },
+      ]),
+    ).toBe("a pale linen shirt (rumpled); hints of camisole beneath");
   });
 });
 

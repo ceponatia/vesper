@@ -2,6 +2,7 @@ import { z } from "zod";
 import { attributeRegistry, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveWardrobeVisibility } from "@/contracts/items/visibility";
+import { isBelowWaist } from "@/contracts/body/locations";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
 // ---------------------------------------------------------------------------
@@ -27,17 +28,21 @@ const PERSONALITY_EXCERPT_CHARS = 120;
 
 /** One default-outfit garment, phrased for the avatar prompt. */
 export interface AvatarOutfitItem {
+  /** Item name — fallback label when the garment has no description. */
   name: string;
+  /** Item definition description — the primary phrasing (usually restates the name). */
+  description?: string;
   /** Optional sensory appearance note from the item definition. */
   appearance?: string;
 }
 
-/** A default-outfit garment before occlusion filtering. */
+/** A default-outfit garment before occlusion / waist-up filtering. */
 export interface AvatarWardrobeItem {
   name: string;
   coverage: readonly string[];
   layer?: number | null;
   opacity?: "opaque" | "sheer";
+  description?: string;
   appearance?: string;
 }
 
@@ -47,6 +52,13 @@ export interface AvatarWardrobeItem {
  * layers is omitted — telling the image model about the t-shirt under a
  * closed abaya makes it paint the abaya open. Sheer-covered items stay as a
  * vague hint; items with no coverage (jewelry, props) stay visible.
+ *
+ * Waist-up framing (avatar only): a garment whose coverage is entirely below
+ * the waist (pants, skirts, shoes) is dropped — handing the model footwear or
+ * trousers tempts a full-body shot against the "waist-up portrait" instruction.
+ * A garment that also covers the torso (dress, coat, abaya) and coverage-less
+ * props (jewelry) stay. Scene images never call this, so they keep full-body
+ * garments (docs/images.md, followups.phase3.md §1).
  */
 export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): AvatarOutfitItem[] {
   const views = resolveWardrobeVisibility(
@@ -60,12 +72,19 @@ export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): A
   );
   const viewById = new Map(views.map((v) => [v.instanceId, v]));
   return items.flatMap((item, index) => {
+    if (item.coverage.length > 0 && item.coverage.every(isBelowWaist)) return []; // below the waist — outside a waist-up portrait
     const view = viewById.get(String(index));
     if (view?.visibility === "hidden") return [];
     if (view?.visibility === "hinted") {
       return [{ name: `${item.name} (only a vague hint beneath sheer layers)` }];
     }
-    return [{ name: item.name, ...(item.appearance ? { appearance: item.appearance } : {}) }];
+    return [
+      {
+        name: item.name,
+        ...(item.description ? { description: item.description } : {}),
+        ...(item.appearance ? { appearance: item.appearance } : {}),
+      },
+    ];
   });
 }
 
@@ -91,9 +110,7 @@ export function buildAvatarPrompt(
     if (formatted) appearance.push(formatted);
     for (const hint of def.promptHints ?? []) hints.push(hint);
   }
-  const wearing = outfit
-    .map((item) => (item.appearance ? `${item.name} (${excerpt(item.appearance, 80)})` : item.name))
-    .join("; ");
+  const wearing = outfit.map(formatGarment).join("; ");
 
   return [
     `${STYLE_PREFIX[style]}, waist-up portrait, facing camera, soft studio lighting, neutral background.`,
@@ -123,6 +140,19 @@ function humanize(value: string): string {
 function excerpt(text: string, max: number): string {
   const collapsed = text.trim().replace(/\s+/g, " ");
   return collapsed.length <= max ? collapsed : `${collapsed.slice(0, max).trimEnd()}…`;
+}
+
+/**
+ * Garment phrasing for image prompts (followups.phase3.md §1): the item's
+ * description is the primary text — it usually restates the name and carries
+ * more visual detail — with the bare name as the fallback when there is no
+ * description, and the sensory appearance appended in parentheses. Untruncated:
+ * clothing detail is authoritative for what the model should paint.
+ */
+function formatGarment(item: { name: string; description?: string; appearance?: string }): string {
+  const base = (item.description?.trim() || item.name).trim();
+  const detail = item.appearance?.trim();
+  return detail ? `${base} (${detail})` : base;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +210,10 @@ export function emptySceneSpec(): SceneSpec {
 export interface SceneWornItem {
   name: string;
   visibility: "visible" | "hinted";
+  /** Item definition description — primary phrasing for visible garments. */
+  description?: string;
+  /** Sensory appearance note from the item definition. */
+  appearance?: string;
 }
 
 /**
@@ -261,12 +295,14 @@ export function buildSceneComposerPrompt(context: SceneComposerContext): string 
 
 function wardrobeLines(worn: ReadonlyArray<SceneWornItem>): string {
   if (worn.length === 0) return "none recorded";
-  return worn.map((w) => (w.visibility === "hinted" ? `${w.name} (hinted beneath sheer layers)` : w.name)).join("; ");
+  return worn
+    .map((w) => (w.visibility === "hinted" ? `${w.name} (hinted beneath sheer layers)` : formatGarment(w)))
+    .join("; ");
 }
 
 /** Deterministic outfit phrase from wardrobe state — overrides model prose. */
 export function wardrobeOutfitSummary(worn: ReadonlyArray<SceneWornItem>): string {
-  const visible = worn.filter((w) => w.visibility === "visible").map((w) => w.name);
+  const visible = worn.filter((w) => w.visibility === "visible").map(formatGarment);
   const hinted = worn.filter((w) => w.visibility === "hinted").map((w) => w.name);
   const parts: string[] = [];
   if (visible.length > 0) parts.push(visible.join(", "));

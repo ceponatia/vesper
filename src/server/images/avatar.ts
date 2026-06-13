@@ -79,6 +79,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
 }
 
 const outfitExtrasSchema = z.object({
+  description: z.string().catch(""),
   coverage: z.array(z.string()).catch([]),
   layer: z
     .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)])
@@ -118,6 +119,7 @@ export async function loadDefaultOutfit(
           coverage: extras.coverage,
           layer: extras.layer,
           opacity: extras.opacity,
+          ...(extras.description ? { description: extras.description } : {}),
           ...(extras.sensory?.appearance ? { appearance: extras.sensory.appearance } : {}),
         },
       ];
