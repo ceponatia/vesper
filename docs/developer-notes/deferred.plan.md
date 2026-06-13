@@ -32,3 +32,16 @@ second provenance path the items model doesn't have yet.
 
 See [location-design-spec.phase3.md](location-design-spec.phase3.md)
 §Ownership.
+
+## Observer / god-mode session POV
+
+*Raised 2026-06-13, from the phase-3 presence open questions.* The
+presence/perception design assumes a player POV; observer / god-mode
+("omniscient") sessions have no player participant to anchor awareness
+blocks to (followups.phase2.md #10). Omniscient mode is **less relevant
+to this fork's romance scope**, but the user wants to support it
+eventually. Needs its own think — likely narrator-omniscient with no
+awareness blocks, but deferred rather than ruled. Phase 3 takes no
+stance for observer sessions.
+
+See [presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md).

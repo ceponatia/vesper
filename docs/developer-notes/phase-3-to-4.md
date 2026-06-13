@@ -12,10 +12,11 @@ The phase-3-plan open questions were answered. Net effect on this plan:
 - **Scope narrowed.** Phase 3 is now settled as **presence & perception v1
   only** — narrower than this plan's original "presence + romance-core
   proximity." The romance-core proximity slice (tiers / engagement / scale
-  gating / staging) moves to **phase 4**, *except* whatever minimal proximity
-  *primitive* presence's `sight` channel strictly needs (the tier ladder +
-  scale-derived tier existence) — that boundary is an open phase-start question
-  (see phase-3-plan).
+  gating / staging) moves to **phase 4**, *except* the minimal proximity
+  *primitive* presence's `sight` channel needs — the tier ladder +
+  scale-derived tier existence + entry defaults — which rides phase 3 (ruled
+  2026-06-13). Comms ships its channel + player-side in phase 3; NPC-initiated
+  comms defers to phase 4.
 - **Pairwise NPC↔NPC awareness (co-located)** is confirmed **in phase 3** and
   maintained every turn; cross-location off-camera awareness defers to phase 5.
 - **Product direction:** Vesper stays able to be a **full NSFW RPG** when a user

@@ -27,6 +27,16 @@ the brainstorm §Presence / §Symmetric perception. Decisions 8, 11, 13,
 > channels (sight/sound/comms) and adds salience, awareness blocks,
 > and true witness sets on top.
 
+> **Phase-3 scope notes (2026-06-13, from phase-3-plan rulings).** Phase
+> 3 is presence & perception v1 only. It pulls in the minimal proximity
+> primitive its `sight` channel needs — the
+> [proximity](proximity-spec.phase3.md) tier ladder + scale-derived tier
+> existence + entry defaults — and leaves engagement, contested checks,
+> the movement lock, and the staging surface to phase 4. Comms ships its
+> channel + player-side + pending-messages line; NPC-*initiated* comms
+> defers to phase 4. Observer / god-mode POV is deferred (see
+> [deferred.plan.md](deferred.plan.md)).
+
 ## Problem
 
 Two failures, one root. (1) Characters the player cannot see or hear
@@ -179,7 +189,12 @@ Attention-derivation table, salience defaults, awareness-block budget —
   (a missed call could carry a message that becomes a told-fact), no
   persistent text-thread history the player can reread. All deferrable;
   text history is the one players will ask for first — it's also a
-  natural UI surface for the pending-messages mechanic.
+  natural UI surface for the pending-messages mechanic. **Ruled
+  2026-06-13:** phase 3 ships the comms *channel* + player-side
+  calls/texts + the pending-messages context line; NPC-*initiated*
+  calls/texts (they need the director / world-tick to emit intents)
+  defer to phase 4. Group calls, voicemail content, and rereadable text
+  history are parked in [deferred.plan.md](deferred.plan.md).
 - **"Referenced but not enacted" needs a crisp prompt formulation.**
   The narrator must distinguish talking *about* Mara from Mara talking.
   Easy to state, easy for a model to fumble in reported speech ("Mara

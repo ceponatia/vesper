@@ -108,20 +108,22 @@ The nine questions raised across the phase-3 doc set were answered
   ([location-design-spec.phase3.md](location-design-spec.phase3.md)
   §Rulings).
 
-Newly surfaced for phase-start (raised 2026-06-13, awaiting ruling):
+Phase-start questions, resolved 2026-06-13:
 
-- **Minimal proximity primitives.** Presence's `sight` channel is gated
-  on "perceivable proximity" and references the `distant` tier. With
-  proximity deferred to phase 4, does phase 3 pull in just the tier
-  ladder + scale-derived tier existence (the primitive presence needs),
-  or run a coarse co-located / adjacent / absent model until proximity
-  lands?
-- **NPC-initiated comms.** Ship the comms *channel* + player-side +
-  pending-messages line in phase 3, but defer NPC-*initiated* calls/texts
-  (they need the director / world-tick to emit intents) to phase 4?
-- **Observer / god-mode sessions.** Presence assumes a player POV;
-  observer sessions have none (followups.phase2.md #10). Stance:
-  narrator-omniscient, no awareness blocks?
+- **Minimal proximity primitives** → phase 3 pulls in the proximity tier
+  ladder + scale-derived tier existence + entry defaults (the primitive
+  presence's `sight` channel needs); engagement, contested checks, the
+  movement lock, and staging stay phase 4
+  ([proximity-spec.phase3.md](proximity-spec.phase3.md) status note;
+  [presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
+  scope note).
+- **NPC-initiated comms** → phase 3 ships the comms channel + player-side
+  + pending-messages line; NPC-*initiated* calls/texts defer to phase 4
+  ([presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
+  §Gaps & opportunities).
+- **Observer / god-mode sessions** → deferred (omniscient mode is less
+  relevant to the romance scope but wanted eventually); tracked in
+  [deferred.plan.md](deferred.plan.md).
 
 ## Naming note
 

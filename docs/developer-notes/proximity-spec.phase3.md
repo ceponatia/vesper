@@ -16,6 +16,11 @@ the brainstorm §Proximity. Decisions 15–18 apply.
 > (`intimate`/`room` ⇒ `apart`) exists to back it. Not started: tiers,
 > engagement, `proximityEvents`, the movement lock, contested checks,
 > the staging surface.
+> **Phase split (2026-06-13):** phase 3 (presence & perception) pulls in
+> only the tier ladder + scale-derived tier existence + entry defaults —
+> the primitive the perception `sight` channel needs. Engagement,
+> `proximityEvents`, the movement lock, contested checks, and the
+> staging surface are **phase 4**.
 
 ## Problem
 
