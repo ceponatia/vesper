@@ -6,9 +6,11 @@ import {
   isForeignKeyViolation,
   jsonError,
   jsonOk,
+  loadLocationLinks,
   locationPatchSchema,
   queueEmbedRefresh,
   readBody,
+  setLocationLinks,
   withUser,
 } from "@/server/api";
 
@@ -27,7 +29,8 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const row = await findLocation(user.id, id);
   if (!row) return jsonError("not_found", "location not found", 404);
-  return jsonOk({ location: row });
+  const links = await loadLocationLinks(user.id, id);
+  return jsonOk({ location: { ...row, links } });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
@@ -36,16 +39,17 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (!body.ok) return body.response;
   const existing = await findLocation(user.id, id);
   if (!existing) return jsonError("not_found", "location not found", 404);
-  if (Object.keys(body.value).length === 0) return jsonOk({ location: existing });
 
-  const [row] = await db()
-    .update(locations)
-    .set(body.value)
-    .where(and(eq(locations.id, id), eq(locations.ownerId, user.id)))
-    .returning();
-  if (!row) return jsonError("not_found", "location not found", 404);
-  queueEmbedRefresh("location", id);
-  return jsonOk({ location: row });
+  // `links` is reconciled into location_links; everything else maps to columns.
+  const { links, ...columns } = body.value;
+  if (Object.keys(columns).length > 0) {
+    await db().update(locations).set(columns).where(and(eq(locations.id, id), eq(locations.ownerId, user.id)));
+    queueEmbedRefresh("location", id);
+  }
+  if (links !== undefined) await setLocationLinks(user.id, id, links);
+
+  const row = (await findLocation(user.id, id)) ?? existing;
+  return jsonOk({ location: { ...row, links: await loadLocationLinks(user.id, id) } });
 });
 
 export const DELETE = withUser<Params>(async (user, _req, ctx) => {

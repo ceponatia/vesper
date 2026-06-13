@@ -66,11 +66,17 @@ export type CharacterPatchBody = z.infer<typeof characterPatchSchema>;
 
 // --- locations ---------------------------------------------------------------
 
+/** Spatial size class; mirrors the locations.scale column and contracts/perception/proximity. */
+export const locationScaleSchema = z.enum(["intimate", "room", "hall", "open", "expanse"]);
+const areaSchema = z.string().trim().max(100);
+
 export const locationCreateSchema = z.object({
   name: nameSchema,
   description: z.string().default(""),
   ambient: ambientSchema.default({}),
   tags: tagsSchema.default([]),
+  scale: locationScaleSchema.default("room"),
+  area: areaSchema.optional(),
 });
 export type LocationCreateBody = z.infer<typeof locationCreateSchema>;
 
@@ -79,6 +85,11 @@ export const locationPatchSchema = z.object({
   description: z.string().optional(),
   ambient: ambientSchema.optional(),
   tags: tagsSchema.optional(),
+  scale: locationScaleSchema.optional(),
+  /** null clears the area label. */
+  area: areaSchema.nullable().optional(),
+  /** The desired set of connected library-location ids (undirected); reconciled server-side. */
+  links: z.array(z.string().min(1)).optional(),
 });
 export type LocationPatchBody = z.infer<typeof locationPatchSchema>;
 

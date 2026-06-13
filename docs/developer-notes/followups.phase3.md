@@ -231,10 +231,24 @@ with no image still gets one — user ruling). Fired from the route, not
 `createWorld`, so direct-call tests don't spawn image work. +1
 integration test (avatar batch). docs/images.md updated.
 
-Remaining: **Part 2** (location fields scale/area/connections +
-migration + world propagation).
+**Part 2 implemented (2026-06-13) — location library fields +
+propagation.** The standalone Locations editor reaches parity with the
+world map tab: **Scale** (was a column, now exposed), **Area** (new
+`locations.area` column), and **Connections** — undirected links to other
+library locations, stored in a new **`location_links`** table
+(`drizzle/0001_*.sql`). Server: `locationCreate/PatchSchema` gain
+scale/area/links; the location PATCH reconciles links
+(`setLocationLinks`/`loadLocationLinks`/`connectedLocationIds` in
+library.ts) and the GET returns them. Client: `locationDetailSchema` +
+the editor's Connections picker (dropdown of other library locations,
+removable tags). **World propagation (user option B):**
+`materializeLocations` recreates `location_links` between imported library
+locations as `world_links`, deduped against authored links. +3
+integration tests (link reconcile ×2, world propagation). docs/database.md
++ ui.md updated.
 
-Status: **parts 1, 3, 4 + library batch closed; part 2 in progress.**
+Status: **all parts (1–4 + library batch) closed.** §5 (world edit-save
+location duplication) remains queued.
 
 ## 5. World edit-save duplicates library locations (queued fix, 2026-06-13)
 

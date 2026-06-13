@@ -66,6 +66,8 @@ export const locations = pgTable(
     ambient: jsonb("ambient").notNull().default({}),
     /** Spatial size class; gates conversation distance, entry proximity, crossing time. */
     scale: text("scale", { enum: ["intimate", "room", "hall", "open", "expanse"] }).notNull().default("room"),
+    /** Map-grouping label (mirrors world_locations.overrides.area); drives default link travel times. */
+    area: text("area"),
     /** Affordance[] (contracts) — things characters can plausibly do here. */
     affordances: jsonb("affordances").notNull().default([]),
     tags: jsonb("tags").notNull().default([]),
@@ -76,6 +78,25 @@ export const locations = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("locations_owner_idx").on(t.ownerId)],
+);
+
+/**
+ * Undirected connections between library locations (one row per pair). The
+ * library counterpart of world_links: a location set designed with linked
+ * nodes keeps those connections, and importing the set into a world recreates
+ * them as world_links (docs/world.md). FK-cascade so deleting either endpoint
+ * drops the link.
+ */
+export const locationLinks = pgTable(
+  "location_links",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    fromLocationId: text("from_location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+    toLocationId: text("to_location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+    travelMinutes: integer("travel_minutes").notNull().default(1),
+  },
+  (t) => [index("location_links_owner_idx").on(t.ownerId), index("location_links_from_idx").on(t.fromLocationId)],
 );
 
 export const items = pgTable(

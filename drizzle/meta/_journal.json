@@ -8,6 +8,13 @@
       "when": 1781367006338,
       "tag": "0000_volatile_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781380244641,
+      "tag": "0001_daffy_wither",
+      "breakpoints": true
     }
   ]
 }

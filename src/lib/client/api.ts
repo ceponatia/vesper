@@ -244,8 +244,14 @@ export const locationSummarySchema = z.object({
 });
 export type LocationSummary = z.infer<typeof locationSummarySchema>;
 
+export const locationConnectionSchema = z.object({ id: idSchema, name: nameSchema });
+export type LocationConnection = z.infer<typeof locationConnectionSchema>;
+
 export const locationDetailSchema = locationSummarySchema.extend({
   ambient: ambientSchema,
+  scale: z.enum(["intimate", "room", "hall", "open", "expanse"]).catch("room"),
+  area: optionalText,
+  links: arrayOf(locationConnectionSchema),
 });
 export type LocationDetail = z.infer<typeof locationDetailSchema>;
 

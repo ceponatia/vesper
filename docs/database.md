@@ -18,7 +18,8 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
 | --- | --- |
 | `users` | `email` unique, `name`, `role` (`user`/`admin`) — dev-cookie auth, see auth module |
 | `characters` | `owner_id`, `name`, `profile` JSONB (`CharacterProfile`: bio, personality, voice, speciesId, bodyPlanId, `attributes` (`AttributeValue[]`), aliases, defaultOutfit item ids, schedule), `tags` JSONB, `avatar_image_id`, `search_embedding` vector |
-| `locations` | `owner_id`, `name`, `description`, `ambient` JSONB (sensory), `scale` (`intimate`/`room`/`hall`/`open`/`expanse`), `affordances` JSONB, `tags` JSONB, `image_id`, `search_embedding` vector |
+| `locations` | `owner_id`, `name`, `description`, `ambient` JSONB (sensory), `scale` (`intimate`/`room`/`hall`/`open`/`expanse`), `area?` (map-grouping label), `affordances` JSONB, `tags` JSONB, `image_id`, `search_embedding` vector |
+| `location_links` | `owner_id`, `from_location_id`, `to_location_id` (FK-cascade), `travel_minutes` — undirected library connections (one row per pair); the library counterpart of `world_links`. Importing a linked set into a world recreates them as `world_links` (`materializeLocations`) |
 | `items` | `owner_id`, `kind` (`clothing`/`object`/`container`), `name`, `description`, `definition` JSONB (`ItemDefinition` extras: coverage, layer, opacity, sensory, fields), `tags` JSONB, `image_id`, `search_embedding` vector |
 
 ### Worlds (composition over the library)

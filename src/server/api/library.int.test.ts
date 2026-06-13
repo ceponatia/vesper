@@ -2,8 +2,8 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DiagnosticCollector, itemDefinitionSchema } from "@/contracts";
 import { pseudoEmbed } from "@/server/ai/embeddings";
-import { db, items, users } from "@/server/db";
-import { materializeSuggestedItems } from "@/server/api";
+import { db, items, locations, users } from "@/server/db";
+import { connectedLocationIds, loadLocationLinks, materializeSuggestedItems, setLocationLinks } from "@/server/api";
 
 // Demo-mode integration suite for the outfit-item dedupe ladder
 // (docs/authoring.md §Saving drafts): exact-name reuse → conservative embedding
@@ -40,6 +40,7 @@ const suggest = (name: string) => itemDefinitionSchema.parse({ kind: "clothing",
 afterAll(async () => {
   if (ready && ownerId) {
     await db().delete(items).where(eq(items.ownerId, ownerId));
+    await db().delete(locations).where(eq(locations.ownerId, ownerId)); // cascades location_links
     await db().delete(users).where(eq(users.id, ownerId));
   }
   await globalThis.__vesperPool?.end();
@@ -125,5 +126,33 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
     expect(ids).toHaveLength(1);
     const [row] = await db().select({ kind: items.kind }).from(items).where(eq(items.id, ids[0]!));
     expect(row?.kind).toBe("clothing");
+  });
+
+  it("reconciles undirected location connections — set, load by name, and remove", async () => {
+    const made = await db()
+      .insert(locations)
+      .values([
+        { ownerId, name: "Conn Lobby" },
+        { ownerId, name: "Conn Hallway" },
+        { ownerId, name: "Conn Office" },
+      ])
+      .returning({ id: locations.id });
+    const [lobby, hallway, office] = made.map((m) => m.id);
+
+    await setLocationLinks(ownerId, lobby!, [hallway!, office!]);
+    expect((await connectedLocationIds(ownerId, lobby!)).sort()).toEqual([hallway, office].sort());
+    expect(await connectedLocationIds(ownerId, hallway!)).toEqual([lobby]); // undirected
+    expect((await loadLocationLinks(ownerId, lobby!)).map((l) => l.name).sort()).toEqual(["Conn Hallway", "Conn Office"]);
+
+    // Reconcile lobby down to just office: the hallway link is removed, office not doubled.
+    await setLocationLinks(ownerId, lobby!, [office!]);
+    expect(await connectedLocationIds(ownerId, lobby!)).toEqual([office]);
+    expect(await connectedLocationIds(ownerId, hallway!)).toEqual([]);
+  });
+
+  it("drops self-links and unknown targets when reconciling connections", async () => {
+    const [solo] = await db().insert(locations).values({ ownerId, name: "Conn Solo" }).returning({ id: locations.id });
+    await setLocationLinks(ownerId, solo!.id, [solo!.id, "nonexistent-location-id"]);
+    expect(await connectedLocationIds(ownerId, solo!.id)).toEqual([]);
   });
 });

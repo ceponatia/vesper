@@ -14,11 +14,13 @@ import {
   users,
   worldCast,
   worldItems,
+  worldLinks,
   worlds,
 } from "@/server/db";
 import { createSessionFromWorld } from "@/server/engine";
+import { setLocationLinks, worldCreateSchema } from "@/server/api";
 import { createWorldFromDraft, MAX_GENERATED_CAST, updateWorldFromDraft } from "./world-from-draft";
-import { getWorldDetail } from "./worlds";
+import { createWorld, getWorldDetail } from "./worlds";
 
 /**
  * Draft-save conversion (docs/authoring.md §World forge), called directly —
@@ -124,6 +126,35 @@ describe.skipIf(!ready)("createWorldFromDraft (demo mode)", () => {
       .from(characters)
       .where(and(eq(characters.ownerId, ownerId), inArray(characters.name, names)));
     expect(created.map((c) => c.name).sort()).toEqual(["Capped One", "Capped Three", "Capped Two"]);
+  });
+
+  it("recreates library connections as world_links when linked locations are imported", async () => {
+    const made = await db()
+      .insert(locations)
+      .values([
+        { ownerId, name: "Imported Quay" },
+        { ownerId, name: "Imported Market" },
+      ])
+      .returning({ id: locations.id, name: locations.name });
+    const [quay, market] = made;
+    await setLocationLinks(ownerId, quay!.id, [market!.id]);
+
+    const result = await createWorld(
+      ownerId,
+      worldCreateSchema.parse({
+        name: "Propagation World",
+        locations: [
+          { locationId: quay!.id, name: quay!.name },
+          { locationId: market!.id, name: market!.name },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The library Quay↔Market connection propagated into the world's map.
+    const links = await db().select().from(worldLinks).where(eq(worldLinks.worldId, result.worldId));
+    expect(links).toHaveLength(1);
   });
 
   it("a failed forge degrades to a stub character (conceptNote bio, stub tag) with a diagnostic", async () => {

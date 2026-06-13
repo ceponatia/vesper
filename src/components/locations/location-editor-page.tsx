@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { locationsApi, type Ambient } from "@/lib/client/api";
+import { locationsApi, type Ambient, type LocationConnection } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { EntityImageStudio } from "@/components/library/entity-image-studio";
@@ -13,23 +13,36 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SaveBar } from "@/components/ui/save-bar";
+import { Select } from "@/components/ui/select";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
+import { Tag } from "@/components/ui/tag";
 import { TagInput } from "@/components/ui/tag-input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+
+const LOCATION_SCALES = ["intimate", "room", "hall", "open", "expanse"] as const;
+type LocationScaleValue = (typeof LOCATION_SCALES)[number];
+
+const SCALE_HINT = "Spatial size: how far apart people in here can be.";
 
 interface LocationForm {
   name: string;
   description: string;
   ambient: Ambient;
   tags: string[];
+  scale: LocationScaleValue;
+  area: string;
+  /** Undirected connections to other library locations. */
+  links: LocationConnection[];
 }
 
 export function LocationEditorPage({ locationId }: { locationId: string }) {
   const router = useRouter();
   const toast = useToast();
   const detail = useAsyncData(() => locationsApi.get(locationId), [locationId]);
+  // Other library locations to connect to (the connection picker's options).
+  const allLocations = useAsyncData(() => locationsApi.list(), []);
 
   const [form, setForm] = useState<LocationForm | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -58,6 +71,9 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
       description: detail.data.description,
       ambient: detail.data.ambient,
       tags: [...detail.data.tags],
+      scale: detail.data.scale,
+      area: detail.data.area ?? "",
+      links: [...detail.data.links],
     });
   } else if (seedAction === "clear") {
     setSeededId(null);
@@ -75,13 +91,22 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
     if (!form) return;
     const gen = editGenRef.current;
     setSaving(true);
-    const result = await locationsApi.update(locationId, form);
+    const result = await locationsApi.update(locationId, {
+      name: form.name,
+      description: form.description,
+      ambient: form.ambient,
+      tags: form.tags,
+      scale: form.scale,
+      area: form.area.trim() || null,
+      links: form.links.map((l) => l.id),
+    });
     setSaving(false);
     if (result.ok) {
       // Edits made while the save was in flight stay marked unsaved.
       if (editGenRef.current === gen) setDirty(false);
       toast.push({ title: "Location saved", tone: "success" });
       detail.reload({ silent: true });
+      allLocations.reload({ silent: true }); // a rename should refresh the picker labels
     } else {
       toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
     }
@@ -117,6 +142,10 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
 
   if (!form) return null;
 
+  const availableLinks = (allLocations.data ?? []).filter(
+    (l) => l.id !== locationId && !form.links.some((x) => x.id === l.id),
+  );
+
   return (
     <PageContainer>
       <h1 className="prose-display mb-6 text-2xl">{form.name || "Untitled location"}</h1>
@@ -140,6 +169,31 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
         <Field label="Tags">
           {(id) => <TagInput id={id} value={form.tags} onChange={(tags) => patch({ tags })} />}
         </Field>
+        <Field label="Scale" hint={SCALE_HINT}>
+          {(id) => (
+            <Select
+              id={id}
+              value={form.scale}
+              onChange={(e) => patch({ scale: e.target.value as LocationScaleValue })}
+            >
+              {LOCATION_SCALES.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label="Area" hint="Locations sharing an area are a minute apart; crossing areas takes longer.">
+          {(id) => (
+            <Input
+              id={id}
+              value={form.area}
+              placeholder="area label (optional)"
+              onChange={(e) => patch({ area: e.target.value })}
+            />
+          )}
+        </Field>
         <Field label="Description" className="sm:col-span-2">
           {(id) => (
             <Textarea id={id} rows={4} value={form.description} onChange={(e) => patch({ description: e.target.value })} />
@@ -156,6 +210,41 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
             )}
           </Field>
         ))}
+      </div>
+
+      <div className="mt-6 flex flex-col gap-2">
+        <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Connections</h2>
+        <p className="text-xs text-paper-500">
+          Undirected links to other library locations. Designing a multi-room place here preserves its map; importing the
+          set into a world recreates these connections.
+        </p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {form.links.map((link) => (
+            <Tag key={link.id} onRemove={() => patch({ links: form.links.filter((l) => l.id !== link.id) })}>
+              {link.name}
+            </Tag>
+          ))}
+          {availableLinks.length > 0 ? (
+            <Select
+              value=""
+              aria-label="Add connection"
+              onChange={(e) => {
+                const target = availableLinks.find((l) => l.id === e.target.value);
+                if (target) patch({ links: [...form.links, { id: target.id, name: target.name }] });
+              }}
+              className="h-7 w-52 text-xs text-paper-400"
+            >
+              <option value="">+ Connect a location…</option>
+              {availableLinks.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+          ) : form.links.length === 0 ? (
+            <span className="text-xs text-paper-500">No other locations to connect to yet.</span>
+          ) : null}
+        </div>
       </div>
         </>
       )}

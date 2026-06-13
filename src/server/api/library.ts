@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { diag, itemDefinitionSchema, type DiagnosticSink, type ItemDefinition } from "@/contracts";
 import { log } from "@/lib/log";
 import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral } from "@/server/ai";
-import { db, images, items } from "@/server/db";
+import { db, images, items, locationLinks, locations } from "@/server/db";
 import { escapeLikePattern } from "@/server/authoring";
 import { fuzzyResolve, ITEM_DEDUPE_MIN_SCORE, refreshSearchEmbedding, type LibraryKind } from "@/server/memory";
 import { absoluteImagePath, type ImageEntityKind } from "@/server/images";
@@ -238,6 +238,73 @@ export async function deleteEntityImages(entityKind: ImageEntityKind, entityId: 
     void fs.unlink(absoluteImagePath(row)).catch(() => {
       // already gone or transient — image_sweep reconciles
     });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Library location connections (undirected; the library counterpart of world_links)
+// ---------------------------------------------------------------------------
+
+/** The library-location ids connected to `locationId` (undirected). */
+export async function connectedLocationIds(ownerId: string, locationId: string): Promise<string[]> {
+  const rows = await db()
+    .select({ from: locationLinks.fromLocationId, to: locationLinks.toLocationId })
+    .from(locationLinks)
+    .where(
+      and(
+        eq(locationLinks.ownerId, ownerId),
+        or(eq(locationLinks.fromLocationId, locationId), eq(locationLinks.toLocationId, locationId)),
+      ),
+    );
+  return rows.map((r) => (r.from === locationId ? r.to : r.from));
+}
+
+/** A location's connections as `{ id, name }`, for the editor and detail response. */
+export async function loadLocationLinks(ownerId: string, locationId: string): Promise<Array<{ id: string; name: string }>> {
+  const ids = await connectedLocationIds(ownerId, locationId);
+  if (ids.length === 0) return [];
+  return db()
+    .select({ id: locations.id, name: locations.name })
+    .from(locations)
+    .where(and(eq(locations.ownerId, ownerId), inArray(locations.id, ids)));
+}
+
+/**
+ * Reconcile a location's undirected connections to exactly `targetIds` —
+ * unknown/non-owned/self ids are dropped, missing links are inserted, removed
+ * links are deleted (either orientation). One row per pair (docs/world.md).
+ */
+export async function setLocationLinks(ownerId: string, locationId: string, targetIds: readonly string[]): Promise<void> {
+  const wanted = [...new Set(targetIds.filter((t) => t && t !== locationId))];
+  const valid =
+    wanted.length === 0
+      ? []
+      : (
+          await db()
+            .select({ id: locations.id })
+            .from(locations)
+            .where(and(eq(locations.ownerId, ownerId), inArray(locations.id, wanted)))
+        ).map((r) => r.id);
+  const validSet = new Set(valid);
+  const current = new Set(await connectedLocationIds(ownerId, locationId));
+
+  for (const other of current) {
+    if (validSet.has(other)) continue;
+    await db()
+      .delete(locationLinks)
+      .where(
+        and(
+          eq(locationLinks.ownerId, ownerId),
+          or(
+            and(eq(locationLinks.fromLocationId, locationId), eq(locationLinks.toLocationId, other)),
+            and(eq(locationLinks.fromLocationId, other), eq(locationLinks.toLocationId, locationId)),
+          ),
+        ),
+      );
+  }
+  const toAdd = valid.filter((id) => !current.has(id));
+  if (toAdd.length > 0) {
+    await db().insert(locationLinks).values(toAdd.map((toLocationId) => ({ ownerId, fromLocationId: locationId, toLocationId })));
   }
 }
 

@@ -21,6 +21,7 @@ import {
   characters,
   db,
   items,
+  locationLinks,
   locations,
   loreChunks,
   worldCast,
@@ -289,6 +290,35 @@ async function materializeLocations(
       const toArea = areaByWorldLocationId.get(toId);
       const travelMinutes = fromArea && toArea && fromArea !== toArea ? DEFAULT_INTER_AREA_TRAVEL_MINUTES : 1;
       await tx.insert(worldLinks).values({ worldId, fromWorldLocationId: loc.worldLocationId, toWorldLocationId: toId, travelMinutes });
+    }
+  }
+
+  // Propagate library connections (followups.phase3.md §4): when a set of
+  // linked library locations is imported (loc.locationId set), recreate the
+  // location_links between them as world_links — deduped against the authored
+  // links above so an explicit connection is never doubled.
+  const worldLocByLibraryId = new Map<string, string>();
+  for (const r of resolved) if (r.input.locationId) worldLocByLibraryId.set(r.input.locationId, r.worldLocationId);
+  const importedLibraryIds = [...worldLocByLibraryId.keys()];
+  if (importedLibraryIds.length >= 2) {
+    const libraryLinks = await tx
+      .select({ from: locationLinks.fromLocationId, to: locationLinks.toLocationId, travel: locationLinks.travelMinutes })
+      .from(locationLinks)
+      .where(
+        and(
+          eq(locationLinks.ownerId, ownerId),
+          inArray(locationLinks.fromLocationId, importedLibraryIds),
+          inArray(locationLinks.toLocationId, importedLibraryIds),
+        ),
+      );
+    for (const ll of libraryLinks) {
+      const fromWl = worldLocByLibraryId.get(ll.from);
+      const toWl = worldLocByLibraryId.get(ll.to);
+      if (!fromWl || !toWl || fromWl === toWl) continue;
+      const pair = [fromWl, toWl].sort().join("|");
+      if (linked.has(pair)) continue;
+      linked.add(pair);
+      await tx.insert(worldLinks).values({ worldId, fromWorldLocationId: fromWl, toWorldLocationId: toWl, travelMinutes: ll.travel });
     }
   }
   return { created, worldLocationIdByName };
