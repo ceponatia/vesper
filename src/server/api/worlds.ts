@@ -221,6 +221,9 @@ async function materializeLocations(
   input: readonly WorldLocationInput[],
   refs: EntityRefs,
   sink: DiagnosticSink,
+  /** Effective-name → library-id of this world's prior locations (update path);
+   *  lets a re-saved editor-added location reuse its row instead of duplicating. */
+  reuseByName?: Map<string, string>,
 ): Promise<{ created: string[]; worldLocationIdByName: Map<string, string> }> {
   const created: string[] = [];
   const worldLocationIdByName = new Map<string, string>();
@@ -235,14 +238,28 @@ async function materializeLocations(
       baseId = base.id;
       effectiveName = loc.overrides.name ?? base.name;
     } else {
-      const [row] = await tx
-        .insert(locations)
-        .values({ ownerId, name: loc.name, description: loc.description, ambient: loc.ambient, scale: loc.scale, tags: loc.tags })
-        .returning({ id: locations.id });
-      if (!row) continue;
-      created.push(row.id);
-      baseId = row.id;
-      effectiveName = loc.name;
+      const reuseId = reuseByName?.get(loc.name.trim().toLowerCase());
+      if (reuseId) {
+        // followups.phase3.md §5: this world already created a library location
+        // with this name on a prior save (the editor draft never learned its
+        // id). Reuse and refresh it instead of inserting a duplicate.
+        await tx
+          .update(locations)
+          .set({ name: loc.name, description: loc.description, ambient: loc.ambient, scale: loc.scale, tags: loc.tags })
+          .where(and(eq(locations.id, reuseId), eq(locations.ownerId, ownerId)));
+        created.push(reuseId);
+        baseId = reuseId;
+        effectiveName = loc.name;
+      } else {
+        const [row] = await tx
+          .insert(locations)
+          .values({ ownerId, name: loc.name, description: loc.description, ambient: loc.ambient, scale: loc.scale, tags: loc.tags })
+          .returning({ id: locations.id });
+        if (!row) continue;
+        created.push(row.id);
+        baseId = row.id;
+        effectiveName = loc.name;
+      }
     }
     // Area is world-placement data, so it always rides in overrides; for a
     // linked library location, scale rides there too (the base row is shared).
@@ -329,6 +346,8 @@ interface MaterializeSeeds {
   worldLocationIdByName?: Map<string, string>;
   /** Existing cast ids by character id (PATCH that keeps the current cast). */
   castIdByCharacterId?: Map<string, string>;
+  /** Effective-name → library-id of the world's prior locations (re-save reuse, §5). */
+  reuseLibraryIdByName?: Map<string, string>;
 }
 
 async function materializeWorldEntities(
@@ -342,7 +361,7 @@ async function materializeWorldEntities(
 ): Promise<MaterializeResult> {
   const { created: createdLocationIds, worldLocationIdByName } =
     input.locations.length > 0 || !seeds.worldLocationIdByName
-      ? await materializeLocations(tx, ownerId, worldId, input.locations, refs, sink)
+      ? await materializeLocations(tx, ownerId, worldId, input.locations, refs, sink, seeds.reuseLibraryIdByName)
       : { created: [], worldLocationIdByName: seeds.worldLocationIdByName };
 
   const castIdByCharacterId = new Map<string, string>(seeds.castIdByCharacterId ?? []);
@@ -443,6 +462,27 @@ async function existingLocationNameMap(tx: Tx, worldId: string): Promise<Map<str
   for (const row of rows) {
     const overrides = parseOr(worldLocationOverridesSchema, row.overrides, {}, undefined, "world_locations.overrides");
     map.set((overrides.name ?? row.name).trim().toLowerCase(), row.id);
+  }
+  return map;
+}
+
+/**
+ * Effective-name → library `location_id` for the world's current locations,
+ * captured before an update re-materializes the map (§5): a re-saved
+ * editor-added location (no `locationId` in the draft) reuses the library row
+ * this world already created for that name instead of duplicating it.
+ */
+async function existingLibraryIdByName(tx: Tx, worldId: string): Promise<Map<string, string>> {
+  const rows = await tx
+    .select({ locationId: worldLocations.locationId, overrides: worldLocations.overrides, name: locations.name })
+    .from(worldLocations)
+    .innerJoin(locations, eq(worldLocations.locationId, locations.id))
+    .where(eq(worldLocations.worldId, worldId));
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const overrides = parseOr(worldLocationOverridesSchema, row.overrides, {}, undefined, "world_locations.overrides");
+    const key = (overrides.name ?? row.name).trim().toLowerCase();
+    if (!map.has(key)) map.set(key, row.locationId);
   }
   return map;
 }
@@ -587,6 +627,11 @@ export async function updateWorld(ownerId: string, worldId: string, body: WorldP
     }
     if (Object.keys(scalar).length > 0) await tx.update(worlds).set(scalar).where(eq(worlds.id, worldId));
 
+    // Capture the world's current name→library-id map BEFORE the delete, so a
+    // re-saved editor-added location reuses its row instead of duplicating (§5).
+    const reuseLibraryIdByName =
+      body.locations !== undefined ? await existingLibraryIdByName(tx, worldId) : undefined;
+
     if (body.locations !== undefined) await tx.delete(worldLocations).where(eq(worldLocations.worldId, worldId));
     if (body.cast !== undefined) await tx.delete(worldCast).where(eq(worldCast.worldId, worldId));
     if (body.items !== undefined) await tx.delete(worldItems).where(eq(worldItems.worldId, worldId));
@@ -595,7 +640,7 @@ export async function updateWorld(ownerId: string, worldId: string, body: WorldP
     if (body.locations || body.cast || body.items || body.loreChunks) {
       // Families not sent in this PATCH keep their current rows; seed the name
       // maps from them so the sent families can still reference them.
-      const seeds: MaterializeSeeds = {};
+      const seeds: MaterializeSeeds = { reuseLibraryIdByName };
       if (body.locations === undefined) seeds.worldLocationIdByName = await existingLocationNameMap(tx, worldId);
       if (body.cast === undefined) {
         const existingCast = await tx

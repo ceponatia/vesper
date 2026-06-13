@@ -594,10 +594,12 @@ describe("worlds", () => {
     expect(afterItems[0]?.itemId).toBe(clothingItemId); // reused by name
     expect(afterItems[0]?.worn).toBe(true);
 
-    // no library rows were duplicated by the save
+    // no library rows were duplicated by the save: the name-only "Quay" reuses
+    // the row this world already created for it rather than orphaning it and
+    // inserting a fresh one (followups.phase3.md §5).
     const libLocationsAfter = await db().select({ id: locations.id }).from(locations).where(eq(locations.ownerId, authState.user.id));
     const libItemsAfter = await db().select({ id: items.id }).from(items).where(eq(items.ownerId, authState.user.id));
-    expect(libLocationsAfter.length).toBe(libLocationsBefore.length + 1); // only the new "Quay" row
+    expect(libLocationsAfter.length).toBe(libLocationsBefore.length);
     expect(libItemsAfter.length).toBe(libItemsBefore.length);
   });
 });

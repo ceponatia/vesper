@@ -274,13 +274,25 @@ assigned, and is re-created (and the prior copy orphaned) on every
 subsequent save. The "Generate images" batch then filled images for all
 the orphans, which is why they became newly visible.
 
-**Fix (queued — same file set as Part 2's world propagation, do
-together on a clean tree).** Options: after a save, re-seed the editor
-draft with the returned location ids; and/or make `materializeLocations`
-reuse an existing library location by name within the world instead of
-blind-inserting; plus a one-off cleanup of the orphaned duplicate rows
-(library locations with no `world_locations` link whose name matches a
-still-linked one). Cleanup not run — the Postgres tool used was
-read-only; offered to the user.
+**Fix applied (2026-06-13) — server-side reuse-by-name.** `updateWorld`
+captures the world's `effective-name → library-id` map **before** it
+deletes `world_locations` (`existingLibraryIdByName`) and threads it into
+`materializeLocations` as `reuseLibraryIdByName`. A draft location with no
+`locationId` whose name matches one this world already created now reuses
+and refreshes that library row instead of inserting a duplicate. Covered
+by a new integration test (re-save a name-only location twice → one
+library row) and the existing world-update route test (now asserts the
+re-sent "Quay" reuses, `+0` library rows, not `+1`).
 
-Status: **open (queued).**
+Residual: **renaming** an editor-added location across saves still misses
+the name match and orphans the old-name row once (the lone one-word
+"Breakroom" orphan). The complete rename-safe fix is the client carrying
+each location's `locationId` back into the draft after a save (so it
+rides the existing `locationId` reuse path) — left as a smaller follow-on.
+
+**Cleanup of the existing 10 orphans:** done separately (a targeted
+delete of orphaned library locations whose name matches a still-linked
+one); the lone uniquely-named "Breakroom" handled by hand.
+
+Status: **fixed (re-save dedup); rename-residual + client round-trip
+remain a smaller follow-on.**
