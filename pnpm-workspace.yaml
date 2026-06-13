@@ -1,0 +1,9 @@
+# Marks vesper/ as its own pnpm installation root. Keep pnpm commands scoped
+# to this folder even when a parent directory also has workspace metadata.
+packages:
+  - "."
+
+allowBuilds:
+  sharp: true
+  esbuild: true
+  unrs-resolver: true

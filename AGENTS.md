@@ -1,0 +1,14 @@
+# Vesper — agent notes
+
+- This app is documented system-by-system in `docs/` — **read `docs/README.md` first**, then the doc for whichever system you touch. Update the relevant doc in the same change when behavior or patterns shift.
+- Resilience rules in `docs/resilience.md` are mandatory: `parseOr` at every trust boundary, diagnostics over exceptions, degraded defaults over failed turns.
+- `src/contracts` and `src/lib` are pure (no IO/env/db). Server modules import each other only through `index.ts` barrels. Components never import `server/*`.
+- Registries (attributes, meters, fact kinds, body locations) are the extension points — vocabulary changes are data edits in one file, never schema migrations.
+- DB workflow: edit `src/server/db/schema.ts` → `pnpm db:generate` → review SQL in `drizzle/` → `pnpm db:migrate`. Never `drizzle-kit push`.
+- Tests: `pnpm test` (pure), `pnpm test:int` (needs Postgres). Degradation tests assert fallback **and** diagnostic code.
+- Working-phase docs (`docs/developer-notes/`) follow a naming convention: `phase-N-plan.md` is the anchor for working phase N, `phase-N.md` is that phase's findings/problem doc, and supporting files are named `<topic>.phaseN.md` (e.g. `access-control-design.phase2.md`) — the workspace file nests them under their plan in the editor.
+  - Every `phase-N-plan.md` opens with a `Status:` line — **draft** (plan not settled / placeholder), **in progress** (the active phase), or **completed** (dated, with a completion note naming any leftovers and where they went).
+  - Open questions raised anywhere in a phase's docs are restated in that phase's plan under an `## Open questions` section, each entry linking to the doc (and section) holding the detail — the plan is the one place to scan for undecided items. When a question is resolved, remove it from the plan and record the ruling in the detail doc.
+  - Specs pulled into a phase get a dated status note pointing at the plan. Docs spanning several future phases carry the suffix of the phase where their remaining work lives and are re-suffixed when phases roll (`grep -rn '\.phaseN\.md' docs/ src/` finds every pointer, including `src/` code comments).
+  - After a phase ships, fixes and small improvements found in testing/play are tracked in a supplemental `followups.phaseN.md` (nests under the plan): dated entries with the observation, investigation, verdict, and proposed fix. Anything feature-sized goes into the next phase's plan instead.
+- This folder is its own pnpm root (see `pnpm-workspace.yaml`); run pnpm commands from here, not the repo root.

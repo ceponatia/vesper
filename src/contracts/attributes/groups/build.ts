@@ -1,0 +1,58 @@
+import { defineAttributeGroup } from "../types";
+
+export const buildGroup = defineAttributeGroup("build", [
+  {
+    id: "build.height",
+    label: "Height",
+    kind: "physical",
+    category: "build",
+    valueType: "enum",
+    description: "Overall height as it visibly reads.",
+    mutability: "inherent",
+    allowedValues: [
+      "very_short", "short", "below_average", "average",
+      "above_average", "tall", "very_tall", "towering",
+    ],
+    aliases: ["height", "tall", "short", "petite"],
+    promptHints: ["Convey height through comparison and blocking (\"she has to look up at him\"), never as a number."],
+    coreVisual: true,
+  },
+  {
+    id: "build.frame",
+    label: "Frame",
+    kind: "physical",
+    category: "build",
+    valueType: "enum",
+    description: "Skeletal frame and overall silhouette.",
+    mutability: "inherent",
+    allowedValues: [
+      "slight", "willowy", "lean", "average", "athletic",
+      "curvy", "stocky", "broad", "heavyset",
+    ],
+    aliases: ["frame", "build", "figure", "physique", "curvy"],
+    coreVisual: true,
+  },
+  {
+    id: "build.musculature",
+    label: "Musculature",
+    kind: "physical",
+    category: "build",
+    valueType: "enum",
+    description: "Visible muscle development.",
+    mutability: "mutable",
+    allowedValues: ["soft", "untoned", "lightly_toned", "toned", "defined", "muscular", "powerfully_built"],
+    aliases: ["muscles", "muscle tone", "musculature"],
+  },
+  {
+    id: "build.weight_presentation",
+    label: "Weight presentation",
+    kind: "physical",
+    category: "build",
+    valueType: "enum",
+    description: "How body weight visibly presents.",
+    mutability: "mutable",
+    allowedValues: ["underweight", "slim", "average", "soft", "plump", "heavy", "very_heavy"],
+    aliases: ["weight", "body weight"],
+    promptHints: ["Describe weight as silhouette and presence, never as a number or a judgement."],
+  },
+]);

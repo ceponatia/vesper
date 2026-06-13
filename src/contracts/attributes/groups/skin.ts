@@ -1,0 +1,56 @@
+import { defineAttributeGroup } from "../types";
+
+export const skinGroup = defineAttributeGroup("skin", [
+  {
+    id: "skin.tone",
+    label: "Skin tone",
+    kind: "physical",
+    category: "skin",
+    valueType: "enum",
+    description: "Base skin tone.",
+    mutability: "inherent",
+    allowedValues: [
+      "porcelain", "fair", "light", "light_olive", "olive", "tan",
+      "golden", "bronze", "light_brown", "brown", "dark_brown", "deep_ebony",
+    ],
+    aliases: ["skin tone", "skin color", "complexion"],
+    coreVisual: true,
+  },
+  {
+    id: "skin.undertone",
+    label: "Skin undertone",
+    kind: "physical",
+    category: "skin",
+    valueType: "enum",
+    description: "Undertone that shows in blush and light.",
+    mutability: "inherent",
+    allowedValues: ["cool", "neutral", "warm", "rosy", "golden", "olive"],
+    aliases: ["undertone"],
+  },
+  {
+    id: "skin.texture",
+    label: "Skin texture",
+    kind: "physical",
+    category: "skin",
+    valueType: "enum",
+    description: "Overall skin texture at close range.",
+    mutability: "mutable",
+    allowedValues: ["smooth", "soft", "dewy", "dry", "rough", "weathered", "leathery"],
+    aliases: ["skin texture"],
+  },
+  {
+    id: "skin.markings",
+    label: "Skin markings",
+    kind: "physical",
+    category: "skin",
+    valueType: "enum_list",
+    description: "Persistent markings anywhere on the body.",
+    mutability: "mutable",
+    allowedValues: [
+      "tattoos", "scars", "birthmark", "moles", "beauty_mark",
+      "vitiligo", "stretch_marks", "sun_spots", "burn_scar", "piercing_marks",
+    ],
+    aliases: ["markings", "tattoos", "scars", "birthmark"],
+    promptHints: ["Mention markings only when exposure allows them to be seen."],
+  },
+]);

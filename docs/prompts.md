@@ -1,0 +1,50 @@
+# Prompt architecture
+
+`src/server/engine/prompts/` — all prompt assembly is code-reviewed text in one place. Builders are pure functions of typed inputs (snapshot-testable); no inline prompt strings elsewhere in the engine.
+
+## The two-block narrative prompt
+
+Provider prefix caching only pays when the prefix is byte-stable, so the narrative prompt is split:
+
+1. **Static rulebook** (`system` message; identical across consecutive turns of a session):
+   - Narrator identity & world synopsis (`always`-tier lore: style directives, era, factions, narrator guidance)
+   - Canonical character facts (name, apparent age, key attributes — drawn from resolved attribute values via registry `promptHints`)
+   - Invariant rule blocks: location fidelity, movement, **presence fidelity** (only characters listed Present in the "Who is where" block may act or speak; a Nearby character joins only via a narrated physical arrival before their first line; Elsewhere characters may be discussed or quoted from memory but never enacted — reported speech is fine, a new line of dialogue from an absent character never is; wanting an absent character is a setup, not a teleport), wardrobe fidelity, temporal realism, perception limits, prose style, dialogue tagging, response contract
+   - Embodied vs observer narration mode rules. **Embodied**: second-person "you", never voice the player, NPCs perceive only what's plausible — and when the player opens a conversation without supplying their words (a phone call, "I ask about…"), the narrator voices only the other side up to where the player would speak next, ends the turn, and waits (never scripts the player's half of an exchange; the continuity agent flags invented player dialogue as a major violation, which the merge folds into next-turn corrections). **Observer**: the user is an out-of-world director with no body in the scene — input is stage direction, never quoted as speech, no "you" in narration, and movement validation has no player participant to move.
+2. **Turn context** (start of the `user` message; volatile):
+   - **"This turn" digest** (first block after the clock): a binding, deterministic distillation of the constraint blocks below it — voice freely / may bring in via narrated arrival / never enact / blocked thresholds (`scene.buildTurnDigest`; every line restates an authoritative block, never new facts; renders nothing when there's nothing to constrain)
+   - Game clock + elapsed time; scene snapshot (location, fixtures, items, containers — full on first visit, one-line summary + changes on revisits; plus one `Size:` framing line from the location's `scale` — **strictly physical size** ("an intimate space; a few steps span it"), never proximity staging, because the proximity phase's entry default for intimate/room is `apart`; default `room` renders no line); a "Comings and goings" block when the brief carries schedule-tick arrivals/departures ("Mara arrived from the market." — stage naturally, never replay as teleportation); a "Who is where" presence roster right after the scene snapshot (`buildPresenceRoster` — every session NPC grouped as `Present:` (co-located with the active location), `Nearby (…): Name (Location)` (adjacent via the undirected link graph; may join this turn only by a narrated arrival before any dialogue), or `Elsewhere: Name (Location)`; empty groups render nothing; interim co-location semantics, same as `witnessed_by` — the rulebook's presence-fidelity rules enforce it, and the continuity agent gets the same roster lines plus a rule flagging an enacted Elsewhere/unarrived-Nearby character as a major violation); wardrobe visibility per present NPC (the *sole authority* on worn clothing, computed per [contracts.md](contracts.md) visibility rules); meter threshold hints & active conditions; character glance impressions (first encounter / intent-detected look targets get full impressions); retrieved memory (merged facts channel, capped at 8); story-so-far + scene summary + director directives + top 3 open threads; NPC affordances (exits, reachable items); movement/follow guidance when the player moved; an absence notice when the player's input names a session NPC who is not at their location (`buildAbsenceNotice` — don't stage them; entry only per the presence-fidelity rules (Nearby + narrated arrival); a direct address earns a light teasing aside, e.g. "Talking to yourself again?")
+   - **Exposure gating**: the brief's `ExposureMask` (per-sense: appearance/scent/touch at none→ambient→close→intimate) renders as sensory rules — e.g. scent at `ambient` permits room-level notes only; `close`/`intimate` unlock person-level detail, with hygiene-meter threshold hints woven in. The director raises/lowers the mask with scene intimacy; intent detection (a smell/touch-targeted input) raises the relevant sense for one turn.
+   - …followed by the player's input, which the opening of the response must address. Input with a leading OOC marker (`(OOC: …)`, `OOC: …`, `[ooc] …` — `isOocInput` in `engine/intent.ts`) gets an out-of-character heading instead: the narrator answers the question directly from the Turn context blocks (exits, present characters, items, time) with no scene narration, and the turn skips the post-turn pipeline entirely (no agents, no clock advance, no episode — see [turn-engine.md](turn-engine.md)).
+
+History: the last 2 raw user/assistant exchanges ride as normal chat messages between system and the new user message (voice continuity).
+
+## Dialogue tagging
+
+NPC speech must start a line as `[Name] "…"` using exactly the session NPC name list; narration stays untagged. The streaming segmenter parses tags incrementally (holding back partial line starts) and emits `{segmentIndex, speaker, content}` deltas — the UI renders narrator prose vs speaker bubbles live. Same protocol as the old app (it worked); implementation in `engine/segmenter.ts` with the edge cases under test: unknown names, soft-wrapped lines, tags split across chunks, blank-line segment termination.
+
+Prompt vocabulary and parser vocabulary are both **session-wide** (every session NPC): an arriving Nearby character must be taggable so their dialogue segments into speaker bubbles instead of plain prose, and a session-stable name list keeps the rulebook bytes identical across moves (prefix caching — the old present-only list cost a cache miss on every location change). WHO may actually speak is gated by the "Who is where" roster and the Presence fidelity rules (tagging rule 5 says so explicitly), enforced post-hoc by the continuity agent's absent-character violation. The parser stays liberal regardless — a violating tag still segments cleanly instead of leaking literal `[Name]` brackets.
+
+## Authority ordering
+
+When sources conflict, later turns hinge on the model knowing what wins. Every context block carries an explicit authority note; the order is:
+
+1. Wardrobe visibility block (what is worn/visible *now*)
+2. Scene snapshot (fixed features of the room)
+3. Current state lines (locations, activities, meters, conditions)
+4. Direction (director directives for this turn)
+5. State corrections (dropped events — last turn's narration described events that did not take effect)
+6. Retrieved facts (long-term memory)
+7. Recent story (style/voice only — never authoritative for physical state)
+
+## Agent prompts
+
+Each post-turn agent has a tight system prompt: role, what to extract, what NOT to do (no inventing entities, names exactly as written, ignore quoted/hypothetical dialogue for physical events), and 2–3 worked examples. Agent user messages contain only that agent's state slice (see [turn-engine.md](turn-engine.md)). Keep agent prompts under ~600 tokens each — they run every turn.
+
+## Style rules for prompt text
+
+- Numbered/bulleted rule blocks, one rule per line, no prose paragraphs of instructions.
+- Reference data blocks by their heading names (`the "Visible wardrobe" block`), never "above"/"below".
+- Anything tunable (history depth, fact cap, paragraph guidance) is a named constant in `prompts/constants.ts`.
+- Authored text reaches prompt builders with `{{player}}` already resolved — filled once at session-bundle load ([authoring.md](authoring.md) §The `{{player}}` token); builders never handle the raw token.
+- **Clothing category names never enter gameplay prompts.** Items are described by name, description, and resolved coverage only — the `category` field on ItemDefinition is an authoring template (docs/contracts.md §Clothing categories). Sending "t-shirt"-style template names would contradict user edits (a top with arm coverage removed must read as sleeveless).

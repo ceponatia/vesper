@@ -1,0 +1,41 @@
+import { defineAttributeGroup } from "../types";
+
+export const handsGroup = defineAttributeGroup("hands", [
+  {
+    id: "hands.size",
+    label: "Hand size",
+    kind: "physical",
+    category: "hands",
+    valueType: "enum",
+    description: "Hand size and proportion.",
+    mutability: "inherent",
+    allowedValues: ["small", "slender", "average", "large", "broad"],
+    bodyLocationId: "hands",
+    aliases: ["hands", "hand size"],
+  },
+  {
+    id: "hands.texture",
+    label: "Hand texture",
+    kind: "physical",
+    category: "hands",
+    valueType: "enum",
+    description: "How the hands feel and read up close; work changes them.",
+    mutability: "mutable",
+    allowedValues: ["soft", "smooth", "dry", "weathered", "calloused", "rough", "scarred"],
+    bodyLocationId: "hands",
+    aliases: ["hand texture", "calloused"],
+    promptHints: ["Hand texture is a touch detail first — surface it on contact, not in a visual sweep."],
+  },
+  {
+    id: "hands.nails",
+    label: "Nails",
+    kind: "presentation",
+    category: "hands",
+    valueType: "enum",
+    description: "Fingernail length and upkeep.",
+    mutability: "mutable",
+    allowedValues: ["bitten", "short", "neatly_trimmed", "manicured", "long", "pointed", "painted", "chipped"],
+    bodyLocationId: "fingers",
+    aliases: ["nails", "fingernails", "manicure"],
+  },
+]);

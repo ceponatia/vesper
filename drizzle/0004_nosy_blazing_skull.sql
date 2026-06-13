@@ -1,0 +1,1 @@
+ALTER TABLE "world_locations" ADD COLUMN "sort" integer DEFAULT 0 NOT NULL;

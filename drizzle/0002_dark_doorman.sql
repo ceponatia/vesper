@@ -1,0 +1,1 @@
+ALTER TABLE "episodes" ADD COLUMN "witnessed_by" jsonb DEFAULT '[]'::jsonb NOT NULL;

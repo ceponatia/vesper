@@ -1,0 +1,1 @@
+ALTER TABLE "world_cast" ADD COLUMN "relationships" jsonb DEFAULT '[]'::jsonb NOT NULL;

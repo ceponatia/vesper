@@ -1,0 +1,1751 @@
+import { and, eq, sql } from "drizzle-orm";
+import { matchActions, type ActionDefinition } from "@/contracts/actions/registry";
+import { attributeRegistry } from "@/contracts/attributes";
+import { attributeValueSchema } from "@/contracts/attributes/value";
+import { isConditionExpired, type ActiveCondition } from "@/contracts/conditions/condition";
+import { diag, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { ItemDefinition, ItemInstanceState } from "@/contracts/items/item";
+import { applyMeterDrift, crossedThresholdHints, type MeterDefinition } from "@/contracts/meters/registry";
+import { emptyBrief, nextTurnBriefSchema, type NextTurnBrief } from "@/contracts/state/brief";
+import type { ParticipantState } from "@/contracts/state/participant-state";
+import { storyThreadSchema, type SessionRuntime, type StoryThread } from "@/contracts/state/session-runtime";
+import type {
+  AgentResults,
+  ArchivistResult,
+  ContinuityResult,
+  DirectorResult,
+  SimulantResult,
+} from "@/contracts/turns/agent-results";
+import type { TurnAuthor } from "@/contracts/turns/stream";
+import type { CharacterProfile } from "@/contracts/world/profile";
+import { checkLinkAccess } from "@/contracts/world/access";
+import { minuteOfDay, resolveGameTime } from "@/lib/clock";
+import { newId } from "@/lib/ids";
+import { parseOrNull } from "@/lib/parse";
+import { clampAffinity, stageForValue } from "@/contracts/relationships/stages";
+import { db, events, itemInstances, participantRelationships, sessionParticipants, sessions, turns } from "../db";
+import { addFacts, appendEpisode, computeUnlocks, deleteEpisodeForTurn, fuzzyResolve, type FactDraftInput } from "../memory";
+import { activeLocationId, type BundlePlace, type BundleRelationship, type SessionBundle } from "./bundle";
+import { declaredRestMinutes, detectDeclaredRest, detectIntent, isOocInput } from "./intent";
+import {
+  AFFINITY_DECAY_WEEK_MINUTES,
+  AFFINITY_DELTA_CLAMP,
+  DEFAULT_LINK_TRAVEL_MINUTES,
+  FALLBACK_MINUTES_ADVANCED,
+  MAX_MINUTES_ADVANCED,
+  MIN_MINUTES_ADVANCED,
+  REST_CLAMP_MINUTES,
+  SCHEDULE_JITTER_MINUTES,
+  THREAD_COOLING_TURNS,
+} from "./constants";
+import { effectiveMeterDefinitions, type SceneLinkInput } from "./scene";
+
+/**
+ * The merge reducer (docs/turn-engine.md §Merge reducer): deterministic
+ * planning over the typed bundle + whatever agent subset succeeded, then one
+ * transaction for all world-state writes. Invalid references degrade to
+ * dropped events with diagnostics; a turn with every agent failed still
+ * advances the clock, applies drift, and writes a synthetic episode.
+ */
+
+// ---------------------------------------------------------------------------
+// Working state
+// ---------------------------------------------------------------------------
+
+export interface WorkingParticipant {
+  id: string;
+  displayName: string;
+  isUser: boolean;
+  role: "player" | "companion" | "npc";
+  characterId: string | null;
+  snapshot: CharacterProfile;
+  locationId: string | null;
+  state: ParticipantState;
+}
+
+export interface WorkingItem {
+  id: string;
+  name: string;
+  itemId: string | null;
+  definition: ItemDefinition;
+  holderParticipantId: string | null;
+  worn: boolean;
+  locationId: string | null;
+  containerInstanceId: string | null;
+  positionNote: string | null;
+  state: ItemInstanceState;
+}
+
+export interface MergeTurn {
+  id: string;
+  number: number;
+  author: TurnAuthor;
+  input: string;
+  narration: string;
+  /** Companion-authored turns: the speaking NPC (counts as a targeted interaction). */
+  speakerParticipantId?: string | null;
+}
+
+export type MergeMode = "post_turn" | "reconcile";
+
+export interface GroundingDeps {
+  /** Library fuzzy match for an item name (maps to instances via itemId). */
+  resolveLibraryItem?: (name: string) => Promise<{ id: string } | null>;
+  /** Library fuzzy match for a location name (maps via session_locations.location_id). */
+  resolveLibraryLocation?: (name: string) => Promise<{ id: string } | null>;
+}
+
+export interface PlanInput {
+  bundle: SessionBundle;
+  turn: MergeTurn;
+  results: AgentResults;
+  sink: DiagnosticSink;
+  mode?: MergeMode;
+  deps?: GroundingDeps;
+  /** When set, lore-unlock near-misses are logged as events (impure). */
+  logMissesForSessionId?: string;
+}
+
+export interface MergePlan {
+  /** Minutes applied by this merge (0 in reconcile mode). */
+  minutes: number;
+  /** Dominant time component ("travel", "shower", "scene", "reconcile") — for the clock-delta UI. */
+  minutesCause: string;
+  /** Final session clock. */
+  clockMinutes: number;
+  participants: WorkingParticipant[];
+  items: WorkingItem[];
+  /** Ids of items whose row changed (placement or state). */
+  touchedItemIds: string[];
+  factDrafts: FactDraftInput[];
+  episodeSummary: string;
+  syntheticEpisode: boolean;
+  touchedThreadIds: string[];
+  runtime: SessionRuntime;
+  brief: NextTurnBrief;
+  droppedEvents: string[];
+  affinityUpdates: AffinityUpdate[];
+  /** Time-driven affinity decay applied by this merge (post_turn only; always empty in reconcile). */
+  affinityDecay: AffinityDecayEdge[];
+  /** Participant ids co-located with the player this turn (interim witness semantics). */
+  witnessedBy: string[];
+}
+
+const SYNTHETIC_EPISODE_CHARS = 300;
+const ITEM_NOTE_CAP = 5;
+const CORRECTION_CAP = 2;
+const THRESHOLD_HINT_CAP = 2;
+const DIRECTIVE_CAP = 8;
+
+// ---------------------------------------------------------------------------
+// Pure helpers (unit-tested directly)
+// ---------------------------------------------------------------------------
+
+/** Clamp simulant minutes to [MIN, MAX]; null/garbage → FALLBACK (clock always advances). */
+export function clampMinutes(raw: number | null | undefined, sink?: DiagnosticSink): number {
+  if (raw === null || raw === undefined || !Number.isFinite(raw)) return FALLBACK_MINUTES_ADVANCED;
+  const rounded = Math.round(raw);
+  if (rounded < MIN_MINUTES_ADVANCED || rounded > MAX_MINUTES_ADVANCED) {
+    const clamped = Math.min(MAX_MINUTES_ADVANCED, Math.max(MIN_MINUTES_ADVANCED, rounded));
+    sink?.push(diag("info", "merge.clock.clamped", `minutesAdvanced ${rounded} clamped to ${clamped}`));
+    return clamped;
+  }
+  return rounded;
+}
+
+export function advanceClock(
+  input: { clockMinutes: number; minutesAdvanced: number | null | undefined },
+  sink?: DiagnosticSink,
+): { clockMinutes: number; minutes: number } {
+  const minutes = clampMinutes(input.minutesAdvanced, sink);
+  return { clockMinutes: input.clockMinutes + minutes, minutes };
+}
+
+/** Declared rest gets its own clamp — never less than a minute, never more than REST_CLAMP_MINUTES. */
+export function clampRestMinutes(raw: number, sink?: DiagnosticSink): number {
+  if (!Number.isFinite(raw)) return FALLBACK_MINUTES_ADVANCED;
+  const rounded = Math.round(raw);
+  if (rounded < MIN_MINUTES_ADVANCED || rounded > REST_CLAMP_MINUTES) {
+    const clamped = Math.min(REST_CLAMP_MINUTES, Math.max(MIN_MINUTES_ADVANCED, rounded));
+    sink?.push(diag("info", "merge.clock.rest_clamped", `declared rest ${rounded} clamped to ${clamped}`));
+    return clamped;
+  }
+  return rounded;
+}
+
+/** The link connecting two locations, either direction (links are bidirectional). */
+export function findLink(fromId: string, toId: string, links: readonly SceneLinkInput[]): SceneLinkInput | null {
+  return (
+    links.find((l) => (l.fromId === fromId && l.toId === toId) || (l.fromId === toId && l.toId === fromId)) ?? null
+  );
+}
+
+/** Traversal cost of the link between two locations (either direction). */
+export function linkTravelMinutes(fromId: string | null, toId: string, links: readonly SceneLinkInput[]): number {
+  if (fromId === null) return 0; // placing an unplaced participant costs nothing
+  return findLink(fromId, toId, links)?.travelMinutes ?? DEFAULT_LINK_TRAVEL_MINUTES;
+}
+
+/**
+ * Turn time (docs/developer-notes/time-and-travel-spec.phase3.md): authored
+ * components win over the LLM estimate, composed by max — never sum — so
+ * overlapping activities are not double-counted. Decision 40: the estimate
+ * still participates, so narration that clearly spans longer than a
+ * registered action is not undercounted. Declared rest (decision 38) joins
+ * the same composition with its own clamp (REST_CLAMP_MINUTES, not 480) —
+ * ordinary turns without a rest component are untouched.
+ */
+export function resolveTurnMinutes(
+  input: {
+    estimate: number | null | undefined;
+    travelMinutes: number;
+    actions: readonly ActionDefinition[];
+    /** Declared rest ("slept until morning"): minutes pre-wrap, clamped here. */
+    rest?: { minutes: number; cause: string } | null;
+  },
+  sink?: DiagnosticSink,
+): { minutes: number; cause: string } {
+  const estimate = clampMinutes(input.estimate, sink);
+  const longestAction = input.actions.reduce<ActionDefinition | null>(
+    (best, a) => (best === null || a.minutes > best.minutes ? a : best),
+    null,
+  );
+  const components: Array<{ minutes: number; cause: string }> = [
+    { minutes: estimate, cause: "scene" },
+    { minutes: input.travelMinutes, cause: "travel" },
+    ...(longestAction ? [{ minutes: longestAction.minutes, cause: longestAction.label.toLowerCase() }] : []),
+    ...(input.rest ? [{ minutes: clampRestMinutes(input.rest.minutes, sink), cause: input.rest.cause }] : []),
+  ];
+  // Last-wins on ties so an authored component beats an equal estimate.
+  const winner = components.reduce((best, c) => (c.minutes >= best.minutes ? c : best));
+  return { minutes: winner.minutes, cause: winner.cause };
+}
+
+/** Deterministic meter effects from registered actions (shower restores hygiene). Agent deltas still apply afterwards and win. */
+export function applyActionMeterEffects(
+  meters: Record<string, number>,
+  actions: readonly ActionDefinition[],
+  defs: readonly MeterDefinition[],
+  sink?: DiagnosticSink,
+  participantName?: string,
+): Record<string, number> {
+  const known = new Set(defs.map((d) => d.id));
+  const next = { ...meters };
+  for (const action of actions) {
+    for (const effect of action.meterEffects) {
+      if (!known.has(effect.meterId)) {
+        sink?.push(
+          diag("info", "merge.action.unknown_meter", `action "${action.id}" meter effect "${effect.meterId}" skipped (meter disabled or unknown)`, {
+            context: { participantName, meterId: effect.meterId },
+          }),
+        );
+        continue;
+      }
+      if (effect.set !== undefined) {
+        next[effect.meterId] = Math.min(1, Math.max(0, effect.set));
+      } else if (effect.delta !== undefined) {
+        const current = next[effect.meterId] ?? defs.find((d) => d.id === effect.meterId)?.initial ?? 0;
+        next[effect.meterId] = Math.min(1, Math.max(0, current + effect.delta));
+      }
+    }
+  }
+  return next;
+}
+
+/** Does the text mention the participant's first name or an alias (whole-word, ci)? */
+export function mentionsParticipant(text: string, participant: WorkingParticipant): boolean {
+  const lower = text.toLowerCase();
+  const names = [participant.displayName.split(/\s+/)[0] ?? participant.displayName, ...participant.snapshot.aliases];
+  return names.some((name) => {
+    const n = name.trim().toLowerCase();
+    if (!n) return false;
+    const re = new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    return re.test(lower);
+  });
+}
+
+/** Case-insensitive display-name map; canonical casing comes from the row. Aliases included. */
+export function groundParticipants(participants: readonly WorkingParticipant[]): Map<string, WorkingParticipant> {
+  const map = new Map<string, WorkingParticipant>();
+  for (const p of participants) {
+    map.set(p.displayName.trim().toLowerCase(), p);
+    for (const alias of p.snapshot.aliases) {
+      const key = alias.trim().toLowerCase();
+      if (key && !map.has(key)) map.set(key, p);
+    }
+  }
+  return map;
+}
+
+/** Display name → participant: exact (ci) → alias → unique first-word match. */
+export function findParticipant(
+  name: string,
+  participants: readonly WorkingParticipant[],
+): WorkingParticipant | null {
+  const wanted = name.trim().toLowerCase();
+  if (!wanted) return null;
+  const exact = groundParticipants(participants).get(wanted);
+  if (exact) return exact;
+  const firstWordMatches = participants.filter((p) => {
+    const first = p.displayName.trim().toLowerCase().split(/\s+/)[0];
+    return first === wanted;
+  });
+  if (firstWordMatches.length === 1) return firstWordMatches[0] ?? null;
+  return null;
+}
+
+/** Links are traversable in both directions (matches the scene builders). */
+export function isAdjacent(fromId: string | null, toId: string, links: readonly SceneLinkInput[]): boolean {
+  if (fromId === null) return true; // an unplaced participant can be placed anywhere
+  return links.some(
+    (l) => (l.fromId === fromId && l.toId === toId) || (l.fromId === toId && l.toId === fromId),
+  );
+}
+
+/** Session location by name: exact (ci) → unique containment either way. */
+export function resolveSessionLocation(name: string, locations: readonly BundlePlace[]): BundlePlace | null {
+  const wanted = name.trim().toLowerCase();
+  if (!wanted) return null;
+  const exact = locations.find((l) => l.name.trim().toLowerCase() === wanted);
+  if (exact) return exact;
+  const loose = locations.filter((l) => {
+    const candidate = l.name.trim().toLowerCase();
+    return candidate.includes(wanted) || wanted.includes(candidate);
+  });
+  return loose.length === 1 ? (loose[0] ?? null) : null;
+}
+
+/**
+ * The location this turn's narration anchors on: the active location — or,
+ * when a player enter-intent targets an adjacent passable room, that staged
+ * target (the same access rule movement validation enforces below). Pre-turn
+ * prompt assembly and the post-turn continuity audit MUST share this anchor:
+ * an auditor anchored on the old room flags characters the narrator was
+ * rightly told are Present (followups.phase2.md #13).
+ */
+export function stagedLocationAnchor(
+  bundle: SessionBundle,
+  input: string,
+  author: TurnAuthor,
+): { staged: BundlePlace | null; blocked: { target: BundlePlace; reason: string } | null } {
+  const none = { staged: null, blocked: null };
+  if (author !== "player" || isOocInput(input)) return none;
+  const activeLoc = activeLocationId(bundle);
+  const presentIds = new Set(
+    bundle.participants.filter((p) => p.locationId !== null && p.locationId === activeLoc).map((p) => p.id),
+  );
+  const npcNames = bundle.participants
+    .filter((p) => !p.isUser && p.locationId !== null && p.locationId === activeLoc)
+    .map((p) => p.displayName);
+  const itemNames = bundle.items
+    .filter(
+      (i) =>
+        (i.locationId !== null && i.locationId === activeLoc) ||
+        (i.holderParticipantId !== null && presentIds.has(i.holderParticipantId)),
+    )
+    .map((i) => i.name);
+  const intent = detectIntent(input, npcNames, itemNames);
+  if (!intent.enterLocation) return none;
+  const target = resolveSessionLocation(intent.enterLocation, bundle.locations);
+  if (!target || target.id === activeLoc || !isAdjacent(activeLoc, target.id, bundle.links)) return none;
+  const link = activeLoc ? findLink(activeLoc, target.id, bundle.links) : null;
+  const door = link?.doorItemId ? (bundle.items.find((i) => i.id === link.doorItemId)?.state ?? null) : null;
+  const verdict = checkLinkAccess({
+    access: link?.access ?? { kind: "public" },
+    minuteOfDay: minuteOfDay(resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart)),
+    door,
+  });
+  if (verdict.passable) return { staged: target, blocked: null };
+  return { staged: null, blocked: { target, reason: verdict.reason } };
+}
+
+type ItemAction = SimulantResult["itemEvents"][number]["action"];
+
+/** Action-aware preference among same-named instances (e.g. `remove` prefers worn). */
+export function scoreItemCandidate(
+  item: WorkingItem,
+  action: ItemAction,
+  actor: { id: string; locationId: string | null } | null,
+): number {
+  const heldByActor = actor !== null && item.holderParticipantId === actor.id;
+  const wornByActor = heldByActor && item.worn;
+  const inActorRoom = actor !== null && actor.locationId !== null && item.locationId === actor.locationId;
+  switch (action) {
+    case "remove":
+      return wornByActor ? 3 : item.worn ? 2 : heldByActor ? 1 : 0;
+    case "wear":
+      return heldByActor && !item.worn ? 3 : inActorRoom ? 2 : heldByActor ? 1 : 0;
+    case "pick_up":
+    case "take_from":
+      return inActorRoom ? 3 : item.containerInstanceId !== null ? 2 : heldByActor ? 0 : 1;
+    case "drop":
+    case "place":
+    case "store_in":
+      return heldByActor ? 3 : inActorRoom ? 2 : 0;
+    case "open":
+    case "close":
+      return inActorRoom ? 3 : heldByActor ? 2 : 1;
+    case "alter":
+      return heldByActor ? 3 : inActorRoom ? 2 : 1;
+  }
+}
+
+export function resolveItemByName(
+  name: string,
+  action: ItemAction,
+  items: readonly WorkingItem[],
+  actor: { id: string; locationId: string | null } | null,
+): WorkingItem | null {
+  const wanted = name.trim().toLowerCase();
+  if (!wanted) return null;
+  const candidates = items.filter((i) => i.name.trim().toLowerCase() === wanted);
+  return pickBest(candidates, action, actor);
+}
+
+function pickBest(
+  candidates: readonly WorkingItem[],
+  action: ItemAction,
+  actor: { id: string; locationId: string | null } | null,
+): WorkingItem | null {
+  let best: WorkingItem | null = null;
+  let bestScore = -1;
+  for (const c of candidates) {
+    const score = scoreItemCandidate(c, action, actor);
+    if (score > bestScore) {
+      best = c;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+export interface ItemPlacement {
+  holderParticipantId: string | null;
+  worn: boolean;
+  locationId: string | null;
+  containerInstanceId: string | null;
+}
+
+function held(participantId: string, worn: boolean): ItemPlacement {
+  return { holderParticipantId: participantId, worn, locationId: null, containerInstanceId: null };
+}
+function atLocation(locationId: string): ItemPlacement {
+  return { holderParticipantId: null, worn: false, locationId, containerInstanceId: null };
+}
+function inContainer(containerInstanceId: string): ItemPlacement {
+  return { holderParticipantId: null, worn: false, locationId: null, containerInstanceId };
+}
+
+/** Exactly-one-placement invariant, asserted before the DB CHECK constraint can. */
+export function assertPlacementExclusive(placement: ItemPlacement): boolean {
+  const set =
+    (placement.holderParticipantId !== null ? 1 : 0) +
+    (placement.locationId !== null ? 1 : 0) +
+    (placement.containerInstanceId !== null ? 1 : 0);
+  return set === 1 && (!placement.worn || placement.holderParticipantId !== null);
+}
+
+export interface ItemEventContext {
+  item: WorkingItem;
+  actor: WorkingParticipant | null;
+  /** Grounded event.locationName, when given. */
+  location: BundlePlace | null;
+  /** Grounded event.containerName, when given. */
+  container: WorkingItem | null;
+  items: readonly WorkingItem[];
+}
+
+export type ItemEventPlanResult =
+  | { ok: true; placement?: ItemPlacement; open?: boolean; note?: string }
+  | { ok: false; code: string; message: string };
+
+function isWearable(definition: ItemDefinition): boolean {
+  return definition.kind === "clothing" || definition.fields["wearableContainer"] === true;
+}
+
+function containerChainContains(start: WorkingItem, targetId: string, items: readonly WorkingItem[]): boolean {
+  let current: WorkingItem | undefined = start;
+  const seen = new Set<string>();
+  while (current) {
+    if (current.id === targetId) return true;
+    if (seen.has(current.id)) return false;
+    seen.add(current.id);
+    const parentId: string | null = current.containerInstanceId;
+    current = parentId ? items.find((i) => i.id === parentId) : undefined;
+  }
+  return false;
+}
+
+/**
+ * One item event → a placement/state transition honoring the placement CHECK
+ * constraint (setting one placement clears the others). Pure.
+ */
+export function planItemEvent(
+  event: SimulantResult["itemEvents"][number],
+  ctx: ItemEventContext,
+): ItemEventPlanResult {
+  const { item, actor } = ctx;
+  const note = event.stateNote?.trim() || undefined;
+
+  switch (event.action) {
+    case "wear": {
+      if (!actor) return { ok: false, code: "merge.item.no_actor", message: `no actor to wear "${item.name}"` };
+      if (!isWearable(item.definition)) {
+        return { ok: false, code: "merge.item.invalid_wear", message: `"${item.name}" is not wearable` };
+      }
+      return { ok: true, placement: held(actor.id, true), note };
+    }
+    case "remove": {
+      if (!item.worn) return { ok: false, code: "merge.item.not_worn", message: `"${item.name}" is not being worn` };
+      const taker = actor ?? (item.holderParticipantId ? { id: item.holderParticipantId } : null);
+      if (!taker) return { ok: false, code: "merge.item.no_actor", message: `no one to remove "${item.name}"` };
+      return { ok: true, placement: held(taker.id, false), note };
+    }
+    case "pick_up":
+    case "take_from": {
+      if (!actor) return { ok: false, code: "merge.item.no_actor", message: `no actor to take "${item.name}"` };
+      if (item.holderParticipantId === actor.id && !item.worn) return { ok: true, note }; // already held
+      return { ok: true, placement: held(actor.id, false), note };
+    }
+    case "drop": {
+      const locationId = ctx.location?.id ?? actor?.locationId ?? item.locationId;
+      if (!locationId) return { ok: false, code: "merge.item.no_location", message: `nowhere to drop "${item.name}"` };
+      return { ok: true, placement: atLocation(locationId), note };
+    }
+    case "place": {
+      const locationId = ctx.location?.id ?? actor?.locationId ?? item.locationId;
+      if (!locationId) return { ok: false, code: "merge.item.no_location", message: `nowhere to place "${item.name}"` };
+      return { ok: true, placement: atLocation(locationId), note };
+    }
+    case "store_in": {
+      if (!ctx.container) {
+        return { ok: false, code: "merge.item.no_container", message: `container for "${item.name}" not found` };
+      }
+      if (ctx.container.definition.kind !== "container") {
+        return { ok: false, code: "merge.item.not_container", message: `"${ctx.container.name}" is not a container` };
+      }
+      if (ctx.container.id === item.id || containerChainContains(ctx.container, item.id, ctx.items)) {
+        return { ok: false, code: "merge.item.container_cycle", message: `cannot store "${item.name}" inside itself` };
+      }
+      return { ok: true, placement: inContainer(ctx.container.id), note };
+    }
+    case "open":
+    case "close": {
+      if (item.definition.kind !== "container") {
+        return { ok: false, code: "merge.item.not_container", message: `"${item.name}" is not a container` };
+      }
+      return { ok: true, open: event.action === "open", note };
+    }
+    case "alter": {
+      return { ok: true, note: note ?? "altered" };
+    }
+  }
+}
+
+export interface MeterAdjustment {
+  meterId: string;
+  delta: number;
+}
+
+/** Agent deltas applied AFTER drift (corrections win over drift), clamped twice. */
+export function applyMeterAdjustments(
+  meters: Record<string, number>,
+  adjustments: readonly MeterAdjustment[],
+  defs: readonly MeterDefinition[],
+  sink?: DiagnosticSink,
+  participantName?: string,
+): Record<string, number> {
+  const known = new Set(defs.map((d) => d.id));
+  const next = { ...meters };
+  for (const adj of adjustments) {
+    if (!known.has(adj.meterId)) {
+      sink?.push(
+        diag("warn", "merge.meter.unknown", `unknown meter "${adj.meterId}" dropped`, {
+          context: { participantName, meterId: adj.meterId },
+        }),
+      );
+      continue;
+    }
+    const delta = Number.isFinite(adj.delta) ? Math.max(-1, Math.min(1, adj.delta)) : 0;
+    const current = next[adj.meterId] ?? defs.find((d) => d.id === adj.meterId)?.initial ?? 0;
+    next[adj.meterId] = Math.min(1, Math.max(0, current + delta));
+  }
+  return next;
+}
+
+type ConditionEvent = SimulantResult["conditionEvents"][number];
+
+export function applyConditionEvents(
+  conditions: readonly ActiveCondition[],
+  events: readonly ConditionEvent[],
+  startedAtMinutes: number,
+  sink?: DiagnosticSink,
+): ActiveCondition[] {
+  let next = [...conditions];
+  for (const event of events) {
+    const labelKey = event.label.trim().toLowerCase();
+    if (!labelKey) continue;
+    if (event.op === "end") {
+      const before = next.length;
+      next = next.filter((c) => c.label.trim().toLowerCase() !== labelKey);
+      if (next.length === before) {
+        sink?.push(
+          diag("info", "merge.condition.unmatched", `condition "${event.label}" ended but was not active`, {
+            context: { participantName: event.participantName },
+          }),
+        );
+      }
+      continue;
+    }
+    const existing = next.find((c) => c.label.trim().toLowerCase() === labelKey);
+    if (existing) {
+      // Refresh rather than duplicate.
+      next = next.map((c) =>
+        c === existing
+          ? {
+              ...c,
+              severity: event.severity ?? c.severity,
+              durationMinutes: event.durationMinutes ?? c.durationMinutes,
+              promptHint: event.promptHint ?? c.promptHint,
+              startedAtMinutes,
+            }
+          : c,
+      );
+      continue;
+    }
+    next.push({
+      id: newId(),
+      label: event.label,
+      severity: event.severity,
+      startedAtMinutes,
+      durationMinutes: event.durationMinutes,
+      source: { kind: "narrative" },
+      attributeEffects: [],
+      promptHint: event.promptHint,
+    });
+  }
+  return next;
+}
+
+export function expireConditions(conditions: readonly ActiveCondition[], clockMinutes: number): ActiveCondition[] {
+  return conditions.filter((c) => !isConditionExpired(c, clockMinutes));
+}
+
+export type ScheduleEntry = CharacterProfile["schedule"][number];
+
+/**
+ * Schedule entry covering a minute-of-day; windows may wrap past midnight.
+ * Entries with a `days` mask only match on those weekdays (absent ⇒ daily).
+ */
+export function scheduleEntryAt(
+  schedule: readonly ScheduleEntry[],
+  minute: number,
+  weekdayIndex?: number,
+): ScheduleEntry | null {
+  for (const entry of schedule) {
+    if (entry.days && weekdayIndex !== undefined && !entry.days.includes(weekdayIndex)) continue;
+    if (entry.startMinute <= entry.endMinute) {
+      if (minute >= entry.startMinute && minute < entry.endMinute) return entry;
+    } else if (minute >= entry.startMinute || minute < entry.endMinute) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+export interface AffinityUpdate {
+  /** Edge owner — always an NPC (decision 41). */
+  fromParticipantId: string;
+  toParticipantId: string;
+  kind: "feeling" | "perceived";
+  delta: number;
+  reason?: string;
+}
+
+/**
+ * Resolve simulant affinityAdjustments to relationship-edge updates
+ * (cast-tiers-and-affinity-spec). fromName is whose feeling moved; when that
+ * is the player, the evidence becomes the NPC's *perceived* affinity from the
+ * player (decision 41 — the player's actual feelings are the player's own).
+ * Deltas clamp to ±AFFINITY_DELTA_CLAMP per edge per turn, summed first.
+ */
+export function planAffinityUpdates(
+  adjustments: SimulantResult["affinityAdjustments"],
+  parts: readonly WorkingParticipant[],
+  sink?: DiagnosticSink,
+): AffinityUpdate[] {
+  const byEdge = new Map<string, AffinityUpdate>();
+  for (const adj of adjustments) {
+    const from = findParticipant(adj.fromName, parts);
+    const toward = findParticipant(adj.towardName, parts);
+    if (!from || !toward || from.id === toward.id) {
+      sink?.push(
+        diag("warn", "merge.affinity.unresolved_pair", `affinity adjustment "${adj.fromName}" → "${adj.towardName}" dropped`, {
+          context: { fromName: adj.fromName, towardName: adj.towardName },
+        }),
+      );
+      continue;
+    }
+    if (from.isUser && toward.isUser) continue;
+    const update: Omit<AffinityUpdate, "delta"> = from.isUser
+      ? { fromParticipantId: toward.id, toParticipantId: from.id, kind: "perceived", reason: adj.reason }
+      : { fromParticipantId: from.id, toParticipantId: toward.id, kind: "feeling", reason: adj.reason };
+    const key = `${update.fromParticipantId}::${update.toParticipantId}::${update.kind}`;
+    const existing = byEdge.get(key);
+    const rawDelta = Number.isFinite(adj.delta) ? adj.delta : 0;
+    const summed = (existing?.delta ?? 0) + rawDelta;
+    byEdge.set(key, { ...update, delta: summed, reason: adj.reason ?? existing?.reason });
+  }
+  const updates: AffinityUpdate[] = [];
+  for (const update of byEdge.values()) {
+    const clamped = Math.max(-AFFINITY_DELTA_CLAMP, Math.min(AFFINITY_DELTA_CLAMP, Math.round(update.delta)));
+    if (clamped === 0) continue;
+    updates.push({ ...update, delta: clamped });
+  }
+  return updates;
+}
+
+/** One edge's decay: `points` toward 0, stopped at the current stage's zero-side boundary. */
+export function decayAffinityValue(value: number, points: number): { value: number; clamped: boolean } {
+  if (points <= 0 || value === 0) return { value, clamped: false };
+  const stage = stageForValue(value);
+  if (value > 0) {
+    // E.g. friendly (35..59): decay stops at 35; stranger (−14..14) decays through to 0.
+    const boundary = Math.max(0, stage.min);
+    const target = value - points;
+    return target < boundary ? { value: boundary, clamped: boundary > 0 } : { value: target, clamped: false };
+  }
+  const boundary = Math.min(0, stage.max);
+  const target = value + points;
+  return target > boundary ? { value: boundary, clamped: boundary < 0 } : { value: target, clamped: false };
+}
+
+export interface AffinityDecayEdge {
+  fromParticipantId: string;
+  toParticipantId: string;
+  kind: "feeling" | "perceived";
+  /** Value before decay. */
+  previousValue: number;
+  /** Value after decay — same stage by construction (decay never crosses a boundary). */
+  value: number;
+  /** Decay wanted to keep going but stopped at the stage's zero-side boundary. */
+  clamped: boolean;
+}
+
+export interface AffinityDecayResult {
+  edges: AffinityDecayEdge[];
+  /** New runtime marker: seeded on first use, else advanced by the consumed whole weeks. */
+  lastAffinityDecayAt: number;
+}
+
+/**
+ * Affinity decay (defaults doc §Affinity stages): 1 point per whole elapsed
+ * in-game week toward 0 on every relationship edge — but decay alone never
+ * crosses a stage boundary; it stops at the stage's zero-side edge (stages
+ * are sticky; only events demote). Edges parked at a boundary still plan a
+ * `clamped` edge each decay pass — that drives the `affinity_decay_clamped`
+ * events row, the tuning evidence for the "relationships fossilizing"
+ * revisit trigger. The marker advances by whole weeks only, so the remainder
+ * keeps accumulating.
+ */
+export function planAffinityDecay(
+  input: {
+    relationships: readonly BundleRelationship[];
+    /** Post-turn session clock. */
+    clockMinutes: number;
+    lastAffinityDecayAt: number | undefined;
+  },
+  sink?: DiagnosticSink,
+): AffinityDecayResult {
+  const last = input.lastAffinityDecayAt;
+  if (last === undefined) return { edges: [], lastAffinityDecayAt: input.clockMinutes }; // seed on first use
+  if (last > input.clockMinutes) {
+    sink?.push(
+      diag("warn", "merge.affinity.decay_marker_reset", `lastAffinityDecayAt ${last} is ahead of the clock ${input.clockMinutes} — reseeded`),
+    );
+    return { edges: [], lastAffinityDecayAt: input.clockMinutes };
+  }
+  const weeks = Math.floor((input.clockMinutes - last) / AFFINITY_DECAY_WEEK_MINUTES);
+  if (weeks < 1) return { edges: [], lastAffinityDecayAt: last };
+  const edges: AffinityDecayEdge[] = [];
+  for (const rel of input.relationships) {
+    const decayed = decayAffinityValue(rel.value, weeks);
+    if (decayed.value === rel.value && !decayed.clamped) continue;
+    edges.push({
+      fromParticipantId: rel.fromParticipantId,
+      toParticipantId: rel.toParticipantId,
+      kind: rel.kind,
+      previousValue: rel.value,
+      value: decayed.value,
+      clamped: decayed.clamped,
+    });
+  }
+  return { edges, lastAffinityDecayAt: last + weeks * AFFINITY_DECAY_WEEK_MINUTES };
+}
+
+/**
+ * Seeded daily schedule jitter (decision 33): same character + same day ⇒
+ * same offset in [-max, +max], so routines read as life, not clockwork —
+ * reproducibly. FNV-1a, dependency-free.
+ */
+export function scheduleJitter(participantId: string, dayIndex: number, max = SCHEDULE_JITTER_MINUTES): number {
+  const text = `${participantId}::${dayIndex}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return ((hash >>> 0) % (2 * max + 1)) - max;
+}
+
+export interface ScheduleMoveStagingInput {
+  displayName: string;
+  fromLocationId: string | null;
+  toLocationId: string;
+  /** The player's (camera's) location this turn. */
+  activeLocationId: string | null;
+  locationNameById: ReadonlyMap<string, string>;
+}
+
+/**
+ * Arrival/departure staging (phase-2-plan T9): when an off-screen schedule
+ * tick moves an NPC into or out of the player's location, the next brief
+ * carries a line so the narrator stages motivated movement instead of
+ * teleportation. Moves elsewhere stage nothing. V1 assumes co-located ⇒
+ * perceived — the same interim rule as witnessed_by; the presence phase's
+ * witness machinery gates these lines when it ships.
+ */
+export function scheduleMoveStaging(input: ScheduleMoveStagingInput): { arrival?: string; departure?: string } {
+  if (input.activeLocationId === null || input.fromLocationId === input.toLocationId) return {};
+  if (input.toLocationId === input.activeLocationId) {
+    const from = input.fromLocationId ? input.locationNameById.get(input.fromLocationId) : undefined;
+    return { arrival: from ? `${input.displayName} arrived from ${from}.` : `${input.displayName} arrived.` };
+  }
+  if (input.fromLocationId === input.activeLocationId) {
+    const toward = input.locationNameById.get(input.toLocationId);
+    return { departure: toward ? `${input.displayName} left toward ${toward}.` : `${input.displayName} left.` };
+  }
+  return {};
+}
+
+type ThreadSignals = NonNullable<DirectorResult["threadSignals"]>;
+
+export interface ThreadSignalResult {
+  threads: StoryThread[];
+  touchedIds: string[];
+}
+
+/**
+ * Thread lifecycle (docs/turn-engine.md step 6): touch reopens and refreshes,
+ * propose adds (deduped by title — a duplicate proposal is a touch), resolve
+ * closes. Unknown references degrade to diagnostics.
+ */
+export function applyThreadSignals(
+  threads: readonly StoryThread[],
+  signals: ThreadSignals,
+  turnNumber: number,
+  sink?: DiagnosticSink,
+): ThreadSignalResult {
+  const next = threads.map((t) => ({ ...t }));
+  const touchedIds = new Set<string>();
+
+  const touchThread = (thread: StoryThread, summary?: string) => {
+    thread.status = "open";
+    thread.lastTouchedTurn = turnNumber;
+    thread.touchCount += 1;
+    if (summary?.trim()) thread.summary = summary.trim();
+    touchedIds.add(thread.id);
+  };
+
+  const byTitle = (title: string) => next.find((t) => t.title.trim().toLowerCase() === title.trim().toLowerCase());
+
+  for (const touch of signals.touch) {
+    const thread = (touch.id ? next.find((t) => t.id === touch.id) : undefined) ?? byTitle(touch.title);
+    if (!thread) {
+      sink?.push(diag("info", "merge.thread.unmatched", `touched thread "${touch.title}" not found`, { context: { id: touch.id } }));
+      continue;
+    }
+    touchThread(thread, touch.summary);
+  }
+
+  for (const proposal of signals.propose) {
+    if (!proposal.title.trim()) continue;
+    const existing = byTitle(proposal.title);
+    if (existing) {
+      touchThread(existing, proposal.summary);
+      continue;
+    }
+    const thread = storyThreadSchema.parse({
+      id: newId(),
+      title: proposal.title.trim(),
+      summary: proposal.summary,
+      status: "open",
+      source: "emergent",
+      openedAtTurn: turnNumber,
+      lastTouchedTurn: turnNumber,
+      touchCount: 1,
+    });
+    next.push(thread);
+    touchedIds.add(thread.id);
+  }
+
+  for (const id of signals.resolve) {
+    const thread = next.find((t) => t.id === id);
+    if (!thread) {
+      sink?.push(diag("info", "merge.thread.unmatched", `resolved thread "${id}" not found`));
+      continue;
+    }
+    thread.status = "resolved";
+    thread.lastTouchedTurn = turnNumber;
+    touchedIds.add(thread.id);
+  }
+
+  return { threads: next, touchedIds: [...touchedIds] };
+}
+
+/** Open threads untouched for THREAD_COOLING_TURNS move to cooling. */
+export function coolThreads(threads: readonly StoryThread[], turnNumber: number): StoryThread[] {
+  return threads.map((t) =>
+    t.status === "open" && turnNumber - t.lastTouchedTurn >= THREAD_COOLING_TURNS ? { ...t, status: "cooling" as const } : t,
+  );
+}
+
+export interface BriefBuildInput {
+  prior: NextTurnBrief;
+  director: DirectorResult | null;
+  continuity: ContinuityResult | null;
+  episodeSummary: string;
+  droppedEvents: readonly string[];
+  /** Newly crossed meter-threshold hints, "Name: hint". */
+  thresholdHints: readonly string[];
+  /** Schedule-tick staging lines (scheduleMoveStaging) — per-turn, never carried forward. */
+  arrivals?: readonly string[];
+  departures?: readonly string[];
+}
+
+/**
+ * Next-turn brief (docs/turn-engine.md step 7). Director failure → the
+ * previous brief carries forward with sceneSummary refreshed from the episode
+ * and memoryQueries kept. Continuity output folds in as at most
+ * CORRECTION_CAP `Correction:`-prefixed directives (self-expiring — the brief
+ * is rebuilt every turn).
+ */
+export function buildNextBrief(input: BriefBuildInput): NextTurnBrief {
+  // Arrivals/departures are this turn's staging only — stale lines would
+  // re-stage a long-finished entrance, so they never carry forward from prior.
+  const arrivals = [...(input.arrivals ?? [])];
+  const departures = [...(input.departures ?? [])];
+  const base: NextTurnBrief = input.director
+    ? {
+        sceneSummary: input.director.sceneSummary.trim() || input.episodeSummary || input.prior.sceneSummary,
+        storySoFar: input.director.storySoFar.trim() || input.prior.storySoFar,
+        characterNotes: [...input.director.characterNotes],
+        directives: [...input.director.directives],
+        memoryQueries: input.director.memoryQueries.length > 0 ? [...input.director.memoryQueries] : [...input.prior.memoryQueries],
+        exposure: input.director.exposure,
+        droppedEvents: [],
+        arrivals,
+        departures,
+      }
+    : {
+        ...input.prior,
+        sceneSummary: input.episodeSummary || input.prior.sceneSummary,
+        characterNotes: [...input.prior.characterNotes],
+        directives: [...input.prior.directives],
+        memoryQueries: [...input.prior.memoryQueries],
+        droppedEvents: [],
+        arrivals,
+        departures,
+      };
+
+  const corrections: string[] = [];
+  if (input.continuity) {
+    const violations = [...input.continuity.violations].sort((a, b) =>
+      a.severity === b.severity ? 0 : a.severity === "major" ? -1 : 1,
+    );
+    for (const v of violations) {
+      corrections.push(`Correction: the narration claimed "${v.claim}" but canon holds "${v.canonical}" (${v.subject}).`);
+    }
+    for (const b of input.continuity.normBreaches) {
+      const witnesses = b.witnessNames.length > 0 ? ` (seen by ${b.witnessNames.join(", ")})` : "";
+      const reaction = b.suggestedReaction.trim() || "let witnesses react in character";
+      corrections.push(`Correction: ${b.byName} breached the norm "${b.normRule}"${witnesses} — next turn: ${reaction}`);
+    }
+  }
+
+  const directives = dedupe([
+    ...base.directives,
+    ...corrections.slice(0, CORRECTION_CAP),
+    ...input.thresholdHints.slice(0, THRESHOLD_HINT_CAP),
+  ]).slice(0, DIRECTIVE_CAP);
+
+  const candidate: NextTurnBrief = {
+    ...base,
+    directives,
+    droppedEvents: [...input.droppedEvents],
+  };
+  const parsed = nextTurnBriefSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : emptyBrief();
+}
+
+/**
+ * Reconcile-mode brief (docs/turn-engine.md §Edit / rerun): the prior brief
+ * carries forward untouched — no director/continuity ran — except that this
+ * reconcile's dropped events and newly crossed meter thresholds fold in.
+ * Without this, an edit that references unknown entities fails silently and a
+ * meter adjustment that crosses a threshold never surfaces to the next turn.
+ * Returns the prior brief by identity when there is nothing to fold.
+ */
+export function reconcileBrief(
+  prior: NextTurnBrief,
+  droppedEvents: readonly string[],
+  thresholdHints: readonly string[],
+): NextTurnBrief {
+  if (droppedEvents.length === 0 && thresholdHints.length === 0) return prior;
+  const candidate: NextTurnBrief = {
+    ...prior,
+    directives: dedupe([...prior.directives, ...thresholdHints.slice(0, THRESHOLD_HINT_CAP)]).slice(0, DIRECTIVE_CAP),
+    droppedEvents: dedupe([...prior.droppedEvents, ...droppedEvents]),
+  };
+  const parsed = nextTurnBriefSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : prior;
+}
+
+function dedupe(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const key = value.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+export function syntheticEpisodeSummary(narration: string): string {
+  const trimmed = narration.trim().replace(/\s+/g, " ");
+  if (!trimmed) return "(turn completed without narration)";
+  return trimmed.length <= SYNTHETIC_EPISODE_CHARS ? trimmed : `${trimmed.slice(0, SYNTHETIC_EPISODE_CHARS - 1)}…`;
+}
+
+// ---------------------------------------------------------------------------
+// Planning
+// ---------------------------------------------------------------------------
+
+const SIMULANT_FALLBACK: SimulantResult = {
+  minutesAdvanced: FALLBACK_MINUTES_ADVANCED,
+  movements: [],
+  itemEvents: [],
+  meterAdjustments: [],
+  conditionEvents: [],
+  attributeChanges: [],
+  activityUpdates: [],
+  affinityAdjustments: [],
+};
+
+const CONTINUITY_FALLBACK: ContinuityResult = { violations: [], normBreaches: [], driftNotes: [] };
+
+export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
+  const { bundle, turn, results, sink } = input;
+  const mode: MergeMode = input.mode ?? "post_turn";
+  const droppedEvents: string[] = [];
+
+  const simulant = results.simulant ?? SIMULANT_FALLBACK;
+  if (!results.simulant) {
+    sink.push(diag("warn", "merge.simulant.degraded", "simulant failed — no state changes; clock advances by fallback"));
+  }
+  const continuity = results.continuity ?? CONTINUITY_FALLBACK;
+
+  const parts: WorkingParticipant[] = bundle.participants.map((p) => ({
+    id: p.id,
+    displayName: p.displayName,
+    isUser: p.isUser,
+    role: p.role,
+    characterId: p.characterId,
+    snapshot: p.snapshot,
+    locationId: p.locationId,
+    state: structuredClone(p.state),
+  }));
+  const items: WorkingItem[] = bundle.items.map((i) => ({
+    id: i.id,
+    name: i.name,
+    itemId: i.itemId,
+    definition: i.definition,
+    holderParticipantId: i.holderParticipantId,
+    worn: i.worn,
+    locationId: i.locationId,
+    containerInstanceId: i.containerInstanceId,
+    positionNote: i.positionNote ?? null,
+    state: structuredClone(i.state),
+  }));
+  const touchedItemIds = new Set<string>();
+  const touchedParticipantIds = new Set<string>();
+  const player = parts.find((p) => p.isUser) ?? null;
+
+  const resolveLocation = async (name: string): Promise<BundlePlace | null> => {
+    const direct = resolveSessionLocation(name, bundle.locations);
+    if (direct) return direct;
+    if (!input.deps?.resolveLibraryLocation) return null;
+    try {
+      const match = await input.deps.resolveLibraryLocation(name);
+      if (!match) return null;
+      return bundle.locations.find((l) => l.locationId === match.id) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const resolveItem = async (
+    name: string,
+    action: ItemAction,
+    actor: { id: string; locationId: string | null } | null,
+  ): Promise<WorkingItem | null> => {
+    const direct = resolveItemByName(name, action, items, actor);
+    if (direct) return direct;
+    if (!input.deps?.resolveLibraryItem) return null;
+    try {
+      const match = await input.deps.resolveLibraryItem(name);
+      if (!match) return null;
+      return pickBest(items.filter((i) => i.itemId === match.id), action, actor);
+    } catch {
+      return null;
+    }
+  };
+
+  // -- Step 2: movements (validated against the session location graph) ------
+  // Movement and declared rest both resolve against the turn-START time: the
+  // player walks through (or is blocked by) the door at the moment they act.
+  const turnStartMinute = minuteOfDay(resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart));
+  let playerTravelMinutes = 0;
+  for (const movement of simulant.movements) {
+    const participant = findParticipant(movement.participantName, parts);
+    if (!participant) {
+      sink.push(
+        diag("warn", "merge.participant.unresolved", `movement participant "${movement.participantName}" not found`),
+      );
+      droppedEvents.push(`${movement.participantName} did not actually move to ${movement.toLocationName} (unknown character).`);
+      continue;
+    }
+    if (participant.isUser && turn.author !== "player") {
+      sink.push(
+        diag("warn", "merge.movement.player_not_author", "player movement dropped: the player only moves on player-authored turns"),
+      );
+      droppedEvents.push(`The player did not actually move to ${movement.toLocationName}.`);
+      continue;
+    }
+    const target = await resolveLocation(movement.toLocationName);
+    if (!target) {
+      sink.push(diag("warn", "merge.location.unresolved", `movement target "${movement.toLocationName}" not found`));
+      droppedEvents.push(`${participant.displayName} did not actually move to ${movement.toLocationName} (unknown location).`);
+      continue;
+    }
+    if (target.id === participant.locationId) continue;
+    if (!isAdjacent(participant.locationId, target.id, bundle.links)) {
+      sink.push(
+        diag("warn", "merge.movement.invalid", `movement to non-adjacent location "${target.name}" dropped`, {
+          context: { participantName: participant.displayName },
+        }),
+      );
+      droppedEvents.push(`${participant.displayName} did not actually move to ${target.name} (not adjacent).`);
+      continue;
+    }
+    // Link access (phase-2-plan T8, player-side only — NPC traversal reuses
+    // checkLinkAccess when the drives phase ships). A link with no access
+    // field parsed to public at the bundle boundary: today's behavior.
+    if (participant.isUser && participant.locationId !== null) {
+      const link = findLink(participant.locationId, target.id, bundle.links);
+      const door = link?.doorItemId ? (items.find((i) => i.id === link.doorItemId)?.state ?? null) : null;
+      const verdict = checkLinkAccess({
+        access: link?.access ?? { kind: "public" },
+        minuteOfDay: turnStartMinute,
+        moverParticipantId: participant.id,
+        door,
+      });
+      if (!verdict.passable) {
+        sink.push(
+          diag("warn", "merge.movement.access_denied", `player movement to "${target.name}" blocked: ${verdict.reason}`, {
+            context: { participantName: participant.displayName, toLocationName: target.name, kind: verdict.kind },
+          }),
+        );
+        droppedEvents.push(
+          `The player did not actually reach ${target.name} — ${verdict.reason}. Narrate the blocked way, not the arrival.`,
+        );
+        continue;
+      }
+    }
+    if (participant.isUser) {
+      playerTravelMinutes = Math.max(
+        playerTravelMinutes,
+        linkTravelMinutes(participant.locationId, target.id, bundle.links),
+      );
+    }
+    participant.locationId = target.id;
+    touchedParticipantIds.add(participant.id);
+  }
+
+  // -- Step 3: item events ----------------------------------------------------
+  for (const event of simulant.itemEvents) {
+    const actor = event.byName ? findParticipant(event.byName, parts) : player;
+    if (event.byName && !actor) {
+      sink.push(diag("warn", "merge.participant.unresolved", `item event actor "${event.byName}" not found`));
+      droppedEvents.push(`The ${event.action} of ${event.itemName} did not take effect (unknown character ${event.byName}).`);
+      continue;
+    }
+    const actorRef = actor ? { id: actor.id, locationId: actor.locationId } : null;
+    const item = await resolveItem(event.itemName, event.action, actorRef);
+    if (!item) {
+      sink.push(diag("warn", "merge.item.unresolved", `item "${event.itemName}" not found in this session`));
+      droppedEvents.push(`The ${event.action} of ${event.itemName} did not take effect (no such item).`);
+      continue;
+    }
+    const location = event.locationName ? await resolveLocation(event.locationName) : null;
+    const container = event.containerName
+      ? await resolveItem(event.containerName, "open", actorRef)
+      : null;
+    const planned = planItemEvent(event, { item, actor, location, container, items });
+    if (!planned.ok) {
+      sink.push(diag("warn", planned.code, planned.message, { context: { action: event.action, itemName: event.itemName } }));
+      droppedEvents.push(`The ${event.action} of ${item.name} did not take effect (${planned.message}).`);
+      continue;
+    }
+    if (planned.placement) {
+      if (!assertPlacementExclusive(planned.placement)) {
+        sink.push(diag("error", "merge.item.placement_invalid", `planned placement for "${item.name}" violates exclusivity`));
+        continue;
+      }
+      item.holderParticipantId = planned.placement.holderParticipantId;
+      item.worn = planned.placement.worn;
+      item.locationId = planned.placement.locationId;
+      item.containerInstanceId = planned.placement.containerInstanceId;
+      item.positionNote = event.action === "place" ? (event.stateNote?.trim() || null) : null;
+      touchedItemIds.add(item.id);
+    }
+    if (planned.open !== undefined) {
+      item.state.open = planned.open;
+      touchedItemIds.add(item.id);
+    }
+    if (planned.note && (event.action === "alter" || !planned.placement)) {
+      item.state.notes = [...item.state.notes, planned.note].slice(-ITEM_NOTE_CAP);
+      touchedItemIds.add(item.id);
+    }
+  }
+
+  // -- Step 4: clock, meters (drift THEN deltas), conditions, schedules -------
+  const reconcile = mode === "reconcile";
+  // Registered actions: matched in the player's own input only (companion/
+  // director turns keep the pure estimate) — docs/developer-notes/time-and-travel-spec.phase3.md.
+  const matchedActions = !reconcile && turn.author === "player" ? matchActions(turn.input) : [];
+  // Declared rest (decision 38): "I sleep until morning" fast-forwards to a
+  // schedule-aware endpoint, clamped to REST_CLAMP_MINUTES inside the clock
+  // resolution. World-tick batching across the span is reserved for the
+  // offscreen-simulation phase — today the single post-turn schedule tick at
+  // the post-rest clock is all that runs (intermediate slots are skipped).
+  const declaredRest = !reconcile && turn.author === "player" ? detectDeclaredRest(turn.input) : null;
+  const resolved = reconcile
+    ? { minutes: 0, cause: "reconcile" }
+    : resolveTurnMinutes(
+        {
+          estimate: results.simulant ? simulant.minutesAdvanced : null,
+          travelMinutes: playerTravelMinutes,
+          actions: matchedActions,
+          rest: declaredRest ? declaredRestMinutes(declaredRest, turnStartMinute) : null,
+        },
+        sink,
+      );
+  const minutes = resolved.minutes;
+  const minutesCause = resolved.cause;
+  const clockMinutes = bundle.clockMinutes + minutes;
+
+  const defs = effectiveMeterDefinitions(bundle.style);
+  const hintsBefore = new Map(parts.map((p) => [p.id, crossedThresholdHints(p.state.meters, defs)]));
+
+  const adjustmentsByParticipant = new Map<string, MeterAdjustment[]>();
+  for (const adj of simulant.meterAdjustments) {
+    const participant = findParticipant(adj.participantName, parts);
+    if (!participant) {
+      sink.push(diag("warn", "merge.participant.unresolved", `meter adjustment for "${adj.participantName}" dropped`));
+      continue;
+    }
+    const list = adjustmentsByParticipant.get(participant.id) ?? [];
+    list.push({ meterId: adj.meterId, delta: adj.delta });
+    adjustmentsByParticipant.set(participant.id, list);
+  }
+
+  for (const participant of parts) {
+    const drifted = reconcile ? participant.state.meters : applyMeterDrift(participant.state.meters, minutes, defs);
+    // Registered-action effects (shower ⇒ hygiene) apply after drift and
+    // before agent deltas, so narration-grounded corrections still win.
+    const withActionEffects =
+      participant.isUser && matchedActions.length > 0
+        ? applyActionMeterEffects(drifted, matchedActions, defs, sink, participant.displayName)
+        : drifted;
+    participant.state.meters = applyMeterAdjustments(
+      withActionEffects,
+      adjustmentsByParticipant.get(participant.id) ?? [],
+      defs,
+      sink,
+      participant.displayName,
+    );
+    touchedParticipantIds.add(participant.id);
+  }
+
+  // Conditions: agent ops first, then duration expiry against the new clock.
+  const conditionsByParticipant = new Map<string, ConditionEvent[]>();
+  for (const event of simulant.conditionEvents) {
+    const participant = findParticipant(event.participantName, parts);
+    if (!participant) {
+      sink.push(diag("warn", "merge.participant.unresolved", `condition event for "${event.participantName}" dropped`));
+      continue;
+    }
+    const list = conditionsByParticipant.get(participant.id) ?? [];
+    list.push(event);
+    conditionsByParticipant.set(participant.id, list);
+  }
+  for (const participant of parts) {
+    const withOps = applyConditionEvents(
+      participant.state.conditions,
+      conditionsByParticipant.get(participant.id) ?? [],
+      clockMinutes,
+      sink,
+    );
+    participant.state.conditions = expireConditions(withOps, clockMinutes);
+  }
+
+  // Attribute changes (rare, lasting): overlays with narrative provenance.
+  for (const change of simulant.attributeChanges) {
+    const participant = findParticipant(change.participantName, parts);
+    if (!participant) {
+      sink.push(diag("warn", "merge.participant.unresolved", `attribute change for "${change.participantName}" dropped`));
+      continue;
+    }
+    if (!attributeRegistry.byId(change.attributeId)) {
+      sink.push(diag("warn", "merge.attribute.unknown", `unknown attribute "${change.attributeId}" dropped`));
+      continue;
+    }
+    const overlay = parseOrNull(
+      attributeValueSchema,
+      { id: change.attributeId, value: change.value, source: "narrative", note: change.note },
+      sink,
+      "merge.attributeChange",
+    );
+    if (!overlay) {
+      sink.push(diag("warn", "merge.attribute.invalid", `attribute change for "${change.attributeId}" failed validation`));
+      continue;
+    }
+    participant.state.attributeOverlays = [
+      ...participant.state.attributeOverlays.filter((o) => !(o.id === overlay.id && o.source === "narrative")),
+      overlay,
+    ];
+    touchedParticipantIds.add(participant.id);
+  }
+
+  // Activity updates.
+  for (const update of simulant.activityUpdates) {
+    const participant = findParticipant(update.participantName, parts);
+    if (!participant) {
+      sink.push(diag("warn", "merge.participant.unresolved", `activity update for "${update.participantName}" dropped`));
+      continue;
+    }
+    participant.state.activity = update.activity;
+    if (update.posture !== undefined) participant.state.posture = update.posture;
+    touchedParticipantIds.add(participant.id);
+  }
+
+  // Off-screen schedule ticks: never teleport on-screen NPCs, and never
+  // override an explicit simulant movement/activity from this turn. Ticks
+  // into/out of the player's location stage arrival/departure lines for the
+  // next brief (phase-2-plan T9) — co-located ⇒ perceived, interim rule.
+  const arrivals: string[] = [];
+  const departures: string[] = [];
+  if (!reconcile) {
+    const activeLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
+    const locationNameById = new Map(bundle.locations.map((l) => [l.id, l.name]));
+    const gameTime = resolveGameTime(clockMinutes, bundle.style.calendarStart);
+    const minute = minuteOfDay(gameTime);
+    for (const participant of parts) {
+      if (participant.isUser) continue;
+      if (participant.locationId !== null && participant.locationId === activeLoc) continue;
+      if (touchedParticipantIds.has(participant.id) && simulantTouchedPlacement(participant, simulant, parts)) continue;
+      // Per-character daily jitter: shifting the compared minute by -j makes
+      // this character's windows start j minutes late (or early) today.
+      const jitter = scheduleJitter(participant.id, gameTime.dayIndex);
+      const jitteredMinute = (((minute - jitter) % 1440) + 1440) % 1440;
+      const entry = scheduleEntryAt(participant.snapshot.schedule, jitteredMinute, gameTime.weekdayIndex);
+      if (!entry) continue;
+      const target = resolveSessionLocation(entry.locationName, bundle.locations);
+      if (!target) {
+        sink.push(
+          diag("info", "merge.schedule.unknown_location", `schedule location "${entry.locationName}" not found`, {
+            context: { participantName: participant.displayName },
+          }),
+        );
+        continue;
+      }
+      if (participant.locationId !== target.id) {
+        const staged = scheduleMoveStaging({
+          displayName: participant.displayName,
+          fromLocationId: participant.locationId,
+          toLocationId: target.id,
+          activeLocationId: activeLoc,
+          locationNameById,
+        });
+        if (staged.arrival) arrivals.push(staged.arrival);
+        if (staged.departure) departures.push(staged.departure);
+        participant.locationId = target.id;
+      }
+      participant.state.activity = entry.activity;
+      touchedParticipantIds.add(participant.id);
+    }
+  }
+
+  // -- Step 5/6 planning: facts, episode, threads ------------------------------
+  const archivist: ArchivistResult | null = results.archivist;
+  const locByName = (name: string) => resolveSessionLocation(name, bundle.locations);
+  const factDrafts: FactDraftInput[] = (archivist?.facts ?? []).map((draft) => {
+    let subjectId: string | null = null;
+    if (draft.subjectKind === "character" || draft.subjectKind === "player") {
+      subjectId = findParticipant(draft.subjectName, parts)?.id ?? null;
+    } else if (draft.subjectKind === "location") {
+      subjectId = locByName(draft.subjectName)?.id ?? null;
+    } else if (draft.subjectKind === "item") {
+      subjectId = resolveItemByName(draft.subjectName, "alter", items, null)?.id ?? null;
+    }
+    return { ...draft, subjectId };
+  });
+
+  const syntheticEpisode = !archivist || !archivist.episodeSummary.trim();
+  const episodeSummary = syntheticEpisode ? syntheticEpisodeSummary(turn.narration) : archivist.episodeSummary.trim();
+  if (syntheticEpisode) {
+    sink.push(diag("warn", "merge.episode.synthetic", "archivist failed — synthetic episode written from the narration"));
+  }
+
+  let threads = bundle.runtime.storyThreads;
+  let touchedThreadIds: string[] = [];
+  if (!reconcile) {
+    const signals = results.director?.threadSignals ?? { touch: [], propose: [], resolve: [] };
+    const applied = applyThreadSignals(threads, signals, turn.number, sink);
+    threads = coolThreads(applied.threads, turn.number);
+    touchedThreadIds = applied.touchedIds;
+  }
+
+  // Lore unlocks from this turn's fact tags (exact lowercase tag match).
+  const factTags = factDrafts.flatMap((d) => d.tags);
+  const newlyUnlocked = computeUnlocks(factTags, bundle.loreChunks, {
+    alreadyUnlockedIds: bundle.runtime.unlockedLoreIds,
+    sessionId: input.logMissesForSessionId,
+  });
+
+  // Witness stamp (decision 3, interim co-location semantics): everyone at
+  // the active location when the turn's facts/episode are written. Write-only
+  // until the knowledge ledger ships; perception refines this to true witness
+  // sets in phase 2.
+  const witnessLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
+  const witnessedBy = parts.filter((p) => p.locationId !== null && p.locationId === witnessLoc).map((p) => p.id);
+  for (const draft of factDrafts) draft.witnessedBy = witnessedBy;
+
+  // Runtime: visited locations + encountered participants follow the camera.
+  const finalActiveLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
+  const visited = new Set(bundle.runtime.visitedLocationIds);
+  if (finalActiveLoc) visited.add(finalActiveLoc);
+  const encountered = new Set(bundle.runtime.encounteredParticipantIds);
+  for (const p of parts) {
+    if (!p.isUser && p.locationId !== null && p.locationId === finalActiveLoc) encountered.add(p.id);
+  }
+
+  // Targeted interactions (decision: co-presence alone never counts):
+  // intent-detected targets, the speaking NPC on companion turns, and
+  // co-located NPCs addressed by name in the player's input.
+  const lastInteractedTurn = { ...bundle.runtime.lastInteractedTurn };
+  if (!reconcile) {
+    const interacted = new Set<string>();
+    if (turn.author === "player") {
+      const coLocated = parts.filter((p) => !p.isUser && p.locationId !== null && p.locationId === witnessLoc);
+      const intent = detectIntent(turn.input, coLocated.map((p) => p.displayName), []);
+      for (const name of [intent.lookTarget, intent.touchTarget, intent.smellTarget]) {
+        if (!name) continue;
+        const target = findParticipant(name, parts);
+        if (target && !target.isUser) interacted.add(target.id);
+      }
+      for (const npc of coLocated) {
+        if (mentionsParticipant(turn.input, npc)) interacted.add(npc.id);
+      }
+    }
+    if (turn.author === "companion" && turn.speakerParticipantId) interacted.add(turn.speakerParticipantId);
+    for (const id of interacted) lastInteractedTurn[id] = turn.number;
+  }
+
+  // Affinity decay (defaults doc §Affinity stages): time-driven, so it only
+  // runs when the clock advances — reconcile leaves edges and marker alone.
+  const affinityDecay = reconcile
+    ? null
+    : planAffinityDecay(
+        { relationships: bundle.relationships, clockMinutes, lastAffinityDecayAt: bundle.runtime.lastAffinityDecayAt },
+        sink,
+      );
+
+  const runtime: SessionRuntime = {
+    ...bundle.runtime,
+    storyThreads: threads,
+    visitedLocationIds: [...visited],
+    encounteredParticipantIds: [...encountered],
+    unlockedLoreIds: [...new Set([...bundle.runtime.unlockedLoreIds, ...newlyUnlocked])],
+    lastInteractedTurn,
+    ...(affinityDecay ? { lastAffinityDecayAt: affinityDecay.lastAffinityDecayAt } : {}),
+  };
+
+  // -- Step 7: next-turn brief --------------------------------------------------
+  const thresholdHints: string[] = [];
+  for (const participant of parts) {
+    if (participant.isUser) continue;
+    const before = hintsBefore.get(participant.id) ?? [];
+    const after = crossedThresholdHints(participant.state.meters, defs);
+    for (const hint of after) {
+      if (!before.includes(hint)) thresholdHints.push(`${participant.displayName}: ${hint}`);
+    }
+  }
+
+  const brief = reconcile
+    ? reconcileBrief(bundle.brief, droppedEvents, thresholdHints)
+    : buildNextBrief({
+        prior: bundle.brief,
+        director: results.director,
+        continuity,
+        episodeSummary,
+        droppedEvents,
+        thresholdHints,
+        arrivals,
+        departures,
+      });
+
+  return {
+    minutes,
+    minutesCause,
+    clockMinutes,
+    affinityUpdates: reconcile ? [] : planAffinityUpdates(simulant.affinityAdjustments, parts, sink),
+    affinityDecay: affinityDecay?.edges ?? [],
+    witnessedBy,
+    participants: parts,
+    items,
+    touchedItemIds: [...touchedItemIds],
+    factDrafts,
+    episodeSummary,
+    syntheticEpisode,
+    touchedThreadIds,
+    runtime,
+    brief,
+    droppedEvents,
+  };
+}
+
+/** Did the simulant explicitly move or re-task this participant this turn? */
+function simulantTouchedPlacement(
+  participant: WorkingParticipant,
+  simulant: SimulantResult,
+  parts: readonly WorkingParticipant[],
+): boolean {
+  const moved = simulant.movements.some((m) => findParticipant(m.participantName, parts)?.id === participant.id);
+  const reTasked = simulant.activityUpdates.some((u) => findParticipant(u.participantName, parts)?.id === participant.id);
+  return moved || reTasked;
+}
+
+// ---------------------------------------------------------------------------
+// Application (one transaction for all world-state writes)
+// ---------------------------------------------------------------------------
+
+export interface ApplyTurnInput {
+  bundle: SessionBundle;
+  turn: MergeTurn;
+  results: AgentResults;
+  sink: DiagnosticSink;
+  mode?: MergeMode;
+  deps?: GroundingDeps;
+}
+
+export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan> {
+  const { bundle, turn, results } = input;
+  const mode: MergeMode = input.mode ?? "post_turn";
+  const ownerId = bundle.world.ownerId;
+
+  // Tee diagnostics: the caller keeps its sink, and everything recorded during
+  // this merge is also persisted onto the turn row.
+  const recorded: Diagnostic[] = [];
+  const sink: DiagnosticSink = {
+    push(d) {
+      recorded.push(d);
+      input.sink.push(d);
+    },
+  };
+
+  const deps: GroundingDeps = input.deps ?? {
+    resolveLibraryItem: (name) => fuzzyResolve("item", ownerId, name, sink),
+    resolveLibraryLocation: (name) => fuzzyResolve("location", ownerId, name, sink),
+  };
+
+  const plan = await planTurnEffects({
+    bundle,
+    turn,
+    results,
+    sink,
+    mode,
+    deps,
+    logMissesForSessionId: bundle.session.id,
+  });
+
+  // Facts and the episode are written through the memory module (each
+  // internally transactional; embeddings degrade per docs/memory.md). The
+  // world-state merge below is the single atomic transaction.
+  await addFacts(bundle.session.id, plan.factDrafts, turn.id, sink);
+  if (mode === "reconcile") {
+    await deleteEpisodeForTurn(bundle.session.id, turn.number);
+  }
+  await appendEpisode(bundle.session.id, turn.number, plan.episodeSummary, plan.touchedThreadIds, sink, plan.witnessedBy);
+
+  const touchedItems = new Set(plan.touchedItemIds);
+  const diagnosticsJson = JSON.stringify(recorded);
+
+  await db().transaction(async (tx) => {
+    for (const participant of plan.participants) {
+      await tx
+        .update(sessionParticipants)
+        .set({ locationId: participant.locationId, state: participant.state })
+        .where(eq(sessionParticipants.id, participant.id));
+    }
+
+    // Affinity decay first (1 pt per whole in-game week toward 0, stopped at
+    // the stage's zero-side boundary), so this turn's adjustments land on
+    // decayed values. A boundary stop logs an `affinity_decay_clamped` events
+    // row — the "relationships fossilizing" tuning evidence. Stage is
+    // recomputed but never changes from decay (boundary stop is within-stage).
+    for (const edge of plan.affinityDecay) {
+      if (edge.value !== edge.previousValue) {
+        await tx
+          .update(participantRelationships)
+          .set({ value: edge.value, stage: stageForValue(edge.value).id })
+          .where(
+            and(
+              eq(participantRelationships.sessionId, bundle.session.id),
+              eq(participantRelationships.fromParticipantId, edge.fromParticipantId),
+              eq(participantRelationships.toParticipantId, edge.toParticipantId),
+              eq(participantRelationships.kind, edge.kind),
+            ),
+          );
+      }
+      if (edge.clamped) {
+        await tx.insert(events).values({
+          sessionId: bundle.session.id,
+          type: "affinity_decay_clamped",
+          payload: {
+            fromParticipantId: edge.fromParticipantId,
+            toParticipantId: edge.toParticipantId,
+            kind: edge.kind,
+            value: edge.value,
+            previousValue: edge.previousValue,
+            stage: stageForValue(edge.value).id,
+            turnId: turn.id,
+          },
+        });
+      }
+    }
+
+    // Affinity edges: read-modify-write per update (tiny volume), logging
+    // stage transitions as events — the tuning evidence the spec requires.
+    for (const update of plan.affinityUpdates) {
+      const [existing] = await tx
+        .select()
+        .from(participantRelationships)
+        .where(
+          and(
+            eq(participantRelationships.sessionId, bundle.session.id),
+            eq(participantRelationships.fromParticipantId, update.fromParticipantId),
+            eq(participantRelationships.toParticipantId, update.toParticipantId),
+            eq(participantRelationships.kind, update.kind),
+          ),
+        )
+        .limit(1);
+      const previousValue = existing?.value ?? 0;
+      const previousStage = existing?.stage ?? stageForValue(previousValue).id;
+      const value = clampAffinity(previousValue + update.delta);
+      const stage = stageForValue(value).id;
+      if (existing) {
+        await tx.update(participantRelationships).set({ value, stage }).where(eq(participantRelationships.id, existing.id));
+      } else {
+        await tx.insert(participantRelationships).values({
+          sessionId: bundle.session.id,
+          fromParticipantId: update.fromParticipantId,
+          toParticipantId: update.toParticipantId,
+          kind: update.kind,
+          value,
+          stage,
+        });
+      }
+      if (stage !== previousStage) {
+        await tx.insert(events).values({
+          sessionId: bundle.session.id,
+          type: "affinity_stage",
+          payload: {
+            fromParticipantId: update.fromParticipantId,
+            toParticipantId: update.toParticipantId,
+            kind: update.kind,
+            from: previousStage,
+            to: stage,
+            value,
+            reason: update.reason ?? null,
+            turnId: turn.id,
+          },
+        });
+      }
+    }
+    for (const item of plan.items) {
+      if (!touchedItems.has(item.id)) continue;
+      await tx
+        .update(itemInstances)
+        .set({
+          holderParticipantId: item.holderParticipantId,
+          worn: item.worn,
+          locationId: item.locationId,
+          containerInstanceId: item.containerInstanceId,
+          positionNote: item.positionNote,
+          state: item.state,
+        })
+        .where(eq(itemInstances.id, item.id));
+    }
+
+    if (mode === "reconcile") {
+      // Clock stays put, but the brief carries any reconcile-dropped events
+      // and threshold crossings forward (see reconcileBrief).
+      await tx.update(sessions).set({ runtime: plan.runtime, brief: plan.brief }).where(eq(sessions.id, bundle.session.id));
+      await tx
+        .update(turns)
+        .set({
+          agentResults: sql`${turns.agentResults} || ${JSON.stringify({ simulant: results.simulant, archivist: results.archivist })}::jsonb`,
+          diagnostics: sql`${turns.diagnostics} || ${diagnosticsJson}::jsonb`,
+          heartbeatAt: new Date(),
+        })
+        .where(eq(turns.id, turn.id));
+    } else {
+      await tx
+        .update(sessions)
+        .set({ clockMinutes: plan.clockMinutes, runtime: plan.runtime, brief: plan.brief })
+        .where(eq(sessions.id, bundle.session.id));
+      await tx
+        .update(turns)
+        .set({
+          status: "ready",
+          minutes: plan.minutes,
+          agentResults: {
+            simulant: results.simulant,
+            archivist: results.archivist,
+            continuity: results.continuity,
+            director: results.director,
+            clock: { minutes: plan.minutes, cause: plan.minutesCause },
+          },
+          diagnostics: sql`${turns.diagnostics} || ${diagnosticsJson}::jsonb`,
+          heartbeatAt: new Date(),
+        })
+        .where(and(eq(turns.id, turn.id), eq(turns.status, "processing")));
+    }
+  });
+
+  return plan;
+}

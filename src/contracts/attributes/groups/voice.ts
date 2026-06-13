@@ -1,0 +1,55 @@
+import { defineAttributeGroup } from "../types";
+
+export const voiceGroup = defineAttributeGroup("voice", [
+  {
+    id: "voice.pitch",
+    label: "Voice pitch",
+    kind: "sensory",
+    category: "voice",
+    valueType: "enum",
+    description: "Resting speaking pitch.",
+    mutability: "inherent",
+    allowedValues: ["very_low", "low", "medium_low", "medium", "medium_high", "high", "very_high"],
+    aliases: ["voice pitch", "deep voice", "high voice"],
+  },
+  {
+    id: "voice.timbre",
+    label: "Voice timbre",
+    kind: "sensory",
+    category: "voice",
+    valueType: "enum",
+    description: "Texture and color of the voice.",
+    mutability: "inherent",
+    allowedValues: [
+      "clear", "warm", "soft_spoken", "husky", "raspy", "smoky",
+      "breathy", "nasal", "resonant", "gravelly", "silvery", "reedy",
+    ],
+    aliases: ["voice timbre", "husky voice", "raspy voice"],
+  },
+  {
+    id: "voice.accent",
+    label: "Accent",
+    kind: "cultural",
+    category: "voice",
+    valueType: "text",
+    description: "Accent or dialect as it would be described in prose (\"soft coastal lilt\").",
+    mutability: "mutable",
+    aliases: ["accent", "dialect"],
+    promptHints: ["Render the accent through word choice and rhythm, not phonetic spelling."],
+  },
+  {
+    id: "voice.cadence",
+    label: "Cadence",
+    kind: "sensory",
+    category: "voice",
+    valueType: "enum",
+    description: "Habitual speaking rhythm.",
+    mutability: "mutable",
+    allowedValues: [
+      "clipped", "measured", "languid", "rapid", "halting",
+      "melodic", "deadpan", "animated", "drawling", "precise",
+    ],
+    aliases: ["cadence", "speaking rhythm"],
+    promptHints: ["Cadence shapes dialogue beats and sentence length; keep it consistent across turns."],
+  },
+]);

@@ -1,0 +1,682 @@
+import { z } from "zod";
+import {
+  attributeRegistry,
+  bodyLocationRegistry,
+  clothingCategories,
+  clothingCategoryById,
+  clothingLayerSchema,
+  diag,
+  itemDefinitionSchema,
+  type AttributeDefinition,
+  type AttributeValue,
+  type CharacterProfile,
+  type DiagnosticSink,
+  type ItemDefinition,
+} from "@/contracts";
+import { parseOrNull } from "@/lib/parse";
+import { generateChecked } from "@/server/ai";
+import { findItemsByName, type LibraryLookup } from "./library";
+import { emptyCharacterDraft, type CharacterDraft } from "./drafts";
+
+/**
+ * Character forge (docs/authoring.md §Character forge): three INDEPENDENT
+ * generateChecked sections — profile, attributes, outfit — so each can
+ * regenerate alone. The forge returns a draft; it never saves.
+ */
+
+export const characterForgeSections = ["profile", "attributes", "outfit"] as const;
+export const characterForgeSectionSchema = z.enum(characterForgeSections);
+export type CharacterForgeSection = (typeof characterForgeSections)[number];
+
+export interface CharacterForgeContext {
+  prompt: string;
+  userId: string;
+  sink?: DiagnosticSink;
+  /** Current draft, for single-section regeneration context. */
+  draft?: CharacterDraft;
+  /** Item-library lookup; defaults to an ILIKE query against the items table. */
+  findItems?: LibraryLookup;
+  /**
+   * Set false to disable the demo fallbacks: failed sections degrade to empty
+   * defaults instead of sample content. Use wherever the result is persisted
+   * without human review (e.g. world-save cast generation) — demo content is
+   * for editable drafts, not for rows written on someone's behalf.
+   */
+  useFallbacks?: boolean;
+}
+
+/** A section's contribution to the draft; merged with applyCharacterSectionPatch. */
+export interface CharacterSectionPatch {
+  name?: string;
+  tags?: string[];
+  profile?: Partial<CharacterProfile>;
+  suggestedItems?: ItemDefinition[];
+}
+
+export function applyCharacterSectionPatch(draft: CharacterDraft, patch: CharacterSectionPatch): CharacterDraft {
+  return {
+    name: patch.name ?? draft.name,
+    tags: patch.tags ?? draft.tags,
+    suggestedItems: patch.suggestedItems ?? draft.suggestedItems,
+    profile: { ...draft.profile, ...(patch.profile ?? {}) },
+  };
+}
+
+export interface ForgeCharacterInput {
+  prompt: string;
+  userId: string;
+  sink?: DiagnosticSink;
+  findItems?: LibraryLookup;
+  useFallbacks?: boolean;
+}
+
+export async function forgeCharacter(input: ForgeCharacterInput): Promise<CharacterDraft> {
+  const context: CharacterForgeContext = { ...input };
+  const patches = await Promise.all(characterForgeSections.map((section) => forgeCharacterSection(section, context)));
+  let draft = emptyCharacterDraft();
+  for (const patch of patches) draft = applyCharacterSectionPatch(draft, patch);
+  return draft;
+}
+
+export async function forgeCharacterSection(
+  section: CharacterForgeSection,
+  context: CharacterForgeContext,
+): Promise<CharacterSectionPatch> {
+  switch (section) {
+    case "profile":
+      return forgeProfileSection(context);
+    case "attributes":
+      return forgeAttributesSection(context);
+    case "outfit":
+      return forgeOutfitSection(context);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Profile section
+// ---------------------------------------------------------------------------
+
+const profileSectionSchema = z.object({
+  name: z.string().default(""),
+  bio: z.string().default(""),
+  personality: z.string().default(""),
+  voice: z.string().default(""),
+  aliases: z.array(z.string()).default([]),
+  tags: z.array(z.string()).default([]),
+});
+
+type ProfileSection = z.infer<typeof profileSectionSchema>;
+
+const PROFILE_SYSTEM =
+  "You draft characters for a roleplaying engine. Write grounded, specific, playable characters — concrete detail over generality. Return only the requested fields.";
+
+function profilePrompt(context: CharacterForgeContext): string {
+  const lines = [
+    "Draft a character from this concept:",
+    context.prompt,
+    "",
+    "Produce: a display name, a 2-4 sentence bio, a personality sketch (quirks, humor, flaws),",
+    "voice notes (how they sound and speak), any aliases or nicknames, and 3-6 lowercase tags.",
+  ];
+  if (context.draft?.name) {
+    lines.push("", `You are regenerating the profile of the draft currently named "${context.draft.name}". Keep the core concept.`);
+  }
+  return lines.join("\n");
+}
+
+async function forgeProfileSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
+  const { value } = await generateChecked({
+    schema: profileSectionSchema,
+    system: PROFILE_SYSTEM,
+    prompt: profilePrompt(context),
+    temperature: 0.7,
+    code: "forge.character.profile",
+    sink: context.sink,
+    fallback: context.useFallbacks === false ? undefined : demoCharacterProfileSection,
+  });
+  const section = value ?? profileSectionSchema.parse({});
+  const profile: Partial<CharacterProfile> = {
+    bio: section.bio.trim(),
+    personality: section.personality.trim(),
+    aliases: section.aliases.map((a) => a.trim()).filter((a) => a.length > 0),
+  };
+  const voice = section.voice.trim();
+  if (voice) profile.voice = voice;
+  return {
+    name: section.name.trim(),
+    tags: section.tags.map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0),
+    profile,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Attributes section (registry-derived schema)
+// ---------------------------------------------------------------------------
+
+export interface RawAttributeEntry {
+  id: string;
+  value: string | string[] | number | boolean;
+}
+
+/** Model-emitted plausible subset for an unset [CORE] enum attribute. */
+export interface RawAttributeRange {
+  id: string;
+  plausible: string[];
+}
+
+export interface AttributeSection {
+  attributes: RawAttributeEntry[];
+  ranges: RawAttributeRange[];
+}
+
+function characterAttributeDefinitions(): readonly AttributeDefinition[] {
+  return attributeRegistry.definitions.filter((d) => (d.appliesToEntityKinds ?? ["character"]).includes("character"));
+}
+
+/**
+ * Built dynamically from the registry so the model only ever sees validated
+ * vocabulary: ids are an enum of registered attribute ids. Values are still
+ * grounded post-hoc with registry.parseValue (docs/authoring.md §Guardrails).
+ */
+export function buildAttributeSectionSchema(): z.ZodType<AttributeSection> {
+  const ids = characterAttributeDefinitions().map((d) => d.id as string);
+  // The registry is never empty in practice; the string fallback keeps an
+  // empty registry from producing an invalid z.enum([]).
+  const idSchema = ids.length > 0 ? z.enum(ids as [string, ...string[]]) : z.string().min(1);
+  return z.object({
+    attributes: z
+      .array(
+        z.object({
+          id: idSchema,
+          value: z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]),
+        }),
+      )
+      .default([]),
+    ranges: z
+      .array(
+        z.object({
+          id: idSchema,
+          plausible: z
+            .array(z.string())
+            .describe("Plausible subset of the attribute's allowed values, conditioned on the identity anchors."),
+        }),
+      )
+      .default([])
+      .describe("For [CORE] enum attributes you could not pin to a definite value: a plausible subset of allowed values."),
+  });
+}
+
+function normalizeEnumToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+/**
+ * Ground raw model output against the registry: invalid or unknown values are
+ * dropped with a diagnostic, never saved. Survivors carry source "creation".
+ */
+export function groundAttributeValues(
+  entries: readonly RawAttributeEntry[],
+  sink?: DiagnosticSink,
+  code = "forge.character.attributes",
+): AttributeValue[] {
+  const grounded: AttributeValue[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.id)) {
+      sink?.push(diag("info", `${code}.duplicate_id`, `dropped duplicate attribute "${entry.id}"`));
+      continue;
+    }
+    let parsed = attributeRegistry.parseValue(entry.id, entry.value);
+    if (!parsed.ok && typeof entry.value === "string") {
+      // Salvage common model slips: "Dark Brown" → "dark_brown".
+      parsed = attributeRegistry.parseValue(entry.id, normalizeEnumToken(entry.value));
+    }
+    if (!parsed.ok && Array.isArray(entry.value)) {
+      parsed = attributeRegistry.parseValue(entry.id, entry.value.map(normalizeEnumToken));
+    }
+    if (!parsed.ok) {
+      sink?.push(
+        diag("warn", `${code}.invalid_value`, `dropped attribute "${entry.id}": ${parsed.issues.join("; ")}`, {
+          context: { id: entry.id, value: entry.value },
+        }),
+      );
+      continue;
+    }
+    seen.add(entry.id);
+    // parseValue success implies a registered id, which satisfies the pattern.
+    grounded.push({ id: entry.id as AttributeValue["id"], value: parsed.value, source: "creation" });
+  }
+  return grounded;
+}
+
+/**
+ * Ground model-emitted plausible ranges against the registry: a range on an
+ * unknown id or a non-enum attribute drops whole, out-of-vocabulary members
+ * drop individually (both `forge.character.attributes.invalid_range_member`),
+ * and a range emptied by grounding drops entirely — fillCoreVisualDefaults
+ * then treats that attribute as unconstrained. Survivors map id → subset of
+ * the attribute's allowedValues.
+ */
+export function groundAttributeRanges(
+  ranges: readonly RawAttributeRange[],
+  sink?: DiagnosticSink,
+  code = "forge.character.attributes",
+): Map<string, string[]> {
+  const grounded = new Map<string, string[]>();
+  for (const range of ranges) {
+    if (grounded.has(range.id)) {
+      sink?.push(diag("info", `${code}.duplicate_id`, `dropped duplicate range for "${range.id}"`));
+      continue;
+    }
+    const def = attributeRegistry.byId(range.id);
+    if (!def || def.valueType !== "enum" || !def.allowedValues || def.allowedValues.length === 0) {
+      sink?.push(
+        diag("warn", `${code}.invalid_range_member`, `dropped range for "${range.id}": not a registered enum attribute`, {
+          context: { id: range.id, plausible: range.plausible },
+        }),
+      );
+      continue;
+    }
+    const members: string[] = [];
+    for (const raw of range.plausible) {
+      const member = normalizeEnumToken(raw);
+      if (!def.allowedValues.includes(member)) {
+        sink?.push(
+          diag("warn", `${code}.invalid_range_member`, `dropped out-of-vocabulary range member "${raw}" on "${range.id}"`, {
+            context: { id: range.id, member: raw },
+          }),
+        );
+        continue;
+      }
+      if (!members.includes(member)) members.push(member);
+    }
+    // A range emptied by grounding drops entirely — better unconstrained than
+    // constrained to nothing (the member drops above already told the dev).
+    if (members.length === 0) continue;
+    grounded.set(range.id, members);
+  }
+  return grounded;
+}
+
+const ATTRIBUTES_SYSTEM = [
+  "You translate a character concept into a fixed attribute vocabulary. Use only the listed attribute ids and allowed values.",
+  "First infer the identity anchors (marked [ANCHOR]) — heritage, apparent age, gender, species presentation — from any cue the text offers, and emit the ones it supports as attributes.",
+  "Where the text states or strongly implies a value for any attribute, emit it as a definite attribute value.",
+  "For each [CORE] enum attribute you cannot pin to a definite value, emit a ranges entry instead: a plausible subset of its allowed values, conditioned on the identity anchors you inferred.",
+  "Guardrails: identity anchors may constrain physical attributes only — coloring, features, build. Heritage must never feed personality, voice, behavior, or role suggestions. Ranges are soft priors that explicit text always overrides — when the text pins a value, emit the definite value and no range for that attribute. When the identity signal is weak, emit wide ranges or none.",
+  'Worked example — text overrides the prior: "a Latina engineer with dyed silver hair" gives identity.heritage = "Latina" and hair.color = "gray" as definite values (the dye job in the text beats the heritage prior — no hair.color range), while eyes.color, unstated, gets a range like ["brown", "dark_brown", "hazel"].',
+  "For everything else, omit any attribute the concept gives no basis for — sparse is correct.",
+].join("\n");
+
+function describeConstraint(def: AttributeDefinition): string {
+  switch (def.valueType) {
+    case "enum":
+      return `one of: ${(def.allowedValues ?? []).join(" | ")}`;
+    case "enum_list":
+      return `list from: ${(def.allowedValues ?? []).join(" | ")}`;
+    case "number": {
+      const range = def.min !== undefined || def.max !== undefined ? ` ${def.min ?? ""}-${def.max ?? ""}` : "";
+      return `number${range}${def.unit ? ` ${def.unit}` : ""}`;
+    }
+    case "text":
+      return "short free text";
+    case "flag":
+      return "true or false";
+  }
+}
+
+function attributesPrompt(context: CharacterForgeContext): string {
+  const vocabulary = characterAttributeDefinitions()
+    .map(
+      (def) =>
+        `- ${def.id}${def.coreVisual ? " [CORE]" : ""}${def.identityAnchor ? " [ANCHOR]" : ""} (${describeConstraint(def)}): ${def.description}`,
+    )
+    .join("\n");
+  const lines = [
+    "Character concept:",
+    context.prompt,
+  ];
+  const bio = context.draft?.profile.bio;
+  if (bio) lines.push("", "Drafted bio:", bio);
+  lines.push(
+    "",
+    "Attribute vocabulary:",
+    vocabulary,
+    "",
+    "Infer the [ANCHOR] attributes first. Emit definite values where the concept supports them; for each [CORE] enum attribute left without a definite value, emit a ranges entry with the plausible subset of its allowed values given the anchors. Fill the others only where the concept supports them; omit the rest.",
+  );
+  return lines.join("\n");
+}
+
+async function forgeAttributesSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
+  const { value } = await generateChecked({
+    schema: buildAttributeSectionSchema(),
+    system: ATTRIBUTES_SYSTEM,
+    prompt: attributesPrompt(context),
+    code: "forge.character.attributes",
+    sink: context.sink,
+    fallback: context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
+  });
+  const section = value ?? { attributes: [], ranges: [] };
+  const grounded = groundAttributeValues(section.attributes, context.sink);
+  const ranges = groundAttributeRanges(section.ranges, context.sink);
+  return { profile: { attributes: fillCoreVisualDefaults(grounded, context.prompt, context.sink, ranges) } };
+}
+
+/** FNV-1a over the seed text — deterministic, dependency-free. */
+function hashSeed(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Tier-3 fill (docs/authoring.md §Character forge): every registry attribute
+ * flagged coreVisual that the model left unset gets a default picked from its
+ * surviving plausible range when one exists — falling through to the full
+ * allowedValues when none does — seeded by (concept, attribute id). Seeded
+ * rather than random on purpose — different concepts get varied defaults (an
+ * LLM asked to "pick randomly" converges on brown/brown), while the same
+ * input still forges the same draft (demo-mode determinism,
+ * docs/resilience.md §6). A definite value always beats a range for the same
+ * id — present ids are never filled. Enum-only: a default we can't pick from
+ * a closed list isn't a default worth inventing.
+ */
+export function fillCoreVisualDefaults(
+  values: readonly AttributeValue[],
+  seedText: string,
+  sink?: DiagnosticSink,
+  ranges?: ReadonlyMap<string, readonly string[]>,
+): AttributeValue[] {
+  const present = new Set(values.map((v) => v.id));
+  const filled = [...values];
+  const added: string[] = [];
+  const unconstrained: string[] = [];
+  for (const def of characterAttributeDefinitions()) {
+    if (!def.coreVisual || present.has(def.id)) continue;
+    if (def.valueType !== "enum" || !def.allowedValues || def.allowedValues.length === 0) continue;
+    const range = ranges?.get(def.id);
+    const pool = range && range.length > 0 ? range : def.allowedValues;
+    if (pool === def.allowedValues) unconstrained.push(def.id);
+    const pick = pool[hashSeed(`${seedText}::${def.id}`) % pool.length];
+    if (!pick) continue;
+    filled.push({ id: def.id, value: pick, source: "creation" });
+    added.push(`${def.id}=${pick}`);
+  }
+  if (added.length > 0) {
+    sink?.push(
+      diag("info", "forge.character.attributes.core_defaults", `filled core visual defaults: ${added.join(", ")}`),
+    );
+  }
+  if (unconstrained.length > 0) {
+    sink?.push(
+      diag(
+        "info",
+        "forge.character.attributes.unconstrained_default",
+        `no plausible range for ${unconstrained.join(", ")}: picked from the full vocabulary`,
+        { context: { ids: unconstrained } },
+      ),
+    );
+  }
+  return filled;
+}
+
+// ---------------------------------------------------------------------------
+// Outfit section
+// ---------------------------------------------------------------------------
+
+const outfitItemSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().default(""),
+  /** Coverage template id (contracts/items/clothing-categories.ts); anchors coverage + layer. */
+  category: z.string().optional().catch(undefined),
+  layer: clothingLayerSchema.optional().catch(undefined),
+  coverage: z.array(z.string()).default([]),
+  opacity: z.enum(["opaque", "sheer"]).catch("opaque"),
+  sensory: z
+    .object({
+      appearance: z.string().optional(),
+      scent: z.string().optional(),
+      tactile: z.string().optional(),
+    })
+    .default({}),
+  tags: z.array(z.string()).default([]),
+});
+
+const outfitSectionSchema = z.object({
+  outfit: z.array(outfitItemSchema).default([]),
+});
+
+export type OutfitSection = z.infer<typeof outfitSectionSchema>;
+
+/**
+ * Validate coverage against the body-location registry (unknown ids drop with
+ * a diagnostic), then re-validate each constructed definition — a garment that
+ * fails the item schema drops with a diagnostic instead of throwing
+ * (docs/resilience.md §1).
+ */
+export function groundOutfitItems(section: OutfitSection, sink?: DiagnosticSink, code = "forge.character.outfit"): ItemDefinition[] {
+  const items: ItemDefinition[] = [];
+  for (const item of section.outfit) {
+    const category = item.category ? clothingCategoryById(normalizeEnumToken(item.category)) : undefined;
+    if (item.category && !category) {
+      sink?.push(diag("info", `${code}.unknown_category`, `ignored unknown clothing category "${item.category}" on "${item.name}"`));
+    }
+    const coverage: string[] = [];
+    for (const raw of item.coverage) {
+      const locationId = normalizeEnumToken(raw);
+      if (!bodyLocationRegistry.byId(locationId)) {
+        sink?.push(
+          diag("warn", `${code}.invalid_coverage`, `dropped unknown body location "${raw}" on "${item.name}"`, {
+            context: { item: item.name, bodyLocationId: raw },
+          }),
+        );
+        continue;
+      }
+      if (!coverage.includes(locationId)) coverage.push(locationId);
+    }
+    const parsed = parseOrNull(
+      itemDefinitionSchema,
+      {
+        kind: "clothing",
+        name: item.name,
+        description: item.description,
+        // the category template anchors anything the model left unset
+        category: category?.id,
+        coverage: coverage.length > 0 ? coverage : [...(category?.coverage ?? [])],
+        layer: item.layer ?? category?.layer ?? 1,
+        opacity: item.opacity,
+        sensory: item.sensory,
+        tags: item.tags,
+      },
+      sink,
+      `${code}.item`,
+    );
+    if (!parsed) {
+      sink?.push(diag("warn", `${code}.invalid_item`, `dropped garment "${item.name}": failed item validation`, { context: { item: item.name } }));
+      continue;
+    }
+    items.push(parsed);
+  }
+  return items;
+}
+
+const OUTFIT_SYSTEM =
+  "You design a character's default outfit for a roleplaying engine. Each garment lists which body locations it covers and which layer it sits on. Layers: 0 underwear, 1 base, 2 mid, 3 outerwear.";
+
+function outfitPrompt(context: CharacterForgeContext): string {
+  const locationIds = bodyLocationRegistry.all
+    .filter((l) => l.coverageRelevant)
+    .map((l) => l.id)
+    .join(", ");
+  const lines = [
+    "Character concept:",
+    context.prompt,
+  ];
+  const bio = context.draft?.profile.bio;
+  if (bio) lines.push("", "Drafted bio:", bio);
+  lines.push(
+    "",
+    `Valid coverage body locations: ${locationIds}`,
+    `Clothing categories (set one per garment where it fits; it anchors coverage): ${clothingCategories.map((c) => c.id).join(", ")}`,
+    "",
+    "Cover only what the garment really covers. A t-shirt covers chest, back, shoulders, waist, upper_arms — never forearms or hands. Note that arms includes hands and torso includes neck, so prefer the specific parts.",
+    "",
+    "Suggest 3-6 garments for the character's everyday default outfit, with a short sensory description each.",
+  );
+  return lines.join("\n");
+}
+
+async function forgeOutfitSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
+  const { value } = await generateChecked({
+    schema: outfitSectionSchema,
+    system: OUTFIT_SYSTEM,
+    prompt: outfitPrompt(context),
+    temperature: 0.5,
+    code: "forge.character.outfit",
+    sink: context.sink,
+    fallback: context.useFallbacks === false ? undefined : demoCharacterOutfitSection,
+  });
+  const section = value ?? outfitSectionSchema.parse({});
+  const items = groundOutfitItems(section, context.sink);
+  const { defaultOutfit, suggested } = await matchOutfitAgainstLibrary(
+    items,
+    context.userId,
+    context.findItems ?? findItemsByName,
+    context.sink,
+  );
+  return { profile: { defaultOutfit }, suggestedItems: suggested };
+}
+
+/**
+ * Library matching (docs/authoring.md): name-matched garments reference the
+ * existing library item id in defaultOutfit; unmatched ones become new item
+ * drafts flagged "suggested". A failed lookup degrades to all-suggested.
+ */
+export async function matchOutfitAgainstLibrary(
+  items: readonly ItemDefinition[],
+  userId: string,
+  findItems: LibraryLookup,
+  sink?: DiagnosticSink,
+): Promise<{ defaultOutfit: string[]; suggested: ItemDefinition[] }> {
+  if (items.length === 0) return { defaultOutfit: [], suggested: [] };
+  let rows: ReadonlyArray<{ id: string; name: string }> = [];
+  try {
+    rows = await findItems(userId, items.map((i) => i.name));
+  } catch (err) {
+    sink?.push(
+      diag("warn", "forge.character.outfit.library_lookup_failed", `item library lookup failed: ${errorText(err)}`),
+    );
+  }
+  const idByName = new Map(rows.map((r) => [r.name.toLowerCase(), r.id]));
+  const defaultOutfit: string[] = [];
+  const suggested: ItemDefinition[] = [];
+  for (const item of items) {
+    const libraryId = idByName.get(item.name.toLowerCase());
+    if (libraryId) {
+      if (!defaultOutfit.includes(libraryId)) defaultOutfit.push(libraryId);
+    } else {
+      suggested.push({ ...item, tags: item.tags.includes("suggested") ? item.tags : [...item.tags, "suggested"] });
+    }
+  }
+  return { defaultOutfit, suggested };
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// ---------------------------------------------------------------------------
+// Demo fallbacks (docs/resilience.md §6): deterministic hand-written sample so
+// the forge UX works keyless, routed through the same generateChecked path.
+// ---------------------------------------------------------------------------
+
+export function demoCharacterProfileSection(): ProfileSection {
+  return {
+    name: "Maren Voss",
+    bio: "Maren Voss has run the Greywater Harbor quay for eleven years, since the night her predecessor sailed out drunk and never came back. She knows every hull by its creak and every captain by their lies. A dock crane took her left knee's best years; the limp slows her walk but never her ledger.",
+    personality:
+      "Dry, watchful, unhurried. Keeps a soft spot for green deckhands and a colder shelf for smooth talkers. Allergic to paperwork, flattery, and being thanked.",
+    voice: "Low and gravelled; clipped harbor slang; says less than she knows and means more than she says.",
+    aliases: ["Voss", "the harbor-master"],
+    tags: ["harbor", "gruff", "mentor", "working-class"],
+  };
+}
+
+export function demoCharacterAttributeSection(): AttributeSection {
+  const candidates: RawAttributeEntry[] = [
+    { id: "identity.gender", value: "female" },
+    { id: "identity.apparent_age", value: "forties" },
+    { id: "identity.species_presentation", value: "human" },
+    { id: "hair.color", value: "auburn" },
+    { id: "hair.length", value: "shoulder_length" },
+    { id: "hair.texture", value: "wavy" },
+    { id: "hair.style", value: "loose braid pinned up against the wind" },
+    { id: "eyes.color", value: "gray_green" },
+    { id: "build.frame", value: "stocky" },
+    { id: "skin.tone", value: "tan" },
+    { id: "skin.texture", value: "weathered" },
+  ];
+  // A weathered dockworker reads as solidly built; the unset core visual gets
+  // a range so the demo path exercises the range-constrained seeded fill.
+  const rangeCandidates: RawAttributeRange[] = [
+    { id: "build.height", plausible: ["average", "above_average", "tall"] },
+  ];
+  // The sample spans groups that may not be registered yet; filtering against
+  // the live registry keeps demo output diagnostic-free as vocabulary grows.
+  return {
+    attributes: candidates.filter((c) => attributeRegistry.parseValue(c.id, c.value).ok),
+    ranges: rangeCandidates
+      .map((r) => ({
+        id: r.id,
+        plausible: r.plausible.filter((m) => attributeRegistry.byId(r.id)?.allowedValues?.includes(m) ?? false),
+      }))
+      .filter((r) => r.plausible.length > 0),
+  };
+}
+
+export function demoCharacterOutfitSection(): OutfitSection {
+  return {
+    outfit: [
+      {
+        name: "Salt-stained oilskin coat",
+        description: "A heavy oilskin coat gone stiff at the cuffs, pockets full of chalk and twine.",
+        layer: 3,
+        coverage: ["shoulders", "chest", "back", "waist", "upper_arms", "forearms", "wrists"],
+        opacity: "opaque",
+        sensory: { scent: "brine and lanolin", tactile: "stiff, waxy canvas" },
+        tags: ["workwear", "weatherproof"],
+      },
+      {
+        name: "Gray wool fisherman's sweater",
+        description: "Thick cabled wool, darned at both elbows in mismatched yarn.",
+        layer: 2,
+        coverage: ["chest", "back", "waist", "upper_arms", "forearms"],
+        opacity: "opaque",
+        sensory: { tactile: "coarse, warm wool" },
+        tags: ["workwear", "warm"],
+      },
+      {
+        name: "Canvas work trousers",
+        description: "Faded duck canvas with a folding rule sheathed along one thigh.",
+        layer: 1,
+        coverage: ["pelvis", "thighs", "calves"],
+        opacity: "opaque",
+        sensory: {},
+        tags: ["workwear"],
+      },
+      {
+        name: "Scuffed leather boots",
+        description: "Tall harbor boots resoled twice, laces tarred against the wet.",
+        layer: 1,
+        coverage: ["feet", "ankles"],
+        opacity: "opaque",
+        sensory: { scent: "leather and tar" },
+        tags: ["workwear", "footwear"],
+      },
+    ],
+  };
+}

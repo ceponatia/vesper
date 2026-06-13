@@ -1,0 +1,47 @@
+import { defineAttributeGroup } from "../types";
+
+export const faceGroup = defineAttributeGroup("face", [
+  {
+    id: "face.shape",
+    label: "Face shape",
+    kind: "physical",
+    category: "face",
+    valueType: "enum",
+    description: "Overall face shape.",
+    mutability: "inherent",
+    allowedValues: [
+      "oval", "round", "square", "heart", "diamond",
+      "oblong", "triangular", "angular", "soft_rounded", "chiseled",
+    ],
+    bodyLocationId: "face",
+    aliases: ["face shape"],
+  },
+  {
+    id: "face.freckles",
+    label: "Freckles",
+    kind: "physical",
+    category: "face",
+    valueType: "enum",
+    description: "Facial freckling density.",
+    mutability: "inherent",
+    allowedValues: ["none", "faint", "light_dusting", "scattered", "prominent", "heavy"],
+    bodyLocationId: "face",
+    aliases: ["freckles", "freckled"],
+  },
+  {
+    id: "face.expression_default",
+    label: "Default expression",
+    kind: "presentation",
+    category: "face",
+    valueType: "enum",
+    description: "Resting expression when nothing in particular is happening.",
+    mutability: "mutable",
+    allowedValues: [
+      "neutral", "soft", "warm", "guarded", "stern",
+      "wry", "melancholy", "bright", "serene", "brooding",
+    ],
+    bodyLocationId: "face",
+    aliases: ["resting expression", "default expression"],
+    promptHints: ["Treat the default expression as a baseline the scene's mood moves away from, not a mask."],
+  },
+]);

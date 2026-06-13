@@ -1,0 +1,245 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import sharp from "sharp";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { db, images } from "../db";
+import { newId } from "@/lib/ids";
+import { log } from "@/lib/log";
+import { parseOr } from "@/lib/parse";
+import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+
+export type ImageRow = typeof images.$inferSelect;
+export type ImageKind = ImageRow["kind"];
+export type ImageEntityKind = NonNullable<ImageRow["entityKind"]>;
+
+/** Runtime asset root. Overridable via DATA_ROOT for tests. */
+export function dataRoot(): string {
+  return process.env.DATA_ROOT ?? path.join(process.cwd(), "data");
+}
+
+/** Canonical relative path stored on the row (docs/images.md). */
+export function imageRelativePath(ownerId: string, imageId: string): string {
+  return `images/${ownerId}/${imageId}.webp`;
+}
+
+export function absoluteImagePath(image: Pick<ImageRow, "path">): string {
+  return path.join(dataRoot(), image.path);
+}
+
+export interface CreateImageAssetOptions {
+  ownerId: string;
+  kind: ImageKind;
+  entityKind?: ImageEntityKind;
+  entityId?: string;
+  sessionId?: string;
+  prompt?: string;
+  sourceImageId?: string;
+  meta?: Record<string, unknown>;
+}
+
+/** Row-before-file: every asset starts as a pending row (docs/images.md). */
+export async function createImageAsset(opts: CreateImageAssetOptions): Promise<ImageRow> {
+  const id = newId();
+  const [row] = await db()
+    .insert(images)
+    .values({
+      id,
+      ownerId: opts.ownerId,
+      kind: opts.kind,
+      entityKind: opts.entityKind,
+      entityId: opts.entityId,
+      sessionId: opts.sessionId,
+      path: imageRelativePath(opts.ownerId, id),
+      prompt: opts.prompt ?? "",
+      sourceImageId: opts.sourceImageId,
+      status: "pending",
+      meta: opts.meta ?? {},
+    })
+    .returning();
+  if (!row) throw new Error("images insert returned no row");
+  return row;
+}
+
+export interface WrittenImageInfo {
+  width: number;
+  height: number;
+  bytes: number;
+}
+
+const WEBP_QUALITY = 90;
+
+/**
+ * Atomic write protocol: convert to webp, write `<name>.pending.webp`, fsync,
+ * rename to the final path. A crash leaves only a pending temp file that
+ * sweepOrphans reclaims — never a half-written final file.
+ */
+export async function writeWebpAtomic(absolutePath: string, buffer: Buffer): Promise<WrittenImageInfo> {
+  const { data, info } = await sharp(buffer).webp({ quality: WEBP_QUALITY }).toBuffer({ resolveWithObject: true });
+  const pendingPath = pendingPathFor(absolutePath);
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  const handle = await fs.open(pendingPath, "w");
+  try {
+    await handle.writeFile(data);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await fs.rename(pendingPath, absolutePath);
+  return { width: info.width, height: info.height, bytes: info.size };
+}
+
+function pendingPathFor(absolutePath: string): string {
+  return absolutePath.endsWith(".webp")
+    ? `${absolutePath.slice(0, -".webp".length)}.pending.webp`
+    : `${absolutePath}.pending`;
+}
+
+const metaSchema = z.record(z.string(), z.unknown());
+
+function mergeMeta(raw: unknown, extra: Record<string, unknown>): Record<string, unknown> {
+  return { ...parseOr(metaSchema, raw, {}), ...extra };
+}
+
+/**
+ * Completes the row-before-file protocol for a generated buffer. Conversion
+ * or write failure marks the row failed instead of throwing; the returned row
+ * carries the final status.
+ */
+export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: DiagnosticSink): Promise<ImageRow | null> {
+  const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
+  if (!row) {
+    sink?.push(diag("error", "images.save_missing_row", `no images row for ${imageId}`));
+    return null;
+  }
+  try {
+    const info = await writeWebpAtomic(absoluteImagePath(row), buffer);
+    const [updated] = await db()
+      .update(images)
+      .set({ status: "ready", meta: mergeMeta(row.meta, { ...info }) })
+      .where(eq(images.id, imageId))
+      .returning();
+    return updated ?? null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    sink?.push(diag("error", "images.save_failed", message.slice(0, 300), { context: { imageId } }));
+    return failImage(imageId, message);
+  }
+}
+
+export async function failImage(imageId: string, error: string): Promise<ImageRow | null> {
+  const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, imageId)).limit(1);
+  const [updated] = await db()
+    .update(images)
+    .set({ status: "failed", meta: mergeMeta(row?.meta, { error: error.slice(0, 500) }) })
+    .where(eq(images.id, imageId))
+    .returning();
+  return updated ?? null;
+}
+
+export interface SweepResult {
+  filesScanned: number;
+  rowsScanned: number;
+  orphanFilesRemoved: number;
+  stalePendingFilesRemoved: number;
+  rowsMarkedFailed: number;
+  errors: string[];
+}
+
+export interface SweepOptions {
+  /** Restrict the sweep to one owner's rows + directory (tests, per-user maintenance). */
+  ownerId?: string;
+  now?: Date;
+}
+
+/** Files/rows younger than this are left alone — they may be mid-protocol. */
+const SWEEP_GRACE_MS = 10 * 60_000;
+
+/**
+ * Idempotent rows↔files reconciliation (docs/images.md). Both directions:
+ * ready rows whose file vanished are marked failed; files without a row (and
+ * crash-leftover `.pending.webp` temps) older than the grace period are
+ * removed. Never throws.
+ */
+export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult> {
+  const now = opts.now ?? new Date();
+  const result: SweepResult = {
+    filesScanned: 0,
+    rowsScanned: 0,
+    orphanFilesRemoved: 0,
+    stalePendingFilesRemoved: 0,
+    rowsMarkedFailed: 0,
+    errors: [],
+  };
+  try {
+    const baseQuery = db()
+      .select({ id: images.id, path: images.path, status: images.status, createdAt: images.createdAt })
+      .from(images);
+    const rows = opts.ownerId ? await baseQuery.where(eq(images.ownerId, opts.ownerId)) : await baseQuery;
+    result.rowsScanned = rows.length;
+    const rowPaths = new Set(rows.map((r) => r.path));
+
+    const root = dataRoot();
+    const imagesDir = opts.ownerId ? path.join(root, "images", opts.ownerId) : path.join(root, "images");
+    let entries: Array<{ parentPath: string; name: string; isFile(): boolean }> = [];
+    try {
+      entries = await fs.readdir(imagesDir, { recursive: true, withFileTypes: true });
+    } catch {
+      // no data directory yet — nothing on the files side
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      result.filesScanned += 1;
+      const absolute = path.join(entry.parentPath, entry.name);
+      const relative = path.relative(root, absolute).split(path.sep).join("/");
+      const isPendingTemp = entry.name.endsWith(".pending.webp");
+      if (!isPendingTemp && rowPaths.has(relative)) continue;
+      try {
+        const stat = await fs.stat(absolute);
+        if (now.getTime() - stat.mtimeMs < SWEEP_GRACE_MS) continue;
+        await fs.unlink(absolute);
+        if (isPendingTemp) {
+          result.stalePendingFilesRemoved += 1;
+          log.warn("images", "swept stale pending temp file", { path: relative });
+        } else {
+          result.orphanFilesRemoved += 1;
+          log.warn("images", "swept orphan file without a row", { path: relative });
+        }
+      } catch (err) {
+        result.errors.push(`file ${relative}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    for (const row of rows) {
+      try {
+        if (row.status === "ready") {
+          const exists = await fileExists(path.join(root, row.path));
+          if (exists) continue;
+          await db().update(images).set({ status: "failed" }).where(eq(images.id, row.id));
+          result.rowsMarkedFailed += 1;
+          log.warn("images", "ready row lost its file; marked failed", { imageId: row.id, path: row.path });
+        } else if (row.status === "pending" && now.getTime() - row.createdAt.getTime() >= SWEEP_GRACE_MS) {
+          await failImage(row.id, "stale pending row reclaimed by image_sweep");
+          result.rowsMarkedFailed += 1;
+          log.warn("images", "stale pending row marked failed", { imageId: row.id });
+        }
+      } catch (err) {
+        result.errors.push(`row ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  } catch (err) {
+    result.errors.push(err instanceof Error ? err.message : String(err));
+    log.warn("images", "sweepOrphans degraded", { error: result.errors.at(-1) ?? "unknown" });
+  }
+  return result;
+}
+
+async function fileExists(absolute: string): Promise<boolean> {
+  try {
+    await fs.access(absolute);
+    return true;
+  } catch {
+    return false;
+  }
+}

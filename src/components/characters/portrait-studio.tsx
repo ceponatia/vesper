@@ -1,0 +1,262 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import {
+  charactersApi,
+  portraitVariantKinds,
+  type PortraitVariantKind,
+} from "@/lib/client/api";
+import { useAsyncData } from "@/components/hooks/use-async";
+import { Button } from "@/components/ui/button";
+import { EntityImage } from "@/components/ui/entity-image";
+import { ErrorState } from "@/components/ui/error-state";
+import { Field } from "@/components/ui/field";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { Select } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tag } from "@/components/ui/tag";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast";
+
+export interface PortraitStudioProps {
+  characterId: string;
+  name: string;
+  avatarImageId: string | null;
+  /** Called when the avatar may have changed (generate/promote) — parent refetches. */
+  onAvatarChanged: () => void;
+}
+
+const POLL_MS = 2500;
+
+/**
+ * Avatar + Venice variant studio (docs/images.md): generate the canonical
+ * avatar from attributes, accumulate kind+instruction variants, promote any
+ * variant to canonical. Pending rows poll until ready/failed.
+ */
+export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChanged }: PortraitStudioProps) {
+  const portraits = useAsyncData(() => charactersApi.portraits(characterId), [characterId]);
+  const toast = useToast();
+  const [kind, setKind] = useState<PortraitVariantKind>("pose");
+  const [instruction, setInstruction] = useState("");
+  const [generatingAvatar, setGeneratingAvatar] = useState(false);
+  const [submittingVariant, setSubmittingVariant] = useState(false);
+  const [busyImageId, setBusyImageId] = useState<string | null>(null);
+  const [enlarged, setEnlarged] = useState<{ id: string; caption: string | null } | null>(null);
+
+  // Once the avatar id changes (a generate finished or a variant was
+  // promoted), stop treating the avatar job as pending. Adjusted during
+  // render — the "previous render" pattern — rather than setState in an effect.
+  const [prevAvatarImageId, setPrevAvatarImageId] = useState(avatarImageId);
+  if (avatarImageId !== prevAvatarImageId) {
+    setPrevAvatarImageId(avatarImageId);
+    if (avatarImageId) setGeneratingAvatar(false);
+  }
+
+  const hasPending = (portraits.data ?? []).some((img) => img.status === "pending") || generatingAvatar;
+
+  // Latest-ref pattern, written in an effect (never during render): the poll
+  // below always calls the current callbacks without re-subscribing on every
+  // parent render (onAvatarChanged is typically an inline arrow).
+  const reloadRef = useRef(portraits.reload);
+  const onAvatarChangedRef = useRef(onAvatarChanged);
+  useEffect(() => {
+    reloadRef.current = portraits.reload;
+    onAvatarChangedRef.current = onAvatarChanged;
+  });
+
+  // Poll while anything is generating; also nudge the parent so a finished
+  // avatar job shows up without a manual refresh.
+  useEffect(() => {
+    if (!hasPending) return;
+    const timer = setInterval(() => {
+      reloadRef.current({ silent: true });
+      onAvatarChangedRef.current();
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [hasPending]);
+
+  const generateAvatar = async () => {
+    setGeneratingAvatar(true);
+    // Stop polling for a stuck/slow job after 2 minutes; the row stays visible.
+    setTimeout(() => setGeneratingAvatar(false), 120_000);
+    const result = await charactersApi.generateAvatar(characterId);
+    if (result.ok) {
+      toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
+    } else {
+      toast.push({ title: "Avatar generation failed", description: result.error.message, tone: "error" });
+      setGeneratingAvatar(false);
+    }
+    portraits.reload({ silent: true });
+  };
+
+  const submitVariant = async () => {
+    if (!instruction.trim()) return;
+    setSubmittingVariant(true);
+    const result = await charactersApi.createPortrait(characterId, { kind, instruction: instruction.trim() });
+    setSubmittingVariant(false);
+    if (result.ok) {
+      setInstruction("");
+      portraits.reload({ silent: true });
+    } else {
+      toast.push({ title: "Variant failed to queue", description: result.error.message, tone: "error" });
+    }
+  };
+
+  const promote = async (imageId: string) => {
+    setBusyImageId(imageId);
+    const result = await charactersApi.promotePortrait(characterId, imageId);
+    setBusyImageId(null);
+    if (result.ok) {
+      toast.push({ title: "Promoted to avatar", tone: "success" });
+      onAvatarChanged();
+    } else {
+      toast.push({ title: "Promote failed", description: result.error.message, tone: "error" });
+    }
+  };
+
+  const removeVariant = async (imageId: string) => {
+    setBusyImageId(imageId);
+    const result = await charactersApi.deletePortrait(characterId, imageId);
+    setBusyImageId(null);
+    if (!result.ok) {
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
+    }
+    portraits.reload({ silent: true });
+  };
+
+  const variants = (portraits.data ?? []).filter((img) => img.id !== avatarImageId);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-start gap-5">
+        <button
+          type="button"
+          onClick={() => avatarImageId && setEnlarged({ id: avatarImageId, caption: null })}
+          disabled={!avatarImageId}
+          aria-label={avatarImageId ? "Enlarge avatar" : undefined}
+          className="cursor-pointer rounded-card disabled:cursor-default"
+        >
+          <EntityImage
+            imageId={avatarImageId}
+            name={name}
+            className="aspect-[3/4] w-44 rounded-card border border-ink-600 text-3xl"
+          />
+        </button>
+        <div className="flex max-w-sm flex-col gap-2">
+          <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Canonical avatar</h3>
+          <p className="text-sm text-paper-400">
+            Generated from this character&apos;s attributes — the registry phrasing is the prompt.
+          </p>
+          <Button variant="primary" onClick={generateAvatar} busy={generatingAvatar} className="w-fit">
+            {avatarImageId ? "Regenerate avatar" : "Generate avatar"}
+          </Button>
+          {generatingAvatar ? <p className="text-xs text-paper-500">Working — this can take a minute…</p> : null}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">New variant</h3>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Kind" className="w-36">
+            {(id) => (
+              <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as PortraitVariantKind)}>
+                {portraitVariantKinds.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Instruction" className="min-w-64 flex-1">
+            {(id) => (
+              <Textarea
+                id={id}
+                rows={2}
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                placeholder="leaning on the harbor rail at dusk, wind in her hair"
+              />
+            )}
+          </Field>
+          <Button
+            variant="primary"
+            onClick={submitVariant}
+            busy={submittingVariant}
+            disabled={!avatarImageId || !instruction.trim()}
+            title={avatarImageId ? undefined : "Generate an avatar first — variants edit the canonical portrait"}
+          >
+            Create variant
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Variants</h3>
+        {portraits.loading ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="aspect-[3/4]" />
+            ))}
+          </div>
+        ) : portraits.error ? (
+          <ErrorState error={portraits.error} onRetry={() => portraits.reload()} />
+        ) : variants.length === 0 ? (
+          <p className="text-sm text-paper-500">No variants yet.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {variants.map((img) => (
+              <figure key={img.id} className="group relative overflow-hidden rounded-card border border-ink-600">
+                {img.status === "pending" ? (
+                  <Skeleton className="aspect-[3/4] rounded-none" />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEnlarged({ id: img.id, caption: img.prompt || img.kind })}
+                    aria-label="Enlarge portrait"
+                    className="block w-full cursor-pointer"
+                  >
+                    <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
+                  </button>
+                )}
+                <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-ink-950/80 px-2 py-1.5 text-[11px] text-paper-300">
+                  {img.status === "pending" ? (
+                    <Tag>generating…</Tag>
+                  ) : img.status === "failed" ? (
+                    <Tag tone="danger">failed</Tag>
+                  ) : (
+                    <span className="truncate" title={img.prompt}>
+                      {img.prompt || img.kind}
+                    </span>
+                  )}
+                  <span className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    {img.status === "ready" ? (
+                      <Button size="sm" busy={busyImageId === img.id} onClick={() => promote(img.id)}>
+                        Promote
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      busy={busyImageId === img.id}
+                      onClick={() => removeVariant(img.id)}
+                    >
+                      ✕
+                    </Button>
+                  </span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <ImageLightbox
+        imageId={enlarged?.id ?? null}
+        alt={name}
+        caption={enlarged?.caption}
+        onClose={() => setEnlarged(null)}
+      />
+    </div>
+  );
+}

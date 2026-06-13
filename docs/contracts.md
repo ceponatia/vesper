@@ -1,0 +1,293 @@
+# Contracts
+
+`src/contracts/` is the pure, IO-free heart of the domain: registries and zod schemas everything else validates against. The architecture follows `~/projects/aionchat/packages/contracts` (registry-driven, provenance-carrying, validator-heavy) with a smaller starter vocabulary, built to grow — adding an attribute, meter, or fact kind is a data change in one file, never a schema migration.
+
+## Attribute system
+
+### Ids and definitions
+
+Attribute ids are `category.name` (e.g. `eyes.color`, `hair.length`, `build.height`). Categories are a closed enum in `attributes/categories.ts` — extend by adding to the array. Definitions:
+
+```ts
+type AttributeDefinition = {
+  id: `${AttributeCategory}.${string}`;
+  label: string;
+  kind: "physical" | "biological" | "presentation" | "cultural" | "condition" | "sensory";
+  valueType: "enum" | "enum_list" | "number" | "text" | "flag";
+  description: string;
+  mutability: "inherent" | "mutable" | "temporary";   // inherent: narrative can't change it
+  allowedValues?: readonly string[];                   // enum/enum_list
+  min?: number; max?: number; unit?: string;           // number
+  bodyLocationId?: string;                             // links to the body tree
+  appliesToBodyPlans?: readonly string[];              // default: all plans
+  excludesBodyPlans?: readonly string[];
+  appliesToEntityKinds?: readonly ("character" | "item" | "location")[];  // default: character
+  aliases?: readonly string[];                         // NLP mention resolution ("ginger" → hair.color)
+  promptHints?: readonly string[];                     // phrasing guidance for prompt builders
+  coreVisual?: boolean;                                // always filled at character creation (forge inference,
+                                                       // then seeded default from allowedValues; enum only)
+  identityAnchor?: boolean;                            // inferred first at forge time; conditions the plausible
+                                                       // ranges for unset core visuals (docs/authoring.md §Character
+                                                       // forge). Physical attributes only — never personality/voice/
+                                                       // behavior/role. New anchors are one-line registry edits.
+};
+```
+
+### Groups and the central registry
+
+Each category lives in one **attribute group** file (`attributes/groups/eyes.ts`, `hair.ts`, …) exporting its definitions via `defineAttributeGroup`. `attributes/registry.ts` derives everything — including each id's value schema — from the group list:
+
+```ts
+export const attributeRegistry = buildRegistry(attributeGroups);
+// .definitions, .byId(id), .parseValue(id, raw) → typed value or issue list,
+// .resolveAlias(text), .forCategory(cat), .forBodyLocation(loc)
+```
+
+**To add attributes: edit/create one group file and add it to the `attributeGroups` array.** Types, validation, alias resolution, and prompt hints all follow. A registry test asserts ids are unique, every enum has ≥2 values, aliases don't collide.
+
+Starter vocabulary (~50 attributes): identity (gender, apparent_age, species_presentation, heritage — free text, since real-world ethnicities and fantasy ancestries can't share a closed list; all four flagged `identityAnchor`), build (height, frame, musculature, weight_presentation), skin (tone, undertone, texture, markings), hair (color, length, texture, style), eyes (color, shape), face (shape, freckles, expression_default), brows, lips, ears, neck, shoulders, chest, waist, hips, arms, hands, legs, feet, voice (pitch, timbre, accent, cadence), presentation (style, grooming, scent_baseline), movement (gait, posture_default). Expansion toward aionchat's per-anatomy granularity is expected; the group mechanism is the contract, the vocabulary is not.
+
+### Values with provenance
+
+A character never stores bare values — always:
+
+```ts
+type AttributeValue = {
+  id: AttributeId;
+  value: unknown;          // validated via registry.parseValue
+  source: "base" | "creation" | "condition" | "injury" | "item" | "magic" | "environment" | "narrative" | "manual";
+  sourceId?: string;       // e.g. condition id
+  note?: string;
+};
+```
+
+The source enum is extensible by design: add the value, slot it into the `resolveAttributes` precedence list, update this doc. Base values live in the character **profile**; runtime overlays (a haircut, a sunburn) live in participant **state** and shadow the base by id. `resolveAttributes(profile, state)` returns the effective view, last-write-wins by source precedence: `manual > condition/injury/item/magic/environment > narrative > creation > base`.
+
+## Body model
+
+`body/locations.ts`: a tree registry of body locations (`id, label, parentId?, side?, coverageRelevant?, promptHints?`). Starter: the humanoid tree with five roots — head (hair, face→eyes, ears), torso (neck, shoulders, chest, back, waist), arms (upper_arms, forearms, wrists, hands→fingers), pelvis (hips, groin, buttocks), legs (thighs, calves, ankles, feet→toes) — at coverage-useful granularity (~27 nodes). The roots double as the coverage editor's column groups. Beware bare parent ids in coverage data: `arms` implies hands and fingers, `torso` implies the neck, `legs` implies feet — garments should use the specific parts (a t-shirt is torso-parts + upper_arms, never `arms`).
+`body/plans.ts`: body plans (`humanoid` seeded) = a set of location ids + applicable attribute rules. Characters reference a `bodyPlanId`; non-humanoid plans are future data additions, not refactors.
+
+Wardrobe coverage, exposure, and attribute targeting all reference body-location **ids** — never hardcoded strings elsewhere.
+
+### Clothing categories
+
+`items/clothing-categories.ts`: authoring-time coverage templates (`top`, `outerwear`, `dress`, `pants`, `shorts`, `skirt`, `bra`, `underwear`, `socks`, `footwear`, `gloves`, `headwear`, `eyewear`, `jewelry`). Picking one pre-fills coverage + layer in the item editor, and the forges may emit one per garment to anchor coverage; everything stays editable after. The chosen id is stored as `ItemDefinition.category` for editor display only — **category names never enter gameplay prompts** (docs/prompts.md): the engine reads the resolved coverage set, so a "top" with arm coverage removed plays as a tank top. Templates deliberately avoid parent ids that over-imply (`top` lists torso-parts + `upper_arms`, never `arms`, which would cover hands; `pants` is `pelvis` + leg parts, not `legs`, which would cover feet; `headwear` is `hair`, not `head`). Expanding the set is a one-file data edit.
+
+### Object subtypes
+
+`items/object-subtypes.ts`: vocabulary for `kind: "object"` items (furniture, vehicle, weapon, tool, device, book, food, beverage, decoration, instrument), stored as optional `ItemDefinition.subtype`. The only capability so far is `holdable` — the item *can* be carried in a hand. Holdable is a capability, never a slot binding: where a holdable item currently sits (a hand, a container, a location) is session state, so holdables stay container-storable by construction. Subtype *behavior* (vehicles moving characters, weapons in combat) is future work — each behavior gets its own design doc before engine code; the planned first is hand-equippable items.
+
+Coverage editing (`items/coverage.ts`) uses a select-all cascade: checking a location covers it plus all descendants, unchecking a descendant carves it out. Edited sets are stored **exploded** (every covered id explicit) so carve-outs keep their siblings — `registry.expand` is per-id, so exploded and minimal sets evaluate identically. Carving out a child also drops its ancestors' own ids (an ancestor would re-imply the child); carve-out precision is bounded by tree granularity — add child locations when a region needs finer holes (a ski mask is "head minus eyes"; "face minus eyes" needs face sub-parts to keep any face coverage).
+
+## Meters
+
+Continuous 0–1 state that drifts with time, defined as data (`meters/registry.ts`):
+
+```ts
+type MeterDefinition = {
+  id: string;                       // "hygiene", "energy", "arousal", "stress", "intoxication"
+  label: string;
+  description: string;
+  initial: number;
+  perHour: number;                  // signed drift per game hour
+  thresholds: Array<{ below?: number; above?: number; promptHint: string }>;
+};
+```
+
+The engine applies drift on clock advance and surfaces crossed-threshold `promptHint`s to the narrator. Worlds may override or disable meters in their style config.
+
+Starter meters: `hygiene` (1→0, −0.04/h, thresholds prompt scent/grime hints), `energy` (1→0 waking drain, restored by sleep via simulant), `stress` (0-seeking), `arousal` (0-seeking), `intoxication` (0-seeking, fast decay). The old app's 7-vector hygiene model becomes `hygiene` + conditions (`sweaty`, `soaked`, `unwashed` with region notes) — same play feel, no bespoke code path. Region-level scent composition is deliberately replaced by: item `sensory` text + hygiene threshold hints + exposure gating ([prompts.md](prompts.md)).
+
+## Registered actions
+
+Common multi-minute activities pass authored game time instead of an LLM estimate (`actions/registry.ts`):
+
+```ts
+type ActionDefinition = {
+  id: string;                          // "shower", "bathe", "nap", "meal", "snack", "workout", "groom"
+  label: string;
+  minutes: number;                     // turn clock advances max(this, travel, estimate)
+  aliases: readonly string[];
+  meterEffects: Array<{ meterId: string; delta?: number; set?: number }>;  // deterministic; agent deltas still win
+  requiredTier?: ProximityTier;        // reserved for proximity gating, unused until that ships
+};
+```
+
+`matchActions(text)` matches aliases whole-word, case-insensitive, longest-first, at most one match per definition; double-quoted spans are stripped so dialogue never matches ("I said I'd shower later").
+
+## Link access
+
+`world/access.ts`: who/when a location link admits — stored as jsonb on `world_links`/`session_links`, parsed once at the bundle boundary (malformed or absent ⇒ `public`, today's behavior):
+
+```ts
+type LinkAccess =
+  | { kind: "public" }
+  | { kind: "private"; ownerParticipantIds: string[] }   // discourages future NPC pathing; no player effect v1
+  | { kind: "locked"; keyItemId?: string }               // keyItemId reserved — v1 blocks even a key-holder
+  | { kind: "timeWindow"; start: number; end: number };  // minutes-of-day, [start, end), wraps past midnight
+```
+
+`checkLinkAccess({ access, minuteOfDay, moverParticipantId?, door? })` is the one traversal rule (passable / blocked-with-reason): the merge's player-movement validation uses it now, phase-4 NPC traversal reuses it. A bound door item instance (`session_links.door_item_id`) whose state is closed+locked seals the link regardless of kind (`ItemInstanceState.locked`, optional boolean). Blocked player moves drop with `merge.movement.access_denied` (see [turn-engine.md](turn-engine.md)).
+
+## Relationship stages
+
+`relationships/stages.ts`: readable labels over the −100..100 affinity scalar — seven stages (hostile · wary · stranger · acquaintance · friendly · close · devoted), boundaries as data. `stageForValue()` maps value → stage; `stageMidpoint()` seeds authored edges. **Stages, never raw numbers, go in prompts and gate behavior.**
+
+`relationships/authored.ts`: the authored entry stored on `world_cast.relationships` — `{ toward, stage }` where `toward` is a cast display name or the literal `"player"` (resolved case-insensitively at spawn) and `stage` is a registry stage id (unknown ids self-heal to `stranger` = no seeded row; the jsonb list reads through `parseOr` with fallback `[]`).
+
+`relationships/bond.ts`: `classifyBond(text)` — a deterministic keyword pass over a cast member's concept/bio text classifying the player bond as `mutual` (named kinds: family, sibling, partner, spouse, friend, coworker, …), `first-meeting` ("never met", "first meeting", "strangers" — beats mutual keywords), or `indeterminate`. Spawn seeds the NPC's `perceived` edge from it: mutual and indeterminate mirror the feeling midpoint, first-meeting seeds no row (`server/engine/relationship-seeds.ts`).
+
+## Conditions
+
+Discrete temporary states (`conditions/condition.ts`), aionchat-style:
+
+```ts
+type ConditionEffect = { attributeId: AttributeId; value: unknown };   // no source — applied AS source "condition"
+
+type ActiveCondition = {
+  id: string;
+  label: string;                    // "soaked", "exhausted", "sprained ankle"
+  severity?: "minor" | "moderate" | "severe";
+  startedAtMinutes: number;         // game clock
+  durationMinutes?: number;         // engine expires it
+  source?: { kind: "narrative" | "item" | "environment" | "manual"; id?: string };
+  attributeEffects?: ConditionEffect[];  // overlaid while active with source: "condition", sourceId: condition id
+  promptHint?: string;
+};
+```
+
+## Items and wardrobe
+
+```ts
+type ItemDefinition = {
+  kind: "clothing" | "object" | "container";   // embedded in item rows / instance snapshots, not self-identified
+  name: string; description: string;
+  coverage?: BodyLocationId[];      // clothing
+  layer?: 0 | 1 | 2 | 3;            // 0 underwear … 3 outerwear
+  opacity?: "opaque" | "sheer";
+  sensory?: { appearance?: string; scent?: string; tactile?: string };
+  fields?: Record<string, unknown>; // kind-specific extras (capacity, wearable container…)
+  tags: string[];
+};
+```
+
+Instance placement is exactly one of: worn by participant / held by participant / in location / in container instance. **Visibility rule** (replaces occlusion stack depths): per body location, the highest-layer covering item is *visible*; items beneath are *hidden*, or *hinted* when everything above them is sheer. Implemented once in `items/visibility.ts`, used by prompts, the simulant grounding, and the UI.
+
+## Facts
+
+`facts/taxonomy.ts` — a trimmed aionchat taxonomy: `factKindIds` (relationship, knowledge, commitment, attribute_revelation, item, location, event, preference, secret) as a closed enum, extendable by array edit. A fact:
+
+```ts
+type FactDraft = {
+  kind: FactKind;
+  verb?: FactVerb;                           // optional normalized verb (small registry, e.g. "promise",
+                                             // "reveal_trait", "show_affection"); invalid → omitted + diagnostic
+  subjectName: string;                       // resolver maps → participant/entity
+  subjectKind: "character" | "player" | "location" | "item" | "world";
+  text: string;                              // one declarative sentence
+  tags: string[];                            // lowercase; exact-match keys for lore unlocks
+  confidence: number;                        // 0–1
+};
+```
+
+Lifecycle (`active | superseded | retracted`) and storage live in the db layer; see [memory.md](memory.md).
+
+## Pinned state shapes
+
+These are the **binding** schemas behind every JSONB column ([database.md](database.md)). They live in `contracts/state/` and `contracts/world/`; each exports an `empty*()` default used as the `parseOr` fallback.
+
+```ts
+type ParticipantState = {
+  attributeOverlays: AttributeValue[];        // shadow profile base values by id
+  meters: Record<string, number>;             // meterId → current value
+  conditions: ActiveCondition[];
+  activity: string;                           // "idle", "cooking dinner", …
+  posture?: string;
+  notes: string[];                            // short-lived mechanical notes for the narrator
+};
+
+type StoryThread = {
+  id: string; title: string; summary: string;
+  status: "open" | "cooling" | "resolved" | "archived";
+  source: "anchor" | "emergent" | "player";
+  openedAtTurn: number; lastTouchedTurn: number; touchCount: number;
+};
+
+type SessionRuntime = {
+  storyThreads: StoryThread[];
+  visitedLocationIds: string[];
+  encounteredParticipantIds: string[];
+  unlockedLoreIds: string[];
+  lastInteractedTurn: Record<string, number>;  // participantId → turn number of last targeted interaction
+  flags: Record<string, boolean>;
+};
+
+type ExposureMask = {                          // per-sense narration proximity gate, set by the director
+  appearance: "ambient" | "close" | "intimate";
+  scent: "none" | "ambient" | "close" | "intimate";
+  touch: "none" | "close" | "intimate";
+};
+
+type NextTurnBrief = {
+  sceneSummary: string;
+  storySoFar: string;
+  characterNotes: string[];
+  directives: string[];                       // includes ≤2 continuity "Correction: …" lines
+  memoryQueries: string[];                    // consumed by the NEXT turn's pre-turn retrieval
+  exposure: ExposureMask;
+  droppedEvents: string[];                    // merge-dropped agent events, surfaced as gentle corrections
+  arrivals: string[];                         // schedule-tick staging ("Mara arrived from the market.") —
+  departures: string[];                       //   per-turn, never carried forward; default [] (old briefs parse unchanged)
+};
+
+type SceneGenState = {                        // no subject field: the composer picks the focal NPC
+  interval: number;                           // every N turns; 0 = off
+  lastGeneratedTurn?: number;                 //   from whoever is co-located with the player
+  status: "idle" | "generating" | "failed";   //   (docs/images.md §Scene images)
+};
+
+type CharacterProfile = {
+  bio: string; personality: string; voice?: string;
+  speciesId: string; bodyPlanId: string;      // registry ids ("human", "humanoid" seeded)
+  attributes: AttributeValue[];               // base/creation-sourced
+  aliases: string[];
+  defaultOutfit: string[];                    // item definition ids (owner's library)
+  schedule?: Array<{ startMinute: number; endMinute: number; locationName: string; activity: string;
+                     days?: number[] }>;   // weekday mask, 0 = Sunday; absent ⇒ every day
+};
+
+type WorldStyle = {
+  directives: string[];                       // tone/era/pacing/content notes
+  narratorGuidance?: string;
+  calendarStart: { year: number; month: number; day: number; hour: number; minute: number };
+  meterOverrides?: Record<string, Partial<MeterDefinition> | null>;  // null disables a meter
+  norms: Array<{                              // generalized taboo/social-rule system
+    rule: string;                             // "public nudity is scandalous"
+    severity: "odd" | "disapproval" | "outrage";
+    consequence: string;                      // hint for witness reactions
+  }>;
+};
+```
+
+## Game time
+
+`src/lib/clock.ts` (pure) derives `GameTime` from `clock_minutes` + `style.calendarStart` — including `weekdayIndex`/`dayIndex` (schedule day masks, per-day deterministic seeds) — and a `daylightBand` helper (dawn 05–07 · day 07–18 · dusk 18–20 · night otherwise) so consumers never re-derive hours.
+
+## Turn contracts
+
+`turns/` defines the binding shapes between engine, agents, and UI: the four agent result schemas (`SimulantResult`, `ArchivistResult`, `ContinuityResult`, `DirectorResult`) — their field-level spec lives in [turn-engine.md](turn-engine.md) §Post-turn agents and the zod source is the single truth — plus the SSE chunk event:
+
+```ts
+type TurnChunkEvent = { segmentIndex: number; speaker: string | null; content: string };
+// speaker matches a session_participants.display_name, or null for narrator prose
+```
+
+Rules:
+
+- Agent schemas reference world entities **by display name**, never db ids — models are bad at ids; deterministic resolvers ground names to rows (with embedding-fuzzy fallback) and emit diagnostics for misses (`merge.<agent>.unresolved_*` codes).
+- Every agent schema field is `.default()`ed; the schemas double as their own degraded fallbacks ([turn-engine.md](turn-engine.md) §Degraded defaults).
+
+## Extension checklist
+
+Adding an attribute/meter/condition/fact-kind: edit the registry file → run `vitest contracts` (registry invariant tests) → done. If you also need it persisted distinctly (rare — most state rides in validated JSONB), see [database.md](database.md) for the migration workflow.

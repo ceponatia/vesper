@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/*
+ * Vesper design tokens — quiet dark "reading room" (docs/ui.md).
+ * Ink: cool near-black surfaces. Paper: warm off-white text scale.
+ * Accent: lamplight amber, used sparingly.
+ */
+@theme {
+  --color-ink-950: #0a0a0d;
+  --color-ink-900: #0e0e12; /* app background */
+  --color-ink-850: #121218;
+  --color-ink-800: #16161d; /* cards */
+  --color-ink-750: #1a1a23;
+  --color-ink-700: #20202b; /* raised surfaces, hover */
+  --color-ink-600: #2b2b39; /* borders */
+  --color-ink-500: #3c3c4e; /* strong borders, disabled text bg */
+
+  --color-paper-50: #f7f2e7; /* brightest headings */
+  --color-paper-100: #efe8d8;
+  --color-paper-200: #ddd4c0; /* body text */
+  --color-paper-300: #bfb59e;
+  --color-paper-400: #998f7a; /* muted */
+  --color-paper-500: #746c5c; /* faint */
+
+  --color-accent-300: #e2b885;
+  --color-accent-400: #d4a160; /* lamplight amber */
+  --color-accent-500: #b9853f;
+  --color-accent-600: #93672c;
+
+  --color-danger-300: #e08a80;
+  --color-danger-400: #cf6a5e;
+  --color-danger-500: #a84a40;
+
+  --color-ok-400: #8fae7e;
+
+  --font-sans: var(--font-sans-base), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-serif-base), "Source Serif 4", ui-serif, Georgia, serif;
+
+  --shadow-lift: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.7);
+
+  --radius-card: 0.625rem;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    scrollbar-color: var(--color-ink-500) transparent;
+  }
+
+  body {
+    background-color: var(--color-ink-900);
+    color: var(--color-paper-200);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-accent-500) 35%, transparent);
+    color: var(--color-paper-50);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent-500);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Quiet scrollbars (WebKit) */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-600);
+    border-radius: 5px;
+    border: 2px solid var(--color-ink-900);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  /* Narrative/display type — serif with gentle tracking. */
+  .prose-display {
+    font-family: var(--font-serif);
+    color: var(--color-paper-50);
+    letter-spacing: 0.01em;
+  }
+}
