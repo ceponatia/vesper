@@ -138,3 +138,30 @@ wardrobe-reconciliation gap (followups §earlier note) is unrelated and
 untouched.
 
 Status: **closed (implemented).**
+
+## 3. Scene tab: "Here with you" present-cast section (2026-06-13)
+
+**Request (user).** On the session Scene tab, below the scene-image
+controls, show cast cards for the characters at the player's active
+location (excluding the player) — a quick read on who can be interacted
+with — reusing the exact Cast-tab cards.
+
+**Implemented (2026-06-13).**
+
+- Extracted the Cast tab's `ParticipantCard` (and its private helpers
+  `MeterBar`/`SectionTitle`/`InnerNoteSection`/`stageLabel`) into
+  `components/play/participant-card.tsx` so both tabs render the
+  identical card with zero duplication; `cast-tab.tsx` now imports it.
+- `scene-tab.tsx` gains a `PresentCast` section under the generate /
+  auto-generate controls: co-located NPCs (composer.tsx's filter —
+  `locationId` match when known, include otherwise; player excluded via
+  `isUser` + `role`), each as a `ParticipantCard` with its own
+  accordion and the same `sessionsApi.relationships` fetch keyed on the
+  clock as the Cast tab. Heading "Here with you" with the current
+  location name; empty state "No one else is at this location."
+
+Pure presentational reuse — no schema, route, or data-shape change.
+Gates: typecheck + lint clean, full pure suite green. docs/ui.md
+updated.
+
+Status: **closed (implemented).**

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { apiPost } from "@/lib/client/api";
+import { apiPost, sessionsApi } from "@/lib/client/api";
 import type { UseSession } from "@/lib/client/use-session";
+import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -11,6 +12,8 @@ import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { relationshipToPlayer } from "./cast-relationship";
+import { ParticipantCard } from "./participant-card";
 
 const INTERVALS = [
   { value: 0, label: "Off" },
@@ -139,11 +142,73 @@ export function SceneTab({ session }: { session: UseSession }) {
         </Select>
       </label>
 
+      <PresentCast session={session} />
+
       <ImageLightbox
         imageId={enlargedId}
         alt={session.status?.title ?? "Scene"}
         onClose={() => setEnlargedId(null)}
       />
     </div>
+  );
+}
+
+/**
+ * Who is at the player's location right now (docs/ui.md): the same cast cards
+ * as the Cast tab, scoped to co-located NPCs so the player can see who is here
+ * to interact with — the present set the scene composer would draw from. The
+ * player is excluded (the scene is their first-person POV). Co-location follows
+ * composer.tsx's rule: filter by `locationId` when known, include otherwise.
+ */
+function PresentCast({ session }: { session: UseSession }) {
+  // Independent accordion (the Cast tab keeps its own): one card open at a time.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Relationships refetch after every completed turn, same as the Cast tab;
+  // stale edges stay rendered while a refetch is in flight.
+  const relationships = useAsyncData(
+    () => sessionsApi.relationships(session.sessionId),
+    [session.sessionId, session.status?.clockMinutes ?? 0],
+  );
+
+  const participants = session.status?.participants ?? [];
+  const player = participants.find((p) => p.isUser) ?? null;
+  const present = participants.filter(
+    (p) =>
+      !p.isUser &&
+      p.role !== "player" &&
+      (!player?.locationId || !p.locationId || p.locationId === player.locationId),
+  );
+  const edges = relationships.data;
+
+  return (
+    <section className="flex flex-col gap-3 border-t border-ink-700 pt-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Here with you</h3>
+        {session.status?.location?.name ? (
+          <span className="truncate text-[11px] text-paper-500" title={session.status.location.name}>
+            {session.status.location.name}
+          </span>
+        ) : null}
+      </div>
+      {present.length === 0 ? (
+        <p className="text-xs text-paper-500">No one else is at this location.</p>
+      ) : (
+        present.map((participant) => (
+          <ParticipantCard
+            key={participant.id}
+            sessionId={session.sessionId}
+            participant={participant}
+            relationship={
+              // Only NPC→player edges are tracked; until they load once, render
+              // nothing rather than a false "Stranger".
+              player && edges ? relationshipToPlayer(edges, participant.id, player.id) : null
+            }
+            playerLocationId={player?.locationId ?? null}
+            expanded={expandedId === participant.id}
+            onToggle={() => setExpandedId((prev) => (prev === participant.id ? null : participant.id))}
+          />
+        ))
+      )}
+    </section>
   );
 }
