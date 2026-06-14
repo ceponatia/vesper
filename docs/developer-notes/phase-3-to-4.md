@@ -1,5 +1,13 @@
 # Phase 3 → phase 4 — doc-split migration plan
 
+> **Resequenced 2026-06-14:** when this doc was written, "phase 4" meant the "world
+> moves" cluster (movement authority, scheduled arrivals, pre-narrator intake).
+> That cluster is now **phase 5** and its specs were renamed `*.phase5.md`. A new
+> **phase 4** was inserted ahead of it — the body-model build
+> ([intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sensory-and-species-spec.phase4.md)).
+> So every "phase 4" below now refers to what is **phase 5**. This historical
+> migration doc is left as-written; a future cleanup may split it.
+
 Status: **plan** (2026-06-13) — a one-off migration plan, not a working-phase
 plan. It says how to cut the overloaded `.phase3.md` corpus into a strict
 phase 3 plus a real phase 4 (and to push the steps-5/6 specs out of phase 3's
@@ -132,7 +140,7 @@ witnessed-intimacy); library-character `tier` field.
   traversal/pathfinding/LOD, commitment, world-tick *proposals*, approach scores,
   follow schedule-conflict term, companion travel atomicity. (Player-side access +
   arrival/departure staging already shipped in phase 2.)
-- **movement-authority** ([spec](movement-authority-spec.phase4.md), drafted
+- **movement-authority** ([spec](movement-authority-spec.phase5.md), drafted
   2026-06-13 from a broken session): the precondition npc-movement's traversal
   assumes — who may *commit* a movement (player narration must not relocate NPCs),
   implied sub-rooms must not promote to graph hops, and multi-hop player intent
@@ -164,12 +172,12 @@ witnessed-intimacy); library-character `tier` field.
 | --- | --- |
 | `phase-3-plan.md` | **Rewrite** as the real, strict phase-3 plan (Bucket 2). Remove the "or more" candidate-scope language and the nesting of non-phase-3 specs. |
 | `presence-and-perception-spec.phase3.md` | **Stays phase 3.** Add a status note scoping out the already-v2 items (full sound channel, NPC-initiated comms escalation, player-unperceived path) to phase 4. |
-| `proximity-spec.phase3.md` | **Split.** Romance-core → phase 3; movement-lock + contested checks → phase 4. Keep `.phase3.md` until phase 3 ships (it has phase-3 work), with a "Phase split" note delineating the phase-4 sections; re-suffix the leftover to `.phase4.md` when phase 3 closes. |
+| `proximity-spec.phase3.md` | **Split.** Romance-core → phase 3; movement-lock + contested checks → phase 4. Keep `.phase3.md` until phase 3 ships (it has phase-3 work), with a "Phase split" note delineating the phase-4 sections; re-suffix the leftover to `.phase5.md` when phase 3 closes. |
 | `cast-tiers-and-affinity-spec.phase3.md` | **Mostly shipped.** First-impressions stays phase 3. Add a note that factions/tier-drift/extras/promotion are deferred general-RPG (Bucket 1) and re-suffix that remainder later. |
 | `location-design-spec.phase3.md` | **Split.** Banded ambients → phase 3; ownership/access-reconciliation/per-location-forge/area-hierarchy → phase 4. Same keep-then-re-suffix pattern as proximity. Resolve its banded-vocabulary open question before the phase-3 work. |
-| `npc-movement-spec.phase3.md` | **Re-suffix → `.phase4.md`.** It is build step 4; the engine is net-new phase-4 work. |
-| `time-and-travel-spec.phase3.md` | **Re-suffix → `.phase4.md`.** Spec is effectively complete; the three leftovers are movement-coupled. |
-| `dynamic-character-introduction-spec.phase3.md` + `-brainstorm` | **Re-suffix → `.phase4.md`** (provisional cast = phase 4, demand-dependent). Note phases 2–3 defer to phase 5+. Phase 0 already shipped (T11). Also fix the stale heritage-is-free-text body (resolved: defined enum). |
+| `npc-movement-spec.phase3.md` | **Re-suffix → `.phase5.md`.** It is build step 4; the engine is net-new phase-4 work. |
+| `time-and-travel-spec.phase3.md` | **Re-suffix → `.phase5.md`.** Spec is effectively complete; the three leftovers are movement-coupled. |
+| `dynamic-character-introduction-spec.phase3.md` + `-brainstorm` | **Re-suffix → `.phase5.md`** (provisional cast = phase 4, demand-dependent). Note phases 2–3 defer to phase 5+. Phase 0 already shipped (T11). Also fix the stale heritage-is-free-text body (resolved: defined enum). |
 | `offscreen-simulation-spec.phase3.md` | **Re-suffix → `.phase5.md`.** Record the romance descope (tick the few love interests; skip the LOD tier engine). |
 | `character-memory-spec.phase3.md` | **Re-suffix → `.phase6.md`.** Note the write-only `witnessed_by` stamp turns real in phase 3. |
 | `multi-character-overview/-data-model/-v1-defaults/-decisions/-presence-and-movement-brainstorm` | **Program-spine references**, not single-phase docs. Decide once: stop re-suffixing them per phase — either drop the phase suffix or freeze at a `.program.md`/`.phase3.md` convention — and say so in the overview, so future phase rolls don't churn them. |
@@ -191,7 +199,7 @@ witnessed-intimacy); library-character `tier` field.
    the items below.
 4. **Re-suffix the clean phase-4 specs**: `npc-movement-spec`,
    `time-and-travel-spec`, `dynamic-character-introduction-spec` (+ brainstorm)
-   `.phase3.md → .phase4.md`.
+   `.phase3.md → .phase5.md`.
 5. **Re-suffix the late specs out of phase 3**: offscreen-simulation `→ .phase5.md`,
    character-memory `→ .phase6.md`. (These are *not* phase-4 content — they just
    shouldn't masquerade as phase 3.)
@@ -223,7 +231,7 @@ Extracting phase-4 content leaves dangling phase-3 prose that must change so pha
   movement/traversal halves move to the phase-4 plan.
 - **Cross-spec "Implementation status" notes** that say "the presence phase gates
   this when it lands" (e.g. arrival/departure witness gating in npc-movement, T9):
-  once npc-movement is `.phase4.md`, reword so phase 3 *produces* the witness
+  once npc-movement is `.phase5.md`, reword so phase 3 *produces* the witness
   machinery and phase 4 *consumes* it — keep the dependency direction legible
   across the rename.
 - **The naming note** at the bottom of `phase-3-plan.md`: once steps 5–6 are

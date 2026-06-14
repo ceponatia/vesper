@@ -578,7 +578,7 @@ idiomatic zero-latency slot is a fifth post-turn agent writing
 next-turn constraints into the brief (the director already works this
 way), not a blocking pre-turn call. **(Pass-over reversed 2026-06-14 —
 see entry 16's update and
-[pre-narrator-agents-spec.phase4.md](pre-narrator-agents-spec.phase4.md);
+[pre-narrator-agents-spec.phase5.md](pre-narrator-agents-spec.phase5.md);
 narrator-quality findings made the latency worth paying.)**
 
 Status: **open (awaiting go — touches the streaming protocol and
@@ -620,14 +620,14 @@ is not enough. We now judge that a **pre-narrator system of some sort is
 needed** — reversing the "passed over" stance of this entry and entry 15. Full
 analysis, feasibility (latency is the real cost), and recommended build (a
 latency-hidden "intake" agent growing into a before/during/after guardrail mesh)
-in [pre-narrator-agents-spec.phase4.md](pre-narrator-agents-spec.phase4.md).
+in [pre-narrator-agents-spec.phase5.md](pre-narrator-agents-spec.phase5.md).
 Note the thread-repetition symptom argues for the *mesh*, not intake alone: an
 input-side agent cannot stop the narrator mid-stream from re-opening a closed
 thread — that wants the mid-stream gate (entry 15) and/or a post-turn fidelity
 check too. Intake is the foundation, not the whole fix.
 
 Status: **closed (implemented); the broader pre-narrator question is reopened
-2026-06-14 — see pre-narrator-agents-spec.phase4.md.**
+2026-06-14 — see pre-narrator-agents-spec.phase5.md.**
 
 ## 17. NPC inner notes — authorial interiority injection (2026-06-12)
 

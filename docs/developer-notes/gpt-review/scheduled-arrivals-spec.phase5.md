@@ -1,6 +1,6 @@
 # GPT review: Scheduled arrivals & appointments
 
-Source: [../scheduled-arrivals-spec.phase4.md](../scheduled-arrivals-spec.phase4.md)
+Source: [../scheduled-arrivals-spec.phase5.md](../scheduled-arrivals-spec.phase5.md)
 
 ## Overall opinion
 

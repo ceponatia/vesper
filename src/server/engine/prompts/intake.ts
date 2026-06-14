@@ -2,7 +2,7 @@ import { AGENT_INPUT_CAP } from "./constants";
 
 /**
  * Pre-narrator intake prompt (docs/prompts.md §Intake agent, docs/developer-notes/
- * pre-narrator-agents-spec.phase4.md). One tight system prompt + a state-slice
+ * pre-narrator-agents-spec.phase5.md). One tight system prompt + a state-slice
  * builder, mirroring the post-turn agent prompts — kept small because it runs
  * every player turn, concurrent with retrieval. The agent classifies and
  * resolves the player's input BEFORE narration; it never narrates.

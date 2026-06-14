@@ -56,7 +56,7 @@ Adopt the moment **any one** of these becomes real (most likely first is bolded)
   the probable source: if offscreen simulation
   ([offscreen-simulation-spec.phase3.md](offscreen-simulation-spec.phase3.md)) or
   the scheduled-arrivals tick
-  ([scheduled-arrivals-spec.phase4.md](scheduled-arrivals-spec.phase4.md)) graduate
+  ([scheduled-arrivals-spec.phase5.md](scheduled-arrivals-spec.phase5.md)) graduate
   from inline post-turn jobs into a **standalone background worker / cron
   process**, then `engine` + `memory` + `db` + `ai` suddenly have *two* consumers
   (the web request path and the worker). That is the canonical monorepo trigger —

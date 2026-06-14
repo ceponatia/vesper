@@ -1,6 +1,11 @@
 # Movement authority & intent fidelity — spec
 
-Status: **draft for discussion** (2026-06-13). Phase 4 ("the world moves"
+> **Resequenced 2026-06-14:** this work is now **phase 5**. A standalone **phase 4**
+> (the body-model build) was inserted ahead of it — see
+> [intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sensory-and-species-spec.phase4.md).
+> This file was renamed from `*.phase4.md` and its body now reads "phase 5" throughout.
+
+Status: **draft for discussion** (2026-06-13). Phase 5 ("the world moves"
 — see [phase-3-to-4.md](phase-3-to-4.md)). This is a sibling of
 [npc-movement-spec.phase3.md](npc-movement-spec.phase3.md) (the movement
 *engine*: drives, traversal, follow/approach, companion atomicity). That
@@ -9,12 +14,12 @@ one answers a prior question it never poses: **who is allowed to commit a
 movement, and what counts as a movement at all.** The two share the
 traversal primitives (shortest path on the session link graph,
 nodes-only, one hop per `travelMinutes`). A third sibling —
-[scheduled-arrivals-spec.phase4.md](scheduled-arrivals-spec.phase4.md),
+[scheduled-arrivals-spec.phase5.md](scheduled-arrivals-spec.phase5.md),
 findings from this same session — answers a further one: how an NPC comes
 to be somewhere at a particular game-clock time (a player-arranged
 appointment, which today nothing schedules).
 
-`phase-4-plan.md` does not exist yet (it is step 3 of the phase-3→4
+`phase-5-plan.md` does not exist yet (it is step 3 of the phase-3→4
 migration). When it is authored, the open questions at the bottom fold
 into its `## Open questions` per the docs convention.
 

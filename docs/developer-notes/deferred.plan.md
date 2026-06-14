@@ -6,6 +6,46 @@ into the relevant phase plan and delete it from here. This file is the anchor;
 supporting detail files named `*.deferred.md` nest under it in the VS Code
 workspace (the same nesting idea as `phase-N-plan.md`).
 
+## Phase-4/5 resequencing — deeper prose sweep
+
+*Raised 2026-06-14, from the phase-4/5 renumber.* When the body-model work became
+phase 4 and the "world moves" cluster became phase 5, the **structural** rename
+was completed: the three world-moves specs (+ their gpt-review mirrors) were
+renamed `*.phase5.md`, every `.phase4.md` filename link (docs + 4 `src/` comment
+refs) was updated, the three living specs were swept to read as "phase 5"
+internally, and resequencing banners were added to them and to
+[phase-3-to-4.md](phase-3-to-4.md). **Link integrity verified; no broken links.**
+
+Deliberately **not** swept (left as historical, banner-only): the plain-prose
+"phase 4" mentions — now meaning phase 5 — in dated/stable docs (the
+`phase-3-to-4.md` body, completed [phase-3-plan.md](phase-3-plan.md), the phase-3
+design specs, gpt-review review snapshots) and ~11 `src/` code comments
+(forward-references like "phase-4 NPC traversal reuses this"). Reasons: some are
+semantically ambiguous, and churning shipped code / dated artifacts is low-value
+and hard to review.
+
+Open questions before doing the deeper sweep:
+
+- **Scope.** Sweep *everything*, or only actively-maintained docs and leave
+  dated/historical artifacts + shipped code comments as-is?
+- **`phase-3-to-4.md` specifically.** Its body *is* the original phase-4
+  definition, which now **splits** between the new phase 4 (body model) and phase
+  5 (world-moves) — e.g. the romance "consequence loop" bucket is arguably the new
+  phase 4, not phase 5. So a blind "phase 4"→"phase 5" is wrong here. Leave
+  banner-only (current), rewrite wholesale, or **split** it into real phase-4 vs
+  phase-5 content (needs a human read of the buckets)?
+- **`src/` code comments (~11 files).** Update the forward-reference "phase 4"
+  comments in shipped phase-3 code to "phase 5" (comment-only churn of stable
+  code), or leave them?
+- **gpt-review snapshots.** These are dated reviews *of* the renamed specs —
+  rewrite their "phase 4" to match the new filename, or preserve them as the
+  historical record they are?
+
+My lean: leave the historical prose as-is (it's not misleading once the phase map
+is known), and only act if a future reader trips on it. Revisit when phase 4
+ships and the standard re-suffix pass runs anyway (see the naming note in
+[phase-4-plan.md](phase-4-plan.md)).
+
 ## Comms expansions
 
 *Raised 2026-06-13, from the phase-3 presence open questions.* Phase-3 comms

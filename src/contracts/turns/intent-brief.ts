@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Pre-narrator intake output (docs/developer-notes/pre-narrator-agents-spec.phase4.md).
+ * Pre-narrator intake output (docs/developer-notes/pre-narrator-agents-spec.phase5.md).
  * The intake agent reads the player's input BEFORE narration and reports what
  * they are trying to do; the brief is persisted on the turn row and consumed by
  * the deterministic prompt builders (exposure / glance / awareness) and the
@@ -45,7 +45,7 @@ export const intentBriefSchema = z.object({
   addressedNpcs: z.array(z.string()).default([]),
 
   /**
-   * Movement classification (movement-authority-spec.phase4.md §1/§3). Persisted
+   * Movement classification (movement-authority-spec.phase5.md §1/§3). Persisted
    * seam — v1 records it; the merge does not yet enforce authority off it.
    * - self: the player moves their own body.
    * - narrated_npc: the player's prose moved an NPC (must NOT directly relocate them).
@@ -66,7 +66,7 @@ export const intentBriefSchema = z.object({
     .default({ kind: "none", coTravelTargets: [] }),
 
   /**
-   * A player-arranged appointment (scheduled-arrivals-spec.phase4.md). Persisted
+   * A player-arranged appointment (scheduled-arrivals-spec.phase5.md). Persisted
    * seam — intake recognises the deal; the engine does the when-to-set-out math
    * later. `timePhrase` is raw ("5:30", "after dinner"); the engine parses it.
    */

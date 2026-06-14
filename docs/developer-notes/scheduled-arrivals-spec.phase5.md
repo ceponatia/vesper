@@ -1,13 +1,18 @@
 # Scheduled arrivals & appointments — findings + spec
 
-Status: **findings / draft for discussion** (2026-06-13). Phase 4 ("the world
-moves"). Sibling of [npc-movement-spec.phase4 (drives & traversal)](npc-movement-spec.phase3.md)
-and [movement-authority-spec.phase4 (who may commit a move)](movement-authority-spec.phase4.md).
+> **Resequenced 2026-06-14:** this work is now **phase 5**. A standalone **phase 4**
+> (the body-model build) was inserted ahead of it — see
+> [intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sensory-and-species-spec.phase4.md).
+> This file was renamed from `*.phase4.md` and its body now reads "phase 5" throughout.
+
+Status: **findings / draft for discussion** (2026-06-13). Phase 5 ("the world
+moves"). Sibling of [npc-movement-spec.phase3 (drives & traversal)](npc-movement-spec.phase3.md)
+and [movement-authority-spec.phase5 (who may commit a move)](movement-authority-spec.phase5.md).
 This one answers a third question neither poses: **how does an NPC come to be
 somewhere at a particular game-clock time** — a player-arranged appointment, not
 a routine and not a player-narrated shove.
 
-When `phase-4-plan.md` is authored, the open questions at the bottom fold into
+When `phase-5-plan.md` is authored, the open questions at the bottom fold into
 its `## Open questions` per the docs convention.
 
 ## Problem — the date nobody can keep (session `pyfb0hznglqkqj35ezjvjcxh`)
@@ -59,7 +64,7 @@ each misses:
 
 Whatever the narrative model improvises — most likely Eleanor *materialises* at
 the apartment with no grounded journey. That is the same teleport-by-prose
-state/narration decoupling that [movement-authority-spec.phase4.md](movement-authority-spec.phase4.md)
+state/narration decoupling that [movement-authority-spec.phase5.md](movement-authority-spec.phase5.md)
 was written about (it post-mortems this *same* session). If the director happened
 to stage her earlier off a thread, she walks over, but arrival is untied to 5:30.
 

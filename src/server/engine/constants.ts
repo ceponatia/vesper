@@ -79,7 +79,7 @@ export const STAGED_INTENT_DEFAULT_BUDGET = 6;
 export const PENDING_COMMS_CAP = 8;
 
 /**
- * Pre-narrator intake (docs/developer-notes/pre-narrator-agents-spec.phase4.md):
+ * Pre-narrator intake (docs/developer-notes/pre-narrator-agents-spec.phase5.md):
  * the LLM intake call runs concurrent with retrieval before narration. If it
  * exceeds this budget the turn proceeds on the regex `detectIntent` fallback —
  * a few hundred ms of added time-to-first-token is acceptable; a stalled turn is
