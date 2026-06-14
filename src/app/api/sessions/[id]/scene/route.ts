@@ -55,6 +55,16 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
     .orderBy(desc(turns.number))
     .limit(1);
 
+  // Mark the scene "generating" now — before enqueuing, so the worker's later
+  // generating→idle/failed transitions can't be overwritten by this write. The
+  // client refreshes immediately after this POST; without this the stored status
+  // would still read "idle" until the worker picks the job up, so the poll loop
+  // never started and the button needed a second press (ideas.md UI #4).
+  await db()
+    .update(sessions)
+    .set({ scene: { ...scene, status: "generating" } })
+    .where(eq(sessions.id, id));
+
   const jobId = await enqueueJob({
     sessionId: id,
     type: "scene_image",
