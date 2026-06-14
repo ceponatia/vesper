@@ -67,6 +67,7 @@ function makeBundle(embodied: boolean): SessionBundle {
       name: "{{player}} World", // identifier-adjacent: world name is not in the substitution contract
       description: "A tale of {{player}}.",
       narrativeModel: "demo",
+      agentModel: "",
     },
     participants: embodied ? [npc(), player()] : [npc()],
     locations: [

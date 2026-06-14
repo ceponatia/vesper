@@ -33,7 +33,7 @@ Steps 1–5 happen inside the request (the SSE response), but **client disconnec
 
 `runIntake` (`engine/intake.ts`) is a 5th leg of the pre-turn `Promise.all` in `assemblePreTurn`, **run concurrently with `preTurnRetrieve`** — so it is the **first (and only) LLM in the critical path to first token**, but adds latency to first token only when it is the long pole (`max(0, intake − retrieval)`; both legs are already network-bound, so retrieval often hides it). It reads the player's input *before* narration and emits a typed **`IntentBrief`** (contracts.md §Intent brief) — what the player is trying to do, to whom, with which entities — replacing the brittle regex intent as the primary signal.
 
-- **Model & resilience**: `generateChecked` on the **`tool` model** (`toolModelId()` = `google/gemini-2.5-flash`, the image scene composer's model — now its second consumer), temperature 0, small schema, `maxOutputTokens` ~512. The full ladder applies (typed output → 1 repair → degraded default).
+- **Model & resilience**: `generateChecked` on the **in-session agent model** (`agentModelId(world.agentModel)` — the per-world override set from the World tab, default `google/gemini-3.5-flash`; shared with the post-turn agents), temperature 0, small schema, `maxOutputTokens` ~512. The full ladder applies (typed output → 1 repair → degraded default).
 - **Timeout → regex fallback**: wrapped in a hard timeout (`INTAKE_TIMEOUT_MS = 1500`). On timeout, failure, demo mode, or when disabled (`INTAKE_DISABLED` env), it **degrades to today's regex `detectIntent`** via `intentBriefFromSceneIntent(...)`. The fallback is the *previously-live* code path, so "intake off" is byte-for-byte today's behavior — a clean new-trust-boundary example (resilience.md §3).
 - **When it runs**: player-authored, non-OOC turns only. Companion-authored and OOC turns get an empty brief (no LLM call).
 - **Persistence**: the `IntentBrief` is stored on the turn row in a new `intent_brief` jsonb column (mirroring `agent_results`), so it survives the turn and the post-turn agents read it back.
@@ -53,7 +53,7 @@ Steps 1–5 happen inside the request (the SSE response), but **client disconnec
 
 ## Post-turn agents
 
-All four: AI SDK `generateChecked` (validate → 1 repair → degraded default, per [resilience.md](resilience.md)), `STATE_MODEL` by default, temperature 0, **small single-concern schemas**, world entities referenced by display name. Inputs: the narration, the player input, and a per-agent slice of state — never the whole world.
+All four: AI SDK `generateChecked` (validate → 1 repair → degraded default, per [resilience.md](resilience.md)), the **in-session agent model** by default (`agentModelId(world.agentModel)` — per-world override from the World tab, default `google/gemini-3.5-flash`; shared with intake), temperature 0, **small single-concern schemas**, world entities referenced by display name. Inputs: the narration, the player input, and a per-agent slice of state — never the whole world. The agent-model switch is **in-session only** — the world/character authoring agents and the image pipeline (scene composer + image models) stay on the plain `state`/`tool` defaults.
 
 ### simulant — what physically changed
 

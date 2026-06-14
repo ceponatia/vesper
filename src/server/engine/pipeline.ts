@@ -494,6 +494,7 @@ async function assemblePreTurn(
           itemNames: inScopeItemNames,
           currentLocationName: activePlace?.name ?? null,
           locationNames: bundle.locations.map((l) => l.name),
+          agentModel: bundle.world.agentModel,
           sink,
         });
 

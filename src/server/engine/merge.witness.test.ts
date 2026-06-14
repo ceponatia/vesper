@@ -52,7 +52,7 @@ function makeBundle(overrides: Partial<SessionBundle> = {}): SessionBundle {
   return {
     relationships: [],
     session: { id: "s-1", ownerId: "u-1", worldId: "w-1", title: "Test", embodied: true, status: "processing", clockMinutes: 0 },
-    world: { id: "w-1", ownerId: "u-1", name: "Testworld", description: "", narrativeModel: "" },
+    world: { id: "w-1", ownerId: "u-1", name: "Testworld", description: "", narrativeModel: "", agentModel: "" },
     participants,
     locations,
     links: [{ fromId: "loc-kitchen", toId: "loc-garden", label: null }],

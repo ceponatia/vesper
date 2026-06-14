@@ -135,6 +135,8 @@ export const worlds = pgTable(
     /** WorldLore (contracts/world/profile.ts) */
     lore: jsonb("lore").notNull().default({}),
     narrativeModel: text("narrative_model").notNull().default(""),
+    /** Per-world override for the in-session agent models (intake + post-turn); "" ⇒ default. */
+    agentModel: text("agent_model").notNull().default(""),
     imageId: text("image_id"),
     /** Where the player starts; unset ⇒ legacy anchor-to-companion behavior. No FK (cycle with world_locations). */
     playerStartWorldLocationId: text("player_start_world_location_id"),

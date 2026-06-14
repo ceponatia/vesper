@@ -128,6 +128,8 @@ export interface SessionStatusPayload {
     worldName: string;
     /** Resolved narrator model id (world override or env default). */
     narrativeModel: string;
+    /** Resolved in-session agent model id (world override or env default). */
+    agentModel: string;
   };
   clock: {
     minutes: number;
@@ -193,6 +195,7 @@ export function buildStatusPayload(
     latestSceneImageId: string | null;
     sceneGallery: SceneGalleryEntry[];
     narrativeModel: string;
+    agentModel: string;
     clockDelta: ClockDelta | null;
   },
 ): SessionStatusPayload {
@@ -256,6 +259,7 @@ export function buildStatusPayload(
       worldId: bundle.world.id,
       worldName: bundle.world.name,
       narrativeModel: extras.narrativeModel,
+      agentModel: extras.agentModel,
     },
     clock: {
       minutes: bundle.clockMinutes,

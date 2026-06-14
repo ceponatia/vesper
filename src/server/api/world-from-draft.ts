@@ -45,6 +45,7 @@ export async function createWorldFromDraft(ownerId: string, draft: WorldDraft): 
     style: draft.style,
     lore: draft.lore,
     narrativeModel: "",
+    agentModel: "",
     playerStartLocationName: draft.playerStartLocationName,
     ...families,
   };

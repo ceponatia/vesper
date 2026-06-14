@@ -26,7 +26,7 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
 
 | Table | Key columns |
 | --- | --- |
-| `worlds` | `owner_id`, `name`, `description`, `style` JSONB (`WorldStyle` — pinned in [contracts.md](contracts.md), includes `norms`), `lore` JSONB (`WorldLore`: synopsis, factions, plot anchors), `narrative_model`, `image_id`, `player_start_world_location_id?` (soft reference, no FK), `duplicated_from_world_id?` (world copy keeps lineage) |
+| `worlds` | `owner_id`, `name`, `description`, `style` JSONB (`WorldStyle` — pinned in [contracts.md](contracts.md), includes `norms`), `lore` JSONB (`WorldLore`: synopsis, factions, plot anchors), `narrative_model`, `agent_model` (per-world in-session agent override; migration 0003), `image_id`, `player_start_world_location_id?` (soft reference, no FK), `duplicated_from_world_id?` (world copy keeps lineage) |
 | `world_cast` | `world_id`, `character_id`, `role` (`companion`/`npc`), `tier` (`major`/`minor`/`extra`), `start_world_location_id` (→ `world_locations`; NPC schedules live in `CharacterProfile.schedule`), `relationships` JSONB (`AuthoredRelationship[]` — directed edges toward cast names or `"player"`; spawn seeds `participant_relationships` at stage midpoints) |
 | `world_locations` | `world_id`, `location_id`, `overrides` JSONB (may also override `scale`/`area`), `sort` (authored map order — the editor's array index on every save; reads ORDER BY it) |
 | `world_links` | `world_id`, `from_world_location_id`, `to_world_location_id`, `label`, `travel_minutes`, `audibility` (reserved), `access` JSONB, `door_item_id?` |

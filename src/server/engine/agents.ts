@@ -13,7 +13,7 @@ import {
   type SimulantResult,
 } from "@/contracts/turns/agent-results";
 import type { TurnAuthor } from "@/contracts/turns/stream";
-import { generateChecked, isDemoMode } from "../ai";
+import { agentModelId, generateChecked, isDemoMode } from "../ai";
 import { db, facts } from "../db";
 import { activeLocationId, type BundleItem, type SessionBundle } from "./bundle";
 import { stagedLocationAnchor } from "./merge";
@@ -130,8 +130,12 @@ export async function runPostTurnAgents(
     activeFacts: activeFactRows,
   });
 
+  // In-session post-turn agents use the world's agent-model override (World tab),
+  // falling back to the default. Authoring agents don't pass modelId, so they
+  // stay on the default — outside the session switch.
+  const agentModel = agentModelId(bundle.world.agentModel);
   const run = <T>(schema: ZodType<T>, system: string, prompt: string, code: string) =>
-    generateChecked<T>({ schema, system, prompt, code, sink: opts.sink });
+    generateChecked<T>({ schema, system, prompt, code, modelId: agentModel, sink: opts.sink });
 
   if (opts.endState) {
     const [simulant, archivist] = await Promise.allSettled([

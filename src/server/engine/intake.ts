@@ -1,6 +1,6 @@
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { emptyIntentBrief, intentBriefSchema, type IntentBrief } from "@/contracts/turns/intent-brief";
-import { generateChecked, isDemoMode, toolModelId, type GenerateCheckedResult } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, type GenerateCheckedResult } from "../ai";
 import { INTAKE_MAX_OUTPUT_TOKENS, INTAKE_TIMEOUT_MS } from "./constants";
 import { detectIntent, type SceneIntent } from "./intent";
 import { buildIntakePrompt, INTAKE_SYSTEM, type IntakePromptInput } from "./prompts/intake";
@@ -16,6 +16,8 @@ import { buildIntakePrompt, INTAKE_SYSTEM, type IntakePromptInput } from "./prom
 
 export interface IntakeInput extends IntakePromptInput {
   sink?: DiagnosticSink;
+  /** The world's in-session agent-model override (World tab); "" / absent ⇒ default. */
+  agentModel?: string;
 }
 
 /** Active unless explicitly disabled (the latency A/B switch); never in demo mode. */
@@ -34,7 +36,7 @@ export async function runIntake(input: IntakeInput): Promise<IntentBrief> {
     schema: intentBriefSchema,
     system: INTAKE_SYSTEM,
     prompt: buildIntakePrompt(input),
-    modelId: toolModelId(),
+    modelId: agentModelId(input.agentModel),
     temperature: 0,
     maxOutputTokens: INTAKE_MAX_OUTPUT_TOKENS,
     code: "agent.intake",

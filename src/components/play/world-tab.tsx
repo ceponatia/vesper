@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DEFAULT_CALENDAR_START, formatElapsed, formatGameClock, resolveGameTime } from "@/lib/clock";
 import { worldsApi } from "@/lib/client/api";
 import type { StatusItem, UseSession } from "@/lib/client/use-session";
+import { AGENT_MODELS } from "@/lib/agent-models";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
@@ -54,6 +55,54 @@ function NarratorSelect({ session }: { session: UseSession }) {
           </option>
         ))}
       </Select>
+      {saving ? <p className="text-[11px] text-paper-500 italic">Switching…</p> : null}
+    </section>
+  );
+}
+
+/**
+ * In-session agent-model dropdown over the curated list (lib/agent-models.ts);
+ * writes the world's agentModel override, which the intake + post-turn agents
+ * use this session. Authoring agents and the image pipeline are unaffected. The
+ * resolved current model is always shown (an off-list id renders as-is).
+ */
+function AgentSelect({ session }: { session: UseSession }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  const status = session.status;
+  const current = status?.agentModel ?? "";
+  const known = AGENT_MODELS.some((o) => o.id === current);
+
+  const select = async (modelId: string) => {
+    if (saving || modelId === current || !status?.worldId) return;
+    setSaving(true);
+    const result = await worldsApi.update(status.worldId, { agentModel: modelId });
+    if (result.ok) {
+      await session.refresh();
+    } else {
+      toast.push({ title: "Couldn't switch the agent model", description: result.error.message, tone: "error" });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <section className="flex flex-col gap-1.5">
+      <SectionTitle>Agents (non-narrator)</SectionTitle>
+      <Select
+        aria-label="Agent model"
+        value={current}
+        disabled={saving || !status?.worldId}
+        onChange={(e) => void select(e.target.value)}
+        className="text-xs"
+      >
+        {!known ? <option value={current}>{current || "—"}</option> : null}
+        {AGENT_MODELS.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+      <p className="text-[11px] text-paper-500">Intake + post-turn agents. Not the narrator, world/character creation, or images.</p>
       {saving ? <p className="text-[11px] text-paper-500 italic">Switching…</p> : null}
     </section>
   );
@@ -178,6 +227,8 @@ export function WorldTab({ session, isAdmin }: { session: UseSession; isAdmin: b
       </section>
 
       <NarratorSelect session={session} />
+
+      <AgentSelect session={session} />
 
       <section className="flex flex-col gap-1.5">
         <SectionTitle>Open threads</SectionTitle>

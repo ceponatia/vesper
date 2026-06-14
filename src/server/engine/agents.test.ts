@@ -15,7 +15,7 @@ function makeBundle(): SessionBundle {
   return {
     relationships: [],
     session: { id: "s-1", ownerId: "u-1", worldId: "w-1", title: "T", embodied: true, status: "processing", clockMinutes: 0 },
-    world: { id: "w-1", ownerId: "u-1", name: "Testworld", description: "", narrativeModel: "" },
+    world: { id: "w-1", ownerId: "u-1", name: "Testworld", description: "", narrativeModel: "", agentModel: "" },
     participants: [
       {
         id: "p-player",

@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, or, sql } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { jsonError, jsonOk, withUser } from "@/server/api";
-import { narrativeModelId } from "@/server/ai";
+import { agentModelId, narrativeModelId } from "@/server/ai";
 import { db, images, jobs, sessions, turns } from "@/server/db";
 import { HEARTBEAT_STALE_MS, loadSessionBundle } from "@/server/engine";
 import { findOwnedSession } from "../../_shared/access";
@@ -88,6 +88,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
       latestSceneImageId: sceneRows.find((r) => !r.preRestart)?.id ?? null,
       sceneGallery: [...sceneRows].reverse().map(({ id: imageId, createdAt }) => ({ id: imageId, createdAt })),
       narrativeModel: narrativeModelId(bundle.world.narrativeModel),
+      agentModel: agentModelId(bundle.world.agentModel),
       clockDelta,
     }),
   );

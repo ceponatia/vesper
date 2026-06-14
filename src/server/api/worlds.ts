@@ -127,6 +127,7 @@ export const worldCreateSchema = z
     style: worldStyleSchema.default(() => worldStyleSchema.parse({})),
     lore: worldLoreSchema.default(() => worldLoreSchema.parse({})),
     narrativeModel: z.string().default(""),
+    agentModel: z.string().default(""),
     locations: z.array(worldLocationInputSchema).max(100).default([]),
     loreChunks: z.array(worldLoreChunkInputSchema).max(200).default([]),
     cast: z.array(worldCastInputSchema).max(100).default([]),
@@ -148,6 +149,7 @@ export const worldPatchSchema = z.object({
   style: partialWithoutDefaults(worldStyleSchema).optional(),
   lore: partialWithoutDefaults(worldLoreSchema).optional(),
   narrativeModel: z.string().optional(),
+  agentModel: z.string().optional(),
   locations: z.array(worldLocationInputSchema).max(100).optional(),
   loreChunks: z.array(worldLoreChunkInputSchema).max(200).optional(),
   cast: z.array(worldCastInputSchema).max(100).optional(),
@@ -589,6 +591,7 @@ export async function createWorld(ownerId: string, body: WorldCreateBody): Promi
         style: body.style,
         lore: body.lore,
         narrativeModel: body.narrativeModel,
+        agentModel: body.agentModel,
       })
       .returning({ id: worlds.id });
     if (!world) throw new Error("worlds insert returned no row");
@@ -619,6 +622,7 @@ export async function updateWorld(ownerId: string, worldId: string, body: WorldP
     if (body.name !== undefined) scalar.name = body.name;
     if (body.description !== undefined) scalar.description = body.description;
     if (body.narrativeModel !== undefined) scalar.narrativeModel = body.narrativeModel;
+    if (body.agentModel !== undefined) scalar.agentModel = body.agentModel;
     if (body.style !== undefined) {
       scalar.style = { ...parseOr(worldStyleSchema, world.style, worldStyleSchema.parse({}), sink, "worlds.style"), ...body.style };
     }
@@ -684,6 +688,7 @@ export async function duplicateWorld(ownerId: string, worldId: string, name?: st
         style: source.style,
         lore: source.lore,
         narrativeModel: source.narrativeModel,
+        agentModel: source.agentModel,
         imageId: source.imageId,
         duplicatedFromWorldId: source.id,
       })

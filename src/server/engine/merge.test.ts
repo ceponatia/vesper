@@ -123,7 +123,7 @@ function makeBundle(overrides: Partial<SessionBundle> = {}): SessionBundle {
       status: "processing",
       clockMinutes: 0,
     },
-    world: { id: "w-1", ownerId: "u-1", name: "Testworld", description: "", narrativeModel: "" },
+    world: { id: "w-1", ownerId: "u-1", name: "Testworld", description: "", narrativeModel: "", agentModel: "" },
     participants,
     locations,
     // Kitchen ↔ Garden adjacent; Attic unreachable.

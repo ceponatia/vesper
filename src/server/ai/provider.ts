@@ -1,12 +1,16 @@
 import { createOpenRouter, type OpenRouterProvider } from "@openrouter/ai-sdk-provider";
+import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
 import { DEFAULT_NARRATIVE_MODEL_ID } from "@/lib/narrative-models";
 
 export const MODEL_DEFAULTS = {
   // The curated narrator list (lib/narrative-models.ts) is the one source for
   // narrator options; the resolver below accepts any world-override id.
   narrative: DEFAULT_NARRATIVE_MODEL_ID,
-  state: "google/gemini-2.5-flash",
-  tool: "google/gemini-2.5-flash",
+  // state + tool both default to the curated in-session agent default
+  // (lib/agent-models.ts). state backs the post-turn agents + authoring; tool
+  // backs intake + the scene composer.
+  state: DEFAULT_AGENT_MODEL_ID,
+  tool: DEFAULT_AGENT_MODEL_ID,
   embedding: "openai/text-embedding-3-small",
   image: "black-forest-labs/flux.2-pro",
   imageFast: "black-forest-labs/flux.2-flex",
@@ -39,6 +43,17 @@ export function stateModelId(): string {
 
 export function toolModelId(): string {
   return process.env.TOOL_MODEL || MODEL_DEFAULTS.tool;
+}
+
+/**
+ * Resolver for the **in-session, non-narrator text agents** (intake + the four
+ * post-turn agents): the world's per-session override (set from the World tab),
+ * else `AGENT_MODEL`, else the curated default (gemini-3.5-flash). The authoring
+ * agents and the image pipeline deliberately do NOT call this — they stay on the
+ * plain `stateModelId`/`toolModelId` defaults, outside the session switch.
+ */
+export function agentModelId(worldAgentModel?: string | null): string {
+  return worldAgentModel?.trim() || process.env.AGENT_MODEL || MODEL_DEFAULTS.state;
 }
 
 export function embeddingModelId(): string {

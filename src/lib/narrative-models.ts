@@ -18,6 +18,7 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   { id: "aion-labs/aion-2.0", label: "Aion 2.0" },
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.1", label: "GLM 5.1" },
+  { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
 ];
 
 /** The narrator used when neither the world nor the env override one. */

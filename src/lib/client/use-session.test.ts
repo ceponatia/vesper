@@ -225,6 +225,7 @@ describe("parseSessionStatus", () => {
       state: "ready",
       worldId: null,
       narrativeModel: null,
+      agentModel: null,
       clockMinutes: 0,
       clockDelta: null,
       calendarStart: null,

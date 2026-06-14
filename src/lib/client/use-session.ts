@@ -355,6 +355,8 @@ export interface SessionStatus {
   worldId: string | null;
   /** Resolved narrator model id, or null when the route doesn't report one. */
   narrativeModel: string | null;
+  /** Resolved in-session agent model id, or null when the route doesn't report one. */
+  agentModel: string | null;
   clockMinutes: number;
   /** Last turn's advance, or null when unknown (old turns, no turns yet). */
   clockDelta: ClockDelta | null;
@@ -427,6 +429,7 @@ export function parseSessionStatus(raw: unknown): SessionStatus | null {
     state: sessionStateSchema.parse(firstPresent(obj, ["status", "state"]) ?? session.status),
     worldId: optionalText.parse(firstPresent(obj, ["worldId"]) ?? session.worldId),
     narrativeModel: optionalText.parse(firstPresent(obj, ["narrativeModel"]) ?? session.narrativeModel),
+    agentModel: optionalText.parse(firstPresent(obj, ["agentModel"]) ?? session.agentModel),
     clockMinutes,
     clockDelta: delta.success ? delta.data : null,
     calendarStart: calendar.success ? calendar.data : null,

@@ -74,6 +74,8 @@ export interface BundleWorld {
   name: string;
   description: string;
   narrativeModel: string;
+  /** Per-world override for in-session agent models (intake + post-turn); "" ⇒ default. */
+  agentModel: string;
 }
 
 /** Structurally satisfies SceneBundleInput — pass it straight to the scene builders. */
@@ -187,6 +189,7 @@ export async function loadSessionBundle(sessionId: string, sink?: DiagnosticSink
       name: worldRow.name,
       description: worldRow.description,
       narrativeModel: worldRow.narrativeModel,
+      agentModel: worldRow.agentModel,
     },
     participants,
     locations,

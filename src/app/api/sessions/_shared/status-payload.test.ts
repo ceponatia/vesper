@@ -120,7 +120,7 @@ function fakeBundle(): SessionBundle {
       status: "ready",
       clockMinutes: 60,
     },
-    world: { id: "w1", ownerId: "u1", name: "Testworld", description: "", narrativeModel: "" },
+    world: { id: "w1", ownerId: "u1", name: "Testworld", description: "", narrativeModel: "", agentModel: "" },
     participants: [player, maya],
     locations: [
       { id: "kitchen", name: "Kitchen", description: "Warm.", ambient: { scent: "bread" }, locationId: null, emergent: false },
@@ -158,6 +158,7 @@ describe("buildStatusPayload", () => {
     latestSceneImageId: "img-scene",
     sceneGallery: [{ id: "img-old", createdAt: new Date("2026-01-01") }, { id: "img-scene", createdAt: new Date("2026-01-02") }],
     narrativeModel: "aion-labs/aion-2.0",
+    agentModel: "google/gemini-3.5-flash",
     clockDelta: { minutes: 20, cause: "shower" },
   });
 
@@ -170,6 +171,7 @@ describe("buildStatusPayload", () => {
       worldId: "w1",
       worldName: "Testworld",
       narrativeModel: "aion-labs/aion-2.0",
+      agentModel: "google/gemini-3.5-flash",
     });
     // default calendar start 8:00 + 60 minutes
     expect(payload.clock.minutes).toBe(60);
@@ -233,6 +235,7 @@ describe("buildStatusPayload", () => {
       latestSceneImageId: null,
       sceneGallery: [],
       narrativeModel: "aion-labs/aion-2.0",
+      agentModel: "google/gemini-3.5-flash",
       clockDelta: null,
     });
     expect(withoutDelta.clock.delta).toBeNull();
