@@ -61,3 +61,17 @@ This may also happen with items and locations but is currently unknown as it has
 - We need to define what actions pass more time than one minute.
 - Narrator also needs to be taught how to use time. It shouldn't say something like "Cassandra washes the dishes and then gets ready for bed" within a 1 minute window.
 - This is difficult to nail down because the agents are responsible for advancing time and the narrator has to work within their somewhat indirect framework. The agents in between player and narrator turns can help with this, but the narrator can still arbitrarily decide to do something that takes several minutes, and if it does so, the follow up agents then have to reconcile. This potentially advances the game time far past what the user expected. But we also don't want to handicap the narrator and prevent it from taking longer actions. We could define a range of time which it's okay for the narrator to use, such as 1-10 minutes. Anything longer than this would be instructed to not do.
+
+## Schema
+
+1. Related to #1 in Overall Engine, we need to define actions and their related time costs per turn. This should be a generic list of action types. We can't possibly list every possible thing an npc can do in a world.
+
+- We could also define actions that cannot be done in one turn. The narrator may start them, and then the next turn(s) they are ongoing. The narrator can still narrate other dialogue and minor actions, but it must include prose about the ongoing action as well.
+- example: npc gets ready for bed (npc MUST be at home or a domicile it `owns` such as a hotel room).
+  - Turn 1, moves to the bathroom (likely 1 minute)
+  - Turn 2, undresses and turns on the water, waiting for it to warm up. Could potentially add minor actions like looking in the mirror, etc. (5 minutes)
+  - Turn 3, takes a shower. This would be a longer action and might take 2 turns. (10 minutes, depending on factors such as hygiene, etc.)
+  - Turn 4, still showering but narrator writes that they're finishing up and then shut off the shower. (10 minutes [so shower is a 20 minute block])
+  - Turn 5, npc dries hair and body, moves to bedroom. (5 minutes)
+  - Turn 6, npc puts on pajamas and gets in bed. Done. (5 minutes)
+- This is a rough example to show how it would work. The number of turns and minutes are not set in stone.
