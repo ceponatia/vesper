@@ -1,0 +1,19 @@
+{
+  "path": ["src"],
+  "pattern": "**/*.{ts,tsx}",
+  "minTokens": 70,
+  "threshold": 4,
+  "reporters": ["console"],
+  "gitignore": true,
+  "absolute": false,
+  "ignore": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.int.test.ts",
+    "**/*.d.ts",
+    "**/.next/**",
+    "**/node_modules/**",
+    "**/drizzle/**",
+    "**/coverage/**"
+  ]
+}

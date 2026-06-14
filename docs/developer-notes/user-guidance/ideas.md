@@ -15,6 +15,10 @@ This document lists preliminary ideas for fixes and features in Vesper, an AI ch
 - For example, if a character's build is slender but the user doesn't say anything about shoulders, hips, etc., we can logically guess that those fields would also be narrow or slender.
   - The user can always override this if they want to but it makes the initial character sheet more detailed without manually editing every field.
 
+3. Autonomy
+
+- This is a long-planned but barely fleshed out feature. What separates vesper from other romantic chatbot apps is that it allows a living world that continues even when the player isn't directly observing it.
+
 ## Model Improvements
 
 1. New models
@@ -42,3 +46,18 @@ There is currently a bug. The steps to reproduce it are thus:
 
 The new character(s) that were added manually by the user will disappear. The save action doesn't appear to run the character creation pipeline. Troubleshoot why this is and how to fix. Clicking save on a new world seems to run the pipeline for characters, locations, and items that were created by the agent, so those must already be primed in the system somehow. Adding a new character doesn't prime it in the same way.
 This may also happen with items and locations but is currently unknown as it has not been tested.
+
+## RAG
+
+1. Add a measured fact relevance policy rather than a blunt universal threshold. For example: include facts if score is above a configurable floor, or if the subject is currently present/addressed, or if a director memory query explicitly mentions the subject. That keeps important character facts from disappearing while reducing random semantic neighbors.
+
+- We definitely want to check `isPresent` for a lot of prompt injections. NPCs should still act behind the scenes when not present with the player, but this will be asynchronous and non-turn-blocking, so it can use a totally different agent pipeline.
+
+## Overall Engine
+
+1. Nail down the `time` system.
+
+- Currently time passes seemingly at random intervals. The player can say "I wait 3 hours" and time correctly passes, which is correct, but in normal turns anywhere from 1 to 10 minutes has been observed passing for seemingly no reason.
+- We need to define what actions pass more time than one minute.
+- Narrator also needs to be taught how to use time. It shouldn't say something like "Cassandra washes the dishes and then gets ready for bed" within a 1 minute window.
+- This is difficult to nail down because the agents are responsible for advancing time and the narrator has to work within their somewhat indirect framework. The agents in between player and narrator turns can help with this, but the narrator can still arbitrarily decide to do something that takes several minutes, and if it does so, the follow up agents then have to reconcile. This potentially advances the game time far past what the user expected. But we also don't want to handicap the narrator and prevent it from taking longer actions. We could define a range of time which it's okay for the narrator to use, such as 1-10 minutes. Anything longer than this would be instructed to not do.

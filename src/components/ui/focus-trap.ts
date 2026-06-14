@@ -17,8 +17,8 @@ export function resolveTabTarget<T>(args: {
 }): T | null {
   const { focusables, active, shiftKey, fallback } = args;
   if (focusables.length === 0) return fallback;
-  const first = focusables[0]!;
-  const last = focusables[focusables.length - 1]!;
+  const first = focusables[0] ?? fallback;
+  const last = focusables[focusables.length - 1] ?? fallback;
   const index = active === null ? -1 : focusables.indexOf(active);
   // Focus is outside the list (the panel itself, or escaped to the page
   // behind): pull it back inside.

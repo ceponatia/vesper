@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ProximityTier } from "../actions/registry";
+import type { ProximityTier } from "../actions/registry";
 
 /**
  * Proximity primitive (proximity-spec.phase3.md §Tiers / §Location scale). Phase 3

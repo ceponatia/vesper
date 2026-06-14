@@ -1,22 +1,93 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextPlugin from "eslint-config-next";
+import tseslint from "typescript-eslint";
+
+// LLM provider construction (createOpenRouter) belongs only in the model gateway
+// (src/server/ai). `streamText`/`generateImage` from the `ai` SDK are used at the
+// call sites that need them (engine narration, image pipelines) by design, so the
+// `ai` package itself is NOT restricted — only provider wiring is centralized.
+const RESTRICT_PROVIDER = {
+  group: ["@openrouter/ai-sdk-provider"],
+  message: "Build LLM providers only in the model gateway (src/server/ai); consume them through its barrel.",
+};
+
+const NAMING_CONVENTION = [
+  "error",
+  { selector: "default", format: ["camelCase"], leadingUnderscore: "allowDouble", trailingUnderscore: "allow" },
+  { selector: "variable", format: ["camelCase", "UPPER_CASE", "PascalCase"], leadingUnderscore: "allowDouble" },
+  { selector: "function", format: ["camelCase", "PascalCase"] },
+  { selector: "parameter", format: ["camelCase", "PascalCase"], leadingUnderscore: "allow" },
+  { selector: "typeLike", format: ["PascalCase"] },
+  { selector: "enumMember", format: ["PascalCase", "UPPER_CASE"] },
+  { selector: "import", format: null },
+  // Object/type keys frequently mirror external shapes (JSON APIs, DB columns).
+  { selector: ["objectLiteralProperty", "typeProperty"], format: null },
+];
 
 export default defineConfig([
-  globalIgnores([".next/**", "node_modules/**", "drizzle/**"]),
+  globalIgnores([".next/**", "node_modules/**", "drizzle/**", "coverage/**", "eslint.config.mjs"]),
   ...nextPlugin,
 
+  // ---------------------------------------------------------------------------
+  // Type-aware guardrails (whole repo). These encode the failure modes agents
+  // hit in a large codebase: `any` escape hatches, dropped awaits, suppressed
+  // errors, unhandled union variants, circular deps. See
+  // docs/developer-notes/monorepo-evaluation.md (lint hardening).
+  // ---------------------------------------------------------------------------
+  {
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    plugins: { "@typescript-eslint": tseslint.plugin },
+    rules: {
+      // Type-safety escape hatches.
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unsafe-assignment": "error",
+      "@typescript-eslint/no-unsafe-call": "error",
+      "@typescript-eslint/no-unsafe-member-access": "error",
+      "@typescript-eslint/no-unsafe-return": "error",
+      "@typescript-eslint/no-unsafe-argument": "error",
+      "@typescript-eslint/no-non-null-assertion": "error",
+      "@typescript-eslint/ban-ts-comment": [
+        "error",
+        { "ts-expect-error": "allow-with-description", "ts-ignore": true, "ts-nocheck": true },
+      ],
+      // Async correctness — the classic agent bug in an async-heavy RAG/LLM pipeline.
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: { attributes: false } }],
+      // Exhaustiveness over discriminated unions (turn pipeline / state variants).
+      "@typescript-eslint/switch-exhaustiveness-check": "error",
+      // Consistency / drift.
+      // Allow inline `import()` type annotations (idiomatic in vi.mock factories);
+      // still require `import type` for ordinary imports.
+      "@typescript-eslint/consistent-type-imports": ["error", { disallowTypeAnnotations: false }],
+      "@typescript-eslint/no-import-type-side-effects": "error",
+      "@typescript-eslint/naming-convention": NAMING_CONVENTION,
+      "import/no-cycle": "error",
+      "import/no-duplicates": "error",
+    },
+  },
+
+  // ---------------------------------------------------------------------------
   // Module-boundary enforcement (docs/architecture.md "Module dependency rules").
-  // The three file globs are disjoint, so each file resolves to exactly one
-  // `no-restricted-imports` config. See docs/developer-notes/monorepo-evaluation.md.
+  // Disjoint file globs → each file resolves to exactly one no-restricted-imports
+  // config (flat config is last-match-wins, so overlapping blocks would clobber).
+  // Each zone carries the provider-gateway ban except src/server/ai itself.
+  // ---------------------------------------------------------------------------
 
   // 1. Purity: contracts + lib stay client-importable — no server/app/components.
   {
     files: ["src/contracts/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
     rules: {
-      "no-restricted-imports": ["error", { patterns: [{
-        group: ["@/server", "@/server/**", "@/app", "@/app/**", "@/components", "@/components/**"],
-        message: "src/contracts and src/lib are pure and client-importable: no @/server, @/app, or @/components imports.",
-      }] }],
+      "no-restricted-imports": ["error", { patterns: [
+        {
+          group: ["@/server", "@/server/**", "@/app", "@/app/**", "@/components", "@/components/**"],
+          message: "src/contracts and src/lib are pure and client-importable: no @/server, @/app, or @/components imports.",
+        },
+        RESTRICT_PROVIDER,
+      ] }],
     },
   },
   // 2. Client→server: UI reaches the server only via route handlers (src/app/api).
@@ -24,20 +95,70 @@ export default defineConfig([
     files: ["src/components/**/*.{ts,tsx}", "src/app/**/*.{ts,tsx}"],
     ignores: ["src/app/api/**"],
     rules: {
-      "no-restricted-imports": ["error", { patterns: [{
-        group: ["@/server", "@/server/**"],
-        message: "Client code must not import @/server; reach the server through a route handler in src/app/api.",
-      }] }],
+      "no-restricted-imports": ["error", { patterns: [
+        {
+          group: ["@/server", "@/server/**"],
+          message: "Client code must not import @/server; reach the server through a route handler in src/app/api.",
+        },
+        RESTRICT_PROVIDER,
+      ] }],
     },
   },
-  // 3. Barrel discipline: import a server module via its index.ts barrel, not deep.
+  // 3. Route handlers: barrel discipline + provider gateway.
   {
-    files: ["src/server/**/*.{ts,tsx}", "src/app/api/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}"],
+    files: ["src/app/api/**/*.{ts,tsx}"],
     rules: {
-      "no-restricted-imports": ["error", { patterns: [{
-        group: ["@/server/*/*"],
-        message: "Import a server module through its barrel (@/server/<module>), not a deep path.",
-      }] }],
+      "no-restricted-imports": ["error", { patterns: [
+        { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
+        RESTRICT_PROVIDER,
+      ] }],
+    },
+  },
+  // 4. Server (except the AI gateway) + scripts: barrel discipline + provider gateway.
+  {
+    files: ["src/server/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}"],
+    ignores: ["src/server/ai/**"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [
+        { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
+        RESTRICT_PROVIDER,
+      ] }],
+    },
+  },
+  // 5. The AI gateway: barrel discipline only (it owns provider construction).
+  {
+    files: ["src/server/ai/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [
+        { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
+      ] }],
+    },
+  },
+
+  // Raw fetch is forbidden in pure/UI layers — data goes through src/lib/client
+  // (browser) or src/server/ai (external APIs), the only sanctioned fetch sites.
+  {
+    files: ["src/components/**/*.{ts,tsx}", "src/app/**/*.{ts,tsx}", "src/contracts/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
+    ignores: ["src/lib/client/**", "src/app/api/**"],
+    rules: {
+      "no-restricted-syntax": ["error", {
+        selector: "CallExpression[callee.name='fetch']",
+        message: "Don't call fetch directly here; use the client data layer (src/lib/client).",
+      }],
+    },
+  },
+
+  // Tests & fixtures: relax the rules that legitimately fire on test scaffolding
+  // (non-null on known-present fixtures; loose typing of parsed HTTP responses).
+  {
+    files: ["**/*.test.{ts,tsx}", "**/*.int.test.{ts,tsx}", "scripts/fixtures/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-non-null-assertion": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
     },
   },
 ]);

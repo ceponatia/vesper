@@ -7,11 +7,11 @@ import { Spinner } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { useToast } from "@/components/ui/toast";
 
-const MODES: ReadonlyArray<{ id: AuthorMode; label: string; hint: string }> = [
+const MODES = [
   { id: "player", label: "Player", hint: "What do you do?" },
   { id: "director", label: "Director", hint: "Direct the story (out of world)…" },
   { id: "companion", label: "Companion", hint: "What do they do?" },
-];
+] as const satisfies ReadonlyArray<{ id: AuthorMode; label: string; hint: string }>;
 
 /**
  * Composer (docs/ui.md §Play screen): Enter submits, Shift+Enter newline,
@@ -79,7 +79,7 @@ export function Composer({ session }: { session: UseSession }) {
     }
   };
 
-  const mode = MODES.find((m) => m.id === author) ?? MODES[0]!;
+  const mode = MODES.find((m) => m.id === author) ?? MODES[0];
   const speakerName = npcs.find((n) => n.id === (speakerId || npcs[0]?.id))?.displayName;
 
   return (

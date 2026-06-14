@@ -143,11 +143,11 @@ function arrayOf<T>(item: z.ZodType<T>) {
 /** Accept a bare array or `{ <key>: [...] }` for any of the given keys. */
 function listOf<T>(item: z.ZodType<T>, ...keys: string[]) {
   return z.preprocess((raw) => {
-    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw)) return raw as unknown[];
     if (raw && typeof raw === "object") {
       for (const key of [...keys, "items", "data", "results"]) {
         const candidate = (raw as Record<string, unknown>)[key];
-        if (Array.isArray(candidate)) return candidate;
+        if (Array.isArray(candidate)) return candidate as unknown[];
       }
     }
     return [];
