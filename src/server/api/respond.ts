@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { ZodType } from "zod";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import { getCurrentUser, type CurrentUser } from "@/server/auth";
 
 /**

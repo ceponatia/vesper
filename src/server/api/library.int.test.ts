@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DiagnosticCollector, itemDefinitionSchema } from "@/contracts";
-import { pseudoEmbed } from "@/server/ai/embeddings";
+import { pseudoEmbed } from "@/server/ai";
 import { db, items, locations, users } from "@/server/db";
 import { connectedLocationIds, loadLocationLinks, materializeSuggestedItems, setLocationLinks } from "@/server/api";
 

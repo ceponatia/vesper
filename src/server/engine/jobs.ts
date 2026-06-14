@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import { newId } from "@/lib/ids";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import { db, jobs, sessions } from "../db";
 import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALE_MS } from "./constants";
 

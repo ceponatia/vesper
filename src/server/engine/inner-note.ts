@@ -7,7 +7,7 @@ import {
   innerNoteExtractionSchema,
   type InnerNoteExtraction,
 } from "@/contracts/turns/inner-note";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { generateChecked } from "../ai";
 import { db, sessionParticipants, sessions } from "../db";

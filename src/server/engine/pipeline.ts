@@ -7,7 +7,7 @@ import type { ExposureMask } from "@/contracts/state/brief";
 import { submitTurnBodySchema, type SubmitTurnBody, type TurnAuthor } from "@/contracts/turns/stream";
 import { emptyIntentBrief, intentBriefSchema, type IntentBrief } from "@/contracts/turns/intent-brief";
 import { daylightBand, formatElapsed, formatGameClock, resolveGameTime } from "@/lib/clock";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { fillPlayerToken } from "@/lib/player-token";
 import { isDemoMode, narrativeModelId, openrouter } from "../ai";

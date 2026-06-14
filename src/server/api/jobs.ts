@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, jobs } from "@/server/db";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import { errorText } from "./respond";
 
 type JobInsert = typeof jobs.$inferInsert;

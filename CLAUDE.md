@@ -1,8 +1,9 @@
 # Vesper — agent notes
 
+- AGENTS.md is a symlink of CLAUDE.md, so you only ever need to update CLAUDE.md when finishing work and additional notes are needed.
 - This app is documented system-by-system in `docs/` — **read `docs/README.md` first**, then the doc for whichever system you touch. Update the relevant doc in the same change when behavior or patterns shift.
 - Resilience rules in `docs/resilience.md` are mandatory: `parseOr` at every trust boundary, diagnostics over exceptions, degraded defaults over failed turns.
-- `src/contracts` and `src/lib` are pure (no IO/env/db). Server modules import each other only through `index.ts` barrels. Components never import `server/*`.
+- `src/contracts` and `src/lib` are pure (no IO/env/db). Server modules import each other only through `index.ts` barrels. Components never import `server/*`. These boundaries are enforced by an ESLint `no-restricted-imports` rule (`eslint.config.mjs`) — a violation fails `pnpm lint`.
 - Registries (attributes, meters, fact kinds, body locations) are the extension points — vocabulary changes are data edits in one file, never schema migrations.
 - DB workflow: edit `src/server/db/schema.ts` → `pnpm db:generate` → review SQL in `drizzle/` → `pnpm db:migrate`. Never `drizzle-kit push`. The initial migration (`drizzle/0000_*.sql`) begins with `CREATE EXTENSION IF NOT EXISTS vector`, so `pnpm db:migrate` self-enables pgvector and works on a fresh database without `pnpm db:create` (drizzle-kit does not emit this line — preserve it when regenerating the baseline migration).
 - Tests: `pnpm test` (pure), `pnpm test:int` (needs Postgres). Degradation tests assert fallback **and** diagnostic code.

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { diag, itemDefinitionSchema, type DiagnosticSink, type ItemDefinition } from "@/contracts";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral } from "@/server/ai";
 import { db, images, items, locationLinks, locations } from "@/server/db";

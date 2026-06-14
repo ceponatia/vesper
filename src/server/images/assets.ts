@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, images } from "../db";
 import { newId } from "@/lib/ids";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 

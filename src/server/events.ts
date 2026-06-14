@@ -1,5 +1,5 @@
 import { db, events } from "./db";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 
 /**
  * Observability stream (docs/database.md). Fire-and-forget: an event insert

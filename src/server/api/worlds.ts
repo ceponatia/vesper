@@ -34,7 +34,7 @@ import {
 import { DEFAULT_INTER_AREA_TRAVEL_MINUTES } from "@/server/engine";
 import { generateAvatarsBatch, generateEntityImagesBatch, missingEntityImageIds } from "@/server/images";
 import { indexLoreChunks } from "@/server/memory";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import { startJob } from "./jobs";
 import { queueEmbedRefresh } from "./library";
 import { errorText } from "./respond";

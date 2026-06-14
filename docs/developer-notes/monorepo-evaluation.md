@@ -78,28 +78,33 @@ split.
 
 ---
 
-## Interim hardening (do this now — 90% of the value, 5% of the cost)
+## Interim hardening — **done (2026-06-14)**
 
-Make the existing conventions into *checks*, so they survive without a workspace:
+The conventions are now *checks* that survive without a workspace:
 
-1. **Add an ESLint boundary rule** (`import/no-restricted-paths` or
-   `no-restricted-imports`) encoding the four rules architecture.md already
-   states:
+1. **ESLint boundary rule — done.** Three `no-restricted-imports` config blocks in
+   `eslint.config.mjs` (disjoint file globs, so no override conflicts) encode the
+   four rules architecture.md states:
    - `src/contracts/**` and `src/lib/**` may not import `@/server`, `@/app`,
      `@/components`.
    - `src/components/**` and `src/app/**` (excluding `src/app/api/**`) may not
      import `@/server`.
-   - cross-`server`-module imports must target a barrel, not a deep path.
+   - cross-`server`-module imports must target a barrel (`@/server/<module>`),
+     not a deep path.
+   Shipped at `error` with zero violations (one test deep-import was barrel-ized).
    Notably, this is the one thing **aionchat's monorepo lacks** (it relies on
    docs + the build graph). For an agent-driven codebase a hard lint error is the
    clearest possible signal, and we get it *without* the workspace.
-2. **Gate the one impurity** — move `process.env.LOG_LEVEL` out of `src/lib/log.ts`
-   (inject the level, or read it in a server-only config module) so `lib` is
-   provably pure and the future package boundary is clean.
-3. **Note the `contracts ↔ lib` cycle** (`lib/parse.ts` → `@/contracts/diagnostics`)
-   so that when we *do* split, we already know to dissolve it (see below).
+2. **Purity gate — done.** `log.ts` (the only `process.env` read in `lib`, used
+   only by server code) moved `src/lib/log.ts` → `src/server/log.ts`; `src/lib` is
+   now provably pure and the future package boundary is clean.
+3. **`contracts ↔ lib` relationship — clarified.** It is **bidirectional edges,
+   not a true cycle**: `lib/parse.ts` → `@/contracts/diagnostics`, and
+   `contracts/world` / `contracts/perception` → `@/lib/clock`; there is no
+   lib→contracts→lib loop. When we split, folding pure `lib` into `core` alongside
+   `contracts` dissolves both edges intra-package.
 
-These three changes mean the eventual split is a mechanical move of already-clean
+The eventual split is now a mechanical move of already-clean, lint-guarded
 folders, not a refactor.
 
 ---

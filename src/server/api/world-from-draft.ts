@@ -1,6 +1,6 @@
 import { diag, emptyCharacterProfile, type AuthoredRelationship, type DiagnosticSink } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { log } from "@/lib/log";
+import { log } from "@/server/log";
 import {
   findCharactersByName,
   findItemsByName,
