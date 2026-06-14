@@ -5,21 +5,20 @@ spec [intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sens
 Dated entries: observation · verdict · proposed fix. Feature-sized items go to a
 future phase plan instead.
 
-## 1. Scene-image per-region intimate text (route-aware threading)
+## 1. Scene-image per-region intimate text (route-aware threading) — RESOLVED
 
-*2026-06-14, from T3.* Decision 3 wanted intimate fields in the **scene image
-generator** too. Shipped conservatively: the portrait path is fully model-gated
-(Qwen includes intimate attributes, Flux excludes), but the scene **composer**
-withholds them (`characterAppearanceSummary` defaults `allowIntimate: false`) —
-because the composer runs on the moderation-prone gemini `TOOL_MODEL` and the
-final scene render route (qwen-edit vs. flux text-to-image) is decided later in
-`server/images/scene.ts`, not where the composer context is built. **Scene nudity
-still flows** via the region-level `formatExposure` (unchanged). **Verdict:**
-acceptable v1; finer per-region intimate text in scenes needs the render route +
-per-character exposure threaded into the composer/exposure path so it's allowed
-only on the uncensored route when the region is actually exposed. **Proposed fix:**
-thread an `allowIntimate` (route-aware + exposure-gated) into
-`buildSceneComposerContext` / `formatExposure`.
+*Raised + resolved 2026-06-14.* Decision 3 wanted intimate fields in the **scene
+image generator** too. Now shipped: `intimateSceneAppearance(attributes, exposure)`
+builds a visible intimate-anatomy phrase **exposure-gated** (a region surfaces only
+when it reads `bare`/`sheer`; sensory scent/taste never render). It's precomputed
+on each present character in `buildSceneComposerContext`, carried through the plan
+(`SceneCharacterSpec.intimateAppearance`), and emitted into the final render prompt
+by `buildSceneRenderPrompt` **only when `allowIntimate` is set** — which
+`renderSceneImage` passes only on the uncensored Venice/Qwen reference-edit route,
+never the Flux text-to-image fallback. The moderation-prone gemini **composer**
+never sees it (it's injected at render assembly, not via the composer LLM). So a
+scene image shows explicit anatomy iff: the character has it (realized) **and** the
+region is exposed **and** the route is uncensored.
 
 ## 2. Pubic hair (tight-start omission)
 

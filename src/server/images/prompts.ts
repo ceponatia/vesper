@@ -245,6 +245,8 @@ export interface ScenePresentCharacter {
   wornVisible: ReadonlyArray<SceneWornItem>;
   /** Compact attribute phrase (characterAppearanceSummary) for textual render descriptions. */
   appearance?: string;
+  /** Visible intimate-anatomy phrase (intimateSceneAppearance), exposure-gated; emitted only on the uncensored route. */
+  intimateAppearance?: string;
   /** Per-region coverage (exposedRegions) — drives explicit bare-skin phrasing. */
   exposure?: RegionExposure;
   /**
@@ -386,6 +388,40 @@ export function characterAppearanceSummary(
   return excerpt(parts.join("; "), maxChars);
 }
 
+/** Which exposure region uncovers each intimate attribute category. */
+const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
+  breasts: "torso",
+  vulva: "pelvis",
+  penis: "pelvis",
+  testicles: "pelvis",
+};
+
+/**
+ * Visible intimate-anatomy phrase for a scene render, gated by **exposure**:
+ * a region's descriptive attributes are included only when that region reads
+ * `bare`/`sheer` (not `covered`). Sensory attributes (scent/taste) are skipped —
+ * they don't render. This is carried in the plan and emitted into the final
+ * render prompt only on the uncensored route (body-model spec Decision 3; the
+ * scene composer itself, a moderation-prone text model, never sees it).
+ */
+export function intimateSceneAppearance(
+  attributes: ReadonlyArray<AttributeValue>,
+  exposure?: RegionExposure,
+  maxChars = APPEARANCE_SUMMARY_CHARS,
+): string {
+  if (!exposure) return "";
+  const parts: string[] = [];
+  for (const value of attributes) {
+    const def = attributeRegistry.byId(value.id);
+    if (!def || !isIntimateAttribute(def) || def.kind === "sensory") continue;
+    const axis = INTIMATE_CATEGORY_EXPOSURE[def.category];
+    if (!axis || exposure[axis] === "covered") continue; // only an exposed region surfaces
+    const formatted = formatAttribute(def, value.value);
+    if (formatted) parts.push(formatted);
+  }
+  return excerpt(parts.join("; "), maxChars);
+}
+
 // ---------------------------------------------------------------------------
 // Resolved render plan (composer output × present roster × wardrobe state)
 // ---------------------------------------------------------------------------
@@ -400,6 +436,8 @@ export interface SceneCharacterSpec {
   appearance: string;
   /** Explicit bare-region phrase ("topless, bare chest; barefoot"), forced from coverage state; "" when fully covered or untracked. */
   exposure?: string;
+  /** Visible intimate-anatomy phrase for exposed regions; emitted only on the uncensored render route. */
+  intimateAppearance?: string;
 }
 
 export interface SceneRenderPlan {
@@ -504,6 +542,7 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
     outfitSummary: wardrobeOutfitSummary(entry.wornVisible),
     appearance: entry.appearance ?? "",
     exposure: formatExposure(entry.exposure, entry.wardrobeTracked),
+    intimateAppearance: entry.intimateAppearance ?? "",
   };
 }
 
@@ -518,6 +557,8 @@ export const SCENE_POV_RULE =
 export interface SceneRenderOptions {
   /** Name of the character the reference image identity-locks (Venice edit); omit for text-to-image. */
   referenceName?: string;
+  /** Uncensored route (Venice/Qwen): emit exposed intimate-anatomy detail (Decision 3). Off for Flux text-to-image. */
+  allowIntimate?: boolean;
 }
 
 /**
@@ -559,11 +600,13 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
       if (reference.action) pieces.push(`Pose: ${reference.action}.`);
       if (reference.outfitSummary) pieces.push(`Wearing: ${fit(reference.outfitSummary, outfitCap)}.`);
       if (reference.exposure) pieces.push(`${capitalizeFirst(reference.exposure)}.`);
+      if (opts.allowIntimate && reference.intimateAppearance) pieces.push(`${capitalizeFirst(reference.intimateAppearance)}.`);
       if (!reference.outfitSummary && !reference.exposure) pieces.push("Keep the same outfit as the reference image.");
     }
     for (const c of textual) {
       const clothing = c.outfitSummary ? `wearing ${fit(c.outfitSummary, outfitCap)}` : c.exposure ? "" : "wearing casual everyday clothing";
-      const detail = [c.appearance, clothing, c.exposure, c.action].filter(Boolean).join("; ");
+      const intimate = opts.allowIntimate ? c.intimateAppearance : "";
+      const detail = [c.appearance, clothing, c.exposure, intimate, c.action].filter(Boolean).join("; ");
       const label = !reference && c === plan.focal ? "Subject" : "Also in frame";
       pieces.push(`${label}: ${c.name} — ${detail}.`);
     }

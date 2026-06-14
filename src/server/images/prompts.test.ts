@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import type { AttributeValue } from "@/contracts/attributes";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import {
   buildAvatarPrompt,
@@ -13,6 +14,7 @@ import {
   emptySceneSpec,
   formatExposure,
   heuristicFocalName,
+  intimateSceneAppearance,
   PORTRAIT_IDENTITY_LOCK,
   RECENT_NARRATION_LATEST_CHARS,
   RECENT_NARRATION_PRIOR_CHARS,
@@ -375,6 +377,44 @@ describe("characterAppearanceSummary", () => {
       12,
     );
     expect(long.length).toBeLessThanOrEqual(12);
+  });
+});
+
+describe("intimateSceneAppearance (exposure-gated)", () => {
+  const attrs: AttributeValue[] = [
+    { id: "penis.size", value: "average", source: "base" },
+    { id: "breasts.size", value: "full", source: "base" },
+    { id: "vulva.scent", value: "musky", source: "base" }, // sensory — never visual
+  ];
+  it("includes intimate detail only for an exposed region, skipping covered regions and sensory", () => {
+    const exposed = intimateSceneAppearance(attrs, { torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" });
+    expect(exposed).toContain("Penis size: average"); // pelvis bare → shown
+    expect(exposed).not.toContain("Breast size"); // torso covered → hidden
+    expect(exposed).not.toContain("scent"); // sensory never renders
+  });
+  it("returns nothing when everything is covered or exposure is unknown", () => {
+    expect(intimateSceneAppearance(attrs, { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" })).toBe("");
+    expect(intimateSceneAppearance(attrs, undefined)).toBe("");
+  });
+});
+
+describe("buildSceneRenderPrompt — intimate detail is route-gated", () => {
+  const plan = {
+    ...emptySceneRenderPlan(),
+    focal: {
+      name: "Mira",
+      action: "reclining",
+      outfitSummary: "",
+      appearance: "Hair color: red",
+      exposure: "fully nude, no clothing",
+      intimateAppearance: "Breast size: full",
+    },
+  };
+  it("emits intimate detail only on the uncensored (allowIntimate) route", () => {
+    const flux = buildSceneRenderPrompt(plan); // text-to-image, no allowIntimate
+    expect(flux).not.toContain("Breast size: full");
+    const qwen = buildSceneRenderPrompt(plan, { referenceName: "Mira", allowIntimate: true });
+    expect(qwen).toContain("Breast size: full");
   });
 });
 

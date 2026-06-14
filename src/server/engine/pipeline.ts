@@ -14,6 +14,7 @@ import { isDemoMode, narrativeModelId, openrouter } from "../ai";
 import { db, facts, jobs, sessions, turnMessages, turns } from "../db";
 import {
   characterAppearanceSummary,
+  intimateSceneAppearance,
   composeSceneSpec,
   renderSceneImage,
   shouldGenerateScene,
@@ -912,6 +913,10 @@ export function buildSceneComposerContext(
         exposure: exposedRegions(wornInputs),
         wardrobeTracked,
         appearance: characterAppearanceSummary(resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays)),
+        intimateAppearance: intimateSceneAppearance(
+          resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays),
+          exposedRegions(wornInputs),
+        ),
       };
     });
   return {

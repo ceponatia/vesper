@@ -94,7 +94,13 @@ export async function renderSceneImage(input: RenderSceneInput): Promise<string>
   const demo = isDemoMode();
   const reference = demo || !hasVenice() ? null : await findReferenceAvatar(input.session.id, input.plan, input.sink);
   const useReference = reference !== null;
-  const prompt = buildSceneRenderPrompt(input.plan, useReference ? { referenceName: reference.name } : {});
+  // The reference-edit route is the uncensored Venice/Qwen model, so it may
+  // depict exposed intimate anatomy (Decision 3); the text-to-image fallback is
+  // Flux, which may not. Exposure-gating already happened upstream.
+  const prompt = buildSceneRenderPrompt(
+    input.plan,
+    useReference ? { referenceName: reference.name, allowIntimate: true } : {},
+  );
 
   const asset = await createImageAsset({
     ownerId: input.userId,
