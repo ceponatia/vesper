@@ -4,24 +4,16 @@ This document lists preliminary ideas for fixes and features in Vesper, an AI ch
 
 ## Improvements to NPC Characters
 
-1. agent(s) that provide the narrator with necessary fields based on the current direction of the chat.
+- All currently settled in `developer-notes/ideas-feedback.md`.
 
-- For example, if the player and a companion are being intimate, the agent(s) will provide the narrator with fields and instructions related to intimacy to steer it.
+## Model Improvements
 
-2. Find a way to limit character dialogue in certain situations.
+1. New models
 
-- Especially during intimacy, characters talk too much, asking irrelevant questions and behaving unrealistically. In real intimacy, there is far less talking. The narrative in these situations should be limited to one or two dialogue lines for flavor (but enforce that this is _only_ when useful) otherwise the narrative should mainly be visual and sensory descriptions.
+- We need to look into using lighter / faster models for some of the agentic tasks that don't require a lot of reasoning.
+- Some of these models have content moderation, so we need to identify fields that might trip that system and prevent the sensitive models from seeing those fields unless absolutely necessary (in which case we would need to use a different model, but will determine that case-by-case).
 
-3. Add sensory schema to characters.
+2. New agents to spread out work in parallel
 
-- Currently, there is no explicit sensory data linked to characters.
-- We will want to add scents, flavors, and tactile feedback for various body fields. This is not only related to intimacy and can be used in a variety of scenarios.
-
-4. Add intimate body regions.
-
-- The current schema was forked from a more general RPG project (reverie). We need to expand to a full body plan similar to what is in `aionchat` (~/projects/aionchat/packages/contracts).
-
-5. Add functionality for nonhuman species.
-
-- We will need to add several species to the game to facilitate fantasy and sci-fi game types.
-  - Elves, mermaids, orcs, various aliens, etc.
+- There are a few agents doing a lot of work. To improve speed we could create more agents that run asynchronously in parallel and then pass their output to a governor who does not let the next stage in the turn progress until it has all requested agent results.
+- This could cause some latency in turns but ideally we would use small, fast models so the increase would be negligible.

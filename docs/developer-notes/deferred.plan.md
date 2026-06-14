@@ -33,6 +33,22 @@ second provenance path the items model doesn't have yet.
 See [location-design-spec.phase3.md](location-design-spec.phase3.md)
 §Ownership.
 
+## Monorepo split (gated on a second deployable)
+
+*Raised 2026-06-14.* Evaluated converting the single Next.js app into a pnpm
+workspace. **Verdict: not yet** — Vesper was deliberately collapsed *from* a
+12-package monorepo because every package had one consumer, and that still holds
+(one deployable). Boundaries are already clean and enforced by convention +
+barrels + the `@/` alias. Park behind a **trigger**: the first second consumer of
+the engine — most likely a phase-4 background **world-simulation / scheduled-
+arrival worker**. When it fires, do a small **4-package, consumer-driven** split
+(`core` / `engine` / `web` / `worker`), not the old 12-package shape. Interim
+action available now: an ESLint boundary rule + gating the one `process.env` read
+in `lib/log.ts`.
+
+See [monorepo-evaluation.md](monorepo-evaluation.md) for the full analysis,
+package outline, and the architectural + `CLAUDE.md` boundary-enforcement design.
+
 ## Visual world map (node/path graph)
 
 *Raised 2026-06-13, from the `/worlds/:id` Map section.* The Map section on
