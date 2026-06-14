@@ -30,10 +30,11 @@ grooming attribute gated on "any genital region present," or per-region
 
 ## 3. Anus has no descriptive/sensory attributes yet
 
-*2026-06-14, from T1/D7.* `anus` is modelled as a body location + body-config
-region group (touchable, gated) but has no attribute category. In scope as a
-region; descriptive/sensory attributes are a later tight-expansion if play wants
-them.
+*2026-06-14, from T1/D7. Updated by §5.* `anus` is a body location (now
+**universal**, not a gated region group — see §5) with no attribute category.
+Touchable + exposure-gated; descriptive/sensory attributes are a later tight-
+expansion if play wants them (aionchat ships none either — it has no `anus`
+anatomy file).
 
 ## 4. Fixture body-config
 
@@ -41,3 +42,46 @@ them.
 or any intimate attributes (the vocabulary-coverage test excludes the gated
 categories). Optional polish: seed the two demo characters' body-config + a
 tasteful minimal intimate set so the feature is visible in the seeded world.
+
+## 5. Anus made universal (was a gated region group) — RESOLVED
+
+*Raised + resolved 2026-06-14, from play.* **Observation:** in the character
+editor's Body configuration, clicking the **anus** toggle "did nothing" — it
+unlocked no attribute group (anus has none), so it read as broken even though the
+selection persisted. **Investigation:** anus was an `intimateGroup`-tagged
+location *and* a member of `INTIMATE_REGION_GROUPS`, so it behaved like a per-
+character toggle — but every body has one, and there's no descriptive attribute
+to show when it's "on." Modelling universal anatomy as an opt-in toggle was the
+real bug. The body-config round-trips correctly (save sends `draft.profile`, load
+re-parses through `characterProfileSchema`) — **not** a persistence bug.
+**Verdict + fix:** anus is now **universal** — the `anus` location drops its
+`intimateGroup` (so `realizeBody` always includes it) and "anus" is removed from
+`INTIMATE_REGION_GROUPS` (so it's no longer a toggle). It stays in `intimate.ts`
+(moderation-sensitive, exposure-gated) and parented to `pelvis` (covered by any
+pelvis garment). Regression test in `species/realize.test.ts`
+("anus is universal, not a configurable region group"). Docs: `contracts.md`
+§Intimate anatomy + the spec D7 note updated.
+
+## 6. Body-config toggle feedback — RESOLVED (via §5 + §7)
+
+*2026-06-14.* The "clicking does not actually add it" symptom (§5) was a
+**feedback** gap, not data loss: a toggled region with no attribute group (anus)
+showed no change. Resolved structurally — anus is no longer a toggle (§5), and the
+genital regions now surface as nested sub-groups under the **Pelvis** area the
+moment they're switched on (§7), so every toggle has a visible effect. The anus
+itself shows as a present-region note in the Pelvis area.
+
+## 7. Intimate attribute groups nested under anatomical areas — RESOLVED
+
+*Raised + resolved 2026-06-14, from play.* **Observation:** `breasts`, `vulva`,
+`penis`, `testicles` appeared as **new top-level sections** in the attribute list,
+floating loose. **Verdict + fix:** the attribute picker
+(`components/characters/attribute-picker.tsx`) now nests them under their
+anatomical area — **Breasts** inside the everyday **Chest** section, and a
+synthetic **Pelvis** area (placed next to Hips) hosting **Vulva / Penis /
+Testicles** + the universal anus note. Nesting is driven by `NESTED_UNDER_CHEST` /
+`PELVIS_CATEGORIES` constants; a category renders nested *or* top-level, never
+both. Section "N set" counts roll up nested sub-groups. (If a future everyday
+`pelvis`/`groin`/`buttocks` attribute group lands — see
+[supplemental-anatomy.phase4.md](supplemental-anatomy.phase4.md) — it slots into
+the same Pelvis area.)

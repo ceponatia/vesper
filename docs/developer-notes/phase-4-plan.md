@@ -8,7 +8,10 @@ body-config (`CharacterProfile.intimateRegions`), intimate attribute groups
 exposure-gated impression surfacing, the Qwen-include / Flux-exclude image switch,
 and forge seeding + the editor body-config toggles. Gates green via `pnpm verify`
 (lint + typecheck + test + jscpd); no DB migration (all state is JSONB). Leftovers
-and tight-start omissions tracked in [followups.phase4.md](followups.phase4.md).
+and tight-start omissions tracked in [followups.phase4.md](followups.phase4.md);
+the **full aionchat anatomy catalog + port plan** for the non-intimate fields T1
+skipped (buttocks, groin, abdomen, nose, …) is in
+[supplemental-anatomy.phase4.md](supplemental-anatomy.phase4.md).
 This is a **standalone** phase with no dependency on phase 5 — the body data it
 produces is later *consumed* by phase 5's intimacy steering, not the reverse.
 
@@ -103,7 +106,10 @@ and the body/attribute guide pages in the same change.
 
 - Actual non-human species records and **novel body plans** (tails/wings/gills) —
   Idea 5 is scaffolding only; novel plans are a later phase with image gen in the
-  room from day one.
+  room from day one. The *additive*-feature slice of this (wings/horns/tail bolted
+  onto the humanoid plan + the first `faerie`/`succubus` records) is now designed
+  in [non-human-races-and-features.deferred.md](non-human-races-and-features.deferred.md);
+  true *structural* plans (mermaid/naga) stay deferred beyond it.
 - The `runtime` mutability tier (D2), and `requiresAttributes` /
   `conflictsWithAttributes`, `itemSchema` / `collection` (spec field table) — each
   re-addable later as a no-migration edit.
@@ -112,11 +118,21 @@ and the body/attribute guide pages in the same change.
 
 ## Open questions
 
-All design questions are resolved (spec Decisions log). One **housekeeping** item
-remains, tracked in [deferred.plan.md](deferred.plan.md) §"Phase-4/5 resequencing
-— deeper prose sweep": whether to chase the remaining historical "phase 4" prose
-mentions (dated phase-3 docs, the `phase-3-to-4.md` body, gpt-review snapshots,
-~11 `src/` code comments) now meaning phase 5, or leave them banner-only.
+All *original* design questions are resolved (spec Decisions log). Two items
+remain:
+
+- **Anatomy port granularity** (raised 2026-06-14, detail in
+  [supplemental-anatomy.phase4.md](supplemental-anatomy.phase4.md) §P1): when
+  porting aionchat's remaining anatomy vocabulary, do we **fold** segment
+  attributes (upper_arms/forearms/thighs/calves → `arms`/`legs`; cheeks/chin/
+  forehead → `face`) into Vesper's coarse groups (recommended), or match aionchat
+  **1:1** with a group per region? The field data is identical either way; only
+  the `category`/file layout differs. Defaults to fold; confirm before the port.
+- **Housekeeping** (tracked in [deferred.plan.md](deferred.plan.md) §"Phase-4/5
+  resequencing — deeper prose sweep"): whether to chase the remaining historical
+  "phase 4" prose mentions (dated phase-3 docs, the `phase-3-to-4.md` body,
+  gpt-review snapshots, ~11 `src/` code comments) now meaning phase 5, or leave
+  them banner-only.
 
 ## Naming note
 

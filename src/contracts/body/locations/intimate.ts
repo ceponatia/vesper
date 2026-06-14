@@ -6,9 +6,16 @@ import type { BodyLocation } from "./types";
  * when its group id is listed there; the realized-body filter (species/realize.ts)
  * reads this to gate both intimate body locations (via BodyLocation.intimateGroup)
  * and intimate attributes (via INTIMATE_ATTRIBUTE_CATEGORIES). An empty body-config
- * means no intimate anatomy — exactly the engine's behavior before this existed.
+ * means no *configurable* intimate anatomy — exactly the engine's behavior before
+ * this existed.
+ *
+ * The **anus** is deliberately NOT here: it is universal anatomy present on every
+ * realized body (it carries no `intimateGroup`, so the filter never gates it
+ * out), not a per-character toggle. It is still moderation-sensitive — it lives
+ * in `intimate.ts` and is exposure-gated like any below-waist region — it simply
+ * isn't something the author switches on or off.
  */
-export const INTIMATE_REGION_GROUPS = ["breasts", "vulva", "penis", "testicles", "anus"] as const;
+export const INTIMATE_REGION_GROUPS = ["breasts", "vulva", "penis", "testicles"] as const;
 export type IntimateRegionGroup = (typeof INTIMATE_REGION_GROUPS)[number];
 
 export function isIntimateRegionGroup(value: string): value is IntimateRegionGroup {
@@ -44,10 +51,11 @@ export function defaultIntimateRegionsForGender(gender: string | undefined): Int
 /**
  * Explicit intimate anatomy, slotted under the everyday `groin` / `pelvis` /
  * `chest` parents. `coverageRelevant: false` — these are not garment slots; a
- * bottom covering `groin` (or a bra covering `chest`) already covers them via
+ * bottom covering `pelvis` (or a bra covering `chest`) already covers them via
  * `registry.expand`, so they never appear in the wardrobe coverage editor.
- * Each carries an `intimateGroup` so the realized-body filter can include or
- * omit the whole sub-tree per character.
+ * Each gated region carries an `intimateGroup` so the realized-body filter can
+ * include or omit the whole sub-tree per character; the **anus** alone omits it
+ * and is therefore universal (present on every body — see INTIMATE_REGION_GROUPS).
  */
 export const humanoidIntimateLocations: readonly BodyLocation[] = [
   // Vulva group (external + internal)
@@ -62,8 +70,10 @@ export const humanoidIntimateLocations: readonly BodyLocation[] = [
   { id: "penis", label: "penis", parentId: "groin", coverageRelevant: false, intimateGroup: "penis" },
   // Testicles group
   { id: "testicles", label: "testicles", parentId: "groin", coverageRelevant: false, intimateGroup: "testicles" },
-  // Anus (a touchable region; no descriptive attributes yet)
-  { id: "anus", label: "anus", parentId: "pelvis", coverageRelevant: false, intimateGroup: "anus" },
+  // Anus — universal anatomy (no `intimateGroup`, so the realized-body filter
+  // always includes it). A touchable, exposure-gated region with no descriptive
+  // attributes yet; covered by any garment over `pelvis`.
+  { id: "anus", label: "anus", parentId: "pelvis", coverageRelevant: false },
   // Breasts group
   { id: "breasts", label: "breasts", parentId: "chest", coverageRelevant: false, intimateGroup: "breasts" },
   { id: "nipples", label: "nipples", parentId: "breasts", coverageRelevant: false, intimateGroup: "breasts" },

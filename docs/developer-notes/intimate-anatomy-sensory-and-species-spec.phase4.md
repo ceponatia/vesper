@@ -546,6 +546,14 @@ aionchat field has a Vesper home; the few aionchat-only schema fields are
 _unused by the anatomy data_, so skipping them drops no information — I've listed
 them so the choice is explicit, not accidental.
 
+> **Scope clarification (2026-06-14).** This mapping and T1 only ported the
+> **intimate** attribute set. aionchat's *everyday* anatomy vocabulary (buttocks,
+> groin, abdomen, nose, cheeks/chin/forehead, facial hair, the arm/leg segments,
+> finer vulva/penis detail, …) was not ported. The complete 1:1 catalog of that
+> remaining vocabulary — every region, every `allowedValues`, with a fold-vs-new-
+> group port plan — now lives in
+> [supplemental-anatomy.phase4.md](supplemental-anatomy.phase4.md).
+
 **Body-location fields**
 
 | aionchat field                                  | Vesper home                                                       | Note                                                                                                     |
@@ -597,8 +605,12 @@ section noted; this is the scan-in-one-place summary.
    `intimate`. §B-decision-4
 6. **Sensory vocabulary — start tight, expand later.** One scent + one taste + one
    texture per relevant region to begin. §B
-7. **Anus — in scope.** Modeled now even though it may not come into play for a
-   while. §A (region tree)
+7. **Anus — in scope, and *universal*.** Modeled now even though it may not come
+   into play for a while. **Revised post-ship (2026-06-14, followups §5):** the
+   anus is **not** a body-config toggle — every body has one, so it carries no
+   `intimateGroup` and is always realized (not in `INTIMATE_REGION_GROUPS`). It
+   stays in the fenced `intimate.ts` (moderation-sensitive, exposure-gated). §A
+   (region tree)
 8. **`speciesId` vs `species_presentation` — keep separate.** Structural id drives
    gating; free text drives description. §C
 9. **Phasing — this is the new phase 4**, a standalone build that goes first; the

@@ -19,7 +19,9 @@ describe("realizeBody — anatomy gating", () => {
     const body = realizeBody({});
     expect(body.isLocationPresent("chest")).toBe(true);
     expect(body.isLocationPresent("groin")).toBe(true);
-    // No intimate anatomy realized.
+    // Anus is universal anatomy — present even with an empty body-config.
+    expect(body.isLocationPresent("anus")).toBe(true);
+    // No *configurable* intimate anatomy realized.
     expect(body.isLocationPresent("vulva")).toBe(false);
     expect(body.isLocationPresent("penis")).toBe(false);
     expect(body.isLocationPresent("breasts")).toBe(false);
@@ -81,6 +83,14 @@ describe("intimate constants stay consistent with the registry", () => {
     for (const cat of INTIMATE_ATTRIBUTE_CATEGORIES) {
       expect((INTIMATE_REGION_GROUPS as readonly string[]).includes(cat)).toBe(true);
     }
+  });
+
+  it("anus is universal, not a configurable region group", () => {
+    // It must never appear as a body-config toggle…
+    expect((INTIMATE_REGION_GROUPS as readonly string[]).includes("anus")).toBe(false);
+    // …yet it is realized on every body, regardless of the body-config.
+    expect(realizeBody({ intimateRegions: [] }).isLocationPresent("anus")).toBe(true);
+    expect(realizeBody({ intimateRegions: ["vulva"] }).isLocationPresent("anus")).toBe(true);
   });
 });
 
