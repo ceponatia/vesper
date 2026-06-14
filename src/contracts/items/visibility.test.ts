@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveWardrobeVisibility, type WornItemInput } from "./visibility";
+import { exposedRegions, resolveWardrobeVisibility, type WornItemInput } from "./visibility";
 
 function worn(partial: Partial<WornItemInput> & Pick<WornItemInput, "instanceId" | "coverage" | "layer">): WornItemInput {
   return { name: partial.instanceId, opacity: "opaque", ...partial };
@@ -90,5 +90,57 @@ describe("resolveWardrobeVisibility", () => {
 
   it("returns an empty list for an empty wardrobe", () => {
     expect(resolveWardrobeVisibility([])).toEqual([]);
+  });
+});
+
+describe("exposedRegions", () => {
+  // Real coverage conventions from clothing-categories.ts.
+  const top = (extra: Partial<WornItemInput> = {}) =>
+    worn({ instanceId: "top", coverage: ["shoulders", "chest", "back", "waist", "upper_arms"], layer: 1, ...extra });
+  const jeans = worn({ instanceId: "jeans", coverage: ["pelvis", "thighs", "calves", "ankles"], layer: 1 });
+  const shoes = worn({ instanceId: "shoes", coverage: ["feet"], layer: 1 });
+
+  it("an empty wardrobe is bare everywhere", () => {
+    expect(exposedRegions([])).toEqual({ torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" });
+  });
+
+  it("top + jeans + shoes covers every region", () => {
+    expect(exposedRegions([top(), jeans, shoes])).toEqual({
+      torso: "covered",
+      pelvis: "covered",
+      legs: "covered",
+      feet: "covered",
+    });
+  });
+
+  it("a top alone leaves the lower body and feet bare", () => {
+    expect(exposedRegions([top()])).toEqual({ torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" });
+  });
+
+  it("a bra covers the torso via chest; nothing else", () => {
+    expect(exposedRegions([worn({ instanceId: "bra", coverage: ["chest"], layer: 0 })])).toEqual({
+      torso: "covered",
+      pelvis: "bare",
+      legs: "bare",
+      feet: "bare",
+    });
+  });
+
+  it("pants stop at the ankles, so an unshod subject reads barefoot", () => {
+    expect(exposedRegions([top(), jeans])).toMatchObject({ legs: "covered", feet: "bare" });
+  });
+
+  it("a sheer-only top reports the torso as sheer, not covered", () => {
+    expect(exposedRegions([top({ opacity: "sheer" })]).torso).toBe("sheer");
+  });
+
+  it("an opaque layer over a sheer one keeps the region covered", () => {
+    expect(exposedRegions([top({ opacity: "sheer" }), worn({ instanceId: "coat", coverage: ["chest"], layer: 3 })]).torso).toBe(
+      "covered",
+    );
+  });
+
+  it("parent coverage expands to children: a dress covering the torso covers the chest", () => {
+    expect(exposedRegions([worn({ instanceId: "dress", coverage: ["torso"], layer: 1 })]).torso).toBe("covered");
   });
 });

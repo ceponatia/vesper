@@ -44,13 +44,31 @@ export function sliderBounds(def: Pick<AttributeDefinition, "min" | "max">): Sli
   return { min, max, step };
 }
 
+/**
+ * First enum member eligible to be an automatic default — skips any the
+ * registry marks `autoDefaultExcludes` (e.g. minor apparent ages), falling back
+ * to the bare first value if exclusion would leave nothing.
+ */
+function firstAutoDefault(def: AttributeDefinition): string | undefined {
+  const values = def.allowedValues;
+  if (!values || values.length === 0) return undefined;
+  const excl = def.autoDefaultExcludes;
+  if (excl && excl.length > 0) {
+    const eligible = values.find((v) => !excl.includes(v));
+    if (eligible !== undefined) return eligible;
+  }
+  return values[0];
+}
+
 /** Default value for a definition when first added, by value type. */
 export function defaultValueFor(def: AttributeDefinition): AttributeValue["value"] {
   switch (def.valueType) {
     case "enum":
-      return def.allowedValues?.[0] ?? "";
-    case "enum_list":
-      return def.allowedValues?.[0] !== undefined ? [def.allowedValues[0]] : [];
+      return firstAutoDefault(def) ?? "";
+    case "enum_list": {
+      const first = firstAutoDefault(def);
+      return first !== undefined ? [first] : [];
+    }
     case "number": {
       const { min, max } = sliderBounds(def);
       return (min + max) / 2;

@@ -609,7 +609,15 @@ export function buildTurnDigest(
   const groups = groupPresence(bundle, activeLocationId);
   const lines: string[] = [];
   if (groups) {
-    if (groups.present.length) lines.push(`- Voice freely: ${groups.present.join(", ")}.`);
+    if (groups.present.length) {
+      // Restate the tag FORMAT here, not just who may speak: the static rulebook's
+      // tagging rule is prefix-cached and far from generation, so a run of untagged
+      // narrator-only turns in the short history window (solo stretches, texting)
+      // can drown it out and the model keeps a returning NPC's dialogue inline as
+      // prose. This volatile reminder rides after that history and re-anchors it.
+      const example = groups.present[0] ?? "Name";
+      lines.push(`- Voice freely — start each spoken line at line start as [Name] "…", e.g. [${example}] "…": ${groups.present.join(", ")}.`);
+    }
     if (groups.nearby.length)
       lines.push(`- May bring in, but only via a narrated physical arrival before their first line: ${groups.nearby.join(", ")}.`);
     if (groups.elsewhere.length)

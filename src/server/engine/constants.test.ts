@@ -25,7 +25,7 @@ describe("engine constants", () => {
     expect(DEFAULT_LINK_TRAVEL_MINUTES).toBe(1);
     expect(DEFAULT_INTER_AREA_TRAVEL_MINUTES).toBe(10);
     expect(MAJOR_TIER_SOFT_CAP).toBe(6);
-    expect(NARRATIVE_HISTORY_TURNS).toBe(2);
+    expect(NARRATIVE_HISTORY_TURNS).toBe(6);
     expect(EPISODE_WINDOW).toBe(4);
     expect(FACTS_CAP).toBe(8);
     expect(THREAD_COOLING_TURNS).toBe(8);

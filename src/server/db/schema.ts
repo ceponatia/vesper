@@ -403,6 +403,8 @@ export const turns = pgTable(
     minutes: integer("minutes").notNull().default(0),
     /** Raw per-agent outputs (AgentResults) for the inspector / replay. */
     agentResults: jsonb("agent_results").notNull().default({}),
+    /** Pre-narrator intake output (IntentBrief) — empty {} when intake didn't run. */
+    intentBrief: jsonb("intent_brief").notNull().default({}),
     /** Diagnostic[] */
     diagnostics: jsonb("diagnostics").notNull().default([]),
     model: text("model"),

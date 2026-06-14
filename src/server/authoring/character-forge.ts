@@ -409,8 +409,20 @@ export function fillCoreVisualDefaults(
     if (!def.coreVisual || present.has(def.id)) continue;
     if (def.valueType !== "enum" || !def.allowedValues || def.allowedValues.length === 0) continue;
     const range = ranges?.get(def.id);
-    const pool = range && range.length > 0 ? range : def.allowedValues;
-    if (pool === def.allowedValues) unconstrained.push(def.id);
+    const constrained = range !== undefined && range.length > 0;
+    let pool: readonly string[] = constrained ? range : def.allowedValues;
+    if (!constrained) {
+      unconstrained.push(def.id);
+      // No signal at all: pick from the full vocabulary minus members the
+      // registry marks as never-auto-default (e.g. minor apparent ages). A
+      // human or the model can still set those explicitly; we just never seed
+      // one. Fall back to the full pool if exclusion would empty it.
+      const excl = def.autoDefaultExcludes;
+      if (excl && excl.length > 0) {
+        const filtered = def.allowedValues.filter((v) => !excl.includes(v));
+        if (filtered.length > 0) pool = filtered;
+      }
+    }
     const pick = pool[hashSeed(`${seedText}::${def.id}`) % pool.length];
     if (!pick) continue;
     filled.push({ id: def.id, value: pick, source: "creation" });

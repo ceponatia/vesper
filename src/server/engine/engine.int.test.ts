@@ -269,6 +269,12 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     expect(turn?.narration?.length ?? 0).toBeGreaterThan(0);
     expect(turn?.minutes).toBe(20); // demo heuristic for "head to"
 
+    // Pre-narrator intake is persisted on the turn. In demo mode it degrades to
+    // the regex fallback brief, which still resolves the movement phrase.
+    const intentBrief = turn?.intentBrief as { enterLocation?: string };
+    expect(intentBrief).toBeTruthy();
+    expect((intentBrief.enterLocation ?? "").toLowerCase()).toContain("garden");
+
     const messages = await db().select().from(turnMessages).where(eq(turnMessages.turnId, turn?.id ?? "")).orderBy(asc(turnMessages.seq));
     expect(messages[0]?.role).toBe("player");
     expect(messages.length).toBeGreaterThan(1);

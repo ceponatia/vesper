@@ -11,6 +11,7 @@ import {
   characterAppearanceSummary,
   emptySceneRenderPlan,
   emptySceneSpec,
+  formatExposure,
   heuristicFocalName,
   PORTRAIT_IDENTITY_LOCK,
   RECENT_NARRATION_LATEST_CHARS,
@@ -19,6 +20,7 @@ import {
   SCENE_COMPOSER_SYSTEM,
   SCENE_POV_RULE,
   sceneSpecSchema,
+  VENICE_RENDER_PROMPT_LIMIT,
   visibleAvatarOutfit,
   wardrobeOutfitSummary,
   type SceneComposerContext,
@@ -48,9 +50,14 @@ describe("buildAvatarPrompt", () => {
     expect(prompt).toContain("wandering cartographer");
   });
 
-  it("includes registry promptHints for present attributes", () => {
+  it("excludes registry promptHints — the image prompt carries label: value only", () => {
     const prompt = buildAvatarPrompt("Mira", profile, "realistic");
-    expect(prompt).toContain("apparent age as an impression");
+    // promptHints are narrator/inference guidance; an image model reads a hint's
+    // concrete example ("late thirties") as literal subject detail and anchors
+    // every face to it. They flow to the narrator (engine/scene.ts), not here.
+    expect(prompt).not.toContain("apparent age as an impression");
+    // …but the resolved label: value still reaches the image as appearance.
+    expect(prompt).toContain("Apparent age: mid twenties");
   });
 
   it("differs by style and never leaks unknown attribute ids", () => {
@@ -472,5 +479,89 @@ describe("buildSceneRenderPrompt", () => {
     expect(prompt).toContain("No people in frame");
     expect(prompt).toContain("Setting: an empty atrium at dusk.");
     expect(prompt).not.toContain(PORTRAIT_IDENTITY_LOCK);
+  });
+
+  it("injects the reference's bare-region phrase and forbids unlisted garments", () => {
+    const topless = {
+      ...emptySceneRenderPlan(),
+      focal: { name: "Mira", action: "seated by the window", outfitSummary: "lace panties", appearance: "Hair color: red", exposure: "topless, bare chest; barefoot" },
+    };
+    const prompt = buildSceneRenderPrompt(topless, { referenceName: "Mira" });
+    expect(prompt).toContain("Wearing: lace panties.");
+    expect(prompt).toContain("Topless, bare chest; barefoot.");
+    expect(prompt).toContain("add no garment that is not listed");
+  });
+
+  it("describes a topless other textually without defaulting them into clothing", () => {
+    const plan = {
+      ...emptySceneRenderPlan(),
+      focal: { name: "Mira", action: "watching", outfitSummary: "wool coat", appearance: "Hair color: red" },
+      others: [{ name: "Sayed", action: "stretching", outfitSummary: "", appearance: "Hair color: black", exposure: "fully nude, no clothing" }],
+    };
+    const prompt = buildSceneRenderPrompt(plan, { referenceName: "Mira" });
+    expect(prompt).toContain("Also in frame: Sayed — Hair color: black; fully nude, no clothing; stretching.");
+    expect(prompt).not.toContain("casual everyday clothing");
+  });
+
+  // Venice's edit endpoint hard-rejects >1500 chars (followups.phase3.md §6).
+  const richOutfit =
+    "A light-wash denim skirt with artfully placed rips and frayed edges (faded blue denim); stylish edgy platform boots in a bright contrasting color (thick sole, sturdy); quirky tights with a whimsical polka-dot pattern (vibrant pink and yellow); a cozy oversized rainbow-striped sweater (soft, slightly fuzzy)";
+  const bigPlan = {
+    ...emptySceneRenderPlan(),
+    focal: {
+      name: "Enid",
+      action: "sitting with one leg tucked under her, facing the player, looking up with a shy smile, hand open between them",
+      outfitSummary: richOutfit,
+      appearance: "Hair color: blonde with rainbow streaks; eyes: bright",
+    },
+    setting: "Enid's side of the dorm room, a vibrant explosion of color and clutter with fairy lights, plush toys, and rainbow-hued clothes; Wednesday's side is a stark gothic sanctuary",
+  };
+
+  it("keeps the Venice edit prompt within the 1500-char limit, preserving the lock + POV", () => {
+    const prompt = buildSceneRenderPrompt(bigPlan, { referenceName: "Enid" });
+    expect(prompt.length).toBeLessThanOrEqual(VENICE_RENDER_PROMPT_LIMIT);
+    expect(prompt.startsWith(PORTRAIT_IDENTITY_LOCK)).toBe(true);
+    expect(prompt).toContain(SCENE_POV_RULE);
+    expect(prompt).toContain("Wearing:");
+    expect(prompt).toContain("add no garment that is not listed");
+  });
+
+  it("does not budget the text-to-image path (flux has no such cap)", () => {
+    const prompt = buildSceneRenderPrompt(bigPlan); // no referenceName → t2i
+    expect(prompt).toContain(richOutfit); // full, untruncated outfit detail
+  });
+});
+
+describe("formatExposure", () => {
+  const covered = { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" } as const;
+
+  it("returns nothing when fully covered, or when the character is not wardrobe-tracked", () => {
+    expect(formatExposure(covered, true)).toBe("");
+    // Bare everywhere but untracked → unknown, never assumed nude.
+    expect(formatExposure({ torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" }, false)).toBe("");
+    expect(formatExposure(undefined, true)).toBe("");
+  });
+
+  it("collapses a fully bare body to a single nude phrase, not a list", () => {
+    expect(formatExposure({ torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" }, true)).toBe("fully nude, no clothing");
+  });
+
+  it("states topless when only the top is gone", () => {
+    expect(formatExposure({ ...covered, torso: "bare" }, true)).toBe("topless, bare chest");
+  });
+
+  it("states bare legs only when the pelvis is covered", () => {
+    expect(formatExposure({ ...covered, legs: "bare" }, true)).toBe("bare legs");
+    // Pelvis bare already implies bare legs — don't double up.
+    expect(formatExposure({ ...covered, pelvis: "bare", legs: "bare" }, true)).toBe("bare below the waist, no underwear or bottoms");
+  });
+
+  it("adds barefoot for an otherwise-clothed subject, and folds it into nude", () => {
+    expect(formatExposure({ ...covered, feet: "bare" }, true)).toBe("barefoot");
+    expect(formatExposure({ torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" }, true)).not.toContain("barefoot");
+  });
+
+  it("reports a sheer top distinctly from a bare one", () => {
+    expect(formatExposure({ ...covered, torso: "sheer" }, true)).toBe("wearing only a sheer top, skin visible through it");
   });
 });

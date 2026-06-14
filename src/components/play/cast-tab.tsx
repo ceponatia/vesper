@@ -56,6 +56,7 @@ export function CastTab({ session }: { session: UseSession }) {
           playerLocationId={player?.locationId ?? null}
           expanded={expandedId === participant.id}
           onToggle={() => setExpandedId((prev) => (prev === participant.id ? null : participant.id))}
+          onTeleported={() => void session.refresh()}
         />
       ))}
     </div>

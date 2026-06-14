@@ -68,6 +68,16 @@ export const attributeDefinitionSchema = z.object({
    * voice, behavior, or role.
    */
   identityAnchor: z.boolean().optional(),
+  /**
+   * Enum members that are valid vocabulary but must never be chosen as an
+   * *automatic* default — neither the forge's tier-3 unconstrained fallback
+   * fill (character-forge.ts §fillCoreVisualDefaults) nor the picker's initial
+   * value when a human adds the attribute (attribute-helpers.ts
+   * §defaultValueFor). The model or a human may still select them explicitly.
+   * Used so minor apparent ages exist for background characters while an
+   * unspecified character never silently defaults to one.
+   */
+  autoDefaultExcludes: z.array(z.string().min(1)).readonly().optional(),
 });
 
 export type AttributeDefinition = z.infer<typeof attributeDefinitionSchema>;

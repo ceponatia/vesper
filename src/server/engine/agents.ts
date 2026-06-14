@@ -30,6 +30,8 @@ import {
 } from "./prompts/agents";
 import { buildAwarenessBlocks, buildCanonicalFactsBlock, buildPresenceRoster, effectiveMeterDefinitions } from "./scene";
 import { detectIntent } from "./intent";
+import { sceneIntentFromBrief } from "./intake";
+import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { resolveGameTime } from "@/lib/clock";
 
 /**
@@ -46,6 +48,14 @@ export interface AgentTurnInput {
   number: number;
   author: TurnAuthor;
   input: string;
+  /**
+   * The pre-narrator intake brief persisted on the turn (pipeline passes it
+   * through). The continuity awareness rebuild reuses it instead of re-running
+   * `detectIntent`, so the auditor sees exactly the intent the narrator's prompt
+   * used. Absent on pre-migration turns / callers that don't supply it → falls
+   * back to `detectIntent`.
+   */
+  intentBrief?: IntentBrief;
 }
 
 export interface RunAgentsOptions {
@@ -139,7 +149,12 @@ export async function runPostTurnAgents(
   // Awareness blocks the continuity agent audits `reacted_to_unperceived_event`
   // against — same builder, anchor, and turn-start clock the pre-turn prompt used,
   // so the auditor sees exactly what the narrator was told who could perceive.
-  const continuityIntent = detectIntent(turn.input, presentNames, []);
+  // Reuse the persisted intake brief so the continuity auditor's awareness
+  // blocks are byte-identical to the narrator's prompt (no second derivation);
+  // fall back to the regex for turns that carry no brief.
+  const continuityIntent = turn.intentBrief
+    ? sceneIntentFromBrief(turn.intentBrief)
+    : detectIntent(turn.input, presentNames, []);
   const continuityGameTime = resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart);
   const awarenessBlocks = buildAwarenessBlocks(bundle, anchorLoc, continuityIntent, continuityGameTime, turn.input);
 

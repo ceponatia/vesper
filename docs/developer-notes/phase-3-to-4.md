@@ -132,6 +132,13 @@ witnessed-intimacy); library-character `tier` field.
   traversal/pathfinding/LOD, commitment, world-tick *proposals*, approach scores,
   follow schedule-conflict term, companion travel atomicity. (Player-side access +
   arrival/departure staging already shipped in phase 2.)
+- **movement-authority** ([spec](movement-authority-spec.phase4.md), drafted
+  2026-06-13 from a broken session): the precondition npc-movement's traversal
+  assumes — who may *commit* a movement (player narration must not relocate NPCs),
+  implied sub-rooms must not promote to graph hops, and multi-hop player intent
+  must route one hop instead of dropping. Its open questions (authority mechanism,
+  co-travel adjudication, implied-room modelling, partial-traversal granularity)
+  belong in the phase-4 plan when it is authored (step 3 below).
 - **Proximity movement-coupled remainder**: the movement-lock + `entwined` merge
   invariant (its consumer is the movement scorer), and contested transitions
   (extract the consequence loop per Bucket 1; the seeded-roll banding is optional/

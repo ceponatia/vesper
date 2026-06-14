@@ -1,5 +1,6 @@
 export * from "./constants";
 export * from "./intent";
+export * from "./intake";
 export * from "./segmenter";
 export * from "./scene";
 export * from "./movement";
@@ -15,6 +16,7 @@ export * from "./pipeline";
 export * from "./inner-note";
 export * from "./prompts/narrative";
 export * from "./prompts/agents";
+export * from "./prompts/intake";
 export * from "./prompts/inner-note";
 // prompts/constants re-exports engine constants; only its unique values here.
 export { AGENT_INPUT_CAP, AGENT_NARRATION_CAP, PARAGRAPH_GUIDANCE } from "./prompts/constants";

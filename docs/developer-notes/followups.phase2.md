@@ -576,7 +576,10 @@ any input-side check; the earliest interception is the mid-stream
 gate above. If richer proactive LLM checking is ever wanted, the
 idiomatic zero-latency slot is a fifth post-turn agent writing
 next-turn constraints into the brief (the director already works this
-way), not a blocking pre-turn call.
+way), not a blocking pre-turn call. **(Pass-over reversed 2026-06-14 —
+see entry 16's update and
+[pre-narrator-agents-spec.phase4.md](pre-narrator-agents-spec.phase4.md);
+narrator-quality findings made the latency worth paying.)**
 
 Status: **open (awaiting go — touches the streaming protocol and
 feed UX).**
@@ -604,7 +607,27 @@ terse action list more reliably than they cross-reference six
 authority blocks — this is the deterministic version of the
 allowed-actions guardrail. 5 new tests; docs/prompts.md updated.
 
-Status: **closed (implemented).**
+**Update (2026-06-14) — the digest is necessary but not sufficient; the
+pre-narrator pass-over is reversed.** After further testing and development the
+deterministic digest alone has proven inadequate to narrator quality. Observed
+in play: the narrator **strays** from the constraints it is handed, and it
+**re-raises story threads it has already brought up and resolved** — it narrates
+as if a settled question is still open, despite resolved/archived threads being
+dropped from its context every turn (turn-engine.md step 7 / story-threads.md).
+That symptom is telling: the model is not reliably honoring the context it is
+given, so a *purely deterministic, advisory* guardrail (a digest it can ignore)
+is not enough. We now judge that a **pre-narrator system of some sort is
+needed** — reversing the "passed over" stance of this entry and entry 15. Full
+analysis, feasibility (latency is the real cost), and recommended build (a
+latency-hidden "intake" agent growing into a before/during/after guardrail mesh)
+in [pre-narrator-agents-spec.phase4.md](pre-narrator-agents-spec.phase4.md).
+Note the thread-repetition symptom argues for the *mesh*, not intake alone: an
+input-side agent cannot stop the narrator mid-stream from re-opening a closed
+thread — that wants the mid-stream gate (entry 15) and/or a post-turn fidelity
+check too. Intake is the foundation, not the whole fix.
+
+Status: **closed (implemented); the broader pre-narrator question is reopened
+2026-06-14 — see pre-narrator-agents-spec.phase4.md.**
 
 ## 17. NPC inner notes — authorial interiority injection (2026-06-12)
 

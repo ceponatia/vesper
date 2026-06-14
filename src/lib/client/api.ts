@@ -438,11 +438,16 @@ export const imageRecordSchema = z.object({
   prompt: textOr(""),
   sourceImageId: optionalId,
   createdAt: optionalText,
+  /** Row meta — `source: "upload"` marks a user-uploaded image; `model` is the generator. */
+  meta: z.object({ source: z.string().optional(), model: z.string().optional() }).catch({}),
 });
 export type ImageRecord = z.infer<typeof imageRecordSchema>;
 
 export const portraitVariantKinds = ["pose", "outfit", "expression", "setting"] as const;
 export type PortraitVariantKind = (typeof portraitVariantKinds)[number];
+
+export const avatarImageModels = ["flux", "qwen"] as const;
+export type AvatarImageModel = (typeof avatarImageModels)[number];
 
 // ---------------------------------------------------------------------------
 // Forge drafts (client mirror of server/authoring/drafts.ts — components may
@@ -574,7 +579,8 @@ export const charactersApi = {
   remove: (id: string) => apiDelete(`/api/characters/${id}`),
   forge: (body: { prompt: string; section?: CharacterForgeSection; draft?: CharacterDraft }) =>
     apiPost(forgeResponseSchema(characterDraftSchema), "/api/characters/forge", body),
-  generateAvatar: (id: string) => apiPost(z.unknown(), `/api/characters/${id}/avatar`, {}),
+  generateAvatar: (id: string, body: { model?: AvatarImageModel } = {}) =>
+    apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>
     apiPost(z.object({ avatarImageId: idSchema }), `/api/characters/${id}/avatar/upload`, { image }),
   portraits: (id: string) =>
@@ -660,4 +666,11 @@ export const sessionsApi = {
   remove: (id: string) => apiDelete(`/api/sessions/${id}`),
   /** Dev-only: force-close a story thread (admin) — it drops from the status payload. */
   closeThread: (id: string, threadId: string) => apiDelete(`/api/sessions/${id}/threads/${threadId}`),
+  /** Dev-only: snap an NPC to the player's location (bypasses movement). */
+  teleportToPlayer: (id: string, participantId: string) =>
+    apiPost(
+      z.object({ id: z.string().catch(""), locationId: z.string().catch("") }),
+      `/api/sessions/${id}/participants/${participantId}/teleport`,
+      {},
+    ),
 };

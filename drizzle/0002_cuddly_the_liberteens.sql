@@ -1,0 +1,1 @@
+ALTER TABLE "turns" ADD COLUMN "intent_brief" jsonb DEFAULT '{}'::jsonb NOT NULL;

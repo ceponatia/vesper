@@ -21,7 +21,18 @@ export const identityGroup = defineAttributeGroup("identity", [
     valueType: "enum",
     description: "Age the character visibly reads as.",
     mutability: "inherent",
+    // Ascending by age. The minor bands (infant…teen) exist so background
+    // characters — families, kids in a crowd — can populate a world, but they
+    // are listed in `autoDefaultExcludes` so an unspecified character never
+    // silently defaults to one (the cast skews adult; minors are an explicit
+    // authorial/model choice, never a fallback).
     allowedValues: [
+      "infant",
+      "toddler",
+      "young_child",
+      "child",
+      "tween",
+      "teen",
       "young_adult",
       "mid_twenties",
       "early_thirties",
@@ -30,8 +41,9 @@ export const identityGroup = defineAttributeGroup("identity", [
       "fifties",
       "sixties_plus",
     ],
+    autoDefaultExcludes: ["infant", "toddler", "young_child", "child", "tween", "teen"],
     aliases: ["age", "apparent age"],
-    promptHints: ["State apparent age as an impression (\"somewhere in her late thirties\"), never as a number from a file."],
+    promptHints: ["State apparent age as an impression (\"somewhere in her late thirties\", \"barely school-age\"), never as a number from a file."],
     coreVisual: true,
     identityAnchor: true,
   },

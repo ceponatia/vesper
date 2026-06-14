@@ -61,6 +61,14 @@ describe("defaultValueFor (against the real registry)", () => {
       expect(result.ok, `${def.id} default should validate`).toBe(true);
     }
   });
+
+  it("never defaults to an autoDefaultExcludes member when one is added", () => {
+    const age = attributeRegistry.byId("identity.apparent_age");
+    expect(age?.autoDefaultExcludes?.length).toBeGreaterThan(0);
+    // A freshly-added apparent age must start on an adult band, not the first
+    // (youngest) vocabulary entry.
+    expect(age?.autoDefaultExcludes).not.toContain(defaultValueFor(age!));
+  });
 });
 
 describe("asList", () => {

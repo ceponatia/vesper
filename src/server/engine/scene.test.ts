@@ -613,7 +613,7 @@ describe("buildTurnDigest", () => {
   it("restates the roster groups as imperative allowances", () => {
     const digest = buildTurnDigest(digestBundle(), "loc_kitchen");
     expect(digest).toContain("## This turn (binding digest — each line restates an authoritative block below)");
-    expect(digest).toContain("- Voice freely: Maya.");
+    expect(digest).toContain('- Voice freely — start each spoken line at line start as [Name] "…", e.g. [Maya] "…": Maya.');
     expect(digest).toContain("- May bring in, but only via a narrated physical arrival before their first line: Rhett (Garden).");
     expect(digest).toContain("- Never enact — discuss or quote from memory only: Fatima (Attic).");
   });
@@ -636,7 +636,7 @@ describe("buildTurnDigest", () => {
     const allHome = digestBundle();
     for (const p of allHome.participants) p.locationId = "loc_kitchen";
     const digest = buildTurnDigest(allHome, "loc_kitchen");
-    expect(digest).toContain("- Voice freely: Maya, Rhett, Fatima.");
+    expect(digest).toContain('- Voice freely — start each spoken line at line start as [Name] "…", e.g. [Maya] "…": Maya, Rhett, Fatima.');
     expect(digest).not.toContain("May bring in");
     expect(digest).not.toContain("Never enact");
   });

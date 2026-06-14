@@ -45,6 +45,14 @@ Schema design rules that make this work:
 - `.default()` everything defaultable. `.catch()` on leaf enums/numbers so a single bad field doesn't reject the whole object.
 - Quantities are clamped in the merge reducer regardless of what the schema allowed (`minutesAdvanced` 1–480, meter deltas −1–1, etc.). Trust nothing.
 
+### Worked example: a new boundary whose fallback is the previously-live path
+
+The pre-narration **intake agent** ([turn-engine.md](turn-engine.md) §Intake agent) is the cleanest shape this rule can take. It is a *new* LLM call on the critical path — the kind of addition the prime directive is most wary of — yet it can never make a turn worse than today's, because its degraded default **is the deterministic code path the engine ran before it existed**:
+
+- It runs `generateChecked` (the full ladder above) on the `tool` model, but is additionally wrapped in a hard timeout (`INTAKE_TIMEOUT_MS = 1500`).
+- On timeout, generation failure, demo mode, or when disabled by env, it falls back to `intentBriefFromSceneIntent(detectIntent(input))` — the regex intent that was the live behavior before intake — and records a diagnostic. The narration never blocks on the agent.
+- So the **worst case is exactly prior behavior**: no failed turn, no missing classification beyond what regex always missed, just a diagnostic noting the degrade. "Intake off" is a tested, safe state by construction, not a separately-maintained path. This is the pattern to copy when adding any future pre-narrator check: make its fallback the previously-shipped deterministic step, time-box it, and the new call is pure upside.
+
 ## 4. Independent agent failure
 
 The four post-turn agents run in parallel and fail independently. The merge reducer consumes whatever subset succeeded:

@@ -12,7 +12,9 @@ submitTurn(sessionId, input, author)
       a. episode RAG retrieve        (PREVIOUS turn's brief.memoryQueries + input)
       b. fact retrieve               (same queries, facts table)
       c. lore retrieve               (retrieval-tier chunks, eligibility-filtered FIRST)
-      d. deterministic, no LLM: intent detection · scene snapshot ·
+      d. INTAKE agent (`runIntake`)  (the ONLY pre-narration LLM — concurrent leg; tool model;
+         player non-OOC turns only; emits IntentBrief; degrades to detectIntent)
+      e. deterministic, no LLM: intent detection · scene snapshot ·
          presence channels + roster (sight/comms/absent, see perception.md) ·
          per-NPC awareness blocks · darkness read · comms staging ·
          wardrobe visibility · movement intent + follow scores ·
@@ -27,9 +29,20 @@ submitTurn(sessionId, input, author)
 
 Steps 1–5 happen inside the request (the SSE response), but **client disconnection does not abort them**: SSE writes are best-effort, the engine loop keeps consuming the model stream and persists the narration regardless. Steps 6–8 run as a `post_turn` job; the client polls `GET /sessions/:id/job` until the session is `ready`.
 
-### Pre-turn deterministic steps (3d)
+### Intake agent (3d) — the only pre-narration LLM
 
-- **Intent detection** (`engine/intent.ts`, regex-based — fast and deterministic): classifies the input for `look/examine`, `touch`, `smell`, `enter`, with targets resolved against participant display names and in-scope item names. Drives full-impression rendering (a looked-at character gets their complete glance block) and sensory snippet inclusion.
+`runIntake` (`engine/intake.ts`) is a 5th leg of the pre-turn `Promise.all` in `assemblePreTurn`, **run concurrently with `preTurnRetrieve`** — so it is the **first (and only) LLM in the critical path to first token**, but adds latency to first token only when it is the long pole (`max(0, intake − retrieval)`; both legs are already network-bound, so retrieval often hides it). It reads the player's input *before* narration and emits a typed **`IntentBrief`** (contracts.md §Intent brief) — what the player is trying to do, to whom, with which entities — replacing the brittle regex intent as the primary signal.
+
+- **Model & resilience**: `generateChecked` on the **`tool` model** (`toolModelId()` = `google/gemini-2.5-flash`, the image scene composer's model — now its second consumer), temperature 0, small schema, `maxOutputTokens` ~512. The full ladder applies (typed output → 1 repair → degraded default).
+- **Timeout → regex fallback**: wrapped in a hard timeout (`INTAKE_TIMEOUT_MS = 1500`). On timeout, failure, demo mode, or when disabled (`INTAKE_DISABLED` env), it **degrades to today's regex `detectIntent`** via `intentBriefFromSceneIntent(...)`. The fallback is the *previously-live* code path, so "intake off" is byte-for-byte today's behavior — a clean new-trust-boundary example (resilience.md §3).
+- **When it runs**: player-authored, non-OOC turns only. Companion-authored and OOC turns get an empty brief (no LLM call).
+- **Persistence**: the `IntentBrief` is stored on the turn row in a new `intent_brief` jsonb column (mirroring `agent_results`), so it survives the turn and the post-turn agents read it back.
+- **Consumers**: the brief is adapted to a `SceneIntent` via `sceneIntentFromBrief(brief)` (lossless — the brief's `lookTarget`/`touchTarget`/`smellTarget`/`examineItem`/`enterLocation` mirror the regex `SceneIntent`) and fed to the three existing pre-turn consumers unchanged in signature — `raiseExposureForIntent`, `buildGlanceImpressions`, `buildAwarenessBlocks`. Post-turn, the continuity agent's awareness rebuild (`engine/agents.ts`) reuses the **persisted** brief instead of re-running `detectIntent`, removing a duplicated derivation and guaranteeing the pre- and post-turn awareness blocks match. `buildTurnDigest` does not consume intent and is unchanged; `stagedLocationAnchor` keeps its own internal regex (movement enforcement is a downstream phase-4 spec, not v1).
+- **Scope**: v1 ships the classifier and its plumbing only. The brief's `movement`, `appointment`, and `check` fields are **persisted seams** — written but not yet enforced; the movement-authority and scheduled-arrivals specs (and future skill-check resolution) consume them later.
+
+### Pre-turn deterministic steps (3e)
+
+- **Intent detection** (`engine/intent.ts`, regex-based — fast and deterministic): classifies the input for `look/examine`, `touch`, `smell`, `enter`, with targets resolved against participant display names and in-scope item names. Drives full-impression rendering (a looked-at character gets their complete glance block) and sensory snippet inclusion. With intake on, this is the **degraded fallback** for the brief, not the primary signal; it still runs (the brief is built from it on intake failure).
 - **Scene snapshot**: first visit to a location → full description + all items; revisits → one-line summary + items that changed. Tracked via `runtime.visitedLocationIds`.
 - **Movement staging + access**: an enter intent toward an adjacent location stages that location in the prompt — unless the connecting link fails the same `checkLinkAccess` rule the merge enforces (locked, closed time window, sealed door), in which case the movement-guidance block tells the narrator to play the blocked threshold and never describe the far side. The merge re-checks and drops the move regardless (belt and suspenders; the narrator is guidance, the merge is law).
 - **Follow scores**: when the player moves, each co-located NPC gets a deterministic follow likelihood from: relationship **stage** when a `participant_relationships` edge exists (active `relationship` fact count is the fallback; hostile/wary/stranger are gated below likely-follows regardless of score), interaction recency (`runtime.lastInteractedTurn`), activity stickiness (busy NPCs stay), and whether the input addressed them. Surfaced as movement guidance for the narrator, not a hard rule.
@@ -124,12 +137,13 @@ So the narrator can play beats that need an absent NPC physically relocated firs
 
 | Agent | Fallback |
 | --- | --- |
+| intake (pre-turn) | `intentBriefFromSceneIntent(detectIntent(input))` — the brief reconstructed from today's regex; movement/appointment/check seams empty. So timeout/failure/demo ⇒ exactly prior behavior, with a diagnostic |
 | simulant | `{ minutesAdvanced: 30, movements: [], itemEvents: [], meterAdjustments: [], conditionEvents: [], attributeChanges: [], activityUpdates: [], affinityAdjustments: [], commsEvents: [] }` — clock still advances, drift still applies |
 | archivist | `{ episodeSummary: first ~300 chars of narration, facts: [], supersedeHints: [] }` + diagnostic |
 | continuity | `{ violations: [], normBreaches: [], driftNotes: [] }` |
 | director | previous brief with `sceneSummary` replaced by the episode summary; `memoryQueries` carried forward |
 
-All constants (`FALLBACK_MINUTES_ADVANCED = 30`, `MAX_CHAINED_ACTIONS = 2`, `DEFAULT_LINK_TRAVEL_MINUTES = 1`, `SCHEDULE_JITTER_MINUTES = 15`, `AFFINITY_DELTA_CLAMP = 5`, `REST_CLAMP_MINUTES = 960`, clamps, thread cooling thresholds) live in `engine/constants.ts`.
+All constants (`FALLBACK_MINUTES_ADVANCED = 30`, `MAX_CHAINED_ACTIONS = 2`, `DEFAULT_LINK_TRAVEL_MINUTES = 1`, `SCHEDULE_JITTER_MINUTES = 15`, `AFFINITY_DELTA_CLAMP = 5`, `REST_CLAMP_MINUTES = 960`, `INTAKE_TIMEOUT_MS = 1500`, clamps, thread cooling thresholds) live in `engine/constants.ts`.
 
 ## Other paths
 

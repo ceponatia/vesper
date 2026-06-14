@@ -9,6 +9,8 @@ type Params = { id: string };
 
 const avatarBodySchema = z.object({
   style: z.enum(["realistic", "stylized"]).default("realistic"),
+  /** Flux (OpenRouter) or Qwen uncensored (Venice). */
+  model: z.enum(["flux", "qwen"]).default("flux"),
 });
 
 /**
@@ -29,8 +31,10 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
 
   const jobId = await startJob({
     type: "avatar",
-    payload: { characterId: id, style: body.value.style },
-    run: async () => ({ imageId: await generateAvatar({ characterId: id, userId: user.id, style: body.value.style }) }),
+    payload: { characterId: id, style: body.value.style, model: body.value.model },
+    run: async () => ({
+      imageId: await generateAvatar({ characterId: id, userId: user.id, style: body.value.style, model: body.value.model }),
+    }),
   });
   return jsonOk({ jobId, characterId: id }, 202);
 });

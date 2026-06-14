@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { attributeRegistry, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { resolveWardrobeVisibility } from "@/contracts/items/visibility";
+import { resolveWardrobeVisibility, type RegionExposure } from "@/contracts/items/visibility";
 import { isBelowWaist } from "@/contracts/body/locations";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
@@ -24,7 +24,6 @@ const STYLE_SUFFIX: Record<AvatarStyle, string> = {
 };
 
 const BIO_EXCERPT_CHARS = 240;
-const PERSONALITY_EXCERPT_CHARS = 120;
 
 /** One default-outfit garment, phrased for the avatar prompt. */
 export interface AvatarOutfitItem {
@@ -90,10 +89,15 @@ export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): A
 
 /**
  * Composes the text-to-image avatar prompt from the character's resolved
- * attribute values. The attribute registry is the single source of phrasing:
- * labels name each trait, promptHints carry per-attribute guidance. The
- * default outfit is authoritative when present — without it the image model
- * invents clothing, which contradicts the character's saved wardrobe.
+ * attribute values. The attribute registry labels name each trait; the image
+ * prompt carries only `label: value` appearance lines — **not** the registry
+ * `promptHints`, which are narrator/inference guidance (e.g. "state apparent age
+ * as an impression…") that an image model reads as literal subject detail (a hint
+ * with a concrete example like "late thirties" anchored every face to that age).
+ * promptHints still flow to the narrator via engine/scene.ts; add one back here
+ * only if testing shows it improves image output. The default outfit is
+ * authoritative when present — without it the image model invents clothing,
+ * which contradicts the character's saved wardrobe.
  */
 export function buildAvatarPrompt(
   name: string,
@@ -102,13 +106,11 @@ export function buildAvatarPrompt(
   outfit: ReadonlyArray<AvatarOutfitItem> = [],
 ): string {
   const appearance: string[] = [];
-  const hints: string[] = [];
   for (const value of profile.attributes) {
     const def = attributeRegistry.byId(value.id);
     if (!def) continue; // unknown vocabulary — skip rather than leak raw ids into the prompt
     const formatted = formatAttribute(def, value.value);
     if (formatted) appearance.push(formatted);
-    for (const hint of def.promptHints ?? []) hints.push(hint);
   }
   const wearing = outfit.map(formatGarment).join("; ");
 
@@ -118,8 +120,6 @@ export function buildAvatarPrompt(
     appearance.length > 0 ? `Appearance: ${appearance.join("; ")}.` : "",
     wearing ? `Wearing (authoritative — depict exactly this clothing): ${wearing}.` : "",
     profile.bio.trim() ? `About: ${excerpt(profile.bio, BIO_EXCERPT_CHARS)}.` : "",
-    profile.personality.trim() ? `Personality: ${excerpt(profile.personality, PERSONALITY_EXCERPT_CHARS)}.` : "",
-    ...hints,
     STYLE_SUFFIX[style],
   ]
     .filter(Boolean)
@@ -135,6 +135,10 @@ function formatAttribute(def: AttributeDefinition, value: string | string[] | nu
 
 function humanize(value: string): string {
   return value.replaceAll("_", " ").trim();
+}
+
+function capitalizeFirst(value: string): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
 
 function excerpt(text: string, max: number): string {
@@ -229,6 +233,14 @@ export interface ScenePresentCharacter {
   wornVisible: ReadonlyArray<SceneWornItem>;
   /** Compact attribute phrase (characterAppearanceSummary) for textual render descriptions. */
   appearance?: string;
+  /** Per-region coverage (exposedRegions) — drives explicit bare-skin phrasing. */
+  exposure?: RegionExposure;
+  /**
+   * True when this character has any garment in inventory (worn or removed):
+   * the gate for bare phrasing, so an NPC whose world never modelled clothing
+   * is never rendered nude — only a stripped, clothing-tracked character is.
+   */
+  wardrobeTracked?: boolean;
 }
 
 export interface SceneComposerContext {
@@ -273,10 +285,12 @@ export function buildSceneComposerPrompt(context: SceneComposerContext): string 
   } else {
     lines.push("Present characters (the only people allowed in the image):");
     for (const c of context.present) {
+      const exposed = formatExposure(c.exposure, c.wardrobeTracked);
       const bits = [
         c.activity ? `activity: ${c.activity}` : "",
         c.posture ? `posture: ${c.posture}` : "",
         `visible wardrobe (authoritative): ${wardrobeLines(c.wornVisible)}`,
+        exposed ? `exposed: ${exposed}` : "",
       ].filter(Boolean);
       lines.push(`- ${c.name} — ${bits.join("; ")}`);
     }
@@ -307,6 +321,33 @@ export function wardrobeOutfitSummary(worn: ReadonlyArray<SceneWornItem>): strin
   const parts: string[] = [];
   if (visible.length > 0) parts.push(visible.join(", "));
   if (hinted.length > 0) parts.push(`hints of ${hinted.join(", ")} beneath`);
+  return parts.join("; ");
+}
+
+/**
+ * Explicit bare-skin phrasing for the uncovered regions an image model would
+ * otherwise paint clothed (docs/images.md §Scene images). Gated on
+ * `wardrobeTracked`: a character whose world never modelled clothing has no
+ * "removed" state, so an empty wardrobe means unknown, not nude. Region scope
+ * is torso + lower body + feet; head/hands are omitted because bare there is
+ * the universal default and would fire on every clothed subject. `legs` is
+ * stated only when the pelvis is covered — a bare pelvis already implies it.
+ * Returns "" when nothing is exposed (or the gate is off).
+ */
+export function formatExposure(exposure?: RegionExposure, wardrobeTracked?: boolean): string {
+  if (!exposure || !wardrobeTracked) return "";
+  const fullyNude = exposure.torso === "bare" && exposure.pelvis === "bare" && exposure.legs === "bare";
+  const parts: string[] = [];
+  if (fullyNude) {
+    parts.push("fully nude, no clothing");
+  } else {
+    if (exposure.torso === "bare") parts.push("topless, bare chest");
+    else if (exposure.torso === "sheer") parts.push("wearing only a sheer top, skin visible through it");
+    if (exposure.pelvis === "bare") parts.push("bare below the waist, no underwear or bottoms");
+    else if (exposure.pelvis === "sheer") parts.push("only sheer fabric below the waist");
+    if (exposure.pelvis !== "bare" && exposure.legs === "bare") parts.push("bare legs");
+  }
+  if (!fullyNude && exposure.feet === "bare") parts.push("barefoot");
   return parts.join("; ");
 }
 
@@ -343,6 +384,8 @@ export interface SceneCharacterSpec {
   outfitSummary: string;
   /** Compact appearance phrase for textual description. */
   appearance: string;
+  /** Explicit bare-region phrase ("topless, bare chest; barefoot"), forced from coverage state; "" when fully covered or untracked. */
+  exposure?: string;
 }
 
 export interface SceneRenderPlan {
@@ -446,6 +489,7 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
     // Forced from occlusion-filtered state regardless of anything the model said.
     outfitSummary: wardrobeOutfitSummary(entry.wornVisible),
     appearance: entry.appearance ?? "",
+    exposure: formatExposure(entry.exposure, entry.wardrobeTracked),
   };
 }
 
@@ -463,10 +507,26 @@ export interface SceneRenderOptions {
 }
 
 /**
+ * Venice's image-edit endpoint hard-rejects prompts over this many characters
+ * (`Prompt exceeds 1500 character limit`). Text-to-image (flux) is far roomier,
+ * so the budget only applies on the reference-edit path. Untruncated garment
+ * descriptions (followups.phase3.md §1) dominate the length, so a rich outfit
+ * or several NPCs blows the cap — buildSceneRenderPrompt shrinks the variable
+ * fields to fit (followups.phase3.md §6).
+ */
+export const VENICE_RENDER_PROMPT_LIMIT = 1500;
+
+/**
  * Final render instruction. Venice is single-reference edit, so at most ONE
  * character is identity-locked (`referenceName`); every other featured
  * character — including the focal one when the reference fell back to another
  * present NPC — is described textually from state-derived appearance/outfit.
+ *
+ * On the Venice path (`referenceName` set) the prompt is budgeted to
+ * VENICE_RENDER_PROMPT_LIMIT: the outfit and setting text are progressively
+ * excerpted until it fits, with a hard clamp as a final safety net. Identity
+ * lock, POV rule, pose, bare-region phrasing and the clothing-authority clause
+ * are never dropped — only the verbose, lower-priority description text shrinks.
  */
 export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderOptions = {}): string {
   const featured = [...(plan.focal ? [plan.focal] : []), ...plan.others];
@@ -474,28 +534,62 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     ? featured.findIndex((c) => normalizeName(c.name) === normalizeName(opts.referenceName ?? ""))
     : -1;
   const reference = refIndex >= 0 ? featured[refIndex] : undefined;
-
-  const pieces: string[] = [];
-  if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
-  pieces.push(SCENE_POV_RULE);
-  if (reference) {
-    if (reference.action) pieces.push(`Pose: ${reference.action}.`);
-    pieces.push(reference.outfitSummary ? `Wearing: ${reference.outfitSummary}.` : "Keep the same outfit as the reference image.");
-  }
   const textual = featured.filter((_, index) => index !== refIndex);
-  for (const c of textual) {
-    const detail = [c.appearance, c.outfitSummary ? `wearing ${c.outfitSummary}` : "wearing casual everyday clothing", c.action]
-      .filter(Boolean)
-      .join("; ");
-    const label = !reference && c === plan.focal ? "Subject" : "Also in frame";
-    pieces.push(`${label}: ${c.name} — ${detail}.`);
+
+  const assemble = (outfitCap: number, settingCap: number): string => {
+    const fit = (text: string, cap: number) => (cap === Infinity ? text : excerpt(text, cap));
+    const pieces: string[] = [];
+    if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
+    pieces.push(SCENE_POV_RULE);
+    if (reference) {
+      if (reference.action) pieces.push(`Pose: ${reference.action}.`);
+      if (reference.outfitSummary) pieces.push(`Wearing: ${fit(reference.outfitSummary, outfitCap)}.`);
+      if (reference.exposure) pieces.push(`${capitalizeFirst(reference.exposure)}.`);
+      if (!reference.outfitSummary && !reference.exposure) pieces.push("Keep the same outfit as the reference image.");
+    }
+    for (const c of textual) {
+      const clothing = c.outfitSummary ? `wearing ${fit(c.outfitSummary, outfitCap)}` : c.exposure ? "" : "wearing casual everyday clothing";
+      const detail = [c.appearance, clothing, c.exposure, c.action].filter(Boolean).join("; ");
+      const label = !reference && c === plan.focal ? "Subject" : "Also in frame";
+      pieces.push(`${label}: ${c.name} — ${detail}.`);
+    }
+    // Anchor clothing to wardrobe state, not the (often fully-dressed) reference image:
+    // without this the edit model re-paints removed garments — a shed top stays on.
+    if (featured.some((c) => c.outfitSummary || c.exposure)) {
+      pieces.push("Depict only the clothing described; add no garment that is not listed.");
+    }
+    if (featured.length === 0) pieces.push("No people in frame — a quiet shot of the place itself.");
+    if (plan.setting) pieces.push(`Setting: ${fit(plan.setting, settingCap)}.`);
+    if (plan.lighting) pieces.push(`Lighting: ${plan.lighting}.`);
+    if (plan.mood) pieces.push(`Mood: ${plan.mood}.`);
+    pieces.push("High quality, no text, no watermark.");
+    return pieces.join(" ");
+  };
+
+  if (!opts.referenceName) return assemble(Infinity, Infinity);
+
+  // Venice edit path: shrink outfit/setting text until under the limit.
+  const caps: ReadonlyArray<[number, number]> = [
+    [Infinity, Infinity],
+    [360, 220],
+    [240, 160],
+    [140, 120],
+    [70, 80],
+  ];
+  let prompt = "";
+  for (const [outfitCap, settingCap] of caps) {
+    prompt = assemble(outfitCap, settingCap);
+    if (prompt.length <= VENICE_RENDER_PROMPT_LIMIT) return prompt;
   }
-  if (featured.length === 0) pieces.push("No people in frame — a quiet shot of the place itself.");
-  if (plan.setting) pieces.push(`Setting: ${plan.setting}.`);
-  if (plan.lighting) pieces.push(`Lighting: ${plan.lighting}.`);
-  if (plan.mood) pieces.push(`Mood: ${plan.mood}.`);
-  pieces.push("High quality, no text, no watermark.");
-  return pieces.join(" ");
+  return clampToLimit(prompt, VENICE_RENDER_PROMPT_LIMIT);
+}
+
+/** Last-resort hard cap: trim to a word boundary at or under the limit. */
+function clampToLimit(prompt: string, limit: number): string {
+  if (prompt.length <= limit) return prompt;
+  const cut = prompt.slice(0, limit);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > limit - 60 ? cut.slice(0, lastSpace) : cut).trimEnd();
 }
 
 // ---------------------------------------------------------------------------

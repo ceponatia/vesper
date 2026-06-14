@@ -194,6 +194,18 @@ describe("fillCoreVisualDefaults", () => {
     expect(sink.items).toEqual([]);
   });
 
+  it("never auto-seeds an autoDefaultExcludes member (e.g. a minor apparent age)", () => {
+    const minors = attributeRegistry.byId("identity.apparent_age")?.autoDefaultExcludes ?? [];
+    expect(minors.length).toBeGreaterThan(0);
+    // No range for apparent_age ⇒ the unconstrained fallback fires; across many
+    // concepts it must never land on a minor band.
+    const seeds = Array.from({ length: 50 }, (_, i) => `concept ${i}: a stranger in the crowd`);
+    for (const seed of seeds) {
+      const age = fillCoreVisualDefaults([], seed).find((v) => v.id === "identity.apparent_age");
+      expect(minors).not.toContain(age?.value);
+    }
+  });
+
   it("draws the seeded pick from the attribute's surviving range", () => {
     const range = ["brown", "dark_brown", "black"];
     const filled = fillCoreVisualDefaults([], "a Latina engineer", undefined, new Map([["hair.color", range]]));

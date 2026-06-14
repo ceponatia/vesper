@@ -31,8 +31,15 @@ export { MAJOR_TIER_SOFT_CAP } from "@/lib/cast-tiers";
 /** In-game minutes per affinity decay point (1 point per week toward 0; defaults doc §Affinity stages). */
 export const AFFINITY_DECAY_WEEK_MINUTES = 7 * 24 * 60;
 
-/** Raw user/assistant exchanges replayed for narrative voice continuity. */
-export const NARRATIVE_HISTORY_TURNS = 2;
+/**
+ * Short-term memory: how many recent raw user/assistant exchanges are replayed
+ * verbatim for narrative voice continuity. Tune freely here — higher keeps the
+ * model coherent across more recent turns (fewer "bizarre inconsistencies") at
+ * the cost of more prompt tokens per turn; lower saves tokens but a short window
+ * lets recent style drift (a run of solo/untagged turns flushing the tagged
+ * dialogue examples is what caused the speaker-tag drift in docs/prompts.md).
+ */
+export const NARRATIVE_HISTORY_TURNS = 6;
 /** Most recent episode summaries always present in the turn context. */
 export const EPISODE_WINDOW = 4;
 /** Max items in the merged narrator facts channel (docs/memory.md). */
@@ -70,3 +77,14 @@ export const FUZZY_RESOLVE_MIN = 0.75;
 export const STAGED_INTENT_DEFAULT_BUDGET = 6;
 /** Max NPC-initiated pending messages kept in runtime — surface-once, a runaway guard. */
 export const PENDING_COMMS_CAP = 8;
+
+/**
+ * Pre-narrator intake (docs/developer-notes/pre-narrator-agents-spec.phase4.md):
+ * the LLM intake call runs concurrent with retrieval before narration. If it
+ * exceeds this budget the turn proceeds on the regex `detectIntent` fallback —
+ * a few hundred ms of added time-to-first-token is acceptable; a stalled turn is
+ * not. Tune against the latency A/B (spec Open-question A).
+ */
+export const INTAKE_TIMEOUT_MS = 1500;
+/** Output-token cap for the intake call — the brief is small; keep it cheap/fast. */
+export const INTAKE_MAX_OUTPUT_TOKENS = 512;

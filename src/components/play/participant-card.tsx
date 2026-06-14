@@ -122,6 +122,7 @@ export function ParticipantCard({
   playerLocationId,
   expanded,
   onToggle,
+  onTeleported,
 }: {
   sessionId: string;
   participant: StatusParticipant;
@@ -129,7 +130,12 @@ export function ParticipantCard({
   playerLocationId: string | null;
   expanded: boolean;
   onToggle: () => void;
+  /** Dev-only: provided by the Cast tab to enable "teleport to player"; the
+   *  parent refreshes the session after a successful snap. */
+  onTeleported?: () => void;
 }) {
+  const toast = useToast();
+  const [teleporting, setTeleporting] = useState(false);
   const meters = Object.entries(participant.meters);
   // The visible outfit list: hidden layers stay out of the collapsed card (docs/ui.md).
   const outfit = participant.wardrobe.filter((w) => w.visibility !== "hidden");
@@ -142,6 +148,28 @@ export function ParticipantCard({
       ? participant.locationName
       : null;
   const detailsId = `cast-card-details-${participant.id}`;
+
+  // Dev-only debug affordance: snap an off-location NPC to the player. Hidden in
+  // production, and only when the Cast tab wired the refresh callback.
+  const canTeleport =
+    process.env.NODE_ENV !== "production" &&
+    !!onTeleported &&
+    !participant.isUser &&
+    !!playerLocationId &&
+    participant.locationId !== playerLocationId;
+
+  const teleport = async () => {
+    if (teleporting) return;
+    setTeleporting(true);
+    const result = await sessionsApi.teleportToPlayer(sessionId, participant.id);
+    setTeleporting(false);
+    if (!result.ok) {
+      toast.push({ title: "Teleport failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    toast.push({ title: `${participant.displayName} pulled to your location`, tone: "success" });
+    onTeleported?.();
+  };
 
   return (
     <Card className="p-3">
@@ -239,6 +267,19 @@ export function ParticipantCard({
             <p className="text-[11px] text-paper-400">
               <span className="text-paper-500">Currently at</span> {elsewhere}
             </p>
+          ) : null}
+
+          {canTeleport ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              busy={teleporting}
+              onClick={() => void teleport()}
+              className="self-start"
+              title="Dev-only: snap this character to your location, bypassing movement"
+            >
+              ⚡ Teleport to me (dev)
+            </Button>
           ) : null}
 
           {wornAll.length > 0 ? (

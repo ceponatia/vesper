@@ -5,6 +5,7 @@ import { matchActions } from "@/contracts/actions/registry";
 import { diag, DiagnosticCollector, diagnosticSchema, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { ExposureMask } from "@/contracts/state/brief";
 import { submitTurnBodySchema, type SubmitTurnBody, type TurnAuthor } from "@/contracts/turns/stream";
+import { emptyIntentBrief, intentBriefSchema, type IntentBrief } from "@/contracts/turns/intent-brief";
 import { daylightBand, formatElapsed, formatGameClock, resolveGameTime } from "@/lib/clock";
 import { log } from "@/lib/log";
 import { parseOr, parseOrNull } from "@/lib/parse";
@@ -24,7 +25,8 @@ import { runPostTurnAgents } from "./agents";
 import { activeLocationId, bundlePlayerName, loadSessionBundle, type SessionBundle } from "./bundle";
 import { EPISODE_WINDOW, FACTS_CAP, HEARTBEAT_INTERVAL_MS, MAX_CHAINED_ACTIONS, NARRATIVE_HISTORY_TURNS, OPEN_THREADS_IN_CONTEXT } from "./constants";
 import { demoNarrative } from "./demo";
-import { detectCommsIntent, detectIntent, isOocInput, type SceneIntent } from "./intent";
+import { detectCommsIntent, isOocInput, type SceneIntent } from "./intent";
+import { runIntake, sceneIntentFromBrief } from "./intake";
 import { enqueueJob, registerJobHandler, sessionBusy } from "./jobs";
 import { applyTurnResults, stagedLocationAnchor } from "./merge";
 import { buildStaticRulebook, buildTurnContext } from "./prompts/narrative";
@@ -49,7 +51,7 @@ import {
   type CommsStaging,
 } from "./scene";
 import { createSegmenter, parseSegments } from "./segmenter";
-import { resolveWardrobeVisibility } from "@/contracts/items/visibility";
+import { exposedRegions, resolveWardrobeVisibility } from "@/contracts/items/visibility";
 import { resolveAttributes } from "@/contracts/attributes/value";
 
 /**
@@ -244,7 +246,7 @@ async function runNarrationTask(sessionId: string, body: SubmitTurnBody, channel
 
     // Persist regardless of the consumer (the doc's "finally"): narration,
     // messages, processing status, then hand off to the post_turn job.
-    await persistNarration(turnId, body, speaker?.displayName ?? null, narration, pre.allNpcNames, sink);
+    await persistNarration(turnId, body, speaker?.displayName ?? null, narration, pre.allNpcNames, pre.intentBrief, sink);
     if (pre.ooc) {
       // OOC exchange: a meta answer has no world impact — no agents, no clock
       // advance, no episode. The turn completes as soon as the answer persists.
@@ -342,6 +344,7 @@ async function persistNarration(
   speakerName: string | null,
   narration: string,
   npcNames: string[],
+  intentBrief: IntentBrief,
   sink: DiagnosticCollector,
 ): Promise<void> {
   const rows = messagesFromNarration(body, speakerName, narration, npcNames);
@@ -352,6 +355,7 @@ async function persistNarration(
     .update(turns)
     .set({
       narration,
+      intentBrief,
       status: "processing",
       heartbeatAt: new Date(),
       diagnostics: sql`${turns.diagnostics} || ${JSON.stringify(sink.items)}::jsonb`,
@@ -403,6 +407,8 @@ interface PreTurnAssembly {
   allNpcNames: string[];
   /** Out-of-character question: the answer has no world impact (no post-turn). */
   ooc: boolean;
+  /** Pre-narrator intake output — persisted on the turn, reused by the continuity audit. */
+  intentBrief: IntentBrief;
 }
 
 async function assemblePreTurn(
@@ -429,9 +435,10 @@ async function assemblePreTurn(
     .map((i) => i.name);
 
   // OOC input is a question to the game, not an in-world action: no physical
-  // intents (an OOC "can I go to the beach?" must not stage a movement).
+  // intents (an OOC "can I go to the beach?" must not stage a movement). The
+  // scene intent now comes from the intake agent (run in the fan-out below),
+  // which returns an empty brief for OOC / non-player turns.
   const ooc = body.author === "player" && isOocInput(body.input);
-  const intent = ooc ? {} : detectIntent(body.input, npcNames, inScopeItemNames);
 
   // Comms staging (presence-spec §comms): "I call/text X" against ANY session
   // NPC (the target is usually absent) stages that NPC as comms-present THIS
@@ -464,8 +471,26 @@ async function assemblePreTurn(
         ].join("\n")
       : undefined;
 
-  // Pre-turn parallel fan-out: retrieval legs + recent context.
-  const [retrieval, history, episodeWindow, relationshipFacts] = await Promise.all([
+  // The intake agent (pre-narrator) runs in the fan-out, concurrent with
+  // retrieval, so its latency hides behind the network-bound retrieval window.
+  // Empty brief for OOC / non-player turns; degrades to the regex on timeout.
+  const intakeLeg: Promise<IntentBrief> =
+    ooc || body.author !== "player"
+      ? Promise.resolve(emptyIntentBrief())
+      : runIntake({
+          playerInput: body.input,
+          presentNpcNames: npcNames,
+          otherNpcNames: bundle.participants
+            .filter((p) => !p.isUser && p.locationId !== activeLoc)
+            .map((p) => p.displayName),
+          itemNames: inScopeItemNames,
+          currentLocationName: activePlace?.name ?? null,
+          locationNames: bundle.locations.map((l) => l.name),
+          sink,
+        });
+
+  // Pre-turn parallel fan-out: retrieval legs + recent context + intake.
+  const [retrieval, history, episodeWindow, relationshipFacts, intentBrief] = await Promise.all([
     preTurnRetrieve({
       session: { id: bundle.session.id },
       world: { id: bundle.world.id },
@@ -481,7 +506,12 @@ async function assemblePreTurn(
     recentTurnHistory(bundle.session.id, NARRATIVE_HISTORY_TURNS),
     recentEpisodes(bundle.session.id, EPISODE_WINDOW, sink),
     activeRelationshipFacts(bundle.session.id),
+    intakeLeg,
   ]);
+
+  // The scene-intent view the prompt builders consume (exposure / glance /
+  // awareness) — a lossless projection of the intake brief's target fields.
+  const intent = sceneIntentFromBrief(intentBrief);
 
   // Movement intent: when the player heads into an adjacent room, the prompt
   // establishes the target and surfaces follow guidance (state moves post-turn).
@@ -681,7 +711,7 @@ async function assemblePreTurn(
 
   // The present-speaker vocabulary includes comms-present NPCs (they speak down
   // the line); the segmenter vocabulary (allNpcNames) is every session NPC.
-  return { system, messages, npcNames: speakerNpcNames, allNpcNames, ooc };
+  return { system, messages, npcNames: speakerNpcNames, allNpcNames, ooc, intentBrief };
 }
 
 function isUnlocked(chunk: { visibility: "public" | "secret"; manuallyUnlocked: boolean; id: string }, unlockedIds: readonly string[]): boolean {
@@ -755,7 +785,14 @@ registerJobHandler("post_turn", async (job) => {
     const narration = turn.narration ?? "";
     const results = await runPostTurnAgents(
       bundle,
-      { number: turn.number, author: turn.author, input: turn.input },
+      {
+        number: turn.number,
+        author: turn.author,
+        input: turn.input,
+        // Trust boundary: the persisted brief is jsonb — parseOr to the empty
+        // brief so a malformed/absent value degrades to the regex path in the agent.
+        intentBrief: parseOr(intentBriefSchema, turn.intentBrief, emptyIntentBrief()),
+      },
       narration,
       { sink },
     );
@@ -831,14 +868,19 @@ export function buildSceneComposerContext(
     .map((p) => {
       const worn = bundle.items.filter((i) => i.holderParticipantId === p.id && i.worn);
       const wornById = new Map(worn.map((i) => [i.id, i]));
-      const views = resolveWardrobeVisibility(
-        worn.map((i) => ({
-          instanceId: i.id,
-          name: i.name,
-          coverage: i.definition.coverage,
-          layer: i.definition.layer ?? 1,
-          opacity: i.definition.opacity,
-        })),
+      const wornInputs = worn.map((i) => ({
+        instanceId: i.id,
+        name: i.name,
+        coverage: i.definition.coverage,
+        layer: i.definition.layer ?? 1,
+        opacity: i.definition.opacity,
+      }));
+      const views = resolveWardrobeVisibility(wornInputs);
+      // A character is "wardrobe-tracked" if they own any garment at all (worn
+      // or removed-into-inventory): only then is a bare region a deliberate
+      // undress rather than a world that never modelled clothing.
+      const wardrobeTracked = bundle.items.some(
+        (i) => i.holderParticipantId === p.id && i.definition.coverage.length > 0,
       );
       return {
         name: p.displayName,
@@ -855,6 +897,8 @@ export function buildSceneComposerContext(
               ...(def?.sensory.appearance ? { appearance: def.sensory.appearance } : {}),
             };
           }),
+        exposure: exposedRegions(wornInputs),
+        wardrobeTracked,
         appearance: characterAppearanceSummary(resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays)),
       };
     });

@@ -2,7 +2,7 @@ import { generateImage } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { imageModel, imageModelId, isDemoMode } from "../ai";
+import { imageModel, imageModelId, isDemoMode, veniceGenerateImage } from "../ai";
 import { logEvent } from "../events";
 import { parseOr } from "@/lib/parse";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
@@ -11,11 +11,21 @@ import { createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { monogramSvg } from "./monogram";
 import { buildAvatarPrompt, visibleAvatarOutfit, type AvatarOutfitItem, type AvatarStyle } from "./prompts";
 
+/** Which generator backs the avatar: Flux (OpenRouter) or Qwen uncensored (Venice). */
+export type AvatarImageModel = "flux" | "qwen";
+
 export interface GenerateAvatarInput {
   characterId: string;
   userId: string;
   style?: AvatarStyle;
+  /** Image model; defaults to Flux. "qwen" routes through Venice's uncensored text-to-image. */
+  model?: AvatarImageModel;
   sink?: DiagnosticSink;
+}
+
+/** Stored on the image row's meta for auditability (mirrors the variant label). */
+function avatarModelLabel(model: AvatarImageModel): string {
+  return model === "qwen" ? `venice/${process.env.VENICE_IMAGE_MODEL || "qwen-image"}` : imageModelId();
 }
 
 /**
@@ -25,6 +35,7 @@ export interface GenerateAvatarInput {
  */
 export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
   const style = input.style ?? "realistic";
+  const model = input.model ?? "flux";
   const demo = isDemoMode();
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
@@ -43,7 +54,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     entityKind: "character",
     entityId: input.characterId,
     prompt,
-    meta: { style, model: demo ? "demo" : imageModelId(), demo },
+    meta: { style, model: demo ? "demo" : avatarModelLabel(model), demo },
   });
 
   if (!character) {
@@ -53,7 +64,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
 
   const started = Date.now();
   try {
-    const buffer = demo ? monogramSvg(character.name) : await generateAvatarBuffer(prompt);
+    const buffer = demo ? monogramSvg(character.name) : await generateAvatarBuffer(prompt, model);
     const saved = await saveImageBuffer(asset.id, buffer, input.sink);
     if (saved?.status === "ready") {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
@@ -136,7 +147,14 @@ export async function loadDefaultOutfit(
   }
 }
 
-async function generateAvatarBuffer(prompt: string): Promise<Buffer> {
+async function generateAvatarBuffer(prompt: string, model: AvatarImageModel): Promise<Buffer> {
+  if (model === "qwen") {
+    // Venice uncensored text-to-image (3:4 portrait). A missing key / API error
+    // throws here and the caller marks the row failed with the message.
+    const result = await veniceGenerateImage({ prompt, aspectRatio: "3:4" });
+    if (!result.ok || !result.image) throw new Error(result.error ?? "venice generate returned no image");
+    return result.image;
+  }
   const result = await generateImage({
     model: imageModel(),
     prompt,

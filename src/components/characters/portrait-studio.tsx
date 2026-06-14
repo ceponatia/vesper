@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  avatarImageModels,
   charactersApi,
   portraitVariantKinds,
+  type AvatarImageModel,
   type PortraitVariantKind,
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -29,6 +31,11 @@ export interface PortraitStudioProps {
 
 const POLL_MS = 2500;
 
+const avatarModelLabels: Record<AvatarImageModel, string> = {
+  flux: "Flux",
+  qwen: "Qwen (uncensored)",
+};
+
 /**
  * Avatar + Venice variant studio (docs/images.md): generate the canonical
  * avatar from attributes, accumulate kind+instruction variants, promote any
@@ -38,6 +45,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const portraits = useAsyncData(() => charactersApi.portraits(characterId), [characterId]);
   const toast = useToast();
   const [kind, setKind] = useState<PortraitVariantKind>("pose");
+  const [avatarModel, setAvatarModel] = useState<AvatarImageModel>("flux");
   const [instruction, setInstruction] = useState("");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const [submittingVariant, setSubmittingVariant] = useState(false);
@@ -61,6 +69,9 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   // parent render (onAvatarChanged is typically an inline arrow).
   const reloadRef = useRef(portraits.reload);
   const onAvatarChangedRef = useRef(onAvatarChanged);
+  // Newest avatar-row id when a generation started — lets the effect below tell a
+  // FAILED regen (a new avatar row that never became canonical) from an old one.
+  const genBaselineRef = useRef<string | null>(null);
   useEffect(() => {
     reloadRef.current = portraits.reload;
     onAvatarChangedRef.current = onAvatarChanged;
@@ -77,11 +88,28 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     return () => clearInterval(timer);
   }, [hasPending]);
 
+  // A failed regeneration never changes avatarImageId, so the success-path clear
+  // (the previous-render block above) never fires. Detect the new failed avatar
+  // row and release the spinner so the button doesn't stay stuck on "Working…".
+  useEffect(() => {
+    if (!generatingAvatar) return;
+    const newestAvatar = (portraits.data ?? []).find((img) => img.kind === "avatar");
+    if (newestAvatar && newestAvatar.id !== genBaselineRef.current && newestAvatar.status === "failed") {
+      setGeneratingAvatar(false);
+      toast.push({
+        title: "Avatar generation failed",
+        description: "The image provider returned an error — try again.",
+        tone: "error",
+      });
+    }
+  }, [portraits.data, generatingAvatar, toast]);
+
   const generateAvatar = async () => {
+    genBaselineRef.current = (portraits.data ?? []).find((img) => img.kind === "avatar")?.id ?? null;
     setGeneratingAvatar(true);
     // Stop polling for a stuck/slow job after 2 minutes; the row stays visible.
     setTimeout(() => setGeneratingAvatar(false), 120_000);
-    const result = await charactersApi.generateAvatar(characterId);
+    const result = await charactersApi.generateAvatar(characterId, { model: avatarModel });
     if (result.ok) {
       toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
     } else {
@@ -126,7 +154,18 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     portraits.reload({ silent: true });
   };
 
-  const variants = (portraits.data ?? []).filter((img) => img.id !== avatarImageId);
+  // Exclude the canonical avatar and any failed avatar regeneration — a failed
+  // regen is transient noise, not a variant the user chose to create.
+  const variants = (portraits.data ?? []).filter(
+    (img) => img.id !== avatarImageId && !(img.kind === "avatar" && img.status === "failed"),
+  );
+  const canonical = avatarImageId ? (portraits.data ?? []).find((img) => img.id === avatarImageId) : undefined;
+  // The prompt that produced the canonical avatar — null when there's no avatar
+  // yet or it's a user-uploaded image (uploads carry no generation prompt).
+  const canonicalPrompt =
+    canonical && canonical.status === "ready" && canonical.meta?.source !== "upload" && canonical.prompt.trim()
+      ? canonical.prompt
+      : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -149,6 +188,17 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           <p className="text-sm text-paper-400">
             Generated from this character&apos;s attributes — the registry phrasing is the prompt.
           </p>
+          <Field label="Model" className="w-44">
+            {(id) => (
+              <Select id={id} value={avatarModel} onChange={(e) => setAvatarModel(e.target.value as AvatarImageModel)}>
+                {avatarImageModels.map((m) => (
+                  <option key={m} value={m}>
+                    {avatarModelLabels[m]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
           <div className="flex flex-wrap gap-2">
             <Button variant="primary" onClick={generateAvatar} busy={generatingAvatar}>
               {avatarImageId ? "Regenerate avatar" : "Generate avatar"}
@@ -160,6 +210,18 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           {generatingAvatar ? <p className="text-xs text-paper-500">Working — this can take a minute…</p> : null}
         </div>
       </div>
+
+      {canonicalPrompt ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Avatar prompt</h3>
+            {canonical?.meta?.model ? <Tag>{canonical.meta.model}</Tag> : null}
+          </div>
+          <p className="rounded-card border border-ink-600 bg-ink-950/40 px-3 py-2 text-sm whitespace-pre-wrap text-paper-300">
+            {canonicalPrompt}
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">New variant</h3>

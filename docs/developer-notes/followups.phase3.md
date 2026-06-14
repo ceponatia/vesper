@@ -296,3 +296,70 @@ one); the lone uniquely-named "Breakroom" handled by hand.
 
 Status: **fixed (re-save dedup); rename-residual + client round-trip
 remain a smaller follow-on.**
+
+## 6. Scene images keep a removed top on the character (bare-region phrasing, 2026-06-14)
+
+**Observed (user).** A scene render "suddenly" keeps characters in a
+shirt even after the top was removed in-session and only an undershirt
+remains.
+
+**Investigation.** Not a regression — nothing in the image/wardrobe path
+or the image-model defaults changed since the early commits
+([../images.md](../images.md)). The cause is a design gap: both the scene
+composer prompt and the render prompt **only ever enumerate worn
+garments** (`wardrobeOutfitSummary`), and never assert that a body region
+is *bare*. Image models default every subject to fully clothed, and the
+Venice **edit** path is additionally anchored to the (fully-dressed)
+canonical avatar — so a removed outer layer produces no visible change.
+Two sub-cases: (a) garment fully removed → no "exposed" signal exists at
+all; (b) swapped down to a lesser garment → the edit re-paints the
+heavier reference clothing.
+
+**Verdict.** Make the prompt assert coverage state positively, not just
+list garments.
+
+**Fix applied (2026-06-14).**
+- `exposedRegions` (`contracts/items/visibility.ts`) classifies torso
+  (`chest`), lower body (`pelvis`), legs (`thighs`), feet — `covered` /
+  `sheer` / `bare` — from worn coverage, reusing the same expand rule as
+  `resolveWardrobeVisibility`.
+- `formatExposure` (`server/images/prompts.ts`) turns that into explicit
+  phrasing ("topless, bare chest", "bare below the waist", "bare legs",
+  "barefoot", or a single "fully nude"). Injected into the composer line,
+  the reference block, and textual others. **head/hands omitted** (bare
+  there is the default and would fire on everyone); **feet included by
+  user choice** — and since pants stop at `ankles`, an NPC with no
+  modelled footwear reads barefoot (accepted trade-off; drop `feet` from
+  `formatExposure` to revert).
+- Gated on `wardrobeTracked` (NPC owns ≥1 garment, worn or removed), set
+  in `buildSceneComposerContext` — a world that never modelled clothing
+  reads as *unknown*, never nude.
+- Render prompt now closes with "depict each person in exactly the
+  clothing described … add no garment that is not listed" so the edit
+  model can't restore a shed garment from the reference (sub-case b).
+- Covered by `exposedRegions` / `formatExposure` unit tests and new
+  `buildSceneRenderPrompt` cases.
+
+Not applied to the **avatar** pipeline (it builds from the default outfit,
+not live session state); easy to extend with the same helper if wanted.
+
+**Follow-on (same day) — Venice 1500-char prompt limit.** Clicking
+"generate" in a session ("NM Test") started then stopped with no image
+and no surfaced error. The job recorded `done`; the **image row** was
+`failed` with `venice 400: Prompt exceeds 1500 character limit for model
+'qwen-edit-uncensored'`. `renderSceneImage` catches the 400, marks the row
+failed, and returns — so the session never errors and the UI just stops.
+The prompt was **1592** chars: a four-garment outfit with **untruncated**
+descriptions (§1) dominated it, and the clothing-authority clause above
+tipped an already-borderline prompt (~1480) over. Root issue: the render
+prompt had **no length budget** for Venice's hard 1500 cap (flux
+text-to-image is far roomier). Fix: shortened the authority clause and gave
+`buildSceneRenderPrompt` a budget on the reference-edit path
+(`VENICE_RENDER_PROMPT_LIMIT`) — it progressively excerpts the outfit and
+setting text until the prompt fits, with a word-boundary hard clamp as a
+final net; identity lock, POV rule, pose, and bare-region phrasing are
+never dropped. Text-to-image is left unbudgeted. Covered by two new
+`buildSceneRenderPrompt` tests (rich outfit on the Venice path stays
+≤1500; t2i keeps full detail).
+
+Status: **fixed** (bare-region phrasing + Venice length budget).
