@@ -1803,7 +1803,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   if (!reconcile) {
     if (turn.author === "player") {
       const intent = detectIntent(turn.input, coLocatedNpcs.map((p) => p.displayName), []);
-      for (const name of [intent.lookTarget, intent.touchTarget, intent.smellTarget]) {
+      for (const name of [intent.lookTarget, intent.touchTarget, intent.smellTarget, intent.tasteTarget]) {
         if (!name) continue;
         const target = findParticipant(name, parts);
         if (target && !target.isUser) interacted.add(target.id);

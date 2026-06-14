@@ -34,22 +34,28 @@ describe("messagesFromNarration", () => {
 
 describe("raiseExposureForIntent", () => {
   it("raises only the intent-targeted senses, one-way", () => {
-    const base = defaultExposureMask(); // ambient / none / none
+    const base = defaultExposureMask(); // ambient / none / none / none
     const raised = raiseExposureForIntent(base, { smellTarget: "Maya", touchTarget: "Maya" });
-    expect(raised).toEqual({ appearance: "ambient", scent: "close", touch: "close" });
+    expect(raised).toEqual({ appearance: "ambient", scent: "close", touch: "close", taste: "none" });
   });
 
   it("never lowers an already-intimate mask", () => {
     const raised = raiseExposureForIntent(
-      { appearance: "intimate", scent: "intimate", touch: "intimate" },
+      { appearance: "intimate", scent: "intimate", touch: "intimate", taste: "intimate" },
       { lookTarget: "Maya", smellTarget: "Maya", touchTarget: "Maya" },
     );
-    expect(raised).toEqual({ appearance: "intimate", scent: "intimate", touch: "intimate" });
+    expect(raised).toEqual({ appearance: "intimate", scent: "intimate", touch: "intimate", taste: "intimate" });
   });
 
   it("look raises appearance to close", () => {
     const raised = raiseExposureForIntent(defaultExposureMask(), { lookTarget: "Maya" });
     expect(raised.appearance).toBe("close");
+  });
+
+  it("a taste intent raises both taste and touch (Decision 5: a kiss earns both)", () => {
+    const raised = raiseExposureForIntent(defaultExposureMask(), { tasteTarget: "Maya" });
+    expect(raised.taste).toBe("close");
+    expect(raised.touch).toBe("close");
   });
 });
 

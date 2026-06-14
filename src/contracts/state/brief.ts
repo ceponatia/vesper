@@ -4,12 +4,16 @@ export const exposureMaskSchema = z.object({
   appearance: z.enum(["ambient", "close", "intimate"]).catch("ambient"),
   scent: z.enum(["none", "ambient", "close", "intimate"]).catch("none"),
   touch: z.enum(["none", "close", "intimate"]).catch("none"),
+  // Taste is the most intimate sense — earned only at intimate contact (a kiss,
+  // mouth on skin). `.catch` makes briefs persisted before this axis parse with
+  // taste:"none", so no migration and today's behavior by default.
+  taste: z.enum(["none", "close", "intimate"]).catch("none"),
 });
 
 export type ExposureMask = z.infer<typeof exposureMaskSchema>;
 
 export function defaultExposureMask(): ExposureMask {
-  return { appearance: "ambient", scent: "none", touch: "none" };
+  return { appearance: "ambient", scent: "none", touch: "none", taste: "none" };
 }
 
 export const nextTurnBriefSchema = z.object({

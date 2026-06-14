@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   attributeRegistry,
   bodyLocationRegistry,
+  defaultIntimateRegionsForGender,
+  isIntimateAttributeCategory,
   clothingCategories,
   clothingCategoryById,
   clothingLayerSchema,
@@ -180,7 +182,12 @@ export interface AttributeSection {
 }
 
 function characterAttributeDefinitions(): readonly AttributeDefinition[] {
-  return attributeRegistry.definitions.filter((d) => (d.appliesToEntityKinds ?? ["character"]).includes("character"));
+  // Intimate anatomy is excluded from the forge vocabulary: it's gated per
+  // character by the body-config (seeded from gender below) and authored by hand
+  // in the editor, never auto-generated. The forge handles visible appearance.
+  return attributeRegistry.definitions.filter(
+    (d) => (d.appliesToEntityKinds ?? ["character"]).includes("character") && !isIntimateAttributeCategory(d.category),
+  );
 }
 
 /**
@@ -370,7 +377,12 @@ async function forgeAttributesSection(context: CharacterForgeContext): Promise<C
   const section = value ?? { attributes: [], ranges: [] };
   const grounded = groundAttributeValues(section.attributes, context.sink);
   const ranges = groundAttributeRanges(section.ranges, context.sink);
-  return { profile: { attributes: fillCoreVisualDefaults(grounded, context.prompt, context.sink, ranges) } };
+  const attributes = fillCoreVisualDefaults(grounded, context.prompt, context.sink, ranges);
+  // Seed the body-config from the resolved gender (Decision 1) — overridable in
+  // the editor. Intimate attribute values stay empty; the human authors them.
+  const gender = attributes.find((a) => a.id === "identity.gender")?.value;
+  const intimateRegions = defaultIntimateRegionsForGender(typeof gender === "string" ? gender : undefined);
+  return { profile: { attributes, intimateRegions } };
 }
 
 /** FNV-1a over the seed text — deterministic, dependency-free. */

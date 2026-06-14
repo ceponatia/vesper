@@ -78,6 +78,20 @@ describe("buildAvatarPrompt", () => {
     expect(prompt).not.toContain("Appearance:");
   });
 
+  it("withholds intimate anatomy from the Flux route, includes it on the uncensored route (Decision 3)", () => {
+    const p = profileWith({
+      attributes: [
+        { id: "hair.color", value: "red", source: "base" },
+        { id: "penis.size", value: "average", source: "base" },
+      ],
+    });
+    const flux = buildAvatarPrompt("Mira", p, "realistic"); // default route = Flux
+    expect(flux).toContain("Hair color: red");
+    expect(flux).not.toContain("Penis size");
+    const qwen = buildAvatarPrompt("Mira", p, "realistic", [], true); // uncensored Qwen route
+    expect(qwen).toContain("Penis size");
+  });
+
   it("treats the default outfit as authoritative clothing when provided", () => {
     const prompt = buildAvatarPrompt("Mira", profile, "realistic", [
       { name: "Black abaya", appearance: "flowing black fabric" },

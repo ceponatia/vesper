@@ -91,7 +91,7 @@ describe("demoAgentResults", () => {
       ...emptyBrief(),
       storySoFar: "Two quiet days at the inn.",
       memoryQueries: ["Maya's brother", "the dock", "extra"],
-      exposure: { appearance: "close" as const, scent: "ambient" as const, touch: "none" as const },
+      exposure: { appearance: "close" as const, scent: "ambient" as const, touch: "none" as const, taste: "none" as const },
     };
     const results = demoAgentResults("More tea", { ...opts, priorBrief });
     expect(results.director?.storySoFar).toBe("Two quiet days at the inn.");

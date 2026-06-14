@@ -2,6 +2,8 @@ export * from "./diagnostics";
 export * from "./attributes";
 export * from "./body/locations";
 export * from "./body/plans";
+export * from "./rules/attribute-rule";
+export * from "./species";
 export * from "./meters/registry";
 export * from "./actions/registry";
 export * from "./relationships/stages";

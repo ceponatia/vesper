@@ -85,6 +85,7 @@ export function sceneIntentFromBrief(brief: IntentBrief): SceneIntent {
   if (brief.lookTarget) intent.lookTarget = brief.lookTarget;
   if (brief.touchTarget) intent.touchTarget = brief.touchTarget;
   if (brief.smellTarget) intent.smellTarget = brief.smellTarget;
+  if (brief.tasteTarget) intent.tasteTarget = brief.tasteTarget;
   if (brief.examineItem) intent.examineItem = brief.examineItem;
   if (brief.enterLocation) intent.enterLocation = brief.enterLocation;
   return intent;
@@ -101,6 +102,7 @@ export function intentBriefFromSceneIntent(intent: SceneIntent): IntentBrief {
   if (intent.lookTarget) brief.lookTarget = intent.lookTarget;
   if (intent.touchTarget) brief.touchTarget = intent.touchTarget;
   if (intent.smellTarget) brief.smellTarget = intent.smellTarget;
+  if (intent.tasteTarget) brief.tasteTarget = intent.tasteTarget;
   if (intent.examineItem) brief.examineItem = intent.examineItem;
   if (intent.enterLocation) brief.enterLocation = intent.enterLocation;
   return brief;

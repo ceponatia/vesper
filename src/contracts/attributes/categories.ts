@@ -24,6 +24,14 @@ export const attributeCategories = [
   "hands",
   "legs",
   "feet",
+  // Intimate anatomy — gated per character by the body-config (see
+  // body/locations intimate.ts: INTIMATE_ATTRIBUTE_CATEGORIES). Attributes in
+  // these categories apply only to a character whose body-config switches the
+  // matching region on.
+  "breasts",
+  "vulva",
+  "penis",
+  "testicles",
   "voice",
   "presentation",
   "movement",

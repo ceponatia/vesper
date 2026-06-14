@@ -350,17 +350,19 @@ describe("buildTurnContext", () => {
 
 describe("exposureRules", () => {
   it("renders gating per sense level", () => {
-    const closed: ExposureMask = { appearance: "ambient", scent: "none", touch: "none" };
+    const closed: ExposureMask = { appearance: "ambient", scent: "none", touch: "none", taste: "none" };
     const closedRules = exposureRules(closed).join(" ");
     expect(closedRules).toContain("social distance only");
     expect(closedRules).toContain("no scent detail");
     expect(closedRules).toContain("no contact has occurred");
+    expect(closedRules).toContain("no taste detail");
 
-    const open: ExposureMask = { appearance: "intimate", scent: "close", touch: "intimate" };
+    const open: ExposureMask = { appearance: "intimate", scent: "close", touch: "intimate", taste: "intimate" };
     const openRules = exposureRules(open).join(" ");
     expect(openRules).toContain("intimate visual detail");
     expect(openRules).toContain("person-level scent");
     expect(openRules).toContain("sustained tactile detail");
+    expect(openRules).toContain("sustained taste detail");
   });
 
   it("always includes the hidden-items guard", () => {

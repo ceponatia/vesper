@@ -68,10 +68,18 @@ The source enum is extensible by design: add the value, slot it into the `resolv
 
 ## Body model
 
-`body/locations.ts`: a tree registry of body locations (`id, label, parentId?, side?, coverageRelevant?, promptHints?`). Starter: the humanoid tree with five roots — head (hair, face→eyes, ears), torso (neck, shoulders, chest, back, waist), arms (upper_arms, forearms, wrists, hands→fingers), pelvis (hips, groin, buttocks), legs (thighs, calves, ankles, feet→toes) — at coverage-useful granularity (~27 nodes). The roots double as the coverage editor's column groups. Beware bare parent ids in coverage data: `arms` implies hands and fingers, `torso` implies the neck, `legs` implies feet — garments should use the specific parts (a t-shirt is torso-parts + upper_arms, never `arms`).
+`body/locations/` (region-split: `everyday.ts` · `intimate.ts` · `index.ts`): a tree registry of body locations (`id, label, parentId?, side?, coverageRelevant?, intimateGroup?, promptHints?`). Everyday humanoid tree: five roots — head (hair, face→eyes, ears), torso (neck, shoulders, chest, back, waist), arms (upper_arms, forearms, wrists, hands→fingers), pelvis (hips, groin, buttocks), legs (thighs, calves, ankles, feet→toes) — at coverage-useful granularity (~27 nodes). The roots double as the coverage editor's column groups. Beware bare parent ids in coverage data: `arms` implies hands and fingers, `torso` implies the neck, `legs` implies feet — garments should use the specific parts (a t-shirt is torso-parts + upper_arms, never `arms`).
 `body/plans.ts`: body plans (`humanoid` seeded) = a set of location ids + applicable attribute rules. Characters reference a `bodyPlanId`; non-humanoid plans are future data additions, not refactors.
 
 Wardrobe coverage, exposure, and attribute targeting all reference body-location **ids** — never hardcoded strings elsewhere.
+
+### Intimate anatomy, body-config & the realized body
+
+Explicit anatomy (`intimate.ts`) hangs off the everyday tree under `groin` / `pelvis` / `chest` — vulva (+ labia, clitoris, vestibule, vagina, mons), penis, testicles, anus, breasts (+ nipples). These are `coverageRelevant: false` (a garment over `groin`/`chest` already covers them via `expand`; they aren't garment slots) and each carries an `intimateGroup` (`INTIMATE_REGION_GROUPS = breasts · vulva · penis · testicles · anus`). Their attributes live in `attributes/groups/intimate/` (a fenced subfolder — easy to find and to withhold from moderation-prone routes), in categories `INTIMATE_ATTRIBUTE_CATEGORIES = breasts · vulva · penis · testicles` (anus is a touchable region with no descriptive attributes yet).
+
+Which intimate anatomy a character has is the **body-config**: `CharacterProfile.intimateRegions` (a list of present region groups, e.g. `["vulva","breasts"]`). It is defaulted from `identity.gender` at forge time (`defaultIntimateRegionsForGender`) and fully overridable in the editor — empty `[]` = no intimate anatomy = the engine's pre-existing behavior. No migration: it rides the profile JSONB.
+
+`species/realize.ts` `realizeBody({ bodyPlanId, speciesId, intimateRegions })` is the single gating filter: body plan (superset of locations) → species (`allowedBodyLocationIds` / `disallowedBodyLocationIds` + `forbidden` attribute rules) → body-config (which intimate groups are present). It answers `isLocationPresent(id)`, `hasIntimateRegion(group)`, and `isAttributeApplicable(def)` — consumed by the forge, the attribute editor, the narrator impression block (exposure-gated), and image generation. `species/` ships **`human` only** (scaffolding); a humanoid variant is a pure data add — the allow/disallow + `rules/attribute-rule.ts` seams already work. `appliesToBodyPlans` / `excludesBodyPlans` on attributes (previously inert) are now consumed here.
 
 ### Clothing categories
 
@@ -258,6 +266,7 @@ type ExposureMask = {                          // per-sense narration proximity 
   appearance: "ambient" | "close" | "intimate";
   scent: "none" | "ambient" | "close" | "intimate";
   touch: "none" | "close" | "intimate";
+  taste: "none" | "close" | "intimate";        // most-intimate sense; raised by a taste/kiss/lick intent (also raises touch)
 };
 
 type NextTurnBrief = {
@@ -281,6 +290,7 @@ type SceneGenState = {                        // no subject field: the composer 
 type CharacterProfile = {
   bio: string; personality: string; voice?: string;
   speciesId: string; bodyPlanId: string;      // registry ids ("human", "humanoid" seeded)
+  intimateRegions: string[];                  // body-config: present intimate region groups (default []); see Body model §realized body
   attributes: AttributeValue[];               // base/creation-sourced
   aliases: string[];
   defaultOutfit: string[];                    // item definition ids (owner's library)
@@ -329,7 +339,7 @@ type IntentBrief = {
   actionType: "converse" | "move" | "observe" | "touch" | "manipulate_item"
             | "comms" | "rest" | "social_attempt" | "intimate" | "meta" | "other";  // default "other"
   // regex-SceneIntent mirror — sceneIntentFromBrief(brief) is lossless
-  lookTarget?: string; touchTarget?: string; smellTarget?: string;  // NPC display names
+  lookTarget?: string; touchTarget?: string; smellTarget?: string; tasteTarget?: string;  // NPC display names
   examineItem?: string;                                             // item name
   enterLocation?: string;                                           // location phrase
   addressedNpcs: string[];                                          // NPC display names

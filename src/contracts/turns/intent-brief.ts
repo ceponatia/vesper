@@ -39,6 +39,8 @@ export const intentBriefSchema = z.object({
   lookTarget: z.string().optional(),
   touchTarget: z.string().optional(),
   smellTarget: z.string().optional(),
+  /** NPC display name the player is tasting / kissing / licking (raises taste + touch). */
+  tasteTarget: z.string().optional(),
   examineItem: z.string().optional(),
   enterLocation: z.string().optional(),
   /** NPC display names the player is speaking to / addressing this turn. */

@@ -264,7 +264,12 @@ export function exposureRules(mask: ExposureMask): string[] {
     close: "Touch: incidental contact texture is permitted (a brush of hands, a guiding touch).",
     intimate: "Touch: sustained tactile detail is permitted.",
   }[mask.touch];
-  return [appearance, scent, touch, "Never describe hidden items or senses beyond these levels unless this turn's events change them."];
+  const taste = {
+    none: "Taste: no taste detail this turn.",
+    close: "Taste: a brief taste is permitted (a kiss, lips on skin) — one grounded impression, not a list.",
+    intimate: "Taste: sustained taste detail is permitted, grounded in the Current state hints.",
+  }[mask.taste];
+  return [appearance, scent, touch, taste, "Never describe hidden items or senses beyond these levels unless this turn's events change them."];
 }
 
 function inputHeading(author: TurnAuthor, speakerName?: string, ooc?: boolean): string {

@@ -127,6 +127,10 @@ export function CharacterEditor({
         <AttributePicker
           values={draft.profile.attributes}
           onChange={(attributes) => patchProfile({ attributes })}
+          intimateRegions={draft.profile.intimateRegions ?? []}
+          onChangeIntimateRegions={(intimateRegions) => patchProfile({ intimateRegions })}
+          speciesId={draft.profile.speciesId}
+          bodyPlanId={draft.profile.bodyPlanId}
         />
       ) : null}
 

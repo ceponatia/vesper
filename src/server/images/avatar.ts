@@ -46,7 +46,9 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     "characters.profile",
   );
   const outfit = character ? await loadDefaultOutfit(input.userId, profile.defaultOutfit, input.sink) : [];
-  const prompt = character ? buildAvatarPrompt(character.name, profile, style, outfit) : "";
+  // Decision 3: the uncensored Qwen route may depict intimate anatomy; the
+  // default Flux portrait generator rejects those fields, so they're withheld.
+  const prompt = character ? buildAvatarPrompt(character.name, profile, style, outfit, model === "qwen") : "";
 
   const asset = await createImageAsset({
     ownerId: input.userId,

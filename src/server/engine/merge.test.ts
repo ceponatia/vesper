@@ -177,7 +177,7 @@ function director(overrides: Partial<DirectorResult> = {}): DirectorResult {
     characterNotes: [],
     directives: [],
     memoryQueries: ["tea"],
-    exposure: { appearance: "ambient", scent: "none", touch: "none" },
+    exposure: { appearance: "ambient", scent: "none", touch: "none", taste: "none" },
     threadSignals: { touch: [], develop: [], propose: [], resolve: [] },
     stageMovement: { stage: [], cancel: [] },
     ...overrides,
@@ -1081,7 +1081,7 @@ describe("buildNextBrief", () => {
   it("includes dropped events, threshold hints, and director exposure", () => {
     const brief = buildNextBrief({
       prior,
-      director: director({ exposure: { appearance: "close", scent: "close", touch: "none" }, directives: ["Slow down."] }),
+      director: director({ exposure: { appearance: "close", scent: "close", touch: "none", taste: "none" }, directives: ["Slow down."] }),
       continuity: null,
       episodeSummary: "ep",
       droppedEvents: ["Maya did not actually move to Attic."],

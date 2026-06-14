@@ -370,17 +370,24 @@ async function persistNarration(
 const EXPOSURE_APPEARANCE_ORDER = ["ambient", "close", "intimate"] as const;
 const EXPOSURE_SCENT_ORDER = ["none", "ambient", "close", "intimate"] as const;
 const EXPOSURE_TOUCH_ORDER = ["none", "close", "intimate"] as const;
+const EXPOSURE_TASTE_ORDER = ["none", "close", "intimate"] as const;
 
 function atLeast<T extends string>(order: readonly T[], current: T, floor: T): T {
   return order.indexOf(current) >= order.indexOf(floor) ? current : floor;
 }
 
-/** Intent raises the relevant sense for one turn (docs/prompts.md §Exposure gating). */
+/**
+ * Intent raises the relevant sense for one turn (docs/prompts.md §Exposure gating).
+ * A taste intent (kiss / lick / mouth) raises both taste **and** touch — tasting
+ * a target is also contact (Decision 5: a kiss earns touch + taste at `close`).
+ */
 export function raiseExposureForIntent(mask: ExposureMask, intent: SceneIntent): ExposureMask {
+  const tasting = Boolean(intent.tasteTarget);
   return {
     appearance: intent.lookTarget ? atLeast(EXPOSURE_APPEARANCE_ORDER, mask.appearance, "close") : mask.appearance,
     scent: intent.smellTarget ? atLeast(EXPOSURE_SCENT_ORDER, mask.scent, "close") : mask.scent,
-    touch: intent.touchTarget ? atLeast(EXPOSURE_TOUCH_ORDER, mask.touch, "close") : mask.touch,
+    touch: intent.touchTarget || tasting ? atLeast(EXPOSURE_TOUCH_ORDER, mask.touch, "close") : mask.touch,
+    taste: tasting ? atLeast(EXPOSURE_TASTE_ORDER, mask.taste, "close") : mask.taste,
   };
 }
 
@@ -581,7 +588,12 @@ async function assemblePreTurn(
       : "";
 
   const exposure = raiseExposureForIntent(bundle.brief.exposure, intent);
-  const includeSensory = exposure.appearance !== "ambient" || exposure.scent === "close" || exposure.scent === "intimate";
+  const includeSensory =
+    exposure.appearance !== "ambient" ||
+    exposure.scent === "close" ||
+    exposure.scent === "intimate" ||
+    exposure.taste === "close" ||
+    exposure.taste === "intimate";
 
   const alwaysLore = trimLoreBudget(
     bundle.loreChunks
@@ -678,7 +690,7 @@ async function assemblePreTurn(
     ]
       .filter(Boolean)
       .join("\n\n"),
-    glanceBlock: buildGlanceImpressions(bundle, intent, channels),
+    glanceBlock: buildGlanceImpressions(bundle, intent, channels, exposure),
     awarenessBlock: buildAwarenessBlocks(bundle, promptLocationId, intent, gameTime, body.input),
     darknessLine: darkness.line,
     affordancesBlock: buildAffordancesBlock(bundle, promptLocationId),

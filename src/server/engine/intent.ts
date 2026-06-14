@@ -16,6 +16,8 @@ export interface SceneIntent {
   touchTarget?: string;
   /** Participant display name the player is smelling. */
   smellTarget?: string;
+  /** Participant display name the player is tasting / kissing / licking. */
+  tasteTarget?: string;
   /** In-scope item name the player is examining / handling. */
   examineItem?: string;
   /** Raw location phrase after an enter/move verb (resolver grounds it). */
@@ -30,6 +32,9 @@ const TOUCH_RE =
 
 const SMELL_RE =
   /\b(?:smell(?:s|ed|ing)?|sniff(?:s|ed|ing)?|inhal(?:e|es|ed|ing)|scent of|breath(?:e|es|ed|ing) in|nose (?:against|in|to))\b/;
+
+const TASTE_RE =
+  /\b(?:tast(?:e|es|ed|ing)|lick(?:s|ed|ing)?|kiss(?:es|ed|ing)?|suck(?:s|ed|ing)?|nibble(?:s|d|ing)?|mouth(?:es|ed|ing)? (?:at|on)|tongue(?:s|d|ing)?)\b/;
 
 const EXAMINE_RE =
   /\b(?:examin(?:e|es|ed|ing)|inspect(?:s|ed|ing)?|check(?:s|ed|ing)?|read(?:s|ing)?|open(?:s|ed|ing)?|pick(?:s|ed|ing)? up|look(?:s|ed|ing)? (?:at|inside|into|through))\b/;
@@ -301,6 +306,9 @@ export function detectIntent(input: string, npcNames: string[], itemNames: strin
 
   const smell = targetAfter(lower, SMELL_RE, npcNames);
   if (smell) intent.smellTarget = smell;
+
+  const taste = targetAfter(lower, TASTE_RE, npcNames);
+  if (taste) intent.tasteTarget = taste;
 
   const examine = targetAfter(lower, LOOK_RE, itemNames) ?? targetAfter(lower, EXAMINE_RE, itemNames);
   if (examine) intent.examineItem = examine;

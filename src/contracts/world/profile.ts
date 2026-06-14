@@ -19,6 +19,15 @@ export const characterProfileSchema = z.object({
   voice: z.string().optional(),
   speciesId: z.string().default("human"),
   bodyPlanId: z.string().default(DEFAULT_BODY_PLAN_ID),
+  /**
+   * Body-config: which intimate region groups this character has (e.g.
+   * ["vulva", "breasts"]). The explicit switch above the descriptive attribute
+   * layer (Decision 1a) — the realized-body filter (species/realize.ts) reads it
+   * to gate intimate anatomy and attributes. Default `[]` = no intimate anatomy,
+   * exactly the engine's behavior before this field existed (degraded-safe).
+   * Validated loosely as strings; unknown groups are ignored at realize time.
+   */
+  intimateRegions: z.array(z.string()).default([]),
   attributes: z.array(attributeValueSchema).default([]),
   aliases: z.array(z.string()).default([]),
   /** Item definition ids from the owner's library. */

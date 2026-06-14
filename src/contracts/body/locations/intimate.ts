@@ -1,0 +1,70 @@
+import type { BodyLocation } from "./types";
+
+/**
+ * Intimate region groups — the vocabulary of the per-character **body-config**
+ * (CharacterProfile.intimateRegions). A character "has" an intimate region only
+ * when its group id is listed there; the realized-body filter (species/realize.ts)
+ * reads this to gate both intimate body locations (via BodyLocation.intimateGroup)
+ * and intimate attributes (via INTIMATE_ATTRIBUTE_CATEGORIES). An empty body-config
+ * means no intimate anatomy — exactly the engine's behavior before this existed.
+ */
+export const INTIMATE_REGION_GROUPS = ["breasts", "vulva", "penis", "testicles", "anus"] as const;
+export type IntimateRegionGroup = (typeof INTIMATE_REGION_GROUPS)[number];
+
+export function isIntimateRegionGroup(value: string): value is IntimateRegionGroup {
+  return (INTIMATE_REGION_GROUPS as readonly string[]).includes(value);
+}
+
+/**
+ * Attribute categories that are intimate anatomy (a subset of INTIMATE_REGION_GROUPS —
+ * "anus" is modelled as a touchable region with no descriptive attributes yet).
+ * An attribute in one of these categories is only applicable to a character whose
+ * body-config switches the matching group on. A contracts test asserts every entry
+ * is a real attribute category.
+ */
+export const INTIMATE_ATTRIBUTE_CATEGORIES = ["breasts", "vulva", "penis", "testicles"] as const;
+export type IntimateAttributeCategory = (typeof INTIMATE_ATTRIBUTE_CATEGORIES)[number];
+
+export function isIntimateAttributeCategory(category: string): category is IntimateAttributeCategory {
+  return (INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(category);
+}
+
+/**
+ * The default body-config for a given presented gender (Decision 1: gender sets
+ * a default, always overridable). Androgynous / nonbinary / unspecified seed
+ * empty — the author picks. This is only a creation-time seed; the stored
+ * body-config is authoritative thereafter.
+ */
+export function defaultIntimateRegionsForGender(gender: string | undefined): IntimateRegionGroup[] {
+  if (gender === "female") return ["vulva", "breasts"];
+  if (gender === "male") return ["penis", "testicles"];
+  return []; // androgynous / nonbinary / unspecified — the author chooses
+}
+
+/**
+ * Explicit intimate anatomy, slotted under the everyday `groin` / `pelvis` /
+ * `chest` parents. `coverageRelevant: false` — these are not garment slots; a
+ * bottom covering `groin` (or a bra covering `chest`) already covers them via
+ * `registry.expand`, so they never appear in the wardrobe coverage editor.
+ * Each carries an `intimateGroup` so the realized-body filter can include or
+ * omit the whole sub-tree per character.
+ */
+export const humanoidIntimateLocations: readonly BodyLocation[] = [
+  // Vulva group (external + internal)
+  { id: "mons", label: "mons pubis", parentId: "groin", coverageRelevant: false, intimateGroup: "vulva" },
+  { id: "vulva", label: "vulva", parentId: "groin", coverageRelevant: false, intimateGroup: "vulva" },
+  { id: "labia_majora", label: "labia majora", parentId: "vulva", coverageRelevant: false, intimateGroup: "vulva" },
+  { id: "labia_minora", label: "labia minora", parentId: "vulva", coverageRelevant: false, intimateGroup: "vulva" },
+  { id: "clitoris", label: "clitoris", parentId: "vulva", coverageRelevant: false, intimateGroup: "vulva" },
+  { id: "vestibule", label: "vulvar vestibule", parentId: "vulva", coverageRelevant: false, intimateGroup: "vulva" },
+  { id: "vagina", label: "vagina", parentId: "groin", coverageRelevant: false, intimateGroup: "vulva" },
+  // Penis group
+  { id: "penis", label: "penis", parentId: "groin", coverageRelevant: false, intimateGroup: "penis" },
+  // Testicles group
+  { id: "testicles", label: "testicles", parentId: "groin", coverageRelevant: false, intimateGroup: "testicles" },
+  // Anus (a touchable region; no descriptive attributes yet)
+  { id: "anus", label: "anus", parentId: "pelvis", coverageRelevant: false, intimateGroup: "anus" },
+  // Breasts group
+  { id: "breasts", label: "breasts", parentId: "chest", coverageRelevant: false, intimateGroup: "breasts" },
+  { id: "nipples", label: "nipples", parentId: "breasts", coverageRelevant: false, intimateGroup: "breasts" },
+];

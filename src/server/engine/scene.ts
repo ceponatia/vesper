@@ -25,7 +25,8 @@ import {
 } from "@/contracts/perception";
 import { daylightBand, type GameTime } from "@/lib/clock";
 import type { LinkAccess } from "@/contracts/world/access";
-import type { NextTurnBrief } from "@/contracts/state/brief";
+import { defaultExposureMask, type ExposureMask, type NextTurnBrief } from "@/contracts/state/brief";
+import { INTIMATE_ATTRIBUTE_CATEGORIES } from "@/contracts/body/locations";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
@@ -403,7 +404,7 @@ export function deriveActionSalience(
   presentNpcNames: readonly string[],
 ): Salience {
   if (!hasStealthMarker(input)) return defaultSalience();
-  const target = (intent.touchTarget ?? intent.lookTarget ?? intent.smellTarget ?? "").toLowerCase();
+  const target = (intent.touchTarget ?? intent.tasteTarget ?? intent.lookTarget ?? intent.smellTarget ?? "").toLowerCase();
   const hasConcealmentTarget = presentNpcNames.some((name) => name.toLowerCase() !== target);
   return hasConcealmentTarget ? concealedSalience() : defaultSalience();
 }
@@ -699,6 +700,21 @@ export function buildCanonicalFactsBlock(bundle: SceneBundleInput): string {
   ].join("\n");
 }
 
+/**
+ * Whether an intimate-anatomy attribute may surface this turn, gated by the
+ * exposure mask (body-model spec Decision 3/§B). Non-intimate attributes are
+ * always allowed (unchanged behavior). Intimate descriptive detail needs the
+ * intimate visual tier; per-region scent/taste needs the matching sense earned.
+ */
+function intimateAttrAllowed(def: AttributeDefinition, exposure: ExposureMask): boolean {
+  if (!(INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category)) return true;
+  if (def.kind === "sensory") {
+    if (def.id.endsWith(".scent")) return exposure.scent === "close" || exposure.scent === "intimate";
+    if (def.id.endsWith(".taste")) return exposure.taste === "close" || exposure.taste === "intimate";
+  }
+  return exposure.appearance === "intimate";
+}
+
 function attributePhrase(def: AttributeDefinition, value: unknown): string | null {
   if (typeof value === "boolean") return value ? def.label.toLowerCase() : null;
   if (typeof value === "number") return `${def.label.toLowerCase()}: ${value}${def.unit ? ` ${def.unit}` : ""}`;
@@ -721,6 +737,7 @@ export function buildGlanceImpressions(
   bundle: SceneBundleInput,
   intent: SceneIntent,
   channels?: Map<string, PresenceChannel>,
+  exposure: ExposureMask = defaultExposureMask(),
 ): string {
   const cast = npcs(bundle);
   if (!cast.length) return "";
@@ -769,6 +786,7 @@ export function buildGlanceImpressions(
     for (const value of effective) {
       const def = attributeRegistry.byId(value.id);
       if (!def) continue;
+      if (!intimateAttrAllowed(def, exposure)) continue; // intimate detail only when the exposure mask earns it
       const phrase = attributePhrase(def, value.value);
       if (!phrase) continue;
       phrases.push(phrase);

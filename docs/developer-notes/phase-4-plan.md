@@ -1,8 +1,15 @@
 # Phase 4 plan — the body model (intimate anatomy, sensory, species scaffolding)
 
-Status: **draft — ready to execute** (2026-06-14). The design is settled; the
-build has not started. Flips to **in progress** when the first task lands. This
-is a **standalone** phase with no dependency on phase 5 — the body data it
+Status: **completed** (2026-06-14) — W0–T5 shipped: the gating engine
+(`species/realize.ts` + `rules/attribute-rule.ts` + `species/` registry with
+`human`), region-split body locations with intimate anatomy, the per-character
+body-config (`CharacterProfile.intimateRegions`), intimate attribute groups
+(`attributes/groups/intimate/`), the `taste` exposure axis + kiss/lick intent,
+exposure-gated impression surfacing, the Qwen-include / Flux-exclude image switch,
+and forge seeding + the editor body-config toggles. Gates green via `pnpm verify`
+(lint + typecheck + test + jscpd); no DB migration (all state is JSONB). Leftovers
+and tight-start omissions tracked in [followups.phase4.md](followups.phase4.md).
+This is a **standalone** phase with no dependency on phase 5 — the body data it
 produces is later *consumed* by phase 5's intimacy steering, not the reverse.
 
 **Phase map.** Phase 3 (presence & perception v1) is

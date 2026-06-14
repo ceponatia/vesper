@@ -12,7 +12,7 @@ export const INTAKE_SYSTEM = `You are intake: you read the player's input and th
 
 Produce:
 - actionType: the primary thing the player is doing (converse, move, observe, touch, manipulate_item, comms, rest, social_attempt, intimate, meta, other).
-- lookTarget / touchTarget / smellTarget: the PRESENT character (by listed name) the player looks at / touches / smells, if any.
+- lookTarget / touchTarget / smellTarget / tasteTarget: the PRESENT character (by listed name) the player looks at / touches / smells / tastes (kiss, lick, mouth on skin), if any.
 - examineItem: the listed in-scope item the player examines or handles.
 - enterLocation: the place (by listed location name) the player is trying to go, if they move themselves.
 - addressedNpcs: characters (listed names) the player speaks to or addresses.

@@ -48,8 +48,17 @@ export function toggleCoverage(
   } else {
     for (const descendant of registry.expand(id)) effective.add(descendant);
   }
-  const ordered = registry.all.filter((loc) => effective.has(loc.id)).map((loc) => loc.id);
+  // Coverage is a wardrobe-slot concept: non-coverageRelevant locations (the
+  // intimate sub-tree) are never stored — a garment over `groin`/`chest` already
+  // covers them via `expand` for visibility, and they aren't garment slots.
+  const ordered = registry.all
+    .filter((loc) => (loc.coverageRelevant ?? true) && effective.has(loc.id))
+    .map((loc) => loc.id);
   const known = new Set(ordered);
-  for (const leftover of effective) if (!known.has(leftover)) ordered.push(leftover);
+  // Pass through only ids the registry doesn't know (custom coverage); a
+  // registry id excluded above is non-coverageRelevant and is dropped on purpose.
+  for (const leftover of effective) {
+    if (!known.has(leftover) && !registry.byId(leftover)) ordered.push(leftover);
+  }
   return ordered;
 }
