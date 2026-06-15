@@ -19,6 +19,7 @@ import {
   type CharacterProfile,
   type DiagnosticSink,
   type ItemDefinition,
+  type RealizedBody,
   type SpeciesDefinition,
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
@@ -269,11 +270,16 @@ function normalizeEnumToken(value: string): string {
 /**
  * Ground raw model output against the registry: invalid or unknown values are
  * dropped with a diagnostic, never saved. Survivors carry source "creation".
+ * When a `realizedBody` is supplied, a definite enum value outside the resolved
+ * species' narrowed set is also dropped (e.g. "rounded" ears on an elf) — the
+ * gap is then refilled from the narrowed vocabulary by the species/core-visual
+ * default passes, so the species invariant holds even if the model disobeys.
  */
 export function groundAttributeValues(
   entries: readonly RawAttributeEntry[],
   sink?: DiagnosticSink,
   code = "forge.character.attributes",
+  realizedBody?: RealizedBody,
 ): AttributeValue[] {
   const grounded: AttributeValue[] = [];
   const seen = new Set<string>();
@@ -297,6 +303,18 @@ export function groundAttributeValues(
         }),
       );
       continue;
+    }
+    const def = attributeRegistry.byId(entry.id);
+    if (realizedBody && def?.valueType === "enum" && typeof parsed.value === "string") {
+      const allowed = realizedBody.allowedValuesFor(def);
+      if (allowed && !allowed.includes(parsed.value)) {
+        sink?.push(
+          diag("warn", `${code}.species_disallowed_value`, `dropped "${entry.id}=${parsed.value}": not allowed for the resolved species`, {
+            context: { id: entry.id, value: parsed.value },
+          }),
+        );
+        continue;
+      }
     }
     seen.add(entry.id);
     // parseValue success implies a registered id, which satisfies the pattern.
@@ -364,12 +382,13 @@ const ATTRIBUTES_SYSTEM = [
   "For everything else, omit any attribute the concept gives no basis for — sparse is correct.",
 ].join("\n");
 
-function describeConstraint(def: AttributeDefinition): string {
+function describeConstraint(def: AttributeDefinition, allowedValues?: readonly string[]): string {
+  const allowed = allowedValues ?? def.allowedValues ?? [];
   switch (def.valueType) {
     case "enum":
-      return `one of: ${(def.allowedValues ?? []).join(" | ")}`;
+      return `one of: ${allowed.join(" | ")}`;
     case "enum_list":
-      return `list from: ${(def.allowedValues ?? []).join(" | ")}`;
+      return `list from: ${allowed.join(" | ")}`;
     case "number": {
       const range = def.min !== undefined || def.max !== undefined ? ` ${def.min ?? ""}-${def.max ?? ""}` : "";
       return `number${range}${def.unit ? ` ${def.unit}` : ""}`;
@@ -382,11 +401,19 @@ function describeConstraint(def: AttributeDefinition): string {
 }
 
 function attributesPrompt(context: CharacterForgeContext): string {
+  const realizedBody = realizedBodyForForgeContext(context);
+  let hasSpeciesTrait = false;
   const vocabulary = characterAttributeDefinitions(context)
-    .map(
-      (def) =>
-        `- ${def.id}${def.coreVisual ? " [CORE]" : ""}${def.identityAnchor ? " [ANCHOR]" : ""} (${describeConstraint(def)}): ${def.description}`,
-    )
+    .map((def) => {
+      const allowed = realizedBody?.allowedValuesFor(def);
+      const required = realizedBody?.isAttributeRequired(def) ?? false;
+      if (required) hasSpeciesTrait = true;
+      const speciesDefault = realizedBody?.defaultValueFor(def);
+      const defaultHint =
+        required && typeof speciesDefault === "string" ? ` (species default: ${speciesDefault})` : "";
+      const tags = `${def.coreVisual ? " [CORE]" : ""}${def.identityAnchor ? " [ANCHOR]" : ""}${required ? " [SPECIES]" : ""}`;
+      return `- ${def.id}${tags} (${describeConstraint(def, allowed)})${defaultHint}: ${def.description}`;
+    })
     .join("\n");
   const lines = [
     "Character concept:",
@@ -395,6 +422,12 @@ function attributesPrompt(context: CharacterForgeContext): string {
   const species = speciesForForgeContext(context);
   if (species && species.id !== DEFAULT_SPECIES_ID) {
     lines.push("", `Resolved structural species: ${species.label}. Include its visible feature morphology when the vocabulary lists it.`);
+  }
+  if (hasSpeciesTrait) {
+    lines.push(
+      "",
+      "Attributes marked [SPECIES] are inherent to the resolved species — emit a value within the (narrowed) allowed set shown; if unsure, the species default is used.",
+    );
   }
   const bio = context.draft?.profile.bio;
   if (bio) lines.push("", "Drafted bio:", bio);
@@ -418,9 +451,13 @@ async function forgeAttributesSection(context: CharacterForgeContext): Promise<C
     fallback: context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
   });
   const section = value ?? { attributes: [], ranges: [] };
-  const grounded = groundAttributeValues(section.attributes, context.sink);
+  const realizedBody = realizedBodyForForgeContext(context);
+  const grounded = groundAttributeValues(section.attributes, context.sink, undefined, realizedBody);
   const ranges = groundAttributeRanges(section.ranges, context.sink);
-  const attributes = fillCoreVisualDefaults(grounded, context.prompt, context.sink, ranges);
+  // Species-required defaults first (e.g. elf ears.shape = "pointed") so the
+  // core-visual pass treats them as already present, then the core-visual fill.
+  const seeded = fillSpeciesRequiredDefaults(grounded, realizedBody, context.sink);
+  const attributes = fillCoreVisualDefaults(seeded, context.prompt, context.sink, ranges, realizedBody);
   // Seed the body-config from the resolved gender (Decision 1) — overridable in
   // the editor. Intimate attribute values stay empty; the human authors them.
   const gender = attributes.find((a) => a.id === "identity.gender")?.value;
@@ -436,6 +473,49 @@ function hashSeed(text: string): number {
     hash = Math.imul(hash, 0x01000193);
   }
   return hash >>> 0;
+}
+
+/**
+ * Seed species-required attribute defaults the model left unset. Unlike
+ * fillCoreVisualDefaults this is NOT limited to coreVisual attributes: a
+ * species `required` rule with a `defaultValue` (elf `ears.shape` = "pointed")
+ * guarantees the trait is present on every member of that species. A value the
+ * model already emitted for the id wins — present ids are never overwritten;
+ * the species default only fills the gap. The default is validated against the
+ * registry so a bad data edit surfaces as a diagnostic, not a stored bad value.
+ */
+export function fillSpeciesRequiredDefaults(
+  values: readonly AttributeValue[],
+  realizedBody: RealizedBody | undefined,
+  sink?: DiagnosticSink,
+): AttributeValue[] {
+  const filled = [...values];
+  if (!realizedBody) return filled;
+  const present = new Set(values.map((v) => v.id));
+  const added: string[] = [];
+  for (const def of attributeRegistry.definitions) {
+    if (present.has(def.id) || !realizedBody.isAttributeApplicable(def)) continue;
+    if (!realizedBody.isAttributeRequired(def)) continue;
+    const raw = realizedBody.defaultValueFor(def);
+    if (raw === undefined) continue;
+    const parsed = attributeRegistry.parseValue(def.id, raw);
+    if (!parsed.ok) {
+      sink?.push(
+        diag("warn", "forge.character.attributes.species_default_invalid", `species default for "${def.id}" rejected: ${parsed.issues.join("; ")}`, {
+          context: { id: def.id, value: raw },
+        }),
+      );
+      continue;
+    }
+    filled.push({ id: def.id as AttributeValue["id"], value: parsed.value, source: "creation" });
+    added.push(`${def.id}=${String(parsed.value)}`);
+  }
+  if (added.length > 0) {
+    sink?.push(
+      diag("info", "forge.character.attributes.species_defaults", `seeded species-required defaults: ${added.join(", ")}`),
+    );
+  }
+  return filled;
 }
 
 /**
@@ -455,6 +535,7 @@ export function fillCoreVisualDefaults(
   seedText: string,
   sink?: DiagnosticSink,
   ranges?: ReadonlyMap<string, readonly string[]>,
+  realizedBody?: RealizedBody,
 ): AttributeValue[] {
   const present = new Set(values.map((v) => v.id));
   const filled = [...values];
@@ -463,18 +544,26 @@ export function fillCoreVisualDefaults(
   for (const def of characterAttributeDefinitions()) {
     if (!def.coreVisual || present.has(def.id)) continue;
     if (def.valueType !== "enum" || !def.allowedValues || def.allowedValues.length === 0) continue;
-    const range = ranges?.get(def.id);
+    // Pick within the resolved species' narrowed set when one applies, so a
+    // core-visual default (e.g. orc build.height) can't fall outside the
+    // species' band. Falls back to the definition's own values.
+    const baseAllowed = realizedBody?.allowedValuesFor(def) ?? def.allowedValues;
+    if (baseAllowed.length === 0) continue;
+    // A model range is a soft prior over the definition; intersect it with the
+    // species band so an off-species range member can't be picked.
+    const rawRange = ranges?.get(def.id);
+    const range = rawRange ? rawRange.filter((v) => baseAllowed.includes(v)) : undefined;
     const constrained = range !== undefined && range.length > 0;
-    let pool: readonly string[] = constrained ? range : def.allowedValues;
+    let pool: readonly string[] = constrained ? range : baseAllowed;
     if (!constrained) {
       unconstrained.push(def.id);
-      // No signal at all: pick from the full vocabulary minus members the
-      // registry marks as never-auto-default (e.g. minor apparent ages). A
-      // human or the model can still set those explicitly; we just never seed
-      // one. Fall back to the full pool if exclusion would empty it.
+      // No signal at all: pick from the (species-narrowed) vocabulary minus
+      // members the registry marks as never-auto-default (e.g. minor apparent
+      // ages). A human or the model can still set those explicitly; we just
+      // never seed one. Fall back to the full pool if exclusion would empty it.
       const excl = def.autoDefaultExcludes;
       if (excl && excl.length > 0) {
-        const filtered = def.allowedValues.filter((v) => !excl.includes(v));
+        const filtered = baseAllowed.filter((v) => !excl.includes(v));
         if (filtered.length > 0) pool = filtered;
       }
     }

@@ -1,4 +1,5 @@
 import type { AttributeDefinition } from "../attributes/types";
+import type { AttributeRule } from "../rules/attribute-rule";
 import {
   bodyLocationRegistry,
   isFeatureAttributeCategory,
@@ -32,6 +33,24 @@ export interface RealizedBody {
   hasIntimateRegion(group: string): boolean;
   hasFeature(group: string): boolean;
   isAttributeApplicable(def: AttributeDefinition): boolean;
+  /** The species attribute rule targeting this id, if any. */
+  attributeRuleFor(attributeId: string): AttributeRule | undefined;
+  /** True when the species marks this attribute `required` (always present). */
+  isAttributeRequired(def: AttributeDefinition): boolean;
+  /**
+   * Species-narrowed allowed values for an enum/enum_list attribute: the
+   * definition's `allowedValues` intersected with the rule's `allowedValues`
+   * and minus its `disallowedValues`. Returns the definition's own values
+   * unchanged when no rule narrows them, and `undefined` for non-enum
+   * attributes (which have no `allowedValues`).
+   */
+  allowedValuesFor(def: AttributeDefinition): readonly string[] | undefined;
+  /**
+   * The species-supplied default value for this attribute, if the rule carries
+   * one (e.g. elf `ears.shape` → "pointed"). The consumer decides how to use it
+   * (forge seeding, picker initial value); resolution stays out of this view.
+   */
+  defaultValueFor(def: AttributeDefinition): unknown;
 }
 
 export interface RealizeBodyInput {
@@ -77,9 +96,33 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
     locationIds.add(id);
   }
 
+  // Index the species rules by attribute id. First rule per id wins; a second
+  // rule for the same id is an authoring error (a species registry test asserts
+  // ids are unique), so the map silently keeps the first.
+  const rulesById = new Map<string, AttributeRule>();
+  for (const rule of species?.attributeRules ?? []) {
+    if (!rulesById.has(rule.attributeId)) rulesById.set(rule.attributeId, rule);
+  }
   const forbiddenAttributeIds = new Set(
-    (species?.attributeRules ?? []).filter((r) => r.applicability === "forbidden").map((r) => r.attributeId),
+    [...rulesById.values()].filter((r) => r.applicability === "forbidden").map((r) => r.attributeId),
   );
+
+  const allowedValuesFor = (def: AttributeDefinition): readonly string[] | undefined => {
+    const base = def.allowedValues;
+    if (!base) return base; // non-enum attributes have no value set to narrow
+    const rule = rulesById.get(def.id);
+    if (!rule || (!rule.allowedValues && !rule.disallowedValues)) return base;
+    let out: readonly string[] = base;
+    if (rule.allowedValues) {
+      const allow = new Set(rule.allowedValues.map((v) => String(v)));
+      out = out.filter((v) => allow.has(v));
+    }
+    if (rule.disallowedValues) {
+      const deny = new Set(rule.disallowedValues.map((v) => String(v)));
+      out = out.filter((v) => !deny.has(v));
+    }
+    return out;
+  };
 
   const isAttributeApplicable = (def: AttributeDefinition): boolean => {
     if (!(def.appliesToEntityKinds ?? ["character"]).includes("character")) return false;
@@ -106,5 +149,9 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
     hasIntimateRegion: (group) => intimateRegions.has(group),
     hasFeature: (group) => bodyFeatures.has(group),
     isAttributeApplicable,
+    attributeRuleFor: (attributeId) => rulesById.get(attributeId),
+    isAttributeRequired: (def) => rulesById.get(def.id)?.applicability === "required",
+    allowedValuesFor,
+    defaultValueFor: (def) => rulesById.get(def.id)?.defaultValue,
   };
 }

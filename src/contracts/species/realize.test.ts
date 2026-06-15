@@ -186,3 +186,41 @@ describe("defaultIntimateRegionsForGender", () => {
     expect(defaultIntimateRegionsForGender(undefined)).toEqual([]);
   });
 });
+
+describe("realizeBody — species attribute rules", () => {
+  it("narrows allowed values, supplies a default, and marks required (elf ears)", () => {
+    const body = realizeBody({ speciesId: "elf" });
+    const ears = def("ears.shape");
+    expect(body.isAttributeRequired(ears)).toBe(true);
+    expect(body.allowedValuesFor(ears)).toEqual(["slightly_pointed", "pointed", "long_pointed"]);
+    expect(body.defaultValueFor(ears)).toBe("pointed");
+    expect(body.attributeRuleFor("ears.shape")?.applicability).toBe("required");
+  });
+
+  it("leaves unruled attributes and other species untouched", () => {
+    const elf = realizeBody({ speciesId: "elf" });
+    const hair = def("hair.color"); // elf carries no hair rule
+    expect(elf.allowedValuesFor(hair)).toEqual(hair.allowedValues);
+    expect(elf.defaultValueFor(hair)).toBeUndefined();
+    expect(elf.isAttributeRequired(hair)).toBe(false);
+    expect(elf.attributeRuleFor("hair.color")).toBeUndefined();
+
+    const human = realizeBody({ speciesId: "human" }); // no rules at all
+    expect(human.allowedValuesFor(def("ears.shape"))).toEqual(def("ears.shape").allowedValues);
+    expect(human.isAttributeRequired(def("ears.shape"))).toBe(false);
+    expect(human.defaultValueFor(def("ears.shape"))).toBeUndefined();
+  });
+
+  it("returns undefined narrowing for non-enum attributes", () => {
+    const body = realizeBody({ speciesId: "elf" });
+    expect(body.allowedValuesFor(def("identity.heritage"))).toBeUndefined(); // free text
+  });
+
+  it("distinguishes required from optional rules (orc build)", () => {
+    const body = realizeBody({ speciesId: "orc" });
+    expect(body.isAttributeRequired(def("build.frame"))).toBe(true);
+    expect(body.isAttributeRequired(def("build.height"))).toBe(false); // optional
+    expect(body.allowedValuesFor(def("build.height"))).toEqual(["above_average", "tall", "very_tall", "towering"]);
+    expect(body.defaultValueFor(def("build.height"))).toBe("tall");
+  });
+});

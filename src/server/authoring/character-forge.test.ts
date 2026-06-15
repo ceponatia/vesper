@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { attributeRegistry, DiagnosticCollector, type ItemDefinition } from "@/contracts";
+import { attributeRegistry, DiagnosticCollector, realizeBody, type ItemDefinition } from "@/contracts";
 import { characterDraftSchema } from "./drafts";
 import {
   buildAttributeSectionSchema,
   demoCharacterAttributeSection,
   demoCharacterOutfitSection,
   fillCoreVisualDefaults,
+  fillSpeciesRequiredDefaults,
   forgeCharacter,
   forgeCharacterSection,
   groundAttributeRanges,
@@ -272,6 +273,48 @@ describe("fillCoreVisualDefaults", () => {
     expect(filled.filter((v) => v.id === "hair.color")).toEqual([
       { id: "hair.color", value: "black", source: "creation" },
     ]);
+  });
+
+  it("a core-visual default is picked from the species-narrowed set (orc height)", () => {
+    const orc = realizeBody({ speciesId: "orc" });
+    // build.height is coreVisual + optional with an orc-narrowed band.
+    const filled = fillCoreVisualDefaults([], "an orc dockworker", undefined, undefined, orc);
+    const height = filled.find((v) => v.id === "build.height")?.value;
+    expect(["above_average", "tall", "very_tall", "towering"]).toContain(height);
+  });
+});
+
+describe("fillSpeciesRequiredDefaults", () => {
+  const elf = realizeBody({ speciesId: "elf" });
+
+  it("seeds a species-required attribute the model left unset (elf pointed ears)", () => {
+    const sink = new DiagnosticCollector();
+    const filled = fillSpeciesRequiredDefaults([], elf, sink);
+    expect(filled).toContainEqual({ id: "ears.shape", value: "pointed", source: "creation" });
+    expect(sink.items.find((d) => d.code === "forge.character.attributes.species_defaults")?.severity).toBe("info");
+  });
+
+  it("never overwrites a value the model already emitted", () => {
+    const present = groundAttributeValues([{ id: "ears.shape", value: "long_pointed" }]);
+    const filled = fillSpeciesRequiredDefaults(present, elf);
+    expect(filled.filter((v) => v.id === "ears.shape")).toEqual([
+      { id: "ears.shape", value: "long_pointed", source: "creation" },
+    ]);
+  });
+
+  it("is a no-op without a realized body (default species has no rules)", () => {
+    expect(fillSpeciesRequiredDefaults([], undefined)).toEqual([]);
+    expect(fillSpeciesRequiredDefaults([], realizeBody({ speciesId: "human" }))).toEqual([]);
+  });
+
+  it("drops an off-species enum value at grounding so the default refills it", () => {
+    const sink = new DiagnosticCollector();
+    // "rounded" is a valid ears.shape but not allowed for an elf.
+    const grounded = groundAttributeValues([{ id: "ears.shape", value: "rounded" }], sink, undefined, elf);
+    expect(grounded.find((v) => v.id === "ears.shape")).toBeUndefined();
+    expect(sink.items.find((d) => d.code === "forge.character.attributes.species_disallowed_value")?.severity).toBe("warn");
+    const refilled = fillSpeciesRequiredDefaults(grounded, elf);
+    expect(refilled).toContainEqual({ id: "ears.shape", value: "pointed", source: "creation" });
   });
 });
 
