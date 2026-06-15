@@ -1,9 +1,12 @@
 import { z } from "zod";
 
 /**
- * Closed list of attribute categories. Extending the vocabulary starts here:
- * add the category, create its group file under ./groups/, register the group
- * in ./groups/index.ts. See docs/contracts.md.
+ * Closed list of attribute category ids — the `<category>.<name>` id prefix and
+ * the taxonomy key. Each id maps to one file under ./categories/ that defines
+ * the category's attributes (its definition bundle, built by
+ * `defineAttributeGroup`). Extending the vocabulary starts here: add the
+ * category id, create its file under ./categories/, register it in
+ * ./categories/index.ts. See docs/contracts.md.
  */
 export const attributeCategories = [
   "identity",

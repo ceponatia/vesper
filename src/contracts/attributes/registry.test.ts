@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { attributeCategories } from "./categories";
-import { attributeGroups } from "./groups";
+import { attributeCategories } from "./category-ids";
+import { attributeGroups } from "./categories";
 import { buildRegistry } from "./registry";
 import { attributeDefinitionSchema, defineAttributeGroup } from "./types";
 import { bodyLocationRegistry } from "../body/locations";

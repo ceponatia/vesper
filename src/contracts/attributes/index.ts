@@ -1,10 +1,10 @@
 import { buildRegistry } from "./registry";
-import { attributeGroups } from "./groups";
+import { attributeGroups } from "./categories";
 
-export * from "./categories";
+export * from "./category-ids";
 export * from "./types";
 export * from "./registry";
 export * from "./value";
-export { attributeGroups } from "./groups";
+export { attributeGroups } from "./categories";
 
 export const attributeRegistry = buildRegistry(attributeGroups);

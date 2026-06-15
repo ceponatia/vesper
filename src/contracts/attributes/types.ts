@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { attributeCategories, attributeCategorySchema, type AttributeCategory } from "./categories";
+import { attributeCategories, attributeCategorySchema, type AttributeCategory } from "./category-ids";
 
 export const attributeKinds = ["physical", "biological", "presentation", "cultural", "condition", "sensory"] as const;
 export const attributeKindSchema = z.enum(attributeKinds);
@@ -82,7 +82,13 @@ export const attributeDefinitionSchema = z.object({
 
 export type AttributeDefinition = z.infer<typeof attributeDefinitionSchema>;
 
-/** One attribute group per category; the group owns its definitions. */
+/**
+ * The definition bundle for one attribute category — one file under
+ * `./categories/` per category, built by `defineAttributeGroup`. "Group" here
+ * means *this bundle of definitions*, NOT a body section: anatomical sections
+ * (head, torso, pelvis …) are body **locations** (`contracts/body/locations`),
+ * which attributes link into via `bodyLocationId`.
+ */
 export interface AttributeGroup {
   category: AttributeCategory;
   definitions: readonly AttributeDefinition[];

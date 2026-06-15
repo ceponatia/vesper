@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { realizeBody } from "./realize";
 import { attributeRegistry } from "../attributes";
-import { attributeCategories } from "../attributes/categories";
+import { attributeCategories } from "../attributes/category-ids";
 import {
   defaultIntimateRegionsForGender,
   FEATURE_ATTRIBUTE_CATEGORIES,

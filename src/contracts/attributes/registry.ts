@@ -1,5 +1,5 @@
 import { z, type ZodType } from "zod";
-import type { AttributeCategory } from "./categories";
+import type { AttributeCategory } from "./category-ids";
 import type { AttributeDefinition, AttributeGroup } from "./types";
 
 export interface AttributeParseFailure {
