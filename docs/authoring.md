@@ -6,7 +6,7 @@
 
 `POST /api/characters/forge` with a prose prompt ("a weary harbor-master in her forties, dry humor, bad knee…"):
 
-Before the parallel sections run, the forge deterministically matches species ids/labels/aliases from the prompt against `speciesCatalog` (exact token/phrase match: `succubus`, `succubi`; no fuzzy substrings). A match seeds structural profile fields (`speciesId`, `bodyPlanId`, and species-default `bodyFeatures`) for every section; no match keeps the normal human default.
+Before the parallel sections run, the forge deterministically matches species ids/labels/aliases from the prompt against `speciesCatalog` (exact token/phrase first, then conservative edit-distance matching for longer single-token terms). A match seeds structural profile fields (`speciesId`, `bodyPlanId`, and species-default `bodyFeatures`) for every section; no match keeps the normal human default.
 
 1. **Profile agent** (`generateChecked`): bio, personality, voice notes, tags, suggested display name.
 2. **Attribute agent**: emits `AttributeValue[]` against the **registry** — the schema enumerates allowed ids/values, so output is validated vocabulary, not free text. The forge vocabulary excludes intimate anatomy, and includes additive feature morphology only when the prompt or current draft resolves a feature-bearing species/body-config. Three-tier fill for attributes flagged `coreVisual` in the registry (hair/eye color, skin tone, height, frame, apparent age), which are always filled:

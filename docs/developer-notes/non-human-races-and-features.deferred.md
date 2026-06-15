@@ -3,11 +3,12 @@
 Status: **draft / brainstorm, partially implemented 2026-06-15**. The first
 succubus slice landed: `featureGroup`, `bodyFeatures`, feature locations
 (`wings`/`horns`/`tail`), starter morphology attributes, the `succubus` species
-record, editor species/feature controls, contract tests, and contract/authoring
-docs. The character forge now deterministically infers registry species names
-from prompt text (`succubus`/`succubi`), seeds species-default body features, and
-unlocks realized feature morphology attributes. Remaining work: image prompting,
-faerie, richer species rules, and wardrobe accommodation.
+record, `faerie`/`elf`/`dwarf`/`gnome`/`orc`/`goblin` registry records, editor
+species/feature controls, contract tests, and contract/authoring docs. The
+character forge now deterministically infers registry species from prompt text
+with exact aliases plus conservative fuzzy fallback, seeds species-default body
+features, and unlocks realized feature morphology attributes. Remaining work:
+image prompting, richer species rules, and wardrobe accommodation.
 
 Forward-looking design for the body-model work **deferred out of
 [phase 4](phase-4-plan.md)** — that phase built the species *scaffolding* (the
@@ -80,12 +81,14 @@ Phase 4 left us standing on almost everything we need:
 - **`back` already exists.** `everyday.ts` has `{ id: "back", parentId: "torso" }`
   (it's a wardrobe-coverage slot today). Wings parent straight to it — _no new
   `back` element is required_ (the brief assumed one was missing; it isn't).
-- **Species scaffolding is live.** `SpeciesDefinition` (id, label, bodyPlanId,
-  allow/disallow location lists, `attributeRules`) + the `rules/attribute-rule.ts`
+- **Species scaffolding is live.** `SpeciesDefinition` (id, label, aliases,
+  bodyPlanId, allow/disallow location lists, `attributeRules`) + the
+  `rules/attribute-rule.ts`
   primitive (`required | optional | forbidden` + default/allowed/disallowed) are
-  built and consumed by realize. The first non-human data record is now
-  `succubus`; additional humanoid species should stay data-only once their needed
-  feature vocabulary exists.
+  built and consumed by realize. The first non-human data records now include
+  `succubus`, `faerie`, `elf`, `dwarf`, `gnome`, `orc`, and `goblin`; additional
+  humanoid species should stay data-only once their needed feature vocabulary
+  exists.
 - **aionchat reserves the vocabulary.** aionchat's attribute-category enum already
   lists `horns`, `tail`, `wings` (and `claws`, `scales`, `fur`, `feathers`) — but
   ships **no** body locations or attribute groups for them. They're reserved
@@ -246,16 +249,20 @@ for v1; see Coordination.)
 ## The first real non-human species records
 
 This is where we deliberately cross phase 4's "human only" line — that's the
-payoff the scaffolding was built for. The first slice ships `succubus`; `faerie`
-is the next obvious data record once we want a second feature-bearing species:
+payoff the scaffolding was built for. The first slice ships two feature-bearing
+humanoid species plus baseline records for common fantasy humanoids:
 
 - **`faerie`** — `bodyPlanId: "humanoid"`, `defaultFeatureGroups: ["wings"]`
-  (gossamer/insectoid), plus an `attributeRule` requiring `ears.shape: pointed`
-  and optional petite-frame leanings. `species_presentation` free text carries the
-  visual flavor (Decision 8 keeps structural id and flavor text separate).
+  (gossamer/insectoid by authoring convention). Richer trait rules like pointed
+  ears or petite-frame leanings remain deferred; `species_presentation` free text
+  carries the visual flavor (Decision 8 keeps structural id and flavor text
+  separate).
 - **`succubus`** — `bodyPlanId: "humanoid"`,
   `defaultFeatureGroups: ["wings","horns","tail"]` (bat-like wings, horns, spaded
   tail), optional rules nudging horn/tail/wing styling.
+- **`elf` / `dwarf` / `gnome` / `orc` / `goblin`** — baseline humanoid species
+  records for structural selection and forge inference. Specific traits remain
+  authored through ordinary attributes until species rules are expanded.
 
 **Honest scoping note.** Phase 4's success test was "adding a second _humanoid_
 species should be a single data file, zero engine changes." That holds for an
@@ -323,12 +330,14 @@ question raised under the `tail` location above; solving it means either excludi
 - **A "Body features" toggle section** in the attribute picker, parallel to the
   existing `BodyConfigSection` — toggles wings/horns/tail, unlocking the
   `morphology/` attribute groups exactly as intimate toggles unlock `intimate/`.
-- **Forge.** The character forge infers registry species from exact prompt
-  names/aliases ("a succubus bartender", "one of the succubi"), sets `speciesId`,
-  seeds `bodyFeatures`, and gives the attribute agent only the feature
-  attributes realized by that species/body-config. This is deliberately
-  registry-based, not fuzzy LLM classification; broader fantasy taxonomy can
-  add aliases/species records as data.
+- **Forge.** The character forge infers registry species from prompt names and
+  aliases ("a succubus bartender", "one of the succubi", "an elven ranger") with
+  exact matching first and conservative fuzzy token matching for longer terms
+  ("sucubus", "gobln"). It sets `speciesId`, seeds `bodyFeatures`, and gives the
+  attribute agent only the feature attributes realized by that
+  species/body-config. This remains registry-based, not open-ended LLM
+  classification; broader fantasy taxonomy can add aliases/species records as
+  data.
 
 ---
 
@@ -379,16 +388,18 @@ Dependency-forced, mirroring phase 4's shape:
 2. **F1 — the three locations + `morphology/` attribute groups (landed
    2026-06-15).** wings→back, horns→head, tail→pelvis, all
    `coverageRelevant: false`; the descriptive attributes bound to each.
-3. **F2 — first species records (partially landed 2026-06-15).** `succubus`
-   ships with `defaultFeatureGroups`; `faerie` and richer attribute nudges remain
+3. **F2 — first species records (partially landed 2026-06-15).** `succubus` and
+   `faerie` ship with `defaultFeatureGroups`; `elf`, `dwarf`, `gnome`, `orc`,
+   and `goblin` ship as baseline humanoid species. Richer attribute nudges remain
    deferred.
 4. **F3 — image generation (deferred; the real cost).** `visibleFeatureAppearance`, injected
    into the base appearance prompt on **all** routes; the waist-up/tail belowWaist
    check.
-5. **F4 — forge + editor (landed for succubus 2026-06-15).** Species picker,
-   "Body features" toggles, deterministic character-forge species inference,
-   species-default feature seeding, and species-aware feature attribute vocabulary
-   ship. Broader taxonomy and non-exact species classification remain deferred.
+5. **F4 — forge + editor (landed for first humanoid species 2026-06-15).**
+   Species picker, "Body features" toggles, deterministic character-forge species
+   inference with aliases/fuzzy fallback, species-default feature seeding, and
+   species-aware feature attribute vocabulary ship. Open-ended species
+   classification remains deferred.
 6. **F5 — tests + docs (partially landed 2026-06-15).** `docs/contracts.md`,
    `docs/authoring.md`, and registry invariants ship; `docs/images.md` belongs
    with F3 when visible feature prompting lands.

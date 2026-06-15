@@ -98,6 +98,28 @@ describe("realizeBody — anatomy gating", () => {
     expect(body.isAttributeApplicable(def("tail.type"))).toBe(true);
   });
 
+  it("faerie species defaults activate wings only", () => {
+    const body = realizeBody({ speciesId: "faerie" });
+    expect([...body.bodyFeatures]).toEqual(["wings"]);
+    expect(body.isLocationPresent("wings")).toBe(true);
+    expect(body.isLocationPresent("horns")).toBe(false);
+    expect(body.isLocationPresent("tail")).toBe(false);
+    expect(body.isAttributeApplicable(def("wings.type"))).toBe(true);
+    expect(body.isAttributeApplicable(def("horns.shape"))).toBe(false);
+    expect(body.isAttributeApplicable(def("tail.type"))).toBe(false);
+  });
+
+  it("non-feature fantasy species stay baseline humanoid until traits are authored", () => {
+    for (const speciesId of ["elf", "dwarf", "gnome", "orc", "goblin"]) {
+      const body = realizeBody({ speciesId });
+      expect([...body.bodyFeatures], speciesId).toEqual([]);
+      expect(body.isLocationPresent("head"), speciesId).toBe(true);
+      expect(body.isLocationPresent("wings"), speciesId).toBe(false);
+      expect(body.isLocationPresent("horns"), speciesId).toBe(false);
+      expect(body.isLocationPresent("tail"), speciesId).toBe(false);
+    }
+  });
+
   it("explicit bodyFeatures override the species defaults", () => {
     const wingless = realizeBody({ speciesId: "succubus", bodyFeatures: ["horns"] });
     expect(wingless.hasFeature("horns")).toBe(true);

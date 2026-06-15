@@ -56,6 +56,18 @@ describe("registry-derived attribute section schema", () => {
     expect(schema.safeParse({ ranges: [{ id: "horns.shape", plausible: ["swept_back"] }] }).success).toBe(true);
   });
 
+  it("uses inferred species defaults for faerie feature vocabulary", () => {
+    const schema = buildAttributeSectionSchema({ prompt: "a fairy archivist", userId: "user_1" });
+    expect(schema.safeParse({ attributes: [{ id: "wings.type", value: "gossamer" }] }).success).toBe(true);
+    expect(schema.safeParse({ attributes: [{ id: "tail.type", value: "spaded" }] }).success).toBe(false);
+  });
+
+  it("keeps non-feature fantasy species from unlocking feature morphology", () => {
+    const schema = buildAttributeSectionSchema({ prompt: "an elven ranger", userId: "user_1" });
+    expect(schema.safeParse({ attributes: [{ id: "ears.shape", value: "pointed" }] }).success).toBe(true);
+    expect(schema.safeParse({ attributes: [{ id: "wings.type", value: "gossamer" }] }).success).toBe(false);
+  });
+
   it("uses draft body-feature overrides when regenerating attributes", () => {
     const draft = characterDraftSchema.parse({ profile: { speciesId: "succubus", bodyFeatures: ["horns"] } });
     const schema = buildAttributeSectionSchema({ prompt: "a succubus bartender", userId: "user_1", draft });
@@ -437,6 +449,16 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     expect(draft.profile.speciesId).toBe("succubus");
     expect(draft.profile.bodyPlanId).toBe("humanoid");
     expect(draft.profile.bodyFeatures?.sort()).toEqual(["horns", "tail", "wings"]);
+  });
+
+  it("seeds new fantasy species from aliases and fuzzy prompt names", async () => {
+    const faerie = await forgeCharacter({ prompt: "a fairy archivist", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(faerie.profile.speciesId).toBe("faerie");
+    expect(faerie.profile.bodyFeatures).toEqual(["wings"]);
+
+    const goblin = await forgeCharacter({ prompt: "a gobln lookout", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(goblin.profile.speciesId).toBe("goblin");
+    expect(goblin.profile.bodyFeatures).toBeUndefined();
   });
 
   it("demo attribute fallback never emits diagnostics through grounding", () => {

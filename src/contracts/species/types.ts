@@ -12,7 +12,7 @@ import { attributeRuleSchema } from "../rules/attribute-rule";
 export const speciesDefinitionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
-  /** Extra exact-match names used by deterministic forge inference. */
+  /** Extra names used by deterministic forge inference before fuzzy fallback. */
   aliases: z.array(z.string().min(1)).readonly().optional(),
   bodyPlanId: z.string().min(1),
   description: z.string().default(""),
