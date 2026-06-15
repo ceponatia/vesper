@@ -15,7 +15,7 @@ Next.js App Router pages + React 19 + Tailwind 4. Aesthetic: quiet dark "reading
 /characters/:id          Editor: profile · attributes (registry picker) · outfit · portrait studio
 /locations, /locations/:id   Lean library + editor (Details · Image tabs)
 /items, /items/:id           Lean library + editor (Details · Image tabs)
-/gallery                 Scene-image gallery: all generated scenes across still-existing sessions, grouped by session, filterable by world/character (components/gallery/gallery-page.tsx)
+/gallery                 Scene-image gallery: all generated scenes across still-existing sessions, grouped by session, filterable by world/character; each scene deletable from the grid (hover ✕ → confirm dialog → clean delete from db + session) (components/gallery/gallery-page.tsx)
 /sessions/new            Wizard: world → embodiment (play a character / observer) → title
 /sessions/:id            The play screen
 ```

@@ -5,12 +5,15 @@ import Link from "next/link";
 import { galleryApi, type SceneImage } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Select } from "@/components/ui/select";
 import { SkeletonCards } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/toast";
 
 interface Facet {
   id: string;
@@ -51,11 +54,30 @@ function uniqueFacets(pairs: Facet[]): Facet[] {
  */
 export function GalleryPage() {
   const gallery = useAsyncData(() => galleryApi.list(), []);
+  const toast = useToast();
   const [worldFilter, setWorldFilter] = useState("");
   const [characterFilter, setCharacterFilter] = useState("");
   const [enlarged, setEnlarged] = useState<{ id: string; caption: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SceneImage | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const scenes = gallery.data ?? [];
+
+  /** Hard-delete a scene: removes it from the gallery and its session at once. */
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    const result = await galleryApi.remove(pendingDelete.id);
+    setDeleting(false);
+    if (!result.ok) {
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    if (enlarged?.id === pendingDelete.id) setEnlarged(null);
+    setPendingDelete(null);
+    toast.push({ title: "Scene deleted", tone: "success" });
+    gallery.reload({ silent: true });
+  };
 
   // Facets from the full set so the dropdowns stay stable while filtering.
   const worldFacets = uniqueFacets(
@@ -167,15 +189,25 @@ export function GalleryPage() {
                   const date = shortDate(scene.createdAt);
                   const meta = [names.join(", "), group.worldName, group.title, date].filter(Boolean).join(" · ");
                   return (
-                    <figure key={scene.id} className="flex flex-col gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setEnlarged({ id: scene.id, caption: scene.prompt ? `${meta} — ${scene.prompt}` : meta })}
-                        aria-label="Enlarge scene image"
-                        className="block cursor-pointer overflow-hidden rounded-card border border-ink-600 transition-colors hover:border-accent-500/60"
-                      >
-                        <EntityImage imageId={scene.id} name={names[0] ?? group.title} className="aspect-[3/4] w-full" />
-                      </button>
+                    <figure key={scene.id} className="group flex flex-col gap-1.5">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setEnlarged({ id: scene.id, caption: scene.prompt ? `${meta} — ${scene.prompt}` : meta })}
+                          aria-label="Enlarge scene image"
+                          className="block w-full cursor-pointer overflow-hidden rounded-card border border-ink-600 transition-colors hover:border-accent-500/60"
+                        >
+                          <EntityImage imageId={scene.id} name={names[0] ?? group.title} className="aspect-[3/4] w-full" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(scene)}
+                          aria-label="Delete scene image"
+                          className="absolute top-1.5 right-1.5 flex size-7 cursor-pointer items-center justify-center rounded-md border border-ink-600 bg-ink-900/80 text-paper-300 opacity-0 backdrop-blur-sm transition-opacity hover:border-danger-500 hover:text-danger-300 group-focus-within:opacity-100 group-hover:opacity-100"
+                        >
+                          ✕
+                        </button>
+                      </div>
                       <figcaption className="flex items-baseline justify-between gap-2 px-0.5 text-[11px] text-paper-500">
                         <span className="truncate text-paper-400">{names.join(", ") || "Scene"}</span>
                         {date ? <span className="shrink-0">{date}</span> : null}
@@ -195,6 +227,26 @@ export function GalleryPage() {
         caption={enlarged?.caption ?? null}
         onClose={() => setEnlarged(null)}
       />
+
+      <Dialog
+        open={pendingDelete !== null}
+        onClose={() => {
+          if (!deleting) setPendingDelete(null);
+        }}
+        title="Delete this scene image?"
+        footer={
+          <>
+            <Button onClick={() => setPendingDelete(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="danger" busy={deleting} onClick={confirmDelete}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        This permanently removes the image from your gallery and the session it belongs to. It can&rsquo;t be undone.
+      </Dialog>
     </PageContainer>
   );
 }

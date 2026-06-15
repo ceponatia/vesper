@@ -86,6 +86,7 @@ GET                /api/sessions/:id/turns/:turnId/inspect     Turn Inspector: a
 ```
 GET                /api/gallery                owner's ready scene images across still-existing sessions
                                                (scenes[]: id, session, world, references[], prompt, createdAt)
+DELETE             /api/gallery/:id            hard-delete one owned scene image (row + file); 404 if not owned / not a scene
 GET                /api/images/:id/file        serve from data/ (ready rows only; immutable cache headers)
 GET                /api/dev/me                 { user, users } — resolved identity + everyone switchable
 POST               /api/dev/switch-user        { userId } → sets the dev cookie

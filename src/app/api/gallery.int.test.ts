@@ -19,6 +19,7 @@ vi.mock("@/server/auth", () => ({
 }));
 
 import { GET as galleryRoute } from "./gallery/route";
+import { DELETE as galleryDelete } from "./gallery/[id]/route";
 import { resolveSceneCharacterRefs } from "@/server/images";
 
 async function probe(): Promise<boolean> {
@@ -192,5 +193,75 @@ describe("resolveSceneCharacterRefs", () => {
   it("returns [] for no names", async (t) => {
     if (!ready) return t.skip();
     expect(await resolveSceneCharacterRefs(ids.sessionNew, [])).toEqual([]);
+  });
+});
+
+describe("DELETE /api/gallery/:id", () => {
+  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+  const exists = async (id: string) =>
+    (await db().select({ id: images.id }).from(images).where(eq(images.id, id))).length === 1;
+
+  it("hard-deletes an owned scene image", async (t) => {
+    if (!ready) return t.skip();
+    const [row] = await db()
+      .insert(images)
+      .values({
+        ownerId: authState.user.id,
+        kind: "scene",
+        status: "ready",
+        sessionId: ids.sessionNew,
+        path: `images/${authState.user.id}/del.webp`,
+        prompt: "",
+        meta: {},
+      })
+      .returning();
+    if (!row) throw new Error("failed to seed scene to delete");
+
+    const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
+    expect(res.status).toBe(200);
+    expect(await exists(row.id)).toBe(false);
+  });
+
+  it("404s and preserves a scene owned by someone else", async (t) => {
+    if (!ready) return t.skip();
+    const [row] = await db()
+      .insert(images)
+      .values({
+        ownerId: ids.otherUser,
+        kind: "scene",
+        status: "ready",
+        sessionId: ids.sessionNew,
+        path: `images/${ids.otherUser}/del.webp`,
+        prompt: "",
+        meta: {},
+      })
+      .returning();
+    if (!row) throw new Error("failed to seed other-owner scene");
+
+    const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
+    expect(res.status).toBe(404);
+    expect(await exists(row.id)).toBe(true);
+  });
+
+  it("404s and preserves a non-scene asset (kind guard)", async (t) => {
+    if (!ready) return t.skip();
+    const [row] = await db()
+      .insert(images)
+      .values({
+        ownerId: authState.user.id,
+        kind: "avatar",
+        status: "ready",
+        entityKind: "character",
+        entityId: ids.character,
+        path: `images/${authState.user.id}/avatar-del.webp`,
+        prompt: "",
+        meta: {},
+      })
+      .returning();
+    if (!row) throw new Error("failed to seed avatar");
+
+    const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
+    expect(res.status).toBe(404);
+    expect(await exists(row.id)).toBe(true);
   });
 });

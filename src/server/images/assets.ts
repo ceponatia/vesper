@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, images } from "../db";
 import { newId } from "@/lib/ids";
@@ -125,6 +125,28 @@ export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: Di
     sink?.push(diag("error", "images.save_failed", message.slice(0, 300), { context: { imageId } }));
     return failImage(imageId, message);
   }
+}
+
+/**
+ * Hard-delete one owned image — the row first, then its file best-effort
+ * (image_sweep reconciles a straggler). Owner-scoped, with an optional `kind`
+ * guard so a route can't delete the wrong class of asset through it. Returns
+ * false when no matching row exists (already gone, not owned, wrong kind). The
+ * single-asset counterpart to the bulk deleteSessionImages/deleteEntityImages.
+ */
+export async function deleteOwnedImage(
+  imageId: string,
+  ownerId: string,
+  opts: { kind?: ImageKind } = {},
+): Promise<boolean> {
+  const where = opts.kind
+    ? and(eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.kind, opts.kind))
+    : and(eq(images.id, imageId), eq(images.ownerId, ownerId));
+  const [row] = await db().select({ path: images.path }).from(images).where(where).limit(1);
+  if (!row) return false;
+  await db().delete(images).where(eq(images.id, imageId));
+  await fs.unlink(absoluteImagePath(row)).catch(() => undefined); // sweep reconciles stragglers
+  return true;
 }
 
 export async function failImage(imageId: string, error: string): Promise<ImageRow | null> {

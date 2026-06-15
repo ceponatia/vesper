@@ -675,6 +675,8 @@ export const worldsApi = {
 export const galleryApi = {
   /** All ready scene images across the user's still-existing sessions. */
   list: () => apiGet(listOf(sceneImageSchema, "scenes"), "/api/gallery"),
+  /** Permanently delete one scene image (row + file; drops from every gallery). */
+  remove: (id: string) => apiDelete(`/api/gallery/${id}`),
 };
 
 export const sessionsApi = {
