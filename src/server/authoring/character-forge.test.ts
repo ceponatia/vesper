@@ -49,6 +49,19 @@ describe("registry-derived attribute section schema", () => {
     expect(schema.safeParse({ attributes: [{ id: "wings.type", value: "membranous" }] }).success).toBe(false);
     expect(schema.safeParse({ ranges: [{ id: "horns.shape", plausible: ["swept_back"] }] }).success).toBe(false);
   });
+
+  it("includes additive feature morphology when the prompt resolves a feature-bearing species", () => {
+    const schema = buildAttributeSectionSchema({ prompt: "a succubus bartender", userId: "user_1" });
+    expect(schema.safeParse({ attributes: [{ id: "wings.type", value: "membranous" }] }).success).toBe(true);
+    expect(schema.safeParse({ ranges: [{ id: "horns.shape", plausible: ["swept_back"] }] }).success).toBe(true);
+  });
+
+  it("uses draft body-feature overrides when regenerating attributes", () => {
+    const draft = characterDraftSchema.parse({ profile: { speciesId: "succubus", bodyFeatures: ["horns"] } });
+    const schema = buildAttributeSectionSchema({ prompt: "a succubus bartender", userId: "user_1", draft });
+    expect(schema.safeParse({ attributes: [{ id: "horns.shape", value: "swept_back" }] }).success).toBe(true);
+    expect(schema.safeParse({ attributes: [{ id: "wings.type", value: "membranous" }] }).success).toBe(false);
+  });
 });
 
 describe("groundAttributeValues", () => {
@@ -419,6 +432,13 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     expect(draft.suggestedItems.every((i) => i.tags.includes("suggested"))).toBe(true);
   });
 
+  it("seeds structural species fields from a prompt species name", async () => {
+    const draft = await forgeCharacter({ prompt: "a succubus bartender", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(draft.profile.speciesId).toBe("succubus");
+    expect(draft.profile.bodyPlanId).toBe("humanoid");
+    expect(draft.profile.bodyFeatures?.sort()).toEqual(["horns", "tail", "wings"]);
+  });
+
   it("demo attribute fallback never emits diagnostics through grounding", () => {
     const sink = new DiagnosticCollector();
     const section = demoCharacterAttributeSection();
@@ -432,6 +452,10 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     const profile = await forgeCharacterSection("profile", context);
     expect(profile.name).toBeDefined();
     expect(profile.profile?.attributes).toBeUndefined();
+
+    const succubusProfile = await forgeCharacterSection("profile", { ...context, prompt: "a succubus bartender" });
+    expect(succubusProfile.profile?.speciesId).toBe("succubus");
+    expect(succubusProfile.profile?.bodyFeatures?.sort()).toEqual(["horns", "tail", "wings"]);
 
     const attributes = await forgeCharacterSection("attributes", context);
     expect(attributes.name).toBeUndefined();

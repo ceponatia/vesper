@@ -2,9 +2,13 @@ import { z } from "zod";
 import {
   attributeRegistry,
   bodyLocationRegistry,
+  DEFAULT_SPECIES_ID,
   defaultIntimateRegionsForGender,
+  inferSpeciesFromText,
   isFeatureAttributeCategory,
   isIntimateAttributeCategory,
+  realizeBody,
+  speciesById,
   clothingCategories,
   clothingCategoryById,
   clothingLayerSchema,
@@ -15,6 +19,7 @@ import {
   type CharacterProfile,
   type DiagnosticSink,
   type ItemDefinition,
+  type SpeciesDefinition,
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { generateChecked } from "@/server/ai";
@@ -55,6 +60,8 @@ export interface CharacterForgeContext {
    * for editable drafts, not for rows written on someone's behalf.
    */
   useFallbacks?: boolean;
+  /** Deterministic registry match from the forge prompt, shared by all sections. */
+  inferredSpecies?: SpeciesDefinition;
 }
 
 /** A section's contribution to the draft; merged with applyCharacterSectionPatch. */
@@ -84,7 +91,7 @@ export interface ForgeCharacterInput {
 }
 
 export async function forgeCharacter(input: ForgeCharacterInput): Promise<CharacterDraft> {
-  const context: CharacterForgeContext = { ...input };
+  const context: CharacterForgeContext = { ...input, inferredSpecies: inferSpeciesFromText(input.prompt)?.species };
   const patches = await Promise.all(characterForgeSections.map((section) => forgeCharacterSection(section, context)));
   let draft = emptyCharacterDraft();
   for (const patch of patches) draft = applyCharacterSectionPatch(draft, patch);
@@ -103,6 +110,22 @@ export async function forgeCharacterSection(
     case "outfit":
       return forgeOutfitSection(context);
   }
+}
+
+function speciesForForgeContext(context: CharacterForgeContext): SpeciesDefinition | undefined {
+  if (context.draft) return speciesById(context.draft.profile.speciesId) ?? context.inferredSpecies;
+  return context.inferredSpecies ?? inferSpeciesFromText(context.prompt)?.species;
+}
+
+function realizedBodyForForgeContext(context: CharacterForgeContext) {
+  const species = speciesForForgeContext(context);
+  if (!species) return undefined;
+  return realizeBody({
+    speciesId: species.id,
+    bodyPlanId: context.draft?.profile.bodyPlanId ?? species.bodyPlanId,
+    intimateRegions: context.draft?.profile.intimateRegions,
+    bodyFeatures: context.draft?.profile.bodyFeatures,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +147,7 @@ const PROFILE_SYSTEM =
   "You draft characters for a roleplaying engine. Write grounded, specific, playable characters — concrete detail over generality. Return only the requested fields.";
 
 function profilePrompt(context: CharacterForgeContext): string {
+  const species = speciesForForgeContext(context);
   const lines = [
     "Draft a character from this concept:",
     context.prompt,
@@ -131,6 +155,9 @@ function profilePrompt(context: CharacterForgeContext): string {
     "Produce: a display name, a 2-4 sentence bio, a personality sketch (quirks, humor, flaws),",
     "voice notes (how they sound and speak), any aliases or nicknames, and 3-6 lowercase tags.",
   ];
+  if (species && species.id !== DEFAULT_SPECIES_ID) {
+    lines.push("", `Resolved structural species: ${species.label}. Keep the draft consistent with that species.`);
+  }
   if (context.draft?.name) {
     lines.push("", `You are regenerating the profile of the draft currently named "${context.draft.name}". Keep the core concept.`);
   }
@@ -155,6 +182,12 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
   };
   const voice = section.voice.trim();
   if (voice) profile.voice = voice;
+  const species = speciesForForgeContext(context);
+  if (species) {
+    profile.speciesId = species.id;
+    profile.bodyPlanId = species.bodyPlanId;
+    profile.bodyFeatures = species.defaultFeatureGroups ? [...species.defaultFeatureGroups] : undefined;
+  }
   return {
     name: section.name.trim(),
     tags: section.tags.map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0),
@@ -182,16 +215,17 @@ export interface AttributeSection {
   ranges: RawAttributeRange[];
 }
 
-function characterAttributeDefinitions(): readonly AttributeDefinition[] {
+function characterAttributeDefinitions(context?: CharacterForgeContext): readonly AttributeDefinition[] {
+  const realizedBody = context ? realizedBodyForForgeContext(context) : undefined;
   // Anatomy-specific attributes are excluded from the forge vocabulary until
   // the forge can also infer the body-config that realizes them. Intimate
-  // regions are seeded from gender below; additive feature groups are authored
-  // by hand in the editor for now.
+  // regions are seeded from gender below; additive feature groups enter only
+  // when the prompt/draft resolves a feature-bearing species.
   return attributeRegistry.definitions.filter(
     (d) =>
       (d.appliesToEntityKinds ?? ["character"]).includes("character") &&
       !isIntimateAttributeCategory(d.category) &&
-      !isFeatureAttributeCategory(d.category),
+      (!isFeatureAttributeCategory(d.category) || (realizedBody?.isAttributeApplicable(d) ?? false)),
   );
 }
 
@@ -200,8 +234,8 @@ function characterAttributeDefinitions(): readonly AttributeDefinition[] {
  * vocabulary: ids are an enum of registered attribute ids. Values are still
  * grounded post-hoc with registry.parseValue (docs/authoring.md §Guardrails).
  */
-export function buildAttributeSectionSchema(): z.ZodType<AttributeSection> {
-  const ids = characterAttributeDefinitions().map((d) => d.id as string);
+export function buildAttributeSectionSchema(context?: CharacterForgeContext): z.ZodType<AttributeSection> {
+  const ids = characterAttributeDefinitions(context).map((d) => d.id as string);
   // The registry is never empty in practice; the string fallback keeps an
   // empty registry from producing an invalid z.enum([]).
   const idSchema = ids.length > 0 ? z.enum(ids as [string, ...string[]]) : z.string().min(1);
@@ -348,7 +382,7 @@ function describeConstraint(def: AttributeDefinition): string {
 }
 
 function attributesPrompt(context: CharacterForgeContext): string {
-  const vocabulary = characterAttributeDefinitions()
+  const vocabulary = characterAttributeDefinitions(context)
     .map(
       (def) =>
         `- ${def.id}${def.coreVisual ? " [CORE]" : ""}${def.identityAnchor ? " [ANCHOR]" : ""} (${describeConstraint(def)}): ${def.description}`,
@@ -358,6 +392,10 @@ function attributesPrompt(context: CharacterForgeContext): string {
     "Character concept:",
     context.prompt,
   ];
+  const species = speciesForForgeContext(context);
+  if (species && species.id !== DEFAULT_SPECIES_ID) {
+    lines.push("", `Resolved structural species: ${species.label}. Include its visible feature morphology when the vocabulary lists it.`);
+  }
   const bio = context.draft?.profile.bio;
   if (bio) lines.push("", "Drafted bio:", bio);
   lines.push(
@@ -372,7 +410,7 @@ function attributesPrompt(context: CharacterForgeContext): string {
 
 async function forgeAttributesSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
   const { value } = await generateChecked({
-    schema: buildAttributeSectionSchema(),
+    schema: buildAttributeSectionSchema(context),
     system: ATTRIBUTES_SYSTEM,
     prompt: attributesPrompt(context),
     code: "forge.character.attributes",

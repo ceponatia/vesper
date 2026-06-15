@@ -4,8 +4,10 @@ Status: **draft / brainstorm, partially implemented 2026-06-15**. The first
 succubus slice landed: `featureGroup`, `bodyFeatures`, feature locations
 (`wings`/`horns`/`tail`), starter morphology attributes, the `succubus` species
 record, editor species/feature controls, contract tests, and contract/authoring
-docs. Remaining work: image prompting, forge inference, faerie, richer species
-rules, and wardrobe accommodation.
+docs. The character forge now deterministically infers registry species names
+from prompt text (`succubus`/`succubi`), seeds species-default body features, and
+unlocks realized feature morphology attributes. Remaining work: image prompting,
+faerie, richer species rules, and wardrobe accommodation.
 
 Forward-looking design for the body-model work **deferred out of
 [phase 4](phase-4-plan.md)** — that phase built the species *scaffolding* (the
@@ -66,12 +68,12 @@ parked.
 Phase 4 left us standing on almost everything we need:
 
 - **The realize filter.** `species/realize.ts` `realizeBody({ bodyPlanId,
-  speciesId, intimateRegions })` is the single gating engine: body plan (superset
-  of locations) → species (allow/disallow + forbidden attribute rules) →
-  per-character body-config. It already answers `isLocationPresent`,
-  `hasIntimateRegion`, `isAttributeApplicable`, and is consumed by the forge, the
-  attribute picker, the narrator impression block, and image generation. **We
-  extend this one function, not the consumers.**
+  speciesId, intimateRegions, bodyFeatures })` is the single gating engine: body
+  plan (superset of locations) → species (allow/disallow + forbidden/default
+  feature rules) → per-character body-config. It answers `isLocationPresent`,
+  `hasIntimateRegion`, `hasFeature`, `isAttributeApplicable`, and is consumed by
+  the attribute picker, forge attribute vocabulary, narrator impression block,
+  and image prompt assembly. **We extend this one function, not the consumers.**
 - **The default-absent tag pattern.** `BodyLocation.intimateGroup` + the
   per-character `intimateRegions` list is the exact shape features need —
   proven, tested, and understood. We mirror it.
@@ -321,9 +323,12 @@ question raised under the `tail` location above; solving it means either excludi
 - **A "Body features" toggle section** in the attribute picker, parallel to the
   existing `BodyConfigSection` — toggles wings/horns/tail, unlocking the
   `morphology/` attribute groups exactly as intimate toggles unlock `intimate/`.
-- **Forge.** The character/world forge infers species from the prompt ("a succubus
-  bartender"), sets `speciesId`, seeds `bodyFeatures`, and the draft fill should
-  populate the feature attributes (wing type, horn shape) like any core visual.
+- **Forge.** The character forge infers registry species from exact prompt
+  names/aliases ("a succubus bartender", "one of the succubi"), sets `speciesId`,
+  seeds `bodyFeatures`, and gives the attribute agent only the feature
+  attributes realized by that species/body-config. This is deliberately
+  registry-based, not fuzzy LLM classification; broader fantasy taxonomy can
+  add aliases/species records as data.
 
 ---
 
@@ -380,9 +385,10 @@ Dependency-forced, mirroring phase 4's shape:
 4. **F3 — image generation (deferred; the real cost).** `visibleFeatureAppearance`, injected
    into the base appearance prompt on **all** routes; the waist-up/tail belowWaist
    check.
-5. **F4 — forge + editor (partially landed 2026-06-15).** Species picker and the
-   "Body features" toggle section ship; forge species inference + feature seeding
-   + attribute fill remain deferred.
+5. **F4 — forge + editor (landed for succubus 2026-06-15).** Species picker,
+   "Body features" toggles, deterministic character-forge species inference,
+   species-default feature seeding, and species-aware feature attribute vocabulary
+   ship. Broader taxonomy and non-exact species classification remain deferred.
 6. **F5 — tests + docs (partially landed 2026-06-15).** `docs/contracts.md`,
    `docs/authoring.md`, and registry invariants ship; `docs/images.md` belongs
    with F3 when visible feature prompting lands.
