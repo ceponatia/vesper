@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { Diagnostic } from "@/contracts";
+import { speciesById, speciesCatalog, type Diagnostic } from "@/contracts";
 import type { CharacterDraft, CharacterForgeSection } from "@/lib/client/api";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { TagInput } from "@/components/ui/tag-input";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +56,15 @@ export function CharacterEditor({
 
   const patchProfile = (patch: Partial<CharacterDraft["profile"]>) =>
     onChange({ ...draft, profile: { ...draft.profile, ...patch } });
+  const setSpecies = (speciesId: string) => {
+    const species = speciesById(speciesId);
+    if (!species) return;
+    patchProfile({
+      speciesId: species.id,
+      bodyPlanId: species.bodyPlanId,
+      bodyFeatures: species.defaultFeatureGroups ? [...species.defaultFeatureGroups] : undefined,
+    });
+  };
 
   const sectionFor: Partial<Record<EditorTab, CharacterForgeSection>> = {
     profile: "profile",
@@ -91,6 +101,21 @@ export function CharacterEditor({
           </Field>
           <Field label="Tags">
             {(id) => <TagInput id={id} value={draft.tags} onChange={(tags) => onChange({ ...draft, tags })} placeholder="harbor, dry humor…" />}
+          </Field>
+          <Field label="Species">
+            {(id) => (
+              <Select
+                id={id}
+                value={speciesById(draft.profile.speciesId)?.id ?? "human"}
+                onChange={(e) => setSpecies(e.target.value)}
+              >
+                {speciesCatalog.map((species) => (
+                  <option key={species.id} value={species.id}>
+                    {species.label}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
           <Field label="Bio" className="sm:col-span-2">
             {(id) => (
@@ -129,6 +154,8 @@ export function CharacterEditor({
           onChange={(attributes) => patchProfile({ attributes })}
           intimateRegions={draft.profile.intimateRegions ?? []}
           onChangeIntimateRegions={(intimateRegions) => patchProfile({ intimateRegions })}
+          bodyFeatures={draft.profile.bodyFeatures}
+          onChangeBodyFeatures={(bodyFeatures) => patchProfile({ bodyFeatures })}
           speciesId={draft.profile.speciesId}
           bodyPlanId={draft.profile.bodyPlanId}
         />

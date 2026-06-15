@@ -1,0 +1,53 @@
+import { defineAttributeGroup } from "../../types";
+
+/** Tail — visible fantasy morphology, gated by bodyFeatures group "tail". */
+export const tailGroup = defineAttributeGroup("tail", [
+  {
+    id: "tail.type",
+    label: "Tail type",
+    kind: "physical",
+    category: "tail",
+    valueType: "enum",
+    description: "The structural style of the tail.",
+    mutability: "inherent",
+    allowedValues: ["spaded", "reptilian", "feline", "prehensile"],
+    bodyLocationId: "tail",
+    aliases: ["tail type", "spaded tail", "demonic tail"],
+    promptHints: ["Visible fantasy morphology; describe as part of the always-visible appearance."],
+  },
+  {
+    id: "tail.length",
+    label: "Tail length",
+    kind: "physical",
+    category: "tail",
+    valueType: "enum",
+    description: "How long the tail is relative to the body.",
+    mutability: "inherent",
+    allowedValues: ["short", "medium", "long", "very_long"],
+    bodyLocationId: "tail",
+    aliases: ["tail length"],
+  },
+  {
+    id: "tail.color",
+    label: "Tail color",
+    kind: "physical",
+    category: "tail",
+    valueType: "text",
+    description: "Tail color or surface appearance.",
+    mutability: "inherent",
+    bodyLocationId: "tail",
+    aliases: ["tail color"],
+  },
+  {
+    id: "tail.tip",
+    label: "Tail tip",
+    kind: "physical",
+    category: "tail",
+    valueType: "enum",
+    description: "Distinctive tail ending.",
+    mutability: "inherent",
+    allowedValues: ["spade", "tuft", "tapered", "barbed"],
+    bodyLocationId: "tail",
+    aliases: ["tail tip"],
+  },
+]);

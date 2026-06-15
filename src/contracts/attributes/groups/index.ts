@@ -21,6 +21,7 @@ import { voiceGroup } from "./voice";
 import { presentationGroup } from "./presentation";
 import { movementGroup } from "./movement";
 import { intimateGroups } from "./intimate";
+import { morphologyGroups } from "./morphology";
 
 /**
  * Central group list — the single registration point for attribute vocabulary.
@@ -49,5 +50,6 @@ export const attributeGroups: readonly AttributeGroup[] = [
   voiceGroup,
   presentationGroup,
   movementGroup,
+  ...morphologyGroups,
   ...intimateGroups,
 ];

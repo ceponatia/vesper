@@ -43,6 +43,12 @@ describe("registry-derived attribute section schema", () => {
     expect(schema.safeParse({ ranges: [{ id: "hair.color", plausible: ["brown", "black"] }] }).success).toBe(true);
     expect(schema.safeParse({ ranges: [{ id: "hair.nonexistent", plausible: ["brown"] }] }).success).toBe(false);
   });
+
+  it("excludes additive feature morphology until forge can infer body features", () => {
+    const schema = buildAttributeSectionSchema();
+    expect(schema.safeParse({ attributes: [{ id: "wings.type", value: "membranous" }] }).success).toBe(false);
+    expect(schema.safeParse({ ranges: [{ id: "horns.shape", plausible: ["swept_back"] }] }).success).toBe(false);
+  });
 });
 
 describe("groundAttributeValues", () => {

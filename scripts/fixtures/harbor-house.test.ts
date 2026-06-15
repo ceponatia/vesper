@@ -3,6 +3,7 @@ import {
   attributeRegistry,
   bodyLocationRegistry,
   characterProfileSchema,
+  FEATURE_ATTRIBUTE_CATEGORIES,
   INTIMATE_ATTRIBUTE_CATEGORIES,
   itemDefinitionSchema,
   loreChunkCategorySchema,
@@ -27,12 +28,17 @@ const castCharacterKeys = new Set(harborHouse.cast.map((c) => c.characterKey));
 
 // Registry attributes the fixture intentionally omits from the "covers
 // everything" check: identity.species_presentation (both characters are human),
-// and all intimate-anatomy attributes — those are gated per character by the
-// body-config (not part of the universal vocabulary every character carries).
+// intimate-anatomy attributes, and additive feature attributes — those are gated
+// per character by the body-config/species feature list (not part of the
+// universal vocabulary every character carries).
 const OMITTED_ATTRIBUTE_IDS = new Set(["identity.species_presentation"]);
 const isIntimateAttribute = (id: string): boolean => {
   const def = attributeRegistry.byId(id);
   return def ? (INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category) : false;
+};
+const isFeatureAttribute = (id: string): boolean => {
+  const def = attributeRegistry.byId(id);
+  return def ? (FEATURE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category) : false;
 };
 
 describe("harbor house characters", () => {
@@ -48,7 +54,7 @@ describe("harbor house characters", () => {
   it("covers the full registry vocabulary (minus documented omissions) without duplicates", () => {
     const allIds = attributeRegistry.definitions
       .map((d) => d.id)
-      .filter((id) => !OMITTED_ATTRIBUTE_IDS.has(id) && !isIntimateAttribute(id));
+      .filter((id) => !OMITTED_ATTRIBUTE_IDS.has(id) && !isIntimateAttribute(id) && !isFeatureAttribute(id));
     for (const character of harborHouse.characters) {
       const ids = character.attributes.map((a) => a.id);
       expect(new Set(ids).size, `${character.key} has duplicate attribute ids`).toBe(ids.length);

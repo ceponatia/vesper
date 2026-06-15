@@ -27,6 +27,7 @@ import { daylightBand, type GameTime } from "@/lib/clock";
 import type { LinkAccess } from "@/contracts/world/access";
 import { defaultExposureMask, type ExposureMask, type NextTurnBrief } from "@/contracts/state/brief";
 import { INTIMATE_ATTRIBUTE_CATEGORIES } from "@/contracts/body/locations";
+import { realizeBody } from "@/contracts/species";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
@@ -782,10 +783,17 @@ export function buildGlanceImpressions(
     }
 
     const effective = resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays);
+    const realizedBody = realizeBody({
+      speciesId: p.snapshot.speciesId,
+      bodyPlanId: p.snapshot.bodyPlanId,
+      intimateRegions: p.snapshot.intimateRegions,
+      bodyFeatures: p.snapshot.bodyFeatures,
+    });
     const phrases: string[] = [];
     for (const value of effective) {
       const def = attributeRegistry.byId(value.id);
       if (!def) continue;
+      if (!realizedBody.isAttributeApplicable(def)) continue;
       if (!intimateAttrAllowed(def, exposure)) continue; // intimate detail only when the exposure mask earns it
       const phrase = attributePhrase(def, value.value);
       if (!phrase) continue;

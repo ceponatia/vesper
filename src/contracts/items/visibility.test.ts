@@ -74,15 +74,15 @@ describe("resolveWardrobeVisibility", () => {
 
   it("ignores unknown coverage ids", () => {
     const views = resolveWardrobeVisibility([
-      worn({ instanceId: "harness", coverage: ["wings", "chest"], layer: 0 }),
+      worn({ instanceId: "harness", coverage: ["custom_wings", "chest"], layer: 0 }),
       worn({ instanceId: "coat", coverage: ["torso"], layer: 3 }),
     ]);
-    // "wings" contributes nothing; the chest coverage is buried under the coat.
+    // "custom_wings" contributes nothing; the chest coverage is buried under the coat.
     expect(viewOf(views, "harness").visibility).toBe("hidden");
     expect(viewOf(views, "harness").visibleAt).toEqual([]);
   });
 
-  it("an item with no resolvable coverage defaults to visible", () => {
+  it("an item with only non-coverage feature locations defaults to visible", () => {
     const views = resolveWardrobeVisibility([worn({ instanceId: "aura", coverage: ["wings"], layer: 1 })]);
     expect(viewOf(views, "aura").visibility).toBe("visible");
     expect(viewOf(views, "aura").visibleAt).toEqual([]);

@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import {
   attributeGroups,
+  FEATURE_GROUPS,
   INTIMATE_REGION_GROUPS,
   realizeBody,
   type AttributeDefinition,
@@ -30,6 +31,10 @@ export interface AttributePickerProps {
   intimateRegions?: readonly string[];
   /** When provided, the body-config toggle UI is shown and intimate groups unlock. */
   onChangeIntimateRegions?: (regions: string[]) => void;
+  /** Per-character additive feature config; undefined means species defaults. */
+  bodyFeatures?: readonly string[];
+  /** When provided, body feature toggle UI is shown. */
+  onChangeBodyFeatures?: (features: string[]) => void;
   speciesId?: string;
   bodyPlanId?: string;
 }
@@ -63,14 +68,17 @@ export function AttributePicker({
   onChange,
   intimateRegions = [],
   onChangeIntimateRegions,
+  bodyFeatures,
+  onChangeBodyFeatures,
   speciesId,
   bodyPlanId,
 }: AttributePickerProps) {
   const byId = useMemo(() => attributeValueMap(values), [values]);
   const body = useMemo(
-    () => realizeBody({ speciesId, bodyPlanId, intimateRegions }),
-    [speciesId, bodyPlanId, intimateRegions],
+    () => realizeBody({ speciesId, bodyPlanId, intimateRegions, bodyFeatures }),
+    [speciesId, bodyPlanId, intimateRegions, bodyFeatures],
   );
+  const effectiveBodyFeatures = bodyFeatures ?? [...body.bodyFeatures];
 
   const onSet = (id: string, value: AttributeValue["value"]) =>
     onChange(setAttribute(values, id as AttributeValue["id"], value));
@@ -90,6 +98,9 @@ export function AttributePicker({
     <div className="flex flex-col gap-3">
       {onChangeIntimateRegions ? (
         <BodyConfigSection intimateRegions={intimateRegions} onChange={onChangeIntimateRegions} />
+      ) : null}
+      {onChangeBodyFeatures ? (
+        <BodyFeaturesSection bodyFeatures={effectiveBodyFeatures} onChange={onChangeBodyFeatures} />
       ) : null}
       {attributeGroups.map((group) => {
         if (NESTED_CATEGORIES.has(group.category)) return null; // rendered nested below
@@ -120,6 +131,68 @@ export function AttributePicker({
         );
       })}
     </div>
+  );
+}
+
+function BodyFeaturesSection({
+  bodyFeatures,
+  onChange,
+}: {
+  bodyFeatures: readonly string[];
+  onChange: (features: string[]) => void;
+}) {
+  const [open, setOpen] = useState(bodyFeatures.length > 0);
+  const present = new Set(bodyFeatures);
+  const toggle = (group: string) => {
+    const next = new Set(present);
+    if (next.has(group)) next.delete(group);
+    else next.add(group);
+    onChange([...next]);
+  };
+
+  return (
+    <section className="rounded-card border border-ink-600 bg-ink-800">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center justify-between px-4 py-2.5 text-left"
+      >
+        <span className="text-sm font-medium text-paper-100">Body features</span>
+        <span className="text-xs text-paper-500">
+          {present.size > 0 ? `${present.size} feature${present.size === 1 ? "" : "s"}` : "—"}
+          <span className={cx("ml-2 inline-block transition-transform", open && "rotate-90")}>›</span>
+        </span>
+      </button>
+      {open ? (
+        <div className="flex flex-col gap-2 border-t border-ink-600 px-4 py-3">
+          <p className="text-xs text-paper-500">
+            Visible non-human morphology. Species can seed this, but each character can override it.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {FEATURE_GROUPS.map((group) => {
+              const active = present.has(group);
+              return (
+                <button
+                  key={group}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggle(group)}
+                  className={cx(
+                    "cursor-pointer rounded-full border px-2.5 py-0.5 text-[11px] capitalize transition-colors",
+                    active
+                      ? "border-accent-500/60 bg-accent-500/10 text-accent-300"
+                      : "border-ink-500 text-paper-400 hover:text-paper-200",
+                  )}
+                >
+                  {group}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

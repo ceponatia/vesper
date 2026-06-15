@@ -1,15 +1,21 @@
 # Non-human races & additive body features (wings · horns · tail) — design
 
-Status: **draft / brainstorm** (drafted 2026-06-14). Forward-looking design for
-the body-model work **deferred out of [phase 4](phase-4-plan.md)** — that phase
-built the species *scaffolding* (the gating engine, the `species/` registry, the
-allow/disallow + attribute-rule seams) and shipped **`human` only**, explicitly
-leaving "novel body plans (tails/wings/gills)" and real non-human species records
-to a later phase ([spec §Out of scope](intimate-anatomy-sensory-and-species-spec.phase4.md#section-c--non-human-species-idea-5-scaffolding-only)).
-This is that later phase's design. Parked under
-[deferred.plan.md](deferred.plan.md) §"Non-human races & additive body features"
-until it graduates into a numbered phase. Plain-language first, with an _"under
-the hood"_ note per section.
+Status: **draft / brainstorm, partially implemented 2026-06-15**. The first
+succubus slice landed: `featureGroup`, `bodyFeatures`, feature locations
+(`wings`/`horns`/`tail`), starter morphology attributes, the `succubus` species
+record, editor species/feature controls, contract tests, and contract/authoring
+docs. Remaining work: image prompting, forge inference, faerie, richer species
+rules, and wardrobe accommodation.
+
+Forward-looking design for the body-model work **deferred out of
+[phase 4](phase-4-plan.md)** — that phase built the species *scaffolding* (the
+gating engine, the `species/` registry, the allow/disallow + attribute-rule
+seams) and shipped **`human` only**, explicitly leaving "novel body plans
+(tails/wings/gills)" and real non-human species records to a later phase
+([spec §Out of scope](intimate-anatomy-sensory-and-species-spec.phase4.md#section-c--non-human-species-idea-5-scaffolding-only)).
+This is that later phase's design. Parked under [deferred.plan.md](deferred.plan.md)
+§"Non-human races & additive body features" until it graduates into a numbered
+phase. Plain-language first, with an _"under the hood"_ note per section.
 
 ---
 
@@ -75,8 +81,9 @@ Phase 4 left us standing on almost everything we need:
 - **Species scaffolding is live.** `SpeciesDefinition` (id, label, bodyPlanId,
   allow/disallow location lists, `attributeRules`) + the `rules/attribute-rule.ts`
   primitive (`required | optional | forbidden` + default/allowed/disallowed) are
-  built and consumed by realize. Only `human` ships; adding a species is a data
-  file + a registry line.
+  built and consumed by realize. The first non-human data record is now
+  `succubus`; additional humanoid species should stay data-only once their needed
+  feature vocabulary exists.
 - **aionchat reserves the vocabulary.** aionchat's attribute-category enum already
   lists `horns`, `tail`, `wings` (and `claws`, `scales`, `fur`, `feathers`) — but
   ships **no** body locations or attribute groups for them. They're reserved
@@ -237,7 +244,8 @@ for v1; see Coordination.)
 ## The first real non-human species records
 
 This is where we deliberately cross phase 4's "human only" line — that's the
-payoff the scaffolding was built for. Two records to start:
+payoff the scaffolding was built for. The first slice ships `succubus`; `faerie`
+is the next obvious data record once we want a second feature-bearing species:
 
 - **`faerie`** — `bodyPlanId: "humanoid"`, `defaultFeatureGroups: ["wings"]`
   (gossamer/insectoid), plus an `attributeRule` requiring `ears.shape: pointed`
@@ -354,29 +362,30 @@ don't collide or duplicate:
 
 ---
 
-## Rough build order (when this graduates to a phase)
+## Rough build order / status
 
 Dependency-forced, mirroring phase 4's shape:
 
-1. **F0 — feature mechanism (contracts, pure, tested).** `featureGroup` tag +
+1. **F0 — feature mechanism (landed 2026-06-15).** `featureGroup` tag +
    `FEATURE_GROUPS`; `bodyFeatures` on the profile (parseOr, default `[]`);
    `defaultFeatureGroups` on `SpeciesDefinition`; realize generalization +
    `hasFeature`. Degradation tests: empty `bodyFeatures` = today's body; unknown
    group ignored; unknown species → human.
-2. **F1 — the three locations + `morphology/` attribute groups.** wings→back,
-   horns→head, tail→pelvis, all `coverageRelevant: false`; the descriptive
-   attributes bound to each.
-3. **F2 — first species records.** `faerie`, `succubus` (+ their
-   `defaultFeatureGroups` and attribute rules). The "human only" line, crossed on
-   purpose.
-4. **F3 — image generation (the real cost).** `visibleFeatureAppearance`, injected
+2. **F1 — the three locations + `morphology/` attribute groups (landed
+   2026-06-15).** wings→back, horns→head, tail→pelvis, all
+   `coverageRelevant: false`; the descriptive attributes bound to each.
+3. **F2 — first species records (partially landed 2026-06-15).** `succubus`
+   ships with `defaultFeatureGroups`; `faerie` and richer attribute nudges remain
+   deferred.
+4. **F3 — image generation (deferred; the real cost).** `visibleFeatureAppearance`, injected
    into the base appearance prompt on **all** routes; the waist-up/tail belowWaist
    check.
-5. **F4 — forge + editor.** Species picker (new seam), the "Body features" toggle
-   section, forge species inference + feature seeding + attribute fill.
-6. **F5 — tests + docs.** Update `docs/contracts.md` (Body model), `images.md`,
-   `authoring.md`; registry invariants (every `FEATURE_GROUP` has a tagged
-   location; every feature attribute binds a real feature location).
+5. **F4 — forge + editor (partially landed 2026-06-15).** Species picker and the
+   "Body features" toggle section ship; forge species inference + feature seeding
+   + attribute fill remain deferred.
+6. **F5 — tests + docs (partially landed 2026-06-15).** `docs/contracts.md`,
+   `docs/authoring.md`, and registry invariants ship; `docs/images.md` belongs
+   with F3 when visible feature prompting lands.
 
 Deferred beyond this: wardrobe accommodation (tail-holes/wing-slits), the exotic
 tier (claws/scales/fur), and **true structural body plans** (mermaid/naga/

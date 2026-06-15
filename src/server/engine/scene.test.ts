@@ -318,6 +318,23 @@ describe("buildGlanceImpressions", () => {
     expect(block).toContain("- Maya (being looked at — full impression)");
     expect(block).toContain("- Rhett — present");
   });
+
+  it("filters feature attributes through the realized body", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    expect(maya).toBeDefined();
+    maya!.snapshot = profile({
+      speciesId: "human",
+      attributes: [{ id: "wings.type", value: "membranous", source: "base" }],
+    });
+    expect(buildGlanceImpressions(bundle, {})).not.toContain("wing type");
+
+    maya!.snapshot = profile({
+      speciesId: "succubus",
+      attributes: [{ id: "wings.type", value: "membranous", source: "base" }],
+    });
+    expect(buildGlanceImpressions(bundle, {})).toContain("wing type: membranous");
+  });
 });
 
 describe("buildAffordancesBlock", () => {

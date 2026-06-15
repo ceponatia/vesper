@@ -82,6 +82,7 @@ describe("buildAvatarPrompt", () => {
 
   it("withholds intimate anatomy from the Flux route, includes it on the uncensored route (Decision 3)", () => {
     const p = profileWith({
+      intimateRegions: ["penis"],
       attributes: [
         { id: "hair.color", value: "red", source: "base" },
         { id: "penis.size", value: "average", source: "base" },
@@ -92,6 +93,32 @@ describe("buildAvatarPrompt", () => {
     expect(flux).not.toContain("Penis size");
     const qwen = buildAvatarPrompt("Mira", p, "realistic", [], true); // uncensored Qwen route
     expect(qwen).toContain("Penis size");
+  });
+
+  it("filters feature attributes through the realized body", () => {
+    const attrs: AttributeValue[] = [
+      { id: "horns.shape", value: "swept_back", source: "base" },
+      { id: "wings.type", value: "membranous", source: "base" },
+      { id: "tail.type", value: "spaded", source: "base" },
+    ];
+    const human = buildAvatarPrompt("Mira", profileWith({ speciesId: "human", attributes: attrs }), "realistic");
+    expect(human).not.toContain("Horn shape");
+    expect(human).not.toContain("Wing type");
+    expect(human).not.toContain("Tail type");
+
+    const succubus = buildAvatarPrompt("Mira", profileWith({ speciesId: "succubus", attributes: attrs }), "realistic");
+    expect(succubus).toContain("Horn shape: swept back");
+    expect(succubus).toContain("Wing type: membranous");
+    expect(succubus).toContain("Tail type: spaded");
+
+    const winglessSuccubus = buildAvatarPrompt(
+      "Mira",
+      profileWith({ speciesId: "succubus", bodyFeatures: ["horns"], attributes: attrs }),
+      "realistic",
+    );
+    expect(winglessSuccubus).toContain("Horn shape");
+    expect(winglessSuccubus).not.toContain("Wing type");
+    expect(winglessSuccubus).not.toContain("Tail type");
   });
 
   it("treats the default outfit as authoritative clothing when provided", () => {
@@ -377,6 +404,14 @@ describe("characterAppearanceSummary", () => {
       12,
     );
     expect(long.length).toBeLessThanOrEqual(12);
+  });
+
+  it("can filter feature attributes when profile context is supplied", () => {
+    const attrs: AttributeValue[] = [{ id: "wings.type", value: "membranous", source: "base" }];
+    expect(characterAppearanceSummary(attrs, undefined, false, profileWith({ speciesId: "human" }))).toBe("");
+    expect(characterAppearanceSummary(attrs, undefined, false, profileWith({ speciesId: "succubus" }))).toContain(
+      "Wing type: membranous",
+    );
   });
 });
 

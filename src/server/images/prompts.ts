@@ -3,6 +3,7 @@ import { attributeRegistry, type AttributeDefinition, type AttributeValue } from
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveWardrobeVisibility, type RegionExposure } from "@/contracts/items/visibility";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist } from "@/contracts/body/locations";
+import { realizeBody } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
 /**
@@ -13,6 +14,15 @@ import type { CharacterProfile } from "@/contracts/world/profile";
  */
 function isIntimateAttribute(def: AttributeDefinition): boolean {
   return (INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category);
+}
+
+function realizedBodyForProfile(profile: CharacterProfile) {
+  return realizeBody({
+    speciesId: profile.speciesId,
+    bodyPlanId: profile.bodyPlanId,
+    intimateRegions: profile.intimateRegions,
+    bodyFeatures: profile.bodyFeatures,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -117,9 +127,11 @@ export function buildAvatarPrompt(
   allowIntimate = false,
 ): string {
   const appearance: string[] = [];
+  const realizedBody = realizedBodyForProfile(profile);
   for (const value of profile.attributes) {
     const def = attributeRegistry.byId(value.id);
     if (!def) continue; // unknown vocabulary — skip rather than leak raw ids into the prompt
+    if (!realizedBody.isAttributeApplicable(def)) continue; // stale/gated attributes must not outlive the realized body
     if (!allowIntimate && isIntimateAttribute(def)) continue; // Flux portrait route excludes intimate anatomy
     const formatted = formatAttribute(def, value.value);
     if (formatted) appearance.push(formatted);
@@ -375,11 +387,14 @@ export function characterAppearanceSummary(
   attributes: ReadonlyArray<AttributeValue>,
   maxChars = APPEARANCE_SUMMARY_CHARS,
   allowIntimate = false,
+  profile?: CharacterProfile,
 ): string {
   const parts: string[] = [];
+  const realizedBody = profile ? realizedBodyForProfile(profile) : undefined;
   for (const value of attributes) {
     const def = attributeRegistry.byId(value.id);
     if (!def) continue;
+    if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
     if (!allowIntimate && isIntimateAttribute(def)) continue; // scene composer (gemini tool model) is moderation-prone
     const formatted = formatAttribute(def, value.value);
     if (formatted) parts.push(formatted);

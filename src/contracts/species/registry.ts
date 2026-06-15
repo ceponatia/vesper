@@ -2,10 +2,9 @@ import type { SpeciesDefinition } from "./types";
 import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
 
 /**
- * Species catalog. **Scaffolding only:** `human` is the single shipped species.
- * Adding a humanoid variant (elf, orc, …) is a data edit here — the realized-body
- * filter (realize.ts) already consumes the allow/disallow + attribute-rule seams,
- * so no engine change is needed. Novel body plans (tails, wings) are a later phase.
+ * Species catalog. Humanoid variants are data edits here. Feature-bearing
+ * species use `defaultFeatureGroups`; true structural body plans are a later
+ * phase.
  */
 export const speciesCatalog: readonly SpeciesDefinition[] = [
   {
@@ -14,6 +13,15 @@ export const speciesCatalog: readonly SpeciesDefinition[] = [
     bodyPlanId: DEFAULT_BODY_PLAN_ID,
     description:
       "A natural humanoid species with ordinary human anatomy and broad individual variation. Which intimate anatomy a given character has is the per-character body-config, not the species.",
+    attributeRules: [],
+  },
+  {
+    id: "succubus",
+    label: "Succubus",
+    bodyPlanId: DEFAULT_BODY_PLAN_ID,
+    description:
+      "A humanoid fantasy species whose default morphology includes wings, horns, and a tail. These are defaults, not hard requirements; bodyFeatures may override them per character.",
+    defaultFeatureGroups: ["wings", "horns", "tail"],
     attributeRules: [],
   },
 ];

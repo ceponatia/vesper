@@ -31,6 +31,7 @@ export function mergeCharacterSection(
           aliases: incoming.profile.aliases,
           speciesId: incoming.profile.speciesId,
           bodyPlanId: incoming.profile.bodyPlanId,
+          bodyFeatures: incoming.profile.bodyFeatures,
         },
       };
     case "attributes":

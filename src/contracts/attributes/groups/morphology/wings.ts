@@ -1,0 +1,53 @@
+import { defineAttributeGroup } from "../../types";
+
+/** Wings — visible fantasy morphology, gated by bodyFeatures group "wings". */
+export const wingsGroup = defineAttributeGroup("wings", [
+  {
+    id: "wings.type",
+    label: "Wing type",
+    kind: "physical",
+    category: "wings",
+    valueType: "enum",
+    description: "The structural style of the wings.",
+    mutability: "inherent",
+    allowedValues: ["membranous", "feathered", "insectoid", "gossamer"],
+    bodyLocationId: "wings",
+    aliases: ["wing type", "bat wings", "feathered wings"],
+    promptHints: ["Visible fantasy morphology; describe as part of the always-visible appearance."],
+  },
+  {
+    id: "wings.span",
+    label: "Wing span",
+    kind: "physical",
+    category: "wings",
+    valueType: "enum",
+    description: "How large the wings read relative to the body.",
+    mutability: "inherent",
+    allowedValues: ["small", "medium", "large", "expansive"],
+    bodyLocationId: "wings",
+    aliases: ["wing span", "wing size"],
+  },
+  {
+    id: "wings.color",
+    label: "Wing color",
+    kind: "physical",
+    category: "wings",
+    valueType: "text",
+    description: "Wing color or surface appearance.",
+    mutability: "inherent",
+    bodyLocationId: "wings",
+    aliases: ["wing color"],
+  },
+  {
+    id: "wings.carriage",
+    label: "Wing carriage",
+    kind: "presentation",
+    category: "wings",
+    valueType: "enum",
+    description: "How the character usually holds their wings.",
+    mutability: "mutable",
+    allowedValues: ["folded", "half_spread", "spread", "relaxed"],
+    bodyLocationId: "wings",
+    aliases: ["wing posture", "wings folded"],
+  },
+]);

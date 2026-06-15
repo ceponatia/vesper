@@ -36,6 +36,7 @@ export function resolveWardrobeVisibility(
     for (const cover of item.coverage) {
       if (!registry.byId(cover)) continue;
       for (const loc of registry.expand(cover)) {
+        if (registry.byId(loc)?.coverageRelevant === false) continue;
         const stack = byLocation.get(loc) ?? [];
         stack.push(item);
         byLocation.set(loc, stack);

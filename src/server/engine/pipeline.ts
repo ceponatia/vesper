@@ -911,7 +911,12 @@ export function buildSceneComposerContext(
         // has no worn clothing items, exposedRegions([]) is the explicit current
         // state and must override any clothed reference avatar.
         wardrobeTracked: true,
-        appearance: characterAppearanceSummary(resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays)),
+        appearance: characterAppearanceSummary(
+          resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays),
+          undefined,
+          false,
+          p.snapshot,
+        ),
         intimateAppearance: intimateSceneAppearance(
           resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays),
           exposure,

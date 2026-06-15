@@ -28,6 +28,12 @@ export const characterProfileSchema = z.object({
    * Validated loosely as strings; unknown groups are ignored at realize time.
    */
   intimateRegions: z.array(z.string()).default([]),
+  /**
+   * Additive non-baseline body features this character has (e.g. wings, horns,
+   * tail). When absent, realizeBody may use the species default feature groups;
+   * when present, even an empty list is an explicit override.
+   */
+  bodyFeatures: z.array(z.string()).optional(),
   attributes: z.array(attributeValueSchema).default([]),
   aliases: z.array(z.string()).default([]),
   /** Item definition ids from the owner's library. */

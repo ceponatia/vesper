@@ -1,5 +1,11 @@
 import type { AttributeDefinition } from "../attributes/types";
-import { bodyLocationRegistry, INTIMATE_ATTRIBUTE_CATEGORIES, isIntimateRegionGroup } from "../body/locations";
+import {
+  bodyLocationRegistry,
+  isFeatureAttributeCategory,
+  isFeatureGroup,
+  INTIMATE_ATTRIBUTE_CATEGORIES,
+  isIntimateRegionGroup,
+} from "../body/locations";
 import { bodyPlanById, DEFAULT_BODY_PLAN_ID } from "../body/plans";
 import { DEFAULT_SPECIES_ID, speciesById } from "./registry";
 
@@ -20,9 +26,11 @@ export interface RealizedBody {
   readonly bodyPlanId: string;
   readonly speciesId: string;
   readonly intimateRegions: ReadonlySet<string>;
+  readonly bodyFeatures: ReadonlySet<string>;
   readonly locationIds: ReadonlySet<string>;
   isLocationPresent(id: string): boolean;
   hasIntimateRegion(group: string): boolean;
+  hasFeature(group: string): boolean;
   isAttributeApplicable(def: AttributeDefinition): boolean;
 }
 
@@ -31,6 +39,11 @@ export interface RealizeBodyInput {
   speciesId?: string;
   /** The per-character body-config — present intimate region groups. */
   intimateRegions?: readonly string[];
+  /**
+   * Present additive body feature groups. Omitted ⇒ species defaults; provided
+   * (including []) ⇒ explicit per-character override.
+   */
+  bodyFeatures?: readonly string[];
 }
 
 export function realizeBody(input: RealizeBodyInput): RealizedBody {
@@ -40,6 +53,8 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
 
   const plan = bodyPlanById(bodyPlanId);
   const species = speciesById(speciesId);
+  const featureSource = input.bodyFeatures ?? species?.defaultFeatureGroups ?? [];
+  const bodyFeatures = new Set<string>(featureSource.filter(isFeatureGroup));
 
   // Base location set = the body plan's ids (or the full registry if the plan id
   // is unknown — a degraded default that keeps everyday anatomy available).
@@ -52,12 +67,13 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
   }
   for (const id of species?.disallowedBodyLocationIds ?? []) baseIds.delete(id);
 
-  // Intimate gating: a location tagged with an intimateGroup is realized only
-  // when the body-config switches that group on.
+  // Body-config gating: tagged locations are realized only when their
+  // corresponding per-character config switches the group on.
   const locationIds = new Set<string>();
   for (const id of baseIds) {
-    const group = bodyLocationRegistry.byId(id)?.intimateGroup;
-    if (group && !intimateRegions.has(group)) continue;
+    const loc = bodyLocationRegistry.byId(id);
+    if (loc?.intimateGroup && !intimateRegions.has(loc.intimateGroup)) continue;
+    if (loc?.featureGroup && !bodyFeatures.has(loc.featureGroup)) continue;
     locationIds.add(id);
   }
 
@@ -74,6 +90,7 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
     if ((INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category) && !intimateRegions.has(def.category)) {
       return false;
     }
+    if (isFeatureAttributeCategory(def.category) && !bodyFeatures.has(def.category)) return false;
     // An attribute bound to a body location that isn't realized is dropped.
     if (def.bodyLocationId && !locationIds.has(def.bodyLocationId)) return false;
     return true;
@@ -83,9 +100,11 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
     bodyPlanId,
     speciesId,
     intimateRegions,
+    bodyFeatures,
     locationIds,
     isLocationPresent: (id) => locationIds.has(id),
     hasIntimateRegion: (group) => intimateRegions.has(group),
+    hasFeature: (group) => bodyFeatures.has(group),
     isAttributeApplicable,
   };
 }

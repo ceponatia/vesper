@@ -22,6 +22,11 @@ export const speciesDefinitionSchema = z.object({
   allowedBodyLocationIds: z.array(z.string().min(1)).readonly().optional(),
   /** Body locations removed from the inherited body-plan location list. */
   disallowedBodyLocationIds: z.array(z.string().min(1)).readonly().optional(),
+  /**
+   * Additive feature groups switched on when a character uses this species and
+   * has not supplied an explicit bodyFeatures override.
+   */
+  defaultFeatureGroups: z.array(z.string().min(1)).readonly().optional(),
   /** Per-attribute rules; `forbidden` ones are dropped from the realized body. */
   attributeRules: z.array(attributeRuleSchema).readonly().default([]),
 });

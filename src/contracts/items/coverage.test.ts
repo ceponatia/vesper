@@ -47,8 +47,8 @@ describe("toggleCoverage (select-all cascade with carve-outs)", () => {
   });
 
   it("preserves ids the registry does not know", () => {
-    const result = toggleCoverage(["tail"], "neck");
-    expect(result).toEqual(["neck", "tail"]);
+    const result = toggleCoverage(["custom_tail_slot"], "neck");
+    expect(result).toEqual(["neck", "custom_tail_slot"]);
   });
 
   it("exploded and minimal inputs evaluate to the same effective set", () => {
@@ -64,6 +64,6 @@ describe("coverageAncestors", () => {
 
   it("is empty for roots and unknown ids", () => {
     expect(coverageAncestors("torso")).toEqual([]);
-    expect(coverageAncestors("tail")).toEqual([]);
+    expect(coverageAncestors("custom_tail_slot")).toEqual([]);
   });
 });

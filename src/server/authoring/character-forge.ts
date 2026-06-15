@@ -3,6 +3,7 @@ import {
   attributeRegistry,
   bodyLocationRegistry,
   defaultIntimateRegionsForGender,
+  isFeatureAttributeCategory,
   isIntimateAttributeCategory,
   clothingCategories,
   clothingCategoryById,
@@ -182,11 +183,15 @@ export interface AttributeSection {
 }
 
 function characterAttributeDefinitions(): readonly AttributeDefinition[] {
-  // Intimate anatomy is excluded from the forge vocabulary: it's gated per
-  // character by the body-config (seeded from gender below) and authored by hand
-  // in the editor, never auto-generated. The forge handles visible appearance.
+  // Anatomy-specific attributes are excluded from the forge vocabulary until
+  // the forge can also infer the body-config that realizes them. Intimate
+  // regions are seeded from gender below; additive feature groups are authored
+  // by hand in the editor for now.
   return attributeRegistry.definitions.filter(
-    (d) => (d.appliesToEntityKinds ?? ["character"]).includes("character") && !isIntimateAttributeCategory(d.category),
+    (d) =>
+      (d.appliesToEntityKinds ?? ["character"]).includes("character") &&
+      !isIntimateAttributeCategory(d.category) &&
+      !isFeatureAttributeCategory(d.category),
   );
 }
 

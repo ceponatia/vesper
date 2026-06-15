@@ -1,8 +1,10 @@
 import { buildBodyLocationRegistry, type BodyLocation } from "./types";
 import { humanoidEverydayLocations } from "./everyday";
+import { humanoidFeatureLocations } from "./features";
 import { humanoidIntimateLocations } from "./intimate";
 
 export * from "./types";
+export * from "./features";
 export * from "./intimate";
 
 /**
@@ -12,6 +14,7 @@ export * from "./intimate";
  */
 export const humanoidBodyLocations: readonly BodyLocation[] = [
   ...humanoidEverydayLocations,
+  ...humanoidFeatureLocations,
   ...humanoidIntimateLocations,
 ];
 

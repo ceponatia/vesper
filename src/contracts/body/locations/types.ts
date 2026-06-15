@@ -15,6 +15,13 @@ export const bodyLocationSchema = z.object({
    * INTIMATE_REGION_GROUPS (intimate.ts).
    */
   intimateGroup: z.string().min(1).optional(),
+  /**
+   * Additive non-baseline feature group this location belongs to (e.g. wings,
+   * horns, tail). When set, the location is realized only when the character's
+   * bodyFeatures switches the group on (species/realize.ts). Absent ⇒ baseline
+   * anatomy, always present.
+   */
+  featureGroup: z.string().min(1).optional(),
   promptHints: z.array(z.string().min(1)).readonly().optional(),
 });
 
