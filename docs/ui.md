@@ -15,9 +15,12 @@ Next.js App Router pages + React 19 + Tailwind 4. Aesthetic: quiet dark "reading
 /characters/:id          Editor: profile · attributes (registry picker) · outfit · portrait studio
 /locations, /locations/:id   Lean library + editor (Details · Image tabs)
 /items, /items/:id           Lean library + editor (Details · Image tabs)
+/gallery                 Scene-image gallery: all generated scenes across still-existing sessions, grouped by session, filterable by world/character (components/gallery/gallery-page.tsx)
 /sessions/new            Wizard: world → embodiment (play a character / observer) → title
 /sessions/:id            The play screen
 ```
+
+The global header (`components/shell/app-shell.tsx`) links **Worlds · Characters · Locations · Items · Gallery**; a session is started from a world's **Begin session** or the dashboard (there is no navbar "New session" button — it was removed as redundant). The Gallery is a separate page; scene images never appear on the landing dashboard.
 
 The world review/editor map tab (`components/worlds/world-editor.tsx`) renders each location as a collapsible card — the header is a real button (`aria-expanded`, caret) showing name, tags, and a scale/area hint; multiple cards can be open at once, existing cards load collapsed, and new/copied cards open expanded. Cards reorder by native HTML5 drag (grip handle, drop-indicator line) with per-card move up/down buttons as the keyboard-accessible path; the order is authored data, written as the array index to `world_locations.sort` on save and read back ordered everywhere (detail, edit, spawn). A per-card Copy duplicates the place itself (description, tags, scale, area, ambient) but not the name (left empty — duplicates break save resolution), links, or the library/world row references. Links are undirected at runtime, so each card also lists incoming connections added on other locations as read-only text, and adding a link whose reverse already exists is refused with a brief inline note instead of creating a doubled edge.
 

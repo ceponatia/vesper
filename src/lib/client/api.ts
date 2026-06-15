@@ -13,6 +13,7 @@ import {
   loreChunkCategorySchema,
   loreChunkTierSchema,
   loreChunkVisibilitySchema,
+  sceneReferenceSchema,
   worldLoreSchema,
   worldStyleSchema,
 } from "@/contracts";
@@ -417,6 +418,20 @@ export const sessionSummarySchema = z.object({
 });
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 
+/** A generated scene image for the cross-session Gallery (docs/images.md). */
+export const sceneImageSchema = z.object({
+  id: idSchema,
+  sessionId: idSchema,
+  sessionTitle: z.string().catch("Untitled session"),
+  worldId: optionalId,
+  worldName: optionalText,
+  /** Characters + location the scene features; `kind: "character"` drives the filter. */
+  references: arrayOf(sceneReferenceSchema),
+  prompt: textOr(""),
+  createdAt: optionalText,
+});
+export type SceneImage = z.infer<typeof sceneImageSchema>;
+
 /** A relationship edge (stage label ids only — affinity values stay server-side). */
 export const relationshipEdgeSchema = z.object({
   id: idSchema,
@@ -655,6 +670,11 @@ export const worldsApi = {
     apiPost(forgeResponseSchema(worldDraftSchema), "/api/worlds/forge", body),
   createSession: (worldId: string, body: { title: string; embodied: boolean; playerCharacterId?: string }) =>
     apiPost(createdRefSchema, `/api/worlds/${worldId}/sessions`, body),
+};
+
+export const galleryApi = {
+  /** All ready scene images across the user's still-existing sessions. */
+  list: () => apiGet(listOf(sceneImageSchema, "scenes"), "/api/gallery"),
 };
 
 export const sessionsApi = {

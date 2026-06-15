@@ -1,10 +1,11 @@
 import fs from "node:fs/promises";
 import { generateImage } from "ai";
 import { eq } from "drizzle-orm";
-import { characters, db, images, sessionParticipants } from "../db";
+import { db, images, sessionParticipants } from "../db";
 import { generateChecked, hasVenice, imageModel, imageModelId, isDemoMode, toolModelId, veniceEditImage } from "../ai";
 import { logEvent } from "../events";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { SceneReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState } from "@/contracts/state/scene-gen";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageRow } from "./assets";
 import { monogramSvg } from "./monogram";
@@ -76,6 +77,8 @@ export interface RenderSceneInput {
   session: { id: string; ownerId: string };
   plan: SceneRenderPlan;
   userId: string;
+  /** Active location (library id + name) for the scene's location reference; null when emergent/unknown. */
+  location?: { id: string; name: string } | null;
   sink?: DiagnosticSink;
 }
 
@@ -102,6 +105,15 @@ export async function renderSceneImage(input: RenderSceneInput): Promise<string>
     useReference ? { referenceName: reference.name, allowIntimate: true } : {},
   );
 
+  // What the scene features: focal + other in-frame characters (resolved to their
+  // library character ids), plus the active location. Recorded so the Gallery can
+  // filter and a future multi-reference model can consume more than one (today's
+  // render still anchors on the single `reference` avatar above).
+  const characterNames = [input.plan.focal?.name, ...input.plan.others.map((o) => o.name)].filter(
+    (n): n is string => typeof n === "string" && n.trim().length > 0,
+  );
+  const references = await buildSceneReferences(input.session.id, characterNames, input.location ?? null);
+
   const asset = await createImageAsset({
     ownerId: input.userId,
     kind: "scene",
@@ -112,6 +124,7 @@ export async function renderSceneImage(input: RenderSceneInput): Promise<string>
       demo,
       focalName: input.plan.focal?.name ?? null,
       referenceName: reference?.name ?? null,
+      references,
       model: demo ? "demo" : useReference ? `venice/${process.env.VENICE_IMAGE_EDIT_MODEL || "qwen-edit-uncensored"}` : imageModelId(),
     },
   });
@@ -152,6 +165,46 @@ function logScene(sessionId: string, imageId: string, status: string, started: n
 }
 
 /**
+ * Scene references (docs/images.md §Gallery): the characters in frame (focal +
+ * others, resolved to library character ids) plus the active location. Recorded
+ * on the image's `meta.references` so the Gallery can filter by character/world.
+ */
+async function buildSceneReferences(
+  sessionId: string,
+  characterNames: readonly string[],
+  location: { id: string; name: string } | null,
+): Promise<SceneReference[]> {
+  const refs = await resolveSceneCharacterRefs(sessionId, characterNames);
+  if (location) refs.push({ kind: "location", id: location.id, name: location.name });
+  return refs;
+}
+
+/**
+ * Resolve in-frame participant display names to `character` references via their
+ * library `characterId`. Names with no backing library character (the player, an
+ * ad-hoc participant) are skipped — the scene still records the refs it can.
+ * Exported for unit testing.
+ */
+export async function resolveSceneCharacterRefs(sessionId: string, names: readonly string[]): Promise<SceneReference[]> {
+  const wanted = names.map((n) => n.trim()).filter(Boolean);
+  if (wanted.length === 0) return [];
+  const rows = await db()
+    .select({ displayName: sessionParticipants.displayName, characterId: sessionParticipants.characterId })
+    .from(sessionParticipants)
+    .where(eq(sessionParticipants.sessionId, sessionId));
+  const characterIdByName = new Map(rows.map((r) => [r.displayName.trim().toLowerCase(), r.characterId]));
+  const refs: SceneReference[] = [];
+  const seen = new Set<string>();
+  for (const name of wanted) {
+    const characterId = characterIdByName.get(name.toLowerCase());
+    if (!characterId || seen.has(characterId)) continue;
+    seen.add(characterId);
+    refs.push({ kind: "character", id: characterId, name });
+  }
+  return refs;
+}
+
+/**
  * Reference selection (docs/images.md §Scene images): one identity anchor.
  * The focal character's avatar when ready; else the first plan-featured
  * other present NPC with a ready avatar — the composer's spec still
@@ -185,8 +238,13 @@ async function findReferenceAvatar(
 }
 
 /**
- * Resolves a participant's canonical portrait for reference editing: the
- * session participant's own avatar first, then their character's avatar.
+ * Resolves a participant's canonical portrait for reference editing: strictly
+ * the session participant's own snapshot avatar. The library character's avatar
+ * is deliberately NOT consulted — a session is frozen at spawn (re-snapshot only
+ * on restart, see engine/spawn.ts), so scene images depict the character as they
+ * are in THIS session. Falling back to the live library avatar produced
+ * wrong-character scene images when the library portrait changed after spawn (or
+ * when the snapshot had none); the session snapshot is the single source.
  */
 async function findParticipantAvatar(
   sessionId: string,
@@ -199,29 +257,15 @@ async function findParticipantAvatar(
     .from(sessionParticipants)
     .where(eq(sessionParticipants.sessionId, sessionId));
   const subject = participants.find((p) => p.displayName.trim().toLowerCase() === wanted);
-  if (!subject) return null;
+  if (!subject?.avatarImageId) return null;
 
-  const candidateIds: string[] = [];
-  if (subject.avatarImageId) candidateIds.push(subject.avatarImageId);
-  if (subject.characterId) {
-    const [character] = await db()
-      .select({ avatarImageId: characters.avatarImageId })
-      .from(characters)
-      .where(eq(characters.id, subject.characterId))
-      .limit(1);
-    if (character?.avatarImageId) candidateIds.push(character.avatarImageId);
+  const [row] = await db().select().from(images).where(eq(images.id, subject.avatarImageId)).limit(1);
+  if (!row || row.status !== "ready") return null;
+  try {
+    return { row, buffer: await fs.readFile(absoluteImagePath(row)) };
+  } catch {
+    return null; // file lost — no usable reference, fall through to text-to-image
   }
-
-  for (const id of candidateIds) {
-    const [row] = await db().select().from(images).where(eq(images.id, id)).limit(1);
-    if (!row || row.status !== "ready") continue;
-    try {
-      return { row, buffer: await fs.readFile(absoluteImagePath(row)) };
-    } catch {
-      // file lost — try the next candidate
-    }
-  }
-  return null;
 }
 
 /**

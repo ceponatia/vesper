@@ -10,6 +10,7 @@ const navLinks = [
   { href: "/characters", label: "Characters" },
   { href: "/locations", label: "Locations" },
   { href: "/items", label: "Items" },
+  { href: "/gallery", label: "Gallery" },
 ] as const;
 
 /**
@@ -46,14 +47,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <div className="ml-auto">
-            <Link
-              href="/sessions/new"
-              className="inline-flex h-8 items-center rounded-md bg-accent-500 px-3 text-sm font-medium text-ink-950 transition-colors hover:bg-accent-400"
-            >
-              New session
-            </Link>
-          </div>
         </div>
       </header>
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
