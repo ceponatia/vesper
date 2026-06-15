@@ -890,12 +890,7 @@ export function buildSceneComposerContext(
         opacity: i.definition.opacity,
       }));
       const views = resolveWardrobeVisibility(wornInputs);
-      // A character is "wardrobe-tracked" if they own any garment at all (worn
-      // or removed-into-inventory): only then is a bare region a deliberate
-      // undress rather than a world that never modelled clothing.
-      const wardrobeTracked = bundle.items.some(
-        (i) => i.holderParticipantId === p.id && i.definition.coverage.length > 0,
-      );
+      const exposure = exposedRegions(wornInputs);
       return {
         name: p.displayName,
         activity: p.state.activity,
@@ -911,12 +906,15 @@ export function buildSceneComposerContext(
               ...(def?.sensory.appearance ? { appearance: def.sensory.appearance } : {}),
             };
           }),
-        exposure: exposedRegions(wornInputs),
-        wardrobeTracked,
+        exposure,
+        // Session item state is authoritative for scene images. If a participant
+        // has no worn clothing items, exposedRegions([]) is the explicit current
+        // state and must override any clothed reference avatar.
+        wardrobeTracked: true,
         appearance: characterAppearanceSummary(resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays)),
         intimateAppearance: intimateSceneAppearance(
           resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays),
-          exposedRegions(wornInputs),
+          exposure,
         ),
       };
     });

@@ -46,6 +46,25 @@ is known), and only act if a future reader trips on it. Revisit when phase 4
 ships and the standard re-suffix pass runs anyway (see the naming note in
 [phase-4-plan.md](phase-4-plan.md)).
 
+## Non-human races & additive body features (wings · horns · tail)
+
+*Raised 2026-06-14, expanding the phase-4 species scaffolding.* Phase 4 built the
+gating engine + `species/` registry and shipped **`human` only**, deferring "novel
+body plans (tails/wings/gills)" and real non-human species. This designs the
+**tractable middle ground**: wings/horns/tail as **additive features on the
+humanoid plan** (a succubus is a humanoid + extra parts, not a new body plan),
+gated by the same default-absent-tag + per-character-list mechanism phase 4 shipped
+for intimate anatomy — a second list (`bodyFeatures`) defaulted from **species**
+instead of gender. Adds the first real species records (`faerie`, `succubus`). The
+real cost is image generation: features are visible + SFW, so they surface in the
+always-visible appearance prompt on **both** image routes (unlike the
+exposure-gated, Flux-excluded intimate set). True **structural** body plans
+(mermaid/naga/quadruped) stay deferred beyond this.
+
+See [non-human-races-and-features.deferred.md](non-human-races-and-features.deferred.md)
+for the full design, the realize-engine change, the field mapping, and the build
+order.
+
 ## Comms expansions
 
 *Raised 2026-06-13, from the phase-3 presence open questions.* Phase-3 comms

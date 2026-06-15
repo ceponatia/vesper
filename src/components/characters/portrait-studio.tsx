@@ -5,6 +5,7 @@ import {
   avatarImageModels,
   charactersApi,
   portraitVariantKinds,
+  type ImageRecord,
   type AvatarImageModel,
   type PortraitVariantKind,
 } from "@/lib/client/api";
@@ -35,6 +36,16 @@ const avatarModelLabels: Record<AvatarImageModel, string> = {
   flux: "Flux",
   qwen: "Qwen (uncensored)",
 };
+
+function generationError(image: ImageRecord): string | null {
+  const error = image.meta?.error?.trim();
+  return error ? error : null;
+}
+
+function portraitKindLabel(image: ImageRecord): string {
+  if (image.kind === "avatar") return "avatar";
+  return image.meta?.variantKind?.trim() || image.kind.replaceAll("_", " ");
+}
 
 /**
  * Avatar + Venice variant studio (docs/images.md): generate the canonical
@@ -96,9 +107,10 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     const newestAvatar = (portraits.data ?? []).find((img) => img.kind === "avatar");
     if (newestAvatar && newestAvatar.id !== genBaselineRef.current && newestAvatar.status === "failed") {
       setGeneratingAvatar(false);
+      const error = generationError(newestAvatar);
       toast.push({
         title: "Avatar generation failed",
-        description: "The image provider returned an error — try again.",
+        description: error ?? "The image provider returned an error. Try again.",
         tone: "error",
       });
     }
@@ -107,8 +119,6 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const generateAvatar = async () => {
     genBaselineRef.current = (portraits.data ?? []).find((img) => img.kind === "avatar")?.id ?? null;
     setGeneratingAvatar(true);
-    // Stop polling for a stuck/slow job after 2 minutes; the row stays visible.
-    setTimeout(() => setGeneratingAvatar(false), 120_000);
     const result = await charactersApi.generateAvatar(characterId, { model: avatarModel });
     if (result.ok) {
       toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
@@ -154,11 +164,9 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     portraits.reload({ silent: true });
   };
 
-  // Exclude the canonical avatar and any failed avatar regeneration — a failed
-  // regen is transient noise, not a variant the user chose to create.
-  const variants = (portraits.data ?? []).filter(
-    (img) => img.id !== avatarImageId && !(img.kind === "avatar" && img.status === "failed"),
-  );
+  // Keep failed rows visible: image failures are diagnostics the user can act on,
+  // not transient noise that should disappear after polling.
+  const variants = (portraits.data ?? []).filter((img) => img.id !== avatarImageId);
   const canonical = avatarImageId ? (portraits.data ?? []).find((img) => img.id === avatarImageId) : undefined;
   // The prompt that produced the canonical avatar — null when there's no avatar
   // yet or it's a user-uploaded image (uploads carry no generation prompt).
@@ -261,7 +269,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
       </div>
 
       <div className="flex flex-col gap-3">
-        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Variants</h3>
+        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Portrait history</h3>
         {portraits.loading ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {Array.from({ length: 4 }, (_, i) => (
@@ -271,51 +279,68 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
         ) : portraits.error ? (
           <ErrorState error={portraits.error} onRetry={() => portraits.reload()} />
         ) : variants.length === 0 ? (
-          <p className="text-sm text-paper-500">No variants yet.</p>
+          <p className="text-sm text-paper-500">No alternate portraits yet.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {variants.map((img) => (
-              <figure key={img.id} className="group relative overflow-hidden rounded-card border border-ink-600">
-                {img.status === "pending" ? (
-                  <Skeleton className="aspect-[3/4] rounded-none" />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEnlarged({ id: img.id, caption: img.prompt || img.kind })}
-                    aria-label="Enlarge portrait"
-                    className="block w-full cursor-pointer"
-                  >
-                    <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
-                  </button>
-                )}
-                <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-ink-950/80 px-2 py-1.5 text-[11px] text-paper-300">
+            {variants.map((img) => {
+              const error = generationError(img);
+              const label = portraitKindLabel(img);
+              return (
+                <figure key={img.id} className="group relative overflow-hidden rounded-card border border-ink-600">
                   {img.status === "pending" ? (
-                    <Tag>generating…</Tag>
+                    <Skeleton className="aspect-[3/4] rounded-none" />
                   ) : img.status === "failed" ? (
-                    <Tag tone="danger">failed</Tag>
+                    <div className="flex aspect-[3/4] w-full flex-col justify-center gap-2 bg-ink-950/60 px-3 py-4">
+                      <Tag tone="danger" className="self-start">
+                        failed
+                      </Tag>
+                      <p className="text-xs font-medium text-paper-200">{label} generation failed</p>
+                      <p className="max-h-24 overflow-y-auto text-xs break-words text-paper-400" title={error ?? undefined}>
+                        {error ?? "The image provider returned an error."}
+                      </p>
+                      {img.meta?.model ? <p className="text-[11px] break-words text-paper-500">{img.meta.model}</p> : null}
+                    </div>
                   ) : (
-                    <span className="truncate" title={img.prompt}>
-                      {img.prompt || img.kind}
-                    </span>
-                  )}
-                  <span className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    {img.status === "ready" ? (
-                      <Button size="sm" busy={busyImageId === img.id} onClick={() => promote(img.id)}>
-                        Promote
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      busy={busyImageId === img.id}
-                      onClick={() => removeVariant(img.id)}
+                    <button
+                      type="button"
+                      onClick={() => setEnlarged({ id: img.id, caption: img.prompt || img.kind })}
+                      aria-label="Enlarge portrait"
+                      className="block w-full cursor-pointer"
                     >
-                      ✕
-                    </Button>
-                  </span>
-                </figcaption>
-              </figure>
-            ))}
+                      <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
+                    </button>
+                  )}
+                  <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-ink-950/80 px-2 py-1.5 text-[11px] text-paper-300">
+                    {img.status === "pending" ? (
+                      <Tag>generating…</Tag>
+                    ) : img.status === "failed" ? (
+                      <span className="truncate" title={error ?? undefined}>
+                        {error ?? "Generation failed"}
+                      </span>
+                    ) : (
+                      <span className="truncate" title={img.prompt}>
+                        {img.prompt || img.kind}
+                      </span>
+                    )}
+                    <span className="ml-auto flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                      {img.status === "ready" ? (
+                        <Button size="sm" busy={busyImageId === img.id} onClick={() => promote(img.id)}>
+                          Promote
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        busy={busyImageId === img.id}
+                        onClick={() => removeVariant(img.id)}
+                      >
+                        ✕
+                      </Button>
+                    </span>
+                  </figcaption>
+                </figure>
+              );
+            })}
           </div>
         )}
       </div>

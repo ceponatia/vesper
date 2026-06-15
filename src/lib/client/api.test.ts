@@ -7,6 +7,7 @@ import {
   detailOf,
   emptyCharacterDraft,
   emptyWorldDraft,
+  imageRecordSchema,
   imageUrl,
   itemDetailSchema,
   sessionSummarySchema,
@@ -58,6 +59,25 @@ describe("withQuery", () => {
 describe("imageUrl", () => {
   it("points at the serving route", () => {
     expect(imageUrl("img1")).toBe("/api/images/img1/file");
+  });
+});
+
+describe("imageRecordSchema", () => {
+  it("preserves image failure details from row meta", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-failed",
+      kind: "avatar",
+      status: "failed",
+      prompt: "portrait prompt",
+      meta: {
+        model: "venice/qwen-image",
+        error: "The operation was aborted due to timeout",
+        variantKind: "pose",
+      },
+    });
+    expect(parsed.meta.model).toBe("venice/qwen-image");
+    expect(parsed.meta.error).toBe("The operation was aborted due to timeout");
+    expect(parsed.meta.variantKind).toBe("pose");
   });
 });
 
@@ -219,6 +239,28 @@ describe("resource schemas degrade per-field", () => {
       expect(result.data[1]?.kind).toBe("feeling");
       expect(result.data[1]?.stage).toBe("stranger");
     }
+  });
+
+  it("posts participant clothing updates and parses the response", async () => {
+    const fetchMock = vi.fn(async (..._args: Parameters<typeof fetch>) =>
+      jsonResponse({ itemInstanceId: "item1", participantId: "npc1", worn: false }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await sessionsApi.updateParticipantClothing("s1", "npc1", {
+      action: "remove",
+      itemInstanceId: "item1",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data).toEqual({ itemInstanceId: "item1", participantId: "npc1", worn: false });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sessions/s1/participants/npc1/clothing",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ action: "remove", itemInstanceId: "item1" }),
+      }),
+    );
   });
 
   it("detailOf merges the wrapped entity with its sibling families (worlds GET shape)", () => {

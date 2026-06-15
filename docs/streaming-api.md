@@ -66,6 +66,11 @@ POST               /api/sessions/:id/participants/:participantId/inner-note
                                                (memory/feeling/belief, never dialogue) ⇒ 202 { jobId };
                                                queues a non-blocking inner_note job (rate-limited);
                                                400 player_participant when targeting the player
+POST               /api/sessions/:id/participants/:participantId/clothing
+                                               dev/admin only, non-production: { action: "wear"|"remove",
+                                               itemInstanceId } flips a participant-held clothing item
+                                               between worn and held inventory; 409 session_busy while
+                                               a turn is processing
 POST               /api/sessions/:id/turns     ⇒ SSE stream (below)
 PATCH/DELETE       /api/sessions/:id/messages/:messageId      edit (→ reconcile job) / delete
                                                (an emptied turn is removed entirely)

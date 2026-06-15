@@ -8,6 +8,7 @@ import {
   characters,
   db,
   images,
+  itemInstances,
   items,
   jobs,
   locations,
@@ -48,6 +49,7 @@ import { PATCH as patchMessageRoute } from "./[id]/messages/[messageId]/route";
 import { POST as rerunRoute } from "./[id]/messages/[messageId]/rerun/route";
 import { GET as relationshipsRoute } from "./[id]/relationships/route";
 import { POST as sceneRoute } from "./[id]/scene/route";
+import { POST as clothingRoute } from "./[id]/participants/[participantId]/clothing/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -369,6 +371,100 @@ describe.skipIf(!ready)("session routes (demo mode)", () => {
 
     const threads = status["threads"] as Array<Record<string, unknown>>;
     expect(threads.map((t) => t["title"])).toContain("The missing brother");
+  });
+
+  it("admin dev clothing route removes worn clothing to held inventory and wears it again", async () => {
+    const sessionId = await spawn("Clothing debug");
+    const statusRes = await statusRoute(get(`http://test/api/sessions/${sessionId}/status`), ctx({ id: sessionId }));
+    expect(statusRes.status).toBe(200);
+    const status = await json(statusRes);
+    const participants = status["participants"] as Array<Record<string, unknown>>;
+    const maya = participants.find((p) => p["displayName"] === "Maya");
+    expect(maya).toBeDefined();
+    if (!maya) return;
+    const participantId = String(maya["id"]);
+    const worn = (maya["wornFull"] as Array<Record<string, unknown>>).find((item) => item["name"] === "sundress");
+    const itemInstanceId = String(worn?.["instanceId"] ?? "");
+    expect(itemInstanceId.length).toBeGreaterThan(0);
+
+    let denied: Response | null = null;
+    try {
+      authState.user.role = "user";
+      denied = await clothingRoute(
+        send(`http://test/api/sessions/${sessionId}/participants/${participantId}/clothing`, "POST", {
+          action: "remove",
+          itemInstanceId,
+        }),
+        ctx({ id: sessionId, participantId }),
+      );
+    } finally {
+      authState.user.role = "admin";
+    }
+    expect(denied?.status).toBe(403);
+
+    const removeRes = await clothingRoute(
+      send(`http://test/api/sessions/${sessionId}/participants/${participantId}/clothing`, "POST", {
+        action: "remove",
+        itemInstanceId,
+      }),
+      ctx({ id: sessionId, participantId }),
+    );
+    expect(removeRes.status).toBe(200);
+    expect((await json(removeRes))["worn"]).toBe(false);
+
+    const [removed] = await db()
+      .select({
+        holderParticipantId: itemInstances.holderParticipantId,
+        worn: itemInstances.worn,
+        locationId: itemInstances.locationId,
+        containerInstanceId: itemInstances.containerInstanceId,
+      })
+      .from(itemInstances)
+      .where(eq(itemInstances.id, itemInstanceId))
+      .limit(1);
+    expect(removed).toEqual({
+      holderParticipantId: participantId,
+      worn: false,
+      locationId: null,
+      containerInstanceId: null,
+    });
+
+    const afterRemove = await json(
+      await statusRoute(get(`http://test/api/sessions/${sessionId}/status`), ctx({ id: sessionId })),
+    );
+    const mayaAfterRemove = (afterRemove["participants"] as Array<Record<string, unknown>>).find(
+      (p) => p["id"] === participantId,
+    );
+    expect(mayaAfterRemove?.["wardrobe"]).toEqual([]);
+    expect(mayaAfterRemove?.["held"]).toContainEqual({ id: itemInstanceId, name: "sundress", kind: "clothing" });
+
+    await db().update(sessions).set({ status: "processing" }).where(eq(sessions.id, sessionId));
+    const busy = await clothingRoute(
+      send(`http://test/api/sessions/${sessionId}/participants/${participantId}/clothing`, "POST", {
+        action: "wear",
+        itemInstanceId,
+      }),
+      ctx({ id: sessionId, participantId }),
+    );
+    expect(busy.status).toBe(409);
+    await db().update(sessions).set({ status: "ready" }).where(eq(sessions.id, sessionId));
+
+    const wearRes = await clothingRoute(
+      send(`http://test/api/sessions/${sessionId}/participants/${participantId}/clothing`, "POST", {
+        action: "wear",
+        itemInstanceId,
+      }),
+      ctx({ id: sessionId, participantId }),
+    );
+    expect(wearRes.status).toBe(200);
+    expect((await json(wearRes))["worn"]).toBe(true);
+
+    const [wornAgain] = await db()
+      .select({ holderParticipantId: itemInstances.holderParticipantId, worn: itemInstances.worn })
+      .from(itemInstances)
+      .where(eq(itemInstances.id, itemInstanceId))
+      .limit(1);
+    expect(wornAgain).toEqual({ holderParticipantId: participantId, worn: true });
   });
 
   it("edits a narration message and reconciles", async () => {

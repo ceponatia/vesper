@@ -188,8 +188,15 @@ export function applyChunk(segments: StreamSegment[], chunk: TurnChunkPayload): 
 export const wornVisibilitySchema = z.enum(["visible", "hinted", "hidden"]).catch("visible");
 
 const wardrobeEntrySchema = z.preprocess(
-  (raw) => (typeof raw === "string" ? { name: raw } : raw),
+  (raw) => {
+    if (typeof raw === "string") return { name: raw };
+    const obj = record(raw);
+    if (!obj) return raw;
+    const instanceId = firstPresent(obj, ["instanceId", "id"]);
+    return instanceId === undefined ? obj : { ...obj, instanceId };
+  },
   z.object({
+    instanceId: z.string().optional().catch(undefined),
     name: z.string().min(1),
     visibility: wornVisibilitySchema,
   }),

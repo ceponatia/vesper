@@ -4,7 +4,7 @@ import { emptyItemDefinition, emptyItemInstanceState, type ItemDefinition } from
 import { defaultExposureMask, emptyBrief } from "@/contracts/state/brief";
 import { emptyParticipantState } from "@/contracts/state/participant-state";
 import { emptyCharacterProfile, emptyWorldStyle } from "@/contracts/world/profile";
-import { buildSceneComposerPrompt } from "../images";
+import { buildSceneComposerPrompt, buildSceneRenderPrompt, resolveScenePlan, sceneSpecSchema } from "../images";
 import type { BundleItem, BundleParticipant } from "./bundle";
 import { MAX_CHAINED_ACTIONS } from "./constants";
 import { buildSceneComposerContext, messagesFromNarration, raiseExposureForIntent, trimLoreBudget } from "./pipeline";
@@ -165,6 +165,29 @@ describe("buildSceneComposerContext", () => {
     const prompt = buildSceneComposerPrompt(context);
     expect(prompt).not.toContain("Band t-shirt");
     expect(prompt).toContain("Velvet choker (hinted beneath sheer layers)");
+  });
+
+  it("treats no session outfit items as explicit exposure, not unknown clothing", () => {
+    const bundle = { ...sceneBundle(), items: [] };
+    const context = buildSceneComposerContext(bundle, []);
+    const mira = context.present[0];
+    expect(mira?.wornVisible).toEqual([]);
+    expect(mira?.wardrobeTracked).toBe(true);
+    expect(mira?.exposure).toEqual({ torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" });
+
+    const plan = resolveScenePlan(sceneSpecSchema.parse({ focalCharacter: "Mira", pose: "facing the player" }), context);
+    expect(plan.focal?.outfitSummary).toBe("");
+    expect(plan.focal?.exposure).toBe("fully nude, no clothing");
+
+    const prompt = buildSceneRenderPrompt(plan, { referenceName: "Mira" });
+    expect(prompt).toContain("Fully nude, no clothing.");
+    expect(prompt).toContain("add no garment that is not listed");
+    expect(prompt).not.toContain("Keep the same outfit as the reference image.");
+    expect(prompt).not.toContain("wearing casual everyday clothing");
+
+    const textToImagePrompt = buildSceneRenderPrompt(plan);
+    expect(textToImagePrompt).toContain("Subject: Mira — fully nude, no clothing; facing the player.");
+    expect(textToImagePrompt).not.toContain("wearing casual everyday clothing");
   });
 
   it("carries location, scene state, daylight-band lighting context, and the recent narration", () => {

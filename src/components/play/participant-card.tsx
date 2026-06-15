@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cx } from "@/components/ui/cx";
 import { EntityImage } from "@/components/ui/entity-image";
+import { Select } from "@/components/ui/select";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -123,6 +124,7 @@ export function ParticipantCard({
   expanded,
   onToggle,
   onTeleported,
+  onClothingChanged,
 }: {
   sessionId: string;
   participant: StatusParticipant;
@@ -133,9 +135,16 @@ export function ParticipantCard({
   /** Dev-only: provided by the Cast tab to enable "teleport to player"; the
    *  parent refreshes the session after a successful snap. */
   onTeleported?: () => void;
+  /** Dev-only: provided by the Cast tab for wardrobe/inventory test toggles. */
+  onClothingChanged?: () => void | Promise<void>;
 }) {
   const toast = useToast();
   const [teleporting, setTeleporting] = useState(false);
+  const [selectedHeldId, setSelectedHeldId] = useState("");
+  const [clothingAction, setClothingAction] = useState<{
+    itemInstanceId: string;
+    action: "wear" | "remove";
+  } | null>(null);
   const meters = Object.entries(participant.meters);
   // The visible outfit list: hidden layers stay out of the collapsed card (docs/ui.md).
   const outfit = participant.wardrobe.filter((w) => w.visibility !== "hidden");
@@ -157,6 +166,12 @@ export function ParticipantCard({
     !participant.isUser &&
     !!playerLocationId &&
     participant.locationId !== playerLocationId;
+  const canEditClothing = process.env.NODE_ENV !== "production" && !!onClothingChanged;
+  const heldClothing = participant.held.filter((item) => item.kind === "clothing" && item.id.length > 0);
+  const selectedWearId = heldClothing.some((item) => item.id === selectedHeldId)
+    ? selectedHeldId
+    : (heldClothing[0]?.id ?? "");
+  const selectedWearName = heldClothing.find((item) => item.id === selectedWearId)?.name ?? "clothing";
 
   const teleport = async () => {
     if (teleporting) return;
@@ -169,6 +184,26 @@ export function ParticipantCard({
     }
     toast.push({ title: `${participant.displayName} pulled to your location`, tone: "success" });
     onTeleported?.();
+  };
+
+  const updateClothing = async (action: "wear" | "remove", itemInstanceId: string, itemName: string) => {
+    if (!onClothingChanged || process.env.NODE_ENV === "production" || clothingAction) return;
+    setClothingAction({ action, itemInstanceId });
+    const result = await sessionsApi.updateParticipantClothing(sessionId, participant.id, { action, itemInstanceId });
+    setClothingAction(null);
+    if (!result.ok) {
+      toast.push({ title: "Clothing update failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    if (action === "wear") setSelectedHeldId("");
+    toast.push({
+      title:
+        action === "wear"
+          ? `${participant.displayName} is wearing ${itemName}`
+          : `${itemName} moved to ${participant.displayName}'s inventory`,
+      tone: "success",
+    });
+    await onClothingChanged();
   };
 
   return (
@@ -294,15 +329,32 @@ export function ParticipantCard({
               <ul className="mt-1 flex flex-col gap-0.5 text-xs">
                 {wornAll.map((item, i) => (
                   <li
-                    key={`${item.name}-${i}`}
-                    className={cx(
-                      "truncate",
-                      item.visibility === "visible" ? "text-paper-300" : "text-paper-500 italic",
-                    )}
+                    key={item.instanceId ?? `${item.name}-${i}`}
+                    className="flex min-w-0 items-center gap-2"
                   >
-                    {item.name}
-                    {item.visibility === "hinted" ? " (hinted)" : ""}
-                    {item.visibility === "hidden" ? " (hidden under other layers)" : ""}
+                    <span
+                      className={cx(
+                        "min-w-0 flex-1 truncate",
+                        item.visibility === "visible" ? "text-paper-300" : "text-paper-500 italic",
+                      )}
+                    >
+                      {item.name}
+                      {item.visibility === "hinted" ? " (hinted)" : ""}
+                      {item.visibility === "hidden" ? " (hidden under other layers)" : ""}
+                    </span>
+                    {canEditClothing && item.instanceId ? (
+                      <Button
+                        size="sm"
+                        variant="quiet"
+                        busy={clothingAction?.action === "remove" && clothingAction.itemInstanceId === item.instanceId}
+                        disabled={clothingAction !== null}
+                        onClick={() => void updateClothing("remove", item.instanceId ?? "", item.name)}
+                        className="h-6 px-2 text-[11px]"
+                        title="Move this worn clothing item into held inventory"
+                      >
+                        Remove
+                      </Button>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -319,6 +371,42 @@ export function ParticipantCard({
                   </li>
                 ))}
               </ul>
+            </section>
+          ) : null}
+
+          {canEditClothing ? (
+            <section>
+              <SectionTitle>Wear held clothing</SectionTitle>
+              {heldClothing.length > 0 ? (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <Select
+                    value={selectedWearId}
+                    disabled={clothingAction !== null}
+                    onChange={(e) => setSelectedHeldId(e.target.value)}
+                    aria-label={`Held clothing for ${participant.displayName}`}
+                    className="h-7 min-w-0 flex-1 text-xs"
+                  >
+                    {heldClothing.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    busy={clothingAction?.action === "wear" && clothingAction.itemInstanceId === selectedWearId}
+                    disabled={clothingAction !== null || selectedWearId.length === 0}
+                    onClick={() => void updateClothing("wear", selectedWearId, selectedWearName)}
+                    className="h-7"
+                    title="Move this held clothing item onto the character"
+                  >
+                    Wear
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-paper-500">No held clothing.</p>
+              )}
             </section>
           ) : null}
 

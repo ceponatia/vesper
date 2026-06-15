@@ -438,8 +438,15 @@ export const imageRecordSchema = z.object({
   prompt: textOr(""),
   sourceImageId: optionalId,
   createdAt: optionalText,
-  /** Row meta — `source: "upload"` marks a user-uploaded image; `model` is the generator. */
-  meta: z.object({ source: z.string().optional(), model: z.string().optional() }).catch({}),
+  /** Row meta — `source: "upload"` marks uploads; failed rows carry `error`. */
+  meta: z
+    .object({
+      source: z.string().optional().catch(undefined),
+      model: z.string().optional().catch(undefined),
+      error: z.string().optional().catch(undefined),
+      variantKind: z.string().optional().catch(undefined),
+    })
+    .catch({}),
 });
 export type ImageRecord = z.infer<typeof imageRecordSchema>;
 
@@ -672,5 +679,16 @@ export const sessionsApi = {
       z.object({ id: z.string().catch(""), locationId: z.string().catch("") }),
       `/api/sessions/${id}/participants/${participantId}/teleport`,
       {},
+    ),
+  /** Dev-only: flip a participant-held clothing item between worn and held inventory. */
+  updateParticipantClothing: (id: string, participantId: string, body: { action: "wear" | "remove"; itemInstanceId: string }) =>
+    apiPost(
+      z.object({
+        itemInstanceId: z.string().catch(""),
+        participantId: z.string().catch(""),
+        worn: z.boolean().catch(false),
+      }),
+      `/api/sessions/${id}/participants/${participantId}/clothing`,
+      body,
     ),
 };

@@ -10,7 +10,7 @@ import { relationshipToPlayer } from "./cast-relationship";
 import { ParticipantCard } from "./participant-card";
 
 /** Cast tab: per-participant accordion cards (docs/ui.md §Play screen). */
-export function CastTab({ session }: { session: UseSession }) {
+export function CastTab({ session, isAdmin }: { session: UseSession; isAdmin: boolean }) {
   // Accordion: at most one card expanded; expanding one collapses the other.
   const [expandedId, setExpandedId] = useState<string | null>(null);
   // Re-fetch after every completed turn (the clock always advances); stale
@@ -57,6 +57,7 @@ export function CastTab({ session }: { session: UseSession }) {
           expanded={expandedId === participant.id}
           onToggle={() => setExpandedId((prev) => (prev === participant.id ? null : participant.id))}
           onTeleported={() => void session.refresh()}
+          onClothingChanged={isAdmin ? () => session.refresh() : undefined}
         />
       ))}
     </div>

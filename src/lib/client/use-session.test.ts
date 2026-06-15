@@ -171,10 +171,10 @@ describe("parseSessionStatus", () => {
               { id: "c2", label: "tipsy", remainingMinutes: 40 },
             ],
           },
-          wardrobe: [{ name: "linen dress", visibility: "visible" }, "scarf"],
+          wardrobe: [{ instanceId: "w-dress", name: "linen dress", visibility: "visible" }, "scarf"],
           wornFull: [
-            { name: "linen dress", visibility: "visible" },
-            { name: "scarf", visibility: "visible" },
+            { instanceId: "w-dress", name: "linen dress", visibility: "visible" },
+            { id: "w-scarf", name: "scarf", visibility: "visible" },
             { name: "slip", visibility: "hidden" },
           ],
           held: [{ id: "i9", name: "paper fan", kind: "object" }, "coin purse"],
@@ -201,12 +201,12 @@ describe("parseSessionStatus", () => {
     expect(maya?.conditions[0]?.remainingMinutes).toBeNull(); // open-ended
     expect(maya?.conditions[1]?.remainingMinutes).toBe(40);
     expect(maya?.wardrobe).toEqual([
-      { name: "linen dress", visibility: "visible" },
+      { instanceId: "w-dress", name: "linen dress", visibility: "visible" },
       { name: "scarf", visibility: "visible" },
     ]);
     expect(maya?.wornFull).toEqual([
-      { name: "linen dress", visibility: "visible" },
-      { name: "scarf", visibility: "visible" },
+      { instanceId: "w-dress", name: "linen dress", visibility: "visible" },
+      { instanceId: "w-scarf", name: "scarf", visibility: "visible" },
       { name: "slip", visibility: "hidden" },
     ]);
     expect(maya?.held).toEqual([

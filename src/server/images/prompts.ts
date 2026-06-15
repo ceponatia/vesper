@@ -250,9 +250,9 @@ export interface ScenePresentCharacter {
   /** Per-region coverage (exposedRegions) — drives explicit bare-skin phrasing. */
   exposure?: RegionExposure;
   /**
-   * True when this character has any garment in inventory (worn or removed):
-   * the gate for bare phrasing, so an NPC whose world never modelled clothing
-   * is never rendered nude — only a stripped, clothing-tracked character is.
+   * Gate for bare phrasing. Scene-image callers set this when the session's
+   * item state is authoritative; with no worn garments, exposedRegions([])
+   * should override a clothed reference avatar.
    */
   wardrobeTracked?: boolean;
 }
@@ -341,12 +341,11 @@ export function wardrobeOutfitSummary(worn: ReadonlyArray<SceneWornItem>): strin
 /**
  * Explicit bare-skin phrasing for the uncovered regions an image model would
  * otherwise paint clothed (docs/images.md §Scene images). Gated on
- * `wardrobeTracked`: a character whose world never modelled clothing has no
- * "removed" state, so an empty wardrobe means unknown, not nude. Region scope
- * is torso + lower body + feet; head/hands are omitted because bare there is
- * the universal default and would fire on every clothed subject. `legs` is
- * stated only when the pelvis is covered — a bare pelvis already implies it.
- * Returns "" when nothing is exposed (or the gate is off).
+ * `wardrobeTracked`: callers set this only when wardrobe state is authoritative.
+ * Region scope is torso + lower body + feet; head/hands are omitted because
+ * bare there is the universal default and would fire on every clothed subject.
+ * `legs` is stated only when the pelvis is covered — a bare pelvis already
+ * implies it. Returns "" when nothing is exposed (or the gate is off).
  */
 export function formatExposure(exposure?: RegionExposure, wardrobeTracked?: boolean): string {
   if (!exposure || !wardrobeTracked) return "";
