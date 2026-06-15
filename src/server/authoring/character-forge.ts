@@ -3,8 +3,8 @@ import {
   attributeRegistry,
   bodyLocationRegistry,
   DEFAULT_SPECIES_ID,
-  defaultIntimateRegionsForGender,
   inferSpeciesFromText,
+  seedBodyConfigFromAttributes,
   isFeatureAttributeCategory,
   isIntimateAttributeCategory,
   realizeBody,
@@ -458,10 +458,11 @@ async function forgeAttributesSection(context: CharacterForgeContext): Promise<C
   // core-visual pass treats them as already present, then the core-visual fill.
   const seeded = fillSpeciesRequiredDefaults(grounded, realizedBody, context.sink);
   const attributes = fillCoreVisualDefaults(seeded, context.prompt, context.sink, ranges, realizedBody);
-  // Seed the body-config from the resolved gender (Decision 1) — overridable in
-  // the editor. Intimate attribute values stay empty; the human authors them.
-  const gender = attributes.find((a) => a.id === "identity.gender")?.value;
-  const intimateRegions = defaultIntimateRegionsForGender(typeof gender === "string" ? gender : undefined);
+  // Seed the body-config declaratively from the attribute values' activatesGroups
+  // (e.g. identity.gender) — a SEED, overridable in the editor. gender is now
+  // coreVisual, so it is always present and the seed is reliable. Intimate
+  // attribute values stay empty; the human authors them.
+  const { intimateRegions } = seedBodyConfigFromAttributes(attributes);
   return { profile: { attributes, intimateRegions } };
 }
 

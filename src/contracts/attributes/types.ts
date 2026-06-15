@@ -78,6 +78,28 @@ export const attributeDefinitionSchema = z.object({
    * unspecified character never silently defaults to one.
    */
   autoDefaultExcludes: z.array(z.string().min(1)).readonly().optional(),
+  /**
+   * Declarative body-config activation — a creation-time SEED, never a lock.
+   * When this (enum) attribute takes one of these values at character creation,
+   * the listed groups are added to the character's body-config: intimate region
+   * groups (`CharacterProfile.intimateRegions`) and/or additive feature groups
+   * (`CharacterProfile.bodyFeatures`). Keyed by enum member; unlisted members
+   * seed nothing. The body-config is authoritative and fully editable
+   * thereafter — so `identity.gender = "male"` seeds penis/testicles but a male
+   * character can still be given a vulva in the editor (no anatomy lock). Group
+   * ids are validated by `seedBodyConfigFromAttributes` against the body-config
+   * vocab (INTIMATE_REGION_GROUPS / FEATURE_GROUPS). The body-config starts
+   * empty, so "deactivate X" is simply "no value activates X".
+   */
+  activatesGroups: z
+    .record(
+      z.string(),
+      z.object({
+        intimateRegions: z.array(z.string().min(1)).readonly().optional(),
+        bodyFeatures: z.array(z.string().min(1)).readonly().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type AttributeDefinition = z.infer<typeof attributeDefinitionSchema>;

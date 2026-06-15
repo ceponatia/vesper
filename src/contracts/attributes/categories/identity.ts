@@ -12,6 +12,16 @@ export const identityGroup = defineAttributeGroup("identity", [
     allowedValues: ["female", "male", "androgynous", "nonbinary"],
     aliases: ["gender"],
     identityAnchor: true,
+    // coreVisual so the forge always fills it: gender is the seed input for the
+    // body-config (activatesGroups below), and a missing gender used to leave a
+    // character with no intimate anatomy at all (was audit E1).
+    coreVisual: true,
+    // Creation-time body-config seed (not a lock — the editor stays
+    // authoritative). androgynous / nonbinary seed nothing; the author chooses.
+    activatesGroups: {
+      female: { intimateRegions: ["vulva", "breasts"] },
+      male: { intimateRegions: ["penis", "testicles"] },
+    },
   },
   {
     id: "identity.apparent_age",

@@ -37,18 +37,6 @@ export function isIntimateAttributeCategory(category: string): category is Intim
 }
 
 /**
- * The default body-config for a given presented gender (Decision 1: gender sets
- * a default, always overridable). Androgynous / nonbinary / unspecified seed
- * empty — the author picks. This is only a creation-time seed; the stored
- * body-config is authoritative thereafter.
- */
-export function defaultIntimateRegionsForGender(gender: string | undefined): IntimateRegionGroup[] {
-  if (gender === "female") return ["vulva", "breasts"];
-  if (gender === "male") return ["penis", "testicles"];
-  return []; // androgynous / nonbinary / unspecified — the author chooses
-}
-
-/**
  * Explicit intimate anatomy, slotted under the everyday `groin` / `pelvis` /
  * `chest` parents. `coverageRelevant: false` — these are not garment slots; a
  * bottom covering `pelvis` (or a bra covering `chest`) already covers them via

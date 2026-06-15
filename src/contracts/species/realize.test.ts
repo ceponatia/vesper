@@ -3,7 +3,6 @@ import { realizeBody } from "./realize";
 import { attributeRegistry } from "../attributes";
 import { attributeCategories } from "../attributes/category-ids";
 import {
-  defaultIntimateRegionsForGender,
   FEATURE_ATTRIBUTE_CATEGORIES,
   FEATURE_GROUPS,
   INTIMATE_ATTRIBUTE_CATEGORIES,
@@ -175,15 +174,6 @@ describe("feature constants stay consistent with the registry", () => {
     expect(bodyLocationRegistry.byId("wings")?.parentId).toBe("back");
     expect(bodyLocationRegistry.byId("horns")?.parentId).toBe("head");
     expect(bodyLocationRegistry.byId("tail")?.parentId).toBe("pelvis");
-  });
-});
-
-describe("defaultIntimateRegionsForGender", () => {
-  it("seeds female / male defaults, empty for nonbinary/unspecified (overridable)", () => {
-    expect(defaultIntimateRegionsForGender("female")).toEqual(["vulva", "breasts"]);
-    expect(defaultIntimateRegionsForGender("male")).toEqual(["penis", "testicles"]);
-    expect(defaultIntimateRegionsForGender("nonbinary")).toEqual([]);
-    expect(defaultIntimateRegionsForGender(undefined)).toEqual([]);
   });
 });
 
