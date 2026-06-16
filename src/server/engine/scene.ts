@@ -694,7 +694,7 @@ export function buildCanonicalFactsBlock(bundle: SceneBundleInput): string {
     // character is an elf / succubus. Generic visual looks go to the image
     // models, not here — the narrator gets physical detail from per-character
     // attributes (buildGlanceImpressions). "" for human (the unmarked default).
-    const species = speciesLorePhrase(p.snapshot.speciesId);
+    const species = speciesLorePhrase(p.snapshot.speciesId, p.snapshot.heritageId);
     const speciesPhrase = species ? ` Species: ${species}.` : "";
     const bio = excerptBio(p.snapshot.bio);
     const bioPhrase = bio ? ` Bio: ${bio}` : "";
@@ -792,6 +792,7 @@ export function buildGlanceImpressions(
     const effective = resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays);
     const realizedBody = realizeBody({
       speciesId: p.snapshot.speciesId,
+      heritageId: p.snapshot.heritageId,
       bodyPlanId: p.snapshot.bodyPlanId,
       intimateRegions: p.snapshot.intimateRegions,
       bodyFeatures: p.snapshot.bodyFeatures,

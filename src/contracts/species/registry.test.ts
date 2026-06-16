@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { inferSpeciesFromText, speciesAppearancePhrase, speciesCatalog, speciesLorePhrase } from "./registry";
+import {
+  heritageFor,
+  heritagesForSpecies,
+  inferHeritageFromText,
+  inferSpeciesFromText,
+  speciesAppearancePhrase,
+  speciesCatalog,
+  speciesLorePhrase,
+} from "./registry";
 import { realizeBody } from "./realize";
 import { attributeRegistry } from "../attributes";
 import { bodyPlanById } from "../body/plans";
@@ -19,6 +27,12 @@ describe("inferSpeciesFromText", () => {
     expect(inferSpeciesFromText("a fae courtier")?.species.id).toBe("faerie");
     expect(inferSpeciesFromText("an orcish mercenary")?.species.id).toBe("orc");
     expect(inferSpeciesFromText("a goblinoid thief")?.species.id).toBe("goblin");
+  });
+
+  it("resolves the parent species from a heritage name", () => {
+    // "drow"/"dark elf" name a heritage but must still infer the elf species.
+    expect(inferSpeciesFromText("a drow ranger")?.species.id).toBe("elf");
+    expect(inferSpeciesFromText("a dark elf scholar")?.species.id).toBe("elf");
   });
 
   it("uses conservative fuzzy matching for misspellings", () => {
@@ -79,6 +93,19 @@ describe("speciesAppearancePhrase", () => {
     expect(succubus?.appearance).toBeTruthy();
     expect(speciesAppearancePhrase("succubus")).toBe(`Succubus — ${succubus?.appearance}`);
   });
+
+  it("uses the heritage label and COMBINES species + heritage appearance", () => {
+    const elf = speciesCatalog.find((s) => s.id === "elf");
+    const dark = elf?.heritages.find((h) => h.id === "dark_elf");
+    const phrase = speciesAppearancePhrase("elf", "dark_elf");
+    expect(phrase.startsWith("Dark Elf — ")).toBe(true); // heritage label wins
+    expect(phrase).toContain(elf?.appearance ?? "__none__"); // species base look kept
+    expect(phrase).toContain(dark?.appearance ?? "__none__"); // heritage specifics appended
+  });
+
+  it("ignores an unknown heritage id (falls back to the bare species)", () => {
+    expect(speciesAppearancePhrase("elf", "nope")).toBe(speciesAppearancePhrase("elf"));
+  });
 });
 
 describe("speciesLorePhrase", () => {
@@ -92,6 +119,59 @@ describe("speciesLorePhrase", () => {
     expect(elf?.lore).toBeTruthy();
     expect(speciesLorePhrase("elf")).toBe(`Elf — ${elf?.lore}`);
   });
+
+  it("uses the heritage label and REPLACES the species lore", () => {
+    const elf = speciesCatalog.find((s) => s.id === "elf");
+    const dark = elf?.heritages.find((h) => h.id === "dark_elf");
+    expect(speciesLorePhrase("elf", "dark_elf")).toBe(`Dark Elf — ${dark?.lore}`);
+    expect(speciesLorePhrase("elf", "dark_elf")).not.toContain(elf?.lore ?? "__none__");
+  });
+});
+
+describe("heritage lookups and inference", () => {
+  it("resolves a heritage within its species only", () => {
+    expect(heritageFor("elf", "dark_elf")?.label).toBe("Dark Elf");
+    expect(heritageFor("elf", "nope")).toBeUndefined();
+    expect(heritageFor("human", "dark_elf")).toBeUndefined(); // not a member of human
+    expect(heritageFor("elf", undefined)).toBeUndefined();
+  });
+
+  it("lists the heritages a species offers", () => {
+    expect(heritagesForSpecies("elf").map((h) => h.id)).toContain("dark_elf");
+    expect(heritagesForSpecies("human")).toEqual([]);
+  });
+
+  it("infers a heritage from label or alias, scoped to the species", () => {
+    expect(inferHeritageFromText("elf", "a dark elf ranger")?.id).toBe("dark_elf");
+    expect(inferHeritageFromText("elf", "a drow assassin in the dark")?.id).toBe("dark_elf");
+    expect(inferHeritageFromText("elf", "an elven ranger")).toBeUndefined(); // no heritage named
+    expect(inferHeritageFromText("human", "a dark elf")).toBeUndefined(); // human has no heritages
+  });
+});
+
+describe("heritage definitions are valid registry references", () => {
+  for (const species of speciesCatalog) {
+    for (const heritage of species.heritages) {
+      it(`${species.id}/${heritage.id}: unique id, rules target real attributes with in-vocabulary values`, () => {
+        // unique within the species
+        expect(species.heritages.filter((h) => h.id === heritage.id).length).toBe(1);
+        const body = realizeBody({ speciesId: species.id, heritageId: heritage.id });
+        for (const rule of heritage.attributeRules) {
+          const d = attributeRegistry.byId(rule.attributeId);
+          expect(d, `${heritage.id}: rule targets unknown attribute ${rule.attributeId}`).toBeDefined();
+          if (!d) continue;
+          if (d.valueType === "enum" || d.valueType === "enum_list") {
+            const inVocab = (v: unknown) =>
+              expect(d.allowedValues?.includes(String(v)), `${heritage.id}.${rule.attributeId}: "${String(v)}" not in allowedValues`).toBe(true);
+            if (rule.defaultValue !== undefined) inVocab(rule.defaultValue);
+            for (const v of rule.allowedValues ?? []) inVocab(v);
+            for (const v of rule.disallowedValues ?? []) inVocab(v);
+            expect((body.allowedValuesFor(d)?.length ?? 0) > 0, `${heritage.id}.${rule.attributeId}: narrowed to empty`).toBe(true);
+          }
+        }
+      });
+    }
+  }
 });
 
 describe("species attributeRules are valid registry references", () => {

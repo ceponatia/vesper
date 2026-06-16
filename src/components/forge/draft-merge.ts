@@ -30,6 +30,7 @@ export function mergeCharacterSection(
           voice: incoming.profile.voice,
           aliases: incoming.profile.aliases,
           speciesId: incoming.profile.speciesId,
+          heritageId: incoming.profile.heritageId,
           bodyPlanId: incoming.profile.bodyPlanId,
           bodyFeatures: incoming.profile.bodyFeatures,
         },

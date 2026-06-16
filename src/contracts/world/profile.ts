@@ -18,6 +18,13 @@ export const characterProfileSchema = z.object({
   personality: z.string().default(""),
   voice: z.string().optional(),
   speciesId: z.string().default("human"),
+  /**
+   * Optional heritage within the species (e.g. "dark_elf" inside "elf") — a pure
+   * overlay realizeBody composes after the species. Absent ⇒ bare species, the
+   * pre-heritage behavior (old rows parse unchanged). Validated loosely as a
+   * string; a heritage id not belonging to the species is ignored at realize time.
+   */
+  heritageId: z.string().optional(),
   bodyPlanId: z.string().default(DEFAULT_BODY_PLAN_ID),
   /**
    * Body-config: which intimate region groups this character has (e.g.

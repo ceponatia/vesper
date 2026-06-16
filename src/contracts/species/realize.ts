@@ -8,7 +8,7 @@ import {
   isIntimateRegionGroup,
 } from "../body/locations";
 import { bodyPlanById, DEFAULT_BODY_PLAN_ID } from "../body/plans";
-import { DEFAULT_SPECIES_ID, speciesById } from "./registry";
+import { DEFAULT_SPECIES_ID, heritageFor, speciesById } from "./registry";
 
 /**
  * The realized body for one character — the single gating filter the spec calls
@@ -16,7 +16,9 @@ import { DEFAULT_SPECIES_ID, speciesById } from "./registry";
  *
  *   body plan (superset of locations)
  *     → species (allow / disallow + forbidden attribute rules)
- *       → per-character body-config (which intimate region groups are present)
+ *       → heritage (additive overlay: extra feature groups, rules that override
+ *         the species' by attributeId)
+ *         → per-character body-config (which intimate region groups are present)
  *
  * and answers, for a given character, which body locations exist and which
  * attributes apply. The forge, the attribute editor, the narrator prompt
@@ -26,6 +28,8 @@ import { DEFAULT_SPECIES_ID, speciesById } from "./registry";
 export interface RealizedBody {
   readonly bodyPlanId: string;
   readonly speciesId: string;
+  /** The resolved heritage id when one applies, else undefined. */
+  readonly heritageId: string | undefined;
   readonly intimateRegions: ReadonlySet<string>;
   readonly bodyFeatures: ReadonlySet<string>;
   readonly locationIds: ReadonlySet<string>;
@@ -56,6 +60,8 @@ export interface RealizedBody {
 export interface RealizeBodyInput {
   bodyPlanId?: string;
   speciesId?: string;
+  /** Optional heritage within the species; ignored if it isn't one of the species' heritages. */
+  heritageId?: string;
   /** The per-character body-config — present intimate region groups. */
   intimateRegions?: readonly string[];
   /**
@@ -72,7 +78,13 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
 
   const plan = bodyPlanById(bodyPlanId);
   const species = speciesById(speciesId);
-  const featureSource = input.bodyFeatures ?? species?.defaultFeatureGroups ?? [];
+  // Heritage is a pure overlay within the species: it never touches the body
+  // plan or location set, only the feature defaults and attribute rules below.
+  const heritage = heritageFor(speciesId, input.heritageId);
+  // Default feature groups = species defaults ∪ heritage additions, unless the
+  // per-character bodyFeatures override is supplied (even an empty one).
+  const featureSource =
+    input.bodyFeatures ?? [...(species?.defaultFeatureGroups ?? []), ...(heritage?.defaultFeatureGroups ?? [])];
   const bodyFeatures = new Set<string>(featureSource.filter(isFeatureGroup));
 
   // Base location set = the body plan's ids (or the full registry if the plan id
@@ -98,11 +110,14 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
 
   // Index the species rules by attribute id. First rule per id wins; a second
   // rule for the same id is an authoring error (a species registry test asserts
-  // ids are unique), so the map silently keeps the first.
+  // ids are unique), so the map silently keeps the first. Heritage rules are
+  // then applied last-wins: a heritage rule **overrides** the species rule for
+  // the same attribute, and heritage-only rules add to the set.
   const rulesById = new Map<string, AttributeRule>();
   for (const rule of species?.attributeRules ?? []) {
     if (!rulesById.has(rule.attributeId)) rulesById.set(rule.attributeId, rule);
   }
+  for (const rule of heritage?.attributeRules ?? []) rulesById.set(rule.attributeId, rule);
   const forbiddenAttributeIds = new Set(
     [...rulesById.values()].filter((r) => r.applicability === "forbidden").map((r) => r.attributeId),
   );
@@ -142,6 +157,7 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
   return {
     bodyPlanId,
     speciesId,
+    heritageId: heritage?.id,
     intimateRegions,
     bodyFeatures,
     locationIds,

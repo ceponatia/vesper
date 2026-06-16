@@ -894,7 +894,7 @@ export function buildSceneComposerContext(
       const exposure = exposedRegions(wornInputs);
       return {
         name: p.displayName,
-        species: speciesAppearancePhrase(p.snapshot.speciesId),
+        species: speciesAppearancePhrase(p.snapshot.speciesId, p.snapshot.heritageId),
         activity: p.state.activity,
         posture: p.state.posture,
         wornVisible: views

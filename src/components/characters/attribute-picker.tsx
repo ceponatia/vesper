@@ -50,6 +50,7 @@ export interface AttributePickerProps {
   /** When provided, body feature toggle UI is shown. */
   onChangeBodyFeatures?: (features: string[]) => void;
   speciesId?: string;
+  heritageId?: string;
   bodyPlanId?: string;
 }
 
@@ -86,12 +87,13 @@ export function AttributePicker({
   bodyFeatures,
   onChangeBodyFeatures,
   speciesId,
+  heritageId,
   bodyPlanId,
 }: AttributePickerProps) {
   const byId = useMemo(() => attributeValueMap(values), [values]);
   const body = useMemo(
-    () => realizeBody({ speciesId, bodyPlanId, intimateRegions, bodyFeatures }),
-    [speciesId, bodyPlanId, intimateRegions, bodyFeatures],
+    () => realizeBody({ speciesId, heritageId, bodyPlanId, intimateRegions, bodyFeatures }),
+    [speciesId, heritageId, bodyPlanId, intimateRegions, bodyFeatures],
   );
   const effectiveBodyFeatures = bodyFeatures ?? [...body.bodyFeatures];
 

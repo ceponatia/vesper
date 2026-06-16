@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { speciesById, speciesCatalog, type Diagnostic } from "@/contracts";
+import { heritageFor, heritagesForSpecies, speciesById, speciesCatalog, type Diagnostic } from "@/contracts";
 import type { CharacterDraft, CharacterForgeSection } from "@/lib/client/api";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { Button } from "@/components/ui/button";
@@ -68,12 +68,26 @@ export function CharacterEditor({
   const setSpecies = (speciesId: string) => {
     const species = speciesById(speciesId);
     if (!species) return;
+    // A heritage belongs to one species, so changing species clears it and the
+    // feature config resets to the (bare) species defaults.
     patchProfile({
       speciesId: species.id,
+      heritageId: undefined,
       bodyPlanId: species.bodyPlanId,
       bodyFeatures: species.defaultFeatureGroups ? [...species.defaultFeatureGroups] : undefined,
     });
   };
+  const setHeritage = (heritageId: string) => {
+    const species = speciesById(draft.profile.speciesId);
+    if (!species) return;
+    const heritage = heritageFor(species.id, heritageId);
+    const groups = [...(species.defaultFeatureGroups ?? []), ...(heritage?.defaultFeatureGroups ?? [])];
+    patchProfile({
+      heritageId: heritage?.id,
+      bodyFeatures: groups.length > 0 ? [...new Set(groups)] : undefined,
+    });
+  };
+  const heritages = heritagesForSpecies(draft.profile.speciesId);
 
   const sectionFor: Partial<Record<EditorTab, CharacterForgeSection>> = {
     profile: "profile",
@@ -126,6 +140,20 @@ export function CharacterEditor({
               </Select>
             )}
           </Field>
+          {heritages.length > 0 ? (
+            <Field label="Heritage" hint="A sub-group within the species.">
+              {(id) => (
+                <Select id={id} value={draft.profile.heritageId ?? ""} onChange={(e) => setHeritage(e.target.value)}>
+                  <option value="">— None —</option>
+                  {heritages.map((heritage) => (
+                    <option key={heritage.id} value={heritage.id}>
+                      {heritage.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          ) : null}
           <Field label="Bio" className="sm:col-span-2">
             {(id) => (
               <Textarea id={id} rows={5} value={draft.profile.bio} onChange={(e) => patchProfile({ bio: e.target.value })} />
@@ -167,6 +195,7 @@ export function CharacterEditor({
           bodyFeatures={draft.profile.bodyFeatures}
           onChangeBodyFeatures={(bodyFeatures) => patchProfile({ bodyFeatures })}
           speciesId={draft.profile.speciesId}
+          heritageId={draft.profile.heritageId}
           bodyPlanId={draft.profile.bodyPlanId}
         />
       ) : null}
@@ -177,6 +206,7 @@ export function CharacterEditor({
           values={draft.profile.attributes}
           onChange={(attributes) => patchProfile({ attributes })}
           speciesId={draft.profile.speciesId}
+          heritageId={draft.profile.heritageId}
           bodyPlanId={draft.profile.bodyPlanId}
         />
       ) : null}

@@ -31,6 +31,14 @@ humanoid plus extra parts.
   generic human note can't fit realistic/sci-fi/fantasy worlds alike). The forge
   feeds `appearance` into both the profile and attribute passes so generated
   characters realize the species look as concrete attribute values.
+- **Heritages (sub-groups within a species)** — optional `heritages` on a species
+  (worked example: `dark_elf` inside `elf`). A pure overlay realized by
+  `realizeBody`'s `heritageId`: adds feature groups, **overrides** species
+  attribute rules per `attributeId`, **combines** its `appearance` with the
+  species look, **replaces** the species `lore`. Stored as `profile.heritageId`;
+  forge inference (`inferHeritageFromText`) and a dependent editor picker resolve
+  it; heritage names resolve the parent species too. Additive-only — never forks
+  the body plan. Authoring more heritages (Wood Elf, Pixie/Sprite, …) is data.
 
 ## Remaining work
 

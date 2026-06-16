@@ -3,6 +3,8 @@ import {
   attributeRegistry,
   bodyLocationRegistry,
   DEFAULT_SPECIES_ID,
+  heritageFor,
+  inferHeritageFromText,
   inferSpeciesFromText,
   seedBodyConfigFromAttributes,
   isFeatureAttributeCategory,
@@ -18,6 +20,7 @@ import {
   type AttributeValue,
   type CharacterProfile,
   type DiagnosticSink,
+  type HeritageDefinition,
   type ItemDefinition,
   type RealizedBody,
   type SpeciesDefinition,
@@ -118,15 +121,44 @@ function speciesForForgeContext(context: CharacterForgeContext): SpeciesDefiniti
   return context.inferredSpecies ?? inferSpeciesFromText(context.prompt)?.species;
 }
 
+/**
+ * The heritage within the resolved species — the draft's stored `heritageId`
+ * when editing, else inferred from the prompt ("a drow ranger" → dark_elf).
+ * Scoped to the resolved species so an inferred heritage can never belong to a
+ * different one.
+ */
+function heritageForForgeContext(context: CharacterForgeContext): HeritageDefinition | undefined {
+  const species = speciesForForgeContext(context);
+  if (!species) return undefined;
+  const draftId = context.draft?.profile.heritageId;
+  if (draftId) return heritageFor(species.id, draftId);
+  return inferHeritageFromText(species.id, context.prompt);
+}
+
 function realizedBodyForForgeContext(context: CharacterForgeContext) {
   const species = speciesForForgeContext(context);
   if (!species) return undefined;
   return realizeBody({
     speciesId: species.id,
+    heritageId: heritageForForgeContext(context)?.id,
     bodyPlanId: context.draft?.profile.bodyPlanId ?? species.bodyPlanId,
     intimateRegions: context.draft?.profile.intimateRegions,
     bodyFeatures: context.draft?.profile.bodyFeatures,
   });
+}
+
+/**
+ * The species/heritage line shared by the profile and attribute prompts: the
+ * label (with the heritage in parens) plus the combined generic appearance.
+ * Empty `label`-only when nothing extra is authored.
+ */
+function speciesForgeDescriptor(
+  species: SpeciesDefinition,
+  heritage: HeritageDefinition | undefined,
+): { label: string; look: string } {
+  const label = heritage ? `${species.label} (${heritage.label} heritage)` : species.label;
+  const look = [species.appearance, heritage?.appearance ?? ""].map((p) => p.trim()).filter(Boolean).join(" ");
+  return { label, look: look ? ` ${look}` : "" };
 }
 
 // ---------------------------------------------------------------------------
@@ -157,8 +189,8 @@ function profilePrompt(context: CharacterForgeContext): string {
     "voice notes (how they sound and speak), any aliases or nicknames, and 3-6 lowercase tags.",
   ];
   if (species && species.id !== DEFAULT_SPECIES_ID) {
-    const look = species.appearance ? ` ${species.appearance}` : "";
-    lines.push("", `Resolved structural species: ${species.label}.${look} Keep the draft consistent with that species.`);
+    const { label, look } = speciesForgeDescriptor(species, heritageForForgeContext(context));
+    lines.push("", `Resolved structural species: ${label}.${look} Keep the draft consistent with that species.`);
   }
   if (context.draft?.name) {
     lines.push("", `You are regenerating the profile of the draft currently named "${context.draft.name}". Keep the core concept.`);
@@ -186,9 +218,12 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
   if (voice) profile.voice = voice;
   const species = speciesForForgeContext(context);
   if (species) {
+    const heritage = heritageForForgeContext(context);
     profile.speciesId = species.id;
+    profile.heritageId = heritage?.id;
     profile.bodyPlanId = species.bodyPlanId;
-    profile.bodyFeatures = species.defaultFeatureGroups ? [...species.defaultFeatureGroups] : undefined;
+    const groups = [...(species.defaultFeatureGroups ?? []), ...(heritage?.defaultFeatureGroups ?? [])];
+    profile.bodyFeatures = groups.length > 0 ? [...new Set(groups)] : undefined;
   }
   return {
     name: section.name.trim(),
@@ -422,10 +457,10 @@ function attributesPrompt(context: CharacterForgeContext): string {
   ];
   const species = speciesForForgeContext(context);
   if (species && species.id !== DEFAULT_SPECIES_ID) {
-    const look = species.appearance ? ` ${species.appearance}` : "";
+    const { label, look } = speciesForgeDescriptor(species, heritageForForgeContext(context));
     lines.push(
       "",
-      `Resolved structural species: ${species.label}.${look} Include its visible feature morphology when the vocabulary lists it; choose attribute values consistent with this generic look unless the concept says otherwise.`,
+      `Resolved structural species: ${label}.${look} Include its visible feature morphology when the vocabulary lists it; choose attribute values consistent with this generic look unless the concept says otherwise.`,
     );
   }
   if (hasSpeciesTrait) {

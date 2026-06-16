@@ -494,6 +494,17 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     expect(draft.profile.bodyFeatures?.sort()).toEqual(["horns", "tail", "wings"]);
   });
 
+  it("seeds a heritage within its species from the prompt", async () => {
+    const drow = await forgeCharacter({ prompt: "a drow ranger", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(drow.profile.speciesId).toBe("elf");
+    expect(drow.profile.heritageId).toBe("dark_elf");
+
+    // A bare elf prompt leaves the heritage unset.
+    const elf = await forgeCharacter({ prompt: "an elven scholar", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(elf.profile.speciesId).toBe("elf");
+    expect(elf.profile.heritageId).toBeUndefined();
+  });
+
   it("seeds new fantasy species from aliases and fuzzy prompt names", async () => {
     const faerie = await forgeCharacter({ prompt: "a fairy archivist", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
     expect(faerie.profile.speciesId).toBe("faerie");

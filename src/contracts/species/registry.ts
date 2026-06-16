@@ -1,4 +1,4 @@
-import type { SpeciesDefinition } from "./types";
+import type { HeritageDefinition, SpeciesDefinition } from "./types";
 import { speciesCatalog } from "./catalog";
 
 /**
@@ -24,34 +24,53 @@ export function isSpeciesId(id: string): boolean {
   return byId.has(id);
 }
 
-/**
- * The species *visual* phrase for the image models and the forge: the label
- * with the authored generic `appearance` appended when present. Returns "" for
- * the default species (human is the unmarked baseline — naming it is noise) or
- * an unknown id; label-only when `appearance` is unauthored, so the consumer
- * still knows the cast is non-human. One gate shared by both visual consumers
- * (images/prompts.ts, authoring/character-forge.ts) so the rule stays identical
- * and out of jscpd's way. Companion to `speciesLorePhrase` (narrator culture).
- */
-export function speciesAppearancePhrase(id: string): string {
-  if (id === DEFAULT_SPECIES_ID) return "";
-  const species = byId.get(id);
-  if (!species) return "";
-  return species.appearance ? `${species.label} — ${species.appearance}` : species.label;
+/** The heritage record for an id within a species, or undefined (unknown / not a member). */
+export function heritageFor(speciesId: string, heritageId: string | undefined): HeritageDefinition | undefined {
+  if (!heritageId) return undefined;
+  return byId.get(speciesId)?.heritages.find((h) => h.id === heritageId);
+}
+
+/** The heritages a species offers (empty array for a species with none). */
+export function heritagesForSpecies(speciesId: string): readonly HeritageDefinition[] {
+  return byId.get(speciesId)?.heritages ?? [];
 }
 
 /**
- * The species *cultural/identity* phrase for the narrator's canonical facts:
- * the label with the authored `lore` appended when present. Same "" / label-only
- * rules as `speciesAppearancePhrase` — the two split the old single phrase by
- * audience (visual → images/forge, culture → narrator) so neither consumer is
- * fed text meant for the other.
+ * The species *visual* phrase for the image models and the forge: the label with
+ * the authored generic `appearance` appended when present. Returns "" for the
+ * default species (human is the unmarked baseline — naming it is noise) or an
+ * unknown id; label-only when `appearance` is unauthored, so the consumer still
+ * knows the cast is non-human. When a `heritageId` resolves, its label replaces
+ * the species label and its `appearance` is **combined** with the species' look.
+ * One gate shared by both visual consumers (images/prompts.ts,
+ * authoring/character-forge.ts). Companion to `speciesLorePhrase` (narrator culture).
  */
-export function speciesLorePhrase(id: string): string {
-  if (id === DEFAULT_SPECIES_ID) return "";
-  const species = byId.get(id);
+export function speciesAppearancePhrase(speciesId: string, heritageId?: string): string {
+  if (speciesId === DEFAULT_SPECIES_ID) return "";
+  const species = byId.get(speciesId);
   if (!species) return "";
-  return species.lore ? `${species.label} — ${species.lore}` : species.label;
+  const heritage = heritageFor(speciesId, heritageId);
+  const label = heritage?.label ?? species.label;
+  const look = [species.appearance, heritage?.appearance ?? ""].map((p) => p.trim()).filter(Boolean).join(" ");
+  return look ? `${label} — ${look}` : label;
+}
+
+/**
+ * The species *cultural/identity* phrase for the narrator's canonical facts: the
+ * label with the authored `lore` appended when present. Same "" / label-only
+ * rules as `speciesAppearancePhrase`. When a `heritageId` resolves, its label
+ * replaces the species label and its `lore` **replaces** the species' (falling
+ * back to the species' lore when the heritage has none) — the two split the old
+ * single phrase by audience so neither consumer is fed text meant for the other.
+ */
+export function speciesLorePhrase(speciesId: string, heritageId?: string): string {
+  if (speciesId === DEFAULT_SPECIES_ID) return "";
+  const species = byId.get(speciesId);
+  if (!species) return "";
+  const heritage = heritageFor(speciesId, heritageId);
+  const label = heritage?.label ?? species.label;
+  const lore = (heritage?.lore.trim() ? heritage.lore : "") || species.lore;
+  return lore ? `${label} — ${lore}` : label;
 }
 
 export interface InferredSpecies {
@@ -68,7 +87,15 @@ function tokens(value: string): string[] {
 }
 
 function speciesTerms(species: SpeciesDefinition): string[] {
-  return [species.id, species.label, ...(species.aliases ?? [])];
+  // Heritage names also resolve their parent species, so "a drow ranger" infers
+  // the elf species (then inferHeritageFromText narrows it to dark_elf). Exact
+  // only — fuzzy stays on the species id/label (fuzzySpeciesTerms).
+  return [
+    species.id,
+    species.label,
+    ...(species.aliases ?? []),
+    ...species.heritages.flatMap((h) => [h.id, h.label, ...(h.aliases ?? [])]),
+  ];
 }
 
 function fuzzySpeciesTerms(species: SpeciesDefinition): string[] {
@@ -209,4 +236,21 @@ export function inferSpeciesFromText(text: string): InferredSpecies | undefined 
   return match
     ? { species: match.species, matchedTerm: match.matchedTerm, matchedText: match.matchedText, matchKind: match.matchKind }
     : undefined;
+}
+
+/**
+ * Deterministic heritage inference for forge prompts, scoped to a resolved
+ * species: the first of its heritages whose id/label/alias appears as an exact
+ * token phrase in the text ("dark elf" / "drow" → dark_elf). Exact-only — no
+ * fuzzy fallback — since a heritage is a narrow refinement and a false positive
+ * would silently rewrite the character's look. Undefined when the species has no
+ * heritages or none is named.
+ */
+export function inferHeritageFromText(speciesId: string, text: string): HeritageDefinition | undefined {
+  const heritages = byId.get(speciesId)?.heritages ?? [];
+  if (heritages.length === 0) return undefined;
+  const haystack = tokens(text);
+  return heritages.find((h) =>
+    [h.id, h.label, ...(h.aliases ?? [])].some((term) => findPhraseStart(haystack, term) !== undefined),
+  );
 }

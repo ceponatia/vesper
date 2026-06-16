@@ -214,3 +214,32 @@ describe("realizeBody — species attribute rules", () => {
     expect(body.defaultValueFor(def("build.height"))).toBe("tall");
   });
 });
+
+describe("realizeBody — heritage overlay", () => {
+  it("a heritage overrides the species rule for the same attribute (Dark Elf ears)", () => {
+    const elf = realizeBody({ speciesId: "elf" });
+    expect(elf.defaultValueFor(def("ears.shape"))).toBe("pointed"); // base elf
+    const dark = realizeBody({ speciesId: "elf", heritageId: "dark_elf" });
+    expect(dark.heritageId).toBe("dark_elf");
+    expect(dark.defaultValueFor(def("ears.shape"))).toBe("long_pointed"); // overridden
+    expect(dark.allowedValuesFor(def("ears.shape"))).toEqual(["pointed", "long_pointed"]);
+  });
+
+  it("a heritage adds a rule the species lacks (Dark Elf skin tone)", () => {
+    const elf = realizeBody({ speciesId: "elf" });
+    expect(elf.attributeRuleFor("skin.tone")).toBeUndefined(); // base elf has no skin rule
+    const dark = realizeBody({ speciesId: "elf", heritageId: "dark_elf" });
+    expect(dark.defaultValueFor(def("skin.tone"))).toBe("ashen");
+    expect(dark.isAttributeRequired(def("skin.tone"))).toBe(false); // optional
+    expect(dark.allowedValuesFor(def("skin.tone"))).toEqual([
+      "ashen", "light_grey", "slate_grey", "blue_grey", "dusky_violet",
+    ]);
+  });
+
+  it("an unknown heritage id is ignored (degraded-safe — bare species)", () => {
+    const body = realizeBody({ speciesId: "elf", heritageId: "not_a_heritage" });
+    expect(body.heritageId).toBeUndefined();
+    expect(body.defaultValueFor(def("ears.shape"))).toBe("pointed"); // species rule stands
+    expect(body.attributeRuleFor("skin.tone")).toBeUndefined();
+  });
+});

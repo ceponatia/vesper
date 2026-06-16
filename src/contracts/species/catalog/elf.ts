@@ -21,4 +21,38 @@ export const elf = defineSpecies({
         "Elves read by their points; the degree varies, the points do not.",
     },
   ],
+  heritages: [
+    {
+      id: "dark_elf",
+      label: "Dark Elf",
+      aliases: ["dark elf", "dark elves", "drow"],
+      appearance:
+        "Ashen grey to deep charcoal skin, most often paired with stark white or silver hair and pale, luminous eyes; their ears sweep long and sharp.",
+      lore: "The Dark Elves — Drow in the old tongue — split from the High Elves generations ago and made their home in the deep places beneath the world. They are insular, sharp-tongued, and quietly matriarchal, and the surface races still regard them with wary suspicion. They excel in necromancy and dark magic.",
+      attributeRules: [
+        // Overrides the species ears rule: Dark Elf points are longer and sharper.
+        {
+          attributeId: "ears.shape",
+          applicability: "required",
+          defaultValue: "long_pointed",
+          allowedValues: ["pointed", "long_pointed"],
+          notes: "Dark Elf ears sweep longer and sharper than other Mer.",
+        },
+        // Heritage-only rule: the signature grey/violet skin the base elf never constrains.
+        {
+          attributeId: "skin.tone",
+          applicability: "optional",
+          defaultValue: "ashen",
+          allowedValues: [
+            "ashen",
+            "light_grey",
+            "slate_grey",
+            "blue_grey",
+            "dusky_violet",
+          ],
+          notes: "Subterranean tones — ashen through to dusky violet.",
+        },
+      ],
+    },
+  ],
 });

@@ -19,6 +19,7 @@ function isIntimateAttribute(def: AttributeDefinition): boolean {
 function realizedBodyForProfile(profile: CharacterProfile) {
   return realizeBody({
     speciesId: profile.speciesId,
+    heritageId: profile.heritageId,
     bodyPlanId: profile.bodyPlanId,
     intimateRegions: profile.intimateRegions,
     bodyFeatures: profile.bodyFeatures,
@@ -170,7 +171,7 @@ export function buildAvatarPrompt(
   const wearing = visibleAvatarOutfit(wardrobe).map(formatGarment).join("; ");
   // Name the species (+ its generic visual appearance) for non-human casts so
   // the image model renders our take on it; "" for human (the unmarked default).
-  const species = speciesAppearancePhrase(profile.speciesId);
+  const species = speciesAppearancePhrase(profile.speciesId, profile.heritageId);
 
   return [
     `${STYLE_PREFIX[style]}, waist-up portrait, facing camera, soft studio lighting, neutral background.`,
