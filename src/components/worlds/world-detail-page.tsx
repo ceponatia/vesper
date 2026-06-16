@@ -146,6 +146,43 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
         </section>
       ) : null}
 
+      {/* Sessions — surfaced right under the synopsis, above the cast/map area. */}
+      <section className="mb-10">
+        <h2 className="mb-3 text-xs font-medium tracking-wide text-paper-400 uppercase">Sessions</h2>
+        {sessions.loading ? (
+          <SkeletonText lines={2} />
+        ) : sessions.error ? (
+          <ErrorState error={sessions.error} onRetry={() => sessions.reload()} />
+        ) : worldSessions.length === 0 ? (
+          <p className="text-sm text-paper-500">No sessions in this world yet.</p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {worldSessions.map((session) => (
+              <li key={session.id} className="flex items-center gap-2">
+                <Link
+                  href={`/sessions/${session.id}`}
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-md border border-ink-600 bg-ink-800 px-4 py-2.5 text-sm hover:border-ink-500"
+                >
+                  <span className="truncate text-paper-100">{session.title}</span>
+                  <Tag tone={session.status === "ready" ? "ok" : "accent"}>{session.status}</Tag>
+                  {session.updatedAt ? (
+                    <span className="ml-auto text-xs text-paper-500">{session.updatedAt.slice(0, 10)}</span>
+                  ) : null}
+                </Link>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  title="Delete session"
+                  onClick={() => setConfirmDeleteSessionId(session.id)}
+                >
+                  ✕
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
         {/* Cast */}
         <section>
@@ -303,43 +340,6 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
               </tbody>
             </table>
           </div>
-        )}
-      </section>
-
-      {/* Sessions */}
-      <section className="mt-10">
-        <h2 className="mb-3 text-xs font-medium tracking-wide text-paper-400 uppercase">Sessions</h2>
-        {sessions.loading ? (
-          <SkeletonText lines={2} />
-        ) : sessions.error ? (
-          <ErrorState error={sessions.error} onRetry={() => sessions.reload()} />
-        ) : worldSessions.length === 0 ? (
-          <p className="text-sm text-paper-500">No sessions in this world yet.</p>
-        ) : (
-          <ul className="flex flex-col gap-1.5">
-            {worldSessions.map((session) => (
-              <li key={session.id} className="flex items-center gap-2">
-                <Link
-                  href={`/sessions/${session.id}`}
-                  className="flex min-w-0 flex-1 items-center gap-3 rounded-md border border-ink-600 bg-ink-800 px-4 py-2.5 text-sm hover:border-ink-500"
-                >
-                  <span className="truncate text-paper-100">{session.title}</span>
-                  <Tag tone={session.status === "ready" ? "ok" : "accent"}>{session.status}</Tag>
-                  {session.updatedAt ? (
-                    <span className="ml-auto text-xs text-paper-500">{session.updatedAt.slice(0, 10)}</span>
-                  ) : null}
-                </Link>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  title="Delete session"
-                  onClick={() => setConfirmDeleteSessionId(session.id)}
-                >
-                  ✕
-                </Button>
-              </li>
-            ))}
-          </ul>
         )}
       </section>
 

@@ -525,6 +525,26 @@ function containerChainContains(start: WorkingItem, targetId: string, items: rea
   return false;
 }
 
+/** Validate + place an item into a container (shared by `store_in` and a
+ * container-destination `remove`, e.g. a garment tossed into the hamper). */
+function planStoreInContainer(
+  container: WorkingItem | null,
+  item: WorkingItem,
+  items: readonly WorkingItem[],
+  note: string | undefined,
+): ItemEventPlanResult {
+  if (!container) {
+    return { ok: false, code: "merge.item.no_container", message: `container for "${item.name}" not found` };
+  }
+  if (container.definition.kind !== "container") {
+    return { ok: false, code: "merge.item.not_container", message: `"${container.name}" is not a container` };
+  }
+  if (container.id === item.id || containerChainContains(container, item.id, items)) {
+    return { ok: false, code: "merge.item.container_cycle", message: `cannot store "${item.name}" inside itself` };
+  }
+  return { ok: true, placement: inContainer(container.id), note };
+}
+
 /**
  * One item event → a placement/state transition honoring the placement CHECK
  * constraint (setting one placement clears the others). Pure.
@@ -546,6 +566,20 @@ export function planItemEvent(
     }
     case "remove": {
       if (!item.worn) return { ok: false, code: "merge.item.not_worn", message: `"${item.name}" is not being worn` };
+      // A removed garment goes where the prose puts it. Destination wins over the
+      // hand: stowed in a container (hamper/drawer), or dropped/left at a location
+      // (the floor of the current room). The agent signals these via the event's
+      // existing containerName / locationName; a bare `remove` (no destination)
+      // defaults to held — she takes it off and keeps it. A `locationName` the
+      // resolver couldn't ground still falls back to the actor's room, so "the
+      // floor" lands the item in the open here rather than in her hand.
+      if (event.containerName) {
+        return planStoreInContainer(ctx.container, item, ctx.items, note);
+      }
+      if (event.locationName) {
+        const locationId = ctx.location?.id ?? actor?.locationId ?? item.locationId;
+        if (locationId) return { ok: true, placement: atLocation(locationId), note };
+      }
       const taker = actor ?? (item.holderParticipantId ? { id: item.holderParticipantId } : null);
       if (!taker) return { ok: false, code: "merge.item.no_actor", message: `no one to remove "${item.name}"` };
       return { ok: true, placement: held(taker.id, false), note };
@@ -566,18 +600,8 @@ export function planItemEvent(
       if (!locationId) return { ok: false, code: "merge.item.no_location", message: `nowhere to place "${item.name}"` };
       return { ok: true, placement: atLocation(locationId), note };
     }
-    case "store_in": {
-      if (!ctx.container) {
-        return { ok: false, code: "merge.item.no_container", message: `container for "${item.name}" not found` };
-      }
-      if (ctx.container.definition.kind !== "container") {
-        return { ok: false, code: "merge.item.not_container", message: `"${ctx.container.name}" is not a container` };
-      }
-      if (ctx.container.id === item.id || containerChainContains(ctx.container, item.id, ctx.items)) {
-        return { ok: false, code: "merge.item.container_cycle", message: `cannot store "${item.name}" inside itself` };
-      }
-      return { ok: true, placement: inContainer(ctx.container.id), note };
-    }
+    case "store_in":
+      return planStoreInContainer(ctx.container, item, ctx.items, note);
     case "open":
     case "close": {
       if (item.definition.kind !== "container") {

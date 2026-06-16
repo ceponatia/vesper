@@ -85,3 +85,22 @@ both. Section "N set" counts roll up nested sub-groups. (If a future everyday
 `pelvis`/`groin`/`buttocks` attribute group lands — see
 [supplemental-anatomy.phase4.md](supplemental-anatomy.phase4.md) — it slots into
 the same Pelvis area.)
+
+## 8. Removed clothing always read as "held" — RESOLVED
+
+*Raised + resolved 2026-06-15, from play.* **Observation:** when the narrator has
+a character take off a garment that ends up on the ground ("kicking off her
+sneakers… they drop to the floor with two quiet thuds"), the UI showed her
+**holding** them. **Investigation:** the simulant emitted a bare `remove`, and
+`planItemEvent`'s `remove` case unconditionally transitioned worn → **held**
+(`merge.ts`). The end-state was representable (`drop`/`place` → at-location), but
+required a second event the agent wasn't reliably emitting, and `held` is only the
+right default when prose doesn't say where the garment goes. **Verdict + fix:**
+`remove` now honors the event's already-present `containerName` (stow off-body in
+a container) / `locationName` (drop in the open at that location — an unresolvable
+phrase like "the floor" falls back to the actor's room), defaulting to **held**
+only when neither is given. One event, no chaining, and `remove`'s instance
+selection already prefers the *worn* pair. The simulant prompt
+(`engine/prompts/agents.ts`) was tightened to set the destination for
+dropped/kicked-off/stowed garments. Container placement is shared with `store_in`
+via `planStoreInContainer`. No schema/DB change (fields existed; rides JSONB).

@@ -10,10 +10,13 @@ export const wingsGroup = defineAttributeGroup("wings", [
     valueType: "enum",
     description: "The structural style of the wings.",
     mutability: "inherent",
-    allowedValues: ["membranous", "feathered", "insectoid", "gossamer"],
+    allowedValues: ["membranous", "feathered", "insectoid", "gossamer", "draconic", "skeletal", "ethereal"],
     bodyLocationId: "wings",
-    aliases: ["wing type", "bat wings", "feathered wings"],
-    promptHints: ["Visible fantasy morphology; describe as part of the always-visible appearance."],
+    aliases: ["wing type", "bat wings", "feathered wings", "dragon wings"],
+    promptHints: [
+      "Visible fantasy morphology; describe as part of the always-visible appearance.",
+      "membranous = bat-like (succubus/demon); feathered = avian/angelic; insectoid/gossamer = fae; draconic = scaled membrane; ethereal = wings of light or mist.",
+    ],
   },
   {
     id: "wings.span",
@@ -37,6 +40,7 @@ export const wingsGroup = defineAttributeGroup("wings", [
     mutability: "inherent",
     bodyLocationId: "wings",
     aliases: ["wing color"],
+    promptHints: ["e.g. leathery crimson, jet-black, snow-white feathers, iridescent gossamer, smoke-grey."],
   },
   {
     id: "wings.carriage",

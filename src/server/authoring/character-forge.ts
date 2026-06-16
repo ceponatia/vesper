@@ -374,7 +374,7 @@ export function groundAttributeRanges(
 
 const ATTRIBUTES_SYSTEM = [
   "You translate a character concept into a fixed attribute vocabulary. Use only the listed attribute ids and allowed values.",
-  "First infer the identity anchors (marked [ANCHOR]) — heritage, apparent age, gender, species presentation — from any cue the text offers, and emit the ones it supports as attributes.",
+  "First infer the identity anchors (marked [ANCHOR]) — heritage, apparent age, gender — from any cue the text offers, and emit the ones it supports as attributes.",
   "Where the text states or strongly implies a value for any attribute, emit it as a definite attribute value.",
   "For each [CORE] enum attribute you cannot pin to a definite value, emit a ranges entry instead: a plausible subset of its allowed values, conditioned on the identity anchors you inferred.",
   "Guardrails: identity anchors may constrain physical attributes only — coloring, features, build. Heritage must never feed personality, voice, behavior, or role suggestions. Ranges are soft priors that explicit text always overrides — when the text pins a value, emit the definite value and no range for that attribute. When the identity signal is weak, emit wide ranges or none.",
@@ -855,7 +855,6 @@ export function demoCharacterAttributeSection(): AttributeSection {
   const candidates: RawAttributeEntry[] = [
     { id: "identity.gender", value: "female" },
     { id: "identity.apparent_age", value: "forties" },
-    { id: "identity.species_presentation", value: "human" },
     { id: "hair.color", value: "auburn" },
     { id: "hair.length", value: "shoulder_length" },
     { id: "hair.texture", value: "wavy" },

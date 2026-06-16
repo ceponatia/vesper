@@ -195,6 +195,11 @@ species-forbidden attributes ungated. Worth a guard or at least an explanatory
 comment so the next editor doesn't widen it naively.
 
 **E3 🔵 `identity.species_presentation` and `speciesId` can silently disagree.**
+**Resolved (2026-06-15):** the divergence is eliminated — `identity.species_presentation`
+was removed and the app unified on `speciesId` (the editor's Species dropdown is the single
+species field; the species label + optional `lore` is surfaced to the narrator and image
+prompts via `speciesPromptPhrase`). Decision 8 is thereby reversed. The analysis below is
+retained for history.
 Decision 8 deliberately separates the structural id (`speciesId: "human"`) from
 the free-text presentation (`species_presentation: "wood-elf"`). Nothing
 reconciles or flags a contradiction, and the two are produced by different forge
@@ -317,5 +322,5 @@ To avoid double-planning, these adjacent items are already recorded:
 | D2 | 🟡 | Forge-section / layer lists duplicated in UI | yes | no |
 | E1 | 🟠 | Gender→`intimateRegions` seeding fragile (gender not `coreVisual`) | yes | no |
 | E2 | 🟡 | Canonical-facts block bypasses `realizeBody` (safe today) | yes | no |
-| E3 | 🔵 | `species_presentation` vs `speciesId` can diverge silently | yes | no |
+| E3 | 🔵 | `species_presentation` vs `speciesId` can diverge silently | yes | yes (2026-06-15: field removed, unified on `speciesId`) |
 | E4 | 🔵 | Single body plan; bodyPlan machinery awaits data | yes | yes (deferred) |

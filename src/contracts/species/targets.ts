@@ -35,7 +35,7 @@ function normalize(term: string): string {
 const COLLOQUIAL_TARGETS: Readonly<
   Record<string, { locations?: readonly string[]; categories?: readonly AttributeCategory[] }>
 > = {
-  mouth: { categories: ["lips"] },
+  mouth: { categories: ["lips", "teeth"] },
   figure: { categories: ["build"] },
   physique: { categories: ["build"] },
   body: { categories: ["build", "skin"] },

@@ -12,6 +12,8 @@ export const earsGroup = defineAttributeGroup("ears", [
     allowedValues: [
       "rounded", "slightly_pointed", "pointed", "long_pointed",
       "small", "large", "protruding", "flat",
+      // Non-human ears: swept fae points, beast-like tufts, aquatic fins.
+      "fae_swept", "tufted", "fin_like",
     ],
     bodyLocationId: "ears",
     aliases: ["ear shape", "pointed ears"],

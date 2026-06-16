@@ -12,6 +12,16 @@ export const skinGroup = defineAttributeGroup("skin", [
     allowedValues: [
       "porcelain", "fair", "light", "light_olive", "olive", "tan",
       "golden", "bronze", "light_brown", "brown", "dark_brown", "deep_ebony",
+      // Supernatural / non-human tones (demonkin, fae, the drowned, the undead).
+      // Selectable in the editor and pickable by the forge when the concept
+      // calls for it, but never an *automatic* default for an unspecified
+      // (human-by-default) character — see autoDefaultExcludes.
+      "ashen", "light_grey", "slate_grey", "blue_grey", "cool_blue",
+      "pale_green", "sage_green", "crimson", "dusky_violet", "ghostly_white",
+    ],
+    autoDefaultExcludes: [
+      "ashen", "light_grey", "slate_grey", "blue_grey", "cool_blue",
+      "pale_green", "sage_green", "crimson", "dusky_violet", "ghostly_white",
     ],
     aliases: ["skin tone", "skin color", "complexion"],
     coreVisual: true,
@@ -49,6 +59,8 @@ export const skinGroup = defineAttributeGroup("skin", [
     allowedValues: [
       "tattoos", "scars", "birthmark", "moles", "beauty_mark",
       "vitiligo", "stretch_marks", "sun_spots", "burn_scar", "piercing_marks",
+      // Non-human skin surfaces (scaled patches, fae patterning, glow).
+      "scales", "natural_patterning", "bioluminescent_markings",
     ],
     aliases: ["markings", "tattoos", "scars", "birthmark"],
     promptHints: ["Mention markings only when exposure allows them to be seen."],

@@ -18,7 +18,7 @@ import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
 
-export function CharacterEditorPage({ characterId }: { characterId: string }) {
+export function CharacterEditPage({ characterId }: { characterId: string }) {
   const router = useRouter();
   const toast = useToast();
   const detail = useAsyncData(() => charactersApi.get(characterId), [characterId]);

@@ -28,7 +28,7 @@ describe("resolveBodyTarget", () => {
   });
 
   it("resolves colloquial synonyms that match no location or category id", () => {
-    expect(categoriesOf("mouth")).toEqual(new Set(["lips"]));
+    expect(categoriesOf("mouth")).toEqual(new Set(["lips", "teeth"]));
     expect(categoriesOf("figure")).toEqual(new Set(["build"]));
     expect(categoriesOf("physique")).toEqual(new Set(["build"]));
   });

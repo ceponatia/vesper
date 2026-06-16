@@ -20,14 +20,16 @@ const SYSTEMS = {
 
 describe("agent system prompts", () => {
   it("stays within each agent's prompt budget (≈4 chars/token)", () => {
-    // Simulant/archivist hug ~600 tokens. The director carries the richest
+    // Archivist hugs ~600 tokens (2600). The simulant earns a touch more (~700)
+    // for the item-event remove-destination convention (kept-in-hand vs floor vs
+    // container — followups.phase4.md §8). The director carries the richest
     // contract — seven fields, four thread signals, the stageMovement channel
     // (phase-4 npc-movement), the thread-lifecycle rules, and four worked
     // examples — so it gets a larger ceiling (~1.5k tokens). Continuity earns a
     // little extra over the base for the comms-location-contradiction clause
     // (npc-movement-spec) — see docs/story-threads.md, docs/perception.md.
-    const budget = (name: string) =>
-      name === "DIRECTOR_SYSTEM" ? 6000 : name === "CONTINUITY_SYSTEM" ? 2900 : 2600;
+    const budget = (name: string): number =>
+      ({ DIRECTOR_SYSTEM: 6000, CONTINUITY_SYSTEM: 2900, SIMULANT_SYSTEM: 2800 })[name] ?? 2600;
     for (const [name, text] of Object.entries(SYSTEMS)) {
       expect(text.length, name).toBeLessThan(budget(name));
     }
@@ -49,7 +51,8 @@ describe("agent system prompts", () => {
     // Completed undress/dress acts must be reported even in gradual, lyrical
     // prose — the hijab miss (followups.phase2.md #19).
     expect(SIMULANT_SYSTEM).toContain("Completed wardrobe changes matter most");
-    expect(SIMULANT_SYSTEM).toContain("remove + place");
+    // A removed garment routes to its destination, not always the hand (followups.phase4.md §8).
+    expect(SIMULANT_SYSTEM).toContain("remove + locationName");
     expect(ARCHIVIST_SYSTEM).toContain('"episodeSummary"');
     expect(ARCHIVIST_SYSTEM).toContain('"supersedeHints"');
     expect(CONTINUITY_SYSTEM).toContain('"violations"');

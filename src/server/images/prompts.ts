@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { attributeRegistry, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { resolveWardrobeVisibility, type RegionExposure } from "@/contracts/items/visibility";
-import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist } from "@/contracts/body/locations";
-import { realizeBody } from "@/contracts/species";
+import { exposedRegions, resolveWardrobeVisibility, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
+import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
+import { realizeBody, speciesPromptPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
 /**
@@ -79,16 +79,21 @@ export interface AvatarWardrobeItem {
  * props (jewelry) stay. Scene images never call this, so they keep full-body
  * garments (docs/images.md, followups.phase3.md §1).
  */
+/** Map raw avatar-wardrobe items to the shared worn-item shape — the single
+ * source for BOTH visibility (visibleAvatarOutfit) and coverage/exposure
+ * (exposedRegions), so the two can never disagree about what a garment covers. */
+function toWornInputs(items: ReadonlyArray<AvatarWardrobeItem>): WornItemInput[] {
+  return items.map((item, index) => ({
+    instanceId: String(index),
+    name: item.name,
+    coverage: item.coverage,
+    layer: item.layer === 0 || item.layer === 1 || item.layer === 2 || item.layer === 3 ? item.layer : 1,
+    opacity: item.opacity ?? "opaque",
+  }));
+}
+
 export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): AvatarOutfitItem[] {
-  const views = resolveWardrobeVisibility(
-    items.map((item, index) => ({
-      instanceId: String(index),
-      name: item.name,
-      coverage: item.coverage,
-      layer: item.layer === 0 || item.layer === 1 || item.layer === 2 || item.layer === 3 ? item.layer : 1,
-      opacity: item.opacity ?? "opaque",
-    })),
-  );
+  const views = resolveWardrobeVisibility(toWornInputs(items));
   const viewById = new Map(views.map((v) => [v.instanceId, v]));
   return items.flatMap((item, index) => {
     if (item.coverage.length > 0 && item.coverage.every(isBelowWaist)) return []; // below the waist — outside a waist-up portrait
@@ -118,29 +123,59 @@ export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): A
  * only if testing shows it improves image output. The default outfit is
  * authoritative when present — without it the image model invents clothing,
  * which contradicts the character's saved wardrobe.
+ *
+ * Takes the **raw wardrobe** (with coverage), not a pre-filtered outfit, so it
+ * owns BOTH gates from one coverage source and they can't drift apart:
+ *  - **Waist-up framing:** every below-the-waist attribute (`bodyLocationId`
+ *    under pelvis/legs — feet, legs, hips, and pelvic intimate anatomy) is
+ *    dropped, mirroring the garment-side `visibleAvatarOutfit` filter. A
+ *    waist-up portrait can't show them. Signature feature morphology (a
+ *    pelvis-rooted tail) is exempt — it sweeps up into frame and defines the
+ *    character.
+ *  - **Exposure gating** (intimate anatomy, body-model spec Decision 3): the
+ *    above-waist intimate category (`breasts`) reaches the prompt only on the
+ *    uncensored route (`allowIntimate`) AND only when its region reads exposed
+ *    (`exposedRegions`) — Maya's bra-covered chest stays unmentioned. Flux
+ *    excludes all intimate anatomy regardless. This reuses the same
+ *    exposure predicate as the scene render (`intimateAttrRendersExposed`).
  */
 export function buildAvatarPrompt(
   name: string,
   profile: CharacterProfile,
   style: AvatarStyle,
-  outfit: ReadonlyArray<AvatarOutfitItem> = [],
+  wardrobe: ReadonlyArray<AvatarWardrobeItem> = [],
   allowIntimate = false,
 ): string {
   const appearance: string[] = [];
   const realizedBody = realizedBodyForProfile(profile);
+  // Coverage of the FULL wardrobe (before the waist-up garment filter) — a
+  // covering garment still hides its region even when it's dropped from the
+  // visible outfit, so exposure must read the raw set.
+  const exposure = exposedRegions(toWornInputs(wardrobe));
   for (const value of profile.attributes) {
     const def = attributeRegistry.byId(value.id);
     if (!def) continue; // unknown vocabulary — skip rather than leak raw ids into the prompt
     if (!realizedBody.isAttributeApplicable(def)) continue; // stale/gated attributes must not outlive the realized body
-    if (!allowIntimate && isIntimateAttribute(def)) continue; // Flux portrait route excludes intimate anatomy
+    // Waist-up portrait: drop below-the-waist anatomy (feet, legs, hips, pelvic
+    // intimate) — but keep signature feature morphology (a succubus tail roots
+    // at the pelvis yet sweeps up into frame), which is the whole point of the
+    // character and reads in a waist-up shot.
+    if (def.bodyLocationId && isBelowWaist(def.bodyLocationId) && !isFeatureAttributeCategory(def.category)) continue;
+    // Intimate anatomy reaches an image only on the uncensored route, and only
+    // when the region is actually bare/sheer — never under clothing.
+    if (isIntimateAttribute(def) && !(allowIntimate && intimateAttrRendersExposed(def, exposure))) continue;
     const formatted = formatAttribute(def, value.value);
     if (formatted) appearance.push(formatted);
   }
-  const wearing = outfit.map(formatGarment).join("; ");
+  const wearing = visibleAvatarOutfit(wardrobe).map(formatGarment).join("; ");
+  // Name the species (+ any authored lore) for non-human casts so the image
+  // model renders our take on it; "" for human (the unmarked default).
+  const species = speciesPromptPhrase(profile.speciesId);
 
   return [
     `${STYLE_PREFIX[style]}, waist-up portrait, facing camera, soft studio lighting, neutral background.`,
     `Subject: ${name.trim() || "an unnamed character"}.`,
+    species ? `Species: ${excerpt(species, 220)}.` : "",
     appearance.length > 0 ? `Appearance: ${appearance.join("; ")}.` : "",
     wearing ? `Wearing (authoritative — depict exactly this clothing): ${wearing}.` : "",
     profile.bio.trim() ? `About: ${excerpt(profile.bio, BIO_EXCERPT_CHARS)}.` : "",
@@ -251,6 +286,8 @@ export interface SceneWornItem {
  */
 export interface ScenePresentCharacter {
   name: string;
+  /** Species phrase (label + any authored lore) for non-human casts; "" / omitted for human (speciesPromptPhrase). */
+  species?: string;
   activity?: string;
   posture?: string;
   /** Occlusion-filtered wardrobe — the only permitted source of outfit truth. */
@@ -313,6 +350,7 @@ export function buildSceneComposerPrompt(context: SceneComposerContext): string 
     for (const c of context.present) {
       const exposed = formatExposure(c.exposure, c.wardrobeTracked);
       const bits = [
+        c.species ? `species: ${c.species}` : "",
         c.activity ? `activity: ${c.activity}` : "",
         c.posture ? `posture: ${c.posture}` : "",
         `visible wardrobe (authoritative): ${wardrobeLines(c.wornVisible)}`,
@@ -411,6 +449,21 @@ const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
 };
 
 /**
+ * Whether an intimate-anatomy attribute should surface in an IMAGE prompt: its
+ * region must read exposed (bare/sheer, not covered by a garment) and sensory
+ * scent/taste attributes never render visually. Shared by the avatar prompt
+ * (`buildAvatarPrompt`) and the scene render's intimate phrase
+ * (`intimateSceneAppearance`) so the two image paths gate intimate anatomy by
+ * the SAME rule — they diverged once (the avatar path skipped this entirely;
+ * see docs/images.md §Avatar generation).
+ */
+function intimateAttrRendersExposed(def: AttributeDefinition, exposure: RegionExposure): boolean {
+  if (def.kind === "sensory") return false; // scent/taste don't render in an image
+  const axis = INTIMATE_CATEGORY_EXPOSURE[def.category];
+  return axis !== undefined && exposure[axis] !== "covered";
+}
+
+/**
  * Visible intimate-anatomy phrase for a scene render, gated by **exposure**:
  * a region's descriptive attributes are included only when that region reads
  * `bare`/`sheer` (not `covered`). Sensory attributes (scent/taste) are skipped —
@@ -427,9 +480,8 @@ export function intimateSceneAppearance(
   const parts: string[] = [];
   for (const value of attributes) {
     const def = attributeRegistry.byId(value.id);
-    if (!def || !isIntimateAttribute(def) || def.kind === "sensory") continue;
-    const axis = INTIMATE_CATEGORY_EXPOSURE[def.category];
-    if (!axis || exposure[axis] === "covered") continue; // only an exposed region surfaces
+    if (!def || !isIntimateAttribute(def)) continue;
+    if (!intimateAttrRendersExposed(def, exposure)) continue; // only an exposed, visual region surfaces
     const formatted = formatAttribute(def, value.value);
     if (formatted) parts.push(formatted);
   }
@@ -442,6 +494,8 @@ export function intimateSceneAppearance(
 
 export interface SceneCharacterSpec {
   name: string;
+  /** Species phrase (label + any authored lore) for non-human casts; "" for human. */
+  species?: string;
   /** What they are doing in frame. */
   action: string;
   /** Deterministic occlusion-filtered outfit phrase, forced from wardrobe state. */
@@ -551,6 +605,7 @@ export function resolveScenePlan(
 function characterSpec(entry: ScenePresentCharacter, action: string): SceneCharacterSpec {
   return {
     name: entry.name,
+    ...(entry.species ? { species: entry.species } : {}),
     action: action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; "),
     // Forced from occlusion-filtered state regardless of anything the model said.
     outfitSummary: wardrobeOutfitSummary(entry.wornVisible),
@@ -620,7 +675,8 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     for (const c of textual) {
       const clothing = c.outfitSummary ? `wearing ${fit(c.outfitSummary, outfitCap)}` : c.exposure ? "" : "wearing casual everyday clothing";
       const intimate = opts.allowIntimate ? c.intimateAppearance : "";
-      const detail = [c.appearance, clothing, c.exposure, intimate, c.action].filter(Boolean).join("; ");
+      const species = c.species ? excerpt(c.species, 160) : "";
+      const detail = [species, c.appearance, clothing, c.exposure, intimate, c.action].filter(Boolean).join("; ");
       const label = !reference && c === plan.focal ? "Subject" : "Also in frame";
       pieces.push(`${label}: ${c.name} — ${detail}.`);
     }

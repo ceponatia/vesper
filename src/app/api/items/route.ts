@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
+import { itemKindSchema } from "@/contracts";
+import { parseOrNull } from "@/lib/parse";
 import { db, items } from "@/server/db";
 import {
   invalidCoverageIds,
@@ -15,12 +17,15 @@ import {
 export const GET = withUser(async (user, req: NextRequest) => {
   const q = req.nextUrl.searchParams.get("q") ?? undefined;
   const tag = req.nextUrl.searchParams.get("tag") ?? undefined;
+  // Optional sub-kind filter (clothing/object/container); an unknown value
+  // degrades to no filter rather than failing the request.
+  const kind = parseOrNull(itemKindSchema, req.nextUrl.searchParams.get("kind"));
   const ids = await searchLibraryIds("item", user.id, { q, tag });
   if (ids.length === 0) return jsonOk({ items: [] });
   const rows = await db()
     .select()
     .from(items)
-    .where(and(eq(items.ownerId, user.id), inArray(items.id, ids)));
+    .where(and(eq(items.ownerId, user.id), inArray(items.id, ids), kind ? eq(items.kind, kind) : undefined));
   const byId = new Map(rows.map((r) => [r.id, r]));
   return jsonOk({ items: ids.flatMap((id) => byId.get(id) ?? []) });
 });

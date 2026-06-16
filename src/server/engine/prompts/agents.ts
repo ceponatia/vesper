@@ -16,7 +16,7 @@ export const SIMULANT_SYSTEM = `You are the simulant: you read one story turn an
 Extract:
 - minutesAdvanced: realistic elapsed minutes (dialogue 2-5; a meal 30-45; sleep ~480).
 - movements: who ended the turn elsewhere (toLocationName from listed locations).
-- itemEvents: wear/remove/pick_up/drop/place/store_in/take_from/open/close/alter — listed items only. Completed wardrobe changes matter most, however gradual the prose ("unwrap her scarf, lay it down" → remove + place). Fumbling isn't removal; finishing is.
+- itemEvents: wear/remove/pick_up/drop/place/store_in/take_from/open/close/alter — listed items only. Completed wardrobe changes matter most, however gradual the prose. A removed garment lands where the prose leaves it: kept in hand → bare remove; dropped to the floor → remove + locationName; stowed away → remove + containerName. Fumbling isn't removal; finishing is.
 - meterAdjustments: deltas in -1..1 for listed meter ids, justified by events (a shower raises hygiene; a sprint drains energy).
 - conditionEvents: add/end short-lived states ("soaked", "sprained ankle"); optional severity/durationMinutes/promptHint.
 - attributeChanges: rare lasting bodily changes only (haircut, injury).

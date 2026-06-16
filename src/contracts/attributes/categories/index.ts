@@ -7,6 +7,7 @@ import { eyesGroup } from "./eyes";
 import { faceGroup } from "./face";
 import { browsGroup } from "./brows";
 import { lipsGroup } from "./lips";
+import { teethGroup } from "./teeth";
 import { earsGroup } from "./ears";
 import { neckGroup } from "./neck";
 import { shouldersGroup } from "./shoulders";
@@ -37,6 +38,7 @@ export const attributeGroups: readonly AttributeGroup[] = [
   faceGroup,
   browsGroup,
   lipsGroup,
+  teethGroup,
   earsGroup,
   neckGroup,
   shouldersGroup,

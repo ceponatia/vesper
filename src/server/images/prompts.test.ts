@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import type { AttributeValue } from "@/contracts/attributes";
+import { attributeRegistry, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
+import {
+  FEATURE_ATTRIBUTE_CATEGORIES,
+  INTIMATE_ATTRIBUTE_CATEGORIES,
+  isBelowWaist,
+  isFeatureAttributeCategory,
+  isIntimateAttributeCategory,
+} from "@/contracts/body/locations";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import {
   buildAvatarPrompt,
@@ -80,19 +87,51 @@ describe("buildAvatarPrompt", () => {
     expect(prompt).not.toContain("Appearance:");
   });
 
-  it("withholds intimate anatomy from the Flux route, includes it on the uncensored route (Decision 3)", () => {
+  it("withholds intimate anatomy from Flux; on the uncensored route includes only EXPOSED above-waist anatomy (Decision 3)", () => {
     const p = profileWith({
-      intimateRegions: ["penis"],
+      intimateRegions: ["breasts"],
       attributes: [
         { id: "hair.color", value: "red", source: "base" },
-        { id: "penis.size", value: "average", source: "base" },
+        { id: "breasts.size", value: "full", source: "base" },
       ],
     });
-    const flux = buildAvatarPrompt("Mira", p, "realistic"); // default route = Flux
+    // Flux excludes intimate anatomy outright — even with the chest bare.
+    const flux = buildAvatarPrompt("Mira", p, "realistic", []); // default route = Flux
     expect(flux).toContain("Hair color: red");
-    expect(flux).not.toContain("Penis size");
-    const qwen = buildAvatarPrompt("Mira", p, "realistic", [], true); // uncensored Qwen route
-    expect(qwen).toContain("Penis size");
+    expect(flux).not.toContain("Breast size");
+    // Uncensored route, chest bare (no top) → the region is exposed → shown.
+    expect(buildAvatarPrompt("Mira", p, "realistic", [], true)).toContain("Breast size: full");
+    // Uncensored route, chest covered by an opaque garment → withheld. (This is
+    // the regression: a clothed character's breasts were described regardless of
+    // coverage because intimate attributes skipped the exposure gate entirely.)
+    const dressed = buildAvatarPrompt("Mira", p, "realistic", [{ name: "Tank top", coverage: ["chest"] }], true);
+    expect(dressed).not.toContain("Breast size");
+  });
+
+  it("drops every below-waist attribute from the waist-up portrait, on both routes", () => {
+    // Mirrors Maya: pelvic + feet + leg anatomy must never reach a waist-up
+    // portrait, even on the uncensored route. Above-waist, non-intimate chest
+    // detail stays.
+    const p = profileWith({
+      intimateRegions: ["vulva"],
+      attributes: [
+        { id: "hair.color", value: "red", source: "base" },
+        { id: "chest.size", value: "full", source: "base" }, // chest (general) — above waist, not intimate
+        { id: "feet.size", value: "average", source: "base" },
+        { id: "legs.length", value: "proportionate", source: "base" },
+        { id: "hips.width", value: "rounded", source: "base" },
+        { id: "vulva.labia", value: "prominent", source: "base" }, // pelvic intimate
+      ],
+    });
+    for (const allowIntimate of [false, true]) {
+      const prompt = buildAvatarPrompt("Mira", p, "realistic", [], allowIntimate);
+      expect(prompt).toContain("Hair color: red");
+      expect(prompt).toContain("Chest: full"); // above the waist → kept
+      expect(prompt).not.toContain("Foot size"); // feet → below waist
+      expect(prompt).not.toContain("Leg length"); // legs → below waist
+      expect(prompt).not.toContain("Hips:"); // hips → below waist
+      expect(prompt).not.toContain("Labia"); // pelvic intimate → below waist, never in a waist-up shot
+    }
   });
 
   it("filters feature attributes through the realized body", () => {
@@ -123,8 +162,8 @@ describe("buildAvatarPrompt", () => {
 
   it("treats the default outfit as authoritative clothing when provided", () => {
     const prompt = buildAvatarPrompt("Mira", profile, "realistic", [
-      { name: "Black abaya", appearance: "flowing black fabric" },
-      { name: "Hijab" },
+      { name: "Black abaya", coverage: ["chest", "back", "shoulders"], appearance: "flowing black fabric" },
+      { name: "Hijab", coverage: ["hair", "neck"] },
     ]);
     expect(prompt).toContain("Wearing (authoritative — depict exactly this clothing): Black abaya (flowing black fabric); Hijab.");
   });
@@ -132,8 +171,8 @@ describe("buildAvatarPrompt", () => {
   it("prefers the garment description over its name and never truncates clothing detail", () => {
     const longAppearance = "deep crimson silk shot through with gold thread ".repeat(8).trim();
     const prompt = buildAvatarPrompt("Mira", profile, "realistic", [
-      { name: "Coat", description: "a heavy charcoal wool overcoat with a fur collar", appearance: longAppearance },
-      { name: "Brooch" }, // no description — falls back to the name
+      { name: "Coat", coverage: ["chest", "back"], description: "a heavy charcoal wool overcoat with a fur collar", appearance: longAppearance },
+      { name: "Brooch", coverage: [] }, // no description — falls back to the name; no coverage (a prop) stays visible
     ]);
     expect(prompt).toContain(`a heavy charcoal wool overcoat with a fur collar (${longAppearance})`);
     expect(prompt).toContain("Brooch");
@@ -142,6 +181,71 @@ describe("buildAvatarPrompt", () => {
 
   it("omits the wearing line without an outfit", () => {
     expect(buildAvatarPrompt("Mira", profile, "realistic")).not.toContain("Wearing");
+  });
+
+  it("names a non-human species and omits the species line for human", () => {
+    const succubus = buildAvatarPrompt("Mira", profileWith({ speciesId: "succubus" }), "realistic");
+    expect(succubus).toContain("Species: Succubus.");
+    const human = buildAvatarPrompt("Mira", profileWith({ speciesId: "human" }), "realistic");
+    expect(human).not.toContain("Species:");
+  });
+});
+
+// Registry-wide guard so a NEW below-waist or intimate attribute category that
+// forgets the gate fails here, not in production. Asserts the output property:
+// a waist-up avatar's Appearance section never names below-waist anatomy, and
+// never names intimate anatomy over a covered region (or on Flux at all). The
+// trick: each profile carries exactly hair.color + the attribute under test, so
+// "Appearance: Hair color: red." (sole entry, note the closing period) means the
+// attribute under test was dropped; a leak appends "; <Label>: <value>" and
+// breaks the match.
+describe("buildAvatarPrompt field-gating invariants (whole attribute registry)", () => {
+  const sampleValue = (def: AttributeDefinition): AttributeValue["value"] => {
+    switch (def.valueType) {
+      case "number":
+        return def.min ?? 1;
+      case "flag":
+        return true;
+      case "enum_list":
+        return [def.allowedValues?.[0] ?? "sample"];
+      case "enum":
+      case "text":
+        return def.allowedValues?.[0] ?? "sample";
+    }
+  };
+  const profileFor = (id: string): CharacterProfile =>
+    profileWith({
+      // Switch on every intimate region + feature group so the attribute under
+      // test is applicable — then the ONLY thing that can drop it is the gate.
+      intimateRegions: [...INTIMATE_ATTRIBUTE_CATEGORIES],
+      bodyFeatures: [...FEATURE_ATTRIBUTE_CATEGORIES],
+      attributes: [
+        { id: "hair.color", value: "red", source: "base" },
+        { id: id as AttributeDefinition["id"], value: sampleValue(attributeRegistry.byId(id) as AttributeDefinition), source: "base" },
+      ],
+    });
+  const fullSuit = {
+    name: "Opaque bodysuit",
+    coverage: ["chest", "back", "shoulders", "waist", "pelvis", "hips", "groin", "buttocks", "thighs", "calves", "ankles", "feet"],
+    layer: 1,
+    opacity: "opaque" as const,
+  };
+
+  const belowWaist = attributeRegistry.definitions.filter(
+    (d) => d.bodyLocationId !== undefined && isBelowWaist(d.bodyLocationId) && !isFeatureAttributeCategory(d.category),
+  );
+  const aboveWaistIntimate = attributeRegistry.definitions.filter(
+    (d) => isIntimateAttributeCategory(d.category) && !(d.bodyLocationId !== undefined && isBelowWaist(d.bodyLocationId)),
+  );
+
+  it.each(belowWaist.map((d) => d.id))("drops below-waist %s even bare + uncensored (waist-up framing)", (id) => {
+    // Bare + Qwen is the most permissive route; gone here ⇒ the waist-up cut did it.
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], true)).toContain("Appearance: Hair color: red.");
+  });
+
+  it.each(aboveWaistIntimate.map((d) => d.id))("withholds covered intimate %s on Qwen, and all intimate on Flux", (id) => {
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [fullSuit], true)).toContain("Appearance: Hair color: red.");
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], false)).toContain("Appearance: Hair color: red.");
   });
 });
 
@@ -364,6 +468,13 @@ describe("buildSceneComposerPrompt", () => {
     });
     expect(prompt).toContain("visible wardrobe (authoritative): a pale linen shirt (rumpled); silk camisole (hinted beneath sheer layers)");
   });
+
+  it("lists a non-human NPC's species phrase first in their line", () => {
+    const prompt = buildSceneComposerPrompt({
+      present: [{ name: "Lilith", species: "Succubus", activity: "pouring a drink", wornVisible: [] }],
+    });
+    expect(prompt).toContain("- Lilith — species: Succubus; activity: pouring a drink");
+  });
 });
 
 describe("wardrobeOutfitSummary", () => {
@@ -560,6 +671,14 @@ describe("buildSceneRenderPrompt", () => {
       { referenceName: "Mira" },
     );
     expect(bare).toContain("Keep the same outfit as the reference image.");
+  });
+
+  it("describes a textual character's species first in their detail", () => {
+    const prompt = buildSceneRenderPrompt({
+      ...plan,
+      focal: { ...plan.focal, name: "Lilith", species: "Succubus" },
+    });
+    expect(prompt).toContain("Subject: Lilith — Succubus; Hair color: red; wearing linen shirt; seated by the window.");
   });
 
   it("renders a location-only POV shot when nobody is present", () => {

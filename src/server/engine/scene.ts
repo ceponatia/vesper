@@ -27,7 +27,7 @@ import { daylightBand, type GameTime } from "@/lib/clock";
 import type { LinkAccess } from "@/contracts/world/access";
 import { defaultExposureMask, type ExposureMask, type NextTurnBrief } from "@/contracts/state/brief";
 import { INTIMATE_ATTRIBUTE_CATEGORIES } from "@/contracts/body/locations";
-import { realizeBody } from "@/contracts/species";
+import { realizeBody, speciesPromptPhrase } from "@/contracts/species";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
@@ -689,10 +689,15 @@ export function buildCanonicalFactsBlock(bundle: SceneBundleInput): string {
     const effective = resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays);
     const age = effective.find((v) => v.id === "identity.apparent_age");
     const agePhrase = typeof age?.value === "string" ? ` — appears ${humanize(age.value)}` : "";
+    // Species is an identity truth ("who they ARE"); surface it (label + any
+    // authored lore) for non-human casts so the narrator knows the character is
+    // an elf / succubus. "" for human (the unmarked default).
+    const species = speciesPromptPhrase(p.snapshot.speciesId);
+    const speciesPhrase = species ? ` Species: ${species}.` : "";
     const bio = excerptBio(p.snapshot.bio);
     const bioPhrase = bio ? ` Bio: ${bio}` : "";
-    if (!agePhrase && !bioPhrase) continue;
-    lines.push(`- ${p.displayName}${agePhrase}.${bioPhrase}`);
+    if (!agePhrase && !speciesPhrase && !bioPhrase) continue;
+    lines.push(`- ${p.displayName}${agePhrase}.${speciesPhrase}${bioPhrase}`);
   }
   if (!lines.length) return "";
   return [

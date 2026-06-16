@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { inferSpeciesFromText, speciesCatalog } from "./registry";
+import { inferSpeciesFromText, speciesCatalog, speciesPromptPhrase } from "./registry";
 import { realizeBody } from "./realize";
 import { attributeRegistry } from "../attributes";
+import { bodyPlanById } from "../body/plans";
+import { FEATURE_GROUPS } from "../body/locations";
 
 describe("inferSpeciesFromText", () => {
   it("detects species ids and labels from forge prompt text", () => {
@@ -39,6 +41,43 @@ describe("inferSpeciesFromText", () => {
 
   it("prefers feature-bearing species over the default human fallback when both appear", () => {
     expect(inferSpeciesFromText("a human-passing succubus bartender")?.species.id).toBe("succubus");
+  });
+});
+
+describe("species catalog invariants", () => {
+  it("has unique ids", () => {
+    const ids = speciesCatalog.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  for (const species of speciesCatalog) {
+    it(`${species.id}: body plan resolves, feature groups + location refs are real`, () => {
+      const plan = bodyPlanById(species.bodyPlanId);
+      expect(plan, `${species.id}: unknown bodyPlanId ${species.bodyPlanId}`).toBeDefined();
+      const planLocations = new Set(plan?.bodyLocationIds ?? []);
+      for (const group of species.defaultFeatureGroups ?? []) {
+        expect(
+          (FEATURE_GROUPS as readonly string[]).includes(group),
+          `${species.id}: unknown feature group ${group}`,
+        ).toBe(true);
+      }
+      for (const id of [...(species.allowedBodyLocationIds ?? []), ...(species.disallowedBodyLocationIds ?? [])]) {
+        expect(planLocations.has(id), `${species.id}: location ${id} not in body plan ${species.bodyPlanId}`).toBe(true);
+      }
+    });
+  }
+});
+
+describe("speciesPromptPhrase", () => {
+  it("is empty for the default species and unknown ids", () => {
+    expect(speciesPromptPhrase("human")).toBe("");
+    expect(speciesPromptPhrase("not_a_species")).toBe("");
+  });
+
+  it("is the label for a non-default species with no lore yet", () => {
+    // lore ships empty; the bare label still reminds the model it is non-human.
+    expect(speciesPromptPhrase("succubus")).toBe("Succubus");
+    expect(speciesPromptPhrase("elf")).toBe("Elf");
   });
 });
 

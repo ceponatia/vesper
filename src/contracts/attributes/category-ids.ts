@@ -17,6 +17,7 @@ export const attributeCategories = [
   "face",
   "brows",
   "lips",
+  "teeth",
   "ears",
   "horns",
   "neck",

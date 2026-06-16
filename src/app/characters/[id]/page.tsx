@@ -1,6 +1,6 @@
-import { CharacterEditorPage } from "@/components/characters/character-editor-page";
+import { CharacterEditPage } from "@/components/characters/character-edit-page";
 
 export default async function CharacterEditorRoute({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <CharacterEditorPage characterId={id} />;
+  return <CharacterEditPage characterId={id} />;
 }

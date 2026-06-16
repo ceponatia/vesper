@@ -2,14 +2,14 @@ import { generateImage } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { imageModel, imageModelId, isDemoMode, veniceGenerateImage } from "../ai";
+import { describeImageGenError, imageModel, imageModelId, isDemoMode, veniceGenerateImage } from "../ai";
 import { logEvent } from "../events";
 import { parseOr } from "@/lib/parse";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { monogramSvg } from "./monogram";
-import { buildAvatarPrompt, visibleAvatarOutfit, type AvatarOutfitItem, type AvatarStyle } from "./prompts";
+import { buildAvatarPrompt, type AvatarWardrobeItem, type AvatarStyle } from "./prompts";
 
 /** Which generator backs the avatar: Flux (OpenRouter) or Qwen uncensored (Venice). */
 export type AvatarImageModel = "flux" | "qwen";
@@ -45,10 +45,11 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     input.sink,
     "characters.profile",
   );
-  const outfit = character ? await loadDefaultOutfit(input.userId, profile.defaultOutfit, input.sink) : [];
-  // Decision 3: the uncensored Qwen route may depict intimate anatomy; the
-  // default Flux portrait generator rejects those fields, so they're withheld.
-  const prompt = character ? buildAvatarPrompt(character.name, profile, style, outfit, model === "qwen") : "";
+  const wardrobe = character ? await loadDefaultWardrobe(input.userId, profile.defaultOutfit, input.sink) : [];
+  // Decision 3: the uncensored Qwen route may depict exposed intimate anatomy;
+  // the default Flux portrait generator rejects those fields, so they're
+  // withheld. buildAvatarPrompt also drops below-waist attributes (waist-up).
+  const prompt = character ? buildAvatarPrompt(character.name, profile, style, wardrobe, model === "qwen") : "";
 
   const asset = await createImageAsset({
     ownerId: input.userId,
@@ -79,7 +80,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       durationMs: Date.now() - started,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = describeImageGenError(err);
     await failImage(asset.id, message);
     void logEvent(null, "image.avatar", {
       imageId: asset.id,
@@ -103,17 +104,19 @@ const outfitExtrasSchema = z.object({
 });
 
 /**
- * The character's default outfit (library items, profile order), filtered to
- * what is actually visible (visibleAvatarOutfit) — hidden under-layers never
- * reach the image model. A failed lookup degrades to no outfit lines with a
- * warn diagnostic (`images.avatar.outfit_load_failed`); the avatar still
- * generates. Exported for the degradation test.
+ * The character's default outfit as RAW wardrobe items (library items in
+ * profile order, carrying coverage/layer/opacity). buildAvatarPrompt does the
+ * occlusion + waist-up filtering and derives region exposure from this same
+ * coverage, so all the avatar's clothing logic lives in one place rather than
+ * being split across loader and prompt builder. A failed lookup degrades to no
+ * wardrobe with a warn diagnostic (`images.avatar.outfit_load_failed`); the
+ * avatar still generates. Exported for the degradation test.
  */
-export async function loadDefaultOutfit(
+export async function loadDefaultWardrobe(
   ownerId: string,
   itemIds: readonly string[],
   sink?: DiagnosticSink,
-): Promise<AvatarOutfitItem[]> {
+): Promise<AvatarWardrobeItem[]> {
   if (itemIds.length === 0) return [];
   try {
     const rows = await db()
@@ -137,7 +140,7 @@ export async function loadDefaultOutfit(
         },
       ];
     });
-    return visibleAvatarOutfit(wardrobe);
+    return wardrobe;
   } catch (err) {
     sink?.push(
       diag("warn", "images.avatar.outfit_load_failed", "default outfit lookup failed — avatar prompt degrades to attributes only", {

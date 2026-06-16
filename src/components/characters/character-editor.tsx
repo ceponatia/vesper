@@ -11,11 +11,14 @@ import { Select } from "@/components/ui/select";
 import { TagInput } from "@/components/ui/tag-input";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { AttributePicker } from "./attribute-picker";
+import { AttributePicker, PERSONALITY_CATEGORIES } from "./attribute-picker";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 
-type EditorTab = "profile" | "attributes" | "outfit" | "portrait";
+type EditorTab = "profile" | "attributes" | "personality" | "outfit" | "portrait";
+
+/** Split the flat attribute list into the two tabs that render it. */
+const isPersonalityAttribute = (id: string) => PERSONALITY_CATEGORIES.some((c) => id.startsWith(`${c}.`));
 
 export interface CharacterEditorProps {
   draft: CharacterDraft;
@@ -43,9 +46,15 @@ export function CharacterEditor({
 }: CharacterEditorProps) {
   const [tab, setTab] = useState<EditorTab>("profile");
 
+  const personalityCount = draft.profile.attributes.filter((a) => isPersonalityAttribute(a.id)).length;
   const tabs: TabDef<EditorTab>[] = [
     { id: "profile", label: "Profile" },
-    { id: "attributes", label: "Attributes", badge: draft.profile.attributes.length || undefined },
+    {
+      id: "attributes",
+      label: "Attributes",
+      badge: draft.profile.attributes.length - personalityCount || undefined,
+    },
+    { id: "personality", label: "Personality", badge: personalityCount || undefined },
     {
       id: "outfit",
       label: "Outfit",
@@ -150,12 +159,23 @@ export function CharacterEditor({
 
       {tab === "attributes" ? (
         <AttributePicker
+          scope="body"
           values={draft.profile.attributes}
           onChange={(attributes) => patchProfile({ attributes })}
           intimateRegions={draft.profile.intimateRegions ?? []}
           onChangeIntimateRegions={(intimateRegions) => patchProfile({ intimateRegions })}
           bodyFeatures={draft.profile.bodyFeatures}
           onChangeBodyFeatures={(bodyFeatures) => patchProfile({ bodyFeatures })}
+          speciesId={draft.profile.speciesId}
+          bodyPlanId={draft.profile.bodyPlanId}
+        />
+      ) : null}
+
+      {tab === "personality" ? (
+        <AttributePicker
+          scope="personality"
+          values={draft.profile.attributes}
+          onChange={(attributes) => patchProfile({ attributes })}
           speciesId={draft.profile.speciesId}
           bodyPlanId={draft.profile.bodyPlanId}
         />

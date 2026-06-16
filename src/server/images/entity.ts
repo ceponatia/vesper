@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { generateImage } from "ai";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
-import { imageModel, imageModelId, isDemoMode } from "../ai";
+import { describeImageGenError, imageModel, imageModelId, isDemoMode } from "../ai";
 import { logEvent } from "../events";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
@@ -67,7 +67,7 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
       durationMs: Date.now() - started,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = describeImageGenError(err);
     await failImage(asset.id, message);
     input.sink?.push(
       diag("warn", "images.entity.generate_failed", message.slice(0, 300), {

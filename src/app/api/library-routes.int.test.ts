@@ -53,7 +53,7 @@ import {
 import { POST as promotePortraitRoute } from "./characters/[id]/portraits/[imageId]/promote/route";
 import { POST as createLocationRoute } from "./locations/route";
 import { PATCH as patchLocationRoute } from "./locations/[id]/route";
-import { POST as createItemRoute } from "./items/route";
+import { GET as listItemsRoute, POST as createItemRoute } from "./items/route";
 import { PATCH as patchItemRoute } from "./items/[id]/route";
 import { POST as worldFromDraftRoute } from "./worlds/from-draft/route";
 import { POST as updateWorldFromDraftRoute } from "./worlds/[id]/from-draft/route";
@@ -297,6 +297,30 @@ describe("locations and items", () => {
     );
     expect(good.status).toBe(201);
     clothingItemId = ((await json(good)).item as { id: string }).id;
+  });
+
+  it("filters the item list by ?kind, ignoring an unknown kind", async (t) => {
+    if (!ready) return t.skip();
+    const obj = await createItemRoute(
+      send("http://t/api/items", "POST", { name: "Brass Lantern", kind: "object" }),
+      noParams,
+    );
+    expect(obj.status).toBe(201);
+    const objectItemId = ((await json(obj)).item as { id: string }).id;
+
+    const kindsOf = (body: Record<string, unknown>) => (body.items as { id: string; kind: string }[]);
+
+    // ?kind=clothing returns only the coat, never the object.
+    const clothing = kindsOf(await json(await listItemsRoute(get("http://t/api/items?kind=clothing"), noParams)));
+    expect(clothing.every((i) => i.kind === "clothing")).toBe(true);
+    expect(clothing.map((i) => i.id)).toContain(clothingItemId);
+    expect(clothing.map((i) => i.id)).not.toContain(objectItemId);
+
+    // No kind → both kinds present; an unknown kind degrades to no filter.
+    const all = kindsOf(await json(await listItemsRoute(get("http://t/api/items"), noParams)));
+    expect(all.map((i) => i.id)).toEqual(expect.arrayContaining([clothingItemId, objectItemId]));
+    const bogus = kindsOf(await json(await listItemsRoute(get("http://t/api/items?kind=weapon"), noParams)));
+    expect(bogus.map((i) => i.id)).toEqual(expect.arrayContaining([clothingItemId, objectItemId]));
   });
 
   it("404s cross-user PATCH for character, location and item without modifying rows", async (t) => {

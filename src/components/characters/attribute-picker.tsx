@@ -24,9 +24,23 @@ import {
   sliderBounds,
 } from "./attribute-helpers";
 
+/**
+ * Expression-and-bearing categories that live on the **Personality** tab rather
+ * than among the physical body attributes. The same flat `attributes` array
+ * backs both tabs — `scope` just selects which categories each one renders.
+ */
+export const PERSONALITY_CATEGORIES = ["voice", "presentation", "movement"] as const;
+const PERSONALITY_CATEGORY_SET = new Set<string>(PERSONALITY_CATEGORIES);
+
 export interface AttributePickerProps {
   values: readonly AttributeValue[];
   onChange: (values: AttributeValue[]) => void;
+  /**
+   * Which slice of the attribute vocabulary to render: `"body"` (physical
+   * attributes plus the body-config/features overrides) or `"personality"`
+   * (voice / presentation / movement). Defaults to `"body"`.
+   */
+  scope?: "body" | "personality";
   /** Per-character body-config — which intimate region groups are present. */
   intimateRegions?: readonly string[];
   /** When provided, the body-config toggle UI is shown and intimate groups unlock. */
@@ -66,6 +80,7 @@ const NESTED_CATEGORIES = new Set<string>([...NESTED_UNDER_CHEST, ...PELVIS_CATE
 export function AttributePicker({
   values,
   onChange,
+  scope = "body",
   intimateRegions = [],
   onChangeIntimateRegions,
   bodyFeatures,
@@ -96,13 +111,9 @@ export function AttributePicker({
 
   return (
     <div className="flex flex-col gap-3">
-      {onChangeIntimateRegions ? (
-        <BodyConfigSection intimateRegions={intimateRegions} onChange={onChangeIntimateRegions} />
-      ) : null}
-      {onChangeBodyFeatures ? (
-        <BodyFeaturesSection bodyFeatures={effectiveBodyFeatures} onChange={onChangeBodyFeatures} />
-      ) : null}
       {attributeGroups.map((group) => {
+        // Each tab owns a disjoint slice of the vocabulary (see PERSONALITY_CATEGORIES).
+        if (PERSONALITY_CATEGORY_SET.has(group.category) !== (scope === "personality")) return null;
         if (NESTED_CATEGORIES.has(group.category)) return null; // rendered nested below
         const definitions = group.definitions.filter((d) => body.isAttributeApplicable(d));
         const nested = group.category === "chest" ? nestedGroupsFor(NESTED_UNDER_CHEST) : [];
@@ -130,6 +141,14 @@ export function AttributePicker({
           </Fragment>
         );
       })}
+      {/* Overrides sit at the bottom of the body form: they reshape what anatomy
+          exists rather than describe it, so they're kept out of the normal flow. */}
+      {scope === "body" && onChangeIntimateRegions ? (
+        <BodyConfigSection intimateRegions={intimateRegions} onChange={onChangeIntimateRegions} />
+      ) : null}
+      {scope === "body" && onChangeBodyFeatures ? (
+        <BodyFeaturesSection bodyFeatures={effectiveBodyFeatures} onChange={onChangeBodyFeatures} />
+      ) : null}
     </div>
   );
 }

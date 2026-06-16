@@ -490,6 +490,39 @@ describe("item events", () => {
     expect(letter.containerInstanceId).toBeNull();
   });
 
+  it("remove with a locationName drops the garment in the open at the actor's room (the floor)", async () => {
+    const { plan: p } = await plan(
+      {},
+      results({
+        simulant: simulant({
+          // "kicks off her sneakers, they thud to the floor" — removed AND left on the ground.
+          itemEvents: [{ action: "remove", itemName: "sundress", byName: "Maya", locationName: "the floor" }],
+        }),
+      }),
+    );
+    const sundress = placementOf(p, "i-sundress");
+    expect(sundress.worn).toBe(false);
+    expect(sundress.holderParticipantId).toBeNull(); // not held — on the floor
+    expect(sundress.locationId).toBe("loc-kitchen"); // unresolvable "the floor" falls back to the actor's room
+    expect(sundress.containerInstanceId).toBeNull();
+  });
+
+  it("remove with a containerName stows the garment in the container", async () => {
+    const { plan: p } = await plan(
+      {},
+      results({
+        simulant: simulant({
+          itemEvents: [{ action: "remove", itemName: "sundress", byName: "Maya", containerName: "basket" }],
+        }),
+      }),
+    );
+    const sundress = placementOf(p, "i-sundress");
+    expect(sundress.worn).toBe(false);
+    expect(sundress.holderParticipantId).toBeNull();
+    expect(sundress.containerInstanceId).toBe("i-basket");
+    expect(sundress.locationId).toBeNull();
+  });
+
   it("open/close only works on containers and flips state.open", async () => {
     const { plan: p, sink } = await plan(
       {},

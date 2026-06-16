@@ -12,7 +12,11 @@ export const hairGroup = defineAttributeGroup("hair", [
     allowedValues: [
       "black", "dark_brown", "brown", "light_brown", "auburn", "red",
       "strawberry_blonde", "blonde", "platinum", "gray", "white", "dyed_vivid",
+      // Naturally otherworldly hair (fae, demonkin) — distinct from a dye job
+      // (dyed_vivid). The vivid ones are not auto-defaulted onto a human.
+      "silver", "rose_gold", "deep_violet", "midnight_blue",
     ],
+    autoDefaultExcludes: ["rose_gold", "deep_violet", "midnight_blue"],
     bodyLocationId: "hair",
     aliases: ["hair color", "ginger", "redhead", "blonde", "brunette"],
     coreVisual: true,

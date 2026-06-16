@@ -10,9 +10,9 @@ export const tailGroup = defineAttributeGroup("tail", [
     valueType: "enum",
     description: "The structural style of the tail.",
     mutability: "inherent",
-    allowedValues: ["spaded", "reptilian", "feline", "prehensile"],
+    allowedValues: ["spaded", "reptilian", "feline", "prehensile", "serpentine", "fox", "draconic", "scorpion"],
     bodyLocationId: "tail",
-    aliases: ["tail type", "spaded tail", "demonic tail"],
+    aliases: ["tail type", "spaded tail", "demonic tail", "fox tail", "serpent tail"],
     promptHints: ["Visible fantasy morphology; describe as part of the always-visible appearance."],
   },
   {
@@ -37,6 +37,7 @@ export const tailGroup = defineAttributeGroup("tail", [
     mutability: "inherent",
     bodyLocationId: "tail",
     aliases: ["tail color"],
+    promptHints: ["e.g. matching the skin, scaled green, russet fur, jet-black with a red spade."],
   },
   {
     id: "tail.tip",
@@ -46,8 +47,8 @@ export const tailGroup = defineAttributeGroup("tail", [
     valueType: "enum",
     description: "Distinctive tail ending.",
     mutability: "inherent",
-    allowedValues: ["spade", "tuft", "tapered", "barbed"],
+    allowedValues: ["spade", "tuft", "tapered", "barbed", "forked", "fluffy", "stinger"],
     bodyLocationId: "tail",
-    aliases: ["tail tip"],
+    aliases: ["tail tip", "spade tip"],
   },
 ]);

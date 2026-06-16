@@ -1,150 +1,20 @@
 import type { SpeciesDefinition } from "./types";
-import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
+import { speciesCatalog } from "./catalog";
 
 /**
- * Species catalog. Humanoid variants are data edits here. Feature-bearing
- * species use `defaultFeatureGroups`; true structural body plans are a later
- * phase.
+ * The species catalog now lives one-file-per-species under `./catalog/`; this
+ * module derives the lookups from it (mirrors `attributes/registry.ts`). Adding
+ * a species is a single new file listed in `./catalog/index.ts`.
  */
-export const speciesCatalog: readonly SpeciesDefinition[] = [
-  {
-    id: "human",
-    label: "Human",
-    aliases: ["humans", "humanlike", "human-like"],
-    bodyPlanId: DEFAULT_BODY_PLAN_ID,
-    description:
-      "A natural humanoid species with ordinary human anatomy and broad individual variation. Which intimate anatomy a given character has is the per-character body-config, not the species.",
-    attributeRules: [],
-  },
-  {
-    id: "elf",
-    label: "Elf",
-    aliases: ["elves", "elven", "elfin", "elf-like", "half-elf", "half elf"],
-    bodyPlanId: DEFAULT_BODY_PLAN_ID,
-    description: "A humanoid fantasy species with elven presentation, defined by pointed ears.",
-    attributeRules: [
-      {
-        attributeId: "ears.shape",
-        applicability: "required",
-        defaultValue: "pointed",
-        allowedValues: ["slightly_pointed", "pointed", "long_pointed"],
-        notes: "Elves read by their points; the degree varies, the points do not.",
-      },
-    ],
-  },
-  {
-    id: "dwarf",
-    label: "Dwarf",
-    aliases: ["dwarves", "dwarven", "dwarf-like"],
-    bodyPlanId: DEFAULT_BODY_PLAN_ID,
-    description: "A humanoid fantasy species with dwarven presentation: short and broad of frame.",
-    attributeRules: [
-      {
-        attributeId: "build.height",
-        applicability: "required",
-        defaultValue: "short",
-        allowedValues: ["very_short", "short", "below_average"],
-        notes: "Dwarves are a short people.",
-      },
-      {
-        attributeId: "build.frame",
-        applicability: "required",
-        defaultValue: "stocky",
-        allowedValues: ["stocky", "broad", "heavyset", "athletic"],
-      },
-    ],
-  },
-  {
-    id: "gnome",
-    label: "Gnome",
-    aliases: ["gnomes", "gnomish", "gnome-like"],
-    bodyPlanId: DEFAULT_BODY_PLAN_ID,
-    description: "A humanoid fantasy species with gnomish presentation: the smallest of the common folk.",
-    attributeRules: [
-      {
-        attributeId: "build.height",
-        applicability: "required",
-        defaultValue: "very_short",
-        allowedValues: ["very_short", "short"],
-        notes: "Gnomes are the smallest of the common humanoid folk.",
-      },
-    ],
-  },
-  {
-    id: "faerie",
-    label: "Faerie",
-    aliases: ["faeries", "faery", "fae", "fairy", "fairies", "fair folk"],
-    bodyPlanId: DEFAULT_BODY_PLAN_ID,
-    description:
-      "A humanoid fantasy species whose default morphology includes wings. These are defaults, not hard requirements; bodyFeatures may override them per character.",
-    defaultFeatureGroups: ["wings"],
-    attributeRules: [],
-  },
-  {
-    id: "orc",
-    label: "Orc",
-    aliases: ["orcs", "orcish", "ork", "orks", "orkish", "orc-like"],
-    bodyPlanId: DEFAULT_BODY_PLAN_ID,
-    description: "A humanoid fantasy species with orcish presentation: broad, tall, and powerfully built.",
-    attributeRules: [
-      {
-        attributeId: "build.frame",
-        applicability: "required",
-        defaultValue: "broad",
-        allowedValues: ["athletic", "stocky", "broad", "heavyset"],
-        notes: "Orcs are broad and powerfully built.",
-      },
-      {
-        attributeId: "build.height",
-        applicability: "optional",
-        defaultValue: "tall",
-        allowedValues: ["above_average", "tall", "very_tall", "towering"],
-      },
-      {
-        attributeId: "build.musculature",
-        applicability: "optional",
-        defaultValue: "muscular",
-        allowedValues: ["toned", "defined", "muscular", "powerfully_built"],
-      },
-    ],
-  },
-  {
-    id: "goblin",
-    label: "Goblin",
-    aliases: ["goblins", "goblin-like", "goblinoid"],
-    bodyPlanId: DEFAULT_BODY_PLAN_ID,
-    description: "A humanoid fantasy species with goblin presentation: small, with large pointed ears.",
-    attributeRules: [
-      {
-        attributeId: "build.height",
-        applicability: "required",
-        defaultValue: "very_short",
-        allowedValues: ["very_short", "short"],
-      },
-      {
-        attributeId: "ears.shape",
-        applicability: "required",
-        defaultValue: "large",
-        allowedValues: ["pointed", "long_pointed", "large", "protruding"],
-        notes: "Large, often pointed ears.",
-      },
-    ],
-  },
-  {
-    id: "succubus",
-    label: "Succubus",
-    aliases: ["succubi", "succuba", "succubae", "succubus-like"],
-    bodyPlanId: DEFAULT_BODY_PLAN_ID,
-    description:
-      "A humanoid fantasy species whose default morphology includes wings, horns, and a tail. These are defaults, not hard requirements; bodyFeatures may override them per character.",
-    defaultFeatureGroups: ["wings", "horns", "tail"],
-    attributeRules: [],
-  },
-];
+export { speciesCatalog };
 
 export const DEFAULT_SPECIES_ID = "human";
 
-const byId = new Map<string, SpeciesDefinition>(speciesCatalog.map((s) => [s.id, s]));
+const byId = new Map<string, SpeciesDefinition>();
+for (const species of speciesCatalog) {
+  if (byId.has(species.id)) throw new Error(`Duplicate species id: ${species.id}`);
+  byId.set(species.id, species);
+}
 
 export function speciesById(id: string): SpeciesDefinition | undefined {
   return byId.get(id);
@@ -152,6 +22,21 @@ export function speciesById(id: string): SpeciesDefinition | undefined {
 
 export function isSpeciesId(id: string): boolean {
   return byId.has(id);
+}
+
+/**
+ * The species phrase surfaced to the narrator and image models. Returns "" for
+ * the default species (human is the unmarked baseline — naming it is noise) or
+ * an unknown id, otherwise the label with the authored `lore` appended when
+ * present. One gate, shared by every prompt consumer (engine/scene.ts,
+ * images/prompts.ts) so the surfacing rule stays identical and out of jscpd's
+ * way. `lore` ships empty today, so the phrase is label-only until authored.
+ */
+export function speciesPromptPhrase(id: string): string {
+  if (id === DEFAULT_SPECIES_ID) return "";
+  const species = byId.get(id);
+  if (!species) return "";
+  return species.lore ? `${species.label} — ${species.lore}` : species.label;
 }
 
 export interface InferredSpecies {

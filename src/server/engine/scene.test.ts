@@ -290,6 +290,20 @@ describe("buildCanonicalFactsBlock", () => {
     expect(excerptBio("One. Two. Three. Four. Five.")).toBe("One. Two. Three.");
     expect(excerptBio("")).toBe("");
   });
+
+  it("names a non-human species and omits the species clause for human", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    expect(maya).toBeDefined();
+
+    maya!.snapshot = profile({ speciesId: "succubus", bio: "Maya runs the inn." });
+    expect(buildCanonicalFactsBlock(bundle)).toContain("Species: Succubus.");
+
+    maya!.snapshot = profile({ speciesId: "human", bio: "Maya runs the inn." });
+    const human = buildCanonicalFactsBlock(bundle);
+    expect(human).toContain("Maya runs the inn");
+    expect(human).not.toContain("Species:");
+  });
 });
 
 describe("buildGlanceImpressions", () => {

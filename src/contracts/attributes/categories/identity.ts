@@ -58,17 +58,6 @@ export const identityGroup = defineAttributeGroup("identity", [
     identityAnchor: true,
   },
   {
-    id: "identity.species_presentation",
-    label: "Species presentation",
-    kind: "physical",
-    category: "identity",
-    valueType: "text",
-    description: "How the character's species reads visually, for non-human casts (\"wood-elf\", \"android shell\").",
-    mutability: "inherent",
-    aliases: ["species", "race"],
-    identityAnchor: true,
-  },
-  {
     id: "identity.heritage",
     label: "Heritage",
     kind: "cultural",

@@ -54,18 +54,6 @@ describe("attribute registry invariants", () => {
     }
   });
 
-  it("aliases do not collide across attribute ids", () => {
-    const seen = new Map<string, string>();
-    for (const def of registry.definitions) {
-      for (const alias of def.aliases ?? []) {
-        const key = alias.toLowerCase();
-        const owner = seen.get(key);
-        expect(owner, `alias "${alias}" claimed by ${owner} and ${def.id}`).toBeUndefined();
-        seen.set(key, def.id);
-      }
-    }
-  });
-
   it("forBodyLocation returns attributes anchored at the location", () => {
     const atHair = registry.forBodyLocation("hair");
     expect(atHair.map((d) => d.id)).toContain("hair.color");
@@ -176,5 +164,17 @@ describe("resolveAlias", () => {
 
   it("returns an empty list for unknown text", () => {
     expect(registry.resolveAlias("dorsal fin")).toEqual([]);
+  });
+
+  it("fans out a shared alias to every attribute that claims it", () => {
+    // Aliases are deliberately many-to-many: a generic mention ("feet") can
+    // surface several candidate attributes. resolveAlias returns all of them.
+    const shared = buildRegistry([
+      defineAttributeGroup("feet", [
+        { id: "feet.a", label: "A", kind: "physical", category: "feet", valueType: "text", description: "x", mutability: "inherent", aliases: ["paws"] },
+        { id: "feet.b", label: "B", kind: "presentation", category: "feet", valueType: "text", description: "y", mutability: "mutable", aliases: ["paws"] },
+      ]),
+    ]);
+    expect(shared.resolveAlias("paws").map((d) => d.id).sort()).toEqual(["feet.a", "feet.b"]);
   });
 });

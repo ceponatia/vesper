@@ -65,6 +65,23 @@ See [non-human-races-and-features.deferred.md](non-human-races-and-features.defe
 for the full design, the realize-engine change, the field mapping, and the build
 order.
 
+## Scene image: multi-reference & provider strategy
+
+*Raised 2026-06-16, from external feedback on scene image generation.* Today's
+scene render is single-reference (Venice/Qwen `/image/edit` takes one buffer);
+multi-character scenes get one identity anchor + textual others. Design note
+covers: a provider-capability abstraction + multi-reference plumbing (atop the
+existing `meta.references` seam), the SFW-only hosted multi-ref lane (FLUX.2 /
+Gemini / GPT-Image — all policy-walled for the intimate core), the brittle
+reference-sheet stopgap, and self-hosted ComfyUI as the long-term home for the
+uncensored core. **One item is not deferrable:** an uploaded real-person avatar
+can currently anchor an intimate scene render (`allowIntimate: true` for any
+Venice reference, `scene.ts:103-106`) — a safety bug to lift into
+[followups.phase4.md](followups.phase4.md) immediately.
+
+See [scene-image-references.deferred.md](scene-image-references.deferred.md) for
+the full review, the exact fix, and my recommendation order.
+
 ## Comms expansions
 
 *Raised 2026-06-13, from the phase-3 presence open questions.* Phase-3 comms

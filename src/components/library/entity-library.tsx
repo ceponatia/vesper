@@ -235,8 +235,8 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
           <p className="mt-1 text-sm text-paper-400">{config.blurb}</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={createBlank} busy={creating}>
-            New blank
+          <Button onClick={createBlank} busy={creating} className="min-w-20">
+            New
           </Button>
           {config.generateImages ? (
             <Button onClick={requestGenerate} busy={generatingBatch} disabled={batchRunning}>

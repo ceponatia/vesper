@@ -6,7 +6,7 @@ Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and 
 
 | Suite | Location | Covers | IO |
 | --- | --- | --- | --- |
-| contracts | `src/contracts/**/*.test.ts` | Registry invariants (unique ids, valid enums, alias collisions), parse/resolve round-trips, attribute precedence, condition logic, wardrobe visibility | none |
+| contracts | `src/contracts/**/*.test.ts` | Registry invariants (unique ids, valid enums, alias fan-out — one alias may resolve to several attributes), parse/resolve round-trips, attribute precedence, condition logic, wardrobe visibility | none |
 | lib | `src/lib/**/*.test.ts` | parseOr/parseOrNull, game-clock math, client API error envelope, SSE turn-stream parsing, session feed/status reducers | none |
 | engine unit | `src/server/engine/**/*.test.ts` | **The merge reducer** (the most-tested code: every event type, clamping, invalid-reference dropping, all-agents-failed degradation), segmenter edge cases, scene assembly incl. wardrobe visibility, movement intent capture, demo-mode generators, prompt builders (structural assertions, not snapshots of full text) | none (fake rows) |
 | memory unit | `src/server/memory/**/*.test.ts` | Supersedence gating, fact lifecycle, lore eligibility filtering, retrieval merge/dedup | mocked embeddings (deterministic vectors) |

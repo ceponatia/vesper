@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { generateImage } from "ai";
 import { eq } from "drizzle-orm";
 import { db, images, sessionParticipants } from "../db";
-import { generateChecked, hasVenice, imageModel, imageModelId, isDemoMode, toolModelId, veniceEditImage } from "../ai";
+import { describeImageGenError, generateChecked, hasVenice, imageModel, imageModelId, isDemoMode, toolModelId, veniceEditImage } from "../ai";
 import { logEvent } from "../events";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { SceneReference } from "@/contracts/images/scene-reference";
@@ -153,7 +153,7 @@ export async function renderSceneImage(input: RenderSceneInput): Promise<string>
     const saved = await saveImageBuffer(asset.id, buffer, input.sink);
     void logScene(input.session.id, asset.id, saved?.status ?? "failed", started);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = describeImageGenError(err);
     await failImage(asset.id, message);
     void logScene(input.session.id, asset.id, "failed", started);
   }

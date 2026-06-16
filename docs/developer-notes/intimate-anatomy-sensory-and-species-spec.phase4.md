@@ -380,6 +380,11 @@ it open later to add species — exactly the rework you want to avoid.
    description. **Decided (Decision 8): keep the two separate** — the structural id
    drives the gating engine, the free text drives description; they're
    complementary, not unified.
+   **Superseded (2026-06-15): Decision 8 reversed.** `identity.species_presentation`
+   was removed and the app unified on `speciesId` — the structural id is now the single
+   species field (editor Species dropdown), and the species label + optional model-facing
+   `lore` is surfaced to the narrator and image prompts via `speciesPromptPhrase`. Narrative
+   ancestry nuance lives in `identity.heritage`. See contracts.md §Body model.
 
 ### What we are explicitly NOT building
 
@@ -613,6 +618,9 @@ section noted; this is the scan-in-one-place summary.
    (region tree)
 8. **`speciesId` vs `species_presentation` — keep separate.** Structural id drives
    gating; free text drives description. §C
+   **Superseded (2026-06-15): unified on `speciesId`; `species_presentation` removed.** The
+   structural id is the single species field, surfaced (label + optional `lore`) to narrator
+   and image prompts; ancestry nuance lives in `identity.heritage`.
 9. **Phasing — this is the new phase 4**, a standalone build that goes first; the
    prior phase-4 "world moves" cluster is renumbered **phase 5**. See the Phase map
    at the top.

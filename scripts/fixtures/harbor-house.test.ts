@@ -3,8 +3,6 @@ import {
   attributeRegistry,
   bodyLocationRegistry,
   characterProfileSchema,
-  FEATURE_ATTRIBUTE_CATEGORIES,
-  INTIMATE_ATTRIBUTE_CATEGORIES,
   itemDefinitionSchema,
   loreChunkCategorySchema,
   loreChunkTierSchema,
@@ -26,41 +24,22 @@ const itemByKey = new Map(harborHouse.items.map((i) => [i.key, i]));
 const characterKeys = new Set(harborHouse.characters.map((c) => c.key));
 const castCharacterKeys = new Set(harborHouse.cast.map((c) => c.characterKey));
 
-// Registry attributes the fixture intentionally omits from the "covers
-// everything" check: identity.species_presentation (both characters are human),
-// intimate-anatomy attributes, and additive feature attributes — those are gated
-// per character by the body-config/species feature list (not part of the
-// universal vocabulary every character carries).
-const OMITTED_ATTRIBUTE_IDS = new Set(["identity.species_presentation"]);
-const isIntimateAttribute = (id: string): boolean => {
-  const def = attributeRegistry.byId(id);
-  return def ? (INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category) : false;
-};
-const isFeatureAttribute = (id: string): boolean => {
-  const def = attributeRegistry.byId(id);
-  return def ? (FEATURE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category) : false;
-};
-
 describe("harbor house characters", () => {
-  it("every attribute value validates against the registry", () => {
+  // Coverage is automatic, not enumerated: every value a fixture sets is checked
+  // against the registry, so new attribute vocabulary is exercised the moment a
+  // character uses it — no per-field list to maintain here. (Attribute
+  // *definitions* are separately validated by the registry-invariants test, so
+  // a new field in the contracts is caught even when no fixture uses it yet.)
+  // We intentionally do NOT require every character to populate every attribute:
+  // that exhaustiveness check forced fixture churn on every vocabulary change.
+  it("every attribute value validates against the registry, with no duplicate ids", () => {
     for (const character of harborHouse.characters) {
+      const ids = character.attributes.map((a) => a.id);
+      expect(new Set(ids).size, `${character.key} has duplicate attribute ids`).toBe(ids.length);
       for (const attr of character.attributes) {
         const result = attributeRegistry.parseValue(attr.id, attr.value);
         expect(result.ok, `${character.key} ${attr.id}: ${result.ok ? "" : result.issues.join("; ")}`).toBe(true);
       }
-    }
-  });
-
-  it("covers the full registry vocabulary (minus documented omissions) without duplicates", () => {
-    const allIds = attributeRegistry.definitions
-      .map((d) => d.id)
-      .filter((id) => !OMITTED_ATTRIBUTE_IDS.has(id) && !isIntimateAttribute(id) && !isFeatureAttribute(id));
-    for (const character of harborHouse.characters) {
-      const ids = character.attributes.map((a) => a.id);
-      expect(new Set(ids).size, `${character.key} has duplicate attribute ids`).toBe(ids.length);
-      const have = new Set<string>(ids);
-      const missing = allIds.filter((id) => !have.has(id));
-      expect(missing, `${character.key} missing: ${missing.join(", ")}`).toEqual([]);
     }
   });
 
