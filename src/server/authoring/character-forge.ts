@@ -157,7 +157,8 @@ function profilePrompt(context: CharacterForgeContext): string {
     "voice notes (how they sound and speak), any aliases or nicknames, and 3-6 lowercase tags.",
   ];
   if (species && species.id !== DEFAULT_SPECIES_ID) {
-    lines.push("", `Resolved structural species: ${species.label}. Keep the draft consistent with that species.`);
+    const look = species.appearance ? ` ${species.appearance}` : "";
+    lines.push("", `Resolved structural species: ${species.label}.${look} Keep the draft consistent with that species.`);
   }
   if (context.draft?.name) {
     lines.push("", `You are regenerating the profile of the draft currently named "${context.draft.name}". Keep the core concept.`);
@@ -421,7 +422,11 @@ function attributesPrompt(context: CharacterForgeContext): string {
   ];
   const species = speciesForForgeContext(context);
   if (species && species.id !== DEFAULT_SPECIES_ID) {
-    lines.push("", `Resolved structural species: ${species.label}. Include its visible feature morphology when the vocabulary lists it.`);
+    const look = species.appearance ? ` ${species.appearance}` : "";
+    lines.push(
+      "",
+      `Resolved structural species: ${species.label}.${look} Include its visible feature morphology when the vocabulary lists it; choose attribute values consistent with this generic look unless the concept says otherwise.`,
+    );
   }
   if (hasSpeciesTrait) {
     lines.push(

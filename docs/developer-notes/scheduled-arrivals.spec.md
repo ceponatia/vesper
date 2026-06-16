@@ -7,7 +7,7 @@
 
 Status: **findings / draft for discussion** (2026-06-13). Phase 5 ("the world
 moves"). Sibling of [npc-movement-spec.phase3 (drives & traversal)](npc-movement-spec.phase3.md)
-and [movement-authority-spec.phase5 (who may commit a move)](movement-authority-spec.phase5.md).
+and [movement-authority-spec.phase5 (who may commit a move)](movement-authority.spec.md).
 This one answers a third question neither poses: **how does an NPC come to be
 somewhere at a particular game-clock time** — a player-arranged appointment, not
 a routine and not a player-narrated shove.
@@ -64,7 +64,7 @@ each misses:
 
 Whatever the narrative model improvises — most likely Eleanor *materialises* at
 the apartment with no grounded journey. That is the same teleport-by-prose
-state/narration decoupling that [movement-authority-spec.phase5.md](movement-authority-spec.phase5.md)
+state/narration decoupling that [movement-authority.spec.md](movement-authority.spec.md)
 was written about (it post-mortems this *same* session). If the director happened
 to stage her earlier off a thread, she walks over, but arrival is untied to 5:30.
 

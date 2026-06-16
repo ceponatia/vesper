@@ -25,8 +25,8 @@ asked to honor. It is a sibling of
 > retrieval re-seeding (Stack B), and the mid-stream tag gate (Stack C). Docs
 > updated per §10. Open questions B/C (authority owner, appointment creation
 > site) remain for those consuming specs.
-[movement-authority-spec.phase5.md](movement-authority-spec.phase5.md) and
-[scheduled-arrivals-spec.phase5.md](scheduled-arrivals-spec.phase5.md): those
+[movement-authority.spec.md](movement-authority.spec.md) and
+[scheduled-arrivals.spec.md](scheduled-arrivals.spec.md): those
 two specs each end with a gap that an input-side understanding layer is the
 natural place to close.
 
@@ -136,10 +136,10 @@ recognises a fixed verb vocabulary and cannot:
   bartender", "follow him out") — only by literal name match.
 - Tell **flavor from command** ("Eleanor steps out of the meeting" reads
   identically to "Eleanor, come with me") — the precise distinction
-  [movement-authority-spec](movement-authority-spec.phase5.md) §Root-cause #2
+  [movement-authority-spec](movement-authority.spec.md) §Root-cause #2
   identifies as the corruption that broke session `pyfb0…`.
 - Recognise a *negotiated* outcome ("it's a date — my place at 5:30") — the
-  trigger [scheduled-arrivals-spec](scheduled-arrivals-spec.phase5.md) needs.
+  trigger [scheduled-arrivals-spec](scheduled-arrivals.spec.md) needs.
 - Classify an action's **type or stakes** ("I try to pick the lock", "I make my
   case to her father") — needed for any attribute-relevant resolution.
 
@@ -584,6 +584,6 @@ the consumer list), `prompts.md` (intake system prompt + state slice; the digest
 now consumes intake's `allowed`), `contracts.md` (`IntentBrief` schema, the
 `tool`-model role), `resilience.md` (intake's timeout→regex fallback as a worked
 example of a new trust boundary), and cross-links from
-[movement-authority-spec](movement-authority-spec.phase5.md) §1/§3 and
-[scheduled-arrivals-spec](scheduled-arrivals-spec.phase5.md) §A (intake supplies
+[movement-authority-spec](movement-authority.spec.md) §1/§3 and
+[scheduled-arrivals-spec](scheduled-arrivals.spec.md) §A (intake supplies
 the input-side recognition both assume someone does).

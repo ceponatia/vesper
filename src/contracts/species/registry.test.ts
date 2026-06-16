@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inferSpeciesFromText, speciesCatalog, speciesPromptPhrase } from "./registry";
+import { inferSpeciesFromText, speciesAppearancePhrase, speciesCatalog, speciesLorePhrase } from "./registry";
 import { realizeBody } from "./realize";
 import { attributeRegistry } from "../attributes";
 import { bodyPlanById } from "../body/plans";
@@ -68,16 +68,29 @@ describe("species catalog invariants", () => {
   }
 });
 
-describe("speciesPromptPhrase", () => {
+describe("speciesAppearancePhrase", () => {
   it("is empty for the default species and unknown ids", () => {
-    expect(speciesPromptPhrase("human")).toBe("");
-    expect(speciesPromptPhrase("not_a_species")).toBe("");
+    expect(speciesAppearancePhrase("human")).toBe("");
+    expect(speciesAppearancePhrase("not_a_species")).toBe("");
   });
 
-  it("is the label for a non-default species with no lore yet", () => {
-    // lore ships empty; the bare label still reminds the model it is non-human.
-    expect(speciesPromptPhrase("succubus")).toBe("Succubus");
-    expect(speciesPromptPhrase("elf")).toBe("Elf");
+  it("is label + authored appearance for a non-default species", () => {
+    const succubus = speciesCatalog.find((s) => s.id === "succubus");
+    expect(succubus?.appearance).toBeTruthy();
+    expect(speciesAppearancePhrase("succubus")).toBe(`Succubus — ${succubus?.appearance}`);
+  });
+});
+
+describe("speciesLorePhrase", () => {
+  it("is empty for the default species and unknown ids", () => {
+    expect(speciesLorePhrase("human")).toBe("");
+    expect(speciesLorePhrase("not_a_species")).toBe("");
+  });
+
+  it("is label + authored lore for a non-default species", () => {
+    const elf = speciesCatalog.find((s) => s.id === "elf");
+    expect(elf?.lore).toBeTruthy();
+    expect(speciesLorePhrase("elf")).toBe(`Elf — ${elf?.lore}`);
   });
 });
 

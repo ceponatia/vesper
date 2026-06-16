@@ -183,9 +183,10 @@ describe("buildAvatarPrompt", () => {
     expect(buildAvatarPrompt("Mira", profile, "realistic")).not.toContain("Wearing");
   });
 
-  it("names a non-human species and omits the species line for human", () => {
+  it("names a non-human species with its generic appearance and omits the species line for human", () => {
     const succubus = buildAvatarPrompt("Mira", profileWith({ speciesId: "succubus" }), "realistic");
-    expect(succubus).toContain("Species: Succubus.");
+    expect(succubus).toContain("Species: Succubus —");
+    expect(succubus).toContain("leathery bat-like wings"); // generic appearance, not cultural lore
     const human = buildAvatarPrompt("Mira", profileWith({ speciesId: "human" }), "realistic");
     expect(human).not.toContain("Species:");
   });

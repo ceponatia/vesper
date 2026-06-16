@@ -1,6 +1,6 @@
 # GPT review: Movement authority & intent fidelity
 
-Source: [../movement-authority-spec.phase5.md](../movement-authority-spec.phase5.md)
+Source: [../movement-authority.spec.md](../movement-authority.spec.md)
 
 ## Overall opinion
 

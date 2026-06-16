@@ -1,6 +1,6 @@
 # GPT review: Pre-narrator intent & guardrail agents
 
-Source: [../pre-narrator-agents-spec.phase5.md](../pre-narrator-agents-spec.phase5.md)
+Source: [../pre-narrator-agents.spec.md](../pre-narrator-agents.spec.md)
 
 ## Overall opinion
 

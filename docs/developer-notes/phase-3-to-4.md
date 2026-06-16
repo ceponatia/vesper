@@ -7,6 +7,14 @@
 > ([intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sensory-and-species-spec.phase4.md)).
 > So every "phase 4" below now refers to what is **phase 5**. This historical
 > migration doc is left as-written; a future cleanup may split it.
+>
+> **Update 2026-06-16:** the project dropped hard phase numbers for a topic-named
+> plan convention ([deferred.plan.md](deferred.plan.md) §"Plan docs: drop hard
+> phase numbers"). The three world-moves specs were renamed off `*.phase5.md` to
+> `movement-authority.spec.md`, `scheduled-arrivals.spec.md`, and
+> `pre-narrator-agents.spec.md`. The `*.phase5.md` mentions below are the
+> historical record of the phase-3→5 resequencing; only the live links were
+> repointed to the new names.
 
 Status: **plan** (2026-06-13) — a one-off migration plan, not a working-phase
 plan. It says how to cut the overloaded `.phase3.md` corpus into a strict
@@ -140,7 +148,7 @@ witnessed-intimacy); library-character `tier` field.
   traversal/pathfinding/LOD, commitment, world-tick *proposals*, approach scores,
   follow schedule-conflict term, companion travel atomicity. (Player-side access +
   arrival/departure staging already shipped in phase 2.)
-- **movement-authority** ([spec](movement-authority-spec.phase5.md), drafted
+- **movement-authority** ([spec](movement-authority.spec.md), drafted
   2026-06-13 from a broken session): the precondition npc-movement's traversal
   assumes — who may *commit* a movement (player narration must not relocate NPCs),
   implied sub-rooms must not promote to graph hops, and multi-hop player intent

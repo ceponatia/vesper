@@ -271,7 +271,7 @@ exceptions, degraded defaults).
    `defaultValue`, which is phase 4's own stated success test ("a second humanoid
    species should be a single data file"). Today it's a data file *plus* teaching
    `realizeBody` to consume `required`/`defaultValue` narrowing. Tracked-adjacent
-   in [non-human-races-and-features.deferred.md](non-human-races-and-features.deferred.md).
+   in [non-human-species.spec.md](non-human-species.spec.md).
 
 7. **Decouple intimate defaulting from a fragile gender read (E1)** — make
    `identity.gender` `coreVisual` (so it's always filled), or re-derive
@@ -291,7 +291,7 @@ exceptions, degraded defaults).
 To avoid double-planning, these adjacent items are already recorded:
 
 - **Additive features + non-human species (image prompting, richer species
-  rules, wardrobe accommodation)** — [non-human-races-and-features.deferred.md](non-human-races-and-features.deferred.md).
+  rules, wardrobe accommodation)** — [non-human-species.spec.md](non-human-species.spec.md).
   Recommendation 6 above overlaps its "richer species rules."
 - **Anatomy port granularity / supplemental anatomy** (buttocks, groin, abdomen,
   nose …) — [supplemental-anatomy.phase4.md](supplemental-anatomy.phase4.md). The

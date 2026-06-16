@@ -24,7 +24,7 @@ participant.state.activity = entry.activity;
 `scheduleEntryAt` (`merge.ts:689`) handles midnight-wrapping windows and weekday
 masks. Two specs lean on this directly:
 
-- **scheduled-arrivals-spec.phase5.md** §"Schedule tick" cites
+- **scheduled-arrivals.spec.md** §"Schedule tick" cites
   `merge.ts:1715-1749` + `scheduleEntryAt` and describes
   `ParticipantSnapshot.schedule` as the NPC's *"authored daily routine"* / its
   *"recurring weekly windows."*
@@ -121,7 +121,7 @@ Resolve the **storage question first** (library default vs. world-local override
 — lean world-local, given the location-name binding), then build authoring in the
 world-cast UI (A). If that's out of scope short-term, ship B with the runtime
 `unknown_location` diagnostic as the guard, and note the migration to A. Either
-way, update `scheduled-arrivals-spec.phase5.md` and
+way, update `scheduled-arrivals.spec.md` and
 `offscreen-simulation-spec.phase3.md` to point at the now-real authoring path.
 
 ## Test plan

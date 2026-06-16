@@ -3,7 +3,7 @@ import { attributeRegistry, type AttributeDefinition, type AttributeValue } from
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { exposedRegions, resolveWardrobeVisibility, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
-import { realizeBody, speciesPromptPhrase } from "@/contracts/species";
+import { realizeBody, speciesAppearancePhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
 /**
@@ -168,9 +168,9 @@ export function buildAvatarPrompt(
     if (formatted) appearance.push(formatted);
   }
   const wearing = visibleAvatarOutfit(wardrobe).map(formatGarment).join("; ");
-  // Name the species (+ any authored lore) for non-human casts so the image
-  // model renders our take on it; "" for human (the unmarked default).
-  const species = speciesPromptPhrase(profile.speciesId);
+  // Name the species (+ its generic visual appearance) for non-human casts so
+  // the image model renders our take on it; "" for human (the unmarked default).
+  const species = speciesAppearancePhrase(profile.speciesId);
 
   return [
     `${STYLE_PREFIX[style]}, waist-up portrait, facing camera, soft studio lighting, neutral background.`,
@@ -286,7 +286,7 @@ export interface SceneWornItem {
  */
 export interface ScenePresentCharacter {
   name: string;
-  /** Species phrase (label + any authored lore) for non-human casts; "" / omitted for human (speciesPromptPhrase). */
+  /** Species phrase (label + generic appearance) for non-human casts; "" / omitted for human (speciesAppearancePhrase). */
   species?: string;
   activity?: string;
   posture?: string;

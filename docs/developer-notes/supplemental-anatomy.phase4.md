@@ -107,7 +107,7 @@ aionchat's skin/eye/hair palettes carry fantastical tones (green/blue/violet
 skin, glowing/arcane eyes, pastel/vibrant hair). Vesper's palettes are realistic.
 These are **gated to the species work** — port them when the first non-human cast
 needs them (see
-[non-human-races-and-features.deferred.md](non-human-races-and-features.deferred.md)),
+[non-human-species.spec.md](non-human-species.spec.md)),
 not as part of this everyday-anatomy pass. Listed below for completeness, tagged
 **[FANTASY — defer to species]**.
 

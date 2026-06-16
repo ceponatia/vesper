@@ -56,7 +56,7 @@ argument, not veto.
 ## Idea 1 — Pre-narrator agent(s) feeding the narrator relevant fields
 
 **What's there today.** This is largely *already designed and in build*. The
-[pre-narrator-agents-spec](pre-narrator-agents-spec.phase5.md) approved **Stack
+[pre-narrator-agents-spec](pre-narrator-agents.spec.md) approved **Stack
 A**: a single latency-hidden intake agent emitting an `IntentBrief`
 (`src/contracts/turns/intent-brief.ts`, `src/server/engine/intake.ts`). The
 brief already carries the exact seams this idea needs:

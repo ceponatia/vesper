@@ -53,6 +53,8 @@ This may also happen with items and locations but is currently unknown as it has
 
 ## RAG
 
+> Being addressed in [RAG-improvements.plan.md](../RAG-improvements.plan.md) (initial impressions / sequencing for all seven items below).
+
 1. Add a measured fact relevance policy rather than a blunt universal threshold. For example: include facts if score is above a configurable floor, or if the subject is currently present/addressed, or if a director memory query explicitly mentions the subject. That keeps important character facts from disappearing while reducing random semantic neighbors.
 
 - We definitely want to check `isPresent` for a lot of prompt injections. NPCs should still act behind the scenes when not present with the player, but this will be asynchronous and non-turn-blocking, so it can use a totally different agent pipeline.

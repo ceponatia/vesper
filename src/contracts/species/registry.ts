@@ -25,14 +25,29 @@ export function isSpeciesId(id: string): boolean {
 }
 
 /**
- * The species phrase surfaced to the narrator and image models. Returns "" for
+ * The species *visual* phrase for the image models and the forge: the label
+ * with the authored generic `appearance` appended when present. Returns "" for
  * the default species (human is the unmarked baseline — naming it is noise) or
- * an unknown id, otherwise the label with the authored `lore` appended when
- * present. One gate, shared by every prompt consumer (engine/scene.ts,
- * images/prompts.ts) so the surfacing rule stays identical and out of jscpd's
- * way. `lore` ships empty today, so the phrase is label-only until authored.
+ * an unknown id; label-only when `appearance` is unauthored, so the consumer
+ * still knows the cast is non-human. One gate shared by both visual consumers
+ * (images/prompts.ts, authoring/character-forge.ts) so the rule stays identical
+ * and out of jscpd's way. Companion to `speciesLorePhrase` (narrator culture).
  */
-export function speciesPromptPhrase(id: string): string {
+export function speciesAppearancePhrase(id: string): string {
+  if (id === DEFAULT_SPECIES_ID) return "";
+  const species = byId.get(id);
+  if (!species) return "";
+  return species.appearance ? `${species.label} — ${species.appearance}` : species.label;
+}
+
+/**
+ * The species *cultural/identity* phrase for the narrator's canonical facts:
+ * the label with the authored `lore` appended when present. Same "" / label-only
+ * rules as `speciesAppearancePhrase` — the two split the old single phrase by
+ * audience (visual → images/forge, culture → narrator) so neither consumer is
+ * fed text meant for the other.
+ */
+export function speciesLorePhrase(id: string): string {
   if (id === DEFAULT_SPECIES_ID) return "";
   const species = byId.get(id);
   if (!species) return "";

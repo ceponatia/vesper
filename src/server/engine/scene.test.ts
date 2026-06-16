@@ -297,7 +297,9 @@ describe("buildCanonicalFactsBlock", () => {
     expect(maya).toBeDefined();
 
     maya!.snapshot = profile({ speciesId: "succubus", bio: "Maya runs the inn." });
-    expect(buildCanonicalFactsBlock(bundle)).toContain("Species: Succubus.");
+    const succubus = buildCanonicalFactsBlock(bundle);
+    expect(succubus).toContain("Species: Succubus —");
+    expect(succubus).toContain("matriarchs"); // cultural lore reaches the narrator, not generic looks
 
     maya!.snapshot = profile({ speciesId: "human", bio: "Maya runs the inn." });
     const human = buildCanonicalFactsBlock(bundle);

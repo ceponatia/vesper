@@ -6,8 +6,11 @@ export const goblin = defineSpecies({
   label: "Goblin",
   aliases: ["goblins", "goblin-like", "goblinoid"],
   bodyPlanId: DEFAULT_BODY_PLAN_ID,
-  description: "A humanoid fantasy species with goblin presentation: small, with large pointed ears.",
-  lore: "",
+  description:
+    "A humanoid fantasy species with goblin presentation: small, with large pointed ears.",
+  appearance:
+    "Short and wiry, with a greenish cast to the skin and long, floppy, oversized ears.",
+  lore: "Goblins are distant relatives to gnomes and have been looked down upon by society, even in contemporary times. They are known for their slightly green skin, long floppy ears, and skill with machinery (though less so digital technology). They share the short height of gnomes, standing at about 4 feet tall on average.",
   attributeRules: [
     {
       attributeId: "build.height",

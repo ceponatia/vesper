@@ -108,7 +108,7 @@ and the body/attribute guide pages in the same change.
   Idea 5 is scaffolding only; novel plans are a later phase with image gen in the
   room from day one. The *additive*-feature slice of this (wings/horns/tail bolted
   onto the humanoid plan + the first `faerie`/`succubus` records) is now designed
-  in [non-human-races-and-features.deferred.md](non-human-races-and-features.deferred.md);
+  in [non-human-species.spec.md](non-human-species.spec.md);
   true *structural* plans (mermaid/naga) stay deferred beyond it.
 - The `runtime` mutability tier (D2), and `requiresAttributes` /
   `conflictsWithAttributes`, `itemSchema` / `collection` (spec field table) — each

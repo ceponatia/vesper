@@ -1,14 +1,61 @@
 # Deferred — unplanned-but-good ideas
 
-Status: **parking lot** — ideas worth keeping that don't belong to a phase
-yet. Not a commitment, not priority-ordered. When an idea graduates, move it
-into the relevant phase plan and delete it from here. This file is the anchor;
-supporting detail files named `*.deferred.md` nest under it in the VS Code
-workspace (the same nesting idea as `phase-N-plan.md`).
+Status: **parking lot** — ideas worth keeping that aren't yet promoted to a plan.
+Not a commitment, not priority-ordered (priority lives in [roadmap.md](roadmap.md)).
+When an idea graduates it becomes a `<topic>.plan.md`, gets a roadmap line, and
+leaves here (a one-line "graduated → …" tombstone is fine). This file is the
+anchor; supporting detail files named `<topic>.deferred.md` nest under it in the
+editor.
+
+## Plan docs: drop hard phase numbers
+
+_Raised 2026-06-16._ The `phase-N` scheme bakes **both** a doc's identity and its
+priority order into the filename, so every time early work jumps the queue we
+renumber/re-suffix files and chase every `.phaseN.md` cross-reference (docs +
+`src/` comments) — the exact churn the "Phase-4/5 resequencing" item below is
+about. Fix: **decouple identity from order.**
+
+- **Plans are topic-named, never numbered:** `<topic>.plan.md`
+  (`scene-images.plan.md`, `world-map.plan.md`, `non-human-species.plan.md`). The
+  filename says _what_, never _when_, so it never has to change.
+- **Status, not a number, encodes lifecycle.** Each plan opens with `Status:` ∈
+  `draft` · `next` · `active` · `shipped — <date>` · `parked`.
+- **Order lives in ONE place** — a `roadmap.md` index listing plans in current
+  priority order (+ a "someday" bucket). Reprioritizing = reorder one list, zero
+  renames.
+- **Supporting docs carry the topic slug:** `<topic>.spec.md` (design truth),
+  `<topic>.followups.md` (post-ship fixes), `<topic>.<sub>.md` (detail). They nest
+  by name prefix, and `grep <topic>` finds every pointer — a stable target that
+  doesn't rot on resequencing.
+- **deferred.plan.md stays the parking lot** for ideas not yet promoted; on
+  graduation an idea becomes a `<topic>.plan.md`, gets a roadmap line, and leaves
+  here.
+- **Completed `phase-N` docs stay as historical record** — no mass rename (that's
+  the churn we're killing). Only new plans use the topic scheme; the
+  not-yet-started world-moves work (`*.phase5.md`) can optionally be renamed now
+  since nothing depends on it as shipped.
+
+**Adopted 2026-06-16.** Folded into `CLAUDE.md` (replacing the phase-N working-doc
+convention); [roadmap.md](roadmap.md) now holds the priority order. First
+instances: [scene-images.plan.md](scene-images.plan.md) +
+[scene-images.spec.md](scene-images.spec.md) and
+[non-human-species.plan.md](non-human-species.plan.md) +
+[non-human-species.spec.md](non-human-species.spec.md); the world-moves specs were
+renamed off `*.phase5.md` to `movement-authority.spec.md` /
+`scheduled-arrivals.spec.md` / `pre-narrator-agents.spec.md`. Legacy `phase-N`
+docs stay as historical record.
 
 ## Phase-4/5 resequencing — deeper prose sweep
 
-*Raised 2026-06-14, from the phase-4/5 renumber.* When the body-model work became
+_Update 2026-06-16 — largely superseded._ The project dropped hard phase numbers
+(see §"Plan docs: drop hard phase numbers" above), so there is no future phase
+"roll" to re-suffix for. The world-moves specs are now topic-named
+(`movement-authority.spec.md` etc.). The open questions below are settled by the
+standing ruling: **leave historical `phase-N` prose and `src/` comments as-is**
+(they're the record of what happened); fix only live links when a target is
+renamed. Kept for history; no action pending.
+
+_Raised 2026-06-14, from the phase-4/5 renumber._ When the body-model work became
 phase 4 and the "world moves" cluster became phase 5, the **structural** rename
 was completed: the three world-moves specs (+ their gpt-review mirrors) were
 renamed `*.phase5.md`, every `.phase4.md` filename link (docs + 4 `src/` comment
@@ -26,9 +73,9 @@ and hard to review.
 
 Open questions before doing the deeper sweep:
 
-- **Scope.** Sweep *everything*, or only actively-maintained docs and leave
+- **Scope.** Sweep _everything_, or only actively-maintained docs and leave
   dated/historical artifacts + shipped code comments as-is?
-- **`phase-3-to-4.md` specifically.** Its body *is* the original phase-4
+- **`phase-3-to-4.md` specifically.** Its body _is_ the original phase-4
   definition, which now **splits** between the new phase 4 (body model) and phase
   5 (world-moves) — e.g. the romance "consequence loop" bucket is arguably the new
   phase 4, not phase 5. So a blind "phase 4"→"phase 5" is wrong here. Leave
@@ -37,7 +84,7 @@ Open questions before doing the deeper sweep:
 - **`src/` code comments (~11 files).** Update the forward-reference "phase 4"
   comments in shipped phase-3 code to "phase 5" (comment-only churn of stable
   code), or leave them?
-- **gpt-review snapshots.** These are dated reviews *of* the renamed specs —
+- **gpt-review snapshots.** These are dated reviews _of_ the renamed specs —
   rewrite their "phase 4" to match the new filename, or preserve them as the
   historical record they are?
 
@@ -46,45 +93,29 @@ is known), and only act if a future reader trips on it. Revisit when phase 4
 ships and the standard re-suffix pass runs anyway (see the naming note in
 [phase-4-plan.md](phase-4-plan.md)).
 
-## Non-human races & additive body features (wings · horns · tail)
+## Non-human races & additive body features — _graduated 2026-06-16_
 
-*Raised 2026-06-14, expanding the phase-4 species scaffolding.* Phase 4 built the
-gating engine + `species/` registry and shipped **`human` only**, deferring "novel
-body plans (tails/wings/gills)" and real non-human species. This designs the
-**tractable middle ground**: wings/horns/tail as **additive features on the
-humanoid plan** (a succubus is a humanoid + extra parts, not a new body plan),
-gated by the same default-absent-tag + per-character-list mechanism phase 4 shipped
-for intimate anatomy — a second list (`bodyFeatures`) defaulted from **species**
-instead of gender. Adds the first real species records (`faerie`, `succubus`). The
-real cost is image generation: features are visible + SFW, so they surface in the
-always-visible appearance prompt on **both** image routes (unlike the
-exposure-gated, Flux-excluded intimate set). True **structural** body plans
-(mermaid/naga/quadruped) stay deferred beyond this.
+Promoted out of the parking lot to its own plan:
+[non-human-species.plan.md](non-human-species.plan.md) (task list) +
+[non-human-species.spec.md](non-human-species.spec.md) (design — the former
+`non-human-races-and-features.deferred.md`). Substantially shipped already
+(8-species catalog, wings/horns/tail morphology, species-driven realization +
+forge inference, editor controls); remaining work (image-gen feature surfacing,
+richer species rules, wardrobe accommodation, `lore` authoring) is tracked in the
+plan.
 
-See [non-human-races-and-features.deferred.md](non-human-races-and-features.deferred.md)
-for the full design, the realize-engine change, the field mapping, and the build
-order.
+## Scene image: multi-reference & provider strategy — _graduated 2026-06-16_
 
-## Scene image: multi-reference & provider strategy
-
-*Raised 2026-06-16, from external feedback on scene image generation.* Today's
-scene render is single-reference (Venice/Qwen `/image/edit` takes one buffer);
-multi-character scenes get one identity anchor + textual others. Design note
-covers: a provider-capability abstraction + multi-reference plumbing (atop the
-existing `meta.references` seam), the SFW-only hosted multi-ref lane (FLUX.2 /
-Gemini / GPT-Image — all policy-walled for the intimate core), the brittle
-reference-sheet stopgap, and self-hosted ComfyUI as the long-term home for the
-uncensored core. **One item is not deferrable:** an uploaded real-person avatar
-can currently anchor an intimate scene render (`allowIntimate: true` for any
-Venice reference, `scene.ts:103-106`) — a safety bug to lift into
-[followups.phase4.md](followups.phase4.md) immediately.
-
-See [scene-image-references.deferred.md](scene-image-references.deferred.md) for
-the full review, the exact fix, and my recommendation order.
+Promoted out of the parking lot to its own plan after the PM review:
+[scene-images.plan.md](scene-images.plan.md) (task list) +
+[scene-images.spec.md](scene-images.spec.md) (design/decisions). Headline: build
+the provider-capability layer + `image_references` join table now; SFW multi-ref
+via hosted APIs, intimate multi-ref via reference-sheet stopgap then self-hosted
+ComfyUI; the uploaded-avatar intimate guard is a deferred pre-production gate.
 
 ## Comms expansions
 
-*Raised 2026-06-13, from the phase-3 presence open questions.* Phase-3 comms
+_Raised 2026-06-13, from the phase-3 presence open questions._ Phase-3 comms
 ships single-pair only. Deferred, none designed:
 
 - **Group calls / group texts.**
@@ -100,7 +131,7 @@ See
 
 ## Item acquisition during play
 
-*Raised 2026-06-13, from the location-design ownership ruling.* Spawn-time item
+_Raised 2026-06-13, from the location-design ownership ruling._ Spawn-time item
 ownership ships with the location/ownership work (`owner_participant_id`,
 written only at spawn). Deferred — needs its own design: characters **acquire**
 items in play (purchases, gifts) that become owned at acquisition time, a
@@ -111,8 +142,35 @@ See [location-design-spec.phase3.md](location-design-spec.phase3.md)
 
 ## Monorepo split (gated on a second deployable)
 
-*Raised 2026-06-14.* Evaluated converting the single Next.js app into a pnpm
-workspace. **Verdict: not yet** — Vesper was deliberately collapsed *from* a
+_Update 2026-06-16._ Permanently deferred for now. I don't foresee a second deployable
+since this is one game. What I would like to know is if there are similar organization
+schemas for repos. I like the way a monorepo breaks domains up into packages, and
+having everything listed under src/ in this app has confused me a bit. If this is the
+optimal way for Claude & GPT to code, I am okay with it. If there is another system
+which could assist them in tracking the codebase better, let's look into that.
+
+_Claude's note 2026-06-16:_ Agreed, no monorepo (no second deployable). On the real
+question — is flat `src/` optimal for AI agents, or is there a better scheme: the
+codebase is **already domain-segmented**, just folders instead of packages —
+`contracts/` (pure domain), `lib/` (pure utils), `server/{ai,db,engine,images,
+authoring,events}/` (each a domain behind a barrel), `components/`, `app/`. Those
+boundaries are real and **enforced** (ESLint `no-restricted-imports` + barrels + the
+`@/` alias) — "packages without the `package.json` tax." For Claude/GPT specifically,
+physical packages don't improve navigation: agents grep and jump to symbols (same in
+folders or packages), while packages _add_ indirection (cross-package builds, more
+config). What actually helps an agent track a codebase is (1) a crisp **module map**,
+(2) consistent **barrels** as each domain's public API, (3) a **boundary lint** so
+violations are mechanical — all of which already exist here. **Recommendation:** don't
+restructure; treat each `server/<domain>/` folder as an internal "package" (its barrel
+= its public surface, already the design) and make the map legible.
+[architecture.md](../architecture.md) already documents directory layout +
+boundaries; if `src/` still confuses you, the cheap win is a one-screen **domain map**
+(table: domain → folder → barrel → owns → may-import) at the top of that doc — I can
+write it. If a _specific_ split is what trips you up, point at it and I'll propose a
+targeted rename rather than a wholesale reshuffle.
+
+_Raised 2026-06-14._ Evaluated converting the single Next.js app into a pnpm
+workspace. **Verdict: not yet** — Vesper was deliberately collapsed _from_ a
 12-package monorepo because every package had one consumer, and that still holds
 (one deployable). Boundaries are already clean and enforced by convention +
 barrels + the `@/` alias. Park behind a **trigger**: the first second consumer of
@@ -125,23 +183,17 @@ in `lib/log.ts`.
 See [monorepo-evaluation.md](monorepo-evaluation.md) for the full analysis,
 package outline, and the architectural + `CLAUDE.md` boundary-enforcement design.
 
-## Visual world map (node/path graph)
+## Visual world map — _graduated 2026-06-16_
 
-*Raised 2026-06-13, from the `/worlds/:id` Map section.* The Map section on
-the world detail page (and the editor's map tab) lists location **cards** in a
-flat column. Production worlds will have many locations, so the column grows
-unwieldy — for now the detail-page Map section is collapsed by default
-(`world-detail-page.tsx`). The real fix is a **visual map**: render locations
-as nodes and the undirected links between them as edges (a force-directed or
-hand-layout graph), so adjacency is read at a glance instead of from
-per-card "↔ …" lists. Open questions: read-only vs. editable layout, where
-node positions are stored (new per-location `x/y`, or auto-layout only),
-and whether the play screen reuses it as a minimap. Replaces the flat list,
-not just decorates it.
+Promoted out of the parking lot (flagged a potential priority):
+[world-map.plan.md](world-map.plan.md). Render locations as graph nodes + their
+undirected links as edges, replacing the flat card column on `/worlds/:id` and the
+editor map tab. The data already exists; first slice is a read-only force-directed
+graph.
 
 ## Observer / god-mode session POV
 
-*Raised 2026-06-13, from the phase-3 presence open questions.* The
+_Raised 2026-06-13, from the phase-3 presence open questions._ The
 presence/perception design assumes a player POV; observer / god-mode
 ("omniscient") sessions have no player participant to anchor awareness
 blocks to (followups.phase2.md #10). Omniscient mode is **less relevant
@@ -154,13 +206,39 @@ See [presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3
 
 ## Companion role as romance eligibility
 
-*Raised 2026-06-13, brainstorm from the cast-tiers investigation.* Use the
+_Update 2026-06-16._ Let's think about whether there is any real value in doing
+this. My initial thought was that we would use Companion and NPC tiers to determine
+how much context to send to the narrator for those characters, but so far context
+window has not been an issue (current models are capable of handling a _lot_ of tokens).
+If there is no real benefit to this, perhaps we remove the tier and Companion systems
+entirely.
+
+However, it is possible that in large worlds with many characters running in the background,
+this would become an issue and tiers / companion flags would be necessary.
+
+_Claude's note 2026-06-16:_ Grounded check on what these actually do today: `tier`
+(major/minor/extra) and `role` (companion/npc) are **stored and snapshotted but
+nothing branches on them at runtime** — the only consumers are `spawnTier` (companion
+`minor`→`major` bump) and the `MAJOR_TIER_SOFT_CAP` spawn/editor warning
+(`lib/cast-tiers.ts`). So you're right that context window isn't the justification, and
+it was never the real lever anyway. The lever these fields exist _for_ is **simulation
+cost**: the per-character post-turn agent fan-out + memory writes each turn, and (once
+it lands) offscreen simulation — compute/latency/token spend that scales with **cast
+size**, not context length. **Recommendation:** keep the fields (nearly free as data,
+and forward-looking per your schema preference) but **don't build
+companion-as-romance-eligibility now** — it would add the first runtime `role` branch
+for a speculative benefit. Revisit both together when offscreen sim or large background
+casts actually land and the per-character cost bites; that's when tiers earn their keep.
+If that moment never comes, deleting two inert fields later is trivial. Net: park,
+don't build, don't remove.
+
+_Raised 2026-06-13, brainstorm from the cast-tiers investigation._ Use the
 existing cast **`role`** field (not tier) to designate romance targets:
 **`role: companion` characters are the session's valid romance targets;
 `role: npc` are not.** `npc`s stay fully fleshed (forge, facts, schedule,
 presence) but are background flavor — the narrator deflects or gently redirects
 romance gestures aimed at them. This keeps `tier` (`major`/`minor`/`extra`)
-free for its existing job — *simulation/narration depth* — orthogonal to who
+free for its existing job — _simulation/narration depth_ — orthogonal to who
 can be romanced.
 
 It rides machinery that already exists: `spawnTier` auto-promotes a `companion`
@@ -169,13 +247,13 @@ deepest simulation — wardrobe, meters, per-character memory, perspective
 memories — for free, while a background `npc` sits at whatever tier its world
 texture needs. Romance would still gate on the **affinity edge**, not the role
 alone — the `close`/`devoted` stages and the perceived-affinity model are the
-mechanical substrate; the `companion` role just decides *who is eligible to
-climb that ladder at all*.
+mechanical substrate; the `companion` role just decides _who is eligible to
+climb that ladder at all_.
 
 Note this gives `role` a concrete gameplay meaning. The cast-tiers spec today
 calls `role: companion | npc` "an authoring/POV distinction, not a simulation
 one" — this would make it the **first behavior to branch on `role` at runtime**
-(nothing branches on role *or* tier today). Tradeoff to weigh: a non-companion
+(nothing branches on role _or_ tier today). Tradeoff to weigh: a non-companion
 you later want romanceable must be re-cast as a `companion` (or we add a
 separate `romanceable` flag); coupling to the existing role is cheapest and
 matches the framing.

@@ -6,7 +6,7 @@ import { detectIntent, type SceneIntent } from "./intent";
 import { buildIntakePrompt, INTAKE_SYSTEM, type IntakePromptInput } from "./prompts/intake";
 
 /**
- * Pre-narrator intake agent (docs/developer-notes/pre-narrator-agents-spec.phase5.md).
+ * Pre-narrator intake agent (docs/developer-notes/pre-narrator-agents.spec.md).
  * Runs concurrent with retrieval, before narration: one fast `generateChecked`
  * call on the `tool` model that reads the player's input and reports an
  * `IntentBrief`. Never throws and never blocks the turn: it degrades to today's

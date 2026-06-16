@@ -1,4 +1,4 @@
-# Non-human races & additive body features (wings · horns · tail) — design
+# Non-human races & additive body features (wings · horns · tail) — spec
 
 Status: **draft / brainstorm, partially implemented 2026-06-15**. The first
 succubus slice landed: `featureGroup`, `bodyFeatures`, feature locations
@@ -16,9 +16,11 @@ gating engine, the `species/` registry, the allow/disallow + attribute-rule
 seams) and shipped **`human` only**, explicitly leaving "novel body plans
 (tails/wings/gills)" and real non-human species records to a later phase
 ([spec §Out of scope](intimate-anatomy-sensory-and-species-spec.phase4.md#section-c--non-human-species-idea-5-scaffolding-only)).
-This is that later phase's design. Parked under [deferred.plan.md](deferred.plan.md)
-§"Non-human races & additive body features" until it graduates into a numbered
-phase. Plain-language first, with an _"under the hood"_ note per section.
+This is that work's design/spec. **Graduated 2026-06-16** out of the
+[deferred.plan.md](deferred.plan.md) parking lot to its own plan —
+[non-human-species.plan.md](non-human-species.plan.md) holds the task list and
+build order; this doc is the truth it references. Plain-language first, with an
+_"under the hood"_ note per section.
 
 ---
 

@@ -24,12 +24,15 @@
       "docker-compose.yml": "docker-compose.*.yml",
       ".env.example": ".env, .env.*",
       "README.md": "AGENTS.md, CLAUDE.md",
-      // developer-notes convention: phase-N-plan.md is the anchor; any
-      // file named *.phaseN.md nests under it, as do the existing
-      // phase-N.md findings docs and the multi-character phase plans.
-      "phase-*-plan.md": "phase-${capture}.md, multi-character-phase-${capture}-plan.md, *.phase${capture}.md",
+      // developer-notes convention (topic-named): <topic>.plan.md is the anchor;
+      // <topic>.spec.md (design), <topic>.followups.md, and any <topic>.<sub>.md
+      // nest under it — the shared topic name determines the parent.
+      "*.plan.md": "${capture}.spec.md, ${capture}.followups.md, ${capture}.*.md",
       // deferred ideas: deferred.plan.md is the anchor; *.deferred.md nest under it.
-      "deferred.plan.md": "*.deferred.md"
+      "deferred.plan.md": "*.deferred.md",
+      // legacy phase docs (historical, not renamed): phase-N-plan.md is the anchor;
+      // *.phaseN.md nests under it, as do phase-N.md findings + multi-character plans.
+      "phase-*-plan.md": "phase-${capture}.md, multi-character-phase-${capture}-plan.md, *.phase${capture}.md"
     },
     // ── TypeScript ────────────────────────────────────────────────────────
     "js/ts.tsdk.path": "node_modules/typescript/lib",

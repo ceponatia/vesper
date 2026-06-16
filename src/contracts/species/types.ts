@@ -6,8 +6,9 @@ import { attributeRuleSchema } from "../rules/attribute-rule";
  * names the body plan it uses, may add or remove body locations from that plan,
  * and carries per-attribute rules. Humanoid variants are data additions when
  * their body features already exist, and novel body plans are a later phase.
- * The structural `id` drives body realization; the optional `lore` field is the
- * model-facing presentation note surfaced to the narrator and image prompts.
+ * The structural `id` drives body realization; the optional model-facing notes
+ * split by audience — `appearance` (generic visual look → image models + forge)
+ * and `lore` (culture/identity → narrator).
  */
 export const speciesDefinitionSchema = z.object({
   id: z.string().min(1),
@@ -18,13 +19,25 @@ export const speciesDefinitionSchema = z.object({
   /** Short internal/UI descriptor of what the species *is*. Not surfaced to models. */
   description: z.string().default(""),
   /**
-   * Model-facing presentation note (optional). A brief backstory + how this
-   * species looks and reads in *our* setting, distinct from the vanilla fantasy
-   * default — surfaced to the narrator (engine/scene.ts canonical facts) and the
-   * image models (images/prompts.ts) via `speciesPromptPhrase`. Keep it to a
-   * sentence or two: it is emitted into prompts under a length budget. Empty ⇒
-   * nothing extra is surfaced (the baseline `human` ships empty). Distinct from
-   * `description`, which is the internal descriptor.
+   * Generic, image-safe visual description of the species' default morphology —
+   * what *any* member looks like (pointed ears, a greenish skin cast, wings /
+   * horns / tail, broad stature), NOT one character's specific attribute values.
+   * Surfaced to the image models (images/prompts.ts) and the character forge
+   * (authoring/character-forge.ts) via `speciesAppearancePhrase`; the forge turns
+   * this generic look into concrete per-character attribute values. Keep it to a
+   * sentence — it shares the image prompt's length budget. Empty ⇒ only the label
+   * is surfaced (human, the unmarked baseline, ships empty).
+   */
+  appearance: z.string().default(""),
+  /**
+   * Model-facing cultural/identity note (optional): a brief backstory + how this
+   * species reads socially in *our* setting (temperament, standing, relations),
+   * distinct from the vanilla fantasy default — surfaced to the narrator
+   * (engine/scene.ts canonical facts) via `speciesLorePhrase`. Physical looks
+   * belong in `appearance`, not here. Keep it to a few sentences: it is emitted
+   * into prompts under a length budget. Empty ⇒ nothing extra is surfaced (the
+   * baseline `human` ships empty). Distinct from `description`, the internal
+   * descriptor.
    */
   lore: z.string().default(""),
   /**
@@ -48,7 +61,7 @@ export type SpeciesDefinition = z.infer<typeof speciesDefinitionSchema>;
 
 /**
  * Build one species definition (mirrors `defineAttributeGroup`): parses through
- * the schema so defaults (`description` / `lore` / `attributeRules`) apply and
+ * the schema so defaults (`description` / `appearance` / `lore` / `attributeRules`) apply and
  * the record is validated at module load. One file per species under
  * `./catalog/`, listed in `./catalog/index.ts` (docs/contracts.md §Body model).
  */

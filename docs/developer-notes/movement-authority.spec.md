@@ -14,7 +14,7 @@ one answers a prior question it never poses: **who is allowed to commit a
 movement, and what counts as a movement at all.** The two share the
 traversal primitives (shortest path on the session link graph,
 nodes-only, one hop per `travelMinutes`). A third sibling —
-[scheduled-arrivals-spec.phase5.md](scheduled-arrivals-spec.phase5.md),
+[scheduled-arrivals.spec.md](scheduled-arrivals.spec.md),
 findings from this same session — answers a further one: how an NPC comes
 to be somewhere at a particular game-clock time (a player-arranged
 appointment, which today nothing schedules).
