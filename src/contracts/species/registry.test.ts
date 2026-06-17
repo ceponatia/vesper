@@ -166,6 +166,13 @@ describe("heritage definitions are valid registry references", () => {
             if (rule.defaultValue !== undefined) inVocab(rule.defaultValue);
             for (const v of rule.allowedValues ?? []) inVocab(v);
             for (const v of rule.disallowedValues ?? []) inVocab(v);
+            // A narrowing rule's own default must stay selectable within it.
+            if (rule.allowedValues && rule.defaultValue !== undefined) {
+              expect(
+                rule.allowedValues.map(String).includes(String(rule.defaultValue)),
+                `${heritage.id}.${rule.attributeId}: default "${String(rule.defaultValue)}" not in the rule's allowedValues`,
+              ).toBe(true);
+            }
             expect((body.allowedValuesFor(d)?.length ?? 0) > 0, `${heritage.id}.${rule.attributeId}: narrowed to empty`).toBe(true);
           }
         }
@@ -191,6 +198,13 @@ describe("species attributeRules are valid registry references", () => {
           if (rule.defaultValue !== undefined) inVocab(rule.defaultValue);
           for (const v of rule.allowedValues ?? []) inVocab(v);
           for (const v of rule.disallowedValues ?? []) inVocab(v);
+          // A narrowing rule's own default must stay selectable within it.
+          if (rule.allowedValues && rule.defaultValue !== undefined) {
+            expect(
+              rule.allowedValues.map(String).includes(String(rule.defaultValue)),
+              `${species.id}.${rule.attributeId}: default "${String(rule.defaultValue)}" not in the rule's allowedValues`,
+            ).toBe(true);
+          }
           // narrowing must leave at least one selectable value
           expect((body.allowedValuesFor(d)?.length ?? 0) > 0, `${species.id}.${rule.attributeId}: narrowed to empty`).toBe(true);
         }

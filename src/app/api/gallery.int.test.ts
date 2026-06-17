@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characters, db, images, sessionParticipants, sessions, users, worlds } from "@/server/db";
+import { characters, db, imageReferences, images, sessionParticipants, sessions, users, worlds } from "@/server/db";
 
 // Gallery route + scene-reference resolution integration suite (docs/testing.md
 // §api): the GET handler invoked directly with mocked auth against DATABASE_URL.
@@ -52,9 +52,11 @@ async function json(res: Response): Promise<Record<string, unknown>> {
 
 interface SceneOut {
   id: string;
-  sessionId: string;
+  sessionId: string | null;
   sessionTitle: string;
   worldName: string | null;
+  characterId: string | null;
+  characterName: string | null;
   references: Array<{ kind: string; id: string; name: string }>;
 }
 
@@ -68,6 +70,7 @@ const ids = {
   sceneNew1: "",
   sceneNew2: "",
   sceneOld: "",
+  sceneChat: "",
 };
 
 beforeAll(async () => {
@@ -111,26 +114,34 @@ beforeAll(async () => {
   });
 
   // newest-first within sessionNew: sceneNew1 createdAt > sceneNew2
-  const [sceneNew1] = await db()
-    .insert(images)
-    .values(scene({
-      sessionId: sNew.id,
-      createdAt: new Date(stamp + 2000),
-      meta: { references: [{ kind: "character", id: character.id, name: "Alice" }, { kind: "location", id: "loc-1", name: "Quay" }] },
-    }))
-    .returning();
-  const [sceneNew2] = await db()
-    .insert(images)
-    .values(scene({ sessionId: sNew.id, createdAt: new Date(stamp + 1000), meta: { references: [{ kind: "character", id: "char-bob", name: "Bob" }] } }))
-    .returning();
-  const [sceneOld] = await db().insert(images).values(scene({ sessionId: sOld.id, createdAt: new Date(stamp), meta: { references: [] } })).returning();
+  const [sceneNew1] = await db().insert(images).values(scene({ sessionId: sNew.id, createdAt: new Date(stamp + 2000) })).returning();
+  const [sceneNew2] = await db().insert(images).values(scene({ sessionId: sNew.id, createdAt: new Date(stamp + 1000) })).returning();
+  const [sceneOld] = await db().insert(images).values(scene({ sessionId: sOld.id, createdAt: new Date(stamp) })).returning();
   if (!sceneNew1 || !sceneNew2 || !sceneOld) throw new Error("failed to seed scenes");
   ids.sceneNew1 = sceneNew1.id;
   ids.sceneNew2 = sceneNew2.id;
   ids.sceneOld = sceneOld.id;
 
-  // Excluded rows: pending / failed status, an orphan (deleted-session) scene,
-  // and another owner's scene in the same session.
+  // A sessionless character-chat scene (kind="scene", entityKind="character",
+  // no session) surfaces in the Gallery under "Character chats".
+  const [sceneChat] = await db()
+    .insert(images)
+    .values(scene({ sessionId: null, entityKind: "character", entityId: character.id, createdAt: new Date(stamp + 3000) }))
+    .returning();
+  if (!sceneChat) throw new Error("failed to seed chat scene");
+  ids.sceneChat = sceneChat.id;
+
+  // What each scene featured now lives in the image_references join table (the
+  // authoritative source the Gallery reads). sceneOld features nothing.
+  await db().insert(imageReferences).values([
+    { sceneImageId: sceneNew1.id, kind: "character", entityId: character.id, name: "Alice", source: "generated" },
+    { sceneImageId: sceneNew1.id, kind: "location", entityId: "loc-1", name: "Quay", source: "entity" },
+    { sceneImageId: sceneNew2.id, kind: "character", entityId: "char-bob", name: "Bob", source: "generated" },
+    { sceneImageId: sceneChat.id, kind: "character", entityId: character.id, name: "Alice", source: "generated" },
+  ]);
+
+  // Excluded rows: pending / failed status, a true orphan (no session, no
+  // entity), and another owner's scene in the same session.
   await db().insert(images).values(scene({ sessionId: sNew.id, status: "pending" }));
   await db().insert(images).values(scene({ sessionId: sOld.id, status: "failed" }));
   await db().insert(images).values(scene({ sessionId: null }));
@@ -160,13 +171,14 @@ describe("GET /api/gallery", () => {
     if (!ready) return t.skip();
     const body = await json(await galleryRoute(req("http://t/api/gallery"), noCtx));
     const scenes = body.scenes as SceneOut[];
+    const sessionScenes = scenes.filter((s) => s.sessionId);
 
     // Only the three ready, still-existing-session, owned scenes — not pending,
-    // failed, orphaned (null session), or another owner's.
-    expect(scenes.map((s) => s.id).sort()).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneOld].sort());
+    // failed, the true orphan, or another owner's.
+    expect(sessionScenes.map((s) => s.id).sort()).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneOld].sort());
 
     // Newest session first; newest scene first within a session.
-    expect(scenes.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneOld]);
+    expect(sessionScenes.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneOld]);
 
     // Joined session/world fields.
     const first = scenes.find((s) => s.id === ids.sceneNew1)!;
@@ -174,12 +186,33 @@ describe("GET /api/gallery", () => {
     expect(first.worldName).toBe("New World");
     expect(scenes.find((s) => s.id === ids.sceneOld)!.worldName).toBe("Old World");
 
-    // References ride through from meta.
-    expect(first.references).toEqual([
-      { kind: "character", id: ids.character, name: "Alice" },
-      { kind: "location", id: "loc-1", name: "Quay" },
-    ]);
+    // References come from the join table (order within a scene is not contractual).
+    expect(first.references).toHaveLength(2);
+    expect(first.references).toEqual(
+      expect.arrayContaining([
+        { kind: "character", id: ids.character, name: "Alice" },
+        { kind: "location", id: "loc-1", name: "Quay" },
+      ]),
+    );
     expect(scenes.find((s) => s.id === ids.sceneOld)!.references).toEqual([]);
+  });
+
+  it("surfaces sessionless character-chat scenes after sessions, tagged with the character", async (t) => {
+    if (!ready) return t.skip();
+    const body = await json(await galleryRoute(req("http://t/api/gallery"), noCtx));
+    const scenes = body.scenes as SceneOut[];
+
+    const chat = scenes.find((s) => s.id === ids.sceneChat);
+    expect(chat).toBeDefined();
+    expect(chat!.sessionId).toBeNull();
+    expect(chat!.characterId).toBe(ids.character);
+    expect(chat!.characterName).toBe("Alice Char");
+
+    // Chat scenes are appended after every session scene, so the client groups
+    // them under a trailing "Character chats" section.
+    const lastSessionIdx = scenes.map((s) => Boolean(s.sessionId)).lastIndexOf(true);
+    const chatIdx = scenes.findIndex((s) => s.id === ids.sceneChat);
+    expect(chatIdx).toBeGreaterThan(lastSessionIdx);
   });
 });
 

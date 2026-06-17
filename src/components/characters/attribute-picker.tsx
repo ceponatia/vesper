@@ -100,6 +100,11 @@ export function AttributePicker({
   const onSet = (id: string, value: AttributeValue["value"]) =>
     onChange(setAttribute(values, id as AttributeValue["id"], value));
   const onRemove = (id: string) => onChange(removeAttribute(values, id));
+  // The species/heritage rule note for THIS character — realizeBody already
+  // composed species + heritage (heritage overrides win), so this returns the
+  // right note per character: none for an unruled field (any human attribute),
+  // the species note for an elf, the heritage's note for a Dark Elf.
+  const noteFor = (def: AttributeDefinition): string | undefined => body.attributeRuleFor(def.id)?.notes;
 
   // Applicable (present-on-this-body) definitions for a category, by id.
   const definitionsFor = (category: string): AttributeDefinition[] => {
@@ -129,6 +134,7 @@ export function AttributePicker({
               byId={byId}
               onSet={onSet}
               onRemove={onRemove}
+              noteFor={noteFor}
             />
             {/* The Pelvis area sits next to its anatomical neighbour, Hips. */}
             {group.category === "hips" ? (
@@ -138,6 +144,7 @@ export function AttributePicker({
                 byId={byId}
                 onSet={onSet}
                 onRemove={onRemove}
+                noteFor={noteFor}
               />
             ) : null}
           </Fragment>
@@ -291,6 +298,8 @@ interface GroupProps {
   byId: Map<string, AttributeValue>;
   onSet: (id: string, value: AttributeValue["value"]) => void;
   onRemove: (id: string) => void;
+  /** Resolves the species/heritage rule note for an attribute (helper text). */
+  noteFor: (def: AttributeDefinition) => string | undefined;
 }
 
 /** A category rendered nested inside an anatomical area (e.g. breasts → chest). */
@@ -317,7 +326,7 @@ function SectionCount({ count, open }: { count: number; open: boolean }) {
  * "add attribute" select — with no card chrome of its own, so it can head a
  * top-level section *or* sit nested inside an anatomical area.
  */
-function CategoryFields({ category, definitions, byId, onSet, onRemove }: GroupProps) {
+function CategoryFields({ category, definitions, byId, onSet, onRemove, noteFor }: GroupProps) {
   const setDefs = definitions.filter((d) => byId.has(d.id));
   const unsetDefs = definitions.filter((d) => !byId.has(d.id));
   if (setDefs.length === 0 && unsetDefs.length === 0) {
@@ -333,6 +342,7 @@ function CategoryFields({ category, definitions, byId, onSet, onRemove }: GroupP
             key={def.id}
             def={def}
             value={current}
+            note={noteFor(def)}
             onSet={(v) => onSet(def.id, v)}
             onRemove={() => onRemove(def.id)}
           />
@@ -361,7 +371,7 @@ function CategoryFields({ category, definitions, byId, onSet, onRemove }: GroupP
 }
 
 /** A nested anatomical sub-group (e.g. Breasts under Chest) — indented, no card. */
-function NestedCategory({ category, definitions, byId, onSet, onRemove }: GroupProps) {
+function NestedCategory({ category, definitions, byId, onSet, onRemove, noteFor }: GroupProps) {
   return (
     <div className="flex flex-col gap-3 border-l border-ink-600 pl-3">
       <p className="text-xs font-semibold text-paper-300 capitalize">{category}</p>
@@ -371,6 +381,7 @@ function NestedCategory({ category, definitions, byId, onSet, onRemove }: GroupP
         byId={byId}
         onSet={onSet}
         onRemove={onRemove}
+        noteFor={noteFor}
       />
     </div>
   );
@@ -383,6 +394,7 @@ function AttributeGroupSection({
   byId,
   onSet,
   onRemove,
+  noteFor,
 }: GroupProps & { nested?: readonly NestedGroup[] }) {
   const nestedSet = nested.reduce((n, g) => n + setCountOf(g.definitions, byId), 0);
   const totalSet = setCountOf(definitions, byId) + nestedSet;
@@ -407,6 +419,7 @@ function AttributeGroupSection({
             byId={byId}
             onSet={onSet}
             onRemove={onRemove}
+            noteFor={noteFor}
           />
           {nested.map((g) => (
             <NestedCategory
@@ -416,6 +429,7 @@ function AttributeGroupSection({
               byId={byId}
               onSet={onSet}
               onRemove={onRemove}
+              noteFor={noteFor}
             />
           ))}
         </div>
@@ -437,12 +451,14 @@ function PelvisArea({
   byId,
   onSet,
   onRemove,
+  noteFor,
 }: {
   members: readonly NestedGroup[];
   anusPresent: boolean;
   byId: Map<string, AttributeValue>;
   onSet: (id: string, value: AttributeValue["value"]) => void;
   onRemove: (id: string) => void;
+  noteFor: (def: AttributeDefinition) => string | undefined;
 }) {
   const totalSet = members.reduce((n, g) => n + setCountOf(g.definitions, byId), 0);
   const [open, setOpen] = useState(totalSet > 0);
@@ -473,6 +489,7 @@ function PelvisArea({
                 byId={byId}
                 onSet={onSet}
                 onRemove={onRemove}
+                noteFor={noteFor}
               />
             ))
           )}
@@ -491,11 +508,14 @@ function PelvisArea({
 function AttributeRow({
   def,
   value,
+  note,
   onSet,
   onRemove,
 }: {
   def: AttributeDefinition;
   value: AttributeValue;
+  /** Species/heritage rule note for this attribute, shown as helper text. */
+  note?: string;
   onSet: (v: AttributeValue["value"]) => void;
   onRemove: () => void;
 }) {
@@ -516,6 +536,7 @@ function AttributeRow({
         </button>
       </div>
       <AttributeControl def={def} value={value} onSet={onSet} />
+      {note ? <p className="text-xs italic text-paper-500">{note}</p> : null}
     </div>
   );
 }

@@ -1,13 +1,12 @@
 import { z } from "zod";
 
 /**
- * What a generated scene image features / could be anchored on — a character in
- * frame or the location. Stored as a list on `images.meta.references` (JSONB, no
- * migration) so a scene can record **multiple** characters and locations, even
- * though today's single-reference image model only consumes one character avatar.
- * The Gallery (docs/images.md) filters scenes on this list; future multi-reference
- * generation can consume more of it. `id` is the library entity id (character or
- * location); `name` is captured at creation as a display fallback.
+ * Gallery DTO — the projection of one `image_references` row that the
+ * `/api/gallery` payload and the Gallery UI consume: a character or location a
+ * scene featured. `id` is the library entity id; `name` is the display fallback
+ * captured at render. References are persisted in the `image_references` join
+ * table (the authoritative, queryable source of truth — docs/database.md), not
+ * on `images.meta`; this shape is just what the Gallery reads back.
  */
 export const sceneReferenceKinds = ["character", "location"] as const;
 export const sceneReferenceKindSchema = z.enum(sceneReferenceKinds);
@@ -20,5 +19,43 @@ export const sceneReferenceSchema = z.object({
 });
 export type SceneReference = z.infer<typeof sceneReferenceSchema>;
 
-/** Degraded-safe list: a malformed value parses to `[]` (old images carry none). */
+/** Degraded-safe list: a malformed value parses to `[]`. */
 export const sceneReferenceListSchema = z.array(sceneReferenceSchema).catch([]);
+
+/**
+ * The render-input superset (spec §4): one reference the provider router may
+ * feed a backend. Broader than the Gallery DTO — it carries the actual asset
+ * (`imageId`) and its provenance (`source`) plus a `role` and the intimate-route
+ * gate. Only `character`/`location` kinds are produced today; `style`/`pose`/
+ * `layout` are reserved for multi-reference providers (reference sheets, layout
+ * control) so adding one is data, not a schema change.
+ *
+ * `allowForIntimate` is the per-reference switch for the uncensored edit path.
+ * It defaults to permissive today (preserving current behavior); the deferred
+ * uploaded-avatar guard (spec §3) will flip it to `false` for uploaded
+ * provenance. The vocabulary arrays are shared with the `image_references`
+ * table definition (`src/server/db/schema.ts`) so the column enums can't drift.
+ */
+export const sceneVisualReferenceKinds = ["character", "location", "style", "pose", "layout"] as const;
+export const sceneVisualReferenceKindSchema = z.enum(sceneVisualReferenceKinds);
+export type SceneVisualReferenceKind = z.infer<typeof sceneVisualReferenceKindSchema>;
+
+export const sceneReferenceSources = ["generated", "uploaded", "composite", "entity"] as const;
+export const sceneReferenceSourceSchema = z.enum(sceneReferenceSources);
+export type SceneReferenceSource = z.infer<typeof sceneReferenceSourceSchema>;
+
+export const sceneVisualReferenceSchema = z.object({
+  kind: sceneVisualReferenceKindSchema,
+  /** Library entity id (character/location); absent for non-entity roles. */
+  entityId: z.string().optional(),
+  /** The actual reference asset fed to a provider; absent when the ref is textual-only. */
+  imageId: z.string().optional(),
+  /** Composition role, e.g. "focal" | "other" | "anchor" | "location". */
+  role: z.string().optional(),
+  /** Display name captured at render (character or location). */
+  name: z.string().optional(),
+  source: sceneReferenceSourceSchema.optional(),
+  /** May this reference be used on the uncensored/intimate edit path? */
+  allowForIntimate: z.boolean(),
+});
+export type SceneVisualReference = z.infer<typeof sceneVisualReferenceSchema>;

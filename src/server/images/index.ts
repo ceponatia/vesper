@@ -6,3 +6,4 @@ export * from "./variants";
 export * from "./upload";
 export * from "./entity";
 export * from "./scene";
+export * from "./character-scene";

@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, images } from "@/server/db";
 import { generateVariant } from "@/server/images";
@@ -22,10 +22,19 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
     .limit(1);
   if (!row) return jsonError("not_found", "character not found", 404);
 
+  // Avatar + variants only — character-chat scenes (kind="scene") are filed
+  // against the character too, but belong to the Chat tab, not the studio.
   const portraits = await db()
     .select()
     .from(images)
-    .where(and(eq(images.ownerId, user.id), eq(images.entityKind, "character"), eq(images.entityId, id)))
+    .where(
+      and(
+        eq(images.ownerId, user.id),
+        eq(images.entityKind, "character"),
+        eq(images.entityId, id),
+        inArray(images.kind, ["avatar", "portrait_variant"]),
+      ),
+    )
     .orderBy(desc(images.createdAt));
   return jsonOk({ portraits });
 });

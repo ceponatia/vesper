@@ -12,10 +12,11 @@ import { TagInput } from "@/components/ui/tag-input";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AttributePicker, PERSONALITY_CATEGORIES } from "./attribute-picker";
+import { CharacterChat } from "./character-chat";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 
-type EditorTab = "profile" | "attributes" | "personality" | "outfit" | "portrait";
+type EditorTab = "profile" | "attributes" | "personality" | "outfit" | "portrait" | "chat";
 
 /** Split the flat attribute list into the two tabs that render it. */
 const isPersonalityAttribute = (id: string) => PERSONALITY_CATEGORIES.some((c) => id.startsWith(`${c}.`));
@@ -61,6 +62,7 @@ export function CharacterEditor({
       badge: draft.profile.defaultOutfit.length + draft.suggestedItems.length || undefined,
     },
     { id: "portrait", label: "Portrait studio" },
+    { id: "chat", label: "Chat" },
   ];
 
   const patchProfile = (patch: Partial<CharacterDraft["profile"]>) =>
@@ -231,6 +233,16 @@ export function CharacterEditor({
         ) : (
           <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
             Save the character first — the avatar pipeline runs from saved attributes.
+          </p>
+        )
+      ) : null}
+
+      {tab === "chat" ? (
+        characterId ? (
+          <CharacterChat characterId={characterId} name={draft.name || "Untitled"} avatarImageId={avatarImageId} />
+        ) : (
+          <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
+            Save the character first — chat speaks from the saved profile and attributes.
           </p>
         )
       ) : null}

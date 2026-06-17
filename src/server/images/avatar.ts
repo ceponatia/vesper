@@ -2,7 +2,7 @@ import { generateImage } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { describeImageGenError, imageModel, imageModelId, isDemoMode, veniceGenerateImage } from "../ai";
+import { describeImageGenError, imageModel, imageModelId, isDemoMode, veniceGenerateImage, veniceImageModelId } from "../ai";
 import { logEvent } from "../events";
 import { parseOr } from "@/lib/parse";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
@@ -25,7 +25,7 @@ export interface GenerateAvatarInput {
 
 /** Stored on the image row's meta for auditability (mirrors the variant label). */
 function avatarModelLabel(model: AvatarImageModel): string {
-  return model === "qwen" ? `venice/${process.env.VENICE_IMAGE_MODEL || "qwen-image"}` : imageModelId();
+  return model === "qwen" ? `venice/${veniceImageModelId()}` : imageModelId();
 }
 
 /**

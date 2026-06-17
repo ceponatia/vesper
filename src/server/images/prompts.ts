@@ -83,7 +83,7 @@ export interface AvatarWardrobeItem {
 /** Map raw avatar-wardrobe items to the shared worn-item shape — the single
  * source for BOTH visibility (visibleAvatarOutfit) and coverage/exposure
  * (exposedRegions), so the two can never disagree about what a garment covers. */
-function toWornInputs(items: ReadonlyArray<AvatarWardrobeItem>): WornItemInput[] {
+export function toWornInputs(items: ReadonlyArray<AvatarWardrobeItem>): WornItemInput[] {
   return items.map((item, index) => ({
     instanceId: String(index),
     name: item.name,

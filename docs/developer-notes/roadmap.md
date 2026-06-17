@@ -22,6 +22,11 @@ progress) · **shipped — <date>** · **parked**.
    [non-human-species.spec.md](non-human-species.spec.md). Catalog + morphology
    shipped; remaining: image-gen feature surfacing, richer species rules, wardrobe,
    lore.
+3. **Character chat — sessionless 1-on-1** —
+   [character-chat.plan.md](character-chat.plan.md). Talk to a saved library
+   character directly (no world/session/RAG) to tune how it voices its attributes.
+   Route → client → Chat tab + manual scene button + Gallery surfacing wired;
+   remaining: live smoke test + deferred model picker / auto-scene.
 
 ## Next (queued — proposed order)
 
@@ -34,6 +39,10 @@ progress) · **shipped — <date>** · **parked**.
    `world-simulation.plan.md` when it becomes active.
 5. **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
    (draft; seven retrieval ideas under evaluation).
+6. **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
+   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
+   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
+   the intimate exposure tier.
 
 ## Someday / parking lot
 

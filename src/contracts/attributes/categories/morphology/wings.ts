@@ -19,6 +19,21 @@ export const wingsGroup = defineAttributeGroup("wings", [
     ],
   },
   {
+    id: "wings.shape",
+    label: "Wing shape",
+    kind: "physical",
+    category: "wings",
+    valueType: "enum",
+    description: "Finer visual form within the wing type — e.g. butterfly vs dragonfly for insectoid (fae) wings.",
+    mutability: "inherent",
+    allowedValues: ["butterfly", "dragonfly"],
+    bodyLocationId: "wings",
+    aliases: ["wing shape", "butterfly wings", "dragonfly wings"],
+    promptHints: [
+      "butterfly = broad, rounded, colorful scaled wings; dragonfly = long, narrow, iridescent twin pairs.",
+    ],
+  },
+  {
     id: "wings.span",
     label: "Wing span",
     kind: "physical",

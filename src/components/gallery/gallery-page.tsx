@@ -20,8 +20,13 @@ interface Facet {
   name: string;
 }
 
-interface SessionGroup {
-  sessionId: string;
+/** Synthetic group key collecting every sessionless character-chat scene. */
+const CHAT_GROUP_KEY = "__character_chats__";
+
+interface SceneGroup {
+  key: string;
+  /** Set for session groups (links to the session); null for the chat group. */
+  sessionId: string | null;
   title: string;
   worldName: string | null;
   scenes: SceneImage[];
@@ -95,14 +100,22 @@ export function GalleryPage() {
       (characterFilter === "" || s.references.some((r) => r.kind === "character" && r.id === characterFilter)),
   );
 
-  // Group by session, preserving the payload's recency order.
-  const groups: SessionGroup[] = [];
+  // Group by session (sessionless chat scenes fall into one "Character chats"
+  // group), preserving the payload's recency order — sessions first, chats last.
+  const groups: SceneGroup[] = [];
   const groupIndex = new Map<string, number>();
   for (const scene of filtered) {
-    const at = groupIndex.get(scene.sessionId);
+    const key = scene.sessionId ?? CHAT_GROUP_KEY;
+    const at = groupIndex.get(key);
     if (at === undefined) {
-      groupIndex.set(scene.sessionId, groups.length);
-      groups.push({ sessionId: scene.sessionId, title: scene.sessionTitle, worldName: scene.worldName, scenes: [scene] });
+      groupIndex.set(key, groups.length);
+      groups.push({
+        key,
+        sessionId: scene.sessionId,
+        title: scene.sessionId ? scene.sessionTitle : "Character chats",
+        worldName: scene.sessionId ? scene.worldName : null,
+        scenes: [scene],
+      });
     } else {
       groups[at]?.scenes.push(scene);
     }
@@ -113,7 +126,7 @@ export function GalleryPage() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="prose-display text-3xl">Gallery</h1>
-          <p className="mt-1 text-sm text-paper-400">Generated scene images from your sessions.</p>
+          <p className="mt-1 text-sm text-paper-400">Generated scene images from your sessions and character chats.</p>
         </div>
         {scenes.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -176,11 +189,15 @@ export function GalleryPage() {
       ) : (
         <div className="flex flex-col gap-10">
           {groups.map((group) => (
-            <section key={group.sessionId}>
+            <section key={group.key}>
               <div className="mb-3 flex items-baseline justify-between gap-3">
-                <Link href={`/sessions/${group.sessionId}`} className="group min-w-0">
-                  <h2 className="prose-display truncate text-xl group-hover:text-accent-300">{group.title}</h2>
-                </Link>
+                {group.sessionId ? (
+                  <Link href={`/sessions/${group.sessionId}`} className="group min-w-0">
+                    <h2 className="prose-display truncate text-xl group-hover:text-accent-300">{group.title}</h2>
+                  </Link>
+                ) : (
+                  <h2 className="prose-display min-w-0 truncate text-xl">{group.title}</h2>
+                )}
                 {group.worldName ? <span className="shrink-0 text-xs text-paper-500">{group.worldName}</span> : null}
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

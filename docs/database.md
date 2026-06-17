@@ -60,6 +60,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 | Table | Key columns |
 | --- | --- |
 | `images` | `owner_id`, `kind` (`avatar`/`portrait_variant`/`scene`/`entity`), `entity_kind?` (`character`/`location`/`item`/`world` — set for `entity` images; always `character` for `avatar`/`portrait_variant`; app convention, not a constraint), `entity_id?`, `session_id?`, `path` (relative to `data/`), `prompt`, `source_image_id?` (reference-edit lineage), `status` (`pending`/`ready`/`failed` — row is written **before** the file; see images.md), `meta` JSONB |
+| `image_references` | `scene_image_id` (→ `images`, **FK-cascade**), `kind` (`character`/`location`/`style`/`pose`/`layout`), `entity_id?` (library character/location id; null for non-entity roles), `role?`, `source?` (`generated`/`uploaded`/`composite`/`entity`; null = unknown), `image_id?` (the reference asset actually fed to a provider; null when textual-only), `name`. One row per reference a scene image featured — the authoritative, queryable record that replaced `images.meta.references` (scene-images.spec.md §4; the Gallery reads it). `SceneVisualReference` is the render-input superset, `SceneReference` the Gallery projection (contracts/images/scene-reference.ts) |
 | `jobs` | `session_id?`, `type` (`post_turn`/`reconcile`/`scene_image`/`avatar`/`portrait_variant`/`entity_image`/`embed_refresh`/`image_sweep`), `status` (`queued`/`running`/`done`/`failed`), `runner_id?` (atomic claim), `heartbeat_at`, `payload` JSONB, `error?`, `attempts`, timestamps |
 | `events` | `session_id?`, `type`, `payload` JSONB — append-only observability stream (written via `server/events.ts`; the Turn Inspector route reads `retrieval` events by created-at window) |
 
@@ -68,6 +69,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 - `turns(session_id, number)` unique; `turn_messages(turn_id, seq)`; `facts(session_id, status)`; `episodes(session_id, turn_number)`.
 - HNSW (`vector_cosine_ops`) on `facts.embedding`, `episodes.embedding`, `lore_chunks.embedding`. The library `search_embedding` columns are unindexed — owner-scoped libraries are small enough to scan.
 - `jobs(status, type)` composite index for queue claims.
+- `image_references(scene_image_id)` for grouping a scene's references; `image_references(kind, entity_id)` for the Gallery's "scenes featuring this character" facet.
 
 ## Transactional invariants
 
