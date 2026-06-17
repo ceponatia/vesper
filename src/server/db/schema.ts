@@ -14,6 +14,7 @@ import {
   vector,
 } from "drizzle-orm/pg-core";
 import type { AuthoredRelationship } from "@/contracts";
+import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { newId } from "@/lib/ids";
 
 const id = () => text("id").primaryKey().$defaultFn(newId);
@@ -53,6 +54,27 @@ export const characters = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("characters_owner_idx").on(t.ownerId)],
+);
+
+/**
+ * The character-chat harness transcript (docs/developer-notes/character-chat.plan.md).
+ * A flat, per-character message log for the editor's Chat tab — deliberately
+ * isolated from sessions (no turns, episodes, facts, or RAG). Clearing the chat
+ * deletes these rows but leaves the generated scene images (kind="scene") alone.
+ */
+export const characterChatMessages = pgTable(
+  "character_chat_messages",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["user", "assistant"] }).notNull(),
+    content: text("content").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("character_chat_messages_owner_character_idx").on(t.ownerId, t.characterId, t.createdAt)],
 );
 
 export const locations = pgTable(
@@ -508,6 +530,37 @@ export const images = pgTable(
     index("images_owner_idx").on(t.ownerId),
     index("images_entity_idx").on(t.entityKind, t.entityId),
     index("images_session_idx").on(t.sessionId),
+  ],
+);
+
+/**
+ * What a scene image featured / was anchored on — one row per reference
+ * (scene-images.spec.md §4). The queryable source of truth that replaced the
+ * old `images.meta.references` JSONB: app-wide metrics ("which scenes used this
+ * character / location / portrait") become a table query. `entity_id` is the
+ * library character/location id (null for non-entity roles); `image_id` is the
+ * actual reference asset fed to a provider (null when the ref was textual-only);
+ * `source` is the asset's provenance (null = unknown, e.g. backfilled rows).
+ * FK-cascade on the scene image so every image-delete path cleans these up.
+ */
+export const imageReferences = pgTable(
+  "image_references",
+  {
+    id: id(),
+    sceneImageId: text("scene_image_id")
+      .notNull()
+      .references(() => images.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: sceneVisualReferenceKinds }).notNull(),
+    entityId: text("entity_id"),
+    role: text("role"),
+    source: text("source", { enum: sceneReferenceSources }),
+    imageId: text("image_id"),
+    name: text("name").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("image_references_scene_idx").on(t.sceneImageId),
+    index("image_references_entity_idx").on(t.kind, t.entityId),
   ],
 );
 

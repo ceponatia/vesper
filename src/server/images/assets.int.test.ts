@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { characters, db, images, items, locations, sessions, users, worlds } from "../db";
+import { characters, db, imageReferences, images, items, locations, sessionParticipants, sessions, users, worlds } from "../db";
 import {
   absoluteImagePath,
   createImageAsset,
@@ -320,5 +320,40 @@ describe("demo-mode pipelines (AI_FAKE=1)", () => {
     expect(row?.kind).toBe("scene");
     expect(row?.sessionId).toBe(session.id);
     await expect(fs.access(absoluteImagePath(row ?? { path: "missing" }))).resolves.toBeUndefined();
+  });
+
+  it("renderSceneImage records image_references rows and no longer writes meta.references", async (ctx) => {
+    if (!available) return ctx.skip();
+    const [world] = await db().insert(worlds).values({ ownerId: userId, name: "W-refs" }).returning();
+    if (!world) throw new Error("failed to create world");
+    const [session] = await db().insert(sessions).values({ ownerId: userId, worldId: world.id, title: "S-refs" }).returning();
+    if (!session) throw new Error("failed to create session");
+    const [character] = await db().insert(characters).values({ ownerId: userId, name: "Mira Vale" }).returning();
+    if (!character) throw new Error("failed to create character");
+    await db()
+      .insert(sessionParticipants)
+      .values({ sessionId: session.id, characterId: character.id, displayName: "Mira Vale" });
+
+    const plan = {
+      ...emptySceneRenderPlan(),
+      focal: { name: "Mira Vale", action: "", outfitSummary: "", appearance: "" },
+    };
+    const imageId = await renderSceneImage({ session: { id: session.id, ownerId: userId }, plan, userId });
+
+    const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
+    expect(row?.status).toBe("ready");
+    const meta = (row?.meta ?? {}) as Record<string, unknown>;
+    expect(meta.references).toBeUndefined(); // dropped — the join table is the source of truth
+
+    const refs = await db().select().from(imageReferences).where(eq(imageReferences.sceneImageId, imageId));
+    expect(refs).toHaveLength(1);
+    expect(refs[0]?.kind).toBe("character");
+    expect(refs[0]?.entityId).toBe(character.id);
+    expect(refs[0]?.name).toBe("Mira Vale");
+
+    // Cascade: deleting the scene image removes its reference rows.
+    await db().delete(images).where(eq(images.id, imageId));
+    const afterDelete = await db().select().from(imageReferences).where(eq(imageReferences.sceneImageId, imageId));
+    expect(afterDelete).toHaveLength(0);
   });
 });

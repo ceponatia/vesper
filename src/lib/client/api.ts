@@ -236,6 +236,15 @@ export const characterDetailSchema = characterSummarySchema.extend({
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
+/** One line of the sessionless character-chat transcript (docs/developer-notes/character-chat.plan.md). */
+export const chatMessageSchema = z.object({
+  id: idSchema,
+  role: z.enum(["user", "assistant"]).catch("assistant"),
+  content: textOr(""),
+  createdAt: optionalText,
+});
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
+
 export const locationSummarySchema = z.object({
   id: idSchema,
   name: nameSchema,
@@ -418,13 +427,21 @@ export const sessionSummarySchema = z.object({
 });
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 
-/** A generated scene image for the cross-session Gallery (docs/images.md). */
+/**
+ * A generated scene image for the cross-session Gallery (docs/images.md). Most
+ * carry a `sessionId`; sessionless character-chat scenes carry a `characterId`
+ * instead and are grouped under "Character chats"
+ * (docs/developer-notes/character-chat.plan.md).
+ */
 export const sceneImageSchema = z.object({
   id: idSchema,
-  sessionId: idSchema,
+  sessionId: optionalId,
   sessionTitle: z.string().catch("Untitled session"),
   worldId: optionalId,
   worldName: optionalText,
+  /** Set for character-chat scenes (the chat partner); null for session scenes. */
+  characterId: optionalId,
+  characterName: optionalText,
   /** Characters + location the scene features; `kind: "character"` drives the filter. */
   references: arrayOf(sceneReferenceSchema),
   prompt: textOr(""),
@@ -612,7 +629,72 @@ export const charactersApi = {
   promotePortrait: (id: string, imageId: string) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits/${imageId}/promote`, {}),
   deletePortrait: (id: string, imageId: string) => apiDelete(`/api/characters/${id}/portraits/${imageId}`),
+  // --- Sessionless in-character chat (docs/developer-notes/character-chat.plan.md) ---
+  chatTranscript: (id: string) =>
+    apiGet(listOf(chatMessageSchema, "messages"), `/api/characters/${id}/chat`),
+  clearChat: (id: string) => apiDelete(`/api/characters/${id}/chat`),
+  /** Rendered scenes for the chat tab (kind="scene"), newest first. */
+  chatScenes: (id: string) =>
+    apiGet(listOf(imageRecordSchema, "scenes", "images"), `/api/characters/${id}/chat/scene`),
+  /** Queue a scene render from the recent chat; poll chatScenes for the result. */
+  generateChatScene: (id: string) => apiPost(z.unknown(), `/api/characters/${id}/chat/scene`, {}),
 };
+
+export interface ChatStreamOutcome {
+  ok: boolean;
+  error?: ApiError;
+}
+
+/**
+ * Send a chat message and stream the character's reply (plain-text token
+ * stream, docs/developer-notes/character-chat.plan.md). `onChunk` fires per
+ * decoded delta; the reply is persisted server-side, so a dropped stream still
+ * leaves the transcript whole on the next reload. Never throws.
+ */
+export async function sendCharacterChat(
+  characterId: string,
+  body: { content: string; model?: string },
+  onChunk: (delta: string) => void,
+): Promise<ChatStreamOutcome> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/characters/${characterId}/chat`, {
+      method: "POST",
+      cache: "no-store",
+      headers: { "content-type": "application/json", accept: "text/plain" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return { ok: false, error: { status: 0, code: "network_error", message: err instanceof Error ? err.message : "Network error" } };
+  }
+  if (!res.ok) {
+    let raw: unknown = null;
+    try {
+      raw = await res.json();
+    } catch {
+      raw = null;
+    }
+    return { ok: false, error: toApiError(res.status, raw) };
+  }
+  const stream = res.body;
+  if (!stream) return { ok: true };
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value, { stream: true });
+      if (text) onChunk(text);
+    }
+    const tail = decoder.decode();
+    if (tail) onChunk(tail);
+  } catch {
+    // Stream interrupted — the partial reply already reached onChunk and the
+    // server persisted the full reply; the next transcript reload reconciles.
+  }
+  return { ok: true };
+}
 
 /** Wrapper for the entity-image GET (`{ image }`, nullable) used by the studio. */
 const entityImageSchema = z.object({ image: imageRecordSchema.nullable().catch(null) });

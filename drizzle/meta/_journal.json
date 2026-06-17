@@ -29,6 +29,20 @@
       "when": 1781462662447,
       "tag": "0003_steep_runaways",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781626089481,
+      "tag": "0004_zippy_franklin_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781638545531,
+      "tag": "0005_clean_old_lace",
+      "breakpoints": true
     }
   ]
 }

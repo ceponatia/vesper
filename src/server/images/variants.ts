@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { characters, db, images } from "../db";
-import { isDemoMode, veniceEditImage } from "../ai";
+import { isDemoMode, veniceEditImage, veniceEditModelId } from "../ai";
 import { logEvent } from "../events";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageRow } from "./assets";
@@ -38,7 +38,7 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     meta: {
       variantKind: input.kind,
       demo,
-      model: demo ? "demo" : `venice/${process.env.VENICE_IMAGE_EDIT_MODEL || "qwen-edit-uncensored"}`,
+      model: demo ? "demo" : `venice/${veniceEditModelId()}`,
     },
   });
 

@@ -219,6 +219,34 @@ the intimate core stays on Venice/Qwen.
   policy + practical filter behavior (written policy and what the filter actually
   rejects differ).
 
+**Spike finding (2026-06-16) — reachability resolved; the open question is
+closed:**
+
+- **Our current path cannot send two references.** OpenRouter's image API
+  reached through the Vercel AI SDK (`openrouter.imageModel` → `generateImage`)
+  hard-caps `maxImagesPerCall` at **1** (the OpenRouter AI-SDK provider warns and
+  drops extras). So no multi-identity compositing through the code path we use
+  today — a spike on that path is a dead end.
+- **Multi-image Flux lives only in the BFL direct API:** `POST
+  https://api.bfl.ai/v1/flux-2-pro-preview`, **up to 8 reference images**
+  (`input_image`, `input_image_2…8`; marketing says 10), `x-key` auth, **async
+  submit → poll → signed sample URL** (a queue model, relevant to the §7
+  background-worker shape). FLUX.1 Kontext is the older `flux-kontext-pro` variant
+  with a `safety_tolerance` knob.
+- **It is SFW-only in practice.** BFL input-moderates *both* the prompt and the
+  uploaded reference images and rejects sexual content; `safety_tolerance` only
+  loosens within bounds. This confirms FLUX.2 stays an **SFW lane** — clothed
+  two-character / location-continuity — and does nothing for the intimate core.
+- **Decision:** do **not** add multi-ref to the OpenRouter/SDK path. The spike
+  validates BFL-direct via a throwaway raw-fetch script
+  (`scripts/spikes/flux-multiref.ts`, SFW-scoped). If clothed two-character SFW
+  output is good, graduate it to a real `src/server/ai/bfl.ts` provider behind the
+  §4 router (never-throws/diagnostic shape mirroring `venice.ts`). Multi-character
+  **intimate** compositing points squarely at self-hosted ComfyUI (§7).
+- Sources: openrouter.ai/docs image-generation; deepwiki OpenRouterTeam/ai-sdk-provider
+  (image model, `maxImagesPerCall: 1`); docs.bfl.ai (FLUX.2 editing, Kontext);
+  bfl.ai/blog/flux-2.
+
 ## 6. Reference-sheet "Strategy B" — brittle, but one real niche (test greenlit)
 
 I agree with every caution: the model gets a picture of a contact sheet, not
@@ -247,6 +275,37 @@ boolean` as a graded failure mode, and if the model reproduces the board frame,
 crop it (we already own webp post-processing in `assets.ts`). It must still obey
 the POV rule (§8.1) — the board is reference input, never the composition.
 
+**Test result (2026-06-16) — the contact-sheet form is a dead end on
+`qwen-image-2-edit`; "rough-composite-then-harmonize" is the viable replacement.**
+Scripts: `scripts/eval/scene-images/refsheet-location-test.ts` (labeled board) +
+`refsheet-variants.ts` (the two follow-ups); outputs in
+`docs/scene-image-eval/refsheet/`. Single-character + location case:
+
+- **Labeled board → copied verbatim.** A 2-panel board (CHARACTER / LOCATION,
+  black label bars) came back as the *same board* — split layout, both label
+  bars, panels intact — despite an explicit "do not reproduce the board/labels/
+  collage" instruction. `copied_reference_sheet = true`. Venice `/image/edit` is
+  an **edit** model: its job is to *preserve* the input, so it preserves the board.
+- **Seamless board (no labels/bars) → partial.** Dropping the label bars stopped
+  the verbatim copy, but the model still anchored to a **left/right split**
+  (person on one side, location on the other) instead of merging them.
+- **Composite-into-scene → worked.** Feathering a cutout of the character
+  *directly onto the location* (one scene, no panels) and prompting "relight /
+  blend the edges / fix scale so she is standing in the space" produced a single
+  coherent photo: identity preserved, location as the setting, no border, no
+  split. **This plays to the edit model's preserve-and-harmonize strength.**
+- **Takeaway:** the stopgap is **not** a reference sheet — it's a
+  **rough-composite + harmonize** pass. It generalizes to two characters (paste
+  both feathered cutouts into the scene at their positions, then harmonize), and
+  needs a **background-removal/segmentation** step for clean cutouts (sharp alone
+  can't matte). This is the path worth plumbing if we want a pre-ComfyUI
+  multi-subject stopgap. (The original two-portrait contact sheet was not retested
+  — given the board-copy result it is very unlikely to beat the composite path.)
+- **POV-wording artifact (feeds §8.1):** the prompt "the camera is the viewer's
+  eyes" made the model render a **literal DSLR camera floating in the foreground**.
+  The §8.1 reword must therefore avoid "camera" as a *depictable noun* — phrase it
+  as "shot from the viewer's own eyes; none of the viewer's body is visible."
+
 ## 7. Self-hosted ComfyUI — the long-term home for the core (research greenlit)
 
 Agree this is where a romance game with generated adults and occasional nudity
@@ -261,6 +320,45 @@ self-hosted ComfyUI **NSFW** scene pipeline (base checkpoints + identity adapter
 + ControlNet/regional tooling). Assume a **cloud-hosted GPU** target — local
 resources are limited — so weight the choice toward what runs well on rented
 cloud GPUs and what's licensable for this use.
+
+**Research finding (2026-06-16) — recommended stack (verify at build time; this
+space moves fast):**
+
+- **Base checkpoint** — pick by lane:
+  - **Chroma** (built on FLUX.1-schnell, fully uncensored/anatomical,
+    schnell/Apache-friendly lineage, ~12 GB fp8 / 24 GB full) — strongest
+    **photoreal NSFW** default with the cleanest commercial-license story.
+  - **Qwen-Image-Edit-2511** (20B) — native **multi-person editing + identity
+    preservation** without a separate adapter; the emerging shortcut for the
+    two-character case (community NSFW variants exist).
+  - **SDXL — Pony / Illustrious / NoobAI** lineage — lower VRAM (~8–16 GB) and the
+    **most battle-tested regional + identity-adapter ecosystem**, stylized-leaning.
+  - Caveat: **FLUX.1-dev base is non-commercial**; prefer Apache-lineage
+    (Chroma/schnell, FLUX.2 *klein*) and get **licensing sign-off** — the biggest
+    non-technical risk, alongside provider adult-content ToS.
+- **Identity adapter (character consistency):** **InfiniteYou** (ByteDance, best
+  ID lock on Flux, beats PuLID-FLUX/FLUX-IP-Adapter) → **PuLID-FLUX** (lighter) for
+  Flux/Chroma; **InstantID + IP-Adapter-FaceID** for SDXL; Qwen-Edit's built-in
+  identity for the Qwen lane.
+- **Composition / "who appears where" (2 chars):** 2-person **OpenPose
+  ControlNet** (+ depth) → **regional prompting** → **regional IP-Adapter attention
+  masks** binding face-A↔left / face-B↔right. SDXL has the most mature regional
+  stack today; Qwen-Edit-2511's native multi-person editing is the shortcut.
+- **Cloud-GPU hosting (the "second deployable" worker):** **RunPod Serverless +
+  Network Volume** (async `/run` → poll, scale-to-zero, cost leader ~$1.9–2.5/hr
+  A100-class, ~30 s cold start) maps directly onto the queue/poll shape image
+  jobs already use — and is exactly the GPU background worker that
+  [monorepo-evaluation.md](monorepo-evaluation.md) parks the split behind. **Modal**
+  if cold-start latency hurts UX (~2–5 s, pricier); Replicate/fal easiest but
+  costliest; **confirm each provider's adult-content ToS first.**
+- **End-to-end:** ComfyUI on RunPod Serverless → Chroma (or Qwen-Edit-2511) →
+  InfiniteYou/InstantID identity → 2-person OpenPose ControlNet + regional
+  IP-Adapter masks. This is the **only** path that delivers two-character NSFW
+  compositing; the hosted Flux APIs (§5) cannot.
+- Sources: InfiniteYou (github.com/bytedance/InfiniteYou, arxiv 2503.16418);
+  Chroma & Flux-uncensored writeups (offlinecreator.com); Qwen-Image-Edit
+  (github.com/QwenLM/Qwen-Image, qwenlm.github.io); RunPod Serverless ComfyUI
+  (docs.runpod.io, github.com/runpod-workers/worker-comfyui).
 
 Two codebase-specific hooks:
 
@@ -287,10 +385,13 @@ Two codebase-specific hooks:
      `SCENE_POV_RULE` is phrased around the "player." Once we hand an image model
      multiple character references, it may not understand "player" and could
      mistake one of the provided character refs *for* the player and omit them
-     from the frame. Reword toward camera/viewer language the image model will act
-     on — e.g. "the camera viewpoint is the viewer's eyes; the viewer is not
-     visible in frame" — rather than "player." Test this wording change as part of
-     the multi-ref spikes (§5/§6).
+     from the frame. Reword toward viewer language the image model will act
+     on — rather than "player." **But avoid "camera" as a noun:** the §6 test
+     (2026-06-16) showed that "the camera is the viewer's eyes" made
+     `qwen-image-2-edit` render a **literal DSLR camera floating in the frame**.
+     Phrase it as "shot from the viewer's own eyes; none of the viewer's body —
+     no hands, arms, or reflection — is visible," not "the camera viewpoint…".
+     Test this wording change as part of the multi-ref spikes (§5/§6).
 2. **Session-snapshot freeze.** Scene references read the participant's
    spawn-snapshot avatar (`findParticipantAvatar`, `session_participants.avatarImageId`),
    never the live library portrait — a deliberate fix for wrong-character scenes
@@ -345,7 +446,11 @@ test` gate. Concretely:
 1. **Provider-capability layer + multi-reference plumbing + the `image_references`
    join table (§4).** The seam everything else slots into; the table makes scene
    references queryable for app-wide metrics. DB migration via the standard
-   workflow. No change to default render behavior yet.
+   workflow. — **Shipped 2026-06-16.** Capability registry is a typed code
+   registry (`server/ai/image-providers.ts`), not a DB table; `meta.references`
+   dropped in favour of the join table (see plan Open questions). The render
+   happy-path is unchanged; the added behavior is the reason-keyed retry +
+   Venice→Flux fallback ladder (was: a Venice failure just failed the row).
 
 **Spikes / research (greenlit, near-term)**
 

@@ -17,8 +17,7 @@ export const elf = defineSpecies({
       applicability: "required",
       defaultValue: "pointed",
       allowedValues: ["slightly_pointed", "pointed", "long_pointed"],
-      notes:
-        "Elves read by their points; the degree varies, the points do not.",
+      notes: "Always pointed — only how sharply pointed varies.",
     },
   ],
   heritages: [
@@ -36,9 +35,10 @@ export const elf = defineSpecies({
           applicability: "required",
           defaultValue: "long_pointed",
           allowedValues: ["pointed", "long_pointed"],
-          notes: "Dark Elf ears sweep longer and sharper than other Mer.",
+          notes: "Longer and sharper than other elves' points.",
         },
         // Heritage-only rule: the signature grey/violet skin the base elf never constrains.
+        // Note: defaultValue must be included in allowedValues!
         {
           attributeId: "skin.tone",
           applicability: "optional",

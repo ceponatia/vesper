@@ -40,6 +40,13 @@ export const AFFINITY_DECAY_WEEK_MINUTES = 7 * 24 * 60;
  * dialogue examples is what caused the speaker-tag drift in docs/prompts.md).
  */
 export const NARRATIVE_HISTORY_TURNS = 6;
+/**
+ * Character-chat harness (docs/developer-notes/character-chat.plan.md): the flat
+ * message window replayed to the narrator in the Chat tab. Far larger than
+ * NARRATIVE_HISTORY_TURNS because the harness has no episodes/RAG to lean on —
+ * the window IS its only memory. A "turn" is one user+assistant exchange.
+ */
+export const CHARACTER_CHAT_HISTORY_TURNS = 40;
 /** Most recent episode summaries always present in the turn context. */
 export const EPISODE_WINDOW = 4;
 /** Max items in the merged narrator facts channel (docs/memory.md). */
