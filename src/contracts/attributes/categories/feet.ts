@@ -72,4 +72,19 @@ export const feetGroup = defineAttributeGroup("feet", [
       "Foot scent is only worth a mention when the feet are bare and near the player's face.",
     ],
   },
+  {
+    id: "feet.toes",
+    label: "Toe length",
+    kind: "physical",
+    category: "feet",
+    valueType: "enum",
+    description: "Overall length of toes.",
+    mutability: "inherent",
+    allowedValues: ["tiny", "short", "average", "long"],
+    bodyLocationId: "feet",
+    aliases: ["feet", "foot", "sole", "heel"],
+    promptHints: [
+      "Foot scent is only worth a mention when the feet are bare and near the player's face.",
+    ],
+  },
 ]);

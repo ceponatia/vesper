@@ -2,22 +2,31 @@
 
 import { useEffect, useRef } from "react";
 import { imageUrl } from "@/lib/client/api";
+import { useIsAdmin } from "@/components/hooks/use-is-admin";
 
 export interface ImageLightboxProps {
   /** Image to enlarge, or null to render nothing. */
   imageId: string | null;
   alt: string;
   onClose: () => void;
-  /** Optional caption under the image (e.g. the generation prompt). */
+  /** Optional caption under the image (e.g. a short label). */
   caption?: string | null;
+  /**
+   * The full generation prompt for this image. Shown in a side panel for
+   * troubleshooting — **admin/dev only** (gated by useIsAdmin); normal users
+   * never see it. Pass it freely; the gate decides whether it renders.
+   */
+  prompt?: string | null;
 }
 
 /**
  * Full-screen image viewer: darkened backdrop, image scaled to fit the
- * viewport. Backdrop click and Escape close (same idiom as Dialog).
+ * viewport. Backdrop click and Escape close (same idiom as Dialog). For admin
+ * users a `prompt` renders in a side panel beside the image (dev troubleshooting).
  */
-export function ImageLightbox({ imageId, alt, onClose, caption }: ImageLightboxProps) {
+export function ImageLightbox({ imageId, alt, onClose, caption, prompt }: ImageLightboxProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const isAdmin = useIsAdmin();
 
   useEffect(() => {
     if (!imageId) return;
@@ -31,12 +40,15 @@ export function ImageLightbox({ imageId, alt, onClose, caption }: ImageLightboxP
 
   if (!imageId) return null;
 
+  const promptText = prompt?.trim() ?? "";
+  const showPrompt = isAdmin && promptText.length > 0;
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={alt}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-ink-950/85 p-6 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center gap-4 bg-ink-950/85 p-6 backdrop-blur-[2px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -50,16 +62,27 @@ export function ImageLightbox({ imageId, alt, onClose, caption }: ImageLightboxP
       >
         ×
       </button>
-      {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; next/image adds nothing here */}
-      <img
-        src={imageUrl(imageId)}
-        alt={alt}
-        className="max-h-[85vh] max-w-full rounded-card border border-ink-600 object-contain shadow-lift"
-      />
-      {caption ? (
-        <p className="max-w-2xl truncate text-center text-xs text-paper-400" title={caption}>
-          {caption}
-        </p>
+      <div className="flex min-w-0 flex-col items-center gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; next/image adds nothing here */}
+        <img
+          src={imageUrl(imageId)}
+          alt={alt}
+          className="max-h-[85vh] max-w-full rounded-card border border-ink-600 object-contain shadow-lift"
+        />
+        {caption ? (
+          <p className="max-w-2xl truncate text-center text-xs text-paper-400" title={caption}>
+            {caption}
+          </p>
+        ) : null}
+      </div>
+      {showPrompt ? (
+        <aside className="flex max-h-[85vh] w-80 shrink-0 flex-col gap-2 self-stretch overflow-y-auto rounded-card border border-ink-600 bg-ink-900/90 p-4">
+          <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">
+            Generation prompt
+            <span className="ml-1.5 text-[10px] text-paper-600 normal-case">dev only</span>
+          </h3>
+          <p className="text-xs leading-relaxed break-words whitespace-pre-wrap text-paper-300">{promptText}</p>
+        </aside>
       ) : null}
     </div>
   );

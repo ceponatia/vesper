@@ -94,6 +94,8 @@ export interface StatusLocation {
 export interface SceneGalleryEntry {
   id: string;
   createdAt: Date;
+  /** The generation prompt (for the dev-only lightbox troubleshooting panel). */
+  prompt: string;
 }
 
 /** The latest turn's time advance, for the "+20m — shower" clock-delta UI. */

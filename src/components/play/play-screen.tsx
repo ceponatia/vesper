@@ -1,23 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { z } from "zod";
-import { apiGet } from "@/lib/client/api";
 import { useSession } from "@/lib/client/use-session";
-import { useAsyncData } from "@/components/hooks/use-async";
+import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { Composer } from "./composer";
 import { Feed } from "./feed";
 import { SidePanel } from "./side-panel";
-
-/** Forgiving: anything but an explicit admin role means "not admin". */
-const devMeSchema = z.preprocess(
-  (raw) => (raw && typeof raw === "object" ? raw : {}),
-  z.object({
-    user: z
-      .object({ role: z.enum(["user", "admin"]).catch("user") })
-      .catch({ role: "user" }),
-  }),
-);
 
 /**
  * The play screen (docs/ui.md §Play screen): feed + composer center, tabbed
@@ -26,8 +14,7 @@ const devMeSchema = z.preprocess(
  */
 export function PlayScreen({ sessionId }: { sessionId: string }) {
   const session = useSession(sessionId);
-  const me = useAsyncData(() => apiGet(devMeSchema, "/api/dev/me"), []);
-  const isAdmin = me.data?.user.role === "admin";
+  const isAdmin = useIsAdmin();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (

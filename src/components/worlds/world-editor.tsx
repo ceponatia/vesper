@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useState, type DragEvent } from "react";
 import { relationshipStages, type Diagnostic } from "@/contracts";
 import { countSpawnMajors, MAJOR_TIER_SOFT_CAP } from "@/lib/cast-tiers";
+import { from12Hour, to12Hour } from "@/lib/clock";
 import { moveItem } from "@/lib/reorder";
 import {
   charactersApi,
@@ -98,7 +99,6 @@ function PremiseTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: Worl
               ["year", 1, 9999],
               ["month", 1, 12],
               ["day", 1, 31],
-              ["hour", 0, 23],
             ] as const
           ).map(([key, min, max]) => (
             <Input
@@ -115,6 +115,54 @@ function PremiseTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: Worl
               className="w-20 text-center"
             />
           ))}
+        </div>
+      </Field>
+      <Field label="Time start" hint="In-world clock the first session opens at.">
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            max={12}
+            aria-label="hour"
+            value={to12Hour(calendar.hour).hour12}
+            onChange={(e) => {
+              const h12 = Number(e.target.value);
+              if (!Number.isFinite(h12)) return;
+              const clamped = Math.min(12, Math.max(1, Math.round(h12)));
+              patchStyle({ calendarStart: { ...calendar, hour: from12Hour(clamped, to12Hour(calendar.hour).meridiem) } });
+            }}
+            className="w-16 text-center"
+          />
+          <span className="text-paper-500">:</span>
+          <Input
+            type="number"
+            min={0}
+            max={59}
+            aria-label="minute"
+            value={calendar.minute}
+            onChange={(e) => {
+              const m = Number(e.target.value);
+              if (!Number.isFinite(m)) return;
+              patchStyle({ calendarStart: { ...calendar, minute: Math.min(59, Math.max(0, Math.round(m))) } });
+            }}
+            className="w-16 text-center"
+          />
+          <Select
+            aria-label="am/pm"
+            value={to12Hour(calendar.hour).meridiem}
+            onChange={(e) =>
+              patchStyle({
+                calendarStart: {
+                  ...calendar,
+                  hour: from12Hour(to12Hour(calendar.hour).hour12, e.target.value === "pm" ? "pm" : "am"),
+                },
+              })
+            }
+            className="w-20"
+          >
+            <option value="am">AM</option>
+            <option value="pm">PM</option>
+          </Select>
         </div>
       </Field>
       <Field label="Player starts at" hint="Unset, the player starts wherever the companion is.">

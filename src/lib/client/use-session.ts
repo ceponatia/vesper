@@ -330,6 +330,8 @@ const sceneImageSchema = z.preprocess(
     id: z.string().min(1),
     createdAt: optionalText,
     status: z.enum(["pending", "ready", "failed"]).catch("ready"),
+    /** Generation prompt — fed to the dev-only lightbox troubleshooting panel. */
+    prompt: z.string().catch(""),
   }),
 );
 export type SceneImage = z.infer<typeof sceneImageSchema>;

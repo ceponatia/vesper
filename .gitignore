@@ -5,3 +5,7 @@ next-env.d.ts
 .env
 data/
 .vitest-cache/
+# Local-only UI/QA artifacts — Playwright scratch + audit screenshots embed
+# app-generated imagery; keep them on the server, never commit/push.
+.playwright-mcp/
+docs/developer-notes/ux-audit-assets/

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   avatarImageModels,
+  avatarImageModelLabels,
   charactersApi,
   portraitVariantKinds,
   type ImageRecord,
@@ -32,11 +33,6 @@ export interface PortraitStudioProps {
 
 const POLL_MS = 2500;
 
-const avatarModelLabels: Record<AvatarImageModel, string> = {
-  flux: "Flux",
-  qwen: "Qwen (uncensored)",
-};
-
 function generationError(image: ImageRecord): string | null {
   const error = image.meta?.error?.trim();
   return error ? error : null;
@@ -61,7 +57,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const [submittingVariant, setSubmittingVariant] = useState(false);
   const [busyImageId, setBusyImageId] = useState<string | null>(null);
-  const [enlarged, setEnlarged] = useState<{ id: string; caption: string | null } | null>(null);
+  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   // Once the avatar id changes (a generate finished or a variant was
@@ -180,7 +176,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
       <div className="flex flex-wrap items-start gap-5">
         <button
           type="button"
-          onClick={() => avatarImageId && setEnlarged({ id: avatarImageId, caption: null })}
+          onClick={() => avatarImageId && setEnlarged({ id: avatarImageId, prompt: canonicalPrompt })}
           disabled={!avatarImageId}
           aria-label={avatarImageId ? "Enlarge avatar" : undefined}
           className="cursor-pointer rounded-card disabled:cursor-default"
@@ -201,7 +197,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
               <Select id={id} value={avatarModel} onChange={(e) => setAvatarModel(e.target.value as AvatarImageModel)}>
                 {avatarImageModels.map((m) => (
                   <option key={m} value={m}>
-                    {avatarModelLabels[m]}
+                    {avatarImageModelLabels[m]}
                   </option>
                 ))}
               </Select>
@@ -303,7 +299,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setEnlarged({ id: img.id, caption: img.prompt || img.kind })}
+                      onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
                       aria-label="Enlarge portrait"
                       className="block w-full cursor-pointer"
                     >
@@ -361,7 +357,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
       <ImageLightbox
         imageId={enlarged?.id ?? null}
         alt={name}
-        caption={enlarged?.caption}
+        prompt={enlarged?.prompt}
         onClose={() => setEnlarged(null)}
       />
     </div>

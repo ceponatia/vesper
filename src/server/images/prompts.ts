@@ -621,8 +621,12 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
 // ---------------------------------------------------------------------------
 
 /** The hard POV rule, restated verbatim in every scene render prompt. */
+// Worded to avoid the literal "camera" framing: phrasing the player AS the
+// camera made image models paint hands gripping a camera into the foreground.
+// "no hands or held objects" closes that off without naming a camera (a negative
+// the image model would only anchor on).
 export const SCENE_POV_RULE =
-  "First-person POV: the image is seen through the player's eyes. The player is the camera and must NEVER be visible — no body, no face, no hands in frame.";
+  "First-person POV through the player's own eyes. The player must NEVER be visible — no body, no face, no hands or held objects in frame.";
 
 export interface SceneRenderOptions {
   /** Name of the character the reference image identity-locks (Venice edit); omit for text-to-image. */

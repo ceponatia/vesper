@@ -14,6 +14,7 @@ import {
   type ImageProviderFailure,
   type ImageProviderId,
   type ProviderRenderResult,
+  type SceneImageModel,
   type SceneRenderRequest,
 } from "../ai";
 import { logEvent } from "../events";
@@ -137,6 +138,8 @@ export interface RenderResolvedSceneInput {
   /** The identity anchor's image bytes (for the reference-edit provider); null ⇒ text-to-image. */
   anchorBuffer: Buffer | null;
   linkage: SceneAssetLinkage;
+  /** Optional explicit model-family pick (character-chat picker); unset ⇒ default ladder. */
+  prefer?: SceneImageModel;
   /** Where to log the outcome (`logScene` for sessions, a character event otherwise). */
   logResult: (imageId: string, status: string, startedMs: number) => void;
   sink?: DiagnosticSink;
@@ -158,7 +161,7 @@ export interface RenderResolvedSceneInput {
 export async function renderResolvedScene(input: RenderResolvedSceneInput): Promise<string> {
   const demo = isDemoMode();
   const { plan, references, linkage } = input;
-  const request: SceneRenderRequest = { references, demo };
+  const request: SceneRenderRequest = { references, demo, prefer: input.prefer };
   const chain = routeSceneProviders(request);
 
   // The identity anchor is the reference that carries an actual image. The

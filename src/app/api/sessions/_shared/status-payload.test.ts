@@ -156,7 +156,10 @@ function fakeBundle(): SessionBundle {
 describe("buildStatusPayload", () => {
   const payload = buildStatusPayload(fakeBundle(), {
     latestSceneImageId: "img-scene",
-    sceneGallery: [{ id: "img-old", createdAt: new Date("2026-01-01") }, { id: "img-scene", createdAt: new Date("2026-01-02") }],
+    sceneGallery: [
+      { id: "img-old", createdAt: new Date("2026-01-01"), prompt: "an old scene" },
+      { id: "img-scene", createdAt: new Date("2026-01-02"), prompt: "the latest scene" },
+    ],
     narrativeModel: "aion-labs/aion-2.0",
     agentModel: "google/gemini-3.5-flash",
     clockDelta: { minutes: 20, cause: "shower" },

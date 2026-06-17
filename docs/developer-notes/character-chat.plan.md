@@ -60,6 +60,18 @@ character read as themselves?* — and a natural home for a quick scene image.
   character editor (saved characters only, like the portrait studio). Transcript
   with avatar bubbles, streaming composer (Enter to send), Clear-chat confirm,
   and a manual **Generate scene** button with a polling scene strip + lightbox.
+  - **Model pickers.** A **narrator** `<Select>` over the curated
+    `NARRATIVE_MODELS` (lib/narrative-models.ts), passed as `model` on each send;
+    and a scene **image-model** `<Select>` (Flux / Qwen-uncensored, the portrait
+    studio's `avatarImageModels` + `avatarImageModelLabels`), passed as `model`
+    on Generate. The image pick defaults to **Qwen (uncensored)** — it preserves
+    the Venice/Qwen-first ladder this tab rendered before the picker existed.
+  - **In-progress feedback.** The scene row doesn't exist until the (slow)
+    composer step finishes, so the strip shows an **immediate labeled placeholder
+    tile** (`PendingSceneTile`, "Painting…") the instant Generate is clicked
+    (`showComposing = generating && !hasPendingRow`); the pending DB row's own
+    labeled tile takes over once it lands, then ready/failed. A failed render
+    keeps its error card (danger-bordered).
 - **Gallery** — `/api/gallery` now unions sessionless `entityKind:"character"`
   scenes after the session scenes; `gallery-page.tsx` groups them under a
   **"Character chats"** section. The portrait studio's history excludes
@@ -80,9 +92,12 @@ character read as themselves?* — and a natural home for a quick scene image.
 
 ## Open questions / deferred
 
-- **Narrator-model picker.** The route accepts `model?`, but the tab doesn't
-  expose a picker yet — defaults to `narrativeModelId(null)`. Add a curated
-  `NARRATIVE_MODELS` select if tuning needs it.
+- **Narrator-model picker.** *Resolved (2026-06-17).* The Chat tab now exposes a
+  curated `NARRATIVE_MODELS` select wired into each send; the scene **Generate**
+  control gained a Flux/Qwen image-model select threaded server-side
+  (`renderCharacterSceneImage` → `renderResolvedScene` → `routeSceneProviders`'s
+  `prefer`, docs/images.md). Both are local component state (the tab is
+  sessionless — no per-character persistence today).
 - **Auto scene every N turns.** Considered; shipped manual-only (cheapest,
   user-controlled). Revisit if the manual button feels too fiddly.
 - **Uploaded-avatar intimate guard.** `renderCharacterSceneImage` sets
