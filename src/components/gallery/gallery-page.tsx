@@ -62,7 +62,7 @@ export function GalleryPage() {
   const toast = useToast();
   const [worldFilter, setWorldFilter] = useState("");
   const [characterFilter, setCharacterFilter] = useState("");
-  const [enlarged, setEnlarged] = useState<{ id: string; caption: string } | null>(null);
+  const [enlarged, setEnlarged] = useState<{ id: string; caption: string; prompt: string | null } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SceneImage | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -210,7 +210,7 @@ export function GalleryPage() {
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() => setEnlarged({ id: scene.id, caption: scene.prompt ? `${meta} — ${scene.prompt}` : meta })}
+                          onClick={() => setEnlarged({ id: scene.id, caption: meta, prompt: scene.prompt || null })}
                           aria-label="Enlarge scene image"
                           className="block w-full cursor-pointer overflow-hidden rounded-card border border-ink-600 transition-colors hover:border-accent-500/60"
                         >
@@ -242,6 +242,7 @@ export function GalleryPage() {
         imageId={enlarged?.id ?? null}
         alt="Scene image"
         caption={enlarged?.caption ?? null}
+        prompt={enlarged?.prompt ?? null}
         onClose={() => setEnlarged(null)}
       />
 

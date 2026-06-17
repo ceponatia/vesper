@@ -488,6 +488,12 @@ export type PortraitVariantKind = (typeof portraitVariantKinds)[number];
 export const avatarImageModels = ["flux", "qwen"] as const;
 export type AvatarImageModel = (typeof avatarImageModels)[number];
 
+/** Display labels for the image-model picker (portrait studio + character-chat scenes). */
+export const avatarImageModelLabels: Record<AvatarImageModel, string> = {
+  flux: "Flux",
+  qwen: "Qwen (uncensored)",
+};
+
 // ---------------------------------------------------------------------------
 // Forge drafts (client mirror of server/authoring/drafts.ts — components may
 // not import server modules, so the draft JSON contract is re-declared here
@@ -637,7 +643,8 @@ export const charactersApi = {
   chatScenes: (id: string) =>
     apiGet(listOf(imageRecordSchema, "scenes", "images"), `/api/characters/${id}/chat/scene`),
   /** Queue a scene render from the recent chat; poll chatScenes for the result. */
-  generateChatScene: (id: string) => apiPost(z.unknown(), `/api/characters/${id}/chat/scene`, {}),
+  generateChatScene: (id: string, body: { model?: AvatarImageModel } = {}) =>
+    apiPost(z.unknown(), `/api/characters/${id}/chat/scene`, body),
 };
 
 export interface ChatStreamOutcome {

@@ -3,8 +3,10 @@ import {
   DEFAULT_CALENDAR_START,
   formatElapsed,
   formatGameClock,
+  from12Hour,
   minuteOfDay,
   resolveGameTime,
+  to12Hour,
   type CalendarStart,
 } from "./clock";
 
@@ -66,6 +68,31 @@ describe("formatGameClock", () => {
     const noon = resolveGameTime(0, { year: 2024, month: 6, day: 1, hour: 12, minute: 0 });
     expect(formatGameClock(midnight)).toContain("12:05am");
     expect(formatGameClock(noon)).toContain("12:00pm");
+  });
+});
+
+describe("12-hour conversion", () => {
+  it("splits 24-hour hours into a clock face + meridiem", () => {
+    expect(to12Hour(0)).toEqual({ hour12: 12, meridiem: "am" });
+    expect(to12Hour(8)).toEqual({ hour12: 8, meridiem: "am" });
+    expect(to12Hour(12)).toEqual({ hour12: 12, meridiem: "pm" });
+    expect(to12Hour(13)).toEqual({ hour12: 1, meridiem: "pm" });
+    expect(to12Hour(23)).toEqual({ hour12: 11, meridiem: "pm" });
+  });
+
+  it("combines a clock face + meridiem back into 24-hour hours", () => {
+    expect(from12Hour(12, "am")).toBe(0);
+    expect(from12Hour(8, "am")).toBe(8);
+    expect(from12Hour(12, "pm")).toBe(12);
+    expect(from12Hour(1, "pm")).toBe(13);
+    expect(from12Hour(11, "pm")).toBe(23);
+  });
+
+  it("round-trips every hour of the day", () => {
+    for (let h = 0; h < 24; h++) {
+      const { hour12, meridiem } = to12Hour(h);
+      expect(from12Hour(hour12, meridiem)).toBe(h);
+    }
   });
 });
 

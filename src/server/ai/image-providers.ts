@@ -75,12 +75,22 @@ export const IMAGE_PROVIDERS = {
 
 // --- Routing -------------------------------------------------------------
 
+/**
+ * A caller's explicit image-model family pick (the character-chat picker, mirroring
+ * the portrait studio's Flux/Qwen choice). `qwen` ⇒ the uncensored Venice/Qwen
+ * reference-edit path (the default ladder); `flux` ⇒ the moderated OpenRouter
+ * text-to-image path only. Unset ⇒ the default ladder.
+ */
+export type SceneImageModel = "flux" | "qwen";
+
 /** Computable from data the pipeline already produces (spec §4). */
 export interface SceneRenderRequest {
   /** Every reference the scene featured; those with an `imageId` can anchor an edit. */
   references: SceneVisualReference[];
   /** Demo mode (no keys) — only the monogram provider runs. */
   demo: boolean;
+  /** Optional explicit model-family pick (character-chat picker); unset ⇒ default ladder. */
+  prefer?: SceneImageModel;
 }
 
 /**
@@ -88,9 +98,14 @@ export interface SceneRenderRequest {
  * from the request against the capability registry. Reference-edit providers
  * need ≥1 reference image; text-to-image providers always attempt (they ignore
  * references). Future multi-reference rungs slot in ahead of `venice_edit` here.
+ *
+ * An explicit `prefer: "flux"` forces the moderated text-to-image path only —
+ * the uncensored edit rung is skipped (the user opted out of it). `prefer:
+ * "qwen"` (and the unset default) keep the full uncensored-first ladder.
  */
 export function routeSceneProviders(request: SceneRenderRequest): ImageProviderId[] {
   if (request.demo) return ["demo"];
+  if (request.prefer === "flux") return ["flux_openrouter"];
   const referenceImages = request.references.filter((r) => Boolean(r.imageId)).length;
   const ordered: ImageProviderId[] = ["venice_edit", "flux_openrouter"];
   const chain = ordered.filter((id) => providerCanAttempt(id, referenceImages));

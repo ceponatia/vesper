@@ -1,13 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { charactersApi, sendCharacterChat, type ImageRecord } from "@/lib/client/api";
+import {
+  avatarImageModels,
+  avatarImageModelLabels,
+  charactersApi,
+  sendCharacterChat,
+  type AvatarImageModel,
+  type ImageRecord,
+} from "@/lib/client/api";
+import { DEFAULT_NARRATIVE_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
@@ -46,6 +55,7 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
   const transcript = useAsyncData(() => charactersApi.chatTranscript(characterId), [characterId]);
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [input, setInput] = useState("");
+  const [narratorModel, setNarratorModel] = useState(DEFAULT_NARRATIVE_MODEL_ID);
   const [sending, setSending] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -78,7 +88,7 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
       { id: assistantId, role: "assistant", content: "" },
     ]);
     setSending(true);
-    const outcome = await sendCharacterChat(characterId, { content }, (delta) => {
+    const outcome = await sendCharacterChat(characterId, { content, model: narratorModel }, (delta) => {
       setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + delta } : l)));
     });
     setSending(false);
@@ -115,11 +125,25 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
 
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Conversation</h3>
-        {lines.length > 0 ? (
-          <Button size="sm" variant="quiet" onClick={() => setConfirmClear(true)}>
-            Clear chat
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Select
+            aria-label="Narrator model"
+            value={narratorModel}
+            onChange={(e) => setNarratorModel(e.target.value)}
+            className="h-8 w-44 text-xs"
+          >
+            {NARRATIVE_MODELS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+          {lines.length > 0 ? (
+            <Button size="sm" variant="quiet" onClick={() => setConfirmClear(true)}>
+              Clear chat
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex max-h-[28rem] min-h-48 flex-col gap-3 overflow-y-auto rounded-card border border-ink-600 bg-ink-950/40 p-4">
@@ -216,11 +240,18 @@ function SceneStrip({ characterId, name, hasChat }: { characterId: string; name:
   const toast = useToast();
   const scenes = useAsyncData(() => charactersApi.chatScenes(characterId), [characterId]);
   const [generating, setGenerating] = useState(false);
-  const [enlarged, setEnlarged] = useState<{ id: string; caption: string | null } | null>(null);
+  const [sceneModel, setSceneModel] = useState<AvatarImageModel>("qwen");
+  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const baselineRef = useRef(0);
 
   const sceneList = scenes.data ?? [];
-  const hasPending = sceneList.some((s) => s.status === "pending") || generating;
+  const hasPendingRow = sceneList.some((s) => s.status === "pending");
+  const hasPending = hasPendingRow || generating;
+  // Show an immediate placeholder the instant "Generate" is clicked — the image
+  // row doesn't exist until the (slow) composer step finishes, so without this
+  // the strip would give no feedback during compose. Once the pending row lands,
+  // its own labeled tile takes over (and `generating` is released below).
+  const showComposing = generating && !hasPendingRow;
 
   // Latest-ref so the poll calls the current reload without re-subscribing.
   const reloadRef = useRef(scenes.reload);
@@ -242,7 +273,7 @@ function SceneStrip({ characterId, name, hasChat }: { characterId: string; name:
   const generate = async () => {
     baselineRef.current = sceneList.length;
     setGenerating(true);
-    const result = await charactersApi.generateChatScene(characterId);
+    const result = await charactersApi.generateChatScene(characterId, { model: sceneModel });
     if (!result.ok) {
       setGenerating(false);
       toast.push({ title: "Scene failed to queue", description: result.error.message, tone: "error" });
@@ -256,30 +287,49 @@ function SceneStrip({ characterId, name, hasChat }: { characterId: string; name:
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Scene images</h3>
-        <Button
-          size="sm"
-          onClick={generate}
-          busy={generating}
-          disabled={!hasChat}
-          title={hasChat ? undefined : "Say something first — the scene is composed from the conversation"}
-        >
-          Generate scene
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select
+            aria-label="Scene image model"
+            value={sceneModel}
+            onChange={(e) => setSceneModel(e.target.value as AvatarImageModel)}
+            className="h-8 w-44 text-xs"
+          >
+            {avatarImageModels.map((m) => (
+              <option key={m} value={m}>
+                {avatarImageModelLabels[m]}
+              </option>
+            ))}
+          </Select>
+          <Button
+            size="sm"
+            onClick={generate}
+            busy={generating}
+            disabled={!hasChat}
+            title={hasChat ? undefined : "Say something first — the scene is composed from the conversation"}
+          >
+            Generate scene
+          </Button>
+        </div>
       </div>
-      {sceneList.length === 0 ? (
+      {sceneList.length === 0 && !showComposing ? (
         <p className="text-sm text-paper-500">
           No scenes yet. “Generate scene” paints the current moment from your recent exchange.
         </p>
       ) : (
         <div className="flex gap-2.5 overflow-x-auto pb-1">
+          {showComposing ? (
+            <div className="w-28 shrink-0">
+              <PendingSceneTile />
+            </div>
+          ) : null}
           {sceneList.map((img) => {
             const error = sceneError(img);
             return (
               <div key={img.id} className="w-28 shrink-0">
                 {img.status === "pending" ? (
-                  <Skeleton className="aspect-[3/4] w-full rounded-card" />
+                  <PendingSceneTile />
                 ) : img.status === "failed" ? (
-                  <div className="flex aspect-[3/4] w-full flex-col justify-center gap-1.5 rounded-card border border-ink-600 bg-ink-950/60 px-2 py-3">
+                  <div className="flex aspect-[3/4] w-full flex-col justify-center gap-1.5 rounded-card border border-danger-500/40 bg-ink-950/60 px-2 py-3">
                     <Tag tone="danger" className="self-start">
                       failed
                     </Tag>
@@ -290,7 +340,7 @@ function SceneStrip({ characterId, name, hasChat }: { characterId: string; name:
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setEnlarged({ id: img.id, caption: img.prompt || null })}
+                    onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
                     aria-label="Enlarge scene image"
                     className="block w-full cursor-pointer overflow-hidden rounded-card border border-ink-600 transition-colors hover:border-accent-500/60"
                   >
@@ -306,9 +356,21 @@ function SceneStrip({ characterId, name, hasChat }: { characterId: string; name:
       <ImageLightbox
         imageId={enlarged?.id ?? null}
         alt={name}
-        caption={enlarged?.caption ?? null}
+        prompt={enlarged?.prompt ?? null}
         onClose={() => setEnlarged(null)}
       />
+    </div>
+  );
+}
+
+/** In-progress scene tile: a pulsing placeholder with an explicit "Painting…" label. */
+function PendingSceneTile() {
+  return (
+    <div className="relative aspect-[3/4] w-full overflow-hidden rounded-card border border-ink-600">
+      <Skeleton className="absolute inset-0 rounded-none" />
+      <span className="absolute inset-x-0 bottom-0 bg-ink-950/80 px-2 py-1 text-center text-[11px] text-paper-300">
+        Painting…
+      </span>
     </div>
   );
 }

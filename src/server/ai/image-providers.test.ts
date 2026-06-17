@@ -38,6 +38,20 @@ describe("routeSceneProviders", () => {
     expect(routeSceneProviders({ references: [], demo: false })).toEqual(["flux_openrouter"]);
   });
 
+  it("an explicit Flux pick forces text-to-image only — the uncensored edit rung is skipped even with a reference image", () => {
+    const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
+    expect(routeSceneProviders({ references: refs, demo: false, prefer: "flux" })).toEqual(["flux_openrouter"]);
+  });
+
+  it("an explicit Qwen pick keeps the uncensored-first ladder", () => {
+    const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
+    expect(routeSceneProviders({ references: refs, demo: false, prefer: "qwen" })).toEqual(["venice_edit", "flux_openrouter"]);
+  });
+
+  it("demo mode ignores an explicit pick — only the monogram runs", () => {
+    expect(routeSceneProviders({ references: [], demo: true, prefer: "flux" })).toEqual(["demo"]);
+  });
+
   it("the registry never allows uploaded real people on an NSFW path", () => {
     for (const caps of Object.values(IMAGE_PROVIDERS)) {
       expect(caps.supportsUploadedRealPeopleInNsfw).toBe(false);

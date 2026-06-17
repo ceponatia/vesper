@@ -21,6 +21,7 @@ async function sceneImages(sessionId: string): Promise<SceneImageRow[]> {
     .select({
       id: images.id,
       createdAt: images.createdAt,
+      prompt: images.prompt,
       preRestart: sql<boolean>`coalesce(${images.meta} ->> 'preRestart', 'false') = 'true'`,
     })
     .from(images)
@@ -86,7 +87,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
     buildStatusPayload(bundle, {
       // The "current" image never reaches back across a restart; the gallery does.
       latestSceneImageId: sceneRows.find((r) => !r.preRestart)?.id ?? null,
-      sceneGallery: [...sceneRows].reverse().map(({ id: imageId, createdAt }) => ({ id: imageId, createdAt })),
+      sceneGallery: [...sceneRows].reverse().map(({ id: imageId, createdAt, prompt }) => ({ id: imageId, createdAt, prompt })),
       narrativeModel: narrativeModelId(bundle.world.narrativeModel),
       agentModel: agentModelId(bundle.world.agentModel),
       clockDelta,

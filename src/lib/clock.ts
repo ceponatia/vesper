@@ -80,11 +80,23 @@ export function daylightBand(time: GameTime): DaylightBand {
   return "night";
 }
 
+export type Meridiem = "am" | "pm";
+
+/** Split a 24-hour hour (0–23) into a 12-hour clock face + meridiem. */
+export function to12Hour(hour24: number): { hour12: number; meridiem: Meridiem } {
+  return { hour12: hour24 % 12 === 0 ? 12 : hour24 % 12, meridiem: hour24 < 12 ? "am" : "pm" };
+}
+
+/** Combine a 12-hour clock face (1–12) + meridiem into a 24-hour hour (0–23). */
+export function from12Hour(hour12: number, meridiem: Meridiem): number {
+  const base = hour12 % 12; // 12 → 0
+  return meridiem === "pm" ? base + 12 : base;
+}
+
 export function formatGameClock(time: GameTime): string {
-  const h12 = time.hour % 12 === 0 ? 12 : time.hour % 12;
-  const ampm = time.hour < 12 ? "am" : "pm";
+  const { hour12, meridiem } = to12Hour(time.hour);
   const month = MONTHS[time.month - 1] ?? "January";
-  return `${time.weekday}, ${month} ${time.day}, ${time.year} — ${h12}:${String(time.minute).padStart(2, "0")}${ampm}`;
+  return `${time.weekday}, ${month} ${time.day}, ${time.year} — ${hour12}:${String(time.minute).padStart(2, "0")}${meridiem}`;
 }
 
 /** Minute of day (0–1439), for schedule windows. */

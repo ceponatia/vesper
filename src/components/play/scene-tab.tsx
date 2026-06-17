@@ -147,6 +147,7 @@ export function SceneTab({ session }: { session: UseSession }) {
       <ImageLightbox
         imageId={enlargedId}
         alt={session.status?.title ?? "Scene"}
+        prompt={gallery.find((image) => image.id === enlargedId)?.prompt ?? null}
         onClose={() => setEnlargedId(null)}
       />
     </div>

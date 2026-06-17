@@ -6,7 +6,7 @@ import { speciesAppearancePhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
-import { hasVenice, isDemoMode } from "../ai";
+import { hasVenice, isDemoMode, type SceneImageModel } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
 import { absoluteImagePath } from "./assets";
@@ -43,6 +43,8 @@ export interface RenderCharacterSceneInput {
   profile: CharacterProfile;
   /** The character's canonical avatar, used as the identity reference when ready. */
   avatarImageId: string | null;
+  /** Explicit model-family pick from the chat picker; `flux` skips the Venice anchor. */
+  imageModel?: SceneImageModel;
   /** Default-room override; falls back to DEFAULT_CHAT_ROOM. */
   room?: string;
   /** Recent assistant turns (oldest first) for the composer to center the shot on. */
@@ -146,7 +148,12 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   });
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 
-  const anchor = isDemoMode() || !hasVenice() ? null : await loadCharacterAvatar(input.userId, input.avatarImageId);
+  // A Flux pick is moderated text-to-image — it ignores the reference image, so
+  // don't pay to load the avatar buffer for it (the Venice/Qwen edit path does).
+  const anchor =
+    isDemoMode() || !hasVenice() || input.imageModel === "flux"
+      ? null
+      : await loadCharacterAvatar(input.userId, input.avatarImageId);
   const references: SceneVisualReference[] = [
     {
       kind: "character",
@@ -162,6 +169,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     plan,
     references,
     anchorBuffer: anchor?.buffer ?? null,
+    prefer: input.imageModel,
     linkage: { ownerId: input.userId, entityKind: "character", entityId: input.characterId },
     logResult: (imageId, status, started) =>
       void logEvent(null, "image.character_scene", {
