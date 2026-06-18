@@ -171,7 +171,15 @@ second turn instead of rejecting. (See `turn-engine.md`, `streaming-api.md`.)
 Turn 1 logged `agent.intake.timeout — intake exceeded 1500ms; using regex fallback` (likely
 aggravated by the concurrent load test). If it fires often, the intake LLM is paid-for but
 unused. **Measure the fallback hit-rate first** (don't tune blind), then raise the budget,
-make intake non-blocking, or drop it. Surface it via the **dev turn HUD** (feature #7,
+make intake non-blocking, or drop it.
+
+> **Measured (2026-06-18):** the hit-rate is **91% fallback** (31/34 player turns time out),
+> and the investigation found two root causes beyond budget — the intake model burning its
+> time/token budget on reasoning, and an orphaned post-timeout call leaking `error`-level
+> diagnostics onto already-successful turns. Full analysis + ordered fixes in
+> [pre-narrator-agents.followups.md](pre-narrator-agents.followups.md). The budget re-tune
+> below (#5 there) stays gated on the HUD, but it should run *after* the reasoning fix, not
+> before — most of the timeouts are not a budget problem. Surface it via the **dev turn HUD** (feature #7,
 dev-only): per-turn token usage + latency + intake-timeout rate, all already in the
 `/inspect` payload. **Cross-ref:** the personality plan adds `socialAct` tagging to this same
 intake agent ([personality-and-state.plan.md](personality-and-state.plan.md) §1.3) — more

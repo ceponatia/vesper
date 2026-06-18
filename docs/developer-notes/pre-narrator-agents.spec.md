@@ -11,6 +11,14 @@ player's input and the narrator's turn** — to extract intent, resolve targets,
 pick relevant attributes, and pre-check the systems the narrator is about to be
 asked to honor. It is a sibling of
 
+> **Post-ship reliability follow-ups (2026-06-18):** intake shipped but is
+> falling back to regex on **91% of turns** (reasoning-token budget exhaustion +
+> an orphaned-call diagnostic leak). Measurement + ordered fixes in
+> [pre-narrator-agents.followups.md](pre-narrator-agents.followups.md). Until
+> those land, the §4.1 latency estimates and §4.2 resilience ladder do **not**
+> describe the agent's behaviour in practice.
+
+
 > **Update (2026-06-14): Stack A approved and in implementation.** The
 > recommendation in §7 is accepted. We are building **Stack A — the single
 > latency-hidden intake agent that degrades to today's regex** — scoped to
