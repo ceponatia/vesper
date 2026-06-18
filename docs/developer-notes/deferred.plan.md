@@ -260,3 +260,46 @@ matches the framing.
 
 See [cast-tiers-and-affinity-spec.phase3.md](cast-tiers-and-affinity-spec.phase3.md)
 §Problem (role definition) and §Design: tiers.
+
+## Relationship & meter timeline — _UX audit feature #4_
+
+_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #4)._
+The post-turn agents already emit per-turn **affinity and meter deltas** (visible in the
+dev Inspector), so the data to chart a romance arc exists — nothing new to compute. Idea: a
+small **sparkline / timeline in the Cast panel** so a player can *see* affinity and meters
+move across a session, not just read the current value.
+
+Parked **separately** from [personality-and-state.plan.md](personality-and-state.plan.md)
+§4 (the affinity-levels / mood work it naturally pairs with) because that plan is
+**mid-build** — promote this alongside it, or sooner if a quick standalone visualization is
+wanted. Routed here from [ux-audit.plan.md](ux-audit.plan.md).
+
+## Session transcript export / share — _UX audit feature #8_
+
+_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #8)._
+Export a session's narrative feed as **Markdown** (and/or a shareable read-only view) — a
+natural fit for a romance-story product where players want to keep or share the story they
+played. Low effort, no model change (the episode/feed data already exists). From
+[ux-audit.plan.md](ux-audit.plan.md).
+
+## Scene image: pin / set as session cover — _UX audit feature #9_
+
+_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #9)._
+Let a player promote a favorite generated **scene image** to the session header as its
+cover. A small surface on top of the existing scene-image + gallery machinery. From
+[ux-audit.plan.md](ux-audit.plan.md).
+
+## First-run guided tour — _UX audit feature #10_
+
+_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #10)._
+The empty states are already strong (the audit praised them); a light **3-step coachmark**
+("forge → begin → play") could shorten time-to-first-turn for a brand-new user. Lowest
+priority of the audit ideas. From [ux-audit.plan.md](ux-audit.plan.md).
+
+## Production-build performance pass — _UX audit §5_
+
+_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §5)._
+The audit **deliberately skipped** perf benchmarking because the dev Turbopack build
+(unminified, HMR) isn't representative. Run a **production-build Lighthouse-perf + trace
+pass** focused on the dashboard and the play screen (the heaviest route) for real numbers.
+Not blocking — do it when perf becomes a question. From [ux-audit.plan.md](ux-audit.plan.md).

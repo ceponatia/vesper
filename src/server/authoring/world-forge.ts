@@ -49,6 +49,12 @@ export const worldForgeSections = ["premise", "locations", "lore", "cast", "item
 export const worldForgeSectionSchema = z.enum(worldForgeSections);
 export type WorldForgeSection = (typeof worldForgeSections)[number];
 
+/** Auto-generate count bounds for the intake dropdowns (UX-audit §1b). 0 ⇒ skip that family (import your own). */
+export const FORGE_COUNT_MIN = 0;
+export const FORGE_COUNT_MAX = 5;
+export const DEFAULT_LOCATION_COUNT = 4;
+export const DEFAULT_CHARACTER_COUNT = 3;
+
 export interface WorldForgeContext {
   prompt: string;
   userId: string;
@@ -57,6 +63,10 @@ export interface WorldForgeContext {
   draft?: WorldDraft;
   /** Character-library lookup; defaults to an ILIKE query against characters. */
   findCharacters?: LibraryLookup;
+  /** How many locations to generate (UX-audit §1b); 0 ⇒ skip. Defaults to DEFAULT_LOCATION_COUNT. */
+  locationCount?: number;
+  /** How many new cast members to suggest; 0 ⇒ skip. Defaults to DEFAULT_CHARACTER_COUNT. */
+  characterCount?: number;
 }
 
 export function applyWorldSectionPatch(draft: WorldDraft, patch: Partial<WorldDraft>): WorldDraft {
@@ -73,6 +83,8 @@ export interface ForgeWorldInput {
   userId: string;
   sink?: DiagnosticSink;
   findCharacters?: LibraryLookup;
+  locationCount?: number;
+  characterCount?: number;
 }
 
 export async function forgeWorld(input: ForgeWorldInput): Promise<WorldDraft> {
@@ -334,14 +346,16 @@ function connectedComponents(locations: readonly WorldDraftLocation[]): number[]
 }
 
 const LOCATIONS_SYSTEM =
-  "You map roleplaying worlds. Produce 4-10 distinct locations with sensory ambient detail and an undirected connection graph. Every location must be reachable from every other. Every links entry must be the EXACT name of another location in this same response — never link to a location you did not generate.";
+  "You map roleplaying worlds. Produce the requested number of distinct locations with sensory ambient detail and an undirected connection graph. Every location must be reachable from every other. Every links entry must be the EXACT name of another location in this same response — never link to a location you did not generate.";
 
 function locationsPrompt(context: WorldForgeContext): string {
+  const count = context.locationCount ?? DEFAULT_LOCATION_COUNT;
   const lines = ["World premise:", context.prompt];
   const synopsis = context.draft?.lore.synopsis;
   if (synopsis) lines.push("", "Synopsis:", synopsis);
   lines.push(
     "",
+    `Produce exactly ${count} distinct location${count === 1 ? "" : "s"}.`,
     "Give each location a name, 2-3 sentence description, ambient { scent, sound, light }, lowercase tags, and links (names of adjacent locations).",
     'Also set scale per location — intimate (closet, car interior) | room (default) | hall (great hall, warehouse) | open (street, plaza) | expanse (beach, fields) — and, where locations group naturally (rooms of one building, one district), a shared lowercase area label like "harbor-inn" or "old-town".',
     "Set playerStartName to the exact name of the most natural starting location.",
@@ -353,6 +367,8 @@ function locationsPrompt(context: WorldForgeContext): string {
 }
 
 async function forgeLocationsSection(context: WorldForgeContext): Promise<Partial<WorldDraft>> {
+  // 0 ⇒ author imports their own locations; produce an empty map (UX-audit §1b).
+  if ((context.locationCount ?? DEFAULT_LOCATION_COUNT) === 0) return { locations: [], playerStartLocationName: undefined };
   const { value } = await generateChecked({
     schema: locationsSectionSchema,
     system: LOCATIONS_SYSTEM,
@@ -574,14 +590,15 @@ export function groundCastRelationships<T extends { name: string; relationships:
 }
 
 const CAST_SYSTEM = [
-  "You cast roleplaying worlds. Suggest 1-3 new characters that fit the premise: name, a one-sentence concept note, a role (companion = close to the player, npc = supporting), a tier (major = central with full simulation; minor = recurring supporting cast; extra = background), and where they start.",
+  "You cast roleplaying worlds. Suggest the requested number of new characters that fit the premise: name, a one-sentence concept note, a role (companion = close to the player, npc = supporting), a tier (major = central with full simulation; minor = recurring supporting cast; extra = background), and where they start.",
   `Where the premise or the characters' concepts clearly support a bond, add relationships entries ({ toward, stage }): toward is the EXACT name of another character in this same response, or the literal "player". Stages: ${relationshipStages.map((s) => s.id).join(" | ")}.`,
   'Suggest only relationships the premise supports. Sparse is correct: no entry means strangers, so never write a "stranger" entry.',
   'When a character has a relationship, their conceptNote must NAME the bond kind in plain words ("her brother", "a coworker at the cannery", "they have never met") — that exact wording is read at spawn to decide what the character believes the player knows of them.',
 ].join("\n");
 
 function castPrompt(context: WorldForgeContext): string {
-  const lines = ["World premise:", context.prompt];
+  const count = context.characterCount ?? DEFAULT_CHARACTER_COUNT;
+  const lines = ["World premise:", context.prompt, "", `Suggest exactly ${count} new character${count === 1 ? "" : "s"}.`];
   const synopsis = context.draft?.lore.synopsis;
   if (synopsis) lines.push("", "Synopsis:", synopsis);
   const locationNames = context.draft?.locations.map((l) => l.name).filter(Boolean) ?? [];
@@ -596,6 +613,8 @@ function castPrompt(context: WorldForgeContext): string {
 }
 
 async function forgeCastSection(context: WorldForgeContext): Promise<Partial<WorldDraft>> {
+  // 0 ⇒ author imports/links their own cast; suggest none (UX-audit §1b).
+  if ((context.characterCount ?? DEFAULT_CHARACTER_COUNT) === 0) return { castSuggestions: [] };
   const { value } = await generateChecked({
     schema: castSectionSchema,
     system: CAST_SYSTEM,

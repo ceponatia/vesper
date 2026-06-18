@@ -38,6 +38,8 @@ import type {
 } from "@/contracts/turns/agent-results";
 import type { TurnAuthor } from "@/contracts/turns/stream";
 import type { CharacterProfile } from "@/contracts/world/profile";
+import { evaluateSocialReaction, NEUTRAL_MOOD, resolveSocialReaction } from "@/contracts/personality/reactions";
+import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { checkLinkAccess, type DoorState } from "@/contracts/world/access";
 import { daylightBand, minuteOfDay, resolveGameTime, type DaylightBand } from "@/lib/clock";
 import { newId } from "@/lib/ids";
@@ -118,6 +120,11 @@ export interface MergeTurn {
   narration: string;
   /** Companion-authored turns: the speaking NPC (counts as a targeted interaction). */
   speakerParticipantId?: string | null;
+  /**
+   * The persisted intake brief. Its `socialActs` drive the deterministic
+   * reaction affinity (personality-and-state.spec.md §6). Absent ⇒ no reaction.
+   */
+  intentBrief?: IntentBrief;
 }
 
 export type MergeMode = "post_turn" | "reconcile";
@@ -776,6 +783,71 @@ export function planAffinityUpdates(
     updates.push({ ...update, delta: clamped });
   }
   return updates;
+}
+
+export interface ReactionAffinityResult {
+  updates: AffinityUpdate[];
+  /** Edge keys (from::to::kind) a reaction resolved for — suppress simulant updates here. */
+  ownedEdgeKeys: Set<string>;
+}
+
+/**
+ * Deterministic affinity from the player's classified social acts
+ * (personality-and-state.spec.md §6). v1 plays the **primary** act: resolve it
+ * against the target NPC's disposition, run the affinity-aware curve over the
+ * NPC's turn-start *feeling* edge, and emit a feeling delta. The reaction **owns**
+ * that edge — its key is returned so the simulant's update on the same edge is
+ * dropped (the authored verdict wins for recognized acts), even when the delta
+ * rounds to 0 ("lets it slide"). No match ⇒ the simulant handles the edge as usual.
+ */
+export function planReactionAffinity(
+  socialActs: IntentBrief["socialActs"],
+  parts: readonly WorkingParticipant[],
+  relationships: readonly BundleRelationship[],
+  sink?: DiagnosticSink,
+): ReactionAffinityResult {
+  const empty: ReactionAffinityResult = { updates: [], ownedEdgeKeys: new Set() };
+  const primary = socialActs[0]; // v1: primary act only (multi-act deferred)
+  if (!primary) return empty;
+  const player = parts.find((p) => p.isUser);
+  if (!player) return empty;
+  const target = findParticipant(primary.target, parts);
+  if (!target || target.isUser) {
+    sink?.push(
+      diag("warn", "merge.reaction.unresolved_target", `social act target "${primary.target}" (${primary.concept}) unresolved`, {
+        context: { target: primary.target, concept: primary.concept },
+      }),
+    );
+    return empty;
+  }
+
+  const reaction = resolveSocialReaction(
+    { concept: primary.concept, target: primary.target },
+    { tags: target.snapshot.tags, preferences: target.snapshot.preferences, cards: [] },
+  );
+  if (!reaction) return empty;
+
+  const feeling = relationships.find(
+    (r) => r.kind === "feeling" && r.fromParticipantId === target.id && r.toParticipantId === player.id,
+  );
+  const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, NEUTRAL_MOOD, 1);
+  const ownedEdgeKeys = new Set([`${target.id}::${player.id}::feeling`]);
+
+  const signed = evaluated.valence === "dislike" ? -evaluated.magnitude : evaluated.magnitude;
+  const delta = Math.max(-AFFINITY_DELTA_CLAMP, Math.min(AFFINITY_DELTA_CLAMP, Math.round(signed)));
+  if (delta === 0) return { updates: [], ownedEdgeKeys };
+  return {
+    updates: [{ fromParticipantId: target.id, toParticipantId: player.id, kind: "feeling", delta, reason: `reaction:${reaction.conceptId}` }],
+    ownedEdgeKeys,
+  };
+}
+
+/** Reaction updates win their edge; simulant updates on an owned edge are dropped. */
+export function combineAffinityUpdates(reaction: ReactionAffinityResult, simulant: AffinityUpdate[]): AffinityUpdate[] {
+  const kept = simulant.filter(
+    (u) => !reaction.ownedEdgeKeys.has(`${u.fromParticipantId}::${u.toParticipantId}::${u.kind}`),
+  );
+  return [...reaction.updates, ...kept];
 }
 
 /** One edge's decay: `points` toward 0, stopped at the current stage's zero-side boundary. */
@@ -1931,7 +2003,12 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     minutes,
     minutesCause,
     clockMinutes,
-    affinityUpdates: reconcile ? [] : planAffinityUpdates(simulant.affinityAdjustments, parts, sink),
+    affinityUpdates: reconcile
+      ? []
+      : combineAffinityUpdates(
+          planReactionAffinity(turn.intentBrief?.socialActs ?? [], parts, bundle.relationships, sink),
+          planAffinityUpdates(simulant.affinityAdjustments, parts, sink),
+        ),
     affinityDecay: affinityDecay?.edges ?? [],
     witnessedBy,
     commsChanges: comms.changes,

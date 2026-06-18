@@ -161,6 +161,16 @@ type LinkAccess =
 
 `relationships/bond.ts`: `classifyBond(text)` — a deterministic keyword pass over a cast member's concept/bio text classifying the player bond as `mutual` (named kinds: family, sibling, partner, spouse, friend, coworker, …), `first-meeting` ("never met", "first meeting", "strangers" — beats mutual keywords), or `indeterminate`. Spawn seeds the NPC's `perceived` edge from it: mutual and indeterminate mirror the feeling midpoint, first-meeting seeds no row (`server/engine/relationship-seeds.ts`).
 
+## Disposition (personality)
+
+`contracts/personality/` — authored character disposition that drives **social reactions** deterministically (docs/developer-notes/personality-and-state.spec.md §6). Three small registries + the pure resolver, all IO-free:
+
+- **Interaction concepts** (`interactions.ts`) — the controlled vocabulary the intake agent classifies a player's social act into (`compliment`, `gift`, `flirt`, `insult`, `jealousy_trigger`, …). Each carries a `verb` (for the reaction line), a `family` (a cluster a preference may target wholesale, e.g. `affection_display`), classifier `triggers`, and an `intimate` flag. One stable classification target; the shared key space for preferences and (later) cards. Add a concept = one data edit + the registry test.
+- **Disposition tags** (`tags.ts`) — a **dev-defined canonical registry** of reusable labels (`bratty`, `prudish`, `foot-fetish-positive`) that social-reaction **cards** key their overrides on. The editor/forge autocomplete from it; free-form tags are tolerated but second-class. `normalizeTag` / `canonicalTagId` map free text onto the canonical id. Inert in v1 (cards aren't built — `social-reaction-cards.plan.md`); stored and authored now so neither the card layer nor the Slice-2 puppet guardrail needs a schema change.
+- **Preferences** (`preference.ts`) — a character's bespoke `{ target, valence: like|dislike, intensity 1–10, hint? }`, where `target` is a concept id **or** a family id. Leaf fields `.catch` so one bad entry degrades, not the array.
+
+Both `tags: string[]` and `preferences: Preference[]` ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition plays exactly as before). The resolver (`reactions.ts`): `resolveSocialReaction(act, { tags, preferences, cards })` applies **pure-override** precedence (bespoke preference → card tag-override → card default → null; v1 passes `cards: []`); `evaluateSocialReaction(reaction, currentAffinity, currentMood, traitScale)` is the **affinity-aware curve** — goodwill deadband, thin-ice amplification, capped/asymmetric likes (mood is a neutral stub, `traitScale` is 1 in v1). Curve constants live in `reactions.ts` (contracts is IO-free; the merge clamps the result to ±`AFFINITY_DELTA_CLAMP`).
+
 ## Conditions
 
 Discrete temporary states (`conditions/condition.ts`), aionchat-style:

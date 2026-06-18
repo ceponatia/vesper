@@ -17,6 +17,7 @@ import {
   type WorldDraftLoreChunk,
   type WorldForgeSection,
 } from "@/lib/client/api";
+import { useAsyncData } from "@/components/hooks/use-async";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { LibraryPickerDialog, type LibraryPickerEntry } from "@/components/library/library-picker";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,8 @@ function PremiseTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: Worl
   const style = draft.style;
   const patchStyle = (patch: Partial<WorldDraft["style"]>) => onChange({ ...draft, style: { ...style, ...patch } });
   const calendar = style.calendarStart;
+  const characters = useAsyncData(() => charactersApi.list(), []);
+  const characterOptions = characters.data ?? [];
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -181,6 +184,25 @@ function PremiseTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: Worl
                   {l.name}
                 </option>
               ))}
+          </Select>
+        )}
+      </Field>
+      <Field label="Play as" hint="Default character the player embodies; unset ⇒ observer. Pre-fills new sessions and is changeable per playthrough.">
+        {(id) => (
+          <Select
+            id={id}
+            value={draft.playerCharacterId ?? ""}
+            onChange={(e) => onChange({ ...draft, playerCharacterId: e.target.value || null })}
+          >
+            <option value="">Observer (no character)</option>
+            {characterOptions.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+            {draft.playerCharacterId && !characterOptions.some((c) => c.id === draft.playerCharacterId) ? (
+              <option value={draft.playerCharacterId}>(selected character)</option>
+            ) : null}
           </Select>
         )}
       </Field>

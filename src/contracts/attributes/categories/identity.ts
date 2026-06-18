@@ -45,6 +45,7 @@ export const identityGroup = defineAttributeGroup("identity", [
       "teen",
       "young_adult",
       "mid_twenties",
+      "late_twenties",
       "early_thirties",
       "late_thirties",
       "forties",

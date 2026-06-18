@@ -1,165 +1,207 @@
 # Personality & evolving state — plan
 
-Status: **draft** (not settled — several v1 decisions still open; the spec is an
-analysis, not yet ratified). No code yet.
+Status: **active** — Slice 1 (the social-reaction loop) **shipped 2026-06-18**; Slices
+2–5 queued. The social-fabric **card layer is a separate plan**
+(`social-reaction-cards.plan.md`) that Slice 1 built the resolution seam for.
 
-Design/decisions: [personality-and-state.spec.md](personality-and-state.spec.md) —
-read it first; it is the truth. This plan is the task list and build order. It
-**front-loads the authored likes/dislikes loop (spec §6)** — the most game-like and
-most self-contained slice — and layers traits, mood, and the dynamics
-generalizations behind it on the seams that loop creates.
+Design/decisions: [personality-and-state.spec.md](personality-and-state.spec.md) — read
+it first; it is the truth. This plan is the task list and build order. It **front-loads
+the social-reaction loop (spec §6)** — the most game-like, most self-contained slice —
+and layers the puppet guardrail, traits, and mood behind it on the seams that loop
+creates.
 
 ## Goal
 
-Give characters **authored preferences** and **disposition** that the engine resolves
-*deterministically*, so reactions and the drift of transient states are driven by
-data, not narrator improvisation. v1 is the **preference loop**: the intake agent
-concept-tags a player's social act, a pure **affinity-aware** curve decides how the
-character takes it, and the narrator is handed the verdict (plus a deterministic
-affinity delta). Traits (the generic dynamics), mood, and the meter/affinity
-generalizations follow on the same seams.
+Give characters **authored disposition** — reusable **tags** + **bespoke** likes/dislikes,
+over a shared social fabric — that the engine resolves *deterministically*, so reactions
+(and the drift of transient states) are driven by data, not narrator improvisation. v1
+is the **social-reaction loop**: the intake agent concept-tags a player's social act, a
+pure **affinity-aware** curve (mood and traits stubbed) decides how the character takes
+it, and the narrator is handed the verdict plus a deterministic affinity delta. The
+puppet guardrail, traits (generic dynamics + lexicon), and mood follow on the same seams;
+the **importable taboo/social-rule cards** plug into the resolution seam from their own
+plan.
 
 ## Build order
 
-### 1. The preference loop (v1 — the headline) — _not started_
+### 1. The social-reaction loop (v1 — the headline) — _shipped 2026-06-18_
 
-The whole "she likes/dislikes this, and reacts on a curve" experience, end to end,
-with **unit trait-scaling** (no trait registry yet — the `traitScale` seam returns 1)
-and **affinity only** (no mood yet). Ships the game feel by itself; everything later
-plugs into seams this slice creates.
+The "she likes/dislikes this, and reacts on a curve" experience end to end, with **unit
+trait-scaling** (`traitScale` seam returns 1), **neutral mood** (curve carries `mood` but
+it's a no-op stub), and **`cards: []`** (only the bespoke character layer is live).
+Ships the game feel by itself; everything later plugs into seams this slice creates.
 
-1. **Interaction-concept registry** — `contracts/personality/interactions.ts` (pure).
-   ~8–12 flat concepts (`compliment`, `gift`, `flirt`, `tease`, `reassure`,
-   `confide`, `insult`, `criticize`, `boundary_push`, `jealousy_trigger`,
-   `physical_affection`, `public_display`), each with `family?`, `triggers`,
-   `defaultHint`, `intimate?`. Registry-invariant test (unique ids, every concept
-   reachable). Reuse the shared registry spine if Slice 2's extraction lands first;
-   a standalone typed map is fine until then (it's small).
-2. **`Preference[]` on the profile** — `preferences: Preference[]` (default `[]`) on
-   `characterProfileSchema` (`contracts/world/profile.ts`) and the participant
-   snapshot. `parseOr` at the JSONB boundary; empty ⇒ no-op. No migration (JSONB).
-3. **`socialAct` intake seam** — add `socialAct: { concept, target }` to
-   `intentBriefSchema` (`contracts/turns/intent-brief.ts`), `.default`ed/`.catch`ed
-   like its siblings; extend `INTAKE_SYSTEM` / `buildIntakePrompt`
-   (`engine/prompts/intake.ts`) to tag the player's **primary** social act against the
-   concept vocabulary. Persisted with the brief (no new column). The regex fallback
-   leaves it empty ⇒ no preference fires (today's behaviour).
-4. **The response curve** — `evaluateSocialAct(concept, pref, currentAffinity, traits)
-   → { valence, magnitude, band, hint }` in `contracts/personality/reactions.ts`
-   (pure). The affinity-aware nonlinear curve (spec §6): goodwill deadband, thin-ice
-   amplification, capped/asymmetric likes. `traitScale(traits)` is a seam returning
-   **1** in v1; constants (`κ`, `λ`, the deadband, the like/dislike asymmetry, the
-   cap) live in `engine/constants.ts`. Heavily unit-tested — this is the load-bearing
-   math.
-5. **Pre-narration reaction line** — a deterministic pre-turn step (sibling to
-   `buildRelationshipBlock`, `engine/scene.ts`): for the brief's `socialAct`, look up
-   the target NPC's matching preference, call `evaluateSocialAct` with the
-   **turn-start** perceived affinity (already loaded for the stage block), and emit a
-   reaction line into the **volatile** turn context (never the cached prefix) via
-   `buildTurnContext` (`engine/prompts/narrative.ts`).
-6. **Merge apply** — in `engine/merge.ts` step 5 (affinity): recompute the delta from
-   the persisted `brief.socialAct` + the **turn-start** affinity (the same value the
-   hint used ⇒ narrated reaction and applied number agree), apply it to the
-   player→NPC edge, and **suppress the simulant's `affinityAdjustments` on that edge**
-   for the turn (preferences are authoritative for recognized acts; the simulant still
-   owns unrecognized edges). Clamp ±`AFFINITY_DELTA_CLAMP`; diagnostic on unresolved
-   target/concept.
-7. **Forge** — infer `preferences` from the prose sketch in the profile section
-   (`authoring/character-forge.ts`), alongside the existing inference.
-8. **Editor** — a "Disposition" tab on `character-editor.tsx`: a preference list
-   (concept/family picker + like/dislike + intensity + optional per-entry hint).
-   Intimate concepts fenced behind the same exposure gate as intimate attributes.
-9. **Tests + docs** — pure-curve tests (deadband, grace, thin-ice, like cap/asymmetry,
-   clamp); merge suppression + diagnostic; intake degradation (no `socialAct` ⇒ prior
-   behaviour) asserting fallback **and** diagnostic, per testing.md. Docs:
-   `contracts.md` (concept registry + `Preference`), `turn-engine.md` (the `socialAct`
-   seam, the reaction step, the merge suppression rule), `prompts.md` (the reaction
-   line in the volatile context), `authoring.md` (forge field + Disposition tab).
+> **Shipped 2026-06-18 — all 10 steps; `pnpm verify` green (1213 tests).**
+> `contracts/personality/` (interactions · tags · preference · reactions) → `socialActs`
+> on the intent brief → intake classification → `buildReactionLine` (pre-narration) →
+> `planReactionAffinity` + `combineAffinityUpdates` (merge step 5: writes the NPC's
+> **feeling** edge from the turn-start value, **whole-edge** simulant suppression) →
+> forge disposition inference (tags + preferences, demo-seeded) → editor **Disposition**
+> tab (autocompleting tag input + bespoke like/dislike list) → tests → docs
+> (contracts/turn-engine/prompts/authoring).
+>
+> **Two deviations from the plan, both deliberate:** (1) the curve's tuning **constants
+> live in `reactions.ts`**, not `engine/constants.ts` — `src/contracts` is IO-free and
+> may not import server constants; the merge still applies `AFFINITY_DELTA_CLAMP`.
+> (2) `evaluateSocialReaction` takes a **`traitScale: number`** (default 1), not trait
+> objects — keeps the pure curve registry-agnostic, and Slice 3 computes the scale in
+> the engine and passes it. The reaction writes the **feeling** edge (the relationship
+> the act actually changes), not the perceived edge.
 
-### 2. Atomic traits + trait scaling — _not started_
+1. **Concept vocabulary** — `contracts/personality/interactions.ts` (pure). ~8–12 flat
+   concepts (`compliment`, `gift`, `flirt`, `tease`, `reassure`, `confide`, `insult`,
+   `criticize`, `boundary_push`, `jealousy_trigger`, `physical_affection`,
+   `public_display`), each with `family?`, `triggers`, `defaultHint`, `intimate?`. The
+   single stable classification target for intake and the key space bespoke preferences
+   (and later cards) reference. Registry-invariant test.
+2. **Disposition on the profile** — `tags: string[]` + `preferences: Preference[]`
+   (default `[]`) on `characterProfileSchema` (`contracts/world/profile.ts`) and the
+   participant snapshot. `parseOr` at the JSONB boundary; empty ⇒ no-op. No migration.
+   Tags draw from a **dev-defined canonical registry** (`contracts/personality/tags.ts`)
+   surfaced by **autocomplete** in the editor/forge; free-form tags are allowed but
+   second-class (no autocomplete, no guaranteed card-override match).
+3. **`socialActs` intake seam** — add `socialActs: Array<{ concept, target }>` to
+   `intentBriefSchema` (`contracts/turns/intent-brief.ts`) — an **array** for forward
+   headroom, `.default([])`/`.catch`ed like its siblings; extend `INTAKE_SYSTEM` /
+   `buildIntakePrompt` (`engine/prompts/intake.ts`) to tag the player's social act(s)
+   against the concept vocabulary. **v1 resolves only the primary** (highest-significance)
+   entry. Persisted with the brief (no new column). Regex fallback leaves it empty ⇒
+   nothing fires.
+4. **Resolution seam** — `resolveSocialReaction(act, { tags, preferences, cards })`
+   → `SocialReaction | null` in `contracts/personality/reactions.ts` (pure). Precedence:
+   bespoke preference → card tag-override → card default → `null`. **v1 always passes
+   `cards: []`**, so only the bespoke layer resolves; the card plan supplies world cards
+   later with **no caller change**.
+5. **The response curve** — `evaluateSocialReaction(reaction, currentAffinity,
+   currentMood, traits) → { valence, magnitude, band, hint }` (pure, same file). The
+   affinity-aware nonlinear curve (spec §6): goodwill deadband, thin-ice amplification,
+   capped/asymmetric likes. `traitScale(traits)` returns **1**; `currentMood` is a
+   **NEUTRAL stub** (factor 1); constants in `engine/constants.ts` with starting values
+   (κ≈0.04, λ≈1.0, like-damping≈0.6 + a capped surprise bonus, mood factor 1±0.3,
+   `intensity` 1–10) — placeholders, tuned in playtest. Heavily unit-tested — the
+   load-bearing math.
+6. **Pre-narration reaction line** — a deterministic pre-turn step (sibling to
+   `buildRelationshipBlock`, `engine/scene.ts`): run `resolveSocialReaction` →
+   `evaluateSocialReaction` with the **turn-start** perceived affinity (already loaded
+   for the stage block), emit a reaction line into the **volatile** turn context (never
+   the cached prefix) via `buildTurnContext` (`engine/prompts/narrative.ts`).
+7. **Merge apply** — `engine/merge.ts` step 5 (affinity): recompute the delta from the
+   persisted `brief.socialAct` + the **turn-start** affinity (same value the hint used
+   ⇒ narrated reaction and applied number agree), apply it to the player→NPC edge, and
+   **suppress the simulant's `affinityAdjustments` on that edge** (the disposition layer
+   is authoritative for recognized acts; the simulant still owns unrecognized edges).
+   Mood nudge is deferred (Slice 4). Clamp ±`AFFINITY_DELTA_CLAMP`; diagnostic on
+   unresolved target/concept.
+8. **Forge** — infer `tags` + `preferences` from the prose sketch
+   (`authoring/character-forge.ts`). The full procedural-expansion ladder (spec §9,
+   Note 3) lands in two parts: **tags + preferences here**; trait-scalar inference +
+   lexicon expansion with the trait registry (Slice 3).
+9. **Editor** — a "Disposition" tab on `character-editor.tsx`: a **tag editor** +
+   a **bespoke like/dislike list** (concept/family picker + like/dislike + intensity +
+   optional hint). Intimate concepts fenced behind the intimate exposure gate.
+10. **Tests + docs** — pure-curve tests (deadband, grace, thin-ice, like cap/asymmetry,
+    clamp); merge suppression + diagnostic; intake degradation (no `socialAct` ⇒ prior
+    behaviour) asserting fallback **and** diagnostic. Docs: `contracts.md` (concept vocab
+    + tags/`Preference` + the resolution seam), `turn-engine.md` (the `socialAct` seam,
+    the reaction step, the merge suppression rule), `prompts.md` (the reaction line),
+    `authoring.md` (forge + Disposition tab).
 
-Spec §3, §5, §7. Adds the generic dispositional dynamics and **fills the `traitScale`
-seam** Slice 1 stubbed.
+### 2. The disposition guardrail (puppet refusal) — _not started_
+
+Spec §6, Note 2. Makes disposition *real* by reading it on the input side. Uses v1
+disposition (tags + preferences); Slice 3 enriches it with full traits + affinity + mood.
+
+1. **`narratedNpcBehavior` intake flag** — generalize the existing `movement.kind:
+   "narrated_npc"` seam to a flag for player-authored NPC dialogue/affection/action,
+   on `intentBriefSchema` + the intake prompt.
+2. **Contradiction check** *(deterministic, fed by intake)* — intake classifies the
+   puppeted behaviour into the concept vocabulary; a pure rule compares its affective
+   direction to the target's disposition. Contradiction ⇒ refuse; consistent ⇒ honour.
+3. **Deflection directive** — when it contradicts, a turn-context directive tells the
+   narrator **not to honour it** and to answer with an **overt cheeky meta aside**; the
+   merge drops any state effect the puppet implied. **Consistent narration passes** —
+   leave a code comment + doc note that this leniency may later be strengthened so the
+   player can't author NPC behaviour from the *player* prompt at all (routed through the
+   companion/narrator out-of-POV affordances).
+4. **Tests + docs** — contradiction fires the aside + strips the effect; consistent
+   narration passes; degradation (flag empty ⇒ prior behaviour). Docs: `turn-engine.md`
+   + `prompts.md`.
+
+### 3. Atomic traits + scaling + lexicon — _not started_
+
+Spec §3, §5, §7. Adds the generic dynamics, **fills the `traitScale` seam** Slice 1
+stubbed, and powers forge expansion.
 
 1. **Shared registry spine** — lift `buildRegistry`/`valueSchemaFor`
-   (`attributes/registry.ts`) + the `resolveAttributes` precedence (`attributes/value.ts`)
-   into a generic the attribute **and** personality registries call (keeps jscpd green;
-   traits inherit base/creation/manual overlays for free).
+   (`attributes/registry.ts`) + `resolveAttributes` precedence (`attributes/value.ts`)
+   into a generic the attribute **and** personality registries call (jscpd-safe; traits
+   inherit base/creation/manual overlays for free).
 2. **Trait registry** — `contracts/personality/` categories (temperament/social/
-   intimate), bipolar scalars + bands, `mutability`, `intimate?`, `modulates?` (spec
-   §3). `traits: TraitValue[]` on the profile/snapshot.
-3. **Disposition block (cached)** — render trait **bands** as behavioural guidance in
-   the static rulebook / canonical-facts region (`engine/scene.ts`) — closes
-   character-schema audit **C1**. Intimate trait bands ride the exposure gate (shared
-   with intimacy-notes).
-4. **Wire `traitScale`** — `evaluateSocialAct`'s `traitScale` now reads real traits
-   (`agreeableness` damps dislikes, `possessiveness` amplifies `jealousy_trigger`);
-   the `modulation.ts` coefficient module (spec §5: `affinityGain` / `meterBaseline` /
-   `meterReactivity`) lands here too.
-5. **Agents / forge / editor** — simulant slice gains trait bands; forge infers trait
-   values (prose → numbers); editor sliders + band readout. Tests + docs.
+   intimate): governing traits as bipolar/unipolar scalars + bands, `mutability`,
+   `intimate?`, `modulates?`, **and a scored member-term `lexicon`** (spec §3, Note 4).
+   `traits: TraitValue[]` on the profile/snapshot.
+3. **Disposition block (cached)** — render trait **bands** as behavioural guidance in the
+   static rulebook region (`engine/scene.ts`) — closes character-schema audit **C1**.
+   Intimate bands ride the exposure gate (shared with intimacy-notes).
+4. **Wire `traitScale`** — `evaluateSocialReaction`'s `traitScale` reads real traits
+   (`agreeableness` damps dislikes, `possessiveness` amplifies `jealousy_trigger`); the
+   `modulation.ts` coefficient module (spec §5) lands here.
+5. **Forge expansion via lexicon** — complete the Note 3 ladder: map sparse terms onto
+   governing traits, pull sibling lexicon terms, infer/invent as input thins out.
+6. **Enrich the guardrail** — Slice 2's contradiction check now reads full traits.
+7. **Agents / editor** — simulant slice gains trait bands; editor sliders + band readout.
+   Tests + docs.
 
-### 3. Mood + meter-baseline generalization — _not started_
+### 4. Mood + meter generalization + affinity levels — _not started_
 
-Spec §4. Adds valence and per-character drift.
+Spec §4. Adds valence, per-character drift, and the mood↔affinity coupling.
 
-1. **Meter generalization** — `baseline?` / `recoveryPerHour?` on `MeterDefinition`
-   (`contracts/meters`), backward-compatible (absent ⇒ today's pole-seeking). Drift
-   seeks `baseline` at `recoveryPerHour`, clamped.
+1. **Meter generalization** — `baseline?` / `recoveryPerHour?` on `MeterDefinition`,
+   backward-compatible (absent ⇒ today's pole-seeking).
 2. **`mood` meter + derived descriptor** — a new valence meter; `buildMeterConditionBlock`
-   blends valence × stress/energy into a descriptor (spec §4).
+   blends valence × stress/energy into a descriptor.
 3. **Trait-derived baselines** — `optimism→mood.baseline`,
-   `libido→arousal.baseline/recovery`, `composure→stress.recovery`, resolved at drift
-   time.
-4. **Mood coupling** — the Slice 1 preference reaction now also nudges `mood` valence
-   (like ↑, dislike ↓). Tests + docs.
+   `libido→arousal.baseline/recovery`, `composure→stress.recovery`.
+4. **Mood↔affinity coupling** — wire the curve's `μ` mood factor to real mood; add the
+   mood-update path (affinity scales how interactions/events move mood); the social
+   reaction now also nudges mood (the deferred Slice-1 nudge). The event→mood table is
+   its own later plan.
+5. **More affinity levels** — widen `stages.ts` so progression reads less coarsely.
+   Tests + docs.
 
-### 4. Affinity trait-coupling — _not started; folds into affinity-decay work_
+### 5. Affinity trait-coupling — _not started; folds into affinity-decay work_
 
 Spec §4 (affinity) / §10. Trait-scaled gain asymmetry + decay target/rate. **Do not
 duplicate** — fold into
 [cast-tiers-and-affinity-spec.phase3.md](cast-tiers-and-affinity-spec.phase3.md) when
 affinity decay is built.
 
+## Dependencies / parallel plans
+
+- **Social-reaction cards** (`social-reaction-cards.plan.md`, to create) — the importable
+  taboo/social-rule **card** layer the Slice-1 seam resolves against (modelled on the
+  companion-app `TabooCard`: concept triggers, severity tiers, tag-keyed
+  `reactionOverrides`). It is a build of its own (schema + DB + editor + cross-world
+  import + forge). When it ships it **replaces and removes** today's `world.style.norms`,
+  the rudimentary World-page social-rule editor + its world-forge hookup, and the
+  continuity agent's `normBreaches` path. v1 here leaves all of those untouched and
+  passes `cards: []`.
+
 ## Not in scope (v1 / this plan)
 
-Deferred to later slices or specs (spec §11): `developable` trait **drift** (character
-arcs) — design the field, defer the rule; **per-relationship** mood/disposition;
-**NPC→NPC** social-act classification (intake is player-only); **player**
-traits/preferences surfaced to NPCs; **multi-act** turns (v1 takes intake's primary
-concept). The `personality` free-text blob's fate (colour line vs forge input vs
-removed) is decided when traits land (Slice 2).
+Deferred (spec §11): `developable` trait **drift** (design the field, defer the rule);
+**per-relationship** mood/disposition; **NPC→NPC** social-act classification (intake is
+player-only); **player** preferences surfaced to NPCs; **multi-act** turns (v1 takes the
+primary concept); the **card layer** (own plan, above); the **event→mood** table (own
+plan, with Slice 4).
 
 ## Open questions
 
-Restated from
-[spec §11](personality-and-state.spec.md#11-open-questions-restate-in-the-plan);
-resolving one = remove it here and record the ruling in the spec. (The "where
-modulation lives" question is **settled** for preferences — deterministic + affinity-
-aware — so it is not relisted.)
-
-**Gate Slice 1 (decide before/at build):**
-
-- **Response-curve constants** — design the curve now and tune `κ`/`λ`/deadband + the
-  like↔dislike asymmetry in playtesting (recommended), or pin starting values in the
-  spec?
-- **Concept families** — ship family-level targeting in v1, or flat concepts with
-  `family` as a written-but-unused seam (recommended)?
-- **Multi-act turns** — primary concept only in v1 (recommended), or several
-  acts/preferences resolved per turn?
-- **Mood coupling** — affinity only in v1 (mood doesn't exist until Slice 3), fold the
-  mood nudge in then (recommended).
-- **Simulant suppression granularity** — suppress the whole player→NPC edge for the
-  turn (recommended, simplest), or net only against the matched delta?
-
-**Gate later slices:**
-
-- **Trait value type** — scalar-with-bands (recommended) vs enum.
-- **Separate `contracts/personality/` registry** (recommended) vs a new attribute `kind`.
-- **Mood shape** — stored valence + derived descriptor (recommended) vs multi-axis
-  vector vs purely derived.
-- **`developable` trait drift** — design the field now, defer the rule (recommended).
-- **NPC→NPC acts / player preferences / per-relationship disposition** — player→NPC
-  only in v1 (recommended).
-- **`personality` blob fate** — colour line vs forge input vs remove once traits cover
-  it.
+**None block v1** — all gating questions were resolved 2026-06-18 (rulings recorded in
+[spec §11](personality-and-state.spec.md#11-open-questions-restate-in-the-plan)): tag
+governance (dev registry + autocomplete), `socialActs` array headroom (resolve primary),
+whole-edge simulant suppression, deterministic puppet verdict fed by intake + honour
+consistent puppeting, and **pure override** for cards × bespoke. Remaining unknowns are
+**playtest tuning** (curve constants) and **future scope** (the event→mood table, and
+strengthening the puppet guardrail via the companion/narrator out-of-POV affordances) —
+none of which gate a build.

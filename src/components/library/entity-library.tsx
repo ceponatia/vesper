@@ -238,7 +238,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
           <Button onClick={createBlank} busy={creating} className="min-w-20">
             New
           </Button>
-          {config.generateImages ? (
+          {config.generateImages && cardsAll.length > 0 ? (
             <Button onClick={requestGenerate} busy={generatingBatch} disabled={batchRunning}>
               {batchRunning ? "Generating…" : "Generate images"}
             </Button>

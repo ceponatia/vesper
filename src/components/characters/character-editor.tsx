@@ -13,10 +13,11 @@ import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AttributePicker, PERSONALITY_CATEGORIES } from "./attribute-picker";
 import { CharacterChat } from "./character-chat";
+import { DispositionEditor } from "./disposition-editor";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 
-type EditorTab = "profile" | "attributes" | "personality" | "outfit" | "portrait" | "chat";
+type EditorTab = "profile" | "attributes" | "personality" | "disposition" | "outfit" | "portrait" | "chat";
 
 /** Split the flat attribute list into the two tabs that render it. */
 const isPersonalityAttribute = (id: string) => PERSONALITY_CATEGORIES.some((c) => id.startsWith(`${c}.`));
@@ -56,6 +57,11 @@ export function CharacterEditor({
       badge: draft.profile.attributes.length - personalityCount || undefined,
     },
     { id: "personality", label: "Personality", badge: personalityCount || undefined },
+    {
+      id: "disposition",
+      label: "Disposition",
+      badge: draft.profile.tags.length + draft.profile.preferences.length || undefined,
+    },
     {
       id: "outfit",
       label: "Outfit",
@@ -210,6 +216,15 @@ export function CharacterEditor({
           speciesId={draft.profile.speciesId}
           heritageId={draft.profile.heritageId}
           bodyPlanId={draft.profile.bodyPlanId}
+        />
+      ) : null}
+
+      {tab === "disposition" ? (
+        <DispositionEditor
+          tags={draft.profile.tags}
+          onChangeTags={(tags) => patchProfile({ tags })}
+          preferences={draft.profile.preferences}
+          onChangePreferences={(preferences) => patchProfile({ preferences })}
         />
       ) : null}
 

@@ -6,6 +6,7 @@ export * from "./rules/attribute-rule";
 export * from "./species";
 export * from "./meters/registry";
 export * from "./actions/registry";
+export * from "./personality";
 export * from "./relationships/stages";
 export * from "./relationships/authored";
 export * from "./relationships/bond";

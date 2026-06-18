@@ -33,6 +33,7 @@ export function worldDetailToDraft(detail: WorldDetail): WorldDraft {
     playerStartLocationName: detail.playerStartWorldLocationId
       ? locationNameById.get(detail.playerStartWorldLocationId)
       : undefined,
+    playerCharacterId: detail.playerCharacterId,
     locations: detail.locations.map((loc) => ({
       id: loc.id,
       locationId: loc.locationId ?? undefined,

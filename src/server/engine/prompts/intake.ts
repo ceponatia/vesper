@@ -1,3 +1,4 @@
+import { interactionConcepts } from "@/contracts";
 import { AGENT_INPUT_CAP } from "./constants";
 
 /**
@@ -8,6 +9,9 @@ import { AGENT_INPUT_CAP } from "./constants";
  * resolves the player's input BEFORE narration; it never narrates.
  */
 
+/** Social-act concept menu (personality-and-state.spec.md §6) — sourced from the registry. */
+const SOCIAL_CONCEPTS = interactionConcepts.map((c) => `${c.id} (${c.description})`).join("; ");
+
 export const INTAKE_SYSTEM = `You are intake: you read the player's input and the current scene and report what the player is TRYING to do — before the story is written. You classify and resolve only; you never narrate.
 
 Produce:
@@ -16,16 +20,20 @@ Produce:
 - examineItem: the listed in-scope item the player examines or handles.
 - enterLocation: the place (by listed location name) the player is trying to go, if they move themselves.
 - addressedNpcs: characters (listed names) the player speaks to or addresses.
+- socialActs: social moves the player directs AT a present character — each {concept, target}. concept is one of the listed Social concepts; target is the present character's name. Only clear moves; [] when none; list the most significant first.
 - movement: when anyone moves — kind = self (their own body) | narrated_npc (their prose moves an NPC) | co_travel_request (they ask/invite an NPC along) | implied_subspace (movement inside the current place, e.g. "to the window" — no real exit) | none. destination = listed location. coTravelTargets = listed names invited along.
 - appointment: ONLY when the player ARRANGES to meet someone at a place/time — withNpc, location, timePhrase (raw, e.g. "5:30", "after dinner"), reason.
 - check: ONLY when the action could plausibly succeed or fail (persuade, seduce, sneak, lie) — relevantAttributeIds (else []), stakes low|med|high.
 - notes: one short phrase explaining the call.
+
+Social concepts (for socialActs.concept): ${SOCIAL_CONCEPTS}.
 
 Rules:
 1. Use names EXACTLY as written in the lists. Never invent characters, items, or locations. Omit a field rather than guess.
 2. Quoted/hypothetical/remembered speech is not action ('she said "go to the cafe"' is not movement).
 3. Most turns are simple: a line of dialogue is just {actionType:"converse", addressedNpcs:[…]}. Empty/absent fields are correct when nothing applies.
 4. enterLocation and movement.destination name the SAME place when the player moves themselves.
+5. A socialAct only fires when the player clearly performs that move toward a present character — a bare question or remark is not a social concept.
 
 Example A — "I look Maya over and ask how her day went" (present: Maya):
 {"actionType":"observe","lookTarget":"Maya","addressedNpcs":["Maya"],"notes":"looks at and addresses Maya"}
@@ -34,7 +42,10 @@ Example B — "Eleanor, let's grab lunch at the Anchor Cafe" (present: Eleanor; 
 {"actionType":"move","addressedNpcs":["Eleanor"],"enterLocation":"Anchor Cafe","movement":{"kind":"co_travel_request","destination":"Anchor Cafe","coTravelTargets":["Eleanor"]},"notes":"invites Eleanor to the cafe"}
 
 Example C — "It's a date — my place at 5:30" (present: Eleanor; locations include Brian's Apartment):
-{"actionType":"social_attempt","addressedNpcs":["Eleanor"],"appointment":{"withNpc":"Eleanor","location":"Brian's Apartment","timePhrase":"5:30","reason":"a date"},"notes":"sets a date for 5:30"}`;
+{"actionType":"social_attempt","addressedNpcs":["Eleanor"],"appointment":{"withNpc":"Eleanor","location":"Brian's Apartment","timePhrase":"5:30","reason":"a date"},"notes":"sets a date for 5:30"}
+
+Example D — "You look stunning tonight, Sabrina, and I brought you these" (present: Sabrina):
+{"actionType":"social_attempt","addressedNpcs":["Sabrina"],"socialActs":[{"concept":"compliment","target":"Sabrina"},{"concept":"gift","target":"Sabrina"}],"notes":"compliments Sabrina and offers a gift"}`;
 
 export interface IntakePromptInput {
   playerInput: string;

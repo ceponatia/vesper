@@ -176,14 +176,21 @@ export function buildAvatarPrompt(
   return [
     `${STYLE_PREFIX[style]}, waist-up portrait, facing camera, soft studio lighting, neutral background.`,
     `Subject: ${name.trim() || "an unnamed character"}.`,
-    species ? `Species: ${excerpt(species, 220)}.` : "",
-    appearance.length > 0 ? `Appearance: ${appearance.join("; ")}.` : "",
-    wearing ? `Wearing (authoritative — depict exactly this clothing): ${wearing}.` : "",
-    profile.bio.trim() ? `About: ${excerpt(profile.bio, BIO_EXCERPT_CHARS)}.` : "",
+    species ? `Species: ${clause(excerpt(species, 220))}.` : "",
+    appearance.length > 0 ? `Appearance: ${clause(appearance.join("; "))}.` : "",
+    wearing ? `Wearing (authoritative — depict exactly this clothing): ${clause(wearing)}.` : "",
+    profile.bio.trim() ? `About: ${clause(excerpt(profile.bio, BIO_EXCERPT_CHARS))}.` : "",
     STYLE_SUFFIX[style],
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+// Trim a trailing period/whitespace off interpolated content so a clause's own
+// "." is never doubled when the content already ends in one — free-text colors,
+// bios, or species phrases produced "…sharp fangs.." (UX-audit P4).
+function clause(body: string): string {
+  return body.replace(/[.\s]+$/, "");
 }
 
 function formatAttribute(def: AttributeDefinition, value: string | string[] | number | boolean): string {
