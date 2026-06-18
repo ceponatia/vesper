@@ -62,16 +62,37 @@ function dropInvalid<T>(item: z.ZodType<T>) {
     );
 }
 
+// Per-turn cost/latency facts for the dev HUD (UX-audit §6): model, token usage,
+// and clock advance. Intake LLM-vs-regex-fallback is derived from diagnostics below.
+const turnInfoSchema = z.preprocess(
+  (raw) => (raw && typeof raw === "object" ? raw : {}),
+  z.object({
+    model: z
+      .string()
+      .nullish()
+      .catch(null)
+      .transform((v) => v ?? null),
+    minutes: z
+      .number()
+      .nullish()
+      .catch(null)
+      .transform((v) => v ?? null),
+    usage: z.record(z.string(), z.unknown()).catch({}),
+  }),
+);
+
 const inspectPayloadSchema = z.preprocess(
   (raw) => {
     const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     return {
+      turn: obj.turn ?? {},
       agentResults: obj.agentResults ?? obj.agent_results ?? obj.results ?? {},
       diagnostics: obj.diagnostics ?? [],
       retrieval: obj.retrieval ?? obj.retrievalEvents ?? obj.retrieval_events ?? [],
     };
   },
   z.object({
+    turn: turnInfoSchema,
     agentResults: z.record(z.string(), z.unknown()).catch({}),
     diagnostics: dropInvalid(diagnosticEntrySchema),
     retrieval: dropInvalid(retrievalEventSchema),
@@ -176,8 +197,38 @@ export function InspectorTab({ session }: { session: UseSession }) {
 
 function InspectView({ payload }: { payload: InspectPayload }) {
   const agents = Object.entries(payload.agentResults);
+  // Intake fell back to the regex brief iff it timed out (UX-audit M5/§6) — step
+  // through turns here to eyeball the LLM-intake hit-rate before tuning the budget.
+  const intakeFellBack = payload.diagnostics.some((d) => d.code === "agent.intake.timeout");
+  const usageEntries = Object.entries(payload.turn.usage).filter(
+    (entry): entry is [string, number] => typeof entry[1] === "number",
+  );
   return (
     <div className="flex flex-col gap-3">
+      <section className="flex flex-col gap-1.5">
+        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Turn</h3>
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          {payload.turn.model ? (
+            <span className="rounded border border-ink-600 px-1.5 py-0.5 font-mono text-paper-300">{payload.turn.model}</span>
+          ) : null}
+          {payload.turn.minutes !== null ? <span className="text-paper-500">+{payload.turn.minutes}m clock</span> : null}
+          <span className={cx("font-medium", intakeFellBack ? "text-accent-300" : "text-paper-500")}>
+            intake: {intakeFellBack ? "regex fallback (LLM timed out)" : "LLM"}
+          </span>
+        </div>
+        {usageEntries.length > 0 ? (
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-paper-400">
+            {usageEntries.map(([key, value]) => (
+              <span key={key}>
+                <span className="text-paper-500">{key}:</span> {value}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-paper-500 italic">No token usage recorded for this turn.</p>
+        )}
+      </section>
+
       <section className="flex flex-col gap-1.5">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Agent results</h3>
         {agents.length === 0 ? (
