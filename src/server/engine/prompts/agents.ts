@@ -141,6 +141,8 @@ export interface SimulantPromptInput {
     locationName: string | null;
     activity: string;
     meters: Record<string, number>;
+    /** Stable trait bands ("Warmth: cold") so raw deltas read in-character (personality §7). */
+    traitBands?: string[];
   }>;
   /** Session locations with adjacent location names. */
   locations: Array<{ name: string; exits: string[] }>;
@@ -156,7 +158,8 @@ export function buildSimulantPrompt(input: SimulantPromptInput): string {
     const meters = Object.entries(p.meters)
       .map(([id, value]) => `${id} ${value.toFixed(2)}`)
       .join(", ");
-    return `- ${p.displayName}${p.isUser ? " (player)" : ""} — at ${p.locationName ?? "unknown"}; activity: ${p.activity || "idle"}${meters ? `; meters: ${meters}` : ""}`;
+    const traits = p.traitBands?.length ? `; disposition: ${p.traitBands.join(", ")}` : "";
+    return `- ${p.displayName}${p.isUser ? " (player)" : ""} — at ${p.locationName ?? "unknown"}; activity: ${p.activity || "idle"}${meters ? `; meters: ${meters}` : ""}${traits}`;
   });
   const locations = input.locations.map((l) => `- ${l.name} → ${l.exits.length ? l.exits.join(", ") : "no exits"}`);
   const items = input.items.map((i) => `- ${i.name} — ${i.placement}`);

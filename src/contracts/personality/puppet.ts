@@ -2,6 +2,8 @@ import { interactionConceptById } from "./interactions";
 import type { Preference } from "./preference";
 import { matchPreference } from "./reactions";
 import { dispositionTagById } from "./tags";
+import { traitRegistry } from "./traits";
+import { effectiveTraitValue, type TraitValue } from "./traits/value";
 
 /**
  * The disposition guardrail — refusing out-of-character player puppeting
@@ -11,10 +13,10 @@ import { dispositionTagById } from "./tags";
  * act's affective direction to the NPC's authored disposition and decides whether
  * it **contradicts** who she is (refuse + deflect) or is **consistent** (honour).
  *
- * Pure: no IO, no engine imports. v1 reads `tags` + `preferences`; Slice 3 enriches
- * the same seam with full traits + affinity + mood. The guardrail fires on
- * *contradiction only* — consistent, in-disposition narration passes (a v1 leniency;
- * the broader puppet-handling system is deferred — see
+ * Pure: no IO, no engine imports. Reads `tags` + `preferences` + the `warmth`
+ * **trait** scalar (Slice 3); affinity + mood join once they exist. The guardrail
+ * fires on *contradiction only* — consistent, in-disposition narration passes (a v1
+ * leniency; the broader puppet-handling system is deferred — see
  * docs/developer-notes/npc-puppeting.deferred.md).
  */
 
@@ -29,6 +31,8 @@ export interface NarratedNpcBehavior {
 export interface PuppetDisposition {
   tags: readonly string[];
   preferences: readonly Preference[];
+  /** Atomic traits (Slice 3); the warmth scalar enriches the affective-direction check. */
+  traits?: readonly TraitValue[];
 }
 
 export interface PuppetVerdict {
@@ -46,8 +50,8 @@ const HONOUR: PuppetVerdict = { contradiction: false, reason: "" };
  * concept/family decides outright (a dislike ⇒ she wouldn't lavish it; an
  * authored like ⇒ explicit consent to puppet it), else the tag affective signal
  * (a won't-initiate family, or warm-act-onto-cold / hostile-act-onto-warm), else
- * honour. An unclassifiable behaviour (no concept — plain dialogue) is always
- * honoured: there is nothing to judge.
+ * the warmth **trait** band (same warm/cold logic on the scalar), else honour. An
+ * unclassifiable behaviour (no concept — plain dialogue) is always honoured.
  */
 export function checkPuppetContradiction(behavior: NarratedNpcBehavior, disposition: PuppetDisposition): PuppetVerdict {
   const conceptId = behavior.concept;
@@ -74,5 +78,17 @@ export function checkPuppetContradiction(behavior: NarratedNpcBehavior, disposit
       return { contradiction: true, reason: `${tagId} is warm; the act is hostile` };
     }
   }
+
+  // 3. Trait affective signal (Slice 3): the warmth scalar's band, read like a tag's
+  //    warmth lean. A cold character won't spontaneously warm-puppet; a warm one won't
+  //    spontaneously turn hostile. Absent/neutral warmth ⇒ no signal ⇒ honour.
+  const warmthBand = traitRegistry.bandFor("temperament.warmth", effectiveTraitValue(disposition.traits ?? [], "temperament.warmth"))?.label;
+  if (polarity === "warm" && warmthBand === "cold") {
+    return { contradiction: true, reason: "cold disposition; the act is warm" };
+  }
+  if (polarity === "hostile" && warmthBand === "warm") {
+    return { contradiction: true, reason: "warm disposition; the act is hostile" };
+  }
+
   return HONOUR;
 }

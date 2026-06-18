@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attributeRegistry, DiagnosticCollector, realizeBody, type ItemDefinition } from "@/contracts";
+import { attributeRegistry, DiagnosticCollector, realizeBody, traitRegistry, type ItemDefinition } from "@/contracts";
 import { characterDraftSchema } from "./drafts";
 import {
   buildAttributeSectionSchema,
@@ -485,6 +485,15 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     }
     expect(draft.suggestedItems.length).toBeGreaterThan(0);
     expect(draft.suggestedItems.every((i) => i.tags.includes("suggested"))).toBe(true);
+  });
+
+  it("infers registry-valid creation traits from the sketch", async () => {
+    const draft = await forgeCharacter({ prompt: "a weary harbor-master", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(draft.profile.traits.length).toBeGreaterThan(0);
+    for (const value of draft.profile.traits) {
+      expect(value.source).toBe("creation");
+      expect(traitRegistry.parseValue(value.id, value.value).ok).toBe(true);
+    }
   });
 
   it("seeds structural species fields from a prompt species name", async () => {
