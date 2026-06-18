@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { interactionFamilies } from "./interactions";
 import { canonicalTagId, dispositionTags, dispositionTagSchema, normalizeTag } from "./tags";
 
 describe("disposition tags", () => {
@@ -8,6 +9,15 @@ describe("disposition tags", () => {
     for (const tag of dispositionTags) {
       expect(() => dispositionTagSchema.parse(tag)).not.toThrow();
       expect(tag.id).toBe(normalizeTag(tag.id)); // canonical ids are already normalized
+    }
+  });
+
+  it("every tag declares a valid warmth lean and wontInitiate references real families", () => {
+    const families = new Set(interactionFamilies());
+    const warmthValues = new Set(["cold", "neutral", "warm"]);
+    for (const tag of dispositionTags) {
+      expect(warmthValues.has(tag.warmth)).toBe(true);
+      for (const family of tag.wontInitiate) expect(families.has(family)).toBe(true);
     }
   });
 

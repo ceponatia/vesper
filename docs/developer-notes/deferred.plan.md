@@ -296,6 +296,18 @@ The empty states are already strong (the audit praised them); a light **3-step c
 ("forge → begin → play") could shorten time-to-first-turn for a brand-new user. Lowest
 priority of the audit ideas. From [ux-audit.plan.md](ux-audit.plan.md).
 
+## NPC puppeting — the full handling system
+
+_Raised 2026-06-18, from personality Slice 2._ Slice 2 shipped the **deflection
+directive** half of the puppet guardrail: intake flags player-authored NPC behaviour
+(`narratedNpcBehaviors`), a deterministic rule refuses behaviour that contradicts
+disposition, and the narrator answers with a cheeky meta aside. That is the working
+v1; the broader system around "the player tries to puppet an NPC" is deferred to
+[npc-puppeting.deferred.md](npc-puppeting.deferred.md) — merge-level state stripping,
+stronger refusal (disallowing player-authored NPC behaviour from the player prompt
+entirely, routed through the companion/narrator out-of-POV affordances), and richer
+contradiction judging once full traits + affinity + mood exist (personality Slice 3).
+
 ## Production-build performance pass — _UX audit §5_
 
 _Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §5)._

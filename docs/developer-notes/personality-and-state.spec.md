@@ -462,7 +462,12 @@ it away, so traits/tags are **guardrails**, not just flavour:
   behaviour into the same concept vocabulary as a `socialAct`; a deterministic rule
   compares its affective direction to the NPC's disposition (tags + bespoke preferences
   now; full traits + affinity + mood once they exist). Behaviour that **contradicts**
-  disposition is refused; consistent behaviour is **honoured**.
+  disposition is refused; consistent behaviour is **honoured**. *(Shipped Slice 2:
+  `checkPuppetContradiction` reads the act's concept **`polarity`** against the tag
+  **`warmth`** lean + **`wontInitiate`** families, with **preferences taking precedence** —
+  a `dislike` is a contradiction, an authored `like` is consent to puppet. Tag `warmth`/
+  `wontInitiate` are the first slice of machine-readable "what a tag means"; free-form tags
+  carry no affect and are invisible to the guardrail.)*
 - **Deflect** — when it contradicts, the narrator is directed **not to honour it** and to
   answer with an **overt, cheeky meta aside** (the chosen handling — old-text-adventure
   flavour):

@@ -63,6 +63,27 @@ export const intentBriefSchema = z.object({
     .default([]),
 
   /**
+   * Player-authored NPC behaviour — the puppet-guardrail seam
+   * (personality-and-state.spec.md §6, Note 2). Each entry names a present
+   * character whose dialogue / affection / action the player's prose authored,
+   * optionally classified to an interaction concept so a deterministic rule can
+   * compare it to that character's disposition (the deflection fires only on a
+   * *contradiction*). An **array** for forward headroom; empty on the regex
+   * fallback ⇒ the guardrail never fires. Distinct from `socialActs` (the
+   * player's OWN acts toward an NPC) and from `movement.kind:"narrated_npc"`
+   * (physical relocation, owned by movement-authority).
+   */
+  narratedNpcBehaviors: z
+    .array(
+      z.object({
+        npc: z.string().min(1),
+        concept: z.string().optional(),
+        summary: z.string().optional(),
+      }),
+    )
+    .default([]),
+
+  /**
    * Movement classification (movement-authority.spec.md §1/§3). Persisted
    * seam — v1 records it; the merge does not yet enforce authority off it.
    * - self: the player moves their own body.

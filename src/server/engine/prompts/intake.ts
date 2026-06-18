@@ -21,6 +21,7 @@ Produce:
 - enterLocation: the place (by listed location name) the player is trying to go, if they move themselves.
 - addressedNpcs: characters (listed names) the player speaks to or addresses.
 - socialActs: social moves the player directs AT a present character — each {concept, target}. concept is one of the listed Social concepts; target is the present character's name. Only clear moves; [] when none; list the most significant first.
+- narratedNpcBehaviors: when the player's prose makes a PRESENT character speak, feel, or act (the player puppeting the NPC — "Sabrina smiles and says she missed me") — each {npc, concept?, summary?}. npc = the present character's name; concept = the Social concept the puppeted behaviour amounts to (omit for plain neutral dialogue); summary = a short phrase. This is the NPC being made to act, NOT the player acting on them; [] when the player only acts as themselves.
 - movement: when anyone moves — kind = self (their own body) | narrated_npc (their prose moves an NPC) | co_travel_request (they ask/invite an NPC along) | implied_subspace (movement inside the current place, e.g. "to the window" — no real exit) | none. destination = listed location. coTravelTargets = listed names invited along.
 - appointment: ONLY when the player ARRANGES to meet someone at a place/time — withNpc, location, timePhrase (raw, e.g. "5:30", "after dinner"), reason.
 - check: ONLY when the action could plausibly succeed or fail (persuade, seduce, sneak, lie) — relevantAttributeIds (else []), stakes low|med|high.
@@ -34,6 +35,7 @@ Rules:
 3. Most turns are simple: a line of dialogue is just {actionType:"converse", addressedNpcs:[…]}. Empty/absent fields are correct when nothing applies.
 4. enterLocation and movement.destination name the SAME place when the player moves themselves.
 5. A socialAct only fires when the player clearly performs that move toward a present character — a bare question or remark is not a social concept.
+6. socialActs vs narratedNpcBehaviors: a move the PLAYER makes toward an NPC is a socialAct; words/feelings/actions the player puts on the NPC are narratedNpcBehaviors. The same input can carry both (the player hugs Maya AND narrates her hugging back).
 
 Example A — "I look Maya over and ask how her day went" (present: Maya):
 {"actionType":"observe","lookTarget":"Maya","addressedNpcs":["Maya"],"notes":"looks at and addresses Maya"}
@@ -45,7 +47,10 @@ Example C — "It's a date — my place at 5:30" (present: Eleanor; locations in
 {"actionType":"social_attempt","addressedNpcs":["Eleanor"],"appointment":{"withNpc":"Eleanor","location":"Brian's Apartment","timePhrase":"5:30","reason":"a date"},"notes":"sets a date for 5:30"}
 
 Example D — "You look stunning tonight, Sabrina, and I brought you these" (present: Sabrina):
-{"actionType":"social_attempt","addressedNpcs":["Sabrina"],"socialActs":[{"concept":"compliment","target":"Sabrina"},{"concept":"gift","target":"Sabrina"}],"notes":"compliments Sabrina and offers a gift"}`;
+{"actionType":"social_attempt","addressedNpcs":["Sabrina"],"socialActs":[{"concept":"compliment","target":"Sabrina"},{"concept":"gift","target":"Sabrina"}],"notes":"compliments Sabrina and offers a gift"}
+
+Example E — "Sabrina pulls me into a warm hug and tells me how much she's missed me" (present: Sabrina):
+{"actionType":"converse","addressedNpcs":["Sabrina"],"narratedNpcBehaviors":[{"npc":"Sabrina","concept":"physical_affection","summary":"hugs Brian and gushes about missing him"}],"notes":"player narrates Sabrina's affection (puppeting)"}`;
 
 export interface IntakePromptInput {
   playerInput: string;
