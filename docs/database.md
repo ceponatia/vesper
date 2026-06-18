@@ -26,7 +26,7 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
 
 | Table | Key columns |
 | --- | --- |
-| `worlds` | `owner_id`, `name`, `description`, `style` JSONB (`WorldStyle` — pinned in [contracts.md](contracts.md), includes `norms`), `lore` JSONB (`WorldLore`: synopsis, factions, plot anchors), `narrative_model`, `agent_model` (per-world in-session agent override; migration 0003), `image_id`, `player_start_world_location_id?` (soft reference, no FK), `duplicated_from_world_id?` (world copy keeps lineage) |
+| `worlds` | `owner_id`, `name`, `description`, `style` JSONB (`WorldStyle` — pinned in [contracts.md](contracts.md), includes `norms`), `lore` JSONB (`WorldLore`: synopsis, factions, plot anchors), `narrative_model`, `agent_model` (per-world in-session agent override; migration 0003), `image_id`, `player_character_id?` (default player the new-session wizard pre-fills; FK→`characters` ON DELETE set null; migration 0007), `player_start_world_location_id?` (soft reference, no FK), `duplicated_from_world_id?` (world copy keeps lineage) |
 | `world_cast` | `world_id`, `character_id`, `role` (`companion`/`npc`), `tier` (`major`/`minor`/`extra`), `start_world_location_id` (→ `world_locations`; NPC schedules live in `CharacterProfile.schedule`), `relationships` JSONB (`AuthoredRelationship[]` — directed edges toward cast names or `"player"`; spawn seeds `participant_relationships` at stage midpoints) |
 | `world_locations` | `world_id`, `location_id`, `overrides` JSONB (may also override `scale`/`area`), `sort` (authored map order — the editor's array index on every save; reads ORDER BY it) |
 | `world_links` | `world_id`, `from_world_location_id`, `to_world_location_id`, `label`, `travel_minutes`, `audibility` (reserved), `access` JSONB, `door_item_id?` |
@@ -69,6 +69,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 - `turns(session_id, number)` unique; `turn_messages(turn_id, seq)`; `facts(session_id, status)`; `episodes(session_id, turn_number)`.
 - HNSW (`vector_cosine_ops`) on `facts.embedding`, `episodes.embedding`, `lore_chunks.embedding`. The library `search_embedding` columns are unindexed — owner-scoped libraries are small enough to scan.
 - `jobs(status, type)` composite index for queue claims.
+- A leading-column composite **covers** a plain index on its first column, so don't add both: `session_participants_session_idx` and `participant_relationships_session_idx` were dropped (migration 0006, UX-audit P8) as redundant with the `…_name_unique` / `…_edge_unique` composites that already lead with `session_id`.
 - `image_references(scene_image_id)` for grouping a scene's references; `image_references(kind, entity_id)` for the Gallery's "scenes featuring this character" facet.
 
 ## Transactional invariants
