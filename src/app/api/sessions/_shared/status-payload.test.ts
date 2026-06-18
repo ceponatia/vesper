@@ -233,6 +233,20 @@ describe("buildStatusPayload", () => {
     ]);
   });
 
+  it("exposes every item instance with its placement at the top level (UX-audit P6)", () => {
+    // The world-tab "Items here" filters this top-level list by location; before the
+    // fix the payload had no top-level `items`, so the tab always read "Nothing of note".
+    const byId = new Map(payload.items.map((i) => [i.id, i]));
+    expect([...byId.keys()].sort()).toEqual(["bra", "chest", "coin", "dress", "lantern", "rake", "tin"]);
+    // Location-placed furniture carries its location id — the field the bare ref omitted.
+    expect(byId.get("rake")).toMatchObject({ kind: "object", locationId: "garden", holderParticipantId: null, containerInstanceId: null });
+    expect(byId.get("chest")).toMatchObject({ kind: "container", locationId: "kitchen", open: true });
+    expect(byId.get("tin")).toMatchObject({ kind: "container", open: false });
+    // Held + contained placements ride along too, so the tab can exclude them from "here".
+    expect(byId.get("lantern")?.holderParticipantId).toBe("maya");
+    expect(byId.get("coin")?.containerInstanceId).toBe("chest");
+  });
+
   it("renders no delta when the latest turn has none (old turns)", () => {
     const withoutDelta = buildStatusPayload(fakeBundle(), {
       latestSceneImageId: null,

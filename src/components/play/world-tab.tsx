@@ -150,8 +150,15 @@ export function WorldTab({ session, isAdmin }: { session: UseSession; isAdmin: b
   const location = status?.location ?? null;
   const items = status?.items ?? [];
 
-  const containers = items.filter((item) => item.kind === "container");
   const contentsOf = (containerId: string) => items.filter((item) => item.containerInstanceId === containerId);
+  // Loose containers standing at the current location (held/contained ones excluded).
+  const containers = items.filter(
+    (item) =>
+      item.kind === "container" &&
+      !item.containerInstanceId &&
+      !item.holderParticipantId &&
+      (!location?.id || !item.locationId || item.locationId === location.id),
+  );
   // Loose items at the current location (containers and contained items render below).
   const looseHere = items.filter(
     (item) =>

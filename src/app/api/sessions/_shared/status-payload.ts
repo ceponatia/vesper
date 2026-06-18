@@ -42,6 +42,24 @@ export interface StatusItemRef {
   kind: ItemKind;
 }
 
+/**
+ * A full session item instance with its placement, for the world-tab "Items here"
+ * view (UX-audit P6). The bare StatusItemRef omits placement, so the top-level
+ * `items` list below carries these — the client filters them by current location.
+ */
+export interface StatusItemInstance {
+  id: string;
+  name: string;
+  kind: ItemKind;
+  worn: boolean;
+  holderParticipantId: string | null;
+  locationId: string | null;
+  containerInstanceId: string | null;
+  positionNote: string | null;
+  /** Container open/closed; null for non-containers. */
+  open: boolean | null;
+}
+
 export interface StatusCondition {
   id: string;
   label: string;
@@ -143,6 +161,8 @@ export interface SessionStatusPayload {
   };
   participants: StatusParticipant[];
   location: StatusLocation | null;
+  /** Every session item instance with placement — the world-tab "Items here" view filters these by location (UX-audit P6). */
+  items: StatusItemInstance[];
   exposure: ExposureMask;
   sceneGen: SceneGenState & {
     latestImageId: string | null;
@@ -154,6 +174,21 @@ export interface SessionStatusPayload {
 
 function itemRef(item: BundleItem): StatusItemRef {
   return { id: item.id, name: item.name, kind: item.definition.kind };
+}
+
+/** Full instance (with placement) for the top-level `items` list — UX-audit P6. */
+function itemInstance(item: BundleItem): StatusItemInstance {
+  return {
+    id: item.id,
+    name: item.name,
+    kind: item.definition.kind,
+    worn: item.worn,
+    holderParticipantId: item.holderParticipantId,
+    locationId: item.locationId,
+    containerInstanceId: item.containerInstanceId,
+    positionNote: item.positionNote ?? null,
+    open: item.definition.kind === "container" ? (item.state.open ?? null) : null,
+  };
 }
 
 function shapeCondition(condition: ActiveCondition, clockMinutes: number): StatusCondition {
@@ -271,6 +306,7 @@ export function buildStatusPayload(
     },
     participants,
     location,
+    items: bundle.items.map(itemInstance),
     exposure: bundle.brief.exposure,
     sceneGen: { ...bundle.scene, latestImageId: extras.latestSceneImageId, gallery: extras.sceneGallery },
     // Active threads (open + cooling) with their full detail (kind, question,
