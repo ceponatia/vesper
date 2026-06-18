@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { charactersApi, worldsApi } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -33,8 +33,23 @@ export function NewSessionWizard() {
   const [playerCharacterId, setPlayerCharacterId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [creating, setCreating] = useState(false);
+  const [prefilledWorldId, setPrefilledWorldId] = useState<string | null>(null);
 
   const selectedWorld = (worlds.data ?? []).find((w) => w.id === worldId);
+
+  // Pre-fill embodiment from the world's default player character (UX-audit §1a) — a
+  // changeable default: applied once per world, then the user owns the choice. Deferred
+  // past a microtask to satisfy the no-sync-setState-in-effects rule.
+  useEffect(() => {
+    if (!selectedWorld || selectedWorld.id === prefilledWorldId) return;
+    const id = selectedWorld.id;
+    const defaultPlayer = selectedWorld.playerCharacterId ?? null;
+    void Promise.resolve().then(() => {
+      setPrefilledWorldId(id);
+      setEmbodied(defaultPlayer !== null);
+      setPlayerCharacterId(defaultPlayer);
+    });
+  }, [selectedWorld, prefilledWorldId]);
 
   const create = async () => {
     if (!worldId) return;

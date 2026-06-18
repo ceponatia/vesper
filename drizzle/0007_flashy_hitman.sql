@@ -1,0 +1,2 @@
+ALTER TABLE "worlds" ADD COLUMN "player_character_id" text;--> statement-breakpoint
+ALTER TABLE "worlds" ADD CONSTRAINT "worlds_player_character_id_characters_id_fk" FOREIGN KEY ("player_character_id") REFERENCES "public"."characters"("id") ON DELETE set null ON UPDATE no action;

@@ -57,7 +57,7 @@ export const hornsGroup = defineAttributeGroup("horns", [
     kind: "physical",
     category: "horns",
     valueType: "text",
-    description: "Horn color or material impression.",
+    description: "Horn color or material impression only — never size or shape.",
     mutability: "inherent",
     bodyLocationId: "horns",
     aliases: ["horn color"],

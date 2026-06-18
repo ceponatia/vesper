@@ -41,7 +41,12 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     playerCharacterId: body.playerCharacterId,
     sink,
   });
-  if (!result) return jsonError("not_found", "world not found", 404);
+  if (!result) {
+    const noLocations = sink.items.find((d) => d.code === "spawn.no_locations");
+    return noLocations
+      ? jsonError("no_locations", noLocations.message, 400)
+      : jsonError("not_found", "world not found", 404);
+  }
   const [session] = await db().select().from(sessions).where(eq(sessions.id, result.sessionId)).limit(1);
   if (!session) return jsonError("spawn_failed", "session vanished after spawn", 500);
   return jsonOk({ session, diagnostics: sink.items }, 201);

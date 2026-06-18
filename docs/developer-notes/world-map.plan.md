@@ -10,6 +10,14 @@ with a **graph**: locations as nodes, their undirected links as edges, so
 adjacency is read at a glance. The data already exists (locations + links) — this
 is largely a client-side render, not a model change.
 
+The 2026-06-17 UX audit independently flagged this (feature #5) as the thing that
+would have made **M2** obvious at a glance — a hot-spring world forged with **no
+bath**, three location links pointing at a non-existent "The Grand Onsen Bath" that
+went unnoticed in the flat card list. The audit recommends bumping this plan's
+priority alongside the forge-canon reconciler
+([ux-audit.plan.md](ux-audit.plan.md) §2, which fixes the *cause*; this view
+surfaces the *symptom*).
+
 ## Current state
 
 The detail-page Map section lists location cards in a flat column (collapsed by

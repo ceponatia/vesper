@@ -122,6 +122,12 @@ export const worldDraftSchema = z.object({
   itemPlacements: z.array(worldDraftItemPlacementSchema).default([]),
   /** Draft location name where the player starts (decision 47); unset ⇒ spawn anchors to the companion. */
   playerStartLocationName: z.string().optional(),
+  /** Default player character chosen up front (UX-audit §1a); unset/null ⇒ observer. */
+  playerCharacterId: z
+    .string()
+    .min(1)
+    .nullish()
+    .transform((v) => v ?? undefined),
 });
 
 export type WorldDraft = z.infer<typeof worldDraftSchema>;

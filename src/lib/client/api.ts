@@ -326,6 +326,8 @@ export const worldSummarySchema = z.object({
   description: textOr(""),
   imageId: optionalId,
   updatedAt: optionalText,
+  /** Default player character, so the new-session wizard can pre-fill embodiment (UX-audit §1a). */
+  playerCharacterId: optionalId,
 });
 export type WorldSummary = z.infer<typeof worldSummarySchema>;
 
@@ -409,6 +411,10 @@ export const worldDetailSchema = worldSummarySchema.extend({
   loreChunks: arrayOf(loreChunkEntrySchema),
   /** Where the player starts (decision 47); null ⇒ spawn anchors to the companion. */
   playerStartWorldLocationId: optionalId,
+  /** Default player character (UX-audit §1a); null ⇒ observer. */
+  playerCharacterId: optionalId,
+  /** Resolved name of the default player character, for {{player}} display (UX-audit P2). */
+  playerCharacterName: optionalText,
 });
 export type WorldDetail = z.infer<typeof worldDetailSchema>;
 
@@ -586,6 +592,8 @@ export const worldDraftSchema = z.object({
   itemPlacements: arrayOf(worldDraftItemPlacementSchema),
   /** Draft location name where the player starts (decision 47); unset ⇒ spawn anchors to the companion, "" clears on save. */
   playerStartLocationName: z.string().optional().catch(undefined),
+  /** Default player character chosen up front (UX-audit §1a); unset ⇒ observer. */
+  playerCharacterId: optionalId,
 });
 export type WorldDraft = z.infer<typeof worldDraftSchema>;
 
@@ -755,8 +763,13 @@ export const worldsApi = {
   update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/worlds/${id}`, body),
   remove: (id: string) => apiDelete(`/api/worlds/${id}`),
   duplicate: (id: string) => apiPost(createdRefSchema, `/api/worlds/${id}/duplicate`, {}),
-  forge: (body: { prompt: string; section?: WorldForgeSection; draft?: WorldDraft }) =>
-    apiPost(forgeResponseSchema(worldDraftSchema), "/api/worlds/forge", body),
+  forge: (body: {
+    prompt: string;
+    section?: WorldForgeSection;
+    draft?: WorldDraft;
+    locationCount?: number;
+    characterCount?: number;
+  }) => apiPost(forgeResponseSchema(worldDraftSchema), "/api/worlds/forge", body),
   createSession: (worldId: string, body: { title: string; embodied: boolean; playerCharacterId?: string }) =>
     apiPost(createdRefSchema, `/api/worlds/${worldId}/sessions`, body),
 };

@@ -10,11 +10,14 @@ export interface TagInputProps {
   placeholder?: string;
   id?: string;
   className?: string;
+  /** Canonical suggestions offered via a native datalist (free-form still allowed). */
+  suggestions?: readonly string[];
 }
 
 /** Chip list + free text entry (Enter/comma adds, Backspace removes last). */
-export function TagInput({ value, onChange, placeholder, id, className }: TagInputProps) {
+export function TagInput({ value, onChange, placeholder, id, className, suggestions }: TagInputProps) {
   const [draft, setDraft] = useState("");
+  const listId = suggestions && suggestions.length > 0 && id ? `${id}-suggestions` : undefined;
 
   const commit = () => {
     const tag = draft.trim();
@@ -38,6 +41,7 @@ export function TagInput({ value, onChange, placeholder, id, className }: TagInp
       <input
         id={id}
         value={draft}
+        list={listId}
         placeholder={value.length === 0 ? placeholder : undefined}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -51,6 +55,11 @@ export function TagInput({ value, onChange, placeholder, id, className }: TagInp
         }}
         className="h-5 min-w-20 flex-1 bg-transparent text-sm text-paper-100 placeholder:text-paper-500 focus:outline-none"
       />
+      {listId ? (
+        <datalist id={listId}>
+          {suggestions?.filter((s) => !value.includes(s)).map((s) => <option key={s} value={s} />)}
+        </datalist>
+      ) : null}
     </div>
   );
 }

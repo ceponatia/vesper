@@ -428,3 +428,23 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     expect(sink.items.some((d) => d.code === "forge.world.items.unresolved_location")).toBe(true);
   });
 });
+
+describe("auto-generate counts (UX-audit §1b)", () => {
+  it("locationCount 0 skips location generation (an empty map to import into)", async () => {
+    const patch = await forgeWorldSection("locations", { prompt: "a port", userId: "user_1", locationCount: 0, findCharacters: noLibrary });
+    expect(patch.locations).toEqual([]);
+    expect(patch.playerStartLocationName).toBeUndefined();
+  });
+
+  it("characterCount 0 skips cast generation", async () => {
+    const patch = await forgeWorldSection("cast", { prompt: "a port", userId: "user_1", characterCount: 0, findCharacters: noLibrary });
+    expect(patch.castSuggestions).toEqual([]);
+  });
+
+  it("forgeWorld with both counts 0 yields a location/cast-free draft that is still schema-valid", async () => {
+    const draft = await forgeWorld({ prompt: "a port", userId: "user_1", locationCount: 0, characterCount: 0, findCharacters: noLibrary });
+    expect(draft.locations).toEqual([]);
+    expect(draft.castSuggestions).toEqual([]);
+    expect(worldDraftSchema.safeParse(draft).success).toBe(true);
+  });
+});

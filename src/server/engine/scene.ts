@@ -31,6 +31,9 @@ import { realizeBody, speciesLorePhrase } from "@/contracts/species";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
+import { interactionConceptById } from "@/contracts/personality/interactions";
+import type { Preference } from "@/contracts/personality/preference";
+import { evaluateSocialReaction, NEUTRAL_MOOD, resolveSocialReaction } from "@/contracts/personality/reactions";
 import { MAX_NPC_PAIR_AWARENESS_LINES } from "./constants";
 import type { SceneIntent } from "./intent";
 
@@ -1065,6 +1068,49 @@ export function buildRelationshipBlock(input: RelationshipBlockInput): string {
     "## Relationships (present characters)",
     ...lines,
     "Play these stages in tone and initiative; relationships move through events, not narration fiat.",
+  ].join("\n");
+}
+
+export interface ReactionLineInput {
+  playerId: string;
+  playerName: string;
+  /** intake's classified social acts (intent-brief.socialActs); v1 plays the primary (first). */
+  socialActs: ReadonlyArray<{ concept: string; target: string }>;
+  presentNpcs: ReadonlyArray<{ id: string; displayName: string; tags: readonly string[]; preferences: readonly Preference[] }>;
+  /** Numeric affinity edges (BundleRelationship); the curve reads the NPC's feeling toward the player. */
+  relationships: ReadonlyArray<{ fromParticipantId: string; toParticipantId: string; kind: "feeling" | "perceived"; value: number }>;
+}
+
+/**
+ * Authored-disposition reaction line (docs/developer-notes/personality-and-state.spec.md
+ * §6). Resolves the player's primary social act against the target NPC's bespoke
+ * disposition and renders the verdict for the narrator — so the model is *told* how
+ * the character takes it (over the affinity-aware curve) instead of improvising it.
+ * The same resolve/evaluate pair runs in the merge, so this hint and the applied
+ * affinity delta can't disagree. Empty when no act, no present target, or no match.
+ */
+export function buildReactionLine(input: ReactionLineInput): string {
+  const primary = input.socialActs[0];
+  if (!primary) return "";
+  const npc = input.presentNpcs.find((n) => n.displayName.toLowerCase() === primary.target.toLowerCase());
+  if (!npc) return "";
+  const reaction = resolveSocialReaction(
+    { concept: primary.concept, target: primary.target },
+    { tags: npc.tags, preferences: npc.preferences, cards: [] },
+  );
+  if (!reaction) return "";
+  const feeling = input.relationships.find(
+    (r) => r.kind === "feeling" && r.fromParticipantId === npc.id && r.toParticipantId === input.playerId,
+  );
+  const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, NEUTRAL_MOOD, 1);
+  const concept = interactionConceptById(primary.concept);
+  const verb = concept?.verb ?? "made a social overture to";
+  const label = (concept?.label ?? primary.concept).toLowerCase();
+  const valenceWord = reaction.valence === "dislike" ? "dislikes" : "likes";
+  const hint = evaluated.hint ? ` ${evaluated.hint}.` : "";
+  return [
+    "## Reaction (authored disposition — play this; do not re-decide whether they mind)",
+    `- ${input.playerName} ${verb} ${npc.displayName} — ${npc.displayName} ${valenceWord} this (${label}) and ${evaluated.band}.${hint}`,
   ].join("\n");
 }
 

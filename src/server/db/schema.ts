@@ -160,6 +160,8 @@ export const worlds = pgTable(
     /** Per-world override for the in-session agent models (intake + post-turn); "" ⇒ default. */
     agentModel: text("agent_model").notNull().default(""),
     imageId: text("image_id"),
+    /** Character the player embodies by default in this world; a changeable default the session wizard pre-fills. null ⇒ observer default (UX-audit §1a). */
+    playerCharacterId: text("player_character_id").references(() => characters.id, { onDelete: "set null" }),
     /** Where the player starts; unset ⇒ legacy anchor-to-companion behavior. No FK (cycle with world_locations). */
     playerStartWorldLocationId: text("player_start_world_location_id"),
     duplicatedFromWorldId: text("duplicated_from_world_id"),
@@ -340,7 +342,7 @@ export const sessionParticipants = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    index("session_participants_session_idx").on(t.sessionId),
+    // session lookups are covered by the leading column of session_participants_name_unique
     uniqueIndex("session_participants_name_unique").on(t.sessionId, t.displayName),
   ],
 );
@@ -401,7 +403,7 @@ export const participantRelationships = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index("participant_relationships_session_idx").on(t.sessionId),
+    // session lookups are covered by the leading column of participant_relationships_edge_unique
     uniqueIndex("participant_relationships_edge_unique").on(t.sessionId, t.fromParticipantId, t.toParticipantId, t.kind),
   ],
 );

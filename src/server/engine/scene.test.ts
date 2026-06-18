@@ -23,6 +23,7 @@ import {
   buildGlanceImpressions,
   buildMeterConditionBlock,
   buildPresenceRoster,
+  buildReactionLine,
   buildRelationshipBlock,
   buildSceneSnapshot,
   buildTurnDigest,
@@ -954,5 +955,41 @@ describe("buildCommsLine", () => {
 
   it("renders nothing without any comms", () => {
     expect(buildCommsLine(makeBundle())).toBe("");
+  });
+});
+
+describe("buildReactionLine", () => {
+  const presentNpcs = [
+    { id: "p-sabrina", displayName: "Sabrina", tags: [], preferences: [{ target: "compliment", valence: "dislike" as const, intensity: 7, hint: "finds flattery cloying" }] },
+  ];
+  const base = {
+    playerId: "p-brian",
+    playerName: "Brian",
+    presentNpcs,
+    relationships: [{ fromParticipantId: "p-sabrina", toParticipantId: "p-brian", kind: "feeling" as const, value: 0 }],
+  };
+
+  it("renders the authored verdict for a matched social act", () => {
+    const line = buildReactionLine({ ...base, socialActs: [{ concept: "compliment", target: "Sabrina" }] });
+    expect(line).toContain("Brian complimented Sabrina");
+    expect(line).toContain("dislikes this (compliment)");
+    expect(line).toContain("is stung");
+    expect(line).toContain("finds flattery cloying");
+  });
+
+  it("reflects the goodwill deadband in the band text", () => {
+    const line = buildReactionLine({
+      ...base,
+      relationships: [{ fromParticipantId: "p-sabrina", toParticipantId: "p-brian", kind: "feeling", value: 100 }],
+      presentNpcs: [{ ...presentNpcs[0]!, preferences: [{ target: "compliment", valence: "dislike", intensity: 4 }] }],
+      socialActs: [{ concept: "compliment", target: "Sabrina" }],
+    });
+    expect(line).toContain("lets it slide");
+  });
+
+  it("is empty with no act, no present target, or no preference match", () => {
+    expect(buildReactionLine({ ...base, socialActs: [] })).toBe("");
+    expect(buildReactionLine({ ...base, socialActs: [{ concept: "compliment", target: "Nobody" }] })).toBe("");
+    expect(buildReactionLine({ ...base, socialActs: [{ concept: "insult", target: "Sabrina" }] })).toBe("");
   });
 });

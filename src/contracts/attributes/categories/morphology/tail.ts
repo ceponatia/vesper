@@ -33,7 +33,7 @@ export const tailGroup = defineAttributeGroup("tail", [
     kind: "physical",
     category: "tail",
     valueType: "text",
-    description: "Tail color or surface appearance.",
+    description: "Tail color, pattern, or surface material only — never size or shape.",
     mutability: "inherent",
     bodyLocationId: "tail",
     aliases: ["tail color"],

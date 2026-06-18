@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { fillPlayerToken } from "@/lib/player-token";
 import { sessionsApi, worldsApi, type LoreChunkEntry } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -53,6 +54,10 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
   }
 
   const detail = world.data;
+  // When the world defines a default player character, resolve {{player}} in displayed
+  // prose to that name (UX-audit P2); otherwise leave the raw token (resolution is per-session).
+  const showPlayer = (text: string) =>
+    detail.playerCharacterName ? fillPlayerToken(text, detail.playerCharacterName) : text;
   const locationNameById = new Map(detail.locations.map((loc) => [loc.id, loc.name]));
   const worldSessions = (sessions.data ?? []).filter((s) => !s.worldId || s.worldId === worldId);
 
@@ -114,7 +119,7 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
         <EntityImage imageId={detail.imageId} name={detail.name} className="h-32 w-48 rounded-card text-2xl" />
         <div className="min-w-0 flex-1">
           <h1 className="prose-display text-3xl">{detail.name}</h1>
-          {detail.description ? <p className="mt-2 max-w-2xl text-sm text-paper-400">{detail.description}</p> : null}
+          {detail.description ? <p className="mt-2 max-w-2xl text-sm text-paper-400">{showPlayer(detail.description)}</p> : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
               href={`/sessions/new?worldId=${detail.id}`}
@@ -142,7 +147,7 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
       {detail.lore.synopsis ? (
         <section className="mb-10">
           <h2 className="mb-2 text-xs font-medium tracking-wide text-paper-400 uppercase">Synopsis</h2>
-          <p className="prose-display max-w-3xl text-base leading-relaxed text-paper-100">{detail.lore.synopsis}</p>
+          <p className="prose-display max-w-3xl text-base leading-relaxed text-paper-100">{showPlayer(detail.lore.synopsis)}</p>
         </section>
       ) : null}
 

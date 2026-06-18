@@ -47,6 +47,22 @@ export const intentBriefSchema = z.object({
   addressedNpcs: z.array(z.string()).default([]),
 
   /**
+   * Social acts the player directs at a character — the seam for authored
+   * likes/dislikes (personality-and-state.spec.md §6). Each is a concept id (from
+   * the interaction-concept vocabulary) aimed at a present character by name. An
+   * **array** for forward headroom; v1 resolves only the primary (first) entry.
+   * Empty on the regex fallback ⇒ no reaction fires.
+   */
+  socialActs: z
+    .array(
+      z.object({
+        concept: z.string().min(1),
+        target: z.string().min(1),
+      }),
+    )
+    .default([]),
+
+  /**
    * Movement classification (movement-authority.spec.md §1/§3). Persisted
    * seam — v1 records it; the merge does not yet enforce authority off it.
    * - self: the player moves their own body.

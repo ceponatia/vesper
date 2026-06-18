@@ -23,8 +23,8 @@ import {
   type WorldWriteResult,
 } from "./worlds";
 
-/** Hard cap on characters forged during a single world save (cost + latency). */
-export const MAX_GENERATED_CAST = 3;
+/** Hard cap on characters forged during a single world save (cost + latency). Honors the intake's 0–5 character dropdown (UX-audit §1b). */
+export const MAX_GENERATED_CAST = 5;
 
 /**
  * Save a world-forge draft (docs/authoring.md §World forge): the draft shape
@@ -47,6 +47,7 @@ export async function createWorldFromDraft(ownerId: string, draft: WorldDraft): 
     narrativeModel: "",
     agentModel: "",
     playerStartLocationName: draft.playerStartLocationName,
+    playerCharacterId: draft.playerCharacterId,
     ...families,
   };
 
@@ -71,6 +72,7 @@ export async function updateWorldFromDraft(ownerId: string, worldId: string, dra
     style: draft.style,
     lore: draft.lore,
     playerStartLocationName: draft.playerStartLocationName,
+    playerCharacterId: draft.playerCharacterId ?? null,
     ...families,
   });
   if (!result.ok) return result;

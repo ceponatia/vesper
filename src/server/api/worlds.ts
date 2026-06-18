@@ -134,6 +134,8 @@ export const worldCreateSchema = z
     items: z.array(worldItemInputSchema).max(300).default([]),
     /** Where the player starts, by location name (decision 47); unset keeps the anchor-to-companion default. */
     playerStartLocationName: z.string().optional(),
+    /** Default character the player embodies; validated against the owner's library, else dropped to observer (UX-audit §1a). */
+    playerCharacterId: z.string().optional(),
   })
   .strict();
 export type WorldCreateBody = z.infer<typeof worldCreateSchema>;
@@ -155,6 +157,8 @@ export const worldPatchSchema = z.object({
   cast: z.array(worldCastInputSchema).max(100).optional(),
   items: z.array(worldItemInputSchema).max(300).optional(),
   playerStartLocationName: z.string().optional(),
+  /** Default player character; `null` clears it (→ observer). Absent ⇒ unchanged. */
+  playerCharacterId: z.string().nullable().optional(),
 });
 export type WorldPatchBody = z.infer<typeof worldPatchSchema>;
 
@@ -576,11 +580,29 @@ async function missingAvatarCharacterIds(ownerId: string, ids: readonly string[]
 // Create / update / duplicate
 // ---------------------------------------------------------------------------
 
+/** Validate a world's default player character belongs to the owner; degrade to observer (null) otherwise. */
+async function resolveOwnedCharacter(
+  ownerId: string,
+  characterId: string | null | undefined,
+  sink: DiagnosticSink,
+): Promise<string | null> {
+  if (!characterId) return null;
+  const [row] = await db()
+    .select({ id: characters.id })
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
+    .limit(1);
+  if (row) return row.id;
+  sink.push(diag("warn", "api.world.player_character_unresolved", "player character not found in your library; defaulting to observer"));
+  return null;
+}
+
 export async function createWorld(ownerId: string, body: WorldCreateBody): Promise<WorldWriteResult> {
   const refs = await prefetchRefs(ownerId, body);
   if (!refs.ok) return { ok: false, code: "invalid_reference", message: refs.message };
 
   const sink = new DiagnosticCollector();
+  const playerCharacterId = await resolveOwnedCharacter(ownerId, body.playerCharacterId, sink);
   const { worldId, materialized } = await db().transaction(async (tx) => {
     const [world] = await tx
       .insert(worlds)
@@ -592,6 +614,7 @@ export async function createWorld(ownerId: string, body: WorldCreateBody): Promi
         lore: body.lore,
         narrativeModel: body.narrativeModel,
         agentModel: body.agentModel,
+        playerCharacterId,
       })
       .returning({ id: worlds.id });
     if (!world) throw new Error("worlds insert returned no row");
@@ -623,6 +646,7 @@ export async function updateWorld(ownerId: string, worldId: string, body: WorldP
     if (body.description !== undefined) scalar.description = body.description;
     if (body.narrativeModel !== undefined) scalar.narrativeModel = body.narrativeModel;
     if (body.agentModel !== undefined) scalar.agentModel = body.agentModel;
+    if (body.playerCharacterId !== undefined) scalar.playerCharacterId = await resolveOwnedCharacter(ownerId, body.playerCharacterId, sink);
     if (body.style !== undefined) {
       scalar.style = { ...parseOr(worldStyleSchema, world.style, worldStyleSchema.parse({}), sink, "worlds.style"), ...body.style };
     }
@@ -786,6 +810,8 @@ export async function duplicateWorld(ownerId: string, worldId: string, name?: st
 
 export interface WorldDetail {
   world: typeof worlds.$inferSelect;
+  /** Resolved name of `world.playerCharacterId` for {{player}} display (UX-audit P2); null ⇒ observer. */
+  playerCharacterName: string | null;
   locations: Array<{
     id: string;
     locationId: string;
@@ -828,6 +854,17 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
     .where(and(eq(worlds.id, worldId), eq(worlds.ownerId, ownerId)))
     .limit(1);
   if (!world) return null;
+
+  // Default player character name — lets display surfaces resolve {{player}} (UX-audit P2).
+  let playerCharacterName: string | null = null;
+  if (world.playerCharacterId) {
+    const [pc] = await db()
+      .select({ name: characters.name })
+      .from(characters)
+      .where(eq(characters.id, world.playerCharacterId))
+      .limit(1);
+    playerCharacterName = pc?.name ?? null;
+  }
 
   const [locationRows, linkRows, castRows, itemRows, chunkRows] = await Promise.all([
     db()
@@ -899,6 +936,7 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
 
   return {
     world,
+    playerCharacterName,
     locations: locationRows.map((row) => {
       const overrides = parseOr(worldLocationOverridesSchema, row.overrides, {}, undefined, "world_locations.overrides");
       return {

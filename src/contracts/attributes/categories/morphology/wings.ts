@@ -51,7 +51,7 @@ export const wingsGroup = defineAttributeGroup("wings", [
     kind: "physical",
     category: "wings",
     valueType: "text",
-    description: "Wing color or surface appearance.",
+    description: "Wing color, pattern, or surface material only — never size or shape.",
     mutability: "inherent",
     bodyLocationId: "wings",
     aliases: ["wing color"],

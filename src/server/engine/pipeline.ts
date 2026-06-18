@@ -43,6 +43,7 @@ import {
   buildGlanceImpressions,
   buildMeterConditionBlock,
   buildPresenceRoster,
+  buildReactionLine,
   buildRelationshipBlock,
   buildSceneSnapshot,
   buildTurnDigest,
@@ -690,6 +691,20 @@ async function assemblePreTurn(
             relationships: bundle.relationships,
           })
         : "",
+      player
+        ? buildReactionLine({
+            playerId: player.id,
+            playerName: player.displayName,
+            socialActs: intentBrief.socialActs,
+            presentNpcs: presentNpcs.map((p) => ({
+              id: p.id,
+              displayName: p.displayName,
+              tags: p.snapshot.tags,
+              preferences: p.snapshot.preferences,
+            })),
+            relationships: bundle.relationships,
+          })
+        : "",
     ]
       .filter(Boolean)
       .join("\n\n"),
@@ -813,7 +828,16 @@ registerJobHandler("post_turn", async (job) => {
     );
     await applyTurnResults({
       bundle,
-      turn: { id: turn.id, number: turn.number, author: turn.author, input: turn.input, narration, speakerParticipantId: turn.speakerParticipantId },
+      turn: {
+        id: turn.id,
+        number: turn.number,
+        author: turn.author,
+        input: turn.input,
+        narration,
+        speakerParticipantId: turn.speakerParticipantId,
+        // The persisted brief's socialActs drive the deterministic reaction affinity (§6).
+        intentBrief: parseOr(intentBriefSchema, turn.intentBrief, emptyIntentBrief()),
+      },
       results,
       sink,
     });

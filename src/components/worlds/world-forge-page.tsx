@@ -9,6 +9,7 @@ import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { SaveBar } from "@/components/ui/save-bar";
+import { Select } from "@/components/ui/select";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -19,6 +20,9 @@ export function WorldForgePage() {
   const router = useRouter();
   const toast = useToast();
   const [prompt, setPrompt] = useState("");
+  // Auto-generate counts (UX-audit §1b): 0–5 each; 0 ⇒ skip (import your own). Defaults match the forge's prior ranges.
+  const [locationCount, setLocationCount] = useState(4);
+  const [characterCount, setCharacterCount] = useState(3);
   const [forging, setForging] = useState(false);
   const [draft, setDraft] = useState<WorldDraft | null>(null);
   const [diagnostics, setDiagnostics] = useState<readonly Diagnostic[]>([]);
@@ -28,7 +32,7 @@ export function WorldForgePage() {
   const forge = async () => {
     if (!prompt.trim()) return;
     setForging(true);
-    const result = await worldsApi.forge({ prompt: prompt.trim() });
+    const result = await worldsApi.forge({ prompt: prompt.trim(), locationCount, characterCount });
     setForging(false);
     if (result.ok) {
       setDraft(result.data.draft);
@@ -41,7 +45,7 @@ export function WorldForgePage() {
   const regenerate = async (section: WorldForgeSection) => {
     if (!draft) return;
     setRegenerating(section);
-    const result = await worldsApi.forge({ prompt: prompt.trim(), section, draft });
+    const result = await worldsApi.forge({ prompt: prompt.trim(), section, draft, locationCount, characterCount });
     setRegenerating(null);
     if (result.ok) {
       setDraft((current) => (current ? mergeWorldSection(current, result.data.draft, section) : result.data.draft));
@@ -94,6 +98,42 @@ export function WorldForgePage() {
             />
           )}
         </Field>
+        <div className="flex flex-wrap gap-4">
+          <Field label="Locations" hint="How many to generate. 0 = none (import your own).">
+            {(id) => (
+              <Select
+                id={id}
+                value={locationCount}
+                onChange={(e) => setLocationCount(Number(e.target.value))}
+                disabled={forging}
+                className="w-24"
+              >
+                {[0, 1, 2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Characters" hint="How many to generate. 0 = none (import your own).">
+            {(id) => (
+              <Select
+                id={id}
+                value={characterCount}
+                onChange={(e) => setCharacterCount(Number(e.target.value))}
+                disabled={forging}
+                className="w-24"
+              >
+                {[0, 1, 2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        </div>
         <Button variant="primary" onClick={forge} busy={forging} disabled={!prompt.trim()} className="w-fit">
           {draft ? "Forge again" : "Forge draft"}
         </Button>
@@ -117,7 +157,7 @@ export function WorldForgePage() {
           />
           {saving && newCastCount > 0 ? (
             <p className="mt-4 text-sm text-paper-400">
-              Forging {Math.min(newCastCount, 3)} new cast member{Math.min(newCastCount, 3) === 1 ? "" : "s"} — this can
+              Forging {Math.min(newCastCount, 5)} new cast member{Math.min(newCastCount, 5) === 1 ? "" : "s"} — this can
               take a minute…
             </p>
           ) : null}

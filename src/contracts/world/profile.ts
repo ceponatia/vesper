@@ -2,6 +2,7 @@ import { z } from "zod";
 import { attributeValueSchema } from "../attributes/value";
 import { calendarStartSchema, DEFAULT_CALENDAR_START } from "@/lib/clock";
 import { meterDefinitionSchema } from "../meters/registry";
+import { preferenceSchema } from "../personality/preference";
 import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
 
 export const scheduleEntrySchema = z.object({
@@ -42,6 +43,14 @@ export const characterProfileSchema = z.object({
    */
   bodyFeatures: z.array(z.string()).optional(),
   attributes: z.array(attributeValueSchema).default([]),
+  /**
+   * Disposition (docs/developer-notes/personality-and-state.spec.md §6): reusable
+   * `tags` (which social-reaction cards key overrides on — inert until cards ship)
+   * and `preferences` (bespoke likes/dislikes resolved against a classified social
+   * act). Both default `[]` ⇒ a character with no disposition plays exactly as before.
+   */
+  tags: z.array(z.string()).default([]),
+  preferences: z.array(preferenceSchema).default([]),
   aliases: z.array(z.string()).default([]),
   /** Item definition ids from the owner's library. */
   defaultOutfit: z.array(z.string()).default([]),

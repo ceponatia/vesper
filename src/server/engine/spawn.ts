@@ -38,7 +38,6 @@ import {
   sessionParticipants,
   sessions,
   turns,
-  users,
   worldCast,
   worldItems,
   worldLinks,
@@ -515,6 +514,12 @@ export async function createSessionFromWorld(input: CreateSessionInput): Promise
   const player = embodied ? await loadPlayerSeed(input.userId, input.playerCharacterId ?? null, input.sink) : null;
   const material = await loadWorldMaterial(input.worldId, player?.profile.defaultOutfit ?? [], input.sink);
   if (!material || material.world.ownerId !== input.userId) return null;
+  // A world may be authored with zero locations (UX-audit §1b: import-your-own), but a
+  // session needs somewhere to stand — refuse until at least one location exists.
+  if (material.worldLocs.length === 0) {
+    input.sink?.push(diag("warn", "spawn.no_locations", "this world has no locations yet — add at least one before starting a session"));
+    return null;
+  }
 
   const sessionId = newId();
   await db().transaction(async (tx) => {
@@ -558,8 +563,8 @@ async function loadPlayerSeed(
     }
     sink?.push(diag("warn", "spawn.player.character_missing", "player character not found; using a default player identity"));
   }
-  const [user] = await db().select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
-  return { characterId: null, displayName: user?.name?.trim() || "You", profile: emptyCharacterProfile(), avatarImageId: null };
+  // No chosen character ⇒ a neutral in-world identity, never the account name (UX-audit P1).
+  return { characterId: null, displayName: "You", profile: emptyCharacterProfile(), avatarImageId: null };
 }
 
 /**

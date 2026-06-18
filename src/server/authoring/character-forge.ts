@@ -16,12 +16,18 @@ import {
   clothingLayerSchema,
   diag,
   itemDefinitionSchema,
+  canonicalTagId,
+  dispositionTags,
+  interactionConceptIds,
+  interactionFamilies,
+  normalizeTag,
   type AttributeDefinition,
   type AttributeValue,
   type CharacterProfile,
   type DiagnosticSink,
   type HeritageDefinition,
   type ItemDefinition,
+  type Preference,
   type RealizedBody,
   type SpeciesDefinition,
 } from "@/contracts";
@@ -172,21 +178,73 @@ const profileSectionSchema = z.object({
   voice: z.string().default(""),
   aliases: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
+  /** Disposition tags (personality §6) — social-reaction labels, distinct from the library tags above. */
+  dispositionTags: z.array(z.string()).default([]),
+  /** Bespoke likes/dislikes (personality §6) — grounded against the concept vocabulary. */
+  preferences: z
+    .array(
+      z.object({
+        target: z.string().default(""),
+        valence: z.enum(["like", "dislike"]).catch("dislike"),
+        intensity: z.number().catch(5),
+        hint: z.string().optional(),
+      }),
+    )
+    .default([]),
 });
 
 type ProfileSection = z.infer<typeof profileSectionSchema>;
+
+/** Ground forge preference targets against the concept vocabulary; drop unknowns. */
+function groundPreferences(raw: ProfileSection["preferences"], sink?: DiagnosticSink): Preference[] {
+  const valid = new Set([...interactionConceptIds(), ...interactionFamilies()]);
+  const out: Preference[] = [];
+  const seen = new Set<string>();
+  for (const p of raw) {
+    const target = p.target.trim().toLowerCase();
+    if (!valid.has(target)) {
+      if (target) sink?.push(diag("info", "forge.character.profile.unknown_preference", `dropped preference target "${p.target}"`));
+      continue;
+    }
+    const key = `${target}::${p.valence}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const hint = p.hint?.trim();
+    out.push({ target, valence: p.valence, intensity: Math.min(10, Math.max(1, Math.round(p.intensity))), ...(hint ? { hint } : {}) });
+  }
+  return out;
+}
+
+/** Normalize forge disposition tags, preferring a canonical id, free-form tolerated. */
+function groundDispositionTags(raw: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const t of raw) {
+    const norm = normalizeTag(t);
+    if (!norm) continue;
+    const tag = canonicalTagId(norm) ?? norm;
+    if (!out.includes(tag)) out.push(tag);
+  }
+  return out;
+}
 
 const PROFILE_SYSTEM =
   "You draft characters for a roleplaying engine. Write grounded, specific, playable characters — concrete detail over generality. Return only the requested fields.";
 
 function profilePrompt(context: CharacterForgeContext): string {
   const species = speciesForForgeContext(context);
+  const conceptVocab = [...interactionConceptIds(), ...interactionFamilies()].join(", ");
+  const canonicalTags = dispositionTags.map((t) => t.id).join(", ");
   const lines = [
     "Draft a character from this concept:",
     context.prompt,
     "",
     "Produce: a display name, a 2-4 sentence bio, a personality sketch (quirks, humor, flaws),",
-    "voice notes (how they sound and speak), any aliases or nicknames, and 3-6 lowercase tags.",
+    "voice notes (how they sound and speak), any aliases or nicknames, and 3-6 lowercase library tags",
+    "(for search/categorization).",
+    "",
+    "Then infer the character's social DISPOSITION from the personality (used by the game, not just prose):",
+    `- dispositionTags: 2-5 short trait labels. Prefer these canonical tags where they fit: ${canonicalTags}. Free-form is allowed but prefer canonical.`,
+    `- preferences: 1-4 clear likes/dislikes that follow from the personality, each {target, valence: like|dislike, intensity: 1-10, hint}. target MUST be one of these interaction concepts/families: ${conceptVocab}. hint is a short note on how they react. Omit weak or generic preferences — sparse and characterful is correct.`,
   ];
   if (species && species.id !== DEFAULT_SPECIES_ID) {
     const { label, look } = speciesForgeDescriptor(species, heritageForForgeContext(context));
@@ -213,6 +271,8 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
     bio: section.bio.trim(),
     personality: section.personality.trim(),
     aliases: section.aliases.map((a) => a.trim()).filter((a) => a.length > 0),
+    tags: groundDispositionTags(section.dispositionTags),
+    preferences: groundPreferences(section.preferences, context.sink),
   };
   const voice = section.voice.trim();
   if (voice) profile.voice = voice;
@@ -888,6 +948,11 @@ export function demoCharacterProfileSection(): ProfileSection {
     voice: "Low and gravelled; clipped harbor slang; says less than she knows and means more than she says.",
     aliases: ["Voss", "the harbor-master"],
     tags: ["harbor", "gruff", "mentor", "working-class"],
+    dispositionTags: ["stoic", "proud", "gentle"],
+    preferences: [
+      { target: "compliment", valence: "dislike", intensity: 6, hint: "flattery makes her wary; she'd rather be useful than admired" },
+      { target: "confide", valence: "like", intensity: 5, hint: "a green deckhand trusting her with something real softens her" },
+    ],
   };
 }
 
