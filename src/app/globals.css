@@ -19,8 +19,10 @@
   --color-paper-100: #efe8d8;
   --color-paper-200: #ddd4c0; /* body text */
   --color-paper-300: #bfb59e;
-  --color-paper-400: #998f7a; /* muted */
-  --color-paper-500: #746c5c; /* faint */
+  --color-paper-400: #998f7a; /* muted — ~5.6:1 on cards (ink-800) */
+  /* faint — the AA floor on this palette: raised from #746c5c (~3.1:1, failed WCAG
+     color-contrast, UX-audit M6) to clear 4.5:1 on both cards and raised surfaces. */
+  --color-paper-500: #938a6a;
 
   --color-accent-300: #e2b885;
   --color-accent-400: #d4a160; /* lamplight amber */
