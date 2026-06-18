@@ -106,7 +106,7 @@ event: error    data: { "code": "…", "message": "…" }      // terminal
 ```
 
 - `chunk.content` is a **delta** (append to the segment's accumulated text). Segments arrive in `segmentIndex` order; a new index closes the previous segment.
-- A `blocked` condition (session busy) is a plain 409 JSON response, not a stream.
+- A `blocked` condition (session busy) is a plain 409 JSON response, not a stream. The lock lingers through the previous turn's post-turn `processing` window (~8–10s after `done`), so the server **waits that window out and retries** before 409ing (UX-audit M3) — a back-to-back / API-driven turn usually just succeeds after a short delay. The 409 only fires for an actively `narrating` turn or a window that never clears; **`GET /status` reaching `status: "ready"` is the signal that the next turn is safe to send.**
 - Client: `src/lib/client/turn-stream.ts` parses with scoped buffering, calls `onStart/onChunk/onStatus/onDone/onError`, and invokes `onIncomplete` if the stream closes without `done`/`error`. An incomplete stream is a **client display problem only** — the server finishes the turn regardless (best-effort SSE writes, [resilience.md](resilience.md) §5); the UI's retry affordance just re-polls `/job` + `/feed` to pick up the finished turn.
 - After `done`, the client polls `/job` (1.5s) until the session is `ready`, then refreshes `/status` (state sidebar) and `/feed`.
 

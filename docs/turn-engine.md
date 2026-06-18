@@ -6,7 +6,11 @@
 
 ```
 submitTurn(sessionId, input, author)
- 1. CAS sessions.status ready→narrating (409 on conflict); recover abandoned turns
+ 1. recover abandoned turns; CAS sessions.status ready→narrating. A turn submitted during the
+    previous turn's post-turn `processing` window (the lock lingers ~8–10s after its SSE `done`)
+    **waits it out — retrying the CAS for up to `TURN_READY_WAIT_MS` — instead of 409ing** (UX-audit
+    M3); only an actively `narrating` session, or a `processing` window that never clears, gets a
+    409 `session_busy` (with a message pointing at the `ready` status signal)
  2. create turn row (status narrating)
  3. PRE-TURN (parallel):
       a. episode RAG retrieve        (PREVIOUS turn's brief.memoryQueries + input)
