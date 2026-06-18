@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { fillPlayerToken } from "@/lib/player-token";
 import { sessionsApi, worldsApi, type LoreChunkEntry } from "@/lib/client/api";
+import { WorldMapGraph } from "./world-map-graph";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
@@ -289,31 +290,40 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
               {detail.locations.length === 0 ? (
                 <p className="text-sm text-paper-500">No locations.</p>
               ) : (
-                <ul className="flex flex-col gap-2">
-                  {detail.locations.map((loc) => {
-                    const connected = detail.links
-                      .filter((l) => l.fromWorldLocationId === loc.id || l.toWorldLocationId === loc.id)
-                      .map((l) =>
-                        locationNameById.get(
-                          l.fromWorldLocationId === loc.id ? l.toWorldLocationId : l.fromWorldLocationId,
-                        ),
-                      )
-                      .filter((n): n is string => Boolean(n));
-                    return (
-                      <li key={loc.id}>
-                        <Card className="p-3">
-                          <p className="text-sm font-medium text-paper-100">{loc.name}</p>
-                          {loc.description ? (
-                            <p className="mt-0.5 line-clamp-2 text-xs text-paper-400">{loc.description}</p>
-                          ) : null}
-                          {connected.length > 0 ? (
-                            <p className="mt-1.5 text-xs text-paper-500">↔ {connected.join(" · ")}</p>
-                          ) : null}
-                        </Card>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <>
+                  <WorldMapGraph
+                    locations={detail.locations.map((l) => ({ id: l.id, name: l.name, description: l.description }))}
+                    links={detail.links}
+                  />
+                  <details>
+                    <summary className="cursor-pointer text-xs text-paper-500 hover:text-paper-300">Location list</summary>
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {detail.locations.map((loc) => {
+                        const connected = detail.links
+                          .filter((l) => l.fromWorldLocationId === loc.id || l.toWorldLocationId === loc.id)
+                          .map((l) =>
+                            locationNameById.get(
+                              l.fromWorldLocationId === loc.id ? l.toWorldLocationId : l.fromWorldLocationId,
+                            ),
+                          )
+                          .filter((n): n is string => Boolean(n));
+                        return (
+                          <li key={loc.id}>
+                            <Card className="p-3">
+                              <p className="text-sm font-medium text-paper-100">{loc.name}</p>
+                              {loc.description ? (
+                                <p className="mt-0.5 line-clamp-2 text-xs text-paper-400">{loc.description}</p>
+                              ) : null}
+                              {connected.length > 0 ? (
+                                <p className="mt-1.5 text-xs text-paper-500">↔ {connected.join(" · ")}</p>
+                              ) : null}
+                            </Card>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </details>
+                </>
               )}
             </div>
           ) : null}
