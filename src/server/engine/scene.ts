@@ -34,7 +34,10 @@ import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/
 import { interactionConceptById } from "@/contracts/personality/interactions";
 import type { Preference } from "@/contracts/personality/preference";
 import { checkPuppetContradiction } from "@/contracts/personality/puppet";
+import { socialTraitScale } from "@/contracts/personality/modulation";
 import { evaluateSocialReaction, NEUTRAL_MOOD, resolveSocialReaction } from "@/contracts/personality/reactions";
+import { bandForValue, INTIMATE_TRAIT_CATEGORY, traitRegistry } from "@/contracts/personality/traits";
+import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { MAX_NPC_PAIR_AWARENESS_LINES } from "./constants";
 import type { SceneIntent } from "./intent";
@@ -714,6 +717,78 @@ export function buildCanonicalFactsBlock(bundle: SceneBundleInput): string {
 }
 
 /**
+ * Render a character's trait bands as behavioural guidance (resolved overlays →
+ * band label + hint). `intimateOnly` partitions the registry: the cached
+ * disposition block takes the non-intimate traits; the volatile, exposure-gated
+ * line takes the intimate ones. Unknown/over-range ids are skipped (the registry
+ * clamps), so a stale value never breaks the block.
+ */
+function dispositionParts(traits: readonly TraitValue[], intimateOnly: boolean, withHint = true): string[] {
+  const parts: string[] = [];
+  for (const value of resolveTraits(traits, [])) {
+    const def = traitRegistry.byId(value.id);
+    if (!def) continue;
+    if ((def.category === INTIMATE_TRAIT_CATEGORY) !== intimateOnly) continue;
+    const band = bandForValue(def, value.value);
+    if (!band) continue;
+    parts.push(`${def.label}: ${band.label}${withHint && band.promptHint ? ` (${band.promptHint})` : ""}`);
+  }
+  return parts;
+}
+
+/**
+ * Terse non-intimate trait bands ("Warmth: cold") for an agent state slice — the
+ * simulant reads these so its raw deltas land in-character (spec §7 Agents). No
+ * hints (token-tight) and no intimate traits (those stay exposure-gated).
+ */
+export function dispositionBandSummary(traits: readonly TraitValue[]): string[] {
+  return dispositionParts(traits, false, false);
+}
+
+/**
+ * Cached disposition block (docs/developer-notes/personality-and-state.spec.md §7;
+ * closes character-schema audit C1 — "personality never reaches a prompt"). Renders
+ * each cast member's **non-intimate** trait bands as stable behavioural guidance in
+ * the static-rulebook region (prefix-cache-stable: core traits don't change mid-
+ * session). Intimate traits surface separately, exposure-gated
+ * (`buildIntimateDispositionLine`). Empty when no one has authored traits ⇒ the
+ * prefix is byte-for-byte today's.
+ */
+export function buildDispositionBlock(bundle: SceneBundleInput): string {
+  const lines: string[] = [];
+  for (const p of npcs(bundle)) {
+    const parts = dispositionParts(p.snapshot.traits, false);
+    if (parts.length) lines.push(`- ${p.displayName} — ${parts.join("; ")}`);
+  }
+  if (!lines.length) return "";
+  return [
+    "## Disposition (stable temperament — play it consistently in tone and initiative; never recite verbatim)",
+    ...lines,
+  ].join("\n");
+}
+
+/**
+ * Volatile, exposure-gated intimate disposition (spec §7.3): surfaces a present
+ * character's intimate trait bands (libido/inhibition/possessiveness) only when the
+ * turn's exposure reaches the **intimate** appearance tier — the same gate intimate
+ * attributes ride (`intimateAttrAllowed`). Never cached. Empty below the gate or
+ * when no present character has intimate traits.
+ */
+export function buildIntimateDispositionLine(
+  present: ReadonlyArray<{ displayName: string; traits: readonly TraitValue[] }>,
+  exposure: ExposureMask,
+): string {
+  if (exposure.appearance !== "intimate") return "";
+  const lines: string[] = [];
+  for (const npc of present) {
+    const parts = dispositionParts(npc.traits, true);
+    if (parts.length) lines.push(`- ${npc.displayName} — ${parts.join("; ")}`);
+  }
+  if (!lines.length) return "";
+  return ["## Intimate disposition (this scene only — exposure-earned)", ...lines].join("\n");
+}
+
+/**
  * Whether an intimate-anatomy attribute may surface this turn, gated by the
  * exposure mask (body-model spec Decision 3/§B). Non-intimate attributes are
  * always allowed (unchanged behavior). Intimate descriptive detail needs the
@@ -1078,7 +1153,13 @@ export interface ReactionLineInput {
   playerName: string;
   /** intake's classified social acts (intent-brief.socialActs); v1 plays the primary (first). */
   socialActs: ReadonlyArray<{ concept: string; target: string }>;
-  presentNpcs: ReadonlyArray<{ id: string; displayName: string; tags: readonly string[]; preferences: readonly Preference[] }>;
+  presentNpcs: ReadonlyArray<{
+    id: string;
+    displayName: string;
+    tags: readonly string[];
+    preferences: readonly Preference[];
+    traits: readonly TraitValue[];
+  }>;
   /** Numeric affinity edges (BundleRelationship); the curve reads the NPC's feeling toward the player. */
   relationships: ReadonlyArray<{ fromParticipantId: string; toParticipantId: string; kind: "feeling" | "perceived"; value: number }>;
 }
@@ -1104,7 +1185,7 @@ export function buildReactionLine(input: ReactionLineInput): string {
   const feeling = input.relationships.find(
     (r) => r.kind === "feeling" && r.fromParticipantId === npc.id && r.toParticipantId === input.playerId,
   );
-  const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, NEUTRAL_MOOD, 1);
+  const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, NEUTRAL_MOOD, socialTraitScale(reaction, npc.traits));
   const concept = interactionConceptById(primary.concept);
   const verb = concept?.verb ?? "made a social overture to";
   const label = (concept?.label ?? primary.concept).toLowerCase();
@@ -1119,7 +1200,12 @@ export function buildReactionLine(input: ReactionLineInput): string {
 export interface PuppetDeflectionInput {
   /** intake's classified player-authored NPC behaviours (intent-brief.narratedNpcBehaviors). */
   narratedNpcBehaviors: ReadonlyArray<{ npc: string; concept?: string; summary?: string }>;
-  presentNpcs: ReadonlyArray<{ displayName: string; tags: readonly string[]; preferences: readonly Preference[] }>;
+  presentNpcs: ReadonlyArray<{
+    displayName: string;
+    tags: readonly string[];
+    preferences: readonly Preference[];
+    traits?: readonly TraitValue[];
+  }>;
   /** A behaviour naming a non-present character is logged here (the absence notice voices it). */
   sink?: DiagnosticSink;
 }
@@ -1154,7 +1240,7 @@ export function buildPuppetDeflection(input: PuppetDeflectionInput): string {
     }
     const verdict = checkPuppetContradiction(
       { npc: behavior.npc, concept: behavior.concept },
-      { tags: npc.tags, preferences: npc.preferences },
+      { tags: npc.tags, preferences: npc.preferences, traits: npc.traits },
     );
     if (!verdict.contradiction) continue;
     const act = behavior.summary?.trim() || interactionConceptById(behavior.concept ?? "")?.label.toLowerCase() || "that";

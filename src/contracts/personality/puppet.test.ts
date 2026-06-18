@@ -67,4 +67,17 @@ describe("checkPuppetContradiction", () => {
     );
     expect(verdict.contradiction).toBe(false);
   });
+
+  it("trait signal: a cold-warmth character can't be warm-puppeted (Slice 3 enrichment)", () => {
+    const cold = { tags: [] as string[], preferences: [], traits: [{ id: "temperament.warmth", value: -80, source: "creation" as const }] };
+    expect(checkPuppetContradiction({ npc: "Sabrina", concept: "compliment" }, cold).contradiction).toBe(true);
+    const warm = { tags: [] as string[], preferences: [], traits: [{ id: "temperament.warmth", value: 80, source: "creation" as const }] };
+    expect(checkPuppetContradiction({ npc: "Sabrina", concept: "insult" }, warm).contradiction).toBe(true);
+  });
+
+  it("trait signal: neutral/absent warmth gives no signal ⇒ honour", () => {
+    expect(checkPuppetContradiction({ npc: "Sabrina", concept: "compliment" }, { tags: [], preferences: [], traits: [] }).contradiction).toBe(false);
+    const reserved = { tags: [] as string[], preferences: [], traits: [{ id: "temperament.warmth", value: 0, source: "creation" as const }] };
+    expect(checkPuppetContradiction({ npc: "Sabrina", concept: "compliment" }, reserved).contradiction).toBe(false);
+  });
 });

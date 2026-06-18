@@ -25,6 +25,8 @@ export interface StaticRulebookInput {
   factions: Array<{ name: string; description: string }>;
   /** Output of scene.buildCanonicalFactsBlock. */
   canonicalFactsBlock: string;
+  /** Output of scene.buildDispositionBlock — cached trait-band guidance (non-intimate). Optional ⇒ "". */
+  dispositionBlock?: string;
   /**
    * EVERY session NPC's display name — the dialogue-tag vocabulary
    * (session-stable, so the rulebook prefix caches across moves). Presence
@@ -178,6 +180,7 @@ export function buildStaticRulebook(input: StaticRulebookInput): string {
     identity,
     ...world,
     input.canonicalFactsBlock,
+    input.dispositionBlock ?? "",
     LOCATION_FIDELITY_RULES,
     MOVEMENT_RULES,
     PRESENCE_FIDELITY_RULES,

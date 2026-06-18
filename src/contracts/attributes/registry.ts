@@ -1,6 +1,7 @@
 import { z, type ZodType } from "zod";
 import type { AttributeCategory } from "./category-ids";
 import type { AttributeDefinition, AttributeGroup } from "./types";
+import { buildRegistryCore } from "../registry";
 
 export interface AttributeParseFailure {
   ok: false;
@@ -50,17 +51,21 @@ function valueSchemaFor(def: AttributeDefinition): ZodType<string | string[] | n
 
 export function buildRegistry(groups: readonly AttributeGroup[]): AttributeRegistry {
   const definitions = groups.flatMap((g) => g.definitions);
-  const byId = new Map<string, AttributeDefinition>();
-  const valueSchemas = new Map<string, ZodType<string | string[] | number | boolean>>();
-  const aliasIndex = new Map<string, AttributeDefinition[]>();
+  // Index + value-parser come from the shared registry spine; the
+  // attribute-specific lookups (category, body location, alias) are layered on.
+  const core = buildRegistryCore<AttributeDefinition, string | string[] | number | boolean>({
+    definitions,
+    valueSchemaFor,
+    idLabel: "attribute",
+    validate: (def) => {
+      if ((def.valueType === "enum" || def.valueType === "enum_list") && (def.allowedValues?.length ?? 0) < 2) {
+        throw new Error(`Attribute ${def.id} is ${def.valueType} but has fewer than 2 allowedValues`);
+      }
+    },
+  });
 
+  const aliasIndex = new Map<string, AttributeDefinition[]>();
   for (const def of definitions) {
-    if (byId.has(def.id)) throw new Error(`Duplicate attribute id: ${def.id}`);
-    if ((def.valueType === "enum" || def.valueType === "enum_list") && (def.allowedValues?.length ?? 0) < 2) {
-      throw new Error(`Attribute ${def.id} is ${def.valueType} but has fewer than 2 allowedValues`);
-    }
-    byId.set(def.id, def);
-    valueSchemas.set(def.id, valueSchemaFor(def));
     for (const alias of def.aliases ?? []) {
       const key = alias.toLowerCase();
       const list = aliasIndex.get(key) ?? [];
@@ -71,16 +76,10 @@ export function buildRegistry(groups: readonly AttributeGroup[]): AttributeRegis
 
   return {
     definitions,
-    byId: (id) => byId.get(id),
+    byId: core.byId,
     forCategory: (category) => definitions.filter((d) => d.category === category),
     forBodyLocation: (bodyLocationId) => definitions.filter((d) => d.bodyLocationId === bodyLocationId),
     resolveAlias: (text) => aliasIndex.get(text.toLowerCase()) ?? [],
-    parseValue: (id, raw) => {
-      const schema = valueSchemas.get(id);
-      if (!schema) return { ok: false, issues: [`unknown attribute id: ${id}`] };
-      const result = schema.safeParse(raw);
-      if (result.success) return { ok: true, value: result.data };
-      return { ok: false, issues: result.error.issues.map((i) => i.message) };
-    },
+    parseValue: core.parseValue,
   };
 }
