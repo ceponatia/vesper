@@ -478,6 +478,23 @@ describe("buildMeterConditionBlock", () => {
     expect(block).toContain("condition: soaked (moderate) — Her clothes cling and drip.");
   });
 
+  it("leads with a derived mood descriptor when mood is notably off-neutral", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    if (maya) maya.state = state({ activity: "drying glasses", meters: { ...initialMeters(), mood: 0.15, stress: 0.7 } });
+    const block = buildMeterConditionBlock(bundle);
+    expect(block).toContain("- Maya — mood: low and on edge. activity: drying glasses");
+  });
+
+  it("omits the mood part on an even, unstressed keel", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    if (maya) maya.state = state({ activity: "reading", meters: { ...initialMeters(), mood: 0.5, stress: 0.1 } });
+    const block = buildMeterConditionBlock(bundle);
+    expect(block).toContain("- Maya — activity: reading");
+    expect(block).not.toContain("mood:");
+  });
+
   it("omits expired conditions", () => {
     const bundle = makeBundle({ clockMinutes: 120 });
     const maya = bundle.participants.find((p) => p.id === "p_maya");
@@ -1041,7 +1058,7 @@ describe("buildCommsLine", () => {
 
 describe("buildReactionLine", () => {
   const presentNpcs = [
-    { id: "p-sabrina", displayName: "Sabrina", tags: [], traits: [], preferences: [{ target: "compliment", valence: "dislike" as const, intensity: 7, hint: "finds flattery cloying" }] },
+    { id: "p-sabrina", displayName: "Sabrina", tags: [], traits: [], mood: 0.5, preferences: [{ target: "compliment", valence: "dislike" as const, intensity: 7, hint: "finds flattery cloying" }] },
   ];
   const base = {
     playerId: "p-brian",

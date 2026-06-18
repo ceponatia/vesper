@@ -78,6 +78,20 @@ describe("planReactionAffinity", () => {
     expect(r.updates).toEqual([]);
     expect(sink.items.some((d) => d.code === "merge.reaction.unresolved_target")).toBe(true);
   });
+
+  it("a resolved reaction nudges the target's mood (a dislike lowers it)", () => {
+    const r = planReactionAffinity([{ concept: "compliment", target: "Sabrina" }], parts, [feeling(0)]);
+    expect(r.moodAdjustment?.participantId).toBe("p-sabrina");
+    expect(r.moodAdjustment!.delta).toBeLessThan(0);
+  });
+
+  it("turn-start mood sharpens a dislike — a bad mood lands a bigger sting than a neutral one", () => {
+    const mild = npc("p-sabrina", "Sabrina", [{ target: "compliment", valence: "dislike", intensity: 3 }]);
+    const act = [{ concept: "compliment", target: "Sabrina" }];
+    const neutral = planReactionAffinity(act, [brian, mild], [feeling(0)], undefined, new Map([["p-sabrina", 0.5]]));
+    const badMood = planReactionAffinity(act, [brian, mild], [feeling(0)], undefined, new Map([["p-sabrina", 0]]));
+    expect(Math.abs(badMood.updates[0]!.delta)).toBeGreaterThan(Math.abs(neutral.updates[0]!.delta));
+  });
 });
 
 describe("combineAffinityUpdates", () => {

@@ -5,7 +5,7 @@ import { attributeValueSchema } from "@/contracts/attributes/value";
 import { isConditionExpired, type ActiveCondition } from "@/contracts/conditions/condition";
 import { diag, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { ItemDefinition, ItemInstanceState } from "@/contracts/items/item";
-import { applyMeterDrift, crossedThresholdHints, type MeterDefinition } from "@/contracts/meters/registry";
+import { applyMeterDrift, crossedThresholdHints, NEUTRAL_MOOD_METER, type MeterDefinition } from "@/contracts/meters/registry";
 import {
   concealedSalience,
   darknessVerdict,
@@ -38,8 +38,8 @@ import type {
 } from "@/contracts/turns/agent-results";
 import type { TurnAuthor } from "@/contracts/turns/stream";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { evaluateSocialReaction, NEUTRAL_MOOD, resolveSocialReaction } from "@/contracts/personality/reactions";
-import { socialTraitScale } from "@/contracts/personality/modulation";
+import { evaluateSocialReaction, moodMeterToFactor, moodNudge, resolveSocialReaction } from "@/contracts/personality/reactions";
+import { personalizeMeters, socialTraitScale } from "@/contracts/personality/modulation";
 import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { checkLinkAccess, type DoorState } from "@/contracts/world/access";
 import { daylightBand, minuteOfDay, resolveGameTime, type DaylightBand } from "@/lib/clock";
@@ -790,22 +790,28 @@ export interface ReactionAffinityResult {
   updates: AffinityUpdate[];
   /** Edge keys (from::to::kind) a reaction resolved for — suppress simulant updates here. */
   ownedEdgeKeys: Set<string>;
+  /** Mood-meter nudge the reaction applies to the target NPC (spec §4); absent ⇒ none. */
+  moodAdjustment?: { participantId: string; delta: number };
 }
 
 /**
  * Deterministic affinity from the player's classified social acts
  * (personality-and-state.spec.md §6). v1 plays the **primary** act: resolve it
  * against the target NPC's disposition, run the affinity-aware curve over the
- * NPC's turn-start *feeling* edge, and emit a feeling delta. The reaction **owns**
- * that edge — its key is returned so the simulant's update on the same edge is
- * dropped (the authored verdict wins for recognized acts), even when the delta
- * rounds to 0 ("lets it slide"). No match ⇒ the simulant handles the edge as usual.
+ * NPC's turn-start *feeling* edge **and turn-start mood** (μ from the mood meter),
+ * and emit a feeling delta plus a mood nudge. The reaction **owns** that edge — its
+ * key is returned so the simulant's update on the same edge is dropped (the authored
+ * verdict wins for recognized acts), even when the delta rounds to 0 ("lets it
+ * slide"). No match ⇒ the simulant handles the edge as usual. `moodByParticipant`
+ * supplies turn-start mood (so the narrated hint and the applied number agree); absent
+ * ⇒ read the current meter (neutral in tests).
  */
 export function planReactionAffinity(
   socialActs: IntentBrief["socialActs"],
   parts: readonly WorkingParticipant[],
   relationships: readonly BundleRelationship[],
   sink?: DiagnosticSink,
+  moodByParticipant?: ReadonlyMap<string, number>,
 ): ReactionAffinityResult {
   const empty: ReactionAffinityResult = { updates: [], ownedEdgeKeys: new Set() };
   const primary = socialActs[0]; // v1: primary act only (multi-act deferred)
@@ -831,21 +837,26 @@ export function planReactionAffinity(
   const feeling = relationships.find(
     (r) => r.kind === "feeling" && r.fromParticipantId === target.id && r.toParticipantId === player.id,
   );
+  const mood = moodByParticipant?.get(target.id) ?? target.state.meters.mood ?? NEUTRAL_MOOD_METER;
   const evaluated = evaluateSocialReaction(
     reaction,
     feeling?.value ?? 0,
-    NEUTRAL_MOOD,
+    moodMeterToFactor(mood),
     socialTraitScale(reaction, target.snapshot.traits),
   );
   const ownedEdgeKeys = new Set([`${target.id}::${player.id}::feeling`]);
 
+  // The reaction also nudges the target's mood (a like lifts, a dislike lowers).
+  const md = moodNudge(evaluated);
+  const moodAdjustment = Math.abs(md) >= 0.005 ? { participantId: target.id, delta: md } : undefined;
+
   const signed = evaluated.valence === "dislike" ? -evaluated.magnitude : evaluated.magnitude;
   const delta = Math.max(-AFFINITY_DELTA_CLAMP, Math.min(AFFINITY_DELTA_CLAMP, Math.round(signed)));
-  if (delta === 0) return { updates: [], ownedEdgeKeys };
-  return {
-    updates: [{ fromParticipantId: target.id, toParticipantId: player.id, kind: "feeling", delta, reason: `reaction:${reaction.conceptId}` }],
-    ownedEdgeKeys,
-  };
+  const updates =
+    delta === 0
+      ? []
+      : [{ fromParticipantId: target.id, toParticipantId: player.id, kind: "feeling" as const, delta, reason: `reaction:${reaction.conceptId}` }];
+  return { updates, ownedEdgeKeys, moodAdjustment };
 }
 
 /** Reaction updates win their edge; simulant updates on an owned edge are dropped. */
@@ -1605,6 +1616,9 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   const clockMinutes = bundle.clockMinutes + minutes;
 
   const defs = effectiveMeterDefinitions(bundle.style);
+  // Turn-start mood, captured before drift mutates it — the social reaction reads this
+  // for its μ so the narrated hint and the applied delta agree (the §6 key invariant).
+  const moodAtTurnStart = new Map(parts.map((p) => [p.id, p.state.meters.mood ?? NEUTRAL_MOOD_METER]));
   const hintsBefore = new Map(parts.map((p) => [p.id, crossedThresholdHints(p.state.meters, defs)]));
 
   const adjustmentsByParticipant = new Map<string, MeterAdjustment[]>();
@@ -1620,7 +1634,11 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   }
 
   for (const participant of parts) {
-    const drifted = reconcile ? participant.state.meters : applyMeterDrift(participant.state.meters, minutes, defs);
+    // Per-character drift: traits shift the resting baseline/recovery (spec §4); thresholds
+    // and agent adjustments still use the global defs.
+    const drifted = reconcile
+      ? participant.state.meters
+      : applyMeterDrift(participant.state.meters, minutes, personalizeMeters(defs, participant.snapshot.traits));
     // Registered-action effects (shower ⇒ hygiene) apply after drift and
     // before agent deltas, so narration-grounded corrections still win.
     const withActionEffects =
@@ -1635,6 +1653,22 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       participant.displayName,
     );
     touchedParticipantIds.add(participant.id);
+  }
+
+  // Social-reaction affinity + mood (personality §6/§4): resolve the player's primary
+  // social act against the target's disposition over turn-start feeling + mood, then nudge
+  // the target's mood (post-drift — the event moved it this turn). Affinity is applied via
+  // the return's affinityUpdates; the mood nudge is a direct meter write here.
+  const reactionResult = reconcile
+    ? null
+    : planReactionAffinity(turn.intentBrief?.socialActs ?? [], parts, bundle.relationships, sink, moodAtTurnStart);
+  if (reactionResult?.moodAdjustment) {
+    const t = parts.find((p) => p.id === reactionResult.moodAdjustment?.participantId);
+    if (t) {
+      const next = Math.min(1, Math.max(0, (t.state.meters.mood ?? NEUTRAL_MOOD_METER) + reactionResult.moodAdjustment.delta));
+      t.state.meters = { ...t.state.meters, mood: next };
+      touchedParticipantIds.add(t.id);
+    }
   }
 
   // Conditions: agent ops first, then duration expiry against the new clock.
@@ -2009,12 +2043,9 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     minutes,
     minutesCause,
     clockMinutes,
-    affinityUpdates: reconcile
-      ? []
-      : combineAffinityUpdates(
-          planReactionAffinity(turn.intentBrief?.socialActs ?? [], parts, bundle.relationships, sink),
-          planAffinityUpdates(simulant.affinityAdjustments, parts, sink),
-        ),
+    affinityUpdates: reactionResult
+      ? combineAffinityUpdates(reactionResult, planAffinityUpdates(simulant.affinityAdjustments, parts, sink))
+      : [],
     affinityDecay: affinityDecay?.edges ?? [],
     witnessedBy,
     commsChanges: comms.changes,

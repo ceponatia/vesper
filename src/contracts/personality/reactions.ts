@@ -91,8 +91,12 @@ export const LIKE_SURPRISE = 1.5;
 export const LIKE_CAP = 4;
 /** Mood swings the magnitude by ±this fraction at full bad/good mood. */
 export const MOOD_FACTOR_SPAN = 0.3;
-/** v1 stub: callers pass this for mood until the mood slice ships. */
+/** Neutral mood factor (μ ∈ [−1,1]; 0 = even). The engine derives μ from the mood meter. */
 export const NEUTRAL_MOOD = 0;
+/** Mood-meter (0–1) points moved per unit of reaction magnitude — the deferred Slice-1 nudge. */
+export const MOOD_NUDGE_PER_MAGNITUDE = 0.03;
+/** A single act can move mood at most this far (0–1 scale). */
+export const MOOD_NUDGE_CAP = 0.15;
 
 export interface EvaluatedReaction {
   valence: PreferenceValence;
@@ -133,6 +137,22 @@ export function evaluateSocialReaction(
 
   magnitude = Math.max(0, magnitude);
   return { valence: reaction.valence, magnitude, band: bandFor(reaction.valence, magnitude), hint: reaction.hint };
+}
+
+/**
+ * The signed mood-meter nudge a resolved reaction applies (spec §4): a liked act lifts
+ * the character's mood, a disliked act lowers it, proportional to the evaluated magnitude
+ * (which already folds in affinity + traits) and capped. Returns a delta on the 0–1 mood
+ * scale; the merge clamps the meter to [0,1].
+ */
+export function moodNudge(evaluated: EvaluatedReaction): number {
+  const signed = (evaluated.valence === "like" ? 1 : -1) * evaluated.magnitude * MOOD_NUDGE_PER_MAGNITUDE;
+  return clamp(signed, -MOOD_NUDGE_CAP, MOOD_NUDGE_CAP);
+}
+
+/** Map a 0–1 mood **meter** to the curve's μ ∈ [−1,1] (0.5 ⇒ neutral). */
+export function moodMeterToFactor(mood: number): number {
+  return clamp((mood - 0.5) * 2, -1, 1);
 }
 
 /** Bad mood sharpens dislikes and damps likes; good mood the reverse. Neutral ⇒ 1. */

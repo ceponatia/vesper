@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { socialTraitScale, TRAIT_SCALE_MAX } from "./modulation";
+import { meterById, meterBaselineOf } from "../meters/registry";
+import { personalizeMeters, socialTraitScale, TRAIT_SCALE_MAX } from "./modulation";
 import type { SocialReaction } from "./reactions";
 import type { TraitValue } from "./traits/value";
 
@@ -46,5 +47,39 @@ describe("socialTraitScale", () => {
       trait("temperament.composure", -100),
     ]);
     expect(scale).toBeLessThanOrEqual(TRAIT_SCALE_MAX);
+  });
+});
+
+describe("personalizeMeters", () => {
+  const defs = [meterById("mood")!, meterById("arousal")!, meterById("stress")!, meterById("hygiene")!];
+  const find = (out: ReturnType<typeof personalizeMeters>, id: string) => out.find((m) => m.id === id)!;
+
+  it("no traits ⇒ defs unchanged (exactly today's drift)", () => {
+    expect(personalizeMeters(defs, [])).toEqual([...defs]);
+  });
+
+  it("optimism lifts the mood baseline; pessimism lowers it", () => {
+    expect(meterBaselineOf(find(personalizeMeters(defs, [trait("temperament.optimism", 100)]), "mood"))).toBeCloseTo(0.75, 5);
+    expect(meterBaselineOf(find(personalizeMeters(defs, [trait("temperament.optimism", -100)]), "mood"))).toBeCloseTo(0.25, 5);
+  });
+
+  it("libido raises the arousal resting point and slows its recovery", () => {
+    const hi = find(personalizeMeters(defs, [trait("intimate.libido", 100)]), "arousal");
+    expect(hi.baseline).toBeCloseTo(0.2, 5);
+    expect(hi.recoveryPerHour!).toBeLessThan(Math.abs(meterById("arousal")!.perHour)); // slower decay
+    // low/negative libido rests at 0 and decays faster
+    const lo = find(personalizeMeters(defs, [trait("intimate.libido", -100)]), "arousal");
+    expect(lo.baseline).toBe(0);
+    expect(lo.recoveryPerHour!).toBeGreaterThan(Math.abs(meterById("arousal")!.perHour));
+  });
+
+  it("composure speeds stress recovery; volatility slows it", () => {
+    const base = Math.abs(meterById("stress")!.perHour);
+    expect(find(personalizeMeters(defs, [trait("temperament.composure", 100)]), "stress").recoveryPerHour!).toBeGreaterThan(base);
+    expect(find(personalizeMeters(defs, [trait("temperament.composure", -100)]), "stress").recoveryPerHour!).toBeLessThan(base);
+  });
+
+  it("leaves untouched meters (hygiene) alone", () => {
+    expect(find(personalizeMeters(defs, [trait("temperament.optimism", 100)]), "hygiene")).toEqual(meterById("hygiene"));
   });
 });
