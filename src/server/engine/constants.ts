@@ -95,3 +95,14 @@ export const PENDING_COMMS_CAP = 8;
 export const INTAKE_TIMEOUT_MS = 1500;
 /** Output-token cap for the intake call — the brief is small; keep it cheap/fast. */
 export const INTAKE_MAX_OUTPUT_TOKENS = 512;
+
+/**
+ * A turn submitted while the previous turn is still in its post-turn "processing"
+ * window waits up to this long for the session to return to "ready" before
+ * 409ing (UX-audit M3): the lock lingers ~8–10s after the stream's `done`, so a
+ * back-to-back / API-driven turn would otherwise hit a spurious session_busy. An
+ * actively "narrating" turn is never waited on — that is the caller's own race.
+ */
+export const TURN_READY_WAIT_MS = 12_000;
+/** Poll interval while waiting out the post-turn window. */
+export const TURN_READY_POLL_MS = 400;
