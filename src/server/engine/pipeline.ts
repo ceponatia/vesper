@@ -38,6 +38,8 @@ import {
   buildAwarenessBlocks,
   buildCanonicalFactsBlock,
   buildCommsLine,
+  buildDispositionBlock,
+  buildIntimateDispositionLine,
   buildDarknessLine,
   buildFollowGuidance,
   buildGlanceImpressions,
@@ -656,6 +658,7 @@ async function assemblePreTurn(
     alwaysLore,
     factions: bundle.lore.factions.map((f) => ({ name: f.name, description: f.description })),
     canonicalFactsBlock: buildCanonicalFactsBlock(bundle),
+    dispositionBlock: buildDispositionBlock(bundle),
     npcNames: allNpcNames,
     embodied: bundle.session.embodied,
     playerContext: bundle.session.embodied && player ? excerptBio(player.snapshot.bio) || undefined : undefined,
@@ -688,6 +691,7 @@ async function assemblePreTurn(
     displayName: p.displayName,
     tags: p.snapshot.tags,
     preferences: p.snapshot.preferences,
+    traits: p.snapshot.traits,
   }));
 
   const turnContext = buildTurnContext({
@@ -735,6 +739,8 @@ async function assemblePreTurn(
             sink,
           })
         : "",
+      // Intimate trait bands, surfaced only when this turn's exposure earns it (volatile).
+      buildIntimateDispositionLine(dispositionNpcs, exposure),
     ]
       .filter(Boolean)
       .join("\n\n"),

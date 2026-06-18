@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { initialMeters } from "@/contracts/meters/registry";
-import { emptyBrief } from "@/contracts/state/brief";
+import { defaultExposureMask, emptyBrief } from "@/contracts/state/brief";
 import { participantStateSchema, type ParticipantState } from "@/contracts/state/participant-state";
 import { emptySessionRuntime } from "@/contracts/state/session-runtime";
 import { itemDefinitionSchema, type ItemDefinition } from "@/contracts/items/item";
@@ -20,6 +20,8 @@ import {
   buildCanonicalFactsBlock,
   buildCommsLine,
   buildDarknessLine,
+  buildDispositionBlock,
+  buildIntimateDispositionLine,
   buildFollowGuidance,
   buildGlanceImpressions,
   buildMeterConditionBlock,
@@ -308,6 +310,83 @@ describe("buildCanonicalFactsBlock", () => {
     const human = buildCanonicalFactsBlock(bundle);
     expect(human).toContain("Maya runs the inn");
     expect(human).not.toContain("Species:");
+  });
+});
+
+describe("buildDispositionBlock", () => {
+  function withTraits(traits: CharacterProfile["traits"]): SceneBundleInput {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya")!;
+    maya.snapshot = profile({ traits });
+    return bundle;
+  }
+
+  it("renders non-intimate trait bands as cached guidance, never the numbers", () => {
+    const block = buildDispositionBlock(
+      withTraits([
+        { id: "temperament.warmth", value: -80, source: "creation" },
+        { id: "social.guardedness", value: 70, source: "creation" },
+      ]),
+    );
+    expect(block).toContain("## Disposition");
+    expect(block).toContain("Maya — Warmth: cold");
+    expect(block).toContain("Guardedness: guarded");
+    expect(block).not.toContain("-80"); // bands, never raw values
+  });
+
+  it("omits intimate trait bands (those are exposure-gated, not cached)", () => {
+    const block = buildDispositionBlock(
+      withTraits([
+        { id: "temperament.warmth", value: 60, source: "creation" },
+        { id: "intimate.libido", value: 70, source: "creation" },
+      ]),
+    );
+    expect(block).toContain("Warmth: warm");
+    expect(block).not.toContain("Libido");
+  });
+
+  it("is empty when no one has authored traits (prefix unchanged from today)", () => {
+    expect(buildDispositionBlock(makeBundle())).toBe("");
+  });
+
+  it("resolves overlay precedence — a manual edit wins over the forge value", () => {
+    const block = buildDispositionBlock(
+      withTraits([
+        { id: "temperament.warmth", value: -80, source: "creation" },
+        { id: "temperament.warmth", value: 80, source: "manual" },
+      ]),
+    );
+    expect(block).toContain("Warmth: warm");
+    expect(block).not.toContain("Warmth: cold");
+  });
+});
+
+describe("buildIntimateDispositionLine", () => {
+  const intimateNpc = [
+    {
+      displayName: "Lena",
+      traits: [
+        { id: "intimate.libido", value: 70, source: "creation" as const },
+        { id: "temperament.warmth", value: 60, source: "creation" as const },
+      ],
+    },
+  ];
+
+  it("surfaces intimate bands only at the intimate exposure tier", () => {
+    const gated = buildIntimateDispositionLine(intimateNpc, defaultExposureMask());
+    expect(gated).toBe("");
+    const earned = buildIntimateDispositionLine(intimateNpc, { ...defaultExposureMask(), appearance: "intimate" });
+    expect(earned).toContain("## Intimate disposition");
+    expect(earned).toContain("Lena — Libido: high");
+    expect(earned).not.toContain("Warmth"); // non-intimate stays in the cached block
+  });
+
+  it("is empty when no present character has intimate traits", () => {
+    const line = buildIntimateDispositionLine(
+      [{ displayName: "Tom", traits: [{ id: "temperament.warmth", value: 50, source: "creation" }] }],
+      { ...defaultExposureMask(), appearance: "intimate" },
+    );
+    expect(line).toBe("");
   });
 });
 
@@ -962,7 +1041,7 @@ describe("buildCommsLine", () => {
 
 describe("buildReactionLine", () => {
   const presentNpcs = [
-    { id: "p-sabrina", displayName: "Sabrina", tags: [], preferences: [{ target: "compliment", valence: "dislike" as const, intensity: 7, hint: "finds flattery cloying" }] },
+    { id: "p-sabrina", displayName: "Sabrina", tags: [], traits: [], preferences: [{ target: "compliment", valence: "dislike" as const, intensity: 7, hint: "finds flattery cloying" }] },
   ];
   const base = {
     playerId: "p-brian",

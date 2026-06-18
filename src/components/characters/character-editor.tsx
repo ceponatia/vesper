@@ -60,7 +60,7 @@ export function CharacterEditor({
     {
       id: "disposition",
       label: "Disposition",
-      badge: draft.profile.tags.length + draft.profile.preferences.length || undefined,
+      badge: draft.profile.traits.length + draft.profile.tags.length + draft.profile.preferences.length || undefined,
     },
     {
       id: "outfit",
@@ -221,6 +221,8 @@ export function CharacterEditor({
 
       {tab === "disposition" ? (
         <DispositionEditor
+          traits={draft.profile.traits}
+          onChangeTraits={(traits) => patchProfile({ traits })}
           tags={draft.profile.tags}
           onChangeTags={(tags) => patchProfile({ tags })}
           preferences={draft.profile.preferences}

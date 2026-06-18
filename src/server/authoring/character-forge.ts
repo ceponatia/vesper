@@ -21,6 +21,8 @@ import {
   interactionConceptIds,
   interactionFamilies,
   normalizeTag,
+  axisRange,
+  traitRegistry,
   type AttributeDefinition,
   type AttributeValue,
   type CharacterProfile,
@@ -30,6 +32,7 @@ import {
   type Preference,
   type RealizedBody,
   type SpeciesDefinition,
+  type TraitValue,
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { generateChecked } from "@/server/ai";
@@ -191,6 +194,15 @@ const profileSectionSchema = z.object({
       }),
     )
     .default([]),
+  /** Atomic trait scalars (personality §3) — grounded against the trait registry + clamped. */
+  traits: z
+    .array(
+      z.object({
+        id: z.string().default(""),
+        value: z.number().catch(0),
+      }),
+    )
+    .default([]),
 });
 
 type ProfileSection = z.infer<typeof profileSectionSchema>;
@@ -215,6 +227,25 @@ function groundPreferences(raw: ProfileSection["preferences"], sink?: Diagnostic
   return out;
 }
 
+/** Ground forge trait scalars against the registry: drop unknown ids, clamp to the axis range. */
+function groundTraitValues(raw: ProfileSection["traits"], sink?: DiagnosticSink): TraitValue[] {
+  const out: TraitValue[] = [];
+  const seen = new Set<string>();
+  for (const t of raw) {
+    const id = t.id.trim();
+    const def = traitRegistry.byId(id);
+    if (!def) {
+      if (id) sink?.push(diag("info", "forge.character.profile.unknown_trait", `dropped trait "${t.id}"`));
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const { min, max } = axisRange(def.axis);
+    out.push({ id, value: Math.min(max, Math.max(min, Math.round(t.value))), source: "creation" });
+  }
+  return out;
+}
+
 /** Normalize forge disposition tags, preferring a canonical id, free-form tolerated. */
 function groundDispositionTags(raw: readonly string[]): string[] {
   const out: string[] = [];
@@ -229,6 +260,19 @@ function groundDispositionTags(raw: readonly string[]): string[] {
 
 const PROFILE_SYSTEM =
   "You draft characters for a roleplaying engine. Write grounded, specific, playable characters — concrete detail over generality. Return only the requested fields.";
+
+function traitVocabulary(): string {
+  return traitRegistry.definitions
+    .map((d) => {
+      const { min, max } = axisRange(d.axis);
+      const terms = d.lexicon
+        .slice(0, 6)
+        .map((l) => l.term)
+        .join(", ");
+      return `  - ${d.id} (${min}..${max}): ${d.description}${terms ? ` [e.g. ${terms}]` : ""}`;
+    })
+    .join("\n");
+}
 
 function profilePrompt(context: CharacterForgeContext): string {
   const species = speciesForForgeContext(context);
@@ -245,6 +289,8 @@ function profilePrompt(context: CharacterForgeContext): string {
     "Then infer the character's social DISPOSITION from the personality (used by the game, not just prose):",
     `- dispositionTags: 2-5 short trait labels. Prefer these canonical tags where they fit: ${canonicalTags}. Free-form is allowed but prefer canonical.`,
     `- preferences: 1-4 clear likes/dislikes that follow from the personality, each {target, valence: like|dislike, intensity: 1-10, hint}. target MUST be one of these interaction concepts/families: ${conceptVocab}. hint is a short note on how they react. Omit weak or generic preferences — sparse and characterful is correct.`,
+    "- traits: scalar readings of the character's temperament, each {id, value}. Map any personality words you used onto the closest trait (negative value = the first/low pole, positive = the second/high pole), then infer the rest from role, species, and vibe. Emit a value for every trait you have a read on; a 0 means genuinely middling. Trait vocabulary (the example words show where the poles sit):",
+    traitVocabulary(),
   ];
   if (species && species.id !== DEFAULT_SPECIES_ID) {
     const { label, look } = speciesForgeDescriptor(species, heritageForForgeContext(context));
@@ -273,6 +319,7 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
     aliases: section.aliases.map((a) => a.trim()).filter((a) => a.length > 0),
     tags: groundDispositionTags(section.dispositionTags),
     preferences: groundPreferences(section.preferences, context.sink),
+    traits: groundTraitValues(section.traits, context.sink),
   };
   const voice = section.voice.trim();
   if (voice) profile.voice = voice;
@@ -952,6 +999,16 @@ export function demoCharacterProfileSection(): ProfileSection {
     preferences: [
       { target: "compliment", valence: "dislike", intensity: 6, hint: "flattery makes her wary; she'd rather be useful than admired" },
       { target: "confide", valence: "like", intensity: 5, hint: "a green deckhand trusting her with something real softens her" },
+    ],
+    traits: [
+      { id: "temperament.warmth", value: -20 },
+      { id: "temperament.composure", value: 60 },
+      { id: "temperament.confidence", value: 55 },
+      { id: "temperament.optimism", value: -15 },
+      { id: "social.extraversion", value: -40 },
+      { id: "social.agreeableness", value: -25 },
+      { id: "social.guardedness", value: 45 },
+      { id: "social.dominance", value: 40 },
     ],
   };
 }

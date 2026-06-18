@@ -146,6 +146,16 @@ describe("buildSimulantPrompt", () => {
     expect(text.startsWith("END-STATE MODE")).toBe(true);
     expect(text).toContain("do not advance time");
   });
+
+  it("appends a character's trait bands so deltas read in-character (personality §7)", () => {
+    const text = buildSimulantPrompt({
+      ...input,
+      participants: [
+        { displayName: "Maya", isUser: false, locationName: "Kitchen", activity: "cooking", meters: {}, traitBands: ["Warmth: cold", "Guardedness: guarded"] },
+      ],
+    });
+    expect(text).toContain("disposition: Warmth: cold, Guardedness: guarded");
+  });
 });
 
 describe("buildArchivistPrompt", () => {
