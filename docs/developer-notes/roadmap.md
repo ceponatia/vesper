@@ -43,6 +43,16 @@ progress) · **shipped — <date>** · **parked**.
    [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
    note (`intimacy`) + per-character disposition, surfaced to the narrator only at
    the intimate exposure tier.
+7. **Personality & evolving state** — plan
+   [personality-and-state.plan.md](personality-and-state.plan.md) · spec
+   [personality-and-state.spec.md](personality-and-state.spec.md) (draft). v1 is the
+   **authored likes/dislikes loop** (spec §6) — the intake agent concept-tags a
+   player's act and a deterministic, **affinity-aware** curve decides the reaction, so
+   the narrator is *told* the verdict instead of improvising it. Later slices add
+   atomic personality **traits** (a registry parallel to attributes) and a new `mood`
+   state that parameterise how each character's transient states (`affinity`/`arousal`/
+   `stress`) drift and react over time. Subsumes the affinity trait-coupling and likely
+   folds in Intimacy notes (intimate traits).
 
 ## Someday / parking lot
 

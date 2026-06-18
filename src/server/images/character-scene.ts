@@ -13,7 +13,7 @@ import { absoluteImagePath } from "./assets";
 import { loadDefaultWardrobe } from "./avatar";
 import {
   characterAppearanceSummary,
-  intimateSceneAppearance,
+  sceneRevealAppearance,
   toWornInputs,
   type SceneComposerContext,
   type ScenePresentCharacter,
@@ -96,7 +96,11 @@ export async function buildCharacterSceneContext(input: {
     // (no outfit) must override a clothed reference avatar, same as a session.
     wardrobeTracked: true,
     appearance: characterAppearanceSummary(resolved, undefined, false, input.profile),
-    intimateAppearance: intimateSceneAppearance(resolved, exposure),
+    // The chat subject is the identity-locked reference (a waist-up portrait), so
+    // supplement it with the figure it can't show: the SFW lower-body shape line
+    // (always) and exposure-/silhouette-aware intimate anatomy (uncensored route).
+    lowerBody: sceneRevealAppearance(resolved, exposure, input.profile, { intimate: false }),
+    intimateAppearance: sceneRevealAppearance(resolved, exposure, input.profile, { intimate: true }),
   };
 
   return {

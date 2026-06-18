@@ -26,6 +26,11 @@ type AttributeDefinition = {
   promptHints?: readonly string[];                     // phrasing guidance for prompt builders
   coreVisual?: boolean;                                // always filled at character creation (forge inference,
                                                        // then seeded default from allowedValues; enum only)
+  imageReveal?: "shape" | "skin";                      // full-body image reveal tier (docs/images.md §Scene images):
+                                                       // "shape" reads through clothing (breast size, waist, hips, leg
+                                                       // build) → always described; "skin" only when the region is
+                                                       // bare/sheer (nipples, leg hair, toenails). Absent ⇒ not part of
+                                                       // the scene subject's reveal line. Consumed by the scene render.
   identityAnchor?: boolean;                            // inferred first at forge time; conditions the plausible
                                                        // ranges for unset core visuals (docs/authoring.md §Character
                                                        // forge). Physical attributes only — never personality/voice/
