@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { fillPlayerToken } from "@/lib/player-token";
 import { sessionsApi, worldsApi, type LoreChunkEntry } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -32,6 +32,21 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
   // grows tall. A visual map node/path view will replace the list later
   // (deferred.plan.md §Visual world map).
   const [mapOpen, setMapOpen] = useState(false);
+
+  // Poll while a world-image backfill runs so freshly-generated art appears and the
+  // "Generating artwork…" hint clears on its own (UX-audit M7); capped at ~5 min.
+  const imageJobActive = world.data?.imageJobActive ?? false;
+  const reloadWorld = world.reload;
+  useEffect(() => {
+    if (!imageJobActive) return;
+    let polls = 0;
+    const timer = setInterval(() => {
+      polls += 1;
+      reloadWorld({ silent: true });
+      if (polls >= 60) clearInterval(timer);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [imageJobActive, reloadWorld]);
 
   if (world.loading) {
     return (
@@ -116,10 +131,23 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
     <PageContainer wide>
       {/* Header */}
       <div className="mb-8 flex flex-wrap items-start gap-5">
-        <EntityImage imageId={detail.imageId} name={detail.name} className="h-32 w-48 rounded-card text-2xl" />
+        {imageJobActive && !detail.imageId ? (
+          <Skeleton className="h-32 w-48 rounded-card" />
+        ) : (
+          <EntityImage imageId={detail.imageId} name={detail.name} className="h-32 w-48 rounded-card text-2xl" />
+        )}
         <div className="min-w-0 flex-1">
           <h1 className="prose-display text-3xl">{detail.name}</h1>
           {detail.description ? <p className="mt-2 max-w-2xl text-sm text-paper-400">{showPlayer(detail.description)}</p> : null}
+          {imageJobActive ? (
+            <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-accent-500/30 bg-accent-500/5 px-3 py-1 text-xs text-accent-300">
+              <span className="size-1.5 animate-pulse rounded-full bg-accent-400" aria-hidden />
+              Generating artwork…
+              {detail.cast.length > 0
+                ? ` (${detail.cast.filter((c) => c.avatarImageId).length}/${detail.cast.length} avatars)`
+                : ""}
+            </p>
+          ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
               href={`/sessions/new?worldId=${detail.id}`}
@@ -199,11 +227,15 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
               {detail.cast.map((member) => (
                 <li key={member.id}>
                   <Card className="flex items-center gap-3 p-3">
-                    <EntityImage
-                      imageId={member.avatarImageId}
-                      name={member.name || "?"}
-                      className="size-11 rounded-full"
-                    />
+                    {imageJobActive && !member.avatarImageId ? (
+                      <Skeleton className="size-11 rounded-full" />
+                    ) : (
+                      <EntityImage
+                        imageId={member.avatarImageId}
+                        name={member.name || "?"}
+                        className="size-11 rounded-full"
+                      />
+                    )}
                     <div className="min-w-0">
                       {member.characterId ? (
                         <Link
