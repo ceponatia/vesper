@@ -9,6 +9,8 @@ describe("intentBriefSchema", () => {
     expect(brief.addressedNpcs).toEqual([]);
     expect(brief.movement).toEqual({ kind: "none", coTravelTargets: [] });
     expect(brief.appointment).toBeUndefined();
+    expect(brief.socialActs).toEqual([]);
+    expect(brief.narratedNpcBehaviors).toEqual([]);
     expect(brief.notes).toBe("");
   });
 
@@ -32,9 +34,11 @@ describe("intentBriefSchema", () => {
       movement: { kind: "co_travel_request", destination: "Anchor Cafe", coTravelTargets: ["Eleanor"] },
       appointment: { withNpc: "Eleanor", location: "Brian's Apartment", timePhrase: "5:30", reason: "a date" },
       check: { relevantAttributeIds: ["charisma"], stakes: "high" },
+      narratedNpcBehaviors: [{ npc: "Eleanor", concept: "physical_affection", summary: "hugs Brian" }],
     });
     expect(parsed.actionType).toBe("move");
     expect(parsed.enterLocation).toBe("Anchor Cafe");
+    expect(parsed.narratedNpcBehaviors).toEqual([{ npc: "Eleanor", concept: "physical_affection", summary: "hugs Brian" }]);
     expect(parsed.movement).toEqual({
       kind: "co_travel_request",
       destination: "Anchor Cafe",

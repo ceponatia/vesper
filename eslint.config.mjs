@@ -25,7 +25,7 @@ const NAMING_CONVENTION = [
 ];
 
 export default defineConfig([
-  globalIgnores([".next/**", "node_modules/**", "drizzle/**", "coverage/**", "eslint.config.mjs"]),
+  globalIgnores([".next/**", "node_modules/**", "drizzle/**", "coverage/**", "eslint.config.mjs", ".claude/**"]),
   ...nextPlugin,
 
   // ---------------------------------------------------------------------------

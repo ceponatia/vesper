@@ -27,6 +27,14 @@ describe("interaction concepts", () => {
     expect(interactionFamilies()).toContain("aggression");
   });
 
+  it("every concept declares a valid affective polarity", () => {
+    const valid = new Set(["warm", "hostile", "neutral"]);
+    for (const def of interactionConcepts) expect(valid.has(def.polarity)).toBe(true);
+    expect(interactionConceptById("compliment")?.polarity).toBe("warm");
+    expect(interactionConceptById("insult")?.polarity).toBe("hostile");
+    expect(interactionConceptById("tease")?.polarity).toBe("neutral");
+  });
+
   it("at least one intimate concept exists and is flagged", () => {
     const intimate = interactionConcepts.filter((c) => c.intimate);
     expect(intimate.length).toBeGreaterThan(0);

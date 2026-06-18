@@ -66,8 +66,8 @@ export function resolveSocialReaction(act: SocialAct, sources: DispositionSource
   return null;
 }
 
-/** Direct concept match beats a family match. */
-function matchPreference(conceptId: string, preferences: readonly Preference[]): Preference | undefined {
+/** Direct concept match beats a family match. Shared with the puppet guardrail (puppet.ts). */
+export function matchPreference(conceptId: string, preferences: readonly Preference[]): Preference | undefined {
   const direct = preferences.find((p) => p.target === conceptId);
   if (direct) return direct;
   const family = interactionConceptById(conceptId)?.family;

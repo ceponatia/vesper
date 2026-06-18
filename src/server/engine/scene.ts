@@ -33,7 +33,9 @@ import type { SessionRuntime } from "@/contracts/state/session-runtime";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
 import { interactionConceptById } from "@/contracts/personality/interactions";
 import type { Preference } from "@/contracts/personality/preference";
+import { checkPuppetContradiction } from "@/contracts/personality/puppet";
 import { evaluateSocialReaction, NEUTRAL_MOOD, resolveSocialReaction } from "@/contracts/personality/reactions";
+import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { MAX_NPC_PAIR_AWARENESS_LINES } from "./constants";
 import type { SceneIntent } from "./intent";
 
@@ -1111,6 +1113,59 @@ export function buildReactionLine(input: ReactionLineInput): string {
   return [
     "## Reaction (authored disposition — play this; do not re-decide whether they mind)",
     `- ${input.playerName} ${verb} ${npc.displayName} — ${npc.displayName} ${valenceWord} this (${label}) and ${evaluated.band}.${hint}`,
+  ].join("\n");
+}
+
+export interface PuppetDeflectionInput {
+  /** intake's classified player-authored NPC behaviours (intent-brief.narratedNpcBehaviors). */
+  narratedNpcBehaviors: ReadonlyArray<{ npc: string; concept?: string; summary?: string }>;
+  presentNpcs: ReadonlyArray<{ displayName: string; tags: readonly string[]; preferences: readonly Preference[] }>;
+  /** A behaviour naming a non-present character is logged here (the absence notice voices it). */
+  sink?: DiagnosticSink;
+}
+
+/**
+ * Disposition guardrail — refusing out-of-character puppeting
+ * (docs/developer-notes/personality-and-state.spec.md §6, Note 2). When the
+ * player's prose authors a present character's dialogue/affection/action that
+ * **contradicts** that character's disposition, emit a volatile directive telling
+ * the narrator not to honour it and to answer with a brief in-voice meta aside.
+ * Consistent (in-disposition) puppeting passes silently — a v1 leniency. Empty when
+ * nothing is puppeted or every puppeted act is consistent.
+ *
+ * v1 ships this deflection directive ONLY: the merge does not separately strip
+ * puppet-implied state, because the narrator's refusal means the puppeted act never
+ * reaches the post-turn agents (the simulant scores the narration, which won't
+ * contain it). The broader puppet-handling system — merge-level stripping, routing
+ * NPC authorship out of the player prompt — is deferred
+ * (docs/developer-notes/npc-puppeting.deferred.md).
+ */
+export function buildPuppetDeflection(input: PuppetDeflectionInput): string {
+  const lines: string[] = [];
+  for (const behavior of input.narratedNpcBehaviors) {
+    const npc = input.presentNpcs.find((n) => n.displayName.toLowerCase() === behavior.npc.toLowerCase());
+    if (!npc) {
+      input.sink?.push(
+        diag("warn", "scene.puppet.unresolved_target", `narrated NPC behaviour names non-present character "${behavior.npc}"`, {
+          context: { npc: behavior.npc, concept: behavior.concept },
+        }),
+      );
+      continue;
+    }
+    const verdict = checkPuppetContradiction(
+      { npc: behavior.npc, concept: behavior.concept },
+      { tags: npc.tags, preferences: npc.preferences },
+    );
+    if (!verdict.contradiction) continue;
+    const act = behavior.summary?.trim() || interactionConceptById(behavior.concept ?? "")?.label.toLowerCase() || "that";
+    lines.push(
+      `- ${npc.displayName} would not "${act}" — it cuts against who ${npc.displayName} is. Do NOT narrate it; answer instead with a brief, knowing aside in the narrator's voice (e.g. "${npc.displayName} raises an eyebrow — those are ${npc.displayName}'s words to choose, not yours.") and let ${npc.displayName} react as themselves.`,
+    );
+  }
+  if (lines.length === 0) return "";
+  return [
+    "## Disposition guardrail (the player's prose puts words or actions on a character — do NOT honour these)",
+    ...lines,
   ].join("\n");
 }
 

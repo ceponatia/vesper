@@ -43,6 +43,7 @@ import {
   buildGlanceImpressions,
   buildMeterConditionBlock,
   buildPresenceRoster,
+  buildPuppetDeflection,
   buildReactionLine,
   buildRelationshipBlock,
   buildSceneSnapshot,
@@ -680,6 +681,15 @@ async function assemblePreTurn(
     sink.push(diag("info", "pipeline.perception.darkness_miss", "night ambient light matched no keyword; defaulting dark"));
   }
 
+  // Present NPCs with their authored disposition — shared by the reaction line and
+  // the puppet-deflection guardrail (both resolve a classified intent against it).
+  const dispositionNpcs = presentNpcs.map((p) => ({
+    id: p.id,
+    displayName: p.displayName,
+    tags: p.snapshot.tags,
+    preferences: p.snapshot.preferences,
+  }));
+
   const turnContext = buildTurnContext({
     clockLine: formatGameClock(gameTime),
     elapsedLine: lastMinutes > 0 ? `${formatElapsed(lastMinutes)} since the previous turn` : undefined,
@@ -714,13 +724,15 @@ async function assemblePreTurn(
             playerId: player.id,
             playerName: player.displayName,
             socialActs: intentBrief.socialActs,
-            presentNpcs: presentNpcs.map((p) => ({
-              id: p.id,
-              displayName: p.displayName,
-              tags: p.snapshot.tags,
-              preferences: p.snapshot.preferences,
-            })),
+            presentNpcs: dispositionNpcs,
             relationships: bundle.relationships,
+          })
+        : "",
+      player
+        ? buildPuppetDeflection({
+            narratedNpcBehaviors: intentBrief.narratedNpcBehaviors,
+            presentNpcs: dispositionNpcs,
+            sink,
           })
         : "",
     ]

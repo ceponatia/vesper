@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { initialMeters } from "@/contracts/meters/registry";
 import { emptyBrief } from "@/contracts/state/brief";
 import { participantStateSchema, type ParticipantState } from "@/contracts/state/participant-state";
@@ -23,6 +24,7 @@ import {
   buildGlanceImpressions,
   buildMeterConditionBlock,
   buildPresenceRoster,
+  buildPuppetDeflection,
   buildReactionLine,
   buildRelationshipBlock,
   buildSceneSnapshot,
@@ -991,5 +993,51 @@ describe("buildReactionLine", () => {
     expect(buildReactionLine({ ...base, socialActs: [] })).toBe("");
     expect(buildReactionLine({ ...base, socialActs: [{ concept: "compliment", target: "Nobody" }] })).toBe("");
     expect(buildReactionLine({ ...base, socialActs: [{ concept: "insult", target: "Sabrina" }] })).toBe("");
+  });
+});
+
+describe("buildPuppetDeflection", () => {
+  const bratty = [{ displayName: "Sabrina", tags: ["bratty"], preferences: [] }];
+
+  it("deflects a puppeted behaviour that contradicts disposition", () => {
+    const block = buildPuppetDeflection({
+      presentNpcs: bratty,
+      narratedNpcBehaviors: [{ npc: "Sabrina", concept: "physical_affection", summary: "hugs Brian warmly" }],
+    });
+    expect(block).toContain("Disposition guardrail");
+    expect(block).toContain('Sabrina would not "hugs Brian warmly"');
+    expect(block).toContain("raises an eyebrow");
+  });
+
+  it("falls back to the concept label when intake gave no summary", () => {
+    const block = buildPuppetDeflection({
+      presentNpcs: bratty,
+      narratedNpcBehaviors: [{ npc: "Sabrina", concept: "physical_affection" }],
+    });
+    expect(block).toContain('would not "physical affection"');
+  });
+
+  it("honours consistent puppeting (no concept, or in-disposition) ⇒ empty", () => {
+    expect(buildPuppetDeflection({ presentNpcs: bratty, narratedNpcBehaviors: [] })).toBe("");
+    // plain dialogue (no concept) is unjudgeable ⇒ honoured
+    expect(buildPuppetDeflection({ presentNpcs: bratty, narratedNpcBehaviors: [{ npc: "Sabrina" }] })).toBe("");
+    // a warm act onto a warm character is consistent
+    expect(
+      buildPuppetDeflection({
+        presentNpcs: [{ displayName: "Mira", tags: ["flirtatious"], preferences: [] }],
+        narratedNpcBehaviors: [{ npc: "Mira", concept: "flirt" }],
+      }),
+    ).toBe("");
+  });
+
+  it("logs a diagnostic and skips when the named character isn't present", () => {
+    const sink = new DiagnosticCollector();
+    const block = buildPuppetDeflection({
+      presentNpcs: bratty,
+      narratedNpcBehaviors: [{ npc: "Ghost", concept: "physical_affection" }],
+      sink,
+    });
+    expect(block).toBe("");
+    expect(sink.items.some((d) => d.code === "scene.puppet.unresolved_target")).toBe(true);
   });
 });

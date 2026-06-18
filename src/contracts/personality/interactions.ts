@@ -19,6 +19,14 @@ export const interactionConceptSchema = z.object({
   family: z.string().optional(),
   /** Past-tense phrase for the reaction line: "complimented", "offered a gift to". */
   verb: z.string().min(1),
+  /**
+   * Coarse affective direction of the act, regardless of who performs it — the
+   * signal the puppet guardrail (personality-and-state.spec.md §6, Note 2) reads
+   * to judge whether a player-puppeted NPC behaviour clashes with disposition.
+   * warm = affection/support/courtship; hostile = aggression/transgression;
+   * neutral = ambiguous (e.g. teasing).
+   */
+  polarity: z.enum(["warm", "hostile", "neutral"]).catch("neutral").default("neutral"),
   /** Phrasing examples that steer the intake classifier (NOT regex triggers). */
   triggers: z.array(z.string()).readonly().default([]),
   /** Fallback narrator flavour when a preference sets no `hint`; "" is fine. */
@@ -41,6 +49,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Praise, flattery, or admiration directed at them.",
     family: "affection_display",
     verb: "complimented",
+    polarity: "warm",
     triggers: ["you look beautiful", "that was brilliant", "I admire how you handled that"],
     defaultHint: "",
     intimate: false,
@@ -51,6 +60,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Offering a present, treat, or unprompted favour.",
     family: "affection_display",
     verb: "offered a gift to",
+    polarity: "warm",
     triggers: ["I brought you this", "a little something for you", "holds out a small box"],
     defaultHint: "",
     intimate: false,
@@ -61,6 +71,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "A hug, hand-hold, or other affectionate, non-sexual touch.",
     family: "affection_display",
     verb: "showed affection to",
+    polarity: "warm",
     triggers: ["pulls her into a hug", "takes his hand", "ruffles her hair"],
     defaultHint: "",
     intimate: false,
@@ -71,6 +82,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "A playful romantic or suggestive advance.",
     family: "courtship",
     verb: "flirted with",
+    polarity: "warm",
     triggers: ["winks at her", "leans in with a slow grin", "'come here often?'"],
     defaultHint: "",
     intimate: false,
@@ -81,6 +93,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Playful ribbing or provocation.",
     family: "teasing",
     verb: "teased",
+    polarity: "neutral",
     triggers: ["smirks 'is that so?'", "pokes fun at her", "mocks her gently"],
     defaultHint: "",
     intimate: false,
@@ -91,6 +104,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Comfort, support, or calming after distress.",
     family: "support",
     verb: "reassured",
+    polarity: "warm",
     triggers: ["it's going to be okay", "I'm here for you", "you did nothing wrong"],
     defaultHint: "",
     intimate: false,
@@ -101,6 +115,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Sharing something personal or vulnerable with them.",
     family: "support",
     verb: "confided in",
+    polarity: "warm",
     triggers: ["I've never told anyone this", "can I tell you something", "I trust you with this"],
     defaultHint: "",
     intimate: false,
@@ -111,6 +126,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "A direct insult, put-down, or demeaning remark.",
     family: "aggression",
     verb: "insulted",
+    polarity: "hostile",
     triggers: ["you're pathetic", "calls her stupid", "sneers something cruel"],
     defaultHint: "",
     intimate: false,
@@ -121,6 +137,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Disapproval or fault-finding of their choices or actions.",
     family: "aggression",
     verb: "criticized",
+    polarity: "hostile",
     triggers: ["that was a mistake", "you should have known better", "I don't like how you handled that"],
     defaultHint: "",
     intimate: false,
@@ -131,6 +148,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Pressing past a stated comfort, limit, or refusal.",
     family: "transgression",
     verb: "pushed a boundary with",
+    polarity: "hostile",
     triggers: ["keeps pressing after a no", "'just this once'", "ignores her hesitation"],
     defaultHint: "",
     intimate: false,
@@ -141,6 +159,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Flirting with or favouring someone else in their presence.",
     family: "transgression",
     verb: "stirred jealousy in",
+    polarity: "hostile",
     triggers: ["flirts with another in front of her", "praises her rival", "leaves with someone else"],
     defaultHint: "",
     intimate: false,
@@ -151,6 +170,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "Conspicuous affection or attention in front of others.",
     family: "courtship",
     verb: "made a public display toward",
+    polarity: "warm",
     triggers: ["kisses her in the crowded room", "announces his feelings to the table", "loud praise in company"],
     defaultHint: "",
     intimate: false,
@@ -161,6 +181,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     description: "A direct sexual or intimate advance.",
     family: "intimate",
     verb: "propositioned",
+    polarity: "warm",
     triggers: ["'come to bed'", "slides a hand up her thigh", "whispers a frank invitation"],
     defaultHint: "",
     intimate: true,

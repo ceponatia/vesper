@@ -1,8 +1,10 @@
 # Personality & evolving state — plan
 
-Status: **active** — Slice 1 (the social-reaction loop) **shipped 2026-06-18**; Slices
-2–5 queued. The social-fabric **card layer is a separate plan**
-(`social-reaction-cards.plan.md`) that Slice 1 built the resolution seam for.
+Status: **active** — Slice 1 (the social-reaction loop) and Slice 2 (the puppet
+guardrail) **shipped 2026-06-18**; Slices 3–5 queued. The social-fabric **card layer is a
+separate plan** (`social-reaction-cards.plan.md`) that Slice 1 built the resolution seam
+for; the **full NPC-puppeting system** beyond Slice 2's deflection directive is parked in
+`npc-puppeting.deferred.md`.
 
 Design/decisions: [personality-and-state.spec.md](personality-and-state.spec.md) — read
 it first; it is the truth. This plan is the task list and build order. It **front-loads
@@ -106,26 +108,47 @@ Ships the game feel by itself; everything later plugs into seams this slice crea
     the reaction step, the merge suppression rule), `prompts.md` (the reaction line),
     `authoring.md` (forge + Disposition tab).
 
-### 2. The disposition guardrail (puppet refusal) — _not started_
+### 2. The disposition guardrail (puppet refusal) — _shipped 2026-06-18_
 
 Spec §6, Note 2. Makes disposition *real* by reading it on the input side. Uses v1
 disposition (tags + preferences); Slice 3 enriches it with full traits + affinity + mood.
 
-1. **`narratedNpcBehavior` intake flag** — generalize the existing `movement.kind:
-   "narrated_npc"` seam to a flag for player-authored NPC dialogue/affection/action,
-   on `intentBriefSchema` + the intake prompt.
-2. **Contradiction check** *(deterministic, fed by intake)* — intake classifies the
-   puppeted behaviour into the concept vocabulary; a pure rule compares its affective
-   direction to the target's disposition. Contradiction ⇒ refuse; consistent ⇒ honour.
-3. **Deflection directive** — when it contradicts, a turn-context directive tells the
-   narrator **not to honour it** and to answer with an **overt cheeky meta aside**; the
-   merge drops any state effect the puppet implied. **Consistent narration passes** —
-   leave a code comment + doc note that this leniency may later be strengthened so the
-   player can't author NPC behaviour from the *player* prompt at all (routed through the
-   companion/narrator out-of-POV affordances).
-4. **Tests + docs** — contradiction fires the aside + strips the effect; consistent
-   narration passes; degradation (flag empty ⇒ prior behaviour). Docs: `turn-engine.md`
-   + `prompts.md`.
+> **Shipped 2026-06-18 — all 4 steps; `pnpm verify` green.**
+> concept `polarity` + tag `warmth`/`wontInitiate` (the contradiction signal) →
+> `narratedNpcBehaviors` on the intent brief + intake prompt → `checkPuppetContradiction`
+> (`contracts/personality/puppet.ts`, pure: preference → tag → honour) →
+> `buildPuppetDeflection` (`engine/scene.ts`, pre-narration, wired into the volatile
+> stateBlock) → tests + docs (contracts/turn-engine/prompts) + the deferred-system doc.
+>
+> **Decisions made during the build (the docs left them open):**
+> (1) The contradiction signal is **tag `warmth` + `wontInitiate` families + concept
+> `polarity`**, with **preferences taking precedence** (a `dislike` ⇒ contradiction, an
+> authored `like` ⇒ consent to puppet) — the first slice of the richer "what a tag means"
+> model the user plans; free-form tags carry no machine affect and are invisible to the
+> guardrail. (2) `narratedNpcBehaviors` is a **new brief field** (sibling to `socialActs`),
+> not a reuse of `movement.kind:"narrated_npc"` — movement (physical relocation) stays the
+> movement-authority spec's concern; "generalize" meant the same *concept* now covers
+> dialogue/affection/action. (3) **No merge state-strip in v1**: the narrator's refusal
+> means the puppeted act never reaches the post-turn agents, so there is nothing to drop;
+> the **full puppet-handling system** (merge stripping, stronger refusal routed through the
+> companion/narrator out-of-POV affordances, trait-enriched judging) is parked in
+> `npc-puppeting.deferred.md` per the user's call to plan it separately.
+
+1. **`narratedNpcBehaviors` intake flag** — a new `{ npc, concept?, summary? }[]` field on
+   `intentBriefSchema` for player-authored NPC dialogue/affection/action, set by the intake
+   prompt. (Movement's `narrated_npc` kind is left to movement-authority.)
+2. **Contradiction check** *(deterministic, fed by intake)* — `checkPuppetContradiction`
+   classifies the puppeted behaviour's affective direction (concept `polarity` + tag
+   `warmth`/`wontInitiate`) against disposition, preference-first. Contradiction ⇒ refuse;
+   consistent / unclassifiable ⇒ honour.
+3. **Deflection directive** — on contradiction, `buildPuppetDeflection` adds a volatile
+   turn-context directive telling the narrator **not to honour it** and to answer with an
+   **overt cheeky meta aside**. **Consistent narration passes** (code comment + the deferred
+   doc note that this leniency may later be strengthened). No merge state-strip in v1 (see
+   the decision note above).
+4. **Tests + docs** — contradiction fires the aside; consistent / unclassifiable puppeting
+   passes; unresolved target ⇒ diagnostic; degradation (flag empty ⇒ prior behaviour). Docs:
+   `contracts.md`, `turn-engine.md`, `prompts.md`, + `npc-puppeting.deferred.md`.
 
 ### 3. Atomic traits + scaling + lexicon — _not started_
 
