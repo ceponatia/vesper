@@ -1,15 +1,30 @@
 "use client";
 
-import { dispositionTags, interactionConcepts, interactionFamilies, type Preference } from "@/contracts";
+import {
+  axisRange,
+  bandForValue,
+  dispositionTags,
+  INTIMATE_TRAIT_CATEGORY,
+  interactionConcepts,
+  interactionFamilies,
+  traitRegistry,
+  type Preference,
+  type TraitCategory,
+  type TraitValue,
+} from "@/contracts";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { TagInput } from "@/components/ui/tag-input";
 
 const CANONICAL_TAG_IDS = dispositionTags.map((t) => t.id);
+const TRAIT_CATEGORY_ORDER: TraitCategory[] = ["temperament", "social", "intimate"];
 
 export interface DispositionEditorProps {
+  traits: readonly TraitValue[];
+  onChangeTraits: (traits: TraitValue[]) => void;
   tags: readonly string[];
   onChangeTags: (tags: string[]) => void;
   preferences: readonly Preference[];
@@ -22,15 +37,54 @@ export interface DispositionEditorProps {
  * from the dev registry, free-form allowed) and **bespoke** likes/dislikes resolved
  * against the interaction-concept vocabulary. Authored game data, not just prose.
  */
-export function DispositionEditor({ tags, onChangeTags, preferences, onChangePreferences }: DispositionEditorProps) {
+export function DispositionEditor({ traits, onChangeTraits, tags, onChangeTags, preferences, onChangePreferences }: DispositionEditorProps) {
   const update = (index: number, patch: Partial<Preference>) =>
     onChangePreferences(preferences.map((p, i) => (i === index ? { ...p, ...patch } : p)));
   const remove = (index: number) => onChangePreferences(preferences.filter((_, i) => i !== index));
   const add = () =>
     onChangePreferences([...preferences, { target: interactionConcepts[0]?.id ?? "compliment", valence: "dislike", intensity: 5 }]);
 
+  // A slider edit is a `manual` overlay; keep one entry per trait id (it wins resolution).
+  const valueOf = (id: string, fallback: number) => traits.find((t) => t.id === id)?.value ?? fallback;
+  const setTrait = (id: string, value: number) =>
+    onChangeTraits([...traits.filter((t) => t.id !== id), { id, value, source: "manual" }]);
+
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
+        <div>
+          <span className="text-sm font-medium text-paper-200">Traits</span>
+          <p className="text-xs text-paper-500">
+            Stable temperament scalars. Bands surface to the narrator as behavioural guidance; some also scale how the
+            character takes social moves. Intimate traits surface only in intimate scenes.
+          </p>
+        </div>
+        {TRAIT_CATEGORY_ORDER.map((category) => {
+          const defs = traitRegistry.forCategory(category);
+          if (defs.length === 0) return null;
+          return (
+            <div key={category} className="flex flex-col gap-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-paper-400">
+                {category}
+                {category === INTIMATE_TRAIT_CATEGORY ? " (intimate)" : ""}
+              </span>
+              {defs.map((def) => {
+                const { min, max } = axisRange(def.axis);
+                const value = valueOf(def.id, def.default);
+                const band = bandForValue(def, value);
+                return (
+                  <Field key={def.id} label={`${def.label} — ${band?.label ?? ""}`} hint={def.description}>
+                    {(id) => (
+                      <Slider id={id} value={value} min={min} max={max} step={5} onChange={(v) => setTrait(def.id, v)} />
+                    )}
+                  </Field>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
       <Field
         label="Disposition tags"
         hint="Reusable trait labels the world's social-reaction cards key on. Canonical tags autocomplete; free-form is allowed."

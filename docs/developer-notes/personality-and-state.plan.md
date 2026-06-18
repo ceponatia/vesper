@@ -1,10 +1,11 @@
 # Personality & evolving state — plan
 
-Status: **active** — Slice 1 (the social-reaction loop) and Slice 2 (the puppet
-guardrail) **shipped 2026-06-18**; Slices 3–5 queued. The social-fabric **card layer is a
-separate plan** (`social-reaction-cards.plan.md`) that Slice 1 built the resolution seam
-for; the **full NPC-puppeting system** beyond Slice 2's deflection directive is parked in
-`npc-puppeting.deferred.md`.
+Status: **active** — Slices 1 (social-reaction loop), 2 (puppet guardrail), and 3 (atomic
+traits + scaling + lexicon) **shipped 2026-06-18**; Slices 4–5 queued. The social-fabric
+**card layer is a separate plan** (`social-reaction-cards.plan.md`) that Slice 1 built the
+resolution seam for; the **full NPC-puppeting system** beyond Slice 2's deflection directive
+is parked in `npc-puppeting.deferred.md`. Slices 4–5 can now build on the live trait
+registry (mood/meter baselines, affinity gain/decay).
 
 Design/decisions: [personality-and-state.spec.md](personality-and-state.spec.md) — read
 it first; it is the truth. This plan is the task list and build order. It **front-loads
@@ -150,10 +151,32 @@ disposition (tags + preferences); Slice 3 enriches it with full traits + affinit
    passes; unresolved target ⇒ diagnostic; degradation (flag empty ⇒ prior behaviour). Docs:
    `contracts.md`, `turn-engine.md`, `prompts.md`, + `npc-puppeting.deferred.md`.
 
-### 3. Atomic traits + scaling + lexicon — _not started_
+### 3. Atomic traits + scaling + lexicon — _shipped 2026-06-18_
 
 Spec §3, §5, §7. Adds the generic dynamics, **fills the `traitScale` seam** Slice 1
 stubbed, and powers forge expansion.
+
+> **Shipped 2026-06-18 — all 7 steps; `pnpm verify` green (1264 tests).**
+> shared `contracts/registry` spine (generic `buildRegistryCore` + provenance/precedence;
+> attributes refactored onto it, behavior unchanged) → `contracts/personality/traits/`
+> (~11 traits across temperament/social/intimate, bands + `lexicon` + `modulates`; `traits:
+> TraitValue[]` on the profile) → `modulation.ts` `socialTraitScale` wired into
+> `buildReactionLine` + the merge → cached `buildDispositionBlock` + volatile exposure-gated
+> `buildIntimateDispositionLine` → guardrail enriched with the warmth scalar → forge trait
+> inference + lexicon-guided prompt → simulant trait bands + editor trait sliders → tests +
+> docs (contracts/turn-engine/prompts/authoring).
+>
+> **Deviations / decisions (per the pre-build Q&A):** (1) **Fuller generic registry** — the
+> shared core is `buildRegistryCore` in a new `contracts/registry` module that both
+> registries instantiate (not a minimal copy); attribute tests prove behavior is unchanged.
+> (2) **Full ~11-trait set** authored now as disposition guidance; only the social-reaction
+> `traitScale` (agreeableness/composure/possessiveness) is *mechanically* live this slice —
+> mood/meter/affinity coupling is Slices 4–5, recorded as `modulates` metadata. (3) Trait
+> **category files collapsed** into one `definitions.ts` (only 11 traits; split per-category
+> like attributes if it grows). (4) Modulation constants live in `modulation.ts` (contracts
+> is IO-free), like the curve constants in `reactions.ts`. (5) Intimate trait bands surface
+> via a **volatile** exposure-gated line (the cached block can't depend on per-turn exposure);
+> intimacy-notes isn't built, so the gate is the exposure mask directly.
 
 1. **Shared registry spine** — lift `buildRegistry`/`valueSchemaFor`
    (`attributes/registry.ts`) + `resolveAttributes` precedence (`attributes/value.ts`)

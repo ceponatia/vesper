@@ -39,6 +39,7 @@ import type {
 import type { TurnAuthor } from "@/contracts/turns/stream";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { evaluateSocialReaction, NEUTRAL_MOOD, resolveSocialReaction } from "@/contracts/personality/reactions";
+import { socialTraitScale } from "@/contracts/personality/modulation";
 import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { checkLinkAccess, type DoorState } from "@/contracts/world/access";
 import { daylightBand, minuteOfDay, resolveGameTime, type DaylightBand } from "@/lib/clock";
@@ -830,7 +831,12 @@ export function planReactionAffinity(
   const feeling = relationships.find(
     (r) => r.kind === "feeling" && r.fromParticipantId === target.id && r.toParticipantId === player.id,
   );
-  const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, NEUTRAL_MOOD, 1);
+  const evaluated = evaluateSocialReaction(
+    reaction,
+    feeling?.value ?? 0,
+    NEUTRAL_MOOD,
+    socialTraitScale(reaction, target.snapshot.traits),
+  );
   const ownedEdgeKeys = new Set([`${target.id}::${player.id}::feeling`]);
 
   const signed = evaluated.valence === "dislike" ? -evaluated.magnitude : evaluated.magnitude;

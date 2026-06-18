@@ -28,7 +28,7 @@ import {
   DIRECTOR_SYSTEM,
   SIMULANT_SYSTEM,
 } from "./prompts/agents";
-import { buildAwarenessBlocks, buildCanonicalFactsBlock, buildPresenceRoster, effectiveMeterDefinitions } from "./scene";
+import { buildAwarenessBlocks, buildCanonicalFactsBlock, buildPresenceRoster, dispositionBandSummary, effectiveMeterDefinitions } from "./scene";
 import { detectIntent } from "./intent";
 import { sceneIntentFromBrief } from "./intake";
 import type { IntentBrief } from "@/contracts/turns/intent-brief";
@@ -106,6 +106,7 @@ export async function runPostTurnAgents(
       locationName: p.locationId ? (locationNameById.get(p.locationId) ?? null) : null,
       activity: p.state.activity,
       meters: p.state.meters,
+      traitBands: p.isUser ? undefined : dispositionBandSummary(p.snapshot.traits),
     })),
     locations: bundle.locations.map((l) => ({ name: l.name, exits: exitNames(bundle, l.id) })),
     items: scopedItems.map((i) => ({ name: i.name, placement: placementLabel(i, bundle) })),

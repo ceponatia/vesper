@@ -3,6 +3,7 @@ import { attributeValueSchema } from "../attributes/value";
 import { calendarStartSchema, DEFAULT_CALENDAR_START } from "@/lib/clock";
 import { meterDefinitionSchema } from "../meters/registry";
 import { preferenceSchema } from "../personality/preference";
+import { traitValueSchema } from "../personality/traits/value";
 import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
 
 export const scheduleEntrySchema = z.object({
@@ -51,6 +52,13 @@ export const characterProfileSchema = z.object({
    */
   tags: z.array(z.string()).default([]),
   preferences: z.array(preferenceSchema).default([]),
+  /**
+   * Atomic personality traits (personality-and-state.spec.md §3): numeric scalars
+   * with registry-defined bands, carrying the `AttributeValue` provenance shape
+   * (base/creation/manual). Default `[]` ⇒ a character with no traits surfaces no
+   * disposition block and scales reactions by 1 — exactly today's behavior.
+   */
+  traits: z.array(traitValueSchema).default([]),
   aliases: z.array(z.string()).default([]),
   /** Item definition ids from the owner's library. */
   defaultOutfit: z.array(z.string()).default([]),
