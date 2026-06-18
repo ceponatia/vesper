@@ -8,9 +8,9 @@ narrator: absent characters drifting into the scene, and everyone in a room bein
 silently omniscient.
 
 Shipped in phase 3 (presence & perception v1 — see
-[developer-notes/phase-3-plan.md](developer-notes/phase-3-plan.md) and the
-[presence](developer-notes/presence-and-perception-spec.phase3.md) /
-[proximity](developer-notes/proximity-spec.phase3.md) specs). The rules are pure
+[developer-notes/phase-3-plan.md](developer-notes/finished/phase-3-plan.md) and the
+[presence](developer-notes/finished/presence-and-perception-spec.phase3.md) /
+[proximity](developer-notes/finished/proximity-spec.phase3.md) specs). The rules are pure
 and unit-tested (`contracts/perception/perception.test.ts`); the engine wiring is
 deterministic and snapshot/merge-tested.
 
@@ -73,7 +73,7 @@ fabricated by the narrator:
   `general` violation (it is fed each absent NPC's location via the roster).
 
 Escalation, group calls, voicemail content, and rereadable text history remain
-**deferred** — see [developer-notes/npc-movement-spec.phase3.md](developer-notes/npc-movement-spec.phase3.md).
+**deferred** — see [developer-notes/npc-movement-spec.phase3.md](developer-notes/finished/npc-movement-spec.phase3.md).
 
 ## Symmetric perception (NPC-side)
 
@@ -194,7 +194,7 @@ their consumer).
 - **Diagnostics**: `merge.comms.unresolved` (warn), `merge.perception.darkness_miss`
   (info), `pipeline.perception.darkness_miss` (info). **Events**:
   `comms_link_opened`, `comms_link_closed`.
-- **Deferred to phase 4+** (see [developer-notes/phase-3-to-4.md](developer-notes/phase-3-to-4.md)):
+- **Deferred to phase 4+** (see [developer-notes/phase-3-to-4.md](developer-notes/finished/phase-3-to-4.md)):
   the cross-location sound channel, NPC-initiated comms + escalation, per-pair
   proximity tracking / engagement / movement lock / contested transitions, banded
   ambient light, and player-unperceived hidden acts (v2).

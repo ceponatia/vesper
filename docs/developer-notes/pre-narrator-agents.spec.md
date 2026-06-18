@@ -2,7 +2,7 @@
 
 > **Resequenced 2026-06-14:** this work is now **phase 5**. A standalone **phase 4**
 > (the body-model build) was inserted ahead of it — see
-> [intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sensory-and-species-spec.phase4.md).
+> [intimate-anatomy-sensory-and-species-spec.phase4.md](finished/intimate-anatomy-sensory-and-species-spec.phase4.md).
 > This file was renamed from `*.phase4.md` and its body now reads "phase 5" throughout.
 
 Status: **findings / draft for discussion** (2026-06-14). Phase 5 ("the world
@@ -31,7 +31,7 @@ two specs each end with a gap that an input-side understanding layer is the
 natural place to close.
 
 `phase-5-plan.md` does not exist yet (step 3 of the
-[phase-3→4 migration](phase-3-to-4.md)). When it is authored, the open questions
+[phase-3→4 migration](finished/phase-3-to-4.md)). When it is authored, the open questions
 at the bottom fold into its `## Open questions` per the docs convention.
 
 ---
@@ -222,7 +222,7 @@ What those entries did not have in front of them, and what changes the calculus:
   the input** the regex cannot parse and the post-turn director sees only after
   the fact.
 - The romance-core "consequence loop" (a rebuffed advance → affinity hit +
-  memory; [phase-3-to-4.md](phase-3-to-4.md) Bucket 1) — the first system that
+  memory; [phase-3-to-4.md](finished/phase-3-to-4.md) Bucket 1) — the first system that
   needs *"what attributes are most relevant"* decided **before** the narrator
   resolves the beat.
 
@@ -467,7 +467,7 @@ shipping A first, then the tag gate, independently.
 
 Sequencing note: intake is also the cleanest substrate for the **attribute /
 skill-check** work the user flagged ("what attributes are most relevant"). That
-system (the romance "consequence loop", [phase-3-to-4.md](phase-3-to-4.md)
+system (the romance "consequence loop", [phase-3-to-4.md](finished/phase-3-to-4.md)
 Bucket 1) is not yet specced; intake's `check` field is where it plugs in when
 it is. Don't build the resolver now — just leave the seam.
 

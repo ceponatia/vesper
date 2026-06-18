@@ -17,13 +17,8 @@ progress) · **shipped — <date>** · **parked**.
    [scene-images.plan.md](scene-images.plan.md) · spec
    [scene-images.spec.md](scene-images.spec.md). Provider-capability layer +
    `image_references` join table; SFW + intimate multi-ref lanes; ComfyUI research.
-2. **Non-human species & body features** —
-   [non-human-species.plan.md](non-human-species.plan.md) · spec
-   [non-human-species.spec.md](non-human-species.spec.md). Catalog + morphology
-   shipped; remaining: image-gen feature surfacing, richer species rules, wardrobe,
-   lore.
-3. **Character chat — sessionless 1-on-1** —
-   [character-chat.plan.md](character-chat.plan.md). Talk to a saved library
+2. **Character chat — sessionless 1-on-1** —
+   [character-chat.plan.md](finished/character-chat.plan.md). Talk to a saved library
    character directly (no world/session/RAG) to tune how it voices its attributes.
    Route → client → Chat tab + manual scene button + Gallery surfacing wired;
    remaining: live smoke test + deferred model picker / auto-scene.
@@ -79,9 +74,15 @@ god-mode POV, companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — `phase-N` docs left as-is)
 
+- **Non-human species & body features** —
+  [non-human-species.plan.md](finished/non-human-species.plan.md) · spec
+  [non-human-species.spec.md](finished/non-human-species.spec.md), shipped 2026-06-18.
+  8-species catalog + wings/horns/tail morphology, image-gen feature surfacing on
+  every route, species/heritage editor controls + forge inference. Leftovers
+  (wardrobe accommodation, incremental species-rule data) tracked in the plan.
 - **Phase 4 — the body model** (intimate anatomy, sensory, species scaffolding) —
-  [phase-4-plan.md](phase-4-plan.md), shipped 2026-06-14.
-- **Phase 3 — presence & perception v1** — [phase-3-plan.md](phase-3-plan.md).
-- **Phase 2** — [phase-2-plan.md](phase-2-plan.md).
-- **Phase 1 — foundation** — [phase-1-plan.md](phase-1-plan.md) (+
-  [multi-character-phase-1-plan.md](multi-character-phase-1-plan.md)).
+  [phase-4-plan.md](finished/phase-4-plan.md), shipped 2026-06-14.
+- **Phase 3 — presence & perception v1** — [phase-3-plan.md](finished/phase-3-plan.md).
+- **Phase 2** — [phase-2-plan.md](finished/phase-2-plan.md).
+- **Phase 1 — foundation** — [phase-1-plan.md](finished/phase-1-plan.md) (+
+  [multi-character-phase-1-plan.md](finished/multi-character-phase-1-plan.md)).

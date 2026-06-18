@@ -219,7 +219,7 @@ Spec §4. Adds valence, per-character drift, and the mood↔affinity coupling.
 
 Spec §4 (affinity) / §10. Trait-scaled gain asymmetry + decay target/rate. **Do not
 duplicate** — fold into
-[cast-tiers-and-affinity-spec.phase3.md](cast-tiers-and-affinity-spec.phase3.md) when
+[cast-tiers-and-affinity-spec.phase3.md](finished/cast-tiers-and-affinity-spec.phase3.md) when
 affinity decay is built.
 
 ## Dependencies / parallel plans

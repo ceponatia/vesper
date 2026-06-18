@@ -1,14 +1,15 @@
 # Non-human races & additive body features (wings · horns · tail) — spec
 
-Status: **draft / brainstorm, partially implemented 2026-06-15**. The first
-succubus slice landed: `featureGroup`, `bodyFeatures`, feature locations
-(`wings`/`horns`/`tail`), starter morphology attributes, the `succubus` species
-record, `faerie`/`elf`/`dwarf`/`gnome`/`orc`/`goblin` registry records, editor
-species/feature controls, contract tests, and contract/authoring docs. The
-character forge now deterministically infers registry species from prompt text
-with exact aliases plus conservative fuzzy fallback, seeds species-default body
-features, and unlocks realized feature morphology attributes. Remaining work:
-image prompting, richer species rules, and wardrobe accommodation.
+Status: **shipped — 2026-06-18** (this doc is the design truth; the task list and
+shipped/leftover summary live in
+[non-human-species.plan.md](non-human-species.plan.md)). All of F0–F5 landed:
+`featureGroup` + `bodyFeatures` + feature locations (`wings`/`horns`/`tail`),
+morphology attributes, the 8-species catalog with `appearance`/`lore` notes and
+heritages, deterministic forge species/heritage inference, editor controls,
+**image-gen feature surfacing on every route** (see the divergence notes below and
+in the plan — it shipped without the proposed `visibleFeatureAppearance` helper,
+and a waist-up portrait keeps rather than drops the tail), and the docs.
+Leftovers: wardrobe accommodation and incremental species-rule data — see the plan.
 
 Forward-looking design for the body-model work **deferred out of
 [phase 4](phase-4-plan.md)** — that phase built the species *scaffolding* (the
@@ -394,17 +395,24 @@ Dependency-forced, mirroring phase 4's shape:
    `faerie` ship with `defaultFeatureGroups`; `elf`, `dwarf`, `gnome`, `orc`,
    and `goblin` ship as baseline humanoid species. Richer attribute nudges remain
    deferred.
-4. **F3 — image generation (deferred; the real cost).** `visibleFeatureAppearance`, injected
-   into the base appearance prompt on **all** routes; the waist-up/tail belowWaist
-   check.
-5. **F4 — forge + editor (landed for first humanoid species 2026-06-15).**
-   Species picker, "Body features" toggles, deterministic character-forge species
-   inference with aliases/fuzzy fallback, species-default feature seeding, and
-   species-aware feature attribute vocabulary ship. Open-ended species
-   classification remains deferred.
-6. **F5 — tests + docs (partially landed 2026-06-15).** `docs/contracts.md`,
-   `docs/authoring.md`, and registry invariants ship; `docs/images.md` belongs
-   with F3 when visible feature prompting lands.
+4. **F3 — image generation (landed 2026-06-18; the real cost).** Features + the
+   species look reach **both** routes — but **not** via the
+   `visibleFeatureAppearance` helper sketched below: that helper was never built.
+   Instead the species' generic morphology rides `speciesAppearancePhrase` (a
+   `Species:` line on the avatar prompt + a per-character `species` field on the
+   scene composer/render) and per-character feature attributes flow through the
+   existing attribute loop (SFW ⇒ never Flux-excluded). The waist-up check shipped
+   **inverted** from this doc: a pelvis-rooted tail is _kept_ in a waist-up
+   portrait (`isFeatureAttributeCategory` exempts feature morphology from the
+   below-waist cut), not dropped — it "sweeps up into frame."
+5. **F4 — forge + editor (landed 2026-06-18).** Species picker, dependent heritage
+   picker, "Body features" toggles, deterministic character-forge species **and
+   heritage** inference with aliases/fuzzy fallback, species-default feature
+   seeding, and species-aware feature attribute vocabulary all ship. Open-ended
+   species classification remains deferred.
+6. **F5 — tests + docs (landed 2026-06-18).** `docs/contracts.md`,
+   `docs/authoring.md`, `docs/images.md` (the feature-surfacing section), and
+   registry invariants all ship.
 
 Deferred beyond this: wardrobe accommodation (tail-holes/wing-slits), the exotic
 tier (claws/scales/fur), and **true structural body plans** (mermaid/naga/

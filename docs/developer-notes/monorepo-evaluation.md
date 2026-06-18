@@ -54,7 +54,7 @@ Adopt the moment **any one** of these becomes real (most likely first is bolded)
 
 - **A second deployable that shares the engine.** Phase 4 ("the world moves") is
   the probable source: if offscreen simulation
-  ([offscreen-simulation-spec.phase3.md](offscreen-simulation-spec.phase3.md)) or
+  ([offscreen-simulation-spec.phase3.md](finished/offscreen-simulation-spec.phase3.md)) or
   the scheduled-arrivals tick
   ([scheduled-arrivals.spec.md](scheduled-arrivals.spec.md)) graduate
   from inline post-turn jobs into a **standalone background worker / cron

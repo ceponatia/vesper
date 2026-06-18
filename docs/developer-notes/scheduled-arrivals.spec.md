@@ -2,11 +2,11 @@
 
 > **Resequenced 2026-06-14:** this work is now **phase 5**. A standalone **phase 4**
 > (the body-model build) was inserted ahead of it — see
-> [intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sensory-and-species-spec.phase4.md).
+> [intimate-anatomy-sensory-and-species-spec.phase4.md](finished/intimate-anatomy-sensory-and-species-spec.phase4.md).
 > This file was renamed from `*.phase4.md` and its body now reads "phase 5" throughout.
 
 Status: **findings / draft for discussion** (2026-06-13). Phase 5 ("the world
-moves"). Sibling of [npc-movement-spec.phase3 (drives & traversal)](npc-movement-spec.phase3.md)
+moves"). Sibling of [npc-movement-spec.phase3 (drives & traversal)](finished/npc-movement-spec.phase3.md)
 and [movement-authority-spec.phase5 (who may commit a move)](movement-authority.spec.md).
 This one answers a third question neither poses: **how does an NPC come to be
 somewhere at a particular game-clock time** — a player-arranged appointment, not
@@ -133,6 +133,6 @@ land.
 `turn-engine.md` (merge: appointment tick → staged-intent open), `prompts.md`
 (director `scheduleArrival` contract + game-clock context), `contracts.md`
 (`runtime.appointments` schema, director result `scheduleArrival`), and a
-cross-link from [npc-movement-spec](npc-movement-spec.phase3.md) (this supplies
+cross-link from [npc-movement-spec](finished/npc-movement-spec.phase3.md) (this supplies
 the timed-goal driver its "Schedule/Goals drive" describes). Retire the dev
 teleport button + route.
