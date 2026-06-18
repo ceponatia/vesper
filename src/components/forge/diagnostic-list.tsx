@@ -4,6 +4,8 @@ import { cx } from "@/components/ui/cx";
 export interface DiagnosticListProps {
   diagnostics: readonly Diagnostic[];
   className?: string;
+  /** When set, "no such location" diagnostics gain a one-click "Create location" action (UX-audit M2). */
+  onCreateLocation?: (name: string) => void;
 }
 
 const TONE: Record<Diagnostic["severity"], string> = {
@@ -20,7 +22,7 @@ const ORDER: Diagnostic["severity"][] = ["error", "warn", "info"];
  * (dropped/cleared values), infos are muted notices. Visual weight must match
  * severity — a recovered repair must not read like a failed section.
  */
-export function DiagnosticList({ diagnostics, className }: DiagnosticListProps) {
+export function DiagnosticList({ diagnostics, className, onCreateLocation }: DiagnosticListProps) {
   if (diagnostics.length === 0) return null;
   return (
     <div className={cx("flex flex-col gap-2", className)}>
@@ -29,12 +31,29 @@ export function DiagnosticList({ diagnostics, className }: DiagnosticListProps) 
         if (group.length === 0) return [];
         return [
           <div key={severity} className={cx("rounded-card border px-4 py-3", TONE[severity])}>
-            {group.map((d, i) => (
-              <p key={i} className="text-xs">
-                {d.message}
-                {severity === "error" ? " — regenerate that section or write it manually." : null}
-              </p>
-            ))}
+            {group.map((d, i) => {
+              const missingLocation =
+                onCreateLocation && d.context?.kind === "missing_location" && typeof d.context.missingLocation === "string"
+                  ? d.context.missingLocation
+                  : null;
+              return (
+                <p key={i} className="flex flex-wrap items-center gap-2 text-xs">
+                  <span>
+                    {d.message}
+                    {severity === "error" ? " — regenerate that section or write it manually." : null}
+                  </span>
+                  {missingLocation && onCreateLocation ? (
+                    <button
+                      type="button"
+                      onClick={() => onCreateLocation(missingLocation)}
+                      className="shrink-0 rounded border border-current px-1.5 py-0.5 font-medium hover:bg-ink-800/40"
+                    >
+                      + Create “{missingLocation}”
+                    </button>
+                  ) : null}
+                </p>
+              );
+            })}
           </div>,
         ];
       })}

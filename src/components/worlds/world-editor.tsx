@@ -37,10 +37,19 @@ export interface WorldEditorProps {
   onRegenerate?: (section: WorldForgeSection) => void;
   regenerating?: WorldForgeSection | null;
   diagnostics?: readonly Diagnostic[];
+  /** One-click "Create location" for dropped-link diagnostics (UX-audit M2). */
+  onCreateLocation?: (name: string) => void;
 }
 
 /** Tabbed world review/editor — used by the forge and by /worlds/:id/edit. */
-export function WorldEditor({ draft, onChange, onRegenerate, regenerating = null, diagnostics = [] }: WorldEditorProps) {
+export function WorldEditor({
+  draft,
+  onChange,
+  onRegenerate,
+  regenerating = null,
+  diagnostics = [],
+  onCreateLocation,
+}: WorldEditorProps) {
   const [tab, setTab] = useState<WorldForgeSection>("premise");
 
   const tabs: TabDef<WorldForgeSection>[] = [
@@ -53,7 +62,7 @@ export function WorldEditor({ draft, onChange, onRegenerate, regenerating = null
 
   return (
     <div className="flex flex-col gap-5">
-      <DiagnosticList diagnostics={diagnostics} />
+      <DiagnosticList diagnostics={diagnostics} onCreateLocation={onCreateLocation} />
 
       <div className="flex items-end justify-between gap-3">
         <Tabs tabs={tabs} value={tab} onChange={setTab} className="flex-1" />

@@ -36,11 +36,14 @@ describe("validateLocationGraph", () => {
     expect(sink.items.some((d) => d.code === "forge.world.locations.duplicate_name")).toBe(true);
   });
 
-  it("drops orphan links with a diagnostic", () => {
+  it("drops orphan links with a diagnostic carrying actionable context (UX-audit M2)", () => {
     const sink = new DiagnosticCollector();
     const result = validateLocationGraph([loc("Quay", ["Atlantis", "Tavern"]), loc("Tavern", ["Quay"])], sink);
     expect(result[0]?.links).toEqual(["Tavern"]);
-    expect(sink.items.some((d) => d.code === "forge.world.locations.orphan_link")).toBe(true);
+    const orphan = sink.items.find((d) => d.code === "forge.world.locations.orphan_link");
+    expect(orphan).toBeDefined();
+    // Structured context drives the one-click "Create location" remediation.
+    expect(orphan?.context).toMatchObject({ kind: "missing_location", missingLocation: "Atlantis", from: "Quay" });
   });
 
   it("drops self-links with a diagnostic", () => {

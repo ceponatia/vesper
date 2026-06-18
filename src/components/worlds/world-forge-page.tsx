@@ -57,6 +57,32 @@ export function WorldForgePage() {
 
   const newCastCount = draft?.castSuggestions.filter((c) => !c.existingCharacterId && c.name.trim()).length ?? 0;
 
+  // One-click remediation for a dropped map link (UX-audit M2): mint the missing
+  // location, reconnect the rooms that referenced it, and clear the diagnostics it raised.
+  const createMissingLocation = (name: string) => {
+    const froms = diagnostics
+      .filter((d) => d.context?.kind === "missing_location" && d.context?.missingLocation === name)
+      .map((d) => (typeof d.context?.from === "string" ? d.context.from : null))
+      .filter((f): f is string => f !== null);
+    setDraft((current) => {
+      if (!current) return current;
+      const exists = current.locations.some((l) => l.name.toLowerCase() === name.toLowerCase());
+      const locations = exists
+        ? current.locations
+        : [...current.locations, { name, description: "", ambient: {}, scale: "room" as const, tags: [], links: [] }];
+      const relinked = locations.map((l) =>
+        froms.some((f) => f.toLowerCase() === l.name.toLowerCase()) && !l.links.includes(name)
+          ? { ...l, links: [...l.links, name] }
+          : l,
+      );
+      return { ...current, locations: relinked };
+    });
+    setDiagnostics((prev) =>
+      prev.filter((d) => !(d.context?.kind === "missing_location" && d.context?.missingLocation === name)),
+    );
+    toast.push({ title: `Added “${name}” to the map — open the Map tab to flesh it out`, tone: "success" });
+  };
+
   const save = async () => {
     if (!draft) return;
     setSaving(true);
@@ -154,6 +180,7 @@ export function WorldForgePage() {
             onRegenerate={regenerate}
             regenerating={regenerating}
             diagnostics={diagnostics.filter((d) => d.severity !== "info")}
+            onCreateLocation={createMissingLocation}
           />
           {saving && newCastCount > 0 ? (
             <p className="mt-4 text-sm text-paper-400">

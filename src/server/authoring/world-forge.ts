@@ -90,12 +90,15 @@ export interface ForgeWorldInput {
 export async function forgeWorld(input: ForgeWorldInput): Promise<WorldDraft> {
   const base: WorldForgeContext = { ...input };
   let draft = emptyWorldDraft();
-  const independent = await Promise.all([
-    forgeWorldSection("premise", base),
-    forgeWorldSection("locations", base),
-    forgeWorldSection("cast", base),
-  ]);
-  for (const patch of independent) draft = applyWorldSectionPatch(draft, patch);
+  // A staged DAG so every section shares one canon (UX-audit M1):
+  // 1) the world skeleton — premise + map (independent of each other),
+  const skeleton = await Promise.all([forgeWorldSection("premise", base), forgeWorldSection("locations", base)]);
+  for (const patch of skeleton) draft = applyWorldSectionPatch(draft, patch);
+  // 2) the canonical cast, generated against the real premise + map (so members
+  //    start in rooms that exist), then
+  draft = applyWorldSectionPatch(draft, await forgeWorldSection("cast", { ...base, draft }));
+  // 3) lore + items, which resolve their cross-references against that canonical
+  //    cast + map — no phantom NPCs (Genzo) or items on people who don't exist.
   const dependentContext: WorldForgeContext = { ...base, draft };
   const dependent = await Promise.all([
     forgeWorldSection("lore", dependentContext),
@@ -276,7 +279,12 @@ export function validateLocationGraph(locations: readonly WorldDraftLocation[], 
       const { match, closest } = fuzzyResolveName(raw, canonicalNames);
       if (!match) {
         const hint = closest ? ` (did you mean "${closest}"?)` : "";
-        sink?.push(diag("warn", `${code}.orphan_link`, `dropped link "${location.name}" → "${raw}": no such location${hint}`));
+        // Structured context lets the forge UI offer a one-click "Create location" (UX-audit M2).
+        sink?.push(
+          diag("warn", `${code}.orphan_link`, `dropped link "${location.name}" → "${raw}": no such location${hint}`, {
+            context: { kind: "missing_location", missingLocation: raw.trim(), from: location.name },
+          }),
+        );
         continue;
       }
       const target = match;
@@ -461,6 +469,15 @@ function lorePrompt(context: WorldForgeContext): string {
   const locationNames = context.draft?.locations.map((l) => l.name) ?? [];
   if (locationNames.length > 0) {
     lines.push("", `World locations: ${locationNames.join(", ")}`, "Use locationTags (lowercase) to tie chunks to relevant locations.");
+  }
+  // The cast is canon by the time lore runs (forgeWorld phase 3): keep lore consistent
+  // with it and never invent other named characters (UX-audit M1 — phantom-NPC fix).
+  const castNames = context.draft?.castSuggestions.map((c) => c.name).filter(Boolean) ?? [];
+  if (castNames.length > 0) {
+    lines.push(
+      "",
+      `World cast (the only named characters — write lore consistent with them, and do not introduce other named people): ${castNames.join(", ")}`,
+    );
   }
   lines.push("", "Where chunk text must name the player character, write the literal token {{player}} — it resolves to the player's name at play time.");
   return lines.join("\n");
