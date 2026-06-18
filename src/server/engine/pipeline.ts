@@ -24,7 +24,7 @@ import {
 import { preTurnRetrieve, recentEpisodes, retractFactsFromTurn, deleteEpisodeForTurn } from "../memory";
 import { runPostTurnAgents } from "./agents";
 import { activeLocationId, bundlePlayerName, loadSessionBundle, type SessionBundle } from "./bundle";
-import { EPISODE_WINDOW, FACTS_CAP, HEARTBEAT_INTERVAL_MS, MAX_CHAINED_ACTIONS, NARRATIVE_HISTORY_TURNS, OPEN_THREADS_IN_CONTEXT } from "./constants";
+import { EPISODE_WINDOW, FACTS_CAP, HEARTBEAT_INTERVAL_MS, MAX_CHAINED_ACTIONS, NARRATIVE_HISTORY_TURNS, OPEN_THREADS_IN_CONTEXT, TURN_READY_POLL_MS, TURN_READY_WAIT_MS } from "./constants";
 import { demoNarrative } from "./demo";
 import { detectCommsIntent, isOocInput, type SceneIntent } from "./intent";
 import { runIntake, sceneIntentFromBrief } from "./intake";
@@ -136,16 +136,34 @@ export async function* submitTurn(input: SubmitTurnInput): AsyncGenerator<TurnSt
     return;
   }
 
-  // CAS ready → narrating: a concurrent submit gets a clean session_busy
-  // (the route turns this first event into a 409 before streaming).
-  const cas = await db()
-    .update(sessions)
-    .set({ status: "narrating" })
-    .where(and(eq(sessions.id, input.sessionId), eq(sessions.status, "ready")))
-    .returning({ id: sessions.id });
-  if (cas.length === 0) {
-    yield errEvent("session_busy", "a turn is already in progress for this session");
-    return;
+  // CAS ready → narrating. The lock lingers through the previous turn's post-turn
+  // "processing" window (~8–10s after its `done` — UX-audit M3), so rather than
+  // 409 a back-to-back / API-driven turn outright, wait that window out and retry
+  // the CAS. An actively "narrating" turn is never waited on — that's the caller's
+  // own race and fails fast. The route turns the final error event into a 409.
+  const deadline = Date.now() + TURN_READY_WAIT_MS;
+  for (;;) {
+    const cas = await db()
+      .update(sessions)
+      .set({ status: "narrating" })
+      .where(and(eq(sessions.id, input.sessionId), eq(sessions.status, "ready")))
+      .returning({ id: sessions.id });
+    if (cas.length > 0) break;
+    const [current] = await db()
+      .select({ status: sessions.status })
+      .from(sessions)
+      .where(eq(sessions.id, input.sessionId))
+      .limit(1);
+    if (current?.status !== "processing" || Date.now() >= deadline) {
+      yield errEvent(
+        "session_busy",
+        current?.status === "processing"
+          ? 'the session is still finishing the previous turn; wait for status to return to "ready", then retry'
+          : "a turn is already in progress for this session",
+      );
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, TURN_READY_POLL_MS));
   }
 
   const channel = new EventChannel();
