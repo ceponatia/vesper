@@ -1,4 +1,4 @@
-import { asc, eq, inArray, isNull, and } from "drizzle-orm";
+import { asc, eq, inArray, isNull, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   authoredRelationshipListSchema,
@@ -21,6 +21,7 @@ import {
   characters,
   db,
   items,
+  jobs,
   locationLinks,
   locations,
   loreChunks,
@@ -812,6 +813,8 @@ export interface WorldDetail {
   world: typeof worlds.$inferSelect;
   /** Resolved name of `world.playerCharacterId` for {{player}} display (UX-audit P2); null ⇒ observer. */
   playerCharacterName: string | null;
+  /** A world-image backfill job is queued/running — drives the "Generating artwork…" hint (UX-audit M7). */
+  imageJobActive: boolean;
   locations: Array<{
     id: string;
     locationId: string;
@@ -854,6 +857,20 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
     .where(and(eq(worlds.id, worldId), eq(worlds.ownerId, ownerId)))
     .limit(1);
   if (!world) return null;
+
+  // Is a world-image backfill still running? Drives the "Generating artwork…" hint (UX-audit M7).
+  const activeImageJob = await db()
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.type, "entity_image"),
+        inArray(jobs.status, ["queued", "running"]),
+        sql`${jobs.payload}->>'worldId' = ${worldId}`,
+      ),
+    )
+    .limit(1);
+  const imageJobActive = activeImageJob.length > 0;
 
   // Default player character name — lets display surfaces resolve {{player}} (UX-audit P2).
   let playerCharacterName: string | null = null;
@@ -937,6 +954,7 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
   return {
     world,
     playerCharacterName,
+    imageJobActive,
     locations: locationRows.map((row) => {
       const overrides = parseOr(worldLocationOverridesSchema, row.overrides, {}, undefined, "world_locations.overrides");
       return {

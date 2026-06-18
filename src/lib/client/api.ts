@@ -415,6 +415,8 @@ export const worldDetailSchema = worldSummarySchema.extend({
   playerCharacterId: optionalId,
   /** Resolved name of the default player character, for {{player}} display (UX-audit P2). */
   playerCharacterName: optionalText,
+  /** A world-image backfill is still running — drives the "Generating artwork…" hint (UX-audit M7). */
+  imageJobActive: z.boolean().catch(false),
 });
 export type WorldDetail = z.infer<typeof worldDetailSchema>;
 
