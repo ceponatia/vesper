@@ -17,6 +17,9 @@ export const breastsGroup = defineAttributeGroup("breasts", [
     allowedValues: ["flat", "small", "average", "full", "large", "very_large"],
     bodyLocationId: "breasts",
     aliases: ["breast size", "cup size"],
+    // Silhouette — size reads through clothing, so a full-body scene render carries
+    // it regardless of coverage (the waist-up portrait alone underspecifies the figure).
+    imageReveal: "shape",
     promptHints: ["Describe breasts only as far as wardrobe exposure and the exposure mask allow; one impression, not a checklist."],
   },
   {
@@ -30,6 +33,7 @@ export const breastsGroup = defineAttributeGroup("breasts", [
     allowedValues: ["round", "teardrop", "soft", "pert", "wide_set"],
     bodyLocationId: "breasts",
     aliases: ["breast shape"],
+    imageReveal: "shape",
   },
   {
     id: "breasts.nipples",
@@ -42,5 +46,7 @@ export const breastsGroup = defineAttributeGroup("breasts", [
     allowedValues: ["small", "average", "large", "puffy", "inverted"],
     bodyLocationId: "nipples",
     aliases: ["nipples"],
+    // Skin-level — only visible when the chest is bare/sheer (no top or bra).
+    imageReveal: "skin",
   },
 ]);

@@ -12,6 +12,7 @@ export const legsGroup = defineAttributeGroup("legs", [
     allowedValues: ["slender", "lithe", "soft", "shapely", "toned", "athletic", "muscular", "sturdy", "heavy"],
     bodyLocationId: "legs",
     aliases: ["legs", "leg build"],
+    imageReveal: "shape",
   },
   {
     id: "legs.length",
@@ -24,6 +25,7 @@ export const legsGroup = defineAttributeGroup("legs", [
     allowedValues: ["short", "proportionate", "long", "very_long"],
     bodyLocationId: "legs",
     aliases: ["leg length", "long legs"],
+    imageReveal: "shape",
   },
   {
     id: "legs.hair",
@@ -36,5 +38,7 @@ export const legsGroup = defineAttributeGroup("legs", [
     allowedValues: ["none", "fine", "light", "moderate", "thick"],
     bodyLocationId: "legs",
     aliases: ["leg hair"],
+    // Skin-level — only visible with bare legs (no bottoms/hosiery covering them).
+    imageReveal: "skin",
   },
 ]);

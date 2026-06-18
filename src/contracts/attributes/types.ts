@@ -60,6 +60,21 @@ export const attributeDefinitionSchema = z.object({
    */
   coreVisual: z.boolean().optional(),
   /**
+   * How this attribute surfaces in a **full-body** image prompt relative to
+   * clothing (docs/images.md §Scene images). A waist-up avatar portrait conveys
+   * the face and upper body but nothing of the figure below it, so a scene
+   * render supplements the reference with body detail:
+   * - `"shape"`: silhouette/proportion that reads *through* clothing (breast
+   *   size, waist, hips, leg build) — described regardless of coverage.
+   * - `"skin"`: surface detail only visible when the region is uncovered
+   *   (nipples, leg hair, toenails) — described only when that region is
+   *   bare/sheer.
+   * Absent ⇒ the attribute is not pulled into the reveal-driven body line (it
+   * still flows through the normal appearance summary where applicable). This is
+   * consumed by the scene render today; avatars keep strict exposure gating.
+   */
+  imageReveal: z.enum(["shape", "skin"]).optional(),
+  /**
    * Identity anchors are the attributes the forge infers first; they condition
    * the plausible-subset ranges for unset core visuals (docs/authoring.md
    * §Character forge). A flag rather than a hardcoded id list in the prompt

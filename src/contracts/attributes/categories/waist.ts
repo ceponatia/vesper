@@ -12,5 +12,6 @@ export const waistGroup = defineAttributeGroup("waist", [
     allowedValues: ["straight", "subtle", "defined", "cinched", "soft", "rounded", "thick"],
     bodyLocationId: "waist",
     aliases: ["waist", "waistline"],
+    imageReveal: "shape",
   },
 ]);

@@ -12,6 +12,7 @@ export const feetGroup = defineAttributeGroup("feet", [
     allowedValues: ["small", "narrow", "average", "long", "broad", "large"],
     bodyLocationId: "feet",
     aliases: ["feet", "foot size"],
+    imageReveal: "shape",
   },
   {
     id: "feet.arch",
@@ -24,6 +25,8 @@ export const feetGroup = defineAttributeGroup("feet", [
     allowedValues: ["flat", "low", "average", "high"],
     bodyLocationId: "feet",
     aliases: ["arches", "foot arch"],
+    // Skin-level — only visible with bare feet (no footwear).
+    imageReveal: "skin",
   },
   {
     id: "feet.nails",
@@ -43,6 +46,7 @@ export const feetGroup = defineAttributeGroup("feet", [
     ],
     bodyLocationId: "toes",
     aliases: ["toenails", "pedicure"],
+    imageReveal: "skin",
     promptHints: [
       "Toenails are only worth a mention when the feet are bare and in view.",
     ],
@@ -83,8 +87,10 @@ export const feetGroup = defineAttributeGroup("feet", [
     allowedValues: ["tiny", "short", "average", "long"],
     bodyLocationId: "feet",
     aliases: ["feet", "foot", "sole", "heel"],
+    // Skin-level — only visible with bare feet (no footwear).
+    imageReveal: "skin",
     promptHints: [
-      "Foot scent is only worth a mention when the feet are bare and near the player's face.",
+      "Toe length is only worth a mention when the feet are bare and in view.",
     ],
   },
 ]);

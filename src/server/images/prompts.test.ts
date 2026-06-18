@@ -26,6 +26,7 @@ import {
   RECENT_NARRATION_LATEST_CHARS,
   RECENT_NARRATION_PRIOR_CHARS,
   resolveScenePlan,
+  sceneRevealAppearance,
   SCENE_COMPOSER_SYSTEM,
   SCENE_POV_RULE,
   sceneSpecSchema,
@@ -542,6 +543,89 @@ describe("intimateSceneAppearance (exposure-gated)", () => {
   it("returns nothing when everything is covered or exposure is unknown", () => {
     expect(intimateSceneAppearance(attrs, { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" })).toBe("");
     expect(intimateSceneAppearance(attrs, undefined)).toBe("");
+  });
+});
+
+describe("sceneRevealAppearance (shape reads through clothing; skin needs exposure)", () => {
+  const attrs: AttributeValue[] = [
+    { id: "breasts.size", value: "full", source: "base" }, // shape
+    { id: "breasts.shape", value: "round", source: "base" }, // shape
+    { id: "breasts.nipples", value: "large", source: "base" }, // skin (torso)
+    { id: "vulva.labia", value: "prominent", source: "base" }, // untagged intimate → exposure-only
+    { id: "waist.definition", value: "defined", source: "base" }, // shape
+    { id: "hips.width", value: "wide", source: "base" }, // shape
+    { id: "legs.build", value: "toned", source: "base" }, // shape
+    { id: "legs.length", value: "long", source: "base" }, // shape
+    { id: "legs.hair", value: "fine", source: "base" }, // skin (legs)
+    { id: "feet.size", value: "average", source: "base" }, // shape
+    { id: "feet.arch", value: "high", source: "base" }, // skin (feet)
+  ];
+  const profile = profileWith({ intimateRegions: ["breasts", "vulva"] });
+
+  it("SFW lower-body line: shape always; skin only when the region is bare; never intimate", () => {
+    const dressed = sceneRevealAppearance(
+      attrs,
+      { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" },
+      profile,
+      { intimate: false },
+    );
+    expect(dressed).toContain("Waist: defined");
+    expect(dressed).toContain("Hips: wide");
+    expect(dressed).toContain("Leg build: toned");
+    expect(dressed).toContain("Leg length: long");
+    expect(dressed).toContain("Foot size: average");
+    expect(dressed).not.toContain("Leg hair"); // legs covered → skin hidden
+    expect(dressed).not.toContain("Foot arch"); // feet covered → skin hidden
+    expect(dressed).not.toContain("Breast"); // intimate is excluded from the SFW half
+
+    const exposed = sceneRevealAppearance(
+      attrs,
+      { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" },
+      profile,
+      { intimate: false },
+    );
+    expect(exposed).toContain("Leg hair: fine"); // legs bare → shown
+    expect(exposed).toContain("Foot arch: high"); // feet bare → shown
+  });
+
+  it("intimate line: breast size/shape read through clothing; nipples + untagged anatomy need exposure", () => {
+    const covered = { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" } as const;
+    const dressed = sceneRevealAppearance(attrs, covered, profile, { intimate: true });
+    expect(dressed).toContain("Breast size: full"); // shape → always
+    expect(dressed).toContain("Breast shape: round"); // shape → always
+    expect(dressed).not.toContain("Nipples"); // skin → torso covered
+    expect(dressed).not.toContain("Labia"); // untagged intimate → pelvis covered
+
+    const topless = sceneRevealAppearance(attrs, { ...covered, torso: "bare" }, profile, { intimate: true });
+    expect(topless).toContain("Nipples: large"); // torso bare → shown
+
+    const bareBelow = sceneRevealAppearance(attrs, { ...covered, pelvis: "bare" }, profile, { intimate: true });
+    expect(bareBelow).toContain("Labia: prominent"); // untagged intimate falls back to the exposure gate
+  });
+
+  it("returns nothing without exposure state", () => {
+    expect(sceneRevealAppearance(attrs, undefined, profile, { intimate: false })).toBe("");
+  });
+});
+
+describe("buildSceneRenderPrompt — subject body line (the waist-up portrait's blind spot)", () => {
+  const plan = {
+    ...emptySceneRenderPlan(),
+    focal: {
+      name: "Mira",
+      action: "standing by the bar",
+      outfitSummary: "red dress",
+      appearance: "Hair color: red",
+      lowerBody: "Waist: defined; Hips: wide; Leg build: toned",
+      intimateAppearance: "Breast size: full",
+    },
+  };
+  it("emits the Body line for the identity-locked reference subject", () => {
+    const qwen = buildSceneRenderPrompt(plan, { referenceName: "Mira", allowIntimate: true });
+    expect(qwen).toContain("Body (below the portrait's framing): Waist: defined; Hips: wide; Leg build: toned.");
+  });
+  it("omits the Body line when the subject is described textually (no reference image)", () => {
+    expect(buildSceneRenderPrompt(plan)).not.toContain("Body (below the portrait's framing)");
   });
 });
 

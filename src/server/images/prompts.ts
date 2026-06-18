@@ -295,6 +295,12 @@ export interface ScenePresentCharacter {
   wornVisible: ReadonlyArray<SceneWornItem>;
   /** Compact attribute phrase (characterAppearanceSummary) for textual render descriptions. */
   appearance?: string;
+  /**
+   * SFW lower-body shape line (sceneRevealAppearance, `{intimate:false}`): the
+   * figure below a waist-up reference portrait — waist/hips/legs/feet, with
+   * skin-level detail gated by exposure. Emitted for the identity-locked subject.
+   */
+  lowerBody?: string;
   /** Visible intimate-anatomy phrase (intimateSceneAppearance), exposure-gated; emitted only on the uncensored route. */
   intimateAppearance?: string;
   /** Per-region coverage (exposedRegions) — drives explicit bare-skin phrasing. */
@@ -489,6 +495,83 @@ export function intimateSceneAppearance(
   return excerpt(parts.join("; "), maxChars);
 }
 
+/** Non-intimate body regions a waist-up portrait can't show — the scene subject's "shape" line draws from these. */
+const LOWER_BODY_CATEGORIES: ReadonlySet<string> = new Set(["waist", "hips", "legs", "feet"]);
+
+/**
+ * Which exposure axis uncovers a `skin`-tier attribute, keyed by category. A
+ * superset of INTIMATE_CATEGORY_EXPOSURE that also covers the everyday lower
+ * body (legs/feet), so the same exposure state drives both the intimate and
+ * the SFW reveal lines.
+ */
+const REVEAL_EXPOSURE_REGION: Record<string, keyof RegionExposure> = {
+  chest: "torso",
+  breasts: "torso",
+  hips: "pelvis",
+  vulva: "pelvis",
+  penis: "pelvis",
+  testicles: "pelvis",
+  legs: "legs",
+  feet: "feet",
+};
+
+/**
+ * Whether a `imageReveal`-tagged attribute surfaces in a scene render given the
+ * coverage state: `shape` reads through clothing (always), `skin` only when its
+ * region is uncovered. Untagged intimate attributes keep the existing
+ * exposure-only rule (`intimateAttrRendersExposed`); untagged non-intimate
+ * attributes are not part of the reveal line at all.
+ */
+function revealSurfaces(def: AttributeDefinition, exposure: RegionExposure, intimate: boolean): boolean {
+  if (def.kind === "sensory") return false; // scent/taste never render visually
+  if (def.imageReveal === "shape") return true;
+  if (def.imageReveal === "skin") {
+    const axis = REVEAL_EXPOSURE_REGION[def.category];
+    return axis !== undefined && exposure[axis] !== "covered";
+  }
+  return intimate ? intimateAttrRendersExposed(def, exposure) : false;
+}
+
+/**
+ * The identity-locked scene subject's body description, split by sensitivity so
+ * the caller can route each half (docs/images.md §Scene images): the reference
+ * image is a waist-up portrait, so it conveys the face and upper body but
+ * underspecifies the figure. This supplements it from `imageReveal`-tagged
+ * attributes — `shape` (silhouette: breast size, waist, hips, leg build) always,
+ * `skin` (nipples, leg hair, toenails) only when the region is bare/sheer.
+ *
+ * - `{ intimate: false }` → the SFW lower-body line (waist/hips/legs/feet),
+ *   emitted on every route.
+ * - `{ intimate: true }` → exposed/silhouette intimate anatomy, emitted only on
+ *   the uncensored route (it folds in untagged intimate attrs by the existing
+ *   exposure rule, so vulva/penis detail is never lost).
+ */
+export function sceneRevealAppearance(
+  attributes: ReadonlyArray<AttributeValue>,
+  exposure: RegionExposure | undefined,
+  profile: CharacterProfile | undefined,
+  opts: { intimate: boolean },
+  maxChars = APPEARANCE_SUMMARY_CHARS,
+): string {
+  if (!exposure) return "";
+  const realizedBody = profile ? realizedBodyForProfile(profile) : undefined;
+  const parts: string[] = [];
+  for (const value of attributes) {
+    const def = attributeRegistry.byId(value.id);
+    if (!def) continue;
+    const intimate = isIntimateAttribute(def);
+    if (intimate !== opts.intimate) continue;
+    if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
+    // The SFW half describes only the lower body — the portrait already covers
+    // the face/upper body, so re-stating it wastes the (tight) Venice budget.
+    if (!intimate && !LOWER_BODY_CATEGORIES.has(def.category)) continue;
+    if (!revealSurfaces(def, exposure, intimate)) continue;
+    const formatted = formatAttribute(def, value.value);
+    if (formatted) parts.push(formatted);
+  }
+  return excerpt(parts.join("; "), maxChars);
+}
+
 // ---------------------------------------------------------------------------
 // Resolved render plan (composer output × present roster × wardrobe state)
 // ---------------------------------------------------------------------------
@@ -503,6 +586,8 @@ export interface SceneCharacterSpec {
   outfitSummary: string;
   /** Compact appearance phrase for textual description. */
   appearance: string;
+  /** SFW lower-body shape line for the identity-locked subject (the waist-up portrait's blind spot). */
+  lowerBody?: string;
   /** Explicit bare-region phrase ("topless, bare chest; barefoot"), forced from coverage state; "" when fully covered or untracked. */
   exposure?: string;
   /** Visible intimate-anatomy phrase for exposed regions; emitted only on the uncensored render route. */
@@ -611,6 +696,7 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
     // Forced from occlusion-filtered state regardless of anything the model said.
     outfitSummary: wardrobeOutfitSummary(entry.wornVisible),
     appearance: entry.appearance ?? "",
+    ...(entry.lowerBody ? { lowerBody: entry.lowerBody } : {}),
     exposure: formatExposure(entry.exposure, entry.wardrobeTracked),
     intimateAppearance: entry.intimateAppearance ?? "",
   };
@@ -672,6 +758,8 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     pieces.push(SCENE_POV_RULE);
     if (reference) {
       if (reference.action) pieces.push(`Pose: ${reference.action}.`);
+      // The reference portrait is waist-up — supply the figure it can't show.
+      if (reference.lowerBody) pieces.push(`Body (below the portrait's framing): ${reference.lowerBody}.`);
       if (reference.outfitSummary) pieces.push(`Wearing: ${fit(reference.outfitSummary, outfitCap)}.`);
       if (reference.exposure) pieces.push(`${capitalizeFirst(reference.exposure)}.`);
       if (opts.allowIntimate && reference.intimateAppearance) pieces.push(`${capitalizeFirst(reference.intimateAppearance)}.`);
