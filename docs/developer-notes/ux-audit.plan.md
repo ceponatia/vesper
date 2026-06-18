@@ -1,6 +1,37 @@
 # UX-audit remediation — plan
 
-Status: **draft** (no code yet) — triaged from the audit, awaiting prioritization.
+Status: **shipped — 2026-06-18** (on branch `ux-audit-rest`) — §1–§6, §8, §9 built and
+verified (`pnpm verify` green); §7 routed to movement-authority; three follow-ups parked.
+See the completion note below.
+
+## Completion note (2026-06-18)
+
+Built & verified on branch `ux-audit-rest` (forked to isolate from concurrent
+personality-slice-2 work in the main checkout):
+
+- **§9 quick-wins** — `late_twenties` age enum (P5); image-prompt double-period `clause()` +
+  `*.color` forge steering (P4); "Generate images" hidden on empty libraries (P3); favicon
+  (P7); two redundant indexes dropped (P8, migration `0006`).
+- **§1 world-forge intake** — world-level `playerCharacterId` (pick existing / observer;
+  migration `0007`), 0–5 location/character auto-generate counts (skip on 0), `{{player}}`
+  display substitution (P2), session-wizard pre-fill + neutral "You" player name (P1),
+  0-location session-start gate, `MAX_GENERATED_CAST` 3→5.
+- **§2 forge canon** — staged DAG (premise+map → canonical cast → lore+items) + lore gets the
+  cast (M1); one-click "Create location" remediation for dropped links (M2).
+- **§3** "Generating artwork" progress surface on world detail (M7).
+- **§4** faint-text token raised to WCAG AA (M6).
+- **§5** post-`done` session-lock wait so back-to-back turns don't 409 (M3).
+- **§6** dev Inspector surfaces tokens + intake LLM-vs-fallback (M5 measurement).
+- **§8** top-level `items` in the status payload — fixed the always-empty "Items here" (P6, a
+  real bug, not cosmetic).
+
+**Routed:** §7/M4 (narration ↔ tracked-location divergence) → movement-authority work.
+
+**Parked follow-ups:** inline-forge-a-new-player-character (§1a; pick-existing ships, forge
+one in /characters then pick it); high-contrast theme toggle (§4/feature #6; the AA fix
+shipped); the **M5 intake-budget tuning** itself stays gated on the §6 fallback-rate
+measurement (don't tune blind). The "add to cast / drop orphan lore" remediations (§2.2) are
+now largely **prevented** by feeding the canonical cast to the lore prompt.
 
 Source: [ux-audit.intake.md](ux-audit.intake.md) — the end-to-end walkthrough (2026-06-17,
 live models) that produced every finding below. PM caveats/additions:
