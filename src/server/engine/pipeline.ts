@@ -58,6 +58,7 @@ import {
 import { createSegmenter, parseSegments } from "./segmenter";
 import { exposedRegions, resolveWardrobeVisibility } from "@/contracts/items/visibility";
 import { resolveAttributes } from "@/contracts/attributes/value";
+import { NEUTRAL_MOOD_METER } from "@/contracts/meters/registry";
 import { speciesAppearancePhrase } from "@/contracts/species";
 
 /**
@@ -692,6 +693,7 @@ async function assemblePreTurn(
     tags: p.snapshot.tags,
     preferences: p.snapshot.preferences,
     traits: p.snapshot.traits,
+    mood: p.state.meters.mood ?? NEUTRAL_MOOD_METER,
   }));
 
   const turnContext = buildTurnContext({

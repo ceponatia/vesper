@@ -111,18 +111,20 @@ Continuous 0–1 state that drifts with time, defined as data (`meters/registry.
 
 ```ts
 type MeterDefinition = {
-  id: string;                       // "hygiene", "energy", "arousal", "stress", "intoxication"
+  id: string;                       // "hygiene", "energy", "arousal", "stress", "intoxication", "mood"
   label: string;
   description: string;
   initial: number;
   perHour: number;                  // signed drift per game hour
+  baseline?: number;                // resting target (absent ⇒ today's pole: perHour<0 ⇒ 0, else 1)
+  recoveryPerHour?: number;         // rate toward baseline (absent ⇒ |perHour|)
   thresholds: Array<{ below?: number; above?: number; promptHint: string }>;
 };
 ```
 
-The engine applies drift on clock advance and surfaces crossed-threshold `promptHint`s to the narrator. Worlds may override or disable meters in their style config.
+The engine applies drift on clock advance (`applyMeterDrift` — moves each value toward its baseline at `recoveryPerHour`, never overshooting, clamped [0,1]) and surfaces crossed-threshold `promptHint`s to the narrator. Worlds may override or disable meters in their style config. Drift is **per-character**: at drift time the merge resolves trait-shifted baseline/recovery via `personalizeMeters` (personality §Modulation) — the global value is the no-trait default. Absent `baseline`/`recoveryPerHour` ⇒ exactly the old pole-seeking drift.
 
-Starter meters: `hygiene` (1→0, −0.04/h, thresholds prompt scent/grime hints), `energy` (1→0 waking drain, restored by sleep via simulant), `stress` (0-seeking), `arousal` (0-seeking), `intoxication` (0-seeking, fast decay). The old app's 7-vector hygiene model becomes `hygiene` + conditions (`sweaty`, `soaked`, `unwashed` with region notes) — same play feel, no bespoke code path. Region-level scent composition is deliberately replaced by: item `sensory` text + hygiene threshold hints + exposure gating ([prompts.md](prompts.md)).
+Starter meters: `hygiene` (1→0, −0.04/h, thresholds prompt scent/grime hints), `energy` (1→0 waking drain, restored by sleep via simulant), `stress` (0-seeking), `arousal` (0-seeking), `intoxication` (0-seeking, fast decay), and **`mood`** — emotional valence (0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel). Mood is surfaced not as raw threshold hints but as a **derived descriptor** (`deriveMoodDescriptor` blends valence × stress/energy → "low and on edge", "bright and playful", …), and it couples with affinity: the social-reaction curve reads mood as its `μ` factor (`moodMeterToFactor`) and a reaction nudges mood back (`moodNudge`). The old app's 7-vector hygiene model becomes `hygiene` + conditions (`sweaty`, `soaked`, `unwashed` with region notes) — same play feel, no bespoke code path. Region-level scent composition is deliberately replaced by: item `sensory` text + hygiene threshold hints + exposure gating ([prompts.md](prompts.md)).
 
 ## Registered actions
 
@@ -172,7 +174,7 @@ type LinkAccess =
 - **Preferences** (`preference.ts`) — a character's bespoke `{ target, valence: like|dislike, intensity 1–10, hint? }`, where `target` is a concept id **or** a family id. Leaf fields `.catch` so one bad entry degrades, not the array.
 - **Traits** (`traits/`) — a parallel registry on the shared spine (§Attribute system), deliberately separate from attributes so it can **never** reach an image prompt. Categories `temperament`/`social`/`intimate` (one starter set, ~11 traits); each definition is a numeric scalar (bipolar −100..100 or unipolar 0..100) with registry-defined **bands** (`{ max, label, promptHint }`, ascending, covering the axis max — store the number, surface the band), a `mutability` (`core`/`developable` — drift deferred), an `intimate?` flag, optional `modulates` metadata, and a scored **`lexicon`** (`{ term, value }`) mapping free-text words onto the axis (`resolveLexicon` — the forge-expansion mechanism). `traitRegistry.bandFor(id, value)` clamps + reads the band. Trait **values** (`TraitValue`) reuse the attribute provenance shape (`resolveTraits` over the shared resolver). Adding a trait is a one-entry data edit + the registry test.
 
-**Modulation** (`modulation.ts`) — pure trait → coefficient functions (spec §5), kept deterministic in the merge, never agent-decided. v1 wires `socialTraitScale(reaction, traits)` — the seam Slice 1 stubbed at 1: agreeableness/composure soften (and their negative poles sharpen) a **dislike**, possessiveness amplifies a **jealousy_trigger**; clamped to `[0.4, 1.8]`. Empty traits ⇒ 1 (today's behavior). Meter/affinity coefficients join here in Slices 4–5.
+**Modulation** (`modulation.ts`) — pure trait → coefficient functions (spec §5), kept deterministic in the merge, never agent-decided. `socialTraitScale(reaction, traits)` scales the reaction curve: agreeableness/composure soften (and their negative poles sharpen) a **dislike**, possessiveness amplifies a **jealousy_trigger**; clamped to `[0.4, 1.8]`. `personalizeMeters(defs, traits)` resolves per-character meter dynamics (§Meters): `optimism→mood.baseline`, `libido→arousal.baseline`+recovery, `composure→stress.recovery`. Empty traits ⇒ unit/identity (today's behavior). Affinity gain/decay coefficients join in Slice 5.
 
 Both `tags: string[]` and `preferences: Preference[]` (and `traits: TraitValue[]`) ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition plays exactly as before). The resolver (`reactions.ts`): `resolveSocialReaction(act, { tags, preferences, cards })` applies **pure-override** precedence (bespoke preference → card tag-override → card default → null; v1 passes `cards: []`); `evaluateSocialReaction(reaction, currentAffinity, currentMood, traitScale)` is the **affinity-aware curve** — goodwill deadband, thin-ice amplification, capped/asymmetric likes (mood is a neutral stub, `traitScale` is 1 in v1). Curve constants live in `reactions.ts` (contracts is IO-free; the merge clamps the result to ±`AFFINITY_DELTA_CLAMP`). `matchPreference` (concept-then-family lookup) is shared with the guardrail.
 

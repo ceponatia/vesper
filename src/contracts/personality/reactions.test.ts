@@ -3,8 +3,12 @@ import type { Preference } from "./preference";
 import {
   evaluateSocialReaction,
   LIKE_CAP,
+  MOOD_NUDGE_CAP,
+  moodMeterToFactor,
+  moodNudge,
   resolveSocialReaction,
   type DispositionSources,
+  type EvaluatedReaction,
   type SocialReaction,
 } from "./reactions";
 
@@ -93,5 +97,23 @@ describe("evaluateSocialReaction — mood & trait stubs", () => {
 
   it("traitScale multiplies the magnitude", () => {
     expect(evaluateSocialReaction(dislike(4), 0, 0, 0.5).magnitude).toBeCloseTo(2);
+  });
+});
+
+describe("mood coupling helpers", () => {
+  const ev = (valence: "like" | "dislike", magnitude: number): EvaluatedReaction => ({ valence, magnitude, band: "", hint: "" });
+
+  it("moodMeterToFactor maps the 0–1 meter to μ ∈ [−1,1] (0.5 ⇒ 0)", () => {
+    expect(moodMeterToFactor(0.5)).toBe(0);
+    expect(moodMeterToFactor(1)).toBe(1);
+    expect(moodMeterToFactor(0)).toBe(-1);
+    expect(moodMeterToFactor(0.75)).toBeCloseTo(0.5);
+  });
+
+  it("moodNudge lifts mood on a like, lowers it on a dislike, and caps", () => {
+    expect(moodNudge(ev("like", 4))).toBeGreaterThan(0);
+    expect(moodNudge(ev("dislike", 4))).toBeLessThan(0);
+    expect(moodNudge(ev("like", 1000))).toBe(MOOD_NUDGE_CAP);
+    expect(moodNudge(ev("dislike", 1000))).toBe(-MOOD_NUDGE_CAP);
   });
 });

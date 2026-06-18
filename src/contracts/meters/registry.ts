@@ -13,6 +13,14 @@ export const meterDefinitionSchema = z.object({
   initial: z.number().min(0).max(1),
   /** Signed drift per game hour; clamped to [0,1] after application. */
   perHour: z.number(),
+  /**
+   * Resting target the meter drifts toward (personality-and-state.spec.md §4).
+   * Absent ⇒ today's implied pole (perHour < 0 ⇒ 0, else 1), so old defs are
+   * unchanged. Per-character traits shift this at drift time (`personalizeMeters`).
+   */
+  baseline: z.number().min(0).max(1).optional(),
+  /** Rate of approach to `baseline` per hour; absent ⇒ |perHour| (today's speed). */
+  recoveryPerHour: z.number().min(0).optional(),
   thresholds: z.array(meterThresholdSchema).readonly().default([]),
 });
 
@@ -78,6 +86,20 @@ export const meterDefinitions: readonly MeterDefinition[] = [
       { above: 0.7, promptHint: "Drunk: slurred edges on words, unsteady balance, poor judgement." },
     ],
   },
+  {
+    // Emotional valence (personality-and-state.spec.md §4): 0 = low/down, 0.5 = even,
+    // 1 = bright. Drifts back to an even keel; trait `optimism` shifts the resting point,
+    // and the social-reaction curve nudges it. Surfaced via a *derived* descriptor
+    // (deriveMoodDescriptor) blended with stress/energy — not raw threshold hints.
+    id: "mood",
+    label: "Mood",
+    description: "Emotional valence from 0 (low) through 0.5 (even) to 1 (bright). Returns toward an even keel.",
+    initial: 0.5,
+    perHour: 0,
+    baseline: 0.5,
+    recoveryPerHour: 0.06,
+    thresholds: [],
+  },
 ];
 
 export function meterById(id: string): MeterDefinition | undefined {
@@ -88,7 +110,25 @@ export function initialMeters(definitions: readonly MeterDefinition[] = meterDef
   return Object.fromEntries(definitions.map((m) => [m.id, m.initial]));
 }
 
-/** Apply per-hour drift for elapsed game minutes, clamped to [0,1]. */
+/** The resting target a meter drifts toward — explicit `baseline`, else today's pole. */
+export function meterBaselineOf(def: MeterDefinition): number {
+  return def.baseline ?? (def.perHour < 0 ? 0 : 1);
+}
+
+/**
+ * Drift one meter toward its baseline over `hours`, never overshooting the target,
+ * clamped to [0,1]. With no `baseline`/`recoveryPerHour` this is exactly the old
+ * `current + perHour*hours` pole-seeking (the cap at the pole == not overshooting 0/1).
+ */
+function driftToward(current: number, def: MeterDefinition, hours: number): number {
+  const target = meterBaselineOf(def);
+  const rate = def.recoveryPerHour ?? Math.abs(def.perHour);
+  const step = rate * hours;
+  const moved = current < target ? Math.min(target, current + step) : Math.max(target, current - step);
+  return Math.min(1, Math.max(0, moved));
+}
+
+/** Apply per-hour drift toward each meter's baseline for elapsed game minutes, clamped to [0,1]. */
 export function applyMeterDrift(
   meters: Record<string, number>,
   elapsedMinutes: number,
@@ -99,9 +139,37 @@ export function applyMeterDrift(
   for (const def of definitions) {
     const current = next[def.id];
     if (current === undefined) continue;
-    next[def.id] = Math.min(1, Math.max(0, current + def.perHour * hours));
+    next[def.id] = driftToward(current, def, hours);
   }
   return next;
+}
+
+/** Neutral mood value (the meter's even keel). */
+export const NEUTRAL_MOOD_METER = 0.5;
+
+/**
+ * A derived mood phrase (personality-and-state.spec.md §4): blends valence (`mood`)
+ * with activation (`energy`) and tension (`stress`) — mood is a *read* over state,
+ * not a second source of truth. "" when there's no `mood` meter or nothing notable
+ * (an even, unstressed keel), so it adds no noise.
+ */
+export function deriveMoodDescriptor(meters: Record<string, number>): string {
+  const mood = meters.mood;
+  if (mood === undefined) return "";
+  const stress = meters.stress ?? 0;
+  const energy = meters.energy ?? 1;
+  if (mood <= 0.35) {
+    if (stress >= 0.6) return "low and on edge";
+    if (energy <= 0.4) return "low and listless";
+    return "subdued and withdrawn";
+  }
+  if (mood >= 0.65) {
+    if (energy >= 0.6) return "bright and playful";
+    return "warm and content";
+  }
+  // Even keel: only worth saying when tension makes it a held composure.
+  if (stress >= 0.6) return "outwardly even but tense";
+  return "";
 }
 
 /** promptHints for thresholds the current values cross. */

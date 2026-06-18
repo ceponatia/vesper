@@ -1,11 +1,12 @@
 # Personality & evolving state — plan
 
-Status: **active** — Slices 1 (social-reaction loop), 2 (puppet guardrail), and 3 (atomic
-traits + scaling + lexicon) **shipped 2026-06-18**; Slices 4–5 queued. The social-fabric
-**card layer is a separate plan** (`social-reaction-cards.plan.md`) that Slice 1 built the
-resolution seam for; the **full NPC-puppeting system** beyond Slice 2's deflection directive
-is parked in `npc-puppeting.deferred.md`. Slices 4–5 can now build on the live trait
-registry (mood/meter baselines, affinity gain/decay).
+Status: **active** — Slices 1 (social-reaction loop), 2 (puppet guardrail), 3 (atomic
+traits + scaling + lexicon), and Slice 4 (mood + meter generalization + mood↔affinity
+coupling) **shipped 2026-06-18**; Slice 4 step 5 (more affinity levels) is folded into
+**Slice 5** (the affinity-decay work) per spec §4/§10. The social-fabric **card layer is a
+separate plan** (`social-reaction-cards.plan.md`) that Slice 1 built the resolution seam
+for; the **full NPC-puppeting system** beyond Slice 2's deflection directive is parked in
+`npc-puppeting.deferred.md`.
 
 Design/decisions: [personality-and-state.spec.md](personality-and-state.spec.md) — read
 it first; it is the truth. This plan is the task list and build order. It **front-loads
@@ -198,27 +199,50 @@ stubbed, and powers forge expansion.
 7. **Agents / editor** — simulant slice gains trait bands; editor sliders + band readout.
    Tests + docs.
 
-### 4. Mood + meter generalization + affinity levels — _not started_
+### 4. Mood + meter generalization + affinity levels — _steps 1–4 shipped 2026-06-18; step 5 → Slice 5_
 
 Spec §4. Adds valence, per-character drift, and the mood↔affinity coupling.
 
+> **Shipped 2026-06-18 — steps 1–4; `pnpm verify` green (1286 tests).**
+> `MeterDefinition.baseline?`/`recoveryPerHour?` + generalized `applyMeterDrift` (toward
+> baseline, backward-compatible) → `mood` valence meter + `deriveMoodDescriptor` (surfaced
+> in `buildMeterConditionBlock`) → `personalizeMeters` (optimism→mood.baseline,
+> libido→arousal.baseline/recovery, composure→stress.recovery), wired per-participant into
+> the merge drift step → mood↔affinity coupling: the curve's `μ` reads the NPC's turn-start
+> mood (`moodMeterToFactor`, snapshotted before drift so hint/applied agree), and a reaction
+> nudges the target's mood (`moodNudge`, affinity-scaled via the curve magnitude). Tests +
+> docs (contracts/turn-engine/prompts).
+>
+> **Step 5 (more affinity levels) deferred to Slice 5 / the affinity-decay work** — spec §4
+> itself places the `stages.ts` widening "folded in with the affinity-decay work (§10)", and
+> widening ripples into stage-keyed maps (`AFFINITY_STAGE_FOLLOW_TERMS`, `classifyBond`)
+> tangential to mood. Doing it with decay keeps the relationship-plumbing changes together.
+>
+> **Decisions:** mood is a **0–1 meter** (0.5 neutral) reusing the meter pipeline (zero new
+> schema); μ = `(mood−0.5)×2`. The mood nudge takes affinity-scaling **implicitly** from the
+> affinity-aware curve magnitude (no separate factor) — refine if playtest wants explicit
+> coupling. The **event→mood** table remains its own later plan (only the social-reaction
+> nudge moves mood in v1). Tuning constants live in `reactions.ts`/`modulation.ts` (contracts
+> is IO-free), like the curve constants.
+
 1. **Meter generalization** — `baseline?` / `recoveryPerHour?` on `MeterDefinition`,
-   backward-compatible (absent ⇒ today's pole-seeking).
+   backward-compatible (absent ⇒ today's pole-seeking). ✓
 2. **`mood` meter + derived descriptor** — a new valence meter; `buildMeterConditionBlock`
-   blends valence × stress/energy into a descriptor.
+   blends valence × stress/energy into a descriptor. ✓
 3. **Trait-derived baselines** — `optimism→mood.baseline`,
-   `libido→arousal.baseline/recovery`, `composure→stress.recovery`.
-4. **Mood↔affinity coupling** — wire the curve's `μ` mood factor to real mood; add the
-   mood-update path (affinity scales how interactions/events move mood); the social
+   `libido→arousal.baseline/recovery`, `composure→stress.recovery`. ✓
+4. **Mood↔affinity coupling** — wire the curve's `μ` mood factor to real mood; the social
    reaction now also nudges mood (the deferred Slice-1 nudge). The event→mood table is
-   its own later plan.
+   its own later plan. ✓
 5. **More affinity levels** — widen `stages.ts` so progression reads less coarsely.
-   Tests + docs.
+   _Deferred to Slice 5 (affinity-decay work), per spec §4/§10._
 
-### 5. Affinity trait-coupling — _not started; folds into affinity-decay work_
+### 5. Affinity trait-coupling + more levels — _not started; folds into affinity-decay work_
 
-Spec §4 (affinity) / §10. Trait-scaled gain asymmetry + decay target/rate. **Do not
-duplicate** — fold into
+Spec §4 (affinity) / §10. Trait-scaled gain asymmetry + decay target/rate, **plus the
+widened `stages.ts` levels carried over from Slice 4 step 5** (it ripples into stage-keyed
+maps — `AFFINITY_STAGE_FOLLOW_TERMS`, `classifyBond` — so it belongs with the decay work).
+**Do not duplicate** — fold into
 [cast-tiers-and-affinity-spec.phase3.md](finished/cast-tiers-and-affinity-spec.phase3.md) when
 affinity decay is built.
 

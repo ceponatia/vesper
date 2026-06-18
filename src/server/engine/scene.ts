@@ -6,6 +6,7 @@ import type { ItemDefinition, ItemInstanceState } from "@/contracts/items/item";
 import { resolveWardrobeVisibility, type WornItemInput } from "@/contracts/items/visibility";
 import {
   crossedThresholdHints,
+  deriveMoodDescriptor,
   meterDefinitions,
   type MeterDefinition,
 } from "@/contracts/meters/registry";
@@ -35,7 +36,7 @@ import { interactionConceptById } from "@/contracts/personality/interactions";
 import type { Preference } from "@/contracts/personality/preference";
 import { checkPuppetContradiction } from "@/contracts/personality/puppet";
 import { socialTraitScale } from "@/contracts/personality/modulation";
-import { evaluateSocialReaction, NEUTRAL_MOOD, resolveSocialReaction } from "@/contracts/personality/reactions";
+import { evaluateSocialReaction, moodMeterToFactor, resolveSocialReaction } from "@/contracts/personality/reactions";
 import { bandForValue, INTIMATE_TRAIT_CATEGORY, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
@@ -942,6 +943,8 @@ export function buildMeterConditionBlock(bundle: SceneBundleInput): string {
   const defs = effectiveMeterDefinitions(bundle.style);
   const lines = present.map((p) => {
     const parts: string[] = [];
+    const mood = deriveMoodDescriptor(p.state.meters);
+    if (mood) parts.push(`mood: ${mood}`);
     parts.push(`activity: ${p.state.activity || "idle"}${p.state.posture ? ` (${p.state.posture})` : ""}`);
 
     const hints = crossedThresholdHints(p.state.meters, defs);
@@ -1159,6 +1162,8 @@ export interface ReactionLineInput {
     tags: readonly string[];
     preferences: readonly Preference[];
     traits: readonly TraitValue[];
+    /** Turn-start mood meter (0–1); drives the curve's μ so the hint matches the applied delta. */
+    mood: number;
   }>;
   /** Numeric affinity edges (BundleRelationship); the curve reads the NPC's feeling toward the player. */
   relationships: ReadonlyArray<{ fromParticipantId: string; toParticipantId: string; kind: "feeling" | "perceived"; value: number }>;
@@ -1185,7 +1190,7 @@ export function buildReactionLine(input: ReactionLineInput): string {
   const feeling = input.relationships.find(
     (r) => r.kind === "feeling" && r.fromParticipantId === npc.id && r.toParticipantId === input.playerId,
   );
-  const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, NEUTRAL_MOOD, socialTraitScale(reaction, npc.traits));
+  const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, moodMeterToFactor(npc.mood), socialTraitScale(reaction, npc.traits));
   const concept = interactionConceptById(primary.concept);
   const verb = concept?.verb ?? "made a social overture to";
   const label = (concept?.label ?? primary.concept).toLowerCase();

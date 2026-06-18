@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   applyMeterDrift,
   crossedThresholdHints,
+  deriveMoodDescriptor,
   initialMeters,
+  meterBaselineOf,
   meterById,
   meterDefinitions,
   type MeterDefinition,
@@ -65,6 +67,46 @@ describe("applyMeterDrift", () => {
     const meters = { hygiene: 0.9 };
     applyMeterDrift(meters, 60);
     expect(meters.hygiene).toBe(0.9);
+  });
+
+  it("drifts toward a non-pole baseline and stops there (no overshoot)", () => {
+    const def: MeterDefinition = {
+      id: "mood",
+      label: "Mood",
+      description: "x",
+      initial: 0.5,
+      perHour: 0,
+      baseline: 0.5,
+      recoveryPerHour: 0.1,
+      thresholds: [],
+    };
+    // From above the baseline, ten hours of 0.1/h would pass 0.5 — it must stop at 0.5.
+    expect(applyMeterDrift({ mood: 0.9 }, 600, [def]).mood).toBe(0.5);
+    // From below, likewise rises only to the baseline.
+    expect(applyMeterDrift({ mood: 0.1 }, 600, [def]).mood).toBe(0.5);
+    // A partial step approaches but doesn't reach it.
+    expect(applyMeterDrift({ mood: 0.9 }, 60, [def]).mood).toBeCloseTo(0.8, 10);
+  });
+
+  it("the mood meter rests at an even keel (baseline 0.5)", () => {
+    expect(meterBaselineOf(meterById("mood")!)).toBe(0.5);
+    expect(initialMeters().mood).toBe(0.5);
+  });
+});
+
+describe("deriveMoodDescriptor", () => {
+  it("blends valence with stress/energy into a phrase", () => {
+    expect(deriveMoodDescriptor({ mood: 0.2, stress: 0.7 })).toBe("low and on edge");
+    expect(deriveMoodDescriptor({ mood: 0.2, energy: 0.2 })).toBe("low and listless");
+    expect(deriveMoodDescriptor({ mood: 0.2 })).toBe("subdued and withdrawn");
+    expect(deriveMoodDescriptor({ mood: 0.8, energy: 0.8 })).toBe("bright and playful");
+    expect(deriveMoodDescriptor({ mood: 0.8, energy: 0.3 })).toBe("warm and content");
+    expect(deriveMoodDescriptor({ mood: 0.5, stress: 0.7 })).toBe("outwardly even but tense");
+  });
+
+  it("says nothing for an even, unstressed keel or when mood is absent", () => {
+    expect(deriveMoodDescriptor({ mood: 0.5, stress: 0.1 })).toBe("");
+    expect(deriveMoodDescriptor({ stress: 0.9 })).toBe(""); // no mood meter ⇒ no descriptor
   });
 });
 
