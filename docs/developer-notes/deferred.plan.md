@@ -39,8 +39,8 @@ about. Fix: **decouple identity from order.**
 convention); [roadmap.md](roadmap.md) now holds the priority order. First
 instances: [scene-images.plan.md](scene-images.plan.md) +
 [scene-images.spec.md](scene-images.spec.md) and
-[non-human-species.plan.md](non-human-species.plan.md) +
-[non-human-species.spec.md](non-human-species.spec.md); the world-moves specs were
+[non-human-species.plan.md](finished/non-human-species.plan.md) +
+[non-human-species.spec.md](finished/non-human-species.spec.md); the world-moves specs were
 renamed off `*.phase5.md` to `movement-authority.spec.md` /
 `scheduled-arrivals.spec.md` / `pre-narrator-agents.spec.md`. Legacy `phase-N`
 docs stay as historical record.
@@ -61,11 +61,11 @@ was completed: the three world-moves specs (+ their gpt-review mirrors) were
 renamed `*.phase5.md`, every `.phase4.md` filename link (docs + 4 `src/` comment
 refs) was updated, the three living specs were swept to read as "phase 5"
 internally, and resequencing banners were added to them and to
-[phase-3-to-4.md](phase-3-to-4.md). **Link integrity verified; no broken links.**
+[phase-3-to-4.md](finished/phase-3-to-4.md). **Link integrity verified; no broken links.**
 
 Deliberately **not** swept (left as historical, banner-only): the plain-prose
 "phase 4" mentions — now meaning phase 5 — in dated/stable docs (the
-`phase-3-to-4.md` body, completed [phase-3-plan.md](phase-3-plan.md), the phase-3
+`phase-3-to-4.md` body, completed [phase-3-plan.md](finished/phase-3-plan.md), the phase-3
 design specs, gpt-review review snapshots) and ~11 `src/` code comments
 (forward-references like "phase-4 NPC traversal reuses this"). Reasons: some are
 semantically ambiguous, and churning shipped code / dated artifacts is low-value
@@ -91,18 +91,27 @@ Open questions before doing the deeper sweep:
 My lean: leave the historical prose as-is (it's not misleading once the phase map
 is known), and only act if a future reader trips on it. Revisit when phase 4
 ships and the standard re-suffix pass runs anyway (see the naming note in
-[phase-4-plan.md](phase-4-plan.md)).
+[phase-4-plan.md](finished/phase-4-plan.md)).
 
-## Non-human races & additive body features — _graduated 2026-06-16_
+## Non-human races & additive body features — _graduated 2026-06-16, shipped 2026-06-18_
 
-Promoted out of the parking lot to its own plan:
-[non-human-species.plan.md](non-human-species.plan.md) (task list) +
-[non-human-species.spec.md](non-human-species.spec.md) (design — the former
-`non-human-races-and-features.deferred.md`). Substantially shipped already
-(8-species catalog, wings/horns/tail morphology, species-driven realization +
-forge inference, editor controls); remaining work (image-gen feature surfacing,
-richer species rules, wardrobe accommodation, `lore` authoring) is tracked in the
-plan.
+Promoted out of the parking lot to its own plan, now **shipped**:
+[non-human-species.plan.md](finished/non-human-species.plan.md) (task list +
+shipped/leftover summary) + [non-human-species.spec.md](finished/non-human-species.spec.md)
+(design — the former `non-human-races-and-features.deferred.md`). The full feature
+landed (8-species catalog with `appearance`/`lore` + heritages, wings/horns/tail
+morphology, species-driven realization + forge species/heritage inference, editor
+controls, and image-gen feature surfacing on every route). One strand parks back
+here for its own later pass:
+
+- **Wardrobe accommodation for features** — garments that fit winged/tailed bodies
+  (back slits, tail openings, horn-cutout hoods) so outfits don't clip or
+  contradict features. The seam is the `expand`/coverage question on the
+  `coverageRelevant: false` `tail` location; solving it means excluding
+  `featureGroup` locations from coverage `expand`, or per-garment "accommodates
+  feature X" flags. (Incremental per-species attribute-rule data — e.g. `succubus`
+  rules, finer coloration nudges — is plain data work tracked in the plan, not a
+  parked idea.)
 
 ## Scene image: multi-reference & provider strategy — _graduated 2026-06-16_
 
@@ -126,7 +135,7 @@ ships single-pair only. Deferred, none designed:
   mechanic.
 
 See
-[presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
+[presence-and-perception-spec.phase3.md](finished/presence-and-perception-spec.phase3.md)
 §Gaps & opportunities.
 
 ## Item acquisition during play
@@ -137,7 +146,7 @@ written only at spawn). Deferred — needs its own design: characters **acquire*
 items in play (purchases, gifts) that become owned at acquisition time, a
 second provenance path the items model doesn't have yet.
 
-See [location-design-spec.phase3.md](location-design-spec.phase3.md)
+See [location-design-spec.phase3.md](finished/location-design-spec.phase3.md)
 §Ownership.
 
 ## Monorepo split (gated on a second deployable)
@@ -202,7 +211,7 @@ eventually. Needs its own think — likely narrator-omniscient with no
 awareness blocks, but deferred rather than ruled. Phase 3 takes no
 stance for observer sessions.
 
-See [presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md).
+See [presence-and-perception-spec.phase3.md](finished/presence-and-perception-spec.phase3.md).
 
 ## Companion role as romance eligibility
 
@@ -258,7 +267,7 @@ you later want romanceable must be re-cast as a `companion` (or we add a
 separate `romanceable` flag); coupling to the existing role is cheapest and
 matches the framing.
 
-See [cast-tiers-and-affinity-spec.phase3.md](cast-tiers-and-affinity-spec.phase3.md)
+See [cast-tiers-and-affinity-spec.phase3.md](finished/cast-tiers-and-affinity-spec.phase3.md)
 §Problem (role definition) and §Design: tiers.
 
 ## Relationship & meter timeline — _UX audit feature #4_

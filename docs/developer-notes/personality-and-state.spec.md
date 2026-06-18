@@ -13,7 +13,7 @@ restated there at that point.
 Reads on: [contracts.md](../contracts.md) §Attribute system / §Meters /
 §Relationship stages, [prompts.md](../prompts.md), [turn-engine.md](../turn-engine.md)
 §Post-turn agents, [resilience.md](../resilience.md). Overlaps and should be
-reconciled with [cast-tiers-and-affinity-spec.phase3.md](cast-tiers-and-affinity-spec.phase3.md)
+reconciled with [cast-tiers-and-affinity-spec.phase3.md](finished/cast-tiers-and-affinity-spec.phase3.md)
 (affinity is already a state of this shape) and
 [intimacy-notes.spec.md](intimacy-notes.spec.md) (the intimate-disposition note
 is the prose sibling of the intimate *traits* proposed here).

@@ -2,12 +2,12 @@
 
 > **Resequenced 2026-06-14:** this work is now **phase 5**. A standalone **phase 4**
 > (the body-model build) was inserted ahead of it — see
-> [intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sensory-and-species-spec.phase4.md).
+> [intimate-anatomy-sensory-and-species-spec.phase4.md](finished/intimate-anatomy-sensory-and-species-spec.phase4.md).
 > This file was renamed from `*.phase4.md` and its body now reads "phase 5" throughout.
 
 Status: **draft for discussion** (2026-06-13). Phase 5 ("the world moves"
-— see [phase-3-to-4.md](phase-3-to-4.md)). This is a sibling of
-[npc-movement-spec.phase3.md](npc-movement-spec.phase3.md) (the movement
+— see [phase-3-to-4.md](finished/phase-3-to-4.md)). This is a sibling of
+[npc-movement-spec.phase3.md](finished/npc-movement-spec.phase3.md) (the movement
 *engine*: drives, traversal, follow/approach, companion atomicity). That
 spec answers *when does an NPC decide to move and how do they path*; this
 one answers a prior question it never poses: **who is allowed to commit a
@@ -118,7 +118,7 @@ with authority over that participant**:
   through the NPC-agency gate (below) before they can take effect.
 - **NPC-/companion-authored turn or world-tick**: NPC movement is willed
   by the NPC's own drives — the existing [npc-movement
-  spec](npc-movement-spec.phase3.md) governs it (drives, commitment,
+  spec](finished/npc-movement-spec.phase3.md) governs it (drives, commitment,
   `merge.movement.unmotivated` for uncitable world-tick proposals).
 
 Mechanism — pick one in design review (Open question A):
@@ -185,7 +185,7 @@ note ("Brian is now on Main Street, still heading to the Anchor Cafe") so
 the narrator does not describe arrival. This self-heals the failure: turn
 34 → player to Main Street, turn 35 → player completes to the cafe.
 
-Couples to the [time-and-travel](time-and-travel-spec.phase3.md)
+Couples to the [time-and-travel](finished/time-and-travel-spec.phase3.md)
 "partial-traversal brief note" leftover and the npc-movement traversal
 model (nodes-only, shortest path, progress per `travelMinutes`). Open
 question D: one hop per turn, or consume the turn's travel-minute budget
@@ -259,5 +259,5 @@ state.
 implied-room no-op), `prompts.md` (multi-hop next-hop guidance, co-travel
 guidance), `contracts.md` (simulant `movements` schema only if option B /
 `willedBy` is chosen), and a cross-link from
-[npc-movement-spec](npc-movement-spec.phase3.md) (this spec supplies the
+[npc-movement-spec](finished/npc-movement-spec.phase3.md) (this spec supplies the
 authority precondition its traversal assumes).

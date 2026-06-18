@@ -10,7 +10,7 @@ Builds directly on the just-shipped **species note split** (`appearance` →
 image+forge, `lore` → narrator) and the phase-4 **exposure mask** (the per-sense
 intimate-tier gate). Read those first: [contracts.md](../contracts.md) §Body
 model and
-[intimate-anatomy-sensory-and-species-spec.phase4.md](intimate-anatomy-sensory-and-species-spec.phase4.md).
+[intimate-anatomy-sensory-and-species-spec.phase4.md](finished/intimate-anatomy-sensory-and-species-spec.phase4.md).
 
 ---
 

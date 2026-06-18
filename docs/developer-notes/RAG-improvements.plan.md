@@ -27,7 +27,7 @@ the current code:
   channel.
 - **No presence/witness gating in retrieval.** `witnessedBy` and `canon` are
   written truthfully every turn but read by nobody — the knowledge-ledger
-  consumer is phase 6 ([character-memory-spec.phase3.md](character-memory-spec.phase3.md)).
+  consumer is phase 6 ([character-memory-spec.phase3.md](finished/character-memory-spec.phase3.md)).
 - **Lore gating is duplicated.** `lore.ts` owns the canonical helpers
   (`isChunkUnlocked`, `selectSceneChunks`, `eligibleRetrievalChunks`,
   `matchesScene`), but `pipeline.ts:732-744` carries its own local `isUnlocked`
@@ -53,7 +53,7 @@ join, no new embedding.
 The user's sub-note — `isPresent` should drive *many* prompt injections, and
 non-present NPCs act via a **separate async, non-turn-blocking pipeline** —
 belongs with [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md)
-and [offscreen-simulation-spec.phase3.md](offscreen-simulation-spec.phase3.md),
+and [offscreen-simulation-spec.phase3.md](finished/offscreen-simulation-spec.phase3.md),
 not the retrieval layer. Keep this idea scoped to "presence as a retrieval/inclusion
 signal"; the offscreen-agent pipeline is its own track.
 
@@ -112,7 +112,7 @@ defuses the alias / rename / duplicate-name fragility the idea calls out.
 ### 5. Consume the richer metadata (witness-gating + canon channel) — agree, but it's phase 6
 
 This is the biggest semantic leap *and* it already has a home:
-[character-memory-spec.phase3.md](character-memory-spec.phase3.md) → phase 6
+[character-memory-spec.phase3.md](finished/character-memory-spec.phase3.md) → phase 6
 (knowledge ledger / `fact_knowers`, per-character episodes). Two retrieval-layer
 hooks to keep in view so #1/#2 don't paint us into a corner:
 - **Witness-gated retrieval:** an NPC should not retrieve facts it never
@@ -182,10 +182,10 @@ respect the constraint:
 ## Cross-references / where things already live
 
 - [memory.md](../memory.md) — current behaviour and all tuning thresholds.
-- [character-memory-spec.phase3.md](character-memory-spec.phase3.md) — knowledge
+- [character-memory-spec.phase3.md](finished/character-memory-spec.phase3.md) — knowledge
   ledger / per-character memory (owns idea #5's consumer, phase 6).
 - [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) and
-  [offscreen-simulation-spec.phase3.md](offscreen-simulation-spec.phase3.md) —
+  [offscreen-simulation-spec.phase3.md](finished/offscreen-simulation-spec.phase3.md) —
   the async non-present-NPC pipeline from idea #1's sub-note.
 - [perception.md](../perception.md) — how `witnessedBy` (attention × salience) is
   computed; the gate idea #5 would consume.

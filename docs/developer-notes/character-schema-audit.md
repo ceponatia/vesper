@@ -271,7 +271,7 @@ exceptions, degraded defaults).
    `defaultValue`, which is phase 4's own stated success test ("a second humanoid
    species should be a single data file"). Today it's a data file *plus* teaching
    `realizeBody` to consume `required`/`defaultValue` narrowing. Tracked-adjacent
-   in [non-human-species.spec.md](non-human-species.spec.md).
+   in [non-human-species.spec.md](finished/non-human-species.spec.md).
 
 7. **Decouple intimate defaulting from a fragile gender read (E1)** — make
    `identity.gender` `coreVisual` (so it's always filled), or re-derive
@@ -290,16 +290,18 @@ exceptions, degraded defaults).
 
 To avoid double-planning, these adjacent items are already recorded:
 
-- **Additive features + non-human species (image prompting, richer species
-  rules, wardrobe accommodation)** — [non-human-species.spec.md](non-human-species.spec.md).
-  Recommendation 6 above overlaps its "richer species rules."
+- **Additive features + non-human species** —
+  [non-human-species.spec.md](finished/non-human-species.spec.md) (shipped 2026-06-18;
+  image prompting + species/heritage rules landed). Leftovers are incremental
+  per-species attribute-rule **data** and wardrobe accommodation; Recommendation 6
+  above overlaps that "richer species rules" data work.
 - **Anatomy port granularity / supplemental anatomy** (buttocks, groin, abdomen,
-  nose …) — [supplemental-anatomy.phase4.md](supplemental-anatomy.phase4.md). The
+  nose …) — [supplemental-anatomy.phase4.md](finished/supplemental-anatomy.phase4.md). The
   D1 nesting fix should land *before* this port so the new groups slot in as data.
-- **Pubic hair, anus attributes, demo body-config** — [followups.phase4.md](followups.phase4.md)
+- **Pubic hair, anus attributes, demo body-config** — [followups.phase4.md](finished/followups.phase4.md)
   §2–4.
 - **`runtime` mutability tier, `requiresAttributes`/`conflictsWithAttributes`,
-  `itemSchema`/`collection`** — explicitly deferred in [phase-4-plan.md](phase-4-plan.md)
+  `itemSchema`/`collection`** — explicitly deferred in [phase-4-plan.md](finished/phase-4-plan.md)
   §Out of scope. Note these are *deferred* (a known parking lot); the A–B
   findings above are *drift* (built and advertised as live, but inert) — a
   different category that warrants enforce-or-delete now.

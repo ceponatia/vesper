@@ -5,7 +5,7 @@ Status: **draft** (not settled — design under review; no code yet).
 Design/decisions: [intimacy-notes.spec.md](intimacy-notes.spec.md) — read it
 first; it is the truth. This plan is the task list and build order. Builds on the
 shipped species note split (`appearance`/`lore`, see
-[non-human-species.plan.md](non-human-species.plan.md)) and the phase-4 exposure
+[non-human-species.plan.md](finished/non-human-species.plan.md)) and the phase-4 exposure
 mask.
 
 ## Goal

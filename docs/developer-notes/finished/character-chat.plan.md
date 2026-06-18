@@ -1,6 +1,6 @@
 # Character chat — sessionless 1-on-1 plan
 
-Status: **active** (resumed 2026-06-17) — server layer (prompt, stream harness,
+Status: **finished/superseded** (resumed 2026-06-17) — server layer (prompt, stream harness,
 sessionless scene render, `character_chat_messages` table + migration `0005`)
 was already in place; this pass wired the **route → client → UI** vertical, the
 manual scene button, and the Gallery surfacing. Remaining: live smoke test with
@@ -17,13 +17,13 @@ isolated from the session engine: **no** turns, episodes, facts, RAG, presence,
 wardrobe state, meters, or exposure. A flat message window is the model's only
 memory.
 
-It is the cheapest possible loop for the real product question — *does this
-character read as themselves?* — and a natural home for a quick scene image.
+It is the cheapest possible loop for the real product question — _does this
+character read as themselves?_ — and a natural home for a quick scene image.
 
 ## Shape (what's built)
 
 - **Prompt** — `engine/prompts/character-chat.ts` · `buildCharacterChatSystemPrompt`.
-  Pure, snapshot-tested. Reuses the *same* representation the in-game narrator
+  Pure, snapshot-tested. Reuses the _same_ representation the in-game narrator
   gets — resolved attribute values via the registry + deduped `promptHints` as
   phrasing guidance — gated by the realized body (`realizeBody`) so a stale
   attribute (e.g. wings after a species change) never leaks. Drops all session
@@ -35,7 +35,7 @@ character read as themselves?* — and a natural home for a quick scene image.
   in-character placeholder so the tab + tests work with no provider key.
 - **Persistence** — `character_chat_messages` (`schema.ts`, migration
   `0005_clean_old_lace.sql`): `{ ownerId, characterId→cascade, role, content,
-  createdAt }`. The route owns the transcript; clearing deletes rows but leaves
+createdAt }`. The route owns the transcript; clearing deletes rows but leaves
   generated scene images.
 - **API** — `api/characters/[id]/chat/route.ts`:
   - `GET` → transcript (oldest-first, capped 500).
@@ -54,7 +54,7 @@ character read as themselves?* — and a natural home for a quick scene image.
   Filed against the character (`kind:"scene"`, `entityKind:"character"`, **no**
   `sessionId`).
 - **Client** — `lib/client/api.ts`: `charactersApi.chatTranscript / clearChat /
-  chatScenes / generateChatScene`, plus `sendCharacterChat()` — a plain-text
+chatScenes / generateChatScene`, plus `sendCharacterChat()` — a plain-text
   stream consumer (`onChunk` per delta, never throws).
 - **UI** — `components/characters/character-chat.tsx`, a **Chat** tab in the
   character editor (saved characters only, like the portrait studio). Transcript
@@ -82,7 +82,7 @@ character read as themselves?* — and a natural home for a quick scene image.
 - **Plain-text stream, not SSE.** The reply is just text; a plain `text/plain`
   stream avoids a second event schema. Errors degrade to a short reply / toast
   rather than an error frame — consistent with the app's degradation philosophy.
-- **Persist-on-settle, best-effort across disconnect.** Generation *is* the
+- **Persist-on-settle, best-effort across disconnect.** Generation _is_ the
   stream here (unlike the turn pipeline, where the engine task is detached before
   the SSE). On a mid-stream client disconnect the server keeps draining and
   persists, but if the platform kills the handler the partial reply is lost — the
@@ -92,7 +92,7 @@ character read as themselves?* — and a natural home for a quick scene image.
 
 ## Open questions / deferred
 
-- **Narrator-model picker.** *Resolved (2026-06-17).* The Chat tab now exposes a
+- **Narrator-model picker.** _Resolved (2026-06-17)._ The Chat tab now exposes a
   curated `NARRATIVE_MODELS` select wired into each send; the scene **Generate**
   control gained a Flux/Qwen image-model select threaded server-side
   (`renderCharacterSceneImage` → `renderResolvedScene` → `routeSceneProviders`'s
