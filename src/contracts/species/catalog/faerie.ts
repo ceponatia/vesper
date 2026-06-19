@@ -68,7 +68,8 @@ export const faerie = defineSpecies({
         {
           attributeId: "wings.color",
           applicability: "optional",
-          defaultValue: "red-hued",
+          // enum_list over the shared MATERIAL_COLORS palette — sprites read red-winged.
+          defaultValue: ["crimson"],
         },
       ],
     },

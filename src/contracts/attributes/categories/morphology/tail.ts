@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../../types";
+import { MATERIAL_COLORS } from "../../shared-values";
 
 /** Tail — visible fantasy morphology, gated by bodyFeatures group "tail". */
 export const tailGroup = defineAttributeGroup("tail", [
@@ -32,12 +33,13 @@ export const tailGroup = defineAttributeGroup("tail", [
     label: "Tail color",
     kind: "physical",
     category: "tail",
-    valueType: "text",
-    description: "Tail color, pattern, or surface material only — never size or shape.",
+    valueType: "enum_list",
+    description: "Tail color, pattern, or surface material only — never size or shape. One or two from the material palette.",
     mutability: "inherent",
+    allowedValues: [...MATERIAL_COLORS],
     bodyLocationId: "tail",
     aliases: ["tail color"],
-    promptHints: ["e.g. matching the skin, scaled green, russet fur, jet-black with a red spade."],
+    promptHints: ["e.g. matches_skin, green (scaled), russet (fur), jet_black + crimson (a red spade)."],
   },
   {
     id: "tail.tip",

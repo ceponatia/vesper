@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { matchActions, type ActionDefinition } from "@/contracts/actions/registry";
 import { attributeRegistry } from "@/contracts/attributes";
-import { attributeValueSchema } from "@/contracts/attributes/value";
+import { attributeValueSchema, overlaySourceMayChange, resolveAttributes } from "@/contracts/attributes/value";
 import { isConditionExpired, type ActiveCondition } from "@/contracts/conditions/condition";
 import { diag, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { ItemDefinition, ItemInstanceState } from "@/contracts/items/item";
@@ -1428,6 +1428,23 @@ const SIMULANT_FALLBACK: SimulantResult = {
 
 const CONTINUITY_FALLBACK: ContinuityResult = { violations: [], normBreaches: [], driftNotes: [] };
 
+/**
+ * Shallow equality for attribute values (scalar or enum_list array). Used by the
+ * inherent-change guard to skip a correction when the model only re-asserts the value
+ * a character already has. Arrays compare order-insensitively (an enum_list is a set).
+ */
+function attributeValuesEqual(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const aa = a as unknown[];
+    const bb = b as unknown[];
+    if (aa.length !== bb.length) return false;
+    const sa = aa.map(String).sort();
+    const sb = bb.map(String).sort();
+    return sa.every((v, i) => v === sb[i]);
+  }
+  return a === b;
+}
+
 export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   const { bundle, turn, results, sink } = input;
   const mode: MergeMode = input.mode ?? "post_turn";
@@ -1718,14 +1735,40 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   }
 
   // Attribute changes (rare, lasting): overlays with narrative provenance.
+  // Inherent traits (eye color, gender, species, bone structure) are protected — a
+  // narrative overlay may not rewrite them (overlaySourceMayChange). A rejected change
+  // drops with a diagnostic + a droppedEvents correction so the narrator is re-grounded
+  // next turn instead of the drift silently sticking and re-applying every turn.
   for (const change of simulant.attributeChanges) {
     const participant = findParticipant(change.participantName, parts);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `attribute change for "${change.participantName}" dropped`));
       continue;
     }
-    if (!attributeRegistry.byId(change.attributeId)) {
+    const def = attributeRegistry.byId(change.attributeId);
+    if (!def) {
       sink.push(diag("warn", "merge.attribute.unknown", `unknown attribute "${change.attributeId}" dropped`));
+      continue;
+    }
+    if (!overlaySourceMayChange(def.mutability, "narrative")) {
+      // Suppress a spurious correction when the model merely re-asserts the value that
+      // already resolves — only correct on a real divergence.
+      const current = resolveAttributes(participant.snapshot.attributes, participant.state.attributeOverlays).find(
+        (v) => v.id === change.attributeId,
+      )?.value;
+      if (!attributeValuesEqual(current, change.value)) {
+        sink.push(
+          diag(
+            "warn",
+            "merge.attribute.inherent_change_rejected",
+            `narrative change to inherent attribute "${change.attributeId}" dropped`,
+            { context: { participant: participant.displayName, attributeId: change.attributeId } },
+          ),
+        );
+        droppedEvents.push(
+          `${participant.displayName}'s ${def.label.toLowerCase()} is an inherent trait and did not change.`,
+        );
+      }
       continue;
     }
     const overlay = parseOrNull(

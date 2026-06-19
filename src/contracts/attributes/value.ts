@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { attributeIdPatternSchema } from "./types";
+import { attributeIdPatternSchema, type AttributeMutability } from "./types";
 import {
   provenanceSourceSchema,
   provenanceSources,
@@ -36,4 +36,24 @@ export type AttributeValue = z.infer<typeof attributeValueSchema>;
  */
 export function resolveAttributes(base: readonly AttributeValue[], overlays: readonly AttributeValue[]): AttributeValue[] {
   return resolveProvenance(base, overlays);
+}
+
+/**
+ * May an overlay from `source` change an attribute of this `mutability`?
+ *
+ * Inherent traits (eye color, gender, apparent age, species presentation, bone
+ * structure) accept only deliberate, high-authority changes — a human author
+ * (`manual`) or an explicit supernatural transformation (`magic`). Plain narrative
+ * drift and every other source are rejected, so an LLM over-reading prose ("her eyes
+ * flashed green") can't silently rewrite a defining trait. Mutable attributes accept
+ * any source. Enforced at the write boundary (engine/merge.ts); the resolver stays a
+ * pure last-write-wins function.
+ *
+ * `magic` is admitted but never produced today (the transformation seam is future
+ * work) — it future-proofs the policy so a real transformation is a later data/flag
+ * change, not a redesign.
+ */
+export function overlaySourceMayChange(mutability: AttributeMutability, source: AttributeValueSource): boolean {
+  if (mutability === "inherent") return source === "manual" || source === "magic";
+  return true;
 }

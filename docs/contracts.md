@@ -15,7 +15,10 @@ type AttributeDefinition = {
   kind: "physical" | "biological" | "presentation" | "cultural" | "condition" | "sensory";
   valueType: "enum" | "enum_list" | "number" | "text" | "flag";
   description: string;
-  mutability: "inherent" | "mutable" | "temporary";   // inherent: narrative can't change it
+  mutability: "inherent" | "mutable";   // inherent: only a human (manual) or a supernatural
+                                         // transformation (magic) may change it — narrative drift is
+                                         // rejected at the merge write boundary (overlaySourceMayChange)
+                                         // with a droppedEvents correction. mutable: any source.
   allowedValues?: readonly string[];                   // enum/enum_list
   min?: number; max?: number; unit?: string;           // number
   bodyLocationId?: string;                             // links to the body tree

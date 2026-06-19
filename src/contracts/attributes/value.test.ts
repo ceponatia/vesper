@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAttributes, type AttributeValue } from "./value";
+import { attributeValueSources, overlaySourceMayChange, resolveAttributes, type AttributeValue } from "./value";
 
 function av(partial: Partial<AttributeValue> & Pick<AttributeValue, "value" | "source">): AttributeValue {
   return { id: "hair.color", ...partial };
@@ -98,5 +98,24 @@ describe("resolveAttributes precedence", () => {
   it("returns base values untouched when there are no overlays", () => {
     const base = [av({ value: "brown", source: "base" })];
     expect(resolveAttributes(base, [])).toEqual(base);
+  });
+});
+
+describe("overlaySourceMayChange", () => {
+  it("inherent admits only manual and magic", () => {
+    expect(overlaySourceMayChange("inherent", "manual")).toBe(true);
+    expect(overlaySourceMayChange("inherent", "magic")).toBe(true);
+  });
+
+  it("inherent rejects narrative and every other non-deliberate source", () => {
+    for (const source of ["base", "creation", "narrative", "condition", "injury", "item", "environment"] as const) {
+      expect(overlaySourceMayChange("inherent", source)).toBe(false);
+    }
+  });
+
+  it("mutable admits every source", () => {
+    for (const source of attributeValueSources) {
+      expect(overlaySourceMayChange("mutable", source)).toBe(true);
+    }
   });
 });

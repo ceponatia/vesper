@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../../types";
+import { INTIMATE_SCENT_BASE } from "../../shared-values";
 
 /**
  * Vulva — intimate region, gated by the body-config group "vulva" (which also
@@ -39,7 +40,7 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     valueType: "enum",
     description: "Intimate scent; shifts with hygiene and arousal. Surfaces only when scent is earned at close/intimate range.",
     mutability: "mutable",
-    allowedValues: ["clean", "musky", "salty", "sweet"],
+    allowedValues: [...INTIMATE_SCENT_BASE, "sweet"],
     bodyLocationId: "vulva",
   },
   {
@@ -50,7 +51,7 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     valueType: "enum",
     description: "Intimate taste. Surfaces only at the intimate taste tier (oral contact).",
     mutability: "mutable",
-    allowedValues: ["clean", "musky", "salty", "tangy", "sweet"],
+    allowedValues: [...INTIMATE_SCENT_BASE, "tangy", "sweet"],
     bodyLocationId: "vulva",
   },
 ]);

@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../../types";
+import { INTIMATE_SCENT_BASE } from "../../shared-values";
 
 /**
  * Penis — intimate region, gated by the body-config group "penis". These describe
@@ -50,7 +51,7 @@ export const penisGroup = defineAttributeGroup("penis", [
     valueType: "enum",
     description: "Intimate scent; shifts with hygiene and arousal. Surfaces only when scent is earned at close/intimate range.",
     mutability: "mutable",
-    allowedValues: ["clean", "musky", "salty"],
+    allowedValues: [...INTIMATE_SCENT_BASE],
     bodyLocationId: "penis",
   },
 ]);
