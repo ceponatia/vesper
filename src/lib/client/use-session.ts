@@ -339,6 +339,8 @@ export type SceneImage = z.infer<typeof sceneImageSchema>;
 const sceneGenSchema = z.object({
   interval: z.number().int().min(0).catch(0),
   status: z.enum(["idle", "generating", "failed"]).catch("idle"),
+  /** Single identity anchor vs Venice multi-reference edit (the session toggle). */
+  referenceMode: z.enum(["single", "multi"]).catch("single"),
 });
 export type SceneGen = z.infer<typeof sceneGenSchema>;
 
@@ -446,7 +448,7 @@ export function parseSessionStatus(raw: unknown): SessionStatus | null {
     participants: arrayOf(statusParticipantSchema).parse(firstPresent(obj, ["participants", "cast"]) ?? []),
     items: arrayOf(statusItemSchema).parse(firstPresent(obj, ["items", "itemInstances"]) ?? []),
     threads: arrayOf(statusThreadSchema).parse(threadsRaw),
-    scene: { currentImageId, gallery, gen: sceneGenSchema.catch({ interval: 0, status: "idle" }).parse(genRaw) },
+    scene: { currentImageId, gallery, gen: sceneGenSchema.catch({ interval: 0, status: "idle", referenceMode: "single" }).parse(genRaw) },
   };
 }
 

@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { emptySceneGenState, sceneGenStateSchema } from "@/contracts";
+import { emptySceneGenState, sceneGenStateSchema, sceneReferenceModeSchema } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
@@ -16,6 +16,10 @@ const sceneActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("setInterval"),
     interval: z.number().int().min(0).max(100),
+  }),
+  z.object({
+    action: z.literal("setReferenceMode"),
+    referenceMode: sceneReferenceModeSchema,
   }),
 ]);
 
@@ -36,6 +40,12 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
 
   if (body.value.action === "setInterval") {
     const updated = { ...scene, interval: body.value.interval };
+    await db().update(sessions).set({ scene: updated }).where(eq(sessions.id, id));
+    return jsonOk({ ok: true, scene: updated });
+  }
+
+  if (body.value.action === "setReferenceMode") {
+    const updated = { ...scene, referenceMode: body.value.referenceMode };
     await db().update(sessions).set({ scene: updated }).where(eq(sessions.id, id));
     return jsonOk({ ok: true, scene: updated });
   }

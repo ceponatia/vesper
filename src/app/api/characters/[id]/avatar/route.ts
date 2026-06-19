@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { avatarImageModels, DEFAULT_AVATAR_IMAGE_MODEL } from "@/contracts";
 import { characters, db } from "@/server/db";
 import { generateAvatar } from "@/server/images";
 import { jsonError, jsonOk, readBody, startJob, withUser } from "@/server/api";
@@ -9,8 +10,8 @@ type Params = { id: string };
 
 const avatarBodySchema = z.object({
   style: z.enum(["realistic", "stylized"]).default("realistic"),
-  /** Flux (OpenRouter) or Qwen uncensored (Venice). */
-  model: z.enum(["flux", "qwen"]).default("flux"),
+  /** Venice text-to-image model key (all uncensored; scene-images.spec.md §5). */
+  model: z.enum(avatarImageModels).default(DEFAULT_AVATAR_IMAGE_MODEL),
 });
 
 /**

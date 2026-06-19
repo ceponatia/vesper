@@ -233,7 +233,7 @@ describe("parseSessionStatus", () => {
       participants: [],
       items: [],
       threads: [],
-      scene: { currentImageId: null, gallery: [], gen: { interval: 0, status: "idle" } },
+      scene: { currentImageId: null, gallery: [], gen: { interval: 0, status: "idle", referenceMode: "single" } },
     });
   });
 
@@ -267,7 +267,7 @@ describe("parseSessionStatus", () => {
     });
     expect(status?.scene.currentImageId).toBe("scn2");
     expect(status?.scene.gallery.map((g) => g.id)).toEqual(["scn1", "scn2"]);
-    expect(status?.scene.gen).toEqual({ interval: 4, status: "generating" });
+    expect(status?.scene.gen).toEqual({ interval: 4, status: "generating", referenceMode: "single" });
   });
 
   it("reads aliases: top-level clock minutes, runtime threads, scene as sceneGen state", () => {
@@ -282,7 +282,7 @@ describe("parseSessionStatus", () => {
     expect(status?.clockMinutes).toBe(245);
     expect(status?.calendarStart?.year).toBe(2030);
     expect(status?.threads[0]?.status).toBe("cooling");
-    expect(status?.scene.gen).toEqual({ interval: 2, status: "generating" });
+    expect(status?.scene.gen).toEqual({ interval: 2, status: "generating", referenceMode: "single" });
     expect(status?.participants[0]?.displayName).toBe("Rook");
   });
 

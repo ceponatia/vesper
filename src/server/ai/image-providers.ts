@@ -1,8 +1,6 @@
-import { generateImage } from "ai";
-import type { SceneVisualReference } from "@/contracts";
+import type { SceneReferenceMode, SceneVisualReference } from "@/contracts";
 import { describeImageGenError } from "./errors";
-import { imageModel } from "./provider";
-import { veniceEditImage } from "./venice";
+import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage } from "./venice";
 
 /**
  * Provider-capability seam for scene rendering (scene-images.spec.md §4). The
@@ -10,13 +8,17 @@ import { veniceEditImage } from "./venice";
  * provider is tied to an SDK call in this directory (the `@openrouter`-only
  * boundary), so the data belongs next to the code and can't drift from it.
  *
- * Today the ladder is: reference-edit (Venice/Qwen, uncensored, single ref) →
- * text-to-image (Flux on OpenRouter, moderated) → (demo monogram, handled in
- * the images layer). Multi-reference / reference-sheet providers are reserved
- * for the §5/§6 spikes: adding one is a new `IMAGE_PROVIDERS` entry + one router
- * clause + a render branch, never a `scene.ts` rewrite.
+ * After the 2026-06-19 Flux removal the stack is **Venice/Qwen end-to-end**
+ * (OpenRouter left the image stack). The ladder is, by reference mode:
+ * - `single` (default): single-reference edit (`venice_edit`) → text-to-image
+ *   (`venice_generate`, Qwen) → (demo monogram, handled in the images layer).
+ * - `multi`: multi-reference edit (`venice_multi_edit`, Venice `/image/multi-edit`,
+ *   ≤3 uncensored refs) → `venice_edit` → `venice_generate` → demo.
+ * Adding a provider (e.g. self-hosted ComfyUI for >3 refs, spec §7) is a new
+ * `IMAGE_PROVIDERS` entry + one router clause + a render branch, never a
+ * `scene.ts` rewrite.
  */
-export const imageProviderIds = ["demo", "venice_edit", "flux_openrouter"] as const;
+export const imageProviderIds = ["demo", "venice_edit", "venice_multi_edit", "venice_generate"] as const;
 export type ImageProviderId = (typeof imageProviderIds)[number];
 /** The AI-backed providers (everything but the images-layer demo monogram). */
 export type AiImageProviderId = Exclude<ImageProviderId, "demo">;
@@ -60,28 +62,31 @@ export const IMAGE_PROVIDERS = {
     aspectRatios: ["3:4"],
     policyMode: "uncensored",
   },
-  flux_openrouter: {
+  venice_multi_edit: {
+    maxReferenceImages: 3,
+    supportsReferenceRoles: true,
+    supportsLocationReference: true,
+    supportsMask: false,
+    supportsAdultFictionalNudity: true,
+    supportsUploadedRealPeopleInNsfw: false,
+    maxPromptChars: 1500,
+    aspectRatios: ["3:4"],
+    policyMode: "uncensored",
+  },
+  venice_generate: {
     maxReferenceImages: 0,
     supportsReferenceRoles: false,
     supportsLocationReference: false,
     supportsMask: false,
-    supportsAdultFictionalNudity: false,
+    supportsAdultFictionalNudity: true,
     supportsUploadedRealPeopleInNsfw: false,
     maxPromptChars: 4000,
     aspectRatios: ["3:4"],
-    policyMode: "moderated",
+    policyMode: "uncensored",
   },
 } as const satisfies Record<ImageProviderId, ImageProviderCaps>;
 
 // --- Routing -------------------------------------------------------------
-
-/**
- * A caller's explicit image-model family pick (the character-chat picker, mirroring
- * the portrait studio's Flux/Qwen choice). `qwen` ⇒ the uncensored Venice/Qwen
- * reference-edit path (the default ladder); `flux` ⇒ the moderated OpenRouter
- * text-to-image path only. Unset ⇒ the default ladder.
- */
-export type SceneImageModel = "flux" | "qwen";
 
 /** Computable from data the pipeline already produces (spec §4). */
 export interface SceneRenderRequest {
@@ -89,34 +94,41 @@ export interface SceneRenderRequest {
   references: SceneVisualReference[];
   /** Demo mode (no keys) — only the monogram provider runs. */
   demo: boolean;
-  /** Optional explicit model-family pick (character-chat picker); unset ⇒ default ladder. */
-  prefer?: SceneImageModel;
+  /**
+   * Reference mode (the session toggle, scene-images.plan.md): `multi` puts the
+   * Venice `/image/multi-edit` rung ahead of single-edit; `single`/unset keeps
+   * the single-anchor ladder. Both degrade through `venice_generate` → demo.
+   */
+  mode?: SceneReferenceMode;
 }
 
 /**
  * The ordered provider fallback chain for a scene (spec §8.3). Pure — selected
  * from the request against the capability registry. Reference-edit providers
- * need ≥1 reference image; text-to-image providers always attempt (they ignore
- * references). Future multi-reference rungs slot in ahead of `venice_edit` here.
+ * need enough reference images to be worthwhile; text-to-image always attempts
+ * (it ignores references), so it is the guaranteed last rung.
  *
- * An explicit `prefer: "flux"` forces the moderated text-to-image path only —
- * the uncensored edit rung is skipped (the user opted out of it). `prefer:
- * "qwen"` (and the unset default) keep the full uncensored-first ladder.
+ * `mode: "multi"` prepends `venice_multi_edit` — but only when ≥2 reference
+ * images exist (with one image it would just be a single edit). With fewer, the
+ * chain degrades to the single ladder, so the toggle never blocks a render.
  */
 export function routeSceneProviders(request: SceneRenderRequest): ImageProviderId[] {
   if (request.demo) return ["demo"];
-  if (request.prefer === "flux") return ["flux_openrouter"];
   const referenceImages = request.references.filter((r) => Boolean(r.imageId)).length;
-  const ordered: ImageProviderId[] = ["venice_edit", "flux_openrouter"];
+  const ordered: ImageProviderId[] =
+    request.mode === "multi"
+      ? ["venice_multi_edit", "venice_edit", "venice_generate"]
+      : ["venice_edit", "venice_generate"];
   const chain = ordered.filter((id) => providerCanAttempt(id, referenceImages));
-  // Flux text-to-image is always a valid last rung even with no reference.
-  return chain.length > 0 ? chain : ["flux_openrouter"];
+  // venice_generate (text-to-image) always qualifies, so the chain is never empty.
+  return chain.length > 0 ? chain : ["venice_generate"];
 }
 
 function providerCanAttempt(id: ImageProviderId, referenceImages: number): boolean {
   const caps = IMAGE_PROVIDERS[id];
   if (caps.maxReferenceImages === 0) return true; // text-to-image ignores references
-  return referenceImages >= 1; // reference-edit needs at least one anchor image
+  if (caps.maxReferenceImages >= 2) return referenceImages >= 2; // multi-ref needs ≥2 anchors
+  return referenceImages >= 1; // single-reference edit needs one anchor image
 }
 
 // --- Failure classification + execution ----------------------------------
@@ -134,15 +146,14 @@ export interface ProviderRenderResult {
   failure?: ImageProviderFailure;
 }
 
-const CONTENT_REJECTION = /moderation|sexual content|nsfw|safe[_ ]?mode|content policy|flagged|disallowed|prohibited/;
+const CONTENT_REJECTION = /moderation|sexual content|nsfw|safe[_ ]?mode|content policy|flagged|disallowed|prohibited|violation/;
 const TRANSIENT =
   /timeout|timed out|abort|econn|etimedout|enotfound|socket hang up|network|fetch failed|rate limit|too many requests|\b(429|500|502|503|504)\b|temporarily/;
 
 /**
  * Map a failure to a retry class (spec §8.3): a content rejection must NOT retry
  * (it only fails again — fall down the ladder); a transient error may retry.
- * Reuses `describeImageGenError` to recover the real upstream message hidden
- * behind OpenRouter's generic "Invalid JSON response".
+ * Reuses `describeImageGenError` to recover any real upstream message.
  */
 export function classifyImageFailure(err: unknown): ImageFailureReason {
   const message = describeImageGenError(err).toLowerCase();
@@ -153,8 +164,10 @@ export function classifyImageFailure(err: unknown): ImageFailureReason {
 
 export interface ImageRenderInput {
   prompt: string;
-  /** Required for reference-edit providers; ignored by text-to-image. */
+  /** Single-reference edit (`venice_edit`): the lone identity anchor. */
   reference?: Buffer;
+  /** Multi-reference edit (`venice_multi_edit`): 1–3 ordered references (first = base). */
+  references?: Buffer[];
 }
 
 /**
@@ -166,8 +179,10 @@ export async function executeImageProvider(id: AiImageProviderId, input: ImageRe
   switch (id) {
     case "venice_edit":
       return renderVeniceEdit(input);
-    case "flux_openrouter":
-      return renderFluxText(input);
+    case "venice_multi_edit":
+      return renderVeniceMultiEdit(input);
+    case "venice_generate":
+      return renderVeniceGenerate(input);
   }
 }
 
@@ -176,16 +191,26 @@ async function renderVeniceEdit(input: ImageRenderInput): Promise<ProviderRender
     return { ok: false, failure: { reason: "other", message: "venice_edit requires a reference image" } };
   }
   const edit = await veniceEditImage({ prompt: input.prompt, reference: input.reference });
-  if (edit.ok && edit.image) return { ok: true, image: edit.image };
-  const message = edit.error ?? "venice edit returned no image";
-  return { ok: false, failure: { reason: classifyImageFailure(message), message } };
+  return fromVenice(edit, "venice edit returned no image");
 }
 
-async function renderFluxText(input: ImageRenderInput): Promise<ProviderRenderResult> {
-  try {
-    const result = await generateImage({ model: imageModel(), prompt: input.prompt, aspectRatio: "3:4" });
-    return { ok: true, image: Buffer.from(result.image.uint8Array) };
-  } catch (err) {
-    return { ok: false, failure: { reason: classifyImageFailure(err), message: describeImageGenError(err) } };
+async function renderVeniceMultiEdit(input: ImageRenderInput): Promise<ProviderRenderResult> {
+  const references = input.references ?? [];
+  if (references.length < 2) {
+    return { ok: false, failure: { reason: "other", message: "venice_multi_edit requires at least two reference images" } };
   }
+  const edit = await veniceMultiEditImage({ prompt: input.prompt, references });
+  return fromVenice(edit, "venice multi-edit returned no image");
+}
+
+async function renderVeniceGenerate(input: ImageRenderInput): Promise<ProviderRenderResult> {
+  const generated = await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4" });
+  return fromVenice(generated, "venice generate returned no image");
+}
+
+/** Shape a Venice never-throws result into a classified provider result. */
+function fromVenice(result: { ok: boolean; image?: Buffer; error?: string }, noImageMessage: string): ProviderRenderResult {
+  if (result.ok && result.image) return { ok: true, image: result.image };
+  const message = result.error ?? noImageMessage;
+  return { ok: false, failure: { reason: classifyImageFailure(message), message } };
 }

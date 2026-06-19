@@ -1,26 +1,26 @@
 import fs from "node:fs/promises";
-import { eq } from "drizzle-orm";
-import { db, imageReferences, images, sessionParticipants } from "../db";
+import { and, eq } from "drizzle-orm";
+import { db, imageReferences, images, locations, sessionParticipants } from "../db";
 import {
   describeImageGenError,
   executeImageProvider,
   generateChecked,
   hasVenice,
-  imageModelId,
   isDemoMode,
   routeSceneProviders,
   toolModelId,
   veniceEditModelId,
+  veniceImageModelId,
+  veniceMultiEditModelId,
   type ImageProviderFailure,
   type ImageProviderId,
   type ProviderRenderResult,
-  type SceneImageModel,
   type SceneRenderRequest,
 } from "../ai";
 import { logEvent } from "../events";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { SceneReference, SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
-import type { SceneGenState } from "@/contracts/state/scene-gen";
+import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageEntityKind, type ImageRow } from "./assets";
 import { monogramSvg } from "./monogram";
 import {
@@ -93,28 +93,52 @@ export interface RenderSceneInput {
   userId: string;
   /** Active location (library id + name) for the scene's location reference; null when emergent/unknown. */
   location?: { id: string; name: string } | null;
+  /** Reference mode (the session toggle); `multi` feeds up to 3 references to Venice `/image/multi-edit`. */
+  mode?: SceneReferenceMode;
   sink?: DiagnosticSink;
 }
 
 /**
  * Scene render (docs/images.md step 2). Resolve the scene's visual references
- * (featured characters + location, with the focal/other identity anchor's
- * spawn-snapshot avatar attached), let the provider router pick an ordered
- * fallback chain, then run it with a reason-keyed retry policy (spec §8.3): a
- * transient failure retries once, a content rejection never retries and drops to
- * the next rung — uncensored Venice/Qwen edit → moderating Flux text-to-image →
- * (demo monogram). Every reference is persisted to `image_references` (the
- * queryable record). Failures mark the row failed and return its id — the
- * session is never blocked by image work.
+ * (featured characters + location, with each available spawn-snapshot avatar +
+ * the location image attached), let the provider router pick an ordered fallback
+ * chain, then run it with a reason-keyed retry policy (spec §8.3): a transient
+ * failure retries once, a content rejection never retries and drops to the next
+ * rung — Venice multi-edit (mode `multi`) → single-reference edit → Qwen
+ * text-to-image → (demo monogram). Every reference is persisted to
+ * `image_references` (the queryable record). Failures mark the row failed and
+ * return its id — the session is never blocked by image work.
  */
 export async function renderSceneImage(input: RenderSceneInput): Promise<string> {
   const demo = isDemoMode();
-  const anchor = demo || !hasVenice() ? null : await findReferenceAvatar(input.session.id, input.plan, input.sink);
-  const references = await buildVisualReferences(input.session.id, input.plan, anchor, input.location ?? null);
+  const mode = input.mode ?? "single";
+  const canVenice = !demo && hasVenice();
+  // Single mode anchors on one avatar; multi gathers every present character's
+  // avatar (in plan order) so two-character scenes can identity-lock both.
+  const anchors = canVenice ? await findSceneAnchors(input.session.id, input.plan, mode, input.sink) : [];
+  // The location image is only sent on the multi-reference path (it's the extra
+  // ref slot beyond the characters); single-edit takes one anchor, the character.
+  const locationImage =
+    mode === "multi" && canVenice && input.location
+      ? await loadLocationImage(input.location.id, input.userId)
+      : null;
+
+  const references = await buildVisualReferences(
+    input.session.id,
+    input.plan,
+    anchors,
+    input.location ?? null,
+    locationImage?.imageId ?? null,
+  );
+  const referenceBuffers = new Map<string, Buffer>();
+  for (const anchor of anchors) referenceBuffers.set(anchor.row.id, anchor.buffer);
+  if (locationImage) referenceBuffers.set(locationImage.imageId, locationImage.buffer);
+
   return renderResolvedScene({
     plan: input.plan,
     references,
-    anchorBuffer: anchor?.buffer ?? null,
+    referenceBuffers,
+    mode,
     linkage: { ownerId: input.userId, sessionId: input.session.id },
     logResult: (imageId, status, started) => void logScene(input.session.id, imageId, status, started),
     sink: input.sink,
@@ -133,13 +157,13 @@ export interface SceneAssetLinkage {
 
 export interface RenderResolvedSceneInput {
   plan: SceneRenderPlan;
-  /** Every reference the scene features; the one carrying an `imageId` is the identity anchor. */
+  /** Every reference the scene features; those carrying an `imageId` are identity anchors. */
   references: SceneVisualReference[];
-  /** The identity anchor's image bytes (for the reference-edit provider); null ⇒ text-to-image. */
-  anchorBuffer: Buffer | null;
+  /** Reference asset bytes keyed by `imageId` (for the edit providers); empty ⇒ text-to-image. */
+  referenceBuffers: Map<string, Buffer>;
   linkage: SceneAssetLinkage;
-  /** Optional explicit model-family pick (character-chat picker); unset ⇒ default ladder. */
-  prefer?: SceneImageModel;
+  /** Reference mode (the session toggle); `multi` prepends the Venice multi-edit rung. */
+  mode?: SceneReferenceMode;
   /** Where to log the outcome (`logScene` for sessions, a character event otherwise). */
   logResult: (imageId: string, status: string, startedMs: number) => void;
   sink?: DiagnosticSink;
@@ -154,37 +178,62 @@ export interface RenderResolvedSceneInput {
  *
  * The provider router picks an ordered fallback chain run with the reason-keyed
  * retry policy (spec §8.3): transient → retry once, content rejection → next rung
- * — uncensored Venice/Qwen edit → moderating Flux text-to-image → (demo
- * monogram). Every reference is persisted to `image_references`. Failures mark
- * the row failed and return its id — callers are never blocked by image work.
+ * — Venice multi-edit (mode `multi`) → single-reference edit → Qwen
+ * text-to-image → (demo monogram). Every reference is persisted to
+ * `image_references`. Failures mark the row failed and return its id — callers
+ * are never blocked by image work.
  */
 export async function renderResolvedScene(input: RenderResolvedSceneInput): Promise<string> {
   const demo = isDemoMode();
   const { plan, references, linkage } = input;
-  const request: SceneRenderRequest = { references, demo, prefer: input.prefer };
+  const mode = input.mode ?? "single";
+  const request: SceneRenderRequest = { references, demo, mode };
   const chain = routeSceneProviders(request);
 
-  // The identity anchor is the reference that carries an actual image. The
-  // uncensored edit path gets identity-lock + (exposure-gated) intimate anatomy;
-  // the moderating text-to-image fallback gets neither — so a fallback never
-  // feeds Flux the intimate prompt it would only reject. `allowForIntimate`
-  // defaults permissive today; the deferred uploaded-avatar guard (spec §3)
-  // flips it for uploaded provenance, and this path already respects it.
-  const anchorRef = references.find((r) => Boolean(r.imageId));
+  // The image-bearing references, in send order (focal char, other chars,
+  // location). The first is the single-edit anchor; the first ≤3 (with their
+  // buffers) are the multi-edit reference set.
+  const imageRefs = references.filter((r) => Boolean(r.imageId));
+  const orderedBuffers = imageRefs.flatMap((r) => {
+    const buffer = r.imageId ? input.referenceBuffers.get(r.imageId) : undefined;
+    return buffer ? [buffer] : [];
+  });
+  const primaryBuffer = orderedBuffers[0] ?? null;
+  const multiBuffers = orderedBuffers.slice(0, 3);
+
+  // The uncensored edit paths get identity-lock + (exposure-gated) intimate
+  // anatomy; the text-to-image fallback gets neither. `allowForIntimate` defaults
+  // permissive today; the deferred uploaded-avatar guard (spec §3) flips it for
+  // uploaded provenance, and every reference-edit prompt below respects it.
+  const anchorRef = imageRefs[0];
   const allowIntimate = anchorRef?.allowForIntimate ?? false;
+  // Multi-edit identity-locks several people at once, so ALL of its featured
+  // character refs must clear the intimate gate, not just the primary.
+  const multiAllowIntimate = imageRefs.filter((r) => r.kind === "character").every((r) => r.allowForIntimate);
+
   const textPrompt = buildSceneRenderPrompt(plan, {});
   const editPrompt = anchorRef
     ? buildSceneRenderPrompt(plan, { referenceName: anchorRef.name, allowIntimate })
     : textPrompt;
-  const promptFor = (id: ImageProviderId): string => (id === "venice_edit" ? editPrompt : textPrompt);
+  const multiPrompt =
+    multiBuffers.length >= 2
+      ? buildSceneRenderPrompt(plan, {
+          allowIntimate: multiAllowIntimate,
+          multiReferences: imageRefs.slice(0, 3).map((r) => ({ name: r.name ?? "", kind: r.kind })),
+        })
+      : editPrompt;
+  const promptFor = (id: ImageProviderId): string =>
+    id === "venice_multi_edit" ? multiPrompt : id === "venice_edit" ? editPrompt : textPrompt;
   const modelFor = (id: ImageProviderId): string =>
     id === "demo"
       ? "demo"
-      : id === "venice_edit"
-        ? `venice/${veniceEditModelId()}`
-        : imageModelId();
+      : id === "venice_multi_edit"
+        ? `venice/${veniceMultiEditModelId()}`
+        : id === "venice_edit"
+          ? `venice/${veniceEditModelId()}`
+          : `venice/${veniceImageModelId()}`;
 
-  const primary = chain[0] ?? "flux_openrouter";
+  const primary = chain[0] ?? "venice_generate";
   const asset = await createImageAsset({
     ownerId: linkage.ownerId,
     kind: "scene",
@@ -202,7 +251,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   });
   await recordImageReferences(asset.id, references, input.sink);
 
-  const ctx: SceneAttemptContext = { promptFor, anchorBuffer: input.anchorBuffer, focalName: plan.focal?.name ?? "Scene" };
+  const ctx: SceneAttemptContext = { promptFor, primaryBuffer, multiBuffers, focalName: plan.focal?.name ?? "Scene" };
   const started = Date.now();
   try {
     const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), input.sink);
@@ -227,7 +276,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
 
 interface SceneAttemptContext {
   promptFor: (id: ImageProviderId) => string;
-  anchorBuffer: Buffer | null;
+  /** Single-edit identity anchor (the first image-bearing reference). */
+  primaryBuffer: Buffer | null;
+  /** Ordered ≤3 reference buffers for the multi-edit rung. */
+  multiBuffers: Buffer[];
   focalName: string;
 }
 
@@ -292,22 +344,28 @@ export async function executeSceneChain(
 /** Dispatch one rung: the demo monogram lives in this (images) layer; AI-backed providers run through the gateway. */
 async function runSceneProvider(id: ImageProviderId, ctx: SceneAttemptContext): Promise<ProviderRenderResult> {
   if (id === "demo") return { ok: true, image: monogramSvg(ctx.focalName || "Scene") };
-  const reference = id === "venice_edit" ? (ctx.anchorBuffer ?? undefined) : undefined;
-  return executeImageProvider(id, { prompt: ctx.promptFor(id), reference });
+  return executeImageProvider(id, {
+    prompt: ctx.promptFor(id),
+    reference: id === "venice_edit" ? (ctx.primaryBuffer ?? undefined) : undefined,
+    references: id === "venice_multi_edit" ? ctx.multiBuffers : undefined,
+  });
 }
 
 /**
  * The scene's visual references (spec §4): featured characters resolved to their
- * library `characterId`, plus the active location, with the identity anchor's
- * spawn-snapshot avatar attached (imageId + provenance). The anchor is always
- * represented even when it has no backing library character, so the router still
- * routes it to the reference-edit provider. Persisted to `image_references`.
+ * library `characterId`, plus the active location, with each available
+ * spawn-snapshot avatar attached (imageId + provenance) and — on the
+ * multi-reference path — the location's library image. Anchors with no backing
+ * library character are still represented so the router routes their image to a
+ * reference-edit provider. References are ordered focal, others, location (the
+ * order the multi-edit provider sends them). Persisted to `image_references`.
  */
 async function buildVisualReferences(
   sessionId: string,
   plan: SceneRenderPlan,
-  anchor: { name: string; row: ImageRow; buffer: Buffer } | null,
+  anchors: { name: string; row: ImageRow; buffer: Buffer }[],
   location: { id: string; name: string } | null,
+  locationImageId: string | null,
 ): Promise<SceneVisualReference[]> {
   const focalName = plan.focal?.name ?? null;
   const names = [plan.focal?.name, ...plan.others.map((o) => o.name)].filter(
@@ -322,7 +380,7 @@ async function buildVisualReferences(
     allowForIntimate: true,
   }));
 
-  if (anchor) {
+  for (const anchor of anchors) {
     const anchorKey = anchor.name.trim().toLowerCase();
     const existing = refs.find((r) => r.name?.trim().toLowerCase() === anchorKey);
     const source = avatarSource(anchor.row.meta);
@@ -343,7 +401,15 @@ async function buildVisualReferences(
   }
 
   if (location) {
-    refs.push({ kind: "location", entityId: location.id, name: location.name, role: "location", source: "entity", allowForIntimate: true });
+    refs.push({
+      kind: "location",
+      entityId: location.id,
+      name: location.name,
+      role: "location",
+      source: "entity",
+      allowForIntimate: true,
+      ...(locationImageId ? { imageId: locationImageId } : {}),
+    });
   }
   return refs;
 }
@@ -425,36 +491,63 @@ export async function resolveSceneCharacterRefs(sessionId: string, names: readon
 }
 
 /**
- * Reference selection (docs/images.md §Scene images): one identity anchor.
- * The focal character's avatar when ready; else the first plan-featured
- * other present NPC with a ready avatar — the composer's spec still
- * features them prominently, so identity-locking them is meaningful (info
- * diagnostic `images.scene_render.reference_fallback`; the focal is then
- * described textually). Absent NPCs are never candidates — the plan only
- * ever contains co-located characters.
+ * Reference selection (docs/images.md §Scene images): the present characters'
+ * spawn-snapshot avatars, in plan order (focal first, then others). `single`
+ * mode keeps only the first — the focal's avatar when ready, else the first
+ * plan-featured present NPC with one (the focal is then described textually,
+ * info diagnostic `images.scene_render.reference_fallback`). `multi` keeps every
+ * available avatar so two-character scenes can identity-lock both people. Absent
+ * NPCs are never candidates — the plan only ever contains co-located characters.
  */
-async function findReferenceAvatar(
+async function findSceneAnchors(
   sessionId: string,
   plan: SceneRenderPlan,
+  mode: SceneReferenceMode,
   sink?: DiagnosticSink,
-): Promise<{ name: string; row: ImageRow; buffer: Buffer } | null> {
-  if (!plan.focal) return null; // location-only shot
-  const focalAvatar = await findParticipantAvatar(sessionId, plan.focal.name);
-  if (focalAvatar) return { name: plan.focal.name, ...focalAvatar };
-  for (const other of plan.others) {
-    const avatar = await findParticipantAvatar(sessionId, other.name);
-    if (avatar) {
-      sink?.push(
-        diag(
-          "info",
-          "images.scene_render.reference_fallback",
-          `focal character "${plan.focal.name}" has no ready avatar — using ${other.name}'s avatar as the identity reference`,
-        ),
-      );
-      return { name: other.name, ...avatar };
-    }
+): Promise<{ name: string; row: ImageRow; buffer: Buffer }[]> {
+  if (!plan.focal) return []; // location-only shot
+  const ordered = [plan.focal.name, ...plan.others.map((o) => o.name)];
+  const found: { name: string; row: ImageRow; buffer: Buffer }[] = [];
+  for (const name of ordered) {
+    const avatar = await findParticipantAvatar(sessionId, name);
+    if (avatar) found.push({ name, ...avatar });
+    if (mode === "single" && found.length >= 1) break; // single only needs the primary anchor
   }
-  return null; // no usable avatar — text-to-image
+  // The primary anchor fell back off the focal onto another present NPC.
+  if (found.length > 0 && found[0]?.name.trim().toLowerCase() !== plan.focal.name.trim().toLowerCase()) {
+    sink?.push(
+      diag(
+        "info",
+        "images.scene_render.reference_fallback",
+        `focal character "${plan.focal.name}" has no ready avatar — using ${found[0]?.name}'s avatar as the identity reference`,
+      ),
+    );
+  }
+  return found;
+}
+
+/**
+ * The active location's library image, for the multi-reference path (spec §5):
+ * the extra reference slot beyond the characters. Owner-scoped + must be ready;
+ * a missing image / lost file degrades to null (the scene just uses fewer refs).
+ */
+async function loadLocationImage(
+  locationId: string,
+  ownerId: string,
+): Promise<{ imageId: string; buffer: Buffer } | null> {
+  const [location] = await db()
+    .select({ imageId: locations.imageId })
+    .from(locations)
+    .where(and(eq(locations.id, locationId), eq(locations.ownerId, ownerId)))
+    .limit(1);
+  if (!location?.imageId) return null;
+  const [row] = await db().select().from(images).where(eq(images.id, location.imageId)).limit(1);
+  if (!row || row.status !== "ready") return null;
+  try {
+    return { imageId: row.id, buffer: await fs.readFile(absoluteImagePath(row)) };
+  } catch {
+    return null; // file lost — fall through to fewer references
+  }
 }
 
 /**

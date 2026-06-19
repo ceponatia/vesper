@@ -1075,7 +1075,13 @@ registerJobHandler("scene_image", async (job) => {
     // for an emergent session location, which has no library row to reference).
     const povLocation = bundle.locations.find((l) => l.id === activeLocationId(bundle));
     const location = povLocation?.locationId ? { id: povLocation.locationId, name: povLocation.name } : null;
-    await renderSceneImage({ session: { id: bundle.session.id, ownerId: bundle.session.ownerId }, plan, userId: bundle.session.ownerId, location });
+    await renderSceneImage({
+      session: { id: bundle.session.id, ownerId: bundle.session.ownerId },
+      plan,
+      userId: bundle.session.ownerId,
+      location,
+      mode: bundle.scene.referenceMode,
+    });
     await setSceneState({ status: "idle", lastGeneratedTurn: payload.turnNumber ?? newestTurnNumber ?? 0 });
   } catch (err) {
     await setSceneState({ status: "failed" });

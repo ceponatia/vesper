@@ -5,6 +5,7 @@ import {
   avatarImageModels,
   avatarImageModelLabels,
   charactersApi,
+  DEFAULT_AVATAR_IMAGE_MODEL,
   portraitVariantKinds,
   type ImageRecord,
   type AvatarImageModel,
@@ -52,7 +53,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const portraits = useAsyncData(() => charactersApi.portraits(characterId), [characterId]);
   const toast = useToast();
   const [kind, setKind] = useState<PortraitVariantKind>("pose");
-  const [avatarModel, setAvatarModel] = useState<AvatarImageModel>("flux");
+  const [avatarModel, setAvatarModel] = useState<AvatarImageModel>(DEFAULT_AVATAR_IMAGE_MODEL);
   const [instruction, setInstruction] = useState("");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const [submittingVariant, setSubmittingVariant] = useState(false);

@@ -24,32 +24,44 @@ describe("routeSceneProviders", () => {
     expect(routeSceneProviders({ references: [], demo: true })).toEqual(["demo"]);
   });
 
-  it("a reference image anchors the uncensored edit, then falls to text-to-image", () => {
+  it("single mode: a reference image anchors the uncensored edit, then falls to Qwen text-to-image", () => {
     const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
-    expect(routeSceneProviders({ references: refs, demo: false })).toEqual(["venice_edit", "flux_openrouter"]);
+    expect(routeSceneProviders({ references: refs, demo: false })).toEqual(["venice_edit", "venice_generate"]);
   });
 
   it("featured-but-textual characters (no image) skip the edit provider — text-to-image only", () => {
     const refs = [charRef({ entityId: "c1", name: "Mira" })];
-    expect(routeSceneProviders({ references: refs, demo: false })).toEqual(["flux_openrouter"]);
+    expect(routeSceneProviders({ references: refs, demo: false })).toEqual(["venice_generate"]);
   });
 
   it("no references at all still has a valid last rung", () => {
-    expect(routeSceneProviders({ references: [], demo: false })).toEqual(["flux_openrouter"]);
+    expect(routeSceneProviders({ references: [], demo: false })).toEqual(["venice_generate"]);
   });
 
-  it("an explicit Flux pick forces text-to-image only — the uncensored edit rung is skipped even with a reference image", () => {
+  it("multi mode with ≥2 reference images prepends the Venice multi-edit rung", () => {
+    const refs = [
+      charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" }),
+      charRef({ entityId: "c2", name: "Sayed", imageId: "img2", source: "generated" }),
+    ];
+    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual([
+      "venice_multi_edit",
+      "venice_edit",
+      "venice_generate",
+    ]);
+  });
+
+  it("multi mode with only ONE reference image degrades to the single-edit ladder (multi needs ≥2)", () => {
     const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
-    expect(routeSceneProviders({ references: refs, demo: false, prefer: "flux" })).toEqual(["flux_openrouter"]);
+    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual(["venice_edit", "venice_generate"]);
   });
 
-  it("an explicit Qwen pick keeps the uncensored-first ladder", () => {
-    const refs = [charRef({ entityId: "c1", name: "Mira", imageId: "img1", source: "generated" })];
-    expect(routeSceneProviders({ references: refs, demo: false, prefer: "qwen" })).toEqual(["venice_edit", "flux_openrouter"]);
+  it("multi mode with no reference images falls to text-to-image only", () => {
+    const refs = [charRef({ entityId: "c1", name: "Mira" })];
+    expect(routeSceneProviders({ references: refs, demo: false, mode: "multi" })).toEqual(["venice_generate"]);
   });
 
-  it("demo mode ignores an explicit pick — only the monogram runs", () => {
-    expect(routeSceneProviders({ references: [], demo: true, prefer: "flux" })).toEqual(["demo"]);
+  it("demo mode ignores the reference mode — only the monogram runs", () => {
+    expect(routeSceneProviders({ references: [], demo: true, mode: "multi" })).toEqual(["demo"]);
   });
 
   it("the registry never allows uploaded real people on an NSFW path", () => {

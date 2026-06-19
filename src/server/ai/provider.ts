@@ -13,8 +13,6 @@ export const MODEL_DEFAULTS = {
   state: DEFAULT_AGENT_MODEL_ID,
   tool: DEFAULT_AGENT_MODEL_ID,
   embedding: "openai/text-embedding-3-small",
-  image: "black-forest-labs/flux.2-pro",
-  imageFast: "black-forest-labs/flux.2-flex",
 } as const;
 
 export function isDemoMode(): boolean {
@@ -104,20 +102,6 @@ export function embeddingModelId(): string {
   return process.env.EMBEDDING_MODEL || MODEL_DEFAULTS.embedding;
 }
 
-export function imageModelId(fast = false): string {
-  return fast
-    ? process.env.IMAGE_MODEL_FAST || MODEL_DEFAULTS.imageFast
-    : process.env.IMAGE_MODEL || MODEL_DEFAULTS.image;
-}
-
-/**
- * Image generation model with image-only output modality. The provider's
- * default `modalities: ["image", "text"]` is rejected by image-only models
- * like flux ("No endpoints found that support the requested output
- * modalities"); extraBody spreads after the base body and overrides it.
- */
-export function imageModel(fast = false) {
-  return openrouter().imageModel(imageModelId(fast), {
-    extraBody: { modalities: ["image"] },
-  });
-}
+// Image generation no longer routes through OpenRouter. After the 2026-06-19
+// Flux removal (scene-images.plan.md) every image lane is Venice/Qwen — see
+// `server/ai/venice.ts`. OpenRouter stays for text/LLM work only.

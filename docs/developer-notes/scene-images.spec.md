@@ -6,14 +6,16 @@ This is the **design / decision record** (the "truth"); the task list and build
 order live in [scene-images.plan.md](scene-images.plan.md). Graduated out of the
 [deferred.plan.md](deferred.plan.md) parking lot 2026-06-16.
 
-> **Pivot (2026-06-19) — drop Flux, Qwen everywhere.** Flux is being removed from
-> the app (it input-moderates nudity and is expensive), making **Venice/Qwen the
-> default for every lane** and taking OpenRouter out of the image stack. We are
-> instead onboarding additional **NSFW-capable** models (§5 — Seedream was
-> evaluated and rejected; Venice's `/image/multi-edit` fills the multi-ref + NSFW
-> gap). §5/§8.3/§10 are rewritten to match; §1 below still describes the *current*
-> code baseline (Flux is removed by the pivot's first build task, not yet). See
-> [scene-images.plan.md](scene-images.plan.md) §"Current direction".
+> **Pivot (2026-06-19) — drop Flux, Qwen everywhere. SHIPPED 2026-06-19.** Flux
+> was removed from the app (it input-moderates nudity and is expensive), making
+> **Venice/Qwen the default for every lane** and taking OpenRouter out of the image
+> stack. The surveyed **NSFW-capable** models were onboarded (§5 — Seedream
+> rejected; Venice's `/image/multi-edit` fills the multi-ref + NSFW gap, wired as a
+> per-session single↔multi toggle). §5/§8.3/§10 describe the shipped design; §1
+> below now reads as the *historical* pre-pivot baseline (Flux **is** removed in
+> code — `server/ai/venice.ts` is the whole image stack). See
+> [scene-images.plan.md](scene-images.plan.md) for build status + the multi-pass
+> future lever.
 
 Decisions from the PM pass:
 
@@ -137,9 +139,13 @@ So "uploaded avatars are SFW-only" (which I endorse) means more than withholding
 anatomy text. When the gate comes due, the chosen rule is:
 
 - **Don't use uploaded references on the uncensored edit path at all** — if the
-  only available reference is uploaded, render the scene text-to-image (Flux,
-  which moderates) or skip the image. Clean invariant: "uncensored edit ⇒
-  synthetic reference only," owned in one place by the provider router (§4).
+  only available reference is uploaded, render the scene text-to-image or skip the
+  image. Clean invariant: "uncensored edit ⇒ synthetic reference only," owned in
+  one place by the provider router (§4). _(Reconcile, 2026-06-19: the original
+  "render text-to-image (Flux, which moderates)" no longer applies — Flux is gone.
+  The replacement moderating backend is **Venice `safe_mode` on** as a per-request
+  knob — `veniceGenerateImage` already reads `VENICE_SAFE_MODE`; see the plan's
+  task 4.)_
 
 **Centralize it.** When built, add `isSyntheticAvatar(row): boolean` next to the
 asset helpers, used by both the scene render and the provider router, with a unit

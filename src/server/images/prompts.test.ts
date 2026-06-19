@@ -88,7 +88,7 @@ describe("buildAvatarPrompt", () => {
     expect(prompt).not.toContain("Appearance:");
   });
 
-  it("withholds intimate anatomy from Flux; on the uncensored route includes only EXPOSED above-waist anatomy (Decision 3)", () => {
+  it("withholds intimate anatomy on the moderated route; on the uncensored route includes only EXPOSED above-waist anatomy (Decision 3)", () => {
     const p = profileWith({
       intimateRegions: ["breasts"],
       attributes: [
@@ -96,10 +96,12 @@ describe("buildAvatarPrompt", () => {
         { id: "breasts.size", value: "full", source: "base" },
       ],
     });
-    // Flux excludes intimate anatomy outright — even with the chest bare.
-    const flux = buildAvatarPrompt("Mira", p, "realistic", []); // default route = Flux
-    expect(flux).toContain("Hair color: red");
-    expect(flux).not.toContain("Breast size");
+    // The moderated/SFW route (allowIntimate off) excludes intimate anatomy
+    // outright — even with the chest bare. (Avatar generation now always passes
+    // allowIntimate on, but the composer's appearance summary keeps it off.)
+    const moderated = buildAvatarPrompt("Mira", p, "realistic", []); // default = allowIntimate off
+    expect(moderated).toContain("Hair color: red");
+    expect(moderated).not.toContain("Breast size");
     // Uncensored route, chest bare (no top) → the region is exposed → shown.
     expect(buildAvatarPrompt("Mira", p, "realistic", [], true)).toContain("Breast size: full");
     // Uncensored route, chest covered by an opaque garment → withheld. (This is
@@ -196,7 +198,7 @@ describe("buildAvatarPrompt", () => {
 // Registry-wide guard so a NEW below-waist or intimate attribute category that
 // forgets the gate fails here, not in production. Asserts the output property:
 // a waist-up avatar's Appearance section never names below-waist anatomy, and
-// never names intimate anatomy over a covered region (or on Flux at all). The
+// never names intimate anatomy over a covered region (or with allowIntimate off). The
 // trick: each profile carries exactly hair.color + the attribute under test, so
 // "Appearance: Hair color: red." (sole entry, note the closing period) means the
 // attribute under test was dropped; a leak appends "; <Label>: <value>" and
@@ -245,7 +247,7 @@ describe("buildAvatarPrompt field-gating invariants (whole attribute registry)",
     expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], true)).toContain("Appearance: Hair color: red.");
   });
 
-  it.each(aboveWaistIntimate.map((d) => d.id))("withholds covered intimate %s on Qwen, and all intimate on Flux", (id) => {
+  it.each(aboveWaistIntimate.map((d) => d.id))("withholds covered intimate %s on the uncensored route, and all intimate on the moderated route", (id) => {
     expect(buildAvatarPrompt("X", profileFor(id), "realistic", [fullSuit], true)).toContain("Appearance: Hair color: red.");
     expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], false)).toContain("Appearance: Hair color: red.");
   });
@@ -642,10 +644,62 @@ describe("buildSceneRenderPrompt — intimate detail is route-gated", () => {
     },
   };
   it("emits intimate detail only on the uncensored (allowIntimate) route", () => {
-    const flux = buildSceneRenderPrompt(plan); // text-to-image, no allowIntimate
-    expect(flux).not.toContain("Breast size: full");
-    const qwen = buildSceneRenderPrompt(plan, { referenceName: "Mira", allowIntimate: true });
-    expect(qwen).toContain("Breast size: full");
+    const textToImage = buildSceneRenderPrompt(plan); // text-to-image, no allowIntimate
+    expect(textToImage).not.toContain("Breast size: full");
+    const uncensored = buildSceneRenderPrompt(plan, { referenceName: "Mira", allowIntimate: true });
+    expect(uncensored).toContain("Breast size: full");
+  });
+});
+
+describe("buildSceneRenderPrompt — multi-reference (Venice /image/multi-edit)", () => {
+  const plan = {
+    ...emptySceneRenderPlan(),
+    focal: { name: "Mira", action: "leaning close", outfitSummary: "red dress", appearance: "Hair color: red" },
+    others: [
+      { name: "Sayed", action: "beside her", outfitSummary: "wool coat", appearance: "Hair color: black" },
+      { name: "Wren", action: "in the doorway", outfitSummary: "apron", appearance: "Hair color: brown" },
+    ],
+    setting: "a rain-streaked library",
+  };
+
+  it("identity-locks every referenced person, enumerates the references, and stays under the Venice limit", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "Sayed", kind: "character" },
+        { name: "The Library", kind: "location" },
+      ],
+    });
+    expect(prompt.startsWith(PORTRAIT_IDENTITY_LOCK)).toBe(true);
+    expect(prompt).toContain(SCENE_POV_RULE);
+    expect(prompt).toContain("3 reference images provided");
+    expect(prompt).toContain("Compose all referenced people together into one shared scene");
+    expect(prompt).toContain("the location (The Library)");
+    expect(prompt).toContain("Mira: leaning close; wearing red dress.");
+    expect(prompt).toContain("Sayed: beside her; wearing wool coat.");
+    expect(prompt.length).toBeLessThanOrEqual(VENICE_RENDER_PROMPT_LIMIT);
+  });
+
+  it("describes a character with no reference image (beyond the 3-ref cap) from text instead", () => {
+    // Only Mira + Sayed + the location fit; Wren has no reference image.
+    const prompt = buildSceneRenderPrompt(plan, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "Sayed", kind: "character" },
+        { name: "The Library", kind: "location" },
+      ],
+    });
+    expect(prompt).toContain("Wren (no reference image — render from this description): Hair color: brown");
+  });
+
+  it("emits intimate detail for multi-references only on the uncensored route", () => {
+    const nude = {
+      ...emptySceneRenderPlan(),
+      focal: { name: "Mira", action: "reclining", outfitSummary: "", appearance: "Hair color: red", exposure: "fully nude, no clothing", intimateAppearance: "Breast size: full" },
+    };
+    const refs = [{ name: "Mira", kind: "character" as const }, { name: "Den", kind: "location" as const }];
+    expect(buildSceneRenderPrompt(nude, { multiReferences: refs })).not.toContain("Breast size: full");
+    expect(buildSceneRenderPrompt(nude, { multiReferences: refs, allowIntimate: true })).toContain("Breast size: full");
   });
 });
 
@@ -819,7 +873,7 @@ describe("buildSceneRenderPrompt", () => {
     expect(prompt).toContain("add no garment that is not listed");
   });
 
-  it("does not budget the text-to-image path (flux has no such cap)", () => {
+  it("does not budget the text-to-image path (Venice t2i has no such cap)", () => {
     const prompt = buildSceneRenderPrompt(bigPlan); // no referenceName → t2i
     expect(prompt).toContain(richOutfit); // full, untruncated outfit detail
   });
