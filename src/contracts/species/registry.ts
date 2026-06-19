@@ -36,14 +36,31 @@ export function heritagesForSpecies(speciesId: string): readonly HeritageDefinit
 }
 
 /**
- * The species *visual* phrase for the image models and the forge: the label with
- * the authored generic `appearance` appended when present. Returns "" for the
- * default species (human is the unmarked baseline — naming it is noise) or an
- * unknown id; label-only when `appearance` is unauthored, so the consumer still
- * knows the cast is non-human. When a `heritageId` resolves, its label replaces
- * the species label and its `appearance` is **combined** with the species' look.
- * One gate shared by both visual consumers (images/prompts.ts,
- * authoring/character-forge.ts). Companion to `speciesLorePhrase` (narrator culture).
+ * The species **name only** for image prompts (2026-06-19): the label (the
+ * heritage label when a `heritageId` resolves), with the authored generic
+ * `appearance` description deliberately **omitted**. An image prompt only needs
+ * to name the species ("Succubus") — the morphology that the `appearance` text
+ * describes (wings, horns, tail) is already carried by the character's feature
+ * attributes, so repeating it is redundant and bloats the prompt. Same
+ * ""/human-is-unmarked rules as the fuller phrases. This is the image default
+ * now; `speciesAppearancePhrase` keeps the appearance-bearing phrase for re-enable.
+ */
+export function speciesLabelPhrase(speciesId: string, heritageId?: string): string {
+  if (speciesId === DEFAULT_SPECIES_ID) return "";
+  const species = byId.get(speciesId);
+  if (!species) return "";
+  return heritageFor(speciesId, heritageId)?.label ?? species.label;
+}
+
+/**
+ * The species *visual* phrase: the label with the authored generic `appearance`
+ * appended when present. Returns "" for the default species (human is the
+ * unmarked baseline) or an unknown id; label-only when `appearance` is unauthored.
+ * When a `heritageId` resolves, its label replaces the species label and its
+ * `appearance` is **combined** with the species' look. **Currently not sent to
+ * image prompts** — they use `speciesLabelPhrase` (name only) since the feature
+ * attributes carry the morphology; this fuller phrase is retained for re-enable.
+ * Companion to `speciesLorePhrase` (narrator culture).
  */
 export function speciesAppearancePhrase(speciesId: string, heritageId?: string): string {
   if (speciesId === DEFAULT_SPECIES_ID) return "";

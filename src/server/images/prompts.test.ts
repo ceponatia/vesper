@@ -57,7 +57,6 @@ describe("buildAvatarPrompt", () => {
     expect(prompt).toContain("Subject: Mira.");
     expect(prompt).toContain("Hair color: red");
     expect(prompt).toContain("Hair length: shoulder length");
-    expect(prompt).toContain("wandering cartographer");
   });
 
   it("excludes registry promptHints — the image prompt carries label: value only", () => {
@@ -186,12 +185,35 @@ describe("buildAvatarPrompt", () => {
     expect(buildAvatarPrompt("Mira", profile, "realistic")).not.toContain("Wearing");
   });
 
-  it("names a non-human species with its generic appearance and omits the species line for human", () => {
+  it("drops non-visual (sensory) attributes — voice and scent never reach an image prompt", () => {
+    const p = profileWith({
+      attributes: [
+        { id: "hair.color", value: "red", source: "base" },
+        { id: "voice.pitch", value: "high", source: "base" },
+        { id: "voice.cadence", value: "melodic", source: "base" },
+        { id: "presentation.scent_baseline", value: "lavender and cedar", source: "base" },
+      ],
+    });
+    const prompt = buildAvatarPrompt("Mira", p, "realistic", [], true);
+    expect(prompt).toContain("Hair color: red");
+    expect(prompt).not.toContain("Voice pitch");
+    expect(prompt).not.toContain("Cadence");
+    expect(prompt).not.toContain("Baseline scent");
+    expect(prompt).not.toContain("lavender");
+  });
+
+  it("names a non-human species by label only (no appearance description) and omits the line for human", () => {
     const succubus = buildAvatarPrompt("Mira", profileWith({ speciesId: "succubus" }), "realistic");
-    expect(succubus).toContain("Species: Succubus —");
-    expect(succubus).toContain("leathery bat-like wings"); // generic appearance, not cultural lore
+    expect(succubus).toContain("Species: Succubus.");
+    expect(succubus).not.toContain("leathery bat-like wings"); // appearance description dropped — feature attributes carry it
     const human = buildAvatarPrompt("Mira", profileWith({ speciesId: "human" }), "realistic");
     expect(human).not.toContain("Species:");
+  });
+
+  it("never includes the bio — image prompts carry visual fields only", () => {
+    const prompt = buildAvatarPrompt("Mira", profile, "realistic");
+    expect(prompt).not.toContain("About:");
+    expect(prompt).not.toContain("wandering cartographer"); // from the fixture bio
   });
 });
 

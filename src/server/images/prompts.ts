@@ -3,7 +3,7 @@ import { attributeRegistry, type AttributeDefinition, type AttributeValue } from
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { exposedRegions, resolveWardrobeVisibility, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
-import { realizeBody, speciesAppearancePhrase } from "@/contracts/species";
+import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
@@ -13,6 +13,17 @@ import type { CharacterProfile } from "@/contracts/world/profile";
  * uncensored Venice/Qwen end-to-end, so avatar generation always sets it; the
  * gate remains off for the moderation-prone scene composer's appearance summary.
  */
+/**
+ * Non-visual attributes never belong in an image prompt — an image can't depict
+ * how someone sounds or smells. `kind: "sensory"` is the auditory/olfactory set
+ * (voice pitch/timbre/cadence, baseline scent), so it is dropped from both the
+ * avatar prompt and the scene appearance summary. (Intimate sensory anatomy is
+ * already gated separately by the exposure predicates.)
+ */
+function isNonVisualAttribute(def: AttributeDefinition): boolean {
+  return def.kind === "sensory";
+}
+
 function isIntimateAttribute(def: AttributeDefinition): boolean {
   return (INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category);
 }
@@ -44,8 +55,6 @@ const STYLE_SUFFIX: Record<AvatarStyle, string> = {
   stylized:
     "Beautiful stylized portrait, flattering soft lighting, photogenic composition, vibrant colors, shallow depth of field, magazine-quality illustration, no text, no watermark.",
 };
-
-const BIO_EXCERPT_CHARS = 240;
 
 /** One default-outfit garment, phrased for the avatar prompt. */
 export interface AvatarOutfitItem {
@@ -164,6 +173,7 @@ export function buildAvatarPrompt(
     // at the pelvis yet sweeps up into frame), which is the whole point of the
     // character and reads in a waist-up shot.
     if (def.bodyLocationId && isBelowWaist(def.bodyLocationId) && !isFeatureAttributeCategory(def.category)) continue;
+    if (isNonVisualAttribute(def)) continue; // voice/scent don't render in a portrait
     // Intimate anatomy reaches an image only on the uncensored route, and only
     // when the region is actually bare/sheer — never under clothing.
     if (isIntimateAttribute(def) && !(allowIntimate && intimateAttrRendersExposed(def, exposure))) continue;
@@ -171,17 +181,19 @@ export function buildAvatarPrompt(
     if (formatted) appearance.push(formatted);
   }
   const wearing = visibleAvatarOutfit(wardrobe).map(formatGarment).join("; ");
-  // Name the species (+ its generic visual appearance) for non-human casts so
-  // the image model renders our take on it; "" for human (the unmarked default).
-  const species = speciesAppearancePhrase(profile.speciesId, profile.heritageId);
+  // Name the species for non-human casts (label only — the morphology lives in
+  // the feature attributes); "" for human (the unmarked default).
+  const species = speciesLabelPhrase(profile.speciesId, profile.heritageId);
 
+  // Bio is deliberately omitted — it carries no visual signal (and narrative
+  // framing like ages/relationships only confuses the image model), so image
+  // prompts stay to visually-depictable fields only.
   return [
     `${STYLE_PREFIX[style]}, waist-up portrait, facing camera, soft studio lighting, neutral background.`,
     `Subject: ${name.trim() || "an unnamed character"}.`,
-    species ? `Species: ${clause(excerpt(species, 220))}.` : "",
+    species ? `Species: ${clause(species)}.` : "",
     appearance.length > 0 ? `Appearance: ${clause(appearance.join("; "))}.` : "",
     wearing ? `Wearing (authoritative — depict exactly this clothing): ${clause(wearing)}.` : "",
-    profile.bio.trim() ? `About: ${clause(excerpt(profile.bio, BIO_EXCERPT_CHARS))}.` : "",
     STYLE_SUFFIX[style],
   ]
     .filter(Boolean)
@@ -296,7 +308,7 @@ export interface SceneWornItem {
  */
 export interface ScenePresentCharacter {
   name: string;
-  /** Species phrase (label + generic appearance) for non-human casts; "" / omitted for human (speciesAppearancePhrase). */
+  /** Species label for non-human casts; "" / omitted for human (speciesLabelPhrase — name only, no appearance description). */
   species?: string;
   activity?: string;
   posture?: string;
@@ -449,6 +461,7 @@ export function characterAppearanceSummary(
     const def = attributeRegistry.byId(value.id);
     if (!def) continue;
     if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
+    if (isNonVisualAttribute(def)) continue; // voice/scent don't render in an image
     if (!allowIntimate && isIntimateAttribute(def)) continue; // scene composer (gemini tool model) is moderation-prone
     const formatted = formatAttribute(def, value.value);
     if (formatted) parts.push(formatted);
