@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { eq, gte, sql } from "drizzle-orm";
+import { eq, gte, inArray, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -321,6 +321,32 @@ describe("locations and items", () => {
     expect(all.map((i) => i.id)).toEqual(expect.arrayContaining([clothingItemId, objectItemId]));
     const bogus = kindsOf(await json(await listItemsRoute(get("http://t/api/items?kind=weapon"), noParams)));
     expect(bogus.map((i) => i.id)).toEqual(expect.arrayContaining([clothingItemId, objectItemId]));
+  });
+
+  it("applies the result cap per-kind and resolves ids past the cap (defaultOutfit regression)", async (t) => {
+    if (!ready) return t.skip();
+    const ownerId = authState.user.id;
+    // Flood the library with >LIST_LIMIT (100) NEWER items of another kind. Pre-fix,
+    // the global cap (order by updated_at desc) filled with these and pushed the
+    // older clothing — like a character's defaultOutfit — out of the clothing list,
+    // making it render as "not in library" though it was never deleted.
+    const flood = Array.from({ length: 105 }, (_, i) => ({ ownerId, kind: "object" as const, name: `Flood Object ${i}` }));
+    const inserted = await db().insert(items).values(flood).returning({ id: items.id });
+    try {
+      const kindsOf = (body: Record<string, unknown>) => body.items as { id: string; kind: string }[];
+      // The per-kind cap keeps the (older) coat in the clothing list.
+      const clothing = kindsOf(await json(await listItemsRoute(get("http://t/api/items?kind=clothing"), noParams)));
+      expect(clothing.every((i) => i.kind === "clothing")).toBe(true);
+      expect(clothing.map((i) => i.id)).toContain(clothingItemId);
+      // ?ids resolves a specific reference (outfit item) regardless of the cap.
+      const byIds = kindsOf(await json(await listItemsRoute(get(`http://t/api/items?ids=${clothingItemId}`), noParams)));
+      expect(byIds.map((i) => i.id)).toEqual([clothingItemId]);
+      // empty ids → empty (must not fall through to the unfiltered list).
+      const none = kindsOf(await json(await listItemsRoute(get("http://t/api/items?ids="), noParams)));
+      expect(none).toEqual([]);
+    } finally {
+      await db().delete(items).where(inArray(items.id, inserted.map((r) => r.id)));
+    }
   });
 
   it("404s cross-user PATCH for character, location and item without modifying rows", async (t) => {

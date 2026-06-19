@@ -76,6 +76,14 @@ export const MAX_NPC_PAIR_AWARENESS_LINES = 4;
 export const HEARTBEAT_STALE_MS = 60_000;
 /** Heartbeat refresh cadence while streaming/processing. */
 export const HEARTBEAT_INTERVAL_MS = 5_000;
+/**
+ * Background recovery-sweep cadence (engine/recovery.ts, started from
+ * instrumentation.ts). On-submit recovery can't reach a session whose UI is
+ * blocked while wedged (e.g. a process restart orphaned its post-turn job),
+ * so a periodic heartbeat-based sweep self-heals it. With HEARTBEAT_STALE_MS a
+ * restart-orphaned session recovers within ~stale + one sweep (~60–90s).
+ */
+export const RECOVERY_SWEEP_INTERVAL_MS = 30_000;
 
 /** Minimum cosine similarity for embedding-fuzzy name grounding. */
 export const FUZZY_RESOLVE_MIN = 0.75;
@@ -88,11 +96,18 @@ export const PENDING_COMMS_CAP = 8;
 /**
  * Pre-narrator intake (docs/developer-notes/pre-narrator-agents.spec.md):
  * the LLM intake call runs concurrent with retrieval before narration. If it
- * exceeds this budget the turn proceeds on the regex `detectIntent` fallback —
- * a few hundred ms of added time-to-first-token is acceptable; a stalled turn is
- * not. Tune against the latency A/B (spec Open-question A).
+ * exceeds this budget the turn proceeds on the regex `detectIntent` fallback
+ * (which is then aborted, silently — see engine/intake.ts) — a second or two of
+ * added time-to-first-token is acceptable; a stalled turn is not.
+ *
+ * Raised 1500→3000 (pre-narrator-agents.followups.md §2a/§5): the original 1500
+ * was tuned to the spec's 400–1200ms estimate, but a reasoning-disabled call on
+ * the curated agent models lands in ~1.5–2.5s in the common case (the old default
+ * also *mandated* reasoning, which blew the budget outright). This is the
+ * product latency knob (spec Open-question A) — finalize on real per-turn HUD
+ * telemetry, not synthetic probes; the silent fallback covers the slow tail.
  */
-export const INTAKE_TIMEOUT_MS = 1500;
+export const INTAKE_TIMEOUT_MS = 3000;
 /** Output-token cap for the intake call — the brief is small; keep it cheap/fast. */
 export const INTAKE_MAX_OUTPUT_TOKENS = 512;
 

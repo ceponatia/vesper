@@ -30,6 +30,16 @@ export interface LibrarySearchOptions {
   q?: string;
   tag?: string;
   limit?: number;
+  /**
+   * Items only: restrict to one item sub-kind (clothing/object/container)
+   * **before** the result cap. Without it, the `limit` is consumed by the
+   * owner's most-recently-updated rows of *every* kind, so a single-kind list
+   * (e.g. the outfit editor's clothing list) silently loses items that rank past
+   * the cap by `updated_at` — they then render as "not in library" even though
+   * they exist (see characters' `defaultOutfit` resolution). No-op for the
+   * character/location tables, which have no `kind` column.
+   */
+  itemKind?: string;
 }
 
 /**
@@ -47,8 +57,11 @@ export async function searchLibraryIds(
   const table = sql.identifier(TABLE_NAMES[kind]);
   const q = opts.q?.trim() ?? "";
   const tag = opts.tag?.trim() ?? "";
+  // Items only — the column exists on the items table; ignored for other kinds.
+  const itemKind = kind === "item" ? (opts.itemKind?.trim() ?? "") : "";
 
   const conditions: SQL[] = [sql`owner_id = ${ownerId}`];
+  if (itemKind) conditions.push(sql`kind = ${itemKind}`);
   if (tag) conditions.push(sql`tags @> ${JSON.stringify([tag])}::jsonb`);
   if (q) {
     const pattern = `%${escapeLikePattern(q)}%`;
@@ -80,6 +93,7 @@ export async function searchLibraryIds(
     sql`embedder = ${currentEmbedder()}`,
     sql`search_embedding is not null`,
   ];
+  if (itemKind) embeddingConditions.push(sql`kind = ${itemKind}`);
   if (tag) embeddingConditions.push(sql`tags @> ${JSON.stringify([tag])}::jsonb`);
   const embeddingResult = await db().execute(
     sql`select id, 1 - (search_embedding <=> ${vector}::vector) as score

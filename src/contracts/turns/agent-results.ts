@@ -261,3 +261,33 @@ export interface AgentResults {
   continuity: ContinuityResult | null;
   director: DirectorResult | null;
 }
+
+/**
+ * Per-leg provider attribution for a turn — which upstream provider OpenRouter
+ * routed each generation to, plus that call's wall-clock latency. Persisted on
+ * the turn so the Inspector can surface which providers are consistently slow.
+ * `provider` is null when the routing metadata was absent (or in demo mode);
+ * `ms` is the call's total latency (the narrator's covers the whole stream).
+ */
+export const turnProviderSchema = z.object({
+  provider: z
+    .string()
+    .nullish()
+    .catch(null)
+    .transform((v) => v ?? null),
+  ms: z.number().nonnegative().catch(0),
+});
+export type TurnProvider = z.infer<typeof turnProviderSchema>;
+
+/** The generation legs we attribute a provider to — narrator + post-turn agents (embedding excluded). */
+export const PROVIDER_LEGS = ["narrator", "simulant", "archivist", "continuity", "director"] as const;
+export type ProviderLeg = (typeof PROVIDER_LEGS)[number];
+
+export const turnProvidersSchema = z.object({
+  narrator: turnProviderSchema.optional(),
+  simulant: turnProviderSchema.optional(),
+  archivist: turnProviderSchema.optional(),
+  continuity: turnProviderSchema.optional(),
+  director: turnProviderSchema.optional(),
+});
+export type TurnProviders = Partial<Record<ProviderLeg, TurnProvider>>;

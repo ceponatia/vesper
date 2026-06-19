@@ -734,6 +734,9 @@ export const locationsApi = {
 
 export const itemsApi = {
   list: (params: ListParams = {}) => apiGet(listOf(itemSummarySchema, "items"), withQuery("/api/items", params)),
+  /** Resolve specific items by id (e.g. a character's defaultOutfit), bypassing the list cap. */
+  listByIds: (ids: readonly string[]) =>
+    apiGet(listOf(itemSummarySchema, "items"), withQuery("/api/items", { ids: [...ids].join(",") })),
   get: (id: string) => apiGet(detailOf(itemDetailSchema, "item"), `/api/items/${id}`),
   create: (body: unknown) => apiPost(createdRefSchema, "/api/items", body),
   update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/items/${id}`, body),

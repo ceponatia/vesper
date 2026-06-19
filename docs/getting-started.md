@@ -28,9 +28,9 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 | `OPENROUTER_API_KEY` | — | All text models + embeddings + text-to-image |
 | `VENICE_API_KEY` | — | Reference image editing |
 | `NARRATIVE_MODEL` | `aion-labs/aion-2.0` | Default narrator for new worlds (per-world override at creation) |
-| `AGENT_MODEL` | `google/gemini-3.5-flash` | In-session agents (intake + post-turn); per-world override from the World tab |
-| `STATE_MODEL` | `google/gemini-3.5-flash` | Default for all `generateChecked` calls — the forge/authoring agents (in-session agents use `AGENT_MODEL`) |
-| `TOOL_MODEL` | `google/gemini-3.5-flash` | Scene composer (image pipeline) |
+| `AGENT_MODEL` | `deepseek/deepseek-v4-flash` | In-session agents (intake + post-turn); per-world override from the World tab |
+| `STATE_MODEL` | `deepseek/deepseek-v4-flash` | Default for all `generateChecked` calls — the forge/authoring agents (in-session agents use `AGENT_MODEL`) |
+| `TOOL_MODEL` | `deepseek/deepseek-v4-flash` | Scene composer (image pipeline) |
 | `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | 1536-dim embeddings |
 | `IMAGE_MODEL` / `IMAGE_MODEL_FAST` | `black-forest-labs/flux.2-pro` / `…flux.2-flex` | Text-to-image |
 | `VENICE_IMAGE_MODEL` | `qwen-image-2` | Venice uncensored text-to-image (portrait regenerate) |

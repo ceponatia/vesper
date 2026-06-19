@@ -1,12 +1,22 @@
 # Pre-narrator intake — reliability follow-ups (improvement pass)
 
-Status: **findings / proposed** (2026-06-18). Post-ship fixes for the intake
-agent shipped per [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md)
-§7 (Stack A). Triggered by a flood of intake diagnostics in the dev Inspector
-during session `ra2enpex3luvmsrlaafsyn8x` ("Whisperwing Estate"). This is the
-measurement the UX-audit deferred — [ux-audit.plan.md](ux-audit.plan.md) §6
-(M5) said "measure the fallback hit-rate first"; this doc is that measurement,
-plus the two root causes it surfaced.
+Status: **implemented — 2026-06-18** (Fixes 1–4 + budget bump landed; remaining
+items in §6). Post-ship fixes for the intake agent shipped per
+[pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) §7 (Stack A).
+Triggered by a flood of intake diagnostics in the dev Inspector during session
+`ra2enpex3luvmsrlaafsyn8x` ("Whisperwing Estate"). This is the measurement the
+UX-audit deferred — [ux-audit.plan.md](ux-audit.plan.md) §6 (M5) said "measure
+the fallback hit-rate first"; this doc is that measurement, the root causes it
+surfaced, and the fixes that landed.
+
+> **Verified by live probe (2026-06-18).** The reasoning hypothesis (§2a) is
+> confirmed and the fixes are in. Headline: the former default
+> `google/gemini-3.5-flash` **mandates reasoning that cannot be disabled** and a
+> live intake call reproduced the production bug exactly — `finish: "length"`,
+> unparseable truncated JSON, 489 reasoning tokens against the 512 cap. It has
+> been **dropped from the agent-model list**; the new default is
+> `deepseek/deepseek-v4-flash` with reasoning explicitly disabled, which returns
+> correct, fully-parsed briefs.
 
 ## Bottom line up front
 
@@ -72,32 +82,42 @@ Model in play: world `agentModel = google/gemini-3.5-flash` (the curated default
 
 ## 2. Root causes
 
-### 2a. Reasoning tokens (the shared root cause) — *verify*
+### 2a. Reasoning tokens (the shared root cause) — *confirmed*
 
 The spec estimated intake at **400–1200 ms** with a small schema and ≤512 output
-tokens (spec §4.1). The observed reality is the opposite: >1.5 s on 91% of
-turns, plus truncated/empty JSON. Both symptoms have one parsimonious
-explanation: the model is doing **reasoning** before it writes the object.
+tokens (spec §4.1). The observed reality was the opposite: >1.5 s on 91% of
+turns, plus truncated/empty JSON. One parsimonious explanation: the model does
+**reasoning** before it writes the object — reasoning is slow (→ `timeout`) and
+its tokens count against `maxOutputTokens` (→ the 512 cap is spent thinking, so
+the JSON truncates or never appears).
 
-- Reasoning is slow → blows the 1.5 s budget → `timeout`.
-- Reasoning tokens count against `maxOutputTokens` → 512 is spent thinking, so
-  the JSON is truncated (`Expected ',' or '}'…`) or never reached at all
-  (`response contained no JSON object`).
+A live probe across every curated agent + narrator model (intake prompt, temp 0,
+512 output cap) confirmed it. `enabled:false` = does the OpenRouter
+`reasoning:{enabled:false}` option turn it off, or is reasoning mandatory:
 
-`generateChecked` sends no provider reasoning config (`generate-checked.ts:43`),
-so the model runs at its **default** reasoning behaviour — and a "flash"
-reasoning model defaults to thinking. This is a single knob with outsized
-leverage: turn reasoning **off** for intake (it is a fast classifier, not a
-reasoner) and both the latency and the truncation should disappear, putting
-intake back near the spec's 400–1200 ms estimate where the 1.5 s budget works
-as designed.
+| Model | Default reasoning | `reasoning:{enabled:false}` | Mandatory? |
+| --- | --- | --- | --- |
+| `google/gemini-3.5-flash` *(former default)* | ~489 tok, **`finish:length`, unparseable** | **errors** | **Yes** |
+| `aion-labs/aion-2.0` *(narrator default)* | ~570 tok, ~69 s | **errors** | **Yes** |
+| `deepseek/deepseek-v4-flash` | varies (0–247 tok; routing-dependent) | → **0 tok**, parses ✓ | No |
+| `z-ai/glm-5.2` | ~381 tok | → **0 tok**, parses ✓ | No |
+| `openrouter/owl-alpha` | — could not test (see §6) | — | unknown |
 
-> **To verify before committing:** confirm gemini-3.5-flash is emitting
-> reasoning tokens on these calls (OpenRouter response usage:
-> `completion_tokens_details.reasoning_tokens`, or the `/inspect` token counts
-> once the dev HUD lands — ux-audit §6). If reasoning is *not* the cause, the
-> fallback explanation is plain verbosity/slowness of the flash tier under load,
-> which points at "raise the budget and/or pick a faster tool model" instead.
+Three findings drove the fix:
+
+1. **gemini-3.5-flash reproduced the production bug live**: a default intake call
+   returned `finish: "length"` with truncated, unparseable JSON — exactly the
+   `Expected ',' or '}'…` signature — because 489 reasoning tokens crowded the
+   512 cap. And its reasoning **cannot be disabled** ("Reasoning is mandatory for
+   this endpoint"). It is the wrong model for a latency-critical classifier.
+2. **`reasoning:{enabled:false}` reliably zeroes reasoning** on the two real
+   agent models (deepseek, glm-5.2) and they then return correct, fully-parsed
+   briefs. The alternative `{exclude,effort:"minimal"}` was **unreliable** across
+   providers (it *raised* deepseek to 693 reasoning tokens and pushed glm to
+   26 s), so the simple `enabled:false` is what shipped.
+3. **deepseek's default reasoning is non-deterministic** — 0 tokens on one call,
+   247 on the next — because OpenRouter routes the slug to different endpoints.
+   So "off by default" cannot be assumed; intake disables it **explicitly**.
 
 ### 2b. The orphaned call leaks diagnostics (and wastes a repair round trip)
 
@@ -130,111 +150,163 @@ the turn is fine** — an intake parse failure has no player-visible consequence
 Surfacing it at `error` makes the Inspector read like a turn broke when nothing
 did.
 
+### 2d. The dominant cause of the timeout: OpenRouter TTFT variance
+
+After the reasoning fix landed, intake **still** timed out — even on
+deepseek-v4-flash, even at a 3 s budget. Streaming probes (real intake prompt,
+reasoning off, spaced 4 s apart to avoid self-induced queueing) isolated it to
+**time-to-first-token variance**, not output length, not the account (paid, no
+rate limit), not concurrency (one intake call per turn):
+
+| | TTFT median | total median | total max |
+| --- | --- | --- | --- |
+| deepseek, default routing | ~0.7 s | ~1.4 s | **13.1 s** |
+| glm-5.2, default routing | ~3.4 s | ~3.5 s | 3.5 s |
+
+deepseek's *median* is fine — but ~⅓ of calls spiked past 3 s (one to 13 s)
+because OpenRouter intermittently routes the slug to a cold/slow provider
+endpoint. A fixed pre-narration budget cannot fit a distribution with that fat a
+tail.
+
+**The lever: OpenRouter provider routing.** Re-running with
+`provider:{sort:"latency"}` (prefer the lowest-latency endpoint for the model —
+same weights, `allow_fallbacks` still on) flattened the tail:
+
+| deepseek routing | TTFT median | TTFT max |
+| --- | --- | --- |
+| default | 0.78 s | 1.76 s (13 s seen earlier) |
+| `sort:"throughput"` | 0.66 s | 1.15 s |
+| **`sort:"latency"`** | **0.68 s** | **0.74 s** |
+
+With latency routing every call landed <0.8 s TTFT / ~1 s total. End-to-end
+through `runIntake` (3 s budget, abort, repair off): **deepseek lands 5/6 within
+budget with correct classifications and clean diagnostics**; glm-5.2 is inherently
+slower (~3 s, lands ~1/6) and stays a graceful-fallback option, not the default.
+
 ---
 
-## 3. Recommended fixes (ordered by leverage)
+## 3. Fixes (implemented 2026-06-18)
 
-### Fix 1 — Disable reasoning on the intake call *(highest leverage; do first)*
+### Fix 0 — Drop the mandatory-reasoning model from the agent list
 
-Pass a provider option that turns reasoning off (or to minimum effort) for the
-intake `generateChecked`. With the AI SDK + OpenRouter provider this is a
-`providerOptions: { openrouter: { reasoning: { enabled: false } } }` (or
-`max_tokens: 0` for the reasoning slice) on the `generateText` call — **verify
-the exact key against the installed `@openrouter/ai-sdk-provider` version**;
-the only existing precedent in the repo is `extraBody` for image modalities
-(`provider.ts:77`).
+`google/gemini-3.5-flash` (the former `DEFAULT_AGENT_MODEL_ID`) mandates
+reasoning it cannot disable and is ~30× costlier per intake call than DeepSeek.
+Removed from `AGENT_MODELS` (`lib/agent-models.ts`); the new default is
+`deepseek/deepseek-v4-flash`. `z-ai/glm-5.2` stays; `openrouter/owl-alpha` was
+added to both the agent and narrator lists (and GLM 5.1 → 5.2 on the narrator).
+Existing worlds that pinned gemini keep it via the World-tab dropdown's
+"unknown current value" fallback, but new worlds and the env default are now the
+cheap non-reasoning model. *(gemini-3.5-flash remains a valid **narrator** choice
+— reasoning helps narration and the narrator output isn't schema-parsed the same
+way.)*
 
-This is the one change that addresses **both** headline symptoms at once: a
-non-reasoning flash classifier should return in a few hundred ms (under budget →
-timeout rate collapses) and have the full 512 tokens for JSON (truncation →
-gone). Plumb it as a `generateChecked` option so callers opt in per-agent rather
-than globally (the post-turn simulant/director may legitimately *want*
-reasoning).
+### Fix 1 — Disable reasoning on the intake call
 
-A cheaper-but-blunter alternative if the provider flag is awkward: point intake
-at a known non-reasoning tool model via `TOOL_MODEL` / a dedicated fast slug.
-The `toolModelId()` slot already exists for exactly this role (`provider.ts:44`)
-but intake currently resolves through `agentModelId` (`intake.ts:39`), so it
-rides the shared agent default. Re-pointing intake at `toolModelId()` would let
-the intake model be tuned independently of the post-turn agents.
+`GenerateCheckedOptions` gained `disableReasoning?: boolean`; intake sets it.
+`generateChecked` then sends `providerOptions: { openrouter: { reasoning: {
+enabled: false } } }` to `generateText`. (Loose `providerOptions` typing accepts
+this without a cast; the strict `OpenRouterProviderOptions` union is the
+provider's internal parse type.) `{enabled:false}` reliably zeroes reasoning on
+the curated agent models; the `{exclude,effort:"minimal"}` alternative was
+rejected as unreliable (§2a). Opt-in per agent — the post-turn simulant/director
+keep reasoning (they reason over the finished narration).
 
-### Fix 2 — Stop the orphaned call from polluting the turn
+### Fix 2 — Abort the call on timeout so the orphan stays silent
 
-Two options; **do at least the first**, prefer both:
-
-- **Minimal (contained to `intake.ts`):** give `generateChecked` a *buffering*
-  sink, and only flush it to the real sink if intake **wins** the race. If the
-  timeout wins, drop the buffer. Stops the noise; does not stop the wasted
-  repair call.
-- **Better (cancellation):** thread an `AbortSignal` from `withTimeout` into
-  `generateChecked` → `generateText`. On timeout, abort: this kills the in-flight
-  request *and* the wasted repair round trip. Teach `generateChecked` to treat
-  an abort as "caller walked away" — return silently, push **no** `parse_failed`
-  / `degraded`. This is the honest fix and saves the billed repair call.
-
-Either way, the invariant to restore: **a timed-out intake produces exactly one
-diagnostic — `agent.intake.timeout` — and nothing after it.**
+`withTimeout` now owns an `AbortController`; on timeout it `controller.abort()`s
+before logging `agent.intake.timeout`. The signal threads
+`runIntake → generateChecked → generateText`. `generateChecked` checks
+`opts.signal?.aborted` in its catch blocks and, when the caller walked away,
+returns `{value: null, degraded: true}` **silently** — no `parse_failed`, no
+`degraded`. Restored invariant (verified by live probe): **a timed-out intake
+emits exactly one diagnostic, `agent.intake.timeout`, and nothing after it.**
 
 ### Fix 3 — Skip the repair round trip for intake
 
-Intake is best-effort, latency-critical, and fully degradable. A repair round
-trip is a *second sequential* LLM call (`generate-checked.ts:66`); with the
-current latency profile it almost always runs orphaned and discarded. Add a
-`repair?: boolean` (default true) to `GenerateCheckedOptions` and set it
-`false` for intake: one attempt, then straight to the regex fallback. Removes a
-guaranteed-wasted call and halves intake's worst-case tail. (The post-turn
-agents keep repair — their result is worth a second try because nothing else
-catches their miss.)
+`GenerateCheckedOptions.repair?: boolean` (default true); intake sets `false`.
+One attempt, then straight to the regex fallback — the repair was a second
+sequential call the timeout would discard anyway. Post-turn agents keep repair
+(their result is worth a second try; nothing else catches their miss).
 
-### Fix 4 — Right-size the diagnostics
+### Fix 4 — Right-size the diagnostic severity
 
-- Let `generateChecked` callers choose the degrade severity (e.g.
-  `degradeSeverity?: "warn" | "error"`, default `error`); set intake to `warn`.
-  A best-effort fallback is a `warn`, not an `error`.
-- Once Fix 2 lands, the `timeout` + `degraded` double-log for the same event
-  goes away on its own (only one path fires).
+`GenerateCheckedOptions.degradeSeverity?: "warn" | "error"` (default `error`);
+intake uses `warn`. A best-effort fallback to a live code path is not a turn
+failure. With Fix 2, the `timeout` + `degraded` double-log for one event is gone
+(only one path fires).
 
-### Fix 5 — Re-tune the budget on honest numbers *(the original M5 ask)*
+### Fix 5 — Budget bump
 
-After Fixes 1–2, re-measure with the dev turn HUD (ux-audit §6 / feature #7:
-per-turn latency + intake-timeout rate, already in `/inspect`). Expectations:
+`INTAKE_TIMEOUT_MS` raised **1500 → 3000** (`constants.ts`). The 1500 was tuned
+to the spec's 400–1200 ms estimate; with reasoning off + latency routing a
+deepseek call lands in ~1 s, so 3000 gives ~3× headroom and the silent fallback
+(Fix 2) covers the rare residual spike. Still the spec's **Open-question A**
+(first-token latency tolerance) — finalize on real per-turn HUD telemetry
+(ux-audit §6).
 
-- If reasoning was the cause, the 1.5 s budget (`INTAKE_TIMEOUT_MS`,
-  `constants.ts:95`) should now pass on the large majority of turns — leave it.
-- If a residual tail remains, the spec's **Open-question A** (first-token
-  latency tolerance) is the governing product call. Given the narrator stream is
-  ~30 s, spending an extra ~1–2 s of TTFT to *use* the intake the system is
-  already paying for is plausibly worth it — but decide on the HUD's data, not
-  vibes. Raising the budget is a one-line change once it's a deliberate call.
+### Fix 6 — Low-latency provider routing *(the actual tail fix)*
+
+`GenerateCheckedOptions.lowLatencyRouting?: boolean` → `provider:{sort:"latency"}`
+on the OpenRouter call; intake sets it. This is what made the budget achievable:
+it flattened deepseek's TTFT from a 13 s tail to <0.8 s (§2d). `allow_fallbacks`
+stays on, so it only reorders provider preference — no reliability loss, and same
+model weights so no quality change.
+
+**Extended to the narrator and post-turn agents** (2026-06-18, per request):
+- Post-turn agents (`agents.ts` `run` helper) set `lowLatencyRouting:true` — the
+  four fan out in parallel; trimming each TTFT tail returns the session to
+  "ready" sooner. Pure win (small structured outputs, no quality concern).
+- The narrator (`pipeline.ts` `liveNarrativeStream`) passes
+  `provider:{sort:"latency"}` on its `streamText` so narration's first token
+  arrives sooner. **Note:** for a long stream this optimises *time-to-first-token*;
+  if sustained tokens/sec ever matters more, switch that one to
+  `sort:"throughput"`. Same weights, so prose quality is unchanged.
 
 ---
 
-## 4. Suggested sequencing
+## 4. Why this matters beyond the noise
 
-Fix 1 (reasoning off) → re-measure → Fix 2 (abort + silent on walk-away) →
-Fix 3 (skip repair) + Fix 4 (severity) as a small cleanup → Fix 5 (budget
-re-tune) gated on the HUD. Fixes 1–4 are self-contained engine/`ai`-layer
-changes with no schema or product implications; Fix 5 is the only one that needs
-a product decision (Open-question A).
+The user-visible complaint was Inspector noise; Fixes 2 + 4 kill that directly
+(at most one `warn` now). But Fix 0 + 1 are the substantive win: the former
+default literally could not return a parseable brief (mandatory reasoning →
+truncation), so intake was contributing on ~0% of turns. With a non-reasoning
+model it returns correct briefs.
 
-This also de-risks the **personality** work, which leans harder on intake:
+This de-risks the **personality** work, which leans harder on intake:
 `socialActs` / `narratedNpcBehaviors` tagging
 ([personality-and-state.plan.md](personality-and-state.plan.md) §1.3, already
-shipped into the brief) only fires when intake **lands** — at a 91% fallback
-rate those reactions almost never trigger today. Fixing intake reliability is a
-prerequisite for the authored likes/dislikes loop actually working in play.
+shipped into the brief) only fires when intake **lands**. At the old 91%
+fallback rate those reactions almost never triggered. Reliable intake is a
+prerequisite for the authored likes/dislikes loop working in play.
 
-## 5. Cross-references
+## 5. Remaining items
+
+- **owl-alpha is unreachable on this account.** Every probe call to
+  `openrouter/owl-alpha` returned *"No endpoints available matching your
+  guardrail restrictions and data policy"* — a cloaked/alpha model gated behind
+  OpenRouter's privacy/data-policy settings. To use it (it's now in both model
+  lists), enable the required data policy at
+  <https://openrouter.ai/settings/privacy>. Until then it errors → degrades to
+  the fallback. Not a code fix.
+- **Post-turn agents still reason.** `disableReasoning` is opt-in and only
+  intake sets it. The four post-turn agents reason on the agent model — fine on
+  the new non-reasoning deepseek default, but a budget cost if a world pins
+  glm-5.2. If post-turn reasoning proves not worth the spend, set
+  `disableReasoning` on them too (a one-line change per agent in `agents.ts`).
+- **Finalize the budget on real telemetry.** §3 Fix 5 raised `INTAKE_TIMEOUT_MS`
+  to 3000 provisionally. Confirm the real per-turn timeout rate via the dev HUD
+  (ux-audit §6) and tune — this is spec Open-question A.
+
+## 6. Cross-references
 
 - Spec: [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) (§4.1
   latency, §4.2 resilience ladder, Open-question A).
 - M5 tracking: [ux-audit.plan.md](ux-audit.plan.md) §6 — this doc supplies the
   "measure first" data it was gated on.
 - Consumer at risk: [personality-and-state.plan.md](personality-and-state.plan.md) §1.3.
-- Code: `src/server/engine/intake.ts` (`withTimeout`),
-  `src/server/ai/generate-checked.ts` (repair ladder, severity),
-  `src/server/engine/constants.ts` (`INTAKE_TIMEOUT_MS`,
-  `INTAKE_MAX_OUTPUT_TOKENS`), `src/server/engine/pipeline.ts`
-  (`assemblePreTurn` fan-out, `persistNarration` sink capture).
-</content>
-</invoke>
+- Code: `src/lib/agent-models.ts` + `src/lib/narrative-models.ts` (model lists +
+  default), `src/server/engine/intake.ts` (`runIntake`/`withTimeout` abort),
+  `src/server/ai/generate-checked.ts` (`disableReasoning` / `repair` /
+  `degradeSeverity` / `signal`), `src/server/engine/constants.ts`
+  (`INTAKE_TIMEOUT_MS`).
+

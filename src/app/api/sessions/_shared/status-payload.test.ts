@@ -161,7 +161,7 @@ describe("buildStatusPayload", () => {
       { id: "img-scene", createdAt: new Date("2026-01-02"), prompt: "the latest scene" },
     ],
     narrativeModel: "aion-labs/aion-2.0",
-    agentModel: "google/gemini-3.5-flash",
+    agentModel: "deepseek/deepseek-v4-flash",
     clockDelta: { minutes: 20, cause: "shower" },
   });
 
@@ -174,7 +174,7 @@ describe("buildStatusPayload", () => {
       worldId: "w1",
       worldName: "Testworld",
       narrativeModel: "aion-labs/aion-2.0",
-      agentModel: "google/gemini-3.5-flash",
+      agentModel: "deepseek/deepseek-v4-flash",
     });
     // default calendar start 8:00 + 60 minutes
     expect(payload.clock.minutes).toBe(60);
@@ -252,7 +252,7 @@ describe("buildStatusPayload", () => {
       latestSceneImageId: null,
       sceneGallery: [],
       narrativeModel: "aion-labs/aion-2.0",
-      agentModel: "google/gemini-3.5-flash",
+      agentModel: "deepseek/deepseek-v4-flash",
       clockDelta: null,
     });
     expect(withoutDelta.clock.delta).toBeNull();

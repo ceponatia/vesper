@@ -11,9 +11,11 @@ import {
   type ContinuityResult,
   type DirectorResult,
   type SimulantResult,
+  type TurnProvider,
+  type TurnProviders,
 } from "@/contracts/turns/agent-results";
 import type { TurnAuthor } from "@/contracts/turns/stream";
-import { agentModelId, generateChecked, isDemoMode } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, type GenerateCheckedResult } from "../ai";
 import { db, facts } from "../db";
 import { activeLocationId, type BundleItem, type SessionBundle } from "./bundle";
 import { stagedLocationAnchor } from "./merge";
@@ -39,6 +41,11 @@ import { resolveGameTime } from "@/lib/clock";
  * single-concern generateChecked calls in parallel, each fed only its own
  * state slice. Agents fail independently — a failed agent is null in the
  * result and the merge reducer applies its documented degraded default.
+ *
+ * Alongside the results it returns per-agent `providers` — which OpenRouter
+ * upstream served each call and how long it took — for the Inspector's
+ * slow-provider tracking (the narrator's own attribution is captured in the
+ * pipeline; embedding is excluded).
  */
 
 /** How many recent active facts ride in the archivist prompt as supersede candidates. */
@@ -64,12 +71,18 @@ export interface RunAgentsOptions {
   sink?: DiagnosticSink;
 }
 
+export interface PostTurnAgentsResult {
+  results: AgentResults;
+  /** Per-agent provider attribution (embedding excluded); empty in demo mode. */
+  providers: TurnProviders;
+}
+
 export async function runPostTurnAgents(
   bundle: SessionBundle,
   turn: AgentTurnInput,
   narration: string,
   opts: RunAgentsOptions = {},
-): Promise<AgentResults> {
+): Promise<PostTurnAgentsResult> {
   const activeLoc = activeLocationId(bundle);
   // Anchor presence exactly where the narrator's prompt anchored it: a staged
   // player move (merge.stagedLocationAnchor) made the TARGET room's occupants
@@ -88,8 +101,8 @@ export async function runPostTurnAgents(
       narration,
       priorBrief: bundle.brief,
     });
-    if (opts.endState) return { ...demo, continuity: null, director: null };
-    return demo;
+    if (opts.endState) return { results: { ...demo, continuity: null, director: null }, providers: {} };
+    return { results: demo, providers: {} };
   }
 
   const locationNameById = new Map(bundle.locations.map((l) => [l.id, l.name]));
@@ -135,8 +148,12 @@ export async function runPostTurnAgents(
   // falling back to the default. Authoring agents don't pass modelId, so they
   // stay on the default — outside the session switch.
   const agentModel = agentModelId(bundle.world.agentModel);
+  // lowLatencyRouting: prefer the lowest-latency provider endpoint for the model
+  // (same weights). The four agents fan out in parallel post-turn; trimming each
+  // one's TTFT tail returns the session to "ready" sooner (the dominant cost is
+  // OpenRouter routing variance, not output length — pre-narrator-agents.followups.md §2d).
   const run = <T>(schema: ZodType<T>, system: string, prompt: string, code: string) =>
-    generateChecked<T>({ schema, system, prompt, code, modelId: agentModel, sink: opts.sink });
+    generateChecked<T>({ schema, system, prompt, code, modelId: agentModel, sink: opts.sink, lowLatencyRouting: true });
 
   if (opts.endState) {
     const [simulant, archivist] = await Promise.allSettled([
@@ -144,10 +161,13 @@ export async function runPostTurnAgents(
       run<ArchivistResult>(archivistResultSchema, ARCHIVIST_SYSTEM, archivistPrompt, "agent.archivist"),
     ]);
     return {
-      simulant: settle(simulant),
-      archivist: settle(archivist),
-      continuity: null,
-      director: null,
+      results: {
+        simulant: settle(simulant),
+        archivist: settle(archivist),
+        continuity: null,
+        director: null,
+      },
+      providers: providersFrom({ simulant, archivist }),
     };
   }
 
@@ -208,10 +228,13 @@ export async function runPostTurnAgents(
   ]);
 
   return {
-    simulant: settle(simulant),
-    archivist: settle(archivist),
-    continuity: settle(continuity),
-    director: settle(director),
+    results: {
+      simulant: settle(simulant),
+      archivist: settle(archivist),
+      continuity: settle(continuity),
+      director: settle(director),
+    },
+    providers: providersFrom({ simulant, archivist, continuity, director }),
   };
 }
 
@@ -224,6 +247,31 @@ function settle<T>(result: PromiseSettledResult<{ value: T | null; degraded: boo
   if (result.status === "rejected") return null;
   if (result.value.degraded) return null;
   return result.value.value;
+}
+
+/**
+ * Provider attribution for one agent leg. Recorded independently of `settle` —
+ * a degraded agent still tells us which (possibly slow) provider it hit; only a
+ * call that never completed (rejected / no latency) is omitted.
+ */
+function providerOf(result: PromiseSettledResult<GenerateCheckedResult<unknown>>): TurnProvider | null {
+  if (result.status === "rejected") return null;
+  const { provider, latencyMs } = result.value;
+  if (latencyMs === undefined) return null;
+  return { provider: provider ?? null, ms: latencyMs };
+}
+
+/** Collapse each settled agent into its provider entry, dropping legs that never completed. */
+function providersFrom(
+  legs: Partial<Record<keyof AgentResults, PromiseSettledResult<GenerateCheckedResult<unknown>>>>,
+): TurnProviders {
+  const providers: TurnProviders = {};
+  for (const [leg, result] of Object.entries(legs)) {
+    if (!result) continue;
+    const entry = providerOf(result);
+    if (entry) providers[leg as keyof AgentResults] = entry;
+  }
+  return providers;
 }
 
 function exitNames(bundle: SessionBundle, locationId: string): string[] {

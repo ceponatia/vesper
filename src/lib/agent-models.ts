@@ -19,10 +19,15 @@ export interface AgentModelOption {
 }
 
 export const AGENT_MODELS: readonly AgentModelOption[] = [
-  { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
+  { id: "openrouter/owl-alpha", label: "Owl (alpha)" },
 ];
 
-/** The in-session agent model used when neither the world nor the env override one. */
-export const DEFAULT_AGENT_MODEL_ID = "google/gemini-3.5-flash";
+/**
+ * The in-session agent model used when neither the world nor the env override
+ * one. DeepSeek 4 Flash: no reasoning by default, fast, and ~30× cheaper per
+ * call than the former gemini-3.5-flash default (which mandated reasoning it
+ * could not disable — see pre-narrator-agents.followups.md §2a).
+ */
+export const DEFAULT_AGENT_MODEL_ID = "deepseek/deepseek-v4-flash";

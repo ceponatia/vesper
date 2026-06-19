@@ -1,0 +1,1 @@
+ALTER TABLE "turns" ADD COLUMN "providers" jsonb DEFAULT '{}'::jsonb NOT NULL;

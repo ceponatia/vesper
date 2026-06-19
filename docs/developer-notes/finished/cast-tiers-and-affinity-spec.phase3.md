@@ -100,17 +100,26 @@ relationships:
   override; weak signals seed near-neutral; the seed is set once and
   never re-applied. This is a known tuning minefield — log every seed
   with its factors so bad patterns are visible early.
-- **Stage**: derived label from a registry —
-  `hostile / wary / stranger / acquaintance / friendly / close / devoted`
-  — registry data edit, per-world overridable. **Stages, not numbers, go
-  in prompts and gate behavior** (follow/approach thresholds, contested
-  checks, comms plausibility).
+- **Stage**: derived label from a registry — widened (personality Slice 5)
+  from the original seven to eleven:
+  `hostile / wary / cool / stranger / acquaintance / friendly / warm / close /
+  cherished / devoted / smitten` — registry data edit, per-world overridable.
+  **Stages, not numbers, go in prompts and gate behavior** (follow/approach
+  thresholds, contested checks, comms plausibility).
 - **Updates**: a small simulant field, `affinityAdjustments: [{ a, b,
   delta, reason }]`, delta clamped tiny per turn (relationships move at
   story speed). NPC↔NPC edges update when both share an event (on-screen
-  or world-tick).
+  or world-tick). **Trait-scaled (personality Slice 5):** the merge scales
+  the owner's raw delta *before* the clamp — `warmth`/`agreeableness` amplify
+  gains, `guardedness` damps them, `composure` damps losses (`scaleAffinityGain`,
+  `modulation.ts`). Recognized social acts skip this path (they're scaled inside
+  the response curve and own their edge).
 - **Decay**: very slow drift toward a per-stage baseline; facts carry the
-  qualitative texture, affinity is the cheap scalar.
+  qualitative texture, affinity is the cheap scalar. **Trait-scaled
+  (personality Slice 5):** a warm, even-keeled (constant) character resists
+  decay — its floor is lifted toward the current value by `affinityDecayRetention`
+  (warmth + composure), so its regard ebbs more slowly than a fickle one's; the
+  floor stays ≥ the stage boundary, so decay remains stage-preserving.
 - **Storage**: a `participant_relationships` table (session-scoped pair
   rows) — queryable, doesn't bloat `ParticipantState` O(cast²).
 

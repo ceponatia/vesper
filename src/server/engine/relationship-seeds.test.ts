@@ -17,7 +17,7 @@ describe("seedRelationshipRows", () => {
       null,
     );
     const forward = rows.find((r) => r.fromParticipantId === "a");
-    expect(forward).toEqual({ fromParticipantId: "a", toParticipantId: "b", kind: "feeling", value: 47, stage: "friendly" });
+    expect(forward).toEqual({ fromParticipantId: "a", toParticipantId: "b", kind: "feeling", value: 41, stage: "friendly" });
   });
 
   it("seeds each stage at its registry midpoint", () => {
@@ -51,7 +51,7 @@ describe("seedRelationshipRows", () => {
     );
     expect(rows).toHaveLength(2);
     expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "b", kind: "feeling", value: 72, stage: "close" });
-    expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "a", kind: "feeling", value: -32, stage: "wary" });
+    expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "a", kind: "feeling", value: -48, stage: "wary" });
   });
 
   it("sparse = stranger: an authored stranger stage writes no row", () => {
@@ -71,7 +71,7 @@ describe("seedRelationshipRows", () => {
       null,
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ fromParticipantId: "a", toParticipantId: "b", kind: "feeling", value: 47 });
+    expect(rows[0]).toMatchObject({ fromParticipantId: "a", toParticipantId: "b", kind: "feeling", value: 41 });
   });
 
   describe("player edges (decision 41 — the player owns no edges)", () => {
@@ -81,8 +81,8 @@ describe("seedRelationshipRows", () => {
         "p",
       );
       expect(rows).toHaveLength(2);
-      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "feeling", value: 47, stage: "friendly" });
-      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "perceived", value: 47, stage: "friendly" });
+      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "feeling", value: 41, stage: "friendly" });
+      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "perceived", value: 41, stage: "friendly" });
     });
 
     it("first-meeting phrasing seeds the feeling row only", () => {
@@ -91,7 +91,7 @@ describe("seedRelationshipRows", () => {
         "p",
       );
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ kind: "feeling", value: 47 });
+      expect(rows[0]).toMatchObject({ kind: "feeling", value: 41 });
     });
 
     it("indeterminate text mirrors the midpoint (safe default)", () => {
@@ -100,7 +100,7 @@ describe("seedRelationshipRows", () => {
         "p",
       );
       expect(rows).toHaveLength(2);
-      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "perceived", value: -32, stage: "wary" });
+      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "perceived", value: -48, stage: "wary" });
     });
 
     it("skips player edges with a diagnostic when there is no player participant", () => {
@@ -125,8 +125,8 @@ describe("seedRelationshipRows", () => {
         "p",
       );
       expect(rows).toHaveLength(2);
-      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "feeling", value: 47, stage: "friendly" });
-      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "perceived", value: 47, stage: "friendly" });
+      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "feeling", value: 41, stage: "friendly" });
+      expect(rows).toContainEqual({ fromParticipantId: "a", toParticipantId: "p", kind: "perceived", value: 41, stage: "friendly" });
       expect(rows.some((r) => r.fromParticipantId === "p")).toBe(false); // players own no edges
     });
 
@@ -139,8 +139,8 @@ describe("seedRelationshipRows", () => {
         "p",
       );
       expect(rows).toHaveLength(2);
-      expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "p", kind: "feeling", value: 47, stage: "friendly" });
-      expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "p", kind: "perceived", value: 47, stage: "friendly" });
+      expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "p", kind: "feeling", value: 41, stage: "friendly" });
+      expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "p", kind: "perceived", value: 41, stage: "friendly" });
     });
 
     it("first-meeting phrasing on the NPC seeds its feeling row only", () => {
@@ -164,8 +164,8 @@ describe("seedRelationshipRows", () => {
         "p",
       );
       expect(rows).toHaveLength(2);
-      expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "p", kind: "feeling", value: -32, stage: "wary" });
-      expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "p", kind: "perceived", value: -32, stage: "wary" });
+      expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "p", kind: "feeling", value: -48, stage: "wary" });
+      expect(rows).toContainEqual({ fromParticipantId: "b", toParticipantId: "p", kind: "perceived", value: -48, stage: "wary" });
     });
 
     it("a stranger edge from the played member writes nothing", () => {
@@ -206,7 +206,7 @@ describe("seedRelationshipRows", () => {
       sink,
     );
     expect(rows).toHaveLength(2); // Sable edge + implied reverse; nothing for Ghost
-    expect(rows.every((r) => r.value === 47)).toBe(true);
+    expect(rows.every((r) => r.value === 41)).toBe(true);
     const diagnostic = sink.items.find((d) => d.code === "spawn.relationship.unresolved_toward");
     expect(diagnostic).toBeDefined();
     expect(diagnostic?.severity).toBe("warn");

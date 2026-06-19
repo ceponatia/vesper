@@ -10,7 +10,8 @@ import { daylightBand, formatElapsed, formatGameClock, resolveGameTime } from "@
 import { log } from "@/server/log";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { fillPlayerToken } from "@/lib/player-token";
-import { isDemoMode, narrativeModelId, openrouter } from "../ai";
+import { isDemoMode, narrativeModelId, openrouter, providerRouting, routedProvider } from "../ai";
+import type { TurnProvider } from "@/contracts/turns/agent-results";
 import { db, facts, jobs, sessions, turnMessages, turns } from "../db";
 import {
   characterAppearanceSummary,
@@ -229,9 +230,10 @@ async function runNarrationTask(sessionId: string, body: SubmitTurnBody, channel
     channel.push({ event: "start", data: { turnId, turnNumber } });
 
     const pre = await assemblePreTurn(bundle, body, speaker?.displayName, sink, turnNumber);
-    const stream = isDemoMode()
-      ? demoNarrative(body.input, pre.npcNames)
+    const live = isDemoMode()
+      ? null
       : liveNarrativeStream(narrativeModelId(bundle.world.narrativeModel), pre.system, pre.messages);
+    const stream = live ? live.textStream : demoNarrative(body.input, pre.npcNames);
 
     const segmenter = createSegmenter(pre.allNpcNames);
     let narration = "";
@@ -269,9 +271,14 @@ async function runNarrationTask(sessionId: string, body: SubmitTurnBody, channel
       return;
     }
 
+    // Best-effort narrator provider attribution for the Inspector — resolved
+    // only when the stream completed cleanly (a broken stream's metadata may
+    // never settle). The post-turn agents add their own entries in the merge.
+    const narratorProvider = live && !streamError ? await live.provider() : null;
+
     // Persist regardless of the consumer (the doc's "finally"): narration,
     // messages, processing status, then hand off to the post_turn job.
-    await persistNarration(turnId, body, speaker?.displayName ?? null, narration, pre.allNpcNames, pre.intentBrief, sink);
+    await persistNarration(turnId, body, speaker?.displayName ?? null, narration, pre.allNpcNames, pre.intentBrief, sink, narratorProvider);
     if (pre.ooc) {
       // OOC exchange: a meta answer has no world impact — no agents, no clock
       // advance, no episode. The turn completes as soon as the answer persists.
@@ -297,14 +304,43 @@ async function runNarrationTask(sessionId: string, body: SubmitTurnBody, channel
   }
 }
 
-async function* liveNarrativeStream(modelId: string, system: string, messages: ModelMessage[]): AsyncGenerator<string> {
+interface LiveNarrativeStream {
+  textStream: AsyncIterable<string>;
+  /**
+   * Provider attribution for the narrator, resolved once the stream is fully
+   * consumed (`providerMetadata` settles at stream end). Best-effort — returns
+   * null if the metadata never arrives. `ms` is the whole-stream latency, so
+   * read it as throughput-ish, not time-to-first-token.
+   */
+  provider: () => Promise<TurnProvider | null>;
+}
+
+function liveNarrativeStream(modelId: string, system: string, messages: ModelMessage[]): LiveNarrativeStream {
+  const startedAt = Date.now();
   const result = streamText({
     model: openrouter().chat(modelId),
     system,
     messages,
     temperature: NARRATIVE_TEMPERATURE,
+    // Prefer the lowest-latency provider endpoint for the model (same weights) so
+    // narration's first token arrives sooner — OpenRouter routing variance is the
+    // dominant cost (pre-narrator-agents.followups.md §2d). For a long stream this
+    // optimises time-to-first-token; switch to sort:"throughput" if sustained
+    // tokens/sec matters more than first-token latency. providerRouting also drops
+    // per-model bad endpoints (DeepInfra on GLM 5.2 — slow despite its low advertised latency).
+    providerOptions: { openrouter: { provider: providerRouting(modelId, { sortLatency: true }) } },
   });
-  for await (const delta of result.textStream) yield delta;
+  return {
+    textStream: result.textStream,
+    provider: async () => {
+      try {
+        const meta = await result.providerMetadata;
+        return { provider: routedProvider(meta), ms: Date.now() - startedAt };
+      } catch {
+        return null;
+      }
+    },
+  };
 }
 
 /**
@@ -371,6 +407,7 @@ async function persistNarration(
   npcNames: string[],
   intentBrief: IntentBrief,
   sink: DiagnosticCollector,
+  narratorProvider: TurnProvider | null,
 ): Promise<void> {
   const rows = messagesFromNarration(body, speakerName, narration, npcNames);
   await db()
@@ -384,6 +421,9 @@ async function persistNarration(
       status: "processing",
       heartbeatAt: new Date(),
       diagnostics: sql`${turns.diagnostics} || ${JSON.stringify(sink.items)}::jsonb`,
+      // Seed the providers map with the narrator leg; the post-turn merge concats
+      // the agent legs onto it (jsonb `||`), so this write must not be clobbered.
+      ...(narratorProvider ? { providers: { narrator: narratorProvider } } : {}),
     })
     .where(eq(turns.id, turnId));
 }
@@ -851,7 +891,7 @@ registerJobHandler("post_turn", async (job) => {
     const bundle = await loadSessionBundle(turn.sessionId, sink);
     if (!bundle) throw new Error("session vanished before the merge");
     const narration = turn.narration ?? "";
-    const results = await runPostTurnAgents(
+    const { results, providers } = await runPostTurnAgents(
       bundle,
       {
         number: turn.number,
@@ -877,6 +917,7 @@ registerJobHandler("post_turn", async (job) => {
         intentBrief: parseOr(intentBriefSchema, turn.intentBrief, emptyIntentBrief()),
       },
       results,
+      providers,
       sink,
     });
 
@@ -909,7 +950,7 @@ registerJobHandler("reconcile", async (job) => {
   const bundle = await loadSessionBundle(turn.sessionId, sink);
   if (!bundle) return;
   const narration = turn.narration ?? "";
-  const results = await runPostTurnAgents(
+  const { results, providers } = await runPostTurnAgents(
     bundle,
     { number: turn.number, author: turn.author, input: turn.input },
     narration,
@@ -919,6 +960,7 @@ registerJobHandler("reconcile", async (job) => {
     bundle,
     turn: { id: turn.id, number: turn.number, author: turn.author, input: turn.input, narration, speakerParticipantId: turn.speakerParticipantId },
     results: { ...results, continuity: null, director: null },
+    providers,
     sink,
     mode: "reconcile",
   });

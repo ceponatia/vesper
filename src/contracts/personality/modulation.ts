@@ -6,9 +6,9 @@ import { effectiveTraitValue, resolveTraits, type TraitValue } from "./traits/va
  * Trait modulation (docs/developer-notes/personality-and-state.spec.md §5): pure
  * functions mapping a character's trait values → the coefficients the merge applies.
  * This is §5's "f(traits)" — kept deterministic in the merge, never decided by an
- * agent (resilience.md §3). v1 wires the **social-reaction `traitScale`** (the seam
- * Slice 1 stubbed at 1); meter baseline/recovery and affinity gain/decay coefficients
- * join here in Slices 4–5.
+ * agent (resilience.md §3). Wires the **social-reaction `traitScale`** (the seam Slice 1
+ * stubbed at 1, Slice 3), the **meter baseline/recovery** coefficients (Slice 4), and the
+ * **affinity gain asymmetry + decay retention** coefficients (Slice 5).
  *
  * Constants are tunable placeholders (like the response-curve constants in
  * `reactions.ts`); they live here because `src/contracts` is IO-free and may not
@@ -92,4 +92,71 @@ export function personalizeMeters(defs: readonly MeterDefinition[], traits: read
         return def;
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Affinity dynamics — trait-scaled gain asymmetry + decay retention (spec §4/§5).
+// These ride the *simulant's* raw, event-grounded affinity deltas (the unrecognized
+// edges; recognized social acts are scaled by `socialTraitScale` in the curve instead)
+// and the time-driven decay. Empty traits ⇒ unit factors ⇒ exactly today's behavior.
+// ---------------------------------------------------------------------------
+
+/** At full warmth (+100) a positive affinity move lands ~30% harder; at full coldness, ~30% softer. */
+export const WARMTH_GAIN_AMP = 0.3;
+/** At full agreeableness (+100) a positive move lands ~20% harder; contrariness softens it. */
+export const AGREEABLENESS_GAIN_AMP = 0.2;
+/** At full guardedness (+100) a positive move is damped ~40%; openness (−100) amplifies it. */
+export const GUARDEDNESS_GAIN_DAMP = 0.4;
+/** At full composure (+100) a loss stings ~30% less; volatility (−100) sharpens it ~30%. */
+export const COMPOSURE_LOSS_DAMP = 0.3;
+/** Hard bounds on the gain scale so no trait combo runs away (the ±clamp is the final guard). */
+export const AFFINITY_GAIN_SCALE_MIN = 0.4;
+export const AFFINITY_GAIN_SCALE_MAX = 1.8;
+
+/**
+ * Scale a simulant affinity delta by how this particular character metabolises events
+ * (spec §4 gain/loss asymmetry). **Gains** (delta > 0): `warmth`/`agreeableness` amplify,
+ * `guardedness` damps — a guarded character warms slowly, a warm one quickly. **Losses**
+ * (delta < 0): `composure` damps the sting, volatility sharpens it. Returns the *scaled*
+ * delta (pre-clamp; the merge still clamps to ±AFFINITY_DELTA_CLAMP). No relevant traits ⇒
+ * the delta unchanged ⇒ exactly today's behavior.
+ */
+export function scaleAffinityGain(rawDelta: number, traits: readonly TraitValue[]): number {
+  if (rawDelta === 0 || traits.length === 0) return rawDelta;
+  const resolved = resolveTraits(traits, []);
+  const value = (id: string) => resolved.find((t) => t.id === id)?.value ?? 0;
+
+  let scale = 1;
+  if (rawDelta > 0) {
+    scale += WARMTH_GAIN_AMP * (value("temperament.warmth") / 100);
+    scale += AGREEABLENESS_GAIN_AMP * (value("social.agreeableness") / 100);
+    scale -= GUARDEDNESS_GAIN_DAMP * (value("social.guardedness") / 100);
+  } else {
+    scale -= COMPOSURE_LOSS_DAMP * (value("temperament.composure") / 100);
+  }
+  const clamped = Math.min(AFFINITY_GAIN_SCALE_MAX, Math.max(AFFINITY_GAIN_SCALE_MIN, scale));
+  return rawDelta * clamped;
+}
+
+/** A warm, even-keeled (loyal) character retains regard; +100 on both lifts the decay floor up to this fraction of the gap to the stage boundary. */
+export const WARMTH_DECAY_RETENTION = 0.4;
+export const COMPOSURE_DECAY_RETENTION = 0.4;
+/** Cap on retention so even the most constant character still drifts, just slowly. */
+export const AFFINITY_DECAY_RETENTION_MAX = 0.7;
+
+/**
+ * How strongly a character resists affinity decay (spec §4 "a loyal character decays
+ * slower / toward a higher floor than a fickle one"). `warmth` + `composure` raise it;
+ * `≥ 0` only (fickle/cold/volatile characters decay at the baseline rate to the stage
+ * boundary — they are never *faster* than baseline, which keeps decay stage-preserving).
+ * The merge reads this as the fraction of the gap between the value and its stage's
+ * zero-side boundary that the decay floor sits above the boundary, so a constant
+ * character's regard ebbs far more slowly. Empty/low traits ⇒ 0 ⇒ today's behavior.
+ */
+export function affinityDecayRetention(traits: readonly TraitValue[]): number {
+  if (traits.length === 0) return 0;
+  const warmth = effectiveTraitValue(traits, "temperament.warmth");
+  const composure = effectiveTraitValue(traits, "temperament.composure");
+  const raw = WARMTH_DECAY_RETENTION * (warmth / 100) + COMPOSURE_DECAY_RETENTION * (composure / 100);
+  return Math.min(AFFINITY_DECAY_RETENTION_MAX, Math.max(0, raw));
 }

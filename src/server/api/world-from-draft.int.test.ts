@@ -275,12 +275,12 @@ describe.skipIf(!ready)("createWorldFromDraft (demo mode)", () => {
 
     // Anna→player feeling at the friendly midpoint; perceived mirrors it
     // because her stub bio names a mutual-knowledge bond ("an old friend").
-    expect(edge(anna.id, player.id, "feeling")).toMatchObject({ value: 47, stage: "friendly" });
-    expect(edge(anna.id, player.id, "perceived")).toMatchObject({ value: 47, stage: "friendly" });
+    expect(edge(anna.id, player.id, "feeling")).toMatchObject({ value: 41, stage: "friendly" });
+    expect(edge(anna.id, player.id, "perceived")).toMatchObject({ value: 41, stage: "friendly" });
 
     // Bo→Anna wary, with the implied reverse edge at the same midpoint.
-    expect(edge(bo.id, anna.id, "feeling")).toMatchObject({ value: -32, stage: "wary" });
-    expect(edge(anna.id, bo.id, "feeling")).toMatchObject({ value: -32, stage: "wary" });
+    expect(edge(bo.id, anna.id, "feeling")).toMatchObject({ value: -48, stage: "wary" });
+    expect(edge(anna.id, bo.id, "feeling")).toMatchObject({ value: -48, stage: "wary" });
     expect(rows).toHaveLength(4);
   });
 
