@@ -36,7 +36,7 @@ exposure mask reaches the intimate tier**. Completes the `appearance` (image) /
 6. **Tests.** Gate on/off (no block below the tier), merge semantics
    (heritage-replaces, archetype+character append), `speciesIntimacyNote`,
    degradation (all-empty ⇒ ""). Reuse the exposure-mask test fixtures.
-7. **Docs.** `contracts.md` (the third note axis + gate), `prompts.md` (the new
+7. **Docs.** `contracts/body.md` (the third note axis + gate), `prompts.md` (the new
    block + its place in `exposureRules`), `authoring.md` (forge field + editor).
 
 ## Open questions

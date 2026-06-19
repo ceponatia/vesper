@@ -50,7 +50,7 @@ read/write asymmetry · 🟡 maintainability / drift · 🔵 future-facing.
 **A1 🔴 `mutability` is declared but never enforced — and never read at all.**
 *(Full write-up + ranked fixes: [attribute-mutability.md](attribute-mutability.md).)*
 `AttributeDefinition.mutability` (`inherent | mutable | temporary`) is documented
-in `contracts.md` as *"inherent: narrative can't change it."* Grep finds **zero**
+in `contracts/attributes.md` as *"inherent: narrative can't change it."* Grep finds **zero**
 consumers outside the schema definition and tests. The narrative attribute-change
 merge path (`engine/merge.ts:1561-1586`) validates participant, known id, and
 value schema — but not mutability — then writes a `source: "narrative"` overlay,
@@ -63,7 +63,7 @@ tests; merge.ts write path read in full.*
 ### B. Aspirational schema — built, advertised, never exercised
 
 **B1 🟡 Attribute `aliases` + `registry.resolveAlias()` have no caller.**
-`contracts.md` advertises `resolveAlias(text)` for *"NLP mention resolution
+`contracts/attributes.md` advertises `resolveAlias(text)` for *"NLP mention resolution
 ('ginger' → hair.color)"*, and most attribute groups dutifully carry `aliases`.
 The alias index is built (`registry.ts:64-69`) and the method exists
 (`registry.ts:77`) but is **never called** anywhere in `src/` outside its own
@@ -71,7 +71,7 @@ test. Every alias array is dead weight today. *Verified: `rg resolveAlias`.*
 
 **B2 🟠 `ConditionEffect.attributeEffects` is inert.**
 *(Full write-up + fix, jointly with B3: [condition-attribute-effects.md](condition-attribute-effects.md).)* `condition.ts:40` defines
-`attributeEffects: ConditionEffect[]`, and `contracts.md` §Conditions states they
+`attributeEffects: ConditionEffect[]`, and `contracts/conditions.md` §Conditions states they
 are *"overlaid while active with source: condition, sourceId: condition id."*
 That overlay step does not exist: the only place conditions are constructed in
 the engine (`merge.ts:672`) hardcodes `attributeEffects: []`, and nothing reads
@@ -102,7 +102,7 @@ fields have no consumer. The schema is ~5× larger than its live surface.
 
 **B5 🟡 Body-plan / entity-kind targeting checks can't fire.**
 `appliesToBodyPlans`, `excludesBodyPlans`, and `appliesToEntityKinds` are checked
-by `realize.ts:85-87`, and `contracts.md` notes they are *"(previously inert) now
+by `realize.ts:85-87`, and `contracts/body.md` notes they are *"(previously inert) now
 consumed here."* True in the narrow sense that the branches execute — but **no
 attribute definition sets any of them**, and there is only one body plan, so the
 body-plan branches are unreachable and the entity-kind branch always passes
@@ -225,7 +225,7 @@ exceptions, degraded defaults).
 1. **`mutability` (A1)** — *enforce*: in `merge.ts`'s narrative attribute-change
    loop, skip (or downgrade to a diagnostic) any change whose
    `attributeRegistry.byId(id).mutability === "inherent"` — a few lines, and it
-   makes the doc honest. *Or delete* the field + the `contracts.md` claim. Pick
+   makes the doc honest. *Or delete* the field + the `contracts/attributes.md` claim. Pick
    enforce: "the narrator can't retcon eye color" is a real correctness property
    for a continuity-sensitive engine. **Detailed proposal with code sketches,
    test plan, and the transformation seam:

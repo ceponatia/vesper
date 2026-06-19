@@ -21,7 +21,7 @@ The design half of the notes is ~85% shipped. Reconciliation (verified 2026-06-1
 
 | User-note item | Status now | Where |
 | --- | --- | --- |
-| #1 Full anatomical body; nonhumanoid-aware | **partial / by design** — humanoid body plan only; nonhumanoid plans are acknowledged future data adds | `body/plans.ts`, `contracts.md` §Body model |
+| #1 Full anatomical body; nonhumanoid-aware | **partial / by design** — humanoid body plan only; nonhumanoid plans are acknowledged future data adds | `body/plans.ts`, `contracts/body.md` §Body model |
 | #2 Body groups targeting section *or* explicit attributes | **done** | `body/locations/` tree + `species/targets.ts` |
 | #3 Species templates choose groups + which attributes | **done** | `species/realize.ts` (`allowed`/`disallowedBodyLocationIds`, `attributeRules`, `defaultFeatureGroups`) |
 | #4 Reduce free-text fields | **live gap** — 7 `text` attributes remain | see §6 |
@@ -42,7 +42,7 @@ content of this spec.
 
 ## 2. Current state of the mutability invariant (verified 2026-06-19)
 
-`docs/contracts.md` still documents the rule as a promise:
+`docs/contracts/attributes.md` still documents the rule as a promise:
 
 ```ts
 mutability: "inherent" | "mutable" | "temporary";   // inherent: narrative can't change it
@@ -211,7 +211,7 @@ disheveled) to the **arousal meter + conditions** and chose no new mutability ti
 Keeping a never-used branch invites exactly the "documented but inert" drift this spec
 is about. Removal is safe: `mutability` is a static registry property, never persisted,
 so there is no migration — drop `"temporary"` from `attributeMutabilities`
-(`attributes/types.ts:12`) and update the `contracts.md` parenthetical. Exhaustive
+(`attributes/types.ts:12`) and update the `contracts/attributes.md` parenthetical. Exhaustive
 `switch`es over the enum (lint-enforced) will flag any branch that must go.
 
 ---
@@ -249,7 +249,7 @@ narrator/agents instead of a player's raw prose. The note also explicitly wants 
 | Attribute | Mutability | Disposition | Rationale |
 | --- | --- | --- | --- |
 | `hair.style` | mutable | **keep text** | The note's own example of useful free text; styles are open-ended. |
-| `identity.heritage` | inherent | **keep text** | `contracts.md` is explicit: real-world ethnicities + fantasy ancestries can't share a closed list; flagged `identityAnchor`. |
+| `identity.heritage` | inherent | **keep text** | `contracts/attributes.md` is explicit: real-world ethnicities + fantasy ancestries can't share a closed list; flagged `identityAnchor`. |
 | `voice.accent` | mutable | **keep text** | Genuinely open-ended ("soft coastal lilt"); prompt-hint already steers rendering. Converting loses fidelity for little gain. |
 | `presentation.scent_baseline` | mutable | **keep text** | Open-ended signature scent ("lavender soap and cedar"); hygiene thresholds + exposure gating already do the programmatic work. |
 | `horns.color` | inherent | **→ `enum_list`** | Convert, drawing from the shared `MATERIAL_COLORS` palette (below). |

@@ -12,7 +12,7 @@ If the archivist failed, a synthetic episode (first ~300 chars of narration) kee
 
 ## Semantic facts
 
-Declarative long-term knowledge (`facts` table, taxonomy in [contracts.md](contracts.md)). Lifecycle:
+Declarative long-term knowledge (`facts` table, taxonomy in [contracts/facts.md](contracts/facts.md)). Lifecycle:
 
 1. **Extraction**: archivist emits `FactDraft[]` with confidence; drafts under 0.4 are dropped.
 2. **Grounding**: subjects resolve to participant/location/item rows by name where possible (`subject_id`); unresolved subjects keep `subject_name` only.

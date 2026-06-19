@@ -27,7 +27,7 @@ import { morphologyGroups } from "./morphology";
 /**
  * Central group list — the single registration point for attribute vocabulary.
  * Add a group file in this folder and list it here; the registry derives
- * everything else (docs/contracts.md §Attribute system).
+ * everything else (docs/contracts/attributes.md §Groups and the central registry).
  */
 export const attributeGroups: readonly AttributeGroup[] = [
   identityGroup,

@@ -4,7 +4,7 @@ Status: **active** — _raised 2026-06-16_ in response to external feedback on
 scene image generation; **PM-reviewed 2026-06-16** (decisions folded in below).
 This is the **design / decision record** (the "truth"); the task list and build
 order live in [scene-images.plan.md](scene-images.plan.md). Graduated out of the
-[deferred.plan.md](deferred.plan.md) parking lot 2026-06-16.
+[deferred.plan.md](../deferred.plan.md) parking lot 2026-06-16.
 
 > **Pivot (2026-06-19) — drop Flux, Qwen everywhere. SHIPPED 2026-06-19.** Flux
 > was removed from the app (it input-moderates nudity and is expensive), making
@@ -32,7 +32,7 @@ Decisions from the PM pass:
   production). The fix is fully designed below so it's ready to drop in.
 
 This is my review of the feedback, grounded in the current pipeline
-([../images.md](../images.md), `src/server/images/`, `src/server/ai/`).
+([../images.md](../../images.md), `src/server/images/`, `src/server/ai/`).
 
 ## 1. What we actually have today (the baseline the feedback describes)
 
@@ -52,7 +52,7 @@ This is my review of the feedback, grounded in the current pipeline
   future multi-reference image model." So the codebase _already anticipates_ this
   work; the feedback is pushing on a door we left open.
 - **The intimate route is the product, not an edge case.** Per
-  [../README.md](../README.md), Vesper forks reverie specifically to make
+  [../README.md](../../README.md), Vesper forks reverie specifically to make
   "uncensored imagery" first-class. That reframes the whole provider question (see
   §5).
 
@@ -124,7 +124,7 @@ When this is built, do it as a **default-deny**, not a denylist:
   (`source === "upload"` → no intimate) works _today_ but is fragile: any future
   ingest path (a "composite", an imported entity image, a real photo used as a
   location ref) that forgets the tag silently re-opens the hole.
-- The resilient choice — matching our own rules ([../resilience.md](../resilience.md):
+- The resilient choice — matching our own rules ([../resilience.md](../../resilience.md):
   degraded **defaults**; default-deny at trust boundaries) and the
   forward-compatible-schema preference — is to **stamp positive provenance on
   generation** (`source: "generated"` in `avatar.ts` and `variants.ts`) and gate
@@ -150,13 +150,13 @@ anatomy text. When the gate comes due, the chosen rule is:
 **Centralize it.** When built, add `isSyntheticAvatar(row): boolean` next to the
 asset helpers, used by both the scene render and the provider router, with a unit
 test that an uploaded row is never synthetic and a generated row is. This is
-exactly the "shared predicate" lesson [../images.md](../images.md) already records
+exactly the "shared predicate" lesson [../images.md](../../images.md) already records
 for `intimateAttrRendersExposed` — don't let the rule diverge across call sites.
 
 ## 4. Provider-capability abstraction, multi-reference plumbing & the join table (build now)
 
 Strongly agree, and it fits our conventions: registries/capability tables are the
-extension point ([../../CLAUDE.md](../../CLAUDE.md)), and provider SDK calls must
+extension point ([../../CLAUDE.md](../../../CLAUDE.md)), and provider SDK calls must
 live in `src/server/ai` (the `@openrouter`-only boundary rule — Venice already
 obeys it in `ai/venice.ts`). Concretely:
 
@@ -183,7 +183,7 @@ exists). The PM ruling overrides that: we want to **track as many metrics as
 possible across the app**, and "which scenes used this portrait / character /
 location" is a query worth having available from day one. So:
 
-- Add an `image_references` table (DB workflow per [../../CLAUDE.md](../../CLAUDE.md):
+- Add an `image_references` table (DB workflow per [../../CLAUDE.md](../../../CLAUDE.md):
   edit `schema.ts` → `pnpm db:generate` → review the SQL in `drizzle/` →
   `pnpm db:migrate`; never `drizzle-kit push`). Columns at least:
   `scene_image_id`, `kind` (`character` | `location` | `style` | `pose` |
@@ -192,7 +192,7 @@ location" is a query worth having available from day one. So:
   `entity`), `image_id` (the actual reference asset used). Written at render in
   `renderSceneImage` alongside the asset insert.
 - Make the table the **queryable source of truth** for "what a scene featured."
-  The Gallery filter ([../images.md](../images.md) §Gallery), today a client-side
+  The Gallery filter ([../images.md](../../images.md) §Gallery), today a client-side
   pass over `meta.references`, can move to a server-side query against the table —
   cleaner and it scales.
 - Keep `source_image_id` on `images` for edit lineage (unchanged). The JSONB
@@ -405,7 +405,7 @@ space moves fast):**
   Network Volume** (async `/run` → poll, scale-to-zero, cost leader ~$1.9–2.5/hr
   A100-class, ~30 s cold start) maps directly onto the queue/poll shape image
   jobs already use — and is exactly the GPU background worker that
-  [monorepo-evaluation.md](monorepo-evaluation.md) parks the split behind. **Modal**
+  [monorepo-evaluation.md](../monorepo-evaluation.md) parks the split behind. **Modal**
   if cold-start latency hurts UX (~2–5 s, pricier); Replicate/fal easiest but
   costliest; **confirm each provider's adult-content ToS first.**
 - **End-to-end:** ComfyUI on RunPod Serverless → Chroma (or Qwen-Edit-2511) →
@@ -427,7 +427,7 @@ Two codebase-specific hooks:
   `maxReferenceImages: N, supportsAdultFictionalNudity: true,
   supportsReferenceRoles: true`," not a rewrite of `scene.ts`.
 - **It is plausibly the trigger for the deferred monorepo split.** The
-  [monorepo-evaluation.md](monorepo-evaluation.md) note parks the split behind
+  [monorepo-evaluation.md](../monorepo-evaluation.md) note parks the split behind
   "the first second deployable… most likely a background worker." A GPU
   ComfyUI/diffusion worker is exactly that second deployable — and the cloud-GPU
   target above makes it a separate service. Make the two decisions together.
@@ -436,7 +436,7 @@ Two codebase-specific hooks:
 
 1. **First-person player POV is a hard rule.** Every scene is from the player's
    eyes; the player never appears and the player's appearance/wardrobe is never
-   fed to the composer or render ([../images.md](../images.md), `SCENE_POV_RULE`).
+   fed to the composer or render ([../images.md](../../images.md), `SCENE_POV_RULE`).
    A multi-reference provider makes this _easier to break_ — you're now handing it
    2+ character refs + a location, and must guarantee the player's avatar is never
    among them. (It isn't today: refs come from present NPCs + location only,
@@ -464,7 +464,7 @@ Two codebase-specific hooks:
      that. A future opt-in "update this session to the latest portrait" feature is
      possible, but it must be explicit and per-session — never an implicit live
      pull.
-3. **Degrade, never fail.** Per [../resilience.md](../resilience.md), scene images
+3. **Degrade, never fail.** Per [../resilience.md](../../resilience.md), scene images
    are nice-to-have, not required — they must never disrupt the chat when they
    fail. The router must be a **fallback ladder** with a diagnostic per downgrade,
    mirroring the existing `images.scene_render.reference_fallback` info diag. Under
@@ -527,6 +527,6 @@ section is a pointer so the two don't diverge). As of the 2026-06-19 pivot:
 - The §3 guard stays tracked here as a pre-production gate (deferred while in
   dev). When the app nears accepting real user uploads, lift it into the plan's
   active work / a fix PR and check the §9 safety row.
-- When §4 ships (it's "build now"), update [../images.md](../images.md) +
-  [../database.md](../database.md) for the join table in the same change, per the
+- When §4 ships (it's "build now"), update [../images.md](../../images.md) +
+  [../database.md](../../database.md) for the join table in the same change, per the
   doc-update convention.

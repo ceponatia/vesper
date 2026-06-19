@@ -589,7 +589,7 @@ Open question D).
 
 `turn-engine.md` (pre-turn: intake agent in the fan-out, its degraded default,
 the consumer list), `prompts.md` (intake system prompt + state slice; the digest
-now consumes intake's `allowed`), `contracts.md` (`IntentBrief` schema, the
+now consumes intake's `allowed`), `contracts/turns.md` (`IntentBrief` schema, the
 `tool`-model role), `resilience.md` (intake's timeout→regex fallback as a worked
 example of a new trust boundary), and cross-links from
 [movement-authority-spec](movement-authority.spec.md) §1/§3 and

@@ -18,7 +18,7 @@ corrections via `droppedEvents`).
 
 ## The invariant, as documented vs. as implemented
 
-`docs/contracts.md` (Attribute system) states the rule plainly:
+`docs/contracts/attributes.md` (Attribute system) states the rule plainly:
 
 ```ts
 mutability: "inherent" | "mutable" | "temporary"; // inherent: narrative can't change it
@@ -130,7 +130,7 @@ documented protection does nothing to stop it.
    distinct from "the narrator drifted." Mutability + source together are the
    vocabulary for that distinction; neither is wired.
 4. **The doc actively misleads.** A future contributor reading
-   `contracts.md` will assume inherent traits are protected and build on a
+   `contracts/attributes.md` will assume inherent traits are protected and build on a
    guarantee that isn't there.
 
 ## Why `resolveAttributes` can't quietly fix it
@@ -249,7 +249,7 @@ that would have populated it is settled in favor of meters/conditions. Either:
 
 - **Drop it** from the `attributeMutabilities` enum (safe — it is a static
   registry property, never persisted, so no migration), or
-- **Keep it reserved** with a one-line `contracts.md` note that it is intended
+- **Keep it reserved** with a one-line `contracts/attributes.md` note that it is intended
   for future overlay-only transient attributes and is currently unused.
 
 Leaning drop, since keeping a never-used branch invites the same "documented but
@@ -275,7 +275,7 @@ in A is shaped to make it a later data/flag change, not a redesign.
    correction (B).
 3. Add the simulant prompt guidance (C, prompt half only).
 4. Decide `temporary` (E).
-5. Update `docs/contracts.md` so the parenthetical points at the now-real
+5. Update `docs/contracts/attributes.md` so the parenthetical points at the now-real
    enforcement, and note `magic`/`manual` as the deliberate-change escape hatch.
 
 Steps 1–2 are the load-bearing change and are small. 3–5 are same-PR polish.

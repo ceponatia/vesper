@@ -35,7 +35,7 @@ Steps 1–5 happen inside the request (the SSE response), but **client disconnec
 
 ### Intake agent (3d) — the only pre-narration LLM
 
-`runIntake` (`engine/intake.ts`) is a 5th leg of the pre-turn `Promise.all` in `assemblePreTurn`, **run concurrently with `preTurnRetrieve`** — so it is the **first (and only) LLM in the critical path to first token**, but adds latency to first token only when it is the long pole (`max(0, intake − retrieval)`; both legs are already network-bound, so retrieval often hides it). It reads the player's input *before* narration and emits a typed **`IntentBrief`** (contracts.md §Intent brief) — what the player is trying to do, to whom, with which entities — replacing the brittle regex intent as the primary signal.
+`runIntake` (`engine/intake.ts`) is a 5th leg of the pre-turn `Promise.all` in `assemblePreTurn`, **run concurrently with `preTurnRetrieve`** — so it is the **first (and only) LLM in the critical path to first token**, but adds latency to first token only when it is the long pole (`max(0, intake − retrieval)`; both legs are already network-bound, so retrieval often hides it). It reads the player's input *before* narration and emits a typed **`IntentBrief`** (contracts/turns.md §Intent brief) — what the player is trying to do, to whom, with which entities — replacing the brittle regex intent as the primary signal.
 
 - **Model & resilience**: `generateChecked` on the **in-session agent model** (`agentModelId(world.agentModel)` — the per-world override set from the World tab, default `deepseek/deepseek-v4-flash`; shared with the post-turn agents), temperature 0, small schema, `maxOutputTokens` ~512, **reasoning disabled** (`reasoning: false`). Intake is a fast classifier, not a reasoner; left on, a reasoning model spends the latency/output budget thinking — the cause of a 91% timeout-fallback rate on the former gemini-3.5-flash default ([pre-narrator-agents.followups.md](developer-notes/pre-narrator-agents.followups.md)). The full ladder applies (typed output → degraded default; intake **skips the repair round-trip** — see below).
 - **Timeout → regex fallback**: wrapped in a hard timeout (`INTAKE_TIMEOUT_MS = 1500`) backed by an `AbortSignal`. On timeout, failure, demo mode, or when disabled (`INTAKE_DISABLED` env), it **degrades to today's regex `detectIntent`** via `intentBriefFromSceneIntent(...)`. The fallback is the *previously-live* code path, so "intake off" is byte-for-byte today's behavior — a clean new-trust-boundary example (resilience.md §3). On timeout the in-flight call is **aborted** (not orphaned): it stops mid-request and emits no further diagnostics, so a timed-out turn carries exactly one `agent.intake.timeout` (and intake's degrade logs at `warn`, not `error` — it is best-effort by contract). Intake also runs a **single attempt** (no repair round-trip): the repair is a second sequential call whose result the timeout would discard anyway.
@@ -88,7 +88,7 @@ All four: AI SDK `generateChecked` (validate → 1 repair → degraded default, 
 ```ts
 {
   episodeSummary: string,                        // 2–4 sentences, past tense
-  facts: FactDraft[],                            // taxonomy in contracts.md
+  facts: FactDraft[],                            // taxonomy in contracts/facts.md
   supersedeHints: [{ factIndex, oldFactText }],  // resolver still gates by similarity
 }
 ```

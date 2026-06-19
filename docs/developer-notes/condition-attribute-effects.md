@@ -37,7 +37,7 @@ but they make no mechanical change to the character's attributes.
 attributeEffects: z.array(conditionEffectSchema).default([]),
 ```
 
-`docs/contracts.md` §Conditions repeats it. But the only place conditions are
+`docs/contracts/conditions.md` §Conditions repeats it. But the only place conditions are
 constructed in the engine hardcodes the field empty (`merge.ts:665-674`):
 
 ```ts
