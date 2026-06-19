@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { resolveAttributes } from "@/contracts/attributes/value";
 import { exposedRegions, resolveWardrobeVisibility } from "@/contracts/items/visibility";
-import { speciesAppearancePhrase } from "@/contracts/species";
+import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
@@ -87,7 +87,7 @@ export async function buildCharacterSceneContext(input: {
   const resolved = resolveAttributes(input.profile.attributes, []);
   const present: ScenePresentCharacter = {
     name: input.name,
-    species: speciesAppearancePhrase(input.profile.speciesId, input.profile.heritageId),
+    species: speciesLabelPhrase(input.profile.speciesId, input.profile.heritageId),
     wornVisible,
     exposure,
     // The default outfit is authoritative for this shot — exposedRegions([])

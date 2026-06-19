@@ -60,7 +60,7 @@ import { createSegmenter, parseSegments } from "./segmenter";
 import { exposedRegions, resolveWardrobeVisibility } from "@/contracts/items/visibility";
 import { resolveAttributes } from "@/contracts/attributes/value";
 import { NEUTRAL_MOOD_METER } from "@/contracts/meters/registry";
-import { speciesAppearancePhrase } from "@/contracts/species";
+import { speciesLabelPhrase } from "@/contracts/species";
 
 /**
  * The turn pipeline (docs/turn-engine.md §Lifecycle). Streaming is decoupled
@@ -998,7 +998,7 @@ export function buildSceneComposerContext(
       const exposure = exposedRegions(wornInputs);
       return {
         name: p.displayName,
-        species: speciesAppearancePhrase(p.snapshot.speciesId, p.snapshot.heritageId),
+        species: speciesLabelPhrase(p.snapshot.speciesId, p.snapshot.heritageId),
         activity: p.state.activity,
         posture: p.state.posture,
         wornVisible: views
