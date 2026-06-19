@@ -207,7 +207,7 @@ function BodyFeaturesSection({
                   aria-pressed={active}
                   onClick={() => toggle(group)}
                   className={cx(
-                    "cursor-pointer rounded-full border px-2.5 py-0.5 text-[11px] capitalize transition-colors",
+                    "touch-target inline-flex cursor-pointer items-center justify-center rounded-full border px-2.5 py-0.5 text-[11px] capitalize transition-colors",
                     active
                       ? "border-accent-500/60 bg-accent-500/10 text-accent-300"
                       : "border-ink-500 text-paper-400 hover:text-paper-200",
@@ -275,7 +275,7 @@ function BodyConfigSection({
                   aria-pressed={active}
                   onClick={() => toggle(group)}
                   className={cx(
-                    "cursor-pointer rounded-full border px-2.5 py-0.5 text-[11px] capitalize transition-colors",
+                    "touch-target inline-flex cursor-pointer items-center justify-center rounded-full border px-2.5 py-0.5 text-[11px] capitalize transition-colors",
                     active
                       ? "border-accent-500/60 bg-accent-500/10 text-accent-300"
                       : "border-ink-500 text-paper-400 hover:text-paper-200",
@@ -582,7 +582,7 @@ function AttributeControl({
                   if (next.length > 0) onSet(next); // enum_list values must stay non-empty
                 }}
                 className={cx(
-                  "cursor-pointer rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                  "touch-target inline-flex cursor-pointer items-center justify-center rounded-full border px-2 py-0.5 text-[11px] transition-colors",
                   active
                     ? "border-accent-500/60 bg-accent-500/10 text-accent-300"
                     : "border-ink-500 text-paper-400 hover:text-paper-200",
@@ -622,7 +622,7 @@ function AttributeControl({
       );
     case "flag":
       return (
-        <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-paper-300">
+        <label className="touch-target flex w-fit cursor-pointer items-center gap-2 text-xs text-paper-300">
           <input
             type="checkbox"
             checked={value.value === true}

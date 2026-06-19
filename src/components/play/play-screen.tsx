@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSession } from "@/lib/client/use-session";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
+import { Sheet } from "@/components/ui/sheet";
 import { Composer } from "./composer";
 import { Feed } from "./feed";
 import { SidePanel } from "./side-panel";
@@ -34,7 +35,7 @@ export function PlayScreen({ sessionId }: { sessionId: string }) {
         <SidePanel session={session} isAdmin={isAdmin} />
       </aside>
 
-      {/* Drawer trigger + overlay under lg */}
+      {/* Drawer trigger under lg; the panel itself is a right-edge Sheet. */}
       <button
         type="button"
         onClick={() => setDrawerOpen(true)}
@@ -43,30 +44,15 @@ export function PlayScreen({ sessionId }: { sessionId: string }) {
       >
         World
       </button>
-      {drawerOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex justify-end bg-ink-950/60 backdrop-blur-[2px] lg:hidden"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setDrawerOpen(false);
-          }}
-        >
-          <div className="flex h-full w-[88vw] max-w-96 flex-col border-l border-ink-600 bg-ink-900">
-            <div className="flex justify-end border-b border-ink-600 px-2 py-1">
-              <button
-                type="button"
-                onClick={() => setDrawerOpen(false)}
-                aria-label="Close session panel"
-                className="cursor-pointer rounded-md px-2 py-1 text-paper-500 hover:text-paper-100"
-              >
-                ×
-              </button>
-            </div>
-            <div className="min-h-0 flex-1">
-              <SidePanel session={session} isAdmin={isAdmin} />
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <Sheet
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        side="right"
+        title="Session state"
+        className="lg:hidden"
+      >
+        <SidePanel session={session} isAdmin={isAdmin} />
+      </Sheet>
     </div>
   );
 }

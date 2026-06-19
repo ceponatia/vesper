@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { cx } from "./cx";
 
 export interface TabDef<Id extends string = string> {
@@ -17,8 +17,25 @@ export interface TabsProps<Id extends string> {
   className?: string;
 }
 
-/** Accessible tab strip; panel rendering is owned by the caller. */
+/**
+ * Accessible tab strip; panel rendering is owned by the caller. Scrolls
+ * horizontally when the tabs outgrow the width (dense editors have 5–7 tabs that
+ * overflow a phone) and keeps the active tab scrolled into view as it changes.
+ */
 export function Tabs<Id extends string>({ tabs, value, onChange, className }: TabsProps<Id>) {
+  const activeRef = useRef<HTMLButtonElement>(null);
+  const mounted = useRef(false);
+
+  // Keep the active tab visible when the selection moves (e.g. arrow keys reach
+  // an off-screen tab). Skip the initial mount so it never yanks page scroll.
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    activeRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [value]);
+
   const move = (from: Id, delta: number) => {
     const index = tabs.findIndex((t) => t.id === from);
     if (index < 0) return;
@@ -26,12 +43,19 @@ export function Tabs<Id extends string>({ tabs, value, onChange, className }: Ta
     if (next) onChange(next.id);
   };
   return (
-    <div role="tablist" className={cx("flex items-end gap-1 border-b border-ink-600", className)}>
+    <div
+      role="tablist"
+      className={cx(
+        "flex items-end gap-1 overflow-x-auto border-b border-ink-600 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        className,
+      )}
+    >
       {tabs.map((tab) => {
         const active = tab.id === value;
         return (
           <button
             key={tab.id}
+            ref={active ? activeRef : undefined}
             role="tab"
             type="button"
             aria-selected={active}
@@ -42,7 +66,7 @@ export function Tabs<Id extends string>({ tabs, value, onChange, className }: Ta
               else if (e.key === "ArrowLeft") move(tab.id, -1);
             }}
             className={cx(
-              "-mb-px inline-flex cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
+              "-mb-px inline-flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors",
               active
                 ? "border-accent-500 text-paper-50"
                 : "border-transparent text-paper-400 hover:text-paper-200",

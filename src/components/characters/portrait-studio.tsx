@@ -318,15 +318,21 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
                         {img.prompt || img.kind}
                       </span>
                     )}
-                    <span className="ml-auto flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                    <span className="hover-reveal ml-auto flex gap-1">
                       {img.status === "ready" ? (
-                        <Button size="sm" busy={busyImageId === img.id} onClick={() => promote(img.id)}>
+                        <Button
+                          size="sm"
+                          className="touch-target"
+                          busy={busyImageId === img.id}
+                          onClick={() => promote(img.id)}
+                        >
                           Promote
                         </Button>
                       ) : null}
                       <Button
                         size="sm"
                         variant="danger"
+                        className="touch-target"
                         busy={busyImageId === img.id}
                         onClick={() => removeVariant(img.id)}
                       >
