@@ -13,11 +13,7 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-1. **Scene images — multi-reference & providers** —
-   [scene-images.plan.md](scene-images.plan.md) · spec
-   [scene-images.spec.md](scene-images.spec.md). Provider-capability layer +
-   `image_references` join table; SFW + intimate multi-ref lanes; ComfyUI research.
-2. **Character chat — sessionless 1-on-1** —
+1. **Character chat — sessionless 1-on-1** —
    [character-chat.plan.md](finished/character-chat.plan.md). Talk to a saved library
    character directly (no world/session/RAG) to tune how it voices its attributes.
    Route → client → Chat tab + manual scene button + Gallery surfacing wired;
@@ -74,6 +70,14 @@ god-mode POV, companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — `phase-N` docs left as-is)
 
+- **Scene images — multi-reference & providers** —
+  [scene-images.plan.md](finished/scene-images.plan.md) · spec
+  [scene-images.spec.md](finished/scene-images.spec.md), shipped 2026-06-19.
+  Provider-capability layer + `image_references` join table, then the Flux removal
+  (Venice/Qwen everywhere) + Venice `/image/multi-edit` behind a per-session
+  single↔multi reference toggle + the lustify/chroma t2i model set. Two long-term
+  items (uploaded-avatar guard, self-hosted ComfyUI) parked to
+  [deferred.plan.md](deferred.plan.md).
 - **Attribute mutability & change-path integrity** —
   [attribute-mutability.plan.md](attribute-mutability.plan.md) · spec
   [attribute-mutability.spec.md](attribute-mutability.spec.md), shipped 2026-06-19.
@@ -83,7 +87,7 @@ god-mode POV, companion-role-as-romance-eligibility (park, don't build).
   value-vocabulary module (`shared-values.ts`) with morphology colors converted to
   `enum_list`, and editor enum hard-restriction by species rule. Re-analysis of the
   2026-06-15 notes; the design half they raised had mostly shipped with non-human species.
-  One follow-up: a rendered editor test (no component-test harness yet).
+  Editor logic extracted to pure helpers + unit-tested; no outstanding follow-ups.
 - **Non-human species & body features** —
   [non-human-species.plan.md](finished/non-human-species.plan.md) · spec
   [non-human-species.spec.md](finished/non-human-species.spec.md), shipped 2026-06-18.

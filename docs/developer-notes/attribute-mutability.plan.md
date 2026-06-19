@@ -11,11 +11,13 @@ Status: **shipped — 2026-06-19**. All three slices landed; `pnpm verify` green
   `text → enum_list`; faerie sprite `wings.color` rule migrated to a palette value.
 - **Slice 3 (editor hard-restrict)** — picker enum/enum_list controls now narrow to
   `allowedValuesFor` and flag out-of-rule stored values; `required` defaults seed on
-  species/heritage change (`seedRequiredAttributes`, not a render effect). Verified by
-  typecheck + the underlying `allowedValuesFor`/`isAttributeRequired` species tests; a
-  **rendered editor test is the one coverage gap** (no component-test harness yet) — left
-  as a follow-up. Deferred items D5 (resolver hardening + overlay scrub) and D6
-  (transformation seam) remain forward-looking.
+  species/heritage change (`seedRequiredAttributes`, not a render effect). The logic was
+  **extracted into pure helpers** (`attribute-helpers.ts`: `allowedOptionsFor`,
+  `isOutOfRuleValue`, `seedValueFor`, `seedRequiredAttributes`) and **unit-tested**
+  (`attribute-helpers.test.ts`, against the real registry/species — faerie wings,
+  elf ears, human) so the original "no rendered editor test" gap is closed for the logic;
+  only the thin JSX wiring is left to typecheck. Deferred items D5 (resolver hardening +
+  overlay scrub) and D6 (transformation seam) remain forward-looking.
 
 Spec: [attribute-mutability.spec.md](attribute-mutability.spec.md). Re-analysis
 (2026-06-19) of [attribute-mutability.md](attribute-mutability.md) +

@@ -1,4 +1,10 @@
-import type { AttributeDefinition, AttributeValue } from "@/contracts";
+import {
+  attributeRegistry,
+  realizeBody,
+  type AttributeDefinition,
+  type AttributeValue,
+  type RealizedBody,
+} from "@/contracts";
 
 /** Pure helpers behind the registry-driven attribute picker. */
 
@@ -85,4 +91,62 @@ export function asList(value: AttributeValue["value"]): string[] {
   if (Array.isArray(value)) return value;
   if (typeof value === "string" && value.length > 0) return [value];
   return [];
+}
+
+// --- Species-rule narrowing (the editor hard-restricts to these) -------------
+
+/**
+ * Options an enum/enum_list control may offer for THIS character: the
+ * species/heritage-narrowed set when a rule applies (`allowedValuesFor`), else the
+ * definition's full set. The editor renders only these.
+ */
+export function allowedOptionsFor(def: AttributeDefinition, body: RealizedBody): readonly string[] {
+  return body.allowedValuesFor(def) ?? def.allowedValues ?? [];
+}
+
+/**
+ * True when a non-empty stored value falls outside the narrowed option set (e.g. left
+ * over after a species change). The editor surfaces it as a flagged option rather than
+ * silently rewriting it.
+ */
+export function isOutOfRuleValue(allowed: readonly string[], value: string): boolean {
+  return value !== "" && !allowed.includes(value);
+}
+
+/**
+ * Seed value when adding an attribute in the editor: the species rule `defaultValue`
+ * when one exists (e.g. a required trait), else the generic per-type default.
+ */
+export function seedValueFor(def: AttributeDefinition, body: RealizedBody): AttributeValue["value"] {
+  const ruleDefault = body.defaultValueFor(def);
+  if (ruleDefault !== undefined) return ruleDefault as AttributeValue["value"];
+  return defaultValueFor(def);
+}
+
+/** The realized-body inputs needed to seed species/heritage defaults. */
+export interface BodyConfig {
+  speciesId: string;
+  heritageId?: string;
+  bodyPlanId: string;
+  intimateRegions: string[];
+  bodyFeatures?: string[];
+}
+
+/**
+ * Seed species/heritage `required`-rule defaults (e.g. elf `ears.shape` → "pointed",
+ * faerie `wings.shape` → "butterfly") into the attribute list for a newly-realized body
+ * — mirrors the forge's creation-time seeding so a species trait holds without the
+ * author hunting for it. Never clobbers a value already set; only fills required gaps.
+ */
+export function seedRequiredAttributes(attributes: readonly AttributeValue[], config: BodyConfig): AttributeValue[] {
+  const body = realizeBody(config);
+  const present = new Set(attributes.map((a) => a.id));
+  const seeded: AttributeValue[] = [];
+  for (const def of attributeRegistry.definitions) {
+    if (present.has(def.id) || !body.isAttributeApplicable(def) || !body.isAttributeRequired(def)) continue;
+    const value = body.defaultValueFor(def);
+    if (value === undefined) continue;
+    seeded.push({ id: def.id, value: value as AttributeValue["value"], source: "creation" });
+  }
+  return seeded.length > 0 ? [...attributes, ...seeded] : [...attributes];
 }
