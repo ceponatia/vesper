@@ -1,4 +1,5 @@
 import { createOpenRouter, type OpenRouterProvider } from "@openrouter/ai-sdk-provider";
+import type { JSONValue, ProviderMetadata } from "ai";
 import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
 import { DEFAULT_NARRATIVE_MODEL_ID } from "@/lib/narrative-models";
 
@@ -18,6 +19,49 @@ export const MODEL_DEFAULTS = {
 
 export function isDemoMode(): boolean {
   return !process.env.OPENROUTER_API_KEY || process.env.AI_FAKE === "1";
+}
+
+/**
+ * The upstream provider OpenRouter actually routed a generation to (e.g.
+ * "DeepInfra", "Together"), read from the response's `providerMetadata`.
+ * Returns null when the metadata is absent. Used for the Inspector's per-leg
+ * provider attribution — correlate it with latency to spot slow providers.
+ */
+export function routedProvider(meta: ProviderMetadata | undefined): string | null {
+  const provider = meta?.openrouter?.provider;
+  return typeof provider === "string" ? provider : null;
+}
+
+/**
+ * Per-model OpenRouter provider exclusions, keyed by model id. A base provider
+ * slug (lowercase, e.g. "deepinfra") matches every endpoint/variant for that
+ * provider.
+ *
+ * GLM 5.2: DeepInfra advertises a low latency but in practice streams it
+ * incredibly slowly (~82s for three paragraphs of narration), so the
+ * latency-sorted routing below keeps landing on it. Drop it from the candidate
+ * set for that model — `allow_fallbacks` stays on, so this only narrows the
+ * pool, never a reliability loss.
+ */
+const PROVIDER_IGNORE: Readonly<Record<string, readonly string[]>> = {
+  "z-ai/glm-5.2": ["deepinfra"],
+};
+
+/** OpenRouter `provider` routing block (the subset of knobs we set), shaped as a JSON object for `providerOptions`. */
+export type OpenRouterRouting = Record<string, JSONValue>;
+
+/**
+ * Build the OpenRouter `provider` routing block for a model: latency-sorted when
+ * `sortLatency` is set, plus any per-model exclusions from PROVIDER_IGNORE.
+ * Returns undefined when neither knob applies, so callers can omit `provider`
+ * entirely rather than send an empty object.
+ */
+export function providerRouting(modelId: string, opts: { sortLatency?: boolean } = {}): OpenRouterRouting | undefined {
+  const routing: OpenRouterRouting = {};
+  if (opts.sortLatency) routing.sort = "latency";
+  const ignore = PROVIDER_IGNORE[modelId];
+  if (ignore && ignore.length > 0) routing.ignore = [...ignore];
+  return Object.keys(routing).length > 0 ? routing : undefined;
 }
 
 let cachedProvider: OpenRouterProvider | undefined;
@@ -48,7 +92,7 @@ export function toolModelId(): string {
 /**
  * Resolver for the **in-session, non-narrator text agents** (intake + the four
  * post-turn agents): the world's per-session override (set from the World tab),
- * else `AGENT_MODEL`, else the curated default (gemini-3.5-flash). The authoring
+ * else `AGENT_MODEL`, else the curated default (deepseek-v4-flash). The authoring
  * agents and the image pipeline deliberately do NOT call this — they stay on the
  * plain `stateModelId`/`toolModelId` defaults, outside the session switch.
  */

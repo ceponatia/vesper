@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { meterById, meterBaselineOf } from "../meters/registry";
-import { personalizeMeters, socialTraitScale, TRAIT_SCALE_MAX } from "./modulation";
+import {
+  affinityDecayRetention,
+  AFFINITY_DECAY_RETENTION_MAX,
+  AFFINITY_GAIN_SCALE_MAX,
+  personalizeMeters,
+  scaleAffinityGain,
+  socialTraitScale,
+  TRAIT_SCALE_MAX,
+} from "./modulation";
 import type { SocialReaction } from "./reactions";
 import type { TraitValue } from "./traits/value";
 
@@ -81,5 +89,66 @@ describe("personalizeMeters", () => {
 
   it("leaves untouched meters (hygiene) alone", () => {
     expect(find(personalizeMeters(defs, [trait("temperament.optimism", 100)]), "hygiene")).toEqual(meterById("hygiene"));
+  });
+});
+
+describe("scaleAffinityGain", () => {
+  it("no traits / zero delta ⇒ delta unchanged (exactly today's behavior)", () => {
+    expect(scaleAffinityGain(4, [])).toBe(4);
+    expect(scaleAffinityGain(-4, [])).toBe(-4);
+    expect(scaleAffinityGain(0, [trait("temperament.warmth", 100)])).toBe(0);
+  });
+
+  it("warmth and agreeableness amplify gains; coldness/contrariness damp them", () => {
+    expect(scaleAffinityGain(4, [trait("temperament.warmth", 100)])).toBeGreaterThan(4);
+    expect(scaleAffinityGain(4, [trait("social.agreeableness", 100)])).toBeGreaterThan(4);
+    expect(scaleAffinityGain(4, [trait("temperament.warmth", -100)])).toBeLessThan(4);
+  });
+
+  it("guardedness damps gains; openness amplifies them", () => {
+    expect(scaleAffinityGain(4, [trait("social.guardedness", 100)])).toBeLessThan(4);
+    expect(scaleAffinityGain(4, [trait("social.guardedness", -100)])).toBeGreaterThan(4);
+  });
+
+  it("composure damps losses; volatility sharpens them — and gains ignore composure", () => {
+    // A loss is a negative delta; damping ⇒ closer to 0 (smaller magnitude).
+    expect(scaleAffinityGain(-4, [trait("temperament.composure", 100)])).toBeGreaterThan(-4);
+    expect(scaleAffinityGain(-4, [trait("temperament.composure", -100)])).toBeLessThan(-4);
+    // The loss-side traits don't touch gains (and vice-versa).
+    expect(scaleAffinityGain(4, [trait("temperament.composure", 100)])).toBe(4);
+    expect(scaleAffinityGain(-4, [trait("temperament.warmth", 100)])).toBe(-4);
+  });
+
+  it("never flips the sign and stays within the scale bounds", () => {
+    const scaled = scaleAffinityGain(4, [
+      trait("temperament.warmth", 100),
+      trait("social.agreeableness", 100),
+      trait("social.guardedness", -100),
+    ]);
+    expect(scaled).toBeGreaterThan(0);
+    expect(scaled).toBeLessThanOrEqual(4 * AFFINITY_GAIN_SCALE_MAX);
+  });
+});
+
+describe("affinityDecayRetention", () => {
+  it("no traits / cold-volatile ⇒ 0 (baseline decay to the stage boundary)", () => {
+    expect(affinityDecayRetention([])).toBe(0);
+    expect(affinityDecayRetention([trait("temperament.warmth", -100), trait("temperament.composure", -100)])).toBe(0);
+  });
+
+  it("warmth and composure each raise retention; both together raise it more", () => {
+    const warm = affinityDecayRetention([trait("temperament.warmth", 100)]);
+    const composed = affinityDecayRetention([trait("temperament.composure", 100)]);
+    const both = affinityDecayRetention([trait("temperament.warmth", 100), trait("temperament.composure", 100)]);
+    expect(warm).toBeGreaterThan(0);
+    expect(composed).toBeGreaterThan(0);
+    expect(both).toBeGreaterThan(warm);
+    expect(both).toBeGreaterThan(composed);
+  });
+
+  it("caps retention so even the most constant character still drifts", () => {
+    expect(affinityDecayRetention([trait("temperament.warmth", 100), trait("temperament.composure", 100)])).toBeLessThanOrEqual(
+      AFFINITY_DECAY_RETENTION_MAX,
+    );
   });
 });

@@ -1,12 +1,12 @@
 # Personality & evolving state — plan
 
-Status: **active** — Slices 1 (social-reaction loop), 2 (puppet guardrail), 3 (atomic
-traits + scaling + lexicon), and Slice 4 (mood + meter generalization + mood↔affinity
-coupling) **shipped 2026-06-18**; Slice 4 step 5 (more affinity levels) is folded into
-**Slice 5** (the affinity-decay work) per spec §4/§10. The social-fabric **card layer is a
-separate plan** (`social-reaction-cards.plan.md`) that Slice 1 built the resolution seam
-for; the **full NPC-puppeting system** beyond Slice 2's deflection directive is parked in
-`npc-puppeting.deferred.md`.
+Status: **shipped — 2026-06-18** — Slices 1 (social-reaction loop), 2 (puppet guardrail),
+3 (atomic traits + scaling + lexicon), 4 (mood + meter generalization + mood↔affinity
+coupling), and **Slice 5** (affinity trait-coupling + widened levels) all **shipped
+2026-06-18**. The social-fabric **card layer is a separate plan**
+(`social-reaction-cards.plan.md`) that Slice 1 built the resolution seam for; the **full
+NPC-puppeting system** beyond Slice 2's deflection directive is parked in
+`npc-puppeting.deferred.md`. The **event→mood table** remains its own later plan (spec §4).
 
 Design/decisions: [personality-and-state.spec.md](personality-and-state.spec.md) — read
 it first; it is the truth. This plan is the task list and build order. It **front-loads
@@ -237,14 +237,42 @@ Spec §4. Adds valence, per-character drift, and the mood↔affinity coupling.
 5. **More affinity levels** — widen `stages.ts` so progression reads less coarsely.
    _Deferred to Slice 5 (affinity-decay work), per spec §4/§10._
 
-### 5. Affinity trait-coupling + more levels — _not started; folds into affinity-decay work_
+### 5. Affinity trait-coupling + more levels — _shipped 2026-06-18_
 
-Spec §4 (affinity) / §10. Trait-scaled gain asymmetry + decay target/rate, **plus the
-widened `stages.ts` levels carried over from Slice 4 step 5** (it ripples into stage-keyed
-maps — `AFFINITY_STAGE_FOLLOW_TERMS`, `classifyBond` — so it belongs with the decay work).
-**Do not duplicate** — fold into
-[cast-tiers-and-affinity-spec.phase3.md](finished/cast-tiers-and-affinity-spec.phase3.md) when
-affinity decay is built.
+Spec §4 (affinity) / §10. Trait-scaled gain asymmetry + decay retention, **plus the widened
+`stages.ts` levels carried over from Slice 4 step 5**.
+
+> **Shipped 2026-06-18 — `pnpm verify` green (1298 pure tests).**
+> `stages.ts` widened **7 → 11** (added `cool` on the cautious side and `warm` / `cherished`
+> / `smitten` on the romance-leaning positive side; the original seven ids are retained so
+> `stranger` stays the neutral default and authored seeds keep matching) → `scaleAffinityGain`
+> + `affinityDecayRetention` in `modulation.ts` → wired into `planAffinityUpdates` (gains scaled
+> by the **edge owner's** traits pre-clamp: warmth/agreeableness amplify, guardedness damps;
+> composure damps losses) and `planAffinityDecay`/`decayAffinityValue` (a trait-derived **floor**
+> at-or-above the stage boundary, so a warm + even-keeled character's regard ebbs slowly) →
+> `AFFINITY_STAGE_FOLLOW_TERMS` + `GATED_STAGES` extended for the new stages → tests
+> (`stages`, `modulation`, `merge.affinity`, seed/int midpoints) + docs (this plan,
+> the affinity spec §affinity, `contracts.md`, `turn-engine.md`).
+>
+> **Decisions made during the build:**
+> (1) **Decay is floor-scaled, not rate-scaled.** The affinity column is an `integer`, so a
+> fractional per-week rate would round to 0 and freeze (or round up and not actually slow);
+> a trait-lifted *floor* is integer-clean, keeps the **stage-preserving invariant** (the floor
+> is always ≥ the stage boundary, so decay never crosses a boundary regardless of traits), and
+> is literally spec §4's "toward a higher floor." Retention is **≥ 0 only** (cold/volatile ⇒ 0
+> ⇒ baseline decay to the boundary; never *faster* than baseline) — so "loyal decays slower than
+> fickle" holds as a relative ordering without introducing decay-driven stage demotions.
+> (2) **`classifyBond` did not need touching** — the plan listed it as a stage-keyed ripple, but
+> it classifies bond *text* into `mutual`/`first-meeting`/`indeterminate` and is independent of
+> the stage set; the real ripples were `AFFINITY_STAGE_FOLLOW_TERMS` + `GATED_STAGES` (and the
+> seed-midpoint test literals, which shifted with the rebalanced bands: `friendly` 47→41,
+> `wary` −32→−48; `close` 72 and `devoted` 93 unchanged).
+> (3) Constants live in `modulation.ts` (contracts is IO-free), like the curve constants.
+>
+> **Not folded into the affinity spec as a rewrite** (the plan's "do not duplicate / fold into
+> cast-tiers-and-affinity-spec.phase3.md when decay is built" note): decay shipped earlier, so
+> that spec already documents it; Slice 5 only adds the **trait coupling** on top, recorded as a
+> short note in that spec's §affinity rather than a duplicated design.
 
 ## Dependencies / parallel plans
 

@@ -1,5 +1,5 @@
 import { streamText, type ModelMessage } from "ai";
-import { isDemoMode, narrativeModelId, openrouter } from "../ai";
+import { isDemoMode, narrativeModelId, openrouter, providerRouting } from "../ai";
 import { CHARACTER_CHAT_HISTORY_TURNS } from "./constants";
 import { NARRATIVE_TEMPERATURE } from "./pipeline";
 
@@ -45,11 +45,16 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
     return;
   }
   const messages: ModelMessage[] = windowed.map((m) => ({ role: m.role, content: m.content }));
+  const modelId = narrativeModelId(input.model);
+  // Drop per-model bad endpoints (DeepInfra on GLM 5.2 — slow despite its low
+  // advertised latency); undefined for every other model leaves routing default.
+  const routing = providerRouting(modelId);
   const result = streamText({
-    model: openrouter().chat(narrativeModelId(input.model)),
+    model: openrouter().chat(modelId),
     system: input.system,
     messages,
     temperature: NARRATIVE_TEMPERATURE,
+    providerOptions: routing ? { openrouter: { provider: routing } } : undefined,
   });
   for await (const delta of result.textStream) yield delta;
 }

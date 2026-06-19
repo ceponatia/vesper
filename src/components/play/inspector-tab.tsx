@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { PROVIDER_LEGS, turnProvidersSchema } from "@/contracts/turns/agent-results";
 import { apiGet, type ApiResult } from "@/lib/client/api";
 import type { UseSession } from "@/lib/client/use-session";
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,10 @@ const turnInfoSchema = z.preprocess(
       .catch(null)
       .transform((v) => v ?? null),
     usage: z.record(z.string(), z.unknown()).catch({}),
+    // Per-leg provider attribution (narrator + post-turn agents) — which
+    // OpenRouter upstream served each call and how long it took. Step through
+    // turns to spot a provider that is consistently slow.
+    providers: turnProvidersSchema.catch({}),
   }),
 );
 
@@ -203,6 +208,12 @@ function InspectView({ payload }: { payload: InspectPayload }) {
   const usageEntries = Object.entries(payload.turn.usage).filter(
     (entry): entry is [string, number] => typeof entry[1] === "number",
   );
+  // Stable leg order (narrator first, then the post-turn agents), skipping legs
+  // that did not run / left no attribution.
+  const providerEntries = PROVIDER_LEGS.flatMap((leg) => {
+    const entry = payload.turn.providers[leg];
+    return entry ? [[leg, entry] as const] : [];
+  });
   return (
     <div className="flex flex-col gap-3">
       <section className="flex flex-col gap-1.5">
@@ -226,6 +237,27 @@ function InspectView({ payload }: { payload: InspectPayload }) {
           </div>
         ) : (
           <p className="text-[11px] text-paper-500 italic">No token usage recorded for this turn.</p>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-1.5">
+        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Providers</h3>
+        {providerEntries.length === 0 ? (
+          <p className="text-[11px] text-paper-500 italic">No provider attribution recorded for this turn.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {providerEntries.map(([leg, entry]) => (
+              <li key={leg} className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-paper-500">{leg}</span>
+                <span className="flex items-center gap-2">
+                  <span className="rounded border border-ink-600 px-1.5 py-0.5 font-mono text-paper-300">
+                    {entry.provider ?? "unknown"}
+                  </span>
+                  <span className="font-mono text-accent-300">{entry.ms.toLocaleString()}ms</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

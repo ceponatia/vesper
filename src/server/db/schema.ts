@@ -435,6 +435,10 @@ export const turns = pgTable(
     diagnostics: jsonb("diagnostics").notNull().default([]),
     model: text("model"),
     usage: jsonb("usage").notNull().default({}),
+    /** Per-leg provider attribution (TurnProviders): which OpenRouter upstream
+     * served the narrator + each post-turn agent, with latency. Embedding
+     * excluded. Powers the Inspector's slow-provider tracking. */
+    providers: jsonb("providers").notNull().default({}),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

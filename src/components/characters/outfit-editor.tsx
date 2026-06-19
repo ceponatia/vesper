@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { ItemDefinition } from "@/contracts";
-import { itemsApi } from "@/lib/client/api";
+import { itemsApi, type ApiResult, type ItemSummary } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { ErrorState } from "@/components/ui/error-state";
 import { Select } from "@/components/ui/select";
@@ -22,10 +22,29 @@ const layerLabels = ["underwear", "base", "mid", "outer"] as const;
 
 /** Default-outfit builder: picks clothing from the item library by id. */
 export function OutfitEditor({ outfit, onChange, suggestedItems, onChangeSuggested }: OutfitEditorProps) {
+  // The clothing browse list (capped) powers the "add" dropdown.
   const library = useAsyncData(() => itemsApi.list({ kind: "clothing" }), []);
-  const byId = useMemo(() => new Map((library.data ?? []).map((item) => [item.id, item])), [library.data]);
+  // Resolve the *referenced* outfit ids directly — bypassing the browse cap — so a
+  // stored reference always renders its real item even after the library grows past
+  // the cap. (The items aren't deleted; they just rank past the most-recent window.)
+  const outfitKey = outfit.join(",");
+  const referenced = useAsyncData<ItemSummary[]>(
+    () =>
+      outfit.length > 0
+        ? itemsApi.listByIds(outfit)
+        : Promise.resolve<ApiResult<ItemSummary[]>>({ ok: true, data: [] }),
+    [outfitKey],
+  );
+  const byId = useMemo(() => {
+    const map = new Map<string, ItemSummary>();
+    for (const item of referenced.data ?? []) map.set(item.id, item);
+    for (const item of library.data ?? []) map.set(item.id, item);
+    return map;
+  }, [library.data, referenced.data]);
 
-  if (library.loading) return <Skeleton className="h-32" />;
+  // Skeleton only on the first load of each leg — `useAsyncData` keeps prior data
+  // across reloads, so editing the outfit never flashes the skeleton.
+  if (library.loading || (referenced.loading && referenced.data === null)) return <Skeleton className="h-32" />;
 
   return (
     <div className="flex flex-col gap-5">

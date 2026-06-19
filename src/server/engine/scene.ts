@@ -973,15 +973,19 @@ export const FOLLOW_THRESHOLD = 0.55;
 const AFFINITY_STAGE_FOLLOW_TERMS: Record<string, number> = {
   hostile: -0.4,
   wary: -0.15,
+  cool: -0.05,
   stranger: 0,
   acquaintance: 0.1,
   friendly: 0.18,
+  warm: 0.22,
   close: 0.25,
+  cherished: 0.28,
   devoted: 0.3,
+  smitten: 0.32,
 };
 
 /** Stages below acquaintance never reach likely-follows on scene warmth alone. */
-const GATED_STAGES = new Set(["hostile", "wary", "stranger"]);
+const GATED_STAGES = new Set(["hostile", "wary", "cool", "stranger"]);
 
 export interface FollowNpcInput {
   displayName: string;

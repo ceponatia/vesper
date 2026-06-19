@@ -32,6 +32,9 @@ export async function runIntake(input: IntakeInput): Promise<IntentBrief> {
   // Demo mode / disabled: skip the LLM entirely, return the regex brief.
   if (!intakeEnabled()) return fallback();
 
+  // The timeout aborts this call; an aborted generateChecked returns silently so
+  // a slow tail can't write diagnostics onto a turn already running on the regex.
+  const controller = new AbortController();
   const work = generateChecked<IntentBrief>({
     schema: intentBriefSchema,
     system: INTAKE_SYSTEM,
@@ -42,25 +45,37 @@ export async function runIntake(input: IntakeInput): Promise<IntentBrief> {
     code: "agent.intake",
     sink: input.sink,
     fallback,
+    signal: controller.signal,
+    // Intake is a fast, best-effort classifier: reasoning tokens blow the latency
+    // budget, the repair round-trip would be discarded by the timeout anyway, and
+    // a parse failure degrades cleanly to the regex (a warn, not an error).
+    // lowLatencyRouting flattens the OpenRouter TTFT tail (the dominant cause of
+    // budget overruns — see pre-narrator-agents.followups.md §2d).
+    disableReasoning: true,
+    lowLatencyRouting: true,
+    repair: false,
+    degradeSeverity: "warn",
   });
 
-  return withTimeout(work, fallback, input.sink);
+  return withTimeout(work, controller, fallback, input.sink);
 }
 
 /**
  * Race the intake call against the timeout. generateChecked never throws (it
  * owns the resilience ladder and resolves to the fallback on degrade), but a
- * slow model must not stall the critical path: on timeout we proceed on the
- * regex fallback and the (now-orphaned) call resolves later, discarded.
+ * slow model must not stall the critical path: on timeout we **abort** the call
+ * (so its orphaned tail emits no diagnostics) and proceed on the regex fallback.
  */
 async function withTimeout(
   work: Promise<GenerateCheckedResult<IntentBrief>>,
+  controller: AbortController,
   fallback: () => IntentBrief,
   sink?: DiagnosticSink,
 ): Promise<IntentBrief> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<IntentBrief>((resolve) => {
     timer = setTimeout(() => {
+      controller.abort();
       sink?.push(diag("warn", "agent.intake.timeout", `intake exceeded ${INTAKE_TIMEOUT_MS}ms; using regex fallback`));
       resolve(fallback());
     }, INTAKE_TIMEOUT_MS);

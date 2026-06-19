@@ -35,11 +35,13 @@ import type {
   ContinuityResult,
   DirectorResult,
   SimulantResult,
+  TurnProviders,
 } from "@/contracts/turns/agent-results";
 import type { TurnAuthor } from "@/contracts/turns/stream";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { evaluateSocialReaction, moodMeterToFactor, moodNudge, resolveSocialReaction } from "@/contracts/personality/reactions";
-import { personalizeMeters, socialTraitScale } from "@/contracts/personality/modulation";
+import { affinityDecayRetention, personalizeMeters, scaleAffinityGain, socialTraitScale } from "@/contracts/personality/modulation";
+import type { TraitValue } from "@/contracts/personality/traits/value";
 import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { checkLinkAccess, type DoorState } from "@/contracts/world/access";
 import { daylightBand, minuteOfDay, resolveGameTime, type DaylightBand } from "@/lib/clock";
@@ -748,7 +750,11 @@ export interface AffinityUpdate {
  * (cast-tiers-and-affinity-spec). fromName is whose feeling moved; when that
  * is the player, the evidence becomes the NPC's *perceived* affinity from the
  * player (decision 41 — the player's actual feelings are the player's own).
- * Deltas clamp to ±AFFINITY_DELTA_CLAMP per edge per turn, summed first.
+ * The summed raw delta is **scaled by the edge owner's traits** (personality §4
+ * gain/loss asymmetry: warmth/agreeableness amplify gains, guardedness damps them,
+ * composure damps losses) before the ±AFFINITY_DELTA_CLAMP clamp. Empty traits ⇒
+ * the delta unchanged ⇒ exactly today's behavior. (Recognized social acts are
+ * scaled inside the curve instead and never reach this path — they own their edge.)
  */
 export function planAffinityUpdates(
   adjustments: SimulantResult["affinityAdjustments"],
@@ -779,7 +785,9 @@ export function planAffinityUpdates(
   }
   const updates: AffinityUpdate[] = [];
   for (const update of byEdge.values()) {
-    const clamped = Math.max(-AFFINITY_DELTA_CLAMP, Math.min(AFFINITY_DELTA_CLAMP, Math.round(update.delta)));
+    const owner = parts.find((p) => p.id === update.fromParticipantId);
+    const scaled = scaleAffinityGain(update.delta, owner?.snapshot.traits ?? []);
+    const clamped = Math.max(-AFFINITY_DELTA_CLAMP, Math.min(AFFINITY_DELTA_CLAMP, Math.round(scaled)));
     if (clamped === 0) continue;
     updates.push({ ...update, delta: clamped });
   }
@@ -867,19 +875,29 @@ export function combineAffinityUpdates(reaction: ReactionAffinityResult, simulan
   return [...reaction.updates, ...kept];
 }
 
-/** One edge's decay: `points` toward 0, stopped at the current stage's zero-side boundary. */
-export function decayAffinityValue(value: number, points: number): { value: number; clamped: boolean } {
+/**
+ * One edge's decay: `points` toward 0, stopped at a **floor** that sits between the
+ * stage's zero-side boundary and the current value. `retention` (0..1, personality §4)
+ * lifts that floor toward the current value, so a warm, even-keeled (constant) character
+ * resists decay — its regard ebbs only a fraction of the way to the boundary each pass.
+ * `retention = 0` ⇒ the floor *is* the stage boundary ⇒ exactly today's behavior. The
+ * floor is always ≥ the boundary, so decay never crosses a stage boundary regardless of
+ * traits (stages stay sticky; only events demote).
+ */
+export function decayAffinityValue(value: number, points: number, retention = 0): { value: number; clamped: boolean } {
   if (points <= 0 || value === 0) return { value, clamped: false };
   const stage = stageForValue(value);
   if (value > 0) {
-    // E.g. friendly (35..59): decay stops at 35; stranger (−14..14) decays through to 0.
+    // E.g. friendly (33..49): decay stops at 33; stranger (−14..14) decays through to 0.
     const boundary = Math.max(0, stage.min);
+    const floor = Math.round(boundary + retention * (value - boundary));
     const target = value - points;
-    return target < boundary ? { value: boundary, clamped: boundary > 0 } : { value: target, clamped: false };
+    return target < floor ? { value: floor, clamped: floor > 0 } : { value: target, clamped: false };
   }
   const boundary = Math.min(0, stage.max);
+  const floor = Math.round(boundary + retention * (value - boundary));
   const target = value + points;
-  return target > boundary ? { value: boundary, clamped: boundary < 0 } : { value: target, clamped: false };
+  return target > floor ? { value: floor, clamped: floor < 0 } : { value: target, clamped: false };
 }
 
 export interface AffinityDecayEdge {
@@ -903,12 +921,15 @@ export interface AffinityDecayResult {
 /**
  * Affinity decay (defaults doc §Affinity stages): 1 point per whole elapsed
  * in-game week toward 0 on every relationship edge — but decay alone never
- * crosses a stage boundary; it stops at the stage's zero-side edge (stages
- * are sticky; only events demote). Edges parked at a boundary still plan a
- * `clamped` edge each decay pass — that drives the `affinity_decay_clamped`
- * events row, the tuning evidence for the "relationships fossilizing"
- * revisit trigger. The marker advances by whole weeks only, so the remainder
- * keeps accumulating.
+ * crosses a stage boundary; it stops at a trait-derived floor at or above the
+ * stage's zero-side edge (stages are sticky; only events demote). The floor is
+ * lifted toward the current value by the owner's **decay retention** (personality
+ * §4: warmth + composure ⇒ a constant character holds its regard, ebbing more
+ * slowly than a fickle one); absent traits ⇒ retention 0 ⇒ the floor is the stage
+ * boundary, exactly today's behavior. Edges parked at their floor still plan a
+ * `clamped` edge each decay pass — that drives the `affinity_decay_clamped` events
+ * row, the tuning evidence for the "relationships fossilizing" revisit trigger.
+ * The marker advances by whole weeks only, so the remainder keeps accumulating.
  */
 export function planAffinityDecay(
   input: {
@@ -916,6 +937,8 @@ export function planAffinityDecay(
     /** Post-turn session clock. */
     clockMinutes: number;
     lastAffinityDecayAt: number | undefined;
+    /** Owner participant id → resolved traits, for per-character decay retention. Absent ⇒ baseline decay. */
+    traitsByParticipant?: ReadonlyMap<string, readonly TraitValue[]>;
   },
   sink?: DiagnosticSink,
 ): AffinityDecayResult {
@@ -931,7 +954,8 @@ export function planAffinityDecay(
   if (weeks < 1) return { edges: [], lastAffinityDecayAt: last };
   const edges: AffinityDecayEdge[] = [];
   for (const rel of input.relationships) {
-    const decayed = decayAffinityValue(rel.value, weeks);
+    const retention = affinityDecayRetention(input.traitsByParticipant?.get(rel.fromParticipantId) ?? []);
+    const decayed = decayAffinityValue(rel.value, weeks, retention);
     if (decayed.value === rel.value && !decayed.clamped) continue;
     edges.push({
       fromParticipantId: rel.fromParticipantId,
@@ -1994,7 +2018,12 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   const affinityDecay = reconcile
     ? null
     : planAffinityDecay(
-        { relationships: bundle.relationships, clockMinutes, lastAffinityDecayAt: bundle.runtime.lastAffinityDecayAt },
+        {
+          relationships: bundle.relationships,
+          clockMinutes,
+          lastAffinityDecayAt: bundle.runtime.lastAffinityDecayAt,
+          traitsByParticipant: new Map(parts.map((p) => [p.id, p.snapshot.traits])),
+        },
         sink,
       );
 
@@ -2160,6 +2189,9 @@ export interface ApplyTurnInput {
   bundle: SessionBundle;
   turn: MergeTurn;
   results: AgentResults;
+  /** Per-agent provider attribution from the fan-out; concatenated onto the
+   * narrator leg the pipeline seeded (jsonb `||`). Empty/absent in demo mode. */
+  providers?: TurnProviders;
   sink: DiagnosticSink;
   mode?: MergeMode;
   deps?: GroundingDeps;
@@ -2207,6 +2239,9 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
 
   const touchedItems = new Set(plan.touchedItemIds);
   const diagnosticsJson = JSON.stringify(recorded);
+  // Concatenated onto the providers map (the pipeline already wrote `narrator`),
+  // so the agent legs merge in without clobbering it.
+  const providersJson = JSON.stringify(input.providers ?? {});
 
   await db().transaction(async (tx) => {
     for (const participant of plan.participants) {
@@ -2335,6 +2370,7 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
         .set({
           agentResults: sql`${turns.agentResults} || ${JSON.stringify({ simulant: results.simulant, archivist: results.archivist })}::jsonb`,
           diagnostics: sql`${turns.diagnostics} || ${diagnosticsJson}::jsonb`,
+          providers: sql`${turns.providers} || ${providersJson}::jsonb`,
           heartbeatAt: new Date(),
         })
         .where(eq(turns.id, turn.id));
@@ -2356,6 +2392,7 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
             clock: { minutes: plan.minutes, cause: plan.minutesCause },
           },
           diagnostics: sql`${turns.diagnostics} || ${diagnosticsJson}::jsonb`,
+          providers: sql`${turns.providers} || ${providersJson}::jsonb`,
           heartbeatAt: new Date(),
         })
         .where(and(eq(turns.id, turn.id), eq(turns.status, "processing")));

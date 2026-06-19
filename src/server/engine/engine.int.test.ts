@@ -573,12 +573,12 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     // Authored Rook→Sable at the close midpoint; the explicit Sable→Rook wary
     // edge wins over the implied reverse.
     expect(edge(rookP.id, sableP.id, "feeling")).toMatchObject({ value: 72, stage: "close" });
-    expect(edge(sableP.id, rookP.id, "feeling")).toMatchObject({ value: -32, stage: "wary" });
+    expect(edge(sableP.id, rookP.id, "feeling")).toMatchObject({ value: -48, stage: "wary" });
 
     // Player edges: feeling at the friendly midpoint, perceived mirrored (the
     // bio names a mutual-knowledge bond: "an old friend of the player").
-    expect(edge(rookP.id, player.id, "feeling")).toMatchObject({ value: 47, stage: "friendly" });
-    expect(edge(rookP.id, player.id, "perceived")).toMatchObject({ value: 47, stage: "friendly" });
+    expect(edge(rookP.id, player.id, "feeling")).toMatchObject({ value: 41, stage: "friendly" });
+    expect(edge(rookP.id, player.id, "perceived")).toMatchObject({ value: 41, stage: "friendly" });
 
     // The unresolved "Ghost" entry degraded: diagnostic recorded, no row, spawn succeeded.
     expect(sink.items.some((d) => d.code === "spawn.relationship.unresolved_toward")).toBe(true);
@@ -791,8 +791,8 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     expect(rows.filter((r) => r.fromParticipantId === devinP.id)).toHaveLength(0);
     const maraEdges = rows.filter((r) => r.fromParticipantId === maraP.id && r.toParticipantId === devinP.id);
     expect(maraEdges.map((r) => [r.kind, r.value]).sort()).toEqual([
-      ["feeling", 47],
-      ["perceived", 47],
+      ["feeling", 41],
+      ["perceived", 41],
     ]);
   });
 

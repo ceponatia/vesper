@@ -61,6 +61,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
       minutes: turn.minutes,
       model: turn.model,
       usage: turn.usage,
+      providers: turn.providers,
       createdAt: turn.createdAt,
     },
     agentResults: turn.agentResults,

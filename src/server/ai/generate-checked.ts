@@ -1,7 +1,7 @@
 import { generateText } from "ai";
 import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { isDemoMode, openrouter, stateModelId } from "./provider";
+import { isDemoMode, openrouter, providerRouting, routedProvider, stateModelId, type OpenRouterRouting } from "./provider";
 
 export interface GenerateCheckedOptions<T> {
   schema: ZodType<T>;
@@ -16,11 +16,58 @@ export interface GenerateCheckedOptions<T> {
   sink?: DiagnosticSink;
   /** Demo-mode / total-failure fallback. Omit to get null on failure. */
   fallback?: () => T;
+  /**
+   * Abort the in-flight (and any repair) call. When a caller-side timeout has
+   * already moved on (intake), aborting stops the request mid-flight and the
+   * call returns **silently** — no diagnostics — because the caller owns the
+   * degrade it already logged. Prevents an orphaned call polluting the turn.
+   */
+  signal?: AbortSignal;
+  /**
+   * Run the one repair round-trip on a parse failure (default true). Best-effort,
+   * latency-critical callers (intake) set this false: the repair is a second
+   * sequential LLM call whose result a tight timeout would discard anyway.
+   */
+  repair?: boolean;
+  /**
+   * Send OpenRouter `reasoning:{enabled:false}`. For fast classifiers (intake)
+   * where reasoning tokens blow the latency + output-token budget (the cause of
+   * the intake timeout/truncation flood — pre-narrator-agents.followups.md).
+   * Default false; the post-turn agents reason over the narration and keep it.
+   * Reliable on the curated agent models (deepseek-v4-flash, glm-5.2); a model
+   * that *mandates* reasoning (gemini-3.5-flash, aion-2.0) rejects it and the
+   * call degrades to the fallback — those are not in the agent-model list.
+   */
+  disableReasoning?: boolean;
+  /**
+   * Route via OpenRouter `provider:{sort:"latency"}` — pick the lowest-latency
+   * provider endpoint for the model. For latency-critical callers (intake): the
+   * model's *median* TTFT is fine (~0.7s) but default routing intermittently
+   * lands a cold/slow endpoint (TTFT spiking to 3–13s), which blew the intake
+   * budget; latency-sorted routing flattened the tail to <0.8s in probes
+   * (pre-narrator-agents.followups.md §2d). `allow_fallbacks` stays on, so this
+   * only reorders preference — no reliability loss. Default false.
+   */
+  lowLatencyRouting?: boolean;
+  /**
+   * Severity for the post-degrade `*.parse_failed` diagnostic (default "error").
+   * Best-effort agents that degrade cleanly to a live path (intake → regex) use
+   * "warn": a fallback is not a turn failure.
+   */
+  degradeSeverity?: "warn" | "error";
 }
 
 export interface GenerateCheckedResult<T> {
   value: T | null;
   degraded: boolean;
+  /**
+   * Upstream provider OpenRouter routed the (last completed) call to — null in
+   * demo mode or when no call completed (network error before a response). Fed
+   * to the Inspector's per-leg provider attribution.
+   */
+  provider?: string | null;
+  /** Wall-clock latency of the last completed model call, ms (undefined if none completed). */
+  latencyMs?: number;
 }
 
 /**
@@ -40,11 +87,26 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   // (followups.phase2.md #20). The model sees the JSON Schema as text; the
   // resilience ladder below does the enforcement.
   const schemaText = jsonSchemaText(opts.schema);
+  // OpenRouter per-call routing/decoding knobs (see the option docs above).
+  // providerRouting also applies any per-model provider exclusions (e.g. drop
+  // DeepInfra for GLM 5.2), so it runs regardless of lowLatencyRouting.
+  const orOptions: { reasoning?: { enabled: boolean }; provider?: OpenRouterRouting } = {};
+  if (opts.disableReasoning) orOptions.reasoning = { enabled: false };
+  const routing = providerRouting(opts.modelId ?? stateModelId(), { sortLatency: opts.lowLatencyRouting });
+  if (routing) orOptions.provider = routing;
+  const providerOptions = Object.keys(orOptions).length > 0 ? { openrouter: orOptions } : undefined;
+  // Provider + latency of the last *completed* call (set even when the response
+  // then fails to parse): the Inspector reports them so a slow endpoint shows up.
+  let provider: string | null = null;
+  let latencyMs: number | undefined;
   const attempt = async (prompt: string): Promise<T> => {
+    const start = Date.now();
     const result = await generateText({
       model: openrouter().chat(opts.modelId ?? stateModelId()),
       temperature: opts.temperature ?? 0,
       maxOutputTokens: opts.maxOutputTokens ?? 4096,
+      abortSignal: opts.signal,
+      providerOptions,
       system: [
         opts.system,
         "",
@@ -53,35 +115,52 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
       ].join("\n"),
       prompt,
     });
+    latencyMs = Date.now() - start;
+    provider = routedProvider(result.providerMetadata);
     return opts.schema.parse(JSON.parse(extractJsonObject(result.text)));
   };
 
+  // The caller aborted (e.g. its timeout fired and it already degraded): return
+  // silently so the orphaned tail adds no diagnostics to a turn it no longer owns.
+  const abandoned = () => opts.signal?.aborted ?? false;
+
   let firstError = "";
   try {
-    return { value: await attempt(opts.prompt), degraded: false };
+    return { value: await attempt(opts.prompt), degraded: false, provider, latencyMs };
   } catch (err) {
+    if (abandoned()) return { value: null, degraded: true, provider, latencyMs };
     firstError = errorText(err);
   }
 
-  try {
-    const value = await attempt(
-      [
-        opts.prompt,
-        "",
-        "Your previous response failed validation with these issues:",
-        firstError.slice(0, 2000),
-        "Respond again with a valid object. Fix only the listed issues.",
-      ].join("\n"),
-    );
-    // info, not warn: the repair *succeeded* — the user has nothing to act on.
-    opts.sink?.push(diag("info", `${opts.code}.repaired`, "structured output needed one repair round-trip"));
-    return { value, degraded: false };
-  } catch (err) {
-    opts.sink?.push(
-      diag("error", `${opts.code}.parse_failed`, `structured output failed after repair: ${errorText(err).slice(0, 500)}`),
-    );
-    return degrade(opts, "validation failed twice");
+  const repair = opts.repair ?? true;
+  if (repair) {
+    try {
+      const value = await attempt(
+        [
+          opts.prompt,
+          "",
+          "Your previous response failed validation with these issues:",
+          firstError.slice(0, 2000),
+          "Respond again with a valid object. Fix only the listed issues.",
+        ].join("\n"),
+      );
+      // info, not warn: the repair *succeeded* — the user has nothing to act on.
+      opts.sink?.push(diag("info", `${opts.code}.repaired`, "structured output needed one repair round-trip"));
+      return { value, degraded: false, provider, latencyMs };
+    } catch (err) {
+      if (abandoned()) return { value: null, degraded: true, provider, latencyMs };
+      firstError = errorText(err);
+    }
   }
+
+  opts.sink?.push(
+    diag(
+      opts.degradeSeverity ?? "error",
+      `${opts.code}.parse_failed`,
+      `structured output failed${repair ? " after repair" : ""}: ${firstError.slice(0, 500)}`,
+    ),
+  );
+  return { ...degrade(opts, repair ? "validation failed twice" : "validation failed"), provider, latencyMs };
 }
 
 function degrade<T>(opts: GenerateCheckedOptions<T>, reason: string): GenerateCheckedResult<T> {

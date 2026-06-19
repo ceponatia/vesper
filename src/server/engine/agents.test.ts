@@ -61,7 +61,7 @@ function makeBundle(): SessionBundle {
 describe("runPostTurnAgents (demo mode)", () => {
   it("returns all four agents non-null so the merge path matches live mode", async () => {
     const sink = new DiagnosticCollector();
-    const results = await runPostTurnAgents(
+    const { results, providers } = await runPostTurnAgents(
       makeBundle(),
       { number: 1, author: "player", input: "I head to the Garden with Maya." },
       "You head into the garden; Maya follows.",
@@ -77,10 +77,12 @@ describe("runPostTurnAgents (demo mode)", () => {
     ]);
     expect(results.archivist?.episodeSummary.length).toBeGreaterThan(0);
     expect(results.director?.storySoFar).toBe("Two days at the inn.");
+    // Demo mode short-circuits before any model call — no provider to attribute.
+    expect(providers).toEqual({});
   });
 
   it("end-state mode (reconcile) skips continuity and director", async () => {
-    const results = await runPostTurnAgents(
+    const { results } = await runPostTurnAgents(
       makeBundle(),
       { number: 2, author: "player", input: "Quiet beat." },
       "Nothing much happens.",
@@ -96,7 +98,7 @@ describe("runPostTurnAgents (demo mode)", () => {
     const bundle = makeBundle();
     bundle.session.embodied = false;
     bundle.participants = bundle.participants.filter((p) => !p.isUser);
-    const results = await runPostTurnAgents(
+    const { results } = await runPostTurnAgents(
       bundle,
       { number: 1, author: "director", input: "Maya walks to the Garden." },
       "Maya wanders out.",

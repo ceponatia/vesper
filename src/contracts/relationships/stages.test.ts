@@ -31,25 +31,32 @@ describe("relationship stages", () => {
     }
   });
 
-  it("stageForValue picks the v1 boundaries", () => {
+  it("stageForValue picks the widened (Slice 5) boundaries", () => {
     expect(stageForValue(0).id).toBe("stranger");
-    expect(stageForValue(-50).id).toBe("hostile");
-    expect(stageForValue(-49).id).toBe("wary");
+    expect(stageForValue(-61).id).toBe("hostile");
+    expect(stageForValue(-60).id).toBe("wary");
+    expect(stageForValue(-36).id).toBe("wary");
+    expect(stageForValue(-35).id).toBe("cool");
+    expect(stageForValue(-15).id).toBe("cool");
     expect(stageForValue(14).id).toBe("stranger");
     expect(stageForValue(15).id).toBe("acquaintance");
-    expect(stageForValue(35).id).toBe("friendly");
-    expect(stageForValue(60).id).toBe("close");
-    expect(stageForValue(85).id).toBe("devoted");
+    expect(stageForValue(33).id).toBe("friendly");
+    expect(stageForValue(50).id).toBe("warm");
+    expect(stageForValue(65).id).toBe("close");
+    expect(stageForValue(79).id).toBe("cherished");
+    expect(stageForValue(90).id).toBe("devoted");
+    expect(stageForValue(97).id).toBe("smitten");
   });
 
   it("clamps out-of-range values", () => {
-    expect(stageForValue(500).id).toBe("devoted");
+    expect(stageForValue(500).id).toBe("smitten");
     expect(stageForValue(-500).id).toBe("hostile");
     expect(clampAffinity(3.7)).toBe(4);
   });
 
   it("stageMidpoint seeds from stage labels", () => {
     expect(stageMidpoint("stranger")).toBe(0);
+    expect(stageMidpoint("friendly")).toBe(41);
     expect(stageMidpoint("close")).toBe(72);
     expect(stageMidpoint("unknown")).toBe(0);
     expect(stageById("devoted")?.label).toBe("Devoted");

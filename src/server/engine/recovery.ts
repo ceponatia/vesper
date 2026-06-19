@@ -1,7 +1,8 @@
 import { and, eq, gt, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { diag } from "@/contracts/diagnostics";
+import { log } from "@/server/log";
 import { db, jobs, sessions, turns } from "../db";
-import { HEARTBEAT_STALE_MS } from "./constants";
+import { HEARTBEAT_STALE_MS, RECOVERY_SWEEP_INTERVAL_MS } from "./constants";
 import { kickSession, recoverStaleJobs } from "./jobs";
 
 /**
@@ -93,4 +94,52 @@ export async function recoverAbandonedTurns(sessionId: string): Promise<Recovery
   }
 
   return { failedTurnIds, failedJobs, sessionReset };
+}
+
+/**
+ * Global recovery sweep: reconcile every session that isn't `ready` so a session
+ * wedged by a process restart (its in-flight post-turn job orphaned, its UI
+ * blocked from submitting) self-heals instead of waiting for a turn submit that
+ * can never come. Heartbeat-based via `recoverAbandonedTurns`, so it never
+ * clobbers live work — an in-flight turn is only recovered once its heartbeat is
+ * stale, and a queued-but-orphaned job is simply re-kicked. Safe to run any time
+ * and repeatedly; multi-instance-safe (no instance fails another's fresh work).
+ */
+export async function sweepAbandonedSessions(): Promise<number> {
+  let recovered = 0;
+  const wedged = await db().select({ id: sessions.id }).from(sessions).where(ne(sessions.status, "ready"));
+  for (const row of wedged) {
+    try {
+      const report = await recoverAbandonedTurns(row.id);
+      if (report.sessionReset || report.failedTurnIds.length > 0 || report.failedJobs > 0) recovered++;
+    } catch (err) {
+      log.warn("recovery", "sweep: session recovery failed", { sessionId: row.id, error: errorText(err) });
+    }
+  }
+  return recovered;
+}
+
+let sweepTimer: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * Start the background recovery sweep (idempotent). Called once per process from
+ * instrumentation.ts: an immediate pass on boot, then every
+ * RECOVERY_SWEEP_INTERVAL_MS. `unref` so it never keeps the process alive.
+ */
+export function startRecoverySweep(): void {
+  if (sweepTimer) return;
+  const tick = () => {
+    void sweepAbandonedSessions()
+      .then((n) => {
+        if (n > 0) log.info("recovery", `sweep recovered ${n} wedged session(s)`);
+      })
+      .catch((err: unknown) => log.error("recovery", "sweep failed", { error: errorText(err) }));
+  };
+  tick();
+  sweepTimer = setInterval(tick, RECOVERY_SWEEP_INTERVAL_MS);
+  sweepTimer.unref?.();
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
