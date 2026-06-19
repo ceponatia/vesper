@@ -22,6 +22,12 @@ const INTERVALS = [
   { value: 8, label: "Every 8 turns" },
 ] as const;
 
+/** Single identity anchor vs Venice multi-reference edit (scene-images.plan.md toggle). */
+const REFERENCE_MODES = [
+  { value: "single", label: "One character" },
+  { value: "multi", label: "Multi-reference" },
+] as const;
+
 const GENERATING_POLL_MS = 4000;
 
 /** Scene tab: current image, gallery strip, generate-now, interval (docs/ui.md). */
@@ -140,6 +146,32 @@ export function SceneTab({ session }: { session: UseSession }) {
             </option>
           ))}
         </Select>
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">References</span>
+        <Select
+          value={scene?.gen.referenceMode ?? "single"}
+          disabled={working}
+          onChange={(e) =>
+            void act(
+              { action: "setReferenceMode", referenceMode: e.target.value },
+              "Couldn't change the reference mode",
+            )
+          }
+          className="h-8 text-xs"
+        >
+          {REFERENCE_MODES.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </Select>
+        <span className="text-[11px] text-paper-500">
+          {scene?.gen.referenceMode === "multi"
+            ? "Anchors every present character + the location image in one render (Venice multi-edit)."
+            : "Anchors the focal character's portrait only."}
+        </span>
       </label>
 
       <PresentCast session={session} />

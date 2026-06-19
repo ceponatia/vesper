@@ -1,8 +1,7 @@
 import fs from "node:fs/promises";
-import { generateImage } from "ai";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
-import { describeImageGenError, imageModel, imageModelId, isDemoMode } from "../ai";
+import { describeImageGenError, isDemoMode, veniceGenerateImage, veniceImageModelId } from "../ai";
 import { logEvent } from "../events";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
@@ -42,7 +41,7 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
     entityKind: input.entityKind,
     entityId: input.entityId,
     prompt: loaded?.prompt ?? "",
-    meta: { model: demo ? "demo" : imageModelId(), demo },
+    meta: { model: demo ? "demo" : `venice/${veniceImageModelId()}`, demo },
   });
 
   if (!loaded) {
@@ -154,8 +153,12 @@ async function reclaimOldImages(kind: EntityImageKind, id: string, ownerId: stri
 }
 
 async function generateEntityBuffer(prompt: string, aspectRatio: `${number}:${number}`): Promise<Buffer> {
-  const result = await generateImage({ model: imageModel(), prompt, aspectRatio });
-  return Buffer.from(result.image.uint8Array);
+  // Venice/Qwen text-to-image (Flux removal — scene-images.plan.md). Item and
+  // location shots are SFW (product/establishing), but the backend is Venice
+  // now; a missing key / API error throws and the caller marks the row failed.
+  const result = await veniceGenerateImage({ prompt, aspectRatio });
+  if (!result.ok || !result.image) throw new Error(result.error ?? "venice generate returned no image");
+  return result.image;
 }
 
 /** How many entity images generate concurrently in a batch (user spec). */

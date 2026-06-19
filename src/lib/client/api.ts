@@ -1,6 +1,10 @@
 import { z } from "zod";
 import {
   authoredRelationshipSchema,
+  avatarImageModels,
+  avatarImageModelLabels,
+  DEFAULT_AVATAR_IMAGE_MODEL,
+  type AvatarImageModel,
   characterProfileSchema,
   emptyCharacterProfile,
   emptyItemDefinition,
@@ -493,14 +497,10 @@ export type ImageRecord = z.infer<typeof imageRecordSchema>;
 export const portraitVariantKinds = ["pose", "outfit", "expression", "setting"] as const;
 export type PortraitVariantKind = (typeof portraitVariantKinds)[number];
 
-export const avatarImageModels = ["flux", "qwen"] as const;
-export type AvatarImageModel = (typeof avatarImageModels)[number];
-
-/** Display labels for the image-model picker (portrait studio + character-chat scenes). */
-export const avatarImageModelLabels: Record<AvatarImageModel, string> = {
-  flux: "Flux",
-  qwen: "Qwen (uncensored)",
-};
+// The avatar image-model registry (keys + labels) is a pure contract so client
+// and server agree on the key set; re-exported here for component imports.
+export { avatarImageModels, avatarImageModelLabels, DEFAULT_AVATAR_IMAGE_MODEL };
+export type { AvatarImageModel };
 
 // ---------------------------------------------------------------------------
 // Forge drafts (client mirror of server/authoring/drafts.ts — components may
@@ -652,9 +652,8 @@ export const charactersApi = {
   /** Rendered scenes for the chat tab (kind="scene"), newest first. */
   chatScenes: (id: string) =>
     apiGet(listOf(imageRecordSchema, "scenes", "images"), `/api/characters/${id}/chat/scene`),
-  /** Queue a scene render from the recent chat; poll chatScenes for the result. */
-  generateChatScene: (id: string, body: { model?: AvatarImageModel } = {}) =>
-    apiPost(z.unknown(), `/api/characters/${id}/chat/scene`, body),
+  /** Queue a scene render from the recent chat (single-reference); poll chatScenes for the result. */
+  generateChatScene: (id: string) => apiPost(z.unknown(), `/api/characters/${id}/chat/scene`, {}),
 };
 
 export interface ChatStreamOutcome {

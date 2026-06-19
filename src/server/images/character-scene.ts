@@ -6,7 +6,7 @@ import { speciesAppearancePhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
-import { hasVenice, isDemoMode, type SceneImageModel } from "../ai";
+import { hasVenice, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
 import { absoluteImagePath } from "./assets";
@@ -43,8 +43,6 @@ export interface RenderCharacterSceneInput {
   profile: CharacterProfile;
   /** The character's canonical avatar, used as the identity reference when ready. */
   avatarImageId: string | null;
-  /** Explicit model-family pick from the chat picker; `flux` skips the Venice anchor. */
-  imageModel?: SceneImageModel;
   /** Default-room override; falls back to DEFAULT_CHAT_ROOM. */
   room?: string;
   /** Recent assistant turns (oldest first) for the composer to center the shot on. */
@@ -152,12 +150,10 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   });
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 
-  // A Flux pick is moderated text-to-image — it ignores the reference image, so
-  // don't pay to load the avatar buffer for it (the Venice/Qwen edit path does).
-  const anchor =
-    isDemoMode() || !hasVenice() || input.imageModel === "flux"
-      ? null
-      : await loadCharacterAvatar(input.userId, input.avatarImageId);
+  // Character-chat is a single subject (one library character, no location image),
+  // so it always renders single-reference: the avatar anchors the uncensored edit,
+  // degrading to Qwen text-to-image when there's no usable avatar.
+  const anchor = isDemoMode() || !hasVenice() ? null : await loadCharacterAvatar(input.userId, input.avatarImageId);
   const references: SceneVisualReference[] = [
     {
       kind: "character",
@@ -168,12 +164,13 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
       ...(anchor ? { imageId: anchor.imageId, source: anchor.source } : {}),
     },
   ];
+  const referenceBuffers = new Map<string, Buffer>();
+  if (anchor) referenceBuffers.set(anchor.imageId, anchor.buffer);
 
   return renderResolvedScene({
     plan,
     references,
-    anchorBuffer: anchor?.buffer ?? null,
-    prefer: input.imageModel,
+    referenceBuffers,
     linkage: { ownerId: input.userId, entityKind: "character", entityId: input.characterId },
     logResult: (imageId, status, started) =>
       void logEvent(null, "image.character_scene", {

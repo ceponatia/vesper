@@ -1,13 +1,29 @@
 # Scene images — multi-reference & provider plan
 
-Status: **active** — Task 1 (provider seam + multi-ref plumbing + `image_references`
-join table) **shipped 2026-06-16**. The Qwen reference-sheet and ComfyUI research
-spikes are **done** (results below / in the spec). **New direction
-(2026-06-19): drop Flux entirely and make Qwen (Venice) the default everywhere**,
-then onboard additional NSFW-capable image models — folded in from
-[scene-images.notes.md](scene-images.notes.md). The Flux-on-OpenRouter / BFL
-multi-image spike is **dropped** (superseded by the Flux removal); the §3
-uploaded-avatar guard stays a deferred pre-production gate.
+Status: **shipped — 2026-06-19** for the core arc; only the deferred
+pre-production guard (task 4) and the long-term ComfyUI upgrade (task 5) remain.
+Task 1 (provider seam + multi-ref plumbing + `image_references` join table)
+**shipped 2026-06-16**. The Qwen reference-sheet and ComfyUI research spikes are
+**done** (results below / in the spec). **Task 2 (drop Flux, Qwen the default
+everywhere) + Task 3 (onboard Venice `/image/multi-edit` + the lustify t2i set)
+shipped 2026-06-19**, with the multi-reference path wired in as a **per-session
+toggle** (single-character ↔ multi-reference) on the Scene tab. The
+Flux-on-OpenRouter / BFL multi-image spike is **dropped** (superseded by the Flux
+removal); the §3 uploaded-avatar guard stays a deferred pre-production gate.
+
+> **Completion note (2026-06-19).** Flux/OpenRouter is gone from the image stack:
+> every lane is Venice/Qwen (`server/ai/venice.ts`). The render ladder is now
+> `venice_multi_edit` (mode `multi`, ≤3 refs) → `venice_edit` (single anchor) →
+> `venice_generate` (Qwen t2i) → demo monogram. The portrait studio's model picker
+> became a Venice t2i model set (qwen default + lustify/chroma/illustrious/turbo,
+> `contracts/images/image-models.ts`); avatar generation is now unconditionally
+> uncensored (exposure-gating unchanged). Item/location images moved to Venice
+> t2i. The session toggle lives on `SceneGenState.referenceMode` and is set via
+> `POST /api/sessions/:id/scene {action:"setReferenceMode"}`. **Leftover:**
+> multi-NSFW-ref identity quality is unvalidated (spec §5 open follow-up) — the
+> code degrades to single-edit when <2 reference images exist, so the toggle never
+> blocks a render, but the two-character identity-lock quality needs a real render
+> pass to judge. The §6 multi-pass idea (below) is the next lever if it disappoints.
 
 This is the **task list and build order**. The design, the decisions, and the
 codebase-grounded rationale live in the spec —
@@ -79,9 +95,10 @@ reason-keyed retry. **Shipped:**
   ladder. Per-downgrade diagnostic.
 - Docs updated: [../images.md](../images.md) + [../database.md](../database.md).
 
-> **Reconcile with the Flux removal:** the shipped ladder ends in the
-> `flux_openrouter` text-to-image rung. The Flux-removal task below swaps that
-> rung for a `venice_generate` (Qwen t2i) rung — the seam itself is unchanged.
+> **Reconciled (2026-06-19):** the original shipped ladder ended in the
+> `flux_openrouter` text-to-image rung. Task 2 swapped that rung for
+> `venice_generate` (Qwen t2i) and task 3 added `venice_multi_edit` on top — the
+> seam itself is unchanged.
 
 #### Qwen-Image reference-sheet test — _done 2026-06-16: contact sheet fails; composite-then-harmonize works_
 
@@ -112,13 +129,37 @@ composition 2-person OpenPose ControlNet + regional IP-Adapter masks; hosting
 monorepo split — [monorepo-evaluation.md](monorepo-evaluation.md)). Gating risks
 are model licensing + provider adult-content ToS, not the tech.
 
-### To implement
+### Done (the 2026-06-19 pivot)
 
-#### 2. Remove Flux; make Qwen the default — _new (2026-06-19)_
+#### 2. Remove Flux; make Qwen the default — _shipped 2026-06-19_
 
-Rip Flux out and route everything through Venice/Qwen. The provider seam (task 1)
-already makes this a registry + router edit, not a `scene.ts` rewrite. Touch
-points (from a codebase sweep):
+Flux is out and everything routes through Venice/Qwen. **Shipped:**
+
+- `server/ai/image-providers.ts` — `flux_openrouter` + `renderFluxText` dropped;
+  `venice_generate` (Qwen t2i) is the new last AI rung and `venice_multi_edit`
+  (task 3) the new top rung. The `prefer: "flux"|"qwen"` model-family pick became
+  a `mode: "single"|"multi"` reference-mode pick (`SceneRenderRequest.mode`).
+- `server/ai/provider.ts` — `imageModel()` / `imageModelId()` / `MODEL_DEFAULTS.image*`
+  removed; OpenRouter is text-only now.
+- `server/images/{avatar,entity,scene,character-scene}.ts` — avatar + entity
+  images render via `veniceGenerateImage`; the scene ladder + prompts re-based on
+  Venice; the chat scene picker's Flux option removed (it's single-reference).
+- `AvatarImageModel` became the extensible Venice t2i set
+  (`contracts/images/image-models.ts`): `qwen` (default) + `lustify` / `chroma` /
+  `illustrious` / `turbo`, resolved to model ids by `veniceT2IModelId`. The
+  portrait-studio + avatar route default to `qwen`.
+- Avatar generation passes `allowIntimate` unconditionally (every route is the
+  sole uncensored one now); exposure-gating inside `buildAvatarPrompt` is unchanged.
+- Tests rewritten (`image-providers.test.ts` routing, `scene.test.ts` chain ids,
+  `prompts.test.ts` route labels + new multi-ref cases); `scripts/spikes/flux-multiref.ts`
+  deleted; the intimate-categories + images.md Flux passages reconciled.
+
+The retained build-order notes below are the historical touch-point list.
+
+<details><summary>Original touch points (for the record)</summary>
+
+The provider seam (task 1) made this a registry + router edit, not a `scene.ts`
+rewrite. Touch points (from the codebase sweep):
 
 - **`server/ai/image-providers.ts`** — drop the `flux_openrouter` provider id,
   caps, and `renderFluxText`. Add a **`venice_generate`** provider backed by
@@ -159,38 +200,62 @@ points (from a codebase sweep):
 
 > **Keep the model-selection seam.** Don't collapse the model-pick infrastructure
 > to a single hard-coded model — task 3 onboards more models behind it. Make the
-> `AvatarImageModel` / `SceneImageModel` unions extensible (forward-compatible
+> `AvatarImageModel` / reference-mode unions extensible (forward-compatible
 > schema preference), with Qwen the default.
 
-#### 3. Onboard additional NSFW-capable image models — _research done 2026-06-19 (spec §5); onboarding to implement_
+</details>
 
-Find and onboard more uncensored image models so we're not single-sourced on Qwen,
-and to chase the multi-reference + NSFW gap. Full survey + sources in **spec §5**.
-Headline outcomes:
+#### 3. Onboard additional NSFW-capable image models — _shipped 2026-06-19_
 
-- **The multi-reference + NSFW gap is fillable today, on Venice** — `POST
-  /image/multi-edit` with **`qwen-edit-uncensored`** + `safe_mode:false` takes
-  **1–3 reference images** in one call. Already-integrated provider; this is the
-  recommended onboarding and it means **ComfyUI is no longer the *only*
-  multi-character-NSFW path** (it's the uncapped upgrade, task 5). Cap = 3 refs;
-  multi-NSFW-ref identity quality is **unproven — test before depending on it.**
-- **Onboard cheaper/more-uncensored Venice t2i:** `lustify-v7`/`lustify-v8`
-  (API-tagged `most_uncensored`, **$0.01/img** vs qwen-image-2's $0.05), plus
-  `chroma` / `wai-Illustrious` / `z-image-turbo` for style + speed diversity.
-- ⚠️ **Verify our current edit model:** we edit with `qwen-image-2-edit` — confirm
-  it's fully uncensored at `safe_mode:false`, or switch to `qwen-edit-uncensored`.
-- **Seedream — rejected.** ByteDance hard-moderates NSFW at generation on every
-  host; not viable for the core (spec §5).
-- **OpenRouter — no uncensored image model;** it exits the image stack (per task 2).
-- **Replicate — viable *new* provider** (Terms tolerate adult output; Pony /
-  Illustrious / NoobAI / uncensored-Flux checkpoints) as diversification/fallback,
-  but its uncensored models are t2i only — not a multi-ref answer.
+Onboarded the surveyed Venice models so we're not single-sourced on one model and
+to fill the multi-reference + NSFW gap. **Shipped:**
 
-Onboarding mechanics: each model = a new `IMAGE_PROVIDERS` entry + router clause +
-(for a new vendor) a provider module mirroring `venice.ts` (never-throws /
-diagnostic shape, inside the `src/server/ai` boundary), exposed through the
-model-pick seam from task 2. Venice additions need **no new module** — just a
-`/image/multi-edit` call + new model ids.
+- **Multi-reference + NSFW path:** `veniceMultiEditImage` (`POST /image/multi-edit`,
+  `modelId: qwen-edit-uncensored` via `veniceMultiEditModelId`, `safe_mode` off,
+  1–3 reference images) backs the new `venice_multi_edit` provider. Wired in as a
+  **per-session toggle** (`SceneGenState.referenceMode` `single`|`multi`) on the
+  Scene tab — `multi` sends every present character's avatar + the location image
+  (capped at 3, characters prioritised), `single` keeps the one-anchor edit.
+  Degrades to single-edit when <2 reference images exist. **API field gotcha
+  confirmed at integration:** multi-edit takes **`modelId`** (not `model`) and
+  **`output_format`** (not `format`); the single `/image/edit` endpoint still
+  takes `model`/`format` (don't touch those). First image = base canvas.
+- **Cheaper/more-uncensored Venice t2i onboarded** as portrait-studio model
+  options (`contracts/images/image-models.ts` → `veniceT2IModelId`): `lustify`
+  (`lustify-v8`, API-flagged most-uncensored, ~$0.01/img), `chroma` (photoreal),
+  `illustrious` (`wai-Illustrious`, anime), `turbo` (`z-image-turbo`, fastest),
+  alongside the default `qwen`. A wrong/retired id degrades to a failed row, so
+  onboarding another is a one-line edit in the resolver.
+- **Seedream — rejected** (ByteDance hard-moderates NSFW; spec §5). **OpenRouter**
+  left the image stack. **Replicate** stays a viable future diversification
+  provider (t2i only) — not onboarded now.
+
+**Open follow-up (carried):** multi-NSFW-ref identity quality is unvalidated.
+⚠️ also still open: confirm the single-edit `qwen-image-2-edit` is fully
+uncensored at `safe_mode:false` or switch it to `qwen-edit-uncensored` (the
+multi-edit path already uses the uncensored variant; both are env-overridable —
+`VENICE_IMAGE_EDIT_MODEL` / `VENICE_MULTI_EDIT_MODEL`).
+
+> **Future lever — multi-pass scene compositing for >2 characters + a location.**
+> Venice `/image/multi-edit` caps at 3 references, so a scene with 3+ characters
+> plus a location image can't fit everyone in one call (today the location is
+> dropped first, then overflow characters fall to textual description). A future
+> upgrade: render in **passes** — send 2 characters + the location to the model
+> for a first composite, then **loop that output back in** as the new base image
+> together with the remaining character(s), using a **different instruction that
+> describes the task better** ("add this person to the existing scene, preserving
+> everyone already present" rather than "compose these references together").
+> Each pass stays within the 3-ref cap while accreting subjects. This is the
+> hosted-API analogue of the §6 composite-then-harmonize finding and a cheaper
+> stepping stone than jumping straight to self-hosted ComfyUI (task 5) for the
+> 3+-character case. Validate the 2-character single-pass quality first — if it's
+> good, the multi-pass extension is worth building; if not, ComfyUI is the path.
+
+Onboarding mechanics (for the next model): each = a new `IMAGE_PROVIDERS` entry +
+router clause + (for a new vendor) a provider module mirroring `venice.ts`
+(never-throws / diagnostic shape, inside the `src/server/ai` boundary), exposed
+through the model-pick seam. Venice additions need **no new module** — just a new
+model id in `veniceT2IModelId` (t2i) or a new endpoint call (like multi-edit).
 
 ### Deferred / long-term
 
@@ -243,8 +308,10 @@ input-moderates nudity) — which is exactly why Flux is being dropped (spec §5
   must not retroactively change other users' in-progress sessions).
 - **Degrade, never fail** — scene images are nice-to-have; a render failure never
   blocks the chat. The all-Venice ladder still degrades step-by-step
-  (`venice_edit` → `venice_generate` → demo monogram) with a diagnostic per
-  downgrade and the reason-keyed retry policy (spec §8.3).
+  (`venice_multi_edit` → `venice_edit` → `venice_generate` → demo monogram) with a
+  diagnostic per downgrade and the reason-keyed retry policy (spec §8.3). The
+  multi-reference toggle never blocks a render either — `multi` degrades to the
+  single ladder when fewer than two reference images are available.
 
 ## Open questions
 
@@ -261,14 +328,21 @@ input-moderates nudity) — which is exactly why Flux is being dropped (spec §5
   reads the table; a one-time backfill copied existing scenes over.
 - ~~**Does any hosted model deliver multi-reference + NSFW** (task 3)~~ —
   **resolved (2026-06-19): yes — Venice `/image/multi-edit` + `qwen-edit-uncensored`,
-  ≤3 refs** (spec §5). Self-hosted ComfyUI is the *uncapped* upgrade, not the only
-  path. Open follow-up: empirically validate identity quality across 2–3 NSFW refs.
-- **Which Venice edit model for the uncensored path** — confirm `qwen-image-2-edit`
-  (current) is uncensored at `safe_mode:false`, or switch to `qwen-edit-uncensored`
-  (spec §5).
+  ≤3 refs**, now shipped behind the session toggle (spec §5). Self-hosted ComfyUI
+  is the *uncapped* upgrade, not the only path. **Open follow-up (carried):**
+  empirically validate identity quality across 2–3 NSFW refs — the code degrades
+  to single-edit when <2 images exist, so the toggle never blocks, but the
+  two-character lock quality is unjudged. If it disappoints, the **multi-pass**
+  idea in task 3 is the next lever before ComfyUI.
+- **Which Venice edit model for the uncensored path** (carried) — confirm the
+  single-edit `qwen-image-2-edit` (current `VENICE_IMAGE_EDIT_MODEL` default) is
+  uncensored at `safe_mode:false`, or switch it to `qwen-edit-uncensored`. The
+  multi-edit path already defaults to `qwen-edit-uncensored`; both are
+  env-overridable.
 - **Does any moderated render backend remain after Flux** — needed only by the §3
-  guard. Tentative answer: Venice `safe_mode` on (no separate provider needed).
-  Confirm when the guard comes due.
+  guard. Tentative answer: Venice `safe_mode` on (no separate provider needed —
+  `veniceGenerateImage` already honors `VENICE_SAFE_MODE`, per-request knob is a
+  small add). Confirm when the guard comes due.
 
 ## Eval harness
 

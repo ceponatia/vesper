@@ -4,13 +4,14 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { exposedRegions, resolveWardrobeVisibility, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
 import { realizeBody, speciesAppearancePhrase } from "@/contracts/species";
+import type { SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
 /**
- * Intimate-anatomy attributes are withheld from image prompts unless the route
- * is the uncensored Qwen/Venice path (body-model spec Decision 3). The default
- * Flux portrait generator rejects these fields, so callers pass `allowIntimate`
- * only when targeting an uncensored model.
+ * Intimate-anatomy attributes are withheld from image prompts unless the caller
+ * sets `allowIntimate` (body-model spec Decision 3). Image generation is now
+ * uncensored Venice/Qwen end-to-end, so avatar generation always sets it; the
+ * gate remains off for the moderation-prone scene composer's appearance summary.
  */
 function isIntimateAttribute(def: AttributeDefinition): boolean {
   return (INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category);
@@ -134,11 +135,12 @@ export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): A
  *    pelvis-rooted tail) is exempt — it sweeps up into frame and defines the
  *    character.
  *  - **Exposure gating** (intimate anatomy, body-model spec Decision 3): the
- *    above-waist intimate category (`breasts`) reaches the prompt only on the
- *    uncensored route (`allowIntimate`) AND only when its region reads exposed
- *    (`exposedRegions`) — Maya's bra-covered chest stays unmentioned. Flux
- *    excludes all intimate anatomy regardless. This reuses the same
- *    exposure predicate as the scene render (`intimateAttrRendersExposed`).
+ *    above-waist intimate category (`breasts`) reaches the prompt only when
+ *    `allowIntimate` is set AND only when its region reads exposed
+ *    (`exposedRegions`) — Maya's bra-covered chest stays unmentioned. The
+ *    `allowIntimate`-off path (the moderation-prone composer) excludes all
+ *    intimate anatomy regardless. This reuses the same exposure predicate as the
+ *    scene render (`intimateAttrRendersExposed`).
  */
 export function buildAvatarPrompt(
   name: string,
@@ -335,7 +337,7 @@ export interface SceneComposerContext {
 
 export const SCENE_COMPOSER_SYSTEM = [
   "You compose the visual spec for a scene image from roleplay session state.",
-  "The image is rendered from the player's first-person POV: the camera IS the player's eyes. The player must NEVER appear in the image — no body, no face, no hands. Never describe the player or their clothing in any field.",
+  "The image is rendered from the player's first-person POV — shot through the player's own eyes. The player must NEVER appear in the image — no body, no face, no hands, and never a camera or held object in frame. Never describe the player or their clothing in any field.",
   "Fill every field of the requested object. Rules:",
   '- focalCharacter: exactly ONE name from the "Present characters" list — whoever the recent narration centers on. If the list is empty, leave it empty: a location-only shot is a valid image.',
   '- others: any remaining names from the "Present characters" list that belong in frame, each with a short phrase for what they are doing. Never include the player or anyone not on the list — characters who are not in the room must not appear.',
@@ -722,17 +724,32 @@ export const SCENE_POV_RULE =
   "First-person POV through the player's own eyes. The player must NEVER be visible — no body, no face, no hands or held objects in frame.";
 
 export interface SceneRenderOptions {
-  /** Name of the character the reference image identity-locks (Venice edit); omit for text-to-image. */
+  /** Name of the character the reference image identity-locks (Venice single edit); omit for text-to-image. */
   referenceName?: string;
-  /** Uncensored route (Venice/Qwen): emit exposed intimate-anatomy detail (Decision 3). Off for Flux text-to-image. */
+  /** Uncensored route (Venice/Qwen): emit exposed intimate-anatomy detail (Decision 3). Off for the moderated text-to-image fallback. */
   allowIntimate?: boolean;
+  /**
+   * Multi-reference edit (Venice `/image/multi-edit`, spec §5): the ordered
+   * reference images fed to the provider — the present characters' avatars plus
+   * the location image — so the prompt can map each image to who/what it depicts.
+   * When set, builds the multi-reference composition prompt (every listed
+   * character is identity-locked by an image, not described textually) instead
+   * of the single-anchor one.
+   */
+  multiReferences?: SceneMultiReference[];
+}
+
+/** One reference image fed to `/image/multi-edit`, in send order (first = base). */
+export interface SceneMultiReference {
+  name: string;
+  kind: SceneVisualReferenceKind;
 }
 
 /**
- * Venice's image-edit endpoint hard-rejects prompts over this many characters
- * (`Prompt exceeds 1500 character limit`). Text-to-image (flux) is far roomier,
- * so the budget only applies on the reference-edit path. Untruncated garment
- * descriptions (followups.phase3.md §1) dominate the length, so a rich outfit
+ * Venice's image-edit endpoints (single + multi) hard-reject prompts over this
+ * many characters (`Prompt exceeds 1500 character limit`). Venice text-to-image
+ * is far roomier, so the budget only applies on the reference-edit paths.
+ * Untruncated garment descriptions (followups.phase3.md §1) dominate the length, so a rich outfit
  * or several NPCs blows the cap — buildSceneRenderPrompt shrinks the variable
  * fields to fit (followups.phase3.md §6).
  */
@@ -752,6 +769,11 @@ export const VENICE_RENDER_PROMPT_LIMIT = 1500;
  */
 export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderOptions = {}): string {
   const featured = [...(plan.focal ? [plan.focal] : []), ...plan.others];
+
+  if (opts.multiReferences && opts.multiReferences.length > 0) {
+    return budgetVenicePrompt((outfitCap, settingCap) => assembleMulti(plan, featured, opts, outfitCap, settingCap));
+  }
+
   const refIndex = opts.referenceName
     ? featured.findIndex((c) => normalizeName(c.name) === normalizeName(opts.referenceName ?? ""))
     : -1;
@@ -759,7 +781,7 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
   const textual = featured.filter((_, index) => index !== refIndex);
 
   const assemble = (outfitCap: number, settingCap: number): string => {
-    const fit = (text: string, cap: number) => (cap === Infinity ? text : excerpt(text, cap));
+    const fit = makeFit(outfitCap);
     const pieces: string[] = [];
     if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
     pieces.push(SCENE_POV_RULE);
@@ -780,22 +802,46 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
       const label = !reference && c === plan.focal ? "Subject" : "Also in frame";
       pieces.push(`${label}: ${c.name} — ${detail}.`);
     }
-    // Anchor clothing to wardrobe state, not the (often fully-dressed) reference image:
-    // without this the edit model re-paints removed garments — a shed top stays on.
-    if (featured.some((c) => c.outfitSummary || c.exposure)) {
-      pieces.push("Depict only the clothing described; add no garment that is not listed.");
-    }
-    if (featured.length === 0) pieces.push("No people in frame — a quiet shot of the place itself.");
-    if (plan.setting) pieces.push(`Setting: ${fit(plan.setting, settingCap)}.`);
-    if (plan.lighting) pieces.push(`Lighting: ${plan.lighting}.`);
-    if (plan.mood) pieces.push(`Mood: ${plan.mood}.`);
-    pieces.push("High quality, no text, no watermark.");
+    appendSceneTail(pieces, plan, featured, fit, settingCap);
     return pieces.join(" ");
   };
 
+  // Text-to-image is unbudgeted; the Venice edit path shrinks to the char cap.
   if (!opts.referenceName) return assemble(Infinity, Infinity);
+  return budgetVenicePrompt(assemble);
+}
 
-  // Venice edit path: shrink outfit/setting text until under the limit.
+/** Per-call excerpt helper: `Infinity` cap ⇒ pass text through whole. */
+function makeFit(_cap: number): (text: string, cap: number) => string {
+  return (text, cap) => (cap === Infinity ? text : excerpt(text, cap));
+}
+
+/**
+ * Shared tail for every scene render prompt: the clothing-authority clause (so
+ * an edit model can't re-paint a shed garment), the empty-room note, and the
+ * setting / lighting / mood / quality lines.
+ */
+function appendSceneTail(
+  pieces: string[],
+  plan: SceneRenderPlan,
+  featured: SceneCharacterSpec[],
+  fit: (text: string, cap: number) => string,
+  settingCap: number,
+): void {
+  // Anchor clothing to wardrobe state, not the (often fully-dressed) reference image:
+  // without this the edit model re-paints removed garments — a shed top stays on.
+  if (featured.some((c) => c.outfitSummary || c.exposure)) {
+    pieces.push("Depict only the clothing described; add no garment that is not listed.");
+  }
+  if (featured.length === 0) pieces.push("No people in frame — a quiet shot of the place itself.");
+  if (plan.setting) pieces.push(`Setting: ${fit(plan.setting, settingCap)}.`);
+  if (plan.lighting) pieces.push(`Lighting: ${plan.lighting}.`);
+  if (plan.mood) pieces.push(`Mood: ${plan.mood}.`);
+  pieces.push("High quality, no text, no watermark.");
+}
+
+/** Venice edit/multi-edit prompts hard-cap at 1500 chars — shrink outfit/setting text until it fits. */
+function budgetVenicePrompt(assemble: (outfitCap: number, settingCap: number) => string): string {
   const caps: ReadonlyArray<[number, number]> = [
     [Infinity, Infinity],
     [360, 220],
@@ -809,6 +855,59 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     if (prompt.length <= VENICE_RENDER_PROMPT_LIMIT) return prompt;
   }
   return clampToLimit(prompt, VENICE_RENDER_PROMPT_LIMIT);
+}
+
+/**
+ * Multi-reference composition prompt for Venice `/image/multi-edit` (spec §5):
+ * every reference image is enumerated and its subject identity-locked, then each
+ * featured character's pose/outfit/exposure is stated. Characters WITHOUT a
+ * reference image (e.g. a third character beyond the 3-ref cap) fall back to a
+ * textual face/appearance description so they still appear. Budgeted to the
+ * Venice limit like the single-edit path.
+ */
+function assembleMulti(
+  plan: SceneRenderPlan,
+  featured: SceneCharacterSpec[],
+  opts: SceneRenderOptions,
+  outfitCap: number,
+  settingCap: number,
+): string {
+  const fit = makeFit(outfitCap);
+  const multi = opts.multiReferences ?? [];
+  const refCharNames = new Set(multi.filter((m) => m.kind === "character").map((m) => normalizeName(m.name)));
+
+  const pieces: string[] = [PORTRAIT_IDENTITY_LOCK, SCENE_POV_RULE];
+  pieces.push(`${multi.length} reference images provided — ${describeMultiReferences(multi)}`);
+  pieces.push("Compose all referenced people together into one shared scene, each keeping the exact face, hair and build of their reference image.");
+
+  for (const c of featured) {
+    const isRef = refCharNames.has(normalizeName(c.name));
+    const parts: string[] = [];
+    if (!isRef) {
+      if (c.species) parts.push(excerpt(c.species, 160));
+      if (c.appearance) parts.push(c.appearance);
+    }
+    if (isRef && c.lowerBody) parts.push(`figure: ${c.lowerBody}`);
+    if (c.action) parts.push(c.action);
+    if (c.outfitSummary) parts.push(`wearing ${fit(c.outfitSummary, outfitCap)}`);
+    else if (!c.exposure && !isRef) parts.push("wearing casual everyday clothing");
+    if (c.exposure) parts.push(c.exposure);
+    if (opts.allowIntimate && c.intimateAppearance) parts.push(c.intimateAppearance);
+    const label = isRef ? c.name : `${c.name} (no reference image — render from this description)`;
+    if (parts.length > 0) pieces.push(`${label}: ${parts.join("; ")}.`);
+  }
+
+  appendSceneTail(pieces, plan, featured, fit, settingCap);
+  return pieces.join(" ");
+}
+
+/** "1) Mira and 2) Sayed are the people; 3) the location is the setting." */
+function describeMultiReferences(multi: readonly SceneMultiReference[]): string {
+  const parts = multi.map((m, i) => {
+    const what = m.kind === "location" ? `the location (${m.name || "the setting"}) — the background/setting` : `${m.name || "a character"} — a person to include`;
+    return `${i + 1}) ${what}`;
+  });
+  return parts.join("; ") + ".";
 }
 
 /** Last-resort hard cap: trim to a word boundary at or under the limit. */

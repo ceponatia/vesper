@@ -21,10 +21,8 @@ type Params = { id: string };
 /** How many recent assistant lines the scene composer centres the shot on. */
 const SCENE_CHAT_CONTEXT = 6;
 
-/** POST body: the optional image-model pick (Flux/Qwen) from the chat picker. */
-const sceneBodySchema = z.object({
-  model: z.enum(["flux", "qwen"]).optional(),
-});
+/** POST body: no options today — character-chat scenes are single-reference (one subject). */
+const sceneBodySchema = z.object({});
 
 /** GET /api/characters/:id/chat/scene — the character's chat scenes, newest first. */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
@@ -54,8 +52,8 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
 /** POST /api/characters/:id/chat/scene — queue a scene render from the recent chat. */
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
-  const body = await readBody(req, sceneBodySchema);
-  if (!body.ok) return body.response;
+  const parsed = await readBody(req, sceneBodySchema);
+  if (!parsed.ok) return parsed.response;
   const [character] = await db()
     .select({ id: characters.id, name: characters.name, profile: characters.profile, avatarImageId: characters.avatarImageId })
     .from(characters)
@@ -95,7 +93,6 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         name: character.name,
         profile,
         avatarImageId: character.avatarImageId,
-        imageModel: body.value.model,
         recentChat,
       }),
     }),

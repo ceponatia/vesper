@@ -104,9 +104,9 @@ describe("executeSceneChain (fallback ladder + reason-keyed retry, spec §8.3)",
       calls.push(id);
       return id === "venice_edit" ? failResult("content_rejection", "Sexual Content") : okResult();
     };
-    const outcome = await executeSceneChain(["venice_edit", "flux_openrouter"], run, sink);
-    expect(outcome?.providerId).toBe("flux_openrouter");
-    expect(calls).toEqual(["venice_edit", "flux_openrouter"]); // venice tried exactly once (no retry)
+    const outcome = await executeSceneChain(["venice_edit", "venice_generate"], run, sink);
+    expect(outcome?.providerId).toBe("venice_generate");
+    expect(calls).toEqual(["venice_edit", "venice_generate"]); // venice tried exactly once (no retry)
     expect(
       sink.items.some((d) => d.code === "images.scene_render.provider_fallback" && d.context?.reason === "content_rejection"),
     ).toBe(true);
@@ -120,7 +120,7 @@ describe("executeSceneChain (fallback ladder + reason-keyed retry, spec §8.3)",
       veniceCalls += 1;
       return veniceCalls === 1 ? failResult("transient", "ETIMEDOUT") : okResult();
     };
-    const outcome = await executeSceneChain(["venice_edit", "flux_openrouter"], run, sink);
+    const outcome = await executeSceneChain(["venice_edit", "venice_generate"], run, sink);
     expect(outcome?.providerId).toBe("venice_edit");
     expect(veniceCalls).toBe(2);
     expect(sink.items.some((d) => d.code === "images.scene_render.retry")).toBe(true);
@@ -128,14 +128,14 @@ describe("executeSceneChain (fallback ladder + reason-keyed retry, spec §8.3)",
 
   it("every rung failing transiently returns null and warns of a possible outage", async () => {
     const sink = new DiagnosticCollector();
-    const outcome = await executeSceneChain(["venice_edit", "flux_openrouter"], async () => failResult("transient"), sink);
+    const outcome = await executeSceneChain(["venice_edit", "venice_generate"], async () => failResult("transient"), sink);
     expect(outcome).toBeNull();
     expect(sink.items.some((d) => d.code === "images.scene_render.service_outage" && d.severity === "warn")).toBe(true);
   });
 
   it("non-transient failures across the chain return null without an outage warning", async () => {
     const sink = new DiagnosticCollector();
-    const outcome = await executeSceneChain(["venice_edit", "flux_openrouter"], async () => failResult("content_rejection"), sink);
+    const outcome = await executeSceneChain(["venice_edit", "venice_generate"], async () => failResult("content_rejection"), sink);
     expect(outcome).toBeNull();
     expect(sink.items.some((d) => d.code === "images.scene_render.service_outage")).toBe(false);
   });

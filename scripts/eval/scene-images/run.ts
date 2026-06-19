@@ -45,7 +45,7 @@ async function main(): Promise<void> {
       name: fx.name,
       category: fx.category,
       chain,
-      primaryProvider: chain[0] ?? "flux_openrouter",
+      primaryProvider: chain[0] ?? "venice_generate",
       uploadedAnchor: Boolean(fx.uploadedAnchor),
       prompts: { edit: editPrompt, text: textPrompt },
     };

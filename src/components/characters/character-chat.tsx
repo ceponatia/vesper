@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import {
-  avatarImageModels,
-  avatarImageModelLabels,
-  charactersApi,
-  sendCharacterChat,
-  type AvatarImageModel,
-  type ImageRecord,
-} from "@/lib/client/api";
+import { charactersApi, sendCharacterChat, type ImageRecord } from "@/lib/client/api";
 import { DEFAULT_NARRATIVE_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
@@ -240,7 +233,6 @@ function SceneStrip({ characterId, name, hasChat }: { characterId: string; name:
   const toast = useToast();
   const scenes = useAsyncData(() => charactersApi.chatScenes(characterId), [characterId]);
   const [generating, setGenerating] = useState(false);
-  const [sceneModel, setSceneModel] = useState<AvatarImageModel>("qwen");
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const baselineRef = useRef(0);
 
@@ -273,7 +265,7 @@ function SceneStrip({ characterId, name, hasChat }: { characterId: string; name:
   const generate = async () => {
     baselineRef.current = sceneList.length;
     setGenerating(true);
-    const result = await charactersApi.generateChatScene(characterId, { model: sceneModel });
+    const result = await charactersApi.generateChatScene(characterId);
     if (!result.ok) {
       setGenerating(false);
       toast.push({ title: "Scene failed to queue", description: result.error.message, tone: "error" });
@@ -288,18 +280,6 @@ function SceneStrip({ characterId, name, hasChat }: { characterId: string; name:
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Scene images</h3>
         <div className="flex items-center gap-2">
-          <Select
-            aria-label="Scene image model"
-            value={sceneModel}
-            onChange={(e) => setSceneModel(e.target.value as AvatarImageModel)}
-            className="h-8 w-44 text-xs"
-          >
-            {avatarImageModels.map((m) => (
-              <option key={m} value={m}>
-                {avatarImageModelLabels[m]}
-              </option>
-            ))}
-          </Select>
           <Button
             size="sm"
             onClick={generate}

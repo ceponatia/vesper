@@ -1,41 +1,38 @@
-import { generateImage } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { describeImageGenError, imageModel, imageModelId, isDemoMode, veniceGenerateImage, veniceImageModelId } from "../ai";
+import { describeImageGenError, isDemoMode, veniceGenerateImage, veniceT2IModelId } from "../ai";
 import { logEvent } from "../events";
 import { parseOr } from "@/lib/parse";
+import { DEFAULT_AVATAR_IMAGE_MODEL, type AvatarImageModel } from "@/contracts";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { monogramSvg } from "./monogram";
 import { buildAvatarPrompt, type AvatarWardrobeItem, type AvatarStyle } from "./prompts";
 
-/** Which generator backs the avatar: Flux (OpenRouter) or Qwen uncensored (Venice). */
-export type AvatarImageModel = "flux" | "qwen";
-
 export interface GenerateAvatarInput {
   characterId: string;
   userId: string;
   style?: AvatarStyle;
-  /** Image model; defaults to Flux. "qwen" routes through Venice's uncensored text-to-image. */
+  /** Venice text-to-image model key (scene-images.spec.md §5); defaults to Qwen. */
   model?: AvatarImageModel;
   sink?: DiagnosticSink;
 }
 
 /** Stored on the image row's meta for auditability (mirrors the variant label). */
 function avatarModelLabel(model: AvatarImageModel): string {
-  return model === "qwen" ? `venice/${veniceImageModelId()}` : imageModelId();
+  return `venice/${veniceT2IModelId(model)}`;
 }
 
 /**
- * Avatar pipeline (docs/images.md): registry prompt → OpenRouter image model
- * (3:4), monogram in demo mode. Generation failure marks the row failed and
- * returns its id — callers poll the row, never catch.
+ * Avatar pipeline (docs/images.md): registry prompt → Venice/Qwen uncensored
+ * text-to-image (3:4), monogram in demo mode. Generation failure marks the row
+ * failed and returns its id — callers poll the row, never catch.
  */
 export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
   const style = input.style ?? "realistic";
-  const model = input.model ?? "flux";
+  const model = input.model ?? DEFAULT_AVATAR_IMAGE_MODEL;
   const demo = isDemoMode();
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
@@ -46,10 +43,11 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     "characters.profile",
   );
   const wardrobe = character ? await loadDefaultWardrobe(input.userId, profile.defaultOutfit, input.sink) : [];
-  // Decision 3: the uncensored Qwen route may depict exposed intimate anatomy;
-  // the default Flux portrait generator rejects those fields, so they're
-  // withheld. buildAvatarPrompt also drops below-waist attributes (waist-up).
-  const prompt = character ? buildAvatarPrompt(character.name, profile, style, wardrobe, model === "qwen") : "";
+  // Decision 3: every avatar model is now an uncensored Venice route (Flux is
+  // gone), so allowIntimate is unconditional — exposed intimate anatomy is still
+  // exposure-gated inside buildAvatarPrompt, which also drops below-waist
+  // attributes (waist-up framing).
+  const prompt = character ? buildAvatarPrompt(character.name, profile, style, wardrobe, true) : "";
 
   const asset = await createImageAsset({
     ownerId: input.userId,
@@ -153,19 +151,11 @@ export async function loadDefaultWardrobe(
 }
 
 async function generateAvatarBuffer(prompt: string, model: AvatarImageModel): Promise<Buffer> {
-  if (model === "qwen") {
-    // Venice uncensored text-to-image (3:4 portrait). A missing key / API error
-    // throws here and the caller marks the row failed with the message.
-    const result = await veniceGenerateImage({ prompt, aspectRatio: "3:4" });
-    if (!result.ok || !result.image) throw new Error(result.error ?? "venice generate returned no image");
-    return result.image;
-  }
-  const result = await generateImage({
-    model: imageModel(),
-    prompt,
-    aspectRatio: "3:4",
-  });
-  return Buffer.from(result.image.uint8Array);
+  // Venice uncensored text-to-image (3:4 portrait). A missing key / API error
+  // throws here and the caller marks the row failed with the message.
+  const result = await veniceGenerateImage({ prompt, aspectRatio: "3:4", model: veniceT2IModelId(model) });
+  if (!result.ok || !result.image) throw new Error(result.error ?? "venice generate returned no image");
+  return result.image;
 }
 
 /** Concurrency for batched avatar generation — matches the entity-image batch. */
