@@ -43,6 +43,21 @@
   --radius-card: 0.625rem;
 }
 
+/*
+ * High-contrast accessibility theme (UX-audit M6 / feature #6). A header toggle
+ * sets data-contrast="high" on <html>; these overrides lift the dim secondary
+ * text tokens + borders well past the AA floor for users who want more contrast.
+ * Still the same dark "reading room" — only the quiet tokens get louder.
+ */
+:root[data-contrast="high"] {
+  --color-paper-200: #efe8d8; /* body text → brighter */
+  --color-paper-300: #d6ccb4;
+  --color-paper-400: #bdb39a; /* muted → much higher contrast */
+  --color-paper-500: #ada189; /* faint → higher contrast */
+  --color-ink-500: #50506a; /* strong borders */
+  --color-ink-600: #3c3c4e; /* borders → clearly visible */
+}
+
 @layer base {
   html {
     color-scheme: dark;
