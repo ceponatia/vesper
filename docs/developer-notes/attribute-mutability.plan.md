@@ -29,9 +29,9 @@ The minimal correct fix. ~spec §4. All design questions resolved.
    Unit-test the truth table.
 2. **Merge enforcement (D2).** In the `attributeChanges` loop (`engine/merge.ts:1721`),
    reject a disallowed inherent change with `merge.attribute.inherent_change_rejected`
-   + a `droppedEvents` correction; short-circuit when the proposed value already equals
-   the resolved value (no spurious correction on a re-assert). Precedent: the
-   movement-drop at `merge.ts:1509`.
+   - a `droppedEvents` correction; short-circuit when the proposed value already equals
+     the resolved value (no spurious correction on a re-assert). Precedent: the
+     movement-drop at `merge.ts:1509`.
 3. **Simulant prompt (D3, prompt half).** Tighten `SIMULANT_SYSTEM`
    (`engine/prompts/agents.ts`) so `attributeChanges` is named as mutable-only and
    inherent traits (eye color, gender, age, species, bone structure) are explicitly
@@ -74,9 +74,11 @@ defaults on first render. Adjacent to Slice 1, independent of Slice 2.
 - **Q1 — free-text conversions (spec §6, blocks Slice 2).** Which of `voice.accent`,
   `presentation.scent_baseline`, `horns.color`, `tail.color`, `wings.color` become
   enum/enum_list, and whether the three morphology colors share one authored palette?
+  **Answer** A central color list is a good idea. We should have a central color palette which can be augmented by certain fields. For example, have the central palette for eye.color but eye.color also adds 'hazel' and other colors that aren't strictly applicable to things like tail.color, etc. What do you think? This could save a lot of code if all fields that need colors just import from a list in a separate schema file. Look for other opportunities where we could do this too, such as arm/leg definition, etc. Many body areas do need to have their own lists of available values, of course.
 - **Q2 — editor enum narrowing (spec §8, blocks Slice 3).** Hard-restrict the editor's
   enum options to the species-narrowed set (drop out-of-rule options), or soft-warn?
   Leaning hard-restrict + seed required defaults.
+  **Answer** Hard-restrict
 
 ## Settled rulings (do not re-open without cause)
 
