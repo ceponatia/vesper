@@ -7,6 +7,7 @@ import { fillPlayerToken } from "@/lib/player-token";
 import { sessionsApi, worldsApi, type LoreChunkEntry } from "@/lib/client/api";
 import { WorldMapGraph } from "./world-map-graph";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { useIsMobile } from "@/components/hooks/use-is-mobile";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,6 +24,7 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
   const toast = useToast();
   const world = useAsyncData(() => worldsApi.get(worldId), [worldId]);
   const sessions = useAsyncData(() => sessionsApi.forWorld(worldId), [worldId]);
+  const isMobile = useIsMobile();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
@@ -76,6 +78,33 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
     detail.playerCharacterName ? fillPlayerToken(text, detail.playerCharacterName) : text;
   const locationNameById = new Map(detail.locations.map((loc) => [loc.id, loc.name]));
   const worldSessions = (sessions.data ?? []).filter((s) => !s.worldId || s.worldId === worldId);
+
+  // The graph scales to width and gets cramped on a phone, so the touch-friendly
+  // list is the primary view there (shown directly); desktop keeps it tucked in a
+  // collapsible below the graph. Defined once so both branches reuse it.
+  const locationList = (
+    <ul className="mt-2 flex flex-col gap-2">
+      {detail.locations.map((loc) => {
+        const connected = detail.links
+          .filter((l) => l.fromWorldLocationId === loc.id || l.toWorldLocationId === loc.id)
+          .map((l) =>
+            locationNameById.get(l.fromWorldLocationId === loc.id ? l.toWorldLocationId : l.fromWorldLocationId),
+          )
+          .filter((n): n is string => Boolean(n));
+        return (
+          <li key={loc.id}>
+            <Card className="p-3">
+              <p className="text-sm font-medium text-paper-100">{loc.name}</p>
+              {loc.description ? <p className="mt-0.5 line-clamp-2 text-xs text-paper-400">{loc.description}</p> : null}
+              {connected.length > 0 ? (
+                <p className="mt-1.5 text-xs text-paper-500">↔ {connected.join(" · ")}</p>
+              ) : null}
+            </Card>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   const duplicate = async () => {
     setDuplicating(true);
@@ -295,34 +324,16 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
                     locations={detail.locations.map((l) => ({ id: l.id, name: l.name, description: l.description }))}
                     links={detail.links}
                   />
-                  <details>
-                    <summary className="cursor-pointer text-xs text-paper-500 hover:text-paper-300">Location list</summary>
-                    <ul className="mt-2 flex flex-col gap-2">
-                      {detail.locations.map((loc) => {
-                        const connected = detail.links
-                          .filter((l) => l.fromWorldLocationId === loc.id || l.toWorldLocationId === loc.id)
-                          .map((l) =>
-                            locationNameById.get(
-                              l.fromWorldLocationId === loc.id ? l.toWorldLocationId : l.fromWorldLocationId,
-                            ),
-                          )
-                          .filter((n): n is string => Boolean(n));
-                        return (
-                          <li key={loc.id}>
-                            <Card className="p-3">
-                              <p className="text-sm font-medium text-paper-100">{loc.name}</p>
-                              {loc.description ? (
-                                <p className="mt-0.5 line-clamp-2 text-xs text-paper-400">{loc.description}</p>
-                              ) : null}
-                              {connected.length > 0 ? (
-                                <p className="mt-1.5 text-xs text-paper-500">↔ {connected.join(" · ")}</p>
-                              ) : null}
-                            </Card>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </details>
+                  {isMobile ? (
+                    locationList
+                  ) : (
+                    <details>
+                      <summary className="cursor-pointer text-xs text-paper-500 hover:text-paper-300">
+                        Location list
+                      </summary>
+                      {locationList}
+                    </details>
+                  )}
                 </>
               )}
             </div>

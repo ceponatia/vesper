@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { cx } from "./cx";
-import { FOCUSABLE_SELECTOR, resolveTabTarget } from "./focus-trap";
+import { useFocusTrap } from "./use-focus-trap";
 
 export interface DialogProps {
   open: boolean;
@@ -16,34 +16,7 @@ export interface DialogProps {
 /** Minimal modal: overlay click + Escape close, focus moves in on open and Tab cycles inside. */
 export function Dialog({ open, onClose, title, children, footer, className }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-      // Focus trap: Tab/Shift+Tab cycle through the dialog's focusables and
-      // never reach the page behind it.
-      if (e.key !== "Tab") return;
-      const panel = panelRef.current;
-      if (!panel) return;
-      const target = resolveTabTarget({
-        focusables: Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)),
-        active: document.activeElement instanceof HTMLElement ? document.activeElement : null,
-        shiftKey: e.shiftKey,
-        fallback: panel,
-      });
-      if (target) {
-        e.preventDefault();
-        target.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useFocusTrap(open, onClose, panelRef);
 
   if (!open) return null;
 

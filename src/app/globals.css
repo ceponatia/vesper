@@ -104,4 +104,42 @@
     color: var(--color-paper-50);
     letter-spacing: 0.01em;
   }
+
+  /*
+   * Touch & mobile (docs/ui.md §Mobile). Scoped to coarse pointers so the dense
+   * desktop UI is untouched.
+   */
+  @media (pointer: coarse) {
+    /* Small controls opt into a ≥44px tap height by adding `touch-target`. */
+    .touch-target {
+      min-height: 2.75rem;
+    }
+    /* iOS zooms toward any focused control whose text is < 16px. Pin form text
+       to 16px on touch so focusing the composer / editor fields never zooms.
+       !important to beat per-field text-xs/text-[11px] utilities. */
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
+  /*
+   * Action clusters revealed on hover (e.g. portrait variant Promote/Delete):
+   * always visible on touch (no hover to trigger them), hover-gated only where
+   * hover exists. The container carries Tailwind's `group` class.
+   */
+  .hover-reveal {
+    opacity: 1;
+    transition: opacity 150ms ease;
+  }
+  @media (hover: hover) {
+    .hover-reveal {
+      opacity: 0;
+    }
+    .group:hover .hover-reveal,
+    .group:focus-within .hover-reveal {
+      opacity: 1;
+    }
+  }
 }

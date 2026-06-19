@@ -165,7 +165,7 @@ export function DispositionEditor({ traits, onChangeTraits, tags, onChangeTags, 
                       max={10}
                       value={pref.intensity}
                       onChange={(e) => update(index, { intensity: Number(e.target.value) })}
-                      className="h-9 w-24 accent-accent-500"
+                      className="touch-target h-9 w-full accent-accent-500 sm:w-24"
                     />
                   )}
                 </Field>
@@ -179,7 +179,13 @@ export function DispositionEditor({ traits, onChangeTraits, tags, onChangeTags, 
                     />
                   )}
                 </Field>
-                <Button size="sm" variant="ghost" onClick={() => remove(index)} aria-label="Remove preference">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => remove(index)}
+                  aria-label="Remove preference"
+                  className="touch-target w-full sm:w-auto"
+                >
                   ✕
                 </Button>
               </li>

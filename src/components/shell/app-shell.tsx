@@ -2,37 +2,53 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cx } from "@/components/ui/cx";
+import { readStoredNavMode, type NavMode } from "@/lib/nav-mode";
 import { ContrastToggle } from "./contrast-toggle";
-
-const navLinks = [
-  { href: "/worlds", label: "Worlds" },
-  { href: "/characters", label: "Characters" },
-  { href: "/locations", label: "Locations" },
-  { href: "/items", label: "Items" },
-  { href: "/gallery", label: "Gallery" },
-] as const;
+import { BottomTabBar } from "./bottom-tab-bar";
+import { NavDrawer } from "./nav-drawer";
+import { isNavActive, NAV_LINKS } from "./nav-links";
 
 /**
  * Global chrome: slim header + unconstrained main. Pages wrap themselves in
  * <PageContainer>; the play screen uses the full viewport.
+ *
+ * Responsive nav (docs/ui.md §Mobile): the desktop top-nav shows at ≥md; below
+ * md one of two mobile chromes takes over per the persisted nav-mode — the
+ * bottom tab bar (default) or a hamburger drawer. The mode is a two-value union,
+ * so exactly one chrome is ever chosen. The bottom bar is suppressed on the
+ * immersive play screen (its fixed footer would collide with the composer); the
+ * hamburger lives in the header, so it stays available everywhere.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [navMode, setNavMode] = useState<NavMode>("tabs");
+
+  // Sync the stored mode after mount (deferred past a microtask, per the
+  // no-sync-setState-in-effects rule — mirrors ContrastToggle).
+  useEffect(() => {
+    const stored = readStoredNavMode();
+    if (stored !== "tabs") void Promise.resolve().then(() => setNavMode(stored));
+  }, []);
+
+  const immersive = pathname.startsWith("/sessions/");
+  const showBottomBar = navMode === "tabs" && !immersive;
+
   return (
     <>
       {/* h-13 (3.25rem) on the header itself, border included (border-box): the
           play screen sizes itself with calc(100dvh - 3.25rem) and a 1px
-          mismatch puts a scrollbar on the document. */}
+          mismatch puts a scrollbar on the document. Do not let this height drift. */}
       <header className="sticky top-0 z-40 h-13 border-b border-ink-600 bg-ink-900/90 backdrop-blur">
-        <div className="mx-auto flex h-full max-w-7xl items-center gap-6 px-4 sm:px-6">
+        <div className="mx-auto flex h-full max-w-7xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
+          {navMode === "drawer" ? <NavDrawer navMode={navMode} onNavModeChange={setNavMode} /> : null}
           <Link href="/" className="prose-display text-lg tracking-wide text-paper-50 italic">
             Vesper
           </Link>
-          <nav className="flex items-center gap-1 text-sm">
-            {navLinks.map((link) => {
-              const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+          <nav className="hidden items-center gap-1 text-sm md:flex">
+            {NAV_LINKS.map((link) => {
+              const active = isNavActive(pathname, link.href);
               return (
                 <Link
                   key={link.href}
@@ -51,7 +67,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           <ContrastToggle />
         </div>
       </header>
-      <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+      <main
+        className={cx(
+          "flex min-h-0 flex-1 flex-col",
+          showBottomBar && "pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0",
+        )}
+      >
+        {children}
+      </main>
+      {showBottomBar ? <BottomTabBar navMode={navMode} onNavModeChange={setNavMode} /> : null}
     </>
   );
 }

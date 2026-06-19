@@ -108,15 +108,15 @@ export function CharacterEditor({
     <div className="flex flex-col gap-5">
       <DiagnosticList diagnostics={diagnostics} />
 
-      <div className="flex items-end justify-between gap-3">
-        <Tabs tabs={tabs} value={tab} onChange={setTab} className="flex-1" />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+        <Tabs tabs={tabs} value={tab} onChange={setTab} className="min-w-0 flex-1" />
         {onRegenerate && section ? (
           <Button
             size="sm"
             onClick={() => onRegenerate(section)}
             busy={regenerating === section}
             disabled={regenerating !== null && regenerating !== section}
-            className="mb-1"
+            className="self-start sm:mb-1 sm:self-auto"
           >
             ↻ Regenerate {section}
           </Button>

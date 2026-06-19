@@ -130,7 +130,7 @@ export function Composer({ session }: { session: UseSession }) {
   const canSend = input.trim() !== "" && queued === null;
 
   return (
-    <div className="border-t border-ink-600 bg-ink-900/95 px-4 py-3 sm:px-8">
+    <div className="border-t border-ink-600 bg-ink-900/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-8">
       <div className="mx-auto max-w-3xl">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <div role="radiogroup" aria-label="Author mode" className="flex rounded-md border border-ink-600 p-0.5">
@@ -142,7 +142,7 @@ export function Composer({ session }: { session: UseSession }) {
                 aria-checked={author === m.id}
                 onClick={() => setAuthor(m.id)}
                 className={cx(
-                  "cursor-pointer rounded px-2.5 py-1 text-xs transition-colors",
+                  "touch-target inline-flex cursor-pointer items-center justify-center rounded px-2.5 py-1 text-xs transition-colors",
                   author === m.id ? "bg-ink-700 text-paper-50" : "text-paper-400 hover:text-paper-200",
                 )}
               >
@@ -156,7 +156,7 @@ export function Composer({ session }: { session: UseSession }) {
                 value={speakerId || npcs[0]?.id || ""}
                 onChange={(e) => setSpeakerId(e.target.value)}
                 aria-label="Speaking companion"
-                className="h-7 w-44 text-xs"
+                className="touch-target h-7 w-44 text-xs"
               >
                 {npcs.map((npc) => (
                   <option key={npc.id} value={npc.id}>

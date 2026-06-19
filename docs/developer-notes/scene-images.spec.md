@@ -6,6 +6,15 @@ This is the **design / decision record** (the "truth"); the task list and build
 order live in [scene-images.plan.md](scene-images.plan.md). Graduated out of the
 [deferred.plan.md](deferred.plan.md) parking lot 2026-06-16.
 
+> **Pivot (2026-06-19) — drop Flux, Qwen everywhere.** Flux is being removed from
+> the app (it input-moderates nudity and is expensive), making **Venice/Qwen the
+> default for every lane** and taking OpenRouter out of the image stack. We are
+> instead onboarding additional **NSFW-capable** models (§5 — Seedream was
+> evaluated and rejected; Venice's `/image/multi-edit` fills the multi-ref + NSFW
+> gap). §5/§8.3/§10 are rewritten to match; §1 below still describes the *current*
+> code baseline (Flux is removed by the pivot's first build task, not yet). See
+> [scene-images.plan.md](scene-images.plan.md) §"Current direction".
+
 Decisions from the PM pass:
 
 - **Build the provider-capability layer + multi-reference plumbing now**, and
@@ -185,67 +194,109 @@ location" is a query worth having available from day one. So:
   dropped once the table is authoritative — decide during the build; don't keep
   two sources of truth diverging.
 
-## 5. Hosted multi-reference providers — the SFW lane only (spike greenlit)
+## 5. Onboarding additional NSFW image models — provider survey (2026-06-19)
 
-The feedback's survey (BFL FLUX.2 ≤10 refs; Gemini multi-image compose but
-SFW-only policy; GPT-Image multi-input but strict filters) is plausible, but two
-codebase facts sharpen it:
+**This section is rewritten under the 2026-06-19 pivot** (Flux removed; Qwen/Venice
+the default — see the banner at the top). The old §5 chased Flux as an SFW
+multi-character lane; that lane is gone with Flux. The question now is: which
+**uncensored** models do we onboard to avoid being single-sourced on Qwen, and can
+any *hosted* model give us **multi-reference + NSFW** (two identity anchors for
+multi-character intimate scenes)? Findings are source-verified 2026-06-19; this
+space moves fast — re-verify model ids/caps/pricing at integration.
 
-- **We already run flux.2-pro and already know it moderates nudity.** It's the
-  default image model (`provider.ts:15`), and [../images.md](../images.md)
-  documents the `"Sexual Content"` rejection on revealing portraits (the whole
-  `describeImageGenError` recovery exists because of it). So "FLUX.2 could become
-  the default multi-character renderer" is true **only for SFW scenes**. For the
-  intimate core it is a non-starter — same policy wall as Gemini and GPT-Image.
-- **The intimate scene is the product** ([../README.md](../README.md)). So _all
-  three_ hosted multi-ref options serve the secondary (SFW romance / clothed /
-  location-continuity) lane. None serve the core lane — the hosted APIs solve
-  multi-character _SFW_; they do nothing for multi-character _intimate_, which is
-  exactly where we most want multiple identity anchors.
+### Headline: the multi-reference + NSFW gap IS fillable today
 
-**Greenlit spike (PM):** use the web to find the image API fields available for
-**Flux on OpenRouter**, specifically whether multi-image reference input is
-supported. **If it is**, build a simple test script that sends **two reference
-images** and validate exactly what comes back (does it composite both identities,
-or ignore one?). Keep it scoped to SFW; do **not** plan FLUX.2 as a new default —
-the intimate core stays on Venice/Qwen.
+**Venice `POST /image/multi-edit` with `qwen-edit-uncensored` + `safe_mode:false`
+takes an `images` array of 1–3 reference images** (schema `minItems:1`,
+`maxItems:3`; first = base, rest = edit layers/refs). This is the **only hosted,
+already-integrated, uncensored, multi-reference path that exists** — no new vendor,
+no new policy risk. It revises the earlier assumption that self-hosted ComfyUI
+(§7) was the *only* route to two-character NSFW: **it isn't.** ComfyUI becomes the
+**upgrade path** for >3 references or premium multi-subject identity-locking, not
+the only option. Caveats: the **3-image cap** is a Venice endpoint limit, and
+identity-preservation quality across 2–3 *NSFW* refs is unproven — validate
+empirically before relying on it for the core feature.
 
-- If OpenRouter does **not** expose Flux multi-image edit, the alternative is a
-  **BFL-direct provider module** mirroring `venice.ts` (new `ai/bfl.ts`, same
-  never-throws / diagnostic shape, inside the `src/server/ai` boundary). My guess
-  is direct BFL, because the AI-SDK image surface we use today is single-output
-  text-to-image.
-- Also worth confirming during the spike: current Gemini / GPT-Image content
-  policy + practical filter behavior (written policy and what the filter actually
-  rejects differ).
+### Venice — preferred (already integrated)
 
-**Spike finding (2026-06-16) — reachability resolved; the open question is
-closed:**
+The live API (`GET /models?type=image`, 2026-06-19) returns 30 image models;
+image pricing is per-image USD.
 
-- **Our current path cannot send two references.** OpenRouter's image API
-  reached through the Vercel AI SDK (`openrouter.imageModel` → `generateImage`)
-  hard-caps `maxImagesPerCall` at **1** (the OpenRouter AI-SDK provider warns and
-  drops extras). So no multi-identity compositing through the code path we use
-  today — a spike on that path is a dead end.
-- **Multi-image Flux lives only in the BFL direct API:** `POST
-  https://api.bfl.ai/v1/flux-2-pro-preview`, **up to 8 reference images**
-  (`input_image`, `input_image_2…8`; marketing says 10), `x-key` auth, **async
-  submit → poll → signed sample URL** (a queue model, relevant to the §7
-  background-worker shape). FLUX.1 Kontext is the older `flux-kontext-pro` variant
-  with a `safety_tolerance` knob.
-- **It is SFW-only in practice.** BFL input-moderates *both* the prompt and the
-  uploaded reference images and rejects sexual content; `safety_tolerance` only
-  loosens within bounds. This confirms FLUX.2 stays an **SFW lane** — clothed
-  two-character / location-continuity — and does nothing for the intimate core.
-- **Decision:** do **not** add multi-ref to the OpenRouter/SDK path. The spike
-  validates BFL-direct via a throwaway raw-fetch script
-  (`scripts/spikes/flux-multiref.ts`, SFW-scoped). If clothed two-character SFW
-  output is good, graduate it to a real `src/server/ai/bfl.ts` provider behind the
-  §4 router (never-throws/diagnostic shape mirroring `venice.ts`). Multi-character
-  **intimate** compositing points squarely at self-hosted ComfyUI (§7).
-- Sources: openrouter.ai/docs image-generation; deepwiki OpenRouterTeam/ai-sdk-provider
-  (image model, `maxImagesPerCall: 1`); docs.bfl.ai (FLUX.2 editing, Kontext);
-  bfl.ai/blog/flux-2.
+- **Uncensored text-to-image, $0.01/img:** `lustify-v7` / `lustify-v8`
+  (API-tagged `traits:["most_uncensored"]`), `lustify-sdxl`, `chroma`,
+  `wai-Illustrious` (anime/Illustrious), `z-image-turbo` (fastest), `venice-sd35`.
+  Plus `qwen-image` ($0.03), `qwen-image-2` ($0.05, our current default),
+  `qwen-image-2-pro` ($0.10). The **lustify set is both cheaper and
+  API-flagged most-uncensored** — strong additional t2i options at a fraction of
+  qwen-image-2's cost.
+- **NSFW posture:** per-request **`safe_mode` (default `true` → blurs adult
+  output)**; send `safe_mode:false` for unblurred adult generation. Global hard
+  limits (CSAM, minors, real-world violence) always apply.
+- **Edit models:** `qwen-edit` *blocks* explicit content; **`qwen-edit-uncensored`**
+  is the uncensored variant; the multi-edit enum also lists
+  `qwen-image-2-edit`/`-pro-edit`. ⚠️ **We currently edit with `qwen-image-2-edit`**
+  (`veniceEditModelId()`) — confirm it is fully uncensored with `safe_mode:false`,
+  or switch the edit/scene path to **`qwen-edit-uncensored`**.
+- **Onboard:** (a) the lustify t2i set as additional model options behind the
+  model-pick seam; (b) `qwen-edit-uncensored` + `/image/multi-edit` as the
+  multi-reference provider for multi-character scenes.
+
+### Seedream (ByteDance) — REJECTED for NSFW
+
+Named as a candidate; the answer is **no.** Seedream 4.0 is technically excellent
+(unified t2i + edit, **multi-reference up to 10 images**, ~$0.03/img), but
+ByteDance applies **three-layer server-side moderation** (prompt + input image +
+output image) with explicit-NSFW a non-bypassable hard-block on **every host**
+(fal, Replicate, BytePlus/Volcano, OpenRouter). fal's `enable_safety_checker:false`
+is a fal-side post-filter toggle, **not** removal of ByteDance's generation-side
+moderation. "Seedream 5 NSFW mode" claims trace only to third-party SEO/affiliate
+blogs — disregard. **Usable only for strictly-SFW work; unfit for the core.**
+
+### OpenRouter — no uncensored image model
+
+Its image catalog (Gemini "Nano Banana", Flux/BFL, Seedream, GPT-image, Grok,
+Recraft, …) routes entirely to **moderating upstreams**; OpenRouter's "uncensored"
+listings are **text LLMs only**. So **OpenRouter leaves the image stack** (it
+stays for text/LLM), as the pivot plans. *Correction to our prior note:* the
+`@openrouter/ai-sdk-provider` `maxImagesPerCall:1` is an **output** cap (1
+generated image per call); input/reference `files` are **not** SDK-capped — moot
+here since no uncensored model exists, but relevant if OpenRouter is ever used for
+SFW multi-ref edits.
+
+### Other providers
+
+- **Replicate — viable new provider.** Its Terms explicitly tolerate pornographic
+  output (prohibiting only CSAM/NCII; 18+). Live, API-runnable **uncensored**
+  checkpoints: `aisha-ai-official/wai-nsfw-illustrious-v11` (~$0.007),
+  `cyber-realistic-pony-v8`, `flux.1dev-uncensored-msfluxnsfw-v3` (~$0.016),
+  `delta-lock/noobai-xl` (~$0.008), and many more. **But these are
+  text-to-image** — multi-ref + NSFW is unproven there (`OmniGen2` does multi-ref
+  but isn't an uncensored fine-tune). Good **diversification / fallback** if Venice
+  ever tightens; not a multi-ref answer.
+- **fal / Together / getimg / BytePlus — moderate NSFW.** fal hosts the best
+  multi-ref editors (Qwen-Edit-2509, Flux Kontext) but its AUP bans explicit
+  content and a default classifier replaces flagged output with black images.
+  Together/getimg/BytePlus similarly prohibit pornographic output.
+- **Novita / Prodia / WaveSpeedAI — unconfirmed.** Permissive tech, ambiguous or
+  contradictory ToS. Get the policy in writing (or a clean test result) before
+  building on them.
+- **RunPod — self-host only** (ComfyUI on uncensored weights): the only *uncapped*
+  uncensored multi-character path — §7.
+
+### Why Flux is out (record)
+
+Flux/BFL **input-moderates nudity** (our own pipeline hit the `"Sexual Content"`
+rejection — the reason `describeImageGenError` exists) and is expensive. That is
+the basis for the 2026-06-19 removal. The earlier BFL-direct multi-ref finding —
+`POST api.bfl.ai/v1/flux-2-pro-preview`, ≤8 refs, `x-key`, async submit→poll, but
+**SFW-only** — is retained for the record but **no longer pursued**; the spike
+(`scripts/spikes/flux-multiref.ts`) is dropped.
+
+Sources (verified 2026-06-19): docs.venice.ai (image/generate · image/edit ·
+image/multi-edit; live `/models?type=image`); fal.ai seedream v4 API + AUP;
+docs.byteplus.com seedream; apiyi seedream moderation note; openrouter.ai image
+collection + flux.2-pro page + `@openrouter/ai-sdk-provider` source; replicate.com
+/terms + aisha-ai-official model pages.
 
 ## 6. Reference-sheet "Strategy B" — brittle, but one real niche (test greenlit)
 
@@ -353,8 +404,11 @@ space moves fast):**
   costliest; **confirm each provider's adult-content ToS first.**
 - **End-to-end:** ComfyUI on RunPod Serverless → Chroma (or Qwen-Edit-2511) →
   InfiniteYou/InstantID identity → 2-person OpenPose ControlNet + regional
-  IP-Adapter masks. This is the **only** path that delivers two-character NSFW
-  compositing; the hosted Flux APIs (§5) cannot.
+  IP-Adapter masks. This is the **uncapped** path for two-character NSFW
+  compositing — the **upgrade** beyond Venice's hosted `/image/multi-edit` (§5),
+  which already does ≤3 uncensored references but caps there and has unproven
+  multi-NSFW-ref identity quality. Use ComfyUI for >3 refs / premium identity-lock;
+  the hosted Flux/BFL APIs cannot do NSFW at all.
 - Sources: InfiniteYou (github.com/bytedance/InfiniteYou, arxiv 2503.16418);
   Chroma & Flux-uncensored writeups (offlinecreator.com); Qwen-Image-Edit
   (github.com/QwenLM/Qwen-Image, qwenlm.github.io); RunPod Serverless ComfyUI
@@ -407,17 +461,19 @@ Two codebase-specific hooks:
 3. **Degrade, never fail.** Per [../resilience.md](../resilience.md), scene images
    are nice-to-have, not required — they must never disrupt the chat when they
    fail. The router must be a **fallback ladder** with a diagnostic per downgrade,
-   mirroring the existing `images.scene_render.reference_fallback` info diag:
-   multi-ref provider → single-ref Venice → reference-sheet → text-to-image →
-   (demo monogram). Each step `parseOr` at the trust boundary, diagnostics over
-   exceptions.
+   mirroring the existing `images.scene_render.reference_fallback` info diag. Under
+   the 2026-06-19 pivot the ladder is **all-Venice**: multi-ref edit
+   (`/image/multi-edit`, ≤3 refs) → single-ref edit (`venice_edit`) → text-to-image
+   (`venice_generate`, Qwen — was Flux) → (demo monogram). Each step `parseOr` at
+   the trust boundary, diagnostics over exceptions.
    - **Retry policy (PM):** reduce avoidable failures with a bounded retry keyed
      on the failure reason. A **transient** error (connection/timeout) may retry
      once or twice; after repeated transient failures, log a potential
      service-outage diagnostic. An **outright content rejection** must **not**
-     retry — it will only fail again — instead fall down the ladder (e.g. to a
-     moderating text-to-image render or skip). The reason classification can reuse
-     `describeImageGenError`'s recovered upstream message.
+     retry — it will only fail again — instead fall down the ladder (skip, or — for
+     the §3 uploaded-avatar case only — a moderated render via Venice `safe_mode`).
+     The reason classification can reuse `describeImageGenError`'s recovered
+     upstream message.
 
 ## 9. Eval harness (agree — with a caveat on what's automatable)
 
@@ -439,35 +495,24 @@ test` gate. Concretely:
 - Later you _can_ semi-automate identity scoring (face-embedding distance ref↔output)
   and collage detection, but manual first — don't block on tooling.
 
-## 10. Sequenced work (after PM review)
+## 10. Sequenced work
 
-**Build now**
+The authoritative, current task list + status lives in
+[scene-images.plan.md](scene-images.plan.md) — maintain it there, not here (this
+section is a pointer so the two don't diverge). As of the 2026-06-19 pivot:
 
-1. **Provider-capability layer + multi-reference plumbing + the `image_references`
-   join table (§4).** The seam everything else slots into; the table makes scene
-   references queryable for app-wide metrics. DB migration via the standard
-   workflow. — **Shipped 2026-06-16.** Capability registry is a typed code
-   registry (`server/ai/image-providers.ts`), not a DB table; `meta.references`
-   dropped in favour of the join table (see plan Open questions). The render
-   happy-path is unchanged; the added behavior is the reason-keyed retry +
-   Venice→Flux fallback ladder (was: a Venice failure just failed the row).
-
-**Spikes / research (greenlit, near-term)**
-
-2. **Flux-on-OpenRouter multi-image spike (§5)** — web-verify the API fields; if
-   multi-image reference is supported, a two-reference test script. SFW-scoped.
-3. **Qwen-Image reference-sheet test (§6)** — send a combined reference-sheet
-   image + compose prompt; validate quality. The direct test of Strategy B.
-4. **ComfyUI NSFW model research (§7)** — best cloud-hosted models for the
-   self-hosted intimate pipeline; co-decide with the monorepo-split trigger.
-
-**Deferred but mandatory**
-
-5. **Uploaded-avatar intimate guard (§3) — pre-production gate.** Not built now
-   (dev only, no real uploads, zero misuse chance). **Must ship before the app
-   accepts real user uploads in production.** Default-deny on `source:
-   "generated"` provenance + keep uploaded refs off the uncensored edit path. The
-   §9 safety row is its acceptance test.
+- **Done:** the provider-capability layer + multi-reference plumbing + the
+  `image_references` join table (§4, shipped 2026-06-16); the Qwen reference-sheet
+  test (§6); the ComfyUI NSFW model research (§7); the additional-NSFW-model survey
+  (§5).
+- **To implement:** remove Flux / make Qwen the default (the pivot); onboard the
+  surveyed models — Venice `/image/multi-edit` (multi-ref + NSFW) + the lustify t2i
+  set (§5).
+- **Deferred / long-term:** the uploaded-avatar intimate guard (§3, a
+  pre-production gate); self-hosted ComfyUI (§7, the uncapped multi-character
+  upgrade).
+- **Dropped:** the Flux-on-OpenRouter / BFL multi-image spike (superseded by the
+  Flux removal — §5).
 
 ## 11. Filing
 
