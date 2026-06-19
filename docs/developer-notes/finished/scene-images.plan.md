@@ -1,15 +1,16 @@
 # Scene images — multi-reference & provider plan
 
-Status: **shipped — 2026-06-19** for the core arc; only the deferred
-pre-production guard (task 4) and the long-term ComfyUI upgrade (task 5) remain.
+Status: **shipped — 2026-06-19** (moved to `finished/`). The whole build arc
+shipped; the two never-built long-term items (the uploaded-avatar pre-production
+guard and self-hosted ComfyUI) **parked to [deferred.plan.md](../deferred.plan.md)**.
 Task 1 (provider seam + multi-ref plumbing + `image_references` join table)
 **shipped 2026-06-16**. The Qwen reference-sheet and ComfyUI research spikes are
 **done** (results below / in the spec). **Task 2 (drop Flux, Qwen the default
 everywhere) + Task 3 (onboard Venice `/image/multi-edit` + the lustify t2i set)
 shipped 2026-06-19**, with the multi-reference path wired in as a **per-session
 toggle** (single-character ↔ multi-reference) on the Scene tab. The
-Flux-on-OpenRouter / BFL multi-image spike is **dropped** (superseded by the Flux
-removal); the §3 uploaded-avatar guard stays a deferred pre-production gate.
+Flux-on-OpenRouter / BFL multi-image spike was **dropped** (superseded by the Flux
+removal).
 
 > **Completion note (2026-06-19).** Flux/OpenRouter is gone from the image stack:
 > every lane is Venice/Qwen (`server/ai/venice.ts`). The render ladder is now
@@ -257,32 +258,18 @@ router clause + (for a new vendor) a provider module mirroring `venice.ts`
 through the model-pick seam. Venice additions need **no new module** — just a new
 model id in `veniceT2IModelId` (t2i) or a new endpoint call (like multi-edit).
 
-### Deferred / long-term
+### Deferred / long-term — _parked to [deferred.plan.md](../deferred.plan.md) (2026-06-19)_
 
-#### 4. Uploaded-avatar intimate guard — _deferred: hard pre-production gate_
+The two never-built long-term items left this plan when it shipped and now live in
+the parking lot under "Scene image: multi-reference & provider strategy":
 
-**Not built now** — dev has no real users / no real uploads, so the misuse path
-has zero chance of firing (spec §3). **Must ship before the app accepts real user
-uploads in production.** Default-deny on `source: "generated"` provenance (stamp
-it on generation) + keep uploaded references off the uncensored edit path. The §9
-eval "safety row" is its acceptance test.
-
-> **Flux-removal consequence:** the guard's old "if the only reference is uploaded,
-> render moderated text-to-image (Flux) or skip" no longer has a moderating
-> backend — Flux was it. Replacement: render uploaded-only refs through **Venice
-> text-to-image with `safe_mode` forced on** (Venice already has the `safe_mode`
-> knob; make it per-request), or **skip the image**. Never route an uploaded real
-> likeness to the uncensored path.
-
-#### 5. Self-hosted ComfyUI — _research done (spec §7); the uncapped long-term upgrade_
-
-The **uncapped** path for multi-character **NSFW** compositing — the upgrade beyond
-Venice's hosted `/image/multi-edit` (task 3, ≤3 refs). Pursue it when we need >3
-references or premium multi-subject identity-locking; until then, Venice multi-edit
-covers the two-character case. Slots in behind the provider seam as one more
-provider; it's the second deployable that plausibly triggers the
-[monorepo-evaluation.md](monorepo-evaluation.md) split — decide the two together.
-Stack + hosting recommendation in spec §7.
+- **Uploaded-avatar intimate guard** — a hard pre-production gate (default-deny on
+  generated provenance; uploaded references off the uncensored path). Full design
+  in [scene-images.spec.md](scene-images.spec.md) §3.
+- **Self-hosted ComfyUI** — the uncapped multi-character-NSFW upgrade beyond
+  Venice's hosted `/image/multi-edit` (>3 refs / premium identity-lock). Stack +
+  hosting in [scene-images.spec.md](scene-images.spec.md) §7; ties to the
+  monorepo "second deployable" trigger.
 
 ### Dropped / superseded
 

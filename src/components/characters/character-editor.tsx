@@ -1,16 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  attributeRegistry,
-  heritageFor,
-  heritagesForSpecies,
-  realizeBody,
-  speciesById,
-  speciesCatalog,
-  type AttributeValue,
-  type Diagnostic,
-} from "@/contracts";
+import { heritageFor, heritagesForSpecies, speciesById, speciesCatalog, type Diagnostic } from "@/contracts";
 import type { CharacterDraft, CharacterForgeSection } from "@/lib/client/api";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { Button } from "@/components/ui/button";
@@ -21,6 +12,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AttributePicker, PERSONALITY_CATEGORIES } from "./attribute-picker";
+import { seedRequiredAttributes } from "./attribute-helpers";
 import { CharacterChat } from "./character-chat";
 import { DispositionEditor } from "./disposition-editor";
 import { OutfitEditor } from "./outfit-editor";
@@ -30,35 +22,6 @@ type EditorTab = "profile" | "attributes" | "personality" | "disposition" | "out
 
 /** Split the flat attribute list into the two tabs that render it. */
 const isPersonalityAttribute = (id: string) => PERSONALITY_CATEGORIES.some((c) => id.startsWith(`${c}.`));
-
-/**
- * Seed species/heritage `required`-rule defaults (e.g. elf `ears.shape` → "pointed",
- * faerie `wings.shape` → "butterfly") into the attribute list when species/heritage
- * changes — mirrors the forge's creation-time seeding so a species trait holds without
- * the author hunting for it. Never clobbers a value the author already set; only fills
- * required gaps for the newly-realized body.
- */
-function seedRequiredAttributes(
-  attributes: readonly AttributeValue[],
-  config: {
-    speciesId: string;
-    heritageId?: string;
-    bodyPlanId: string;
-    intimateRegions: string[];
-    bodyFeatures?: string[];
-  },
-): AttributeValue[] {
-  const body = realizeBody(config);
-  const present = new Set(attributes.map((a) => a.id));
-  const seeded: AttributeValue[] = [];
-  for (const def of attributeRegistry.definitions) {
-    if (present.has(def.id) || !body.isAttributeApplicable(def) || !body.isAttributeRequired(def)) continue;
-    const value = body.defaultValueFor(def);
-    if (value === undefined) continue;
-    seeded.push({ id: def.id, value: value as AttributeValue["value"], source: "creation" });
-  }
-  return seeded.length > 0 ? [...attributes, ...seeded] : [...attributes];
-}
 
 export interface CharacterEditorProps {
   draft: CharacterDraft;

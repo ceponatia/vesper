@@ -16,11 +16,13 @@ import { Select } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { AiTag, Tag } from "@/components/ui/tag";
 import {
+  allowedOptionsFor,
   asList,
   attributeValueMap,
-  defaultValueFor,
   isAiSourced,
+  isOutOfRuleValue,
   removeAttribute,
+  seedValueFor,
   setAttribute,
   sliderBounds,
 } from "./attribute-helpers";
@@ -303,18 +305,6 @@ interface GroupProps {
   body: RealizedBody;
 }
 
-/** Options a control may offer: species-narrowed when a rule applies, else the full set. */
-function allowedOptionsFor(def: AttributeDefinition, body: RealizedBody): readonly string[] {
-  return body.allowedValuesFor(def) ?? def.allowedValues ?? [];
-}
-
-/** Seed value when adding an attribute: the species rule default if any, else the generic default. */
-function seedValueFor(def: AttributeDefinition, body: RealizedBody): AttributeValue["value"] {
-  const ruleDefault = body.defaultValueFor(def);
-  if (ruleDefault !== undefined) return ruleDefault as AttributeValue["value"];
-  return defaultValueFor(def);
-}
-
 /** A category rendered nested inside an anatomical area (e.g. breasts → chest). */
 interface NestedGroup {
   category: string;
@@ -575,7 +565,7 @@ function AttributeControl({
       const current = typeof value.value === "string" ? value.value : "";
       // A stored value outside the species-narrowed set (e.g. after a species change)
       // is surfaced as a flagged option — visible and fixable, never silently rewritten.
-      const outOfRule = current !== "" && !allowed.includes(current);
+      const outOfRule = isOutOfRuleValue(allowed, current);
       return (
         <Select
           value={current}
