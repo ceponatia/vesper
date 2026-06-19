@@ -58,6 +58,17 @@ progress) · **shipped — <date>** · **parked**.
    state that parameterise how each character's transient states (`affinity`/`arousal`/
    `stress`) drift and react over time. Subsumes the affinity trait-coupling and likely
    folds in Intimacy notes (intimate traits).
+9. **Attribute mutability & change-path integrity** — plan
+   [attribute-mutability.plan.md](attribute-mutability.plan.md) · spec
+   [attribute-mutability.spec.md](attribute-mutability.spec.md) (**next** — Slice 1 fully
+   spec'd). Enforces the documented-but-inert `mutability` invariant at the merge write
+   boundary (a `narrative` overlay can currently rewrite eye color/gender/age/species and
+   re-apply every turn): a pure `overlaySourceMayChange` policy + `droppedEvents`
+   correction + simulant-prompt guardrail, drops the dead `temporary` tier. Re-analysis of
+   the 2026-06-15 notes; the design half they also raised mostly shipped with non-human
+   species. Live follow-on slices: free-text reduction (#4) + editor enum-narrowing by
+   species rule. **Reorder this slot to taste.**
+
 8. **Social-reaction cards** — plan
    [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (draft). Importable
    **taboo / social-rule cards** (library content, reusable across worlds like items) that

@@ -1,5 +1,11 @@
 # Attribute mutability: an unenforced invariant
 
+> **Superseded as the working plan (2026-06-19).** This analysis has been folded
+> into [attribute-mutability.spec.md](attribute-mutability.spec.md) +
+> [attribute-mutability.plan.md](attribute-mutability.plan.md), which re-verified it
+> against the current code (the leak still exists; line numbers shifted). Its three
+> open questions are now resolved there. Kept as the original deep-dive on the leak.
+
 Status: **analysis / proposal** (2026-06-15). Supplement to
 [character-schema-audit.md](character-schema-audit.md) finding **A1**. Goes deep
 on the one 🔴 finding: `AttributeDefinition.mutability` is documented as a

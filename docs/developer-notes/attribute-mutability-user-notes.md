@@ -1,5 +1,15 @@
 # Attribute mutability and design
 
+> **Mostly shipped / superseded (2026-06-19).** ~85% of this wishlist was built by the
+> non-human-species work (2026-06-18): species templates with activation/deactivation,
+> colloquial groups, reverie-style inline schemas, the `groups`→`categories` rename, and
+> species LLM descriptions. The reconciliation, the still-live gaps (free-text reduction;
+> editor enum-narrowing), and the rulings where the shipped design diverged from these
+> notes (override-allowed seed; no DB sentinel) are in
+> [attribute-mutability.spec.md](attribute-mutability.spec.md) §1/§6/§7/§8 +
+> [attribute-mutability.plan.md](attribute-mutability.plan.md). Kept as the original
+> design intent.
+
 Status: **analysis / proposal**
 
 ## Design
