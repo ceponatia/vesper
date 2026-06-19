@@ -1,7 +1,7 @@
 import type { ZodType } from "zod";
 
 /**
- * The shared registry spine (docs/contracts.md §Registries). Both the character
+ * The shared registry spine (docs/contracts/attributes.md §The shared registry spine). Both the character
  * attribute registry and the personality trait registry are an id-indexed bundle
  * of definitions with per-id value validation; this module owns that core — the
  * duplicate-id guard and the value parser — so neither system reimplements it

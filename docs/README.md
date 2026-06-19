@@ -11,7 +11,7 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 | [getting-started.md](getting-started.md) | Setup, env vars, database, running dev/tests |
 | [architecture.md](architecture.md) | Stack, directory layout, module boundaries, data flow |
 | [resilience.md](resilience.md) | The error-handling philosophy every module must follow |
-| [contracts.md](contracts.md) | Attribute registry, body model, meters, conditions — and how to extend them |
+| [contracts/](contracts/README.md) | Attribute registry, body model, meters, conditions — and how to extend them |
 | [database.md](database.md) | Drizzle schema, pgvector, migration workflow |
 | [turn-engine.md](turn-engine.md) | The turn lifecycle: pre-turn assembly, narrative streaming, post-turn agent fan-out |
 | [prompts.md](prompts.md) | Prompt architecture: static rulebook, turn context, caching, speaker tags |
@@ -29,4 +29,4 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 
 - One focused document per system. When a system changes, update its doc in the same change.
 - Documents describe **patterns and invariants** ("how to add an attribute group", "what a post-turn agent may not do"), not line-by-line code walkthroughs.
-- If a doc would exceed ~400 lines, split it.
+- **Promote a doc to a folder when it outgrows one file.** A system doc starts as `docs/<system>.md`. When it would exceed ~400 lines, promote it to `docs/<system>/`: a `README.md` index (one-paragraph intro + a reading-order table linking the parts + any whole-system checklist) plus one file per sub-topic, named after the sub-topic — or, where the doc mirrors a code tree, after the code subfolder it covers (see `contracts/`, which mirrors `src/contracts/`). Keep each part well under ~400 lines; if a part outgrows that, it is itself a candidate for promotion. The folder's row in this table points at `docs/<system>/README.md`. On promotion, repoint active inbound links to the new part files; leave historical `finished/`/`phase-N` docs as-is.

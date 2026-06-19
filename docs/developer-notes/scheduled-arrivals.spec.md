@@ -131,7 +131,7 @@ land.
 ## Docs to update when implementing
 
 `turn-engine.md` (merge: appointment tick → staged-intent open), `prompts.md`
-(director `scheduleArrival` contract + game-clock context), `contracts.md`
+(director `scheduleArrival` contract + game-clock context), `contracts/turns.md`
 (`runtime.appointments` schema, director result `scheduleArrival`), and a
 cross-link from [npc-movement-spec](finished/npc-movement-spec.phase3.md) (this supplies
 the timed-goal driver its "Schedule/Goals drive" describes). Retire the dev

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Stable fact categories. Extend by adding to the array (docs/contracts.md). */
+/** Stable fact categories. Extend by adding to the array (docs/contracts/facts.md). */
 export const factKindIds = [
   "relationship",
   "knowledge",

@@ -257,7 +257,7 @@ state.
 
 `turn-engine.md` (merge step 2: authority gate, partial traversal,
 implied-room no-op), `prompts.md` (multi-hop next-hop guidance, co-travel
-guidance), `contracts.md` (simulant `movements` schema only if option B /
+guidance), `contracts/turns.md` (simulant `movements` schema only if option B /
 `willedBy` is chosen), and a cross-link from
 [npc-movement-spec](finished/npc-movement-spec.phase3.md) (this spec supplies the
 authority precondition its traversal assumes).

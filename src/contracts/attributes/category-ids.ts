@@ -6,7 +6,7 @@ import { z } from "zod";
  * the category's attributes (its definition bundle, built by
  * `defineAttributeGroup`). Extending the vocabulary starts here: add the
  * category id, create its file under ./categories/, register it in
- * ./categories/index.ts. See docs/contracts.md.
+ * ./categories/index.ts. See docs/contracts/attributes.md.
  */
 export const attributeCategories = [
   "identity",

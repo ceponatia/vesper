@@ -1,5 +1,5 @@
 /**
- * Object subtypes (docs/contracts.md §Object subtypes): vocabulary for
+ * Object subtypes (docs/contracts/items.md §Object subtypes): vocabulary for
  * kind="object" items. This is the extension point for subtype behavior —
  * vehicles moving characters, weapons in combat — each of which gets its own
  * design doc before any engine code. For now the only capability is

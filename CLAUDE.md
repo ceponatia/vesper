@@ -2,6 +2,7 @@
 
 - AGENTS.md is a symlink of CLAUDE.md, so you only ever need to update CLAUDE.md when finishing work and additional notes are needed.
 - This app is documented system-by-system in `docs/` — **read `docs/README.md` first**, then the doc for whichever system you touch. Update the relevant doc in the same change when behavior or patterns shift.
+- If a _reference_ docs (the root docs and docs/guide/ folders) would exceed ~400 lines after creation or editing, determine if you can split it into more specific docs. A good example is `contracts.md` which was at one point thousands of lines, so we are creating a contracts folder and putting more specific documents in that folder rather than keeping one large file.
 - Because this app is in ongoing development you _do not_ need to preserve legacy functionality when changing features and systems. Prefer removing old code rather than marking deprecated or making wrappers to preserve functionality.
 - Resilience rules in `docs/resilience.md` are mandatory: `parseOr` at every trust boundary, diagnostics over exceptions, degraded defaults over failed turns.
 - `src/contracts` and `src/lib` are pure (no IO/env/db). Server modules import each other only through `index.ts` barrels. Components never import `server/*`. These boundaries are enforced by an ESLint `no-restricted-imports` rule (`eslint.config.mjs`) — a violation fails `pnpm lint`.

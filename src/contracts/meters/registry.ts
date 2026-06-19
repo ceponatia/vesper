@@ -29,7 +29,7 @@ export type MeterDefinition = z.infer<typeof meterDefinitionSchema>;
 /**
  * Starter meters. Worlds may override fields or disable a meter entirely via
  * WorldStyle.meterOverrides (null disables). The old app's hygiene vectors
- * collapse into `hygiene` + conditions; see docs/contracts.md.
+ * collapse into `hygiene` + conditions; see docs/contracts/meters-actions.md.
  */
 export const meterDefinitions: readonly MeterDefinition[] = [
   {

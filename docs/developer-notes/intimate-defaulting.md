@@ -130,7 +130,7 @@ departure worth debating, not a quick patch. Raised as a question.
    gender edit (B).
 3. Consider `coreVisual` on gender (A) for its broader benefits, knowing it needs
    C/B alongside.
-4. Update `docs/authoring.md` (forge seeding) and `docs/contracts.md` (body-config
+4. Update `docs/authoring.md` (forge seeding) and `docs/contracts/body.md` (body-config
    defaulting) to describe the re-seed semantics.
 
 ## Test plan

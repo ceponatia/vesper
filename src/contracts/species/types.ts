@@ -105,7 +105,7 @@ export type SpeciesDefinition = z.infer<typeof speciesDefinitionSchema>;
  * Build one species definition (mirrors `defineAttributeGroup`): parses through
  * the schema so defaults (`description` / `appearance` / `lore` / `attributeRules` / `heritages`) apply and
  * the record is validated at module load. One file per species under
- * `./catalog/`, listed in `./catalog/index.ts` (docs/contracts.md §Body model).
+ * `./catalog/`, listed in `./catalog/index.ts` (docs/contracts/body.md §Body model).
  */
 export function defineSpecies(def: z.input<typeof speciesDefinitionSchema>): SpeciesDefinition {
   return speciesDefinitionSchema.parse(def);

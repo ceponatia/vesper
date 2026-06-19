@@ -5,7 +5,7 @@ Status: **shipped — 2026-06-19**. All three slices landed; `pnpm verify` green
 - **Slice 1 (enforcement)** — `overlaySourceMayChange` (value.ts), merge-boundary guard
   + `merge.attribute.inherent_change_rejected` diagnostic + `droppedEvents` correction
   with the equality short-circuit, simulant prompt tightened, `temporary` dropped,
-  `contracts.md` updated. Covered by new pure (`value.test.ts`) + merge degradation tests.
+  `contracts/attributes.md` updated. Covered by new pure (`value.test.ts`) + merge degradation tests.
 - **Slice 2 (shared vocab)** — `shared-values.ts` (`HAIR_DENSITY`, `INTIMATE_SCENT_BASE`,
   `MATERIAL_COLORS`); arms/legs hair + vulva/penis scent/taste DRYed; 3 morphology colors
   `text → enum_list`; faerie sprite `wings.color` rule migrated to a palette value.
@@ -27,7 +27,7 @@ plan covers only what is still unbuilt — see the spec's §1 reconciliation tab
 
 ## Why this exists
 
-`AttributeDefinition.mutability` is documented in `contracts.md` as a binding rule
+`AttributeDefinition.mutability` is documented in `contracts/attributes.md` as a binding rule
 ("inherent: narrative can't change it") and set on all 86 attributes (51 inherent /
 35 mutable), but it is **read by nothing**. A single simulant turn can permanently
 rewrite a character's eye color, gender, apparent age, or species via a `narrative`
@@ -55,7 +55,7 @@ The minimal correct fix. ~spec §4. All design questions resolved.
 4. **Dispose of `temporary` (D4).** Drop `"temporary"` from `attributeMutabilities`
    (`attributes/types.ts:12`); fix any exhaustive `switch` the lint flags. No
    migration (static registry property, never persisted).
-5. **Docs.** Update `contracts.md` so the `mutability` parenthetical points at real
+5. **Docs.** Update `contracts/attributes.md` so the `mutability` parenthetical points at real
    enforcement and names `magic`/`manual` as the deliberate-change escape hatch; note
    `temporary` is gone.
 

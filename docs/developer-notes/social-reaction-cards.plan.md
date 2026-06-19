@@ -125,7 +125,7 @@ directives ride the volatile tail.
    authoring.
 6. **Removals + migration** — delete the freeform norms surface (above); migrate/seed.
 7. **Tests + docs** — pure helpers + resolution precedence + witness gating + degradation;
-   docs `contracts.md`, `turn-engine.md`, `database.md`, `authoring.md`,
+   docs `contracts/relationships.md`, `turn-engine.md`, `database.md`, `authoring.md`,
    `perception.md` (witness reuse), and personality §10 (mark removed).
 
 ## Open questions

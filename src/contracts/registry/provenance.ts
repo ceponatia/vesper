@@ -5,7 +5,7 @@ import { z } from "zod";
  * attributes (`contracts/attributes`) and personality traits
  * (`contracts/personality`). Sources are ordered low → high; a higher source
  * wins when two values target the same id. Lifted out of the attribute registry
- * (docs/contracts.md §Attribute system) so traits inherit base/creation/manual
+ * (docs/contracts/attributes.md §Values with provenance) so traits inherit base/creation/manual
  * overlays for free — one last-write-wins implementation, two consumers.
  *
  * Extensible: add a source, slot it into SOURCE_PRECEDENCE, update docs.

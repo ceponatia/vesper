@@ -8,7 +8,7 @@ import { bodyLocationRegistry } from "../body/locations";
 
 /**
  * Colloquial body-reference resolution (the "look at her face" → fields rule of
- * docs/contracts.md §Attribute system). When a player references a body region
+ * docs/contracts/body.md §Colloquial body references). When a player references a body region
  * in prose, the game wants the *set* of attributes that region colloquially
  * covers — "face" means face + eyes + brows + lips here, not just `face.*`.
  *

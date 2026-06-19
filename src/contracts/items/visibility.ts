@@ -20,7 +20,7 @@ export interface WornItemView {
 }
 
 /**
- * The single wardrobe-visibility rule (docs/contracts.md): per body location,
+ * The single wardrobe-visibility rule (docs/contracts/items.md): per body location,
  * the highest-layer covering item is visible; items beneath are hidden, or
  * hinted when every item above them is sheer. Coverage of a parent location
  * implies its descendants (registry.expand). An item visible at any location

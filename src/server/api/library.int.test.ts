@@ -94,7 +94,7 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
 
   it("persists the clothing category into the stored definition", async () => {
     // Regression: the category template anchors coverage semantics and must
-    // survive materialization, not get dropped on insert (docs/contracts.md).
+    // survive materialization, not get dropped on insert (docs/contracts/items.md).
     const suggestion = itemDefinitionSchema.parse({
       kind: "clothing",
       name: "Forge Category Probe Garment",
