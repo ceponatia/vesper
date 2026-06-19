@@ -11,7 +11,7 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 | [getting-started.md](getting-started.md) | Setup, env vars, database, running dev/tests |
 | [architecture.md](architecture.md) | Stack, directory layout, module boundaries, data flow |
 | [resilience.md](resilience.md) | The error-handling philosophy every module must follow |
-| [contracts/](contracts/README.md) | Attribute registry, body model, meters, conditions — and how to extend them |
+| [contracts/](contracts/index.md) | Attribute registry, body model, meters, conditions — and how to extend them |
 | [database.md](database.md) | Drizzle schema, pgvector, migration workflow |
 | [turn-engine.md](turn-engine.md) | The turn lifecycle: pre-turn assembly, narrative streaming, post-turn agent fan-out |
 | [prompts.md](prompts.md) | Prompt architecture: static rulebook, turn context, caching, speaker tags |
