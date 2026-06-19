@@ -9,7 +9,13 @@ export const attributeValueTypes = ["enum", "enum_list", "number", "text", "flag
 export const attributeValueTypeSchema = z.enum(attributeValueTypes);
 export type AttributeValueType = z.infer<typeof attributeValueTypeSchema>;
 
-export const attributeMutabilities = ["inherent", "mutable", "temporary"] as const;
+// `inherent` — structural identity the narrative may not rewrite (eye color, gender,
+// species, bone structure); only a human author (`manual`) or an explicit supernatural
+// transformation (`magic`) may change it (see `overlaySourceMayChange` in value.ts).
+// `mutable` — legitimately changes over play (haircut, dye, tattoo, weight). A former
+// `temporary` tier was dropped (zero members, no consumer): transient live state rides
+// the arousal meter + conditions, not a mutability tier.
+export const attributeMutabilities = ["inherent", "mutable"] as const;
 export const attributeMutabilitySchema = z.enum(attributeMutabilities);
 export type AttributeMutability = z.infer<typeof attributeMutabilitySchema>;
 

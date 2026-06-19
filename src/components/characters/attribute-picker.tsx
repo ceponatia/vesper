@@ -8,6 +8,7 @@ import {
   realizeBody,
   type AttributeDefinition,
   type AttributeValue,
+  type RealizedBody,
 } from "@/contracts";
 import { cx } from "@/components/ui/cx";
 import { Input } from "@/components/ui/input";
@@ -100,11 +101,11 @@ export function AttributePicker({
   const onSet = (id: string, value: AttributeValue["value"]) =>
     onChange(setAttribute(values, id as AttributeValue["id"], value));
   const onRemove = (id: string) => onChange(removeAttribute(values, id));
-  // The species/heritage rule note for THIS character — realizeBody already
-  // composed species + heritage (heritage overrides win), so this returns the
-  // right note per character: none for an unruled field (any human attribute),
-  // the species note for an elf, the heritage's note for a Dark Elf.
-  const noteFor = (def: AttributeDefinition): string | undefined => body.attributeRuleFor(def.id)?.notes;
+  // The realized `body` is threaded down so each control can resolve, per THIS
+  // character, the species/heritage rule note (`attributeRuleFor`), the narrowed
+  // option set (`allowedValuesFor` — hard-restricts enums to species-allowed values),
+  // and the seeded rule default (`defaultValueFor`). realizeBody already composed
+  // species + heritage (heritage overrides win).
 
   // Applicable (present-on-this-body) definitions for a category, by id.
   const definitionsFor = (category: string): AttributeDefinition[] => {
@@ -134,7 +135,7 @@ export function AttributePicker({
               byId={byId}
               onSet={onSet}
               onRemove={onRemove}
-              noteFor={noteFor}
+              body={body}
             />
             {/* The Pelvis area sits next to its anatomical neighbour, Hips. */}
             {group.category === "hips" ? (
@@ -144,7 +145,7 @@ export function AttributePicker({
                 byId={byId}
                 onSet={onSet}
                 onRemove={onRemove}
-                noteFor={noteFor}
+                body={body}
               />
             ) : null}
           </Fragment>
@@ -298,8 +299,20 @@ interface GroupProps {
   byId: Map<string, AttributeValue>;
   onSet: (id: string, value: AttributeValue["value"]) => void;
   onRemove: (id: string) => void;
-  /** Resolves the species/heritage rule note for an attribute (helper text). */
-  noteFor: (def: AttributeDefinition) => string | undefined;
+  /** Realized body for THIS character — source of rule note, narrowed options, defaults. */
+  body: RealizedBody;
+}
+
+/** Options a control may offer: species-narrowed when a rule applies, else the full set. */
+function allowedOptionsFor(def: AttributeDefinition, body: RealizedBody): readonly string[] {
+  return body.allowedValuesFor(def) ?? def.allowedValues ?? [];
+}
+
+/** Seed value when adding an attribute: the species rule default if any, else the generic default. */
+function seedValueFor(def: AttributeDefinition, body: RealizedBody): AttributeValue["value"] {
+  const ruleDefault = body.defaultValueFor(def);
+  if (ruleDefault !== undefined) return ruleDefault as AttributeValue["value"];
+  return defaultValueFor(def);
 }
 
 /** A category rendered nested inside an anatomical area (e.g. breasts → chest). */
@@ -326,7 +339,7 @@ function SectionCount({ count, open }: { count: number; open: boolean }) {
  * "add attribute" select — with no card chrome of its own, so it can head a
  * top-level section *or* sit nested inside an anatomical area.
  */
-function CategoryFields({ category, definitions, byId, onSet, onRemove, noteFor }: GroupProps) {
+function CategoryFields({ category, definitions, byId, onSet, onRemove, body }: GroupProps) {
   const setDefs = definitions.filter((d) => byId.has(d.id));
   const unsetDefs = definitions.filter((d) => !byId.has(d.id));
   if (setDefs.length === 0 && unsetDefs.length === 0) {
@@ -342,7 +355,8 @@ function CategoryFields({ category, definitions, byId, onSet, onRemove, noteFor 
             key={def.id}
             def={def}
             value={current}
-            note={noteFor(def)}
+            note={body.attributeRuleFor(def.id)?.notes}
+            allowed={allowedOptionsFor(def, body)}
             onSet={(v) => onSet(def.id, v)}
             onRemove={() => onRemove(def.id)}
           />
@@ -354,7 +368,7 @@ function CategoryFields({ category, definitions, byId, onSet, onRemove, noteFor 
           aria-label={`Add ${category} attribute`}
           onChange={(e) => {
             const def = unsetDefs.find((d) => d.id === e.target.value);
-            if (def) onSet(def.id, defaultValueFor(def));
+            if (def) onSet(def.id, seedValueFor(def, body));
           }}
           className="h-8 max-w-60 text-xs text-paper-400"
         >
@@ -371,7 +385,7 @@ function CategoryFields({ category, definitions, byId, onSet, onRemove, noteFor 
 }
 
 /** A nested anatomical sub-group (e.g. Breasts under Chest) — indented, no card. */
-function NestedCategory({ category, definitions, byId, onSet, onRemove, noteFor }: GroupProps) {
+function NestedCategory({ category, definitions, byId, onSet, onRemove, body }: GroupProps) {
   return (
     <div className="flex flex-col gap-3 border-l border-ink-600 pl-3">
       <p className="text-xs font-semibold text-paper-300 capitalize">{category}</p>
@@ -381,7 +395,7 @@ function NestedCategory({ category, definitions, byId, onSet, onRemove, noteFor 
         byId={byId}
         onSet={onSet}
         onRemove={onRemove}
-        noteFor={noteFor}
+        body={body}
       />
     </div>
   );
@@ -394,7 +408,7 @@ function AttributeGroupSection({
   byId,
   onSet,
   onRemove,
-  noteFor,
+  body,
 }: GroupProps & { nested?: readonly NestedGroup[] }) {
   const nestedSet = nested.reduce((n, g) => n + setCountOf(g.definitions, byId), 0);
   const totalSet = setCountOf(definitions, byId) + nestedSet;
@@ -419,7 +433,7 @@ function AttributeGroupSection({
             byId={byId}
             onSet={onSet}
             onRemove={onRemove}
-            noteFor={noteFor}
+            body={body}
           />
           {nested.map((g) => (
             <NestedCategory
@@ -429,7 +443,7 @@ function AttributeGroupSection({
               byId={byId}
               onSet={onSet}
               onRemove={onRemove}
-              noteFor={noteFor}
+              body={body}
             />
           ))}
         </div>
@@ -451,14 +465,14 @@ function PelvisArea({
   byId,
   onSet,
   onRemove,
-  noteFor,
+  body,
 }: {
   members: readonly NestedGroup[];
   anusPresent: boolean;
   byId: Map<string, AttributeValue>;
   onSet: (id: string, value: AttributeValue["value"]) => void;
   onRemove: (id: string) => void;
-  noteFor: (def: AttributeDefinition) => string | undefined;
+  body: RealizedBody;
 }) {
   const totalSet = members.reduce((n, g) => n + setCountOf(g.definitions, byId), 0);
   const [open, setOpen] = useState(totalSet > 0);
@@ -489,7 +503,7 @@ function PelvisArea({
                 byId={byId}
                 onSet={onSet}
                 onRemove={onRemove}
-                noteFor={noteFor}
+                body={body}
               />
             ))
           )}
@@ -509,6 +523,7 @@ function AttributeRow({
   def,
   value,
   note,
+  allowed,
   onSet,
   onRemove,
 }: {
@@ -516,6 +531,8 @@ function AttributeRow({
   value: AttributeValue;
   /** Species/heritage rule note for this attribute, shown as helper text. */
   note?: string;
+  /** Species-narrowed option set for enum/enum_list controls (hard-restricted). */
+  allowed: readonly string[];
   onSet: (v: AttributeValue["value"]) => void;
   onRemove: () => void;
 }) {
@@ -535,7 +552,7 @@ function AttributeRow({
           clear
         </button>
       </div>
-      <AttributeControl def={def} value={value} onSet={onSet} />
+      <AttributeControl def={def} value={value} allowed={allowed} onSet={onSet} />
       {note ? <p className="text-xs italic text-paper-500">{note}</p> : null}
     </div>
   );
@@ -544,51 +561,66 @@ function AttributeRow({
 function AttributeControl({
   def,
   value,
+  allowed,
   onSet,
 }: {
   def: AttributeDefinition;
   value: AttributeValue;
+  /** Hard-restricted option set (species-narrowed); see allowedOptionsFor. */
+  allowed: readonly string[];
   onSet: (v: AttributeValue["value"]) => void;
 }) {
   switch (def.valueType) {
-    case "enum":
+    case "enum": {
+      const current = typeof value.value === "string" ? value.value : "";
+      // A stored value outside the species-narrowed set (e.g. after a species change)
+      // is surfaced as a flagged option — visible and fixable, never silently rewritten.
+      const outOfRule = current !== "" && !allowed.includes(current);
       return (
         <Select
-          value={typeof value.value === "string" ? value.value : ""}
+          value={current}
           onChange={(e) => onSet(e.target.value)}
           aria-label={def.label}
           className="h-8 max-w-72 text-xs"
         >
-          {(def.allowedValues ?? []).map((option) => (
+          {outOfRule ? <option value={current}>{`⚠ ${current.replaceAll("_", " ")} (not allowed)`}</option> : null}
+          {allowed.map((option) => (
             <option key={option} value={option}>
               {option.replaceAll("_", " ")}
             </option>
           ))}
         </Select>
       );
+    }
     case "enum_list": {
       const selected = asList(value.value);
+      // Out-of-rule selected values lead, flagged, so they can be deselected.
+      const extraneous = selected.filter((s) => !allowed.includes(s));
       return (
         <div className="flex flex-wrap gap-1.5">
-          {(def.allowedValues ?? []).map((option) => {
+          {[...extraneous, ...allowed].map((option) => {
             const active = selected.includes(option);
+            const outOfRule = !allowed.includes(option);
             return (
               <button
                 key={option}
                 type="button"
                 aria-pressed={active}
+                title={outOfRule ? "Not allowed for this species" : undefined}
                 onClick={() => {
                   const next = active ? selected.filter((s) => s !== option) : [...selected, option];
                   if (next.length > 0) onSet(next); // enum_list values must stay non-empty
                 }}
                 className={cx(
                   "touch-target inline-flex cursor-pointer items-center justify-center rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                  active
-                    ? "border-accent-500/60 bg-accent-500/10 text-accent-300"
-                    : "border-ink-500 text-paper-400 hover:text-paper-200",
+                  outOfRule
+                    ? "border-danger-400/60 bg-danger-500/10 text-danger-300"
+                    : active
+                      ? "border-accent-500/60 bg-accent-500/10 text-accent-300"
+                      : "border-ink-500 text-paper-400 hover:text-paper-200",
                 )}
               >
-                {option.replaceAll("_", " ")}
+                {`${outOfRule ? "⚠ " : ""}${option.replaceAll("_", " ")}`}
               </button>
             );
           })}

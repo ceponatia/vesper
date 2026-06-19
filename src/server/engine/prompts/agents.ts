@@ -19,7 +19,7 @@ Extract:
 - itemEvents: wear/remove/pick_up/drop/place/store_in/take_from/open/close/alter — listed items only. Completed wardrobe changes matter most, however gradual the prose. A removed garment lands where the prose leaves it: kept in hand → bare remove; dropped to the floor → remove + locationName; stowed away → remove + containerName. Fumbling isn't removal; finishing is.
 - meterAdjustments: deltas in -1..1 for listed meter ids, justified by events (a shower raises hygiene; a sprint drains energy).
 - conditionEvents: add/end short-lived states ("soaked", "sprained ankle"); optional severity/durationMinutes/promptHint.
-- attributeChanges: rare lasting bodily changes only (haircut, injury).
+- attributeChanges: rare lasting MUTABLE changes only (haircut, dye, tattoo, weight). NEVER inherent traits — eye color, gender, age, species, bone structure.
 - activityUpdates: each named character's end-of-turn activity (posture when clear).
 - commsEvents: phone/text links opened/closed this turn ({op:"open"|"close", kind:"call"|"text", withName: other party}). "She picks up" → open call; "hangs up" → close; "texts back" → open text. Never invent comms not shown.
 - affinityAdjustments: feeling shifts shown by words or deeds (fromName toward towardName; ±1-2 ordinary, ±4-5 betrayal/rescue). Often none.

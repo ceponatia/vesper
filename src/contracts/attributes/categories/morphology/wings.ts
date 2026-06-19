@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../../types";
+import { MATERIAL_COLORS } from "../../shared-values";
 
 /** Wings — visible fantasy morphology, gated by bodyFeatures group "wings". */
 export const wingsGroup = defineAttributeGroup("wings", [
@@ -50,12 +51,13 @@ export const wingsGroup = defineAttributeGroup("wings", [
     label: "Wing color",
     kind: "physical",
     category: "wings",
-    valueType: "text",
-    description: "Wing color, pattern, or surface material only — never size or shape.",
+    valueType: "enum_list",
+    description: "Wing color, pattern, or surface material only — never size or shape. One or two from the material palette.",
     mutability: "inherent",
+    allowedValues: [...MATERIAL_COLORS],
     bodyLocationId: "wings",
     aliases: ["wing color"],
-    promptHints: ["e.g. leathery crimson, jet-black, snow-white feathers, iridescent gossamer, smoke-grey."],
+    promptHints: ["e.g. crimson (leathery), jet_black, bone_white (feathers), iridescent (gossamer), smoke_grey."],
   },
   {
     id: "wings.carriage",

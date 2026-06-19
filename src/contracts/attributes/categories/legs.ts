@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../types";
+import { HAIR_DENSITY } from "../shared-values";
 
 export const legsGroup = defineAttributeGroup("legs", [
   {
@@ -35,7 +36,7 @@ export const legsGroup = defineAttributeGroup("legs", [
     valueType: "enum",
     description: "Leg hair density; grooming can change it.",
     mutability: "mutable",
-    allowedValues: ["none", "fine", "light", "moderate", "thick"],
+    allowedValues: [...HAIR_DENSITY],
     bodyLocationId: "legs",
     aliases: ["leg hair"],
     // Skin-level — only visible with bare legs (no bottoms/hosiery covering them).

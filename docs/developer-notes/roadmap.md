@@ -58,17 +58,6 @@ progress) · **shipped — <date>** · **parked**.
    state that parameterise how each character's transient states (`affinity`/`arousal`/
    `stress`) drift and react over time. Subsumes the affinity trait-coupling and likely
    folds in Intimacy notes (intimate traits).
-9. **Attribute mutability & change-path integrity** — plan
-   [attribute-mutability.plan.md](attribute-mutability.plan.md) · spec
-   [attribute-mutability.spec.md](attribute-mutability.spec.md) (**next** — Slice 1 fully
-   spec'd). Enforces the documented-but-inert `mutability` invariant at the merge write
-   boundary (a `narrative` overlay can currently rewrite eye color/gender/age/species and
-   re-apply every turn): a pure `overlaySourceMayChange` policy + `droppedEvents`
-   correction + simulant-prompt guardrail, drops the dead `temporary` tier. Re-analysis of
-   the 2026-06-15 notes; the design half they also raised mostly shipped with non-human
-   species. Live follow-on slices: free-text reduction (#4) + editor enum-narrowing by
-   species rule. **Reorder this slot to taste.**
-
 8. **Social-reaction cards** — plan
    [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (draft). Importable
    **taboo / social-rule cards** (library content, reusable across worlds like items) that
@@ -85,6 +74,16 @@ god-mode POV, companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — `phase-N` docs left as-is)
 
+- **Attribute mutability & change-path integrity** —
+  [attribute-mutability.plan.md](attribute-mutability.plan.md) · spec
+  [attribute-mutability.spec.md](attribute-mutability.spec.md), shipped 2026-06-19.
+  Enforced the documented-but-inert `mutability` invariant at the merge write boundary
+  (`overlaySourceMayChange` + `merge.attribute.inherent_change_rejected` + `droppedEvents`
+  correction + simulant guardrail; dropped the dead `temporary` tier). Plus a shared
+  value-vocabulary module (`shared-values.ts`) with morphology colors converted to
+  `enum_list`, and editor enum hard-restriction by species rule. Re-analysis of the
+  2026-06-15 notes; the design half they raised had mostly shipped with non-human species.
+  One follow-up: a rendered editor test (no component-test harness yet).
 - **Non-human species & body features** —
   [non-human-species.plan.md](finished/non-human-species.plan.md) · spec
   [non-human-species.spec.md](finished/non-human-species.spec.md), shipped 2026-06-18.

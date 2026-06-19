@@ -699,19 +699,20 @@ describe("conditions", () => {
 });
 
 describe("attribute and activity updates", () => {
-  it("applies registry-known attribute changes as narrative overlays", async () => {
+  it("applies a mutable attribute change as a narrative overlay", async () => {
     const { plan: p } = await plan(
       {},
       results({
         simulant: simulant({
-          attributeChanges: [{ participantName: "Maya", attributeId: "identity.apparent_age", value: "forties" }],
+          // hair.color is mutable — a dye job is a legitimate narrative change.
+          attributeChanges: [{ participantName: "Maya", attributeId: "hair.color", value: "auburn" }],
           activityUpdates: [{ participantName: "Maya", activity: "cooking", posture: "leaning on the counter" }],
         }),
       }),
     );
     const maya = p.participants.find((x) => x.id === "p-maya");
     expect(maya?.state.attributeOverlays).toEqual([
-      expect.objectContaining({ id: "identity.apparent_age", value: "forties", source: "narrative" }),
+      expect.objectContaining({ id: "hair.color", value: "auburn", source: "narrative" }),
     ]);
     expect(maya?.state.activity).toBe("cooking");
     expect(maya?.state.posture).toBe("leaning on the counter");
@@ -730,25 +731,64 @@ describe("attribute and activity updates", () => {
     expect(p.participants.find((x) => x.id === "p-maya")?.state.attributeOverlays).toEqual([]);
   });
 
-  it("replaces a prior narrative overlay for the same attribute", async () => {
+  it("replaces a prior narrative overlay for the same mutable attribute", async () => {
     const bundle = makeBundle();
     const maya = bundle.participants.find((p) => p.id === "p-maya");
     if (!maya) throw new Error("fixture");
-    maya.state.attributeOverlays = [{ id: "identity.apparent_age", value: "mid_twenties", source: "narrative" }];
+    maya.state.attributeOverlays = [{ id: "hair.color", value: "brown", source: "narrative" }];
     const sink = new DiagnosticCollector();
     const p = await planTurnEffects({
       bundle,
       turn: makeTurn(),
       results: results({
         simulant: simulant({
-          attributeChanges: [{ participantName: "Maya", attributeId: "identity.apparent_age", value: "forties" }],
+          attributeChanges: [{ participantName: "Maya", attributeId: "hair.color", value: "auburn" }],
         }),
       }),
       sink,
     });
     const overlays = p.participants.find((x) => x.id === "p-maya")?.state.attributeOverlays ?? [];
     expect(overlays).toHaveLength(1);
-    expect(overlays[0]?.value).toBe("forties");
+    expect(overlays[0]?.value).toBe("auburn");
+  });
+
+  it("rejects a narrative change to an inherent attribute, with a diagnostic + correction", async () => {
+    // eyes.color is inherent — prose getting vivid must not rewrite a defining trait.
+    const { plan: p, sink } = await plan(
+      {},
+      results({
+        simulant: simulant({
+          attributeChanges: [{ participantName: "Maya", attributeId: "eyes.color", value: "blue" }],
+        }),
+      }),
+    );
+    const maya = p.participants.find((x) => x.id === "p-maya");
+    expect(maya?.state.attributeOverlays).toEqual([]);
+    expect(codes(sink)).toContain("merge.attribute.inherent_change_rejected");
+    expect(p.droppedEvents.some((e) => e.toLowerCase().includes("inherent trait"))).toBe(true);
+    expect(p.brief.droppedEvents.some((e) => e.toLowerCase().includes("inherent trait"))).toBe(true);
+  });
+
+  it("stays silent when an inherent change merely re-asserts the current value", async () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p-maya");
+    if (!maya) throw new Error("fixture");
+    maya.snapshot.attributes = [{ id: "eyes.color", value: "green", source: "creation" }];
+    const sink = new DiagnosticCollector();
+    const p = await planTurnEffects({
+      bundle,
+      turn: makeTurn(),
+      results: results({
+        simulant: simulant({
+          attributeChanges: [{ participantName: "Maya", attributeId: "eyes.color", value: "green" }],
+        }),
+      }),
+      sink,
+    });
+    const updated = p.participants.find((x) => x.id === "p-maya");
+    expect(updated?.state.attributeOverlays).toEqual([]);
+    expect(codes(sink)).not.toContain("merge.attribute.inherent_change_rejected");
+    expect(p.droppedEvents.some((e) => e.toLowerCase().includes("inherent trait"))).toBe(false);
   });
 });
 

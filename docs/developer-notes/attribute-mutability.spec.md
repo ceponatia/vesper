@@ -1,7 +1,7 @@
 # Attribute mutability & change-path integrity — spec
 
-Status: **next** — design settled for the enforcement slice; free-text reduction
-and the editor enum-narrowing gap are scoped but carry one open question each.
+Status: **shipped — 2026-06-19** (all three slices; see the plan for completion notes).
+Design settled for all three slices; open questions resolved 2026-06-19 (§10).
 
 Plan: [attribute-mutability.plan.md](attribute-mutability.plan.md). This spec is
 the **re-analysis (2026-06-19)** of two 2026-06-15 notes —
@@ -246,22 +246,48 @@ fields ⇒ the engine can send **programmatic, well-designed prompt hints** to t
 narrator/agents instead of a player's raw prose. The note also explicitly wants to
 **keep** some free text where it genuinely helps (`hair.style` is its named example).
 
-| Attribute | Mutability | Convert to enum? | Rationale |
+| Attribute | Mutability | Disposition | Rationale |
 | --- | --- | --- | --- |
 | `hair.style` | mutable | **keep text** | The note's own example of useful free text; styles are open-ended. |
 | `identity.heritage` | inherent | **keep text** | `contracts.md` is explicit: real-world ethnicities + fantasy ancestries can't share a closed list; flagged `identityAnchor`. |
-| `voice.accent` | mutable | **candidate** | Could become enum + optional free-text refinement; accents cluster well. |
-| `presentation.scent_baseline` | mutable | **candidate** | Could become enum_list of scent families ("floral","woody","citrus",…) + optional note. |
-| `horns.color` | inherent | **candidate** | Color/material impressions enumerate well; parity with how `skin.tone`/`hair.color` are enums. |
-| `tail.color` | inherent | **candidate** | Same. |
-| `wings.color` | inherent | **candidate** | Same. |
+| `voice.accent` | mutable | **keep text** | Genuinely open-ended ("soft coastal lilt"); prompt-hint already steers rendering. Converting loses fidelity for little gain. |
+| `presentation.scent_baseline` | mutable | **keep text** | Open-ended signature scent ("lavender soap and cedar"); hygiene thresholds + exposure gating already do the programmatic work. |
+| `horns.color` | inherent | **→ `enum_list`** | Convert, drawing from the shared `MATERIAL_COLORS` palette (below). |
+| `tail.color` | inherent | **→ `enum_list`** | Same. |
+| `wings.color` | inherent | **→ `enum_list`** | Same. |
 
-This is a vocabulary edit per the registry contract (edit the category file → run
-`vitest contracts`), not a migration — but it is **not** purely mechanical: each
-candidate needs an authored allowed-value set and prompt hints, and an `enum_list` vs
-`enum` call. **Open question (§9 Q1):** which of the four candidates to convert, and
-whether the three morphology colors should share one palette. Defer the actual
-conversion behind that ruling.
+**Resolved (was Q1).** Convert the **three morphology colors** to `enum_list` and
+keep the other four as text. `enum_list` (not `enum`) because morphology colors are
+routinely two-tone ("jet-black with a red spade", "snow-white feathers tipped grey") —
+a list of 1–2 palette terms stays programmatic while preserving that expressiveness.
+
+### The shared value-vocabulary module (user Q1's "central palette" idea)
+
+New pure file `contracts/attributes/shared-values.ts` is the home for value lists
+reused across categories. The pattern is **base + per-field augment** (the user's
+`eyes.color`-adds-`hazel` model). It must **reproduce the exact current value strings**
+of any list it replaces — `allowedValues` members are persisted on character profiles,
+so a rename silently invalidates stored values (`parseOr` drops them). The first
+constants, chosen for real overlap with zero persisted-value churn:
+
+| Constant | Members | Consumers | Notes |
+| --- | --- | --- | --- |
+| `HAIR_DENSITY` | `none·fine·light·moderate·thick` | `arms.hair`, `legs.hair` | The two lists are **byte-identical** today — pure DRY extraction. `chest.hair` keeps its `sparse` variant (body-appropriate) and stays local. |
+| `INTIMATE_SCENT_BASE` | `clean·musky·salty` | `vulva.scent` (+`sweet`), `penis.scent` (exact), `vulva.taste` (+`tangy`,`sweet`) | Clean base+augment that reproduces each field's current set and order. |
+| `MATERIAL_COLORS` | non-skin surface palette — e.g. `obsidian·jet_black·bone_white·ivory·ash_grey·smoke_grey·crimson·blood_red·russet·tan·gold·bronze·silver·iridescent·pearlescent·translucent·matches_skin` | the 3 morphology colors (new `enum_list`) | The "central palette, augmented per field" example. Each morphology field may add its own terms (e.g. wings `feathered_white`) on top. |
+
+**Scope ruling (was Q1 follow-up).** The shared-color refactor is **morphology only.**
+`eyes.color` / `hair.color` / `skin.tone` stay curated **local** lists: they are
+`coreVisual` with `autoDefaultExcludes` tied to specific values and a deliberate
+natural→supernatural ordering, share only ~6 generic terms, and folding them onto a
+base would reorder them and risk persisted-value breakage for marginal gain.
+`arms.build`/`legs.build` likewise stay local (overlap, but not identical; composition
+is fragile). This honours the note's own caveat that "many body areas do need their own
+lists of available values." The module is the seam; future shared axes are one-line
+additions once a genuine duplication appears.
+
+Each change is a vocabulary edit per the registry contract (edit the file → `vitest
+contracts`), not a migration.
 
 ---
 
@@ -317,13 +343,19 @@ renders enum `<option>`s from raw `def.allowedValues` (`:562,:573`). Consequence
 faerie's `wings.shape` is rule-locked to `"butterfly"`, but the editor still offers the
 full base palette, and `required` rule defaults are neither pre-seeded nor marked.
 
-**Fix:** point the editor's enum/enum_list controls at `body.allowedValuesFor(def)`
-(it already computes `body = realizeBody(...)` at `attribute-picker.tsx:94`), and seed
-`required`-rule defaults on first render. **Open question (§9 Q2):** should the editor
-*hard-restrict* to the narrowed set (drop out-of-rule options entirely) or *soft-warn*
-(show them, flag a violation), to stay consistent with the seed-not-lock philosophy of
-R1? Leaning hard-restrict for `forbidden`/value narrowing (a rule is a species fact,
-not a default) while leaving body-config toggles as the override surface.
+**Fix (resolved Q2 — hard-restrict).** Point the editor's enum/enum_list controls at
+`body.allowedValuesFor(def)` (it already computes `body = realizeBody(...)` at
+`attribute-picker.tsx:94`) and **drop out-of-rule options entirely** — a species rule is
+a species fact, not a default, so a faerie's `wings.shape` simply offers only
+`"butterfly"`. Body-config toggles (intimate regions / features) remain the per-character
+override surface (R1); the hard-restrict applies to *value narrowing within an applicable
+attribute*, not to which anatomy a character has. Required-rule defaults: when a stored
+value is absent for a `required` attribute whose rule carries a `defaultValue`, seed it —
+done where species/heritage is set (mirror `character-editor.tsx`'s existing
+`setHeritage` feature-seeding), **not** in a render effect (react-hooks lint forbids sync
+setState in effects). A value already out of the narrowed set (e.g. after a species
+change) is shown as a flagged invalid selection so the author can see and fix it rather
+than having it silently rewritten.
 
 ---
 
@@ -349,19 +381,18 @@ Per `docs/testing.md` (degradation tests assert fallback **and** diagnostic code
 
 ---
 
-## 10. Open questions
+## 10. Resolved questions
 
-Restated in the plan's `## Open questions`; resolved rulings live here.
+All open questions are now resolved (rulings live in the cited sections):
 
-- **Q1 (free-text, §6).** Which of `voice.accent` / `presentation.scent_baseline` /
-  `horns.color` / `tail.color` / `wings.color` to convert to enum/enum_list, and
-  whether the three morphology colors share one authored palette. Blocks §6 work, not
-  the enforcement slice.
-- **Q2 (editor narrowing, §8).** Hard-restrict enum options to the species-narrowed
-  set, or soft-warn? Leaning hard-restrict + seed required defaults.
+- **Q1 (free-text / shared vocab, §6).** Convert the three morphology colors to
+  `enum_list` drawing from a shared `MATERIAL_COLORS` palette; keep `voice.accent`,
+  `presentation.scent_baseline`, `hair.style`, `identity.heritage` as text. The shared
+  module ships `HAIR_DENSITY` + `INTIMATE_SCENT_BASE` + `MATERIAL_COLORS`; the
+  color-sharing scope is **morphology only** (eyes/hair/skin/limb-build stay local).
+- **Q2 (editor narrowing, §8).** **Hard-restrict** enum options to the
+  species-narrowed set; seed `required` defaults where species/heritage is set.
 
-Resolved in this re-analysis (were open in the 2026-06-15 note): inherent allow-list =
-`{ manual, magic }` (D1); equality short-circuit on near-miss re-asserts (D2);
-`temporary` → drop (D4); override seed kept (R1); no sentinel (R2).
-</content>
-</invoke>
+Resolved earlier in this re-analysis (were open in the 2026-06-15 note): inherent
+allow-list = `{ manual, magic }` (D1); equality short-circuit on near-miss re-asserts
+(D2); `temporary` → drop (D4); override seed kept (R1); no sentinel (R2).

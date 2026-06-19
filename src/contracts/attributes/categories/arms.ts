@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../types";
+import { HAIR_DENSITY } from "../shared-values";
 
 export const armsGroup = defineAttributeGroup("arms", [
   {
@@ -21,7 +22,7 @@ export const armsGroup = defineAttributeGroup("arms", [
     valueType: "enum",
     description: "Arm hair density.",
     mutability: "mutable",
-    allowedValues: ["none", "fine", "light", "moderate", "thick"],
+    allowedValues: [...HAIR_DENSITY],
     bodyLocationId: "arms",
     aliases: ["arm hair"],
   },

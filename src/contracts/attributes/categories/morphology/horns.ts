@@ -1,4 +1,5 @@
 import { defineAttributeGroup } from "../../types";
+import { MATERIAL_COLORS } from "../../shared-values";
 
 /** Horns — visible fantasy morphology, gated by bodyFeatures group "horns". */
 export const hornsGroup = defineAttributeGroup("horns", [
@@ -56,11 +57,12 @@ export const hornsGroup = defineAttributeGroup("horns", [
     label: "Horn color",
     kind: "physical",
     category: "horns",
-    valueType: "text",
-    description: "Horn color or material impression only — never size or shape.",
+    valueType: "enum_list",
+    description: "Horn color or material impression only — never size or shape. One or two from the material palette.",
     mutability: "inherent",
+    allowedValues: [...MATERIAL_COLORS],
     bodyLocationId: "horns",
     aliases: ["horn color"],
-    promptHints: ["Usually non-skin material — e.g. obsidian black, bone white, ivory, blood-red, iridescent."],
+    promptHints: ["Usually non-skin material — e.g. obsidian, bone white, ivory, blood-red, iridescent."],
   },
 ]);
