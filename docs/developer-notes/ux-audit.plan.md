@@ -2,7 +2,9 @@
 
 Status: **shipped — 2026-06-18** (on branch `ux-audit-rest`) — §1–§6, §8, §9 built and
 verified (`pnpm verify` green); §7 routed to movement-authority; three follow-ups parked.
-See the completion note below.
+See the completion note below. **Addendum (2026-06-19, branch `ux-audit-next`):** the §4
+high-contrast theme **toggle** — the last parked follow-up — is now built and verified
+(`pnpm verify` green); see §4.
 
 ## Completion note (2026-06-18)
 
@@ -28,9 +30,9 @@ personality-slice-2 work in the main checkout):
 **Routed:** §7/M4 (narration ↔ tracked-location divergence) → movement-authority work.
 
 **Parked follow-ups:** inline-forge-a-new-player-character (§1a; pick-existing ships, forge
-one in /characters then pick it); high-contrast theme toggle (§4/feature #6; the AA fix
-shipped); the **M5 intake-budget tuning** itself stays gated on the §6 fallback-rate
-measurement (don't tune blind). The "add to cast / drop orphan lore" remediations (§2.2) are
+one in /characters then pick it); the **M5 intake-budget tuning** itself stays gated on the
+§6 fallback-rate measurement (don't tune blind). _(The high-contrast theme toggle — §4/feature
+#6 — was the third parked follow-up; **built 2026-06-19** on `ux-audit-next`, see §4.)_ The "add to cast / drop orphan lore" remediations (§2.2) are
 now largely **prevented** by feeding the canonical cast to the lore prompt.
 
 Source: [ux-audit.intake.md](ux-audit.intake.md) — the end-to-end walkthrough (2026-06-17,
@@ -155,6 +157,14 @@ Lighthouse a11y **95**; the one failure is `color-contrast`. Offender: the dark 
 secondary-text tokens (`text-paper-500`/`paper-400`) on dark cards — labels, hints, meter
 captions, relationship sub-text. Raise the secondary tokens to ≥4.5:1 (≥3:1 large), and/or
 add the high-contrast theme toggle (feature #6) that lifts them.
+
+**Shipped (2026-06-19, `ux-audit-next`):** _both._ The baseline token AA fix shipped
+2026-06-18; the **opt-in high-contrast toggle** now lands on top of it. A header button
+(`components/shell/contrast-toggle.tsx`) flips `data-contrast="high"` on `<html>`, persisted
+in `localStorage` and applied **pre-paint** by an inline script in the root layout (no flash).
+`globals.css` keys a `:root[data-contrast="high"]` block that lifts the quiet `paper`/`ink`
+tokens well past the AA floor — same dark "reading room", only the dim tokens get louder. The
+read/parse/apply path is `lib/contrast-theme.ts` (pure `parseContrastMode`, unit-tested).
 
 ## 5. Turn concurrency: post-`done` session-lock window — _M3_
 

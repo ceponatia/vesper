@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { cx } from "@/components/ui/cx";
+import { ContrastToggle } from "./contrast-toggle";
 
 const navLinks = [
   { href: "/worlds", label: "Worlds" },
@@ -47,6 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
+          <ContrastToggle />
         </div>
       </header>
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
