@@ -1,18 +1,166 @@
+[← Contracts index](index.md)
+
 # Body model
 
-`body/locations/` (region-split: `everyday.ts` · `features.ts` · `intimate.ts` · `index.ts`): a tree registry of body locations (`id, label, parentId?, side?, coverageRelevant?, intimateGroup?, featureGroup?, promptHints?`). Everyday humanoid tree: five roots — head (hair, face→eyes, ears), torso (neck, shoulders, chest, back, waist), arms (upper_arms, forearms, wrists, hands→fingers), pelvis (hips, groin, buttocks), legs (thighs, calves, ankles, feet→toes) — at coverage-useful granularity (~27 nodes). Additive feature locations are default-absent and tagged with `featureGroup`: horns under `head`, wings under `back` (which already exists under torso), and tail under `pelvis` (not groin; it is attached near the pelvis but not genital anatomy). The roots double as the coverage editor's column groups. Beware bare parent ids in coverage data: `arms` implies hands and fingers, `torso` implies the neck, `legs` implies feet — garments should use the specific parts (a t-shirt is torso-parts + upper_arms, never `arms`).
-`body/plans.ts`: body plans (`humanoid` seeded) = a set of location ids + applicable attribute rules. Characters reference a `bodyPlanId`; non-humanoid plans are future data additions, not refactors.
+The body model describes *where* things are on a character — the anatomy that clothing covers, that attributes attach to, and that the narrator and image prompts read from. It's a tree of body locations, refined per character by their species, heritage, and body-config.
 
-Wardrobe coverage, exposure, and attribute targeting all reference body-location **ids** — never hardcoded strings elsewhere. Garment coverage templates and the coverage editor live in [items.md](items.md) §Coverage editing.
+## The body-location tree
 
-## Intimate anatomy, body-config & the realized body
+`body/locations/` is a tree registry of body locations, split by region across `everyday.ts` · `features.ts` · `intimate.ts` · `index.ts`. Each location carries:
 
-Explicit anatomy (`intimate.ts`) hangs off the everyday tree under `groin` / `pelvis` / `chest` — vulva (+ labia, clitoris, vestibule, vagina, mons), penis, testicles, anus, breasts (+ nipples). These are `coverageRelevant: false` (a garment over `pelvis`/`chest` already covers them via `expand`; they aren't garment slots). The *configurable* ones each carry an `intimateGroup` (`INTIMATE_REGION_GROUPS = breasts · vulva · penis · testicles`) so the realized-body filter can include/omit the sub-tree per character. The **anus** is the exception: it carries **no** `intimateGroup`, so it is **universal** — present on every realized body (everyone has one), not a body-config toggle — while still living in the fenced intimate subfolder and being exposure-gated like any below-waist region. Their attributes live in `attributes/categories/intimate/` (a fenced subfolder — easy to find and to withhold from moderation-prone routes), in categories `INTIMATE_ATTRIBUTE_CATEGORIES = breasts · vulva · penis · testicles` (anus is a touchable region with no descriptive attributes yet). The full aionchat anatomy vocabulary T1 didn't port (buttocks, groin, abdomen, nose, …) is catalogued in `docs/developer-notes/supplemental-anatomy.phase4.md`.
+```ts
+{ id, label, parentId?, side?, coverageRelevant?, intimateGroup?, featureGroup?, promptHints? }
+```
 
-Which intimate anatomy a character has is the **body-config**: `CharacterProfile.intimateRegions` (a list of present region groups, e.g. `["vulva","breasts"]`). It is **seeded declaratively** at forge time from the attribute values' `activatesGroups` (`seedBodyConfigFromAttributes` — e.g. `identity.gender = "female"` → `["vulva","breasts"]`; `identity.gender` is `coreVisual` so it is always present and the seed is reliable) and is fully overridable in the editor — a SEED, never a lock, so a "male" character can still be given a vulva. Empty `[]` = no intimate anatomy = the engine's pre-existing behavior; the body-config starts empty, so "deactivate X" is simply "no value activates X". Additive fantasy morphology uses the parallel `CharacterProfile.bodyFeatures` list (`["wings","horns","tail"]`); when that field is absent, the species' `defaultFeatureGroups` seed the realized body, and when present, even `[]` is an explicit per-character override. No migration: both ride the profile JSONB.
+The **everyday humanoid tree** has five roots, at coverage-useful granularity (~27 nodes). The roots double as the coverage editor's column groups:
 
-`species/realize.ts` `realizeBody({ bodyPlanId, speciesId, heritageId, intimateRegions, bodyFeatures })` is the single gating filter: body plan (superset of locations) → species (`allowedBodyLocationIds` / `disallowedBodyLocationIds` + `defaultFeatureGroups` + attribute rules) → **heritage** (an optional refinement within the species — adds feature groups, overrides attribute rules per `attributeId`, never touches the body plan or locations) → body-config (which intimate groups and additive features are present). It answers `isLocationPresent(id)`, `hasIntimateRegion(group)`, `hasFeature(group)`, and `isAttributeApplicable(def)`, plus the per-attribute **rule view** — `attributeRuleFor(id)`, `isAttributeRequired(def)`, `allowedValuesFor(def)` (def values intersected with the rule's `allowedValues`, minus `disallowedValues`), and `defaultValueFor(def)`. All three `AttributeRule` applicabilities are now live: `forbidden` drops the attribute, `required`/`optional` keep it (a `required` rule with a `defaultValue` is seeded at creation — e.g. elf `ears.shape` → "pointed"), and `allowedValues`/`disallowedValues` narrow the value set per species. Consumed by the attribute editor, narrator impression block (exposure-gated), image prompt assembly, and forge attribute vocabulary so stale/gated attribute values do not surface and species traits hold. Forge species inference uses registry id/label/alias matching plus conservative token-level fuzzy fallback (`inferSpeciesFromText`) before its parallel sections run; a feature-bearing match seeds `speciesId`, `bodyPlanId`, and species-default `bodyFeatures`, then unlocks realized feature attributes for the attribute agent. Species live **one file per species** under `species/catalog/` (parity with attribute categories: `defineSpecies(...)` per file, listed in `catalog/index.ts`; `registry.ts` derives `speciesById` / `isSpeciesId` / `inferSpeciesFromText` / `speciesAppearancePhrase` / `speciesLorePhrase` / `heritageFor` / `heritagesForSpecies` / `inferHeritageFromText` from that array — adding a species is a single new file). The catalog ships `human`, feature-bearing `succubus` (`wings`, `horns`, `tail` by default), feature-bearing `faerie` (`wings` by default), and baseline humanoid records for `elf`, `dwarf`, `gnome`, `orc`, and `goblin`. A further humanoid variant is a data add once its feature groups exist; true non-humanoid body plans stay future work. Each species carries two optional **model-facing** notes split by audience (both empty by default, both distinct from the internal `description`): **`appearance`** — a generic, image-safe description of the species' default morphology (pointed ears, a greenish skin cast, wings/horns/tail, broad stature), *not* any one character's specific attribute values — and **`lore`** — cultural/identity backstory (temperament, standing, relations). `speciesAppearancePhrase(speciesId)` resolves the label (+ `appearance` when authored) and feeds the **avatar/scene image prompts** (`images/prompts.ts`) and the **character forge** (`authoring/character-forge.ts`, which turns the generic look into concrete per-character attribute values); `speciesLorePhrase(speciesId)` resolves the label (+ `lore`) for the **narrator** canonical-facts block (`engine/scene.ts`) — the narrator's physical detail comes from per-character attributes (`buildGlanceImpressions`), so it gets culture here, not looks. Both surface only for **non-human** casts (label-only when the field is unauthored); the unmarked `human` default surfaces nothing. A species may also carry **`heritages`** — optional sub-groups within it (e.g. `dark_elf` inside `elf`; ships as the worked example). A heritage is a pure overlay: it adds feature groups, **overrides** the species attribute rule for any shared `attributeId` (last-wins), and carries its own `appearance` (**combined** with the species look) and `lore` (**replaces** the species culture note, falling back when absent). The character stores an optional `profile.heritageId`; `realizeBody`'s `heritageId` composes the overlay, the phrase helpers take it as a second arg, and the forge infers it (`inferHeritageFromText`, scoped to the resolved species; heritage names like "drow" also resolve the parent species). Heritage never changes the body plan — structural non-humanoids stay future work. `appliesToBodyPlans` / `excludesBodyPlans` on attributes (previously inert) are now consumed here.
+| Root | Children |
+| --- | --- |
+| head | hair, face (→ eyes), ears |
+| torso | neck, shoulders, chest, back, waist |
+| arms | upper_arms, forearms, wrists, hands (→ fingers) |
+| pelvis | hips, groin, buttocks |
+| legs | thighs, calves, ankles, feet (→ toes) |
+
+**Additive feature locations** are default-absent and tagged with a `featureGroup`:
+
+| Feature | Hangs under | Note |
+| --- | --- | --- |
+| horns | head | |
+| wings | back | `back` already exists under torso |
+| tail | pelvis | attached near the pelvis, **not** `groin` — it is not genital anatomy |
+
+> ⚠️ **Beware bare parent ids in coverage data.** `arms` implies hands and fingers, `torso` implies the neck, and `legs` implies feet. Garments should always use the specific parts — a t-shirt is `torso`-parts + `upper_arms`, never `arms`.
+
+## Body plans
+
+`body/plans.ts`: a body plan (only `humanoid` is seeded) is a set of location ids plus the applicable attribute rules. Characters reference a `bodyPlanId`. Non-humanoid plans are future *data* additions, not refactors.
+
+Everything that targets the body — wardrobe coverage, exposure, attribute targeting — references body-location **ids**, never hardcoded strings. Garment coverage templates and the coverage editor live in [items.md](items.md) §Coverage editing.
+
+## Intimate anatomy
+
+Explicit anatomy (`intimate.ts`) hangs off the everyday tree under `groin` / `pelvis` / `chest`:
+
+| Region | Parts |
+| --- | --- |
+| vulva | + labia, clitoris, vestibule, vagina, mons |
+| penis | |
+| testicles | |
+| anus | |
+| breasts | + nipples |
+
+These are all `coverageRelevant: false` — a garment over `pelvis` / `chest` already covers them via `expand`, so they aren't garment slots of their own.
+
+**Which intimate anatomy is configurable** is controlled by `intimateGroup`:
+
+- The *configurable* parts each carry an `intimateGroup` (`INTIMATE_REGION_GROUPS = breasts · vulva · penis · testicles`), so the realized-body filter can include or omit that sub-tree per character.
+- The **anus is the exception**: it carries **no** `intimateGroup`, so it is **universal** — present on every realized body (everyone has one), never a body-config toggle. It still lives in the fenced intimate subfolder and is exposure-gated like any below-waist region.
+
+**Where intimate attributes live:** `attributes/categories/intimate/` — a fenced subfolder, easy to find and to withhold from moderation-prone routes. Its categories are `INTIMATE_ATTRIBUTE_CATEGORIES = breasts · vulva · penis · testicles` (the anus is a touchable region with no descriptive attributes yet).
+
+The full aionchat anatomy vocabulary that didn't port in T1 (buttocks, groin, abdomen, nose, …) is catalogued in `docs/developer-notes/supplemental-anatomy.phase4.md`.
+
+## Body-config: which anatomy a character has
+
+A character's body-config is the set of intimate regions and additive features they actually have. Two profile fields hold it, both riding the profile JSONB (no migration):
+
+| Field | Holds | Default / absence behavior |
+| --- | --- | --- |
+| `CharacterProfile.intimateRegions` | Present intimate region groups, e.g. `["vulva", "breasts"]` | `[]` = no intimate anatomy (the engine's pre-existing behavior) |
+| `CharacterProfile.bodyFeatures` | Additive feature groups, e.g. `["wings", "horns", "tail"]` | *absent* ⇒ species `defaultFeatureGroups` seed it; `[]` ⇒ explicit per-character "none" |
+
+**How `intimateRegions` is seeded.** At forge time it's filled declaratively from the attribute values' `activatesGroups` (`seedBodyConfigFromAttributes`) — e.g. `identity.gender = "female"` seeds `["vulva", "breasts"]`. Because `identity.gender` is `coreVisual`, it is always present, so the seed is reliable. It is fully overridable in the editor — a **seed, never a lock** — so a "male" character can still be given a vulva. The body-config starts empty, so "deactivate X" is simply "no value activates X".
+
+## The realized body
+
+`species/realize.ts` exposes `realizeBody(...)` — the single gating filter that turns the full body plan into one character's actual body:
+
+```ts
+realizeBody({ bodyPlanId, speciesId, heritageId, intimateRegions, bodyFeatures })
+```
+
+It applies four stages in order:
+
+| Stage | What it does |
+| --- | --- |
+| 1. Body plan | The superset of locations. |
+| 2. Species | `allowedBodyLocationIds` / `disallowedBodyLocationIds` + `defaultFeatureGroups` + attribute rules. |
+| 3. Heritage | *Optional* refinement within the species — adds feature groups and overrides attribute rules per `attributeId`. Never touches the body plan or locations. |
+| 4. Body-config | Which intimate groups and additive features are present. |
+
+**What it answers:**
+
+- Presence checks — `isLocationPresent(id)`, `hasIntimateRegion(group)`, `hasFeature(group)`, `isAttributeApplicable(def)`.
+- The per-attribute **rule view** — `attributeRuleFor(id)`, `isAttributeRequired(def)`, `allowedValuesFor(def)` (the definition's values intersected with the rule's `allowedValues`, minus its `disallowedValues`), and `defaultValueFor(def)`.
+
+All three `AttributeRule` applicabilities are live:
+
+| Applicability | Effect |
+| --- | --- |
+| `forbidden` | Drops the attribute entirely. |
+| `required` / `optional` | Keeps the attribute. A `required` rule with a `defaultValue` is seeded at creation — e.g. an elf's `ears.shape` → `"pointed"`. |
+| `allowedValues` / `disallowedValues` | Narrows the value set per species. |
+
+**Consumers:** the attribute editor, the narrator impression block (exposure-gated), image-prompt assembly, and the forge attribute vocabulary — so stale or gated attribute values never surface and species traits hold.
+
+### Forge species inference
+
+Before the forge's parallel sections run, it infers the species from text (`inferSpeciesFromText`) using registry id / label / alias matching plus a conservative token-level fuzzy fallback. A feature-bearing match seeds `speciesId`, `bodyPlanId`, and the species-default `bodyFeatures`, then unlocks the realized feature attributes for the attribute agent.
+
+### The species catalog
+
+Species live **one file per species** under `species/catalog/` — parity with attribute categories: a `defineSpecies(...)` per file, listed in `catalog/index.ts`. `registry.ts` derives everything from that array (`speciesById`, `isSpeciesId`, `inferSpeciesFromText`, `speciesAppearancePhrase`, `speciesLorePhrase`, `heritageFor`, `heritagesForSpecies`, `inferHeritageFromText`), so **adding a species is a single new file.**
+
+What ships:
+
+| Species | Default features |
+| --- | --- |
+| human | — (unmarked default) |
+| succubus | wings, horns, tail |
+| faerie | wings |
+| elf, dwarf, gnome, orc, goblin | baseline humanoid records |
+
+A further humanoid variant is a data add once its feature groups exist; true non-humanoid body plans stay future work.
+
+### Model-facing notes: appearance vs. lore
+
+Each species carries two optional, **model-facing** notes — both empty by default, both distinct from the internal `description`:
+
+| Note | Audience | Contents | Surfaced via | Feeds |
+| --- | --- | --- | --- | --- |
+| `appearance` | image | A generic, image-safe description of the species' default morphology (pointed ears, a greenish skin cast, wings/horns/tail, broad stature) — **not** any one character's specific attribute values. | `speciesAppearancePhrase(speciesId)` | Avatar/scene image prompts (`images/prompts.ts`) and the character forge (`authoring/character-forge.ts`), which turns the generic look into concrete per-character attribute values. |
+| `lore` | narrator | Cultural / identity backstory — temperament, standing, relations. | `speciesLorePhrase(speciesId)` | The narrator's canonical-facts block (`engine/scene.ts`). |
+
+The narrator's *physical* detail comes from per-character attributes (`buildGlanceImpressions`), so via `lore` it gets culture here, not looks. Both notes surface only for **non-human** casts (label-only when the field is unauthored); the unmarked `human` default surfaces nothing.
+
+### Heritages
+
+A species may also carry **`heritages`** — optional sub-groups within it (e.g. `dark_elf` inside `elf`, which ships as the worked example). A heritage is a pure **overlay**:
+
+- adds feature groups,
+- **overrides** the species attribute rule for any shared `attributeId` (last-wins),
+- carries its own `appearance` (**combined** with the species look) and `lore` (**replaces** the species culture note, falling back to it when absent).
+
+The character stores an optional `profile.heritageId`. `realizeBody`'s `heritageId` composes the overlay, the phrase helpers take it as a second argument, and the forge infers it (`inferHeritageFromText`, scoped to the resolved species — heritage names like "drow" also resolve the parent species). Heritage never changes the body plan, so structural non-humanoids stay future work.
+
+(`appliesToBodyPlans` / `excludesBodyPlans` on attributes — previously inert — are now consumed here.)
 
 ## Colloquial body references
 
-`species/targets.ts` resolves a player's colloquial body reference to the *set* of attributes it covers — "look at her **face**" means `face` + `eyes` + `brows` + `lips` here, not just `face.*`. It is **deterministic and pure** (not an attribute-fetch agent): a term resolves through the body-location tree (`expand` the subtree, then gather every attribute bound to those locations via `bodyLocationId`) or a category id, with a small synonym map for colloquialisms that match neither (`mouth` → lips, `figure`/`physique` → build). `resolveBodyTarget(term)` returns the structural expansion; `expandBodyTarget(term, isApplicable)` filters it through a character's realized body (pass `realizeBody(...).isAttributeApplicable`, so "chest" on a flat-chested character omits breast attributes); `detectBodyTargets(text)` scans free prose (whole-word, longest-phrase-first). The intended consumer is the look/touch attribute surfacing for the narrator; that wiring is pending (it lives in the turn pipeline / scene assembly).
+`species/targets.ts` resolves a player's colloquial body reference to the *set* of attributes it covers — "look at her **face**" means `face` + `eyes` + `brows` + `lips` here, not just `face.*`.
+
+It is **deterministic and pure** (not an attribute-fetch agent). A term resolves either:
+
+- through the body-location tree — `expand` the subtree, then gather every attribute bound to those locations via `bodyLocationId`, or
+- as a category id,
+
+with a small synonym map for colloquialisms that match neither (`mouth` → lips, `figure` / `physique` → build).
+
+| Function | Returns |
+| --- | --- |
+| `resolveBodyTarget(term)` | The structural expansion. |
+| `expandBodyTarget(term, isApplicable)` | The expansion filtered through a character's realized body — pass `realizeBody(...).isAttributeApplicable`, so "chest" on a flat-chested character omits breast attributes. |
+| `detectBodyTargets(text)` | Scans free prose (whole-word, longest-phrase-first). |
+
+The intended consumer is the look/touch attribute surfacing for the narrator; that wiring is pending (it lives in the turn pipeline / scene assembly).

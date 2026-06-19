@@ -1,39 +1,82 @@
+[← Contracts index](index.md)
+
 # Meters and registered actions
+
+**Meters** are continuous numbers (0–1) that drift over time — hygiene, energy, arousal, and so on. **Registered actions** are common timed activities (shower, nap, meal) with authored durations and meter effects.
 
 ## Meters
 
-Continuous 0–1 state that drifts with time, defined as data (`meters/registry.ts`):
+A meter is continuous 0–1 state that drifts with the clock, defined as data in `meters/registry.ts`:
 
 ```ts
 type MeterDefinition = {
-  id: string;                       // "hygiene", "energy", "arousal", "stress", "intoxication", "mood"
+  id: string;
   label: string;
   description: string;
   initial: number;
   perHour: number;                  // signed drift per game hour
-  baseline?: number;                // resting target (absent ⇒ today's pole: perHour<0 ⇒ 0, else 1)
-  recoveryPerHour?: number;         // rate toward baseline (absent ⇒ |perHour|)
+  baseline?: number;
+  recoveryPerHour?: number;
   thresholds: Array<{ below?: number; above?: number; promptHint: string }>;
 };
 ```
 
-The engine applies drift on clock advance (`applyMeterDrift` — moves each value toward its baseline at `recoveryPerHour`, never overshooting, clamped [0,1]) and surfaces crossed-threshold `promptHint`s to the narrator. Worlds may override or disable meters in their style config. Drift is **per-character**: at drift time the merge resolves trait-shifted baseline/recovery via `personalizeMeters` ([relationships.md](relationships.md) §Modulation) — the global value is the no-trait default. Absent `baseline`/`recoveryPerHour` ⇒ exactly the old pole-seeking drift.
+| Field | Meaning |
+| --- | --- |
+| `id` | e.g. `hygiene`, `energy`, `arousal`, `stress`, `intoxication`, `mood`. |
+| `label` / `description` | Display text. |
+| `initial` | Starting value. |
+| `perHour` | Signed drift per game hour. |
+| `baseline` | The resting target. *Absent* ⇒ today's pole: `perHour < 0` ⇒ 0, else 1. |
+| `recoveryPerHour` | Rate of movement toward `baseline`. *Absent* ⇒ `|perHour|`. |
+| `thresholds` | Crossing one surfaces its `promptHint` to the narrator. |
 
-Starter meters: `hygiene` (1→0, −0.04/h, thresholds prompt scent/grime hints), `energy` (1→0 waking drain, restored by sleep via simulant), `stress` (0-seeking), `arousal` (0-seeking), `intoxication` (0-seeking, fast decay), and **`mood`** — emotional valence (0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel). Mood is surfaced not as raw threshold hints but as a **derived descriptor** (`deriveMoodDescriptor` blends valence × stress/energy → "low and on edge", "bright and playful", …), and it couples with affinity: the social-reaction curve reads mood as its `μ` factor (`moodMeterToFactor`) and a reaction nudges mood back (`moodNudge`). The old app's 7-vector hygiene model becomes `hygiene` + conditions (`sweaty`, `soaked`, `unwashed` with region notes) — same play feel, no bespoke code path. Region-level scent composition is deliberately replaced by: item `sensory` text + hygiene threshold hints + exposure gating ([prompts.md](../prompts.md)).
+**Drift.** On every clock advance, `applyMeterDrift` moves each value toward its baseline at `recoveryPerHour` — never overshooting, clamped to `[0, 1]` — and surfaces any crossed-threshold `promptHint`s to the narrator. Worlds may override or disable meters in their style config.
+
+**Drift is per-character.** At drift time the merge resolves trait-shifted baseline/recovery via `personalizeMeters` ([relationships.md](relationships.md) §Modulation); the global value is the no-trait default. Absent `baseline` / `recoveryPerHour` ⇒ exactly the old pole-seeking drift.
+
+### Starter meters
+
+| Meter | Behavior |
+| --- | --- |
+| `hygiene` | 1 → 0 at −0.04/h; thresholds prompt scent/grime hints. |
+| `energy` | 1 → 0 waking drain; restored by sleep via the simulant. |
+| `stress` | 0-seeking. |
+| `arousal` | 0-seeking. |
+| `intoxication` | 0-seeking, fast decay. |
+| `mood` | Emotional valence — 0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel. |
+
+### Mood
+
+Mood is surfaced not as raw threshold hints but as a **derived descriptor**: `deriveMoodDescriptor` blends valence × stress/energy into phrases like "low and on edge" or "bright and playful". It also couples with affinity:
+
+- the social-reaction curve reads mood as its `μ` factor (`moodMeterToFactor`), and
+- a reaction nudges mood back (`moodNudge`).
+
+> The old app's 7-vector hygiene model becomes `hygiene` + conditions (`sweaty`, `soaked`, `unwashed`, with region notes) — same play feel, no bespoke code path. Region-level scent composition is deliberately replaced by: item `sensory` text + hygiene threshold hints + exposure gating ([prompts.md](../prompts.md)).
 
 ## Registered actions
 
-Common multi-minute activities pass authored game time instead of an LLM estimate (`actions/registry.ts`):
+Common multi-minute activities pass *authored* game time instead of asking an LLM to estimate it (`actions/registry.ts`):
 
 ```ts
 type ActionDefinition = {
-  id: string;                          // "shower", "bathe", "nap", "meal", "snack", "workout", "groom"
+  id: string;
   label: string;
-  minutes: number;                     // turn clock advances max(this, travel, estimate)
+  minutes: number;
   aliases: readonly string[];
-  meterEffects: Array<{ meterId: string; delta?: number; set?: number }>;  // deterministic; agent deltas still win
-  requiredTier?: ProximityTier;        // reserved for proximity gating, unused until that ships
+  meterEffects: Array<{ meterId: string; delta?: number; set?: number }>;
+  requiredTier?: ProximityTier;
 };
 ```
 
-`matchActions(text)` matches aliases whole-word, case-insensitive, longest-first, at most one match per definition; double-quoted spans are stripped so dialogue never matches ("I said I'd shower later").
+| Field | Meaning |
+| --- | --- |
+| `id` | e.g. `shower`, `bathe`, `nap`, `meal`, `snack`, `workout`, `groom`. |
+| `label` | Display text. |
+| `minutes` | The turn clock advances by `max(this, travel, estimate)`. |
+| `aliases` | Phrases that trigger the action. |
+| `meterEffects` | Deterministic meter changes (`delta` or `set`) — but agent deltas still win. |
+| `requiredTier` | Reserved for proximity gating; unused until that ships. |
+
+`matchActions(text)` matches aliases whole-word, case-insensitive, longest-first, at most one match per definition. Double-quoted spans are stripped first, so dialogue never matches — *"I said I'd shower later"* triggers nothing.

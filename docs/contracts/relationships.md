@@ -1,24 +1,122 @@
+[← Contracts index](index.md)
+
 # Relationships and disposition
+
+Two related systems live here: **relationships** (how an NPC feels about the player, as a number with readable stage labels) and **disposition** (an NPC's authored personality — traits, preferences, and tags that shape how they react).
 
 ## Relationship stages
 
-`relationships/stages.ts`: readable labels over the −100..100 affinity scalar — eleven stages (hostile · wary · cool · stranger · acquaintance · friendly · warm · close · cherished · devoted · smitten; widened from the original seven in personality Slice 5 for finer, romance-leaning progression — `stranger` still straddles 0), boundaries as data. `stageForValue()` maps value → stage; `stageMidpoint()` seeds authored edges. **Stages, never raw numbers, go in prompts and gate behavior.**
+Affinity is a single number from −100 to 100. `relationships/stages.ts` puts readable labels over it — **eleven stages**, widened from the original seven in personality Slice 5 for finer, romance-leaning progression:
 
-`relationships/authored.ts`: the authored entry stored on `world_cast.relationships` — `{ toward, stage }` where `toward` is a cast display name or the literal `"player"` (resolved case-insensitively at spawn) and `stage` is a registry stage id (unknown ids self-heal to `stranger` = no seeded row; the jsonb list reads through `parseOr` with fallback `[]`).
+```
+hostile · wary · cool · stranger · acquaintance · friendly · warm · close · cherished · devoted · smitten
+```
 
-`relationships/bond.ts`: `classifyBond(text)` — a deterministic keyword pass over a cast member's concept/bio text classifying the player bond as `mutual` (named kinds: family, sibling, partner, spouse, friend, coworker, …), `first-meeting` ("never met", "first meeting", "strangers" — beats mutual keywords), or `indeterminate`. Spawn seeds the NPC's `perceived` edge from it: mutual and indeterminate mirror the feeling midpoint, first-meeting seeds no row (`server/engine/relationship-seeds.ts`).
+(`stranger` still straddles 0.) The boundaries are data. `stageForValue()` maps a value to its stage; `stageMidpoint()` seeds authored edges.
+
+> **Stages, never raw numbers, go in prompts and gate behavior.**
+
+**Authored edges** (`relationships/authored.ts`) — the entry stored on `world_cast.relationships`:
+
+```ts
+{ toward, stage }
+```
+
+`toward` is a cast display name or the literal `"player"` (resolved case-insensitively at spawn); `stage` is a registry stage id. Unknown ids self-heal to `stranger` (= no seeded row), and the JSONB list reads through `parseOr` with fallback `[]`.
+
+**Bond classification** (`relationships/bond.ts`) — `classifyBond(text)` is a deterministic keyword pass over a cast member's concept/bio text that classifies the player bond:
+
+| Result | Triggers |
+| --- | --- |
+| `mutual` | Named kinds: family, sibling, partner, spouse, friend, coworker, … |
+| `first-meeting` | "never met", "first meeting", "strangers" — **beats** mutual keywords |
+| `indeterminate` | Nothing matched. |
+
+Spawn seeds the NPC's `perceived` edge from this: `mutual` and `indeterminate` mirror the feeling midpoint, `first-meeting` seeds no row (`server/engine/relationship-seeds.ts`).
 
 ## Disposition (personality)
 
-`contracts/personality/` — authored character disposition: **atomic traits** that parameterise dynamics + **social reactions** decided deterministically (docs/developer-notes/personality-and-state.spec.md §3/§6). Registries + pure resolvers, all IO-free:
+`contracts/personality/` holds an NPC's authored disposition: **atomic traits** that parameterize dynamics, plus **social reactions** decided deterministically (`docs/developer-notes/personality-and-state.spec.md` §3/§6). Everything here is registries + pure resolvers, all IO-free.
 
-- **Interaction concepts** (`interactions.ts`) — the controlled vocabulary the intake agent classifies a player's social act into (`compliment`, `gift`, `flirt`, `insult`, `jealousy_trigger`, …). Each carries a `verb` (for the reaction line), a `family` (a cluster a preference may target wholesale, e.g. `affection_display`), a `polarity` (`warm`/`hostile`/`neutral` — the act's affective direction, read by the puppet guardrail), classifier `triggers`, and an `intimate` flag. One stable classification target; the shared key space for preferences and (later) cards. Add a concept = one data edit + the registry test.
-- **Disposition tags** (`tags.ts`) — a **dev-defined canonical registry** of reusable labels (`bratty`, `prudish`, `foot-fetish-positive`) that social-reaction **cards** key their overrides on. Each tag carries the first slice of machine-readable affect: a `warmth` lean (`cold`/`neutral`/`warm`) and a `wontInitiate` list of concept families the character would not spontaneously perform — the signal the **puppet guardrail** reads. The editor/forge autocomplete from it; free-form tags are tolerated but second-class (and, carrying no machine affect, invisible to the guardrail). `normalizeTag` / `canonicalTagId` map free text onto the canonical id. Tags remain inert to the **card** layer until cards ship (`social-reaction-cards.plan.md`).
-- **Preferences** (`preference.ts`) — a character's bespoke `{ target, valence: like|dislike, intensity 1–10, hint? }`, where `target` is a concept id **or** a family id. Leaf fields `.catch` so one bad entry degrades, not the array.
-- **Traits** (`traits/`) — a parallel registry on the shared spine ([attributes.md](attributes.md)), deliberately separate from attributes so it can **never** reach an image prompt. Categories `temperament`/`social`/`intimate` (one starter set, ~11 traits); each definition is a numeric scalar (bipolar −100..100 or unipolar 0..100) with registry-defined **bands** (`{ max, label, promptHint }`, ascending, covering the axis max — store the number, surface the band), a `mutability` (`core`/`developable` — drift deferred), an `intimate?` flag, optional `modulates` metadata, and a scored **`lexicon`** (`{ term, value }`) mapping free-text words onto the axis (`resolveLexicon` — the forge-expansion mechanism). `traitRegistry.bandFor(id, value)` clamps + reads the band. Trait **values** (`TraitValue`) reuse the attribute provenance shape (`resolveTraits` over the shared resolver). Adding a trait is a one-entry data edit + the registry test.
+### Interaction concepts (`interactions.ts`)
 
-**Modulation** (`modulation.ts`) — pure trait → coefficient functions (spec §5), kept deterministic in the merge, never agent-decided. `socialTraitScale(reaction, traits)` scales the reaction curve: agreeableness/composure soften (and their negative poles sharpen) a **dislike**, possessiveness amplifies a **jealousy_trigger**; clamped to `[0.4, 1.8]`. `personalizeMeters(defs, traits)` resolves per-character meter dynamics ([meters-actions.md](meters-actions.md) §Meters): `optimism→mood.baseline`, `libido→arousal.baseline`+recovery, `composure→stress.recovery`. `scaleAffinityGain(rawDelta, traits)` (Slice 5) scales a **simulant** affinity delta pre-clamp — warmth/agreeableness amplify gains, guardedness damps them, composure damps losses (clamped to `[0.4, 1.8]×`). `affinityDecayRetention(traits)` (Slice 5) returns a `[0, 0.7]` retention from warmth + composure that lifts the decay floor toward the current value (a constant character holds its regard). Empty traits ⇒ unit/identity (today's behavior).
+The controlled vocabulary the intake agent classifies a player's social act into — `compliment`, `gift`, `flirt`, `insult`, `jealousy_trigger`, … Each concept carries:
 
-Both `tags: string[]` and `preferences: Preference[]` (and `traits: TraitValue[]`) ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition plays exactly as before). The resolver (`reactions.ts`): `resolveSocialReaction(act, { tags, preferences, cards })` applies **pure-override** precedence (bespoke preference → card tag-override → card default → null; v1 passes `cards: []`); `evaluateSocialReaction(reaction, currentAffinity, currentMood, traitScale)` is the **affinity-aware curve** — goodwill deadband, thin-ice amplification, capped/asymmetric likes (mood is a neutral stub, `traitScale` is 1 in v1). Curve constants live in `reactions.ts` (contracts is IO-free; the merge clamps the result to ±`AFFINITY_DELTA_CLAMP`). `matchPreference` (concept-then-family lookup) is shared with the guardrail.
+| Property | Purpose |
+| --- | --- |
+| `verb` | Phrasing for the reaction line. |
+| `family` | A cluster a preference may target wholesale (e.g. `affection_display`). |
+| `polarity` | `warm` / `hostile` / `neutral` — the act's affective direction, read by the puppet guardrail. |
+| `triggers` | Classifier keywords. |
+| `intimate` | Whether the act is intimate. |
 
-**Puppet guardrail** (`puppet.ts`) — `checkPuppetContradiction(behavior, { tags, preferences })` decides whether a *player-authored NPC behaviour* (intake's `narratedNpcBehaviors`, classified to a concept) clashes with who the character is. Precedence mirrors the reaction resolver (most specific wins): a bespoke preference on the concept/family decides outright (a `dislike` ⇒ contradiction, an authored `like` ⇒ consent to puppet), else the tag affect (a `wontInitiate` family match, or a warm act onto a `cold` character / a hostile act onto a `warm` one), else the **warmth trait** band (same warm/cold logic on the scalar), else **honour**. An unclassifiable behaviour (no concept — plain dialogue) is always honoured. Pure; reads tags + preferences + the warmth trait — affinity + mood join once they exist.
+It is one stable classification target and the shared key space for preferences and (later) cards. Adding a concept is one data edit + the registry test.
+
+### Disposition tags (`tags.ts`)
+
+A **dev-defined canonical registry** of reusable labels (`bratty`, `prudish`, `foot-fetish-positive`) that social-reaction **cards** key their overrides on. Each tag carries the first slice of machine-readable affect:
+
+- a `warmth` lean — `cold` / `neutral` / `warm`, and
+- a `wontInitiate` list of concept families the character would not spontaneously perform — the signal the **puppet guardrail** reads.
+
+The editor/forge autocomplete from this registry. Free-form tags are tolerated but second-class — carrying no machine affect, they're invisible to the guardrail. `normalizeTag` / `canonicalTagId` map free text onto the canonical id. Tags stay inert to the **card** layer until cards ship (`social-reaction-cards.plan.md`).
+
+### Preferences (`preference.ts`)
+
+A character's bespoke likes and dislikes:
+
+```ts
+{ target, valence: "like" | "dislike", intensity: 1–10, hint? }
+```
+
+`target` is a concept id **or** a family id. Leaf fields `.catch`, so one bad entry degrades rather than breaking the whole array.
+
+### Traits (`traits/`)
+
+A parallel registry on the shared spine ([attributes.md](attributes.md)), kept deliberately separate from attributes so it can **never** reach an image prompt. Categories are `temperament` / `social` / `intimate` (one starter set, ~11 traits). Each trait definition has:
+
+| Part | Detail |
+| --- | --- |
+| scalar | A number — bipolar (−100..100) or unipolar (0..100). |
+| `bands` | `{ max, label, promptHint }`, ascending, covering the axis max — **store the number, surface the band**. |
+| `mutability` | `core` / `developable` (drift deferred). |
+| `intimate?` | Flag. |
+| `modulates` | Optional metadata. |
+| `lexicon` | Scored `{ term, value }` pairs mapping free-text words onto the axis (`resolveLexicon` — the forge-expansion mechanism). |
+
+`traitRegistry.bandFor(id, value)` clamps and reads the band. Trait **values** (`TraitValue`) reuse the attribute provenance shape (`resolveTraits` over the shared resolver). Adding a trait is a one-entry data edit + the registry test.
+
+### Modulation (`modulation.ts`)
+
+Pure trait → coefficient functions (spec §5), kept deterministic in the merge — never agent-decided:
+
+| Function | What it does |
+| --- | --- |
+| `socialTraitScale(reaction, traits)` | Scales the reaction curve: agreeableness/composure soften (their negative poles sharpen) a **dislike**; possessiveness amplifies a **jealousy_trigger**. Clamped to `[0.4, 1.8]`. |
+| `personalizeMeters(defs, traits)` | Resolves per-character meter dynamics ([meters-actions.md](meters-actions.md) §Meters): `optimism` → `mood.baseline`, `libido` → `arousal.baseline` + recovery, `composure` → `stress.recovery`. |
+| `scaleAffinityGain(rawDelta, traits)` *(Slice 5)* | Scales a **simulant** affinity delta pre-clamp — warmth/agreeableness amplify gains, guardedness damps them, composure damps losses. Clamped to `[0.4, 1.8]×`. |
+| `affinityDecayRetention(traits)` *(Slice 5)* | Returns a `[0, 0.7]` retention from warmth + composure that lifts the decay floor toward the current value (a constant character holds its regard). |
+
+Empty traits ⇒ unit/identity (today's behavior).
+
+### How it's stored and resolved
+
+`tags: string[]`, `preferences: Preference[]`, and `traits: TraitValue[]` all ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition plays exactly as before).
+
+The resolver lives in `reactions.ts`:
+
+- `resolveSocialReaction(act, { tags, preferences, cards })` applies **pure-override** precedence: bespoke preference → card tag-override → card default → null. (v1 passes `cards: []`.)
+- `evaluateSocialReaction(reaction, currentAffinity, currentMood, traitScale)` is the **affinity-aware curve** — goodwill deadband, thin-ice amplification, capped/asymmetric likes. (Mood is a neutral stub and `traitScale` is 1 in v1.)
+
+Curve constants live in `reactions.ts` (contracts is IO-free; the merge clamps the result to ±`AFFINITY_DELTA_CLAMP`). `matchPreference` (concept-then-family lookup) is shared with the guardrail.
+
+### Puppet guardrail (`puppet.ts`)
+
+`checkPuppetContradiction(behavior, { tags, preferences })` decides whether a *player-authored NPC behaviour* (intake's `narratedNpcBehaviors`, classified to a concept) clashes with who the character is. Precedence mirrors the reaction resolver — most specific wins:
+
+1. **Bespoke preference** on the concept/family decides outright — a `dislike` ⇒ contradiction, an authored `like` ⇒ consent to puppet.
+2. Else **tag affect** — a `wontInitiate` family match, or a warm act onto a `cold` character / a hostile act onto a `warm` one.
+3. Else the **warmth trait band** — same warm/cold logic on the scalar.
+4. Else **honour** it.
+
+An unclassifiable behaviour (no concept — plain dialogue) is always honoured. The function is pure; it reads tags + preferences + the warmth trait — affinity + mood will join once they exist.

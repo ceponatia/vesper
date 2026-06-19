@@ -1,6 +1,27 @@
+[← Contracts index](index.md)
+
 # Pinned state shapes
 
-These are the **binding** schemas behind every JSONB column ([database.md](../database.md)). They live in `contracts/state/` and `contracts/world/`; each exports an `empty*()` default used as the `parseOr` fallback.
+These are the **binding** schemas behind every JSONB column in the database ([database.md](../database.md)). They live in `contracts/state/` and `contracts/world/`, and each exports an `empty*()` default used as the `parseOr` fallback.
+
+## Where each shape is stored
+
+| Shape | Lives on | What it is |
+| --- | --- | --- |
+| `ParticipantState` | `session_participants.state` | A participant's live state this session. |
+| `CharacterProfile` | `characters.profile` / `session_participants.snapshot` | The authored character (and its spawn snapshot). |
+| `SessionRuntime` | `sessions.runtime` | Session-wide bookkeeping. |
+| `StoryThread` | inside `SessionRuntime` | One open narrative thread. |
+| `StagedIntent` | inside `SessionRuntime` | A director-staged off-screen NPC move. |
+| `NextTurnBrief` | `sessions.brief` | What the next turn needs to know. |
+| `ExposureMask` | inside `NextTurnBrief` | The per-sense narration proximity gate. |
+| `SceneGenState` | `sessions.scene` | Scene-image generation cadence. |
+| `WorldStyle` | `worlds.style` | A world's tone, calendar, and norms. |
+| `LinkAccess` | `world_links` / `session_links`.`access` | Who/when a location link admits. |
+
+## ParticipantState
+
+A participant's live state for this session — overlays, meters, conditions, and what they're currently doing.
 
 ```ts
 type ParticipantState = {
@@ -11,14 +32,26 @@ type ParticipantState = {
   posture?: string;
   notes: string[];                            // short-lived mechanical notes for the narrator
 };
+```
 
+## StoryThread
+
+One open narrative thread the session is tracking.
+
+```ts
 type StoryThread = {
   id: string; title: string; summary: string;
   status: "open" | "cooling" | "resolved" | "archived";
   source: "anchor" | "emergent" | "player";
   openedAtTurn: number; lastTouchedTurn: number; touchCount: number;
 };
+```
 
+## SessionRuntime
+
+Session-wide bookkeeping — threads, where the player has been, who they've met, active links, staged NPC moves, and flags.
+
+```ts
 type SessionRuntime = {
   storyThreads: StoryThread[];
   visitedLocationIds: string[];
@@ -30,7 +63,13 @@ type SessionRuntime = {
   stagedIntents: StagedIntent[];                 // director-staged off-screen NPC moves + on-arrival beats (phase-4 npc-movement minimal slice; ../turn-engine.md)
   flags: Record<string, boolean>;
 };
+```
 
+## StagedIntent
+
+A director story decision — walk an NPC off-screen and fire a beat on arrival — executed by `engine/movement.ts`.
+
+```ts
 type StagedIntent = {                            // a director story decision, executed by engine/movement.ts
   id: string;
   participantId: string;                         // the NPC being walked off-screen
@@ -42,14 +81,26 @@ type StagedIntent = {                            // a director story decision, e
   openedAtTurn: number;
   expiresInTurns: number;                        // give-up budget (STAGED_INTENT_DEFAULT_BUDGET)
 };
+```
 
+## ExposureMask
+
+The per-sense narration proximity gate, set by the director. Each sense is dialed up only as the player gets closer.
+
+```ts
 type ExposureMask = {                          // per-sense narration proximity gate, set by the director
   appearance: "ambient" | "close" | "intimate";
   scent: "none" | "ambient" | "close" | "intimate";
   touch: "none" | "close" | "intimate";
   taste: "none" | "close" | "intimate";        // most-intimate sense; raised by a taste/kiss/lick intent (also raises touch)
 };
+```
 
+## NextTurnBrief
+
+Everything the next turn needs — the scene so far, character notes, directives, and the exposure gate.
+
+```ts
 type NextTurnBrief = {
   sceneSummary: string;
   storySoFar: string;
@@ -61,25 +112,45 @@ type NextTurnBrief = {
   arrivals: string[];                         // schedule-tick staging ("Mara arrived from the market.") —
   departures: string[];                       //   per-turn, never carried forward; default [] (old briefs parse unchanged)
 };
+```
 
+## SceneGenState
+
+Controls how often scene images are generated. There's no subject field — the composer picks the focal NPC from whoever is co-located with the player.
+
+```ts
 type SceneGenState = {                        // no subject field: the composer picks the focal NPC
   interval: number;                           // every N turns; 0 = off
   lastGeneratedTurn?: number;                 //   from whoever is co-located with the player
   status: "idle" | "generating" | "failed";   //   (docs/images.md §Scene images)
 };
+```
 
+## CharacterProfile
+
+The authored character: bio, personality, body-config, attributes, default outfit, and schedule.
+
+```ts
 type CharacterProfile = {
   bio: string; personality: string; voice?: string;
   speciesId: string; bodyPlanId: string;      // registry ids ("human" / "succubus" / "faerie" / …, "humanoid" seeded)
-  intimateRegions: string[];                  // body-config: present intimate region groups (default []); see [body.md](body.md) §realized body
+  intimateRegions: string[];                  // body-config: present intimate region groups (default []); see body.md §realized body
   bodyFeatures?: string[];                    // additive feature groups; absent ⇒ species defaults, [] ⇒ explicit none
   attributes: AttributeValue[];               // base/creation-sourced
   aliases: string[];
   defaultOutfit: string[];                    // item definition ids (owner's library)
   schedule?: Array<{ startMinute: number; endMinute: number; locationName: string; activity: string;
-                     days?: number[] }>;   // weekday mask, 0 = Sunday; absent ⇒ every day
+                     days?: number[] }>;      // weekday mask, 0 = Sunday; absent ⇒ every day
 };
+```
 
+See [body.md](body.md) §The realized body for `intimateRegions` / `bodyFeatures`.
+
+## WorldStyle
+
+A world's tone, calendar start, meter overrides, and social norms.
+
+```ts
 type WorldStyle = {
   directives: string[];                       // tone/era/pacing/content notes
   narratorGuidance?: string;
@@ -95,7 +166,7 @@ type WorldStyle = {
 
 ## Link access
 
-`world/access.ts`: who/when a location link admits — stored as jsonb on `world_links`/`session_links`, parsed once at the bundle boundary (malformed or absent ⇒ `public`, today's behavior):
+`world/access.ts` decides who and when a location link admits. It's stored as JSONB on `world_links` / `session_links` and parsed once at the bundle boundary (malformed or absent ⇒ `public`, today's behavior):
 
 ```ts
 type LinkAccess =
@@ -105,8 +176,15 @@ type LinkAccess =
   | { kind: "timeWindow"; start: number; end: number };  // minutes-of-day, [start, end), wraps past midnight
 ```
 
-`checkLinkAccess({ access, minuteOfDay, moverParticipantId?, door? })` is the one traversal rule (passable / blocked-with-reason): the merge's player-movement validation uses it now, phase-4 NPC traversal reuses it. A bound door item instance (`session_links.door_item_id`) whose state is closed+locked seals the link regardless of kind (`ItemInstanceState.locked`, optional boolean). Blocked player moves drop with `merge.movement.access_denied` (see [turn-engine.md](../turn-engine.md)).
+`checkLinkAccess({ access, minuteOfDay, moverParticipantId?, door? })` is the one traversal rule — passable, or blocked-with-reason. The merge's player-movement validation uses it now, and phase-4 NPC traversal reuses it.
+
+A bound door item instance (`session_links.door_item_id`) whose state is closed+locked seals the link **regardless of `kind`** (`ItemInstanceState.locked`, an optional boolean). Blocked player moves drop with `merge.movement.access_denied` (see [turn-engine.md](../turn-engine.md)).
 
 ## Game time
 
-`src/lib/clock.ts` (pure) derives `GameTime` from `clock_minutes` + `style.calendarStart` — including `weekdayIndex`/`dayIndex` (schedule day masks, per-day deterministic seeds) — and a `daylightBand` helper (dawn 05–07 · day 07–18 · dusk 18–20 · night otherwise) so consumers never re-derive hours.
+`src/lib/clock.ts` (pure) derives `GameTime` from `clock_minutes` + `style.calendarStart`. It provides:
+
+- `weekdayIndex` / `dayIndex` — for schedule day masks and per-day deterministic seeds, and
+- a `daylightBand` helper — **dawn** 05–07 · **day** 07–18 · **dusk** 18–20 · **night** otherwise —
+
+so consumers never re-derive hours themselves.
