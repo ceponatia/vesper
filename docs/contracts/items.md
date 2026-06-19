@@ -1,4 +1,4 @@
-[← Contracts index](index.md)
+[← Contracts index](README.md)
 
 # Items and wardrobe
 
