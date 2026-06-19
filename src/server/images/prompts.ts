@@ -151,6 +151,40 @@ export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): A
  *    intimate anatomy regardless. This reuses the same exposure predicate as the
  *    scene render (`intimateAttrRendersExposed`).
  */
+/**
+ * Attributes withheld from the **waist-up avatar prompt only** (scene-images "D"):
+ * low-value in a head-and-shoulders still, where every token dilutes a
+ * limited-adherence SDXL model's attention from the load-bearing features. These
+ * fall into: not visible in a still (`movement.*`), no reference to read (height),
+ * sub-perceptible (undertone/texture/slope/neck/brows), usually out of frame or
+ * tiny (hands/arm hair/ear piercings), and **all teeth** — "sharp canines" makes
+ * SDXL render a ridiculous mouth. Scene images keep the full set (they're
+ * full-body and use `characterAppearanceSummary`, not this list). Curating by id
+ * keeps the cut avatar-local and reversible; a registry `imageValue` tag is the
+ * eventual home if this grows (scene-images plan).
+ */
+const AVATAR_OMIT_ATTRIBUTES: ReadonlySet<string> = new Set([
+  "movement.gait",
+  "movement.posture_default",
+  "build.height",
+  "skin.undertone",
+  "skin.texture",
+  "shoulders.slope",
+  "neck.length",
+  "neck.throat_prominence",
+  "arms.hair",
+  "hands.size",
+  "hands.texture",
+  "hands.nails",
+  "brows.shape",
+  "brows.thickness",
+  "ears.piercings",
+  "teeth.shape",
+  "teeth.condition",
+  "lips.shape",
+  "horns.texture",
+]);
+
 export function buildAvatarPrompt(
   name: string,
   profile: CharacterProfile,
@@ -158,12 +192,23 @@ export function buildAvatarPrompt(
   wardrobe: ReadonlyArray<AvatarWardrobeItem> = [],
   allowIntimate = false,
 ): string {
-  const appearance: string[] = [];
   const realizedBody = realizedBodyForProfile(profile);
   // Coverage of the FULL wardrobe (before the waist-up garment filter) — a
   // covering garment still hides its region even when it's dropped from the
   // visible outfit, so exposure must read the raw set.
   const exposure = exposedRegions(toWornInputs(wardrobe));
+
+  // Group surviving appearance attributes by category so like-fields render as
+  // ONE coherent clause (every horn facet together, etc.) and the section can be
+  // ORDERED to lead with non-human morphology. SDXL-family models (e.g. Lustify)
+  // front-load attention and parse grouped caption/tag phrasing far better than a
+  // flat "Label: value" metadata wall, so establishing the creature first — and
+  // dropping the per-field label nouns — stops "a human wearing fake wings"
+  // (scene-images A+B+C). Identity (gender, apparent age) folds into the subject.
+  const byCategory = new Map<string, string[]>();
+  let gender: string | undefined;
+  let apparentAge: string | undefined;
+  let heritage: string | undefined;
   for (const value of profile.attributes) {
     const def = attributeRegistry.byId(value.id);
     if (!def) continue; // unknown vocabulary — skip rather than leak raw ids into the prompt
@@ -173,31 +218,117 @@ export function buildAvatarPrompt(
     // at the pelvis yet sweeps up into frame), which is the whole point of the
     // character and reads in a waist-up shot.
     if (def.bodyLocationId && isBelowWaist(def.bodyLocationId) && !isFeatureAttributeCategory(def.category)) continue;
+    if (AVATAR_OMIT_ATTRIBUTES.has(def.id)) continue; // low-value in a waist-up still (scene-images "D")
     if (isNonVisualAttribute(def)) continue; // voice/scent don't render in a portrait
     // Intimate anatomy reaches an image only on the uncensored route, and only
     // when the region is actually bare/sheer — never under clothing.
     if (isIntimateAttribute(def) && !(allowIntimate && intimateAttrRendersExposed(def, exposure))) continue;
-    const formatted = formatAttribute(def, value.value);
-    if (formatted) appearance.push(formatted);
+    // Chest hair is hidden under clothing — only state it when the torso reads bare/sheer.
+    if (def.id === "chest.hair" && exposure.torso === "covered") continue;
+    if (value.id === "identity.gender") {
+      gender = formatAttributeValue(def, value.value) || undefined;
+      continue;
+    }
+    if (value.id === "identity.apparent_age") {
+      apparentAge = formatAttributeValue(def, value.value) || undefined;
+      continue;
+    }
+    if (value.id === "identity.heritage") {
+      heritage = formatAttributeValue(def, value.value) || undefined; // ethnicity → appended to the subject phrase
+      continue;
+    }
+    if (def.category === "identity") continue; // any other identity facet isn't a visual descriptor
+    const token = formatAttributeValue(def, value.value);
+    if (!token) continue;
+    const bucket = byCategory.get(def.category);
+    if (bucket) bucket.push(token);
+    else byCategory.set(def.category, [token]);
   }
-  const wearing = visibleAvatarOutfit(wardrobe).map(formatGarment).join("; ");
-  // Name the species for non-human casts (label only — the morphology lives in
-  // the feature attributes); "" for human (the unmarked default).
-  const species = speciesLabelPhrase(profile.speciesId, profile.heritageId);
 
-  // Bio is deliberately omitted — it carries no visual signal (and narrative
-  // framing like ages/relationships only confuses the image model), so image
-  // prompts stay to visually-depictable fields only.
+  const wearing = visibleAvatarOutfit(wardrobe).map(formatGarment).join("; ");
+  // Species label only (the morphology lives in the feature attributes); "" for human.
+  const species = speciesLabelPhrase(profile.speciesId, profile.heritageId);
+  const subjectName = name.trim() || "an unnamed character";
+  const descriptor = subjectDescriptor(apparentAge, gender, species, heritage);
+  const appearance = orderedAppearanceClauses(byCategory).join("; ");
+
+  // Bio is deliberately omitted (no visual signal). Order: creature subject →
+  // grouped appearance (morphology first) → clothing → photographic style.
   return [
     `${STYLE_PREFIX[style]}, waist-up portrait, facing camera, soft studio lighting, neutral background.`,
-    `Subject: ${name.trim() || "an unnamed character"}.`,
-    species ? `Species: ${clause(species)}.` : "",
-    appearance.length > 0 ? `Appearance: ${clause(appearance.join("; "))}.` : "",
+    descriptor ? `Subject: ${subjectName} — ${descriptor}.` : `Subject: ${subjectName}.`,
+    appearance ? `Appearance: ${clause(appearance)}.` : "",
     wearing ? `Wearing (authoritative — depict exactly this clothing): ${clause(wearing)}.` : "",
     STYLE_SUFFIX[style],
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+// Appearance bucket order: non-human morphology + skin first (an SDXL-family model
+// commits to the creature before the human-ish traits), then body, hair, eyes,
+// face, presentation. Categories not listed sort last so a new one degrades
+// gracefully (still rendered) instead of vanishing.
+const APPEARANCE_CATEGORY_ORDER: readonly string[] = [
+  "horns", "wings", "tail",
+  "skin",
+  "build", "shoulders", "neck", "chest", "breasts", "waist", "arms", "hands",
+  "hair",
+  "eyes", "brows",
+  "face", "lips", "ears", "teeth",
+  "movement",
+  "presentation",
+];
+/** Display noun per bucket; defaults to the capitalized category. */
+const APPEARANCE_BUCKET_NOUNS: Readonly<Record<string, string>> = {
+  presentation: "Style",
+  movement: "Bearing",
+  breasts: "Bust",
+};
+
+function appearanceOrder(category: string): number {
+  const index = APPEARANCE_CATEGORY_ORDER.indexOf(category);
+  return index === -1 ? APPEARANCE_CATEGORY_ORDER.length : index;
+}
+
+function bucketNoun(category: string): string {
+  return APPEARANCE_BUCKET_NOUNS[category] ?? capitalizeFirst(category);
+}
+
+/**
+ * Caption/tag-style appearance clauses, grouped by category and ordered so
+ * non-human morphology leads (scene-images A+B+C). Each clause is
+ * "<Noun>: value, value" — the per-attribute label noun is dropped (the bucket
+ * header carries it), so the model reads coherent grouped tags instead of a flat
+ * "Label: value" metadata wall it largely ignores.
+ */
+function orderedAppearanceClauses(byCategory: ReadonlyMap<string, string[]>): string[] {
+  return [...byCategory.keys()]
+    .sort((a, b) => appearanceOrder(a) - appearanceOrder(b))
+    .flatMap((category) => {
+      const values = byCategory.get(category) ?? [];
+      return values.length > 0 ? [`${bucketNoun(category)}: ${clause(values.join(", "))}`] : [];
+    });
+}
+
+/**
+ * The subject's lead phrase — "a <apparent age> <gender> <species>, <ethnicity>"
+ * — so the creature identity lands before any feature (scene-images A). Gender or
+ * species supplies the noun; with neither (but some base word), "person" does, so
+ * the phrase never dangles. Ethnicity (`identity.heritage`, free text, original
+ * casing) is appended after a comma — distinct from the species noun so a "Latina
+ * succubus" reads right. Empty when nothing is set.
+ */
+function subjectDescriptor(apparentAge?: string, gender?: string, species?: string, heritage?: string): string {
+  const words = [apparentAge, gender, species]
+    .map((w) => w?.trim().toLowerCase())
+    .filter((w): w is string => Boolean(w));
+  if (words.length > 0 && !gender?.trim() && !species?.trim()) words.push("person");
+  let phrase = words.join(" ");
+  const ethnicity = heritage?.trim();
+  if (ethnicity) phrase = phrase ? `${phrase}, ${ethnicity}` : ethnicity;
+  if (!phrase) return "";
+  return `${/^[aeiou]/i.test(phrase) ? "an" : "a"} ${phrase}`;
 }
 
 // Trim a trailing period/whitespace off interpolated content so a clause's own
@@ -207,11 +338,18 @@ function clause(body: string): string {
   return body.replace(/[.\s]+$/, "");
 }
 
+/** `Label: value` form (the scene appearance summary still uses this). */
 function formatAttribute(def: AttributeDefinition, value: string | string[] | number | boolean): string {
   if (typeof value === "boolean") return value ? def.label : "";
-  if (typeof value === "number") return `${def.label}: ${value}${def.unit ? ` ${def.unit}` : ""}`;
-  const text = Array.isArray(value) ? value.map(humanize).join(", ") : humanize(value);
+  const text = formatAttributeValue(def, value);
   return text ? `${def.label}: ${text}` : "";
+}
+
+/** Value-only token (no label noun) for the grouped avatar prompt (scene-images C). */
+function formatAttributeValue(def: AttributeDefinition, value: string | string[] | number | boolean): string {
+  if (typeof value === "boolean") return value ? humanize(def.label).toLowerCase() : "";
+  if (typeof value === "number") return `${value}${def.unit ? ` ${def.unit}` : ""}`;
+  return Array.isArray(value) ? value.map(humanize).join(", ") : humanize(value);
 }
 
 function humanize(value: string): string {

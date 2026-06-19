@@ -52,21 +52,22 @@ describe("buildAvatarPrompt", () => {
     ],
   });
 
-  it("composes registry labels and humanized values", () => {
+  it("groups like-fields by category and humanizes values", () => {
     const prompt = buildAvatarPrompt("Mira", profile, "realistic");
-    expect(prompt).toContain("Subject: Mira.");
-    expect(prompt).toContain("Hair color: red");
-    expect(prompt).toContain("Hair length: shoulder length");
+    // Apparent age folds into the subject line (no gender/species → "person" noun).
+    expect(prompt).toContain("Subject: Mira — a mid twenties person.");
+    // Hair facets collapse into one grouped, label-free clause (scene-images A+B+C).
+    expect(prompt).toContain("Hair: red, shoulder length");
   });
 
-  it("excludes registry promptHints — the image prompt carries label: value only", () => {
+  it("excludes registry promptHints — the image prompt carries visual values only", () => {
     const prompt = buildAvatarPrompt("Mira", profile, "realistic");
     // promptHints are narrator/inference guidance; an image model reads a hint's
     // concrete example ("late thirties") as literal subject detail and anchors
     // every face to it. They flow to the narrator (engine/scene.ts), not here.
     expect(prompt).not.toContain("apparent age as an impression");
-    // …but the resolved label: value still reaches the image as appearance.
-    expect(prompt).toContain("Apparent age: mid twenties");
+    // …but the resolved value still reaches the image (in the subject phrase).
+    expect(prompt).toContain("mid twenties");
   });
 
   it("differs by style and never leaks unknown attribute ids", () => {
@@ -99,15 +100,16 @@ describe("buildAvatarPrompt", () => {
     // outright — even with the chest bare. (Avatar generation now always passes
     // allowIntimate on, but the composer's appearance summary keeps it off.)
     const moderated = buildAvatarPrompt("Mira", p, "realistic", []); // default = allowIntimate off
-    expect(moderated).toContain("Hair color: red");
-    expect(moderated).not.toContain("Breast size");
-    // Uncensored route, chest bare (no top) → the region is exposed → shown.
-    expect(buildAvatarPrompt("Mira", p, "realistic", [], true)).toContain("Breast size: full");
+    expect(moderated).toContain("Hair: red");
+    expect(moderated).not.toContain("Bust:");
+    // Uncensored route, chest bare (no top) → the region is exposed → shown (the
+    // breasts bucket renders under the "Bust" noun, value-only).
+    expect(buildAvatarPrompt("Mira", p, "realistic", [], true)).toContain("Bust: full");
     // Uncensored route, chest covered by an opaque garment → withheld. (This is
     // the regression: a clothed character's breasts were described regardless of
     // coverage because intimate attributes skipped the exposure gate entirely.)
     const dressed = buildAvatarPrompt("Mira", p, "realistic", [{ name: "Tank top", coverage: ["chest"] }], true);
-    expect(dressed).not.toContain("Breast size");
+    expect(dressed).not.toContain("Bust:");
   });
 
   it("drops every below-waist attribute from the waist-up portrait, on both routes", () => {
@@ -127,12 +129,12 @@ describe("buildAvatarPrompt", () => {
     });
     for (const allowIntimate of [false, true]) {
       const prompt = buildAvatarPrompt("Mira", p, "realistic", [], allowIntimate);
-      expect(prompt).toContain("Hair color: red");
-      expect(prompt).toContain("Chest: full"); // above the waist → kept
-      expect(prompt).not.toContain("Foot size"); // feet → below waist
-      expect(prompt).not.toContain("Leg length"); // legs → below waist
-      expect(prompt).not.toContain("Hips:"); // hips → below waist
-      expect(prompt).not.toContain("Labia"); // pelvic intimate → below waist, never in a waist-up shot
+      expect(prompt).toContain("Hair: red");
+      expect(prompt).toContain("Chest: full"); // above the waist → kept (chest bucket)
+      expect(prompt).not.toContain("Feet"); // feet bucket → below waist
+      expect(prompt).not.toContain("Legs"); // legs bucket → below waist
+      expect(prompt).not.toContain("Hips"); // hips bucket → below waist
+      expect(prompt).not.toContain("Vulva"); // pelvic intimate → below waist, never in a waist-up shot
     }
   });
 
@@ -143,23 +145,24 @@ describe("buildAvatarPrompt", () => {
       { id: "tail.type", value: "spaded", source: "base" },
     ];
     const human = buildAvatarPrompt("Mira", profileWith({ speciesId: "human", attributes: attrs }), "realistic");
-    expect(human).not.toContain("Horn shape");
-    expect(human).not.toContain("Wing type");
-    expect(human).not.toContain("Tail type");
+    expect(human).not.toContain("Horns:");
+    expect(human).not.toContain("Wings:");
+    expect(human).not.toContain("Tail:");
 
+    // Morphology leads the appearance section and each feature is one grouped clause.
     const succubus = buildAvatarPrompt("Mira", profileWith({ speciesId: "succubus", attributes: attrs }), "realistic");
-    expect(succubus).toContain("Horn shape: swept back");
-    expect(succubus).toContain("Wing type: membranous");
-    expect(succubus).toContain("Tail type: spaded");
+    expect(succubus).toContain("Horns: swept back");
+    expect(succubus).toContain("Wings: membranous");
+    expect(succubus).toContain("Tail: spaded");
 
     const winglessSuccubus = buildAvatarPrompt(
       "Mira",
       profileWith({ speciesId: "succubus", bodyFeatures: ["horns"], attributes: attrs }),
       "realistic",
     );
-    expect(winglessSuccubus).toContain("Horn shape");
-    expect(winglessSuccubus).not.toContain("Wing type");
-    expect(winglessSuccubus).not.toContain("Tail type");
+    expect(winglessSuccubus).toContain("Horns:");
+    expect(winglessSuccubus).not.toContain("Wings:");
+    expect(winglessSuccubus).not.toContain("Tail:");
   });
 
   it("treats the default outfit as authoritative clothing when provided", () => {
@@ -185,6 +188,68 @@ describe("buildAvatarPrompt", () => {
     expect(buildAvatarPrompt("Mira", profile, "realistic")).not.toContain("Wearing");
   });
 
+  it("omits low-value waist-up attributes — including ALL teeth (scene-images D)", () => {
+    const p = profileWith({
+      speciesId: "succubus",
+      attributes: [
+        { id: "hair.color", value: "black", source: "base" },
+        { id: "teeth.shape", value: "sharp_canines", source: "base" }, // "sharp canines" makes SDXL render a mess
+        { id: "teeth.condition", value: "pristine", source: "base" },
+        { id: "build.height", value: "short", source: "base" }, // no height reference in a waist-up crop
+        { id: "skin.undertone", value: "cool", source: "base" },
+        { id: "hands.nails", value: "manicured", source: "base" },
+        { id: "movement.gait", value: "graceful", source: "base" }, // motion — invisible in a still
+      ],
+    });
+    const prompt = buildAvatarPrompt("Kianna", p, "realistic", [], true);
+    expect(prompt).toContain("Hair: black"); // kept
+    expect(prompt).not.toContain("Teeth");
+    expect(prompt).not.toContain("canines");
+    expect(prompt).not.toContain("Build:"); // height was the only build field
+    expect(prompt).not.toContain("Skin:"); // undertone was the only skin field
+    expect(prompt).not.toContain("Nails");
+    expect(prompt).not.toContain("Bearing"); // gait/posture bucket
+  });
+
+  it("appends ethnicity (heritage) as a comma after the species in the subject phrase", () => {
+    const succubus = buildAvatarPrompt(
+      "Kianna",
+      profileWith({
+        speciesId: "succubus",
+        attributes: [
+          { id: "identity.gender", value: "female", source: "base" },
+          { id: "identity.apparent_age", value: "young_adult", source: "base" },
+          { id: "identity.heritage", value: "Latina", source: "base" },
+        ],
+      }),
+      "realistic",
+    );
+    expect(succubus).toContain("Subject: Kianna — a young adult female succubus, Latina.");
+    // Human (no species noun): ethnicity follows gender.
+    const human = buildAvatarPrompt(
+      "Mira",
+      profileWith({
+        attributes: [
+          { id: "identity.gender", value: "female", source: "base" },
+          { id: "identity.apparent_age", value: "young_adult", source: "base" },
+          { id: "identity.heritage", value: "Igbo", source: "base" },
+        ],
+      }),
+      "realistic",
+    );
+    expect(human).toContain("Subject: Mira — a young adult female, Igbo.");
+  });
+
+  it("states chest hair only when the torso is bare, never under clothing", () => {
+    const p = profileWith({ attributes: [{ id: "chest.hair", value: "dense", source: "base" }] });
+    // Clothed (a top covering the chest) → hidden.
+    const clothed = buildAvatarPrompt("Sayed", p, "realistic", [{ name: "Shirt", coverage: ["chest"] }]);
+    expect(clothed).not.toContain("Chest");
+    expect(clothed).not.toContain("dense");
+    // Bare chest → stated.
+    expect(buildAvatarPrompt("Sayed", p, "realistic", [])).toContain("Chest: dense");
+  });
+
   it("drops non-visual (sensory) attributes — voice and scent never reach an image prompt", () => {
     const p = profileWith({
       attributes: [
@@ -195,19 +260,20 @@ describe("buildAvatarPrompt", () => {
       ],
     });
     const prompt = buildAvatarPrompt("Mira", p, "realistic", [], true);
-    expect(prompt).toContain("Hair color: red");
-    expect(prompt).not.toContain("Voice pitch");
+    expect(prompt).toContain("Hair: red");
+    expect(prompt).not.toContain("Voice");
     expect(prompt).not.toContain("Cadence");
-    expect(prompt).not.toContain("Baseline scent");
+    expect(prompt).not.toContain("scent");
     expect(prompt).not.toContain("lavender");
   });
 
-  it("names a non-human species by label only (no appearance description) and omits the line for human", () => {
+  it("names a non-human species by label only (no appearance description) in the subject phrase, omitted for human", () => {
     const succubus = buildAvatarPrompt("Mira", profileWith({ speciesId: "succubus" }), "realistic");
-    expect(succubus).toContain("Species: Succubus.");
+    expect(succubus).toContain("Subject: Mira — a succubus.");
     expect(succubus).not.toContain("leathery bat-like wings"); // appearance description dropped — feature attributes carry it
     const human = buildAvatarPrompt("Mira", profileWith({ speciesId: "human" }), "realistic");
-    expect(human).not.toContain("Species:");
+    expect(human).toContain("Subject: Mira.");
+    expect(human).not.toContain("succubus");
   });
 
   it("never includes the bio — image prompts carry visual fields only", () => {
@@ -222,9 +288,9 @@ describe("buildAvatarPrompt", () => {
 // a waist-up avatar's Appearance section never names below-waist anatomy, and
 // never names intimate anatomy over a covered region (or with allowIntimate off). The
 // trick: each profile carries exactly hair.color + the attribute under test, so
-// "Appearance: Hair color: red." (sole entry, note the closing period) means the
-// attribute under test was dropped; a leak appends "; <Label>: <value>" and
-// breaks the match.
+// "Appearance: Hair: red." (sole entry, anchored by BOTH the "Appearance: " prefix
+// and the closing period) means the attribute under test was dropped; a leak adds
+// another "; <Noun>: <value>" bucket — before or after hair — and breaks the match.
 describe("buildAvatarPrompt field-gating invariants (whole attribute registry)", () => {
   const sampleValue = (def: AttributeDefinition): AttributeValue["value"] => {
     switch (def.valueType) {
@@ -266,12 +332,12 @@ describe("buildAvatarPrompt field-gating invariants (whole attribute registry)",
 
   it.each(belowWaist.map((d) => d.id))("drops below-waist %s even bare + uncensored (waist-up framing)", (id) => {
     // Bare + Qwen is the most permissive route; gone here ⇒ the waist-up cut did it.
-    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], true)).toContain("Appearance: Hair color: red.");
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], true)).toContain("Appearance: Hair: red.");
   });
 
   it.each(aboveWaistIntimate.map((d) => d.id))("withholds covered intimate %s on the uncensored route, and all intimate on the moderated route", (id) => {
-    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [fullSuit], true)).toContain("Appearance: Hair color: red.");
-    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], false)).toContain("Appearance: Hair color: red.");
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [fullSuit], true)).toContain("Appearance: Hair: red.");
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], false)).toContain("Appearance: Hair: red.");
   });
 });
 
