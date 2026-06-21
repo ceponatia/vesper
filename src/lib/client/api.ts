@@ -649,6 +649,11 @@ export const charactersApi = {
   chatTranscript: (id: string) =>
     apiGet(listOf(chatMessageSchema, "messages"), `/api/characters/${id}/chat`),
   clearChat: (id: string) => apiDelete(`/api/characters/${id}/chat`),
+  /** Overwrite one chat message's text in place (recovery lever for a poisoned transcript). */
+  editChatMessage: (id: string, messageId: string, content: string) =>
+    apiPatch(z.unknown(), `/api/characters/${id}/chat/${messageId}`, { content }),
+  /** Delete a single chat message (snip a refusal out of the context window). */
+  deleteChatMessage: (id: string, messageId: string) => apiDelete(`/api/characters/${id}/chat/${messageId}`),
   /** Rendered scenes for the chat tab (kind="scene"), newest first. */
   chatScenes: (id: string) =>
     apiGet(listOf(imageRecordSchema, "scenes", "images"), `/api/characters/${id}/chat/scene`),

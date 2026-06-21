@@ -119,6 +119,20 @@ Three findings drove the fix:
    247 on the next — because OpenRouter routes the slug to different endpoints.
    So "off by default" cannot be assumed; intake disables it **explicitly**.
 
+> **Follow-up (2026-06-21) — Aion ignores *all* reasoning controls, not just
+> `enabled:false`.** A later attempt floored the narrator's effort to
+> `reasoning:{effort:"minimal"}` (it can't be disabled, per the table above) on
+> the theory that minimal would at least *shrink* the think. A live probe
+> (temp 0, n=5/config, identical RP prompt) disproved it: every effort level and
+> every `reasoning.max_tokens` budget landed in the same ~210–280 reasoning-token
+> band. `minimal` = 223 tok ≈ `baseline` 216 ≈ `high` 225; `reasoning.max_tokens:128`
+> = 231 tok (budget ignored). Cause: Aion 2.0 is served only by the first-party
+> **AionLabs** endpoint, which accepts but does not honor OpenRouter's reasoning
+> knobs. Reasoning is a fixed ~57% of Aion's billed output and **cannot be tuned
+> down** — the only levers are a different narrator model or a smaller prompt. The
+> no-op `reasoningFloor` was removed from `server/ai/provider.ts`; the floor was
+> never committed to a release.
+
 ### 2b. The orphaned call leaks diagnostics (and wastes a repair round trip)
 
 `withTimeout` (`intake.ts:56`) races the `generateChecked` promise against the

@@ -51,6 +51,21 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toMatch(/never mention being an AI/i);
   });
 
+  it("grants the mature-content license the sessionless chat otherwise lacks", () => {
+    // The session engine licenses explicit content via world directives + exposure
+    // rules; the chat carries neither, so the prompt must state the frame itself or
+    // safety-aligned narrators refuse and break character. See character-chat.ts.
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(prompt).toMatch(/adult interactive fiction/i);
+    expect(prompt).toMatch(/sexually explicit content (are|is) fully in scope/i);
+  });
+
+  it("forbids breaking character to refuse, and routes a 'no' through the character", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(prompt).toMatch(/never break character to refuse/i);
+    expect(prompt).toMatch(/play it as Mara's own in-world choice/i);
+  });
+
   it("skips unknown attribute vocabulary instead of leaking it", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Mara",

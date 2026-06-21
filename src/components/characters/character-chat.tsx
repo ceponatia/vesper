@@ -54,6 +54,9 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
   const [clearing, setClearing] = useState(false);
   const tempId = useRef(0);
   const mkId = () => `tmp-${tempId.current++}`;
+  // Mirrors `sending` synchronously so the post-send id-reconcile can bail if a
+  // new send started in the await window (state would be stale in the closure).
+  const sendingRef = useRef(false);
 
   // Seed the editable transcript from the load exactly once per character (the
   // "adjust state while rendering" pattern) so a streamed/optimistic reply is
@@ -72,7 +75,7 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
 
   const send = async () => {
     const content = input.trim();
-    if (!content || sending) return;
+    if (!content || sendingRef.current) return;
     setInput("");
     const assistantId = mkId();
     setLines((prev) => [
@@ -80,15 +83,46 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
       { id: mkId(), role: "user", content },
       { id: assistantId, role: "assistant", content: "" },
     ]);
+    sendingRef.current = true;
     setSending(true);
     const outcome = await sendCharacterChat(characterId, { content, model: narratorModel }, (delta) => {
       setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + delta } : l)));
     });
+    sendingRef.current = false;
     setSending(false);
     if (!outcome.ok) {
       // Drop the empty reply bubble (a partial reply, if any streamed, stays).
       setLines((prev) => prev.filter((l) => !(l.id === assistantId && l.content === "")));
       toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
+      return;
+    }
+    // Swap the optimistic temp-ids for the persisted ids so the exchange just
+    // sent is immediately editable/deletable — the levers for snipping a refusal
+    // before it poisons later turns. Skip if another send already started.
+    const fresh = await charactersApi.chatTranscript(characterId);
+    if (fresh.ok && !sendingRef.current) {
+      setLines(fresh.data.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+    }
+  };
+
+  /** Overwrite one message's text in place; updates the line on success. */
+  const editLine = async (id: string, content: string): Promise<boolean> => {
+    const result = await charactersApi.editChatMessage(characterId, id, content);
+    if (result.ok) {
+      setLines((prev) => prev.map((l) => (l.id === id ? { ...l, content } : l)));
+      return true;
+    }
+    toast.push({ title: "Edit failed", description: result.error.message, tone: "error" });
+    return false;
+  };
+
+  /** Delete a single message; removes the line on success. */
+  const deleteLine = async (id: string) => {
+    const result = await charactersApi.deleteChatMessage(characterId, id);
+    if (result.ok) {
+      setLines((prev) => prev.filter((l) => l.id !== id));
+    } else {
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
     }
   };
 
@@ -154,7 +188,15 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
         ) : (
           <>
             {lines.map((line) => (
-              <MessageBubble key={line.id} line={line} name={name} avatarImageId={avatarImageId} streaming={sending} />
+              <MessageBubble
+                key={line.id}
+                line={line}
+                name={name}
+                avatarImageId={avatarImageId}
+                streaming={sending}
+                onEdit={editLine}
+                onDelete={deleteLine}
+              />
             ))}
             <div ref={bottomRef} />
           </>
@@ -198,31 +240,95 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
   );
 }
 
-/** One chat line: the user on the right, the character (with avatar) on the left. */
+/**
+ * One chat line: the user on the right, the character (with avatar) on the left.
+ * Hovering a persisted line reveals Edit / Delete — the recovery levers for a
+ * refusal (edit rewrites the line in place; delete snips it out of the window).
+ * Optimistic, still-streaming, and temp-id lines expose no actions: there is no
+ * server row to target until the send settles and ids reconcile.
+ */
 function MessageBubble({
   line,
   name,
   avatarImageId,
   streaming,
+  onEdit,
+  onDelete,
 }: {
   line: ChatLine;
   name: string;
   avatarImageId: string | null;
   streaming: boolean;
+  onEdit: (id: string, content: string) => Promise<boolean>;
+  onDelete: (id: string) => Promise<void>;
 }) {
   const isUser = line.role === "user";
   const pending = !isUser && line.content === "" && streaming;
+  const actionable = !pending && !streaming && !line.id.startsWith("tmp-");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(line.content);
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    setDraft(line.content);
+    setEditing(true);
+  };
+
+  const save = async () => {
+    const next = draft.trim();
+    if (!next || next === line.content) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const ok = await onEdit(line.id, next);
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+
   return (
-    <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+    <div className={`group flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       {!isUser ? (
         <EntityImage imageId={avatarImageId} name={name} className="mt-0.5 size-8 shrink-0 rounded-full text-xs" />
       ) : null}
-      <div
-        className={`max-w-[80%] rounded-card px-3 py-2 text-sm whitespace-pre-wrap ${
-          isUser ? "bg-accent-500/15 text-paper-100" : "bg-ink-800 text-paper-200"
-        }`}
-      >
-        {pending ? <span className="text-paper-500">…</span> : line.content}
+      <div className={`flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
+        {editing ? (
+          <div className="flex w-full min-w-64 flex-col gap-1.5">
+            <Textarea rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} className="w-full text-sm" autoFocus />
+            <div className="flex justify-end gap-1.5">
+              <Button size="sm" variant="quiet" onClick={() => setEditing(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button size="sm" variant="primary" busy={saving} onClick={save}>
+                Save
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div
+              className={`rounded-card px-3 py-2 text-sm whitespace-pre-wrap ${
+                isUser ? "bg-accent-500/15 text-paper-100" : "bg-ink-800 text-paper-200"
+              }`}
+            >
+              {pending ? <span className="text-paper-500">…</span> : line.content}
+            </div>
+            {actionable ? (
+              <div className="flex gap-2 px-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <button type="button" onClick={startEdit} className="text-[11px] text-paper-500 hover:text-paper-200">
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onDelete(line.id)}
+                  className="text-[11px] text-paper-500 hover:text-danger-400"
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );
