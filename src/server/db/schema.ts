@@ -60,7 +60,8 @@ export const characters = pgTable(
  * The character-chat harness transcript (docs/developer-notes/character-chat.plan.md).
  * A flat, per-character message log for the editor's Chat tab — deliberately
  * isolated from sessions (no turns, episodes, facts, or RAG). Clearing the chat
- * deletes these rows but leaves the generated scene images (kind="scene") alone.
+ * deletes these rows; the generated scene images (kind="scene") survive, but
+ * their chat-derived prompt text is scrubbed (character-chat.followups.md §3).
  */
 export const characterChatMessages = pgTable(
   "character_chat_messages",

@@ -24,7 +24,12 @@ submitTurn(sessionId, input, author)
          wardrobe visibility · movement intent + follow scores ·
          canonical character facts · meter/condition surface · NPC affordances
  4. assemble prompt (see prompts.md) → streamText (per-world narrative model,
-      low-latency provider routing for faster first token) → speaker segmenter → SSE chunks to client
+      low-latency provider routing for faster first token. No reasoning knob is
+      set: the default narrator Aion 2.0 is served only by the AionLabs endpoint,
+      which ignores OpenRouter's reasoning controls (2026-06-21 probe — effort and
+      `reasoning.max_tokens` left usage unchanged; reasoning can't be disabled), so
+      flooring effort bought nothing. Both narrator lanes share
+      `narrativeProviderOptions` — server/ai/provider.ts) → speaker segmenter → SSE chunks to client
  5. persist narration + turn_messages; turn status → processing; SSE done
  6. POST-TURN (parallel, via post_turn job): simulant · archivist · continuity · director
  7. merge reducer → ONE transaction → turn status ready; session status ready

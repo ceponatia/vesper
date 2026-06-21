@@ -21,6 +21,13 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Next (queued — proposed order)
 
+- **Character chat — light state & embodied player** (draft brainstorm) —
+  [character-chat-state.plan.md](character-chat-state.plan.md). Grow the sessionless
+  1-on-1 chat from a stateless transcript into a light, state-aware quick chat that
+  reuses the contracts (meters incl. **hygiene**, affinity, conditions) without the
+  session engine, plus the **placeholder intake** for a future profile-level *player
+  character* the chat (and sessions) default to. Menu of ideas; pick a v1 before
+  promoting. **Reorder this slot to taste.**
 - **UX-audit remediation** — [ux-audit.plan.md](ux-audit.plan.md). Triage + dispatch of
   the 2026-06-17 end-to-end audit. Headline net-new item: PM's **world-forge intake fields**
   (player-character pick / inline-forge / observer default + auto-generate counts). Also:
@@ -29,6 +36,19 @@ progress) · **shipped — <date>** · **parked**.
   quick-wins polish batch. Routes the map view → world-map, M4 → movement-authority, and the
   meter/affinity timeline + transcript-export / scene-cover / first-run-tour →
   deferred.plan.md. **Reorder this slot to taste.**
+
+- **Mood-reactive 3D avatars** (draft feasibility) —
+  [avatar-3d.plan.md](avatar-3d.plan.md). Silent **anime/VRM** character avatar
+  that emotes in real time off the character's mood ("Grok companions, but more
+  sophisticated"). Verdict: **feasible, and stronger than first thought** — the
+  "rich reaction" engine **already shipped** (`personality-and-state`: `mood`
+  meter, `deriveMoodDescriptor`, trait-modulated likes/dislikes curve, affinity
+  coupling), so the avatar mostly *renders* existing state. Work = client-side
+  `three`/R3F + `@pixiv/three-vrm` render layer, a thin pure expression-mapper,
+  and **asset production** (the real cost: agents can't yet auto-rig anime faces
+  from scratch — recommended path is a parametric VRM base + AI-textured
+  per-character variation). Voice deferred. Exploratory — **reorder / promote to
+  taste.**
 
 3. **Visual world map** — [world-map.plan.md](world-map.plan.md). Flagged a
    potential priority. Read-only force-directed graph of locations first.

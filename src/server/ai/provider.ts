@@ -62,6 +62,32 @@ export function providerRouting(modelId: string, opts: { sortLatency?: boolean }
   return Object.keys(routing).length > 0 ? routing : undefined;
 }
 
+/**
+ * The full `providerOptions.openrouter` block for a **narrator** generation — the
+ * session turn stream (pipeline.ts) and the character-chat stream
+ * (engine/character-chat.ts) both build their provider options here, so the two
+ * lanes never drift. Currently just wraps latency routing + per-model provider
+ * exclusions (providerRouting) in the `openrouter` envelope. Returns undefined
+ * when nothing applies, so callers can omit `providerOptions` entirely rather
+ * than send an empty object.
+ *
+ * No reasoning knob is set here on purpose: the default narrator (Aion 2.0,
+ * `aion-labs/aion-2.0`) is served only by the first-party AionLabs endpoint,
+ * which **ignores** OpenRouter's reasoning controls — a 2026-06-21 live probe
+ * showed `effort:"minimal"` and even `reasoning.max_tokens:128` left reasoning
+ * usage unchanged (~220 tok/turn, identical to baseline), and `effort:"none"` /
+ * `reasoning.enabled:false` are rejected outright ("Reasoning is mandatory for
+ * this endpoint"). So flooring effort bought nothing; it was removed. If a
+ * narrator that *does* honor effort is added, reintroduce a per-model knob here.
+ */
+export function narrativeProviderOptions(
+  modelId: string,
+  opts: { sortLatency?: boolean } = {},
+): { openrouter: Record<string, JSONValue> } | undefined {
+  const provider = providerRouting(modelId, opts);
+  return provider ? { openrouter: { provider } } : undefined;
+}
+
 let cachedProvider: OpenRouterProvider | undefined;
 
 export function openrouter(): OpenRouterProvider {

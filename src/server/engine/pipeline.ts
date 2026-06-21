@@ -10,7 +10,7 @@ import { daylightBand, formatElapsed, formatGameClock, resolveGameTime } from "@
 import { log } from "@/server/log";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { fillPlayerToken } from "@/lib/player-token";
-import { isDemoMode, narrativeModelId, openrouter, providerRouting, routedProvider } from "../ai";
+import { isDemoMode, narrativeModelId, narrativeProviderOptions, openrouter, routedProvider } from "../ai";
 import type { TurnProvider } from "@/contracts/turns/agent-results";
 import { db, facts, jobs, sessions, turnMessages, turns } from "../db";
 import {
@@ -326,9 +326,10 @@ function liveNarrativeStream(modelId: string, system: string, messages: ModelMes
     // narration's first token arrives sooner — OpenRouter routing variance is the
     // dominant cost (pre-narrator-agents.followups.md §2d). For a long stream this
     // optimises time-to-first-token; switch to sort:"throughput" if sustained
-    // tokens/sec matters more than first-token latency. providerRouting also drops
-    // per-model bad endpoints (DeepInfra on GLM 5.2 — slow despite its low advertised latency).
-    providerOptions: { openrouter: { provider: providerRouting(modelId, { sortLatency: true }) } },
+    // tokens/sec matters more than first-token latency. narrativeProviderOptions
+    // also drops per-model bad endpoints (DeepInfra on GLM 5.2) and pins the
+    // reasoning floor for abliterated narrators (Aion 2.0) so they don't think long.
+    providerOptions: narrativeProviderOptions(modelId, { sortLatency: true }),
   });
   return {
     textStream: result.textStream,
