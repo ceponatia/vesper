@@ -100,6 +100,13 @@ export interface SceneRenderRequest {
    * the single-anchor ladder. Both degrade through `venice_generate` → demo.
    */
   mode?: SceneReferenceMode;
+  /**
+   * Fail-visible for identity-locked renders (character chat, user policy): when
+   * an avatar anchors the shot, drop the text-to-image rung so a failed reference
+   * edit fails the image instead of silently rendering a *different-looking*
+   * person. No-op without an anchor image (text-to-image is then the only path).
+   */
+  requireReferenceIdentity?: boolean;
 }
 
 /**
@@ -120,6 +127,14 @@ export function routeSceneProviders(request: SceneRenderRequest): ImageProviderI
       ? ["venice_multi_edit", "venice_edit", "venice_generate"]
       : ["venice_edit", "venice_generate"];
   const chain = ordered.filter((id) => providerCanAttempt(id, referenceImages));
+  // Fail-visible (character chat): with an anchor image present, drop the
+  // text-to-image rung — a failed edit must not silently become a different-looking
+  // person. Only applied when ≥1 anchor exists, so an avatar-less render still has
+  // text-to-image as its sole rung; never empties the chain.
+  if (request.requireReferenceIdentity && referenceImages >= 1) {
+    const editOnly = chain.filter((id) => id !== "venice_generate");
+    if (editOnly.length > 0) return editOnly;
+  }
   // venice_generate (text-to-image) always qualifies, so the chain is never empty.
   return chain.length > 0 ? chain : ["venice_generate"];
 }

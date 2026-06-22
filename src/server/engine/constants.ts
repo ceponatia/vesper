@@ -47,6 +47,20 @@ export const NARRATIVE_HISTORY_TURNS = 6;
  * the window IS its only memory. A "turn" is one user+assistant exchange.
  */
 export const CHARACTER_CHAT_HISTORY_TURNS = 40;
+/**
+ * Rolling chat summary (docs/developer-notes/character-chat-summary.plan.md).
+ * When the unsummarized tail reaches CHARACTER_CHAT_SUMMARIZE_AT exchanges, a
+ * detached `chat_summary` job folds the oldest exchanges into the running
+ * summary, leaving CHARACTER_CHAT_VERBATIM_KEEP verbatim. The fold size is the
+ * difference (≈20 exchanges). CHARACTER_CHAT_HISTORY_TURNS stays the verbatim
+ * *ceiling* — the degraded floor when summarization is off/failed (= the old
+ * flat-window behavior). The gap between SUMMARIZE_AT (35) and the ceiling (40)
+ * is headroom: the one-call fold settles before the window could overflow. A
+ * "turn"/"exchange" is one user+assistant pair (≈2 messages).
+ */
+export const CHARACTER_CHAT_SUMMARIZE_AT = 35;
+/** Exchanges left verbatim after a fold (the rest fold into the running summary). */
+export const CHARACTER_CHAT_VERBATIM_KEEP = 15;
 /** Most recent episode summaries always present in the turn context. */
 export const EPISODE_WINDOW = 4;
 /** Max items in the merged narrator facts channel (docs/memory.md). */

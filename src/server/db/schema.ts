@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -76,6 +77,35 @@ export const characterChatMessages = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("character_chat_messages_owner_character_idx").on(t.ownerId, t.characterId, t.createdAt)],
+);
+
+/**
+ * Rolling background summary for one character chat
+ * (docs/developer-notes/character-chat-summary.plan.md). One row per
+ * (ownerId, characterId): a running prose recap of the transcript OLDER than the
+ * verbatim window, plus a **watermark** — the (createdAt, id) of the newest
+ * message already folded into `summary`. The chat prompt sends `summary` +
+ * every message after the watermark, so memory reaches past the 40-turn window.
+ * A detached `chat_summary` job advances the watermark. No row (or a null
+ * watermark) ⇒ the chat behaves exactly as before (last-40 verbatim window).
+ * Clearing the chat deletes this row alongside the messages.
+ */
+export const characterChatSummaries = pgTable(
+  "character_chat_summaries",
+  {
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    summary: text("summary").notNull().default(""),
+    /** (watermarkAt, watermarkId) = the newest message folded into `summary`; both null until the first fold. */
+    watermarkAt: timestamp("watermark_at", { withTimezone: true }),
+    watermarkId: text("watermark_id"),
+    /** Exchanges represented by `summary` — telemetry/debug only, never a correctness input. */
+    coveredExchanges: integer("covered_exchanges").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.ownerId, t.characterId] })],
 );
 
 export const locations = pgTable(
@@ -577,7 +607,7 @@ export const jobs = pgTable(
     id: id(),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
     type: text("type", {
-      enum: ["post_turn", "reconcile", "inner_note", "scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep"],
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep"],
     }).notNull(),
     status: text("status", { enum: ["queued", "running", "done", "failed"] }).notNull().default("queued"),
     runnerId: text("runner_id"),

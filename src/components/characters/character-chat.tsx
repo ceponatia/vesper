@@ -294,7 +294,13 @@ function MessageBubble({
       <div className={`flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
         {editing ? (
           <div className="flex w-full min-w-64 flex-col gap-1.5">
-            <Textarea rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} className="w-full text-sm" autoFocus />
+            <Textarea
+              rows={2}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="field-sizing-content max-h-[60vh] w-full text-sm"
+              autoFocus
+            />
             <div className="flex justify-end gap-1.5">
               <Button size="sm" variant="quiet" onClick={() => setEditing(false)} disabled={saving}>
                 Cancel

@@ -5,12 +5,14 @@ import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { errorText, jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { characterChatMessages, characters, db, images } from "@/server/db";
+import { characterChatMessages, characterChatSummaries, characters, db, images } from "@/server/db";
 import {
   buildCharacterChatSystemPrompt,
-  CHARACTER_CHAT_HISTORY_TURNS,
+  CHARACTER_CHAT_SUMMARIZE_AT,
+  enqueueChatSummary,
+  loadChatSummary,
+  loadVerbatimWindow,
   streamCharacterChat,
-  type ChatTurn,
 } from "@/server/engine";
 import { log } from "@/server/log";
 
@@ -88,15 +90,19 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     .insert(characterChatMessages)
     .values({ id: promptMessageId, ownerId: user.id, characterId: id, role: "user", content: body.value.content });
 
-  // Load the recent window (newest-first slice, reversed to oldest-first); this
-  // includes the line just inserted. streamCharacterChat re-windows defensively.
-  const recent = await db()
-    .select({ role: characterChatMessages.role, content: characterChatMessages.content })
-    .from(characterChatMessages)
-    .where(and(eq(characterChatMessages.ownerId, user.id), eq(characterChatMessages.characterId, id)))
-    .orderBy(desc(characterChatMessages.createdAt))
-    .limit(CHARACTER_CHAT_HISTORY_TURNS * 2);
-  const history: ChatTurn[] = recent.reverse();
+  // The running summary covers everything up to its watermark; the verbatim
+  // window is every message after it (includes the line just inserted). No
+  // summary row ⇒ the old last-40 behavior, unchanged
+  // (docs/developer-notes/character-chat-summary.plan.md).
+  const summaryState = await loadChatSummary(user.id, id);
+  const history = await loadVerbatimWindow(user.id, id, summaryState?.watermark ?? null);
+
+  // The verbatim tail has grown to the fold trigger → fold the oldest exchanges
+  // into the running summary. Fire-and-forget: a detached job that runs
+  // concurrently with this reply and never adds latency to it.
+  if (history.length >= CHARACTER_CHAT_SUMMARIZE_AT * 2) {
+    void enqueueChatSummary({ ownerId: user.id, characterId: id });
+  }
 
   const profile = parseOr(
     characterProfileSchema,
@@ -105,7 +111,11 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     undefined,
     "characters.profile",
   );
-  const system = buildCharacterChatSystemPrompt({ name: character.name, profile });
+  const system = buildCharacterChatSystemPrompt({
+    name: character.name,
+    profile,
+    priorSummary: summaryState?.summary,
+  });
   const gen = streamCharacterChat({ system, history, name: character.name, model: body.value.model });
 
   return streamReply(gen, (full) =>
@@ -142,8 +152,10 @@ export async function persistAssistantReply(args: {
 }
 
 /**
- * DELETE /api/characters/:id/chat — clear the conversation. The scene images
- * (kind="scene") survive, but their prompts embed recent chat lines
+ * DELETE /api/characters/:id/chat — clear the conversation. The running summary
+ * row is deleted too (the watermark + recap are this conversation's memory; a
+ * cleared chat must not keep a hidden recap — correctness + privacy). The scene
+ * images (kind="scene") survive, but their prompts embed recent chat lines
  * (renderCharacterSceneImage → recentNarration), so we reset the prompt text:
  * a cleared conversation must not leave old chat context visible (the gallery
  * enlarge view shows `prompt`), which would be both confusing and a privacy
@@ -155,6 +167,9 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   await db()
     .delete(characterChatMessages)
     .where(and(eq(characterChatMessages.ownerId, user.id), eq(characterChatMessages.characterId, id)));
+  await db()
+    .delete(characterChatSummaries)
+    .where(and(eq(characterChatSummaries.ownerId, user.id), eq(characterChatSummaries.characterId, id)));
   await db()
     .update(images)
     .set({ prompt: "" })
