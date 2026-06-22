@@ -16,6 +16,7 @@ export type JobType =
   | "post_turn"
   | "reconcile"
   | "inner_note"
+  | "chat_summary"
   | "scene_image"
   | "avatar"
   | "portrait_variant"

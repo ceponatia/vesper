@@ -29,4 +29,5 @@ export * from "./state/scene-gen";
 export * from "./turns/agent-results";
 export * from "./turns/intent-brief";
 export * from "./turns/inner-note";
+export * from "./turns/chat-summary";
 export * from "./turns/stream";

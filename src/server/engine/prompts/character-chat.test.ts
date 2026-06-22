@@ -80,4 +80,22 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("this character");
     expect(prompt).toContain("How to respond:");
   });
+
+  it("surfaces a prior summary as a continuity-context block, before the response rules", () => {
+    const recap = "You met at the night market and traded names. Established:\n- The user is Theo.";
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), priorSummary: recap });
+    expect(prompt).toContain("Earlier in this conversation");
+    expect(prompt).toContain("The user is Theo.");
+    // It's context, not dialogue, and must sit above the per-line response rules.
+    expect(prompt.indexOf("Earlier in this conversation")).toBeLessThan(prompt.indexOf("How to respond:"));
+  });
+
+  it("omits the recap block entirely when there is no prior summary (prompt unchanged)", () => {
+    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain(
+      "Earlier in this conversation",
+    );
+    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), priorSummary: "   " })).not.toContain(
+      "Earlier in this conversation",
+    );
+  });
 });

@@ -21,6 +21,13 @@ const BIO_EXCERPT_CHARS = 600;
 export interface CharacterChatPromptInput {
   name: string;
   profile: CharacterProfile;
+  /**
+   * Running recap of the conversation OLDER than the verbatim window
+   * (docs/developer-notes/character-chat-summary.plan.md). Context only — carries
+   * continuity past the message window. Empty/undefined ⇒ no recap block (a fresh
+   * chat, or summarization off), so the prompt is unchanged from before.
+   */
+  priorSummary?: string;
 }
 
 const humanize = (value: string): string => value.replaceAll("_", " ").trim();
@@ -119,6 +126,8 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     .filter(Boolean)
     .join(" ");
 
+  const priorSummary = input.priorSummary?.trim();
+
   const sections = [
     CONTENT_FRAMING,
     identity,
@@ -128,6 +137,9 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
       ? `Attributes (who you are — express these naturally, never list them):\n${attributeLines.join("\n")}`
       : "",
     hints.size ? `Phrasing guidance:\n${[...hints].map((h) => `- ${h}`).join("\n")}` : "",
+    priorSummary
+      ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${priorSummary}`
+      : "",
     CHAT_RULES(displayName),
   ];
 

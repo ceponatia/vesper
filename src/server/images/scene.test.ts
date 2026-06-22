@@ -133,10 +133,23 @@ describe("executeSceneChain (fallback ladder + reason-keyed retry, spec §8.3)",
     expect(sink.items.some((d) => d.code === "images.scene_render.service_outage" && d.severity === "warn")).toBe(true);
   });
 
-  it("non-transient failures across the chain return null without an outage warning", async () => {
+  it("non-transient failures across the chain return null with an all_failed diagnostic, not an outage warning", async () => {
     const sink = new DiagnosticCollector();
     const outcome = await executeSceneChain(["venice_edit", "venice_generate"], async () => failResult("content_rejection"), sink);
     expect(outcome).toBeNull();
     expect(sink.items.some((d) => d.code === "images.scene_render.service_outage")).toBe(false);
+    expect(sink.items.some((d) => d.code === "images.scene_render.all_failed" && d.severity === "warn")).toBe(true);
+  });
+
+  it("a single-rung identity-locked edit that content-rejects is never silent — it pushes all_failed with the cause", async () => {
+    // Fail-visible character-chat path: routeSceneProviders has already dropped the
+    // text-to-image rung, so a rejected edit has no fallback hop to log; the
+    // terminal diagnostic is the only record of WHY the character image failed.
+    const sink = new DiagnosticCollector();
+    const outcome = await executeSceneChain(["venice_edit"], async () => failResult("content_rejection", "Sexual Content"), sink);
+    expect(outcome).toBeNull();
+    const terminal = sink.items.find((d) => d.code === "images.scene_render.all_failed");
+    expect(terminal?.message).toContain("Sexual Content");
+    expect(terminal?.context?.reason).toBe("content_rejection");
   });
 });

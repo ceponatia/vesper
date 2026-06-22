@@ -64,6 +64,16 @@ describe("routeSceneProviders", () => {
     expect(routeSceneProviders({ references: [], demo: true, mode: "multi" })).toEqual(["demo"]);
   });
 
+  it("requireReferenceIdentity drops the text-to-image rung when an avatar anchors the shot (fail-visible)", () => {
+    const refs = [charRef({ entityId: "c1", name: "Harper", imageId: "img1", source: "generated" })];
+    expect(routeSceneProviders({ references: refs, demo: false, requireReferenceIdentity: true })).toEqual(["venice_edit"]);
+  });
+
+  it("requireReferenceIdentity with NO anchor image keeps text-to-image — there is no identity to protect", () => {
+    const refs = [charRef({ entityId: "c1", name: "Harper" })];
+    expect(routeSceneProviders({ references: refs, demo: false, requireReferenceIdentity: true })).toEqual(["venice_generate"]);
+  });
+
   it("the registry never allows uploaded real people on an NSFW path", () => {
     for (const caps of Object.values(IMAGE_PROVIDERS)) {
       expect(caps.supportsUploadedRealPeopleInNsfw).toBe(false);

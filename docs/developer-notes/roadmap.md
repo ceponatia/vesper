@@ -21,6 +21,13 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Next (queued — proposed order)
 
+- **Character chat — rolling background summary** (shipped — 2026-06-21) —
+  [character-chat-summary.plan.md](character-chat-summary.plan.md). Gives the
+  sessionless 1-on-1 chat memory *past* its 40-turn window: a watermark-anchored
+  running summary, refreshed by a detached background job (the `inner-note`
+  template) every ~20 turns, folding the oldest ~20 exchanges into prose while
+  keeping ~15 verbatim. Degraded floor = exactly today's last-40 window.
+  Leftovers are the plan's tuning Open questions + a deferred client memory panel.
 - **Character chat — light state & embodied player** (draft brainstorm) —
   [character-chat-state.plan.md](character-chat-state.plan.md). Grow the sessionless
   1-on-1 chat from a stateless transcript into a light, state-aware quick chat that
@@ -37,17 +44,28 @@ progress) · **shipped — <date>** · **parked**.
   meter/affinity timeline + transcript-export / scene-cover / first-run-tour →
   deferred.plan.md. **Reorder this slot to taste.**
 
-- **Mood-reactive 3D avatars** (draft feasibility) —
-  [avatar-3d.plan.md](avatar-3d.plan.md). Silent **anime/VRM** character avatar
-  that emotes in real time off the character's mood ("Grok companions, but more
-  sophisticated"). Verdict: **feasible, and stronger than first thought** — the
-  "rich reaction" engine **already shipped** (`personality-and-state`: `mood`
-  meter, `deriveMoodDescriptor`, trait-modulated likes/dislikes curve, affinity
-  coupling), so the avatar mostly *renders* existing state. Work = client-side
-  `three`/R3F + `@pixiv/three-vrm` render layer, a thin pure expression-mapper,
-  and **asset production** (the real cost: agents can't yet auto-rig anime faces
-  from scratch — recommended path is a parametric VRM base + AI-textured
-  per-character variation). Voice deferred. Exploratory — **reorder / promote to
+- **Mood — app-wide emotional state** (draft) — [mood.plan.md](mood.plan.md).
+  Graduates the **event→mood table** deferred by `personality-and-state` (spec §4):
+  generalizes mood movement beyond the lone social-reaction nudge (scene
+  atmosphere, conditions, beats, presence) + a **labeled-emotion projection** so
+  consumers get a discrete emotion, not just a `0–1` valence. Mood is a cross-app
+  read (narrator, scene images, **avatar animations**, UI mood chip, chat) — built
+  separately because it serves more than the avatar. Pairs with the deferred
+  relationship/meter timeline. **Reorder to taste.**
+- **Mood-reactive avatars** (draft feasibility) —
+  [avatar-3d.plan.md](avatar-3d.plan.md) · notes
+  [avatar-3d.notes.md](avatar-3d.notes.md). Silent **anime, 2D-first** character
+  avatar that emotes in real time off the character's mood ("Grok companions, but
+  more sophisticated"). Verdict: **feasible** — the "rich reaction" engine
+  **already shipped** (`personality-and-state`: `mood` meter, `deriveMoodDescriptor`,
+  likes/dislikes curve), so the avatar mostly *renders* existing state, and
+  runtime animation is **procedural + token-free** (one-time per-character asset
+  gen; the turn only *selects* a cue — no per-turn image/video gen). v1 = layered
+  sprites + `motion` behind a renderer-neutral `AvatarDirector`/`AvatarCue`
+  contract (Rive rig + R3F/VRM as later upgrade lanes). Lead open Q: sprite
+  exact-identity-but-less-fluid vs a Rive reusable rig (artist + identity cap) for
+  the unbounded user-created cast. Char-chat surface depends on
+  `character-chat-state` for mood. Voice deferred. Exploratory — **reorder to
   taste.**
 
 3. **Visual world map** — [world-map.plan.md](world-map.plan.md). Flagged a

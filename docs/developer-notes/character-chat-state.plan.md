@@ -79,6 +79,12 @@ type CharacterChatState = {
   sentences the pulse keeps current ("She's still teasing you about the snow;
   warming up but guarded"). It rides in the prompt and carries continuity past
   the 40-message window without embeddings or a `facts` table.
+  - **Complement, not duplicate** of the running **transcript recap** in
+    [character-chat-summary.plan.md](character-chat-summary.plan.md): mindNote =
+    current mood/disposition; that summary = factual recap of the older
+    transcript. They converge — the summary's fold call can also emit the
+    mindNote, and the summary lands as a column on this `character_chat_state`
+    row when state ships. (That plan ships independently first.)
 - **Clearing the chat resets the state** (it's the same conversation's memory).
 
 ### Time model — "they have a life"
@@ -234,5 +240,3 @@ This keeps the chat a *quick chat*, not a session.
 - roadmap #7 `personality-and-state` (likes/dislikes §6 curve) — the pulse engine.
 - [deferred.plan.md](deferred.plan.md) "Relationship & meter timeline" — the
   surfacing idea, here at chat scale.
-</content>
-</invoke>

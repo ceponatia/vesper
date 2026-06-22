@@ -15,6 +15,8 @@ export * from "./merge";
 export * from "./pipeline";
 export * from "./inner-note";
 export * from "./character-chat";
+export * from "./chat-summary";
+export * from "./prompts/chat-summary";
 export * from "./prompts/narrative";
 export * from "./prompts/character-chat";
 export * from "./prompts/agents";

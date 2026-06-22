@@ -18,7 +18,8 @@ import {
   type SceneRenderRequest,
 } from "../ai";
 import { logEvent } from "../events";
-import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { log } from "@/server/log";
+import { diag, DiagnosticCollector, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { SceneReference, SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageEntityKind, type ImageRow } from "./assets";
@@ -164,6 +165,13 @@ export interface RenderResolvedSceneInput {
   linkage: SceneAssetLinkage;
   /** Reference mode (the session toggle); `multi` prepends the Venice multi-edit rung. */
   mode?: SceneReferenceMode;
+  /**
+   * Fail-visible for identity-locked renders (character chat): when an avatar
+   * anchors the shot, drop the text-to-image rung so a failed reference edit
+   * fails the image instead of silently painting a *different-looking* person.
+   * Off (default) keeps the full degrade ladder for session scenes.
+   */
+  requireReferenceIdentity?: boolean;
   /** Where to log the outcome (`logScene` for sessions, a character event otherwise). */
   logResult: (imageId: string, status: string, startedMs: number) => void;
   sink?: DiagnosticSink;
@@ -187,7 +195,18 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   const demo = isDemoMode();
   const { plan, references, linkage } = input;
   const mode = input.mode ?? "single";
-  const request: SceneRenderRequest = { references, demo, mode };
+  // Scene-render diagnostics — above all the provider fallback that records WHY
+  // an identity-locked edit dropped to text-to-image (Venice rejecting an
+  // explicit prompt, a transient outage) — were black-holed: no caller threads a
+  // sink, so a scene image silently losing its reference likeness left no trace.
+  // Tee every diagnostic into a collector and drain it to the server log below.
+  const collected = new DiagnosticCollector();
+  const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
+  // Fail-visible (character chat) rides in the request: routeSceneProviders drops
+  // the text-to-image rung when an avatar anchors the shot, so a failed edit fails
+  // the image (a "failed" tile + the ever-present Generate button = retry) rather
+  // than silently painting a different-looking person.
+  const request: SceneRenderRequest = { references, demo, mode, requireReferenceIdentity: input.requireReferenceIdentity };
   const chain = routeSceneProviders(request);
 
   // The image-bearing references, in send order (focal char, other chars,
@@ -249,14 +268,16 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       model: modelFor(primary),
     },
   });
-  await recordImageReferences(asset.id, references, input.sink);
+  await recordImageReferences(asset.id, references, sink);
 
   const ctx: SceneAttemptContext = { promptFor, primaryBuffer, multiBuffers, focalName: plan.focal?.name ?? "Scene" };
   const started = Date.now();
   try {
-    const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), input.sink);
+    const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
     if (!outcome) {
-      await failImage(asset.id, "all scene image providers failed");
+      // Surface the real upstream cause on the row so the failed tile explains
+      // why (e.g. a Venice edit content-rejection), not a generic placeholder.
+      await failImage(asset.id, sceneFailureMessage(collected.items));
       input.logResult(asset.id, "failed", started);
       return asset.id;
     }
@@ -264,12 +285,14 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     if (outcome.providerId !== primary) {
       await correctProviderMeta(asset.id, promptFor(outcome.providerId), modelFor(outcome.providerId));
     }
-    const saved = await saveImageBuffer(asset.id, outcome.image, input.sink);
+    const saved = await saveImageBuffer(asset.id, outcome.image, sink);
     input.logResult(asset.id, saved?.status ?? "failed", started);
   } catch (err) {
     const message = describeImageGenError(err);
     await failImage(asset.id, message);
     input.logResult(asset.id, "failed", started);
+  } finally {
+    drainSceneDiagnostics(collected.items, plan.focal?.name ?? null);
   }
   return asset.id;
 }
@@ -305,6 +328,7 @@ export async function executeSceneChain(
 ): Promise<SceneRenderOutcome | null> {
   let sawTransient = false;
   let sawNonTransient = false;
+  let lastFailure: ImageProviderFailure | undefined;
   for (let i = 0; i < chain.length; i++) {
     const id = chain[i];
     if (!id) continue;
@@ -322,6 +346,7 @@ export async function executeSceneChain(
       break;
     }
     if (!failure) continue;
+    lastFailure = failure;
     if (failure.reason === "transient") sawTransient = true;
     else sawNonTransient = true;
     const next = chain[i + 1];
@@ -333,9 +358,20 @@ export async function executeSceneChain(
       );
     }
   }
-  if (sawTransient && !sawNonTransient) {
+  // Terminal diagnostic so a wholly-failed chain is never silent — in particular
+  // a single-rung identity-locked edit (character chat) that content-rejects has
+  // no fallback hop to log, yet is exactly the failure the user needs to see.
+  if (lastFailure) {
+    const outage = sawTransient && !sawNonTransient;
     sink?.push(
-      diag("warn", "images.scene_render.service_outage", "every scene image provider failed transiently — possible image service outage"),
+      diag(
+        "warn",
+        outage ? "images.scene_render.service_outage" : "images.scene_render.all_failed",
+        outage
+          ? "every scene image provider failed transiently — possible image service outage"
+          : `every scene image provider failed: ${lastFailure.message.slice(0, 200)}`,
+        { context: { reason: lastFailure.reason, providers: chain } },
+      ),
     );
   }
   return null;
@@ -463,6 +499,41 @@ function metaRecord(meta: unknown): Record<string, unknown> {
 
 function logScene(sessionId: string, imageId: string, status: string, started: number): Promise<void> {
   return logEvent(sessionId, "image.scene", { imageId, status, durationMs: Date.now() - started });
+}
+
+/** The user-facing reason a whole render chain failed, drawn from the terminal diagnostic the chain pushed. */
+function sceneFailureMessage(items: readonly Diagnostic[]): string {
+  const terminal = [...items]
+    .reverse()
+    .find((d) => d.code === "images.scene_render.all_failed" || d.code === "images.scene_render.service_outage");
+  return terminal?.message ?? "all scene image providers failed";
+}
+
+/** Fan each diagnostic into both an external sink (if a caller passed one) and the local collector. */
+function teeSink(external: DiagnosticSink, collector: DiagnosticSink): DiagnosticSink {
+  return {
+    push(diagnostic) {
+      external.push(diagnostic);
+      collector.push(diagnostic);
+    },
+  };
+}
+
+/**
+ * Surface scene-render diagnostics to the server log. Otherwise silent: the
+ * load-bearing one is `images.scene_render.provider_fallback`, which records WHY
+ * an identity-locked edit dropped to text-to-image (e.g. the Venice edit
+ * endpoint rejecting an explicit prompt, or a transient outage) — the cause of a
+ * scene image that no longer resembles its reference avatar. The success path
+ * pushes nothing, so this stays quiet unless a fallback or failure occurred.
+ */
+function drainSceneDiagnostics(items: readonly Diagnostic[], focalName: string | null): void {
+  for (const d of items) {
+    const data = { code: d.code, ...(focalName ? { focal: focalName } : {}), ...(d.context ? { context: d.context } : {}) };
+    if (d.severity === "error") log.error("images.scene_render", d.message, data);
+    else if (d.severity === "warn") log.warn("images.scene_render", d.message, data);
+    else log.info("images.scene_render", d.message, data);
+  }
 }
 
 /**

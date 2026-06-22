@@ -151,8 +151,10 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 
   // Character-chat is a single subject (one library character, no location image),
-  // so it always renders single-reference: the avatar anchors the uncensored edit,
-  // degrading to Qwen text-to-image when there's no usable avatar.
+  // so it always renders single-reference: the avatar anchors the uncensored edit.
+  // With an avatar present the render is fail-visible (requireReferenceIdentity) —
+  // a failed edit never degrades to a different-looking text-to-image person; only
+  // when there's NO usable avatar does Qwen text-to-image stand in.
   const anchor = isDemoMode() || !hasVenice() ? null : await loadCharacterAvatar(input.userId, input.avatarImageId);
   const references: SceneVisualReference[] = [
     {
@@ -171,6 +173,9 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     plan,
     references,
     referenceBuffers,
+    // Fail-visible: with an avatar anchoring the shot, never silently degrade to a
+    // text-to-image render of a *different-looking* person — fail and let the tab retry.
+    requireReferenceIdentity: true,
     linkage: { ownerId: input.userId, entityKind: "character", entityId: input.characterId },
     logResult: (imageId, status, started) =>
       void logEvent(null, "image.character_scene", {
