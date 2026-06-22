@@ -33,10 +33,24 @@ export const viewport: Viewport = {
  */
 const contrastScript = `(function(){try{if(localStorage.getItem('${CONTRAST_STORAGE_KEY}')==='high'){document.documentElement.dataset.contrast='high';}}catch(e){}})();`;
 
+/**
+ * Dev-only noise filter. Some mobile / in-app wallet browsers (MetaMask,
+ * Coinbase Wallet, Brave…) inject a `window.ethereum` provider that throws
+ * "undefined is not an object (window.ethereum.selectedAddress …)" at document
+ * start. It's the injected script's bug, not ours, but Next's dev error overlay
+ * counts every uncaught window error and shows "1 issue". A capture-phase
+ * listener swallows just that error (narrow message match) before the overlay
+ * sees it. Gated out of production builds, so it can never mask a real app error.
+ */
+const walletNoiseSilencer = `(function(){try{window.addEventListener('error',function(e){var m=(e&&e.message)||'';if(m.indexOf('ethereum')>-1||m.indexOf('selectedAddress')>-1){e.stopImmediatePropagation();e.preventDefault();}},true);}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${serif.variable}`} suppressHydrationWarning>
       <body className="flex min-h-screen flex-col">
+        {process.env.NODE_ENV !== "production" && (
+          <script dangerouslySetInnerHTML={{ __html: walletNoiseSilencer }} />
+        )}
         <script dangerouslySetInnerHTML={{ __html: contrastScript }} />
         <ToastProvider>
           <AppShell>{children}</AppShell>

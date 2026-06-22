@@ -273,7 +273,8 @@ constants, chosen for real overlap with zero persisted-value churn:
 | Constant | Members | Consumers | Notes |
 | --- | --- | --- | --- |
 | `HAIR_DENSITY` | `none·fine·light·moderate·thick` | `arms.hair`, `legs.hair` | The two lists are **byte-identical** today — pure DRY extraction. `chest.hair` keeps its `sparse` variant (body-appropriate) and stays local. |
-| `INTIMATE_SCENT_BASE` | `clean·musky·salty` | `vulva.scent` (+`sweet`), `penis.scent` (exact), `vulva.taste` (+`tangy`,`sweet`) | Clean base+augment that reproduces each field's current set and order. |
+| `INTIMATE_SCENT_BASE` | `clean·musky·salty` | `vulva.scent` (+`sweet`), `penis.scent` (exact) | Clean base+augment that reproduces each field's current set and order. |
+| `INTIMATE_TASTE_BASE` | `clean·musky·salty·tangy` (composed: scent base + `tangy`) | `vulva.taste` (+`sweet`) | Taste = scent core + the taste-only note `tangy`. Composing off `INTIMATE_SCENT_BASE` keeps the core single-sourced; a future scent term only ever *adds* a taste value. |
 | `MATERIAL_COLORS` | non-skin surface palette — e.g. `obsidian·jet_black·bone_white·ivory·ash_grey·smoke_grey·crimson·blood_red·russet·tan·gold·bronze·silver·iridescent·pearlescent·translucent·matches_skin` | the 3 morphology colors (new `enum_list`) | The "central palette, augmented per field" example. Each morphology field may add its own terms (e.g. wings `feathered_white`) on top. |
 
 **Scope ruling (was Q1 follow-up).** The shared-color refactor is **morphology only.**

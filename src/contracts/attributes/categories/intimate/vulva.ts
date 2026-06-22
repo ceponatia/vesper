@@ -1,5 +1,5 @@
 import { defineAttributeGroup } from "../../types";
-import { INTIMATE_SCENT_BASE } from "../../shared-values";
+import { INTIMATE_SCENT_BASE, INTIMATE_TASTE_BASE } from "../../shared-values";
 
 /**
  * Vulva — intimate region, gated by the body-config group "vulva" (which also
@@ -51,7 +51,7 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     valueType: "enum",
     description: "Intimate taste. Surfaces only at the intimate taste tier (oral contact).",
     mutability: "mutable",
-    allowedValues: [...INTIMATE_SCENT_BASE, "tangy", "sweet"],
+    allowedValues: [...INTIMATE_TASTE_BASE, "sweet"],
     bodyLocationId: "vulva",
   },
 ]);

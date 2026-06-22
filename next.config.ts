@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   // runtime) against localhost, not the current host — so a page opened at the
   // LAN IP renders its SSR shell but its client-side fetches/hydration are
   // refused, leaving lists empty. Listing the LAN IP here unblocks them.
-  allowedDevOrigins: ["192.168.0.62", "192.168.0.*"],
+  allowedDevOrigins: ["192.168.1.64", "192.168.1.*", "192.168.0.*"],
 };
 
 export default nextConfig;

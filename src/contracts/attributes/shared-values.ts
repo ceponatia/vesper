@@ -16,13 +16,46 @@
  * Body-hair density. `arms.hair` and `legs.hair` share this exactly. `chest.hair` keeps
  * its own `sparse` variant (body-appropriate) and stays local.
  */
-export const HAIR_DENSITY = ["none", "fine", "light", "moderate", "thick"] as const;
+export const HAIR_DENSITY = [
+  "none",
+  "fine",
+  "light",
+  "moderate",
+  "thick",
+] as const;
 
 /**
- * The shared core of intimate scent/taste. Per-anatomy fields augment it: `vulva.scent`
- * adds `sweet`, `vulva.taste` adds `tangy`+`sweet`, `penis.scent` uses the base as-is.
+ * The shared core of intimate scent. Per-anatomy fields augment it: `vulva.scent`
+ * adds `sweet`, `penis.scent` uses the base as-is. Intimate *taste* builds on this
+ * core via `INTIMATE_TASTE_BASE`.
  */
-export const INTIMATE_SCENT_BASE = ["clean", "musky", "salty"] as const;
+export const INTIMATE_SCENT_BASE = [
+  "clean",
+  "musky",
+  "heady",
+  "fishy",
+  "yeasty",
+  "sour",
+  "pungent",
+  "metallic",
+] as const;
+
+/**
+ * The shared core of intimate taste — the scent core plus `tangy`, a taste-only
+ * note. Per-anatomy fields augment it: `vulva.taste` adds `sweet`. Composing off
+ * `INTIMATE_SCENT_BASE` keeps the clean/musky/salty core in one place, so a future
+ * scent term flows into taste too (only ever *adds* a value — never invalidates a
+ * stored one).
+ */
+export const INTIMATE_TASTE_BASE = [
+  "clean",
+  "musky",
+  "bitter",
+  "briny",
+  "sour",
+  "tangy",
+  "faintly_sweet",
+] as const;
 
 /**
  * Non-skin surface colors for visible fantasy morphology (horns, tail, wings) — a
