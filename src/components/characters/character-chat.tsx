@@ -320,14 +320,21 @@ function MessageBubble({
               {pending ? <span className="text-paper-500">…</span> : line.content}
             </div>
             {actionable ? (
-              <div className="flex gap-2 px-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                <button type="button" onClick={startEdit} className="text-[11px] text-paper-500 hover:text-paper-200">
+              // `.hover-reveal` (globals.css): hover-gated on pointer devices,
+              // always shown on touch — the only way these reach a phone. Padded
+              // so each is a comfortable finger target, not an 11px glyph.
+              <div className="hover-reveal -mx-1 flex gap-1">
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
+                >
                   Edit
                 </button>
                 <button
                   type="button"
                   onClick={() => void onDelete(line.id)}
-                  className="text-[11px] text-paper-500 hover:text-danger-400"
+                  className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
                 >
                   Delete
                 </button>
