@@ -45,6 +45,9 @@ interface EntityConfig {
   emptyBody: string;
   newName: string;
   square: boolean;
+  /** Shareable entities get the All/Public/Owned visibility toggle (auth.md);
+   *  worlds/sessions aren't shareable, so they don't. */
+  shareable?: boolean;
   list: (q: string, tag: string) => Promise<ApiResult<LibraryCard[]>>;
   create: () => Promise<ApiResult<CreatedRef>>;
   /** Optional segmented type-buckets over a card field (items use `kind`). */
@@ -74,13 +77,14 @@ const configs: Record<LibraryEntity, EntityConfig> = {
   },
   characters: {
     title: "Characters",
-    blurb: "Your cast — forge-drafted or hand-built.",
+    blurb: "Reusable characters your worlds can cast.",
     basePath: "/characters",
     forgePath: "/characters/forge",
     emptyTitle: "No characters yet",
     emptyBody: "Forge one from a one-line concept, or start from a blank profile.",
     newName: "Untitled character",
     square: true,
+    shareable: true,
     list: async (q, tag) => {
       const result = await charactersApi.list({ q, tag });
       return result.ok
@@ -97,6 +101,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     emptyBody: "Locations are usually forged with a world, but you can build them by hand too.",
     newName: "Untitled location",
     square: false,
+    shareable: true,
     list: (q, tag) => locationsApi.list({ q, tag }),
     create: () => locationsApi.create({ name: "Untitled location" }),
     generateImages: (ids) => locationsApi.generateMissingImages(ids),
@@ -109,6 +114,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     emptyBody: "Clothing drives wardrobe visibility in play; objects and containers furnish locations.",
     newName: "Untitled item",
     square: true,
+    shareable: true,
     list: (q, tag) => itemsApi.list({ q, tag }),
     create: () => itemsApi.create({ name: "Untitled item", kind: "object" }),
     buckets: {
@@ -123,6 +129,57 @@ const configs: Record<LibraryEntity, EntityConfig> = {
   },
 };
 
+/**
+ * Cross-account visibility scope (auth.md). `all` (default) is everything you
+ * can see, `public` is the discovery gallery, `owned` is only yours — a public
+ * entity you own shows under both `public` and `owned`.
+ */
+type Scope = "all" | "public" | "owned";
+const SCOPE_OPTIONS: { id: Scope; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "public", label: "Public" },
+  { id: "owned", label: "Owned" },
+];
+
+/** A segmented tab group (the library's toolbar control). Counts are optional. */
+function Segmented<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { id: T; label: string; count?: number }[];
+  value: T;
+  onChange: (id: T) => void;
+}) {
+  return (
+    <div role="tablist" aria-label={label} className="inline-flex gap-1 rounded-md border border-ink-600 bg-ink-850 p-1">
+      {options.map((opt) => {
+        const active = value === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(opt.id)}
+            className={cx(
+              "cursor-pointer rounded px-3 py-1 text-xs transition-colors",
+              active ? "bg-ink-700 text-paper-50" : "text-paper-400 hover:text-paper-200",
+            )}
+          >
+            {opt.label}
+            {opt.count !== undefined ? (
+              <span className={cx("ml-1.5 tabular-nums", active ? "text-paper-400" : "text-paper-500")}>{opt.count}</span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Library grid with debounced search + tag filter (docs/ui.md). */
 export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const config = configs[entity];
@@ -133,6 +190,10 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const [tag, setTag] = useState("");
   const [creating, setCreating] = useState(false);
   const [bucket, setBucket] = useState("all");
+  // Visual-only for now: the public-browse query is deferred (auth.plan.md
+  // §"Later" / roadmap), so this scopes nothing yet — wire it into config.list
+  // (and a public-mode list endpoint) when the discovery gallery lands.
+  const [scope, setScope] = useState<Scope>("all");
   const [generatingBatch, setGeneratingBatch] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
   const [confirmGen, setConfirmGen] = useState(false);
@@ -254,33 +315,22 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
         </div>
       </div>
 
-      {config.buckets ? (
-        <div
-          role="tablist"
-          aria-label="Filter by type"
-          className="mb-4 inline-flex gap-1 rounded-md border border-ink-600 bg-ink-850 p-1"
-        >
-          {[{ id: "all", label: "All" }, ...config.buckets.options].map((opt) => {
-            const count =
-              opt.id === "all" ? cardsAll.length : cardsAll.filter((c) => config.buckets?.field(c) === opt.id).length;
-            const active = bucket === opt.id;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setBucket(opt.id)}
-                className={cx(
-                  "cursor-pointer rounded px-3 py-1 text-xs transition-colors",
-                  active ? "bg-ink-700 text-paper-50" : "text-paper-400 hover:text-paper-200",
-                )}
-              >
-                {opt.label}
-                <span className={cx("ml-1.5 tabular-nums", active ? "text-paper-400" : "text-paper-500")}>{count}</span>
-              </button>
-            );
-          })}
+      {config.shareable || config.buckets ? (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          {config.shareable ? (
+            <Segmented label="Filter by visibility" options={SCOPE_OPTIONS} value={scope} onChange={setScope} />
+          ) : null}
+          {config.buckets ? (
+            <Segmented
+              label="Filter by type"
+              value={bucket}
+              onChange={setBucket}
+              options={[{ id: "all", label: "All" }, ...config.buckets.options].map((opt) => ({
+                ...opt,
+                count: opt.id === "all" ? cardsAll.length : cardsAll.filter((c) => config.buckets?.field(c) === opt.id).length,
+              }))}
+            />
+          ) : null}
         </div>
       ) : null}
 
