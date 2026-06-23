@@ -2,7 +2,7 @@
 
 Status: **next** — queued, design settled in the 2026-06-23 Q&A + design
 discussion; ready to promote to **active** once
-[world-instances.plan.md](world-instances.plan.md) is sequenced (this plan's
+[world-instances.plan.md](finished/world-instances.plan.md) is sequenced (this plan's
 sharing model depends on the copy cascade). Topic slug `auth`.
 
 This is the supplemental plan called for by
@@ -20,7 +20,7 @@ Two things ship together because they share the same authorization seam:
 2. **Entity visibility** — a `private` / `public` layer on shareable entities
    (characters/locations/items; worlds & sessions are always private). Private ⇒
    owner-only. Public ⇒ **discoverable and copyable** by anyone. Because of the
-   [world-instances](world-instances.plan.md) copy cascade, **using** a public
+   [world-instances](finished/world-instances.plan.md) copy cascade, **using** a public
    entity *copies* it into your own world/library — there are no live cross-owner
    references, so the author can't break your copy and you own/edit it freely.
 
@@ -38,12 +38,12 @@ stored reference stays owner-scoped, and **all writes stay owner-strict**.
 | --- | --- |
 | Auth library | **Better Auth** — MIT, fully self-hosted, owns its tables in our Postgres via the Drizzle adapter. |
 | Sign-in methods (v1) | **All three**: email + password (baseline), magic link (passwordless), social OAuth — the latter two **env-gated** (enabled only when their secrets are present; degrade quietly otherwise, per `docs/resilience.md`). |
-| Public-entity model | **Copy-on-use** (via [world-instances](world-instances.plan.md)). A public entity is discoverable and copyable; **using** it (add to a world, or clone to your library) makes an **owned copy** — no live cross-owner reference. You can edit your copy freely; the source author can't push changes or break it. |
+| Public-entity model | **Copy-on-use** (via [world-instances](finished/world-instances.plan.md)). A public entity is discoverable and copyable; **using** it (add to a world, or clone to your library) makes an **owned copy** — no live cross-owner reference. You can edit your copy freely; the source author can't push changes or break it. |
 | Always-private | **Worlds and sessions** — no visibility column, never shareable. |
 | Shareable | **Characters, locations, items** — `visibility` column, default `private`. |
 
 > **Dependency:** the copy-on-use model is delivered by
-> [world-instances.plan.md](world-instances.plan.md). That refactor (worlds hold
+> [world-instances.plan.md](finished/world-instances.plan.md). That refactor (worlds hold
 > instance copies, not live FKs) is what eliminates cross-owner references. Land it
 > before — or together with — this plan's visibility seam. It is the reason this
 > plan has **no** "lifecycle of a referenced public entity" section: there are no
@@ -87,7 +87,7 @@ stored reference stays owner-scoped, and **all writes stay owner-strict**.
 - User profiles / usernames / public author pages.
 - An `unlisted` (link-only) visibility tier, or a per-entity collaborator ACL.
 - Selective update **propagation** to copies (deferred — speced in
-  [world-instances.plan.md](world-instances.plan.md) §Future).
+  [world-instances.plan.md](finished/world-instances.plan.md) §Future).
 - Organizations/teams, 2FA, passkeys (Better Auth plugins).
 - Favorites / ratings / "remix count" on public content.
 
@@ -215,7 +215,7 @@ these helpers so the rule lives in exactly one place.
   you don't own returns 404 (treat as not-found, don't confirm existence). The only
   way to a writable copy is to **copy/clone** it (then it's yours).
 - **No live cross-owner references.** "Using" a public entity always produces an
-  owned copy via the [world-instances](world-instances.plan.md) cascade, so there's
+  owned copy via the [world-instances](finished/world-instances.plan.md) cascade, so there's
   no widened reference-validation path and no cross-owner FK. (This replaces the
   earlier draft's `prefetchRefs` widening and lifecycle handling.)
 - **Clone (library→library):** deep-copy the source row → new owned row
@@ -242,7 +242,7 @@ these helpers so the rule lives in exactly one place.
 
 ## Rollout (ordered slices — no `phase-N` filenames)
 
-> **Depends on [world-instances.plan.md](world-instances.plan.md)** for the copy
+> **Depends on [world-instances.plan.md](finished/world-instances.plan.md)** for the copy
 > cascade. Slices 6–7 assume worlds already hold instance copies.
 
 1. **Schema + migration** — Better Auth tables, `users` extension, `visibility` +
@@ -311,4 +311,4 @@ these helpers so the rule lives in exactly one place.
 - **Browse gallery** — in v1 or deferred? The read rule supports it; only the list
   query + UI are missing. → Rollout Slice 8.
 - *(Resolved)* delete/un-publish lifecycle of referenced public entities — no longer
-  an issue under the [world-instances](world-instances.plan.md) copy cascade.
+  an issue under the [world-instances](finished/world-instances.plan.md) copy cascade.

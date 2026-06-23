@@ -25,7 +25,7 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
 ### Worlds (instance copies of the library)
 
 A world holds its **own snapshot copy** of every entity it uses, not a live reference
-(the library → world → session copy cascade — see [developer-notes/world-instances.plan.md](developer-notes/world-instances.plan.md)).
+(the library → world → session copy cascade — see [developer-notes/world-instances.plan.md](developer-notes/finished/world-instances.plan.md)).
 Each `world_*` row carries a `snapshot` of the effective entity plus a **soft**
 `source_*_id` pointer (provenance only — **no FK**) and `source_stamped_at` (the
 source's `updated_at` at copy time, the diff baseline for future opt-in propagation).
