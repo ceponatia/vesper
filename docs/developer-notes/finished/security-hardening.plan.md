@@ -1,8 +1,23 @@
 # Security hardening — plan
 
-Status: **next** — queued. Remediation of the 2026-06-23 full-surface security
-scan (six parallel review agents over auth/API, all routes, AI/engine, images,
-data layer, and config). Topic slug `security-hardening`.
+Status: **shipped — 2026-06-23**. Remediation of the 2026-06-23 full-surface
+security scan (six parallel review agents over auth/API, all routes, AI/engine,
+images, data layer, and config). Topic slug `security-hardening`.
+
+**Completion note (2026-06-23):** all nine clusters landed. Cluster A + the auth
+migration shipped earlier with [auth.plan.md](auth.plan.md); clusters
+**B–I** shipped in this batch (eight file-disjoint agents, one consolidated
+`pnpm verify` green — lint + typecheck + 1378 tests + jscpd). Per-cluster
+"✅ DONE" notes inline below. **Leftovers / deliberate deferrals:**
+- **E3 (origin/CSRF check)** — deferred to the auth surface; already covered by
+  Better Auth's `trustedOrigins`/`baseURL` + `sameSite` cookies. Not a gap.
+- **Rate limiter stays an in-process `Map`** (single-instance, by design); a
+  shared store is out of scope until the app runs more than one instance.
+- **`ENABLE_TURN_INSPECTOR`** (new env, off by default) added to `.env.example`;
+  the inspector now needs both the flag **and** admin role.
+- **CSP** ships permissive on `script-src` (`'unsafe-inline'`/`'unsafe-eval'`) so
+  Next's runtime/HMR isn't broken; `connect-src` adds `ws:`/`wss:` in dev only.
+  Tightening `script-src` with nonces is a future polish, not a blocker.
 
 The scan's headline: **the codebase is disciplined** — the IDOR sweep came back
 clean across all 40+ routes, and there's no SQL injection, no SSRF, no committed
@@ -54,7 +69,7 @@ stage it: **wave 1** = A, B, C, D (the high-severity, reachable-now set); **wave
 
 ### Cluster A — Auth boundary 🔴 — ✅ DONE (auth.plan.md, shipped 2026-06-23)
 
-**Implemented by [auth.plan.md](finished/auth.plan.md).** The dev-cookie model is gone:
+**Implemented by [auth.plan.md](auth.plan.md).** The dev-cookie model is gone:
 Better Auth signed sessions replace it, `getCurrentUser` 401s on no session (no
 auto-mint), `/api/dev/*` 404 in production, `switch-user` is deleted (replaced by
 dev-gated `impersonate`), `/api/dev/me` returns only the current user, and the
@@ -82,7 +97,15 @@ load-bearing assumption under every (correct) ownership check.
   identity. (The `uxtestmain…` account stays admin — see `CLAUDE.md`.)
 - Tests: assert `/api/dev/*` 404s when `NODE_ENV=production`.
 
-### Cluster B — Image-decode safety 🔴/🟠
+### Cluster B — Image-decode safety 🔴/🟠 — ✅ DONE (2026-06-23)
+
+**Shipped:** B1 — `{ limitInputPixels: 40_000_000, failOn: "error", animated:
+false }` on both `sharp()` decode sites (`upload.ts` resize + `assets.ts`
+`writeWebpAtomic`, which backstops every save path). B2 — `decodeDataUrl` mime
+allow-list (`image/{png,jpeg,webp,avif}`; SVG and all else rejected). B3 —
+pre-decode base64-length check before `Buffer.from`; `MAX_DECODED_BYTES` lowered
+12 MB → **4 MB** (coordinated with C5's 3 MB route string cap). Pure test
+(`upload.test.ts`) covers SVG reject / oversize-pre-decode reject / valid PNG.
 
 Reachable today by any caller via avatar upload; already-triggerable OOM
 (`machine-earlyoom-oom-tuning` memory records earlyoom killing the dev process).
@@ -103,10 +126,21 @@ Reachable today by any caller via avatar upload; already-triggerable OOM
 - Tests: a tiny decompression-bomb fixture and an SVG payload both rejected with a
   diagnostic, not a crash.
 
-### Cluster C — Rate limits & abuse caps 🔴/🟡
+### Cluster C — Rate limits & abuse caps 🔴/🟡 — ✅ DONE (2026-06-23)
 
-Only `forge`/`from-draft`/`inner-note` are rate-limited today. Every other paid
-model / heavy-write endpoint is unthrottled → financial / resource DoS.
+**Shipped:** added `GENERATION_RATE_LIMIT` (20/min), `CHAT_RATE_LIMIT` (30/min),
+`HEAVY_WRITE_RATE_LIMIT` (10/min) in `rate-limit.ts`. C1 — per-user/per-kind
+`rateLimit()` on every generation route (avatar, avatar/upload, portraits, chat,
+chat/scene, session scene, item/location single + batch image). C2 — heavy
+writes `worlds/[id]/duplicate` + `worlds/[id]/sessions`. C3 — limiter moved
+*after* ownership + body validation everywhere (incl. reordering inner-note +
+forge routes). C4 — `duplicate` malformed body now 400 (`invalid_json`), not
+silent-empty. C5 — avatar-upload data-URL cap 16 MB → **3 MB**. Plus `MAX_BATCH
+= 100` fan-out cap on the generate-all image routes. In-process `Map` caveat
+logged (single-instance by design).
+
+Only `forge`/`from-draft`/`inner-note` were rate-limited before. Every other paid
+model / heavy-write endpoint was unthrottled → financial / resource DoS.
 
 - **C1 — Apply `rateLimit()` (per-user, per-kind keys) to all generation
   routes:** `characters/[id]/avatar`, `characters/[id]/avatar/upload`,
@@ -128,7 +162,19 @@ model / heavy-write endpoint is unthrottled → financial / resource DoS.
 - Note: the limiter is an in-process `Map` (single-instance, by design); a shared
   store is out of scope until the app scales past one instance — log that caveat.
 
-### Cluster D — HTTP hardening 🟠
+### Cluster D — HTTP hardening 🟠 — ✅ DONE (2026-06-23)
+
+**Shipped (decision: `next.config.ts` `headers()`, not middleware — auth already
+landed, so nothing favored middleware):** CSP + `X-Content-Type-Options:
+nosniff` + `X-Frame-Options: DENY` + `Referrer-Policy:
+strict-origin-when-cross-origin` + `Permissions-Policy` (camera/mic/geo off) on
+all routes; HSTS **prod-only**. CSP keeps the high-value directives
+(`object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`,
+`form-action 'self'`) strict while allowing `script-src 'unsafe-inline'/'unsafe-eval'`
+for Next's runtime; `connect-src` adds `ws:`/`wss:` in dev only for HMR.
+D2 — `allowedDevOrigins` narrowed from `192.168.{0,1}.*` wildcards to the single
+`192.168.1.64`. (Verified safe: app makes no client-side off-origin requests —
+no Sentry/analytics/CDN; `next/font` self-hosts.)
 
 - **D1 — Security headers.** Add a `headers()` block in `next.config.ts` (or a
   `middleware.ts`): CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options:
@@ -138,7 +184,17 @@ model / heavy-write endpoint is unthrottled → financial / resource DoS.
 - **D2 — Narrow `allowedDevOrigins`.** Drop the `192.168.0.*` / `192.168.1.*`
   wildcards (`next.config.ts:11`) to the specific test IP already listed.
 
-### Cluster E — Request-body trust boundary 🟡
+### Cluster E — Request-body trust boundary 🟡 — ✅ DONE (2026-06-23)
+
+**Shipped:** E1 — `readBody` now reads `Content-Length` and 413s
+(`payload_too_large`) over `DEFAULT_MAX_BODY_BYTES = 4 MB` (optional per-call
+`{ maxBytes }` override; no caller change required; absent/chunked falls through
+to `req.json()`, noted). E2 — `worldDraftSchema` arrays bounded: `locations`
+.max(200), `loreChunks` .max(500), `castSuggestions` .max(200), `itemPlacements`
+.max(500). E3 — intentionally deferred (Better Auth `trustedOrigins` already
+covers CSRF). Tests added (`respond.test.ts` 413 paths, `drafts.test.ts` over-cap
+reject). NB: the real file is `server/authoring/drafts.ts` (plan's
+`contracts/world/drafts.ts` path was stale).
 
 - **E1 — Max request-body size.** `readBody` calls `req.json()` with no guard
   (`respond.ts:65`); Next route handlers don't enforce the old Pages-API limit. Add
@@ -152,7 +208,19 @@ model / heavy-write endpoint is unthrottled → financial / resource DoS.
   for mutating methods. `sameSite:lax` mitigates CSRF today, so this is
   low-urgency; primarily a §Auth-migration item.
 
-### Cluster F — Prompt-injection hardening 🟡
+### Cluster F — Prompt-injection hardening 🟡 — ✅ DONE (2026-06-23)
+
+**Shipped:** new pure helper `server/engine/prompts/untrusted.ts` —
+`fenceUntrusted(label, text)` (opaque sentinel fence), `UNTRUSTED_DATA_NOTICE`
+(authoritative "fenced text is data, not instructions" rule), and
+`neutralizePlayerInput()` (F2 — escapes leading-`#` headings + softens `(OOC:`
+markers so player input can't spoof `## Player input`/`## Turn context`; the
+structured `ooc` flag stays trusted). F1 — untrusted author/lore/player spans
+fenced + notice added across `narrative.ts`, `character-chat.ts`, `intake.ts`,
+`inner-note.ts`, `chat-summary.ts`. `docs/prompts.md` documents the pattern.
+Tests in `untrusted.test.ts` + `narrative.test.ts` + `intake.test.ts` (incl. a
+heading/OOC breakout test). Registry-derived/structured blocks left unfenced
+(low risk + protects prefix-cache byte-stability).
 
 Blast radius is narrative-integrity (not privilege — agents emit *names*
 re-validated server-side), but the framework's own headings are forgeable in-band.
@@ -166,7 +234,19 @@ re-validated server-side), but the framework's own headings are forgeable in-ban
   can't spoof the authoritative `## Turn context` / `## Player input` blocks. The
   structured `ooc` flag is already trusted correctly — keep it.
 
-### Cluster G — LLM-output bounds 🟡
+### Cluster G — LLM-output bounds 🟡 — ✅ DONE (2026-06-23)
+
+**Shipped (graceful slice, not rejecting `.max()` — the schemas parse via
+`generateChecked`, so a hard reject would drop the whole result to its degraded
+default):** G1 — `MAX_*` slice caps (all 50) at every simulant-array consumption
+point in `merge.ts` (`movements`, `itemEvents`, `meterAdjustments`,
+`conditionEvents`, `attributeChanges`, `activityUpdates`, `affinityAdjustments`,
+`commsEvents`); `intent-brief.ts` arrays bounded with a `capArray` transform
+(slice-on-parse, caps 30). G2 — `dedupeThreadProposals` embedding batch capped to
+`MAX_THREAD_PROPOSALS` (50); tail still title-deduped (no work dropped). G3 —
+trust-basis comment on `threadSignals` IDs (matched against the session-local set,
+no DB lookup; non-match → `merge.thread.unmatched` diagnostic). Pure cap test in
+`intent-brief.test.ts`.
 
 - **G1 — Cap model-output arrays.** Add `.max(N)` to `movements`, `itemEvents`,
   `meterAdjustments`, `affinityAdjustments`, `conditionEvents`, `activityUpdates`,
@@ -180,7 +260,13 @@ re-validated server-side), but the framework's own headings are forgeable in-ban
   session-local set, no DB lookup), but prefer title-based matching or document the
   trust basis (`agent-results.ts:191-248`).
 
-### Cluster H — Infra & secrets 🟡
+### Cluster H — Infra & secrets 🟡 — ✅ DONE (2026-06-23)
+
+**Shipped:** H1 — `docker-compose.yml` port now `127.0.0.1:5435:5432` (no LAN
+exposure). H2 — `db-create.ts`/`db-migrate.ts` throw `DATABASE_URL is required
+outside development` when `NODE_ENV=production` without `DATABASE_URL`; dev
+default preserved. H3 — `.env.example` documents `VENICE_SAFE_MODE="false"` as a
+conscious choice not to be promoted to shared/prod.
 
 - **H1 — Bind Postgres to localhost.** `docker-compose.yml` maps `5435:5432` on
   `0.0.0.0`; change to `127.0.0.1:5435:5432` to avoid LAN exposure.
@@ -191,7 +277,17 @@ re-validated server-side), but the framework's own headings are forgeable in-ban
 - **H3 — Confirm `VENICE_SAFE_MODE="false"`** is a conscious choice (disables the
   image provider's safety filter); document the decision in `.env.example`.
 
-### Cluster I — Defense-in-depth (Lows) 🟢
+### Cluster I — Defense-in-depth (Lows) 🟢 — ✅ DONE (2026-06-23)
+
+**Shipped:** I1 — `ownerId` added to the session `DELETE` `WHERE`. I2 — gallery
+character-chat join owner-scoped on the `characters` side. I3 — already in place
+(`Cache-Control: private` for owner-only images). I4 — turn inspector gated
+behind `ENABLE_TURN_INSPECTOR === "true"` **and** admin role (404 when off; added
+to `.env.example`). I5 — "unknown references" message no longer echoes
+attacker-supplied IDs (count only; full list logged server-side). I6 —
+`MAX_JOB_ATTEMPTS = 3` poison-job cap (`jobs.ts` abandons over-cap rows before the
+handler; `recovery.ts` calls `abandonOverAttemptedJobs` so a poison job is never
+re-kicked). Pure test in `jobs.test.ts`.
 
 Small, independent correctness/hardening fixes:
 
@@ -213,13 +309,13 @@ Small, independent correctness/hardening fixes:
 
 ## Auth migration (separate, larger effort — not a quick-win cluster) — ✅ DONE (2026-06-23)
 
-> **Implemented by [auth.plan.md](finished/auth.plan.md)** (Better Auth + entity
+> **Implemented by [auth.plan.md](auth.plan.md)** (Better Auth + entity
 > visibility), shipped 2026-06-23. Every requirement below is met: signed
 > sessions, 401 on unresolved identity (no default/admin), `switch-user` deleted,
 > `secure`+`sameSite` cookies (Better Auth defaults). Cluster A is subsumed; the
 > `role`-gated routes now run under genuine authentication. The origin/CSRF check
 > (E3) is Better Auth's built-in `baseURL`/`trustedOrigins` enforcement. See
-> [../auth.md](../auth.md). Requirements checklist retained below for the record.
+> [../auth.md](../../auth.md). Requirements checklist retained below for the record.
 
 The clusters above harden the *current* model; they do not replace it.
 `server/auth/index.ts` is, by design, "the entire auth-migration surface." When
@@ -255,16 +351,16 @@ For reviewers: the scan explicitly confirmed these, so don't "fix" non-issues.
   never in responses/diagnostics; memory scoped by session/world/owner+embedder).
 - **pnpm build-script allow-list** correctly minimal (`sharp`/`esbuild`/`unrs-resolver`).
 
-## Open questions
+## Open questions — all resolved (2026-06-23)
 
-- **Headers location** — `next.config.ts` `headers()` vs. a new `middleware.ts`?
-  Middleware also gives a natural home for the future origin/CSRF check (E3) and a
-  global auth gate. Lean middleware if the auth migration is near; else
-  `next.config.ts` is simpler. *(Cluster D — decide before starting.)*
-- **Rate-limit values** — pick per-kind limits/windows (generation vs. chat vs.
-  heavy-write). Reuse `FORGE_RATE_LIMIT` (10/min) as the baseline? *(Cluster C.)*
-- **Pixel-limit threshold** — 40 MP is a starting point; confirm it clears the
-  largest legitimate avatar/scene reference image. *(Cluster B.)*
-- **Default-user role flip (A4)** — does anything in dev rely on the zero-config
-  user being `admin` (besides the explicit `uxtestmain…` account)? Check before
-  flipping to `user`.
+- **Headers location** — RESOLVED: `next.config.ts` `headers()`. The auth
+  migration already landed, so nothing favored middleware; the origin/CSRF check
+  (E3) is Better Auth's job, not a header concern. *(Cluster D.)*
+- **Rate-limit values** — RESOLVED: per-kind constants off the FORGE baseline —
+  generation 20/min, chat 30/min, heavy-write 10/min (forge/inner-note stay
+  10/min). *(Cluster C.)*
+- **Pixel-limit threshold** — RESOLVED: 40 MP. The legitimate path is a canvas
+  JPEG re-fit to 768×1024 (well under 1 MP), so 40 MP clears every real image
+  with vast headroom while killing decompression bombs. *(Cluster B.)*
+- **Default-user role flip (A4)** — RESOLVED by the auth migration (moot: there
+  is no longer an auto-minted default user).

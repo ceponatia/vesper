@@ -39,7 +39,7 @@ discussion; promoted to **active** once
 sharing model depends on the copy cascade). Topic slug `auth`.
 
 This is the supplemental plan called for by
-[security-hardening.plan.md](../security-hardening.plan.md) §"Auth migration". It
+[security-hardening.plan.md](security-hardening.plan.md) §"Auth migration". It
 **implements** that section and **subsumes** Cluster A (the dev-auth boundary
 fixes) — Cluster A's one-line `/api/dev/*` gate (A1) is still worth shipping
 immediately as an interim stopgap, but this plan is the real fix and deletes the

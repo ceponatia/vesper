@@ -7,6 +7,9 @@ import { Client } from "pg";
  * we connect to the maintenance db `postgres` on the same server to create it.
  */
 async function main() {
+  if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required outside development");
+  }
   const url = new URL(
     process.env.DATABASE_URL ??
       "postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev",

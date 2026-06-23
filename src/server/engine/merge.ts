@@ -196,6 +196,30 @@ const CORRECTION_CAP = 2;
 const THRESHOLD_HINT_CAP = 2;
 const DIRECTIVE_CAP = 8;
 
+/**
+ * Per-array caps on simulant (LLM) output before it drives DB writes
+ * (docs/resilience.md §3, "trust nothing"). `maxOutputTokens` is the only
+ * *implicit* bound today, so a token-cap bump would silently lift the ceiling
+ * on how many rows one turn writes inside the merge transaction. These are
+ * applied by `.slice(0, MAX_*)` at each consumption point below — graceful (keep
+ * the first N, drop the tail), mirroring ITEM_NOTE_CAP / INNER_NOTE_MAX_FACTS.
+ * They are NOT schema `.max()`es: simulantResultSchema degrades whole-object
+ * (generateChecked returns the schema default on any parse failure), so a
+ * rejecting `.max()` would drop ALL events to the degraded fallback. Values are
+ * generous — a legitimate turn never approaches them; the cap only fires on a
+ * runaway/adversarial flood.
+ */
+const MAX_MOVEMENTS = 50;
+const MAX_ITEM_EVENTS = 50;
+const MAX_METER_ADJUSTMENTS = 50;
+const MAX_CONDITION_EVENTS = 50;
+const MAX_ATTRIBUTE_CHANGES = 50;
+const MAX_ACTIVITY_UPDATES = 50;
+const MAX_AFFINITY_ADJUSTMENTS = 50;
+const MAX_COMMS_EVENTS = 50;
+/** Bound on proposed threads embedded for semantic dedup (one batch, two vecs each). */
+const MAX_THREAD_PROPOSALS = 50;
+
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested directly)
 // ---------------------------------------------------------------------------
@@ -1235,9 +1259,17 @@ export async function dedupeThreadProposals(
   const candidates = threads.filter((t) => t.status === "open" || t.status === "cooling");
   if (candidates.length === 0) return signals;
 
+  // Bound the embedding batch (docs/resilience.md §3): a flood of model-proposed
+  // threads would otherwise trigger an unbounded embed() call. Only the first
+  // MAX_THREAD_PROPOSALS are considered for *semantic* dedup; any tail beyond the
+  // cap passes through to applyThreadSignals unchanged (still title-deduped there,
+  // never embedded here). The cap shrinks the embed batch, it does not drop work.
+  const consideredProposals = signals.propose.slice(0, MAX_THREAD_PROPOSALS);
+  const passthroughProposals = signals.propose.slice(MAX_THREAD_PROPOSALS);
+
   let vectors: number[][];
   try {
-    vectors = await embed([...candidates.map(threadDedupText), ...signals.propose.map(threadDedupText)]);
+    vectors = await embed([...candidates.map(threadDedupText), ...consideredProposals.map(threadDedupText)]);
   } catch (err) {
     sink?.push(
       diag("warn", "merge.thread.dedup_embed_failed", `thread dedup embedding failed: ${err instanceof Error ? err.message : String(err)}`),
@@ -1249,7 +1281,7 @@ export async function dedupeThreadProposals(
 
   const extraDevelop: ThreadSignals["develop"] = [];
   const keptProposals: ThreadSignals["propose"] = [];
-  signals.propose.forEach((proposal, i) => {
+  consideredProposals.forEach((proposal, i) => {
     const pv = propVecs[i];
     let bestScore = -1;
     let bestIdx = -1;
@@ -1277,8 +1309,17 @@ export async function dedupeThreadProposals(
     }
   });
 
+  // No fold ⇒ the original signals are unchanged (the passthrough tail was never
+  // touched and is already part of `signals.propose`).
   if (extraDevelop.length === 0) return signals;
-  return { ...signals, propose: keptProposals, develop: [...signals.develop, ...extraDevelop] };
+  // Fold ⇒ rebuild propose from the kept considered-proposals plus the
+  // never-considered passthrough tail (preserves both the original order group
+  // and every proposal that the cap excluded from dedup).
+  return {
+    ...signals,
+    propose: [...keptProposals, ...passthroughProposals],
+    develop: [...signals.develop, ...extraDevelop],
+  };
 }
 
 /** Open threads untouched for THREAD_COOLING_TURNS move to cooling. */
@@ -1517,7 +1558,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   // player walks through (or is blocked by) the door at the moment they act.
   const turnStartMinute = minuteOfDay(resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart));
   let playerTravelMinutes = 0;
-  for (const movement of simulant.movements) {
+  for (const movement of simulant.movements.slice(0, MAX_MOVEMENTS)) {
     const participant = findParticipant(movement.participantName, parts);
     if (!participant) {
       sink.push(
@@ -1584,7 +1625,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   }
 
   // -- Step 3: item events ----------------------------------------------------
-  for (const event of simulant.itemEvents) {
+  for (const event of simulant.itemEvents.slice(0, MAX_ITEM_EVENTS)) {
     const actor = event.byName ? findParticipant(event.byName, parts) : player;
     if (event.byName && !actor) {
       sink.push(diag("warn", "merge.participant.unresolved", `item event actor "${event.byName}" not found`));
@@ -1663,7 +1704,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   const hintsBefore = new Map(parts.map((p) => [p.id, crossedThresholdHints(p.state.meters, defs)]));
 
   const adjustmentsByParticipant = new Map<string, MeterAdjustment[]>();
-  for (const adj of simulant.meterAdjustments) {
+  for (const adj of simulant.meterAdjustments.slice(0, MAX_METER_ADJUSTMENTS)) {
     const participant = findParticipant(adj.participantName, parts);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `meter adjustment for "${adj.participantName}" dropped`));
@@ -1714,7 +1755,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
 
   // Conditions: agent ops first, then duration expiry against the new clock.
   const conditionsByParticipant = new Map<string, ConditionEvent[]>();
-  for (const event of simulant.conditionEvents) {
+  for (const event of simulant.conditionEvents.slice(0, MAX_CONDITION_EVENTS)) {
     const participant = findParticipant(event.participantName, parts);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `condition event for "${event.participantName}" dropped`));
@@ -1739,7 +1780,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   // narrative overlay may not rewrite them (overlaySourceMayChange). A rejected change
   // drops with a diagnostic + a droppedEvents correction so the narrator is re-grounded
   // next turn instead of the drift silently sticking and re-applying every turn.
-  for (const change of simulant.attributeChanges) {
+  for (const change of simulant.attributeChanges.slice(0, MAX_ATTRIBUTE_CHANGES)) {
     const participant = findParticipant(change.participantName, parts);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `attribute change for "${change.participantName}" dropped`));
@@ -1789,7 +1830,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   }
 
   // Activity updates.
-  for (const update of simulant.activityUpdates) {
+  for (const update of simulant.activityUpdates.slice(0, MAX_ACTIVITY_UPDATES)) {
     const participant = findParticipant(update.participantName, parts);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `activity update for "${update.participantName}" dropped`));
@@ -2054,7 +2095,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   // (consistent with affinity/schedule gating).
   const comms = reconcile
     ? { links: bundle.runtime.commsLinks, changes: [] as CommsChange[] }
-    : planCommsEvents(simulant.commsEvents, bundle.runtime.commsLinks, clockMinutes, parts, sink);
+    : planCommsEvents(simulant.commsEvents.slice(0, MAX_COMMS_EVENTS), bundle.runtime.commsLinks, clockMinutes, parts, sink);
 
   // Affinity decay (defaults doc §Affinity stages): time-driven, so it only
   // runs when the clock advances — reconcile leaves edges and marker alone.
@@ -2116,7 +2157,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     minutesCause,
     clockMinutes,
     affinityUpdates: reactionResult
-      ? combineAffinityUpdates(reactionResult, planAffinityUpdates(simulant.affinityAdjustments, parts, sink))
+      ? combineAffinityUpdates(reactionResult, planAffinityUpdates(simulant.affinityAdjustments.slice(0, MAX_AFFINITY_ADJUSTMENTS), parts, sink))
       : [],
     affinityDecay: affinityDecay?.edges ?? [],
     witnessedBy,

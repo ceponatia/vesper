@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db, images, locations } from "@/server/db";
 import { generateEntityImage } from "@/server/images";
-import { jsonError, jsonOk, startJob, withUser } from "@/server/api";
+import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, startJob, withUser } from "@/server/api";
 
 type Params = { id: string };
 
@@ -35,6 +35,9 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
 export const POST = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   if (!(await ownsLocation(user.id, id))) return jsonError("not_found", "location not found", 404);
+  if (!rateLimit(`location_image:${user.id}`, GENERATION_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many image generations; try again in a minute", 429);
+  }
   const jobId = await startJob({
     type: "entity_image",
     payload: { entityKind: "location", entityId: id },

@@ -1,5 +1,6 @@
 import { interactionConcepts } from "@/contracts";
 import { AGENT_INPUT_CAP } from "./constants";
+import { fenceUntrusted, neutralizePlayerInput, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
  * Pre-narrator intake prompt (docs/prompts.md §Intake agent, docs/developer-notes/
@@ -36,6 +37,7 @@ Rules:
 4. enterLocation and movement.destination name the SAME place when the player moves themselves.
 5. A socialAct only fires when the player clearly performs that move toward a present character — a bare question or remark is not a social concept.
 6. socialActs vs narratedNpcBehaviors: a move the PLAYER makes toward an NPC is a socialAct; words/feelings/actions the player puts on the NPC are narratedNpcBehaviors. The same input can carry both (the player hugs Maya AND narrates her hugging back).
+7. ${UNTRUSTED_DATA_NOTICE}
 
 Example A — "I look Maya over and ask how her day went" (present: Maya):
 {"actionType":"observe","lookTarget":"Maya","addressedNpcs":["Maya"],"notes":"looks at and addresses Maya"}
@@ -76,6 +78,8 @@ export function buildIntakePrompt(input: IntakePromptInput): string {
     `Items in scope: ${input.itemNames.join(", ") || "none"}`,
     `Current location: ${input.currentLocationName ?? "unknown"}`,
     `Locations: ${input.locationNames.join(", ") || "none"}`,
-    `Player input:\n${cap(input.playerInput, AGENT_INPUT_CAP)}`,
+    // Player input is untrusted: neutralize in-band heading / OOC spoof markers,
+    // then fence it so it cannot impersonate the labeled slice fields above.
+    `Player input:\n${fenceUntrusted("player input", neutralizePlayerInput(cap(input.playerInput, AGENT_INPUT_CAP)))}`,
   ].join("\n\n");
 }

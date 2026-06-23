@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { db, sessions } from "@/server/db";
-import { jsonError, jsonOk, withUser } from "@/server/api";
+import { db, sessions, worlds } from "@/server/db";
+import { HEAVY_WRITE_RATE_LIMIT, jsonError, jsonOk, rateLimit, withUser } from "@/server/api";
 import { createSessionFromWorld } from "@/server/engine";
 
 type Params = { id: string };
@@ -30,6 +30,18 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     const parsed = spawnBodySchema.safeParse(candidate);
     if (!parsed.success) return jsonError("invalid_body", "expected { title?, embodied?, playerCharacterId? }", 400);
     body = parsed.data;
+  }
+
+  // Ownership before the limiter (so a legit owner's 404 doesn't burn budget);
+  // a non-owner 404s without confirming the row (auth.md §Authorization).
+  const [owned] = await db()
+    .select({ id: worlds.id })
+    .from(worlds)
+    .where(and(eq(worlds.id, id), eq(worlds.ownerId, user.id)))
+    .limit(1);
+  if (!owned) return jsonError("not_found", "world not found", 404);
+  if (!rateLimit(`world_sessions:${user.id}`, HEAVY_WRITE_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many session spawns; try again in a minute", 429);
   }
 
   const sink = new DiagnosticCollector();

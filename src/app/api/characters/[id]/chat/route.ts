@@ -4,7 +4,7 @@ import { z } from "zod";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
-import { errorText, jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { CHAT_RATE_LIMIT, errorText, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 import { characterChatMessages, characterChatSummaries, characters, db, images } from "@/server/db";
 import {
   buildCharacterChatSystemPrompt,
@@ -81,6 +81,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
 
   const character = await loadOwnedCharacter(id, user.id);
   if (!character) return jsonError("not_found", "character not found", 404);
+  if (!rateLimit(`chat:${user.id}`, CHAT_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many chat messages; try again in a minute", 429);
+  }
 
   // Mint the user line's id up front so the assistant persist can be guarded
   // against it (persistAssistantReply): if a concurrent clear or single-message

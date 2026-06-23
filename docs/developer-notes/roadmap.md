@@ -13,22 +13,12 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-build right now — the auth + world-instances batch just shipped (see
-**Shipped** below), which also closed security cluster A + the auth migration.
-Next up is the rest of **Security hardening** (cluster B is a reachable-now OOM).
+Nothing mid-build right now — **Security hardening** just finished (clusters B–I;
+see **Shipped** below), closing the 2026-06-23 scan in full. Pick the next item
+off **Next** (top: character-chat light state, then mood).
 
 ## Next (queued)
 
-- **Security hardening** — [security-hardening.plan.md](security-hardening.plan.md).
-  Remediation of the 2026-06-23 full-surface security scan. **Cluster A (gate
-  `/api/dev/*`) and the auth migration already shipped** with the auth batch; what
-  remains is the rest of the file-disjoint clusters, which run fully concurrently: B
-  sharp decode limits (an **already-triggerable OOM** — the reachable-now item), C
-  rate-limit the unthrottled paid-model/heavy-write routes, D security headers +
-  narrow dev-origins, E request-body caps, F prompt-injection delimiting, G
-  LLM-output array bounds, H Postgres bind/creds, I defense-in-depth lows. IDOR sweep
-  / SQLi / SSRF / XSS / committed-secrets all came back **clean**; aside from B the
-  remaining findings are latent-until-deploy.
 - **Character chat — light state & embodied player** (draft brainstorm) —
   [character-chat-state.plan.md](character-chat-state.plan.md). Grow the sessionless
   1-on-1 chat from a stateless transcript into a light, state-aware quick chat that
@@ -97,6 +87,12 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Security hardening** — [security-hardening.plan.md](finished/security-hardening.plan.md),
+  2026-06-23. Closed the full-surface scan: image-decode pixel/format/length limits
+  (OOM fix), rate limits on every paid-model/heavy-write route, security headers +
+  narrowed dev-origins, request-body caps, prompt-injection fencing, LLM-output array
+  bounds, Postgres localhost bind + cred guard, and seven defense-in-depth lows.
+  Deferred: origin/CSRF (covered by Better Auth); `script-src` nonce tightening.
 - **Auth & entity visibility** — [auth.plan.md](finished/auth.plan.md) · ref
   [auth.md](../auth.md), 2026-06-23. Better Auth accounts (401 on no session, no
   auto-mint) + a private/public visibility seam with copy-on-use cloning. Also closed

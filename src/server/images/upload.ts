@@ -17,8 +17,26 @@ export interface UploadAvatarInput {
 
 export type UploadAvatarResult = { ok: true; avatarImageId: string } | { ok: false; error: string };
 
-/** Permissive cap: the client sends a cropped ~768×1024 image, never a raw photo. */
-const MAX_DECODED_BYTES = 12 * 1024 * 1024;
+/**
+ * Decoded-size cap: legit cropped avatar JPEGs are <1 MB; 4 MB is generous
+ * headroom while still rejecting decompression bombs before they materialize.
+ * (The route-level data-URL string cap is lower still, set independently.)
+ */
+const MAX_DECODED_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Raster formats sharp can safely rasterize without invoking a vector renderer.
+ * Anything else (notably `image/svg+xml`, which reaches librsvg) is rejected at
+ * decode so it never touches sharp.
+ */
+const ALLOWED_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/avif"]);
+
+/**
+ * Decode guards passed to every sharp call on untrusted input: cap the pixel
+ * count (a ~1 MB bomb expands to 100+ MP; 40 MP ≈ 6300×6300 dwarfs any real
+ * avatar), fail on any decode error, and never expand animation frames.
+ */
+const SHARP_DECODE_LIMITS = { limitInputPixels: 40_000_000, failOn: "error", animated: false } as const;
 
 /**
  * User-supplied avatar (docs/images.md): decode the cropped data URL, re-fit it
@@ -57,7 +75,7 @@ export async function uploadAvatar(input: UploadAvatarInput): Promise<UploadAvat
   const started = Date.now();
   let buffer: Buffer;
   try {
-    buffer = await sharp(decoded.buffer)
+    buffer = await sharp(decoded.buffer, SHARP_DECODE_LIMITS)
       .rotate() // honor EXIF orientation before cropping
       .resize(AVATAR_WIDTH, AVATAR_HEIGHT, { fit: "cover", position: "centre" })
       .toBuffer();
@@ -88,17 +106,37 @@ interface DecodedImage {
   mime: string;
 }
 
-/** Parse a `data:<mime>;base64,<payload>` URL with an image mime; null otherwise. */
-function decodeDataUrl(dataUrl: string): DecodedImage | null {
+/**
+ * Parse a `data:<mime>;base64,<payload>` URL; null otherwise. The mime must be
+ * on the raster allow-list (no SVG → no librsvg), and the decoded size is
+ * estimated from the base64 length and rejected over the cap *before* the
+ * buffer is materialized, so a bomb is never allocated. The post-decode
+ * `byteLength` check on the caller is kept as defense in depth.
+ */
+export function decodeDataUrl(dataUrl: string): DecodedImage | null {
   const match = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl.trim());
-  const mime = match?.[1];
+  const rawMime = match?.[1];
   const payload = match?.[2];
-  if (!mime || !payload) return null;
+  if (!rawMime || !payload) return null;
+  const mime = rawMime.toLowerCase();
+  if (!ALLOWED_MIMES.has(mime)) return null;
+  if (estimatedBase64Bytes(payload) > MAX_DECODED_BYTES) return null;
   try {
     const buffer = Buffer.from(payload, "base64");
     if (buffer.byteLength === 0) return null;
-    return { buffer, mime: mime.toLowerCase() };
+    return { buffer, mime };
   } catch {
     return null;
   }
+}
+
+/**
+ * Decoded byte count of a base64 payload without allocating it: 3 bytes per
+ * 4 chars, minus one per `=` pad. Whitespace is stripped first (the regex
+ * permits it inside the payload).
+ */
+function estimatedBase64Bytes(payload: string): number {
+  const compact = payload.replace(/\s+/g, "");
+  const padding = compact.endsWith("==") ? 2 : compact.endsWith("=") ? 1 : 0;
+  return Math.floor((compact.length * 3) / 4) - padding;
 }

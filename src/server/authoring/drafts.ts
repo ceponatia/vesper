@@ -111,15 +111,25 @@ export const worldDraftItemPlacementSchema = z.object({
 
 export type WorldDraftItemPlacement = z.infer<typeof worldDraftItemPlacementSchema>;
 
+/**
+ * Per-family caps on a world draft's nested arrays — generous enough never to
+ * truncate a legitimate authored/imported draft, but bounded so a hostile body
+ * can't request unbounded materialization (the trust boundary in §7 resilience).
+ */
+export const MAX_DRAFT_LOCATIONS = 200;
+export const MAX_DRAFT_LORE_CHUNKS = 500;
+export const MAX_DRAFT_CAST_SUGGESTIONS = 200;
+export const MAX_DRAFT_ITEM_PLACEMENTS = 500;
+
 export const worldDraftSchema = z.object({
   name: z.string().default(""),
   description: z.string().default(""),
   style: worldStyleSchema.default(() => emptyWorldStyle()),
   lore: worldLoreSchema.default(() => emptyWorldLore()),
-  locations: z.array(worldDraftLocationSchema).default([]),
-  loreChunks: z.array(worldDraftLoreChunkSchema).default([]),
-  castSuggestions: z.array(worldDraftCastSuggestionSchema).default([]),
-  itemPlacements: z.array(worldDraftItemPlacementSchema).default([]),
+  locations: z.array(worldDraftLocationSchema).max(MAX_DRAFT_LOCATIONS).default([]),
+  loreChunks: z.array(worldDraftLoreChunkSchema).max(MAX_DRAFT_LORE_CHUNKS).default([]),
+  castSuggestions: z.array(worldDraftCastSuggestionSchema).max(MAX_DRAFT_CAST_SUGGESTIONS).default([]),
+  itemPlacements: z.array(worldDraftItemPlacementSchema).max(MAX_DRAFT_ITEM_PLACEMENTS).default([]),
   /** Draft location name where the player starts (decision 47); unset ⇒ spawn anchors to the companion. */
   playerStartLocationName: z.string().optional(),
   /** Default player character chosen up front (UX-audit §1a); unset/null ⇒ observer. */

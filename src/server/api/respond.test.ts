@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import {
+  DEFAULT_MAX_BODY_BYTES,
   isForeignKeyViolation,
   isPgError,
   isUniqueViolation,
@@ -28,6 +29,15 @@ function post(body: string): NextRequest {
     method: "POST",
     body,
     headers: { "content-type": "application/json" },
+  });
+}
+
+/** A request whose declared Content-Length is `bytes`, regardless of actual body. */
+function postWithLength(body: string, bytes: number): NextRequest {
+  return new NextRequest("http://test.local/api/x", {
+    method: "POST",
+    body,
+    headers: { "content-type": "application/json", "content-length": String(bytes) },
   });
 }
 
@@ -75,6 +85,31 @@ describe("readBody", () => {
       expect(body.error.code).toBe("invalid_body");
       expect(body.error.message).toContain("name");
     }
+  });
+
+  it("413s with payload_too_large when Content-Length exceeds the default cap", async () => {
+    const req = postWithLength(JSON.stringify({ name: "Maya" }), DEFAULT_MAX_BODY_BYTES + 1);
+    const result = await readBody(req, schema);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(413);
+      const body = await result.response.json();
+      expect(body.error.code).toBe("payload_too_large");
+    }
+  });
+
+  it("413s when Content-Length exceeds a per-call maxBytes override", async () => {
+    const req = postWithLength(JSON.stringify({ name: "Maya" }), 200);
+    const result = await readBody(req, schema, { maxBytes: 100 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(413);
+  });
+
+  it("parses normally when Content-Length is within the cap", async () => {
+    const req = postWithLength(JSON.stringify({ name: "Maya" }), 50);
+    const result = await readBody(req, schema);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.name).toBe("Maya");
   });
 });
 

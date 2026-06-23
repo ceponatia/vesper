@@ -9,6 +9,16 @@ import { salienceSchema } from "../perception/salience";
  * Field-level rules: every field .default()ed so the parsed-empty object IS
  * the degraded fallback; entities referenced by display name, never ids;
  * leaf enums .catch()ed so one bad field doesn't reject the object.
+ *
+ * Array bounding (docs/resilience.md §3, "trust nothing"): these arrays are
+ * parsed from LLM output and `maxOutputTokens` is their only implicit ceiling,
+ * so a token-cap bump would silently lift it — and every element drives a DB
+ * write inside the merge transaction. They are NOT `.max()`-capped here: this
+ * schema degrades whole-object (`generateChecked` returns the schema default on
+ * a parse failure, dropping ALL events), so a rejecting `.max()` would be a
+ * regression. Instead each array is bounded by `.slice(0, MAX_*)` at its merge
+ * consumption point (src/server/engine/merge.ts — graceful: keep the first N,
+ * drop the tail), mirroring INNER_NOTE_MAX_FACTS / ITEM_NOTE_CAP.
  */
 
 export const itemEventActionSchema = z.enum([
@@ -185,6 +195,13 @@ export const directorResultSchema = z.object({
    * - develop: a major beat contributed — append a development entry (and optionally revise the summary).
    * - propose: open a genuinely new thread (kind defaults to investigation; set closeConditions for those).
    * - resolve: ids of investigations that concluded (ongoing threads are never resolved).
+   *
+   * Thread-id trust basis (defense-in-depth): the `id` on touch/develop and the
+   * raw ids in `resolve` come straight from the model and are NOT trusted as
+   * authoritative references. The merge only ever matches them against the
+   * session-local thread set already loaded for this turn (an in-memory lookup,
+   * no DB read keyed on the model's string), and a non-matching id is dropped —
+   * so a fabricated or stale id can at worst no-op, never reach a foreign row.
    */
   threadSignals: z
     .object({

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { emptySceneGenState, sceneGenStateSchema, sceneReferenceModeSchema } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 import { db, jobs, sessions, turns } from "@/server/db";
 import { enqueueJob } from "@/server/engine";
 import { findOwnedSession } from "../../_shared/access";
@@ -48,6 +48,12 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
     const updated = { ...scene, referenceMode: body.value.referenceMode };
     await db().update(sessions).set({ scene: updated }).where(eq(sessions.id, id));
     return jsonOk({ ok: true, scene: updated });
+  }
+
+  // generate / regenerate: throttle the paid render path (the cheap
+  // setInterval/setReferenceMode config writes above are not rate-limited).
+  if (!rateLimit(`scene_gen:${user.id}`, GENERATION_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many scene generations; try again in a minute", 429);
   }
 
   // generate / regenerate: one in-flight scene job per session is enough.

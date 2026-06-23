@@ -5,6 +5,8 @@ import {
   characterDraftSchema,
   emptyCharacterDraft,
   emptyWorldDraft,
+  MAX_DRAFT_LOCATIONS,
+  MAX_DRAFT_LORE_CHUNKS,
   worldDraftCastSuggestionSchema,
   worldDraftItemPlacementSchema,
   worldDraftLocationSchema,
@@ -80,5 +82,32 @@ describe("drafts at the parse boundary", () => {
     const draft = worldDraftSchema.parse({ name: "Greywater Harbor" });
     expect(draft.name).toBe("Greywater Harbor");
     expect(draft.locations).toEqual([]);
+  });
+});
+
+describe("worldDraftSchema bounds its nested arrays", () => {
+  it("accepts an at-cap locations array", () => {
+    const locations = Array.from({ length: MAX_DRAFT_LOCATIONS }, (_, i) => ({ name: `loc-${i}` }));
+    const result = worldDraftSchema.safeParse({ locations });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.locations).toHaveLength(MAX_DRAFT_LOCATIONS);
+  });
+
+  it("rejects an over-cap locations array", () => {
+    const locations = Array.from({ length: MAX_DRAFT_LOCATIONS + 1 }, (_, i) => ({ name: `loc-${i}` }));
+    const result = worldDraftSchema.safeParse({ locations });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === "locations")).toBe(true);
+    }
+  });
+
+  it("rejects an over-cap loreChunks array", () => {
+    const loreChunks = Array.from({ length: MAX_DRAFT_LORE_CHUNKS + 1 }, (_, i) => ({ title: `lore-${i}` }));
+    const result = worldDraftSchema.safeParse({ loreChunks });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === "loreChunks")).toBe(true);
+    }
   });
 });
