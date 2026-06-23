@@ -19,6 +19,11 @@ off **Next** (top: character-chat light state, then mood).
 
 ## Next (queued)
 
+- **Default player character** (plan needed) - Now that auth is implemented, create a
+  user profile accessible by clicking their name on the nav bar. In this menu they will
+  be able to create a default player character that contains the basic fields needed
+  for character chat. Session chat will still _prefer_ having an embodied player character
+  from the library. This will be passed into the character chat in the next roadmap item.
 - **Character chat — light state & embodied player** (draft brainstorm) —
   [character-chat-state.plan.md](character-chat-state.plan.md). Grow the sessionless
   1-on-1 chat from a stateless transcript into a light, state-aware quick chat that
