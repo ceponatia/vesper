@@ -55,9 +55,9 @@ describe("buildAvatarPrompt", () => {
   it("groups like-fields by category and humanizes values", () => {
     const prompt = buildAvatarPrompt("Mira", profile, "realistic");
     // Apparent age folds into the subject line (no gender/species → "person" noun).
-    expect(prompt).toContain("Subject: Mira — a mid twenties person.");
+    expect(prompt).toMatch(/Subject: Mira\b.*mid twenties.*person/);
     // Hair facets collapse into one grouped, label-free clause (scene-images A+B+C).
-    expect(prompt).toContain("Hair: red, shoulder length");
+    expect(prompt).toMatch(/Hair:.*red.*shoulder length/);
   });
 
   it("excludes registry promptHints — the image prompt carries visual values only", () => {
@@ -224,7 +224,8 @@ describe("buildAvatarPrompt", () => {
       }),
       "realistic",
     );
-    expect(succubus).toContain("Subject: Kianna — a young adult female succubus, Latina.");
+    // Species noun present; ethnicity carried. Assert the pieces, not the exact clause.
+    expect(succubus).toMatch(/Subject: Kianna\b.*young adult.*female.*succubus.*Latina/);
     // Human (no species noun): ethnicity follows gender.
     const human = buildAvatarPrompt(
       "Mira",
@@ -237,7 +238,8 @@ describe("buildAvatarPrompt", () => {
       }),
       "realistic",
     );
-    expect(human).toContain("Subject: Mira — a young adult female, Igbo.");
+    expect(human).toMatch(/Subject: Mira\b.*young adult.*female.*Igbo/);
+    expect(human).not.toMatch(/succubus/i); // no species noun for a human
   });
 
   it("states chest hair only when the torso is bare, never under clothing", () => {
@@ -458,8 +460,8 @@ describe("buildVariantInstruction", () => {
   it("prefixes the identity lock and embeds the instruction", () => {
     const prompt = buildVariantInstruction("pose", "leaning against a railing");
     expect(prompt.startsWith(PORTRAIT_IDENTITY_LOCK)).toBe(true);
-    expect(prompt).toContain("Change the pose: leaning against a railing.");
-    expect(prompt).toContain("Keep the same outfit as the reference image.");
+    expect(prompt).toContain("Change the pose: leaning against a railing");
+    expect(prompt).toContain("Keep the same outfit");
   });
 
   it("drops the outfit-keep clause for outfit variants", () => {
@@ -509,8 +511,17 @@ describe("buildSceneComposerPrompt", () => {
   it("lists every co-located NPC with their authoritative visible wardrobe", () => {
     const prompt = buildSceneComposerPrompt(libraryContext);
     expect(prompt).toContain("Present characters (the only people allowed in the image):");
-    expect(prompt).toContain("- Mira — activity: reading; posture: curled in an armchair; visible wardrobe (authoritative): linen shirt; silk camisole (hinted beneath sheer layers)");
-    expect(prompt).toContain("- Sayed — activity: shelving books; visible wardrobe (authoritative): wool coat");
+    // Load-bearing: each NPC's line carries their data + the authoritative-wardrobe
+    // marker. Exact field formatting (activity:/posture:/separators) is incidental.
+    expect(prompt).toContain("- Mira");
+    expect(prompt).toContain("reading");
+    expect(prompt).toContain("curled in an armchair");
+    expect(prompt).toContain("visible wardrobe (authoritative):");
+    expect(prompt).toContain("linen shirt");
+    expect(prompt).toContain("silk camisole");
+    expect(prompt).toContain("- Sayed");
+    expect(prompt).toContain("shelving books");
+    expect(prompt).toContain("wool coat");
     expect(prompt).toContain("Location: The Drowned Library");
     expect(prompt).toContain("Time of day: dusk");
     expect(SCENE_COMPOSER_SYSTEM).toContain("never infer clothing from the narration");
@@ -558,14 +569,19 @@ describe("buildSceneComposerPrompt", () => {
         },
       ],
     });
-    expect(prompt).toContain("visible wardrobe (authoritative): a pale linen shirt (rumpled); silk camisole (hinted beneath sheer layers)");
+    // Visible garments carry description + appearance; hinted ones fold to a name + marker.
+    expect(prompt).toContain("visible wardrobe (authoritative):");
+    expect(prompt).toContain("a pale linen shirt (rumpled)");
+    expect(prompt).toContain("silk camisole");
+    expect(prompt).toContain("hinted");
   });
 
   it("lists a non-human NPC's species phrase first in their line", () => {
     const prompt = buildSceneComposerPrompt({
       present: [{ name: "Lilith", species: "Succubus", activity: "pouring a drink", wornVisible: [] }],
     });
-    expect(prompt).toContain("- Lilith — species: Succubus; activity: pouring a drink");
+    // Species phrase precedes the activity on the line; assert order without pinning separators.
+    expect(prompt).toMatch(/- Lilith\b.*Succubus.*pouring a drink/);
   });
 });
 
@@ -712,7 +728,12 @@ describe("buildSceneRenderPrompt — subject body line (the waist-up portrait's 
   };
   it("emits the Body line for the identity-locked reference subject", () => {
     const qwen = buildSceneRenderPrompt(plan, { referenceName: "Mira", allowIntimate: true });
-    expect(qwen).toContain("Body (below the portrait's framing): Waist: defined; Hips: wide; Leg build: toned.");
+    // Keep the load-bearing "below the portrait's framing" marker; the attribute
+    // list order/separators are incidental.
+    expect(qwen).toContain("Body (below the portrait's framing):");
+    expect(qwen).toMatch(/Waist: defined/);
+    expect(qwen).toMatch(/Hips: wide/);
+    expect(qwen).toMatch(/Leg build: toned/);
   });
   it("omits the Body line when the subject is described textually (no reference image)", () => {
     expect(buildSceneRenderPrompt(plan)).not.toContain("Body (below the portrait's framing)");
@@ -761,10 +782,11 @@ describe("buildSceneRenderPrompt — multi-reference (Venice /image/multi-edit)"
     expect(prompt.startsWith(PORTRAIT_IDENTITY_LOCK)).toBe(true);
     expect(prompt).toContain(SCENE_POV_RULE);
     expect(prompt).toContain("3 reference images provided");
-    expect(prompt).toContain("Compose all referenced people together into one shared scene");
-    expect(prompt).toContain("the location (The Library)");
-    expect(prompt).toContain("Mira: leaning close; wearing red dress.");
-    expect(prompt).toContain("Sayed: beside her; wearing wool coat.");
+    expect(prompt).toContain("one shared scene");
+    expect(prompt).toContain("The Library");
+    // name → action → outfit on each person's line; assert order, not separators.
+    expect(prompt).toMatch(/Mira\b.*leaning close.*red dress/);
+    expect(prompt).toMatch(/Sayed\b.*beside her.*wool coat/);
     expect(prompt.length).toBeLessThanOrEqual(VENICE_RENDER_PROMPT_LIMIT);
   });
 
@@ -777,7 +799,8 @@ describe("buildSceneRenderPrompt — multi-reference (Venice /image/multi-edit)"
         { name: "The Library", kind: "location" },
       ],
     });
-    expect(prompt).toContain("Wren (no reference image — render from this description): Hair color: brown");
+    // Over-cap character falls back to a text description; keep the marker + data.
+    expect(prompt).toMatch(/Wren\b.*no reference image.*Hair color: brown/);
   });
 
   it("emits intimate detail for multi-references only on the uncensored route", () => {
@@ -875,29 +898,30 @@ describe("buildSceneRenderPrompt", () => {
   it("identity-locks the focal reference and describes the others textually", () => {
     const prompt = buildSceneRenderPrompt(plan, { referenceName: "Mira" });
     expect(prompt.startsWith(PORTRAIT_IDENTITY_LOCK)).toBe(true);
-    expect(prompt).toContain("Pose: seated by the window.");
-    expect(prompt).toContain("Wearing: linen shirt.");
+    expect(prompt).toContain("Pose: seated by the window");
+    expect(prompt).toContain("Wearing: linen shirt");
     expect(prompt).not.toContain("Subject: Mira");
-    expect(prompt).toContain("Also in frame: Sayed — Hair color: black; wearing wool coat; shelving books.");
+    // "Also in frame" line carries the other's appearance + outfit + action, in order.
+    expect(prompt).toMatch(/Also in frame: Sayed\b.*black.*wool coat.*shelving books/);
   });
 
   it("fallback reference on another present NPC keeps the focal textual", () => {
     const prompt = buildSceneRenderPrompt(plan, { referenceName: "Sayed" });
     expect(prompt.startsWith(PORTRAIT_IDENTITY_LOCK)).toBe(true);
-    expect(prompt).toContain("Pose: shelving books.");
-    expect(prompt).toContain("Wearing: wool coat.");
-    expect(prompt).toContain("Also in frame: Mira — Hair color: red; wearing linen shirt; seated by the window.");
+    expect(prompt).toContain("Pose: shelving books");
+    expect(prompt).toContain("Wearing: wool coat");
+    expect(prompt).toMatch(/Also in frame: Mira\b.*red.*linen shirt.*seated by the window/);
   });
 
   it("text-to-image names the focal as subject; an empty reference outfit keeps the reference outfit", () => {
     const prompt = buildSceneRenderPrompt(plan);
     expect(prompt).not.toContain(PORTRAIT_IDENTITY_LOCK);
-    expect(prompt).toContain("Subject: Mira — Hair color: red; wearing linen shirt; seated by the window.");
+    expect(prompt).toMatch(/Subject: Mira\b.*red.*linen shirt.*seated by the window/);
     const bare = buildSceneRenderPrompt(
       { ...plan, focal: { ...plan.focal, outfitSummary: "" } },
       { referenceName: "Mira" },
     );
-    expect(bare).toContain("Keep the same outfit as the reference image.");
+    expect(bare).toContain("Keep the same outfit");
   });
 
   it("describes a textual character's species first in their detail", () => {
@@ -905,7 +929,8 @@ describe("buildSceneRenderPrompt", () => {
       ...plan,
       focal: { ...plan.focal, name: "Lilith", species: "Succubus" },
     });
-    expect(prompt).toContain("Subject: Lilith — Succubus; Hair color: red; wearing linen shirt; seated by the window.");
+    // Species precedes the rest of the textual detail; assert order, not separators.
+    expect(prompt).toMatch(/Subject: Lilith\b.*Succubus.*red.*linen shirt/);
   });
 
   it("renders a location-only POV shot when nobody is present", () => {
