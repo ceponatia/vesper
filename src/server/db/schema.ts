@@ -47,6 +47,13 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").notNull().default(false),
   /** Better Auth profile image URL (OAuth avatar); null for password sign-ups. */
   image: text("image"),
+  /**
+   * The default player character (player-character.plan.md): a light persona
+   * (StoredPlayerPersona — name + short bio) the player is represented by in
+   * character chat. `{}` ⇒ none set; read back via `resolvePlayerPersona`, which
+   * `parseOr`s it. JSONB so growing the persona never needs a migration.
+   */
+  playerPersona: jsonb("player_persona").notNull().default({}),
   /** Admin plugin ban fields — null/false ⇒ not banned. */
   banned: boolean("banned"),
   banReason: text("ban_reason"),

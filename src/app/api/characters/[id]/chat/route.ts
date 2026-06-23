@@ -15,6 +15,7 @@ import {
   streamCharacterChat,
 } from "@/server/engine";
 import { log } from "@/server/log";
+import { resolvePlayerPersona } from "@/server/players";
 
 type Params = { id: string };
 
@@ -114,10 +115,14 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     undefined,
     "characters.profile",
   );
+  // The user's default player character (player-character.plan.md), so the
+  // character addresses someone by name instead of a faceless "the user".
+  const player = await resolvePlayerPersona(user.id);
   const system = buildCharacterChatSystemPrompt({
     name: character.name,
     profile,
     priorSummary: summaryState?.summary,
+    player: { name: player.name, persona: player.persona },
   });
   const gen = streamCharacterChat({ system, history, name: character.name, model: body.value.model });
 

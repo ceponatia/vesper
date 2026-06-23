@@ -792,6 +792,35 @@ export const worldsApi = {
     apiPost(createdRefSchema, `/api/worlds/${worldId}/sessions`, body),
 };
 
+// ---------------------------------------------------------------------------
+// Account / default player character (player-character.plan.md)
+// ---------------------------------------------------------------------------
+
+export const playerPersonaClientSchema = z.object({
+  /** Display name; absent ⇒ the character falls back to the account name. */
+  name: z.string().min(1).optional().catch(undefined),
+  persona: textOr(""),
+});
+export type PlayerPersonaClient = z.infer<typeof playerPersonaClientSchema>;
+
+export const meSchema = z.object({
+  /** The account display name — the form's placeholder + the name fallback. */
+  accountName: textOr(""),
+  playerPersona: playerPersonaClientSchema.catch(() => ({ persona: "" })),
+});
+export type Me = z.infer<typeof meSchema>;
+
+export const meApi = {
+  get: () => apiGet(meSchema, "/api/users/me"),
+  /** Replace the default player character persona (the settings form sends both fields). */
+  updatePersona: (playerPersona: { name?: string; persona: string }) =>
+    apiPatch(
+      z.object({ playerPersona: playerPersonaClientSchema.catch(() => ({ persona: "" })) }),
+      "/api/users/me",
+      { playerPersona },
+    ),
+};
+
 export const galleryApi = {
   /** All ready scene images across the user's still-existing sessions. */
   list: () => apiGet(listOf(sceneImageSchema, "scenes"), "/api/gallery"),

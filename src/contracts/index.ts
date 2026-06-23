@@ -20,6 +20,7 @@ export * from "./items/visibility";
 export * from "./facts/taxonomy";
 export * from "./images/scene-reference";
 export * from "./images/image-models";
+export * from "./players/persona";
 export * from "./world/profile";
 export * from "./world/access";
 export * from "./world/location";
