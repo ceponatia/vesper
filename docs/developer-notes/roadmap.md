@@ -130,7 +130,7 @@ god-mode POV, companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — `phase-N` docs left as-is)
 
 - **World instances — the library→world→session copy cascade** —
-  [world-instances.plan.md](world-instances.plan.md), shipped 2026-06-23. Worlds now
+  [world-instances.plan.md](finished/world-instances.plan.md), shipped 2026-06-23. Worlds now
   hold **instance snapshot copies** of entities (like sessions already did) instead of
   live FK references, so the cascade is uniform (library template → world instance →
   session runtime) and **deletes never break copies**. Eliminates cross-owner foreign
