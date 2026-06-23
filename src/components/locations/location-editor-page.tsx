@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { locationsApi, type Ambient, type LocationConnection } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { PublishToggle } from "@/components/library/publish-toggle";
 import { EntityImageStudio } from "@/components/library/entity-image-studio";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
@@ -148,7 +149,10 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
 
   return (
     <PageContainer>
-      <h1 className="prose-display mb-6 text-2xl">{form.name || "Untitled location"}</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="prose-display text-2xl">{form.name || "Untitled location"}</h1>
+        {detail.data ? <PublishToggle kind="location" id={locationId} visibility={detail.data.visibility} /> : null}
+      </div>
 
       <Tabs tabs={editorTabs} value={tab} onChange={setTab} className="mb-6" />
 

@@ -9,6 +9,7 @@ import {
 } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -107,7 +108,10 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
 
   return (
     <PageContainer>
-      <h1 className="prose-display mb-6 text-2xl">{draft.name || "Untitled character"}</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="prose-display text-2xl">{draft.name || "Untitled character"}</h1>
+        {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
+      </div>
       <CharacterEditor
         draft={draft}
         onChange={(next) => {

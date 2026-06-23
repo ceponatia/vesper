@@ -162,6 +162,9 @@ function listOf<T>(item: z.ZodType<T>, ...keys: string[]) {
 
 const idSchema = z.string().min(1);
 const nameSchema = z.string().catch("Untitled");
+/** Cross-account share scope (auth.plan.md); unknown/absent ⇒ private. */
+export const visibilitySchema = z.enum(["private", "public"]).catch("private");
+export type Visibility = z.infer<typeof visibilitySchema>;
 const textOr = (fallback: string) => z.string().catch(fallback);
 const tagsSchema = arrayOf(z.string());
 /** string | null, tolerating absent/garbage values. */
@@ -233,6 +236,7 @@ export type CharacterSummary = z.infer<typeof characterSummarySchema>;
 
 export const characterDetailSchema = characterSummarySchema.extend({
   profile: characterProfileSchema.catch(() => emptyCharacterProfile()),
+  visibility: visibilitySchema,
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
@@ -262,6 +266,7 @@ export const locationDetailSchema = locationSummarySchema.extend({
   scale: z.enum(["intimate", "room", "hall", "open", "expanse"]).catch("room"),
   area: optionalText,
   links: arrayOf(locationConnectionSchema),
+  visibility: visibilitySchema,
 });
 export type LocationDetail = z.infer<typeof locationDetailSchema>;
 
@@ -313,6 +318,7 @@ export type ItemSummary = z.infer<typeof itemSummarySchema>;
 
 export const itemDetailSchema = itemSummarySchema.extend({
   definition: itemDefinitionPartsSchema,
+  visibility: visibilitySchema,
 });
 export type ItemDetail = z.infer<typeof itemDetailSchema>;
 
@@ -629,6 +635,8 @@ export const charactersApi = {
   create: (body: unknown) => apiPost(createdRefSchema, "/api/characters", body),
   update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/characters/${id}`, body),
   remove: (id: string) => apiDelete(`/api/characters/${id}`),
+  /** Clone a public (or own) character into your library as an owned, private copy. */
+  clone: (id: string) => apiPost(createdRefSchema, `/api/characters/${id}/clone`, {}),
   forge: (body: { prompt: string; section?: CharacterForgeSection; draft?: CharacterDraft }) =>
     apiPost(forgeResponseSchema(characterDraftSchema), "/api/characters/forge", body),
   generateAvatar: (id: string, body: { model?: AvatarImageModel } = {}) =>
@@ -727,6 +735,8 @@ export const locationsApi = {
   create: (body: unknown) => apiPost(createdRefSchema, "/api/locations", body),
   update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/locations/${id}`, body),
   remove: (id: string) => apiDelete(`/api/locations/${id}`),
+  /** Clone a public (or own) location into your library as an owned, private copy. */
+  clone: (id: string) => apiPost(createdRefSchema, `/api/locations/${id}/clone`, {}),
   image: (id: string) => apiGet(entityImageSchema, `/api/locations/${id}/image`),
   generateImage: (id: string) => apiPost(z.unknown(), `/api/locations/${id}/image`, {}),
   generateMissingImages: (ids?: readonly string[]) =>
@@ -742,6 +752,8 @@ export const itemsApi = {
   create: (body: unknown) => apiPost(createdRefSchema, "/api/items", body),
   update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/items/${id}`, body),
   remove: (id: string) => apiDelete(`/api/items/${id}`),
+  /** Clone a public (or own) item into your library as an owned, private copy. */
+  clone: (id: string) => apiPost(createdRefSchema, `/api/items/${id}/clone`, {}),
   image: (id: string) => apiGet(entityImageSchema, `/api/items/${id}/image`),
   generateImage: (id: string) => apiPost(z.unknown(), `/api/items/${id}/image`, {}),
   generateMissingImages: (ids?: readonly string[]) =>

@@ -36,7 +36,13 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 | `VENICE_IMAGE_EDIT_MODEL` | `qwen-image-2-edit` | Single-reference editing (portrait variants + scene images) |
 | `VENICE_MULTI_EDIT_MODEL` | `qwen-edit-uncensored` | Multi-reference editing (`/image/multi-edit`, ≤3 refs) |
 | `VENICE_SAFE_MODE` | `false` | Venice content filter toggle |
+| `BETTER_AUTH_SECRET` | — | **Required.** Signs sessions/cookies ([auth.md](auth.md)); `openssl rand -base64 32` |
+| `BETTER_AUTH_URL` | `http://localhost:3200` | App origin (OAuth callbacks + CSRF origin check) |
+| `GOOGLE_/GITHUB_/DISCORD_CLIENT_ID`+`_SECRET` | — | OAuth providers — a provider is enabled only when **both** are set; absent ⇒ off |
+| `DEV_PASSWORD` | `vesper-dev-password` | Dev/QA: password the seed sets on the Player + uxtest admin for `POST /api/dev/impersonate` |
 | `LOG_LEVEL` | `info` | Logger |
+
+> Magic-link sign-in has no email transport in v1 — the dev fallback **logs the link** to the server console (grep `auth.magic_link`).
 
 ## Day-to-day
 

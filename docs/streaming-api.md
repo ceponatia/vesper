@@ -87,9 +87,12 @@ GET                /api/sessions/:id/turns/:turnId/inspect     Turn Inspector: a
 GET                /api/gallery                owner's ready scene images across still-existing sessions
                                                (scenes[]: id, session, world, references[], prompt, createdAt)
 DELETE             /api/gallery/:id            hard-delete one owned scene image (row + file); 404 if not owned / not a scene
-GET                /api/images/:id/file        serve from data/ (ready rows only; immutable cache headers)
-GET                /api/dev/me                 { user, users } — resolved identity + everyone switchable
-POST               /api/dev/switch-user        { userId } → sets the dev cookie
+GET                /api/images/:id/file        serve from data/ (ready rows only; owner OR public-entity image; immutable cache)
+POST               /api/characters/:id/clone   clone a public/own entity → owned private copy (also locations, items)
+GET                /api/auth/*                 Better Auth surface (sign-in/up/out, OAuth, magic-link, get-session)
+GET                /api/auth-config            { providers[], emailPassword, magicLink } — enabled methods for the sign-in UI
+GET                /api/dev/me                 { user } — resolved identity (dev-only; 404 in production)
+POST               /api/dev/impersonate        { userId } → mints a real signed session (dev-only; 404 in production)
 ```
 
 ## Turn streaming (SSE)
@@ -112,7 +115,11 @@ event: error    data: { "code": "…", "message": "…" }      // terminal
 
 ## Auth
 
-Dev-cookie identity (same model as the old app): `vesper_user` cookie → `users` row; `getCurrentUser()` in `server/auth`. Every query is owner-scoped. Swapping in a real provider later means replacing `server/auth` only.
+Real accounts via [Better Auth](https://better-auth.com) ([auth.md](auth.md)), self-hosted in our Postgres. The `/api/auth/*` surface is owned by the library (signed, httpOnly, `secure` session cookies); our handlers only **read** the session. `getCurrentUser()` (`server/auth`) resolves it or throws `Unauthenticated`, which `withUser` maps to a **401** — there is no auto-minted default user. A genuine resolution failure (DB down) stays a **500 `auth_unavailable`**.
+
+**Authorization** is one seam ([auth.md](auth.md)): every **write** is owner-strict (`ownerId = me`; a non-owner write 404s, never confirming the row). **Reads** on the browse/preview/copy path widen to **owner-or-public** via `findViewable` — characters/locations/items carry a `visibility` (`private` default | `public`); worlds and sessions are always private. A public entity is **copyable** (`POST /:kind/:id/clone` → an owned, private copy with `clonedFromId` provenance and self-contained images), never live-referenced.
+
+**Dev/QA:** `POST /api/dev/impersonate { userId }` mints a real signed session (the old `vesper_user` raw-id cookie is gone). Dev routes 404 in production. See [CLAUDE.md](../CLAUDE.md) for the seeded credential.
 
 ## Pagination & limits
 

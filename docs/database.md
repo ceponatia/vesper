@@ -16,11 +16,12 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
 
 | Table | Key columns |
 | --- | --- |
-| `users` | `email` unique, `name`, `role` (`user`/`admin`) — dev-cookie auth, see auth module |
-| `characters` | `owner_id`, `name`, `profile` JSONB (`CharacterProfile`: bio, personality, voice, speciesId, bodyPlanId, `attributes` (`AttributeValue[]`), aliases, defaultOutfit item ids, schedule), `tags` JSONB, `avatar_image_id`, `search_embedding` vector |
-| `locations` | `owner_id`, `name`, `description`, `ambient` JSONB (sensory), `scale` (`intimate`/`room`/`hall`/`open`/`expanse`), `area?` (map-grouping label), `affordances` JSONB, `tags` JSONB, `image_id`, `search_embedding` vector |
+| `users` | `email` unique, `name`, `role` (`user`/`admin`), `email_verified`, `image?`, `banned?`/`ban_reason?`/`ban_expires?` (admin plugin) — Better Auth, see [auth.md](auth.md) |
+| `auth_sessions` / `accounts` / `verifications` | Better Auth's `session`/`account`/`verification` models (renamed to avoid the game-`sessions` collision): signed session tokens, credential+OAuth links, one-time tokens. Owned by the library; authored by hand in `schema.ts`, never via Better Auth's own CLI ([auth.md](auth.md)) |
+| `characters` | `owner_id`, `name`, `profile` JSONB (`CharacterProfile`: bio, personality, voice, speciesId, bodyPlanId, `attributes` (`AttributeValue[]`), aliases, defaultOutfit item ids, schedule), `tags` JSONB, `avatar_image_id`, **`visibility` (`private`/`public`) — cross-account share scope ([auth.md](auth.md))**, `cloned_from_id?` (soft remix provenance), `search_embedding` vector |
+| `locations` | `owner_id`, `name`, `description`, `ambient` JSONB (sensory), `scale` (`intimate`/`room`/`hall`/`open`/`expanse`), `area?` (map-grouping label), `affordances` JSONB, `tags` JSONB, `image_id`, `visibility`, `cloned_from_id?`, `search_embedding` vector |
 | `location_links` | `owner_id`, `from_location_id`, `to_location_id` (FK-cascade), `travel_minutes` — undirected library connections (one row per pair); the library counterpart of `world_links`. Importing a linked set into a world recreates them as `world_links` (`materializeLocations`) |
-| `items` | `owner_id`, `kind` (`clothing`/`object`/`container`), `name`, `description`, `definition` JSONB (`ItemDefinition` extras: coverage, layer, opacity, sensory, fields), `tags` JSONB, `image_id`, `search_embedding` vector |
+| `items` | `owner_id`, `kind` (`clothing`/`object`/`container`), `name`, `description`, `definition` JSONB (`ItemDefinition` extras: coverage, layer, opacity, sensory, fields), `tags` JSONB, `image_id`, `visibility`, `cloned_from_id?`, `search_embedding` vector |
 
 ### Worlds (instance copies of the library)
 

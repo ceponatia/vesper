@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { cx } from "@/components/ui/cx";
 import { readStoredNavMode, type NavMode } from "@/lib/nav-mode";
+import { AccountMenu } from "./account-menu";
 import { ContrastToggle } from "./contrast-toggle";
 import { BottomTabBar } from "./bottom-tab-bar";
 import { NavDrawer } from "./nav-drawer";
@@ -64,7 +65,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <ContrastToggle />
+          <div className="ml-auto flex items-center gap-3">
+            <ContrastToggle />
+            <AccountMenu />
+          </div>
         </div>
       </header>
       <main

@@ -5,6 +5,7 @@ import { db, items } from "@/server/db";
 import {
   deleteEntityImages,
   emptyItemExtras,
+  findViewable,
   invalidCoverageIds,
   itemExtrasSchema,
   itemPatchSchema,
@@ -28,7 +29,8 @@ async function findItem(ownerId: string, id: string) {
 
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
-  const row = await findItem(user.id, id);
+  // Owner-or-public read (the browse/preview/copy path); private non-owned ⇒ 404.
+  const row = await findViewable("item", id, user.id);
   if (!row) return jsonError("not_found", "item not found", 404);
   return jsonOk({ item: row });
 });
@@ -45,6 +47,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (body.value.kind !== undefined) update.kind = body.value.kind;
   if (body.value.description !== undefined) update.description = body.value.description;
   if (body.value.tags !== undefined) update.tags = body.value.tags;
+  if (body.value.visibility !== undefined) update.visibility = body.value.visibility;
   if (body.value.definition !== undefined) {
     const current = parseOr(itemExtrasSchema, existing.definition, emptyItemExtras(), undefined, "items.definition");
     const merged = { ...current, ...body.value.definition };

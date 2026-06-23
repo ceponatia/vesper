@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { ZodType } from "zod";
 import { log } from "@/server/log";
-import { getCurrentUser, type CurrentUser } from "@/server/auth";
+import { getCurrentUser, Unauthenticated, type CurrentUser } from "@/server/auth";
 
 /**
  * Route-handler plumbing (docs/streaming-api.md, docs/resilience.md §7):
@@ -27,7 +27,12 @@ export interface RouteContext<P> {
 
 export type UserHandler<P> = (user: CurrentUser, req: NextRequest, ctx: RouteContext<P>) => Promise<Response>;
 
-/** Wraps a handler with dev-cookie auth resolution and the 500 envelope. */
+/**
+ * Wraps a handler with Better Auth session resolution and the error envelope.
+ * No signed session ⇒ **401 `unauthenticated`** (never a fabricated user); a
+ * genuine resolution failure (DB down) stays a **500 `auth_unavailable`**. The
+ * two are distinct codes so clients can redirect-to-sign-in vs. retry.
+ */
 export function withUser<P = Record<string, never>>(
   handler: UserHandler<P>,
 ): (req: NextRequest, ctx: RouteContext<P>) => Promise<Response> {
@@ -36,6 +41,9 @@ export function withUser<P = Record<string, never>>(
     try {
       user = await getCurrentUser();
     } catch (err) {
+      if (err instanceof Unauthenticated) {
+        return jsonError("unauthenticated", "sign in to continue", 401);
+      }
       log.error("api", "auth resolution failed", { error: errorText(err) });
       return jsonError("auth_unavailable", "could not resolve the current user", 500);
     }

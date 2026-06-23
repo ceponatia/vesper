@@ -19,6 +19,7 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 | [story-threads.md](story-threads.md) | Thread kinds, lifecycle, semantic dedup, accumulated developments, the detail modal |
 | [perception.md](perception.md) | Presence channels, the attention × salience witness matrix, awareness blocks, darkness, comms |
 | [streaming-api.md](streaming-api.md) | HTTP API surface and the SSE turn-streaming protocol |
+| [auth.md](auth.md) | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam |
 | [images.md](images.md) | Avatar generation, Venice reference editing, scene images, asset storage |
 | [authoring.md](authoring.md) | AI-first world/character forges and manual-override editors |
 | [ui.md](ui.md) | Pages, components, styling conventions |

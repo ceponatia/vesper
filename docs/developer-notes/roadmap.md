@@ -21,17 +21,6 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Next (queued — proposed order)
 
-- **Auth & entity visibility** — [auth.plan.md](auth.plan.md). The early real-auth
-  system: replace the dev-cookie identity with **Better Auth** (self-hosted,
-  Drizzle-into-our-Postgres; email+password live, magic-link + social OAuth
-  env-gated) — signed sessions, **401 on unresolved identity**, no auto-minted
-  admin. Plus a `private`/`public` **visibility** layer on shareable entities
-  (characters/locations/items; worlds & sessions are always private): public =
-  discoverable + **copyable** — using a public entity *copies* it (owned) via the
-  world-instances cascade, so there are no live cross-owner references. Implements
-  security-hardening's §Auth migration and subsumes its Cluster A. Thin v1, built
-  to expand (orgs/2FA/passkeys/browse-gallery are later plugins/slices).
-  **Depends on world-instances. Reorder this slot to taste.**
 - **Security hardening** — [security-hardening.plan.md](security-hardening.plan.md).
   Remediation of the 2026-06-23 full-surface security scan. Nine **file-disjoint
   agent clusters** that run fully concurrently: A gate `/api/dev/*` (the one urgent
@@ -128,6 +117,19 @@ item acquisition during play, monorepo split (permanently deferred), observer /
 god-mode POV, companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — `phase-N` docs left as-is)
+
+- **Auth & entity visibility** — [auth.plan.md](auth.plan.md) · ref
+  [auth.md](../auth.md), shipped 2026-06-23. Real accounts via **Better Auth**
+  (self-hosted, Drizzle-into-our-Postgres; email+password live, magic-link +
+  social OAuth env-gated) — signed sessions, **401 on unresolved identity**, no
+  auto-minted admin; `switch-user` replaced by dev-gated impersonation. Plus a
+  `private`/`public` **visibility** seam on shareable entities (characters/
+  locations/items) — public = discoverable + **copyable** (copy-on-use via the
+  world-instances cascade, no live cross-owner references) with a `clone`
+  endpoint + cross-owner image duplication. Implemented security-hardening's
+  §Auth migration + Cluster A. **Deferred:** the public browse gallery + the
+  "add public to world" / clone UI entry point (the read rule already supports
+  them — only the list query + discovery UI are missing).
 
 - **World instances — the library→world→session copy cascade** —
   [world-instances.plan.md](finished/world-instances.plan.md), shipped 2026-06-23. Worlds now
