@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attributeRegistry, DiagnosticCollector, realizeBody, traitRegistry, type ItemDefinition } from "@/contracts";
+import { attributeRegistry, DiagnosticCollector, realizeBody, speciesById, traitRegistry, type ItemDefinition } from "@/contracts";
 import { characterDraftSchema } from "./drafts";
 import {
   buildAttributeSectionSchema,
@@ -20,6 +20,11 @@ import type { ClothingCandidateLookup, LibraryLookup } from "./library";
 
 const noLibrary: LibraryLookup = async () => [];
 const noCandidates: ClothingCandidateLookup = async () => [];
+
+// A species' default body features, sourced from the catalog (the single source of
+// truth) rather than re-hardcoded here — so a catalog change doesn't break these
+// forge tests. The exact set lives in src/contracts/species; order is incidental.
+const speciesFeatures = (id: string) => [...(speciesById(id)?.defaultFeatureGroups ?? [])].sort();
 
 describe("registry-derived attribute section schema", () => {
   it("accepts registered attribute ids", () => {
@@ -500,7 +505,7 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     const draft = await forgeCharacter({ prompt: "a succubus bartender", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
     expect(draft.profile.speciesId).toBe("succubus");
     expect(draft.profile.bodyPlanId).toBe("humanoid");
-    expect(draft.profile.bodyFeatures?.sort()).toEqual(["horns", "tail", "wings"]);
+    expect(draft.profile.bodyFeatures?.sort()).toEqual(speciesFeatures("succubus"));
   });
 
   it("seeds a heritage within its species from the prompt", async () => {
@@ -517,7 +522,7 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
   it("seeds new fantasy species from aliases and fuzzy prompt names", async () => {
     const faerie = await forgeCharacter({ prompt: "a fairy archivist", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
     expect(faerie.profile.speciesId).toBe("faerie");
-    expect(faerie.profile.bodyFeatures).toEqual(["wings"]);
+    expect([...(faerie.profile.bodyFeatures ?? [])].sort()).toEqual(speciesFeatures("faerie"));
 
     const goblin = await forgeCharacter({ prompt: "a gobln lookout", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
     expect(goblin.profile.speciesId).toBe("goblin");
@@ -540,7 +545,7 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
 
     const succubusProfile = await forgeCharacterSection("profile", { ...context, prompt: "a succubus bartender" });
     expect(succubusProfile.profile?.speciesId).toBe("succubus");
-    expect(succubusProfile.profile?.bodyFeatures?.sort()).toEqual(["horns", "tail", "wings"]);
+    expect(succubusProfile.profile?.bodyFeatures?.sort()).toEqual(speciesFeatures("succubus"));
 
     const attributes = await forgeCharacterSection("attributes", context);
     expect(attributes.name).toBeUndefined();
