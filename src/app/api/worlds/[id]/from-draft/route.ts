@@ -19,12 +19,13 @@ type Params = { id: string };
  * all nested families. Forge-rate-limited (a save can run character forges).
  */
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (!rateLimit(`forge:${user.id}`, FORGE_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many forge requests; try again in a minute", 429);
-  }
   const { id } = await ctx.params;
   const body = await readBody(req, worldDraftSchema);
   if (!body.ok) return body.response;
+  // After body validation so a malformed request doesn't burn the budget.
+  if (!rateLimit(`forge:${user.id}`, FORGE_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many forge requests; try again in a minute", 429);
+  }
 
   const result = await updateWorldFromDraft(user.id, id, body.value);
   if (!result.ok) return jsonError(result.code, result.message, result.code === "not_found" ? 404 : 400);

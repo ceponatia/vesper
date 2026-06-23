@@ -20,11 +20,12 @@ const forgeBodySchema = z.object({
 
 /** Prose prompt → AI character draft. Never saves (drafts live client-side). */
 export const POST = withUser(async (user, req: NextRequest) => {
+  const body = await readBody(req, forgeBodySchema);
+  if (!body.ok) return body.response;
+  // After body validation so a malformed request doesn't burn the budget.
   if (!rateLimit(`forge:${user.id}`, FORGE_RATE_LIMIT)) {
     return jsonError("rate_limited", "too many forge requests; try again in a minute", 429);
   }
-  const body = await readBody(req, forgeBodySchema);
-  if (!body.ok) return body.response;
 
   const sink = new DiagnosticCollector();
   const { prompt, section, draft } = body.value;

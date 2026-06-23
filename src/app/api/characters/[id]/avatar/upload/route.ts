@@ -3,17 +3,19 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db } from "@/server/db";
 import { uploadAvatar } from "@/server/images";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 
 type Params = { id: string };
 
 const uploadBodySchema = z.object({
-  // A base64 image data URL from the crop dialog's canvas — already ~768×1024,
-  // so the cap is generous, not load-bearing.
+  // A base64 image data URL from the crop dialog's canvas — already ~768×1024
+  // (legit crop output is a JPEG well under 1 MB), so 3 MB of base64 string is a
+  // generous cap that still rejects an oversized payload before we decode it
+  // (server/images/upload.ts enforces the decoded 4 MB byte cap independently).
   image: z
     .string()
     .min(1)
-    .max(16_000_000)
+    .max(3_000_000)
     .refine((v) => v.startsWith("data:image/"), "image must be an image data URL"),
 });
 
@@ -32,6 +34,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     .where(and(eq(characters.id, id), eq(characters.ownerId, user.id)))
     .limit(1);
   if (!row) return jsonError("not_found", "character not found", 404);
+  if (!rateLimit(`avatar_gen:${user.id}`, GENERATION_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many avatar uploads; try again in a minute", 429);
+  }
 
   const result = await uploadAvatar({ characterId: id, userId: user.id, dataUrl: body.value.image });
   if (!result.ok) return jsonError("bad_request", result.error, 400);

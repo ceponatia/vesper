@@ -99,6 +99,17 @@ export const HEARTBEAT_INTERVAL_MS = 5_000;
  */
 export const RECOVERY_SWEEP_INTERVAL_MS = 30_000;
 
+/**
+ * Hard cap on job execution attempts (security Cluster I6). `jobs.attempts`
+ * increments atomically on every claim; once a job has been attempted this many
+ * times it is abandoned (marked failed with a diagnostic) rather than re-run, so
+ * a poison job orphaned-and-re-kicked by recovery can never loop forever. A
+ * gating (post_turn/reconcile) job that exhausts its attempts still drains the
+ * queue, so the session returns to `ready` — a poison job degrades a turn, it
+ * never wedges play (docs/resilience.md §5).
+ */
+export const MAX_JOB_ATTEMPTS = 3;
+
 /** Minimum cosine similarity for embedding-fuzzy name grounding. */
 export const FUZZY_RESOLVE_MIN = 0.75;
 

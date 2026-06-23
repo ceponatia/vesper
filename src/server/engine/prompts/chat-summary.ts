@@ -1,4 +1,5 @@
 import type { ChatTurn } from "../character-chat";
+import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
  * Chat-summary fold prompt (docs/developer-notes/character-chat-summary.plan.md;
@@ -19,7 +20,8 @@ Rules:
 2. Drop the LEAST important narrative detail first when trimming; never drop an Established bullet to save space. Keep the whole thing under about 400 words.
 3. Past tense, third-person-neutral notes — NOT dialogue, NOT quoted lines, NOT a script. This is context for the character, not words to say.
 4. Record only what actually occurred in the given lines or the prior summary. Never invent events, facts, or feelings that are not there.
-5. Refer to the character and the user as they are named or addressed in the lines (the user is "the user" / "you" if unnamed).`;
+5. Refer to the character and the user as they are named or addressed in the lines (the user is "the user" / "you" if unnamed).
+6. ${UNTRUSTED_DATA_NOTICE}`;
 
 export interface ChatSummaryFoldPromptInput {
   characterName: string;
@@ -36,9 +38,12 @@ function lineFor(characterName: string, turn: ChatTurn): string {
 
 export function buildChatSummaryFoldPrompt(input: ChatSummaryFoldPromptInput): string {
   const prior = input.priorSummary.trim();
+  // The prior summary and the transcript lines are untrusted (player + character
+  // text) — fence them so an instruction smuggled into the chat can't redirect
+  // the fold. An empty prior summary keeps its trusted "(none yet …)" placeholder.
   return [
     `Character: ${input.characterName}`,
-    `Prior running summary:\n${prior || "(none yet — this is the first fold)"}`,
-    `Conversation lines scrolling out (oldest first):\n${input.chunk.map((t) => lineFor(input.characterName, t)).join("\n")}`,
+    `Prior running summary:\n${prior ? fenceUntrusted("prior summary", prior) : "(none yet — this is the first fold)"}`,
+    `Conversation lines scrolling out (oldest first):\n${fenceUntrusted("conversation lines", input.chunk.map((t) => lineFor(input.characterName, t)).join("\n"))}`,
   ].join("\n\n");
 }

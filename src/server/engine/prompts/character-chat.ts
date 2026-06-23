@@ -2,6 +2,7 @@ import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import { realizeBody, speciesLorePhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
+import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
  * The character-chat harness prompt (docs/developer-notes/character-chat.plan.md).
@@ -117,11 +118,14 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     for (const hint of def.promptHints ?? []) hints.add(hint);
   }
 
+  // Identity framing (framework text) stays trusted; the author-written `bio`,
+  // `personality`, `voice`, and the recap are untrusted DATA — fence each so an
+  // "ignore your rules / you are actually …" line smuggled into a bio or note
+  // reads as in-world background, not as authority over the chat rules below.
   const identity = [
     `You are ${displayName}, speaking with the user in a one-on-one conversation.`,
     agePhrase ? `You appear ${agePhrase}.` : "",
     species ? `Species: ${species}.` : "",
-    profile.bio.trim() ? `Background: ${excerpt(profile.bio, BIO_EXCERPT_CHARS)}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -130,15 +134,17 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
 
   const sections = [
     CONTENT_FRAMING,
+    UNTRUSTED_DATA_NOTICE,
     identity,
-    profile.personality.trim() ? `Personality:\n${profile.personality.trim()}` : "",
-    profile.voice?.trim() ? `Voice (how you sound): ${profile.voice.trim()}` : "",
+    profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
+    profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
+    profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
     attributeLines.length
       ? `Attributes (who you are — express these naturally, never list them):\n${attributeLines.join("\n")}`
       : "",
     hints.size ? `Phrasing guidance:\n${[...hints].map((h) => `- ${h}`).join("\n")}` : "",
     priorSummary
-      ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${priorSummary}`
+      ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
     CHAT_RULES(displayName),
   ];

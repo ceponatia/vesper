@@ -21,10 +21,6 @@ const bodySchema = z.object({
  * immediately; the route never blocks on the LLM.
  */
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (!rateLimit(`inner_note:${user.id}`, FORGE_RATE_LIMIT)) {
-    return jsonError("rate_limited", "too many inner notes; try again in a minute", 429);
-  }
-
   const { id, participantId } = await ctx.params;
   const session = await findOwnedSession(user.id, id);
   if (!session) return jsonError("not_found", "session not found", 404);
@@ -40,6 +36,12 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (!participant) return jsonError("not_found", "participant not found in this session", 404);
   if (participant.isUser) {
     return jsonError("player_participant", "inner notes can only target NPCs, not the player", 400);
+  }
+
+  // After ownership + body + target validation, so a legit owner's 404/400
+  // paths don't burn their budget (security-hardening pass).
+  if (!rateLimit(`inner_note:${user.id}`, FORGE_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many inner notes; try again in a minute", 429);
   }
 
   const jobId = await enqueueInnerNote({ sessionId: id, participantId, text: body.value.text });

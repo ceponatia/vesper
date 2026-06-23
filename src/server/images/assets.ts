@@ -70,12 +70,23 @@ export interface WrittenImageInfo {
 const WEBP_QUALITY = 90;
 
 /**
+ * Decode guards for the one sharp call every saved buffer passes through: cap
+ * the pixel count (a ~1 MB decompression bomb expands to 100+ MP; 40 MP ≈
+ * 6300×6300 dwarfs any legitimate avatar/scene image), fail on any decode
+ * error, and never expand animation frames. This rasterizes every stored
+ * buffer, so it protects all decode paths regardless of their own input checks.
+ */
+const SHARP_DECODE_LIMITS = { limitInputPixels: 40_000_000, failOn: "error", animated: false } as const;
+
+/**
  * Atomic write protocol: convert to webp, write `<name>.pending.webp`, fsync,
  * rename to the final path. A crash leaves only a pending temp file that
  * sweepOrphans reclaims — never a half-written final file.
  */
 export async function writeWebpAtomic(absolutePath: string, buffer: Buffer): Promise<WrittenImageInfo> {
-  const { data, info } = await sharp(buffer).webp({ quality: WEBP_QUALITY }).toBuffer({ resolveWithObject: true });
+  const { data, info } = await sharp(buffer, SHARP_DECODE_LIMITS)
+    .webp({ quality: WEBP_QUALITY })
+    .toBuffer({ resolveWithObject: true });
   const pendingPath = pendingPathFor(absolutePath);
   await fs.mkdir(path.dirname(absolutePath), { recursive: true });
   const handle = await fs.open(pendingPath, "w");

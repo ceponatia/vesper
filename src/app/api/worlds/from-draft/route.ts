@@ -19,11 +19,12 @@ import {
  * MAX_GENERATED_CAST character forges.
  */
 export const POST = withUser(async (user, req: NextRequest) => {
+  const body = await readBody(req, worldDraftSchema);
+  if (!body.ok) return body.response;
+  // After body validation so a malformed request doesn't burn the budget.
   if (!rateLimit(`forge:${user.id}`, FORGE_RATE_LIMIT)) {
     return jsonError("rate_limited", "too many forge requests; try again in a minute", 429);
   }
-  const body = await readBody(req, worldDraftSchema);
-  if (!body.ok) return body.response;
 
   const result = await createWorldFromDraft(user.id, body.value);
   if (!result.ok) return jsonError(result.code, result.message, result.code === "not_found" ? 404 : 400);

@@ -46,7 +46,11 @@ export const GET = withUser(async (user) => {
       createdAt: images.createdAt,
     })
     .from(images)
-    .innerJoin(characters, eq(images.entityId, characters.id))
+    // Owner-scope the join on the characters side too (security Cluster I2): the
+    // image rows are already owner-filtered below, but constraining the joined
+    // character to the same owner makes it structurally impossible for the join
+    // to surface another owner's character row.
+    .innerJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
     .where(
       and(
         eq(images.ownerId, user.id),

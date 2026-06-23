@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
 import { db, jobs, sessions } from "../db";
-import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALE_MS } from "./constants";
+import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALE_MS, MAX_JOB_ATTEMPTS } from "./constants";
 
 /**
  * DB-backed job rows + an in-process runner, strictly serial per session and
@@ -29,6 +29,17 @@ const SESSION_GATING_TYPES: JobType[] = ["post_turn", "reconcile"];
 
 export type JobRow = typeof jobs.$inferSelect;
 export type JobHandler = (job: JobRow) => Promise<void>;
+
+/**
+ * Poison-job guard (security Cluster I6). `attempts` is incremented atomically
+ * on every claim, so the value on a just-claimed row already counts this run.
+ * Once it exceeds MAX_JOB_ATTEMPTS the job is abandoned instead of re-run — a
+ * single bad job (or one that crashes the process mid-run and gets re-kicked by
+ * recovery) can never loop forever. PURE so the cap is unit-testable.
+ */
+export function jobExceedsAttemptCap(attempts: number): boolean {
+  return attempts > MAX_JOB_ATTEMPTS;
+}
 
 const RUNNER_ID = `runner_${newId()}`;
 
@@ -117,6 +128,26 @@ export async function recoverStaleJobs(sessionId?: string): Promise<number> {
   return failed.length;
 }
 
+/**
+ * Fail any `queued` job for the session that has already hit the attempt cap
+ * (security Cluster I6), so a re-kicked drain loop never re-claims a poison job.
+ * Called by recovery before it re-kicks an orphaned queue. Uses `>=` (not the
+ * post-claim `>` of `jobExceedsAttemptCap`) because these rows haven't been
+ * re-claimed yet — a row already at the cap would exceed it on the next claim.
+ * Returns the number abandoned.
+ */
+export async function abandonOverAttemptedJobs(sessionId: string): Promise<number> {
+  const abandoned = await db()
+    .update(jobs)
+    .set({ status: "failed", error: `abandoned: reached poison-job attempt cap (${MAX_JOB_ATTEMPTS})`, finishedAt: new Date() })
+    .where(and(eq(jobs.sessionId, sessionId), eq(jobs.status, "queued"), sql`${jobs.attempts} >= ${MAX_JOB_ATTEMPTS}`))
+    .returning({ id: jobs.id });
+  if (abandoned.length > 0) {
+    log.warn("jobs", `abandoned ${abandoned.length} poison job(s) at attempt cap`, { sessionId });
+  }
+  return abandoned.length;
+}
+
 async function hasQueuedJobs(sessionId: string): Promise<boolean> {
   const [row] = await db()
     .select({ id: jobs.id })
@@ -171,6 +202,18 @@ async function runDetachedJob(jobId: string): Promise<void> {
 }
 
 async function runJob(job: JobRow): Promise<void> {
+  // Poison-job cap (security Cluster I6): the claim already bumped `attempts`,
+  // so an over-cap row is abandoned here — failing it (which still drains the
+  // gating queue, so the session settles to `ready`) rather than re-invoking a
+  // handler that keeps crashing.
+  if (jobExceedsAttemptCap(job.attempts)) {
+    log.warn("jobs", `job ${job.type} abandoned after ${job.attempts} attempts`, {
+      jobId: job.id,
+      sessionId: job.sessionId ?? undefined,
+    });
+    await finishJob(job.id, "failed", `abandoned after ${job.attempts} attempts (poison-job cap ${MAX_JOB_ATTEMPTS})`);
+    return;
+  }
   const handler = runnerState().handlers.get(job.type);
   if (!handler) {
     await finishJob(job.id, "failed", `no handler registered for job type "${job.type}"`);

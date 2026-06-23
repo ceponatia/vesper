@@ -29,9 +29,11 @@ describe("INNER_NOTE_SYSTEM", () => {
 });
 
 describe("buildInnerNotePrompt", () => {
-  it("carries the character name and the note", () => {
+  it("carries the character name and fences the note", () => {
     const text = buildInnerNotePrompt({ npcName: "Fatima", note: "She is privately flattered." });
     expect(text).toContain("Character: Fatima");
-    expect(text).toContain("Author's note:\nShe is privately flattered.");
+    // The note is untrusted free text, so it's wrapped in the sentinel fence
+    // (an embedded instruction reads as content to paraphrase, not a directive).
+    expect(text).toMatch(/Author's note:\n<<vsp-untrusted-[0-9a-f]+:author's note>>\nShe is privately flattered\.\n<<\//);
   });
 });

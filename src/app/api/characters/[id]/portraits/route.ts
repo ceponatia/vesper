@@ -3,7 +3,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, images } from "@/server/db";
 import { generateVariant } from "@/server/images";
-import { jsonError, jsonOk, readBody, startJob, withUser } from "@/server/api";
+import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
 
 type Params = { id: string };
 
@@ -54,6 +54,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     .where(and(eq(characters.id, id), eq(characters.ownerId, user.id)))
     .limit(1);
   if (!row) return jsonError("not_found", "character not found", 404);
+  if (!rateLimit(`portrait_gen:${user.id}`, GENERATION_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many portrait generations; try again in a minute", 429);
+  }
 
   const jobId = await startJob({
     type: "portrait_variant",

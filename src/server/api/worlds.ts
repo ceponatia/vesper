@@ -205,7 +205,15 @@ async function prefetchRefs(
     ...characterIds.filter((id) => !refs.charactersById.has(id)).map((id) => `character ${id}`),
     ...itemIds.filter((id) => !refs.itemsById.has(id)).map((id) => `item ${id}`),
   ];
-  if (missing.length > 0) return { ok: false, message: `unknown references: ${missing.slice(0, 5).join(", ")}` };
+  if (missing.length > 0) {
+    // Don't reflect attacker-supplied ids back to the client (security Cluster
+    // I5) — report only a count. The detailed list stays server-side for
+    // debugging (these ids failed an owner-scoped lookup, so they're either
+    // bogus or another owner's; either way they're not echoed).
+    log.warn("api.worlds", "world save referenced unknown entities", { ownerId, missing });
+    const plural = missing.length === 1 ? "" : "s";
+    return { ok: false, message: `${missing.length} unknown reference${plural}` };
+  }
   return { ok: true, refs };
 }
 

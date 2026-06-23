@@ -4,7 +4,7 @@ import { z } from "zod";
 import { avatarImageModels, DEFAULT_AVATAR_IMAGE_MODEL } from "@/contracts";
 import { characters, db } from "@/server/db";
 import { generateAvatar } from "@/server/images";
-import { jsonError, jsonOk, readBody, startJob, withUser } from "@/server/api";
+import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
 
 type Params = { id: string };
 
@@ -29,6 +29,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     .where(and(eq(characters.id, id), eq(characters.ownerId, user.id)))
     .limit(1);
   if (!row) return jsonError("not_found", "character not found", 404);
+  if (!rateLimit(`avatar_gen:${user.id}`, GENERATION_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many avatar generations; try again in a minute", 429);
+  }
 
   const jobId = await startJob({
     type: "avatar",

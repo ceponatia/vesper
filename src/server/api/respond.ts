@@ -69,8 +69,35 @@ export function withRoute<P = Record<string, never>>(
 
 export type BodyResult<T> = { ok: true; value: T } | { ok: false; response: NextResponse<ApiError> };
 
-/** Zod-validated request body; malformed JSON and schema failures are 400s. */
-export async function readBody<T>(req: NextRequest, schema: ZodType<T>): Promise<BodyResult<T>> {
+/**
+ * Default request-body cap (4 MB). Next route handlers don't enforce the old
+ * Pages-API `bodyParser` limit, so `readBody` guards it here. Sized to admit the
+ * largest legitimate body — the avatar-upload data URL (~3 MB after its own cap)
+ * — while rejecting multi-hundred-MB DoS payloads.
+ */
+export const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+export interface ReadBodyOptions {
+  /** Reject bodies whose `Content-Length` exceeds this (default {@link DEFAULT_MAX_BODY_BYTES}). */
+  maxBytes?: number;
+}
+
+/**
+ * Zod-validated request body; malformed JSON and schema failures are 400s, and
+ * an oversized body (per `Content-Length`) is a 413 before we ever buffer it.
+ */
+export async function readBody<T>(
+  req: NextRequest,
+  schema: ZodType<T>,
+  options: ReadBodyOptions = {},
+): Promise<BodyResult<T>> {
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BODY_BYTES;
+  // Content-Length lets us reject before buffering. Absent on chunked/streamed
+  // bodies — those fall through to req.json() and are not size-capped here.
+  const contentLength = Number(req.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    return { ok: false, response: jsonError("payload_too_large", "request body is too large", 413) };
+  }
   let raw: unknown;
   try {
     raw = await req.json();

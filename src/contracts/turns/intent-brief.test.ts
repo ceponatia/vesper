@@ -26,6 +26,30 @@ describe("intentBriefSchema", () => {
     expect(parsed.movement.coTravelTargets).toEqual([]);
   });
 
+  it("caps over-long model-output arrays (slice, not reject) so a flood can't drive unbounded work", () => {
+    // 200 entries each — well over the 30 cap. A rejecting .max() would drop the
+    // whole brief to emptyIntentBrief(); the graceful slice keeps the first N and
+    // preserves the rest of the brief (docs/resilience.md §3).
+    const flood = Array.from({ length: 200 }, (_, i) => `NPC${i}`);
+    const parsed = intentBriefSchema.parse({
+      actionType: "converse",
+      addressedNpcs: flood,
+      socialActs: Array.from({ length: 200 }, (_, i) => ({ concept: "compliment", target: `T${i}` })),
+      narratedNpcBehaviors: Array.from({ length: 200 }, (_, i) => ({ npc: `N${i}` })),
+      movement: { kind: "co_travel_request", coTravelTargets: flood },
+      check: { relevantAttributeIds: flood, stakes: "low" },
+    });
+    // Sliced to the cap (30), keeping the first N in order.
+    expect(parsed.addressedNpcs).toHaveLength(30);
+    expect(parsed.addressedNpcs[0]).toBe("NPC0");
+    expect(parsed.socialActs).toHaveLength(30);
+    expect(parsed.narratedNpcBehaviors).toHaveLength(30);
+    expect(parsed.movement.coTravelTargets).toHaveLength(30);
+    expect(parsed.check?.relevantAttributeIds).toHaveLength(30);
+    // Graceful: the rest of the brief survives — the cap did NOT degrade to empty.
+    expect(parsed.actionType).toBe("converse");
+  });
+
   it("round-trips the sense/target fields and the persisted seams", () => {
     const parsed = intentBriefSchema.parse({
       actionType: "move",

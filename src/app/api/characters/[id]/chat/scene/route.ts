@@ -3,7 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { parseOr } from "@/lib/parse";
-import { jsonError, jsonOk, readBody, startJob, withUser } from "@/server/api";
+import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
 import { characterChatMessages, characters, db, images } from "@/server/db";
 import { renderCharacterSceneImage } from "@/server/images";
 
@@ -60,6 +60,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     .where(and(eq(characters.id, id), eq(characters.ownerId, user.id)))
     .limit(1);
   if (!character) return jsonError("not_found", "character not found", 404);
+  if (!rateLimit(`chat_scene:${user.id}`, CHAT_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many scene renders; try again in a minute", 429);
+  }
 
   const profile = parseOr(
     characterProfileSchema,

@@ -1,4 +1,32 @@
-import { z } from "zod";
+import { z, type ZodType } from "zod";
+
+/**
+ * Per-array caps on this LLM-parsed brief (docs/resilience.md §3, "trust
+ * nothing"). `maxOutputTokens` is the only *implicit* bound today; a token-cap
+ * bump would silently lift the ceiling, and these arrays feed deterministic
+ * prompt builders / the reaction + puppet-guardrail seams downstream.
+ *
+ * Bounded here at the SCHEMA via `.transform((a) => a.slice(0, MAX))` (applied
+ * after `.default([])`) — NOT `.max()`: this brief degrades whole-object
+ * (`generateChecked` returns `emptyIntentBrief()` on any parse failure, and the
+ * intake call would also fall back to the regex intent), so a rejecting `.max()`
+ * would throw the whole brief away. A graceful slice keeps the first N and drops
+ * the tail, mirroring the merge-side slices for the post-turn agent arrays
+ * (src/server/engine/merge.ts). Generous values — a legitimate turn never
+ * approaches them; the cap only fires on a runaway/adversarial flood.
+ */
+const MAX_ADDRESSED_NPCS = 30;
+const MAX_SOCIAL_ACTS = 30;
+const MAX_NARRATED_NPC_BEHAVIORS = 30;
+const MAX_CO_TRAVEL_TARGETS = 30;
+const MAX_CHECK_ATTRIBUTES = 30;
+
+/** Graceful per-array cap: keep the first `max`, drop the tail (never rejects). */
+const capArray = <T>(schema: ZodType<T>, max: number) =>
+  z
+    .array(schema)
+    .default([])
+    .transform((a) => a.slice(0, max));
 
 /**
  * Pre-narrator intake output (docs/developer-notes/pre-narrator-agents.spec.md).
@@ -44,7 +72,7 @@ export const intentBriefSchema = z.object({
   examineItem: z.string().optional(),
   enterLocation: z.string().optional(),
   /** NPC display names the player is speaking to / addressing this turn. */
-  addressedNpcs: z.array(z.string()).default([]),
+  addressedNpcs: capArray(z.string(), MAX_ADDRESSED_NPCS),
 
   /**
    * Social acts the player directs at a character — the seam for authored
@@ -53,14 +81,13 @@ export const intentBriefSchema = z.object({
    * **array** for forward headroom; v1 resolves only the primary (first) entry.
    * Empty on the regex fallback ⇒ no reaction fires.
    */
-  socialActs: z
-    .array(
-      z.object({
-        concept: z.string().min(1),
-        target: z.string().min(1),
-      }),
-    )
-    .default([]),
+  socialActs: capArray(
+    z.object({
+      concept: z.string().min(1),
+      target: z.string().min(1),
+    }),
+    MAX_SOCIAL_ACTS,
+  ),
 
   /**
    * Player-authored NPC behaviour — the puppet-guardrail seam
@@ -73,15 +100,14 @@ export const intentBriefSchema = z.object({
    * player's OWN acts toward an NPC) and from `movement.kind:"narrated_npc"`
    * (physical relocation, owned by movement-authority).
    */
-  narratedNpcBehaviors: z
-    .array(
-      z.object({
-        npc: z.string().min(1),
-        concept: z.string().optional(),
-        summary: z.string().optional(),
-      }),
-    )
-    .default([]),
+  narratedNpcBehaviors: capArray(
+    z.object({
+      npc: z.string().min(1),
+      concept: z.string().optional(),
+      summary: z.string().optional(),
+    }),
+    MAX_NARRATED_NPC_BEHAVIORS,
+  ),
 
   /**
    * Movement classification (movement-authority.spec.md §1/§3). Persisted
@@ -100,7 +126,7 @@ export const intentBriefSchema = z.object({
       /** Willed destination (may be non-adjacent / multi-hop) — location display name. */
       destination: z.string().optional(),
       /** NPC display names the player invites along (co_travel_request). */
-      coTravelTargets: z.array(z.string()).default([]),
+      coTravelTargets: capArray(z.string(), MAX_CO_TRAVEL_TARGETS),
     })
     .default({ kind: "none", coTravelTargets: [] }),
 
@@ -125,7 +151,7 @@ export const intentBriefSchema = z.object({
    */
   check: z
     .object({
-      relevantAttributeIds: z.array(z.string()).default([]),
+      relevantAttributeIds: capArray(z.string(), MAX_CHECK_ATTRIBUTES),
       stakes: z.enum(["low", "med", "high"]).catch("low").default("low"),
     })
     .optional(),

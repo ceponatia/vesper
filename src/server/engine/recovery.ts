@@ -3,7 +3,7 @@ import { diag } from "@/contracts/diagnostics";
 import { log } from "@/server/log";
 import { db, jobs, sessions, turns } from "../db";
 import { HEARTBEAT_STALE_MS, RECOVERY_SWEEP_INTERVAL_MS } from "./constants";
-import { kickSession, recoverStaleJobs } from "./jobs";
+import { abandonOverAttemptedJobs, kickSession, recoverStaleJobs } from "./jobs";
 
 /**
  * Heartbeat-based recovery (docs/resilience.md §5), run on each turn submit
@@ -20,7 +20,10 @@ export interface RecoveryReport {
 
 export async function recoverAbandonedTurns(sessionId: string): Promise<RecoveryReport> {
   const cutoff = new Date(Date.now() - HEARTBEAT_STALE_MS);
-  const failedJobs = await recoverStaleJobs(sessionId);
+  // Stale running → failed, then abandon any queued job that has already hit the
+  // attempt cap (security Cluster I6) — done before the liveJob check / re-kick
+  // below so an over-cap poison job is never treated as live and never re-kicked.
+  const failedJobs = (await recoverStaleJobs(sessionId)) + (await abandonOverAttemptedJobs(sessionId));
 
   // A live gating job: queued (claimable any time) or running with a fresh heartbeat.
   const [liveJob] = await db()

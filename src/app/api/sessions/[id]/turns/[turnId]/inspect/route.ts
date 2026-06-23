@@ -18,6 +18,11 @@ const EVENT_LIMIT = 50;
  * Admin-only.
  */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
+  // Defense-in-depth (security Cluster I4): the inspector exposes raw agent
+  // output, so it stays off unless explicitly enabled by env — a 404 (not 403)
+  // when the flag is off, so a disabled inspector is indistinguishable from a
+  // route that doesn't exist. The admin role check still applies on top.
+  if (process.env.ENABLE_TURN_INSPECTOR !== "true") return jsonError("not_found", "not found", 404);
   if (user.role !== "admin") return jsonError("forbidden", "turn inspection is admin-only", 403);
   const { id, turnId } = await ctx.params;
   const session = await findOwnedSession(user.id, id);
