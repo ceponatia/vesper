@@ -6,13 +6,14 @@ import { getSessionCookie } from "better-auth/cookies";
  * to `/sign-in` *before* any protected page renders, so the dashboard's
  * owner-scoped fetches never run client-side and flash a "please sign in" error.
  *
- * This is an **optimistic** check — cookie presence only, no DB call (the
- * recommended Better Auth middleware pattern; middleware runs on the edge). A
+ * Next 16 renamed the `middleware` file convention to `proxy` (same runtime, same
+ * `config` matcher) — this is that file. It is an **optimistic** check — cookie
+ * presence only, no DB call (the recommended Better Auth edge pattern). A
  * forged/expired cookie still gets a real 401 from `withUser`; this only stops
  * the never-logged-in flash. The matcher already excludes `/sign-in`, `/api/*`
  * (which return their own JSON 401), Next internals, and static files.
  */
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const sessionCookie = getSessionCookie(request);
   if (!sessionCookie) {
     const signIn = new URL("/sign-in", request.url);
