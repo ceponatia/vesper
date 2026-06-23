@@ -1,0 +1,93 @@
+import { eq } from "drizzle-orm";
+import { cloneEntityImages } from "@/server/images";
+import { characters, db, items, locations } from "@/server/db";
+import { queueEmbedRefresh } from "./library";
+import { findViewable, type ShareableKind } from "./visibility";
+
+/**
+ * Clone-to-library (auth.plan.md slice 7). The source may be **public** (read
+ * via findViewable) or your own; the result is always a new **owned, private**
+ * row with `clonedFromId` provenance and self-contained, duplicated images — so
+ * deleting the source later can never break your copy (the world-instances
+ * guarantee, extended library→library). The source is never mutated.
+ *
+ * Scope note: the snapshot is copied as-is — a character's `defaultOutfit` /
+ * a location's links keep referencing the source owner's library ids, which
+ * simply degrade (resolve to nothing) for the new owner rather than breaking.
+ * Deep-cloning those reference graphs is a future enhancement.
+ */
+export type CloneResult = { ok: true; id: string } | { ok: false; code: "not_found" };
+
+export async function cloneToLibrary(kind: ShareableKind, srcId: string, userId: string): Promise<CloneResult> {
+  switch (kind) {
+    case "character": {
+      const src = await findViewable("character", srcId, userId);
+      if (!src) return { ok: false, code: "not_found" };
+      const [copy] = await db()
+        .insert(characters)
+        .values({
+          ownerId: userId,
+          name: src.name,
+          profile: src.profile,
+          tags: src.tags,
+          visibility: "private",
+          clonedFromId: src.id,
+        })
+        .returning({ id: characters.id });
+      if (!copy) return { ok: false, code: "not_found" };
+      const imageMap = await cloneEntityImages("character", src.id, src.ownerId, copy.id, userId);
+      const newAvatar = src.avatarImageId ? imageMap.get(src.avatarImageId) : undefined;
+      if (newAvatar) await db().update(characters).set({ avatarImageId: newAvatar }).where(eq(characters.id, copy.id));
+      queueEmbedRefresh("character", copy.id);
+      return { ok: true, id: copy.id };
+    }
+    case "location": {
+      const src = await findViewable("location", srcId, userId);
+      if (!src) return { ok: false, code: "not_found" };
+      const [copy] = await db()
+        .insert(locations)
+        .values({
+          ownerId: userId,
+          name: src.name,
+          description: src.description,
+          ambient: src.ambient,
+          scale: src.scale,
+          area: src.area,
+          affordances: src.affordances,
+          tags: src.tags,
+          visibility: "private",
+          clonedFromId: src.id,
+        })
+        .returning({ id: locations.id });
+      if (!copy) return { ok: false, code: "not_found" };
+      const imageMap = await cloneEntityImages("location", src.id, src.ownerId, copy.id, userId);
+      const newImage = src.imageId ? imageMap.get(src.imageId) : undefined;
+      if (newImage) await db().update(locations).set({ imageId: newImage }).where(eq(locations.id, copy.id));
+      queueEmbedRefresh("location", copy.id);
+      return { ok: true, id: copy.id };
+    }
+    case "item": {
+      const src = await findViewable("item", srcId, userId);
+      if (!src) return { ok: false, code: "not_found" };
+      const [copy] = await db()
+        .insert(items)
+        .values({
+          ownerId: userId,
+          kind: src.kind,
+          name: src.name,
+          description: src.description,
+          definition: src.definition,
+          tags: src.tags,
+          visibility: "private",
+          clonedFromId: src.id,
+        })
+        .returning({ id: items.id });
+      if (!copy) return { ok: false, code: "not_found" };
+      const imageMap = await cloneEntityImages("item", src.id, src.ownerId, copy.id, userId);
+      const newImage = src.imageId ? imageMap.get(src.imageId) : undefined;
+      if (newImage) await db().update(items).set({ imageId: newImage }).where(eq(items.id, copy.id));
+      queueEmbedRefresh("item", copy.id);
+      return { ok: true, id: copy.id };
+    }
+  }
+}

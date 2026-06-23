@@ -12,14 +12,14 @@ import {
   withUser,
 } from "./respond";
 
-vi.mock("@/server/auth", () => ({
-  getCurrentUser: vi.fn(),
-  listUsers: vi.fn(async () => []),
-  ensureDefaultUser: vi.fn(),
-  USER_COOKIE: "vesper_user",
-}));
+vi.mock("@/server/auth", () => {
+  // Class defined inside the factory so the instanceof check in withUser uses the
+  // exact same reference the test throws — vi.mock is hoisted above the import.
+  class Unauthenticated extends Error {}
+  return { getCurrentUser: vi.fn(), Unauthenticated };
+});
 
-import { getCurrentUser } from "@/server/auth";
+import { getCurrentUser, Unauthenticated } from "@/server/auth";
 
 const TEST_USER = { id: "u1", email: "t@test.local", name: "Tester", role: "user" as const };
 
@@ -86,7 +86,16 @@ describe("withUser / withRoute", () => {
     expect(await res.json()).toEqual({ id: "u1" });
   });
 
-  it("500s with auth_unavailable when auth resolution fails", async () => {
+  it("401s with unauthenticated when no session resolves", async () => {
+    vi.mocked(getCurrentUser).mockRejectedValueOnce(new Unauthenticated());
+    const handler = withUser(async () => jsonOk({}));
+    const res = await handler(new NextRequest("http://test.local/api/x"), emptyCtx);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe("unauthenticated");
+  });
+
+  it("500s with auth_unavailable when auth resolution genuinely fails (DB down)", async () => {
     vi.mocked(getCurrentUser).mockRejectedValueOnce(new Error("db down"));
     const handler = withUser(async () => jsonOk({}));
     const res = await handler(new NextRequest("http://test.local/api/x"), emptyCtx);

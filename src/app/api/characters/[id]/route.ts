@@ -6,6 +6,7 @@ import { characters, db, images } from "@/server/db";
 import {
   characterPatchSchema,
   deleteEntityImages,
+  findViewable,
   jsonError,
   jsonOk,
   queueEmbedRefresh,
@@ -26,12 +27,14 @@ async function findCharacter(ownerId: string, id: string) {
 
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
-  const row = await findCharacter(user.id, id);
+  // Owner-or-public read (the browse/preview/copy path); private non-owned ⇒ 404.
+  const row = await findViewable("character", id, user.id);
   if (!row) return jsonError("not_found", "character not found", 404);
+  // Portraits scope to the entity owner so a public preview shows the author's art.
   const portraits = await db()
     .select()
     .from(images)
-    .where(and(eq(images.ownerId, user.id), eq(images.entityKind, "character"), eq(images.entityId, id)))
+    .where(and(eq(images.ownerId, row.ownerId), eq(images.entityKind, "character"), eq(images.entityId, id)))
     .orderBy(desc(images.createdAt));
   return jsonOk({ character: row, portraits });
 });
@@ -46,6 +49,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const update: Partial<typeof characters.$inferInsert> = {};
   if (body.value.name !== undefined) update.name = body.value.name;
   if (body.value.tags !== undefined) update.tags = body.value.tags;
+  if (body.value.visibility !== undefined) update.visibility = body.value.visibility;
   if (body.value.profile !== undefined) {
     const current = parseOr(characterProfileSchema, existing.profile, emptyCharacterProfile(), undefined, "characters.profile");
     update.profile = { ...current, ...body.value.profile };

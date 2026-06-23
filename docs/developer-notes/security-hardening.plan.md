@@ -52,7 +52,14 @@ stage it: **wave 1** = A, B, C, D (the high-severity, reachable-now set); **wave
 
 ---
 
-### Cluster A — Auth boundary 🔴
+### Cluster A — Auth boundary 🔴 — ✅ DONE (auth.plan.md, shipped 2026-06-23)
+
+**Implemented by [auth.plan.md](auth.plan.md).** The dev-cookie model is gone:
+Better Auth signed sessions replace it, `getCurrentUser` 401s on no session (no
+auto-mint), `/api/dev/*` 404 in production, `switch-user` is deleted (replaced by
+dev-gated `impersonate`), `/api/dev/me` returns only the current user, and the
+default dev user is no longer force-`admin`. A1–A4 are all subsumed. Original
+analysis kept below for the record.
 
 The dev-cookie model (`vesper_user` = raw userId; absent/invalid → a default
 **admin** user created on demand) is documented dev scaffolding and is the single
@@ -204,13 +211,15 @@ Small, independent correctness/hardening fixes:
 
 ---
 
-## Auth migration (separate, larger effort — not a quick-win cluster)
+## Auth migration (separate, larger effort — not a quick-win cluster) — ✅ DONE (2026-06-23)
 
-> **Now planned in [auth.plan.md](auth.plan.md)** (Better Auth + entity
-> visibility). That plan implements this section and **subsumes Cluster A** — the
-> A1 dev-route gate is still worth shipping as an interim stopgap, but the items
-> below are delivered there. Keep this section as the requirements checklist the
-> auth plan must satisfy.
+> **Implemented by [auth.plan.md](auth.plan.md)** (Better Auth + entity
+> visibility), shipped 2026-06-23. Every requirement below is met: signed
+> sessions, 401 on unresolved identity (no default/admin), `switch-user` deleted,
+> `secure`+`sameSite` cookies (Better Auth defaults). Cluster A is subsumed; the
+> `role`-gated routes now run under genuine authentication. The origin/CSRF check
+> (E3) is Better Auth's built-in `baseURL`/`trustedOrigins` enforcement. See
+> [../auth.md](../auth.md). Requirements checklist retained below for the record.
 
 The clusters above harden the *current* model; they do not replace it.
 `server/auth/index.ts` is, by design, "the entire auth-migration surface." When

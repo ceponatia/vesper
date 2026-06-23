@@ -149,6 +149,68 @@ export async function deleteOwnedImage(
   return true;
 }
 
+/**
+ * Duplicate a shareable entity's ready images into a new owner's storage for a
+ * clone (auth.plan.md / world-instances image policy). Each source image gets a
+ * fresh row owned by `dstOwnerId`, pointed at `dstEntityId`, with the file
+ * **copied** (not shared) so the clone is fully self-contained — deleting the
+ * source can never strip the copy's art. `sourceImageId` records provenance.
+ * Returns old→new image-id map so callers can remap avatar/cover references.
+ * An image that fails to copy is skipped (degraded, never throws).
+ */
+export async function cloneEntityImages(
+  entityKind: ImageEntityKind,
+  srcEntityId: string,
+  srcOwnerId: string,
+  dstEntityId: string,
+  dstOwnerId: string,
+): Promise<Map<string, string>> {
+  const rows = await db()
+    .select()
+    .from(images)
+    .where(
+      and(
+        eq(images.ownerId, srcOwnerId),
+        eq(images.entityKind, entityKind),
+        eq(images.entityId, srcEntityId),
+        eq(images.status, "ready"),
+      ),
+    );
+  const idMap = new Map<string, string>();
+  for (const src of rows) {
+    const newImageId = newId();
+    const relative = imageRelativePath(dstOwnerId, newImageId);
+    try {
+      const absoluteDst = path.join(dataRoot(), relative);
+      await fs.mkdir(path.dirname(absoluteDst), { recursive: true });
+      await fs.copyFile(absoluteImagePath(src), absoluteDst);
+    } catch (err) {
+      log.warn("images", "clone image copy failed; skipping", {
+        imageId: src.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+    const [inserted] = await db()
+      .insert(images)
+      .values({
+        id: newImageId,
+        ownerId: dstOwnerId,
+        kind: src.kind,
+        entityKind,
+        entityId: dstEntityId,
+        path: relative,
+        prompt: src.prompt,
+        sourceImageId: src.id,
+        status: "ready",
+        meta: src.meta,
+      })
+      .returning({ id: images.id });
+    if (inserted) idMap.set(src.id, inserted.id);
+  }
+  return idMap;
+}
+
 export async function failImage(imageId: string, error: string): Promise<ImageRow | null> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, imageId)).limit(1);
   const [updated] = await db()

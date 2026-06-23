@@ -31,13 +31,91 @@ const embedding = () => vector("embedding", { dimensions: 1536 });
 // Identity & library
 // ---------------------------------------------------------------------------
 
+/**
+ * Accounts (auth.plan.md). Owns its core columns for Better Auth's Drizzle
+ * adapter (`user` model → this table); the adapter maps by Drizzle **property
+ * key**, so the keys below must match Better Auth's field names exactly
+ * (`emailVerified`, `createdAt`, `updatedAt`) — the SQL column names are free.
+ * `role`/`banned`/`banReason`/`banExpires` are read by the admin plugin.
+ */
 export const users = pgTable("users", {
   id: id(),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   role: text("role", { enum: ["user", "admin"] }).notNull().default("user"),
+  /** Better Auth: set true once an email is verified (magic-link/OAuth). */
+  emailVerified: boolean("email_verified").notNull().default(false),
+  /** Better Auth profile image URL (OAuth avatar); null for password sign-ups. */
+  image: text("image"),
+  /** Admin plugin ban fields — null/false ⇒ not banned. */
+  banned: boolean("banned"),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires", { withTimezone: true }),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
+
+/**
+ * Better Auth session tokens (auth.plan.md). Named `auth_sessions` to avoid the
+ * collision with the game `sessions` table; mapped via the adapter's `schema`
+ * option (`session` model → this table). `impersonatedBy` is the admin plugin's
+ * column, set when a dev/admin session is impersonating another user.
+ */
+export const authSessions = pgTable(
+  "auth_sessions",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    impersonatedBy: text("impersonated_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("auth_sessions_user_idx").on(t.userId)],
+);
+
+/** Better Auth credential + OAuth links (`account` model → this table). */
+export const accounts = pgTable(
+  "accounts",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+    scope: text("scope"),
+    /** Hashed password for the `credential` provider; null for OAuth links. */
+    password: text("password"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("accounts_user_idx").on(t.userId)],
+);
+
+/** Better Auth one-time tokens — email verification, magic links (`verification` model). */
+export const verifications = pgTable(
+  "verifications",
+  {
+    id: id(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("verifications_identifier_idx").on(t.identifier)],
+);
 
 export const characters = pgTable(
   "characters",
@@ -49,6 +127,16 @@ export const characters = pgTable(
     profile: jsonb("profile").notNull().default({}),
     tags: jsonb("tags").notNull().default([]),
     avatarImageId: text("avatar_image_id"),
+    /**
+     * Cross-account **share scope** (auth.plan.md). `private` ⇒ owner-only;
+     * `public` ⇒ discoverable + copyable by anyone (copy-on-use, no live
+     * cross-owner reference). Distinct from `lore_chunks.visibility` (in-world
+     * secrecy) and `world_links.access` (in-world traversal). Headroom for an
+     * `unlisted` tier later without a migration.
+     */
+    visibility: text("visibility", { enum: ["private", "public"] }).notNull().default("private"),
+    /** Soft provenance for a library→library clone of a public source — no FK (remix attribution). */
+    clonedFromId: text("cloned_from_id"),
     searchEmbedding: vector("search_embedding", { dimensions: 1536 }),
     embedder: text("embedder"),
     createdAt: createdAt(),
@@ -125,6 +213,10 @@ export const locations = pgTable(
     affordances: jsonb("affordances").notNull().default([]),
     tags: jsonb("tags").notNull().default([]),
     imageId: text("image_id"),
+    /** Cross-account share scope (auth.plan.md) — see characters.visibility. */
+    visibility: text("visibility", { enum: ["private", "public"] }).notNull().default("private"),
+    /** Soft provenance for a library→library clone of a public source — no FK. */
+    clonedFromId: text("cloned_from_id"),
     searchEmbedding: vector("search_embedding", { dimensions: 1536 }),
     embedder: text("embedder"),
     createdAt: createdAt(),
@@ -164,6 +256,10 @@ export const items = pgTable(
     definition: jsonb("definition").notNull().default({}),
     tags: jsonb("tags").notNull().default([]),
     imageId: text("image_id"),
+    /** Cross-account share scope (auth.plan.md) — see characters.visibility. */
+    visibility: text("visibility", { enum: ["private", "public"] }).notNull().default("private"),
+    /** Soft provenance for a library→library clone of a public source — no FK. */
+    clonedFromId: text("cloned_from_id"),
     searchEmbedding: vector("search_embedding", { dimensions: 1536 }),
     embedder: text("embedder"),
     createdAt: createdAt(),

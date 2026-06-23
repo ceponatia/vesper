@@ -32,10 +32,10 @@ const authState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/server/auth", () => ({
-  USER_COOKIE: "vesper_user",
   getCurrentUser: async () => authState.user,
-  ensureDefaultUser: async () => authState.user,
-  listUsers: async () => [authState.user],
+  // respond.ts imports this for the 401 instanceof check; resolution never
+  // throws here (getCurrentUser always resolves), so a stand-in class suffices.
+  Unauthenticated: class Unauthenticated extends Error {},
 }));
 
 import { GET as listCharactersRoute, POST as createCharacterRoute } from "./characters/route";
@@ -64,8 +64,8 @@ import { POST as duplicateWorldRoute } from "./worlds/[id]/duplicate/route";
 import { POST as spawnSessionRoute } from "./worlds/[id]/sessions/route";
 import { POST as forgeWorldRoute } from "./worlds/forge/route";
 import { GET as imageFileRoute } from "./images/[id]/file/route";
+import { POST as cloneCharacterRoute } from "./characters/[id]/clone/route";
 import { GET as devMeRoute } from "./dev/me/route";
-import { POST as switchUserRoute } from "./dev/switch-user/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -253,6 +253,94 @@ describe("characters CRUD + search", () => {
       expect(res.status).toBe(404);
     } finally {
       authState.user = original;
+      await db().delete(users).where(eq(users.id, other.id));
+    }
+  });
+});
+
+describe("entity visibility (auth.plan.md)", () => {
+  it("public entities read cross-owner but never write; private stay owner-only", async (t) => {
+    if (!ready) return t.skip();
+    const owner = authState.user;
+    const mkChar = async (name: string) =>
+      ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name }), noParams))).character as {
+        id: string;
+      }).id;
+    const privateId = await mkChar("Secret Muse");
+    const publicId = await mkChar("Public Muse");
+
+    const published = await patchCharacterRoute(
+      send(`http://t/api/characters/${publicId}`, "PATCH", { visibility: "public" }),
+      ctx({ id: publicId }),
+    );
+    expect(published.status).toBe(200);
+    expect(((await json(published)).character as { visibility: string }).visibility).toBe("public");
+
+    const [other] = await db()
+      .insert(users)
+      .values({ email: `routes-int-vis-${Date.now()}@test.local`, name: "Viewer" })
+      .returning();
+    if (!other) throw new Error("failed to create second user");
+    try {
+      authState.user = { ...owner, id: other.id, email: other.email };
+      // Read widens to owner-or-public: a public entity reads cross-owner, a private one 404s.
+      expect((await getCharacterRoute(get(`http://t/api/characters/${publicId}`), ctx({ id: publicId }))).status).toBe(200);
+      expect((await getCharacterRoute(get(`http://t/api/characters/${privateId}`), ctx({ id: privateId }))).status).toBe(404);
+      // Writes never cross owner — even on a public entity (treated as not-found).
+      expect(
+        (await patchCharacterRoute(send(`http://t/api/characters/${publicId}`, "PATCH", { name: "hijack" }), ctx({ id: publicId }))).status,
+      ).toBe(404);
+      expect((await deleteCharacterRoute(get(`http://t/api/characters/${publicId}`), ctx({ id: publicId }))).status).toBe(404);
+    } finally {
+      authState.user = owner;
+      await db().delete(users).where(eq(users.id, other.id));
+    }
+
+    // Owner still sees the public entity, and the cross-owner PATCH never landed.
+    const ownerView = await json(await getCharacterRoute(get(`http://t/api/characters/${publicId}`), ctx({ id: publicId })));
+    expect((ownerView.character as { name: string }).name).toBe("Public Muse");
+
+    await deleteCharacterRoute(get(`http://t/api/characters/${publicId}`), ctx({ id: publicId }));
+    await deleteCharacterRoute(get(`http://t/api/characters/${privateId}`), ctx({ id: privateId }));
+  });
+
+  it("clones a public entity into an owned, private copy that survives source deletion", async (t) => {
+    if (!ready) return t.skip();
+    const owner = authState.user;
+    const srcId = ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name: "Shared Muse", tags: ["origin"] }), noParams))).character as { id: string }).id;
+    await patchCharacterRoute(send(`http://t/api/characters/${srcId}`, "PATCH", { visibility: "public" }), ctx({ id: srcId }));
+
+    const [other] = await db()
+      .insert(users)
+      .values({ email: `routes-int-clone-${Date.now()}@test.local`, name: "Cloner" })
+      .returning();
+    if (!other) throw new Error("failed to create second user");
+    const asOther = { ...owner, id: other.id, email: other.email };
+    let cloneId = "";
+    try {
+      authState.user = asOther;
+      const cloned = await cloneCharacterRoute(send(`http://t/api/characters/${srcId}/clone`, "POST", {}), ctx({ id: srcId }));
+      expect(cloned.status).toBe(201);
+      cloneId = ((await json(cloned)) as { id: string }).id;
+
+      const copy = (await json(await getCharacterRoute(get(`http://t/api/characters/${cloneId}`), ctx({ id: cloneId })))).character as {
+        visibility: string;
+        tags: string[];
+        clonedFromId: string | null;
+      };
+      expect(copy.visibility).toBe("private");
+      expect(copy.tags).toContain("origin");
+      expect(copy.clonedFromId).toBe(srcId);
+
+      // Owner deletes the source; the cross-owner clone must survive intact.
+      authState.user = owner;
+      expect((await deleteCharacterRoute(get(`http://t/api/characters/${srcId}`), ctx({ id: srcId }))).status).toBe(200);
+      authState.user = asOther;
+      expect((await getCharacterRoute(get(`http://t/api/characters/${cloneId}`), ctx({ id: cloneId }))).status).toBe(200);
+    } finally {
+      authState.user = asOther;
+      if (cloneId) await deleteCharacterRoute(get(`http://t/api/characters/${cloneId}`), ctx({ id: cloneId }));
+      authState.user = owner;
       await db().delete(users).where(eq(users.id, other.id));
     }
   });
@@ -777,20 +865,23 @@ describe("forge endpoints (demo mode) and rate limiting", () => {
 });
 
 describe("dev identity", () => {
-  it("dev/me returns the resolved user and the switch sets the cookie", async (t) => {
+  it("dev/me returns the resolved user", async (t) => {
     if (!ready) return t.skip();
     const me = await json(await devMeRoute(get("http://t/api/dev/me"), noParams));
     expect((me.user as { id: string }).id).toBe(authState.user.id);
+  });
 
-    const switched = await switchUserRoute(
-      send("http://t/api/dev/switch-user", "POST", { userId: authState.user.id }),
-      noParams,
-    );
-    expect(switched.status).toBe(200);
-    expect(switched.headers.get("set-cookie")).toContain(`vesper_user=${authState.user.id}`);
-
-    const unknown = await switchUserRoute(send("http://t/api/dev/switch-user", "POST", { userId: "nope" }), noParams);
-    expect(unknown.status).toBe(404);
+  it("dev/me 404s in production (the dev-route gate)", async (t) => {
+    if (!ready) return t.skip();
+    const prev = process.env.NODE_ENV;
+    // NODE_ENV is read-only in the Next types; assign through a cast for the test.
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    try {
+      const gated = await devMeRoute(get("http://t/api/dev/me"), noParams);
+      expect(gated.status).toBe(404);
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = prev;
+    }
   });
 });
 

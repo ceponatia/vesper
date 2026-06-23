@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { apiGet } from "@/lib/client/api";
 
-/** Forgiving: anything but an explicit admin role means "not admin" (mirrors /api/dev/me). */
-const devMeSchema = z.preprocess(
+// Better Auth's get-session returns `{ session, user } | null`; forgiving parse —
+// no session (null) or any non-admin role resolves to "not admin". Reads the real
+// signed session, so admin-gated affordances work under real auth and in prod.
+const sessionSchema = z.preprocess(
   (raw) => (raw && typeof raw === "object" ? raw : {}),
   z.object({
     user: z.object({ role: z.enum(["user", "admin"]).catch("user") }).catch({ role: "user" }),
@@ -16,7 +18,7 @@ const devMeSchema = z.preprocess(
 // several admin-gated affordances — the lightbox, the Inspector tab — at once).
 let cached: Promise<boolean> | null = null;
 function fetchIsAdmin(): Promise<boolean> {
-  cached ??= apiGet(devMeSchema, "/api/dev/me").then((r) => (r.ok ? r.data.user.role === "admin" : false));
+  cached ??= apiGet(sessionSchema, "/api/auth/get-session").then((r) => (r.ok ? r.data.user.role === "admin" : false));
   return cached;
 }
 

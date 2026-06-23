@@ -1,8 +1,41 @@
 # Auth & entity visibility — plan
 
-Status: **next** — queued, design settled in the 2026-06-23 Q&A + design
-discussion; ready to promote to **active** once
-[world-instances.plan.md](finished/world-instances.plan.md) is sequenced (this plan's
+Status: **shipped — 2026-06-23** — Better Auth + the entity-visibility seam are
+live. Reference doc: [../auth.md](../auth.md). Topic slug `auth`.
+
+> **Completion note (2026-06-23).** Migration `0011_superb_greymalkin.sql`:
+> `auth_sessions`/`accounts`/`verifications` tables, `users` extended
+> (`email_verified`/`image`/`updated_at` + admin `banned`/`ban_reason`/`ban_expires`),
+> `visibility` + `cloned_from_id` on characters/locations/items. `server/auth` now
+> holds `auth.ts` (the Better Auth instance — email+password live; OAuth +
+> magic-link env-gated; `admin()` + `nextCookies()`), `session.ts`
+> (`getCurrentUser` → `Unauthenticated` → **401**; no auto-mint), and `dev.ts`
+> (impersonation via the shared dev credential). Routes: `app/api/auth/[...all]`
+> (`toNextJsHandler`), `/api/auth-config`, `/api/dev/impersonate` (replaces
+> `switch-user`), trimmed `/api/dev/me`, `/:kind/:id/clone`. Authorization seam in
+> `server/api/visibility.ts` (`findViewable`, `isPublicEntityImage`) + `clone.ts`
+> (`cloneToLibrary`) + `images cloneEntityImages` (cross-owner file duplication).
+> UI: `/sign-in` + header `AccountMenu` + per-editor `PublishToggle`. Seed
+> provisions the Player + uxtest admin dev credentials. `pnpm verify` green (1351
+> pure tests); visibility-matrix + clone-survives-source-delete int tests added.
+> **Deviations:** (1) dev impersonation uses `signInEmail` with a seeded shared
+> credential (fully typed, robust) rather than the admin plugin's `impersonateUser`
+> (which needs a pre-existing admin caller) — works for any dev-credentialed user.
+> (2) clone **always duplicates** images (self-contained), including same-owner
+> clones, rather than the plan's same-owner "share" — strictly safer, negligible
+> cost. (3) magic-link has no email transport yet (dev logs the link), per plan.
+> **Leftovers (deferred → Slice 8 / "Later"):** the public **browse/discovery
+> gallery**, the "add public entity to a world" UI, and the clone **UI entry
+> point** all wait on the gallery (no in-product way to discover a public entity
+> yet); the clone API primitive + image policy are done and tested.
+
+---
+
+## Original plan (below)
+
+Status was: **next** — queued, design settled in the 2026-06-23 Q&A + design
+discussion; promoted to **active** once
+[world-instances.plan.md](finished/world-instances.plan.md) was sequenced (this plan's
 sharing model depends on the copy cascade). Topic slug `auth`.
 
 This is the supplemental plan called for by

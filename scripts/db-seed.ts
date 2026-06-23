@@ -30,6 +30,7 @@ import {
   type Db,
 } from "../src/server/db";
 import { indexLoreChunks, refreshSearchEmbedding } from "../src/server/memory";
+import { DEV_PASSWORD, ensureDevCredential } from "../src/server/auth";
 import { harborHouse, SEED_TAG, WORLD_NAME, type SeedWorldFixture } from "./fixtures/harbor-house";
 
 /**
@@ -40,8 +41,12 @@ import { harborHouse, SEED_TAG, WORLD_NAME, type SeedWorldFixture } from "./fixt
  * their snapshots), never cascaded.
  */
 
-// Mirrors src/server/auth (not importable here: it depends on next/headers).
 const DEV_EMAIL = "player@vesper.local";
+
+/** The dedicated UI/QA admin (CLAUDE.md) — a fixed id every Tsukikage Onsen
+ *  `ownerId` references, so it must be preserved, never recreated with a new id. */
+const UXTEST_ID = "uxtestmaina1b2c3d4e5f6g7";
+const UXTEST_EMAIL = "uxtest-main@vesper.local";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -50,13 +55,22 @@ async function ensureDevUser(): Promise<{ id: string; name: string }> {
   if (existing) return existing;
   const [created] = await db()
     .insert(users)
-    .values({ email: DEV_EMAIL, name: "Player", role: "admin" })
+    .values({ email: DEV_EMAIL, name: "Player", role: "admin", emailVerified: true })
     .onConflictDoNothing()
     .returning();
   if (created) return created;
   const [raced] = await db().select().from(users).where(eq(users.email, DEV_EMAIL)).limit(1);
   if (!raced) throw new Error("failed to ensure default dev user");
   return raced;
+}
+
+/** Ensure the UI/QA admin row exists (preserving its fixed id) — fresh DBs lack it. */
+async function ensureUxtestAdmin(): Promise<string> {
+  await db()
+    .insert(users)
+    .values({ id: UXTEST_ID, email: UXTEST_EMAIL, name: "UX Tester", role: "admin", emailVerified: true })
+    .onConflictDoNothing();
+  return UXTEST_ID;
 }
 
 /** ids of owner rows carrying the seed marker tag. */
@@ -296,6 +310,13 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
 async function main(): Promise<void> {
   const user = await ensureDevUser();
   console.log(`seeding "${WORLD_NAME}" for ${DEV_EMAIL} (${user.id})`);
+
+  // Provision the shared dev credential so `POST /api/dev/impersonate` can mint a
+  // real signed session for the Player + the UI/QA admin (auth.plan.md).
+  const uxtestId = await ensureUxtestAdmin();
+  await ensureDevCredential(user.id);
+  await ensureDevCredential(uxtestId);
+  console.log(`  dev credential set (password "${DEV_PASSWORD}") for ${DEV_EMAIL} + ${UXTEST_EMAIL}`);
 
   const created = await db().transaction(async (tx) => {
     await wipe(tx, user.id);

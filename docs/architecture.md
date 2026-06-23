@@ -46,7 +46,7 @@ vesper/
       memory/            # retrieval, fact supersedence, episodes, lore RAG
       images/            # avatar/scene/variant pipelines, asset registry
       authoring/         # world forge, character forge
-      auth/              # dev-cookie user resolution
+      auth/              # Better Auth instance + session resolution (docs/auth.md)
       log.ts             # logging (reads LOG_LEVEL — server-only, kept out of lib)
     app/                 # Next.js routes (pages + API route handlers)
     components/          # React components
@@ -70,6 +70,7 @@ components →  contracts (types only), never server/*
 - `src/contracts` and `src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.
+- **Auth & ownership** ([auth.md](auth.md)): `server/auth` wraps Better Auth (signed sessions; `getCurrentUser` → 401 on no session). Every entity carries `ownerId` and every **write** is owner-strict. The single cross-owner relaxation is a **read** widening to owner-or-public (`findViewable`) confined to the browse/preview/copy path; "using" a public entity copies it (no live cross-owner reference), preserving the IDOR-clean property.
 
 ## Data flow (one turn)
 

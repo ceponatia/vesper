@@ -17,6 +17,7 @@ import { itemsApi, type ItemDefinitionParts } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { EntityImageStudio } from "@/components/library/entity-image-studio";
+import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
@@ -148,7 +149,10 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
 
   return (
     <PageContainer>
-      <h1 className="prose-display mb-6 text-2xl">{form.name || "Untitled item"}</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="prose-display text-2xl">{form.name || "Untitled item"}</h1>
+        {detail.data ? <PublishToggle kind="item" id={itemId} visibility={detail.data.visibility} /> : null}
+      </div>
 
       <Tabs tabs={editorTabs} value={tab} onChange={setTab} className="mb-6" />
 

@@ -17,6 +17,15 @@ export const nameSchema = z.string().trim().min(1).max(200);
 export const tagsSchema = z.array(z.string().trim().min(1).max(60)).max(50);
 
 /**
+ * Cross-account share scope for a shareable entity (auth.plan.md) — `public`
+ * makes it discoverable + copyable, `private` is owner-only. Headroom for an
+ * `unlisted` tier later. Distinct from lore-chunk/link visibility (those are
+ * in-world concepts on different schemas).
+ */
+export const visibilitySchema = z.enum(["private", "public"]);
+export type Visibility = z.infer<typeof visibilitySchema>;
+
+/**
  * All-optional view of an object schema with `.default()`s stripped. Zod 4
  * fires defaults even through `.partial()`, which would make a PATCH merge
  * (`{ ...current, ...patch }`) silently reset unsent fields to their
@@ -60,6 +69,8 @@ export const characterPatchSchema = z.object({
   name: nameSchema.optional(),
   profile: partialWithoutDefaults(characterProfileSchema).optional(),
   tags: tagsSchema.optional(),
+  /** Publish/un-publish toggle (auth.plan.md). */
+  visibility: visibilitySchema.optional(),
 });
 export type CharacterPatchBody = z.infer<typeof characterPatchSchema>;
 
@@ -89,6 +100,8 @@ export const locationPatchSchema = z.object({
   area: areaSchema.nullable().optional(),
   /** The desired set of connected library-location ids (undirected); reconciled server-side. */
   links: z.array(z.string().min(1)).optional(),
+  /** Publish/un-publish toggle (auth.plan.md). */
+  visibility: visibilitySchema.optional(),
 });
 export type LocationPatchBody = z.infer<typeof locationPatchSchema>;
 
@@ -125,6 +138,8 @@ export const itemPatchSchema = z.object({
   description: z.string().optional(),
   tags: tagsSchema.optional(),
   definition: partialWithoutDefaults(itemExtrasSchema).optional(),
+  /** Publish/un-publish toggle (auth.plan.md). */
+  visibility: visibilitySchema.optional(),
 });
 export type ItemPatchBody = z.infer<typeof itemPatchSchema>;
 

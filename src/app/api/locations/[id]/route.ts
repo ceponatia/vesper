@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db, locations } from "@/server/db";
 import {
   deleteEntityImages,
+  findViewable,
   jsonError,
   jsonOk,
   loadLocationLinks,
@@ -26,9 +27,11 @@ async function findLocation(ownerId: string, id: string) {
 
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
-  const row = await findLocation(user.id, id);
+  // Owner-or-public read (the browse/preview/copy path); private non-owned ⇒ 404.
+  const row = await findViewable("location", id, user.id);
   if (!row) return jsonError("not_found", "location not found", 404);
-  const links = await loadLocationLinks(user.id, id);
+  // Links scope to the entity owner so a public preview shows the author's map.
+  const links = await loadLocationLinks(row.ownerId, id);
   return jsonOk({ location: { ...row, links } });
 });
 
