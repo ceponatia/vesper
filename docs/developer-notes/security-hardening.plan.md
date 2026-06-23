@@ -54,7 +54,7 @@ stage it: **wave 1** = A, B, C, D (the high-severity, reachable-now set); **wave
 
 ### Cluster A — Auth boundary 🔴 — ✅ DONE (auth.plan.md, shipped 2026-06-23)
 
-**Implemented by [auth.plan.md](auth.plan.md).** The dev-cookie model is gone:
+**Implemented by [auth.plan.md](finished/auth.plan.md).** The dev-cookie model is gone:
 Better Auth signed sessions replace it, `getCurrentUser` 401s on no session (no
 auto-mint), `/api/dev/*` 404 in production, `switch-user` is deleted (replaced by
 dev-gated `impersonate`), `/api/dev/me` returns only the current user, and the
@@ -213,7 +213,7 @@ Small, independent correctness/hardening fixes:
 
 ## Auth migration (separate, larger effort — not a quick-win cluster) — ✅ DONE (2026-06-23)
 
-> **Implemented by [auth.plan.md](auth.plan.md)** (Better Auth + entity
+> **Implemented by [auth.plan.md](finished/auth.plan.md)** (Better Auth + entity
 > visibility), shipped 2026-06-23. Every requirement below is met: signed
 > sessions, 401 on unresolved identity (no default/admin), `switch-user` deleted,
 > `secure`+`sameSite` cookies (Better Auth defaults). Cluster A is subsumed; the

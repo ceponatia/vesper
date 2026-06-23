@@ -118,7 +118,7 @@ god-mode POV, companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — `phase-N` docs left as-is)
 
-- **Auth & entity visibility** — [auth.plan.md](auth.plan.md) · ref
+- **Auth & entity visibility** — [auth.plan.md](finished/auth.plan.md) · ref
   [auth.md](../auth.md), shipped 2026-06-23. Real accounts via **Better Auth**
   (self-hosted, Drizzle-into-our-Postgres; email+password live, magic-link +
   social OAuth env-gated) — signed sessions, **401 on unresolved identity**, no

@@ -2,7 +2,7 @@
 
 Status: **shipped — 2026-06-23** — the library → world → session copy cascade is
 live. Topic slug `world-instances`. Born from the 2026-06-23 auth design discussion
-(see [auth.plan.md](../auth.plan.md)); unblocks the auth visibility seam (no
+(see [auth.plan.md](auth.plan.md)); unblocks the auth visibility seam (no
 cross-owner references to build).
 
 > **Completion note (2026-06-23).** Migration `0010_tiny_green_goblin.sql`: `world_*`
@@ -49,7 +49,7 @@ be deleted at any time; worlds and sessions built from it survive untouched.
   (yours or, once sharing lands, anyone's) can never break a world or session,
   because they hold their own copies. No FK 409 "in use", no dangling worlds.
 - **Safe cross-owner sharing — and a _stronger_ security posture.** This is the
-  big one for [auth.plan.md](../auth.plan.md). "Use a public entity" becomes "copy it
+  big one for [auth.plan.md](auth.plan.md). "Use a public entity" becomes "copy it
   into your world/library at add-time," so **no cross-owner foreign keys ever
   exist**. Every row stays owner-scoped (the IDOR-clean property the 2026-06-23
   scan praised is preserved), and the entire "what happens on un-publish / delete
@@ -159,7 +159,7 @@ and baseline, none of the above is computable later.
    the **world instance**, not the library entity.
 4. **Image handling** — ref-aware deletion (same-owner) + the existing
    `image_sweep` integration; cross-owner file duplication wired into the copy op
-   (lands with auth's clone/add, see [auth.plan.md](../auth.plan.md)).
+   (lands with auth's clone/add, see [auth.plan.md](auth.plan.md)).
 5. **Delete unblocking** — drop the FK-driven "in_use" 409 on library deletes (it
    no longer applies); confirm worlds/sessions survive a source delete.
 
