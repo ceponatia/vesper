@@ -36,6 +36,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const immersive = pathname.startsWith("/sessions/");
   const showBottomBar = navMode === "tabs" && !immersive;
 
+  // The sign-in page stands alone — no nav chrome (you're not "in" the app yet).
+  if (pathname === "/sign-in") return <>{children}</>;
+
   return (
     <>
       {/* h-13 (3.25rem) on the header itself, border included (border-box): the

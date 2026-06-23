@@ -130,4 +130,4 @@ read rule already supports it — only the list query + UI are missing), the
 "add public entity to a world" surface that pairs with it, user profiles,
 an `unlisted` tier, selective update **propagation** to copies (deferred — see
 the world-instances plan), and Better Auth plugins (organizations, 2FA, passkeys,
-API keys, more OAuth). Tracked in [auth.plan.md](developer-notes/auth.plan.md).
+API keys, more OAuth). Tracked in [auth.plan.md](developer-notes/finished/auth.plan.md).
