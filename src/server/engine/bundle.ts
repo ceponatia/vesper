@@ -1,5 +1,4 @@
 import { asc, eq } from "drizzle-orm";
-import { z } from "zod";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import {
   emptyItemDefinition,
@@ -8,6 +7,7 @@ import {
   itemInstanceStateSchema,
 } from "@/contracts/items/item";
 import { defaultLinkAccess, linkAccessSchema } from "@/contracts/world/access";
+import { ambientSchema, type Ambient } from "@/contracts/world/location";
 import { emptyBrief, nextTurnBriefSchema } from "@/contracts/state/brief";
 import { emptyParticipantState, participantStateSchema } from "@/contracts/state/participant-state";
 import { emptySceneGenState, sceneGenStateSchema, type SceneGenState } from "@/contracts/state/scene-gen";
@@ -32,13 +32,10 @@ import type { SceneBundleInput, SceneItemInput, SceneLinkInput, SceneParticipant
  * (docs/resilience.md §1) — downstream code never sees raw rows.
  */
 
-export const ambientSchema = z.object({
-  scent: z.string().optional(),
-  sound: z.string().optional(),
-  light: z.string().optional(),
-});
-
-export type Ambient = z.infer<typeof ambientSchema>;
+// Ambient is canonical in contracts (world/location); re-exported so engine
+// consumers keep importing it from the bundle.
+export { ambientSchema };
+export type { Ambient };
 
 export interface BundleParticipant extends SceneParticipantInput {
   characterId: string | null;

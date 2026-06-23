@@ -22,6 +22,7 @@ export * from "./images/scene-reference";
 export * from "./images/image-models";
 export * from "./world/profile";
 export * from "./world/access";
+export * from "./world/location";
 export * from "./state/participant-state";
 export * from "./state/session-runtime";
 export * from "./state/brief";

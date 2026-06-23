@@ -3,7 +3,6 @@ import { and, eq } from "drizzle-orm";
 import { db, locations } from "@/server/db";
 import {
   deleteEntityImages,
-  isForeignKeyViolation,
   jsonError,
   jsonOk,
   loadLocationLinks,
@@ -56,14 +55,9 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const existing = await findLocation(user.id, id);
   if (!existing) return jsonError("not_found", "location not found", 404);
-  try {
-    await db().delete(locations).where(and(eq(locations.id, id), eq(locations.ownerId, user.id)));
-  } catch (err) {
-    if (isForeignKeyViolation(err)) {
-      return jsonError("in_use", "location is used by a world or session", 409);
-    }
-    throw err;
-  }
+  // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
+  // library delete never breaks them and never hits a FK — no in-use guard.
+  await db().delete(locations).where(and(eq(locations.id, id), eq(locations.ownerId, user.id)));
   void deleteEntityImages("location", id, user.id).catch(() => undefined);
   return jsonOk({ ok: true });
 });

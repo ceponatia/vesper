@@ -94,32 +94,19 @@ async function resolveDraftFamilies(
       sink.push(diag("warn", "api.world.from_draft.location_nameless", "dropped a location with no name"));
       continue;
     }
-    if (loc.locationId) {
-      // Linked library location: edited values become world-local overrides;
-      // the base row is never duplicated or mutated from here.
-      locations.push({
-        locationId: loc.locationId,
-        name: "",
-        description: "",
-        ambient: {},
-        tags: [],
-        scale: loc.scale,
-        area: loc.area,
-        overrides: { name, description: loc.description, ambient: loc.ambient, tags: loc.tags, scale: loc.scale, area: loc.area },
-        links: loc.links,
-      });
-    } else {
-      locations.push({
-        name,
-        description: loc.description,
-        ambient: loc.ambient,
-        tags: loc.tags,
-        scale: loc.scale,
-        area: loc.area,
-        overrides: {},
-        links: loc.links,
-      });
-    }
+    // The world bakes its own snapshot from these fields either way
+    // (world-instances.plan.md); `locationId`, when present, is just the source
+    // library template (never mutated from here).
+    locations.push({
+      locationId: loc.locationId,
+      name,
+      description: loc.description,
+      ambient: loc.ambient,
+      tags: loc.tags,
+      scale: loc.scale,
+      area: loc.area,
+      links: loc.links,
+    });
   }
 
   const loreChunks: WorldLoreChunkInput[] = [];

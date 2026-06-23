@@ -19,16 +19,14 @@ import {
   turnMessages,
   turns,
   users,
-  worldCast,
-  worldItems,
   worldLinks,
-  worldLocations,
   worlds,
 } from "../db";
 import { loadSessionBundle } from "./bundle";
 import { applyTurnResults } from "./merge";
 import { createSessionFromWorld, restartSession } from "./spawn";
 import { sessionJobStatus, submitTurn, type TurnStreamEvent } from "./pipeline";
+import { addWorldCast, addWorldItem, addWorldLocation } from "./world-fixture";
 
 /**
  * Full demo-mode turn against the real database (docs/turn-engine.md
@@ -146,18 +144,11 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     if (!world) throw new Error("world insert failed");
     worldId = world.id;
 
-    const [wlKitchen] = await db()
-      .insert(worldLocations)
-      .values({ worldId, locationId: kitchen.id })
-      .returning({ id: worldLocations.id });
-    const [wlGarden] = await db()
-      .insert(worldLocations)
-      .values({ worldId, locationId: garden.id, overrides: { name: "Walled Garden" } })
-      .returning({ id: worldLocations.id });
-    if (!wlKitchen || !wlGarden) throw new Error("world location insert failed");
-    await db().insert(worldLinks).values({ worldId, fromWorldLocationId: wlKitchen.id, toWorldLocationId: wlGarden.id, label: "back door" });
-    await db().insert(worldCast).values({ worldId, characterId: maya.id, role: "companion", startWorldLocationId: wlKitchen.id });
-    await db().insert(worldItems).values({ worldId, itemId: lantern.id, worldLocationId: wlKitchen.id });
+    const wlKitchen = await addWorldLocation(worldId, kitchen.id);
+    const wlGarden = await addWorldLocation(worldId, garden.id, { snapshot: { name: "Walled Garden" } });
+    await db().insert(worldLinks).values({ worldId, fromWorldLocationId: wlKitchen, toWorldLocationId: wlGarden, label: "back door" });
+    await addWorldCast(worldId, maya.id, { role: "companion", startWorldLocationId: wlKitchen });
+    await addWorldItem(worldId, lantern.id, { worldLocationId: wlKitchen });
   });
 
   it("materializes a session from the world definition", async () => {
@@ -183,7 +174,8 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     const mayaP = participants.find((p) => p.displayName === "Maya");
     const player = participants.find((p) => p.isUser);
     expect(mayaP?.role).toBe("companion");
-    expect(player?.displayName).toBe("Brian");
+    // Embodied with no chosen character ⇒ the neutral identity, never the account name (UX-audit P1).
+    expect(player?.displayName).toBe("You");
 
     const instances = await db().select().from(itemInstances).where(eq(itemInstances.sessionId, created.sessionId));
     const worn = instances.find((i) => i.name === "sundress");
@@ -372,7 +364,7 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
             conditionEvents: [],
             attributeChanges: [],
             activityUpdates: [],
-            affinityAdjustments: [{ fromName: "Maya", towardName: "Brian", delta, reason: "shared confidence" }],
+            affinityAdjustments: [{ fromName: "Maya", towardName: "You", delta, reason: "shared confidence" }],
             commsEvents: [],
           },
           archivist: null,
@@ -527,32 +519,18 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     if (!rook || !sable || !jetty) throw new Error("fixture insert failed");
     const [relWorld] = await db().insert(worlds).values({ ownerId, name: "Relationship World" }).returning({ id: worlds.id });
     if (!relWorld) throw new Error("world insert failed");
-    const [wlJetty] = await db()
-      .insert(worldLocations)
-      .values({ worldId: relWorld.id, locationId: jetty.id })
-      .returning({ id: worldLocations.id });
-    if (!wlJetty) throw new Error("world location insert failed");
-    await db().insert(worldCast).values([
-      {
-        worldId: relWorld.id,
-        characterId: rook.id,
-        role: "npc",
-        startWorldLocationId: wlJetty.id,
-        relationships: [
-          { toward: "Sable", stage: "close" },
-          { toward: "player", stage: "friendly" },
-          { toward: "Ghost", stage: "devoted" }, // unresolved on purpose
-        ],
-      },
-      {
-        worldId: relWorld.id,
-        characterId: sable.id,
-        role: "npc",
-        startWorldLocationId: wlJetty.id,
-        // explicit reverse direction (lowercase to exercise case-insensitive resolution)
-        relationships: [{ toward: "rook", stage: "wary" }],
-      },
-    ]);
+    const wlJetty = await addWorldLocation(relWorld.id, jetty.id);
+    await addWorldCast(relWorld.id, rook.id, {
+      role: "npc",
+      startWorldLocationId: wlJetty,
+      relationships: [
+        { toward: "Sable", stage: "close" },
+        { toward: "player", stage: "friendly" },
+        { toward: "Ghost", stage: "devoted" }, // unresolved on purpose
+      ],
+    });
+    // explicit reverse direction (lowercase to exercise case-insensitive resolution)
+    await addWorldCast(relWorld.id, sable.id, { role: "npc", startWorldLocationId: wlJetty, relationships: [{ toward: "rook", stage: "wary" }] });
 
     const sink = new DiagnosticCollector();
     const created = await createSessionFromWorld({ worldId: relWorld.id, userId: ownerId, title: "Rel spawn", embodied: true, sink });
@@ -605,12 +583,8 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
       })
       .returning({ id: worlds.id });
     if (!tokenWorld) throw new Error("world insert failed");
-    const [wlHall] = await db()
-      .insert(worldLocations)
-      .values({ worldId: tokenWorld.id, locationId: hall.id })
-      .returning({ id: worldLocations.id });
-    if (!wlHall) throw new Error("world location insert failed");
-    await db().insert(worldCast).values({ worldId: tokenWorld.id, characterId: scribe.id, role: "npc", startWorldLocationId: wlHall.id });
+    const wlHall = await addWorldLocation(tokenWorld.id, hall.id);
+    await addWorldCast(tokenWorld.id, scribe.id, { role: "npc", startWorldLocationId: wlHall });
     await db().insert(loreChunks).values({ worldId: tokenWorld.id, title: "The arrival", body: "Town gossip says {{player}} will return.", tier: "always" });
 
     const embodied = await createSessionFromWorld({ worldId: tokenWorld.id, userId: ownerId, title: "Token embodied", embodied: true });
@@ -618,13 +592,14 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     const bundle = await loadSessionBundle(embodied.sessionId);
     if (!bundle) throw new Error("bundle load failed");
 
-    // The user fixture is named Brian — the embodied player's display name.
-    expect(bundle.world.description).toBe("A story about Brian.");
-    expect(bundle.lore.synopsis).toBe("Brian arrives at dusk.");
-    expect(bundle.style.directives).toEqual(["Follow Brian closely."]);
-    expect(bundle.loreChunks[0]?.body).toBe("Town gossip says Brian will return.");
-    expect(bundle.participants.find((p) => !p.isUser)?.snapshot.bio).toBe("Chronicles Brian's deeds.");
-    expect(bundle.locations[0]?.description).toBe("Built where Brian was born.");
+    // Embodied with no chosen character ⇒ {{player}} fills with the neutral "You"
+    // (the account name is never used — UX-audit P1).
+    expect(bundle.world.description).toBe("A story about You.");
+    expect(bundle.lore.synopsis).toBe("You arrives at dusk.");
+    expect(bundle.style.directives).toEqual(["Follow You closely."]);
+    expect(bundle.loreChunks[0]?.body).toBe("Town gossip says You will return.");
+    expect(bundle.participants.find((p) => !p.isUser)?.snapshot.bio).toBe("Chronicles You's deeds.");
+    expect(bundle.locations[0]?.description).toBe("Built where You was born.");
     expect(bundle.locations[0]?.name).toBe("{{player}} Hall"); // names are grounding identifiers — never substituted
 
     // Observer sessions spawn no is_user row: the token fills with the fixed phrase.
@@ -645,11 +620,7 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     if (!hall) throw new Error("location insert failed");
     const [capWorld] = await db().insert(worlds).values({ ownerId, name: "Crowded World" }).returning({ id: worlds.id });
     if (!capWorld) throw new Error("world insert failed");
-    const [wlHall] = await db()
-      .insert(worldLocations)
-      .values({ worldId: capWorld.id, locationId: hall.id })
-      .returning({ id: worldLocations.id });
-    if (!wlHall) throw new Error("world location insert failed");
+    const wlHall = await addWorldLocation(capWorld.id, hall.id);
 
     // 6 authored majors + 1 default-tier companion (spawn bumps it to major) = 7 > cap 6.
     const castMembers: Array<{ name: string; role: "companion" | "npc"; tier: "major" | "minor" }> = [
@@ -659,13 +630,7 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     for (const member of castMembers) {
       const [row] = await db().insert(characters).values({ ownerId, name: member.name }).returning({ id: characters.id });
       if (!row) throw new Error("character insert failed");
-      await db().insert(worldCast).values({
-        worldId: capWorld.id,
-        characterId: row.id,
-        role: member.role,
-        tier: member.tier,
-        startWorldLocationId: wlHall.id,
-      });
+      await addWorldCast(capWorld.id, row.id, { role: member.role, tier: member.tier, startWorldLocationId: wlHall });
     }
 
     const sink = new DiagnosticCollector();
@@ -718,40 +683,23 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
 
     const [pcWorld] = await db().insert(worlds).values({ ownerId, name: "Played Cast World" }).returning({ id: worlds.id });
     if (!pcWorld) throw new Error("world insert failed");
-    const [wlCove] = await db()
-      .insert(worldLocations)
-      .values({ worldId: pcWorld.id, locationId: cove.id })
-      .returning({ id: worldLocations.id });
-    const [wlDen] = await db()
-      .insert(worldLocations)
-      .values({ worldId: pcWorld.id, locationId: den.id })
-      .returning({ id: worldLocations.id });
-    if (!wlCove || !wlDen) throw new Error("world location insert failed");
+    const wlCove = await addWorldLocation(pcWorld.id, cove.id);
+    const wlDen = await addWorldLocation(pcWorld.id, den.id);
     // Generic player start set to the cove; Devin's own placement (the den) must win.
-    await db().update(worlds).set({ playerStartWorldLocationId: wlCove.id }).where(eq(worlds.id, pcWorld.id));
+    await db().update(worlds).set({ playerStartWorldLocationId: wlCove }).where(eq(worlds.id, pcWorld.id));
 
-    const [devinCast] = await db()
-      .insert(worldCast)
-      .values({
-        worldId: pcWorld.id,
-        characterId: devin.id,
-        role: "npc",
-        startWorldLocationId: wlDen.id,
-        relationships: [{ toward: "Mara", stage: "close" }],
-      })
-      .returning({ id: worldCast.id });
-    await db().insert(worldCast).values({
-      worldId: pcWorld.id,
-      characterId: mara.id,
+    const devinCast = await addWorldCast(pcWorld.id, devin.id, {
       role: "npc",
-      startWorldLocationId: wlCove.id,
+      startWorldLocationId: wlDen,
+      relationships: [{ toward: "Mara", stage: "close" }],
+    });
+    await addWorldCast(pcWorld.id, mara.id, {
+      role: "npc",
+      startWorldLocationId: wlCove,
       relationships: [{ toward: "Devin", stage: "friendly" }],
     });
-    if (!devinCast) throw new Error("cast insert failed");
-    await db().insert(worldItems).values([
-      { worldId: pcWorld.id, itemId: scarf.id, castId: devinCast.id, worn: true },
-      { worldId: pcWorld.id, itemId: satchel.id, castId: devinCast.id },
-    ]);
+    await addWorldItem(pcWorld.id, scarf.id, { castId: devinCast, worn: true });
+    await addWorldItem(pcWorld.id, satchel.id, { castId: devinCast });
 
     const created = await createSessionFromWorld({
       worldId: pcWorld.id,
@@ -813,7 +761,7 @@ describe.skipIf(!ready)("engine integration (demo mode)", () => {
     if (!pip || !shore) throw new Error("fixture insert failed");
     const [soloWorld] = await db().insert(worlds).values({ ownerId, name: "Solo World" }).returning({ id: worlds.id });
     if (!soloWorld) throw new Error("world insert failed");
-    await db().insert(worldLocations).values({ worldId: soloWorld.id, locationId: shore.id });
+    await addWorldLocation(soloWorld.id, shore.id);
 
     const created = await createSessionFromWorld({
       worldId: soloWorld.id,

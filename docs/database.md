@@ -22,18 +22,33 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
 | `location_links` | `owner_id`, `from_location_id`, `to_location_id` (FK-cascade), `travel_minutes` — undirected library connections (one row per pair); the library counterpart of `world_links`. Importing a linked set into a world recreates them as `world_links` (`materializeLocations`) |
 | `items` | `owner_id`, `kind` (`clothing`/`object`/`container`), `name`, `description`, `definition` JSONB (`ItemDefinition` extras: coverage, layer, opacity, sensory, fields), `tags` JSONB, `image_id`, `search_embedding` vector |
 
-### Worlds (composition over the library)
+### Worlds (instance copies of the library)
+
+A world holds its **own snapshot copy** of every entity it uses, not a live reference
+(the library → world → session copy cascade — see [developer-notes/world-instances.plan.md](developer-notes/world-instances.plan.md)).
+Each `world_*` row carries a `snapshot` of the effective entity plus a **soft**
+`source_*_id` pointer (provenance only — **no FK**) and `source_stamped_at` (the
+source's `updated_at` at copy time, the diff baseline for future opt-in propagation).
+So deleting or editing a library row never breaks a world; the source pointer just
+dangles. Library entities remain the single reuse surface (forge writes them; a
+world materialization copies them in the same step).
 
 | Table | Key columns |
 | --- | --- |
 | `worlds` | `owner_id`, `name`, `description`, `style` JSONB (`WorldStyle` — pinned in [contracts/state.md](contracts/state.md), includes `norms`), `lore` JSONB (`WorldLore`: synopsis, factions, plot anchors), `narrative_model`, `agent_model` (per-world in-session agent override; migration 0003), `image_id`, `player_character_id?` (default player the new-session wizard pre-fills; FK→`characters` ON DELETE set null; migration 0007), `player_start_world_location_id?` (soft reference, no FK), `duplicated_from_world_id?` (world copy keeps lineage) |
-| `world_cast` | `world_id`, `character_id`, `role` (`companion`/`npc`), `tier` (`major`/`minor`/`extra`), `start_world_location_id` (→ `world_locations`; NPC schedules live in `CharacterProfile.schedule`), `relationships` JSONB (`AuthoredRelationship[]` — directed edges toward cast names or `"player"`; spawn seeds `participant_relationships` at stage midpoints) |
-| `world_locations` | `world_id`, `location_id`, `overrides` JSONB (may also override `scale`/`area`), `sort` (authored map order — the editor's array index on every save; reads ORDER BY it) |
+| `world_cast` | `world_id`, `source_character_id?` (soft, no FK), `name` (display copy), `snapshot` JSONB (`CharacterProfile` copy), `avatar_image_id?` (shared owner-asset, kept fresh by the world image backfill), `source_stamped_at?`, `role` (`companion`/`npc`), `tier` (`major`/`minor`/`extra`), `start_world_location_id` (→ `world_locations`; NPC schedules live in `CharacterProfile.schedule`), `relationships` JSONB (`AuthoredRelationship[]` — directed edges toward cast names or `"player"`; spawn seeds `participant_relationships` at stage midpoints) |
+| `world_locations` | `world_id`, `source_location_id?` (soft, no FK), `snapshot` JSONB (`LocationSnapshot` — name/description/ambient/scale/area/affordances/tags), `source_stamped_at?`, `sort` (authored map order — the editor's array index on every save; reads ORDER BY it) |
 | `world_links` | `world_id`, `from_world_location_id`, `to_world_location_id`, `label`, `travel_minutes`, `audibility` (reserved), `access` JSONB, `door_item_id?` |
-| `world_items` | `world_id`, `item_id`, placement: `world_location_id?` or `cast_id?` (+ `worn`), `container_world_item_id?`, `quantity` |
+| `world_items` | `world_id`, `source_item_id?` (soft, no FK), `name` (display copy), `snapshot` JSONB (`ItemDefinition` copy), `source_stamped_at?`, placement: `world_location_id?` or `cast_id?` (+ `worn`), `container_world_item_id?`, `quantity` |
 | `lore_chunks` | `world_id`, `title`, `body`, `category`, `tier` (`always`/`scene`/`retrieval`), `visibility` (`public`/`secret`), `unlock_tags` JSONB, `location_tags` JSONB, `character_ids` JSONB, `sort`, `manually_unlocked` bool, `embedding` vector |
 
 ### Sessions (instances)
+
+A session is a full instantiation of its **world** (which is itself already a copy of
+the library), so play never reads world or library rows again. The `character_id?` /
+`location_id?` / `item_id?` back-pointers on the tables below are **soft source
+references — no FK** (same cascade rationale as `world_*`): a deleted library row
+leaves the snapshot intact.
 
 | Table | Key columns |
 | --- | --- |

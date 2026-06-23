@@ -220,11 +220,11 @@ beforeAll(async () => {
 
   const [wlKitchen] = await db()
     .insert(worldLocations)
-    .values({ worldId, locationId: kitchen.id })
+    .values({ worldId, sourceLocationId: kitchen.id, snapshot: { name: "Kitchen", description: "A warm farmhouse kitchen.", ambient: { scent: "bread" } } })
     .returning({ id: worldLocations.id });
   const [wlGarden] = await db()
     .insert(worldLocations)
-    .values({ worldId, locationId: garden.id })
+    .values({ worldId, sourceLocationId: garden.id, snapshot: { name: "Garden", description: "An overgrown herb garden." } })
     .returning({ id: worldLocations.id });
   if (!wlKitchen || !wlGarden) throw new Error("world location insert failed");
   await db()
@@ -232,13 +232,15 @@ beforeAll(async () => {
     .values({ worldId, fromWorldLocationId: wlKitchen.id, toWorldLocationId: wlGarden.id, label: "back door" });
   await db().insert(worldCast).values({
     worldId,
-    characterId: maya.id,
+    sourceCharacterId: maya.id,
+    name: "Maya",
+    snapshot: { bio: "Maya grew up coastal.", defaultOutfit: [sundress.id] },
     role: "companion",
     startWorldLocationId: wlKitchen.id,
     // Maya's bio names no bond kind (indeterminate) ⇒ perceived mirrors the midpoint.
     relationships: [{ toward: "player", stage: "friendly" }],
   });
-  await db().insert(worldItems).values({ worldId, itemId: lantern.id, worldLocationId: wlKitchen.id });
+  await db().insert(worldItems).values({ worldId, sourceItemId: lantern.id, name: "lantern", snapshot: { kind: "object", name: "lantern", description: "A brass lantern." }, worldLocationId: wlKitchen.id });
 });
 
 afterAll(async () => {
@@ -299,7 +301,10 @@ describe.skipIf(!ready)("session routes (demo mode)", () => {
 
   it("returns 409 JSON (not a stream) when the session is busy", async () => {
     const sessionId = await spawn("Busy");
-    await db().update(sessions).set({ status: "processing" }).where(eq(sessions.id, sessionId));
+    // "narrating" = an active turn → the busy guard fails fast. (A "processing"
+    // session instead waits out the post-turn window before 409 — UX-audit M3 —
+    // which is correct product behavior but too slow to assert here.)
+    await db().update(sessions).set({ status: "narrating" }).where(eq(sessions.id, sessionId));
     const res = await turnsRoute(
       send(`http://test/api/sessions/${sessionId}/turns`, "POST", { input: "I wave.", author: "player" }),
       ctx({ id: sessionId }),

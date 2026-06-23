@@ -3,8 +3,11 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   characterProfileSchema,
   itemDefinitionSchema,
+  locationSnapshotSchema,
   worldLoreSchema,
   worldStyleSchema,
+  type CharacterProfile,
+  type ItemDefinition,
 } from "../src/contracts";
 import { DiagnosticCollector } from "../src/contracts/diagnostics";
 import { newId } from "../src/lib/ids";
@@ -83,7 +86,7 @@ async function wipe(tx: Tx, ownerId: string): Promise<void> {
   const charIds = await taggedIds(tx, characters, ownerId);
   if (charIds.length > 0) {
     await tx.update(sessionParticipants).set({ characterId: null }).where(inArray(sessionParticipants.characterId, charIds));
-    const borrowed = await tx.delete(worldCast).where(inArray(worldCast.characterId, charIds)).returning({ id: worldCast.id });
+    const borrowed = await tx.delete(worldCast).where(inArray(worldCast.sourceCharacterId, charIds)).returning({ id: worldCast.id });
     if (borrowed.length > 0) console.log(`  warning: removed ${borrowed.length} cast row(s) referencing seed characters in other worlds`);
     await tx.delete(characters).where(inArray(characters.id, charIds));
   }
@@ -91,7 +94,7 @@ async function wipe(tx: Tx, ownerId: string): Promise<void> {
   const itemIds = await taggedIds(tx, items, ownerId);
   if (itemIds.length > 0) {
     await tx.update(itemInstances).set({ itemId: null }).where(inArray(itemInstances.itemId, itemIds));
-    const borrowed = await tx.delete(worldItems).where(inArray(worldItems.itemId, itemIds)).returning({ id: worldItems.id });
+    const borrowed = await tx.delete(worldItems).where(inArray(worldItems.sourceItemId, itemIds)).returning({ id: worldItems.id });
     if (borrowed.length > 0) console.log(`  warning: removed ${borrowed.length} item placement(s) referencing seed items in other worlds`);
     await tx.delete(items).where(inArray(items.id, itemIds));
   }
@@ -99,7 +102,7 @@ async function wipe(tx: Tx, ownerId: string): Promise<void> {
   const locIds = await taggedIds(tx, locations, ownerId);
   if (locIds.length > 0) {
     await tx.update(sessionLocations).set({ locationId: null }).where(inArray(sessionLocations.locationId, locIds));
-    const borrowed = await tx.delete(worldLocations).where(inArray(worldLocations.locationId, locIds)).returning({ id: worldLocations.id });
+    const borrowed = await tx.delete(worldLocations).where(inArray(worldLocations.sourceLocationId, locIds)).returning({ id: worldLocations.id });
     if (borrowed.length > 0) console.log(`  warning: removed ${borrowed.length} location row(s) referencing seed locations in other worlds`);
     await tx.delete(locations).where(inArray(locations.id, locIds));
   }
@@ -135,10 +138,13 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
   // Library items. Validate the composed definition; store extras only
   // (items.definition holds the ItemDefinition extras slice — see server/api/schemas.ts).
   const itemIdByKey = new Map<string, string>(fixture.items.map((i) => [i.key, newId()]));
+  // Capture the composed ItemDefinition per key so the world copy can bake it as
+  // its snapshot (world-instances.plan.md — the world owns a full copy).
+  const itemDefByKey = new Map<string, ItemDefinition>();
   await tx.insert(items).values(
     fixture.items.map((i) => {
       const tags = [...(i.tags ?? []), SEED_TAG];
-      itemDefinitionSchema.parse({ kind: i.kind, name: i.name, description: i.description, tags, ...i.extras });
+      itemDefByKey.set(i.key, itemDefinitionSchema.parse({ kind: i.kind, name: i.name, description: i.description, tags, ...i.extras }));
       return {
         id: requireKey(itemIdByKey, i.key, "item"),
         ownerId,
@@ -153,12 +159,12 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
 
   // Characters (defaultOutfit references resolved library item ids).
   const charIdByKey = new Map<string, string>(fixture.characters.map((c) => [c.key, newId()]));
+  // Capture each built profile + name so the world cast can bake them as its copy.
+  const profileByCharKey = new Map<string, CharacterProfile>();
+  const nameByCharKey = new Map<string, string>(fixture.characters.map((c) => [c.key, c.name]));
   await tx.insert(characters).values(
-    fixture.characters.map((c) => ({
-      id: requireKey(charIdByKey, c.key, "character"),
-      ownerId,
-      name: c.name,
-      profile: characterProfileSchema.parse({
+    fixture.characters.map((c) => {
+      const profile = characterProfileSchema.parse({
         bio: c.bio,
         personality: c.personality,
         voice: c.voice,
@@ -168,9 +174,16 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
         aliases: c.aliases,
         defaultOutfit: c.defaultOutfitKeys.map((k) => requireKey(itemIdByKey, k, "item")),
         schedule: c.schedule,
-      }),
-      tags: [...c.tags, SEED_TAG],
-    })),
+      });
+      profileByCharKey.set(c.key, profile);
+      return {
+        id: requireKey(charIdByKey, c.key, "character"),
+        ownerId,
+        name: c.name,
+        profile,
+        tags: [...c.tags, SEED_TAG],
+      };
+    }),
   );
 
   // World.
@@ -201,8 +214,13 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
     fixture.locations.map((l) => ({
       id: requireKey(worldLocIdByKey, l.key, "world location"),
       worldId,
-      locationId: requireKey(locIdByKey, l.key, "location"),
-      overrides: {},
+      sourceLocationId: requireKey(locIdByKey, l.key, "location"),
+      snapshot: locationSnapshotSchema.parse({
+        name: l.name,
+        description: l.description,
+        ambient: l.ambient,
+        tags: [...l.tags, SEED_TAG],
+      }),
     })),
   );
   await tx.insert(worldLinks).values(
@@ -220,7 +238,9 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
     fixture.cast.map((c) => ({
       id: requireKey(castIdByCharKey, c.characterKey, "cast"),
       worldId,
-      characterId: requireKey(charIdByKey, c.characterKey, "character"),
+      sourceCharacterId: requireKey(charIdByKey, c.characterKey, "character"),
+      name: requireKey(nameByCharKey, c.characterKey, "character name"),
+      snapshot: requireKey(profileByCharKey, c.characterKey, "character profile"),
       role: c.role,
       startWorldLocationId: requireKey(worldLocIdByKey, c.startLocationKey, "world location"),
     })),
@@ -233,10 +253,13 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
     fixture.placements.map((p) => {
       const placements = [p.locationKey, p.castKey, p.containerKey].filter((v) => v !== undefined);
       if (placements.length !== 1) throw new Error(`placement for "${p.itemKey}" must set exactly one of location/cast/container`);
+      const snapshot = requireKey(itemDefByKey, p.itemKey, "item definition");
       return {
         id: requireKey(worldItemIdByItemKey, p.itemKey, "placement"),
         worldId,
-        itemId: requireKey(itemIdByKey, p.itemKey, "item"),
+        sourceItemId: requireKey(itemIdByKey, p.itemKey, "item"),
+        name: snapshot.name,
+        snapshot,
         worldLocationId: p.locationKey ? requireKey(worldLocIdByKey, p.locationKey, "world location") : null,
         castId: p.castKey ? requireKey(castIdByCharKey, p.castKey, "cast") : null,
         worn: p.worn ?? false,

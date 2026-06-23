@@ -1,8 +1,8 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { z } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { emptyItemDefinition, itemDefinitionSchema, type ItemDefinition } from "@/contracts/items/item";
 import { authoredRelationshipListSchema, type AuthoredRelationship } from "@/contracts/relationships/authored";
+import { emptyLocationSnapshot, locationSnapshotSchema, type LocationSnapshot } from "@/contracts/world/location";
 import { initialMeters } from "@/contracts/meters/registry";
 import { emptyBrief } from "@/contracts/state/brief";
 import { participantStateSchema, type ParticipantState } from "@/contracts/state/participant-state";
@@ -31,7 +31,6 @@ import {
   itemInstances,
   items,
   jobs,
-  locations,
   participantRelationships,
   sessionLinks,
   sessionLocations,
@@ -46,7 +45,6 @@ import {
   type Db,
 } from "../db";
 import { indexLoreChunks } from "../memory";
-import { ambientSchema } from "./bundle";
 import { seedRelationshipRows, type RelationshipSeedMember } from "./relationship-seeds";
 import { effectiveMeterDefinitions } from "./scene";
 
@@ -56,14 +54,6 @@ import { effectiveMeterDefinitions } from "./scene";
  * instances — so play never reads world/library rows again.
  */
 
-const locationOverridesSchema = z.object({
-  name: z.string().optional(),
-  description: z.string().optional(),
-  ambient: ambientSchema.optional(),
-  scale: z.enum(["intimate", "room", "hall", "open", "expanse"]).optional(),
-  area: z.string().optional(),
-  affordances: z.array(z.unknown()).optional(),
-});
 
 export interface CreateSessionInput {
   worldId: string;
@@ -102,13 +92,8 @@ interface WorldMaterial {
   lore: WorldLore;
   worldLocs: Array<{
     id: string;
-    locationId: string;
-    overrides: unknown;
-    name: string;
-    description: string;
-    ambient: unknown;
-    scale: "intimate" | "room" | "hall" | "open" | "expanse";
-    affordances: unknown;
+    sourceLocationId: string | null;
+    snapshot: LocationSnapshot;
   }>;
   links: Array<typeof worldLinks.$inferSelect>;
   cast: Array<{
@@ -117,14 +102,14 @@ interface WorldMaterial {
     tier: "major" | "minor" | "extra";
     startWorldLocationId: string | null;
     relationships: AuthoredRelationship[];
-    characterId: string;
+    sourceCharacterId: string | null;
     characterName: string;
     avatarImageId: string | null;
     profile: CharacterProfile;
   }>;
   worldItemRows: Array<{
     id: string;
-    itemId: string;
+    sourceItemId: string | null;
     worldLocationId: string | null;
     castId: string | null;
     worn: boolean;
@@ -158,20 +143,17 @@ async function loadWorldMaterial(
   const [world] = await db().select().from(worlds).where(eq(worlds.id, worldId)).limit(1);
   if (!world) return null;
 
+  // World rows carry self-contained snapshots (world-instances.plan.md) — spawn
+  // reads them directly, never joining the library, so a deleted library row
+  // never breaks a session.
   const [locRows, linkRows, castRows, itemRows] = await Promise.all([
     db()
       .select({
         id: worldLocations.id,
-        locationId: worldLocations.locationId,
-        overrides: worldLocations.overrides,
-        name: locations.name,
-        description: locations.description,
-        ambient: locations.ambient,
-        scale: locations.scale,
-        affordances: locations.affordances,
+        sourceLocationId: worldLocations.sourceLocationId,
+        snapshot: worldLocations.snapshot,
       })
       .from(worldLocations)
-      .innerJoin(locations, eq(worldLocations.locationId, locations.id))
       .where(eq(worldLocations.worldId, worldId))
       // sessions mirror the authored map order (world_locations.sort)
       .orderBy(asc(worldLocations.sort), asc(worldLocations.id)),
@@ -183,39 +165,43 @@ async function loadWorldMaterial(
         tier: worldCast.tier,
         startWorldLocationId: worldCast.startWorldLocationId,
         relationships: worldCast.relationships,
-        characterId: worldCast.characterId,
-        characterName: characters.name,
-        avatarImageId: characters.avatarImageId,
-        profile: characters.profile,
+        sourceCharacterId: worldCast.sourceCharacterId,
+        characterName: worldCast.name,
+        avatarImageId: worldCast.avatarImageId,
+        profile: worldCast.snapshot,
       })
       .from(worldCast)
-      .innerJoin(characters, eq(worldCast.characterId, characters.id))
       .where(eq(worldCast.worldId, worldId)),
     db()
       .select({
         id: worldItems.id,
-        itemId: worldItems.itemId,
+        sourceItemId: worldItems.sourceItemId,
         worldLocationId: worldItems.worldLocationId,
         castId: worldItems.castId,
         worn: worldItems.worn,
         containerWorldItemId: worldItems.containerWorldItemId,
         quantity: worldItems.quantity,
-        kind: items.kind,
-        name: items.name,
-        description: items.description,
-        definition: items.definition,
+        snapshot: worldItems.snapshot,
       })
       .from(worldItems)
-      .innerJoin(items, eq(worldItems.itemId, items.id))
       .where(eq(worldItems.worldId, worldId)),
   ]);
+
+  const worldLocs = locRows.map((row) => ({
+    id: row.id,
+    sourceLocationId: row.sourceLocationId,
+    snapshot: parseOr(locationSnapshotSchema, row.snapshot, emptyLocationSnapshot(), sink, "world_locations.snapshot"),
+  }));
 
   const cast = castRows.map((row) => ({
     ...row,
     relationships: parseOr(authoredRelationshipListSchema, row.relationships, [], sink, "world_cast.relationships"),
-    profile: parseOr(characterProfileSchema, row.profile, emptyCharacterProfile(), sink, "characters.profile"),
+    profile: parseOr(characterProfileSchema, row.profile, emptyCharacterProfile(), sink, "world_cast.snapshot"),
   }));
 
+  // Player default-outfit items are still resolved from the library at spawn (the
+  // player picks a currently-owned character); cast outfits come from each cast
+  // snapshot's defaultOutfit, also resolved against the library here.
   const outfitIds = [...new Set([...cast.flatMap((c) => c.profile.defaultOutfit), ...playerOutfitIds])];
   const outfitItems = new Map<string, ItemDefinition>();
   if (outfitIds.length > 0) {
@@ -227,18 +213,18 @@ async function loadWorldMaterial(
     world,
     style: parseOr(worldStyleSchema, world.style, emptyWorldStyle(), sink, "worlds.style"),
     lore: parseOr(worldLoreSchema, world.lore, emptyWorldLore(), sink, "worlds.lore"),
-    worldLocs: locRows,
+    worldLocs,
     links: linkRows,
     cast,
     worldItemRows: itemRows.map((row) => ({
       id: row.id,
-      itemId: row.itemId,
+      sourceItemId: row.sourceItemId,
       worldLocationId: row.worldLocationId,
       castId: row.castId,
       worn: row.worn,
       containerWorldItemId: row.containerWorldItemId,
       quantity: row.quantity,
-      definition: parseItemDefinition(row, sink),
+      definition: parseOr(itemDefinitionSchema, row.snapshot, emptyItemDefinition(), sink, "world_items.snapshot"),
     })),
     outfitItems,
   };
@@ -260,22 +246,21 @@ async function materializeSession(
 ): Promise<void> {
   const { sessionId, material, sink } = args;
 
-  // Locations (overrides win over the library row).
+  // Locations: copy the world's snapshot into the session (world-instances.plan.md).
   const sessionLocByWorldLoc = new Map<string, string>();
   const locationValues = material.worldLocs.map((wl) => {
-    const overrides = parseOr(locationOverridesSchema, wl.overrides, {}, sink, "world_locations.overrides");
     const id = newId();
     sessionLocByWorldLoc.set(wl.id, id);
     return {
       id,
       sessionId,
-      locationId: wl.locationId,
-      name: overrides.name ?? wl.name,
-      description: overrides.description ?? wl.description,
-      ambient: overrides.ambient ?? parseOr(ambientSchema, wl.ambient, {}, sink, "locations.ambient"),
-      scale: overrides.scale ?? wl.scale,
-      area: overrides.area ?? null,
-      affordances: overrides.affordances ?? wl.affordances,
+      locationId: wl.sourceLocationId,
+      name: wl.snapshot.name,
+      description: wl.snapshot.description,
+      ambient: wl.snapshot.ambient,
+      scale: wl.snapshot.scale,
+      area: wl.snapshot.area,
+      affordances: wl.snapshot.affordances,
       emergent: false,
     };
   });
@@ -288,9 +273,9 @@ async function materializeSession(
   for (const wi of material.worldItemRows) instanceByWorldItem.set(wi.id, newId());
   const firstInstanceByLibraryItem = new Map<string, string>();
   for (const wi of material.worldItemRows) {
-    if (!firstInstanceByLibraryItem.has(wi.itemId)) {
+    if (wi.sourceItemId && !firstInstanceByLibraryItem.has(wi.sourceItemId)) {
       const instanceId = instanceByWorldItem.get(wi.id);
-      if (instanceId) firstInstanceByLibraryItem.set(wi.itemId, instanceId);
+      if (instanceId) firstInstanceByLibraryItem.set(wi.sourceItemId, instanceId);
     }
   }
 
@@ -337,7 +322,7 @@ async function materializeSession(
     : null;
   const playerCharacterId = args.embodied ? (args.player?.characterId ?? null) : null;
   const playerCastId = playerCharacterId
-    ? (material.cast.find((member) => member.characterId === playerCharacterId)?.id ?? null)
+    ? (material.cast.find((member) => member.sourceCharacterId === playerCharacterId)?.id ?? null)
     : null;
 
   let playerParticipantId: string | null = null;
@@ -351,7 +336,7 @@ async function materializeSession(
     return {
       id,
       sessionId,
-      characterId: member.characterId,
+      characterId: member.sourceCharacterId,
       isUser: isPlayer,
       displayName: uniqueName(member.characterName),
       role: isPlayer ? ("player" as const) : member.role,
@@ -450,7 +435,7 @@ async function materializeSession(
       itemValues.push({
         id,
         sessionId,
-        itemId: wi.itemId,
+        itemId: wi.sourceItemId,
         name: wi.definition.name,
         snapshot: wi.definition,
         holderParticipantId,
@@ -484,7 +469,7 @@ async function materializeSession(
       }
       const alreadyWorn =
         wearer.castId !== null &&
-        material.worldItemRows.some((wi) => wi.castId === wearer.castId && wi.itemId === itemId && wi.worn);
+        material.worldItemRows.some((wi) => wi.castId === wearer.castId && wi.sourceItemId === itemId && wi.worn);
       if (alreadyWorn) continue;
       itemValues.push({
         id: newId(),

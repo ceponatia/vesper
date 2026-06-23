@@ -21,6 +21,27 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Next (queued — proposed order)
 
+- **Auth & entity visibility** — [auth.plan.md](auth.plan.md). The early real-auth
+  system: replace the dev-cookie identity with **Better Auth** (self-hosted,
+  Drizzle-into-our-Postgres; email+password live, magic-link + social OAuth
+  env-gated) — signed sessions, **401 on unresolved identity**, no auto-minted
+  admin. Plus a `private`/`public` **visibility** layer on shareable entities
+  (characters/locations/items; worlds & sessions are always private): public =
+  discoverable + **copyable** — using a public entity *copies* it (owned) via the
+  world-instances cascade, so there are no live cross-owner references. Implements
+  security-hardening's §Auth migration and subsumes its Cluster A. Thin v1, built
+  to expand (orgs/2FA/passkeys/browse-gallery are later plugins/slices).
+  **Depends on world-instances. Reorder this slot to taste.**
+- **Security hardening** — [security-hardening.plan.md](security-hardening.plan.md).
+  Remediation of the 2026-06-23 full-surface security scan. Nine **file-disjoint
+  agent clusters** that run fully concurrently: A gate `/api/dev/*` (the one urgent
+  now-fix) + cookie/role hygiene, B sharp decode limits (already-triggerable OOM),
+  C rate-limit the unthrottled paid-model/heavy-write routes, D security headers +
+  narrow dev-origins, E request-body caps, F prompt-injection delimiting, G
+  LLM-output array bounds, H Postgres bind/creds, I defense-in-depth lows. IDOR
+  sweep / SQLi / SSRF / XSS / committed-secrets all came back **clean**; most
+  findings are latent-until-deploy. The real-auth migration is tracked separately
+  in the plan's §Auth migration. **Reorder this slot to taste.**
 - **Character chat — rolling background summary** (shipped — 2026-06-21) —
   [character-chat-summary.plan.md](character-chat-summary.plan.md). Gives the
   sessionless 1-on-1 chat memory *past* its 40-turn window: a watermark-anchored
@@ -107,6 +128,14 @@ item acquisition during play, monorepo split (permanently deferred), observer /
 god-mode POV, companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — `phase-N` docs left as-is)
+
+- **World instances — the library→world→session copy cascade** —
+  [world-instances.plan.md](world-instances.plan.md), shipped 2026-06-23. Worlds now
+  hold **instance snapshot copies** of entities (like sessions already did) instead of
+  live FK references, so the cascade is uniform (library template → world instance →
+  session runtime) and **deletes never break copies**. Eliminates cross-owner foreign
+  keys, clearing the way for entity sharing in `auth.plan.md`. Selective opt-in
+  *propagation* to copies stays deferred (plan §Future).
 
 - **Scene images — multi-reference & providers** —
   [scene-images.plan.md](finished/scene-images.plan.md) · spec

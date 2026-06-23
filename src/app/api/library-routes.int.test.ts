@@ -18,6 +18,7 @@ import {
   sessionParticipants,
   sessions,
   users,
+  worldCast,
   worlds,
 } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
@@ -401,7 +402,7 @@ describe("worlds", () => {
         },
         locations: [
           { name: "Quay", description: "Wet stone.", links: ["Harbor Office"] },
-          { locationId, overrides: { description: "Now with a leak." } },
+          { locationId, description: "Now with a leak." },
         ],
         cast: [{ characterId, role: "companion", startLocationName: "Harbor Office" }],
         items: [
@@ -794,11 +795,16 @@ describe("dev identity", () => {
 });
 
 describe("deletion guards", () => {
-  it("409s deleting a character used by a world, then deletes cleanly after the world", async (t) => {
+  it("deletes a library character even while a world references it; the world keeps its snapshot", async (t) => {
     if (!ready) return t.skip();
-    const inUse = await deleteCharacterRoute(get(`http://t/api/characters/${characterId}`), ctx({ id: characterId }));
-    expect(inUse.status).toBe(409);
-    expect(((await json(inUse)).error as { code: string }).code).toBe("in_use");
+    // world-instances.plan.md: worlds hold their own entity snapshots, so a
+    // library delete no longer 409s ("in use") and never breaks the world — the
+    // cast copy survives with a now-dangling source pointer.
+    const charGone = await deleteCharacterRoute(get(`http://t/api/characters/${characterId}`), ctx({ id: characterId }));
+    expect(charGone.status).toBe(200);
+    const cast = await db().select().from(worldCast).where(eq(worldCast.worldId, worldId));
+    expect(cast.length).toBeGreaterThan(0);
+    expect(cast.every((c) => c.name.length > 0)).toBe(true);
 
     const worldGone = await deleteWorldRoute(get(`http://t/api/worlds/${worldId}`), ctx({ id: worldId }));
     expect(worldGone.status).toBe(200);
@@ -807,8 +813,5 @@ describe("deletion guards", () => {
       .from(loreChunks)
       .where(eq(loreChunks.worldId, worldId));
     expect(chunkCount?.count).toBe(0);
-
-    const charGone = await deleteCharacterRoute(get(`http://t/api/characters/${characterId}`), ctx({ id: characterId }));
-    expect(charGone.status).toBe(200);
   });
 });
