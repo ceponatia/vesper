@@ -134,12 +134,12 @@ beforeAll(async () => {
 
   const [wlTearoom] = await db()
     .insert(worldLocations)
-    .values({ worldId, locationId: tearoom.id })
+    .values({ worldId, sourceLocationId: tearoom.id, snapshot: { name: "Tearoom", description: "A quiet tearoom." } })
     .returning({ id: worldLocations.id });
   if (!wlTearoom) throw new Error("world location insert failed");
   await db()
     .insert(worldCast)
-    .values({ worldId, characterId: fatima.id, role: "companion", startWorldLocationId: wlTearoom.id });
+    .values({ worldId, sourceCharacterId: fatima.id, name: "Fatima", snapshot: { bio: "Fatima runs the tearoom." }, role: "companion", startWorldLocationId: wlTearoom.id });
 });
 
 afterAll(async () => {

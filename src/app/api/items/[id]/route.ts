@@ -6,7 +6,6 @@ import {
   deleteEntityImages,
   emptyItemExtras,
   invalidCoverageIds,
-  isForeignKeyViolation,
   itemExtrasSchema,
   itemPatchSchema,
   jsonError,
@@ -71,14 +70,9 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const existing = await findItem(user.id, id);
   if (!existing) return jsonError("not_found", "item not found", 404);
-  try {
-    await db().delete(items).where(and(eq(items.id, id), eq(items.ownerId, user.id)));
-  } catch (err) {
-    if (isForeignKeyViolation(err)) {
-      return jsonError("in_use", "item is used by a world or session", 409);
-    }
-    throw err;
-  }
+  // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
+  // library delete never breaks them and never hits a FK — no in-use guard.
+  await db().delete(items).where(and(eq(items.id, id), eq(items.ownerId, user.id)));
   void deleteEntityImages("item", id, user.id).catch(() => undefined);
   return jsonOk({ ok: true });
 });

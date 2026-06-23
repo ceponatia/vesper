@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ambientSchema,
   bodyLocationRegistry,
   characterProfileSchema,
   itemDefinitionSchema,
@@ -32,11 +33,9 @@ export function partialWithoutDefaults<T extends z.ZodRawShape>(
   return z.object(Object.fromEntries(entries)) as unknown as z.ZodType<Partial<z.infer<z.ZodObject<T>>>>;
 }
 
-export const ambientSchema = z.object({
-  scent: z.string().max(500).optional(),
-  sound: z.string().max(500).optional(),
-  light: z.string().max(500).optional(),
-});
+// Canonical ambient lives in contracts (world/location); re-exported so the
+// library route schemas keep importing it from here.
+export { ambientSchema };
 
 // --- characters --------------------------------------------------------------
 

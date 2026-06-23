@@ -207,9 +207,15 @@ export const worldLocations = pgTable(
   {
     id: id(),
     worldId: text("world_id").notNull().references(() => worlds.id, { onDelete: "cascade" }),
-    locationId: text("location_id").notNull().references(() => locations.id),
-    /** Partial Location overrides for this world. */
-    overrides: jsonb("overrides").notNull().default({}),
+    /** Soft pointer to the library location this was copied from — provenance only
+     * (world-instances.plan.md). No FK: the source may be edited or deleted; this row
+     * is self-sufficient via `snapshot`. */
+    sourceLocationId: text("source_location_id"),
+    /** Source `updated_at` at copy time — the diff baseline for future opt-in propagation. */
+    sourceStampedAt: timestamp("source_stamped_at", { withTimezone: true }),
+    /** LocationSnapshot (contracts/world/location): the world's own full copy of the
+     * effective location — name/description/ambient/scale/area/affordances/tags. */
+    snapshot: jsonb("snapshot").notNull().default({}),
     /** Authored map order (editor reordering); written as the array index on every save. */
     sort: integer("sort").notNull().default(0),
   },
@@ -240,7 +246,15 @@ export const worldCast = pgTable(
   {
     id: id(),
     worldId: text("world_id").notNull().references(() => worlds.id, { onDelete: "cascade" }),
-    characterId: text("character_id").notNull().references(() => characters.id),
+    /** Soft pointer to the source library character — provenance only, no FK (see worldLocations). */
+    sourceCharacterId: text("source_character_id"),
+    sourceStampedAt: timestamp("source_stamped_at", { withTimezone: true }),
+    /** Display name copied from the source character at materialize time. */
+    name: text("name").notNull().default(""),
+    /** CharacterProfile (contracts/world/profile) — the world's own copy. */
+    snapshot: jsonb("snapshot").notNull().default({}),
+    /** Avatar image id; a soft ref to a shared owner-asset, kept fresh by the world image backfill. */
+    avatarImageId: text("avatar_image_id"),
     role: text("role", { enum: ["companion", "npc"] }).notNull().default("npc"),
     /** Simulation/narration depth ceiling (cast-tiers-and-affinity-spec). */
     tier: text("tier", { enum: ["major", "minor", "extra"] }).notNull().default("minor"),
@@ -256,7 +270,13 @@ export const worldItems = pgTable(
   {
     id: id(),
     worldId: text("world_id").notNull().references(() => worlds.id, { onDelete: "cascade" }),
-    itemId: text("item_id").notNull().references(() => items.id),
+    /** Soft pointer to the source library item — provenance only, no FK (see worldLocations). */
+    sourceItemId: text("source_item_id"),
+    sourceStampedAt: timestamp("source_stamped_at", { withTimezone: true }),
+    /** Display name copied from the source item at materialize time. */
+    name: text("name").notNull().default(""),
+    /** ItemDefinition (contracts/items/item) — the world's own full copy. */
+    snapshot: jsonb("snapshot").notNull().default({}),
     /** Placement: a location, a cast member (worn/carried), or inside another world item. */
     worldLocationId: text("world_location_id").references(() => worldLocations.id, { onDelete: "cascade" }),
     castId: text("cast_id").references(() => worldCast.id, { onDelete: "cascade" }),
@@ -323,7 +343,9 @@ export const sessionLocations = pgTable(
   {
     id: id(),
     sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
-    locationId: text("location_id").references(() => locations.id),
+    /** Soft pointer to the source library location — provenance only, no FK (world-instances.plan.md):
+     * the snapshot columns below are self-sufficient, so deleting the library row never blocks. */
+    locationId: text("location_id"),
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
     ambient: jsonb("ambient").notNull().default({}),
@@ -359,7 +381,8 @@ export const sessionParticipants = pgTable(
   {
     id: id(),
     sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
-    characterId: text("character_id").references(() => characters.id),
+    /** Soft pointer to the source library character — provenance only, no FK (the `snapshot` is self-sufficient). */
+    characterId: text("character_id"),
     isUser: boolean("is_user").notNull().default(false),
     displayName: text("display_name").notNull(),
     role: text("role", { enum: ["player", "companion", "npc"] }).notNull().default("npc"),
@@ -383,7 +406,8 @@ export const itemInstances = pgTable(
   {
     id: id(),
     sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
-    itemId: text("item_id").references(() => items.id),
+    /** Soft pointer to the source library item — provenance only, no FK (the `snapshot` is self-sufficient). */
+    itemId: text("item_id"),
     name: text("name").notNull(),
     /** ItemDefinition snapshot. */
     snapshot: jsonb("snapshot").notNull().default({}),

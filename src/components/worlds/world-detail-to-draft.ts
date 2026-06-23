@@ -41,8 +41,7 @@ export function worldDetailToDraft(detail: WorldDetail): WorldDraft {
       description: loc.description,
       ambient: loc.ambient,
       scale: loc.scale,
-      // area is world-placement data, so it only ever rides in overrides
-      area: loc.overrides.area,
+      area: loc.area ?? undefined,
       tags: loc.tags,
       links: linksFor(loc.id),
     })),

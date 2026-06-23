@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ambientSchema as ambientBaseSchema,
   authoredRelationshipSchema,
   avatarImageModels,
   avatarImageModelLabels,
@@ -212,13 +213,8 @@ export function detailOf<T>(item: z.ZodType<T>, key: string) {
   }, item);
 }
 
-const ambientSchema = z
-  .object({
-    scent: z.string().optional(),
-    sound: z.string().optional(),
-    light: z.string().optional(),
-  })
-  .catch({});
+// Canonical shape from contracts; client wraps it in `.catch({})` for resilience.
+const ambientSchema = ambientBaseSchema.catch({});
 
 export type Ambient = z.infer<typeof ambientSchema>;
 
@@ -358,14 +354,15 @@ export type WorldCastEntry = z.infer<typeof worldCastEntrySchema>;
 
 export const worldLocationEntrySchema = z.object({
   id: idSchema,
+  /** Soft source library id (provenance); null once the source is gone. */
   locationId: optionalId,
   name: textOr(""),
   description: textOr(""),
   ambient: ambientSchema,
   scale: worldLocationScaleSchema,
   tags: tagsSchema,
-  /** World-local override slice; `area` is placement data and only lives here. */
-  overrides: z.object({ area: z.string().optional() }).catch({}),
+  /** Map-grouping label (world-placement data); null/absent when unset. */
+  area: optionalText,
 });
 export type WorldLocationEntry = z.infer<typeof worldLocationEntrySchema>;
 

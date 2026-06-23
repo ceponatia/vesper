@@ -6,7 +6,6 @@ import { characters, db, images } from "@/server/db";
 import {
   characterPatchSchema,
   deleteEntityImages,
-  isForeignKeyViolation,
   jsonError,
   jsonOk,
   queueEmbedRefresh,
@@ -67,14 +66,9 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const existing = await findCharacter(user.id, id);
   if (!existing) return jsonError("not_found", "character not found", 404);
-  try {
-    await db().delete(characters).where(and(eq(characters.id, id), eq(characters.ownerId, user.id)));
-  } catch (err) {
-    if (isForeignKeyViolation(err)) {
-      return jsonError("in_use", "character is used by a world or session", 409);
-    }
-    throw err;
-  }
+  // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
+  // library delete never breaks them and never hits a FK — no in-use guard.
+  await db().delete(characters).where(and(eq(characters.id, id), eq(characters.ownerId, user.id)));
   void deleteEntityImages("character", id, user.id).catch(() => undefined);
   return jsonOk({ ok: true });
 });

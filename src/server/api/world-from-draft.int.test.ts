@@ -98,7 +98,10 @@ afterAll(async () => {
 
 describe.skipIf(!ready)("createWorldFromDraft (demo mode)", () => {
   it("caps generated cast at MAX_GENERATED_CAST with a diagnostic; the world still saves", async () => {
-    const names = ["Capped One", "Capped Two", "Capped Three", "Capped Four"];
+    // One more than the cap so exactly one suggestion overflows (derived from the
+    // constant, not a hardcoded count, so a future cap change won't rot this test).
+    const names = Array.from({ length: MAX_GENERATED_CAST + 1 }, (_, i) => `Capped ${i + 1}`);
+    const overflowName = names[names.length - 1]!;
     const result = await createWorldFromDraft(
       ownerId,
       draft({
@@ -116,16 +119,18 @@ describe.skipIf(!ready)("createWorldFromDraft (demo mode)", () => {
 
     const capped = result.diagnostics.filter((d) => d.code === "api.world.from_draft.cast_capped");
     expect(capped).toHaveLength(1);
-    expect(capped[0]?.message).toContain("Capped Four");
+    expect(capped[0]?.message).toContain(overflowName);
 
     const castRows = await db().select().from(worldCast).where(eq(worldCast.worldId, result.worldId));
     expect(castRows).toHaveLength(MAX_GENERATED_CAST);
 
+    // Exactly MAX_GENERATED_CAST characters created; the overflow one was never generated.
     const created = await db()
       .select({ name: characters.name })
       .from(characters)
       .where(and(eq(characters.ownerId, ownerId), inArray(characters.name, names)));
-    expect(created.map((c) => c.name).sort()).toEqual(["Capped One", "Capped Three", "Capped Two"]);
+    expect(created).toHaveLength(MAX_GENERATED_CAST);
+    expect(created.map((c) => c.name)).not.toContain(overflowName);
   });
 
   it("recreates library connections as world_links when linked locations are imported", async () => {
@@ -211,7 +216,7 @@ describe.skipIf(!ready)("createWorldFromDraft (demo mode)", () => {
     expect((stub?.profile as { bio: string }).bio).toBe("a wary night clerk");
 
     const castRows = await db().select().from(worldCast).where(eq(worldCast.worldId, result.worldId));
-    expect(castRows.map((c) => c.characterId)).toContain(stub?.id);
+    expect(castRows.map((c) => c.sourceCharacterId)).toContain(stub?.id);
   });
 
   it("cast relationship suggestions persist to world_cast and seed participant_relationships at spawn", async () => {
@@ -351,7 +356,7 @@ describe.skipIf(!ready)("createWorldFromDraft (demo mode)", () => {
 
     const placed = await db().select().from(worldItems).where(eq(worldItems.worldId, result.worldId));
     expect(placed).toHaveLength(2);
-    expect(placed.map((p) => p.itemId)).toContain(lantern.id); // reused, not redefined
+    expect(placed.map((p) => p.sourceItemId)).toContain(lantern.id); // reused, not redefined
 
     // No duplicate lantern row was created…
     const lanternRows = await db()
@@ -368,6 +373,6 @@ describe.skipIf(!ready)("createWorldFromDraft (demo mode)", () => {
       .where(and(eq(items.ownerId, ownerId), eq(items.name, "Tin Whistle")))
       .limit(1);
     expect(whistle).toBeDefined();
-    expect(placed.map((p) => p.itemId)).toContain(whistle?.id);
+    expect(placed.map((p) => p.sourceItemId)).toContain(whistle?.id);
   });
 });

@@ -3,8 +3,13 @@ import { z } from "zod";
 import {
   authoredRelationshipListSchema,
   authoredRelationshipSchema,
+  characterProfileSchema,
   diag,
+  emptyCharacterProfile,
+  emptyItemDefinition,
+  emptyLocationSnapshot,
   itemDefinitionSchema,
+  locationSnapshotSchema,
   loreChunkCategorySchema,
   loreChunkTierSchema,
   loreChunkVisibilitySchema,
@@ -13,6 +18,7 @@ import {
   type AuthoredRelationship,
   type Diagnostic,
   type DiagnosticSink,
+  type ItemDefinition,
 } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
@@ -37,7 +43,7 @@ import { generateAvatarsBatch, generateEntityImagesBatch, missingEntityImageIds 
 import { indexLoreChunks } from "@/server/memory";
 import { log } from "@/server/log";
 import { startJob } from "./jobs";
-import { queueEmbedRefresh } from "./library";
+import { composeItemDefinition, queueEmbedRefresh } from "./library";
 import { errorText } from "./respond";
 import { ambientSchema, nameSchema, partialWithoutDefaults, tagsSchema } from "./schemas";
 
@@ -48,30 +54,22 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 // rows; the same nested shape serves create and full-replace PATCH)
 // ---------------------------------------------------------------------------
 
-export const worldLocationOverridesSchema = z
-  .object({
-    name: nameSchema,
-    description: z.string(),
-    ambient: ambientSchema,
-    tags: tagsSchema,
-    scale: locationScaleSchema,
-    area: z.string().trim().max(100),
-  })
-  .partial();
-
 export const worldLocationInputSchema = z
   .object({
-    /** Link an existing library location; omit to create one from the fields below. */
+    /**
+     * Optional source library location to copy from (provenance + the library
+     * stays the reuse surface). The world bakes its own snapshot from the fields
+     * below either way — no live reference is kept (world-instances.plan.md).
+     */
     locationId: z.string().min(1).optional(),
     name: z.string().trim().max(200).default(""),
     description: z.string().default(""),
     ambient: ambientSchema.default({}),
     tags: tagsSchema.default([]),
-    /** Spatial size class (proximity-spec); persisted on new library locations, in overrides for linked ones. */
+    /** Spatial size class (proximity-spec). */
     scale: locationScaleSchema.catch("room").default("room"),
     /** Map-grouping label — drives default link travel times (intra-area 1, inter-area 10). */
     area: z.string().trim().max(100).optional(),
-    overrides: worldLocationOverridesSchema.default({}),
     /** Names of other locations in this payload this one connects to (undirected). */
     links: z.array(z.string()).default([]),
   })
@@ -237,13 +235,16 @@ async function materializeLocations(
   const resolved: Array<{ input: WorldLocationInput; worldLocationId: string; effectiveName: string }> = [];
 
   for (const [index, loc] of input.entries()) {
-    let baseId: string;
+    let sourceLocationId: string;
+    let sourceStampedAt: Date | null = null;
     let effectiveName: string;
+    let base: typeof locations.$inferSelect | undefined;
     if (loc.locationId) {
-      const base = refs.locationsById.get(loc.locationId);
+      base = refs.locationsById.get(loc.locationId);
       if (!base) continue; // prefetch already rejected unknown ids; defensive
-      baseId = base.id;
-      effectiveName = loc.overrides.name ?? base.name;
+      sourceLocationId = base.id;
+      sourceStampedAt = base.updatedAt;
+      effectiveName = loc.name.trim() || base.name;
     } else {
       const reuseId = reuseByName?.get(loc.name.trim().toLowerCase());
       if (reuseId) {
@@ -255,7 +256,7 @@ async function materializeLocations(
           .set({ name: loc.name, description: loc.description, ambient: loc.ambient, scale: loc.scale, tags: loc.tags })
           .where(and(eq(locations.id, reuseId), eq(locations.ownerId, ownerId)));
         created.push(reuseId);
-        baseId = reuseId;
+        sourceLocationId = reuseId;
         effectiveName = loc.name;
       } else {
         const [row] = await tx
@@ -264,19 +265,33 @@ async function materializeLocations(
           .returning({ id: locations.id });
         if (!row) continue;
         created.push(row.id);
-        baseId = row.id;
+        sourceLocationId = row.id;
         effectiveName = loc.name;
       }
     }
-    // Area is world-placement data, so it always rides in overrides; for a
-    // linked library location, scale rides there too (the base row is shared).
-    const overrides = loc.locationId
-      ? { ...loc.overrides, scale: loc.overrides.scale ?? loc.scale, area: loc.overrides.area ?? loc.area }
-      : { ...(loc.area ? { area: loc.area } : {}) };
+    // The world owns a full snapshot (world-instances.plan.md): the input fields
+    // are the effective values; affordances (not in the editor input) ride from
+    // the source library row. `area` is world-placement data.
+    const ambientGiven = Boolean(loc.ambient.scent || loc.ambient.sound || loc.ambient.light);
+    const snapshot = parseOr(
+      locationSnapshotSchema,
+      {
+        name: effectiveName,
+        description: loc.description || base?.description || "",
+        ambient: ambientGiven ? loc.ambient : (base?.ambient ?? {}),
+        scale: loc.scale,
+        area: loc.area ?? null,
+        affordances: base?.affordances ?? [],
+        tags: loc.tags.length > 0 ? loc.tags : (base?.tags ?? []),
+      },
+      { ...emptyLocationSnapshot(), name: effectiveName },
+      sink,
+      "world_locations.snapshot",
+    );
     // The array index is the authored map order (editor reordering).
     const [wl] = await tx
       .insert(worldLocations)
-      .values({ worldId, locationId: baseId, overrides, sort: index })
+      .values({ worldId, sourceLocationId, sourceStampedAt, snapshot, sort: index })
       .returning({ id: worldLocations.id });
     if (!wl) continue;
     const key = effectiveName.trim().toLowerCase();
@@ -293,7 +308,7 @@ async function materializeLocations(
   // minute; both areas set and different ⇒ the inter-area default. Editable
   // per link afterwards.
   const areaByWorldLocationId = new Map<string, string | undefined>(
-    resolved.map((loc) => [loc.worldLocationId, (loc.input.overrides.area ?? loc.input.area)?.trim().toLowerCase() || undefined]),
+    resolved.map((loc) => [loc.worldLocationId, loc.input.area?.trim().toLowerCase() || undefined]),
   );
   const linked = new Set<string>();
   for (const loc of resolved) {
@@ -382,11 +397,20 @@ async function materializeWorldEntities(
     if (startName && !startWorldLocationId) {
       sink.push(diag("warn", "api.world.cast.start_unresolved", `start location "${member.startLocationName}" not found`));
     }
+    // Bake the world's own copy of the character (world-instances.plan.md): the
+    // profile snapshot + name + avatar make the world self-sufficient; the source
+    // id is provenance only.
+    const character = refs.charactersById.get(member.characterId);
+    const profile = parseOr(characterProfileSchema, character?.profile, emptyCharacterProfile(), sink, "characters.profile");
     const [row] = await tx
       .insert(worldCast)
       .values({
         worldId,
-        characterId: member.characterId,
+        sourceCharacterId: member.characterId,
+        sourceStampedAt: character?.updatedAt ?? null,
+        name: character?.name ?? "",
+        snapshot: profile,
+        avatarImageId: character?.avatarImageId ?? null,
         role: member.role,
         tier: member.tier,
         startWorldLocationId,
@@ -398,9 +422,16 @@ async function materializeWorldEntities(
 
   const createdItemIds: string[] = [];
   for (const item of input.items) {
-    let itemId: string;
+    // The world owns a full ItemDefinition snapshot; `sourceItemId` is provenance.
+    let sourceItemId: string;
+    let sourceStampedAt: Date | null = null;
+    let snapshot: ItemDefinition;
     if (item.itemId) {
-      itemId = item.itemId;
+      const libItem = refs.itemsById.get(item.itemId);
+      if (!libItem) continue; // prefetch already rejected unknown ids; defensive
+      sourceItemId = libItem.id;
+      sourceStampedAt = libItem.updatedAt;
+      snapshot = composeItemDefinition(libItem);
     } else if (item.definition) {
       const def = item.definition;
       const [row] = await tx
@@ -426,7 +457,8 @@ async function materializeWorldEntities(
         .returning({ id: items.id });
       if (!row) continue;
       createdItemIds.push(row.id);
-      itemId = row.id;
+      sourceItemId = row.id;
+      snapshot = def;
     } else {
       continue; // schema refine prevents this
     }
@@ -442,7 +474,10 @@ async function materializeWorldEntities(
     }
     await tx.insert(worldItems).values({
       worldId,
-      itemId,
+      sourceItemId,
+      sourceStampedAt,
+      name: snapshot.name,
+      snapshot,
       // exactly one placement; cast wins when both resolve
       worldLocationId: castId ? null : worldLocationId,
       castId,
@@ -461,35 +496,34 @@ async function materializeWorldEntities(
 
 async function existingLocationNameMap(tx: Tx, worldId: string): Promise<Map<string, string>> {
   const rows = await tx
-    .select({ id: worldLocations.id, overrides: worldLocations.overrides, name: locations.name })
+    .select({ id: worldLocations.id, snapshot: worldLocations.snapshot })
     .from(worldLocations)
-    .innerJoin(locations, eq(worldLocations.locationId, locations.id))
     .where(eq(worldLocations.worldId, worldId));
   const map = new Map<string, string>();
   for (const row of rows) {
-    const overrides = parseOr(worldLocationOverridesSchema, row.overrides, {}, undefined, "world_locations.overrides");
-    map.set((overrides.name ?? row.name).trim().toLowerCase(), row.id);
+    const snapshot = parseOr(locationSnapshotSchema, row.snapshot, emptyLocationSnapshot(), undefined, "world_locations.snapshot");
+    map.set(snapshot.name.trim().toLowerCase(), row.id);
   }
   return map;
 }
 
 /**
- * Effective-name → library `location_id` for the world's current locations,
- * captured before an update re-materializes the map (§5): a re-saved
+ * Effective-name → source library `location_id` for the world's current
+ * locations, captured before an update re-materializes the map (§5): a re-saved
  * editor-added location (no `locationId` in the draft) reuses the library row
  * this world already created for that name instead of duplicating it.
  */
 async function existingLibraryIdByName(tx: Tx, worldId: string): Promise<Map<string, string>> {
   const rows = await tx
-    .select({ locationId: worldLocations.locationId, overrides: worldLocations.overrides, name: locations.name })
+    .select({ sourceLocationId: worldLocations.sourceLocationId, snapshot: worldLocations.snapshot })
     .from(worldLocations)
-    .innerJoin(locations, eq(worldLocations.locationId, locations.id))
     .where(eq(worldLocations.worldId, worldId));
   const map = new Map<string, string>();
   for (const row of rows) {
-    const overrides = parseOr(worldLocationOverridesSchema, row.overrides, {}, undefined, "world_locations.overrides");
-    const key = (overrides.name ?? row.name).trim().toLowerCase();
-    if (!map.has(key)) map.set(key, row.locationId);
+    if (!row.sourceLocationId) continue;
+    const snapshot = parseOr(locationSnapshotSchema, row.snapshot, emptyLocationSnapshot(), undefined, "world_locations.snapshot");
+    const key = snapshot.name.trim().toLowerCase();
+    if (!map.has(key)) map.set(key, row.sourceLocationId);
   }
   return map;
 }
@@ -545,21 +579,38 @@ export function queueWorldImageGeneration(ownerId: string, worldId: string): voi
     type: "entity_image",
     payload: { worldId, kind: "world_backfill" },
     run: async () => {
+      // Image generation targets the source library entities (the library is the
+      // single reuse surface); world copies carry soft `source*Id` pointers.
       const [locRows, itemRows, castRows] = await Promise.all([
-        db().select({ id: worldLocations.locationId }).from(worldLocations).where(eq(worldLocations.worldId, worldId)),
-        db().select({ id: worldItems.itemId }).from(worldItems).where(eq(worldItems.worldId, worldId)),
-        db().select({ id: worldCast.characterId }).from(worldCast).where(eq(worldCast.worldId, worldId)),
+        db().select({ id: worldLocations.sourceLocationId }).from(worldLocations).where(eq(worldLocations.worldId, worldId)),
+        db().select({ id: worldItems.sourceItemId }).from(worldItems).where(eq(worldItems.worldId, worldId)),
+        db().select({ id: worldCast.id, sourceCharacterId: worldCast.sourceCharacterId }).from(worldCast).where(eq(worldCast.worldId, worldId)),
       ]);
+      const castSourceIds = castRows.flatMap((r) => (r.sourceCharacterId ? [r.sourceCharacterId] : []));
       const [locationIds, itemIds, characterIds] = await Promise.all([
-        missingEntityImageIds("location", ownerId, { ids: locRows.map((r) => r.id) }),
-        missingEntityImageIds("item", ownerId, { ids: itemRows.map((r) => r.id) }),
-        missingAvatarCharacterIds(ownerId, castRows.map((r) => r.id)),
+        missingEntityImageIds("location", ownerId, { ids: locRows.flatMap((r) => (r.id ? [r.id] : [])) }),
+        missingEntityImageIds("item", ownerId, { ids: itemRows.flatMap((r) => (r.id ? [r.id] : [])) }),
+        missingAvatarCharacterIds(ownerId, castSourceIds),
       ]);
       const [locationCount, itemCount, avatarCount] = await Promise.all([
         generateEntityImagesBatch("location", locationIds, ownerId),
         generateEntityImagesBatch("item", itemIds, ownerId),
         generateAvatarsBatch(characterIds, ownerId),
       ]);
+      // Refresh the world cast's baked avatar pointer from the (now generated)
+      // source characters — same-owner copies share the image asset
+      // (world-instances.plan.md §Images). Reads stay snapshot-only.
+      if (castSourceIds.length > 0) {
+        const avatarRows = await db()
+          .select({ id: characters.id, avatarImageId: characters.avatarImageId })
+          .from(characters)
+          .where(and(eq(characters.ownerId, ownerId), inArray(characters.id, castSourceIds)));
+        const avatarBySource = new Map(avatarRows.map((r) => [r.id, r.avatarImageId]));
+        for (const row of castRows) {
+          const avatarImageId = row.sourceCharacterId ? avatarBySource.get(row.sourceCharacterId) : undefined;
+          if (avatarImageId) await db().update(worldCast).set({ avatarImageId }).where(eq(worldCast.id, row.id));
+        }
+      }
       return { locations: locationCount, items: itemCount, avatars: avatarCount };
     },
   }).catch((err: unknown) => {
@@ -673,10 +724,12 @@ export async function updateWorld(ownerId: string, worldId: string, body: WorldP
       if (body.locations === undefined) seeds.worldLocationIdByName = await existingLocationNameMap(tx, worldId);
       if (body.cast === undefined) {
         const existingCast = await tx
-          .select({ id: worldCast.id, characterId: worldCast.characterId })
+          .select({ id: worldCast.id, sourceCharacterId: worldCast.sourceCharacterId })
           .from(worldCast)
           .where(eq(worldCast.worldId, worldId));
-        seeds.castIdByCharacterId = new Map(existingCast.map((c) => [c.characterId, c.id]));
+        seeds.castIdByCharacterId = new Map(
+          existingCast.flatMap((c) => (c.sourceCharacterId ? [[c.sourceCharacterId, c.id] as const] : [])),
+        );
       }
       const result = await materializeWorldEntities(tx, ownerId, worldId, nested, refs.refs, sink, seeds);
       await applyPlayerStart(tx, worldId, body.playerStartLocationName, result.worldLocationIdByName, sink);
@@ -725,7 +778,13 @@ export async function duplicateWorld(ownerId: string, worldId: string, name?: st
     for (const row of sourceLocations) {
       const [inserted] = await tx
         .insert(worldLocations)
-        .values({ worldId: copy.id, locationId: row.locationId, overrides: row.overrides, sort: row.sort })
+        .values({
+          worldId: copy.id,
+          sourceLocationId: row.sourceLocationId,
+          sourceStampedAt: row.sourceStampedAt,
+          snapshot: row.snapshot,
+          sort: row.sort,
+        })
         .returning({ id: worldLocations.id });
       if (inserted) locationIdMap.set(row.id, inserted.id);
     }
@@ -745,7 +804,11 @@ export async function duplicateWorld(ownerId: string, worldId: string, name?: st
         .insert(worldCast)
         .values({
           worldId: copy.id,
-          characterId: member.characterId,
+          sourceCharacterId: member.sourceCharacterId,
+          sourceStampedAt: member.sourceStampedAt,
+          name: member.name,
+          snapshot: member.snapshot,
+          avatarImageId: member.avatarImageId,
           role: member.role,
           tier: member.tier,
           relationships: member.relationships,
@@ -762,7 +825,10 @@ export async function duplicateWorld(ownerId: string, worldId: string, name?: st
         .insert(worldItems)
         .values({
           worldId: copy.id,
-          itemId: item.itemId,
+          sourceItemId: item.sourceItemId,
+          sourceStampedAt: item.sourceStampedAt,
+          name: item.name,
+          snapshot: item.snapshot,
           worldLocationId: item.worldLocationId ? (locationIdMap.get(item.worldLocationId) ?? null) : null,
           castId: item.castId ? (castIdMap.get(item.castId) ?? null) : null,
           worn: item.worn,
@@ -817,18 +883,20 @@ export interface WorldDetail {
   imageJobActive: boolean;
   locations: Array<{
     id: string;
-    locationId: string;
+    /** Soft source library id (provenance); null once the source is gone. */
+    locationId: string | null;
     name: string;
     description: string;
     ambient: unknown;
     scale: "intimate" | "room" | "hall" | "open" | "expanse";
-    tags: unknown;
-    overrides: z.infer<typeof worldLocationOverridesSchema>;
+    tags: string[];
+    /** Map-grouping label (world-placement data); null when unset. */
+    area: string | null;
   }>;
   links: Array<{ id: string; fromWorldLocationId: string; toWorldLocationId: string; label: string | null; travelMinutes: number }>;
   cast: Array<{
     id: string;
-    characterId: string;
+    characterId: string | null;
     role: "companion" | "npc";
     tier: "major" | "minor" | "extra";
     startWorldLocationId: string | null;
@@ -838,7 +906,7 @@ export interface WorldDetail {
   }>;
   items: Array<{
     id: string;
-    itemId: string;
+    itemId: string | null;
     name: string;
     kind: "clothing" | "object" | "container";
     worldLocationId: string | null;
@@ -887,16 +955,10 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
     db()
       .select({
         id: worldLocations.id,
-        locationId: worldLocations.locationId,
-        overrides: worldLocations.overrides,
-        name: locations.name,
-        description: locations.description,
-        ambient: locations.ambient,
-        scale: locations.scale,
-        tags: locations.tags,
+        sourceLocationId: worldLocations.sourceLocationId,
+        snapshot: worldLocations.snapshot,
       })
       .from(worldLocations)
-      .innerJoin(locations, eq(worldLocations.locationId, locations.id))
       .where(eq(worldLocations.worldId, worldId))
       // authored map order; id tiebreak keeps pre-sort rows (all 0) stable
       .orderBy(asc(worldLocations.sort), asc(worldLocations.id)),
@@ -904,23 +966,22 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
     db()
       .select({
         id: worldCast.id,
-        characterId: worldCast.characterId,
+        sourceCharacterId: worldCast.sourceCharacterId,
         role: worldCast.role,
         tier: worldCast.tier,
         startWorldLocationId: worldCast.startWorldLocationId,
         relationships: worldCast.relationships,
-        name: characters.name,
-        avatarImageId: characters.avatarImageId,
+        name: worldCast.name,
+        avatarImageId: worldCast.avatarImageId,
       })
       .from(worldCast)
-      .innerJoin(characters, eq(worldCast.characterId, characters.id))
       .where(eq(worldCast.worldId, worldId)),
     db()
       .select({
         id: worldItems.id,
-        itemId: worldItems.itemId,
-        name: items.name,
-        kind: items.kind,
+        sourceItemId: worldItems.sourceItemId,
+        name: worldItems.name,
+        snapshot: worldItems.snapshot,
         worldLocationId: worldItems.worldLocationId,
         castId: worldItems.castId,
         worn: worldItems.worn,
@@ -928,7 +989,6 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
         quantity: worldItems.quantity,
       })
       .from(worldItems)
-      .innerJoin(items, eq(worldItems.itemId, items.id))
       .where(eq(worldItems.worldId, worldId)),
     db()
       .select({
@@ -956,16 +1016,16 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
     playerCharacterName,
     imageJobActive,
     locations: locationRows.map((row) => {
-      const overrides = parseOr(worldLocationOverridesSchema, row.overrides, {}, undefined, "world_locations.overrides");
+      const snapshot = parseOr(locationSnapshotSchema, row.snapshot, emptyLocationSnapshot(), undefined, "world_locations.snapshot");
       return {
         id: row.id,
-        locationId: row.locationId,
-        name: overrides.name ?? row.name,
-        description: overrides.description ?? row.description,
-        ambient: overrides.ambient ?? row.ambient,
-        scale: overrides.scale ?? row.scale,
-        tags: overrides.tags ?? row.tags,
-        overrides,
+        locationId: row.sourceLocationId,
+        name: snapshot.name,
+        description: snapshot.description,
+        ambient: snapshot.ambient,
+        scale: snapshot.scale,
+        tags: snapshot.tags,
+        area: snapshot.area,
       };
     }),
     links: linkRows.map((l) => ({
@@ -976,10 +1036,29 @@ export async function getWorldDetail(ownerId: string, worldId: string): Promise<
       travelMinutes: l.travelMinutes,
     })),
     cast: castRows.map((row) => ({
-      ...row,
+      id: row.id,
+      characterId: row.sourceCharacterId,
+      role: row.role,
+      tier: row.tier,
+      startWorldLocationId: row.startWorldLocationId,
+      name: row.name,
+      avatarImageId: row.avatarImageId,
       relationships: parseOr(authoredRelationshipListSchema, row.relationships, [], undefined, "world_cast.relationships"),
     })),
-    items: itemRows,
+    items: itemRows.map((row) => {
+      const snapshot = parseOr(itemDefinitionSchema, row.snapshot, emptyItemDefinition(), undefined, "world_items.snapshot");
+      return {
+        id: row.id,
+        itemId: row.sourceItemId,
+        name: row.name,
+        kind: snapshot.kind,
+        worldLocationId: row.worldLocationId,
+        castId: row.castId,
+        worn: row.worn,
+        containerWorldItemId: row.containerWorldItemId,
+        quantity: row.quantity,
+      };
+    }),
     loreChunks: chunkRows,
   };
 }

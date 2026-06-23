@@ -7,7 +7,7 @@ const detail = worldDetailSchema.parse({
   name: "Harborfall",
   description: "A drowned port.",
   locations: [
-    { id: "loc1", name: "Quay", description: "Wet stone.", scale: "open", overrides: { area: "harbor" } },
+    { id: "loc1", name: "Quay", description: "Wet stone.", scale: "open", area: "harbor" },
     { id: "loc2", name: "Market" },
     { id: "loc3", name: "Lighthouse" },
   ],
@@ -87,7 +87,7 @@ describe("worldDetailToDraft", () => {
     expect(draft.castSuggestions[1]?.relationships).toEqual([]);
   });
 
-  it("maps scale, overrides.area and the player start to draft fields", () => {
+  it("maps scale, area and the player start to draft fields", () => {
     expect(draft.locations[0]).toMatchObject({ scale: "open", area: "harbor" });
     expect(draft.locations[1]?.scale).toBe("room"); // defaulted, never absent
     expect(draft.locations[1]?.area).toBeUndefined();
