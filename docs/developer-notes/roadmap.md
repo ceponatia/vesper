@@ -13,17 +13,14 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-build right now — **Security hardening** just finished (clusters B–I;
-see **Shipped** below), closing the 2026-06-23 scan in full. Pick the next item
-off **Next** (top: character-chat light state, then mood).
+Nothing mid-build right now — **Default player character** just finished (see
+**Shipped** below): the settings menu + a light player persona threaded into
+character chat. Pick the next item off **Next** (top: **character-chat light
+state & embodied player**, which now consumes the `resolvePlayerPersona` resolver
+this shipped; then mood).
 
 ## Next (queued)
 
-- **Default player character** (plan needed) - Now that auth is implemented, create a
-  user profile accessible by clicking their name on the nav bar. In this menu they will
-  be able to create a default player character that contains the basic fields needed
-  for character chat. Session chat will still _prefer_ having an embodied player character
-  from the library. This will be passed into the character chat in the next roadmap item.
 - **Character chat — light state & embodied player** (draft brainstorm) —
   [character-chat-state.plan.md](character-chat-state.plan.md). Grow the sessionless
   1-on-1 chat from a stateless transcript into a light, state-aware quick chat that
@@ -92,6 +89,12 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Default player character** — [player-character.plan.md](player-character.plan.md),
+  2026-06-23. A `/settings` page (reached from the nav account menu) where the user sets
+  a light default player character — name + short persona on `users.playerPersona`,
+  read through the single `resolvePlayerPersona` resolver and threaded into character
+  chat so a character greets the player by name (closes the faceless-player UX-audit P1).
+  Inline-blob storage; graduates to a real library character later via the same resolver.
 - **Security hardening** — [security-hardening.plan.md](finished/security-hardening.plan.md),
   2026-06-23. Closed the full-surface scan: image-decode pixel/format/length limits
   (OOM fix), rate limits on every paid-model/heavy-write route, security headers +

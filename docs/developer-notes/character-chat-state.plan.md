@@ -149,7 +149,15 @@ built the same way the narrator's is:
 - Optional **action chips** (offer a drink → intoxication↑; suggest she freshen
   up → hygiene reset) — playful, and they *show off* the systems.
 
-## The embodied player — placeholder intake (build the seam now)
+## The embodied player — graduated to [player-character.plan.md](player-character.plan.md)
+
+> **Graduated.** This section's idea — a profile-level player character +
+> `resolvePlayerPersona` resolver + the chat-prompt seam — is now its own plan,
+> [player-character.plan.md](player-character.plan.md) (a profile/settings menu
+> hosting a light default player character). That plan delivers the menu,
+> storage, resolver, and (recommended) the thin chat-prompt seam below; this
+> plan keeps the **light-state** work that *consumes* the resolver. The original
+> brainstorm is preserved below for context.
 
 The user wants a **profile-level character the player embodies**, defaulted when
 they don't pick a session/world PC, and used as the player in chats. We build the
@@ -208,7 +216,8 @@ This keeps the chat a *quick chat*, not a session.
    threshold/mood/stage hints in the prompt, status-strip + stage-toast UI.
    *Already feels alive, zero added model cost.*
 2. **Player-persona placeholder** — `resolvePlayerPersona` stub + prompt seam.
-   Small, independent, ships immersion immediately.
+   **Moved to [player-character.plan.md](player-character.plan.md)** (build steps
+   2 & 5 there); it ships with the settings menu, not this plan.
 3. **The reaction pulse** — the structured delta agent, ideally on the personality
    §6 curve; degrade to drift-only.
 4. **Texture** — light conditions, action chips, mindNote-driven resume beats.

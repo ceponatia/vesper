@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "player_persona" jsonb DEFAULT '{}'::jsonb NOT NULL;

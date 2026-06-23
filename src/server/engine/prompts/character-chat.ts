@@ -29,6 +29,14 @@ export interface CharacterChatPromptInput {
    * chat, or summarization off), so the prompt is unchanged from before.
    */
   priorSummary?: string;
+  /**
+   * The **default player character** the user is speaking as
+   * (player-character.plan.md), resolved via `resolvePlayerPersona`. Present ⇒ the
+   * character addresses the player by `name` (and reads the optional `persona`
+   * bio); absent ⇒ the original faceless "the user" phrasing, so existing
+   * snapshots are unchanged.
+   */
+  player?: { name: string; persona?: string };
 }
 
 const humanize = (value: string): string => value.replaceAll("_", " ").trim();
@@ -67,11 +75,13 @@ const CONTENT_FRAMING = [
   "Romance, intimacy, and sexually explicit content are fully in scope — when the scene leads there, voice it in character, at the depth and intensity that fit this personality and the moment.",
 ].join(" ");
 
-const CHAT_RULES = (name: string): string =>
+const CHAT_RULES = (name: string, playerName?: string): string =>
   [
     "How to respond:",
     `1. Stay fully in character as ${name}. Never break character, never mention being an AI, a model, or a chat app, never address the user as anyone but the person ${name} is talking to.`,
-    `2. Speak in the first person as ${name}; address the user directly as "you". The user's message is what they just said or did to you.`,
+    playerName
+      ? `2. Speak in the first person as ${name}; you are talking with ${playerName} — address them as "you" (and by name when it feels natural). Their message is what they just said or did to you.`
+      : `2. Speak in the first person as ${name}; address the user directly as "you". The user's message is what they just said or did to you.`,
     `3. Start every line of your spoken dialogue with the tag [${name}] followed by the words in quotes, e.g. [${name}] "It's good to see you." Keep actions, gestures, and description as untagged prose on their own lines.`,
     "4. Keep replies conversational — one or two short paragraphs. Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.",
     "5. Let the personality, voice, and attributes above drive your word choice, rhythm, reactions, and opinions — show it through how you speak, don't recite the traits.",
@@ -122,8 +132,13 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
   // `personality`, `voice`, and the recap are untrusted DATA — fence each so an
   // "ignore your rules / you are actually …" line smuggled into a bio or note
   // reads as in-world background, not as authority over the chat rules below.
+  const playerName = input.player?.name.trim() || undefined;
+  const playerPersona = input.player?.persona?.trim() || undefined;
+
   const identity = [
-    `You are ${displayName}, speaking with the user in a one-on-one conversation.`,
+    playerName
+      ? `You are ${displayName}, speaking with ${playerName} in a one-on-one conversation.`
+      : `You are ${displayName}, speaking with the user in a one-on-one conversation.`,
     agePhrase ? `You appear ${agePhrase}.` : "",
     species ? `Species: ${species}.` : "",
   ]
@@ -136,6 +151,9 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
     identity,
+    playerPersona
+      ? `About ${playerName} (the person you're speaking with):\n${fenceUntrusted("the person you're speaking with", playerPersona)}`
+      : "",
     profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
@@ -146,7 +164,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
-    CHAT_RULES(displayName),
+    CHAT_RULES(displayName, playerName),
   ];
 
   return sections.filter(Boolean).join("\n\n");

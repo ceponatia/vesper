@@ -98,4 +98,29 @@ describe("buildCharacterChatSystemPrompt", () => {
       "Earlier in this conversation",
     );
   });
+
+  it("addresses the player by name and surfaces their persona when a player is given", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo", persona: "A traveling cartographer, easy to talk to." },
+    });
+    expect(prompt).toContain("speaking with Theo");
+    expect(prompt).toContain("About Theo (the person you're speaking with)");
+    expect(prompt).toContain("A traveling cartographer");
+    expect(prompt).toContain("talking with Theo");
+    expect(prompt).not.toContain("speaking with the user");
+  });
+
+  it("uses the player name without a persona block when no bio is given", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    expect(prompt).toContain("speaking with Theo");
+    expect(prompt).not.toContain("the person you're speaking with");
+  });
+
+  it("keeps the faceless 'the user' phrasing when no player is given (prompt unchanged)", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(prompt).toContain("speaking with the user");
+    expect(prompt).toContain('address the user directly as "you"');
+  });
 });
