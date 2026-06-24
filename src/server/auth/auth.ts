@@ -39,6 +39,21 @@ export function enabledSocialProviders(): string[] {
 }
 
 /**
+ * Origins Better Auth accepts sign-in requests from beyond `baseURL`
+ * (comma-separated `BETTER_AUTH_TRUSTED_ORIGINS`). Needed for **LAN dev**: a
+ * phone hitting `http://<lan-ip>:3200` sends that origin, and Better Auth rejects
+ * any request whose Origin isn't trusted with "Invalid origin". List the dev
+ * machine's `http://<lan-ip>:3200` (and keep `http://localhost:3200`) here. Empty
+ * ⇒ only `baseURL` is trusted (the single-host default).
+ */
+function configuredTrustedOrigins(): string[] {
+  return (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+/**
  * Deliver a magic-link sign-in URL. v1 has no email transport, so the dev
  * fallback is to **log the link** (docs/getting-started.md) — a real transport
  * (Resend/SMTP) plugs in here later behind its own env gate. Always logs so the
@@ -55,6 +70,7 @@ export const auth = betterAuth({
   }),
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL,
+  trustedOrigins: configuredTrustedOrigins(),
   emailAndPassword: { enabled: true },
   socialProviders: configuredSocialProviders(),
   plugins: [
