@@ -166,6 +166,10 @@ beforeAll(async () => {
   if (!ready) return;
   tmpDataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "vesper-sessions-int-"));
   process.env.DATA_ROOT = tmpDataRoot;
+  // The Turn Inspector is env-gated off by default (security Cluster I4: a 404
+  // when disabled hides its existence). Enable it for this suite so the inspect
+  // test exercises the admin gate (403) and the success path; restored in afterAll.
+  process.env.ENABLE_TURN_INSPECTOR = "true";
 
   const [user] = await db()
     .insert(users)
@@ -254,6 +258,9 @@ afterAll(async () => {
     await db().delete(users).where(eq(users.id, ownerId));
   }
   if (tmpDataRoot) await fs.rm(tmpDataRoot, { recursive: true, force: true });
+  // Restore the default-off inspector gate so it can't leak to sibling suites
+  // (int tests share a worker under --no-file-parallelism).
+  delete process.env.ENABLE_TURN_INSPECTOR;
   await globalThis.__vesperPool?.end();
   globalThis.__vesperPool = undefined;
 });
