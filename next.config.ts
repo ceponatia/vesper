@@ -67,6 +67,18 @@ const nextConfig: NextConfig = {
   // Wildcards dropped — only the specific dev machine IP is allowed.
   allowedDevOrigins: ["192.168.1.64"],
 
+  // Disable Turbopack's persistent dev filesystem cache. It's on by default
+  // (writes .next/dev/cache/turbopack/*.sst) but isn't garbage-collected — it
+  // grew to 34 GB over days and inflated the dev server to ~4 GB RAM (the cache
+  // is memory-mapped and indexed), which on this 16 GB box helped trip the OOM
+  // killer. Off = bounded memory and no disk churn; the only cost is a cold
+  // compile of each route on first visit per session (Turbopack compiles
+  // lazily, so the server is still "Ready" in ~1-2s). In-session caching is
+  // unaffected — revisiting a page you've already opened stays instant.
+  experimental: {
+    turbopackFileSystemCacheForDev: false,
+  },
+
   async headers(): Promise<
     Array<{ source: string; headers: Array<{ key: string; value: string }> }>
   > {
