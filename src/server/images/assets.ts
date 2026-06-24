@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db, images } from "../db";
 import { newId } from "@/lib/ids";
@@ -158,6 +158,31 @@ export async function deleteOwnedImage(
   await db().delete(images).where(eq(images.id, imageId));
   await fs.unlink(absoluteImagePath(row)).catch(() => undefined); // sweep reconciles stragglers
   return true;
+}
+
+/**
+ * Hard-delete many owned images by id in one statement — the bulk counterpart to
+ * deleteOwnedImage, used by the Gallery's "Delete all" (delete every scene the
+ * active world/character filter shows). Owner-scoped with the same optional
+ * `kind` guard, so ids not owned / of the wrong kind / already gone are silently
+ * skipped — a caller can never reach another owner's or another class of asset.
+ * Files are unlinked best-effort (image_sweep reconciles stragglers). Returns
+ * the count actually removed.
+ */
+export async function deleteOwnedImages(
+  imageIds: string[],
+  ownerId: string,
+  opts: { kind?: ImageKind } = {},
+): Promise<number> {
+  if (imageIds.length === 0) return 0;
+  const where = opts.kind
+    ? and(inArray(images.id, imageIds), eq(images.ownerId, ownerId), eq(images.kind, opts.kind))
+    : and(inArray(images.id, imageIds), eq(images.ownerId, ownerId));
+  const rows = await db().select({ path: images.path }).from(images).where(where);
+  if (rows.length === 0) return 0;
+  await db().delete(images).where(where);
+  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
+  return rows.length;
 }
 
 /**

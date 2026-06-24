@@ -20,6 +20,7 @@ vi.mock("@/server/auth", () => ({
 
 import { GET as galleryRoute } from "./gallery/route";
 import { DELETE as galleryDelete } from "./gallery/[id]/route";
+import { POST as galleryDeleteAll } from "./gallery/delete/route";
 import { resolveSceneCharacterRefs } from "@/server/images";
 
 async function probe(): Promise<boolean> {
@@ -296,5 +297,57 @@ describe("DELETE /api/gallery/:id", () => {
     const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
     expect(res.status).toBe(404);
     expect(await exists(row.id)).toBe(true);
+  });
+});
+
+describe("POST /api/gallery/delete (bulk)", () => {
+  const exists = async (id: string) =>
+    (await db().select({ id: images.id }).from(images).where(eq(images.id, id))).length === 1;
+  const postReq = (ids: string[]) =>
+    new NextRequest("http://t/api/gallery/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+  const scene = (over: Partial<typeof images.$inferInsert>) => ({
+    ownerId: authState.user.id,
+    kind: "scene" as const,
+    status: "ready" as const,
+    path: `images/${authState.user.id}/bulk.webp`,
+    prompt: "",
+    meta: {},
+    ...over,
+  });
+
+  it("bulk-deletes only the owner's scene rows in the list, skipping foreign + non-scene ids", async (t) => {
+    if (!ready) return t.skip();
+    const [a] = await db().insert(images).values(scene({ sessionId: ids.sessionNew })).returning();
+    const [b] = await db().insert(images).values(scene({ sessionId: ids.sessionOld })).returning();
+    const [avatar] = await db()
+      .insert(images)
+      .values(scene({ kind: "avatar", entityKind: "character", entityId: ids.character }))
+      .returning();
+    const [foreign] = await db()
+      .insert(images)
+      .values(scene({ ownerId: ids.otherUser, sessionId: ids.sessionNew, path: `images/${ids.otherUser}/bulk.webp` }))
+      .returning();
+    if (!a || !b || !avatar || !foreign) throw new Error("failed to seed bulk-delete scenes");
+
+    const res = await galleryDeleteAll(postReq([a.id, b.id, avatar.id, foreign.id]), noCtx);
+    expect(res.status).toBe(200);
+    expect((await json(res)).deleted).toBe(2);
+
+    // The two owned scenes are gone; the avatar (kind guard) and the other
+    // owner's scene (owner scope) survive.
+    expect(await exists(a.id)).toBe(false);
+    expect(await exists(b.id)).toBe(false);
+    expect(await exists(avatar.id)).toBe(true);
+    expect(await exists(foreign.id)).toBe(true);
+  });
+
+  it("400s an empty id list", async (t) => {
+    if (!ready) return t.skip();
+    const res = await galleryDeleteAll(postReq([]), noCtx);
+    expect(res.status).toBe(400);
   });
 });

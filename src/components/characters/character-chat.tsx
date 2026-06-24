@@ -254,6 +254,16 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     <div className="flex flex-col gap-5">
       <SceneStrip characterId={characterId} name={name} hasChat={lines.length > 0} />
 
+      <PremiseBar
+        value={premise}
+        who={who}
+        saving={savingPremise}
+        promptDisabled={sending}
+        onChange={setPremise}
+        onSave={savePremise}
+        onPromptCharacter={promptCharacter}
+      />
+
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Conversation</h3>
         <div className="flex items-center gap-2">
@@ -318,16 +328,6 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
           <ActionChips busy={actionBusy} disabled={sending} onAction={runAction} />
         </div>
       ) : null}
-
-      <PremiseBar
-        value={premise}
-        who={who}
-        saving={savingPremise}
-        promptDisabled={sending}
-        onChange={setPremise}
-        onSave={savePremise}
-        onPromptCharacter={promptCharacter}
-      />
 
       <div className="flex items-end gap-2">
         <Textarea
