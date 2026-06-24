@@ -24,3 +24,12 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
 
 /** The narrator used when neither the world nor the env override one. */
 export const DEFAULT_NARRATIVE_MODEL_ID = "aion-labs/aion-2.0";
+
+/**
+ * The narrator the **character-chat** tab defaults to (the Chat-tab model
+ * dropdown's initial value). Kept separate from the session narrator default
+ * above so the two surfaces can diverge: chat favours GLM 5.2's voice for the
+ * quick 1-on-1, while sessions stay on Aion 2.0. Must be an id in
+ * {@link NARRATIVE_MODELS} so the dropdown shows it selected.
+ */
+export const DEFAULT_CHARACTER_CHAT_MODEL_ID = "z-ai/glm-5.2";
