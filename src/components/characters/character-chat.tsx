@@ -18,6 +18,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MoodChip } from "@/components/ui/mood-chip";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -459,6 +460,7 @@ function StatusStrip({ state }: { state: ChatStateSnapshot }) {
   const pips = meterPips(state.meters);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      <MoodChip emotion={state.emotion} className="text-xs" />
       <Tag tone="accent" title={`Affinity ${state.affinity}`}>
         <span aria-hidden>♥</span> {state.stage.label}
       </Tag>

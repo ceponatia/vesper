@@ -2,12 +2,13 @@
 
 Status: **core shipped — 2026-06-24** · remainder queued in [roadmap.md](roadmap.md)
 `## Next`. The pure projection + `EmotionLabel`, welcome/unwelcome touch, the
-condition→mood baseline shift, and the cast-card mood chip landed (see _Shipped_
-below); the atmosphere source, the meter/relationship timeline, the chat-surface
-label, and the avatar consumption remain. Settled (open questions resolved 2026-06-24;
-see _Decisions_). Graduates the **event→mood table** that `personality-and-state`
-deferred (spec §4: _"the event→mood inputs and the full coupling matrix are planned
-with the mood slice"_) and promotes **mood** to a first-class, cross-app read.
+condition→mood baseline shift, the scene-atmosphere shift (its producer shipped too),
+and the **mood chip on both the cast card and the character-chat strip** landed (see
+_Shipped_ below); only the meter/relationship timeline and the avatar consumption
+remain. Settled (open questions resolved 2026-06-24; see _Decisions_). Graduates the
+**event→mood table** that `personality-and-state` deferred (spec §4: _"the event→mood
+inputs and the full coupling matrix are planned with the mood slice"_) and promotes
+**mood** to a first-class, cross-app read.
 
 Design detail / vocabularies: [mood.spec.md](mood.spec.md) — the `EmotionLabel`
 enum, the `deriveEmotionLabel` projection, and the event→mood table shapes.
@@ -156,8 +157,10 @@ invented — is in [mood.spec.md](mood.spec.md) §3.)
    cross-talk, intimacy beats are later.
 4. **UI surfacing** — ✓ mood chip (cast card / `StatusParticipant.emotion`); ⏳ the
    relationship/meter timeline.
-5. ⏳ **Chat** — chat already moves mood (the shipped reaction pulse); add the **labeled
-   projection** to the chat surface (mood chip / avatar), reusing this system.
+5. ✓ **Chat** — the chat already moved mood (the reaction pulse); the **labeled projection**
+   now surfaces as a mood chip in the chat strip (`ChatStateSnapshot.emotion`, computed in
+   `chatStateSnapshot` with the character's dominance + intimate-capable context). The chip
+   is a shared `MoodChip` component reused by the cast card.
 6. ⏳ **Avatar** — the avatar cue consumes `deriveEmotionLabel` + widens its enum to the
    11 ([avatar-3d.plan.md](avatar-3d.plan.md)).
 
@@ -169,9 +172,12 @@ total `deriveEmotionLabel` projection (activation axis + precedence ladder), the
 `AtmosphereLabel` enum (mood owns it until the avatar lands), welcome/unwelcome touch
 (`resolveTouchWelcomeness` + `touchMoodDeltas`, wired into `merge.ts planReactionAffinity`
 as the no-preference affinity-gated fallback + a stress hit), the condition→mood baseline
-shift (wired into the drift loop), and the cast-card mood chip
-(`status-payload.ts`/`participant-card.tsx`). Deferred: the atmosphere source, the
-meter/relationship timeline, the chat-surface label, and the avatar consumption.
+shift (wired into the drift loop), and the mood chip — a shared `MoodChip`
+(`components/ui/mood-chip.tsx`) on both the cast card (`status-payload.ts`/
+`participant-card.tsx`) and the character-chat strip (`ChatStateSnapshot.emotion` via
+`chatStateSnapshot`, `character-chat.tsx`). The scene-atmosphere producer shipped
+separately ([scene-atmosphere.plan.md](scene-atmosphere.plan.md)). Deferred: the
+meter/relationship timeline and the avatar consumption.
 
 ## Decisions (resolved 2026-06-24)
 

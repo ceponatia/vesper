@@ -6,7 +6,15 @@ import type { ActiveCondition } from "@/contracts/conditions/condition";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import { CHAT_AROUSAL_INTIMATE, CHAT_RESET_MINUTES, CHAT_TICK_MINUTES } from "./constants";
-import { applyChatAction, applyChatPulse, driftChatState, runChatPulse, seedChatState, type ChatState } from "./chat-state";
+import {
+  applyChatAction,
+  applyChatPulse,
+  chatStateSnapshot,
+  driftChatState,
+  runChatPulse,
+  seedChatState,
+  type ChatState,
+} from "./chat-state";
 
 // These run with AI_FAKE=1 (src/test/setup.ts): demo mode short-circuits the
 // pulse LLM, so runChatPulse exercises the drift-only degrade path.
@@ -224,5 +232,31 @@ describe("runChatPulse (demo ⇒ drift-only degrade)", () => {
 describe("stageForValue chip mapping (the strip's stage label)", () => {
   it("maps a warm affinity to the warm stage", () => {
     expect(stageForValue(seedChatState(profile({ playerRelationship: { stage: "warm", note: "" } })).affinity).id).toBe("warm");
+  });
+});
+
+describe("chatStateSnapshot — mood chip (mood.spec §4)", () => {
+  const withMeters = (over: Record<string, number>): ChatState => ({
+    ...seedChatState(profile()),
+    meters: { ...initialMeters(), ...over },
+  });
+
+  it("carries a derived emotion label + bounded intensity", () => {
+    const snap = chatStateSnapshot(seedChatState(profile()));
+    expect(snap.emotion.label).toBeTruthy();
+    expect(snap.emotion.intensity).toBeGreaterThanOrEqual(0);
+    expect(snap.emotion.intensity).toBeLessThanOrEqual(1);
+  });
+
+  it("dominance tilts a low, calm mood from sad toward angry", () => {
+    const low = withMeters({ mood: 0.2, stress: 0.2 });
+    expect(chatStateSnapshot(low, { dominance: 0 }).emotion.label).toBe("sad");
+    expect(chatStateSnapshot(low, { dominance: 80 }).emotion.label).toBe("angry");
+  });
+
+  it("intimateContext gates the aroused label at high arousal (chat passes it on)", () => {
+    const hot = withMeters({ mood: 0.6, arousal: 0.8 });
+    expect(chatStateSnapshot(hot, { intimateContext: false }).emotion.label).not.toBe("aroused");
+    expect(chatStateSnapshot(hot, { intimateContext: true }).emotion.label).toBe("aroused");
   });
 });
