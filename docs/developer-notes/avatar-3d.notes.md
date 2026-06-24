@@ -73,6 +73,11 @@ The avatar should not simply receive `mood: "sad"`. That will produce odd result
 
 Use four distinct channels:
 
+> **Note (2026-06-24):** the `emotion` enum below is GPT's original 8. The
+> `EmotionLabel` vocabulary is now **owned by `mood.spec.md` §2 and locked at 11**
+> (adds `playful`, `flustered`, `aroused`); the cue imports it from `contracts/mood`.
+> Treat the inline enum here as illustrative — `mood.spec.md` is authoritative.
+
 ```ts
 import { z } from "zod";
 
