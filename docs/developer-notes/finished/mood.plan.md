@@ -1,14 +1,16 @@
 # Mood — app-wide emotional state (plan)
 
-Status: **core shipped — 2026-06-24** · remainder queued in [roadmap.md](roadmap.md)
-`## Next`. The pure projection + `EmotionLabel`, welcome/unwelcome touch, the
-condition→mood baseline shift, the scene-atmosphere shift (its producer shipped too),
-and the **mood chip on both the cast card and the character-chat strip** landed (see
-_Shipped_ below); only the meter/relationship timeline and the avatar consumption
-remain. Settled (open questions resolved 2026-06-24; see _Decisions_). Graduates the
-**event→mood table** that `personality-and-state` deferred (spec §4: _"the event→mood
-inputs and the full coupling matrix are planned with the mood slice"_) and promotes
-**mood** to a first-class, cross-app read.
+Status: **shipped — 2026-06-24**. All of mood's **own** scope landed: the projection +
+`EmotionLabel`, welcome/unwelcome touch, the condition + scene-atmosphere baseline shifts,
+and the mood chip on both the cast card and the character-chat strip (see _Shipped_
+below). The two ideas once parked under "remainder" belong to **other** plans, not this
+one — the relationship/meter timeline ([deferred.plan.md](deferred.plan.md) #4) and the
+avatar's consumption of the projection ([avatar-3d.plan.md](avatar-3d.plan.md)) — so the
+mood topic itself is complete and archived to `finished/`. Settled (open questions
+resolved 2026-06-24; see _Decisions_). Graduated the **event→mood table** that
+`personality-and-state` deferred (spec §4: _"the event→mood inputs and the full coupling
+matrix are planned with the mood slice"_) and promoted **mood** to a first-class,
+cross-app read.
 
 Design detail / vocabularies: [mood.spec.md](mood.spec.md) — the `EmotionLabel`
 enum, the `deriveEmotionLabel` projection, and the event→mood table shapes.

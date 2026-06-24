@@ -13,24 +13,16 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-build right now — **Character chat — light state** just finished in
-full (slices 1 + 3 + 4; see **Shipped** below): the state row, time-drift spine,
-reaction pulse, premise/strip/reset UI, plus the slice-4 texture (arousal-from-
-intimate, action chips, light conditions) and test-bed affordances (state-tools
-modal, Prompt Character opening beat). The only deferred piece is the **state-aware
-chat scene image**, folded into [deferred.plan.md](deferred.plan.md). Pick the next
-item off **Next** (top: **mood**).
+Nothing mid-build right now — the **Mood** arc just finished in full (the projection +
+`EmotionLabel`, welcome/unwelcome touch, condition + scene-atmosphere baseline shifts,
+and the mood chip on the cast card + chat strip; see **Shipped**), and its docs are
+archived to `finished/`. Its two leftover ideas live in **other** plans — the
+relationship/meter timeline ([deferred.plan.md](deferred.plan.md) #4) and the avatar's
+consumption of the projection (the **Mood-reactive avatars** plan below). Pick the next
+item off **Next** (top: **social-reaction cards**).
 
 ## Next (queued)
 
-- **Mood — remainder** (core shipped 2026-06-24, see Shipped) —
-  [mood.plan.md](mood.plan.md). The projection + `EmotionLabel`, welcome/unwelcome
-  touch, the condition→mood baseline shift, the **scene-atmosphere** baseline shift (its
-  producer shipped 2026-06-24, see Shipped), and the **mood chip** on both the cast card
-  and the **character-chat strip** landed. **Left:** the **relationship/meter timeline**
-  ([deferred.plan.md](deferred.plan.md) #4) and the **avatar consumption** (which widens
-  the cue enum to 11 — folded into the avatar plan below). With the chip on both surfaces,
-  the mood remainder is now just those two cross-plan pieces.
 - **Social-reaction cards** — plan
   [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (draft). Importable
   **taboo / social-rule cards** (library content, reusable across worlds like items) that
@@ -92,15 +84,18 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   a present character lower, composure-damped). Unblocks mood's last v1 input; later serves the
   avatar's `environment.atmosphere`. Deferred: authored location tone, status surfacing, a
   danger→`tense` floor.
-- **Mood — core slice** — [mood.plan.md](mood.plan.md) · spec
-  [mood.spec.md](mood.spec.md), 2026-06-24. A new `src/contracts/mood/` module: the
-  locked **11-label `EmotionLabel`**, the pure/total **`deriveEmotionLabel`** projection
-  (a derived activation axis × valence + affinity + conditions, with a transient reaction
-  beat), and the **event→mood table** split into impulse (one-time) vs standing (baseline-
-  shift) modes. **Welcome/unwelcome touch** (affinity-stage gated + preference override)
-  and the **condition→mood baseline shift** are wired into the engine merge; a **cast-card
-  mood chip** surfaces the label. Atmosphere shift is built but unwired (no scene-tone
-  source); the timeline, chat label, and avatar consumption stay in Next.
+- **Mood — app-wide emotional state** (complete) —
+  [mood.plan.md](finished/mood.plan.md) · spec [mood.spec.md](finished/mood.spec.md),
+  2026-06-24. A new `src/contracts/mood/` module: the locked **11-label `EmotionLabel`**,
+  the pure/total **`deriveEmotionLabel`** projection (a derived activation axis × valence +
+  affinity + conditions, with a transient reaction beat), and the **event→mood table** split
+  into impulse (one-time) vs standing (baseline-shift) modes. **Welcome/unwelcome touch**
+  (affinity-stage gated + preference override), the **condition→mood baseline shift**, and the
+  **scene-atmosphere baseline shift** (its producer is the sibling Shipped entry above) are
+  wired into the engine merge; a shared **`MoodChip`** surfaces the label on both the cast card
+  and the character-chat strip. Mood's own scope is done; the two leftover ideas live in other
+  plans — the relationship/meter timeline ([deferred.plan.md](deferred.plan.md) #4) and the
+  avatar's projection consumption (Mood-reactive avatars, in Next).
 - **Character chat — light state** —
   [character-chat-state.plan.md](finished/character-chat-state.plan.md) · spec
   [character-chat-state.spec.md](finished/character-chat-state.spec.md), 2026-06-24. The
