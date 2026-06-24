@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { charactersApi, sendCharacterChat, type ImageRecord } from "@/lib/client/api";
-import { DEFAULT_NARRATIVE_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
+import { DEFAULT_CHARACTER_CHAT_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -48,7 +48,7 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
   const transcript = useAsyncData(() => charactersApi.chatTranscript(characterId), [characterId]);
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [input, setInput] = useState("");
-  const [narratorModel, setNarratorModel] = useState(DEFAULT_NARRATIVE_MODEL_ID);
+  const [narratorModel, setNarratorModel] = useState(DEFAULT_CHARACTER_CHAT_MODEL_ID);
   const [sending, setSending] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
