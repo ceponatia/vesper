@@ -23,22 +23,11 @@ item off **Next** (top: **mood**).
 
 ## Next (queued)
 
-- **Scene atmosphere — a derived scene-tone signal** (draft) —
-  [scene-atmosphere.plan.md](scene-atmosphere.plan.md) · spec
-  [scene-atmosphere.spec.md](scene-atmosphere.spec.md). Builds the **producer** the mood
-  core slice left missing: the **director** emits one `atmosphere` enum field per turn
-  (`calm`/`warm`/`romantic`/`tense`/`ominous`/`melancholy`/`hopeful` — no new leg), the merge
-  carries it onto the brief (sticky, with an intimate-frame floor), and it feeds the already-
-  built `atmosphereMoodBaselineShift` (a tense room drags a present character's mood, trait-
-  damped). **Unblocks the mood remainder in order**, and later serves the avatar's
-  `environment.atmosphere` cue channel — one producer, two consumers. A few open questions to
-  confirm first (director-emitted vs deterministic, sticky vs per-turn).
 - **Mood — remainder** (core shipped 2026-06-24, see Shipped) —
   [mood.plan.md](mood.plan.md). The projection + `EmotionLabel`, welcome/unwelcome
-  touch, the condition→mood baseline shift, and the cast-card mood chip landed. **Left:**
-  **scene atmosphere** (now its own item above — [scene-atmosphere.plan.md](scene-atmosphere.plan.md)
-  builds the source + wires the shift), the **relationship/meter timeline**
-  ([deferred.plan.md](deferred.plan.md) #4),
+  touch, the condition→mood baseline shift, the **scene-atmosphere** baseline shift (its
+  producer shipped 2026-06-24, see Shipped), and the cast-card mood chip landed. **Left:** the
+  **relationship/meter timeline** ([deferred.plan.md](deferred.plan.md) #4),
   the **chat-surface label**, and the **avatar consumption** (which widens the cue enum
   to 11 — folded into the avatar plan below).
 - **Social-reaction cards** — plan
@@ -92,6 +81,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Scene atmosphere — scene-tone producer** —
+  [scene-atmosphere.plan.md](scene-atmosphere.plan.md) · spec
+  [scene-atmosphere.spec.md](scene-atmosphere.spec.md), 2026-06-24. Built the producer the mood
+  core slice was missing: the **director** emits an optional `atmosphere` enum (one field, no
+  new leg); `resolveAtmosphere` carries it onto the brief (sticky — director tone, else the
+  prior, with an intimate-frame floor to `romantic`); the drift loop feeds it to the already-
+  built `atmosphereMoodBaselineShift` for NPCs co-located with the player (a tense room settles
+  a present character lower, composure-damped). Unblocks mood's last v1 input; later serves the
+  avatar's `environment.atmosphere`. Deferred: authored location tone, status surfacing, a
+  danger→`tense` floor.
 - **Mood — core slice** — [mood.plan.md](mood.plan.md) · spec
   [mood.spec.md](mood.spec.md), 2026-06-24. A new `src/contracts/mood/` module: the
   locked **11-label `EmotionLabel`**, the pure/total **`deriveEmotionLabel`** projection

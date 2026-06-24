@@ -151,9 +151,9 @@ invented — is in [mood.spec.md](mood.spec.md) §3.)
    baseline shifts (pure, tested). Split into **impulse** (one-time delta) vs **standing**
    (baseline shift) modes — see spec §5.
 3. **Wire the v1 event sources** into the merge — ✓ welcome/unwelcome touch, ✓ conditions
-   (baseline shift in drift); ⏳ **scene atmosphere** — the producer is now its own plan
-   ([scene-atmosphere.plan.md](scene-atmosphere.plan.md)), which wires the ready shift.
-   Story beats, presence, physical cross-talk, intimacy beats are later.
+   (baseline shift in drift), ✓ **scene atmosphere** (producer + wiring shipped 2026-06-24,
+   [scene-atmosphere.plan.md](scene-atmosphere.plan.md)). Story beats, presence, physical
+   cross-talk, intimacy beats are later.
 4. **UI surfacing** — ✓ mood chip (cast card / `StatusParticipant.emotion`); ⏳ the
    relationship/meter timeline.
 5. ⏳ **Chat** — chat already moves mood (the shipped reaction pulse); add the **labeled

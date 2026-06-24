@@ -29,7 +29,7 @@ describe("agent system prompts", () => {
     // little extra over the base for the comms-location-contradiction clause
     // (npc-movement-spec) — see docs/story-threads.md, docs/perception.md.
     const budget = (name: string): number =>
-      ({ DIRECTOR_SYSTEM: 6000, CONTINUITY_SYSTEM: 2900, SIMULANT_SYSTEM: 2800 })[name] ?? 2600;
+      ({ DIRECTOR_SYSTEM: 6200, CONTINUITY_SYSTEM: 2900, SIMULANT_SYSTEM: 2800 })[name] ?? 2600;
     for (const [name, text] of Object.entries(SYSTEMS)) {
       expect(text.length, name).toBeLessThan(budget(name));
     }

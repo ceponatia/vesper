@@ -181,8 +181,8 @@ would compound (a `tense` room would pin mood to 0 within a few turns). So:
 - **Standing** influences shift the mood **baseline** (resting target) so drift pulls
   toward it without compounding — `conditionMoodBaselineShift` (wired into the drift
   loop: a `hurt` companion settles lower, recovers when it lifts) and
-  `atmosphereMoodBaselineShift` (pure; the producer + wiring is
-  [scene-atmosphere.plan.md](scene-atmosphere.plan.md)).
+  `atmosphereMoodBaselineShift` (wired 2026-06-24, gated to co-located NPCs; its producer
+  is [scene-atmosphere.plan.md](scene-atmosphere.plan.md)).
 
 **Welcome/unwelcome touch** (v1, decision 2026-06-24). A touch act
 (`physical_affection`, or an `intimate` touch concept) resolves a **welcome-ness**
