@@ -13,23 +13,16 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-build right now — **Character chat — light state (slices 1 + 3)** just
-finished (see **Shipped** below): the state row, time-drift spine, reaction pulse,
-and the premise/strip/reset UI. Its **slice 4** (texture + test-bed affordances)
-stays in **Next** below.
+Nothing mid-build right now — **Character chat — light state** just finished in
+full (slices 1 + 3 + 4; see **Shipped** below): the state row, time-drift spine,
+reaction pulse, premise/strip/reset UI, plus the slice-4 texture (arousal-from-
+intimate, action chips, light conditions) and test-bed affordances (state-tools
+modal, Prompt Character opening beat). The only deferred piece is the **state-aware
+chat scene image**, folded into [deferred.plan.md](deferred.plan.md). Pick the next
+item off **Next** (top: **mood**).
 
 ## Next (queued)
 
-- **Character chat — light state, slice 4 (texture + test-bed)** —
-  [character-chat-state.plan.md](character-chat-state.plan.md) · spec
-  [character-chat-state.spec.md](character-chat-state.spec.md). The post-playtest
-  polish left after slices 1 + 3 shipped (see **Shipped**): light conditions, action
-  chips (offer a drink → intoxication↑), arousal-from-intimate-acts, mindNote-driven
-  resume beats, a state-aware chat scene image, and the test-bed affordances — a
-  **state-tools modal** (inspect/edit affinity, meters, conditions, premise, mindNote
-  + the last-turn debug trace already persisted by the pulse) and the premise-driven
-  **Prompt Character** opening beat. Lower priority than mood; pull when chat playtest
-  surfaces the need.
 - **Mood — app-wide emotional state** (draft) — [mood.plan.md](mood.plan.md).
   Graduates the **event→mood table** deferred by the shipped `personality-and-state`
   (spec §4): generalizes mood movement beyond the lone social-reaction nudge (scene
@@ -89,7 +82,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
-- **Character chat — light state (slices 1 + 3)** —
+- **Character chat — light state** —
   [character-chat-state.plan.md](character-chat-state.plan.md) · spec
   [character-chat-state.spec.md](character-chat-state.spec.md), 2026-06-24. The
   sessionless 1-on-1 chat is now state-aware: a `character_chat_state` row (full meter
@@ -98,10 +91,12 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   affinity seeded from a new authored `playerRelationship` profile field, a per-chat
   **premise** (chat-only scenario), and a cheap reaction pulse that reuses the
   personality §6 curve to move affinity/mood + refresh the mindNote (degrades to
-  drift-only). Surfaced as a prompt "Current state" + scenario block, a `GET/PATCH
+  drift-only). Surfaced as a prompt "Current state" + scenario block, a `GET/PATCH/POST
   …/chat/state` API, a status strip + stage-change toast + premise bar, and three
-  reset scopes (all/chat/state). **Slice 4** (texture + state-tools modal + Prompt
-  Character) remains in **Next**.
+  reset scopes (all/chat/state). **Slice 4** added the texture (arousal-from-intimate,
+  action chips, light conditions) and test-bed affordances (a **state-tools modal**
+  with the last-turn debug trace, and the **Prompt Character** opening beat). Only the
+  state-aware chat scene image was deferred → [deferred.plan.md](deferred.plan.md).
 - **Default player character** — [player-character.plan.md](player-character.plan.md),
   2026-06-23. A `/settings` page (reached from the nav account menu) where the user sets
   a light default player character — name + short persona on `users.playerPersona`,

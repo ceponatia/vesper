@@ -20,6 +20,24 @@ export const CHAT_MIND_NOTE_MAX_CHARS = 320;
 /** Cap on the player-set per-chat premise (a scenario, not a bio). */
 export const CHAT_PREMISE_MAX_CHARS = 600;
 
+/**
+ * Test-bed **action chips** (character-chat-state.spec.md slice 4): one-click
+ * deterministic state nudges shown above the composer. The id + label live here
+ * (pure) so the chat UI renders them and the engine's effect registry keys off the
+ * same ids; the engine owns the effect functions. `chatActionIdSchema` validates
+ * the action at the route boundary.
+ */
+export const CHAT_ACTIONS = [
+  { id: "drink", label: "Offer a drink" },
+  { id: "freshen", label: "Freshen up" },
+  { id: "rest", label: "Take a breather" },
+  { id: "fluster", label: "Heat things up" },
+] as const;
+
+export type ChatActionId = (typeof CHAT_ACTIONS)[number]["id"];
+
+export const chatActionIdSchema = z.enum(["drink", "freshen", "rest", "fluster"]);
+
 export const chatPulseSchema = z.object({
   /** The player's primary act toward the character, classified into a concept id; null ⇒ none. */
   playerAct: z.object({ concept: z.string().min(1) }).nullable().catch(null).default(null),
@@ -53,7 +71,9 @@ export const chatPulseTraceSchema = z.object({
   affinityDelta: z.number().catch(0).default(0),
   /** Signed mood-meter move applied this exchange (0–1 scale). */
   moodDelta: z.number().catch(0).default(0),
-  /** Which state fields the pulse changed (affinity / mood / mindNote). */
+  /** Arousal-meter move from an intimate act this exchange (0–1 scale; slice 4). */
+  arousalDelta: z.number().catch(0).default(0),
+  /** Which state fields the pulse changed (affinity / mood / arousal / mindNote). */
   changed: z.array(z.string()).catch([]).default([]),
   /** True when the pulse degraded to drift-only (timeout / parse failure / demo). */
   degraded: z.boolean().catch(false).default(false),

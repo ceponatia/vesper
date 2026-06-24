@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
   activeConditionSchema,
+  type ActiveCondition,
   ambientSchema as ambientBaseSchema,
   authoredRelationshipSchema,
   avatarImageModels,
   avatarImageModelLabels,
+  type ChatActionId,
   chatPulseTraceSchema,
   DEFAULT_AVATAR_IMAGE_MODEL,
   type AvatarImageModel,
@@ -264,13 +266,24 @@ export const chatStateSnapshotSchema = z.object({
     valence: null,
     affinityDelta: 0,
     moodDelta: 0,
+    arousalDelta: 0,
     changed: [],
     degraded: false,
   })),
+  clockMinutes: z.number().catch(0),
+  lastInteractionAt: z.string().nullable().catch(null),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
 /** The reset scope of the three chat reset actions (Reset All / Chat / State). */
 export type ChatResetScope = "all" | "chat" | "state";
+/** A partial edit applied by the premise Save or the state-tools modal (slice 4). */
+export interface ChatStateEdit {
+  premise?: string;
+  affinity?: number;
+  mindNote?: string;
+  meters?: Record<string, number>;
+  conditions?: ActiveCondition[];
+}
 
 export const locationSummarySchema = z.object({
   id: idSchema,
@@ -688,6 +701,12 @@ export const charactersApi = {
   /** Save the per-chat premise (upserts the state row); returns the refreshed snapshot. */
   saveChatPremise: (id: string, premise: string) =>
     apiPatch(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`, { premise }),
+  /** Edit chat state fields from the state-tools modal (slice 4); returns the refreshed snapshot. */
+  editChatState: (id: string, patch: ChatStateEdit) =>
+    apiPatch(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`, patch),
+  /** Apply a one-click action chip (offer a drink → intoxication↑, etc.); returns the refreshed snapshot. */
+  applyChatAction: (id: string, action: ChatActionId) =>
+    apiPost(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`, { action }),
   /** Overwrite one chat message's text in place (recovery lever for a poisoned transcript). */
   editChatMessage: (id: string, messageId: string, content: string) =>
     apiPatch(z.unknown(), `/api/characters/${id}/chat/${messageId}`, { content }),
@@ -713,7 +732,7 @@ export interface ChatStreamOutcome {
  */
 export async function sendCharacterChat(
   characterId: string,
-  body: { content: string; model?: string },
+  body: { content?: string; model?: string; open?: boolean },
   onChunk: (delta: string) => void,
 ): Promise<ChatStreamOutcome> {
   let res: Response;
@@ -860,6 +879,9 @@ export const galleryApi = {
   list: () => apiGet(listOf(sceneImageSchema, "scenes"), "/api/gallery"),
   /** Permanently delete one scene image (row + file; drops from every gallery). */
   remove: (id: string) => apiDelete(`/api/gallery/${id}`),
+  /** Bulk-delete the given scene images (row + file each) — the "Delete all" action. */
+  removeMany: (ids: string[]) =>
+    apiPost(z.object({ deleted: z.number().catch(0) }), "/api/gallery/delete", { ids }),
 };
 
 export const sessionsApi = {

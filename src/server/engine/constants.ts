@@ -84,6 +84,14 @@ export const CHAT_PULSE_MAX_OUTPUT_TOKENS = 256;
  * budget only delays the controller.close() — invisible to perceived latency.
  */
 export const CHAT_PULSE_TIMEOUT_MS = 4000;
+/**
+ * Arousal a pulse-classified **intimate** act adds (slice 4): full for an intimate
+ * concept (e.g. a proposition), half for courtship / physical-affection. Skipped
+ * when the act is disliked. Clamped to [0,1] like every meter.
+ */
+export const CHAT_AROUSAL_INTIMATE = 0.18;
+/** Duration (chat-clock minutes) of a condition added by an action chip before it self-expires. */
+export const CHAT_ACTION_CONDITION_MINUTES = 90;
 /** Most recent episode summaries always present in the turn context. */
 export const EPISODE_WINDOW = 4;
 /** Max items in the merged narrator facts channel (docs/memory.md). */

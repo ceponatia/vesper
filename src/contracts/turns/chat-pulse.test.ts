@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHAT_ACTIONS,
+  chatActionIdSchema,
   chatPulseSchema,
   CHAT_MIND_NOTE_MAX_CHARS,
   chatPulseTraceSchema,
@@ -36,6 +38,7 @@ describe("chatPulseTraceSchema", () => {
       valence: null,
       affinityDelta: 0,
       moodDelta: 0,
+      arousalDelta: 0,
       changed: [],
       degraded: false,
     });
@@ -46,6 +49,17 @@ describe("chatPulseTraceSchema", () => {
     expect(parsed.concept).toBeNull();
     expect(parsed.valence).toBeNull();
     expect(parsed.affinityDelta).toBe(0);
+    expect(parsed.arousalDelta).toBe(0);
     expect(parsed.changed).toEqual([]);
+  });
+});
+
+describe("chat action chips", () => {
+  it("every CHAT_ACTIONS id validates against chatActionIdSchema", () => {
+    for (const action of CHAT_ACTIONS) expect(chatActionIdSchema.safeParse(action.id).success).toBe(true);
+  });
+
+  it("rejects an unknown action id", () => {
+    expect(chatActionIdSchema.safeParse("nuke").success).toBe(false);
   });
 });

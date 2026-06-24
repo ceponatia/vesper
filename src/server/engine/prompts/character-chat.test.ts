@@ -182,4 +182,11 @@ describe("buildCharacterChatSystemPrompt", () => {
     });
     expect(noPremise).not.toContain("Scenario for this chat");
   });
+
+  it("adds an opening-beat instruction only when opening is set", () => {
+    const opening = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), opening: true });
+    expect(opening).toMatch(/Opening beat/);
+    expect(opening).toMatch(/Begin the conversation yourself/);
+    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain("Opening beat");
+  });
 });
