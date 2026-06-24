@@ -23,14 +23,16 @@ item off **Next** (top: **mood**).
 
 ## Next (queued)
 
-- **Mood — app-wide emotional state** (draft) — [mood.plan.md](mood.plan.md).
-  Graduates the **event→mood table** deferred by the shipped `personality-and-state`
-  (spec §4): generalizes mood movement beyond the lone social-reaction nudge (scene
-  atmosphere, conditions, beats, presence) + a **labeled-emotion projection** so
-  consumers get a discrete emotion, not just a `0–1` valence. Mood is a cross-app
-  read (narrator, scene images, **avatar animations**, UI mood chip, chat) — built
-  separately because it serves more than the avatar, and it unblocks the avatar's
-  emotion read. Pairs with the deferred relationship/meter timeline.
+- **Mood — app-wide emotional state** (next; settled 2026-06-24) —
+  [mood.plan.md](mood.plan.md). Graduates the **event→mood table** deferred by the
+  shipped `personality-and-state` (spec §4): generalizes mood movement beyond the lone
+  social-reaction nudge (v1 adds **welcome/unwelcome touch**, conditions, scene
+  atmosphere; beats/presence deferred) + a **labeled-emotion projection** over a locked
+  **11-label `EmotionLabel`** enum so consumers get a discrete emotion, not just a
+  `0–1` valence. Mood is a cross-app read (narrator, scene images, **avatar
+  animations**, UI mood chip, chat) — built separately because it serves more than the
+  avatar, and it unblocks the avatar's emotion read. Pairs with the deferred
+  relationship/meter timeline.
 - **Social-reaction cards** — plan
   [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (draft). Importable
   **taboo / social-rule cards** (library content, reusable across worlds like items) that
