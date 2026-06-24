@@ -100,10 +100,14 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     };
   }, [characterId]);
 
-  // Auto-scroll to the newest line as the conversation grows / streams.
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // Auto-scroll the message *list* (not the page) to the newest line as the
+  // conversation grows / streams. Setting the container's scrollTop directly keeps
+  // the scroll contained: `scrollIntoView` bubbles to every ancestor incl. the
+  // window, which shoved the composer below the fold on each send.
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [lines]);
 
   /** Refetch the state strip; toast when the affinity stage changed (the romance arc made visible). */
@@ -293,7 +297,10 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
         </div>
       </div>
 
-      <div className="flex max-h-[28rem] min-h-48 flex-col gap-3 overflow-y-auto rounded-card border border-ink-600 bg-ink-950/40 p-4">
+      <div
+        ref={scrollRef}
+        className="flex max-h-[28rem] min-h-48 flex-col gap-3 overflow-y-auto rounded-card border border-ink-600 bg-ink-950/40 p-4"
+      >
         {transcript.loading ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-10 w-2/3" />
@@ -306,20 +313,17 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
             Say something to {who} to start the conversation. This chat lives only here — no world, no session.
           </p>
         ) : (
-          <>
-            {lines.map((line) => (
-              <MessageBubble
-                key={line.id}
-                line={line}
-                name={name}
-                avatarImageId={avatarImageId}
-                streaming={sending}
-                onEdit={editLine}
-                onDelete={deleteLine}
-              />
-            ))}
-            <div ref={bottomRef} />
-          </>
+          lines.map((line) => (
+            <MessageBubble
+              key={line.id}
+              line={line}
+              name={name}
+              avatarImageId={avatarImageId}
+              streaming={sending}
+              onEdit={editLine}
+              onDelete={deleteLine}
+            />
+          ))
         )}
       </div>
 
