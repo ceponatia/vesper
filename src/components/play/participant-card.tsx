@@ -10,27 +10,13 @@ import { Card } from "@/components/ui/card";
 import { cx } from "@/components/ui/cx";
 import { EntityImage } from "@/components/ui/entity-image";
 import { Select } from "@/components/ui/select";
+import { MoodChip } from "@/components/ui/mood-chip";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import type { PlayerRelationship } from "./cast-relationship";
 
 const meterLabels = new Map(meterDefinitions.map((m) => [m.id, m.label]));
-
-/** Glanceable glyph per emotion label (mood.spec §2) for the cast-card mood chip. */
-const emotionGlyph: Record<string, string> = {
-  neutral: "😐",
-  happy: "🙂",
-  affectionate: "🥰",
-  playful: "😏",
-  flustered: "😳",
-  concerned: "😟",
-  sad: "😢",
-  angry: "😠",
-  afraid: "😨",
-  surprised: "😲",
-  aroused: "🥵",
-};
 
 /** Registry label for a stage id; unknown ids degrade to a capitalized raw id. */
 function stageLabel(stageId: string): string {
@@ -260,15 +246,7 @@ export function ParticipantCard({
             {participant.activity}
             {participant.posture ? ` · ${participant.posture}` : ""}
           </p>
-          {participant.emotion ? (
-            <p
-              className="mt-1 flex items-center gap-1 text-[11px] text-paper-400"
-              title={`Mood — intensity ${Math.round(participant.emotion.intensity * 100)}%`}
-            >
-              <span aria-hidden>{emotionGlyph[participant.emotion.label] ?? "·"}</span>
-              <span className="capitalize">{participant.emotion.label}</span>
-            </p>
-          ) : null}
+          {participant.emotion ? <MoodChip emotion={participant.emotion} className="mt-1 text-[11px]" /> : null}
         </div>
       </button>
 

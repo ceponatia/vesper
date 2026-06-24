@@ -16,6 +16,7 @@ import {
   emptyWorldLore,
   emptyWorldStyle,
   diagnosticSchema,
+  emotionLabelSchema,
   itemDefinitionSchema,
   itemKindSchema,
   itemSensorySchema,
@@ -258,6 +259,9 @@ export const chatStateSnapshotSchema = z.object({
   meters: z.record(z.string(), z.number()).catch({}),
   affinity: z.number().catch(0),
   stage: z.object({ id: z.string(), label: z.string() }).catch({ id: "stranger", label: "Stranger" }),
+  emotion: z
+    .object({ label: emotionLabelSchema, intensity: z.number().min(0).max(1).catch(0) })
+    .catch({ label: "neutral", intensity: 0 }),
   conditions: z.array(activeConditionSchema).catch([]),
   mindNote: textOr(""),
   premise: textOr(""),

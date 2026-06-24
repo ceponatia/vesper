@@ -9,6 +9,7 @@ import {
   chatPulseTraceSchema,
   clampAffinity,
   degradedChatPulse,
+  deriveEmotionLabel,
   diag,
   emptyChatPulseTrace,
   evaluateSocialReaction,
@@ -30,6 +31,7 @@ import {
   type ChatPulse,
   type ChatPulseTrace,
   type DiagnosticSink,
+  type EmotionLabel,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, type GenerateCheckedResult } from "../ai";
@@ -74,6 +76,8 @@ export interface ChatStateSnapshot {
   meters: Record<string, number>;
   affinity: number;
   stage: { id: string; label: string };
+  /** Derived discrete emotion for the chat mood chip (mood.spec §4). */
+  emotion: { label: EmotionLabel; intensity: number };
   conditions: ActiveCondition[];
   mindNote: string;
   premise: string;
@@ -550,13 +554,34 @@ export async function deleteChatState(ownerId: string, characterId: string): Pro
     .where(and(eq(characterChatState.ownerId, ownerId), eq(characterChatState.characterId, characterId)));
 }
 
-/** Project a state into the GET …/chat/state response shape (adds the derived stage). */
-export function chatStateSnapshot(state: ChatState): ChatStateSnapshot {
+/**
+ * Project a state into the GET …/chat/state response shape (adds the derived stage +
+ * the labeled emotion for the mood chip). `opts.dominance` (the character's
+ * `social.dominance` trait) tilts a low-valence read angry vs sad; chat is an
+ * intimate-capable 1-on-1, so `intimateContext` defaults on (the `aroused` gate is then
+ * just the arousal meter) — callers without a character pass nothing and get the
+ * conservative defaults.
+ */
+export function chatStateSnapshot(
+  state: ChatState,
+  opts: { dominance?: number; intimateContext?: boolean } = {},
+): ChatStateSnapshot {
   const stage = stageForValue(state.affinity);
+  const emotion = deriveEmotionLabel({
+    mood: state.meters.mood ?? NEUTRAL_MOOD_METER,
+    arousal: state.meters.arousal ?? 0,
+    stress: state.meters.stress ?? 0,
+    energy: state.meters.energy ?? 1,
+    affinityStage: stage.id,
+    conditions: state.conditions,
+    intimateContext: opts.intimateContext ?? false,
+    dominance: opts.dominance ?? 0,
+  });
   return {
     meters: state.meters,
     affinity: state.affinity,
     stage: { id: stage.id, label: stage.label },
+    emotion: { label: emotion.emotion, intensity: emotion.intensity },
     conditions: state.conditions,
     mindNote: state.mindNote,
     premise: state.premise,

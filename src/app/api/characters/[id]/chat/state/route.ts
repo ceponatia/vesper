@@ -7,7 +7,9 @@ import {
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   DiagnosticCollector,
+  effectiveTraitValue,
   emptyCharacterProfile,
+  type CharacterProfile,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
@@ -48,6 +50,16 @@ const editBodySchema = z.object({
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });
 
+/**
+ * Mood-chip inputs for the snapshot (mood.spec §4): the character's `social.dominance`
+ * tilts a low-valence read angry vs sad, and chat — a private intimate-capable 1-on-1 —
+ * permits the `aroused` label (then gated purely on the arousal meter).
+ */
+const snapshotOpts = (profile: CharacterProfile) => ({
+  dominance: effectiveTraitValue(profile.traits, "social.dominance"),
+  intimateContext: true,
+});
+
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const character = await loadOwnedCharacter(id, user.id);
@@ -57,7 +69,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
   const stored = await loadChatState(user.id, id, sink);
   const state = stored ? driftChatState(stored, new Date(), profile, { advance: false }) : seedChatState(profile);
-  return jsonOk(chatStateSnapshot(state));
+  return jsonOk(chatStateSnapshot(state, snapshotOpts(profile)));
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
@@ -71,7 +83,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const sink = new DiagnosticCollector();
   const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
   const state = await editChatState({ ownerId: user.id, characterId: id, profile, patch: body.value });
-  return jsonOk(chatStateSnapshot(state));
+  return jsonOk(chatStateSnapshot(state, snapshotOpts(profile)));
 });
 
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
@@ -89,5 +101,5 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const current = stored ? driftChatState(stored, new Date(), profile, { advance: false }) : seedChatState(profile);
   const next = applyChatAction(current, body.value.action);
   await persistChatState(user.id, id, next);
-  return jsonOk(chatStateSnapshot(next));
+  return jsonOk(chatStateSnapshot(next, snapshotOpts(profile)));
 });

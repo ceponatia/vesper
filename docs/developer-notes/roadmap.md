@@ -26,10 +26,11 @@ item off **Next** (top: **mood**).
 - **Mood — remainder** (core shipped 2026-06-24, see Shipped) —
   [mood.plan.md](mood.plan.md). The projection + `EmotionLabel`, welcome/unwelcome
   touch, the condition→mood baseline shift, the **scene-atmosphere** baseline shift (its
-  producer shipped 2026-06-24, see Shipped), and the cast-card mood chip landed. **Left:** the
-  **relationship/meter timeline** ([deferred.plan.md](deferred.plan.md) #4),
-  the **chat-surface label**, and the **avatar consumption** (which widens the cue enum
-  to 11 — folded into the avatar plan below).
+  producer shipped 2026-06-24, see Shipped), and the **mood chip** on both the cast card
+  and the **character-chat strip** landed. **Left:** the **relationship/meter timeline**
+  ([deferred.plan.md](deferred.plan.md) #4) and the **avatar consumption** (which widens
+  the cue enum to 11 — folded into the avatar plan below). With the chip on both surfaces,
+  the mood remainder is now just those two cross-plan pieces.
 - **Social-reaction cards** — plan
   [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (draft). Importable
   **taboo / social-rule cards** (library content, reusable across worlds like items) that
