@@ -16,7 +16,7 @@ import {
   senseModsFromConditions,
   type Salience,
 } from "@/contracts/perception";
-import { emptyBrief, nextTurnBriefSchema, type NextTurnBrief } from "@/contracts/state/brief";
+import { emptyBrief, nextTurnBriefSchema, type ExposureMask, type NextTurnBrief } from "@/contracts/state/brief";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import {
   pendingCommsSchema,
@@ -42,7 +42,14 @@ import type { CharacterProfile } from "@/contracts/world/profile";
 import { evaluateSocialReaction, moodMeterToFactor, moodNudge, resolveSocialReaction } from "@/contracts/personality/reactions";
 import { affinityDecayRetention, personalizeMeters, scaleAffinityGain, socialTraitScale } from "@/contracts/personality/modulation";
 import { interactionConceptById } from "@/contracts/personality/interactions";
-import { conditionMoodBaselineShift, isTouchConcept, resolveTouchWelcomeness, touchMoodDeltas } from "@/contracts/mood";
+import {
+  atmosphereMoodBaselineShift,
+  conditionMoodBaselineShift,
+  isTouchConcept,
+  resolveTouchWelcomeness,
+  touchMoodDeltas,
+  type AtmosphereLabel,
+} from "@/contracts/mood";
 import type { TraitValue } from "@/contracts/personality/traits/value";
 import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { checkLinkAccess, type DoorState } from "@/contracts/world/access";
@@ -1375,6 +1382,25 @@ export interface BriefBuildInput {
  * CORRECTION_CAP `Correction:`-prefixed directives (self-expiring — the brief
  * is rebuilt every turn).
  */
+/** Scene tones that an intimate frame must NOT overwrite (an intimate scene can be fraught). */
+const DARK_ATMOSPHERES: ReadonlySet<AtmosphereLabel> = new Set(["tense", "ominous", "melancholy"]);
+
+/**
+ * Resolve the next brief's scene tone (scene-atmosphere.spec.md §2): the director's
+ * classification wins when present, else carry the prior tone forward (sticky — a quiet
+ * turn doesn't reset to calm). Then a deterministic floor: an intimate frame reads
+ * `romantic` unless the resolved tone is already dark. Pure + total.
+ */
+export function resolveAtmosphere(input: {
+  director?: AtmosphereLabel;
+  prior: AtmosphereLabel;
+  exposure: ExposureMask;
+}): AtmosphereLabel {
+  const base = input.director ?? input.prior;
+  const intimate = input.exposure.touch === "intimate" || input.exposure.appearance === "intimate";
+  return intimate && !DARK_ATMOSPHERES.has(base) ? "romantic" : base;
+}
+
 export function buildNextBrief(input: BriefBuildInput): NextTurnBrief {
   // Arrivals/departures are this turn's staging only — stale lines would
   // re-stage a long-finished entrance, so they never carry forward from prior.
@@ -1388,6 +1414,11 @@ export function buildNextBrief(input: BriefBuildInput): NextTurnBrief {
         directives: [...input.director.directives],
         memoryQueries: input.director.memoryQueries.length > 0 ? [...input.director.memoryQueries] : [...input.prior.memoryQueries],
         exposure: input.director.exposure,
+        atmosphere: resolveAtmosphere({
+          director: input.director.atmosphere,
+          prior: input.prior.atmosphere,
+          exposure: input.director.exposure,
+        }),
         droppedEvents: [],
         arrivals,
         departures,
@@ -1722,6 +1753,9 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   const clockMinutes = bundle.clockMinutes + minutes;
 
   const defs = effectiveMeterDefinitions(bundle.style);
+  // The active scene's tone (scene-atmosphere.spec §5) shifts the mood baseline of NPCs
+  // *in the player's location* — the brief describes that scene.
+  const playerLocationId = parts.find((p) => p.isUser)?.locationId ?? null;
   // Turn-start mood, captured before drift mutates it — the social reaction reads this
   // for its μ so the narrated hint and the applied delta agree (the §6 key invariant).
   const moodAtTurnStart = new Map(parts.map((p) => [p.id, p.state.meters.mood ?? NEUTRAL_MOOD_METER]));
@@ -1741,12 +1775,16 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
 
   for (const participant of parts) {
     // Per-character drift: traits shift the resting baseline/recovery (spec §4); thresholds
-    // and agent adjustments still use the global defs. Active conditions are a *standing*
-    // mood influence (mood.spec §5): they shift the mood baseline so drift pulls toward an
-    // influenced target without compounding a per-turn delta (a `hurt` companion settles
-    // lower; recovers once it lifts). Trait/condition shifts only matter in a real turn.
+    // and agent adjustments still use the global defs. *Standing* mood influences (mood.spec
+    // §5) shift the mood baseline so drift pulls toward an influenced target without
+    // compounding a per-turn delta: active conditions (a `hurt` companion settles lower,
+    // recovers once it lifts) and the scene atmosphere (a tense room drags a present, low-
+    // composure NPC down; composure-damped). Only matter in a real turn.
     const personalized = personalizeMeters(defs, participant.snapshot.traits);
-    const moodBaselineShift = conditionMoodBaselineShift(participant.state.conditions);
+    const coLocatedWithPlayer = playerLocationId !== null && participant.locationId === playerLocationId;
+    const moodBaselineShift =
+      conditionMoodBaselineShift(participant.state.conditions) +
+      (coLocatedWithPlayer ? atmosphereMoodBaselineShift(bundle.brief.atmosphere, participant.snapshot.traits) : 0);
     const driftDefs =
       moodBaselineShift === 0
         ? personalized

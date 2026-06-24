@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { atmosphereLabelSchema } from "../mood/atmosphere";
 
 export const exposureMaskSchema = z.object({
   appearance: z.enum(["ambient", "close", "intimate"]).catch("ambient"),
@@ -23,6 +24,12 @@ export const nextTurnBriefSchema = z.object({
   directives: z.array(z.string()).default([]),
   memoryQueries: z.array(z.string()).default([]),
   exposure: exposureMaskSchema.default(defaultExposureMask()),
+  /**
+   * The active scene's emotional tone (scene-atmosphere.spec.md) — a *read* the mood
+   * drift and (later) the avatar consume. Defaulted so briefs persisted before this
+   * field parse unchanged (⇒ `calm` ⇒ a zero mood shift).
+   */
+  atmosphere: atmosphereLabelSchema.default("calm"),
   droppedEvents: z.array(z.string()).default([]),
   /**
    * Off-screen NPC movement staged for the next narration (schedule ticks

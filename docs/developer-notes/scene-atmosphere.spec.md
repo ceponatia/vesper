@@ -4,7 +4,9 @@ Status: **draft** — the design detail behind [scene-atmosphere.plan.md](scene-
 Owns the **producer** of `AtmosphereLabel` (the enum itself is owned by
 [mood.spec.md](mood.spec.md) §2 / `contracts/mood/atmosphere.ts`). Read the plan first
 for scope/why. Structure settled (decisions 2026-06-24): director-emitted + intimate floor,
-sticky carry-forward on the brief.
+sticky carry-forward on the brief. **Shipped 2026-06-24** — `directorResultSchema.atmosphere`,
+`NextTurnBrief.atmosphere`, `resolveAtmosphere` (`merge.ts`), and the co-located drift shift.
+Status surfacing (§7) deferred.
 
 Slug `scene-atmosphere`. Constants/thresholds here are *starting values* tuned in playtest.
 

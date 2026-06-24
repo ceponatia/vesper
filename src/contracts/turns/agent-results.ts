@@ -3,6 +3,7 @@ import { factDraftSchema } from "../facts/taxonomy";
 import { conditionSeveritySchema } from "../conditions/condition";
 import { exposureMaskSchema, defaultExposureMask } from "../state/brief";
 import { salienceSchema } from "../perception/salience";
+import { atmosphereLabelSchema } from "../mood/atmosphere";
 
 /**
  * Post-turn agent output schemas (docs/turn-engine.md §Post-turn agents).
@@ -189,6 +190,13 @@ export const directorResultSchema = z.object({
   directives: z.array(z.string()).default([]),
   memoryQueries: z.array(z.string()).default([]),
   exposure: exposureMaskSchema.default(defaultExposureMask()),
+  /**
+   * The scene's emotional tone (docs/developer-notes/scene-atmosphere.spec.md) — the
+   * room's mood, NOT any one character's. Optional: an absent value carries the prior
+   * brief's tone forward (sticky), so a terse director never resets it. `.catch`'d to
+   * `calm` on an unknown string.
+   */
+  atmosphere: atmosphereLabelSchema.optional(),
   /**
    * Story-thread lifecycle signals (docs/story-threads.md):
    * - touch: keep-warm only — the thread is still live but nothing major happened (no log entry).

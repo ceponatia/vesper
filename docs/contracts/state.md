@@ -108,6 +108,7 @@ type NextTurnBrief = {
   directives: string[];                       // includes ≤2 continuity "Correction: …" lines
   memoryQueries: string[];                    // consumed by the NEXT turn's pre-turn retrieval
   exposure: ExposureMask;
+  atmosphere: AtmosphereLabel;                // scene tone (scene-atmosphere.spec.md): director-emitted, sticky; feeds the mood drift; default "calm"
   droppedEvents: string[];                    // merge-dropped agent events, surfaced as gentle corrections
   arrivals: string[];                         // schedule-tick staging ("Mara arrived from the market.") —
   departures: string[];                       //   per-turn, never carried forward; default [] (old briefs parse unchanged)

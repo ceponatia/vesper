@@ -1,10 +1,11 @@
 # Scene atmosphere — a derived scene-tone signal (plan)
 
-Status: **next** — settled (open questions resolved 2026-06-24; see _Decisions_). Queued to
-unblock the mood remainder (and later the avatar). The `AtmosphereLabel` enum + the
-`atmosphereMoodBaselineShift` consumer already shipped with the [mood core slice](mood.plan.md)
-(2026-06-24); they sit unwired because **nothing in the engine produces a scene tone**. This
-plan builds that producer.
+Status: **shipped — 2026-06-24** — the producer + mood wiring landed (see _Shipped_ below).
+Built the director `atmosphere` field, the sticky brief carry-forward + intimate floor, and
+the co-located mood baseline shift, so the mood remainder's atmosphere input is now live.
+Deferred enhancements: authored location tone, the status-payload surfacing (spec §7), and a
+deterministic danger→`tense` floor. Settled (open questions resolved 2026-06-24; see
+_Decisions_).
 
 Design detail: [scene-atmosphere.spec.md](scene-atmosphere.spec.md) — the source
 precedence, persistence shape, and the director field.
@@ -74,20 +75,28 @@ the intimate frame; consumers read `brief.atmosphere`.
 - Atmosphere is an **input** to mood, never an override (a composed companion holds calm in a
   tense room — the shift is composure-damped). It is **not** the character's emotion.
 
-## Build order
+## Build order (✓ = shipped 2026-06-24)
 
-1. **Contract** — add `atmosphere: AtmosphereLabel` to `directorResultSchema` (default `calm`,
-   `.catch`) and to `NextTurnBrief` (`brief.atmosphere`, defaulted so old briefs parse).
-2. **Director prompt** — one line asking for the scene's emotional tone from the enum.
-3. **Merge assembly** — `atmosphere: resolveAtmosphere(director, prior, exposure)` in the
-   brief builder (director → floor → carry-forward). A pure helper + tests.
-4. **Wire mood** — add `atmosphereMoodBaselineShift(brief.atmosphere, traits)` to the drift
-   mood-baseline shift (alongside the condition shift), gated to co-located participants.
-   Degradation test (absent/odd atmosphere ⇒ no shift + diagnostic).
-5. **Surface (optional)** — atmosphere on the status payload for the dev/Inspector panel.
-6. **Docs** — `turn-engine.md` (director field), `prompts.md` (the director line),
-   `contracts/state.md` (brief field), `contracts/meters-actions.md` (atmosphere now wired);
-   mark mood's atmosphere row shipped.
+1. ✓ **Contract** — `atmosphere` on `directorResultSchema` (optional, `.catch`'d) and on
+   `NextTurnBrief` (`brief.atmosphere`, default `calm` so old briefs parse).
+2. ✓ **Director prompt** — one tone line + the field seeded in the few-shot examples.
+3. ✓ **Merge assembly** — `resolveAtmosphere(director, prior, exposure)` in the brief builder
+   (director → carry-forward → intimate floor). Pure helper + 6 unit tests.
+4. ✓ **Wire mood** — `atmosphereMoodBaselineShift(brief.atmosphere, traits)` added to the drift
+   mood-baseline shift, gated to NPCs co-located with the player.
+5. ⏳ **Surface (optional, deferred)** — atmosphere on the status payload for the dev panel /
+   a future scene chip (spec §7). The mood chip already reflects the *effect*.
+6. ✓ **Docs** — `turn-engine.md` (director field + drift), `contracts/state.md` (brief field),
+   `contracts/meters-actions.md` (atmosphere wired). `prompts.md` unchanged (the director
+   prompt isn't field-documented there).
+
+### Shipped 2026-06-24
+
+The director emits an optional `atmosphere` enum; the merge's `resolveAtmosphere` resolves the
+next brief's tone (director wins → else sticky carry-forward → intimate-frame floor to
+`romantic` unless a darker tone was named); `buildNextBrief` writes `brief.atmosphere`; the
+drift loop adds `atmosphereMoodBaselineShift` (composure-damped) to the mood baseline for
+co-located NPCs. Deferred: authored location tone, status-payload surfacing, danger floor.
 
 ## Decisions (resolved 2026-06-24)
 
