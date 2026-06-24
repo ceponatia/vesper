@@ -1,21 +1,27 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import { characterProfileSchema, DiagnosticCollector, emptyCharacterProfile } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { CHAT_RATE_LIMIT, errorText, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
-import { characterChatMessages, characterChatSummaries, characters, db, images } from "@/server/db";
+import { characterChatMessages, characterChatSummaries, db, images } from "@/server/db";
 import {
   buildCharacterChatSystemPrompt,
   CHARACTER_CHAT_SUMMARIZE_AT,
+  deleteChatState,
+  driftChatState,
   enqueueChatSummary,
+  finalizeChatState,
+  loadChatState,
   loadChatSummary,
   loadVerbatimWindow,
+  seedChatState,
   streamCharacterChat,
 } from "@/server/engine";
 import { log } from "@/server/log";
 import { resolvePlayerPersona } from "@/server/players";
+import { loadOwnedCharacter } from "./owned";
 
 type Params = { id: string };
 
@@ -37,16 +43,6 @@ const sendBodySchema = z.object({
   /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
   model: z.string().trim().min(1).max(120).optional(),
 });
-
-/** Resolve an owned character to the fields the chat needs, or null. */
-async function loadOwnedCharacter(characterId: string, ownerId: string) {
-  const [row] = await db()
-    .select({ id: characters.id, name: characters.name, profile: characters.profile })
-    .from(characters)
-    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
-    .limit(1);
-  return row ?? null;
-}
 
 /** GET /api/characters/:id/chat — the full transcript, oldest first. */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
@@ -118,17 +114,54 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // The user's default player character (player-character.plan.md), so the
   // character addresses someone by name instead of a faceless "the user".
   const player = await resolvePlayerPersona(user.id);
+
+  // Light chat state (character-chat-state.spec.md §5): load (or lazily seed from
+  // the authored defaults), then recompute drift — between-visit recovery toward
+  // rested + this exchange's within-visit tick. Pure; persisted once at turn end.
+  const now = new Date();
+  const sink = new DiagnosticCollector();
+  const storedState = await loadChatState(user.id, id, sink);
+  const driftedState = driftChatState(storedState ?? seedChatState(profile), now, profile, { advance: true });
+
   const system = buildCharacterChatSystemPrompt({
     name: character.name,
     profile,
     priorSummary: summaryState?.summary,
     player: { name: player.name, persona: player.persona },
+    state: {
+      meters: driftedState.meters,
+      affinity: driftedState.affinity,
+      conditions: driftedState.conditions,
+      mindNote: driftedState.mindNote,
+      premise: driftedState.premise,
+    },
   });
   const gen = streamCharacterChat({ system, history, name: character.name, model: body.value.model });
 
-  return streamReply(gen, (full) =>
-    persistAssistantReply({ ownerId: user.id, characterId: id, promptMessageId, content: full }),
-  );
+  // Finalizer (turn end): persist the reply, then run the reaction pulse + fold
+  // drift into the persisted state. The reply has already flushed to the client,
+  // so this is invisible to perceived latency; a pulse failure degrades to
+  // drift-only state and never affects the saved reply.
+  return streamReply(gen, async (full) => {
+    await persistAssistantReply({ ownerId: user.id, characterId: id, promptMessageId, content: full });
+    try {
+      await finalizeChatState({
+        ownerId: user.id,
+        characterId: id,
+        promptMessageId,
+        profile,
+        characterName: character.name,
+        playerName: player.name,
+        driftedState,
+        now,
+        exchange: { player: body.value.content, assistant: full },
+        sink,
+      });
+    } catch (err) {
+      log.error("api.chat", "chat-state finalize failed", { error: errorText(err) });
+    }
+    if (sink.items.length) log.info("api.chat", "chat-state diagnostics", { codes: sink.items.map((d) => d.code) });
+  });
 });
 
 /**
@@ -160,36 +193,52 @@ export async function persistAssistantReply(args: {
 }
 
 /**
- * DELETE /api/characters/:id/chat — clear the conversation. The running summary
- * row is deleted too (the watermark + recap are this conversation's memory; a
- * cleared chat must not keep a hidden recap — correctness + privacy). The scene
- * images (kind="scene") survive, but their prompts embed recent chat lines
- * (renderCharacterSceneImage → recentNarration), so we reset the prompt text:
- * a cleared conversation must not leave old chat context visible (the gallery
- * enlarge view shows `prompt`), which would be both confusing and a privacy
- * residue. The asset stays; only its derived prompt is blanked (column default "").
+ * DELETE /api/characters/:id/chat?scope=all|chat|state — the three reset actions
+ * (character-chat-state.spec.md §5), replacing the old single clear:
+ *
+ * - **all** (default): delete messages + summary + the light-state row — the full
+ *   wipe (the old clear-chat behavior, now also dropping state).
+ * - **chat**: delete messages + summary but KEEP the state row, so a tester can
+ *   start a fresh transcript while preserving the current disposition + premise.
+ * - **state**: delete the state row only, keeping the transcript — it re-seeds
+ *   lazily from the authored defaults on the next exchange (Reset State).
+ *
+ * The running summary travels with the transcript (its watermark + recap are this
+ * conversation's memory; a cleared chat must not keep a hidden recap — correctness
+ * + privacy). The scene images (kind="scene") survive, but their prompts embed
+ * recent chat lines, so the prompt text is blanked: a cleared conversation must not
+ * leave old chat context visible (the gallery enlarge view shows `prompt`). The
+ * asset stays; only its derived prompt is reset (column default "").
  */
-export const DELETE = withUser<Params>(async (user, _req, ctx) => {
+export const DELETE = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   if (!(await loadOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
-  await db()
-    .delete(characterChatMessages)
-    .where(and(eq(characterChatMessages.ownerId, user.id), eq(characterChatMessages.characterId, id)));
-  await db()
-    .delete(characterChatSummaries)
-    .where(and(eq(characterChatSummaries.ownerId, user.id), eq(characterChatSummaries.characterId, id)));
-  await db()
-    .update(images)
-    .set({ prompt: "" })
-    .where(
-      and(
-        eq(images.ownerId, user.id),
-        eq(images.kind, "scene"),
-        eq(images.entityKind, "character"),
-        eq(images.entityId, id),
-      ),
-    );
-  return jsonOk({ cleared: true });
+  const scopeParam = req.nextUrl.searchParams.get("scope");
+  const scope = scopeParam === "chat" || scopeParam === "state" ? scopeParam : "all";
+
+  if (scope !== "state") {
+    await db()
+      .delete(characterChatMessages)
+      .where(and(eq(characterChatMessages.ownerId, user.id), eq(characterChatMessages.characterId, id)));
+    await db()
+      .delete(characterChatSummaries)
+      .where(and(eq(characterChatSummaries.ownerId, user.id), eq(characterChatSummaries.characterId, id)));
+    await db()
+      .update(images)
+      .set({ prompt: "" })
+      .where(
+        and(
+          eq(images.ownerId, user.id),
+          eq(images.kind, "scene"),
+          eq(images.entityKind, "character"),
+          eq(images.entityId, id),
+        ),
+      );
+  }
+  if (scope !== "chat") {
+    await deleteChatState(user.id, id);
+  }
+  return jsonOk({ cleared: true, scope });
 });
 
 /**

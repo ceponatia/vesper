@@ -1,0 +1,175 @@
+import { describe, expect, it } from "vitest";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { initialMeters } from "@/contracts/meters/registry";
+import { stageForValue, stageMidpoint } from "@/contracts/relationships/stages";
+import type { ActiveCondition } from "@/contracts/conditions/condition";
+import type { ChatPulse } from "@/contracts/turns/chat-pulse";
+import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
+import { CHAT_RESET_MINUTES, CHAT_TICK_MINUTES } from "./constants";
+import { applyChatPulse, driftChatState, runChatPulse, seedChatState, type ChatState } from "./chat-state";
+
+// These run with AI_FAKE=1 (src/test/setup.ts): demo mode short-circuits the
+// pulse LLM, so runChatPulse exercises the drift-only degrade path.
+
+function profile(overrides: Partial<CharacterProfile> = {}): CharacterProfile {
+  return { ...emptyCharacterProfile(), ...overrides };
+}
+
+const ago = (minutes: number): Date => new Date(Date.now() - minutes * 60_000);
+
+describe("seedChatState", () => {
+  it("seeds rested meters, neutral affinity, and an empty premise for a default profile", () => {
+    const state = seedChatState(profile());
+    expect(state.meters).toEqual(initialMeters());
+    expect(state.affinity).toBe(0);
+    expect(state.premise).toBe("");
+    expect(state.mindNote).toBe(""); // never seeded — purely dynamic
+    expect(state.lastInteractionAt).toBeNull();
+  });
+
+  it("seeds affinity from the authored playerRelationship stage via stageMidpoint", () => {
+    const warm = seedChatState(profile({ playerRelationship: { stage: "warm", note: "" } }));
+    expect(warm.affinity).toBe(stageMidpoint("warm"));
+    expect(warm.affinity).toBeGreaterThan(0);
+  });
+
+  it("stranger / absent stage seeds affinity 0 (today's behavior unchanged)", () => {
+    expect(seedChatState(profile({ playerRelationship: { stage: "stranger", note: "" } })).affinity).toBe(0);
+  });
+
+  it("self-heals a malformed authored stage to stranger ⇒ affinity 0", () => {
+    const parsed = characterProfileSchema.parse({ playerRelationship: { stage: "not-a-stage" } });
+    expect(seedChatState(parsed).affinity).toBe(0);
+  });
+
+  it("pre-fills the premise from playerRelationship.note, and an explicit premise overrides it", () => {
+    expect(seedChatState(profile({ playerRelationship: { stage: "stranger", note: "her bodyguard" } })).premise).toBe(
+      "her bodyguard",
+    );
+    expect(seedChatState(profile({ playerRelationship: { stage: "stranger", note: "ignored" } }), "tonight she leaves").premise).toBe(
+      "tonight she leaves",
+    );
+  });
+});
+
+describe("driftChatState", () => {
+  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(profile()), ...overrides });
+
+  it("within-visit tick advances the clock and decays meters toward their baseline", () => {
+    const drifted = driftChatState(base(), new Date(), profile(), { advance: true });
+    expect(drifted.clockMinutes).toBe(CHAT_TICK_MINUTES);
+    expect(drifted.meters.hygiene).toBeLessThan(0.9); // drifts toward the grime pole
+    expect(drifted.meters.energy).toBeLessThan(0.9);
+  });
+
+  it("between-visit recovery lerps meters toward rested by elapsed/CHAT_RESET_MINUTES", () => {
+    const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 }, lastInteractionAt: ago(CHAT_RESET_MINUTES / 2) });
+    const drifted = driftChatState(tired, new Date(), profile(), { advance: false });
+    // f = 0.5 ⇒ halfway from 0.2 back to the rested 0.9.
+    expect(drifted.meters.hygiene).toBeCloseTo(0.55, 2);
+    expect(drifted.meters.energy).toBeCloseTo(0.55, 2);
+  });
+
+  it("a full gap recovers to rested and never overshoots (cap at f=1)", () => {
+    const tired = base({ meters: { ...initialMeters(), hygiene: 0.1 }, lastInteractionAt: ago(CHAT_RESET_MINUTES * 5) });
+    const drifted = driftChatState(tired, new Date(), profile(), { advance: false });
+    expect(drifted.meters.hygiene).toBeCloseTo(0.9, 5); // exactly rested, not beyond
+  });
+
+  it("never decays affinity (no between-visit decay — spec §10)", () => {
+    const warm = base({ affinity: 57, lastInteractionAt: ago(CHAT_RESET_MINUTES * 10) });
+    expect(driftChatState(warm, new Date(), profile(), { advance: false }).affinity).toBe(57);
+    expect(driftChatState(warm, new Date(), profile(), { advance: true }).affinity).toBe(57);
+  });
+
+  it("expires conditions past the clock during the within-visit tick", () => {
+    const condition: ActiveCondition = { id: "tipsy", label: "Tipsy", startedAtMinutes: 0, durationMinutes: 2, attributeEffects: [] };
+    const withCondition = base({ conditions: [condition] });
+    // Tick advances the clock past started + duration (2) ⇒ expired.
+    expect(driftChatState(withCondition, new Date(), profile(), { advance: true }).conditions).toHaveLength(0);
+    // A read (no advance) keeps the chat clock still ⇒ the condition survives.
+    expect(driftChatState(withCondition, new Date(), profile(), { advance: false }).conditions).toHaveLength(1);
+  });
+});
+
+describe("applyChatPulse (the deterministic §6 curve)", () => {
+  const likeProfile = profile({ preferences: [{ target: "compliment", valence: "like", intensity: 5 }] });
+  const dislikeProfile = profile({ preferences: [{ target: "insult", valence: "dislike", intensity: 5 }] });
+  const state = (): ChatState => seedChatState(profile());
+  const pulse = (concept: string | null, mindNote = "thinking"): ChatPulse => ({
+    playerAct: concept ? { concept } : null,
+    mindNote,
+  });
+
+  it("a liked act raises affinity (clamped) and lifts mood, and records the trace", () => {
+    const { state: next, trace } = applyChatPulse(state(), pulse("compliment"), likeProfile, "Mara");
+    expect(trace.concept).toBe("compliment");
+    expect(trace.valence).toBe("like");
+    expect(trace.affinityDelta).toBeGreaterThan(0);
+    expect(next.affinity).toBe(trace.affinityDelta);
+    expect(next.meters.mood).toBeGreaterThan(0.5);
+    expect(next.mindNote).toBe("thinking");
+    expect(trace.changed).toContain("affinity");
+  });
+
+  it("a disliked act lowers affinity and mood", () => {
+    const { state: next, trace } = applyChatPulse(state(), pulse("insult"), dislikeProfile, "Mara");
+    expect(trace.valence).toBe("dislike");
+    expect(trace.affinityDelta).toBeLessThan(0);
+    expect(next.affinity).toBeLessThan(0);
+    expect(next.meters.mood).toBeLessThan(0.5);
+  });
+
+  it("clamps the affinity move to ±AFFINITY_DELTA_CLAMP", () => {
+    const intense = profile({ preferences: [{ target: "insult", valence: "dislike", intensity: 10 }] });
+    const { trace } = applyChatPulse(state(), pulse("insult"), intense, "Mara");
+    expect(trace.affinityDelta).toBeGreaterThanOrEqual(-5);
+  });
+
+  it("an unrecognised act moves nothing but still refreshes the mindNote", () => {
+    const { state: next, trace } = applyChatPulse(state(), pulse("compliment", "warmer now"), profile(), "Mara");
+    expect(trace.valence).toBeNull();
+    expect(trace.affinityDelta).toBe(0);
+    expect(next.affinity).toBe(0);
+    expect(next.mindNote).toBe("warmer now");
+    expect(trace.changed).toEqual(["mindNote"]);
+  });
+
+  it("a null act leaves state untouched except the mindNote", () => {
+    const { state: next, trace } = applyChatPulse(state(), pulse(null, "still musing"), likeProfile, "Mara");
+    expect(trace.concept).toBeNull();
+    expect(next.affinity).toBe(0);
+    expect(next.mindNote).toBe("still musing");
+  });
+
+  it("an empty mindNote keeps the prior note", () => {
+    const prior: ChatState = { ...state(), mindNote: "kept" };
+    expect(applyChatPulse(prior, pulse(null, ""), profile(), "Mara").state.mindNote).toBe("kept");
+  });
+});
+
+describe("runChatPulse (demo ⇒ drift-only degrade)", () => {
+  it("degrades to drift-only state AND emits the chat_state.pulse.degraded diagnostic", async () => {
+    const sink = new DiagnosticCollector();
+    const input: ChatState = { ...seedChatState(profile()), affinity: 12, mindNote: "before" };
+    const { state, degraded } = await runChatPulse({
+      state: input,
+      profile: profile(),
+      characterName: "Mara",
+      playerName: "Theo",
+      exchange: { player: "hi", assistant: "[Mara] \"hi\"" },
+      sink,
+    });
+    expect(degraded).toBe(true);
+    expect(state.affinity).toBe(12); // unchanged — drift-only
+    expect(state.mindNote).toBe("before");
+    expect(state.lastPulseTrace.degraded).toBe(true);
+    expect(sink.items.some((d) => d.code === "chat_state.pulse.degraded")).toBe(true);
+  });
+});
+
+describe("stageForValue chip mapping (the strip's stage label)", () => {
+  it("maps a warm affinity to the warm stage", () => {
+    expect(stageForValue(seedChatState(profile({ playerRelationship: { stage: "warm", note: "" } })).affinity).id).toBe("warm");
+  });
+});

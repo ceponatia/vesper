@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { stageById } from "./stages";
+import { stageIdSchema } from "./stages";
 
 /**
  * Authored relationships (docs/authoring.md §Cast relationships): a world cast
@@ -13,10 +13,7 @@ export const authoredRelationshipSchema = z.object({
   /** Cast display name or the literal "player"; resolved case-insensitively at spawn. */
   toward: z.string().trim().min(1),
   /** Stage id from the registry; unknown ids self-heal to "stranger" (= no seeded row). */
-  stage: z
-    .string()
-    .refine((id) => stageById(id) !== undefined, { message: "unknown relationship stage" })
-    .catch("stranger"),
+  stage: stageIdSchema,
 });
 
 export type AuthoredRelationship = z.infer<typeof authoredRelationshipSchema>;

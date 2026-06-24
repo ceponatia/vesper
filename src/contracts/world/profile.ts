@@ -4,7 +4,14 @@ import { calendarStartSchema, DEFAULT_CALENDAR_START } from "@/lib/clock";
 import { meterDefinitionSchema } from "../meters/registry";
 import { preferenceSchema } from "../personality/preference";
 import { traitValueSchema } from "../personality/traits/value";
+import { stageIdSchema } from "../relationships/stages";
 import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
+
+/**
+ * Cap on the authored `playerRelationship.note` — it pre-fills a chat premise, so
+ * keep it a one-line setup, not a second bio (character-chat-state.spec.md §1.1).
+ */
+export const PLAYER_RELATIONSHIP_NOTE_MAX = 280;
 
 export const scheduleEntrySchema = z.object({
   startMinute: z.number().int().min(0).max(1439),
@@ -59,6 +66,23 @@ export const characterProfileSchema = z.object({
    * disposition block and scales reactions by 1 — exactly today's behavior.
    */
   traits: z.array(traitValueSchema).default([]),
+  /**
+   * The character's authored default stance toward the player
+   * (character-chat-state.spec.md §1.1). v1 seeds the **character chat**: `stage`
+   * → the chat's starting affinity (`stageMidpoint`), and the one-line `note`
+   * pre-fills the chat's default premise (§1.2). Default `stranger`/"" ⇒ affinity
+   * 0 and no default premise ⇒ today's behavior. Stored as `playerRelationship`
+   * (intrinsic stance toward the player, broader than chat) but shown on the
+   * character-sheet **Chat** tab as **Starting Relationship**. Every part has a
+   * `.catch` so a malformed value self-heals rather than failing the whole profile.
+   */
+  playerRelationship: z
+    .object({
+      stage: stageIdSchema.default("stranger"),
+      note: z.string().max(PLAYER_RELATIONSHIP_NOTE_MAX).catch("").default(""),
+    })
+    .catch({ stage: "stranger", note: "" })
+    .default({ stage: "stranger", note: "" }),
   aliases: z.array(z.string()).default([]),
   /** Item definition ids from the owner's library. */
   defaultOutfit: z.array(z.string()).default([]),

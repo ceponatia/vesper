@@ -13,23 +13,23 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-build right now — **Default player character** just finished (see
-**Shipped** below): the settings menu + a light player persona threaded into
-character chat. Pick the next item off **Next** (top: **character-chat light
-state & embodied player**, which now consumes the `resolvePlayerPersona` resolver
-this shipped; then mood).
+Nothing mid-build right now — **Character chat — light state (slices 1 + 3)** just
+finished (see **Shipped** below): the state row, time-drift spine, reaction pulse,
+and the premise/strip/reset UI. Its **slice 4** (texture + test-bed affordances)
+stays in **Next** below.
 
 ## Next (queued)
 
-- **Character chat — light state & embodied player** (draft brainstorm) —
-  [character-chat-state.plan.md](character-chat-state.plan.md). Grow the sessionless
-  1-on-1 chat from a stateless transcript into a light, state-aware quick chat that
-  reuses the contracts (meters incl. **hygiene**, affinity, conditions) without the
-  session engine, plus the **placeholder intake** for a future profile-level _player
-  character_ the chat (and sessions) default to. Its reaction pulse reuses the shipped
-  personality §6 likes/dislikes curve — chat is the cheapest testbed for that loop.
-  Also delivers the embodied-player immersion fix (UX-audit P1). Menu of ideas; pick a
-  v1 before promoting.
+- **Character chat — light state, slice 4 (texture + test-bed)** —
+  [character-chat-state.plan.md](character-chat-state.plan.md) · spec
+  [character-chat-state.spec.md](character-chat-state.spec.md). The post-playtest
+  polish left after slices 1 + 3 shipped (see **Shipped**): light conditions, action
+  chips (offer a drink → intoxication↑), arousal-from-intimate-acts, mindNote-driven
+  resume beats, a state-aware chat scene image, and the test-bed affordances — a
+  **state-tools modal** (inspect/edit affinity, meters, conditions, premise, mindNote
+  + the last-turn debug trace already persisted by the pulse) and the premise-driven
+  **Prompt Character** opening beat. Lower priority than mood; pull when chat playtest
+  surfaces the need.
 - **Mood — app-wide emotional state** (draft) — [mood.plan.md](mood.plan.md).
   Graduates the **event→mood table** deferred by the shipped `personality-and-state`
   (spec §4): generalizes mood movement beyond the lone social-reaction nudge (scene
@@ -89,6 +89,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character chat — light state (slices 1 + 3)** —
+  [character-chat-state.plan.md](character-chat-state.plan.md) · spec
+  [character-chat-state.spec.md](character-chat-state.spec.md), 2026-06-24. The
+  sessionless 1-on-1 chat is now state-aware: a `character_chat_state` row (full meter
+  set, affinity, conditions, mindNote, premise, chat clock), a free time-drift spine
+  (within-visit decay + between-visit recovery toward rested, **no affinity decay**),
+  affinity seeded from a new authored `playerRelationship` profile field, a per-chat
+  **premise** (chat-only scenario), and a cheap reaction pulse that reuses the
+  personality §6 curve to move affinity/mood + refresh the mindNote (degrades to
+  drift-only). Surfaced as a prompt "Current state" + scenario block, a `GET/PATCH
+  …/chat/state` API, a status strip + stage-change toast + premise bar, and three
+  reset scopes (all/chat/state). **Slice 4** (texture + state-tools modal + Prompt
+  Character) remains in **Next**.
 - **Default player character** — [player-character.plan.md](player-character.plan.md),
   2026-06-23. A `/settings` page (reached from the nav account menu) where the user sets
   a light default player character — name + short persona on `users.playerPersona`,

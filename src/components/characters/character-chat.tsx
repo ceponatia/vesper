@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { charactersApi, sendCharacterChat, type ImageRecord } from "@/lib/client/api";
+import { CHAT_PREMISE_MAX_CHARS } from "@/contracts";
+import {
+  charactersApi,
+  sendCharacterChat,
+  type ChatResetScope,
+  type ChatStateSnapshot,
+  type ImageRecord,
+} from "@/lib/client/api";
 import { DEFAULT_CHARACTER_CHAT_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
@@ -11,7 +18,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tag } from "@/components/ui/tag";
+import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
@@ -50,8 +57,15 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
   const [input, setInput] = useState("");
   const [narratorModel, setNarratorModel] = useState(DEFAULT_CHARACTER_CHAT_MODEL_ID);
   const [sending, setSending] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [clearing, setClearing] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState<ChatResetScope | null>(null);
+  // Light chat state (character-chat-state.spec.md): the strip + premise. Held in
+  // local state (not useAsyncData) so a post-send refresh can drive the
+  // stage-change toast off the value it just fetched.
+  const [chatState, setChatState] = useState<ChatStateSnapshot | null>(null);
+  const [premise, setPremise] = useState("");
+  const [savingPremise, setSavingPremise] = useState(false);
+  const stageRef = useRef<string | null>(null);
   const tempId = useRef(0);
   const mkId = () => `tmp-${tempId.current++}`;
   // Mirrors `sending` synchronously so the post-send id-reconcile can bail if a
@@ -67,11 +81,38 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     setLines(transcript.data.map((m) => ({ id: m.id, role: m.role, content: m.content })));
   }
 
+  // Load the light state once per character (the premise pre-fills from the
+  // authored default). Writes happen past the await, so no in-render setState.
+  useEffect(() => {
+    let cancelled = false;
+    void charactersApi.chatState(characterId).then((r) => {
+      if (cancelled || !r.ok) return;
+      setChatState(r.data);
+      setPremise(r.data.premise);
+      stageRef.current = r.data.stage.label;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [characterId]);
+
   // Auto-scroll to the newest line as the conversation grows / streams.
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [lines]);
+
+  /** Refetch the state strip; toast when the affinity stage changed (the romance arc made visible). */
+  const refreshState = async () => {
+    const prior = stageRef.current;
+    const result = await charactersApi.chatState(characterId);
+    if (!result.ok) return;
+    setChatState(result.data);
+    if (prior && result.data.stage.label !== prior) {
+      toast.push({ title: `${who} now regards you as ${result.data.stage.label.toLowerCase()}.` });
+    }
+    stageRef.current = result.data.stage.label;
+  };
 
   const send = async () => {
     const content = input.trim();
@@ -103,6 +144,9 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     if (fresh.ok && !sendingRef.current) {
       setLines(fresh.data.map((m) => ({ id: m.id, role: m.role, content: m.content })));
     }
+    // The pulse + drift settle server-side as the stream finalizes; refetch the
+    // strip so the disposition (and any stage change) shows after the exchange.
+    await refreshState();
   };
 
   /** Overwrite one message's text in place; updates the line on success. */
@@ -133,18 +177,44 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     }
   };
 
-  const clearChat = async () => {
-    setClearing(true);
-    const result = await charactersApi.clearChat(characterId);
-    setClearing(false);
-    setConfirmClear(false);
+  /** Persist the per-chat premise (Save). Upserts the state row server-side. */
+  const savePremise = async () => {
+    setSavingPremise(true);
+    const result = await charactersApi.saveChatPremise(characterId, premise.trim());
+    setSavingPremise(false);
     if (result.ok) {
-      setLines([]);
-      toast.push({ title: "Chat cleared" });
+      setChatState(result.data);
+      setPremise(result.data.premise);
+      stageRef.current = result.data.stage.label;
+      toast.push({ title: "Scenario saved" });
     } else {
-      toast.push({ title: "Clear failed", description: result.error.message, tone: "error" });
+      toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
     }
   };
+
+  /** One of the three reset actions (character-chat-state.spec.md §5). */
+  const runReset = async (scope: ChatResetScope) => {
+    setResetting(scope);
+    const result = await charactersApi.resetChat(characterId, scope);
+    setResetting(null);
+    setResetOpen(false);
+    if (!result.ok) {
+      toast.push({ title: "Reset failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    if (scope !== "state") setLines([]);
+    const fresh = await charactersApi.chatState(characterId);
+    if (fresh.ok) {
+      setChatState(fresh.data);
+      setPremise(fresh.data.premise);
+      stageRef.current = fresh.data.stage.label;
+    }
+    toast.push({
+      title: scope === "all" ? "Chat fully reset" : scope === "chat" ? "Transcript cleared" : "State reset",
+    });
+  };
+
+  const hasAnything = lines.length > 0 || (chatState !== null && (chatState.affinity !== 0 || premise.trim().length > 0));
 
   return (
     <div className="flex flex-col gap-5">
@@ -165,9 +235,9 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
               </option>
             ))}
           </Select>
-          {lines.length > 0 ? (
-            <Button size="sm" variant="quiet" onClick={() => setConfirmClear(true)}>
-              Clear chat
+          {hasAnything ? (
+            <Button size="sm" variant="quiet" onClick={() => setResetOpen(true)}>
+              Reset…
             </Button>
           ) : null}
         </div>
@@ -203,6 +273,10 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
         )}
       </div>
 
+      {chatState ? <StatusStrip state={chatState} /> : null}
+
+      <PremiseBar value={premise} who={who} saving={savingPremise} onChange={setPremise} onSave={savePremise} />
+
       <div className="flex items-end gap-2">
         <Textarea
           rows={2}
@@ -218,25 +292,178 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
       </div>
 
       <Dialog
-        open={confirmClear}
+        open={resetOpen}
         onClose={() => {
-          if (!clearing) setConfirmClear(false);
+          if (!resetting) setResetOpen(false);
         }}
-        title="Clear this conversation?"
+        title="Reset this chat"
         footer={
-          <>
-            <Button onClick={() => setConfirmClear(false)} disabled={clearing}>
-              Cancel
-            </Button>
-            <Button variant="danger" busy={clearing} onClick={clearChat}>
-              Clear
-            </Button>
-          </>
+          <Button onClick={() => setResetOpen(false)} disabled={resetting !== null}>
+            Cancel
+          </Button>
         }
       >
-        This deletes every message in this chat. Generated scene images are kept (find them in the Gallery).
+        <div className="flex flex-col gap-3 text-sm">
+          <p className="text-paper-400">
+            Pick what to reset. The transcript and {who}&rsquo;s disposition (affinity, mood, scenario) are separate.
+          </p>
+          <ResetOption
+            title="Reset state"
+            description={`Keep the transcript; re-seed ${who}'s disposition and scenario from the authored defaults.`}
+            busy={resetting === "state"}
+            disabled={resetting !== null}
+            onClick={() => runReset("state")}
+          />
+          <ResetOption
+            title="Reset chat"
+            description="Clear the messages and summary but keep the current disposition and scenario, to start a fresh transcript."
+            busy={resetting === "chat"}
+            disabled={resetting !== null}
+            onClick={() => runReset("chat")}
+          />
+          <ResetOption
+            title="Reset all"
+            description="Clear everything — messages, summary, and disposition. Generated scene images are kept (find them in the Gallery)."
+            tone="danger"
+            busy={resetting === "all"}
+            disabled={resetting !== null}
+            onClick={() => runReset("all")}
+          />
+        </div>
       </Dialog>
     </div>
+  );
+}
+
+/** Compact, off-baseline meter pips for the status strip (only what's worth saying). */
+function meterPips(meters: Record<string, number>): { id: string; label: string; tone: TagTone }[] {
+  const pips: { id: string; label: string; tone: TagTone }[] = [];
+  const energy = meters.energy ?? 0.9;
+  if (energy <= 0.45) pips.push({ id: "energy", label: energy <= 0.2 ? "exhausted" : "tired", tone: "default" });
+  const hygiene = meters.hygiene ?? 0.9;
+  if (hygiene <= 0.55) pips.push({ id: "hygiene", label: hygiene <= 0.3 ? "unwashed" : "lived-in", tone: "default" });
+  const stress = meters.stress ?? 0.15;
+  if (stress >= 0.6) pips.push({ id: "stress", label: stress >= 0.85 ? "near breaking" : "on edge", tone: "danger" });
+  const arousal = meters.arousal ?? 0;
+  if (arousal >= 0.55) pips.push({ id: "arousal", label: "flushed", tone: "accent" });
+  const intoxication = meters.intoxication ?? 0;
+  if (intoxication >= 0.35)
+    pips.push({ id: "intoxication", label: intoxication >= 0.7 ? "drunk" : "tipsy", tone: "accent" });
+  const mood = meters.mood ?? 0.5;
+  if (mood >= 0.65) pips.push({ id: "mood", label: "bright", tone: "ok" });
+  else if (mood <= 0.35) pips.push({ id: "mood", label: "low", tone: "default" });
+  return pips;
+}
+
+/**
+ * The status strip above the composer: an affinity stage chip (heart) + meter
+ * pips, shown only when off-baseline so casual chats stay clean
+ * (character-chat-state.spec.md §7). Fed by GET …/chat/state, refetched per send.
+ */
+function StatusStrip({ state }: { state: ChatStateSnapshot }) {
+  const pips = meterPips(state.meters);
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Tag tone="accent" title={`Affinity ${state.affinity}`}>
+        <span aria-hidden>♥</span> {state.stage.label}
+      </Tag>
+      {pips.map((p) => (
+        <Tag key={p.id} tone={p.tone}>
+          {p.label}
+        </Tag>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The premise (Scenario) bar above the composer (character-chat-state.spec.md §7):
+ * a collapsible free-text scenario for this chat, pre-filled from the authored
+ * default and editable any time. Collapsed by default when empty so casual chats
+ * aren't cluttered; it's the headline control for the "easily test scenarios" use.
+ */
+function PremiseBar({
+  value,
+  who,
+  saving,
+  onChange,
+  onSave,
+}: {
+  value: string;
+  who: string;
+  saving: boolean;
+  onChange: (next: string) => void;
+  onSave: () => void;
+}) {
+  const [open, setOpen] = useState(value.trim().length > 0);
+  return (
+    <div className="rounded-card border border-ink-600 bg-ink-950/40">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-3 py-2 text-xs"
+      >
+        <span className="font-medium tracking-wide text-paper-400 uppercase">Scenario</span>
+        <span className="text-paper-500">{open ? "Hide" : value.trim() ? "Edit" : "Set the scene"}</span>
+      </button>
+      {open ? (
+        <div className="flex flex-col gap-2 px-3 pb-3">
+          <Textarea
+            rows={2}
+            value={value}
+            maxLength={CHAT_PREMISE_MAX_CHARS}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={`Set the scene for this chat with ${who} — e.g. "it's the night before you move away…"`}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-paper-600">
+              Chat-only — it never touches {who}&rsquo;s saved bio or personality.
+            </span>
+            <Button size="sm" variant="primary" busy={saving} onClick={onSave}>
+              Save
+            </Button>
+          </div>
+        </div>
+      ) : value.trim() ? (
+        <p className="line-clamp-2 px-3 pb-2 text-xs text-paper-500">{value}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** One labeled choice in the reset dialog. */
+function ResetOption({
+  title,
+  description,
+  tone = "default",
+  busy,
+  disabled,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  tone?: "default" | "danger";
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-card border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
+        tone === "danger"
+          ? "border-danger-500/40 hover:border-danger-500/70"
+          : "border-ink-600 hover:border-accent-500/60"
+      }`}
+    >
+      <span className={`text-sm font-medium ${tone === "danger" ? "text-danger-300" : "text-paper-200"}`}>
+        {title}
+        {busy ? " …" : ""}
+      </span>
+      <span className="mt-0.5 block text-xs text-paper-500">{description}</span>
+    </button>
   );
 }
 

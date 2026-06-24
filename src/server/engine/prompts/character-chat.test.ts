@@ -123,4 +123,63 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("speaking with the user");
     expect(prompt).toContain('address the user directly as "you"');
   });
+
+  it("is byte-identical when the state block is absent (existing behavior)", () => {
+    const withoutState = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    // An empty state (rested, neutral, no premise) adds nothing notable.
+    const withEmptyState = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [] },
+    });
+    expect(withEmptyState).toBe(withoutState);
+    expect(withoutState).not.toContain("Your current state");
+    expect(withoutState).not.toContain("Scenario for this chat");
+  });
+
+  it("renders a warmth steer + mood + mindNote in the Current state block", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: {
+        meters: { mood: 0.8, energy: 0.8, hygiene: 0.9, stress: 0.1 },
+        affinity: 57, // warm
+        conditions: [],
+        mindNote: "She's glad he came back.",
+      },
+    });
+    expect(prompt).toContain("Your current state");
+    expect(prompt).toMatch(/warm toward you/i);
+    expect(prompt).toContain("bright and playful");
+    expect(prompt).toContain("She's glad he came back.");
+    // The state block sits above the per-line response rules.
+    expect(prompt.indexOf("Your current state")).toBeLessThan(prompt.indexOf("How to respond:"));
+  });
+
+  it("surfaces a crossed meter threshold (drift made visible)", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: { ...{ hygiene: 0.2 }, mood: 0.5, energy: 0.9 }, affinity: 0, conditions: [] },
+    });
+    expect(prompt).toMatch(/unwashed/i);
+  });
+
+  it("renders the premise as a prominent scenario block, above the response rules; empty ⇒ no block", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [], premise: "It's the night before she moves away forever." },
+    });
+    expect(prompt).toContain("Scenario for this chat");
+    expect(prompt).toContain("the night before she moves away");
+    expect(prompt.indexOf("Scenario for this chat")).toBeLessThan(prompt.indexOf("How to respond:"));
+
+    const noPremise = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [], premise: "   " },
+    });
+    expect(noPremise).not.toContain("Scenario for this chat");
+  });
 });

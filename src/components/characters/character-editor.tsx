@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { heritageFor, heritagesForSpecies, speciesById, speciesCatalog, type Diagnostic } from "@/contracts";
+import {
+  heritageFor,
+  heritagesForSpecies,
+  PLAYER_RELATIONSHIP_NOTE_MAX,
+  relationshipStages,
+  speciesById,
+  speciesCatalog,
+  type Diagnostic,
+} from "@/contracts";
 import type { CharacterDraft, CharacterForgeSection } from "@/lib/client/api";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { Button } from "@/components/ui/button";
@@ -271,13 +279,63 @@ export function CharacterEditor({
       ) : null}
 
       {tab === "chat" ? (
-        characterId ? (
-          <CharacterChat characterId={characterId} name={draft.name || "Untitled"} avatarImageId={avatarImageId} />
-        ) : (
-          <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
-            Save the character first — chat speaks from the saved profile and attributes.
-          </p>
-        )
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Starting Relationship"
+              hint="How this character feels about the player at the start of a chat — seeds the chat's affinity."
+            >
+              {(id) => (
+                <Select
+                  id={id}
+                  value={draft.profile.playerRelationship?.stage ?? "stranger"}
+                  onChange={(e) =>
+                    patchProfile({
+                      playerRelationship: {
+                        stage: e.target.value,
+                        note: draft.profile.playerRelationship?.note ?? "",
+                      },
+                    })
+                  }
+                >
+                  {relationshipStages.map((stage) => (
+                    <option key={stage.id} value={stage.id}>
+                      {stage.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field
+              label="Default scenario"
+              hint="A one-line setup that pre-fills each chat's scenario (editable per chat)."
+            >
+              {(id) => (
+                <Input
+                  id={id}
+                  value={draft.profile.playerRelationship?.note ?? ""}
+                  maxLength={PLAYER_RELATIONSHIP_NOTE_MAX}
+                  placeholder="e.g. her devoted bodyguard"
+                  onChange={(e) =>
+                    patchProfile({
+                      playerRelationship: {
+                        stage: draft.profile.playerRelationship?.stage ?? "stranger",
+                        note: e.target.value,
+                      },
+                    })
+                  }
+                />
+              )}
+            </Field>
+          </div>
+          {characterId ? (
+            <CharacterChat characterId={characterId} name={draft.name || "Untitled"} avatarImageId={avatarImageId} />
+          ) : (
+            <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
+              Save the character first — chat speaks from the saved profile and attributes.
+            </p>
+          )}
+        </div>
       ) : null}
     </div>
   );

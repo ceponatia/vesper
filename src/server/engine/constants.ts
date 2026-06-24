@@ -61,6 +61,29 @@ export const CHARACTER_CHAT_HISTORY_TURNS = 40;
 export const CHARACTER_CHAT_SUMMARIZE_AT = 35;
 /** Exchanges left verbatim after a fold (the rest fold into the running summary). */
 export const CHARACTER_CHAT_VERBATIM_KEEP = 15;
+
+/**
+ * Character-chat light state (docs/developer-notes/character-chat-state.spec.md §3).
+ * The chat has no in-world clock, so synthesise one. Within a visit each exchange
+ * advances the chat clock CHAT_TICK_MINUTES and decays meters that far (the session
+ * decay model, scaled tiny). Between visits, real elapsed time maps to a recovery
+ * fraction over CHAT_RESET_MINUTES and meters lerp toward rested (initialMeters) —
+ * so an idle character comes back freshly bathed and rested, not perpetually filthy.
+ * (Affinity never decays — chat is a light, often-ephemeral test-bed, spec §10.)
+ */
+export const CHAT_TICK_MINUTES = 4;
+/** Real minutes of absence that fully recover meters toward rested (≈ a few hours). */
+export const CHAT_RESET_MINUTES = 180;
+/** Run the reaction pulse every Nth exchange (1 = every exchange; batch later if cost bites). */
+export const CHAT_PULSE_EVERY_N = 1;
+/** Output-token cap for the pulse call — a concept id + a short mindNote; keep it cheap/fast. */
+export const CHAT_PULSE_MAX_OUTPUT_TOKENS = 256;
+/**
+ * Timeout for the inline reaction pulse before degrading to drift-only state. It
+ * runs in the stream finalizer AFTER the reply has flushed to the client, so this
+ * budget only delays the controller.close() — invisible to perceived latency.
+ */
+export const CHAT_PULSE_TIMEOUT_MS = 4000;
 /** Most recent episode summaries always present in the turn context. */
 export const EPISODE_WINDOW = 4;
 /** Max items in the merged narrator facts channel (docs/memory.md). */

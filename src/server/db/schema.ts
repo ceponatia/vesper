@@ -203,6 +203,52 @@ export const characterChatSummaries = pgTable(
   (t) => [primaryKey({ columns: [t.ownerId, t.characterId] })],
 );
 
+/**
+ * Character-chat light state (docs/developer-notes/character-chat-state.spec.md).
+ * One row per (ownerId, characterId): the chat's only memory beyond the message
+ * window and the rolling summary — the full meter registry, an affinity scalar,
+ * optional self-expiring conditions, a dynamic "what's on their mind" note, a
+ * player-set per-chat premise, the chat-local game clock, and a wall-clock anchor
+ * for between-visit recovery. A pure CREATE (not an extension of
+ * character_chat_summaries) so the migration never hits drizzle's rename prompt
+ * and the pulse stays independent of the summary fold. No row ⇒ a fresh stateless
+ * chat (today's behavior); the first POST lazily seeds one. Reset semantics:
+ * **Reset All** deletes this row + messages + summary, **Reset Chat** deletes
+ * messages + summary while preserving this row, **Reset State** deletes this row
+ * only (it re-seeds lazily from the authored defaults, transcript intact).
+ */
+export const characterChatState = pgTable(
+  "character_chat_state",
+  {
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    /** Record<string,number> — the full meter registry, carried verbatim (seeded from initialMeters()). */
+    meters: jsonb("meters").notNull().default({}),
+    /** −100…100, the character's feeling toward the player persona (seeded from playerRelationship.stage). */
+    affinity: integer("affinity").notNull().default(0),
+    /** ActiveCondition[] — optional light texture, self-expiring on clockMinutes. */
+    conditions: jsonb("conditions").notNull().default([]),
+    /** 1–3 sentences: "what's on their mind" — the cheap dynamic continuity note (pulse-written). */
+    mindNote: text("mind_note").notNull().default(""),
+    /** ChatPulseTrace — last-exchange debug trace for the state-tools modal; parsed defensively. */
+    lastPulseTrace: jsonb("last_pulse_trace").notNull().default({}),
+    /**
+     * Player-set scenario framing for THIS chat ("it's the night before she moves
+     * away…"). Chat-only by construction — no session ever reads it (spec §1.2).
+     * Pre-filled from the authored `playerRelationship.note`, then player-owned.
+     */
+    premise: text("premise").notNull().default(""),
+    /** Chat-local game clock (within-visit drift + condition-expiry driver). */
+    clockMinutes: integer("clock_minutes").notNull().default(0),
+    /** Wall-clock anchor for between-visit recovery; null until the first exchange. */
+    lastInteractionAt: timestamp("last_interaction_at", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.ownerId, t.characterId] })],
+);
+
 export const locations = pgTable(
   "locations",
   {
