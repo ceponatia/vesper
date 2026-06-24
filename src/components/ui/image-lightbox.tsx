@@ -13,8 +13,10 @@ export interface ImageLightboxProps {
   caption?: string | null;
   /**
    * The full generation prompt for this image. Shown in a side panel for
-   * troubleshooting — **admin/dev only** (gated by useIsAdmin); normal users
-   * never see it. Pass it freely; the gate decides whether it renders.
+   * troubleshooting — **admin/dev only** (gated by useIsAdmin) and **desktop
+   * only** (hidden below the md breakpoint so it never crowds the image on a
+   * phone). Normal users never see it. Pass it freely; the gates decide whether
+   * it renders.
    */
   prompt?: string | null;
 }
@@ -76,7 +78,9 @@ export function ImageLightbox({ imageId, alt, onClose, caption, prompt }: ImageL
         ) : null}
       </div>
       {showPrompt ? (
-        <aside className="flex max-h-[85vh] w-80 shrink-0 flex-col gap-2 self-stretch overflow-y-auto rounded-card border border-ink-600 bg-ink-900/90 p-4">
+        // Desktop only: hidden below md so the prompt panel never crowds the
+        // image on a phone (docs/ui.md §Mobile uses the same md breakpoint).
+        <aside className="hidden max-h-[85vh] w-80 shrink-0 flex-col gap-2 self-stretch overflow-y-auto rounded-card border border-ink-600 bg-ink-900/90 p-4 md:flex">
           <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">
             Generation prompt
             <span className="ml-1.5 text-[10px] text-paper-600 normal-case">dev only</span>
