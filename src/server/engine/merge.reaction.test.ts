@@ -94,6 +94,40 @@ describe("planReactionAffinity", () => {
   });
 });
 
+describe("planReactionAffinity — welcome/unwelcome touch (mood.spec §5)", () => {
+  const touch = [{ concept: "physical_affection", target: "Sabrina" }];
+
+  it("a no-preference touch at a warm stage ⇒ welcome: mood up, stress eased, no affinity write", () => {
+    const sabrina = npc("p-sabrina", "Sabrina");
+    const r = planReactionAffinity(touch, [brian, sabrina], [feeling(55)]); // warm
+    expect(r.updates).toEqual([]);
+    expect(r.ownedEdgeKeys.size).toBe(0);
+    expect(r.moodAdjustment?.delta).toBeGreaterThan(0);
+    expect(r.stressAdjustment!.delta).toBeLessThan(0);
+  });
+
+  it("the same touch at a cool stage ⇒ unwelcome: mood drops, stress spikes", () => {
+    const sabrina = npc("p-sabrina", "Sabrina");
+    const r = planReactionAffinity(touch, [brian, sabrina], [feeling(-25)]); // cool
+    expect(r.moodAdjustment!.delta).toBeLessThan(0);
+    expect(r.stressAdjustment!.delta).toBeGreaterThan(0);
+  });
+
+  it("a stranger-stage touch is ambiguous ⇒ faint mood, no stress", () => {
+    const sabrina = npc("p-sabrina", "Sabrina");
+    const r = planReactionAffinity(touch, [brian, sabrina], [feeling(0)]);
+    expect(r.moodAdjustment?.delta).toBeGreaterThan(0);
+    expect(r.stressAdjustment).toBeUndefined(); // |stress| < 0.005 ⇒ omitted
+  });
+
+  it("a preference on the touch concept overrides the gate (reaction curve owns it)", () => {
+    const likesTouch = npc("p-sabrina", "Sabrina", [{ target: "physical_affection", valence: "like", intensity: 6 }]);
+    const r = planReactionAffinity(touch, [brian, likesTouch], [feeling(-25)]); // cool, but she likes it
+    expect(r.ownedEdgeKeys.has("p-sabrina::p-brian::feeling")).toBe(true); // routed through the reaction path
+    expect(r.moodAdjustment!.delta).toBeGreaterThan(0); // liked ⇒ mood up despite the cool stage
+  });
+});
+
 describe("combineAffinityUpdates", () => {
   it("the reaction wins its edge; the simulant's update on that edge is dropped, others kept", () => {
     const reaction: ReactionAffinityResult = {

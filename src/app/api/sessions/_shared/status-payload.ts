@@ -1,8 +1,11 @@
 import { z } from "zod";
 import {
+  deriveEmotionLabel,
+  effectiveTraitValue,
   isConditionExpired,
   resolveWardrobeVisibility,
   type ActiveCondition,
+  type EmotionLabel,
   type ExposureMask,
   type ItemKind,
   type SceneGenState,
@@ -82,6 +85,13 @@ export interface StatusParticipant {
   activity: string;
   posture: string | null;
   meters: Record<string, number>;
+  /**
+   * Derived discrete emotion (mood.spec.md §4) — the sustained baseline label + its
+   * intensity for the cast-card mood chip. A *read* over meters + affinity stage +
+   * conditions; null for the player. No transient reaction beat here (that's the
+   * avatar's concern) — this is the held face.
+   */
+  emotion: { label: EmotionLabel; intensity: number } | null;
   conditions: StatusCondition[];
   /** Visibility-filtered outfit (visible/hinted only) — the collapsed-card list. */
   wardrobe: StatusWardrobeItem[];
@@ -204,6 +214,36 @@ function shapeCondition(condition: ActiveCondition, clockMinutes: number): Statu
   };
 }
 
+/**
+ * The sustained baseline emotion for an NPC's mood chip (mood.spec.md §4): a pure
+ * read over meters + the affinity stage toward the player + conditions + the scene's
+ * intimate frame. No reaction beat (the avatar layers that on); null for the player.
+ */
+function participantEmotion(
+  p: SessionBundle["participants"][number],
+  ctx: { playerId: string | undefined; relationships: SessionBundle["relationships"]; intimateContext: boolean },
+): { label: EmotionLabel; intensity: number } | null {
+  if (p.isUser) return null;
+  const meters = p.state.meters;
+  const stage =
+    (ctx.playerId
+      ? ctx.relationships.find(
+          (r) => r.kind === "feeling" && r.fromParticipantId === p.id && r.toParticipantId === ctx.playerId,
+        )?.stage
+      : undefined) ?? "stranger";
+  const { emotion, intensity } = deriveEmotionLabel({
+    mood: meters.mood ?? 0.5,
+    arousal: meters.arousal ?? 0,
+    stress: meters.stress ?? 0,
+    energy: meters.energy ?? 1,
+    affinityStage: stage,
+    conditions: p.state.conditions,
+    intimateContext: ctx.intimateContext,
+    dominance: effectiveTraitValue(p.snapshot.traits, "social.dominance"),
+  });
+  return { label: emotion, intensity };
+}
+
 /** Worn instances → the complete per-layer list with resolved visibility. */
 function shapeWornFull(worn: BundleItem[]): StatusWornItem[] {
   return resolveWardrobeVisibility(
@@ -237,6 +277,12 @@ export function buildStatusPayload(
   },
 ): SessionStatusPayload {
   const locationName = new Map(bundle.locations.map((l) => [l.id, l.name]));
+  const playerId = bundle.participants.find((p) => p.isUser)?.id;
+  const exposure = bundle.brief.exposure;
+  // Intimate *frame* (mood.spec §2): an intimate touch/appearance scope — the gate
+  // for `aroused`. Deliberately distinct from wardrobe undress (a clothed character
+  // can be aroused).
+  const intimateContext = exposure.touch === "intimate" || exposure.appearance === "intimate";
 
   const participants: StatusParticipant[] = bundle.participants.map((p) => {
     const held = bundle.items.filter((i) => i.holderParticipantId === p.id && !i.worn);
@@ -254,6 +300,7 @@ export function buildStatusPayload(
       activity: p.state.activity,
       posture: p.state.posture ?? null,
       meters: p.state.meters,
+      emotion: participantEmotion(p, { playerId, relationships: bundle.relationships, intimateContext }),
       conditions: p.state.conditions
         .filter((c) => !isConditionExpired(c, bundle.clockMinutes))
         .map((c) => shapeCondition(c, bundle.clockMinutes)),

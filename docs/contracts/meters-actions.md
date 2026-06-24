@@ -53,6 +53,14 @@ Mood is surfaced not as raw threshold hints but as a **derived descriptor**: `de
 - the social-reaction curve reads mood as its `μ` factor (`moodMeterToFactor`), and
 - a reaction nudges mood back (`moodNudge`).
 
+#### The mood module — labeled emotion + event→mood (`src/contracts/mood/`)
+
+A second, discrete read sits beside the prose descriptor (see `docs/developer-notes/mood.spec.md`):
+
+- **`EmotionLabel`** — the locked app-wide 11-label vocabulary (`neutral`/`happy`/`affectionate`/`playful`/`flustered`/`concerned`/`sad`/`angry`/`afraid`/`surprised`/`aroused`; `aroused` is gated on an *intimate frame*, not undress). Owned here; the avatar cue + UI mood chip import it.
+- **`deriveEmotionLabel`** — a pure, **total** projection: a *transient beat* (the latest `EvaluatedReaction`) wins briefly, else a *baseline* from a derived `activation` axis (energy/stress/arousal) × valence + affinity stage + conditions. Surfaced as the cast-card mood chip (`status-payload.ts` → `StatusParticipant.emotion`).
+- **Event→mood table** — generalizes the lone reaction nudge. **Impulse** events apply one-time deltas: the social reaction (above) and **welcome/unwelcome touch** (`resolveTouchWelcomeness` + `touchMoodDeltas`, affinity-stage gated with a preference override — a touch with no preference swings mood/stress by warmth, wired in `merge.ts planReactionAffinity`). **Standing** influences shift the mood *baseline* (no per-turn compounding): `conditionMoodBaselineShift` (wired into drift) and `atmosphereMoodBaselineShift` (pure, awaiting a scene-tone source).
+
 > The old app's 7-vector hygiene model becomes `hygiene` + conditions (`sweaty`, `soaked`, `unwashed`, with region notes) — same play feel, no bespoke code path. Region-level scent composition is deliberately replaced by: item `sensory` text + hygiene threshold hints + exposure gating ([prompts.md](../prompts.md)).
 
 ## Registered actions
