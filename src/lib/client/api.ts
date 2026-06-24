@@ -1,9 +1,11 @@
 import { z } from "zod";
 import {
+  activeConditionSchema,
   ambientSchema as ambientBaseSchema,
   authoredRelationshipSchema,
   avatarImageModels,
   avatarImageModelLabels,
+  chatPulseTraceSchema,
   DEFAULT_AVATAR_IMAGE_MODEL,
   type AvatarImageModel,
   characterProfileSchema,
@@ -248,6 +250,27 @@ export const chatMessageSchema = z.object({
   createdAt: optionalText,
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+/** Light chat-state snapshot (character-chat-state.spec.md §5) for the strip, premise bar, and state tools. */
+export const chatStateSnapshotSchema = z.object({
+  meters: z.record(z.string(), z.number()).catch({}),
+  affinity: z.number().catch(0),
+  stage: z.object({ id: z.string(), label: z.string() }).catch({ id: "stranger", label: "Stranger" }),
+  conditions: z.array(activeConditionSchema).catch([]),
+  mindNote: textOr(""),
+  premise: textOr(""),
+  lastPulseTrace: chatPulseTraceSchema.catch(() => ({
+    concept: null,
+    valence: null,
+    affinityDelta: 0,
+    moodDelta: 0,
+    changed: [],
+    degraded: false,
+  })),
+});
+export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
+/** The reset scope of the three chat reset actions (Reset All / Chat / State). */
+export type ChatResetScope = "all" | "chat" | "state";
 
 export const locationSummarySchema = z.object({
   id: idSchema,
@@ -653,7 +676,18 @@ export const charactersApi = {
   // --- Sessionless in-character chat (docs/developer-notes/character-chat.plan.md) ---
   chatTranscript: (id: string) =>
     apiGet(listOf(chatMessageSchema, "messages"), `/api/characters/${id}/chat`),
-  clearChat: (id: string) => apiDelete(`/api/characters/${id}/chat`),
+  /**
+   * The three reset actions (character-chat-state.spec.md §5): `all` wipes
+   * messages + summary + state, `chat` keeps the state row, `state` keeps the
+   * transcript and re-seeds state from authored defaults.
+   */
+  resetChat: (id: string, scope: ChatResetScope = "all") =>
+    apiDelete(`/api/characters/${id}/chat?scope=${scope}`),
+  // --- Light chat state (character-chat-state.spec.md) ---
+  chatState: (id: string) => apiGet(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`),
+  /** Save the per-chat premise (upserts the state row); returns the refreshed snapshot. */
+  saveChatPremise: (id: string, premise: string) =>
+    apiPatch(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`, { premise }),
   /** Overwrite one chat message's text in place (recovery lever for a poisoned transcript). */
   editChatMessage: (id: string, messageId: string, content: string) =>
     apiPatch(z.unknown(), `/api/characters/${id}/chat/${messageId}`, { content }),

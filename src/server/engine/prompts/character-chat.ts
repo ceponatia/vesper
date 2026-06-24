@@ -1,5 +1,8 @@
 import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
+import type { ActiveCondition } from "@/contracts/conditions/condition";
+import { crossedThresholdHints, deriveMoodDescriptor } from "@/contracts/meters/registry";
+import { stageForValue } from "@/contracts/relationships/stages";
 import { realizeBody, speciesLorePhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
@@ -37,6 +40,64 @@ export interface CharacterChatPromptInput {
    * snapshots are unchanged.
    */
   player?: { name: string; persona?: string };
+  /**
+   * Light chat state (character-chat-state.spec.md §6), surfaced as a compact
+   * "Current state" section + a per-chat scenario block. Absent ⇒ the prompt is
+   * byte-identical to the stateless chat (existing snapshots hold). The builder
+   * owns the surfacing (it already imports the contracts), so it's snapshot-tested
+   * in one place.
+   */
+  state?: {
+    meters: Record<string, number>;
+    affinity: number;
+    conditions: ActiveCondition[];
+    mindNote?: string;
+    /** The per-chat scenario framing (§1.2) — the strongest framing in the prompt. */
+    premise?: string;
+  };
+}
+
+/**
+ * A behavioral warmth instruction keyed off the affinity stage id — how warmly the
+ * character should *act* now (character-chat-state.spec.md §6). `stranger` (and any
+ * unknown id) returns "" so a neutral default chat adds no line (today's behavior);
+ * every off-neutral stage gets a one-line steer.
+ */
+const WARMTH_HINTS: Record<string, string> = {
+  hostile: "regards you with hostility — cold and adversarial, looking for the exit or the upper hand",
+  wary: "is wary of you — guarded, slow to trust, keeping their distance",
+  cool: "is cool toward you — politely distant, unbothered whether you stay or go",
+  acquaintance: "treats you as an acquaintance — friendly enough, but keeping it light",
+  friendly: "considers you a friend — relaxed and warm, glad you're here",
+  warm: "is genuinely warm toward you — easy affection and teasing, openly fond",
+  close: "holds you close — trusting and intimate in tone, unguarded with you",
+  cherished: "cherishes you — tender and devoted, lit up by your attention",
+  devoted: "is devoted to you — deeply attached, protective, wholly yours",
+  smitten: "is utterly smitten with you — head over heels, and unable to hide it",
+};
+
+export function warmthHintForStage(stageId: string, name: string): string {
+  const hint = WARMTH_HINTS[stageId];
+  return hint ? `${name} ${hint} — let it show in how you behave, don't announce it.` : "";
+}
+
+/**
+ * The compact "Current state" block: a derived mood phrase, crossed meter
+ * thresholds, the stage warmth steer, active condition hints, and the dynamic
+ * mindNote. "" when nothing is notable (a rested, neutral character) ⇒ no block.
+ */
+function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>, name: string): string {
+  const lines: string[] = [];
+  const mood = deriveMoodDescriptor(state.meters);
+  if (mood) lines.push(`- You are feeling ${mood} right now.`);
+  for (const hint of crossedThresholdHints(state.meters)) lines.push(`- ${hint}`);
+  const warmth = warmthHintForStage(stageForValue(state.affinity).id, name);
+  if (warmth) lines.push(`- ${warmth}`);
+  for (const condition of state.conditions) if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
+  const mindNote = state.mindNote?.trim();
+  if (mindNote) lines.push(`- On your mind: ${mindNote}`);
+  if (!lines.length) return "";
+  return `Your current state (let this color how you speak and react — never recite it):\n${lines.join("\n")}`;
 }
 
 const humanize = (value: string): string => value.replaceAll("_", " ").trim();
@@ -147,6 +208,16 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
 
   const priorSummary = input.priorSummary?.trim();
 
+  // The per-chat scenario framing (§1.2): the strongest framing in the prompt — the
+  // situation the whole conversation plays inside — fenced (player-authored), placed
+  // right after identity. Empty ⇒ no block ⇒ byte-identical to the stateless chat.
+  const premise = input.state?.premise?.trim();
+  const scenario = premise
+    ? `Scenario for this chat (the situation you are in — play inside it):\n${fenceUntrusted("scenario", premise)}`
+    : "";
+  // The dynamic "Current state" block (§6); "" when nothing is notable.
+  const stateSection = input.state ? buildStateSection(input.state, displayName) : "";
+
   const sections = [
     CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
@@ -154,6 +225,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     playerPersona
       ? `About ${playerName} (the person you're speaking with):\n${fenceUntrusted("the person you're speaking with", playerPersona)}`
       : "",
+    scenario,
     profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
@@ -164,6 +236,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
+    stateSection,
     CHAT_RULES(displayName, playerName),
   ];
 

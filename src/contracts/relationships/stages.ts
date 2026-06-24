@@ -62,3 +62,16 @@ export function stageMidpoint(id: string): number {
   if (!stage) return 0;
   return Math.round((stage.min + stage.max) / 2);
 }
+
+/**
+ * A stage id validated against the registry, self-healing an unknown id to
+ * `stranger` (the neutral default ⇒ no seeded movement). The shared
+ * `refine(stageById) + catch("stranger")` dance reused by authored cast edges
+ * (relationships/authored.ts) and the character's authored chat seed
+ * (world/profile.ts `playerRelationship`). Append `.default("stranger")` at a use
+ * site that wants an absent field to seed neutral too.
+ */
+export const stageIdSchema = z
+  .string()
+  .refine((id) => stageById(id) !== undefined, { message: "unknown relationship stage" })
+  .catch("stranger");
