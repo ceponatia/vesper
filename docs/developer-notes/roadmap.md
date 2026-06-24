@@ -83,8 +83,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **Character chat — light state** —
-  [character-chat-state.plan.md](character-chat-state.plan.md) · spec
-  [character-chat-state.spec.md](character-chat-state.spec.md), 2026-06-24. The
+  [character-chat-state.plan.md](finished/character-chat-state.plan.md) · spec
+  [character-chat-state.spec.md](finished/character-chat-state.spec.md), 2026-06-24. The
   sessionless 1-on-1 chat is now state-aware: a `character_chat_state` row (full meter
   set, affinity, conditions, mindNote, premise, chat clock), a free time-drift spine
   (within-visit decay + between-visit recovery toward rested, **no affinity decay**),
