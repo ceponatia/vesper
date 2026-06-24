@@ -55,6 +55,12 @@ export interface CharacterChatPromptInput {
     /** The per-chat scenario framing (§1.2) — the strongest framing in the prompt. */
     premise?: string;
   };
+  /**
+   * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): the
+   * player hasn't spoken yet — the character speaks first, opening the scene from
+   * the scenario + state. Absent ⇒ byte-identical to a normal turn.
+   */
+  opening?: boolean;
 }
 
 /**
@@ -238,6 +244,9 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
       : "",
     stateSection,
     CHAT_RULES(displayName, playerName),
+    input.opening
+      ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
+      : "",
   ];
 
   return sections.filter(Boolean).join("\n\n");

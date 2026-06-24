@@ -351,3 +351,13 @@ The audit **deliberately skipped** perf benchmarking because the dev Turbopack b
 (unminified, HMR) isn't representative. Run a **production-build Lighthouse-perf + trace
 pass** focused on the dashboard and the play screen (the heaviest route) for real numbers.
 Not blocking — do it when perf becomes a question. From [ux-audit.plan.md](ux-audit.plan.md).
+
+## State-aware chat scene image — _split from character-chat-state slice 4_
+
+_Raised 2026-06-24, the one piece of [character-chat-state.plan.md](character-chat-state.plan.md)
+slice 4 not built (the rest shipped 2026-06-24)._ Fold the chat's current light state —
+mood/meters (e.g. flushed, tipsy, tired), active conditions, and the disposition `mindNote` —
+into the **chat scene-image prompt**, so a generated scene reflects how the character actually
+is right now, not just the recent dialogue. The state + the render path already exist
+(`renderCharacterSceneImage`); this only enriches the prompt. Deferred from slice 4 because it
+touches the image pipeline and wants a playtest read on which state cues read well visually.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { CHAT_PREMISE_MAX_CHARS } from "@/contracts";
+import { CHAT_ACTIONS, CHAT_PREMISE_MAX_CHARS, type ChatActionId } from "@/contracts";
 import {
   charactersApi,
   sendCharacterChat,
@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { ChatStateToolsModal } from "./chat-state-tools";
 
 export interface CharacterChatProps {
   characterId: string;
@@ -65,6 +66,8 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
   const [chatState, setChatState] = useState<ChatStateSnapshot | null>(null);
   const [premise, setPremise] = useState("");
   const [savingPremise, setSavingPremise] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [actionBusy, setActionBusy] = useState<ChatActionId | null>(null);
   const stageRef = useRef<string | null>(null);
   const tempId = useRef(0);
   const mkId = () => `tmp-${tempId.current++}`;
@@ -114,19 +117,22 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     stageRef.current = result.data.stage.label;
   };
 
-  const send = async () => {
-    const content = input.trim();
-    if (!content || sendingRef.current) return;
-    setInput("");
+  /**
+   * Shared streaming flow for both a normal send and the Prompt Character opening
+   * beat: append an optimistic assistant bubble (and a user line, if any), stream
+   * the reply into it, then reconcile temp-ids against the persisted transcript and
+   * refresh the state strip. `userLine` omitted ⇒ the opening beat (no player line).
+   */
+  const runStream = async (body: { content?: string; model?: string; open?: boolean }, userLine?: string) => {
     const assistantId = mkId();
     setLines((prev) => [
       ...prev,
-      { id: mkId(), role: "user", content },
-      { id: assistantId, role: "assistant", content: "" },
+      ...(userLine !== undefined ? [{ id: mkId(), role: "user" as const, content: userLine }] : []),
+      { id: assistantId, role: "assistant" as const, content: "" },
     ]);
     sendingRef.current = true;
     setSending(true);
-    const outcome = await sendCharacterChat(characterId, { content, model: narratorModel }, (delta) => {
+    const outcome = await sendCharacterChat(characterId, body, (delta) => {
       setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + delta } : l)));
     });
     sendingRef.current = false;
@@ -134,12 +140,10 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     if (!outcome.ok) {
       // Drop the empty reply bubble (a partial reply, if any streamed, stays).
       setLines((prev) => prev.filter((l) => !(l.id === assistantId && l.content === "")));
-      toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
-      return;
+      return outcome;
     }
-    // Swap the optimistic temp-ids for the persisted ids so the exchange just
-    // sent is immediately editable/deletable — the levers for snipping a refusal
-    // before it poisons later turns. Skip if another send already started.
+    // Swap the optimistic temp-ids for the persisted ids so the exchange just sent
+    // is immediately editable/deletable. Skip if another send already started.
     const fresh = await charactersApi.chatTranscript(characterId);
     if (fresh.ok && !sendingRef.current) {
       setLines(fresh.data.map((m) => ({ id: m.id, role: m.role, content: m.content })));
@@ -147,6 +151,15 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange.
     await refreshState();
+    return outcome;
+  };
+
+  const send = async () => {
+    const content = input.trim();
+    if (!content || sendingRef.current) return;
+    setInput("");
+    const outcome = await runStream({ content, model: narratorModel }, content);
+    if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
   };
 
   /** Overwrite one message's text in place; updates the line on success. */
@@ -192,6 +205,27 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
     }
   };
 
+  /** Apply a one-click test-bed action chip (offer a drink → intoxication↑, etc.). */
+  const runAction = async (action: ChatActionId) => {
+    setActionBusy(action);
+    const result = await charactersApi.applyChatAction(characterId, action);
+    setActionBusy(null);
+    if (result.ok) {
+      setChatState(result.data);
+      stageRef.current = result.data.stage.label;
+    } else {
+      toast.push({ title: "Action failed", description: result.error.message, tone: "error" });
+    }
+  };
+
+  /** Prompt Character (opening beat): save the premise, then stream a character-authored opening turn. */
+  const promptCharacter = async () => {
+    if (sendingRef.current) return;
+    await charactersApi.editChatState(characterId, { premise: premise.trim() });
+    const outcome = await runStream({ open: true, model: narratorModel });
+    if (!outcome.ok) toast.push({ title: "Couldn't open the scene", description: outcome.error?.message, tone: "error" });
+  };
+
   /** One of the three reset actions (character-chat-state.spec.md §5). */
   const runReset = async (scope: ChatResetScope) => {
     setResetting(scope);
@@ -235,6 +269,11 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
               </option>
             ))}
           </Select>
+          {chatState ? (
+            <Button size="sm" variant="quiet" onClick={() => setToolsOpen(true)}>
+              State tools
+            </Button>
+          ) : null}
           {hasAnything ? (
             <Button size="sm" variant="quiet" onClick={() => setResetOpen(true)}>
               Reset…
@@ -273,9 +312,22 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
         )}
       </div>
 
-      {chatState ? <StatusStrip state={chatState} /> : null}
+      {chatState ? (
+        <div className="flex flex-col gap-2">
+          <StatusStrip state={chatState} />
+          <ActionChips busy={actionBusy} disabled={sending} onAction={runAction} />
+        </div>
+      ) : null}
 
-      <PremiseBar value={premise} who={who} saving={savingPremise} onChange={setPremise} onSave={savePremise} />
+      <PremiseBar
+        value={premise}
+        who={who}
+        saving={savingPremise}
+        promptDisabled={sending}
+        onChange={setPremise}
+        onSave={savePremise}
+        onPromptCharacter={promptCharacter}
+      />
 
       <div className="flex items-end gap-2">
         <Textarea
@@ -331,6 +383,49 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
           />
         </div>
       </Dialog>
+
+      {chatState ? (
+        <ChatStateToolsModal
+          open={toolsOpen}
+          onClose={() => setToolsOpen(false)}
+          characterId={characterId}
+          who={who}
+          snapshot={chatState}
+          onSaved={(next) => {
+            setChatState(next);
+            setPremise(next.premise);
+            stageRef.current = next.stage.label;
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Test-bed action chips (character-chat-state.spec.md slice 4): one-click state nudges. */
+function ActionChips({
+  busy,
+  disabled,
+  onAction,
+}: {
+  busy: ChatActionId | null;
+  disabled: boolean;
+  onAction: (action: ChatActionId) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {CHAT_ACTIONS.map((action) => (
+        <Button
+          key={action.id}
+          size="sm"
+          variant="quiet"
+          busy={busy === action.id}
+          disabled={disabled || busy !== null}
+          onClick={() => onAction(action.id)}
+        >
+          {action.label}
+        </Button>
+      ))}
     </div>
   );
 }
@@ -386,14 +481,18 @@ function PremiseBar({
   value,
   who,
   saving,
+  promptDisabled,
   onChange,
   onSave,
+  onPromptCharacter,
 }: {
   value: string;
   who: string;
   saving: boolean;
+  promptDisabled: boolean;
   onChange: (next: string) => void;
   onSave: () => void;
+  onPromptCharacter: () => void;
 }) {
   const [open, setOpen] = useState(value.trim().length > 0);
   return (
@@ -419,9 +518,20 @@ function PremiseBar({
             <span className="text-[11px] text-paper-600">
               Chat-only — it never touches {who}&rsquo;s saved bio or personality.
             </span>
-            <Button size="sm" variant="primary" busy={saving} onClick={onSave}>
-              Save
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="quiet"
+                disabled={promptDisabled}
+                onClick={onPromptCharacter}
+                title={`Let ${who} open the scene from this scenario`}
+              >
+                Prompt {who}
+              </Button>
+              <Button size="sm" variant="primary" busy={saving} onClick={onSave}>
+                Save
+              </Button>
+            </div>
           </div>
         </div>
       ) : value.trim() ? (

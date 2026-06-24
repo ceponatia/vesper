@@ -5,8 +5,8 @@ import { stageForValue, stageMidpoint } from "@/contracts/relationships/stages";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
-import { CHAT_RESET_MINUTES, CHAT_TICK_MINUTES } from "./constants";
-import { applyChatPulse, driftChatState, runChatPulse, seedChatState, type ChatState } from "./chat-state";
+import { CHAT_AROUSAL_INTIMATE, CHAT_RESET_MINUTES, CHAT_TICK_MINUTES } from "./constants";
+import { applyChatAction, applyChatPulse, driftChatState, runChatPulse, seedChatState, type ChatState } from "./chat-state";
 
 // These run with AI_FAKE=1 (src/test/setup.ts): demo mode short-circuits the
 // pulse LLM, so runChatPulse exercises the drift-only degrade path.
@@ -145,6 +145,59 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
   it("an empty mindNote keeps the prior note", () => {
     const prior: ChatState = { ...state(), mindNote: "kept" };
     expect(applyChatPulse(prior, pulse(null, ""), profile(), "Mara").state.mindNote).toBe("kept");
+  });
+
+  it("raises arousal on an intimate act (proposition), full amount", () => {
+    const { state: next, trace } = applyChatPulse(state(), pulse("proposition"), profile(), "Mara");
+    expect(trace.arousalDelta).toBeCloseTo(CHAT_AROUSAL_INTIMATE, 5);
+    expect(next.meters.arousal).toBeCloseTo(CHAT_AROUSAL_INTIMATE, 5);
+    expect(trace.changed).toContain("arousal");
+  });
+
+  it("raises arousal half as much for a courtship act (flirt)", () => {
+    const { trace } = applyChatPulse(state(), pulse("flirt"), profile(), "Mara");
+    expect(trace.arousalDelta).toBeCloseTo(CHAT_AROUSAL_INTIMATE / 2, 5);
+  });
+
+  it("does not raise arousal when the intimate act is disliked", () => {
+    const prude = profile({ preferences: [{ target: "proposition", valence: "dislike", intensity: 6 }] });
+    const { state: next, trace } = applyChatPulse(state(), pulse("proposition"), prude, "Mara");
+    expect(trace.arousalDelta).toBe(0);
+    expect(next.meters.arousal).toBe(0);
+  });
+});
+
+describe("applyChatAction (test-bed chips)", () => {
+  const state = (): ChatState => seedChatState(profile());
+
+  it("offer a drink raises intoxication", () => {
+    expect(applyChatAction(state(), "drink").meters.intoxication).toBeCloseTo(0.3, 5);
+  });
+
+  it("freshen up restores hygiene", () => {
+    const tired = { ...state(), meters: { ...initialMeters(), hygiene: 0.2 } };
+    expect(applyChatAction(tired, "freshen").meters.hygiene).toBeCloseTo(0.95, 5);
+  });
+
+  it("take a breather lifts energy and lowers stress", () => {
+    const drained = { ...state(), meters: { ...initialMeters(), energy: 0.4, stress: 0.5 } };
+    const next = applyChatAction(drained, "rest");
+    expect(next.meters.energy).toBeCloseTo(0.6, 5);
+    expect(next.meters.stress).toBeCloseTo(0.3, 5);
+  });
+
+  it("heat things up raises arousal and adds a self-expiring flushed condition", () => {
+    const next = applyChatAction(state(), "fluster");
+    expect(next.meters.arousal).toBeCloseTo(0.25, 5);
+    const flushed = next.conditions.find((c) => c.id === "flushed");
+    expect(flushed).toBeDefined();
+    expect(flushed?.durationMinutes).toBeGreaterThan(0);
+  });
+
+  it("re-applying a condition chip refreshes rather than duplicates it", () => {
+    const once = applyChatAction(state(), "fluster");
+    const twice = applyChatAction(once, "fluster");
+    expect(twice.conditions.filter((c) => c.id === "flushed")).toHaveLength(1);
   });
 });
 

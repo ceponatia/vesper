@@ -33,7 +33,7 @@ vi.mock("@/server/auth", () => ({
 }));
 
 import { DELETE as chatDelete, POST as chatPost } from "./[id]/chat/route";
-import { GET as stateGet, PATCH as statePatch } from "./[id]/chat/state/route";
+import { GET as stateGet, PATCH as statePatch, POST as stateAction } from "./[id]/chat/state/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -71,10 +71,17 @@ function patchReq(id: string, body: unknown): NextRequest {
     body: JSON.stringify(body),
   });
 }
+function actionReq(id: string, body: unknown): NextRequest {
+  return new NextRequest(`http://t/api/characters/${id}/chat/state`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
 const delReq = (id: string, scope?: string) =>
   new NextRequest(`http://t/api/characters/${id}/chat${scope ? `?scope=${scope}` : ""}`, { method: "DELETE" });
 
-const ids = { warm: "", fresh: "" };
+const ids = { warm: "", fresh: "", open: "" };
 
 async function stateRow(characterId: string) {
   const [row] = await db()
@@ -105,9 +112,14 @@ beforeAll(async () => {
     .values({ ownerId: user.id, name: "Mara", profile: { playerRelationship: { stage: "warm", note: "childhood friend" } } })
     .returning();
   const [fresh] = await db().insert(characters).values({ ownerId: user.id, name: "Pip", profile: {} }).returning();
-  if (!warm || !fresh) throw new Error("failed to seed characters");
+  const [open] = await db()
+    .insert(characters)
+    .values({ ownerId: user.id, name: "Rell", profile: { playerRelationship: { stage: "warm", note: "an old flame" } } })
+    .returning();
+  if (!warm || !fresh || !open) throw new Error("failed to seed characters");
   ids.warm = warm.id;
   ids.fresh = fresh.id;
+  ids.open = open.id;
 });
 
 afterAll(async () => {
@@ -186,6 +198,60 @@ describe("GET …/chat/state", () => {
     expect(res.status).toBe(200);
     const snap = (await res.json()) as { meters: Record<string, number> };
     expect(typeof snap.meters).toBe("object");
+  });
+});
+
+describe("state-tools edit (PATCH) + action chips (POST)", () => {
+  it("PATCH edits affinity / meters / mindNote", async (t) => {
+    if (!ready) return t.skip();
+    const res = await statePatch(
+      patchReq(ids.fresh, { affinity: 40, meters: { hygiene: 0.4, mood: 0.7 }, mindNote: "set by hand" }),
+      ctx(ids.fresh),
+    );
+    expect(res.status).toBe(200);
+    const row = await stateRow(ids.fresh);
+    expect(row?.affinity).toBe(40);
+    expect((row?.meters as Record<string, number>).hygiene).toBeCloseTo(0.4, 5);
+    expect(row?.mindNote).toBe("set by hand");
+  });
+
+  it("clamps an out-of-range meter on edit", async (t) => {
+    if (!ready) return t.skip();
+    await statePatch(patchReq(ids.fresh, { meters: { arousal: 5 } }), ctx(ids.fresh));
+    expect((((await stateRow(ids.fresh))?.meters) as Record<string, number>).arousal).toBe(1);
+  });
+
+  it("an action chip applies a deterministic state nudge (offer a drink → intoxication↑)", async (t) => {
+    if (!ready) return t.skip();
+    const before = (((await stateRow(ids.fresh))?.meters) as Record<string, number>)?.intoxication ?? 0;
+    const res = await stateAction(actionReq(ids.fresh, { action: "drink" }), ctx(ids.fresh));
+    expect(res.status).toBe(200);
+    const after = (((await stateRow(ids.fresh))?.meters) as Record<string, number>).intoxication;
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("rejects an unknown action id", async (t) => {
+    if (!ready) return t.skip();
+    const res = await stateAction(actionReq(ids.fresh, { action: "nuke" }), ctx(ids.fresh));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("Prompt Character (opening beat)", () => {
+  it("streams a character-authored opening with no player line, and seeds the state row", async (t) => {
+    if (!ready) return t.skip();
+    const res = await chatPost(postReq(ids.open, { open: true }), ctx(ids.open));
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("[Rell]"); // the character spoke (demo reply)
+
+    const msgs = await db()
+      .select({ role: characterChatMessages.role })
+      .from(characterChatMessages)
+      .where(and(eq(characterChatMessages.ownerId, authState.user.id), eq(characterChatMessages.characterId, ids.open)));
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.role).toBe("assistant"); // no user line was inserted
+    expect((await stateRow(ids.open))?.affinity).toBe(stageMidpoint("warm")); // seeded from the authored stage
   });
 });
 

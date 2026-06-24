@@ -16,6 +16,7 @@ import {
   loadChatState,
   loadChatSummary,
   loadVerbatimWindow,
+  persistChatState,
   seedChatState,
   streamCharacterChat,
 } from "@/server/engine";
@@ -38,11 +39,24 @@ type Params = { id: string };
 /** Cap on transcript rows returned to the editor (oldest-first after slice). */
 const TRANSCRIPT_LIMIT = 500;
 
-const sendBodySchema = z.object({
-  content: z.string().trim().min(1).max(4000),
-  /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
-  model: z.string().trim().min(1).max(120).optional(),
-});
+const sendBodySchema = z
+  .object({
+    content: z.string().trim().max(4000).optional(),
+    /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
+    model: z.string().trim().min(1).max(120).optional(),
+    /**
+     * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): no
+     * player line — the character opens the scene from the premise + seeded warmth.
+     */
+    open: z.boolean().optional(),
+  })
+  .refine((b) => b.open === true || (b.content?.length ?? 0) >= 1, {
+    message: "content is required unless open is true",
+    path: ["content"],
+  });
+
+/** A synthetic, non-persisted cue that gives the model a turn to respond to when the character opens the scene. */
+const OPENING_CUE = "(Open the scene. Speak first, in character.)";
 
 /** GET /api/characters/:id/chat — the full transcript, oldest first. */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
@@ -82,13 +96,18 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     return jsonError("rate_limited", "too many chat messages; try again in a minute", 429);
   }
 
-  // Mint the user line's id up front so the assistant persist can be guarded
-  // against it (persistAssistantReply): if a concurrent clear or single-message
-  // delete removes this row mid-stream, the reply is dropped rather than orphaned.
+  const opening = body.value.open === true;
+
+  // Normal turn: mint the user line's id up front so the assistant persist can be
+  // guarded against it (persistAssistantReply): if a concurrent clear or
+  // single-message delete removes this row mid-stream, the reply is dropped rather
+  // than orphaned. The opening beat has no player line, so no guard row.
   const promptMessageId = newId();
-  await db()
-    .insert(characterChatMessages)
-    .values({ id: promptMessageId, ownerId: user.id, characterId: id, role: "user", content: body.value.content });
+  if (!opening) {
+    await db()
+      .insert(characterChatMessages)
+      .values({ id: promptMessageId, ownerId: user.id, characterId: id, role: "user", content: body.value.content ?? "" });
+  }
 
   // The running summary covers everything up to its watermark; the verbatim
   // window is every message after it (includes the line just inserted). No
@@ -135,8 +154,27 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       mindNote: driftedState.mindNote,
       premise: driftedState.premise,
     },
+    opening,
   });
-  const gen = streamCharacterChat({ system, history, name: character.name, model: body.value.model });
+  // The opening beat has no player turn — give the model a synthetic (non-persisted)
+  // cue to respond to so it produces the character's first line.
+  const modelHistory = opening ? [...history, { role: "user" as const, content: OPENING_CUE }] : history;
+  const gen = streamCharacterChat({ system, history: modelHistory, name: character.name, model: body.value.model });
+
+  if (opening) {
+    // Opening beat: persist only the character's line (no guard row exists), then
+    // fold drift into the state — no pulse, since there was no player act to react to.
+    return streamReply(gen, async (full) => {
+      await db()
+        .insert(characterChatMessages)
+        .values({ ownerId: user.id, characterId: id, role: "assistant", content: full });
+      try {
+        await persistChatState(user.id, id, { ...driftedState, lastInteractionAt: now });
+      } catch (err) {
+        log.error("api.chat", "chat-state opening persist failed", { error: errorText(err) });
+      }
+    });
+  }
 
   // Finalizer (turn end): persist the reply, then run the reaction pulse + fold
   // drift into the persisted state. The reply has already flushed to the client,
@@ -154,7 +192,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         playerName: player.name,
         driftedState,
         now,
-        exchange: { player: body.value.content, assistant: full },
+        exchange: { player: body.value.content ?? "", assistant: full },
         sink,
       });
     } catch (err) {

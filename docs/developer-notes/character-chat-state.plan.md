@@ -1,16 +1,19 @@
 # Character chat — light state (plan)
 
-Status: **slices 1 + 3 shipped — 2026-06-24**; slice 4 (texture + test-bed
-affordances) queued in [roadmap.md](roadmap.md) `## Next`. Slices 1 (state row +
-drift + prompt surfacing + UI) and 3 (the reaction pulse) shipped together: the
+Status: **shipped — 2026-06-24** (slices 1 + 3 + 4). Slices 1 (state row + drift +
+prompt surfacing + UI) and 3 (the reaction pulse) shipped first: the
 `character_chat_state` table + migration `drizzle/0013`, `engine/chat-state.ts`
 (seed/load/drift/pulse/save), the `playerRelationship` profile field + Chat-tab
-editor, the per-chat premise (`PATCH …/chat/state`), the prompt `state` + scenario
-blocks, `GET …/chat/state`, the three reset scopes, and the premise bar + status
-strip + stage toast. **Slice 4 leftovers** (light conditions, action chips,
-arousal-from-intimate-acts, state-aware scene image, the state-tools modal, and the
-**Prompt Character** opening beat) are deferred to a playtest-driven pass. The
-mechanics are fixed in [character-chat-state.spec.md](character-chat-state.spec.md).
+editor, the per-chat premise, the prompt `state` + scenario blocks, `GET …/chat/state`,
+the three reset scopes, and the premise bar + status strip + stage toast. **Slice 4**
+then added the texture (**arousal-from-intimate-acts**, **action chips** — offer a
+drink → intoxication↑ etc., **light conditions** wired through drift/prompt/modal) and
+the test-bed affordances (a **state-tools modal** for all owners — inspect/edit
+affinity/meters/conditions/mindNote/premise + the read-only last-turn debug trace —
+generalized `PATCH …/chat/state` + a `POST …/chat/state {action}`, and the
+**Prompt Character** opening beat via `POST …/chat {open:true}`). The one deferred
+piece is the **state-aware chat scene image** → [deferred.plan.md](deferred.plan.md).
+The mechanics are fixed in [character-chat-state.spec.md](character-chat-state.spec.md).
 Grow the sessionless 1-on-1 chat
 ([finished/character-chat.plan.md](finished/character-chat.plan.md)) from a
 stateless transcript into a **light, fun, state-aware** quick chat that reuses

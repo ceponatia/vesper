@@ -13,6 +13,7 @@ import {
   emptyChatPulseTrace,
   evaluateSocialReaction,
   initialMeters,
+  interactionConceptById,
   isConditionExpired,
   meterDefinitions,
   moodMeterToFactor,
@@ -24,6 +25,7 @@ import {
   stageForValue,
   stageMidpoint,
   type ActiveCondition,
+  type ChatActionId,
   type CharacterProfile,
   type ChatPulse,
   type ChatPulseTrace,
@@ -34,6 +36,8 @@ import { agentModelId, generateChecked, isDemoMode, type GenerateCheckedResult }
 import { characterChatMessages, characterChatState, db } from "../db";
 import {
   AFFINITY_DELTA_CLAMP,
+  CHAT_ACTION_CONDITION_MINUTES,
+  CHAT_AROUSAL_INTIMATE,
   CHAT_PULSE_MAX_OUTPUT_TOKENS,
   CHAT_PULSE_TIMEOUT_MS,
   CHAT_RESET_MINUTES,
@@ -74,6 +78,9 @@ export interface ChatStateSnapshot {
   mindNote: string;
   premise: string;
   lastPulseTrace: ChatPulseTrace;
+  /** Read-only chat-clock + wall-clock anchor, surfaced for the state-tools modal (slice 4). */
+  clockMinutes: number;
+  lastInteractionAt: string | null;
 }
 
 const metersSchema = z.record(z.string(), z.number());
@@ -229,6 +236,11 @@ export function applyChatPulse(
     }
   }
 
+  // Arousal-from-intimate-acts (slice 4): an intimate concept raises arousal — full
+  // for a flagged-intimate act (a proposition), half for courtship/physical
+  // affection — unless the character disliked it.
+  const arousalDelta = concept && valence !== "dislike" ? arousalBumpForConcept(concept) : 0;
+
   if (affinityDelta !== 0) {
     next.affinity = clampAffinity(state.affinity + affinityDelta);
     changed.push("affinity");
@@ -237,13 +249,17 @@ export function applyChatPulse(
     next.meters.mood = clamp01(next.meters.mood + moodDelta);
     changed.push("mood");
   }
+  if (arousalDelta >= 0.005 && next.meters.arousal !== undefined) {
+    next.meters.arousal = clamp01(next.meters.arousal + arousalDelta);
+    changed.push("arousal");
+  }
   const note = pulse.mindNote.trim();
   if (note) {
     next.mindNote = note.slice(0, CHAT_MIND_NOTE_MAX_CHARS);
     changed.push("mindNote");
   }
 
-  const trace: ChatPulseTrace = { concept, valence, affinityDelta, moodDelta, changed, degraded: false };
+  const trace: ChatPulseTrace = { concept, valence, affinityDelta, moodDelta, arousalDelta, changed, degraded: false };
   next.lastPulseTrace = trace;
   return { state: next, trace };
 }
@@ -307,11 +323,21 @@ function degradeState(state: ChatState, sink: DiagnosticSink | undefined, reason
       valence: null,
       affinityDelta: 0,
       moodDelta: 0,
+      arousalDelta: 0,
       changed: [],
       degraded: true,
       diagnostic: "chat_state.pulse.degraded",
     },
   };
+}
+
+/** Arousal bump for an intimate concept: full for a flagged-intimate act, half for courtship / physical affection. */
+function arousalBumpForConcept(concept: string): number {
+  const def = interactionConceptById(concept);
+  if (!def) return 0;
+  if (def.intimate) return CHAT_AROUSAL_INTIMATE;
+  if (def.family === "courtship" || concept === "physical_affection") return CHAT_AROUSAL_INTIMATE * 0.5;
+  return 0;
 }
 
 /**
@@ -412,37 +438,109 @@ export async function saveChatState(args: {
 }
 
 /**
- * Set the per-chat premise (spec §1.2 Save). Upserts the row: on insert it seeds
- * the rest from the authored defaults (`seedChatState` with this premise); on
- * conflict it touches ONLY the premise (the pulse owns the dynamic fields). Lets
- * the player set the scene before the first message. Not guarded on a message —
- * there is no exchange in flight.
+ * Persist a full state row unguarded — for explicit author edits (the premise Save,
+ * the state-tools modal, action chips) where no exchange is in flight, so the
+ * stream-race guard (`saveChatState`) is unnecessary. Upserts every field.
  */
-export async function setChatPremise(args: {
-  ownerId: string;
-  characterId: string;
-  premise: string;
-  profile: CharacterProfile;
-}): Promise<void> {
-  const seed = seedChatState(args.profile, args.premise);
+export async function persistChatState(ownerId: string, characterId: string, state: ChatState): Promise<void> {
+  const row = {
+    meters: state.meters,
+    affinity: state.affinity,
+    conditions: state.conditions,
+    mindNote: state.mindNote,
+    lastPulseTrace: state.lastPulseTrace,
+    premise: state.premise,
+    clockMinutes: state.clockMinutes,
+    lastInteractionAt: state.lastInteractionAt,
+  };
   await db()
     .insert(characterChatState)
-    .values({
-      ownerId: args.ownerId,
-      characterId: args.characterId,
-      meters: seed.meters,
-      affinity: seed.affinity,
-      conditions: seed.conditions,
-      mindNote: seed.mindNote,
-      lastPulseTrace: seed.lastPulseTrace,
-      premise: seed.premise,
-      clockMinutes: seed.clockMinutes,
-      lastInteractionAt: seed.lastInteractionAt,
-    })
+    .values({ ownerId, characterId, ...row })
     .onConflictDoUpdate({
       target: [characterChatState.ownerId, characterChatState.characterId],
-      set: { premise: seed.premise, updatedAt: new Date() },
+      set: { ...row, updatedAt: new Date() },
     });
+}
+
+/** A partial edit to a chat state from the premise Save or the state-tools modal (slice 4). */
+export interface ChatStateEdit {
+  premise?: string;
+  affinity?: number;
+  mindNote?: string;
+  meters?: Record<string, number>;
+  conditions?: ActiveCondition[];
+}
+
+/**
+ * Apply an author edit to a chat's state (spec §1.2 Save + slice 4 state-tools
+ * modal). Loads the row (or seeds from the authored defaults — the premise
+ * pre-fills before the first message), applies only the provided fields with the
+ * same clamps the engine enforces, and persists. Returns the new state. Not guarded
+ * on a message — there is no exchange in flight.
+ */
+export async function editChatState(args: {
+  ownerId: string;
+  characterId: string;
+  profile: CharacterProfile;
+  patch: ChatStateEdit;
+}): Promise<ChatState> {
+  const { ownerId, characterId, profile, patch } = args;
+  const base = (await loadChatState(ownerId, characterId)) ?? seedChatState(profile, patch.premise);
+  const next: ChatState = { ...base, meters: { ...base.meters } };
+  if (patch.premise !== undefined) next.premise = patch.premise.trim().slice(0, CHAT_PREMISE_MAX_CHARS);
+  if (patch.affinity !== undefined) next.affinity = clampAffinity(patch.affinity);
+  if (patch.mindNote !== undefined) next.mindNote = patch.mindNote.trim().slice(0, CHAT_MIND_NOTE_MAX_CHARS);
+  if (patch.meters !== undefined) next.meters = clampMeters(patch.meters);
+  if (patch.conditions !== undefined) next.conditions = patch.conditions;
+  await persistChatState(ownerId, characterId, next);
+  return next;
+}
+
+/** Apply a one-click test-bed action chip to the state (slice 4); returns the mutated state (PURE). */
+export function applyChatAction(state: ChatState, action: ChatActionId): ChatState {
+  const meters = { ...state.meters };
+  let conditions = state.conditions;
+  const bump = (id: string, delta: number) => {
+    meters[id] = clamp01((meters[id] ?? 0) + delta);
+  };
+  switch (action) {
+    case "drink":
+      bump("intoxication", 0.3);
+      break;
+    case "freshen":
+      meters.hygiene = 0.95;
+      bump("energy", 0.05);
+      break;
+    case "rest":
+      bump("energy", 0.2);
+      bump("stress", -0.2);
+      break;
+    case "fluster":
+      bump("arousal", 0.25);
+      conditions = upsertCondition(conditions, {
+        id: "flushed",
+        label: "Flushed",
+        startedAtMinutes: state.clockMinutes,
+        durationMinutes: CHAT_ACTION_CONDITION_MINUTES,
+        promptHint: "Color high, breath a little quick.",
+        attributeEffects: [],
+      });
+      break;
+  }
+  return { ...state, meters, conditions };
+}
+
+/** Replace a condition with the same id, else append (so re-applying a chip refreshes it). */
+function upsertCondition(conditions: readonly ActiveCondition[], next: ActiveCondition): ActiveCondition[] {
+  const rest = conditions.filter((c) => c.id !== next.id);
+  return [...rest, next];
+}
+
+/** Clamp every meter value to [0,1], keeping the registry keys. */
+function clampMeters(meters: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, value] of Object.entries(meters)) out[id] = clamp01(value);
+  return out;
 }
 
 /** Delete the state row (Reset All / Reset State). Lazily re-seeds from authored defaults on next use. */
@@ -463,5 +561,7 @@ export function chatStateSnapshot(state: ChatState): ChatStateSnapshot {
     mindNote: state.mindNote,
     premise: state.premise,
     lastPulseTrace: state.lastPulseTrace,
+    clockMinutes: state.clockMinutes,
+    lastInteractionAt: state.lastInteractionAt ? state.lastInteractionAt.toISOString() : null,
   };
 }
