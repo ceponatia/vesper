@@ -84,6 +84,17 @@ character-chat prompt threads it in as the addressee (`engine/prompts/character-
 (`/sign-in`, `src/components/auth/`) renders only buttons that work. The header
 `AccountMenu` shows the user + sign-out, or a sign-in link.
 
+### Trusted origins (LAN dev)
+
+Better Auth rejects any sign-in whose `Origin` isn't `baseURL` or a listed
+trusted origin — "**Invalid origin**". `BETTER_AUTH_URL` is trusted implicitly;
+`BETTER_AUTH_TRUSTED_ORIGINS` (comma-separated, parsed in `auth.ts` →
+`trustedOrigins`) adds more. To sign in from a **phone on the same Wi-Fi**, add
+the dev machine's `http://<lan-ip>:3200` (alongside `http://localhost:3200`).
+Magic-link/OAuth absolute URLs are built from `baseURL`, so for those to work on
+the phone too, point `BETTER_AUTH_URL` at the LAN IP. DHCP can reassign the IP —
+pin it with a router reservation or update `.env`.
+
 ## The authorization seam (`server/api/visibility.ts`)
 
 One module owns the asymmetry — **reads widen, writes stay strict**:
