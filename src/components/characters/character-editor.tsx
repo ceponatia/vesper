@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   heritageFor,
   heritagesForSpecies,
-  PLAYER_RELATIONSHIP_NOTE_MAX,
   relationshipStages,
   speciesById,
   speciesCatalog,
@@ -280,10 +279,11 @@ export function CharacterEditor({
 
       {tab === "chat" ? (
         <div className="flex flex-col gap-5">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-wrap gap-4">
             <Field
               label="Starting Relationship"
               hint="How this character feels about the player at the start of a chat — seeds the chat's affinity."
+              className="w-full max-w-xs"
             >
               {(id) => (
                 <Select
@@ -304,27 +304,6 @@ export function CharacterEditor({
                     </option>
                   ))}
                 </Select>
-              )}
-            </Field>
-            <Field
-              label="Default scenario"
-              hint="A one-line setup that pre-fills each chat's scenario (editable per chat)."
-            >
-              {(id) => (
-                <Input
-                  id={id}
-                  value={draft.profile.playerRelationship?.note ?? ""}
-                  maxLength={PLAYER_RELATIONSHIP_NOTE_MAX}
-                  placeholder="e.g. her devoted bodyguard"
-                  onChange={(e) =>
-                    patchProfile({
-                      playerRelationship: {
-                        stage: draft.profile.playerRelationship?.stage ?? "stranger",
-                        note: e.target.value,
-                      },
-                    })
-                  }
-                />
               )}
             </Field>
           </div>

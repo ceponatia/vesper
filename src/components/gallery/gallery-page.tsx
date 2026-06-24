@@ -65,6 +65,8 @@ export function GalleryPage() {
   const [enlarged, setEnlarged] = useState<{ id: string; caption: string; prompt: string | null } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SceneImage | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   const scenes = gallery.data ?? [];
 
@@ -84,6 +86,23 @@ export function GalleryPage() {
     gallery.reload({ silent: true });
   };
 
+  /** Hard-delete every scene the active filter shows (all worlds/all characters ⇒ all). */
+  const deleteAll = async () => {
+    const ids = filtered.map((s) => s.id);
+    if (ids.length === 0) return;
+    setDeletingAll(true);
+    const result = await galleryApi.removeMany(ids);
+    setDeletingAll(false);
+    if (!result.ok) {
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    if (enlarged && ids.includes(enlarged.id)) setEnlarged(null);
+    setConfirmDeleteAll(false);
+    toast.push({ title: `Deleted ${result.data.deleted} scene${result.data.deleted === 1 ? "" : "s"}`, tone: "success" });
+    gallery.reload({ silent: true });
+  };
+
   // Facets from the full set so the dropdowns stay stable while filtering.
   const worldFacets = uniqueFacets(
     scenes.flatMap((s) => (s.worldId ? [{ id: s.worldId, name: s.worldName ?? "Untitled world" }] : [])),
@@ -99,6 +118,13 @@ export function GalleryPage() {
       (worldFilter === "" || s.worldId === worldFilter) &&
       (characterFilter === "" || s.references.some((r) => r.kind === "character" && r.id === characterFilter)),
   );
+
+  // Names of the active filters, for the "Delete all" confirmation copy.
+  const activeWorldName = worldFacets.find((w) => w.id === worldFilter)?.name ?? null;
+  const activeCharacterName = characterFacets.find((c) => c.id === characterFilter)?.name ?? null;
+  const filterScope = [activeWorldName, activeCharacterName && `featuring ${activeCharacterName}`]
+    .filter(Boolean)
+    .join(", ");
 
   // Group by session (sessionless chat scenes fall into one "Character chats"
   // group), preserving the payload's recency order — sessions first, chats last.
@@ -156,6 +182,15 @@ export function GalleryPage() {
                 </option>
               ))}
             </Select>
+            <Button
+              variant="danger"
+              size="sm"
+              className="h-8"
+              onClick={() => setConfirmDeleteAll(true)}
+              disabled={filtered.length === 0}
+            >
+              Delete all{filtered.length > 0 ? ` (${filtered.length})` : ""}
+            </Button>
           </div>
         ) : null}
       </div>
@@ -264,6 +299,34 @@ export function GalleryPage() {
         }
       >
         This permanently removes the image from your gallery and the session it belongs to. It can&rsquo;t be undone.
+      </Dialog>
+
+      <Dialog
+        open={confirmDeleteAll}
+        onClose={() => {
+          if (!deletingAll) setConfirmDeleteAll(false);
+        }}
+        title={`Delete ${filtered.length} scene image${filtered.length === 1 ? "" : "s"}?`}
+        footer={
+          <>
+            <Button onClick={() => setConfirmDeleteAll(false)} disabled={deletingAll}>
+              Cancel
+            </Button>
+            <Button variant="danger" busy={deletingAll} onClick={deleteAll}>
+              Delete all
+            </Button>
+          </>
+        }
+      >
+        This permanently removes{" "}
+        {filterScope ? (
+          <>
+            every scene image <span className="text-paper-200">{filterScope}</span>
+          </>
+        ) : (
+          <>every scene image in your gallery</>
+        )}{" "}
+        — from the gallery and the sessions they belong to. It can&rsquo;t be undone.
       </Dialog>
     </PageContainer>
   );
