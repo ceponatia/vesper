@@ -1,10 +1,13 @@
 # Mood — app-wide emotional state (plan)
 
-Status: **next** — settled (open questions resolved 2026-06-24; see _Decisions_
-below). Graduates the **event→mood table** that `personality-and-state` deferred
-(spec §4: _"the event→mood inputs and the full coupling matrix are planned with the
-mood slice"_) and promotes **mood** to a first-class, cross-app read with multiple
-consumers — the avatar being only one.
+Status: **core shipped — 2026-06-24** · remainder queued in [roadmap.md](roadmap.md)
+`## Next`. The pure projection + `EmotionLabel`, welcome/unwelcome touch, the
+condition→mood baseline shift, and the cast-card mood chip landed (see _Shipped_
+below); the atmosphere source, the meter/relationship timeline, the chat-surface
+label, and the avatar consumption remain. Settled (open questions resolved 2026-06-24;
+see _Decisions_). Graduates the **event→mood table** that `personality-and-state`
+deferred (spec §4: _"the event→mood inputs and the full coupling matrix are planned
+with the mood slice"_) and promotes **mood** to a first-class, cross-app read.
 
 Design detail / vocabularies: [mood.spec.md](mood.spec.md) — the `EmotionLabel`
 enum, the `deriveEmotionLabel` projection, and the event→mood table shapes.
@@ -140,18 +143,34 @@ invented — is in [mood.spec.md](mood.spec.md) §3.)
   not per-edge, for now.
 - Don't duplicate affinity; mood couples to it, doesn't replace it.
 
-## A possible build order
+## Build order (✓ = shipped 2026-06-24)
 
-1. **Labeled-emotion projection** (pure read) — unblocks the avatar cue
-   immediately, zero new state, fully unit-testable.
-2. **Event→mood registry + coupling matrix** — generalize the lone social-reaction
-   nudge into a table of event kinds with affinity/trait scaling.
-3. **Wire the v1 event sources** into the merge (conditions, scene atmosphere,
-   welcome/unwelcome touch), one source at a time, each with a degradation test.
-   (Story beats, presence, physical cross-talk, intimacy beats are a later slice.)
-4. **UI surfacing** — mood chip; then the relationship/meter timeline.
-5. **Chat** — chat already moves mood (the shipped reaction pulse); add the **labeled
+1. ✓ **Labeled-emotion projection** (pure read) — `deriveEmotionLabel` + `EmotionLabel`
+   in `src/contracts/mood/`. Zero new state, fully unit-tested.
+2. ✓ **Event→mood table + coupling matrix** — touch welcome-ness, condition + atmosphere
+   baseline shifts (pure, tested). Split into **impulse** (one-time delta) vs **standing**
+   (baseline shift) modes — see spec §5.
+3. **Wire the v1 event sources** into the merge — ✓ welcome/unwelcome touch, ✓ conditions
+   (baseline shift in drift); ⏳ **scene atmosphere** awaits a scene-tone source (the pure
+   function is ready). Story beats, presence, physical cross-talk, intimacy beats are later.
+4. **UI surfacing** — ✓ mood chip (cast card / `StatusParticipant.emotion`); ⏳ the
+   relationship/meter timeline.
+5. ⏳ **Chat** — chat already moves mood (the shipped reaction pulse); add the **labeled
    projection** to the chat surface (mood chip / avatar), reusing this system.
+6. ⏳ **Avatar** — the avatar cue consumes `deriveEmotionLabel` + widens its enum to the
+   11 ([avatar-3d.plan.md](avatar-3d.plan.md)).
+
+### Shipped 2026-06-24
+
+`src/contracts/mood/` (`emotion-label`, `atmosphere`, `affinity`, `projection`, `events`
++ tests, wired through `contracts/index.ts`): the locked 11-label `EmotionLabel`, the
+total `deriveEmotionLabel` projection (activation axis + precedence ladder), the
+`AtmosphereLabel` enum (mood owns it until the avatar lands), welcome/unwelcome touch
+(`resolveTouchWelcomeness` + `touchMoodDeltas`, wired into `merge.ts planReactionAffinity`
+as the no-preference affinity-gated fallback + a stress hit), the condition→mood baseline
+shift (wired into the drift loop), and the cast-card mood chip
+(`status-payload.ts`/`participant-card.tsx`). Deferred: the atmosphere source, the
+meter/relationship timeline, the chat-surface label, and the avatar consumption.
 
 ## Decisions (resolved 2026-06-24)
 

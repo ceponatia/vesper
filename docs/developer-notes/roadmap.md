@@ -23,16 +23,13 @@ item off **Next** (top: **mood**).
 
 ## Next (queued)
 
-- **Mood — app-wide emotional state** (next; settled 2026-06-24) —
-  [mood.plan.md](mood.plan.md). Graduates the **event→mood table** deferred by the
-  shipped `personality-and-state` (spec §4): generalizes mood movement beyond the lone
-  social-reaction nudge (v1 adds **welcome/unwelcome touch**, conditions, scene
-  atmosphere; beats/presence deferred) + a **labeled-emotion projection** over a locked
-  **11-label `EmotionLabel`** enum so consumers get a discrete emotion, not just a
-  `0–1` valence. Mood is a cross-app read (narrator, scene images, **avatar
-  animations**, UI mood chip, chat) — built separately because it serves more than the
-  avatar, and it unblocks the avatar's emotion read. Pairs with the deferred
-  relationship/meter timeline.
+- **Mood — remainder** (core shipped 2026-06-24, see Shipped) —
+  [mood.plan.md](mood.plan.md). The projection + `EmotionLabel`, welcome/unwelcome
+  touch, the condition→mood baseline shift, and the cast-card mood chip landed. **Left:**
+  wire **scene atmosphere** (the pure baseline-shift fn is ready, no scene-tone source
+  yet), the **relationship/meter timeline** ([deferred.plan.md](deferred.plan.md) #4),
+  the **chat-surface label**, and the **avatar consumption** (which widens the cue enum
+  to 11 — folded into the avatar plan below).
 - **Social-reaction cards** — plan
   [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (draft). Importable
   **taboo / social-rule cards** (library content, reusable across worlds like items) that
@@ -84,6 +81,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Mood — core slice** — [mood.plan.md](mood.plan.md) · spec
+  [mood.spec.md](mood.spec.md), 2026-06-24. A new `src/contracts/mood/` module: the
+  locked **11-label `EmotionLabel`**, the pure/total **`deriveEmotionLabel`** projection
+  (a derived activation axis × valence + affinity + conditions, with a transient reaction
+  beat), and the **event→mood table** split into impulse (one-time) vs standing (baseline-
+  shift) modes. **Welcome/unwelcome touch** (affinity-stage gated + preference override)
+  and the **condition→mood baseline shift** are wired into the engine merge; a **cast-card
+  mood chip** surfaces the label. Atmosphere shift is built but unwired (no scene-tone
+  source); the timeline, chat label, and avatar consumption stay in Next.
 - **Character chat — light state** —
   [character-chat-state.plan.md](finished/character-chat-state.plan.md) · spec
   [character-chat-state.spec.md](finished/character-chat-state.spec.md), 2026-06-24. The

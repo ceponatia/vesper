@@ -5,6 +5,12 @@ Status: **draft** — the design detail behind [mood.plan.md](mood.plan.md). Own
 **emotion projection** + **event→mood** shapes. Read the plan first for scope/why.
 The structure is settled (open questions resolved 2026-06-24).
 
+**Shipped 2026-06-24** (`src/contracts/mood/`): `EmotionLabel`, `deriveEmotionLabel`,
+welcome/unwelcome touch (wired in `merge.ts`), the condition→mood baseline shift
+(wired into drift), and the cast-card mood chip. The atmosphere baseline shift is
+pure-and-tested but **unwired** — it awaits a scene-tone source. Implementation notes
+are folded into §3/§5 below.
+
 Slug `mood`. Constants here are *starting values* tuned in playtest (the pattern
 set by the reaction curve in `reactions.ts` / `modulation.ts`).
 
@@ -82,6 +88,7 @@ type EmotionInputs = {
   energy: number;      // 0..1
   affinityStage: RelationshipStage["id"];    // warmth toward the player (hostile…smitten)
   reaction?: EvaluatedReaction;              // latest social-reaction result (the beat)
+  reactionConcept?: string;                  // concept behind `reaction` (flirt/boundary_push) — refines the beat (added in impl: EvaluatedReaction carries no concept)
   conditions: readonly ActiveCondition[];    // tipsy / flustered / hurt …
   intimateContext: boolean;                  // scene is in an intimate frame — gates `aroused` (NOT wardrobe undress)
   dominance?: number;                        // trait, tilts low-valence → angry vs sad
@@ -164,6 +171,18 @@ mood; **mood scales** reaction magnitude (`μ`, exists); **traits** damp/amplify
 in the merge alongside meter drift. v1 wires the subset tagged above (see the plan's
 _Decisions_).
 
+**Impulse vs standing (implementation, 2026-06-24).** Discovered building this: the
+union mixes two application modes, and treating standing states as per-turn deltas
+would compound (a `tense` room would pin mood to 0 within a few turns). So:
+
+- **Impulse** events (a discrete act this turn) apply a **one-time signed delta** —
+  `social_reaction` (exists, `moodNudge`) and `touch` (`touchMoodDeltas`), written
+  directly onto the meter post-drift in `merge.ts`.
+- **Standing** influences shift the mood **baseline** (resting target) so drift pulls
+  toward it without compounding — `conditionMoodBaselineShift` (wired into the drift
+  loop: a `hurt` companion settles lower, recovers when it lifts) and
+  `atmosphereMoodBaselineShift` (pure, **unwired** — no scene-tone source yet).
+
 **Welcome/unwelcome touch** (v1, decision 2026-06-24). A touch act
 (`physical_affection`, or an `intimate` touch concept) resolves a **welcome-ness**
 from the affinity stage, with a preference override:
@@ -182,11 +201,12 @@ the existing reaction curve's affinity terms (the surprise/hostility amplifiers 
 by the body location touched (the phase-4 body model) once intimacy notes land — an
 unwelcome intimate-location touch should hit harder than a hand on the arm. Deferred.
 
-`AtmosphereLabel` is **owned by [avatar-3d.spec.md](avatar-3d.spec.md)** (it's a cue
-channel); mood imports it here as a `scene_atmosphere` input. Atmosphere *nudges*
-mood (trait-damped) but is **not** the character's emotion — a composed companion
-holds calm in a tense room. `RelationshipStage`/`TraitValue` are the existing types
-(`contracts/relationships/stages.ts`, `contracts/personality/traits/`).
+`AtmosphereLabel` was nominally the avatar's, but **mood ships first**, so it lives in
+`src/contracts/mood/atmosphere.ts` for now; the avatar imports it from there when it
+lands ([avatar-3d.spec.md](avatar-3d.spec.md) keeps it as a cue channel). Atmosphere
+*nudges* mood (trait-damped) but is **not** the character's emotion — a composed
+companion holds calm in a tense room. `RelationshipStage`/`TraitValue` are the existing
+types (`contracts/relationships/stages.ts`, `contracts/personality/traits/`).
 
 ## 6. Resilience
 

@@ -7,6 +7,7 @@ import { calendarStartSchema } from "@/lib/clock";
 import { apiGet, toApiError, withQuery, type ApiError } from "@/lib/client/api";
 import { consumeTurnStream, type TurnChunkPayload } from "@/lib/client/turn-stream";
 import type { TurnAuthor } from "@/contracts/turns/stream";
+import { emotionLabelSchema } from "@/contracts/mood/emotion-label";
 
 /**
  * Play-screen client data layer (docs/ui.md §Play screen,
@@ -233,6 +234,17 @@ const heldItemSchema = z.preprocess(
 );
 export type HeldItem = z.infer<typeof heldItemSchema>;
 
+/** The cast-card mood chip (mood.spec §4); absent/legacy payloads → null (no chip). */
+const emotionChipSchema = z
+  .object({
+    label: emotionLabelSchema,
+    intensity: z.number().min(0).max(1).catch(0),
+  })
+  .nullish()
+  .catch(null)
+  .transform((v) => v ?? null);
+export type EmotionChip = z.infer<typeof emotionChipSchema>;
+
 export const statusParticipantSchema = z.preprocess(
   (raw) => {
     const obj = record(raw);
@@ -261,6 +273,8 @@ export const statusParticipantSchema = z.preprocess(
     activity: z.string().catch("idle"),
     posture: optionalText,
     meters: z.record(z.string(), z.number()).catch({}),
+    /** Derived discrete emotion for the mood chip; player/legacy payloads → null. */
+    emotion: emotionChipSchema,
     conditions: arrayOf(conditionChipSchema),
     wardrobe: arrayOf(wardrobeEntrySchema),
     /**

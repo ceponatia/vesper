@@ -41,6 +41,8 @@ import type { TurnAuthor } from "@/contracts/turns/stream";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { evaluateSocialReaction, moodMeterToFactor, moodNudge, resolveSocialReaction } from "@/contracts/personality/reactions";
 import { affinityDecayRetention, personalizeMeters, scaleAffinityGain, socialTraitScale } from "@/contracts/personality/modulation";
+import { interactionConceptById } from "@/contracts/personality/interactions";
+import { conditionMoodBaselineShift, isTouchConcept, resolveTouchWelcomeness, touchMoodDeltas } from "@/contracts/mood";
 import type { TraitValue } from "@/contracts/personality/traits/value";
 import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { checkLinkAccess, type DoorState } from "@/contracts/world/access";
@@ -824,6 +826,8 @@ export interface ReactionAffinityResult {
   ownedEdgeKeys: Set<string>;
   /** Mood-meter nudge the reaction applies to the target NPC (spec §4); absent ⇒ none. */
   moodAdjustment?: { participantId: string; delta: number };
+  /** Stress-meter nudge from an unwelcome/welcome touch (mood.spec §5); absent ⇒ none. */
+  stressAdjustment?: { participantId: string; delta: number };
 }
 
 /**
@@ -864,11 +868,31 @@ export function planReactionAffinity(
     { concept: primary.concept, target: primary.target },
     { tags: target.snapshot.tags, preferences: target.snapshot.preferences, cards: [] },
   );
-  if (!reaction) return empty;
 
   const feeling = relationships.find(
     (r) => r.kind === "feeling" && r.fromParticipantId === target.id && r.toParticipantId === player.id,
   );
+
+  if (!reaction) {
+    // Welcome/unwelcome touch (mood.spec §5): a touch concept with no matching
+    // preference swings mood (+ stress) by affinity-stage welcome-ness — the no-
+    // authoring, auto-scaling fallback. A preference-matched touch instead flows
+    // through the reaction curve below (the authored verdict is the override).
+    if (isTouchConcept(primary.concept)) {
+      const stageId = stageForValue(feeling?.value ?? 0).id;
+      const welcomeness = resolveTouchWelcomeness({ affinityStage: stageId });
+      const intimate = interactionConceptById(primary.concept)?.intimate ?? false;
+      const d = touchMoodDeltas(welcomeness, { intimate, traits: target.snapshot.traits });
+      return {
+        updates: [],
+        ownedEdgeKeys: new Set(),
+        moodAdjustment: Math.abs(d.mood) >= 0.005 ? { participantId: target.id, delta: d.mood } : undefined,
+        stressAdjustment: Math.abs(d.stress) >= 0.005 ? { participantId: target.id, delta: d.stress } : undefined,
+      };
+    }
+    return empty;
+  }
+
   const mood = moodByParticipant?.get(target.id) ?? target.state.meters.mood ?? NEUTRAL_MOOD_METER;
   const evaluated = evaluateSocialReaction(
     reaction,
@@ -1717,10 +1741,23 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
 
   for (const participant of parts) {
     // Per-character drift: traits shift the resting baseline/recovery (spec §4); thresholds
-    // and agent adjustments still use the global defs.
+    // and agent adjustments still use the global defs. Active conditions are a *standing*
+    // mood influence (mood.spec §5): they shift the mood baseline so drift pulls toward an
+    // influenced target without compounding a per-turn delta (a `hurt` companion settles
+    // lower; recovers once it lifts). Trait/condition shifts only matter in a real turn.
+    const personalized = personalizeMeters(defs, participant.snapshot.traits);
+    const moodBaselineShift = conditionMoodBaselineShift(participant.state.conditions);
+    const driftDefs =
+      moodBaselineShift === 0
+        ? personalized
+        : personalized.map((d) =>
+            d.id === "mood"
+              ? { ...d, baseline: Math.min(1, Math.max(0, (d.baseline ?? NEUTRAL_MOOD_METER) + moodBaselineShift)) }
+              : d,
+          );
     const drifted = reconcile
       ? participant.state.meters
-      : applyMeterDrift(participant.state.meters, minutes, personalizeMeters(defs, participant.snapshot.traits));
+      : applyMeterDrift(participant.state.meters, minutes, driftDefs);
     // Registered-action effects (shower ⇒ hygiene) apply after drift and
     // before agent deltas, so narration-grounded corrections still win.
     const withActionEffects =
@@ -1752,6 +1789,15 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       touchedParticipantIds.add(t.id);
     }
   }
+  if (reactionResult?.stressAdjustment) {
+    const t = parts.find((p) => p.id === reactionResult.stressAdjustment?.participantId);
+    if (t) {
+      const next = Math.min(1, Math.max(0, (t.state.meters.stress ?? 0) + reactionResult.stressAdjustment.delta));
+      t.state.meters = { ...t.state.meters, stress: next };
+      touchedParticipantIds.add(t.id);
+    }
+  }
+
 
   // Conditions: agent ops first, then duration expiry against the new clock.
   const conditionsByParticipant = new Map<string, ConditionEvent[]>();
