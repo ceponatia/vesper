@@ -1,7 +1,7 @@
+import { severityToTier, type SocialReactionCard } from "@/contracts/personality/cards";
 import type { NextTurnBrief } from "@/contracts/state/brief";
 import type { StoryThread } from "@/contracts/state/session-runtime";
 import type { TurnAuthor } from "@/contracts/turns/stream";
-import type { WorldNorm } from "@/contracts/world/profile";
 import { AGENT_INPUT_CAP, AGENT_NARRATION_CAP } from "./constants";
 
 /**
@@ -56,15 +56,15 @@ Example A — Maya promises to teach the player to fish tomorrow:
 Example B — Maya turns on Rhett; active facts list contains "Maya trusts Rhett completely.":
 {"episodeSummary":"Maya found the forged letter in Rhett's coat and confronted him; he denied nothing. She left the room without a word.","facts":[{"kind":"relationship","subjectName":"Maya","subjectKind":"character","text":"Maya no longer trusts Rhett after finding the forged letter.","tags":["trust","rhett"],"confidence":0.85}],"supersedeHints":[{"factIndex":0,"oldFactText":"Maya trusts Rhett completely."}]}`;
 
-export const CONTINUITY_SYSTEM = `You are the continuity checker: you audit one turn of narration against canon and norms. You only flag.
+export const CONTINUITY_SYSTEM = `You are the continuity checker: you audit one turn of narration against canon and the world's social cards. You only flag.
 
 Produce:
 - violations: contradictions of the provided canon. claim = what the narration asserted; canonical = the contradicted fact; severity minor|major; kind (see rules 5-7, default general).
-- normBreaches: witnessed breaches of listed norms. normRule exactly as listed; byName the breacher; witnessNames who saw it; suggestedReaction one in-character beat.
+- cardBreaches: witnessed breaches of the listed cards. cardId exactly as listed; concept it amounts to; byName the breacher; witnessNames who saw it. The engine resolves the reaction, not you.
 - driftNotes: brief style/POV drift (tense slips, AI-speak).
 
 Rules:
-1. Names exactly as written; never invent entities or norms.
+1. Names exactly as written; never invent entities or cards.
 2. Quoted or hypothetical speech is not a breach/violation unless it contradicts canon as a claim of fact.
 3. Apparent age describes looks — never contradicts actual age.
 4. Style/pacing complaints are driftNotes, never violations. Empty arrays = clean turn (common).
@@ -76,7 +76,7 @@ Example A — canon "Maya fears deep water."; Maya boasts she loves it (contradi
 {"violations":[{"subject":"Maya","claim":"loves deep water","canonical":"Maya fears deep water","severity":"major","kind":"general"}]}
 
 Example B — roster lists Fatima Elsewhere; she strides in and scolds Rhett, while Maya (awareness: absorbed, back turned) spins to a silent wink behind her:
-{"violations":[{"subject":"Fatima","claim":"scolded Rhett","canonical":"listed elsewhere this turn","severity":"major","kind":"narrated_absent_character"},{"subject":"Maya","claim":"reacted to a wink she couldn't see","canonical":"could not perceive it (per awareness)","severity":"major","kind":"reacted_to_unperceived_event"}],"normBreaches":[]}`;
+{"violations":[{"subject":"Fatima","claim":"scolded Rhett","canonical":"listed elsewhere this turn","severity":"major","kind":"narrated_absent_character"},{"subject":"Maya","claim":"reacted to a wink she couldn't see","canonical":"could not perceive it (per awareness)","severity":"major","kind":"reacted_to_unperceived_event"}],"cardBreaches":[]}`;
 
 export const DIRECTOR_SYSTEM = `You are the director: you steer the NEXT turn of the story.
 
@@ -210,20 +210,23 @@ export interface ContinuityPromptInput {
   canonicalFactsBlock: string;
   /** Output of scene.buildPresenceRoster — the "Who is where" lines rule 6 audits ("" when the session has no NPCs). */
   presenceRoster: string;
-  norms: WorldNorm[];
+  /** The world's social-reaction cards — the breach targets the agent flags. */
+  socialCards: SocialReactionCard[];
   presentNames: string[];
   /** Per-character awareness/perception lines rule 7 audits; "" omits the heading (set at integration). */
   awarenessBlocks?: string;
 }
 
 export function buildContinuityPrompt(input: ContinuityPromptInput): string {
-  const norms = input.norms.map((n) => `- "${n.rule}" (severity: ${n.severity}${n.consequence ? `; consequence: ${n.consequence}` : ""})`);
+  const cards = input.socialCards.map(
+    (c) => `- [${c.id}] "${c.label}" (${severityToTier(c.severity)}; triggers: ${c.triggers.join(", ") || "—"})${c.description ? ` — ${c.description}` : ""}`,
+  );
   return [
     `Present characters: ${input.presentNames.join(", ") || "none"}`,
     input.presenceRoster,
     input.awarenessBlocks ? `Awareness (who can perceive what):\n${input.awarenessBlocks}` : "",
     input.canonicalFactsBlock || "Canonical character facts: none recorded.",
-    `World norms:\n${norms.length ? norms.join("\n") : "- none"}`,
+    `Social-reaction cards (taboos / rules):\n${cards.length ? cards.join("\n") : "- none"}`,
     turnSection(input.playerInput, input.narration, input.author),
   ]
     .filter(Boolean)

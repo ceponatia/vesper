@@ -20,6 +20,7 @@ import {
 import { useAsyncData } from "@/components/hooks/use-async";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { LibraryPickerDialog, type LibraryPickerEntry } from "@/components/library/library-picker";
+import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { Field } from "@/components/ui/field";
@@ -254,54 +255,12 @@ function PremiseTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: Worl
       </Field>
 
       <div className="sm:col-span-2">
-        <h3 className="mb-2 text-xs font-medium tracking-wide text-paper-400 uppercase">Norms</h3>
-        <div className="flex flex-col gap-2">
-          {style.norms.map((norm, index) => (
-            <div key={index} className="flex flex-wrap items-center gap-2">
-              <Input
-                value={norm.rule}
-                aria-label="Rule"
-                placeholder="Rule"
-                onChange={(e) =>
-                  patchStyle({ norms: style.norms.map((n, i) => (i === index ? { ...n, rule: e.target.value } : n)) })
-                }
-                className="min-w-48 flex-1"
-              />
-              <Select
-                value={norm.severity}
-                aria-label="Severity"
-                onChange={(e) =>
-                  patchStyle({
-                    norms: style.norms.map((n, i) =>
-                      i === index ? { ...n, severity: e.target.value as (typeof norm)["severity"] } : n,
-                    ),
-                  })
-                }
-                className="w-36"
-              >
-                {(["odd", "disapproval", "outrage"] as const).map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </Select>
-              <Button
-                size="sm"
-                variant="quiet"
-                onClick={() => patchStyle({ norms: style.norms.filter((_, i) => i !== index) })}
-              >
-                Remove
-              </Button>
-            </div>
-          ))}
-          <Button
-            size="sm"
-            onClick={() => patchStyle({ norms: [...style.norms, { rule: "New norm", severity: "odd", consequence: "" }] })}
-            className="w-fit"
-          >
-            + Add norm
-          </Button>
-        </div>
+        <SocialCardsEditor
+          cards={style.socialCards}
+          onChange={(socialCards) => patchStyle({ socialCards })}
+          hint="The world's social fabric — taboos and rules every present character reacts to. A character's own cards (on their Disposition tab) take precedence."
+          emptyText="No social cards yet. Add a taboo or social rule, or let the forge propose a starter set."
+        />
       </div>
     </div>
   );

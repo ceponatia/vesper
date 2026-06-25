@@ -1,3 +1,4 @@
+import { resolveCardReaction, type SocialReactionCard } from "./cards";
 import { interactionConceptById } from "./interactions";
 import type { Preference, PreferenceValence } from "./preference";
 
@@ -27,28 +28,24 @@ export interface SocialReaction {
   source: "preference" | "card";
 }
 
-/**
- * Placeholder for the deferred social-reaction card layer
- * (social-reaction-cards.plan.md). The card plan fills in the shape; v1 callers
- * pass `cards: []`.
- */
-export interface SocialReactionCard {
-  readonly id: string;
-}
-
 export interface DispositionSources {
-  /** Canonical/free-form tags — cards key overrides on these (unused in v1). */
+  /** Canonical/free-form tags — cards key their `reactionOverrides` on these. */
   tags: readonly string[];
   preferences: readonly Preference[];
-  /** Deferred — empty in v1. */
+  /**
+   * The effective card set, in precedence order — a character's own cards listed
+   * **before** the world's, so the personal line beats society's (the first card whose
+   * triggers include the concept governs). Empty ⇒ only the bespoke layer is live.
+   */
   cards: readonly SocialReactionCard[];
 }
 
 /**
  * Resolve a classified social act against a character's disposition. Precedence
  * (pure override, most specific wins): bespoke preference → card tag-override →
- * card default → null (narrator plays it straight). v1 only has the bespoke layer
- * (cards: []), so this returns a preference match or null.
+ * card default → null (narrator plays it straight). A card match returns a
+ * `SocialReaction { source: "card" }` that rides the same `evaluateSocialReaction`
+ * curve as a preference.
  */
 export function resolveSocialReaction(act: SocialAct, sources: DispositionSources): SocialReaction | null {
   const pref = matchPreference(act.concept, sources.preferences);
@@ -62,7 +59,10 @@ export function resolveSocialReaction(act: SocialAct, sources: DispositionSource
       source: "preference",
     };
   }
-  // Card layer is deferred (social-reaction-cards.plan.md); nothing to resolve in v1.
+  const card = resolveCardReaction(act.concept, sources.tags, sources.cards);
+  if (card) {
+    return { conceptId: act.concept, valence: card.valence, intensity: card.intensity, hint: card.hint, source: "card" };
+  }
   return null;
 }
 

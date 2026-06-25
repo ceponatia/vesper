@@ -2,6 +2,7 @@ import { z } from "zod";
 import { attributeValueSchema } from "../attributes/value";
 import { calendarStartSchema, DEFAULT_CALENDAR_START } from "@/lib/clock";
 import { meterDefinitionSchema } from "../meters/registry";
+import { socialReactionCardSchema } from "../personality/cards";
 import { preferenceSchema } from "../personality/preference";
 import { traitValueSchema } from "../personality/traits/value";
 import { stageIdSchema } from "../relationships/stages";
@@ -60,6 +61,13 @@ export const characterProfileSchema = z.object({
   tags: z.array(z.string()).default([]),
   preferences: z.array(preferenceSchema).default([]),
   /**
+   * The character's own default social-reaction cards (social-reaction-cards.plan.md):
+   * its *personal* lines/taboos, snapshot copies from the card library. They resolve in
+   * the world-less character chat and, in a session, are tried **before** the world's
+   * cards (the personal line beats society's). Default `[]` ⇒ no character cards.
+   */
+  socialCards: z.array(socialReactionCardSchema).default([]),
+  /**
    * Atomic personality traits (personality-and-state.spec.md §3): numeric scalars
    * with registry-defined bands, carrying the `AttributeValue` provenance shape
    * (base/creation/manual). Default `[]` ⇒ a character with no traits surfaces no
@@ -95,21 +103,19 @@ export function emptyCharacterProfile(): CharacterProfile {
   return characterProfileSchema.parse({});
 }
 
-export const worldNormSchema = z.object({
-  rule: z.string().min(1),
-  severity: z.enum(["odd", "disapproval", "outrage"]).catch("odd"),
-  consequence: z.string().default(""),
-});
-
-export type WorldNorm = z.infer<typeof worldNormSchema>;
-
 export const worldStyleSchema = z.object({
   directives: z.array(z.string()).default([]),
   narratorGuidance: z.string().optional(),
   calendarStart: calendarStartSchema.default(DEFAULT_CALENDAR_START),
   /** Partial overrides per meter id; null disables the meter for this world. */
   meterOverrides: z.record(z.string(), meterDefinitionSchema.partial().nullable()).default({}),
-  norms: z.array(worldNormSchema).default([]),
+  /**
+   * The world's social fabric (social-reaction-cards.plan.md) — snapshot copies of taboo /
+   * social-rule cards selected from the card library. Read live each turn (like the rest of
+   * `style`); resolves player→target reactions and witnessed breaches. Replaces the former
+   * freeform `norms`. Default `[]` ⇒ no social fabric (narrator plays it straight).
+   */
+  socialCards: z.array(socialReactionCardSchema).default([]),
 });
 
 export type WorldStyle = z.infer<typeof worldStyleSchema>;

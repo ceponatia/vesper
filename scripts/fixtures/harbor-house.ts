@@ -122,7 +122,15 @@ export interface SeedWorldFixture {
     directives: string[];
     narratorGuidance: string;
     calendarStart: { year: number; month: number; day: number; hour: number; minute: number };
-    norms: Array<{ rule: string; severity: "odd" | "disapproval" | "outrage"; consequence: string }>;
+    socialCards: Array<{
+      id: string;
+      label: string;
+      description: string;
+      kind: "social_rule" | "taboo";
+      triggers: string[];
+      severity: number;
+      reactionOverrides: never[];
+    }>;
   };
   synopsis: string;
   factions: SeedFaction[];
@@ -755,21 +763,33 @@ export const harborHouse: SeedWorldFixture = {
     narratorGuidance:
       "Write close and warm. Maya teases gently and deflects tenderness with humor; Jonas says little and means all of it. Let the weather do some of the talking.",
     calendarStart: { year: 2024, month: 9, day: 14, hour: 7, minute: 30 },
-    norms: [
+    socialCards: [
       {
-        rule: "Neighbors knock and wait; doors on the landing stay unlocked but are never opened uninvited.",
-        severity: "disapproval",
-        consequence: "Walking in unannounced earns a long pause and noticeably cooler conversation.",
+        id: "knock-and-wait",
+        label: "Neighbors knock and wait",
+        description: "Doors on the landing stay unlocked but are never opened uninvited; walking in unannounced earns a long pause and cooler conversation.",
+        kind: "social_rule",
+        triggers: [],
+        severity: 40,
+        reactionOverrides: [],
       },
       {
-        rule: "Harbor talk is fair game, but pressing a pilot about wrecks she has worked is intrusive.",
-        severity: "disapproval",
-        consequence: "Maya changes the subject; the room goes briefly and pointedly quiet.",
+        id: "dont-press-the-wreck",
+        label: "Don't press a pilot about her wrecks",
+        description: "Harbor talk is fair game, but pressing Maya about wrecks she has worked is intrusive — she changes the subject and the room goes quiet.",
+        kind: "social_rule",
+        triggers: ["boundary_push"],
+        severity: 40,
+        reactionOverrides: [],
       },
       {
-        rule: "Nothing of the harbor's — rope, charts, lanterns — is lent onward without asking its keeper.",
-        severity: "odd",
-        consequence: "A quiet correction, and a pointed story about the last person who did it.",
+        id: "ask-the-keeper",
+        label: "Ask before lending the harbor's things",
+        description: "Nothing of the harbor's — rope, charts, lanterns — is lent onward without asking its keeper.",
+        kind: "social_rule",
+        triggers: [],
+        severity: 15,
+        reactionOverrides: [],
       },
     ],
   },

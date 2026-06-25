@@ -734,6 +734,7 @@ async function assemblePreTurn(
     tags: p.snapshot.tags,
     preferences: p.snapshot.preferences,
     traits: p.snapshot.traits,
+    socialCards: p.snapshot.socialCards,
     mood: p.state.meters.mood ?? NEUTRAL_MOOD_METER,
   }));
 
@@ -773,6 +774,7 @@ async function assemblePreTurn(
             socialActs: intentBrief.socialActs,
             presentNpcs: dispositionNpcs,
             relationships: bundle.relationships,
+            worldCards: bundle.style.socialCards,
           })
         : "",
       player

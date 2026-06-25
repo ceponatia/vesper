@@ -32,6 +32,7 @@ import { realizeBody, speciesLorePhrase } from "@/contracts/species";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
+import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { interactionConceptById } from "@/contracts/personality/interactions";
 import type { Preference } from "@/contracts/personality/preference";
 import { checkPuppetContradiction } from "@/contracts/personality/puppet";
@@ -1166,11 +1167,15 @@ export interface ReactionLineInput {
     tags: readonly string[];
     preferences: readonly Preference[];
     traits: readonly TraitValue[];
+    /** The NPC's own default cards — tried before the world's (the personal line wins). */
+    socialCards: readonly SocialReactionCard[];
     /** Turn-start mood meter (0–1); drives the curve's μ so the hint matches the applied delta. */
     mood: number;
   }>;
   /** Numeric affinity edges (BundleRelationship); the curve reads the NPC's feeling toward the player. */
   relationships: ReadonlyArray<{ fromParticipantId: string; toParticipantId: string; kind: "feeling" | "perceived"; value: number }>;
+  /** The world's social fabric cards (bundle.style.socialCards), tried after the NPC's own. */
+  worldCards: readonly SocialReactionCard[];
 }
 
 /**
@@ -1188,7 +1193,7 @@ export function buildReactionLine(input: ReactionLineInput): string {
   if (!npc) return "";
   const reaction = resolveSocialReaction(
     { concept: primary.concept, target: primary.target },
-    { tags: npc.tags, preferences: npc.preferences, cards: [] },
+    { tags: npc.tags, preferences: npc.preferences, cards: [...npc.socialCards, ...input.worldCards] },
   );
   if (!reaction) return "";
   const feeling = input.relationships.find(

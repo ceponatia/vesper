@@ -112,7 +112,7 @@ export function demoAgentResults(input: string, opts: DemoAgentOptions): AgentRe
     },
     continuity: {
       violations: [],
-      normBreaches: [],
+      cardBreaches: [],
       driftNotes: [],
     },
     director: {

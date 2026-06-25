@@ -149,7 +149,7 @@ See [body.md](body.md) §The realized body for `intimateRegions` / `bodyFeatures
 
 ## WorldStyle
 
-A world's tone, calendar start, meter overrides, and social norms.
+A world's tone, calendar start, meter overrides, and social fabric.
 
 ```ts
 type WorldStyle = {
@@ -157,13 +157,15 @@ type WorldStyle = {
   narratorGuidance?: string;
   calendarStart: { year: number; month: number; day: number; hour: number; minute: number };
   meterOverrides?: Record<string, Partial<MeterDefinition> | null>;  // null disables a meter
-  norms: Array<{                              // generalized taboo/social-rule system
-    rule: string;                             // "public nudity is scandalous"
-    severity: "odd" | "disapproval" | "outrage";
-    consequence: string;                      // hint for witness reactions
-  }>;
+  socialCards: SocialReactionCard[];          // the world's social fabric — inline snapshot
+                                              // copies of taboo/social-rule cards (the card
+                                              // library is `social_cards`). See
+                                              // social-reaction-cards.plan.md. Replaced the
+                                              // former freeform `norms`.
 };
 ```
+
+`SocialReactionCard` (`contracts/personality/cards.ts`) carries `{ id, label, description, kind: "social_rule"|"taboo", triggers: conceptId[], severity: 0–100, defaultReaction?, reactionOverrides: [{ tag, toReaction }] }`. `severity` → a tier (`severityToTier`) → a ramped base intensity; a matched card resolves to a `SocialReaction` that rides the §6 curve (no raw deltas). A character carries its own cards on `CharacterProfile.socialCards`, tried before the world's.
 
 ## Link access
 

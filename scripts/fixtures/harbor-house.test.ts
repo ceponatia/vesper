@@ -166,10 +166,10 @@ describe("harbor house world graph", () => {
 });
 
 describe("harbor house style and lore", () => {
-  it("style parses with directives and three norms", () => {
+  it("style parses with directives and three social cards", () => {
     const style = worldStyleSchema.parse(harborHouse.style);
     expect(style.directives.length).toBeGreaterThanOrEqual(3);
-    expect(style.norms).toHaveLength(3);
+    expect(style.socialCards).toHaveLength(3);
   });
 
   it("world lore parses with factions and two plot anchors", () => {

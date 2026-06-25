@@ -118,7 +118,9 @@ function makeBundle(embodied: boolean): SessionBundle {
     style: worldStyleSchema.parse({
       directives: ["Focus on {{player}}'s doubts.", "Keep scenes short."],
       narratorGuidance: "Speak warmly of {{ Player }}.",
-      norms: [{ rule: "Nobody questions {{player}}.", severity: "odd", consequence: "Glares follow {{PLAYER}}." }],
+      socialCards: [
+        { id: "respect", label: "Nobody questions {{player}}.", description: "Glares follow {{PLAYER}}.", kind: "social_rule", triggers: [], severity: 20, reactionOverrides: [] },
+      ],
     }),
     lore: worldLoreSchema.parse({ synopsis: "{{player}} arrives at dusk." }),
     runtime: emptySessionRuntime(),
@@ -146,7 +148,7 @@ describe("fillBundlePlayerToken", () => {
 
     expect(filled.style.directives).toEqual(["Focus on Brian's doubts.", "Keep scenes short."]);
     expect(filled.style.narratorGuidance).toBe("Speak warmly of Brian.");
-    expect(filled.style.norms[0]).toMatchObject({ rule: "Nobody questions Brian.", consequence: "Glares follow Brian." });
+    expect(filled.style.socialCards[0]).toMatchObject({ label: "Nobody questions Brian.", description: "Glares follow Brian." });
 
     for (const chunk of filled.loreChunks) {
       expect(chunk.title).toContain("The ballad of Brian");

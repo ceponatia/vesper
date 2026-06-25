@@ -56,7 +56,7 @@ describe("agent system prompts", () => {
     expect(ARCHIVIST_SYSTEM).toContain('"episodeSummary"');
     expect(ARCHIVIST_SYSTEM).toContain('"supersedeHints"');
     expect(CONTINUITY_SYSTEM).toContain('"violations"');
-    expect(CONTINUITY_SYSTEM).toContain('"normBreaches"');
+    expect(CONTINUITY_SYSTEM).toContain('"cardBreaches"');
     // Invented player dialogue is flagged as a violation (followups.phase2.md #5),
     // but restating the player's own input never is (#21 — the tea false positive).
     expect(CONTINUITY_SYSTEM).toContain("Invented player dialogue IS a violation");
@@ -178,14 +178,16 @@ describe("buildArchivistPrompt", () => {
 });
 
 describe("buildContinuityPrompt", () => {
-  it("carries canonical facts, the presence roster, and world norms", () => {
+  it("carries canonical facts, the presence roster, and social cards", () => {
     const text = buildContinuityPrompt({
       playerInput: "input",
       narration: "narration",
       author: "player",
       canonicalFactsBlock: "## Canonical character facts\n- Maya — appears mid twenties.",
       presenceRoster: "## Who is where (authoritative presence roster this turn)\nPresent: Maya\nElsewhere: Fatima (Attic)",
-      norms: [{ rule: "public nudity is scandalous", severity: "outrage", consequence: "witnesses gasp" }],
+      socialCards: [
+        { id: "nudity", label: "public nudity is scandalous", description: "witnesses gasp", kind: "taboo", triggers: ["public_display"], severity: 90, reactionOverrides: [] },
+      ],
       presentNames: ["Maya"],
     });
     expect(text).toContain("Present characters: Maya");
@@ -193,21 +195,21 @@ describe("buildContinuityPrompt", () => {
     expect(text).toContain("Present: Maya");
     expect(text).toContain("Elsewhere: Fatima (Attic)");
     expect(text).toContain("Maya — appears mid twenties.");
-    expect(text).toContain('"public nudity is scandalous" (severity: outrage; consequence: witnesses gasp)');
+    expect(text).toContain('[nudity] "public nudity is scandalous" (ostracized; triggers: public_display)');
   });
 
-  it("degrades gracefully with no canon, no roster, and no norms", () => {
+  it("degrades gracefully with no canon, no roster, and no cards", () => {
     const text = buildContinuityPrompt({
       playerInput: "input",
       narration: "narration",
       author: "player",
       canonicalFactsBlock: "",
       presenceRoster: "",
-      norms: [],
+      socialCards: [],
       presentNames: [],
     });
     expect(text).toContain("Canonical character facts: none recorded.");
-    expect(text).toContain("World norms:\n- none");
+    expect(text).toContain("Social-reaction cards (taboos / rules):\n- none");
     expect(text).not.toContain("Who is where");
     // awarenessBlocks defaults to "" → no awareness heading.
     expect(text).not.toContain("Awareness (who can perceive what)");
@@ -220,7 +222,7 @@ describe("buildContinuityPrompt", () => {
       author: "player",
       canonicalFactsBlock: "",
       presenceRoster: "",
-      norms: [],
+      socialCards: [],
       presentNames: ["Maya"],
       awarenessBlocks: "Maya: absorbed in cooking, back to the door (cannot see behind her).",
     });
@@ -235,7 +237,7 @@ describe("buildContinuityPrompt", () => {
       author: "player",
       canonicalFactsBlock: "",
       presenceRoster: "",
-      norms: [],
+      socialCards: [],
       presentNames: ["Maya"],
       awarenessBlocks: "",
     });

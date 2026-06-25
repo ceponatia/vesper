@@ -10,14 +10,15 @@ import {
   objectSubtypes,
   emptyWorldLore,
   emptyWorldStyle,
+  interactionConceptIds,
   itemDefinitionSchema,
   itemKindSchema,
   loreChunkCategorySchema,
   loreChunkTierSchema,
   loreChunkVisibilitySchema,
   relationshipStages,
+  type SocialReactionCard,
   worldLoreSchema,
-  worldNormSchema,
   worldStyleSchema,
   type AuthoredRelationship,
   type DiagnosticSink,
@@ -127,6 +128,19 @@ export async function forgeWorldSection(section: WorldForgeSection, context: Wor
 // Premise section
 // ---------------------------------------------------------------------------
 
+/**
+ * The forge proposes the playable shell of a social-reaction card (social-reaction-cards.plan.md):
+ * a label, blurb, kind, the interaction concepts it triggers on, and a 0–100 severity. The id +
+ * derived reaction + per-tag overrides are filled deterministically (no LLM-authored verdict).
+ */
+const forgeCardSchema = z.object({
+  label: z.string().min(1),
+  description: z.string().default(""),
+  kind: z.enum(["social_rule", "taboo"]).catch("social_rule"),
+  triggers: z.array(z.string()).default([]),
+  severity: z.number().min(0).max(100).catch(40),
+});
+
 const premiseSectionSchema = z.object({
   name: z.string().default(""),
   description: z.string().default(""),
@@ -134,22 +148,42 @@ const premiseSectionSchema = z.object({
   directives: z.array(z.string()).default([]),
   narratorGuidance: z.string().default(""),
   calendarStart: calendarStartSchema.default(DEFAULT_CALENDAR_START),
-  norms: z.array(worldNormSchema).default([]),
+  socialCards: z.array(forgeCardSchema).default([]),
 });
 
 type PremiseSection = z.infer<typeof premiseSectionSchema>;
 
 const PREMISE_SYSTEM =
-  "You design roleplaying world premises. Be concrete and playable: a name, a short blurb, a story synopsis, style directives (tone, era, pacing, content notes), narrator guidance, a calendar start date, and 1-4 social norms with severities.";
+  "You design roleplaying world premises. Be concrete and playable: a name, a short blurb, a story synopsis, style directives (tone, era, pacing, content notes), narrator guidance, a calendar start date, and 1-4 social-reaction cards (taboos / social rules) with severities.";
 
 function premisePrompt(context: WorldForgeContext): string {
   const lines = ["Design a world from this premise:", context.prompt];
   if (context.draft?.name) {
     lines.push("", `You are regenerating the premise of the draft currently named "${context.draft.name}". Keep the core idea.`);
   }
-  lines.push("", 'Norm severities mean: "odd" raises eyebrows, "disapproval" costs standing, "outrage" provokes confrontation.');
+  lines.push(
+    "",
+    "Social cards: each is a taboo or social rule the world enforces. Give a short label, a one-line description, kind ('taboo' for visceral wrongs, 'social_rule' for etiquette), a severity 0-100 (0-25 raises eyebrows, 26-50 costs standing, 51-75 gets you shunned, 76-100 gets you ostracized), and triggers chosen from these interaction concepts: " +
+      interactionConceptIds().join(", ") +
+      ".",
+  );
   lines.push("Where the synopsis or narrator guidance must name the player character, write the literal token {{player}} — it resolves to the player's name at play time.");
   return lines.join("\n");
+}
+
+/** Build a full SocialReactionCard from the forge's shell (deterministic slug id, empty overrides; reaction derived from severity). */
+function forgeCardToSocialCard(c: PremiseSection["socialCards"][number], index: number): SocialReactionCard {
+  const label = c.label.trim() || "Social rule";
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return {
+    id: slug || `card-${index + 1}`,
+    label,
+    description: c.description.trim(),
+    kind: c.kind,
+    triggers: c.triggers,
+    severity: c.severity,
+    reactionOverrides: [],
+  };
 }
 
 async function forgePremiseSection(context: WorldForgeContext): Promise<Partial<WorldDraft>> {
@@ -171,7 +205,7 @@ async function forgePremiseSection(context: WorldForgeContext): Promise<Partial<
       directives: section.directives,
       narratorGuidance: section.narratorGuidance.trim() || undefined,
       calendarStart: section.calendarStart,
-      norms: section.norms,
+      socialCards: section.socialCards.map(forgeCardToSocialCard),
     },
     emptyWorldStyle(),
     context.sink,
@@ -837,16 +871,20 @@ export function demoWorldPremiseSection(): PremiseSection {
     ],
     narratorGuidance: "Let the weather and the tide set the rhythm of scenes; secrets surface slowly, in fragments.",
     calendarStart: { year: 1862, month: 10, day: 14, hour: 7, minute: 30 },
-    norms: [
+    socialCards: [
       {
-        rule: "Unloading cargo without a customs stamp is a criminal offense",
-        severity: "outrage",
-        consequence: "Witnesses alert the customs watch; fines or arrest follow.",
+        label: "Public propositions scandalize",
+        description: "Forward sexual advances in public mark you as disreputable on the quay.",
+        kind: "taboo",
+        triggers: ["proposition", "public_display"],
+        severity: 60,
       },
       {
-        rule: "Refusing a toast to the drowned is deeply rude in harbor taverns",
-        severity: "disapproval",
-        consequence: "Locals turn cold and conversations dry up.",
+        label: "Cold-shoulder the boastful",
+        description: "Loud self-promotion in harbor taverns earns quiet contempt.",
+        kind: "social_rule",
+        triggers: ["public_display"],
+        severity: 30,
       },
     ],
   };
