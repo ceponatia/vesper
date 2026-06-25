@@ -1,26 +1,30 @@
+# fly.toml app configuration file generated for vesper on 2026-06-25T15:58:20Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
 app = 'vesper'
 primary_region = 'iad'
 
 [build]
 
 [deploy]
-  # Applies pending drizzle migrations before the new release goes live.
-  # Requires DATABASE_URL (Neon) to be set as a secret first.
-  release_command = "pnpm db:migrate"
+  release_command = 'pnpm db:migrate'
+
+[[mounts]]
+  source = 'vesper_data'
+  destination = '/app/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = false      # MUST stay up — in-process job worker loop
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  min_machines_running = 1         # never scale to zero
+  min_machines_running = 1
   processes = ['app']
 
-[[mounts]]
-  source = "vesper_data"           # persistent image storage (DATA_ROOT=/app/data)
-  destination = "/app/data"
-
 [[vm]]
-  memory = '2gb'                   # 256mb OOMs Next instantly; 1gb is the floor
+  memory = '2gb'
   cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 2048
