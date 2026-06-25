@@ -12,7 +12,9 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
     HUSKY=0 \
     PORT=8080 \
     HOSTNAME=0.0.0.0
-ARG PNPM_VERSION=10
+# Pin to the exact version in package.json's "packageManager" so Corepack uses
+# the cached pnpm at release time instead of re-downloading it.
+ARG PNPM_VERSION=10.12.1
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 
 # ---- build: install ALL deps + Next production build ----
@@ -35,6 +37,7 @@ ENV NODE_ENV=production
 COPY --from=build /app /app
 RUN mkdir -p /app/data
 EXPOSE 8080
-# Call next directly so the package.json start script's hardcoded `-p 3200`
-# is bypassed; bind to Fly's $PORT (8080).
-CMD ["sh", "-c", "pnpm exec next start -H 0.0.0.0 -p ${PORT:-8080}"]
+# Run next via node directly — NOT through pnpm — so boot never invokes Corepack
+# (no pnpm download, no npm-registry dependency at startup) and is instant.
+# Binds to Fly's $PORT (8080), bypassing the package.json start script's -p 3200.
+CMD ["sh", "-c", "node node_modules/next/dist/bin/next start -H 0.0.0.0 -p ${PORT:-8080}"]
