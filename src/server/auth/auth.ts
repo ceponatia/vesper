@@ -63,6 +63,13 @@ async function sendMagicLink({ email, url }: { email: string; url: string }): Pr
   log.info("auth.magic_link", "magic-link sign-in requested", { email, url });
 }
 
+// Self-service sign-up is OFF by default — only seeded/approved accounts exist.
+// Flip it on by setting ALLOW_SIGNUP=true (local .env, or `fly secrets set
+// ALLOW_SIGNUP=true`), let the person register, then set it back to false.
+// Gates email/password and magic-link sign-up; OAuth providers are only active
+// when their client-id/secret env vars are set (none in this deployment).
+const signupDisabled = process.env.ALLOW_SIGNUP !== "true";
+
 export const auth = betterAuth({
   database: drizzleAdapter(db(), {
     provider: "pg",
@@ -71,10 +78,10 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL,
   trustedOrigins: configuredTrustedOrigins(),
-  emailAndPassword: { enabled: true },
+  emailAndPassword: { enabled: true, disableSignUp: signupDisabled },
   socialProviders: configuredSocialProviders(),
   plugins: [
-    magicLink({ sendMagicLink }),
+    magicLink({ sendMagicLink, disableSignUp: signupDisabled }),
     admin(),
     // nextCookies must be last so it can flush Set-Cookie on server-action responses.
     nextCookies(),

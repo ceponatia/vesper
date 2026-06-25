@@ -25,6 +25,16 @@ Better Auth owns sign-in/up/out, OAuth callbacks, magic-link, `get-session`, and
 the admin endpoints. Our own handlers never write auth state — they only **read**
 the session.
 
+### Sign-up control (`ALLOW_SIGNUP`)
+
+Self-service sign-up is **disabled by default** — only seeded/approved accounts
+can sign in. `auth.ts` gates Better Auth's `disableSignUp` (email/password **and**
+magic-link) on `process.env.ALLOW_SIGNUP !== "true"`. To register a new account:
+set `ALLOW_SIGNUP=true` (local `.env`, or `fly secrets set ALLOW_SIGNUP=true -a
+vesper`, then redeploy/restart), sign up, then set it back to `false`. OAuth
+providers can also create accounts, but are only active when their
+client-id/secret env vars are set (none in the Fly deployment), so they're inert.
+
 ### Tables (`server/db/schema.ts`, “Identity & library”)
 
 Better Auth's `session`/`account`/`verification` models map to distinctly-named
