@@ -9,6 +9,7 @@ import {
   interactionFamilies,
   traitRegistry,
   type Preference,
+  type SocialReactionCard,
   type TraitCategory,
   type TraitValue,
 } from "@/contracts";
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { TagInput } from "@/components/ui/tag-input";
+import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 
 const CANONICAL_TAG_IDS = dispositionTags.map((t) => t.id);
 const TRAIT_CATEGORY_ORDER: TraitCategory[] = ["temperament", "social", "intimate"];
@@ -29,6 +31,8 @@ export interface DispositionEditorProps {
   onChangeTags: (tags: string[]) => void;
   preferences: readonly Preference[];
   onChangePreferences: (preferences: Preference[]) => void;
+  socialCards: readonly SocialReactionCard[];
+  onChangeSocialCards: (cards: SocialReactionCard[]) => void;
 }
 
 /**
@@ -37,7 +41,16 @@ export interface DispositionEditorProps {
  * from the dev registry, free-form allowed) and **bespoke** likes/dislikes resolved
  * against the interaction-concept vocabulary. Authored game data, not just prose.
  */
-export function DispositionEditor({ traits, onChangeTraits, tags, onChangeTags, preferences, onChangePreferences }: DispositionEditorProps) {
+export function DispositionEditor({
+  traits,
+  onChangeTraits,
+  tags,
+  onChangeTags,
+  preferences,
+  onChangePreferences,
+  socialCards,
+  onChangeSocialCards,
+}: DispositionEditorProps) {
   const update = (index: number, patch: Partial<Preference>) =>
     onChangePreferences(preferences.map((p, i) => (i === index ? { ...p, ...patch } : p)));
   const remove = (index: number) => onChangePreferences(preferences.filter((_, i) => i !== index));
@@ -193,6 +206,13 @@ export function DispositionEditor({ traits, onChangeTraits, tags, onChangeTags, 
           </ul>
         )}
       </div>
+
+      <SocialCardsEditor
+        cards={socialCards}
+        onChange={onChangeSocialCards}
+        hint="This character's own taboos and rules — they apply in 1-on-1 chat and take precedence over a world's cards in a session."
+        emptyText="No personal cards. Add one to give this character lines that travel with them into any world."
+      />
     </div>
   );
 }

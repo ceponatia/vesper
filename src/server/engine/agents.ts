@@ -193,7 +193,7 @@ export async function runPostTurnAgents(
     // against must be the one the narrator actually saw.
     presenceRoster: buildPresenceRoster(bundle, anchorLoc),
     awarenessBlocks,
-    norms: bundle.style.norms,
+    socialCards: bundle.style.socialCards,
     presentNames,
   });
 

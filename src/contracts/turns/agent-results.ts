@@ -168,13 +168,20 @@ export const continuityResultSchema = z.object({
       }),
     )
     .default([]),
-  normBreaches: z
+  /**
+   * Witnessed breaches of the world's social-reaction cards
+   * (social-reaction-cards.plan.md). `cardId` matches a listed card; `concept` is the
+   * interaction concept it amounts to; `byName` the breacher; `witnessNames` who saw it.
+   * The reaction is resolved deterministically in the merge (per witness's tags + the §6
+   * curve) — the agent only flags, it does not author the verdict.
+   */
+  cardBreaches: z
     .array(
       z.object({
-        normRule: z.string().min(1),
+        cardId: z.string().min(1),
+        concept: z.string().default(""),
         byName: z.string().min(1),
         witnessNames: z.array(z.string()).default([]),
-        suggestedReaction: z.string().default(""),
       }),
     )
     .default([]),

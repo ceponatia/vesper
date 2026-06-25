@@ -59,7 +59,7 @@ A **dev-defined canonical registry** of reusable labels (`bratty`, `prudish`, `f
 - a `warmth` lean — `cold` / `neutral` / `warm`, and
 - a `wontInitiate` list of concept families the character would not spontaneously perform — the signal the **puppet guardrail** reads.
 
-The editor/forge autocomplete from this registry. Free-form tags are tolerated but second-class — carrying no machine affect, they're invisible to the guardrail. `normalizeTag` / `canonicalTagId` map free text onto the canonical id. Tags stay inert to the **card** layer until cards ship (`social-reaction-cards.plan.md`).
+The editor/forge autocomplete from this registry. Free-form tags are tolerated but second-class — carrying no machine affect, they're invisible to the guardrail. `normalizeTag` / `canonicalTagId` map free text onto the canonical id. **Social-reaction cards** (`cards.ts`, shipped `social-reaction-cards.plan.md`) key their `reactionOverrides` on these tags — the foot-fetish flip: a `foot-fetish` taboo defaults to revulsion, but a character tagged `foot-fetish-positive` overrides it to *enjoy*.
 
 ### Preferences (`preference.ts`)
 
@@ -101,12 +101,12 @@ Empty traits ⇒ unit/identity (today's behavior).
 
 ### How it's stored and resolved
 
-`tags: string[]`, `preferences: Preference[]`, and `traits: TraitValue[]` all ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition plays exactly as before).
+`tags: string[]`, `preferences: Preference[]`, `traits: TraitValue[]`, and `socialCards: SocialReactionCard[]` (the character's own cards) all ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition plays exactly as before).
 
-The resolver lives in `reactions.ts`:
+The resolver lives in `reactions.ts` (cards in `cards.ts`):
 
-- `resolveSocialReaction(act, { tags, preferences, cards })` applies **pure-override** precedence: bespoke preference → card tag-override → card default → null. (v1 passes `cards: []`.)
-- `evaluateSocialReaction(reaction, currentAffinity, currentMood, traitScale)` is the **affinity-aware curve** — goodwill deadband, thin-ice amplification, capped/asymmetric likes. (Mood is a neutral stub and `traitScale` is 1 in v1.)
+- `resolveSocialReaction(act, { tags, preferences, cards })` applies **pure-override** precedence: bespoke preference → card tag-override → card default → null. The effective `cards` set is the character's own cards followed by the world's (`worldStyle.socialCards`) — the personal line wins; world-less chat passes only the character's. A card resolves to a `SocialReaction { source: "card" }` that rides the same curve as a preference.
+- `evaluateSocialReaction(reaction, currentAffinity, currentMood, traitScale)` is the **affinity- and mood-aware curve** — goodwill deadband, thin-ice amplification, capped/asymmetric likes, `μ` from the mood meter (`moodMeterToFactor`), and `socialTraitScale` from the character's traits.
 
 Curve constants live in `reactions.ts` (contracts is IO-free; the merge clamps the result to ±`AFFINITY_DELTA_CLAMP`). `matchPreference` (concept-then-family lookup) is shared with the guardrail.
 

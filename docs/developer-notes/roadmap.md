@@ -18,19 +18,18 @@ Nothing mid-build right now — the **Mood** arc just finished in full (the proj
 and the mood chip on the cast card + chat strip; see **Shipped**), and its docs are
 archived to `finished/`. Its two leftover ideas live in **other** plans — the
 relationship/meter timeline ([deferred.plan.md](deferred.plan.md) #4) and the avatar's
-consumption of the projection (the **Mood-reactive avatars** plan below). Pick the next
-item off **Next** (top: **social-reaction cards**).
+consumption of the projection (the **Mood-reactive avatars** plan below). **Social-reaction
+cards** then shipped its core engine + inline authoring (2026-06-25; see Shipped), leaving
+only its library-reuse UI slice in **Next**.
 
 ## Next (queued)
 
-- **Social-reaction cards** — plan
-  [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (draft). Importable
-  **taboo / social-rule cards** (library content, reusable across worlds like items) that
-  resolve deterministically with per-character **tag overrides**, feeding the personality
-  §6 reaction seam and the witnessed-breach reactions. Replaces today's freeform
-  `world.style.norms`. **Ready to build** — its only dependency, the personality §6
-  `resolveSocialReaction(act, {…, cards})` resolution seam (which ships with `cards: []`),
-  shipped 2026-06-18; this fills that argument. Can run in parallel with the mood slice.
+- **Social-reaction cards (library-reuse UI)** — plan
+  [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (shipped core; one slice
+  remains). The card engine + inline authoring shipped 2026-06-25 (see Shipped). The
+  deferred slice: the **`social_cards` library** reuse surface — CRUD API, standalone
+  library page, cross-world import picker, per-character attach-from-library, and clone
+  (the table exists; inline authoring + forge proposals already deliver the core value).
 - **Mood-reactive avatars** (draft feasibility) —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -74,6 +73,20 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Social-reaction cards — engine + inline authoring** —
+  [social-reaction-cards.plan.md](social-reaction-cards.plan.md), 2026-06-25. Importable
+  **taboo / social-rule cards** (`contracts/personality/cards.ts`) that resolve a classified
+  social act to a `SocialReaction` riding the §6 curve — one `severity` → tier → ramped
+  intensity, with per-tag override flips (the foot-fetish enjoy). Wired into all three
+  reaction call sites (session merge, pre-narration line, world-less chat); **world cards**
+  live inline on `worldStyle.socialCards`, **character cards** on `CharacterProfile.socialCards`
+  (both snapshot arrays riding the live-read cascade — no join/instance tables). The
+  continuity agent's freeform `normBreaches` was re-pointed to `cardBreaches`, with
+  `planCardBreachReactions` folding **per-witness affinity** through the curve + directives —
+  the freeform `world.style.norms` surface is fully removed. Forge proposes a starter card
+  set; the world editor + character Disposition tab author cards inline. Deferred: the
+  `social_cards` **library-reuse UI** (CRUD/page/import-picker/clone — table shipped, still
+  in Next).
 - **Scene atmosphere — scene-tone producer** —
   [scene-atmosphere.plan.md](scene-atmosphere.plan.md) · spec
   [scene-atmosphere.spec.md](scene-atmosphere.spec.md), 2026-06-24. Built the producer the mood

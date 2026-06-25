@@ -267,7 +267,7 @@ export function fillBundlePlayerToken(bundle: SessionBundle): SessionBundle {
       ...bundle.style,
       directives: bundle.style.directives.map(fill),
       narratorGuidance: fillOpt(bundle.style.narratorGuidance),
-      norms: bundle.style.norms.map((n) => ({ ...n, rule: fill(n.rule), consequence: fill(n.consequence) })),
+      socialCards: bundle.style.socialCards.map((c) => ({ ...c, label: fill(c.label), description: fill(c.description) })),
     },
     lore: { ...bundle.lore, synopsis: fill(bundle.lore.synopsis) },
   };

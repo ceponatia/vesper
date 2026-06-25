@@ -39,7 +39,8 @@ import type {
 } from "@/contracts/turns/agent-results";
 import type { TurnAuthor } from "@/contracts/turns/stream";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { evaluateSocialReaction, moodMeterToFactor, moodNudge, resolveSocialReaction } from "@/contracts/personality/reactions";
+import { evaluateSocialReaction, moodMeterToFactor, moodNudge, resolveSocialReaction, type SocialReaction } from "@/contracts/personality/reactions";
+import { findCardById, resolveCardForTags, type SocialReactionCard } from "@/contracts/personality/cards";
 import { affinityDecayRetention, personalizeMeters, scaleAffinityGain, socialTraitScale } from "@/contracts/personality/modulation";
 import { interactionConceptById } from "@/contracts/personality/interactions";
 import {
@@ -855,6 +856,7 @@ export function planReactionAffinity(
   relationships: readonly BundleRelationship[],
   sink?: DiagnosticSink,
   moodByParticipant?: ReadonlyMap<string, number>,
+  worldCards: readonly SocialReactionCard[] = [],
 ): ReactionAffinityResult {
   const empty: ReactionAffinityResult = { updates: [], ownedEdgeKeys: new Set() };
   const primary = socialActs[0]; // v1: primary act only (multi-act deferred)
@@ -873,7 +875,8 @@ export function planReactionAffinity(
 
   const reaction = resolveSocialReaction(
     { concept: primary.concept, target: primary.target },
-    { tags: target.snapshot.tags, preferences: target.snapshot.preferences, cards: [] },
+    // The NPC's own cards win over the world's (personal line beats society's).
+    { tags: target.snapshot.tags, preferences: target.snapshot.preferences, cards: [...target.snapshot.socialCards, ...worldCards] },
   );
 
   const feeling = relationships.find(
@@ -928,6 +931,73 @@ export function combineAffinityUpdates(reaction: ReactionAffinityResult, simulan
     (u) => !reaction.ownedEdgeKeys.has(`${u.fromParticipantId}::${u.toParticipantId}::${u.kind}`),
   );
   return [...reaction.updates, ...kept];
+}
+
+export interface CardBreachResult {
+  /** Witness→player feeling deltas (the per-witness affinity fold). */
+  updates: AffinityUpdate[];
+  /** Edge keys these reactions own — suppress simulant updates there (like a reaction). */
+  ownedEdgeKeys: Set<string>;
+  /** Next-turn narrator directives, one per breach. */
+  directives: string[];
+}
+
+/**
+ * Witnessed-breach reactions (social-reaction-cards.plan.md §Resolution #2). For each
+ * breach the continuity agent flagged, emit a next-turn directive, and — when the breacher
+ * is the **player** — fold a per-witness affinity delta into each witness→player edge: each
+ * witness resolves the breached card against **their own** tags (the foot-fetish flip applies
+ * per witness) and rides the same §6 curve as any other reaction (their affinity + mood +
+ * trait scale). A witness who genuinely doesn't mind (an `indifferent` resolution) nets no
+ * change. Unknown card ids degrade to a directive-only breach.
+ */
+export function planCardBreachReactions(
+  cardBreaches: ContinuityResult["cardBreaches"],
+  parts: readonly WorkingParticipant[],
+  relationships: readonly BundleRelationship[],
+  worldCards: readonly SocialReactionCard[],
+  moodByParticipant?: ReadonlyMap<string, number>,
+  sink?: DiagnosticSink,
+): CardBreachResult {
+  const updates: AffinityUpdate[] = [];
+  const ownedEdgeKeys = new Set<string>();
+  const directives: string[] = [];
+  const player = parts.find((p) => p.isUser);
+
+  for (const breach of cardBreaches) {
+    const card = findCardById(breach.cardId, worldCards);
+    if (!card) {
+      sink?.push(diag("info", "merge.breach.unknown_card", `card breach references unknown card "${breach.cardId}"`, { context: { cardId: breach.cardId } }));
+      continue;
+    }
+    const breacher = findParticipant(breach.byName, parts);
+    const witnesses = breach.witnessNames
+      .map((n) => findParticipant(n, parts))
+      .filter((p): p is WorkingParticipant => !!p && !p.isUser && p.id !== breacher?.id);
+    const witnessLabel = witnesses.length > 0 ? ` (seen by ${witnesses.map((w) => w.displayName).join(", ")})` : "";
+    directives.push(`Correction: ${breach.byName} breached "${card.label}"${witnessLabel} — next turn: present witnesses react in character.`);
+
+    // Affinity fold only when the player is the breacher (witness→player edge).
+    if (!player || !breacher || breacher.id !== player.id) continue;
+    const conceptId = breach.concept || card.triggers[0] || "";
+    for (const witness of witnesses) {
+      const resolved = resolveCardForTags(card, conceptId, witness.snapshot.tags);
+      if (!resolved) continue; // indifferent ⇒ no change
+      const reaction: SocialReaction = { conceptId: resolved.conceptId, valence: resolved.valence, intensity: resolved.intensity, hint: resolved.hint, source: "card" };
+      const feeling = relationships.find(
+        (r) => r.kind === "feeling" && r.fromParticipantId === witness.id && r.toParticipantId === player.id,
+      );
+      const mood = moodByParticipant?.get(witness.id) ?? witness.state.meters.mood ?? NEUTRAL_MOOD_METER;
+      const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, moodMeterToFactor(mood), socialTraitScale(reaction, witness.snapshot.traits));
+      const signed = evaluated.valence === "dislike" ? -evaluated.magnitude : evaluated.magnitude;
+      const delta = Math.max(-AFFINITY_DELTA_CLAMP, Math.min(AFFINITY_DELTA_CLAMP, Math.round(signed)));
+      ownedEdgeKeys.add(`${witness.id}::${player.id}::feeling`);
+      if (delta !== 0) {
+        updates.push({ fromParticipantId: witness.id, toParticipantId: player.id, kind: "feeling", delta, reason: `breach:${card.id}` });
+      }
+    }
+  }
+  return { updates, ownedEdgeKeys, directives };
 }
 
 /**
@@ -1442,11 +1512,8 @@ export function buildNextBrief(input: BriefBuildInput): NextTurnBrief {
     for (const v of violations) {
       corrections.push(`Correction: the narration claimed "${v.claim}" but canon holds "${v.canonical}" (${v.subject}).`);
     }
-    for (const b of input.continuity.normBreaches) {
-      const witnesses = b.witnessNames.length > 0 ? ` (seen by ${b.witnessNames.join(", ")})` : "";
-      const reaction = b.suggestedReaction.trim() || "let witnesses react in character";
-      corrections.push(`Correction: ${b.byName} breached the norm "${b.normRule}"${witnesses} — next turn: ${reaction}`);
-    }
+    // Card-breach directives ride in via stagedDirectives (planCardBreachReactions), which
+    // also folds the per-witness affinity — both need the world cards, resolved in the reducer.
   }
 
   const directives = dedupe([
@@ -1522,7 +1589,7 @@ const SIMULANT_FALLBACK: SimulantResult = {
   commsEvents: [],
 };
 
-const CONTINUITY_FALLBACK: ContinuityResult = { violations: [], normBreaches: [], driftNotes: [] };
+const CONTINUITY_FALLBACK: ContinuityResult = { violations: [], cardBreaches: [], driftNotes: [] };
 
 /**
  * Shallow equality for attribute values (scalar or enum_list array). Used by the
@@ -1818,7 +1885,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   // the return's affinityUpdates; the mood nudge is a direct meter write here.
   const reactionResult = reconcile
     ? null
-    : planReactionAffinity(turn.intentBrief?.socialActs ?? [], parts, bundle.relationships, sink, moodAtTurnStart);
+    : planReactionAffinity(turn.intentBrief?.socialActs ?? [], parts, bundle.relationships, sink, moodAtTurnStart, bundle.style.socialCards);
   if (reactionResult?.moodAdjustment) {
     const t = parts.find((p) => p.id === reactionResult.moodAdjustment?.participantId);
     if (t) {
@@ -2222,6 +2289,25 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     }
   }
 
+  // Witnessed-breach reactions (social-reaction-cards.plan.md §Resolution #2): the
+  // continuity agent flagged card breaches; resolve each witness's reaction (their tags +
+  // the §6 curve) into witness→player affinity, and a directive per breach into the brief.
+  const breachResult = reconcile
+    ? { updates: [] as AffinityUpdate[], ownedEdgeKeys: new Set<string>(), directives: [] as string[] }
+    : planCardBreachReactions(continuity.cardBreaches, parts, bundle.relationships, bundle.style.socialCards, moodAtTurnStart, sink);
+  stagedDirectives.push(...breachResult.directives);
+
+  // Affinity = the player→target reaction + the witnessed-breach folds + the simulant's
+  // remaining adjustments (dropped on any edge a reaction or breach already owns).
+  const affinityUpdates: AffinityUpdate[] = reconcile
+    ? []
+    : (() => {
+        const simulantUpdates = planAffinityUpdates(simulant.affinityAdjustments.slice(0, MAX_AFFINITY_ADJUSTMENTS), parts, sink);
+        const owned = new Set<string>([...(reactionResult?.ownedEdgeKeys ?? []), ...breachResult.ownedEdgeKeys]);
+        const kept = simulantUpdates.filter((u) => !owned.has(`${u.fromParticipantId}::${u.toParticipantId}::${u.kind}`));
+        return [...(reactionResult?.updates ?? []), ...breachResult.updates, ...kept];
+      })();
+
   const brief = reconcile
     ? reconcileBrief(bundle.brief, droppedEvents, thresholdHints)
     : buildNextBrief({
@@ -2240,9 +2326,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     minutes,
     minutesCause,
     clockMinutes,
-    affinityUpdates: reactionResult
-      ? combineAffinityUpdates(reactionResult, planAffinityUpdates(simulant.affinityAdjustments.slice(0, MAX_AFFINITY_ADJUSTMENTS), parts, sink))
-      : [],
+    affinityUpdates,
     affinityDecay: affinityDecay?.edges ?? [],
     witnessedBy,
     commsChanges: comms.changes,

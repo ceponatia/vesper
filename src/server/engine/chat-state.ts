@@ -224,7 +224,8 @@ export function applyChatPulse(
   if (concept) {
     const reaction = resolveSocialReaction(
       { concept, target: characterName },
-      { tags: profile.tags, preferences: profile.preferences, cards: [] },
+      // World-less chat: only the character's own default cards apply.
+      { tags: profile.tags, preferences: profile.preferences, cards: profile.socialCards },
     );
     if (reaction) {
       valence = reaction.valence;

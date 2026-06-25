@@ -321,6 +321,28 @@ export const items = pgTable(
   (t) => [index("items_owner_idx").on(t.ownerId), index("items_kind_idx").on(t.kind)],
 );
 
+export const socialCards = pgTable(
+  "social_cards",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    /** SocialReactionCard extras (contracts/personality/cards.ts): kind, triggers, severity, defaultReaction, reactionOverrides */
+    definition: jsonb("definition").notNull().default({}),
+    tags: jsonb("tags").notNull().default([]),
+    /** Cross-account share scope (auth.plan.md) — see items.visibility. */
+    visibility: text("visibility", { enum: ["private", "public"] }).notNull().default("private"),
+    /** Soft provenance for a library→library clone of a public source — no FK. */
+    clonedFromId: text("cloned_from_id"),
+    searchEmbedding: vector("search_embedding", { dimensions: 1536 }),
+    embedder: text("embedder"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("social_cards_owner_idx").on(t.ownerId)],
+);
+
 // ---------------------------------------------------------------------------
 // Worlds
 // ---------------------------------------------------------------------------

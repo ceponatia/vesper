@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { SocialReactionCard } from "./cards";
 import type { Preference } from "./preference";
 import {
   evaluateSocialReaction,
@@ -45,6 +46,35 @@ describe("resolveSocialReaction", () => {
     const prefs: Preference[] = [{ target: "insult", valence: "dislike", intensity: 5 }];
     expect(resolveSocialReaction({ concept: "compliment", target: "Sabrina" }, sources(prefs))).toBeNull();
     expect(resolveSocialReaction({ concept: "compliment", target: "Sabrina" }, sources([]))).toBeNull();
+  });
+
+  it("falls through to a card when no preference matches (source: card)", () => {
+    const taboo: SocialReactionCard = {
+      id: "no-pda",
+      label: "No public affection",
+      description: "",
+      kind: "social_rule",
+      triggers: ["public_display"],
+      severity: 40, // disapproval → intensity 5
+      reactionOverrides: [],
+    };
+    const r = resolveSocialReaction({ concept: "public_display", target: "Sabrina" }, { tags: [], preferences: [], cards: [taboo] });
+    expect(r).toMatchObject({ conceptId: "public_display", valence: "dislike", intensity: 5, source: "card" });
+  });
+
+  it("a bespoke preference beats a card on the same concept", () => {
+    const taboo: SocialReactionCard = {
+      id: "no-pda",
+      label: "No public affection",
+      description: "",
+      kind: "social_rule",
+      triggers: ["public_display"],
+      severity: 90,
+      reactionOverrides: [],
+    };
+    const prefs: Preference[] = [{ target: "public_display", valence: "like", intensity: 4 }];
+    const r = resolveSocialReaction({ concept: "public_display", target: "Sabrina" }, { tags: [], preferences: prefs, cards: [taboo] });
+    expect(r).toMatchObject({ valence: "like", source: "preference" });
   });
 });
 

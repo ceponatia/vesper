@@ -619,16 +619,20 @@ describe("worlds", () => {
     expect(first.status).toBe(200);
     const second = await patchWorldRoute(
       send(`http://t/api/worlds/${worldId}`, "PATCH", {
-        style: { norms: [{ rule: "No open flames on the docks", severity: "disapproval" }] },
+        style: {
+          socialCards: [
+            { id: "no-flames", label: "No open flames on the docks", description: "", kind: "social_rule", triggers: [], severity: 40, reactionOverrides: [] },
+          ],
+        },
         loreChunks: [{ title: "Rewritten", body: "Only chunk now." }],
       }),
       ctx({ id: worldId }),
     );
     expect(second.status).toBe(200);
     const body = await json(second);
-    const style = (body.world as { style: { directives: string[]; norms: unknown[] } }).style;
-    expect(style.directives).toEqual(["slow-burn pacing"]); // earlier patch survived the norms patch
-    expect(style.norms.length).toBe(1);
+    const style = (body.world as { style: { directives: string[]; socialCards: unknown[] } }).style;
+    expect(style.directives).toEqual(["slow-burn pacing"]); // earlier patch survived the cards patch
+    expect(style.socialCards.length).toBe(1);
     expect((body.loreChunks as unknown[]).length).toBe(1);
     expect((body.locations as unknown[]).length).toBe(2); // untouched family kept
   });

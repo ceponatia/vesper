@@ -1058,13 +1058,14 @@ describe("buildCommsLine", () => {
 
 describe("buildReactionLine", () => {
   const presentNpcs = [
-    { id: "p-sabrina", displayName: "Sabrina", tags: [], traits: [], mood: 0.5, preferences: [{ target: "compliment", valence: "dislike" as const, intensity: 7, hint: "finds flattery cloying" }] },
+    { id: "p-sabrina", displayName: "Sabrina", tags: [], traits: [], socialCards: [], mood: 0.5, preferences: [{ target: "compliment", valence: "dislike" as const, intensity: 7, hint: "finds flattery cloying" }] },
   ];
   const base = {
     playerId: "p-brian",
     playerName: "Brian",
     presentNpcs,
     relationships: [{ fromParticipantId: "p-sabrina", toParticipantId: "p-brian", kind: "feeling" as const, value: 0 }],
+    worldCards: [],
   };
 
   it("renders the authored verdict for a matched social act", () => {
@@ -1073,6 +1074,18 @@ describe("buildReactionLine", () => {
     expect(line).toContain("dislikes this (compliment)");
     expect(line).toContain("is stung");
     expect(line).toContain("finds flattery cloying");
+  });
+
+  it("falls through to a world card when the NPC has no matching preference", () => {
+    const line = buildReactionLine({
+      ...base,
+      presentNpcs: [{ id: "p-sabrina", displayName: "Sabrina", tags: [], traits: [], socialCards: [], mood: 0.5, preferences: [] }],
+      worldCards: [
+        { id: "no-pda", label: "No public affection", description: "", kind: "social_rule", triggers: ["public_display"], severity: 60, reactionOverrides: [] },
+      ],
+      socialActs: [{ concept: "public_display", target: "Sabrina" }],
+    });
+    expect(line).toContain("dislikes this");
   });
 
   it("reflects the goodwill deadband in the band text", () => {

@@ -250,6 +250,8 @@ export function CharacterEditor({
           onChangeTags={(tags) => patchProfile({ tags })}
           preferences={draft.profile.preferences}
           onChangePreferences={(preferences) => patchProfile({ preferences })}
+          socialCards={draft.profile.socialCards}
+          onChangeSocialCards={(socialCards) => patchProfile({ socialCards })}
         />
       ) : null}
 

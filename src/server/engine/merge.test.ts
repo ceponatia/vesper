@@ -30,6 +30,7 @@ import {
   expireConditions,
   findParticipant,
   isAdjacent,
+  planCardBreachReactions,
   planItemEvent,
   planTurnEffects,
   reconcileBrief,
@@ -1137,9 +1138,7 @@ describe("buildNextBrief", () => {
           { subject: "Maya", claim: "minor slip", canonical: "canon A", severity: "minor", kind: "general" },
           { subject: "Maya", claim: "big slip", canonical: "canon B", severity: "major", kind: "general" },
         ],
-        normBreaches: [
-          { normRule: "no magic in public", byName: "Rhett", witnessNames: ["Maya"], suggestedReaction: "Maya recoils." },
-        ],
+        cardBreaches: [],
         driftNotes: [],
       },
       episodeSummary: "ep",
@@ -1198,6 +1197,71 @@ describe("buildNextBrief", () => {
 // ---------------------------------------------------------------------------
 // Degradation: every agent failed
 // ---------------------------------------------------------------------------
+
+describe("planCardBreachReactions (witnessed breach)", () => {
+  const card = {
+    id: "no-pda",
+    label: "No public affection",
+    description: "",
+    kind: "social_rule" as const,
+    triggers: ["public_display"],
+    severity: 70, // shunning → intensity 8
+    reactionOverrides: [],
+  };
+  function setup() {
+    const player = participant("p-player", "Brian", "loc-kitchen", { isUser: true, role: "player" });
+    const maya = participant("p-maya", "Maya", "loc-kitchen", { role: "npc" });
+    maya.snapshot.tags = ["prudish"];
+    const rhett = participant("p-rhett", "Rhett", "loc-kitchen", { role: "npc" });
+    const parts: WorkingParticipant[] = [player, maya, rhett];
+    const relationships = [
+      { fromParticipantId: "p-maya", toParticipantId: "p-player", kind: "feeling" as const, value: 0, stage: "stranger" },
+      { fromParticipantId: "p-rhett", toParticipantId: "p-player", kind: "feeling" as const, value: 0, stage: "stranger" },
+    ];
+    return { parts, relationships };
+  }
+
+  it("folds a witness→player dislike when the player breaches a card, plus a directive", () => {
+    const { parts, relationships } = setup();
+    const result = planCardBreachReactions(
+      [{ cardId: "no-pda", concept: "public_display", byName: "Brian", witnessNames: ["Maya"] }],
+      parts,
+      relationships,
+      [card],
+    );
+    expect(result.directives[0]).toContain("No public affection");
+    expect(result.directives[0]).toContain("Maya");
+    expect(result.updates).toHaveLength(1);
+    const [first] = result.updates;
+    expect(first).toMatchObject({ fromParticipantId: "p-maya", toParticipantId: "p-player", kind: "feeling" });
+    expect(first?.delta ?? 0).toBeLessThan(0);
+    expect(result.ownedEdgeKeys.has("p-maya::p-player::feeling")).toBe(true);
+  });
+
+  it("emits a directive but no affinity fold when the breacher is an NPC", () => {
+    const { parts, relationships } = setup();
+    const result = planCardBreachReactions(
+      [{ cardId: "no-pda", concept: "public_display", byName: "Rhett", witnessNames: ["Maya"] }],
+      parts,
+      relationships,
+      [card],
+    );
+    expect(result.directives).toHaveLength(1);
+    expect(result.updates).toHaveLength(0);
+  });
+
+  it("degrades to nothing for an unknown card id", () => {
+    const { parts, relationships } = setup();
+    const result = planCardBreachReactions(
+      [{ cardId: "ghost", concept: "public_display", byName: "Brian", witnessNames: ["Maya"] }],
+      parts,
+      relationships,
+      [card],
+    );
+    expect(result.updates).toHaveLength(0);
+    expect(result.directives).toHaveLength(0);
+  });
+});
 
 describe("all-agents-null degradation", () => {
   it("still advances the clock, applies drift, and plans a synthetic episode", async () => {

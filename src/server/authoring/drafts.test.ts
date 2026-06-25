@@ -34,7 +34,7 @@ describe("draft schemas accept {} (all-default partial drafts)", () => {
     expect(draft.castSuggestions).toEqual([]);
     expect(draft.itemPlacements).toEqual([]);
     expect(draft.style.directives).toEqual([]);
-    expect(draft.style.norms).toEqual([]);
+    expect(draft.style.socialCards).toEqual([]);
     expect(draft.lore.synopsis).toBe("");
   });
 
