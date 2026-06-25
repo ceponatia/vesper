@@ -1,0 +1,64 @@
+name: vesper
+
+# Production-ish compose for the single dev box. Run on the server with:
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+# The GitHub Actions deploy job does exactly this after pulling the new image.
+#
+# Single source of truth for the DB password is POSTGRES_PASSWORD in .env;
+# DATABASE_URL is derived from it here, so the app/migrate never drift.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vesper
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: vesper_dev
+    volumes:
+      - vesper_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vesper -d vesper_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No published ports on purpose — Postgres is reachable only on the internal
+    # compose network. From your laptop (over Tailscale) use an SSH tunnel or
+    # `docker compose exec postgres psql ...` — see docs/deployment.md.
+
+  # One-shot: applies pending drizzle migrations, then exits. The app waits for
+  # this to complete successfully before booting.
+  migrate:
+    image: ${VESPER_IMAGE:-ghcr.io/ceponatia/vesper:latest}
+    pull_policy: always
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://vesper:${POSTGRES_PASSWORD}@postgres:5432/vesper_dev
+    command: ["pnpm", "db:migrate"]
+
+  app:
+    image: ${VESPER_IMAGE:-ghcr.io/ceponatia/vesper:latest}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://vesper:${POSTGRES_PASSWORD}@postgres:5432/vesper_dev
+      DATA_ROOT: /app/data
+    volumes:
+      - vesper_data:/app/data
+    # Bound to localhost only; Tailscale Serve fronts it with tailnet HTTPS.
+    ports:
+      - "127.0.0.1:3200:3200"
+
+volumes:
+  vesper_postgres_data:
+  vesper_data:

@@ -1,0 +1,38 @@
+#cloud-config
+# Hetzner Cloud "user-data" for a fresh Ubuntu 24.04 server. Paste this into the
+# "Cloud config" field when creating the server, AFTER replacing the one
+# REPLACE_ME below. It installs Docker + Tailscale, locks the firewall down to
+# the tailnet (+ key-only SSH for break-glass), and prepares /opt/vesper.
+#
+# Generate the auth key first: Tailscale admin → Settings → Keys →
+# "Generate auth key" → enable **Ephemeral** + **Pre-approved**, set Tags to
+# `tag:server` (add tag:server to tagOwners in your ACL first). Paste it below.
+
+package_update: true
+package_upgrade: true
+
+write_files:
+  - path: /opt/vesper/README
+    permissions: "0644"
+    content: |
+      Vesper deploy dir.
+      - Put the real env at /opt/vesper/.env (see deploy/.env.prod.example).
+      - docker-compose.prod.yml is uploaded here by the GitHub Actions deploy job.
+      - Bring up manually with:
+          docker compose -f docker-compose.prod.yml --env-file .env up -d
+
+runcmd:
+  # Docker Engine + compose plugin (official convenience script).
+  - curl -fsSL https://get.docker.com | sh
+  # Tailscale: join the tailnet headlessly as host "vesper".
+  - curl -fsSL https://tailscale.com/install.sh | sh
+  - tailscale up --authkey=REPLACE_WITH_TAILSCALE_AUTHKEY --hostname=vesper
+  # Firewall: deny all inbound except key-only SSH (break-glass) and the tailnet.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow in on tailscale0
+  - ufw allow 22/tcp
+  - ufw --force enable
+  - mkdir -p /opt/vesper/data
+  # Once you've confirmed SSH works over Tailscale, harden by removing public
+  # SSH:  ufw delete allow 22/tcp
