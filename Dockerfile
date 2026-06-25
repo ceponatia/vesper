@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+ARG NODE_VERSION=22
+
+# ---- base: pnpm via Corepack ----
+FROM node:${NODE_VERSION}-slim AS base
+LABEL fly_launch_runtime="Next.js"
+WORKDIR /app
+# HUSKY=0 stops the `prepare` git-hook script (package.json: "prepare":"husky")
+# from running during install/prune — there is no .git in the image.
+# PORT/HOSTNAME match Fly's defaults.
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    HUSKY=0 \
+    PORT=8080 \
+    HOSTNAME=0.0.0.0
+ARG PNPM_VERSION=10
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+
+# ---- build: install ALL deps + Next production build ----
+# pnpm installs devDependencies regardless of NODE_ENV, so next build has
+# typescript/tailwind/etc. sharp ships prebuilt binaries (the "Ignored build
+# scripts: sharp" warning is benign — the @img/sharp-* optional dep provides it).
+FROM base AS build
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm run build
+
+# ---- runner ----
+# Keep the FULL dependency tree (no `pnpm prune --prod`). Two reasons:
+#   1. Pruning re-runs the husky `prepare` hook after husky is gone → the build
+#      failure ("husky: not found"). HUSKY=0 + no prune avoids it entirely.
+#   2. `pnpm db:migrate` runs via tsx (a devDependency) at release time.
+FROM base AS runner
+ENV NODE_ENV=production
+COPY --from=build /app /app
+RUN mkdir -p /app/data
+EXPOSE 8080
+# Call next directly so the package.json start script's hardcoded `-p 3200`
+# is bypassed; bind to Fly's $PORT (8080).
+CMD ["sh", "-c", "pnpm exec next start -H 0.0.0.0 -p ${PORT:-8080}"]
