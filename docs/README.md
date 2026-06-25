@@ -24,6 +24,7 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 | [authoring.md](authoring.md) | AI-first world/character forges and manual-override editors |
 | [ui.md](ui.md) | Pages, components, styling conventions |
 | [testing.md](testing.md) | Test strategy and conventions |
+| [deployment.md](deployment.md) | Hosting the dev build online: Fly.io (Dockerfile, fly.toml, pgvector, volume, push-to-deploy, migrations) |
 | [guide/](guide/README.md) | Task-oriented manual pages (creating characters, items, worlds; running sessions) |
 
 ## Documentation rules
