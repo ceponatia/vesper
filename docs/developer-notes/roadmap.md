@@ -19,17 +19,13 @@ and the mood chip on the cast card + chat strip; see **Shipped**), and its docs 
 archived to `finished/`. Its two leftover ideas live in **other** plans — the
 relationship/meter timeline ([deferred.plan.md](deferred.plan.md) #4) and the avatar's
 consumption of the projection (the **Mood-reactive avatars** plan below). **Social-reaction
-cards** then shipped its core engine + inline authoring (2026-06-25; see Shipped), leaving
-only its library-reuse UI slice in **Next**.
+cards** is now **fully shipped** — the core engine + inline authoring (2026-06-25) and the
+library-reuse UI slice (CRUD + page + builder + import/save + public discovery gallery,
+2026-06-26; see **Shipped**), which also graduated the auth.plan.md public-browse deferral
+(cards-first; other shareable kinds fast-follow).
 
 ## Next (queued)
 
-- **Social-reaction cards (library-reuse UI)** — plan
-  [social-reaction-cards.plan.md](social-reaction-cards.plan.md) (shipped core; one slice
-  remains). The card engine + inline authoring shipped 2026-06-25 (see Shipped). The
-  deferred slice: the **`social_cards` library** reuse surface — CRUD API, standalone
-  library page, cross-world import picker, per-character attach-from-library, and clone
-  (the table exists; inline authoring + forge proposals already deliver the core value).
 - **Mood-reactive avatars** (draft feasibility) —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -73,6 +69,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Social-reaction cards — library-reuse UI** —
+  [social-reaction-cards.plan.md](social-reaction-cards.plan.md) §"Deferred slice", 2026-06-26.
+  The `social_cards` library finally gets its surface: `social_card` wired into the shared
+  library machinery (`ShareableKind`/`LibraryKind`, clone, owner-or-public reads, semantic
+  search), full CRUD at `/api/social-cards` (+ `/clone`), a `/social-cards` page + standalone
+  **card builder** (with a live reaction preview, reusing the shared `SocialCardFields`),
+  **Import from / Save to library** on the inline editor (snapshot-copy both ways via
+  `cardFromLibraryParts`), and the **public discovery gallery** — the deferred `searchLibraryIds`
+  `scope` query, debuted on cards (the auth.plan.md "public browse gallery + clone UI entry point"
+  deferral graduates here; other shareable kinds pass `scope` through but their list API still
+  ignores it — the fast-follow). Int-tested (scope/clone/visibility) + pure snapshot test.
 - **Prod branch + promotion workflow** —
   [deployment.md](../deployment.md) §"Branch model & promotion", 2026-06-26. Long-lived
   protected `prod` branch on the existing `origin` remote (dev stays `main`). New CI
@@ -148,7 +155,9 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   [auth.md](../auth.md), 2026-06-23. Better Auth accounts (401 on no session, no
   auto-mint) + a private/public visibility seam with copy-on-use cloning. Also closed
   security cluster A + the auth migration. Deferred: the public browse gallery + clone
-  UI entry point.
+  UI entry point — **graduated 2026-06-26 for social cards** (the `searchLibraryIds` `scope`
+  query + clone CTA; see the Social-reaction cards library-reuse entry above); characters /
+  locations / items pass `scope` through but their list API still ignores it (fast-follow).
 - **World instances — copy cascade** —
   [world-instances.plan.md](finished/world-instances.plan.md), 2026-06-23. Worlds hold
   snapshot copies of entities instead of live library FKs, so deletes never break copies.

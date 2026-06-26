@@ -7,6 +7,7 @@ import {
   charactersApi,
   itemsApi,
   locationsApi,
+  socialCardsApi,
   worldsApi,
   type ApiResult,
   type CreatedRef,
@@ -25,7 +26,7 @@ import { SkeletonCards } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 
-export type LibraryEntity = "worlds" | "characters" | "locations" | "items";
+export type LibraryEntity = "worlds" | "characters" | "locations" | "items" | "social-cards";
 
 interface LibraryCard {
   id: string;
@@ -35,6 +36,9 @@ interface LibraryCard {
   imageId: string | null;
   kind?: string;
 }
+
+/** Cross-account visibility scope (auth.md): `all` = owner ∪ public, `public` = discovery, `owned` = yours. */
+type Scope = "all" | "public" | "owned";
 
 interface EntityConfig {
   title: string;
@@ -48,7 +52,8 @@ interface EntityConfig {
   /** Shareable entities get the All/Public/Owned visibility toggle (auth.md);
    *  worlds/sessions aren't shareable, so they don't. */
   shareable?: boolean;
-  list: (q: string, tag: string) => Promise<ApiResult<LibraryCard[]>>;
+  /** `scope` drives the discovery gallery; kinds whose API ignores it stay owner-scoped (cards wired first). */
+  list: (q: string, tag: string, scope: Scope) => Promise<ApiResult<LibraryCard[]>>;
   create: () => Promise<ApiResult<CreatedRef>>;
   /** Optional segmented type-buckets over a card field (items use `kind`). */
   buckets?: { field: (card: LibraryCard) => string | undefined; options: { id: string; label: string }[] };
@@ -127,14 +132,42 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     },
     generateImages: (ids) => itemsApi.generateMissingImages(ids),
   },
+  "social-cards": {
+    title: "Social cards",
+    blurb: "Importable taboos and social rules that shape how characters react.",
+    basePath: "/social-cards",
+    emptyTitle: "No social cards yet",
+    emptyBody: "Build a taboo or social rule, then attach it to a world's fabric or a character's lines.",
+    newName: "Untitled card",
+    square: true,
+    shareable: true,
+    list: async (q, tag, scope) => {
+      const result = await socialCardsApi.list({ q, tag, scope });
+      return result.ok
+        ? {
+            ok: true,
+            data: result.data.map((c) => ({
+              id: c.id,
+              name: c.name,
+              description: c.description,
+              tags: c.tags,
+              imageId: null,
+              kind: c.definition.kind,
+            })),
+          }
+        : result;
+    },
+    create: () => socialCardsApi.create({ name: "Untitled card" }),
+    buckets: {
+      field: (card) => card.kind,
+      options: [
+        { id: "social_rule", label: "Social rule" },
+        { id: "taboo", label: "Taboo" },
+      ],
+    },
+  },
 };
 
-/**
- * Cross-account visibility scope (auth.md). `all` (default) is everything you
- * can see, `public` is the discovery gallery, `owned` is only yours — a public
- * entity you own shows under both `public` and `owned`.
- */
-type Scope = "all" | "public" | "owned";
 const SCOPE_OPTIONS: { id: Scope; label: string }[] = [
   { id: "all", label: "All" },
   { id: "public", label: "Public" },
@@ -190,16 +223,16 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const [tag, setTag] = useState("");
   const [creating, setCreating] = useState(false);
   const [bucket, setBucket] = useState("all");
-  // Visual-only for now: the public-browse query is deferred (auth.plan.md
-  // §"Later" / roadmap), so this scopes nothing yet — wire it into config.list
-  // (and a public-mode list endpoint) when the discovery gallery lands.
+  // Drives the discovery gallery via config.list (social-reaction-cards.plan.md
+  // step 6). Wired for social cards; the other shareable kinds pass scope through
+  // but their list API still ignores it (owner-scoped) until the fast-follow.
   const [scope, setScope] = useState<Scope>("all");
   const [generatingBatch, setGeneratingBatch] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
   const [confirmGen, setConfirmGen] = useState(false);
   const [batchIds, setBatchIds] = useState<ReadonlySet<string>>(new Set());
 
-  const list = useAsyncData(() => config.list(search, tag), [entity, search, tag]);
+  const list = useAsyncData(() => config.list(search, tag, scope), [entity, search, tag, scope]);
   const { reload } = list;
 
   // Debounce: schedule the search update on input.

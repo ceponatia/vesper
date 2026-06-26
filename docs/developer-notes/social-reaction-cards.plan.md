@@ -1,6 +1,8 @@
 # Social-reaction cards — plan
 
-Status: **shipped — 2026-06-25** (core feature; one slice deferred — see completion note).
+Status: **shipped — 2026-06-26** (core feature 2026-06-25; the library-reuse UI slice —
+CRUD + page + builder + import/save + public discovery gallery — 2026-06-26; see the
+"Deferred slice — library-reuse UI" section for the per-step record).
 
 ## Completion note (2026-06-25)
 
@@ -33,6 +35,88 @@ flip).
 Carried-forward open questions (now build-time follow-ups): the deferred library-reuse UI;
 the three-layer precedence is implemented as **character cards before world cards** (first
 matching card governs); severity thresholds use the companion-app 26/51/76 (playtest-tunable).
+
+## Deferred slice — library-reuse UI (build plan, 2026-06-26)
+
+This is the one remaining slice (top of `roadmap.md` → Next). The `social_cards` table
+shipped (migration 0014, full library shape — owner/visibility/clonedFromId/searchEmbedding);
+what's missing is the **reuse surface** around it. **Decisions taken 2026-06-26:**
+**(a) full surface** — CRUD API + standalone library page + a dedicated **card builder** +
+cross-world import picker + per-character attach + clone + save-to-library + a **public browse
+gallery** (cross-account discovery); **(b) full semantic search** (wire `social_card` into the
+memory/embedding module like items); **(c) imported cards keep unknown-tag overrides as-is** — a
+`reactionOverride` keyed on a tag absent from this account's registry is a silent no-op until a
+character carries that tag (no validate-on-import friction; consistent with the immutable-snapshot
+model).
+
+**Slice progress (2026-06-26): shipped — all 7 steps built + `pnpm verify`-green + int-tested.**
+The library-machinery wiring, CRUD API, standalone page + card builder (with live reaction
+preview), import/attach + save-to-library on the inline editor, the public discovery gallery
+(scope query, debuted on cards), and tests/docs all landed. The auth.plan.md "public browse
+gallery + clone UI entry point" deferral graduated here (cards-first; the other shareable kinds
+pass `scope` through but their list API still ignores it — the fast-follow).
+
+> **Storage note — read this before the superseded "Storage & import" section below.** Cards
+> ship **inline**, not in join tables (completion-note refinement #1). The `world_social_cards`
+> / `character_social_cards` joins, the `materializeWorldEntities`-style copy, and the frozen
+> session-bundle array described under "Storage & import" were **not built and are not the
+> design** — a world's cards live on `worlds.style.socialCards`, a character's on
+> `characters.profile.socialCards`, both edited by the shared `SocialCardsEditor`
+> (`components/personality/social-cards-editor.tsx`) via a plain `onChange` array. So **import
+> / attach = snapshot a `social_cards` library row into that inline array** (append a fresh-id
+> copy), and **save-to-library = the reverse** (promote an inline card to a `social_cards`
+> row). There is no join to write.
+
+Build order for the slice (each step reuses the **items** library as its template):
+
+1. **[done 2026-06-26]** **Wire `social_card` into the shared library machinery.** `"social_card"`
+   added to `ShareableKind` (`server/api/visibility.ts` `findViewable` + `server/api/clone.ts`
+   `cloneToLibrary`, no image step — cards carry none) and to `LibraryKind`
+   (`server/memory/library-search.ts` — both `TABLE_NAMES`, `searchTextFor`, `fuzzyResolve`;
+   `server/api/library.ts` `TABLE_NAMES`); cards get semantic search (decision **b**).
+2. **[done 2026-06-26]** **CRUD API.** `GET/POST /api/social-cards`,
+   `GET/PATCH/DELETE /api/social-cards/[id]`, `POST /api/social-cards/[id]/clone` — mirror
+   `app/api/items/**`. `definition` holds the mechanical fields (`socialCardExtrasSchema` =
+   `socialReactionCardSchema.pick(kind/triggers/severity/defaultReaction/reactionOverrides)`);
+   `label`→`name`, `description`→column, fresh `id` per row. **List is owner-scoped today** (public
+   discovery is step 6). Embedding refreshed on create/update; `parseOr` at the boundary.
+3. **[done 2026-06-26]** **Standalone library page + card builder.** Add `"social-cards"` to `EntityLibrary`'s
+   `LibraryEntity` union + a **`shareable: true`** config (`components/library/entity-library.tsx`) —
+   so it gets the All/Public/Owned toggle (wired live in step 6) and the publish toggle. A
+   `/social-cards` grid + a **card builder** at `/social-cards/new` & `/social-cards/[id]`: reuse
+   `SocialCardsEditor`'s per-card controls (kind, trigger-concept multi-select from
+   `interactionConceptIds()`, severity slider, default reaction, the `reactionOverrides` tag-flip on
+   `dispositionTags`) for the mechanical fields, wrapped with library-row chrome
+   (name/description/tags + a `PublishToggle`) and a **live reaction preview** (`severityToTier` →
+   `tierIntensity`/`tierDefaultKind`, plus "a character tagged X → …" so the author watches the
+   foot-fetish flip resolve). Cards have no image — skip the batch-image affordances. Add a
+   `social_card` case to `publish-toggle.tsx`'s local `ShareableKind` + a `socialCardsApi` client.
+4. **[done 2026-06-26]** **Import / attach pickers (snapshot into inline arrays).** Add a pure **library-row → inline
+   `SocialReactionCard`** snapshot helper in `contracts/personality/cards.ts` (compose from the
+   row's `definition`, mint a new id). Surface a `LibraryPickerDialog` "Import from library" next
+   to the inline `SocialCardsEditor` in **both** the world editor (writes `style.socialCards`) and
+   the character Disposition tab (writes `profile.socialCards`). Unknown-tag overrides accepted
+   as-is (decision **c**).
+5. **[done 2026-06-26]** **Save-to-library (reverse).** A "Save to library" action on each inline card row →
+   `POST /api/social-cards`, so forge-/inline-authored cards become reusable. (Clone-on-use is
+   the clone route from step 2.)
+6. **[done 2026-06-26]** **Public browse gallery (graduates the auth.plan.md deferral).** `EntityLibrary`'s
+   All/Public/Owned toggle exists but is **visual-only** — the public-browse query was deferred
+   app-wide (`finished/auth.plan.md` → "public browse gallery + clone UI entry point"; see the
+   `scope` comment in `entity-library.tsx:193`). Implement it here, **debuting on cards**: a `scope`
+   (`all`|`public`|`owned`) param on `GET /api/social-cards`, backed by an **owner∪public /
+   public-only** `searchLibraryIds` variant (extend `LibrarySearchOptions` with `scope` + the viewer
+   id so other owners' public rows return), threaded through `EntityLibrary`'s `config.list`
+   (`(q, tag)` → `(q, tag, scope)`) and `socialCardsApi.list`. The **clone entry point** = a "Clone
+   to my library" action on a public card's tile/detail → the step-2 clone route. The
+   `searchLibraryIds` scope change is **shared infra** — it lights the same toggle for
+   characters/locations/items the moment their `config.list` passes `scope` (see Open questions:
+   generalize-now vs cards-first).
+7. **[done 2026-06-26]** **Tests + docs.** CRUD/clone/visibility **+ public-scope** int tests (mirror
+   `library.int.test.ts`); the snapshot-helper unit test. Update `database.md` (drop the "deferred
+   slice" caveat on the `social_cards` row), `authoring.md`, `contracts/relationships.md`, and note
+   the public-gallery graduation on `roadmap.md` (the Auth Shipped entry's "Deferred" line) +
+   `auth.md` if it tracks the deferral.
 
 ---
 
@@ -319,7 +403,9 @@ Line numbers verified 2026-06-25:
   & cards* → **characters carry a default card set** (snapshot copies), live in chat and
   merged with world cards in session. · *`world.style.norms` migration* → **drop, no
   backfill**. · *Type name* → keep **`SocialReactionCard`** (fill the placeholder, don't
-  rename to `SocialCard`).
+  rename to `SocialCard`). · *Tag registry scope for imported/shared cards* (resolved
+  2026-06-26) → **accept unknown-tag overrides as-is** (silent no-op until a character carries
+  the tag; no validate-on-import — see the deferred-slice build plan, decision **c**).
 
 **Still open:**
 - **Card precedence ordering.** With three layers now (bespoke preference, character default
@@ -330,9 +416,13 @@ Line numbers verified 2026-06-25:
   ties across sources?
 - **Severity → tier thresholds** — reuse companion-app's (26/51/76), or re-tune to Vesper's
   affinity scale + the §6 curve? (Playtest-tunable; not a v1 blocker.)
-- **Tag registry scope for overrides** — cards reference canonical tags; do imported/shared
-  cards ever introduce *new* tags, and how do those reconcile with the dev registry
-  (`contracts/personality/tags.ts`)?
+- **Public-browse query: generalize now or cards-first?** (resolved 2026-06-26 → **cards-first,
+  fast-follow**) Step 6's `searchLibraryIds` scope variant is shared infra — once it lands, the
+  only thing standing between characters/locations/items and a live discovery gallery is passing
+  `scope` through their `config.list`. Ruling: **build the query generally, wire cards'
+  `config.list` first, leave the other three for a quick follow-up** so the cards slice isn't
+  gated on auditing every kind's gallery. (This graduates the auth.plan.md deferral — record it
+  there when step 6 lands.)
 
 ## Not in scope
 

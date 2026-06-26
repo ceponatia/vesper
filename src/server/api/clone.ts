@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { cloneEntityImages } from "@/server/images";
-import { characters, db, items, locations } from "@/server/db";
+import { characters, db, items, locations, socialCards } from "@/server/db";
 import { queueEmbedRefresh } from "./library";
 import { findViewable, type ShareableKind } from "./visibility";
 
@@ -87,6 +87,26 @@ export async function cloneToLibrary(kind: ShareableKind, srcId: string, userId:
       const newImage = src.imageId ? imageMap.get(src.imageId) : undefined;
       if (newImage) await db().update(items).set({ imageId: newImage }).where(eq(items.id, copy.id));
       queueEmbedRefresh("item", copy.id);
+      return { ok: true, id: copy.id };
+    }
+    case "social_card": {
+      // Cards carry no images (social-reaction-cards.plan.md) — no cloneEntityImages step.
+      const src = await findViewable("social_card", srcId, userId);
+      if (!src) return { ok: false, code: "not_found" };
+      const [copy] = await db()
+        .insert(socialCards)
+        .values({
+          ownerId: userId,
+          name: src.name,
+          description: src.description,
+          definition: src.definition,
+          tags: src.tags,
+          visibility: "private",
+          clonedFromId: src.id,
+        })
+        .returning({ id: socialCards.id });
+      if (!copy) return { ok: false, code: "not_found" };
+      queueEmbedRefresh("social_card", copy.id);
       return { ok: true, id: copy.id };
     }
   }

@@ -103,6 +103,8 @@ Empty traits ⇒ unit/identity (today's behavior).
 
 `tags: string[]`, `preferences: Preference[]`, `traits: TraitValue[]`, and `socialCards: SocialReactionCard[]` (the character's own cards) all ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition plays exactly as before).
 
+Cards are also **library content** — a user-owned `social_cards` table reusable across worlds and characters (mirrors `items`: visibility + clone-on-use + semantic search). A `/social-cards` library page + standalone **builder** author cards directly; the inline `SocialCardsEditor` (world `style.socialCards` / character `profile.socialCards`) carries **Import from library** (snapshot a row into the array via `cardFromLibraryParts`) and **Save to library** (the reverse). Every layer holds its own snapshot copy — editing or deleting the library card never reaches a world/character already using it. Discovery uses the shared `searchLibraryIds` `scope` (All/Public/Owned). See [../developer-notes/social-reaction-cards.plan.md](../developer-notes/social-reaction-cards.plan.md).
+
 The resolver lives in `reactions.ts` (cards in `cards.ts`):
 
 - `resolveSocialReaction(act, { tags, preferences, cards })` applies **pure-override** precedence: bespoke preference → card tag-override → card default → null. The effective `cards` set is the character's own cards followed by the world's (`worldStyle.socialCards`) — the personal line wins; world-less chat passes only the character's. A card resolves to a `SocialReaction { source: "card" }` that rides the same curve as a preference.

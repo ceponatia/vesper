@@ -1,5 +1,5 @@
 import { and, eq, or, sql } from "drizzle-orm";
-import { characters, db, items, locations } from "@/server/db";
+import { characters, db, items, locations, socialCards } from "@/server/db";
 
 /**
  * The authorization seam for shareable entities (auth.plan.md). One place owns
@@ -9,12 +9,13 @@ import { characters, db, items, locations } from "@/server/db";
  * Worlds and sessions are always private and never pass through here.
  */
 
-export type ShareableKind = "character" | "location" | "item";
+export type ShareableKind = "character" | "location" | "item" | "social_card";
 
 const PUBLIC_TABLE_NAMES: Record<ShareableKind, string> = {
   character: "characters",
   location: "locations",
   item: "items",
+  social_card: "social_cards",
 };
 
 /**
@@ -26,6 +27,7 @@ const PUBLIC_TABLE_NAMES: Record<ShareableKind, string> = {
 export function findViewable(kind: "character", id: string, userId: string): Promise<typeof characters.$inferSelect | undefined>;
 export function findViewable(kind: "location", id: string, userId: string): Promise<typeof locations.$inferSelect | undefined>;
 export function findViewable(kind: "item", id: string, userId: string): Promise<typeof items.$inferSelect | undefined>;
+export function findViewable(kind: "social_card", id: string, userId: string): Promise<typeof socialCards.$inferSelect | undefined>;
 export async function findViewable(kind: ShareableKind, id: string, userId: string) {
   switch (kind) {
     case "character": {
@@ -49,6 +51,14 @@ export async function findViewable(kind: ShareableKind, id: string, userId: stri
         .select()
         .from(items)
         .where(and(eq(items.id, id), or(eq(items.ownerId, userId), eq(items.visibility, "public"))))
+        .limit(1);
+      return row;
+    }
+    case "social_card": {
+      const [row] = await db()
+        .select()
+        .from(socialCards)
+        .where(and(eq(socialCards.id, id), or(eq(socialCards.ownerId, userId), eq(socialCards.visibility, "public"))))
         .limit(1);
       return row;
     }
