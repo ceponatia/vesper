@@ -1,11 +1,13 @@
 # Deployment (Fly.io)
 
 The dev build runs on **Fly.io** — a single always-on Machine running the Next.js
-app, a **Fly Postgres** with **pgvector**, and a **Fly Volume** for image storage.
-Chosen because this account has a **legacy Fly org** that predates the
-"no free allowance for new orgs" change. (The earlier Hetzner + Tailscale plan is
-superseded; Fly trades the Tailscale "private by default" posture for a public
-`*.fly.dev` URL gated by Better Auth — see Security below.)
+app and a **Fly Volume** for image storage — with **Neon** (serverless Postgres
+with **pgvector**) as the database. Fly was chosen because this account has a
+**legacy Fly org** that predates the "no free allowance for new orgs" change;
+Neon hosts the DB rather than a Fly Postgres app (the app reaches it through the
+`DATABASE_URL` secret). (The earlier Hetzner + Tailscale plan is superseded; Fly
+trades the Tailscale "private by default" posture for a public `*.fly.dev` URL
+gated by Better Auth — see Security below.)
 
 This is deliberately **not** serverless: the turn engine runs an in-process job
 worker loop (`src/server/engine/jobs.ts`) and images are written to a local
@@ -67,17 +69,16 @@ primary_region = 'iad'
 
 ## One-time setup
 
-1. **Postgres with pgvector.** Vesper uses `vector(1536)` columns + HNSW indexes.
-   Create a Fly Postgres and ensure pgvector is available:
+1. **Postgres with pgvector (Neon).** Vesper uses `vector(1536)` columns + HNSW
+   indexes. Create a Neon project (pgvector ships with Neon), then point the Fly
+   app at it by hand:
    ```
-   fly postgres create --name vesper-db --region iad
-   fly postgres connect -a vesper-db -c "CREATE EXTENSION IF NOT EXISTS vector;"
-   fly postgres attach vesper-db -a vesper   # sets DATABASE_URL secret
+   # In the Neon console: create a project, copy its connection string, then:
+   fly secrets set DATABASE_URL="postgresql://…neon.tech/…?sslmode=require" -a vesper
    ```
-   If the Fly Postgres image lacks pgvector, run a pgvector image instead
-   (e.g. `pgvector/pgvector:pg17`) as a separate Fly app and set `DATABASE_URL`
-   by hand. (The baseline migration `CREATE EXTENSION IF NOT EXISTS vector` also
-   self-enables it when the role has permission.)
+   There is no Fly Postgres app — the DB lives entirely on Neon. pgvector is
+   enabled by the baseline migration (`CREATE EXTENSION IF NOT EXISTS vector`),
+   which `pnpm db:migrate` runs automatically on deploy.
 2. **Volume for images:**
    ```
    fly volumes create vesper_data --region iad --size 3 -a vesper
@@ -100,9 +101,13 @@ primary_region = 'iad'
 
 ## Deploy
 
-- **From GitHub** (the import you set up): push to `main` → Fly builds the
-  Dockerfile on its remote builder and deploys.
-- **From the CLI:** `fly deploy`.
+Deploys are **manual** — pushing to GitHub does **not** auto-deploy (there is no
+Fly↔GitHub integration firing; every release so far has been a hand-run
+`fly deploy`). So a `git push` ships nothing on its own — run the deploy after.
+
+- **From the CLI:** `fly deploy -a vesper` — Fly builds the Dockerfile on its
+  remote builder, runs the `release_command` (`pnpm db:migrate`) against Neon,
+  then cuts the Machine over to the new version. Verify with `fly status -a vesper`.
 - **If the remote builder returns `unauthorized`:** build locally and push —
   `fly deploy --local-only` (needs local Docker). Re-auth with `fly auth login`
   and confirm the app is in your legacy org (`fly orgs list`, `fly apps list`).
