@@ -38,7 +38,7 @@ export const interactionConceptSchema = z.object({
 export type InteractionConcept = z.infer<typeof interactionConceptSchema>;
 
 /**
- * Starter vocabulary (~13). Grouped loosely by `family`. Conservative on purpose —
+ * Starter vocabulary (~14). Grouped loosely by `family`. Conservative on purpose —
  * grow it as preferences and (later) taboo/social-rule cards require, including
  * non-interpersonal concepts (e.g. `public_exposure`) when the card plan lands.
  */
@@ -185,6 +185,20 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     triggers: ["'come to bed'", "slides a hand up her thigh", "whispers a frank invitation"],
     defaultHint: "",
     intimate: true,
+  },
+  {
+    id: "foot_contact",
+    label: "Foot contact",
+    description: "Foot-focused touch or attention — kissing, caressing, massaging, or fixating on someone's feet.",
+    verb: "made a foot-focused advance on",
+    // Reception is the whole point (odd/gross to most, enjoyed by the foot-fetish-positive),
+    // so the act itself is affectively ambiguous — let the card's tags decide valence.
+    polarity: "neutral",
+    triggers: ["kneels to kiss her feet", "caresses her bare foot", "can't stop staring at her feet", "worships and massages his feet"],
+    defaultHint: "",
+    // NOT exposure-gated: a foot-fetish act is a socially *witnessed* oddity, not fenced
+    // intimate anatomy — it must surface in ordinary social scenes for the taboo to land.
+    intimate: false,
   },
 ];
 

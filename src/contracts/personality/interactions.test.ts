@@ -40,4 +40,11 @@ describe("interaction concepts", () => {
     expect(intimate.length).toBeGreaterThan(0);
     expect(interactionConceptById("proposition")?.intimate).toBe(true);
   });
+
+  it("foot_contact is registered as a non-intimate, affectively neutral act (the foot-fetish card trigger)", () => {
+    const foot = interactionConceptById("foot_contact");
+    expect(foot).toBeDefined();
+    expect(foot?.intimate).toBe(false);
+    expect(foot?.polarity).toBe("neutral");
+  });
 });
