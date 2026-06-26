@@ -259,4 +259,9 @@ describe("chatStateSnapshot — mood chip (mood.spec §4)", () => {
     expect(chatStateSnapshot(hot, { intimateContext: false }).emotion.label).not.toBe("aroused");
     expect(chatStateSnapshot(hot, { intimateContext: true }).emotion.label).toBe("aroused");
   });
+
+  it("persisted defaults true and is honored when set false (fresh-chat seed preview)", () => {
+    expect(chatStateSnapshot(seedChatState(profile())).persisted).toBe(true);
+    expect(chatStateSnapshot(seedChatState(profile()), { persisted: false }).persisted).toBe(false);
+  });
 });

@@ -85,6 +85,12 @@ export interface ChatStateSnapshot {
   /** Read-only chat-clock + wall-clock anchor, surfaced for the state-tools modal (slice 4). */
   clockMinutes: number;
   lastInteractionAt: string | null;
+  /**
+   * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
+   * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
+   * on a fresh chat without clobbering an ongoing chat's accumulated disposition.
+   */
+  persisted: boolean;
 }
 
 const metersSchema = z.record(z.string(), z.number());
@@ -565,7 +571,7 @@ export async function deleteChatState(ownerId: string, characterId: string): Pro
  */
 export function chatStateSnapshot(
   state: ChatState,
-  opts: { dominance?: number; intimateContext?: boolean } = {},
+  opts: { dominance?: number; intimateContext?: boolean; persisted?: boolean } = {},
 ): ChatStateSnapshot {
   const stage = stageForValue(state.affinity);
   const emotion = deriveEmotionLabel({
@@ -589,5 +595,7 @@ export function chatStateSnapshot(
     lastPulseTrace: state.lastPulseTrace,
     clockMinutes: state.clockMinutes,
     lastInteractionAt: state.lastInteractionAt ? state.lastInteractionAt.toISOString() : null,
+    // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
+    persisted: opts.persisted ?? true,
   };
 }

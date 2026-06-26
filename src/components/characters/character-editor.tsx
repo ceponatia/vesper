@@ -310,7 +310,12 @@ export function CharacterEditor({
             </Field>
           </div>
           {characterId ? (
-            <CharacterChat characterId={characterId} name={draft.name || "Untitled"} avatarImageId={avatarImageId} />
+            <CharacterChat
+              characterId={characterId}
+              name={draft.name || "Untitled"}
+              avatarImageId={avatarImageId}
+              startingStage={draft.profile.playerRelationship?.stage ?? "stranger"}
+            />
           ) : (
             <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
               Save the character first — chat speaks from the saved profile and attributes.

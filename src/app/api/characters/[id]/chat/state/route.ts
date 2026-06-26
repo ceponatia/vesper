@@ -69,7 +69,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
   const stored = await loadChatState(user.id, id, sink);
   const state = stored ? driftChatState(stored, new Date(), profile, { advance: false }) : seedChatState(profile);
-  return jsonOk(chatStateSnapshot(state, snapshotOpts(profile)));
+  return jsonOk(chatStateSnapshot(state, { ...snapshotOpts(profile), persisted: stored !== null }));
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {

@@ -277,6 +277,9 @@ export const chatStateSnapshotSchema = z.object({
   })),
   clockMinutes: z.number().catch(0),
   lastInteractionAt: z.string().nullable().catch(null),
+  // False ⇒ a seed-on-read (no row yet); the chat strip then previews the authored
+  // Starting Relationship. Defaults true so a missing flag shows the stored disposition.
+  persisted: z.boolean().catch(true),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
 /** The reset scope of the three chat reset actions (Reset All / Chat / State). */
