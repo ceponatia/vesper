@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { CHAT_ACTIONS, CHAT_PREMISE_MAX_CHARS, type ChatActionId } from "@/contracts";
+import { CHAT_ACTIONS, CHAT_PREMISE_MAX_CHARS, stageById, stageMidpoint, type ChatActionId } from "@/contracts";
 import {
   charactersApi,
   sendCharacterChat,
@@ -28,6 +28,12 @@ export interface CharacterChatProps {
   characterId: string;
   name: string;
   avatarImageId: string | null;
+  /**
+   * The authored Starting Relationship (`playerRelationship.stage`) from the live editor
+   * draft. A fresh chat (no stored state) previews it in the strip chip so changing the
+   * dropdown updates the chip immediately — before it's even saved.
+   */
+  startingStage: string;
 }
 
 interface ChatLine {
@@ -50,7 +56,7 @@ function sceneError(image: ImageRecord): string | null {
  * renders a scene image from the recent exchange (filed against the character,
  * so it also lands in the Gallery under "Character chats").
  */
-export function CharacterChat({ characterId, name, avatarImageId }: CharacterChatProps) {
+export function CharacterChat({ characterId, name, avatarImageId, startingStage }: CharacterChatProps) {
   const toast = useToast();
   const who = name.trim() || "this character";
 
@@ -329,7 +335,7 @@ export function CharacterChat({ characterId, name, avatarImageId }: CharacterCha
 
       {chatState ? (
         <div className="flex flex-col gap-2">
-          <StatusStrip state={chatState} />
+          <StatusStrip state={chatState} startingStage={startingStage} />
           <ActionChips busy={actionBusy} disabled={sending} onAction={runAction} />
         </div>
       ) : null}
@@ -460,13 +466,19 @@ function meterPips(meters: Record<string, number>): { id: string; label: string;
  * pips, shown only when off-baseline so casual chats stay clean
  * (character-chat-state.spec.md §7). Fed by GET …/chat/state, refetched per send.
  */
-function StatusStrip({ state }: { state: ChatStateSnapshot }) {
+function StatusStrip({ state, startingStage }: { state: ChatStateSnapshot; startingStage: string }) {
   const pips = meterPips(state.meters);
+  // A fresh chat (no stored row) previews the authored Starting Relationship, so editing
+  // the dropdown moves the chip at once. Once the chat has its own disposition we show
+  // that — the seed is then inert (Reset state re-seeds from the authored default).
+  const seed = state.persisted ? undefined : stageById(startingStage);
+  const stageLabel = seed?.label ?? state.stage.label;
+  const affinity = seed ? stageMidpoint(startingStage) : state.affinity;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <MoodChip emotion={state.emotion} className="text-xs" />
-      <Tag tone="accent" title={`Affinity ${state.affinity}`}>
-        <span aria-hidden>♥</span> {state.stage.label}
+      <Tag tone="accent" title={`Affinity ${affinity}`}>
+        <span aria-hidden>♥</span> {stageLabel}
       </Tag>
       {pips.map((p) => (
         <Tag key={p.id} tone={p.tone}>
