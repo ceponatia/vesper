@@ -56,6 +56,13 @@ library-reuse UI slice (CRUD + page + builder + import/save + public discovery g
   needs a `world-simulation.plan.md` when it becomes active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
+- **Merge reducer decomposition** (draft; engineering debt, no feature payoff) —
+  [merge-decomposition.plan.md](merge-decomposition.plan.md) · spec
+  [merge-decomposition.spec.md](merge-decomposition.spec.md). Behavior-preserving
+  refactor of `engine/merge.ts` (2655 lines; `planTurnEffects` is 830) into a `merge/`
+  folder behind a `WorkingState` ADT that owns dirty-tracking, plus an explicit phase
+  pipeline. From the Code Complete review pass. Sequence for a quiet window between
+  feature arcs — it's a hot, merge-adjacent path. Lowest priority here; pure maintainability.
 
 ## Someday / parking lot
 

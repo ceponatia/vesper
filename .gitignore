@@ -9,6 +9,7 @@ data/
 # app-generated imagery; keep them on the server, never commit/push.
 .playwright-mcp/
 docs/developer-notes/ux-audit-assets/
+docs/prompts/
 
 # Generated/eval imagery under docs — regenerable, keep out of git.
 # Text docs (.md) stay tracked; app icons under src/app are unaffected.
