@@ -13,16 +13,15 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-build right now — the **Mood** arc just finished in full (the projection +
-`EmotionLabel`, welcome/unwelcome touch, condition + scene-atmosphere baseline shifts,
-and the mood chip on the cast card + chat strip; see **Shipped**), and its docs are
-archived to `finished/`. Its two leftover ideas live in **other** plans — the
-relationship/meter timeline ([deferred.plan.md](deferred.plan.md) #4) and the avatar's
-consumption of the projection (the **Mood-reactive avatars** plan below). **Social-reaction
-cards** is now **fully shipped** — the core engine + inline authoring (2026-06-25) and the
-library-reuse UI slice (CRUD + page + builder + import/save + public discovery gallery,
-2026-06-26; see **Shipped**), which also graduated the auth.plan.md public-browse deferral
-(cards-first; other shareable kinds fast-follow).
+Nothing mid-build right now. The two most recent arcs both finished in full and are in
+**Shipped**, with their docs archived to `finished/`: the **Mood** arc (projection +
+`EmotionLabel`, welcome/unwelcome touch, condition + scene-atmosphere baseline shifts, the
+mood chip on the cast card + chat strip) and **Social-reaction cards** (core engine + inline
+authoring 2026-06-25, then the library-reuse UI slice — CRUD + page + builder + import/save +
+public discovery gallery — 2026-06-26, which also graduated the auth.plan.md public-browse
+deferral, cards-first). Their leftover ideas live in **other** plans — the relationship/meter
+timeline ([deferred.plan.md](deferred.plan.md) #4) and the avatar's consumption of the
+projection (the **Mood-reactive avatars** plan below).
 
 ## Next (queued)
 
@@ -77,7 +76,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **Social-reaction cards — library-reuse UI** —
-  [social-reaction-cards.plan.md](social-reaction-cards.plan.md) §"Deferred slice", 2026-06-26.
+  [social-reaction-cards.plan.md](finished/social-reaction-cards.plan.md) §"Deferred slice", 2026-06-26.
   The `social_cards` library finally gets its surface: `social_card` wired into the shared
   library machinery (`ShareableKind`/`LibraryKind`, clone, owner-or-public reads, semantic
   search), full CRUD at `/api/social-cards` (+ `/clone`), a `/social-cards` page + standalone
@@ -96,7 +95,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   (`.github/workflows/promote.yml`) opens the `main → prod` PR. Prod **deploy** is
   intentionally not wired yet (needs a prod Fly app + Neon prod DB + `FLY_API_TOKEN`).
 - **Social-reaction cards — engine + inline authoring** —
-  [social-reaction-cards.plan.md](social-reaction-cards.plan.md), 2026-06-25. Importable
+  [social-reaction-cards.plan.md](finished/social-reaction-cards.plan.md), 2026-06-25. Importable
   **taboo / social-rule cards** (`contracts/personality/cards.ts`) that resolve a classified
   social act to a `SocialReaction` riding the §6 curve — one `severity` → tier → ramped
   intensity, with per-tag override flips (the foot-fetish enjoy). Wired into all three
