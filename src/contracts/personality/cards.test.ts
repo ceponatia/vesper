@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  cardFromLibraryParts,
   findCardById,
   reactionKindToValence,
   resolveCardForTags,
   resolveCardReaction,
   severityToTier,
+  socialReactionCardExtrasSchema,
   tierIntensity,
   type SocialReactionCard,
 } from "./cards";
@@ -105,5 +107,27 @@ describe("findCardById", () => {
     const b = card({ id: "b" });
     expect(findCardById("b", [a, b])?.id).toBe("b");
     expect(findCardById("c", [a, b])).toBeUndefined();
+  });
+});
+
+describe("cardFromLibraryParts — library row → inline snapshot", () => {
+  it("recomposes a full card: row id→fresh id, name→label, + the definition extras", () => {
+    const source = card({ id: "lib-row", label: "ignored", description: "ignored" });
+    const extras = socialReactionCardExtrasSchema.parse(source);
+    const snapshot = cardFromLibraryParts("fresh-id", "Public nudity", "No exposure in the plaza", extras);
+    expect(snapshot.id).toBe("fresh-id");
+    expect(snapshot.label).toBe("Public nudity");
+    expect(snapshot.description).toBe("No exposure in the plaza");
+    // mechanical fields carried verbatim from the extras
+    expect(snapshot).toMatchObject({ kind: "taboo", triggers: ["proposition"], severity: 80 });
+    // and it still resolves through the curve like any card
+    expect(resolveCardForTags(snapshot, "proposition", [])?.valence).toBe("dislike");
+  });
+
+  it("the extras schema drops the row-level id/label/description", () => {
+    const extras = socialReactionCardExtrasSchema.parse(card());
+    expect(extras).not.toHaveProperty("id");
+    expect(extras).not.toHaveProperty("label");
+    expect(extras).not.toHaveProperty("description");
   });
 });

@@ -24,6 +24,7 @@ import {
   loreChunkTierSchema,
   loreChunkVisibilitySchema,
   sceneReferenceSchema,
+  socialReactionCardExtrasSchema,
   worldLoreSchema,
   worldStyleSchema,
 } from "@/contracts";
@@ -189,7 +190,7 @@ export const createdRefSchema = z.preprocess((raw) => {
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
     if (typeof obj.id === "string") return { id: obj.id };
-    for (const key of ["session", "world", "character", "location", "item", "draft"]) {
+    for (const key of ["session", "world", "character", "location", "item", "socialCard", "draft"]) {
       const inner = obj[key];
       if (inner && typeof inner === "object" && typeof (inner as Record<string, unknown>).id === "string") {
         return { id: (inner as Record<string, unknown>).id };
@@ -361,6 +362,27 @@ export const itemDetailSchema = itemSummarySchema.extend({
   visibility: visibilitySchema,
 });
 export type ItemDetail = z.infer<typeof itemDetailSchema>;
+
+// ---------------------------------------------------------------------------
+// Social-reaction cards (social-reaction-cards.plan.md — library-reuse slice)
+// ---------------------------------------------------------------------------
+
+export const socialCardSummarySchema = z.object({
+  id: idSchema,
+  name: nameSchema,
+  description: textOr(""),
+  tags: tagsSchema,
+  visibility: visibilitySchema,
+  /** The `kind` lives in the definition JSONB; surfaced for the library bucket + tag. */
+  definition: socialReactionCardExtrasSchema.catch(() => socialReactionCardExtrasSchema.parse({})),
+});
+export type SocialCardSummary = z.infer<typeof socialCardSummarySchema>;
+
+/** Detail adds `mine` (viewer owns it) so the builder offers edit vs clone-to-library. */
+export const socialCardDetailSchema = socialCardSummarySchema.extend({
+  mine: z.boolean().catch(true),
+});
+export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 
 // ---------------------------------------------------------------------------
 // Worlds
@@ -815,6 +837,18 @@ export const itemsApi = {
   generateImage: (id: string) => apiPost(z.unknown(), `/api/items/${id}/image`, {}),
   generateMissingImages: (ids?: readonly string[]) =>
     apiPost(batchImageSchema, "/api/items/images", ids ? { ids } : {}),
+};
+
+export const socialCardsApi = {
+  /** `scope` (all|public|owned) drives the discovery gallery; owner-scoped until step 6 wires it. */
+  list: (params: ListParams & { scope?: string } = {}) =>
+    apiGet(listOf(socialCardSummarySchema, "socialCards"), withQuery("/api/social-cards", params)),
+  get: (id: string) => apiGet(detailOf(socialCardDetailSchema, "socialCard"), `/api/social-cards/${id}`),
+  create: (body: unknown) => apiPost(createdRefSchema, "/api/social-cards", body),
+  update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/social-cards/${id}`, body),
+  remove: (id: string) => apiDelete(`/api/social-cards/${id}`),
+  /** Clone a public (or own) card into your library as an owned, private copy. */
+  clone: (id: string) => apiPost(createdRefSchema, `/api/social-cards/${id}/clone`, {}),
 };
 
 export const worldsApi = {

@@ -17,6 +17,7 @@ export const NAV_LINKS: readonly NavDest[] = [
   { href: "/characters", label: "Characters", icon: "characters" },
   { href: "/locations", label: "Locations", icon: "locations" },
   { href: "/items", label: "Items", icon: "items" },
+  { href: "/social-cards", label: "Social cards", icon: "social-cards" },
   { href: "/gallery", label: "Gallery", icon: "gallery" },
 ];
 
@@ -32,6 +33,7 @@ export const PRIMARY_NAV: readonly NavDest[] = [
 export const OVERFLOW_NAV: readonly NavDest[] = [
   { href: "/locations", label: "Locations", icon: "locations" },
   { href: "/items", label: "Items", icon: "items" },
+  { href: "/social-cards", label: "Social cards", icon: "social-cards" },
 ];
 
 /**

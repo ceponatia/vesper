@@ -21,6 +21,7 @@ const TABLE_NAMES: Record<LibraryKind, string> = {
   character: "characters",
   location: "locations",
   item: "items",
+  social_card: "social_cards",
 };
 
 const idRowSchema = z.object({ id: z.string() });
@@ -40,6 +41,14 @@ export interface LibrarySearchOptions {
    * character/location tables, which have no `kind` column.
    */
   itemKind?: string;
+  /**
+   * Cross-account discovery scope (auth.plan.md, debuted on social cards):
+   * `owned` (default) is owner-only — the long-standing behaviour every other
+   * caller relies on; `public` is everyone's published rows (your own public
+   * ones included); `all` is owner ∪ public. Only the shareable tables carry a
+   * `visibility` column, so pass a non-`owned` scope only for those.
+   */
+  scope?: "all" | "public" | "owned";
 }
 
 /**
@@ -59,8 +68,16 @@ export async function searchLibraryIds(
   const tag = opts.tag?.trim() ?? "";
   // Items only — the column exists on the items table; ignored for other kinds.
   const itemKind = kind === "item" ? (opts.itemKind?.trim() ?? "") : "";
+  // Discovery scope (default owner-only, so existing callers are unchanged).
+  const scope = opts.scope ?? "owned";
+  const scopeCondition =
+    scope === "public"
+      ? sql`visibility = 'public'`
+      : scope === "all"
+        ? sql`(owner_id = ${ownerId} or visibility = 'public')`
+        : sql`owner_id = ${ownerId}`;
 
-  const conditions: SQL[] = [sql`owner_id = ${ownerId}`];
+  const conditions: SQL[] = [scopeCondition];
   if (itemKind) conditions.push(sql`kind = ${itemKind}`);
   if (tag) conditions.push(sql`tags @> ${JSON.stringify([tag])}::jsonb`);
   if (q) {
@@ -89,7 +106,7 @@ export async function searchLibraryIds(
     return ids;
   }
   const embeddingConditions: SQL[] = [
-    sql`owner_id = ${ownerId}`,
+    scopeCondition,
     sql`embedder = ${currentEmbedder()}`,
     sql`search_embedding is not null`,
   ];

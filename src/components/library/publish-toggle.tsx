@@ -1,16 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { charactersApi, itemsApi, locationsApi, type Visibility } from "@/lib/client/api";
+import { charactersApi, itemsApi, locationsApi, socialCardsApi, type Visibility } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
-export type ShareableKind = "character" | "location" | "item";
+export type ShareableKind = "character" | "location" | "item" | "social_card";
 
 const updaters: Record<ShareableKind, (id: string, body: unknown) => ReturnType<typeof charactersApi.update>> = {
   character: charactersApi.update,
   location: locationsApi.update,
   item: itemsApi.update,
+  social_card: socialCardsApi.update,
 };
 
 /**

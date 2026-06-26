@@ -4,10 +4,10 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral, type Embedded } from "../ai";
-import { characters, db, items, locations } from "../db";
+import { characters, db, items, locations, socialCards } from "../db";
 import { FUZZY_MIN_SCORE } from "./constants";
 
-export type LibraryKind = "character" | "location" | "item";
+export type LibraryKind = "character" | "location" | "item" | "social_card";
 
 export interface FuzzyMatch {
   id: string;
@@ -19,6 +19,7 @@ const TABLE_NAMES: Record<LibraryKind, string> = {
   character: "characters",
   location: "locations",
   item: "items",
+  social_card: "social_cards",
 };
 
 const stringArraySchema = z.array(z.string());
@@ -155,6 +156,16 @@ async function searchTextFor(kind: LibraryKind, id: string, sink?: DiagnosticSin
       .limit(1);
     if (!row) return null;
     const tags = parseOr(stringArraySchema, row.tags, [], sink, "locations.tags");
+    return joinParts([row.name, row.description, ...tags]);
+  }
+  if (kind === "social_card") {
+    const [row] = await db()
+      .select({ name: socialCards.name, description: socialCards.description, tags: socialCards.tags })
+      .from(socialCards)
+      .where(eq(socialCards.id, id))
+      .limit(1);
+    if (!row) return null;
+    const tags = parseOr(stringArraySchema, row.tags, [], sink, "social_cards.tags");
     return joinParts([row.name, row.description, ...tags]);
   }
   const [row] = await db()

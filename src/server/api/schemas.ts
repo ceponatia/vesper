@@ -5,6 +5,7 @@ import {
   characterProfileSchema,
   itemDefinitionSchema,
   itemKindSchema,
+  socialReactionCardExtrasSchema,
 } from "@/contracts";
 
 /**
@@ -147,3 +148,37 @@ export type ItemPatchBody = z.infer<typeof itemPatchSchema>;
 export function invalidCoverageIds(coverage: readonly string[]): string[] {
   return coverage.filter((id) => bodyLocationRegistry.byId(id.trim().toLowerCase()) === undefined);
 }
+
+// --- social cards ------------------------------------------------------------
+
+/**
+ * The slice of a SocialReactionCard stored in `social_cards.definition` — the mechanical fields
+ * only (defined once in contracts as `socialReactionCardExtrasSchema`). The card's
+ * `label`/`description` map onto the row's `name`/`description` columns, and the row mints its
+ * own `id`; the inline snapshot (world/character) recomposes the full card via
+ * `cardFromLibraryParts` (social-reaction-cards.plan.md → deferred-slice build plan).
+ */
+export const socialCardExtrasSchema = socialReactionCardExtrasSchema;
+export type SocialCardExtras = z.infer<typeof socialCardExtrasSchema>;
+
+export function emptySocialCardExtras(): SocialCardExtras {
+  return socialCardExtrasSchema.parse({});
+}
+
+export const socialCardCreateSchema = z.object({
+  name: nameSchema,
+  description: z.string().default(""),
+  tags: tagsSchema.default([]),
+  definition: socialCardExtrasSchema.default(() => emptySocialCardExtras()),
+});
+export type SocialCardCreateBody = z.infer<typeof socialCardCreateSchema>;
+
+export const socialCardPatchSchema = z.object({
+  name: nameSchema.optional(),
+  description: z.string().optional(),
+  tags: tagsSchema.optional(),
+  definition: partialWithoutDefaults(socialCardExtrasSchema).optional(),
+  /** Publish/un-publish toggle (auth.plan.md). */
+  visibility: visibilitySchema.optional(),
+});
+export type SocialCardPatchBody = z.infer<typeof socialCardPatchSchema>;

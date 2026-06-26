@@ -79,6 +79,36 @@ export const socialReactionCardSchema = z.object({
 });
 export type SocialReactionCard = z.infer<typeof socialReactionCardSchema>;
 
+/**
+ * The mechanical slice of a card — everything except the row-level `id`/`label`/`description`.
+ * This is what a `social_cards` library row stores in its `definition` column and what the card
+ * builder edits; the inline snapshot recomposes the full card from it + the row's
+ * id/name/description (server/api re-exports this as `socialCardExtrasSchema`).
+ */
+export const socialReactionCardExtrasSchema = socialReactionCardSchema.pick({
+  kind: true,
+  triggers: true,
+  severity: true,
+  defaultReaction: true,
+  reactionOverrides: true,
+});
+export type SocialReactionCardExtras = z.infer<typeof socialReactionCardExtrasSchema>;
+
+/**
+ * Recompose a full inline {@link SocialReactionCard} from a `social_cards` library row's parts:
+ * the row's `id`→a fresh inline id (passed in — contracts mints none), `name`→`label`,
+ * `description`, and the `definition` extras. The copy-at-every-layer snapshot the world editor /
+ * character disposition tab append when importing a library card (social-reaction-cards.plan.md).
+ */
+export function cardFromLibraryParts(
+  newCardId: string,
+  name: string,
+  description: string,
+  extras: SocialReactionCardExtras,
+): SocialReactionCard {
+  return { id: newCardId, label: name, description, ...extras };
+}
+
 // ---------------------------------------------------------------------------
 // Pure helpers — severity → tier → intensity, kind → valence.
 // ---------------------------------------------------------------------------
