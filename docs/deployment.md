@@ -112,6 +112,46 @@ locally (`pnpm db:generate`, review SQL — see [database.md](database.md)), com
 the `drizzle/` files, and push; the server only ever runs the non-interactive
 `pnpm db:migrate`.
 
+## Branch model & promotion (dev → prod)
+
+Two long-lived branches on the **same** `origin` remote (`ceponatia/vesper`) —
+there is no second remote:
+
+| Branch | Role | How it updates |
+| --- | --- | --- |
+| `main` | **dev** (default) | Your normal workflow. Push here as always; the Fly GitHub integration auto-deploys dev on push. |
+| `prod` | **production** | **Protected.** No direct pushes — only fast-tested code arrives via a pull request from `main`. |
+
+Day-to-day is unchanged: keep committing to and pushing `main`. `prod` only ever
+moves through a **promotion PR**.
+
+**To promote dev → prod:**
+
+1. **Open the PR.** Either Actions tab → **"Promote dev → prod"** → *Run
+   workflow* (opens a `main → prod` PR for you), or locally:
+   `gh pr create --base prod --head main`.
+2. **Wait for the `verify` check** (CI runs `pnpm verify`). Protection blocks the
+   merge until it's green.
+3. **Merge** the PR. That's the only way commits reach `prod`.
+
+**Protection on `prod`** (set via `gh api .../branches/prod/protection`):
+
+- Pull request required before merging (0 required approvals — solo repo; GitHub
+  won't let you approve your own PR, so requiring one would lock you out).
+- Required status check: **`verify`**, strict (branch must be up to date with
+  `prod` before merge).
+- Force-pushes and branch deletion blocked.
+- **Enforced for admins too** — even the owner merges via a green PR. For a
+  genuine emergency, toggle protection off in the GitHub UI
+  (Settings → Branches), merge, and turn it back on; it's a deliberate act, not
+  an accident.
+
+**Deploying prod is still manual / not wired up.** Merging to `prod` only moves
+code; nothing auto-deploys from it yet. Standing up a prod environment (a
+separate Fly app + a Neon prod DB + a `FLY_API_TOKEN` secret + a
+deploy-on-merge-to-`prod` workflow) is a deliberate next step — see the dev
+setup above as the template.
+
 ## Security
 
 The app is on the **public internet** at `https://vesper.fly.dev`, so access

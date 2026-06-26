@@ -73,6 +73,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Prod branch + promotion workflow** —
+  [deployment.md](../deployment.md) §"Branch model & promotion", 2026-06-26. Long-lived
+  protected `prod` branch on the existing `origin` remote (dev stays `main`). New CI
+  (`.github/workflows/ci.yml`) runs `pnpm verify` on PRs/pushes to both branches; `prod`
+  protection requires the `verify` check + a PR (force-push/delete blocked, enforced for
+  admins). A `workflow_dispatch` "Promote dev → prod" button
+  (`.github/workflows/promote.yml`) opens the `main → prod` PR. Prod **deploy** is
+  intentionally not wired yet (needs a prod Fly app + Neon prod DB + `FLY_API_TOKEN`).
 - **Social-reaction cards — engine + inline authoring** —
   [social-reaction-cards.plan.md](social-reaction-cards.plan.md), 2026-06-25. Importable
   **taboo / social-rule cards** (`contracts/personality/cards.ts`) that resolve a classified

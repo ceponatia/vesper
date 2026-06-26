@@ -1,0 +1,43 @@
+name: Promote dev → prod
+
+# A one-click button (Actions tab → "Promote dev → prod" → Run workflow) that
+# opens a pull request from `main` (dev) into `prod`. It does NOT merge — the
+# PR still has to pass the `verify` check and be merged by you. If a promotion
+# PR is already open it just points you at it instead of creating a duplicate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-promotion-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or update the dev → prod promotion PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          existing=$(gh pr list --repo "$REPO" --base prod --head main --state open \
+            --json number --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            url=$(gh pr view "$existing" --repo "$REPO" --json url --jq .url)
+            echo "Promotion PR already open: #$existing — $url"
+            exit 0
+          fi
+
+          # Nothing to promote if prod already contains every commit on main.
+          ahead=$(gh api "repos/$REPO/compare/prod...main" --jq '.ahead_by')
+          if [ "$ahead" = "0" ]; then
+            echo "prod is already up to date with main — nothing to promote."
+            exit 0
+          fi
+
+          gh pr create --repo "$REPO" --base prod --head main \
+            --title "Promote dev → prod ($(date -u +%Y-%m-%d))" \
+            --body $'Automated promotion of `main` (dev) into `prod`.\n\nMerging requires the CI `verify` check to pass.'

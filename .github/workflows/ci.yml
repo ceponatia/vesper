@@ -1,0 +1,42 @@
+name: CI
+
+# Runs the project's canonical gate (`pnpm verify` = lint + typecheck + test +
+# jscpd) on every PR and push to the long-lived environment branches. The job
+# name below ("verify") is the status-check context that `prod` branch
+# protection requires before a promotion PR can merge.
+on:
+  pull_request:
+    branches: [main, prod]
+  push:
+    branches: [main, prod]
+
+# A newer push to the same ref cancels the in-flight run — saves CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          # Skip the husky git-hook install in CI (no commits happen here).
+          HUSKY: 0
+
+      - name: Verify (lint + typecheck + test + jscpd)
+        run: pnpm verify
