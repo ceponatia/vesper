@@ -236,6 +236,14 @@ write stay byte-identical. Safeguards, in order:
 4. **Slice granularity = revertibility.** ADT swap (S2), toolkit extract (S3), one phase
    per commit (S4), apply+barrel (S5) — each independently green and revertible, so a
    regression bisects to a small diff.
+5. **Encapsulation gate (checklist item 6, enforced).** After Slice 2 there must be **zero
+   direct field assignment to participant/item state outside `working-state.ts`** — every
+   world mutation goes through a `WorkingState` mutator that owns the matching dirty-mark.
+   Enforced mechanically (grep gate or ESLint `no-restricted-syntax` on
+   `participant.locationId =`, `.state.meters =`, `.state.open =`, … assignment targets),
+   added to `pnpm verify` so the ADT's black-box property (item 5) can't silently erode under
+   later edits (item 9). This converts the single highest-risk bug class from "caught only by
+   tests" to "structurally impossible, lint-enforced."
 
 ---
 
@@ -246,4 +254,31 @@ write stay byte-identical. Safeguards, in order:
 - Not a rewrite of the per-subsystem planners (B) — they move, they don't change.
 - Not a conversion of the whole engine to OO. The one new class is the `WorkingState`
   accumulator; phases stay functions.
+
+---
+
+## 7. Target design re-scored against the checklist
+
+Symmetric to §2 (which scored the **old** code — net ✗ at every inner boundary). This scores
+the **proposed** design, so the refactor's success criteria are explicit and checkable. The
+class the checklist primarily scores is `WorkingState`; the phase modules are functions but
+are held to the same abstraction discipline (noted per row). Legend: ✓ pass · ◐ partial.
+
+| # | Checklist item | Target | How the design achieves it |
+| --- | --- | :---: | --- |
+| 0 | Thought of as an ADT? | ✓ | `WorkingState` (§3.1) *is* the ADT the working state was begging for — the mutable per-turn world copy + its dirty-tracking, behind an interface. |
+| 1 | Central purpose? | ✓ | One purpose per unit: `WorkingState` = the per-turn world copy; `grounding.ts` = name→row resolution; each phase = one subsystem's effect; `apply.ts` = the DB write. |
+| 2 | Well named; name describes purpose? | ✓ | `WorkingState`, `grounding`, `phases/movements`, `apply` — each name states its single purpose. |
+| 3 | Consistent abstraction? | ✓ | `WorkingState`'s methods sit at one altitude (reads / mutators / accumulators / assembly). `plan.ts` is a *uniform* ordered list of `(state, ctx) => void` calls — the binding constraint behind the Q3 ruling (no half-inline orchestrator). |
+| 4 | Obvious how to use? | ✓ | `WorkingState`: `fromBundle` → mutators → `toMergePlan`. Phases: one uniform signature. The barrel exports only the public surface (§3.2), so entry points are unambiguous. |
+| 5 | Black box (abstract enough)? | ✓ | Dirty-tracking is private; callers never see `touchedX` maintained. A phase reads `ctx` + state getters and mutates via methods — never how the marks are kept. |
+| 6 | Services complete; no meddling? | ✓ | Every mutation owns its dirty-mark inside `WorkingState`; **enforced** by the §5.5 encapsulation gate (zero external field assignment). |
+| 7 | Unrelated information moved out? | ✓ | Grounding toolkit → `grounding.ts` (Slice 3); DB writes → `apply.ts` (Slice 5). The reducer reads as pure logic. |
+| 8 | Subdivided as far as is useful? | ✓ | `merge/` splits into working-state / grounding / plan / apply / phases; every phase is its own named function. File grouping of *trivial* sibling phases stays flexible (Q3) — subdivide-as-far-as-useful, not classomania. |
+| 9 | Interface integrity under modification? | ✓ | External interface (`applyTurnResults`, `MergePlan`) byte-identical (the behavior-preserving contract). Internally, items 5/6 are held by the lint gate, so future edits can't quietly re-flatten the abstraction. |
+
+The two ◐/✗-prone items from §2 that depended on discipline rather than structure — **5**
+(black box) and **6** (no meddling) — are the ones now backed by a mechanical gate, which is
+what makes item **9** (integrity *preserved under later modification*) credible rather than
+aspirational.
 </content>

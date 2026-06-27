@@ -81,7 +81,10 @@ fix for checklist items 5 & 6:
 
 `planTurnEffects` keeps its current shape but calls these methods instead of mutating
 fields and hand-maintaining sets. No phase split yet — this slice is the ADT swap alone,
-so any regression localizes to the ADT.
+so any regression localizes to the ADT. This slice also lands the **encapsulation gate**
+(spec §5.5): once the mutators exist, add the grep / ESLint `no-restricted-syntax` rule that
+forbids direct field assignment to participant/item state outside `working-state.ts`, so the
+manual-dirty-tracking bug class can never return.
 
 ### Slice 3 — `merge/grounding.ts`: extract the pure resolution toolkit
 
@@ -141,12 +144,21 @@ Resolved 2026-06-27 (rulings recorded in the spec):
 state.toMergePlan()`. `brief` is the lone exception (reads everything → final
   `state.toBrief()`).
 
-Still open:
+- ~~Should Slice 4 stop short of the full 14-phase split?~~ → **split is binding at the
+  function level, flexible at the file level** (resolved 2026-06-27, conditioned on the ADT
+  checklist). Checklist item 3 (consistent abstraction) requires `plan.ts` to be a _uniform_
+  ordered list of named `(state, ctx) => void` phase calls — a half-extracted / half-inline
+  orchestrator is not a consistent abstraction — so "leave the small phases inline" is **off
+  the table**; every phase becomes a named function (items 3, 4, 5, 8 all agree). What "stop
+  short" still buys is _file_ granularity: trivial sibling phases may share one file (e.g.
+  `phases/misc.ts` exporting two functions) rather than each getting its own, honoring item 8
+  as subdivide-as-far-as-_useful_, not classomania. The orchestrator's shape is fixed
+  regardless; only the file grouping waits on the post-Slice-3 re-measure.
 
-- Should Slice 4 stop short of the full 14-phase split if the orchestrator is already
-  legible after, say, extracting only the 3 largest phases (schedule-tick, clock-and-meters,
-  witness)? Decide after Slice 3 lands and the function is re-measured. **Metric for the
-  call:** the goal is that `plan.ts` reads as one clean ordered phase list — extract a phase
-  when it's large _or_ carries a non-obvious ordering dependency; a trivial phase with no
-  ordering significance may stay inline or share a file with a sibling. Optimize for the
-  legibility of the orchestrator, not file symmetry.
+The target design is re-scored against the full nine-item checklist in **spec §7** (symmetric
+to §2, which scored the old code). Item 6 (no meddling with internal data) is promoted from a
+review judgment to a **hard gate**: after Slice 2, zero direct field assignment to
+participant/item state outside `working-state.ts`, enforced by grep / ESLint
+`no-restricted-syntax` (added to Slice 2's `pnpm verify`). That keeps item 6 true under later
+modification (item 9) — without it the ADT's black-box property erodes the first time someone
+writes `participant.locationId = …` in a phase.
