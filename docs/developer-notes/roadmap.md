@@ -69,8 +69,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **Merge reducer decomposition — all 5 slices** —
-  [merge-decomposition.plan.md](merge-decomposition.plan.md) · spec
-  [merge-decomposition.spec.md](merge-decomposition.spec.md), 2026-06-27. The 2655-line
+  [merge-decomposition.plan.md](finished/merge-decomposition.plan.md) · spec
+  [merge-decomposition.spec.md](finished/merge-decomposition.spec.md), 2026-06-27. The 2655-line
   `engine/merge.ts` is fully decomposed: a `merge/` folder behind the `WorkingState` ADT
   (dirty-tracking owned internally, `no-restricted-syntax` gate), the pure resolution toolkit
   in `grounding.ts`, one `phases/*.ts` file per phase, the orchestrator (`PhaseContext` + an
