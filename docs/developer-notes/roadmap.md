@@ -76,7 +76,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **Character chat — scenario setup modal** —
-  [character-chat-scenario.plan.md](character-chat-scenario.plan.md), 2026-06-27. The chat tab's
+  [character-chat-scenario.plan.md](finished/character-chat-scenario.plan.md), 2026-06-27. The chat tab's
   Starting Relationship + Scenario controls fold into one **Scenario setup** modal (sibling of State
   tools), grown into a no-session test harness: a per-chat **active social-card** set (seeded from the
   character's own cards, then authoritative — the pulse resolves against it) so taboos/rules are
