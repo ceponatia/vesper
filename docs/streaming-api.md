@@ -75,9 +75,10 @@ POST               /api/sessions/:id/turns     ⇒ SSE stream (below)
 PATCH/DELETE       /api/sessions/:id/messages/:messageId      edit (→ reconcile job) / delete
                                                (an emptied turn is removed entirely)
 POST               /api/sessions/:id/messages/:messageId/rerun ⇒ SSE stream; latest turn only
-POST               /api/sessions/:id/scene     { action: "generate" | "regenerate" } ⇒ 202 { jobId, queued: true }
-                                               (an in-flight scene job is reused: 200, queued: false) ·
-                                               { action: "setInterval", interval: 0–100 }
+POST               /api/sessions/:id/scene     { action: "generate" | "regenerate" } ⇒ 202 { ok: true, jobId, queued: true }
+                                               (an in-flight scene job is reused: 200 { ok: true, jobId, queued: false }) ·
+                                               { action: "setInterval", interval: 0–100 } and { action: "setReferenceMode",
+                                               referenceMode: "single" | "multi" } ⇒ 200 { ok: true, scene }
 GET                /api/sessions/:id/turns/:turnId/inspect     Turn Inspector: agent results, diagnostics,
                                                retrieval events (windowed by turn timestamps). Admin-only (403)
 ```

@@ -48,6 +48,7 @@ The controlled vocabulary the intake agent classifies a player's social act into
 | `family` | A cluster a preference may target wholesale (e.g. `affection_display`). |
 | `polarity` | `warm` / `hostile` / `neutral` — the act's affective direction, read by the puppet guardrail. |
 | `triggers` | Classifier keywords. |
+| `defaultHint` | Fallback narrator flavour when a preference sets no `hint` (`""` is fine). |
 | `intimate` | Whether the act is intimate. |
 
 It is one stable classification target and the shared key space for preferences and (later) cards. Adding a concept is one data edit + the registry test.
@@ -103,7 +104,7 @@ Empty traits ⇒ unit/identity (today's behavior).
 
 `tags: string[]`, `preferences: Preference[]`, `traits: TraitValue[]`, and `socialCards: SocialReactionCard[]` (the character's own cards) all ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition plays exactly as before).
 
-Cards are also **library content** — a user-owned `social_cards` table reusable across worlds and characters (mirrors `items`: visibility + clone-on-use + semantic search). A `/social-cards` library page + standalone **builder** author cards directly; the inline `SocialCardsEditor` (world `style.socialCards` / character `profile.socialCards`) carries **Import from library** (snapshot a row into the array via `cardFromLibraryParts`) and **Save to library** (the reverse). Every layer holds its own snapshot copy — editing or deleting the library card never reaches a world/character already using it. Discovery uses the shared `searchLibraryIds` `scope` (All/Public/Owned). See [../developer-notes/social-reaction-cards.plan.md](../developer-notes/social-reaction-cards.plan.md).
+Cards are also **library content** — a user-owned `social_cards` table reusable across worlds and characters (mirrors `items`: visibility + clone-on-use + semantic search). A `/social-cards` library page + standalone **builder** author cards directly; the inline `SocialCardsEditor` (world `style.socialCards` / character `profile.socialCards`) carries **Import from library** (snapshot a row into the array via `cardFromLibraryParts`) and **Save to library** (the reverse). Every layer holds its own snapshot copy — editing or deleting the library card never reaches a world/character already using it. Discovery uses the shared `searchLibraryIds` `scope` (All/Public/Owned). See [../developer-notes/social-reaction-cards.plan.md](../developer-notes/finished/social-reaction-cards.plan.md).
 
 The resolver lives in `reactions.ts` (cards in `cards.ts`):
 

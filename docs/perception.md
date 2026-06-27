@@ -22,7 +22,7 @@ player's scene (`contracts/perception/channels.ts`):
 | Channel | Condition | Narrator rights |
 | --- | --- | --- |
 | `sight` | co-located at perceivable proximity | full presence — act, speak, be described |
-| `sound` | audibility-linked location | reserved (the cross-location sound channel is phase 4); kept in the enum so nothing changes when it lands |
+| `sound` | audibility-linked location | heard only — voice and noise carry, but no visual detail (reserved for phase 4) |
 | `comms` | an active call/text link | may speak, but is **not** physically here — no action, no appearance, cannot be touched |
 | `absent` | none of the above | may be **referenced** or remembered, never **enacted** |
 
@@ -172,7 +172,7 @@ sense wins.
 A first encounter renders an impression matched to the channel
 (`buildGlanceImpressions`): `sight` ⇒ the full appearance impression (as before);
 `comms` ⇒ a **voice-only** impression (pitch/timbre/accent/cadence + manner, no
-physical description) labeled "first contact by voice". `runtime.encountered­Participant­Ids`
+physical description) labeled "first contact by voice". `runtime.encounteredParticipantIds`
 marks full encounters only, so meeting someone first by phone doesn't burn the
 in-person first impression.
 
@@ -207,8 +207,9 @@ their consumer).
   `buildPresenceRoster`, `buildGlanceImpressions`, `deriveActionSalience`, the
   darkness + comms lines.
 - `engine/intent.ts` — `detectCommsIntent`.
-- `engine/merge.ts` — `turnSalienceSet`, the witness-set computation,
-  `planCommsEvents`.
+- `engine/merge/phases/witness.ts` — `turnSalienceSet`, the witness-set
+  computation.
+- `engine/merge/phases/comms.ts` — `planCommsEvents`.
 - `engine/prompts/narrative.ts` — presence/perception rulebook + turn-context blocks.
 - `engine/prompts/agents.ts` — simulant salience/comms guidance + continuity
   violation kinds.

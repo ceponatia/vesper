@@ -29,8 +29,8 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 | `VENICE_API_KEY` | — | Reference image editing |
 | `NARRATIVE_MODEL` | `aion-labs/aion-2.0` | Default narrator for new worlds (per-world override at creation) |
 | `AGENT_MODEL` | `deepseek/deepseek-v4-flash` | In-session agents (intake + post-turn); per-world override from the World tab |
-| `STATE_MODEL` | `deepseek/deepseek-v4-flash` | Default for all `generateChecked` calls — the forge/authoring agents (in-session agents use `AGENT_MODEL`) |
-| `TOOL_MODEL` | `deepseek/deepseek-v4-flash` | Scene composer (image pipeline) |
+| `STATE_MODEL` | `google/gemini-2.5-flash` | Default for all `generateChecked` calls — the forge/authoring agents (in-session agents use `AGENT_MODEL`) |
+| `TOOL_MODEL` | `google/gemini-2.5-flash` | Scene composer (image pipeline) |
 | `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | 1536-dim embeddings |
 | `VENICE_IMAGE_MODEL` | `qwen-image-2` | Venice uncensored text-to-image (avatars, entity images, scene t2i fallback) |
 | `VENICE_IMAGE_EDIT_MODEL` | `qwen-image-2-edit` | Single-reference editing (portrait variants + scene images) |

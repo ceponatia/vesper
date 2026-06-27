@@ -64,5 +64,5 @@ container-nesting between world items isn't carried through a world edit-save.)
 ## On the world page
 
 The world detail page draws the map as a force-directed graph (orphans in red),
-with a collapsible location list underneath. From there, **Edit** reopens the Map
-tab.
+with a collapsible location list underneath. From there, **Edit** opens the world
+editor, where you can switch to the **Map** tab.

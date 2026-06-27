@@ -2,7 +2,7 @@
 
 Story threads are the game's running list of "what's unresolved or worth tracking" — the missing-brother mystery, an investigation into a shifty captain, a standing interest in a character's social life. They are AI-maintained: the **director** post-turn agent opens, advances, and closes them; the narrator is told about the live ones so the story keeps its threads alive; the player sees them in the World tab and can open any one for the full picture.
 
-This doc is the single source of truth for how threads work end to end. The director's *prompt contract* lives in `engine/prompts/agents.ts` (`DIRECTOR_SYSTEM`); the deterministic *lifecycle* lives in `engine/merge.ts`; the *shape* lives in `contracts/state/session-runtime.ts`.
+This doc is the single source of truth for how threads work end to end. The director's *prompt contract* lives in `engine/prompts/agents.ts` (`DIRECTOR_SYSTEM`); the deterministic *lifecycle* lives in `engine/merge/phases/threads.ts`; the *shape* lives in `contracts/state/session-runtime.ts`.
 
 ## The two kinds
 
@@ -55,7 +55,7 @@ Every field is `.default()`ed, so threads written before this schema existed par
 ```
 
 - **Spawn** (`engine/spawn.ts`): plot anchors seed threads (`source: "anchor"`); priority `active` → `open`, else `cooling`.
-- **touch / develop / propose / resolve**: applied deterministically by `applyThreadSignals` (`engine/merge.ts`, pure & unit-tested). `develop` is the major-event path (appends a `{turn, text, kind}` entry, capped, and refreshes recency); `touch` is the cheap keep-warm path (refreshes recency, **no** log entry); `propose` seeds a new thread with kind/question/closeConditions and an opening development; `resolve` flips an investigation to `resolved`.
+- **touch / develop / propose / resolve**: applied deterministically by `applyThreadSignals` (`engine/merge/phases/threads.ts`, pure & unit-tested). `develop` is the major-event path (appends a `{turn, text, kind}` entry, capped, and refreshes recency); `touch` is the cheap keep-warm path (refreshes recency, **no** log entry); `propose` seeds a new thread with kind/question/closeConditions and an opening development; `resolve` flips an investigation to `resolved`.
 - **cooling** (`coolThreads`): an `open` thread untouched for `THREAD_COOLING_TURNS` turns demotes to `cooling` — it leaves the narrator context but still shows in the UI and is still offered to the director. Applies to both kinds (a quiet ongoing thread cools out of the way and reactivates when developed).
 - **resolve / archive**: only investigations resolve. Resolved/archived threads drop from both the narrator context and the status payload, so they vanish from the UI. A closed thread is never resurrected by dedup.
 
@@ -64,7 +64,7 @@ Every field is `.default()`ed, so threads written before this schema existed par
 Originally threads deduped by **exact title** only, so one subject spawned near-duplicates ("Captain Thorne's unusual directness" / "…quiet contemplation" / "Brian's informal investigation"). Two layers now prevent that, belt-and-suspenders like the item-dedupe ladder:
 
 1. **Director prompt (primary).** The director sees every open/cooling thread with its kind + development count and is told *one subject, one thread* (Rule 5): if a beat belongs to an existing thread, `develop` it rather than `propose` a near-duplicate.
-2. **Embedding backstop (`dedupeThreadProposals`, `engine/merge.ts`).** Before the pure reducer runs, each proposal's `title + question + summary` is embedded and compared (in-memory `cosineSimilarity`) against the same text for each **open/cooling** thread. A best match ≥ `THREAD_DEDUPE_MIN_SCORE` is rewritten into a `develop` on that thread (diagnostic `merge.thread.dedup_merged`) instead of opening a duplicate. Conservative threshold so only obvious dupes merge; resolved/archived threads are never candidates; embedding failure degrades to the exact-title guard inside `applyThreadSignals`.
+2. **Embedding backstop (`dedupeThreadProposals`, `engine/merge/phases/threads.ts`).** Before the pure reducer runs, each proposal's `title + question + summary` is embedded and compared (in-memory `cosineSimilarity`) against the same text for each **open/cooling** thread. A best match ≥ `THREAD_DEDUPE_MIN_SCORE` is rewritten into a `develop` on that thread (diagnostic `merge.thread.dedup_merged`) instead of opening a duplicate. Conservative threshold so only obvious dupes merge; resolved/archived threads are never candidates; embedding failure degrades to the exact-title guard inside `applyThreadSignals`.
 
 The embedder is injected via `GroundingDeps.embedThreadTexts` (same seam as `fuzzyResolve` for item/location grounding), so the planner stays testable — tests pass a deterministic fake; production wraps `embedTexts`. When no embedder is present, only the exact-title guard applies.
 

@@ -124,7 +124,7 @@ there is no second remote:
 
 | Branch | Role | How it updates |
 | --- | --- | --- |
-| `main` | **dev** (default) | Your normal workflow. Push here as always; the Fly GitHub integration auto-deploys dev on push. |
+| `main` | **dev** (default) | Your normal workflow. Push here as always; deploying dev is a separate **manual** `fly deploy` after testing — pushing to GitHub does **not** auto-deploy. |
 | `prod` | **production** | **Protected.** No direct pushes — only fast-tested code arrives via a pull request from `main`. |
 
 Day-to-day is unchanged: keep committing to and pushing `main`. `prod` only ever
