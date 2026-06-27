@@ -55,13 +55,6 @@ projection (the **Mood-reactive avatars** plan below).
   needs a `world-simulation.plan.md` when it becomes active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
-- **Merge reducer decomposition — Slices 4–5** (engineering debt, no feature payoff) —
-  [merge-decomposition.plan.md](merge-decomposition.plan.md) · spec
-  [merge-decomposition.spec.md](merge-decomposition.spec.md). Slices 1–3 shipped (see
-  Shipped). Remaining: split the ~700-line `planTurnEffects` into the explicit phase list
-  (Slice 4, "one phase per commit, verify between each") and move it to `plan.ts` /
-  `applyTurnResults` to `apply.ts` + tighten the barrel (Slice 5). The hot, merge-adjacent
-  path — sequence for a quiet window between feature arcs. Lowest priority here.
 
 ## Someday / parking lot
 
@@ -75,13 +68,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
-- **Merge reducer decomposition — Slices 1–3** —
+- **Merge reducer decomposition — all 5 slices** —
   [merge-decomposition.plan.md](merge-decomposition.plan.md) · spec
-  [merge-decomposition.spec.md](merge-decomposition.spec.md), 2026-06-27. `engine/merge.ts`
-  promoted to a `merge/` folder behind the `WorkingState` ADT (dirty-tracking owned
-  internally, enforced by a `no-restricted-syntax` encapsulation gate), and the pure
-  resolution toolkit split into `merge/grounding.ts`. Behavior-preserving. Slices 4–5
-  (phase split, `plan.ts`/`apply.ts` move) remain in Next.
+  [merge-decomposition.spec.md](merge-decomposition.spec.md), 2026-06-27. The 2655-line
+  `engine/merge.ts` is fully decomposed: a `merge/` folder behind the `WorkingState` ADT
+  (dirty-tracking owned internally, `no-restricted-syntax` gate), the pure resolution toolkit
+  in `grounding.ts`, one `phases/*.ts` file per phase, the orchestrator (`PhaseContext` + an
+  ordered `PHASES` list) in `plan.ts`, the lone DB-write transaction in `apply.ts`, and a
+  narrowed public barrel. Behavior-preserving (MergePlan + every DB write byte-identical;
+  189 pure + 13 integration tests green).
 - **Character chat — scenario setup modal** —
   [character-chat-scenario.plan.md](finished/character-chat-scenario.plan.md), 2026-06-27. The chat tab's
   Starting Relationship + Scenario controls fold into one **Scenario setup** modal (sibling of State
