@@ -70,13 +70,23 @@ and unhealthy at every **inner** boundary (no ADT, manual dirty-tracking, an opa
 
 ## 3. Target design
 
-### 3.1 `WorkingState` — the ADT (recommend: a class)
+### 3.1 `WorkingState` — the ADT (decided 2026-06-27: a class)
 
 A mutable-accumulator class, matching the existing precedent — `EventChannel`
 (`pipeline.ts:91`) and `DiagnosticCollector` (`contracts/diagnostics.ts:21`) are both
 mutable accumulators with private fields and intention-revealing methods. A class here
 follows the grain rather than fighting the codebase's functional bent, and it lets
 dirty-tracking be **private and automatic** — the structural fix for checklist 5 & 6.
+
+This is a class **because there is an ADT with an invariant to encapsulate** (every world
+mutation must mark a dirty set), not a turn toward OO — it is exactly the Code Complete
+test for when a class earns its keep. The deciding factor over an opaque-type + function
+module is enforcement: with private fields a caller *cannot* mutate the world copy without
+going through a mutator that marks the dirty set, so the highest-risk bug class (a dropped
+DB write from a missed `.add()`) becomes structurally impossible. An opaque type would
+rely on convention to keep the two in lockstep. The phases that operate on this state stay
+**functions** (see §3.3) — the codebase's functional grain is preserved everywhere a pure
+transformation lives; the class is introduced only where mutable state + an invariant do.
 
 ```
 class WorkingState {
@@ -97,18 +107,24 @@ class WorkingState {
   setConditions(p, conditions): void
   setAttributeOverlay(p, overlay): void
 
-  // accumulators
+  // accumulators — every per-turn output lands here, so phases return void (§3.3)
   recordDrop(message: string): void
   stageArrival(line): void; stageDeparture(line): void; stageDirective(line): void
   fireComms(pending: PendingComms): void
+  recordFacts(drafts: FactDraft[]): void; setEpisodeSummary(s): void
+  recordAffinity(updates: AffinityUpdate[]): void   // applies the reaction→combine order
 
-  // readonly getters consumed when assembling the MergePlan
+  // readonly getters (used internally by toMergePlan; exposed for phase-level tests)
   get participants(): readonly WorkingParticipant[]
   get items(): readonly WorkingItem[]
   get touchedItemIds(): readonly string[]
   get touchedParticipantIds(): ReadonlySet<string>
   get droppedEvents(): readonly string[]
   get arrivals(): readonly string[]   // …departures, firedComms, stagedDirectives
+
+  // final assembly — the orchestrator's only post-phase calls
+  toBrief(): MergeBrief        // reads from everything; the lone non-accumulator output
+  toMergePlan(): MergePlan     // packages participants/items/dirty sets/outputs + toBrief()
 }
 ```
 
@@ -143,24 +159,48 @@ resolve unchanged. The merge tests repoint to the relative sibling they exercise
 rule (`eslint.config.mjs`, the `src/server/**` block) restricts only **cross-module**
 `@/server/*/*` deep imports, never relative intra-module ones.
 
-### 3.3 Phase signature (recommend: mutate `WorkingState`, return only fragments)
+### 3.3 Phase signature (decided 2026-06-27: mutate `WorkingState`, every phase returns `void`)
 
 ```
-type Phase = (state: WorkingState, ctx: PhaseContext) => PhaseOutput | void
+type Phase = (state: WorkingState, ctx: PhaseContext) => void
 ```
 
 `ctx` carries the read-only inputs every phase shares (`bundle`, `turn`, `results`,
 `reconcile` flag, resolved `clockMinutes`/`minutes`, `defs`, `moodAtTurnStart`, `sink`).
-Most phases mutate `state` and return `void`; the few that contribute non-state plan
-fragments (e.g. `facts-episode` → `factDrafts` + `episodeSummary`; `affinity` →
-`affinityUpdates`) return a typed `PhaseOutput` the orchestrator merges into the
-`MergePlan`. This keeps the diff small (state still mutates as today) while making each
-phase independently constructible-and-testable against a `WorkingState`.
 
-`plan.ts` becomes legible end to end — its body is the **explicit ordered phase list**,
-so the load-bearing ordering invariants (drift → reaction mood-nudge; reaction edges →
-affinity combine; staged-intent tick → schedule tick) are stated in one readable place
-instead of being smeared across 830 lines and prose comments.
+Mutate-in-place beats pure return-by-value: a pure phase would have to invent a command /
+diff representation and re-apply it, which splits the mutation+dirty-tracking logic right
+back out of the ADT §3.1 exists to consolidate. So phases mutate `state` — and they mutate
+it *only* through the ADT's mutators, which is what keeps each phase independently
+constructible-and-testable (build a `WorkingState`, run the phase, assert on its getters).
+
+We go one step past a hybrid `PhaseOutput | void`: **every** per-turn output accumulates on
+`WorkingState`, so the signature is uniformly `=> void`. The state already carries the
+narrative byproducts (`droppedEvents`, `arrivals`, `departures`, `firedComms`,
+`stagedDirectives`); the plan-data outputs (`factDrafts`, `affinityUpdates`,
+`episodeSummary`) join them as accumulators rather than being returned and merged by the
+orchestrator. This removes the `PhaseOutput` union and its merge logic, and the load-bearing
+ordering invariants (drift → reaction mood-nudge; reaction edges → affinity combine;
+staged-intent tick → schedule tick) reduce to the order of `void`-returning calls. The one
+exception is `brief`, which reads from everything else — it is not an accumulator but a
+final `state.toBrief()` assembly step.
+
+Cost of this choice: `WorkingState`'s surface grows with outputs that aren't strictly "the
+world copy." That line was already crossed (the byproducts above live on state today in the
+target design), so consistency favors crossing it fully; the alternative three-tier split
+(world mutations / byproducts / plan-data) buys a conceptual boundary at the price of a
+non-uniform phase signature. We take uniformity.
+
+`plan.ts` becomes legible end to end — its body is literally the **explicit ordered phase
+list** followed by `return state.toMergePlan()`:
+
+```
+for (const phase of PHASES) phase(state, ctx);
+return state.toMergePlan();   // brief assembled here via state.toBrief()
+```
+
+— so the ordering that was smeared across 830 lines and prose comments is stated in one
+readable place.
 
 ---
 
