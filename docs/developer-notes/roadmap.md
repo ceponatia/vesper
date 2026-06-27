@@ -34,6 +34,18 @@ deferral, cards-first). The avatar arc above consumes Mood's projection — the 
 
 ## Next (queued)
 
+- **Narrator prompt focus & proportionate reaction** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) (draft). Stop the narrator
+  over-talking and doting: replace the `3–5 paragraphs` floor with hot-swappable narration
+  **shape profiles** (default concise-but-immersive, an aggressive-concise backup), and add
+  response-first + proportionate-reaction + multi-party-restraint rules to both the session
+  rulebook (`PROSE_STYLE_RULES` / `RESPONSE_CONTRACT` / presence-fidelity) and `CHAT_RULES`,
+  leaning on the existing `## Reaction` band instead of inventing whether a remark matters.
+  Global default with an authored override; self-motivated NPC initiative is **kept** for
+  living-world texture. Phase 1 is pure prompt wording (cache-stable); Phase 2 adds a
+  deterministic `buildResponseShape` line (no new call); Phase 3 (a structured focus planner)
+  is gated on eval. Reasoning knobs stay model-default pending live probes (Aion 2.0 / GLM 5.2
+  / Owl Alpha). A scored **behavioral eval harness** follows as a separate task.
 - **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
