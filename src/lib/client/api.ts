@@ -25,6 +25,8 @@ import {
   loreChunkVisibilitySchema,
   sceneReferenceSchema,
   socialReactionCardExtrasSchema,
+  socialReactionCardSchema,
+  type SocialReactionCard,
   worldLoreSchema,
   worldStyleSchema,
 } from "@/contracts";
@@ -280,6 +282,11 @@ export const chatStateSnapshotSchema = z.object({
   // False ⇒ a seed-on-read (no row yet); the chat strip then previews the authored
   // Starting Relationship. Defaults true so a missing flag shows the stored disposition.
   persisted: z.boolean().catch(true),
+  // Scenario-modal fields (character-chat-scenario.plan.md): free-text outfit + intimate-reveal
+  // gate for scene images, and the social cards live in this chat.
+  outfit: textOr(""),
+  outfitExposed: z.boolean().catch(false),
+  activeSocialCards: z.array(socialReactionCardSchema).catch([]),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
 /** The reset scope of the three chat reset actions (Reset All / Chat / State). */
@@ -291,6 +298,9 @@ export interface ChatStateEdit {
   mindNote?: string;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
+  outfit?: string;
+  outfitExposed?: boolean;
+  activeSocialCards?: SocialReactionCard[];
 }
 
 export const locationSummarySchema = z.object({
@@ -727,10 +737,7 @@ export const charactersApi = {
     apiDelete(`/api/characters/${id}/chat?scope=${scope}`),
   // --- Light chat state (character-chat-state.spec.md) ---
   chatState: (id: string) => apiGet(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`),
-  /** Save the per-chat premise (upserts the state row); returns the refreshed snapshot. */
-  saveChatPremise: (id: string, premise: string) =>
-    apiPatch(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`, { premise }),
-  /** Edit chat state fields from the state-tools modal (slice 4); returns the refreshed snapshot. */
+  /** Edit chat state fields from the state-tools / scenario-setup modals; returns the refreshed snapshot. */
   editChatState: (id: string, patch: ChatStateEdit) =>
     apiPatch(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`, patch),
   /** Apply a one-click action chip (offer a drink → intoxication↑, etc.); returns the refreshed snapshot. */

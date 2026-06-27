@@ -5,6 +5,7 @@ import {
   applyMeterDrift,
   chatPulseSchema,
   CHAT_MIND_NOTE_MAX_CHARS,
+  CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   chatPulseTraceSchema,
   clampAffinity,
@@ -22,6 +23,7 @@ import {
   NEUTRAL_MOOD_METER,
   personalizeMeters,
   resolveSocialReaction,
+  socialReactionCardSchema,
   socialTraitScale,
   stageForValue,
   stageMidpoint,
@@ -32,6 +34,7 @@ import {
   type ChatPulseTrace,
   type DiagnosticSink,
   type EmotionLabel,
+  type SocialReactionCard,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, type GenerateCheckedResult } from "../ai";
@@ -66,6 +69,12 @@ export interface ChatState {
   conditions: ActiveCondition[];
   mindNote: string;
   premise: string;
+  /** Free-text starting outfit driving chat scene images (character-chat-scenario.plan.md). */
+  outfit: string;
+  /** Whether chat scene images reveal intimate anatomy (no structured wardrobe to derive it). */
+  outfitExposed: boolean;
+  /** The social cards live in THIS chat — seeded from `profile.socialCards`, then authoritative. */
+  activeSocialCards: SocialReactionCard[];
   lastPulseTrace: ChatPulseTrace;
   clockMinutes: number;
   lastInteractionAt: Date | null;
@@ -81,6 +90,12 @@ export interface ChatStateSnapshot {
   conditions: ActiveCondition[];
   mindNote: string;
   premise: string;
+  /** Free-text starting outfit for the scenario modal (character-chat-scenario.plan.md). */
+  outfit: string;
+  /** Intimate-reveal gate for chat scene images. */
+  outfitExposed: boolean;
+  /** The cards live in THIS chat (editable in the scenario modal). */
+  activeSocialCards: SocialReactionCard[];
   lastPulseTrace: ChatPulseTrace;
   /** Read-only chat-clock + wall-clock anchor, surfaced for the state-tools modal (slice 4). */
   clockMinutes: number;
@@ -95,6 +110,7 @@ export interface ChatStateSnapshot {
 
 const metersSchema = z.record(z.string(), z.number());
 const conditionsSchema = z.array(activeConditionSchema);
+const activeSocialCardsSchema = z.array(socialReactionCardSchema);
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 const clamp01 = (n: number): number => clamp(n, 0, 1);
@@ -114,6 +130,10 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     conditions: [],
     mindNote: "",
     premise: (premise ?? note).trim().slice(0, CHAT_PREMISE_MAX_CHARS),
+    outfit: "",
+    outfitExposed: false,
+    // Seeded from the character's own cards, then author-editable + authoritative in the chat.
+    activeSocialCards: [...(profile.socialCards ?? [])],
     lastPulseTrace: emptyChatPulseTrace(),
     clockMinutes: 0,
     lastInteractionAt: null,
@@ -134,6 +154,9 @@ export async function loadChatState(
       mindNote: characterChatState.mindNote,
       lastPulseTrace: characterChatState.lastPulseTrace,
       premise: characterChatState.premise,
+      outfit: characterChatState.outfit,
+      outfitExposed: characterChatState.outfitExposed,
+      activeSocialCards: characterChatState.activeSocialCards,
       clockMinutes: characterChatState.clockMinutes,
       lastInteractionAt: characterChatState.lastInteractionAt,
     })
@@ -147,6 +170,9 @@ export async function loadChatState(
     conditions: parseOr(conditionsSchema, row.conditions, [], sink, "character_chat_state.conditions"),
     mindNote: row.mindNote,
     premise: row.premise,
+    outfit: row.outfit,
+    outfitExposed: row.outfitExposed,
+    activeSocialCards: parseOr(activeSocialCardsSchema, row.activeSocialCards, [], sink, "character_chat_state.active_social_cards"),
     lastPulseTrace: parseOr(
       chatPulseTraceSchema,
       row.lastPulseTrace,
@@ -230,8 +256,9 @@ export function applyChatPulse(
   if (concept) {
     const reaction = resolveSocialReaction(
       { concept, target: characterName },
-      // World-less chat: only the character's own default cards apply.
-      { tags: profile.tags, preferences: profile.preferences, cards: profile.socialCards },
+      // World-less chat: the cards active in THIS chat (scenario modal) apply —
+      // seeded from the character's own `profile.socialCards`, then author-editable.
+      { tags: profile.tags, preferences: profile.preferences, cards: state.activeSocialCards },
     );
     if (reaction) {
       valence = reaction.valence;
@@ -461,6 +488,9 @@ export async function persistChatState(ownerId: string, characterId: string, sta
     mindNote: state.mindNote,
     lastPulseTrace: state.lastPulseTrace,
     premise: state.premise,
+    outfit: state.outfit,
+    outfitExposed: state.outfitExposed,
+    activeSocialCards: state.activeSocialCards,
     clockMinutes: state.clockMinutes,
     lastInteractionAt: state.lastInteractionAt,
   };
@@ -480,6 +510,9 @@ export interface ChatStateEdit {
   mindNote?: string;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
+  outfit?: string;
+  outfitExposed?: boolean;
+  activeSocialCards?: SocialReactionCard[];
 }
 
 /**
@@ -503,6 +536,9 @@ export async function editChatState(args: {
   if (patch.mindNote !== undefined) next.mindNote = patch.mindNote.trim().slice(0, CHAT_MIND_NOTE_MAX_CHARS);
   if (patch.meters !== undefined) next.meters = clampMeters(patch.meters);
   if (patch.conditions !== undefined) next.conditions = patch.conditions;
+  if (patch.outfit !== undefined) next.outfit = patch.outfit.slice(0, CHAT_OUTFIT_MAX_CHARS);
+  if (patch.outfitExposed !== undefined) next.outfitExposed = patch.outfitExposed;
+  if (patch.activeSocialCards !== undefined) next.activeSocialCards = patch.activeSocialCards;
   await persistChatState(ownerId, characterId, next);
   return next;
 }
@@ -592,6 +628,9 @@ export function chatStateSnapshot(
     conditions: state.conditions,
     mindNote: state.mindNote,
     premise: state.premise,
+    outfit: state.outfit,
+    outfitExposed: state.outfitExposed,
+    activeSocialCards: state.activeSocialCards,
     lastPulseTrace: state.lastPulseTrace,
     clockMinutes: state.clockMinutes,
     lastInteractionAt: state.lastInteractionAt ? state.lastInteractionAt.toISOString() : null,

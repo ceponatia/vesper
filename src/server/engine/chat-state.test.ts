@@ -4,6 +4,7 @@ import { initialMeters } from "@/contracts/meters/registry";
 import { stageForValue, stageMidpoint } from "@/contracts/relationships/stages";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
+import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import { CHAT_AROUSAL_INTIMATE, CHAT_RESET_MINUTES, CHAT_TICK_MINUTES } from "./constants";
 import {
@@ -172,6 +173,29 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
     const { state: next, trace } = applyChatPulse(state(), pulse("proposition"), prude, "Mara");
     expect(trace.arousalDelta).toBe(0);
     expect(next.meters.arousal).toBe(0);
+  });
+
+  it("resolves a reaction against the chat's ACTIVE social cards (character-chat-scenario.plan.md)", () => {
+    const taboo: SocialReactionCard = {
+      id: "no-crit",
+      label: "Criticism is taboo here",
+      description: "",
+      kind: "taboo",
+      triggers: ["criticize"],
+      severity: 60,
+      reactionOverrides: [],
+    };
+    const withCard: ChatState = { ...state(), activeSocialCards: [taboo] };
+    const { trace } = applyChatPulse(withCard, pulse("criticize"), profile(), "Mara");
+    expect(trace.concept).toBe("criticize");
+    expect(trace.valence).toBe("dislike");
+    expect(trace.affinityDelta).toBeLessThan(0);
+  });
+
+  it("no active card on the concept ⇒ no card reaction (the active set is authoritative)", () => {
+    const { trace } = applyChatPulse(state(), pulse("criticize"), profile(), "Mara");
+    expect(trace.valence).toBeNull();
+    expect(trace.affinityDelta).toBe(0);
   });
 });
 

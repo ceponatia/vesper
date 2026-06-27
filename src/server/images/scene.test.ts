@@ -85,6 +85,13 @@ describe("composeSceneSpec (demo mode = degraded fallback path)", () => {
     expect(plan.focal?.name).toBe("Mira");
     expect(plan.focal?.outfitSummary).toBe("");
   });
+
+  it("a free-text outfitDescription overrides the wardrobe summary (character chat — no equippable items)", async () => {
+    const plan = await composeSceneSpec({
+      present: [{ name: "Mira", wornVisible: [], outfitDescription: "a loose silk robe and bare feet" }],
+    });
+    expect(plan.focal?.outfitSummary).toBe("a loose silk robe and bare feet");
+  });
 });
 
 const okResult = (): ProviderRenderResult => ({ ok: true, image: Buffer.from("img") });

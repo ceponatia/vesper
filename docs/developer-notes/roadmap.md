@@ -75,6 +75,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character chat — scenario setup modal** —
+  [character-chat-scenario.plan.md](character-chat-scenario.plan.md), 2026-06-27. The chat tab's
+  Starting Relationship + Scenario controls fold into one **Scenario setup** modal (sibling of State
+  tools), grown into a no-session test harness: a per-chat **active social-card** set (seeded from the
+  character's own cards, then authoritative — the pulse resolves against it) so taboos/rules are
+  testable without a world/session, plus a free-text **starting outfit** + an **exposed** toggle that
+  drive chat scene images — **detaching the structured clothing** the chat can't equip (`defaultOutfit`
+  stays for avatar/portrait/sessions). Three new `character_chat_state` columns (`outfit`,
+  `outfit_exposed`, `active_social_cards`; migration 0015). Also added the `foot_contact` interaction
+  concept earlier the same arc so the foot-fetish card triggers precisely.
 - **Social-reaction cards — library-reuse UI** —
   [social-reaction-cards.plan.md](finished/social-reaction-cards.plan.md) §"Deferred slice", 2026-06-26.
   The `social_cards` library finally gets its surface: `social_card` wired into the shared
