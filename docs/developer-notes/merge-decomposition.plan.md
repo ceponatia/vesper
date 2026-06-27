@@ -1,13 +1,16 @@
 # Merge reducer decomposition — plan
 
-Status: **Slices 1–3 shipped — 2026-06-27** (`merge/` folder + `WorkingState` ADT +
-encapsulation lint gate + `grounding.ts`); **Slices 4–5 next** (the phase split + the
-`plan.ts`/`apply.ts` move — deferred to a quiet window, see roadmap `## Next`). A
-behavior-preserving refactor — no feature payoff, pure maintainability. Produced by the
-Code Complete "complete review" pass (`docs/prompts/complete-review.md`) over
-`src/server/engine/merge.ts`, the codebase's largest file and the highest-confusion area
-in the turn engine. Slices land green per `pnpm verify`; the merge suite (189 pure tests)
-is the behavior gate (Postgres-backed `engine.int.test.ts` runs in CI).
+Status: **shipped — 2026-06-27** (all 5 slices). Slices 1–3 (`merge/` folder + `WorkingState`
+ADT + encapsulation lint gate + `grounding.ts`) landed first; Slices 4–5 (the phase split +
+the `plan.ts`/`apply.ts` move + barrel narrowing) completed the same day. The 2655-line
+`merge/index.ts` is now a 16-line public barrel over `types.ts` + `plan.ts` + `apply.ts` +
+16 `phases/*.ts` files (largest ~250 lines); `planTurnEffects` is an ordered `PHASES` list
+run over a `PhaseContext` (see the §3.3 refinement note in the spec). A behavior-preserving
+refactor — no feature payoff, pure maintainability. Produced by the Code Complete "complete
+review" pass (`docs/prompts/complete-review.md`) over the old `merge.ts`, the codebase's
+largest file and the highest-confusion area in the turn engine. Every slice landed green per
+`pnpm verify`; the merge suite (189 pure tests) + Postgres-backed `engine.int.test.ts`
+(13 tests) were the behavior gate.
 
 Spec (full checklist scoring, target design, test strategy):
 [merge-decomposition.spec.md](merge-decomposition.spec.md). System doc:
@@ -104,27 +107,41 @@ Move the stateless name→row helpers (`findParticipant`, `groundParticipants`,
 already pure and well-tested; this is a file move + import update. Unrelated info leaves
 the reducer (checklist 7).
 
-### Slice 4 — `merge/phases/*.ts`: one file per phase — ⬜ remaining (re-measured: `planTurnEffects` ≈ 700 lines)
+### Slice 4 — `merge/phases/*.ts`: one file per phase — ✅ shipped 2026-06-27
 
-Extract each inline phase of `planTurnEffects` into `(state: WorkingState, ctx) => void`
-(or returning a typed plan-fragment). One file per phase: `movements`, `item-events`,
-`clock-and-meters`, `reactions`, `conditions`, `attributes`, `activities`,
-`schedule-tick`, `facts-episode`, `threads`, `witness`, `affinity`, `comms`, `brief`.
-Extract **one phase per commit**, verify between each. `planTurnEffects` shrinks to a
-~60-line orchestrator whose body is the explicit, ordered phase list — the load-bearing
-ordering becomes visible in one place (checklist 5 & 8). Most per-subsystem planners
-(`plan*`/`apply*`) already exist; the phase file is just the glue that lives inline today.
+Each inline phase of `planTurnEffects` is now a named `(ctx, state) => void` step in its own
+`phases/*.ts` file (`movement`, `items`, `meters`, `reactions`, `conditions`, `attributes`,
+`activities`, `schedule`, `facts`, `threads`, `witness`, `comms`, `affinity`, `brief` + a
+shared `caps.ts`), each co-locating its glue with the per-subsystem planner(s) it drives.
+`planTurnEffects` (now in `plan.ts`) is a ~10-line orchestrator: build the `WorkingState` + a
+`PhaseContext`, `for (const phase of PHASES) await phase(ctx, state)`, then
+`buildMergePlan(ctx, state)`. The load-bearing ordering is the `PHASES` list (checklist 5 & 8).
+Landed in two verified passes (in-file decomposition, then the physical file split) rather than
+one-commit-per-phase — the test suite (189 + 13) was green after each.
 
-### Slice 5 — `merge/apply.ts` + barrel tightening — ⬜ remaining (do after Slice 4: `plan.ts` needs the phases distributed first to avoid an index↔plan cycle)
+**§3.3 refinement (recorded in the spec):** the spec's "every per-turn output accumulates on
+`WorkingState`; `return state.toMergePlan()`" was implemented as **uniform `=> void` phases
+(the binding Q3 constraint, honored) whose outputs + intermediate scratch accumulate on a
+mutable `PhaseContext`, not on `WorkingState`.** `WorkingState` stayed exactly as Slice 2
+shipped it (world copy + its narrative byproducts + the dirty-tracking invariant);
+`buildMergePlan(ctx, state)` assembles the plan. Keeping the world-copy ADT focused rather than
+growing it into a turn-result god-object serves checklist items 1/3/8 (one purpose per unit)
+better than folding everything into it. See spec §3.3.
 
-Isolate `applyTurnResults` (the DB-write layer) into its own file; optionally split its
-three transaction write-loops (participants, affinity edges+events, items) into small
-private writers. Then `merge/index.ts` re-exports only the **public** surface
-(`applyTurnResults`, `planTurnEffects`, and the `MergePlan` / `PlanInput` / `MergeTurn` /
-`WorkingParticipant` / `WorkingItem` / `WorkingState` types). Phase + grounding helpers
-are imported by their tests via relative sibling paths inside the folder — legal, because
-the ESLint boundary rule restricts only cross-module `@/server/*/*` deep imports, not
-relative intra-module ones. The public/internal boundary is restored (checklist 3 & 4).
+### Slice 5 — `merge/apply.ts` + barrel tightening — ✅ shipped 2026-06-27
+
+`applyTurnResults` (the DB-write layer) is isolated in `merge/apply.ts` (it imports
+`planTurnEffects` from `plan.ts`, so no index↔plan cycle). `merge/index.ts` re-exports only the
+**public** surface — `applyTurnResults`, `planTurnEffects`, `stagedLocationAnchor`,
+`WorkingState`, and the `MergePlan` / `PlanInput` / `MergeTurn` / `MergeMode` / `GroundingDeps` /
+`WorkingParticipant` / `WorkingItem` / `ItemPlacement` types. The ~30 per-subsystem planners +
+phase glue that only the unit tests reach are no longer re-exported; the 7 merge test files
+import them directly from their relative sibling modules (`./merge/phases/*`, `./merge/grounding`,
+`./merge/types`) — legal, because the ESLint boundary rule restricts only cross-module
+`@/server/*/*` deep imports, not relative intra-module ones. Verified zero production consumers
+used any now-internal symbol. The public/internal boundary is restored (checklist 3 & 4).
+(The transaction write-loops were left as one body — the optional private-writer split wasn't
+needed for the boundary win.)
 
 ## Risks & sequencing
 

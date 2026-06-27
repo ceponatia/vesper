@@ -133,9 +133,13 @@ Violations become next-turn correction directives (self-expiring — the brief i
 behind an ADT that owns dirty-tracking — every world mutation goes through a method that
 marks the right dirty set, so a dropped DB write from a forgotten mark is structurally
 impossible (an ESLint `no-restricted-syntax` gate forbids direct field assignment outside
-that file). Name→row resolution lives in `merge/grounding.ts`; `planTurnEffects` (the
-orchestrator) and `applyTurnResults` (the one write transaction) in `merge/index.ts`. The
-ongoing decomposition is [merge-decomposition.plan.md](developer-notes/merge-decomposition.plan.md).
+that file). The reducer is decomposed into a folder: name→row resolution in
+`merge/grounding.ts`; shared contracts in `merge/types.ts`; one file per phase under
+`merge/phases/*` (each co-locating its glue with the per-subsystem planner it drives);
+`planTurnEffects` (the orchestrator — a `PhaseContext` plus an ordered `PHASES` list run over
+the `WorkingState`) in `merge/plan.ts`; `applyTurnResults` (the one write transaction) in
+`merge/apply.ts`; `merge/index.ts` is the public barrel. The decomposition history is
+[merge-decomposition.plan.md](developer-notes/merge-decomposition.plan.md).
 Order:
 
 1. **Ground names → rows**: participants by display name (case-insensitive; canonical casing from the row); items via the resolver (exact name → alias → embedding-fuzzy ≥0.75 against in-scope instances only — bounded search space; action-aware preference, e.g. `remove` prefers worn instances). Unresolvable references → diagnostic (`merge.item.unresolved`, `merge.participant.unresolved`), event dropped, and the dropped event is recorded in `brief.droppedEvents` so the next turn can gently correct any narration/state divergence.

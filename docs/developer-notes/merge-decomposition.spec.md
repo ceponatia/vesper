@@ -1,8 +1,9 @@
 # Merge reducer decomposition — spec
 
-Status: **draft** (proposal). The design + evidence behind
-[merge-decomposition.plan.md](merge-decomposition.plan.md). Subject:
-`src/server/engine/merge.ts` (2655 lines, as of 2026-06-26). Produced by the Code
+Status: **shipped — 2026-06-27** (implemented; see the §3.3 refinement note for the one
+deviation from this proposal). The design + evidence behind
+[merge-decomposition.plan.md](merge-decomposition.plan.md). Subject: the former
+`src/server/engine/merge.ts` (2655 lines), now the `merge/` folder. Produced by the Code
 Complete "complete review" framework (`docs/prompts/complete-review.md`). System doc:
 [turn-engine.md](../turn-engine.md) §"Merge reducer".
 
@@ -201,6 +202,38 @@ return state.toMergePlan();   // brief assembled here via state.toBrief()
 
 — so the ordering that was smeared across 830 lines and prose comments is stated in one
 readable place.
+
+### 3.3a — As-built refinement (2026-06-27): outputs accumulate on `PhaseContext`, not `WorkingState`
+
+The shipped code keeps the **binding** part of §3.3 — every phase is a uniform
+`(ctx, state) => void`, and `plan.ts` is the explicit ordered `PHASES` list — but routes the
+per-turn *outputs and intermediate scratch* through a mutable **`PhaseContext`** (`ctx`) rather
+than folding them all onto `WorkingState`:
+
+```
+const state = WorkingState.fromBundle(input.bundle);
+const ctx = createPhaseContext(input, state);
+for (const phase of PHASES) await phase(ctx, state);
+return buildMergePlan(ctx, state);
+```
+
+`ctx` carries the read-only inputs (`bundle`/`turn`/`results`/`sink`/`deps` + the resolved
+`defs`/`turnStartMinute` and the name→row resolver closures) **and** the mutable cross-phase
+state one phase produces for a later one (clock outputs, turn-start mood, the reaction/breach
+folds, the runtime-building pieces, `factDrafts`/`affinityUpdates`/`episodeSummary`).
+`WorkingState` stayed **exactly** as Slice 2 shipped it — the world copy + its narrative
+byproducts (`droppedEvents`/`arrivals`/`departures`/`stagedDirectives`/`firedComms`) + the
+private dirty-tracking invariant — and `buildMergePlan(ctx, state)` (a free function in `plan.ts`)
+does the final assembly instead of a `state.toMergePlan()` method.
+
+Why this beats the literal "everything on `WorkingState`": §3.3 itself already routed
+`clockMinutes`/`minutes`/`defs`/`moodAtTurnStart` through `ctx`, so the plan-data outputs join
+their natural siblings there. Folding the whole `MergePlan` (clock scalars, runtime, witnessedBy,
+commsChanges, affinityDecay, brief, …) onto `WorkingState` would have turned the world-copy ADT
+into a turn-result god-object — directly against checklist items **1/3/8** (one purpose per unit).
+Keeping `WorkingState` focused on its single invariant (world mutation ⇒ dirty-mark) and giving
+the turn's scratch+outputs their own `PhaseContext` honors those items *better*, at no cost to the
+black-box property (item 5/6 are still structural + lint-gated). The §7 re-scoring stands.
 
 ---
 
