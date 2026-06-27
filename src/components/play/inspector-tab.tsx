@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { Select } from "@/components/ui/select";
 import { SkeletonText } from "@/components/ui/skeleton";
+import { NarrationShapeToggle } from "./narration-shape-toggle";
 
 /**
  * Inspector tab (admin only, docs/ui.md): per-turn agent results, persisted
@@ -156,45 +157,49 @@ export function InspectorTab({ session }: { session: UseSession }) {
     setLoading(false);
   };
 
-  if (turns.length === 0) {
-    return <p className="p-4 text-xs text-paper-500 italic">No turns yet — nothing to inspect.</p>;
-  }
-
   return (
     <div className="flex flex-col gap-3 p-4">
-      <div className="flex items-center gap-2">
-        <Select
-          value={turnId ?? ""}
-          onChange={(e) => {
-            setSelectedId(e.target.value);
-            void load(e.target.value);
-          }}
-          aria-label="Inspect turn"
-          className="h-8 text-xs"
-        >
-          {turns.map((turn) => (
-            <option key={turn.id} value={turn.id}>
-              {turn.number !== null ? `Turn ${turn.number}` : turn.id.slice(0, 8)}
-            </option>
-          ))}
-        </Select>
-        <Button size="sm" variant="quiet" busy={loading} onClick={() => turnId && void load(turnId, true)}>
-          {cached ? "Reload" : "Inspect"}
-        </Button>
-      </div>
+      <NarrationShapeToggle />
 
-      {!cached ? (
-        loading ? (
-          <SkeletonText lines={4} />
-        ) : (
-          <p className="text-xs text-paper-500 italic">Pick a turn and press Inspect.</p>
-        )
-      ) : !cached.ok ? (
-        <p className="text-xs text-danger-300">
-          {cached.error.code}: {cached.error.message}
-        </p>
+      {turns.length === 0 ? (
+        <p className="text-xs text-paper-500 italic">No turns yet — nothing to inspect.</p>
       ) : (
-        <InspectView payload={cached.data} />
+        <>
+          <div className="flex items-center gap-2">
+            <Select
+              value={turnId ?? ""}
+              onChange={(e) => {
+                setSelectedId(e.target.value);
+                void load(e.target.value);
+              }}
+              aria-label="Inspect turn"
+              className="h-8 text-xs"
+            >
+              {turns.map((turn) => (
+                <option key={turn.id} value={turn.id}>
+                  {turn.number !== null ? `Turn ${turn.number}` : turn.id.slice(0, 8)}
+                </option>
+              ))}
+            </Select>
+            <Button size="sm" variant="quiet" busy={loading} onClick={() => turnId && void load(turnId, true)}>
+              {cached ? "Reload" : "Inspect"}
+            </Button>
+          </div>
+
+          {!cached ? (
+            loading ? (
+              <SkeletonText lines={4} />
+            ) : (
+              <p className="text-xs text-paper-500 italic">Pick a turn and press Inspect.</p>
+            )
+          ) : !cached.ok ? (
+            <p className="text-xs text-danger-300">
+              {cached.error.code}: {cached.error.message}
+            </p>
+          ) : (
+            <InspectView payload={cached.data} />
+          )}
+        </>
       )}
     </div>
   );

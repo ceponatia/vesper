@@ -66,6 +66,34 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toMatch(/play it as Mara's own in-world choice/i);
   });
 
+  it("adopts the shape profiles, replacing the fixed paragraph target", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(prompt).not.toContain("one or two short paragraphs");
+    // The default (concise_immersive) profile drives chat length too.
+    expect(prompt).toContain("Write one focused beat per turn");
+  });
+
+  it("makes the aggressive_concise shape selectable in chat and distinct", () => {
+    const aggressive = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), narrationShape: "aggressive_concise" });
+    const concise = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), narrationShape: "concise_immersive" });
+    expect(aggressive).toContain("Be brief and tightly scoped");
+    expect(aggressive).not.toContain("Write one focused beat per turn");
+    expect(aggressive).not.toBe(concise);
+  });
+
+  it("carries the proportionate-reaction + stay-in-voice chat rules", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(prompt).toContain("React in proportion");
+    expect(prompt).toContain("affection is earned, not automatic");
+    expect(prompt).toContain("Stay in your own voice and the current topic");
+  });
+
+  it("introduces no hard length cap in the chat lane for either shape profile", () => {
+    const cap = /\d+\s+(characters|tokens|words|lines|sentences|paragraphs)/;
+    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), narrationShape: "concise_immersive" })).not.toMatch(cap);
+    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), narrationShape: "aggressive_concise" })).not.toMatch(cap);
+  });
+
   it("skips unknown attribute vocabulary instead of leaking it", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Mara",

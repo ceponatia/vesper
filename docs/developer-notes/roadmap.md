@@ -34,18 +34,14 @@ deferral, cards-first). The avatar arc above consumes Mood's projection — the 
 
 ## Next (queued)
 
-- **Narrator prompt focus & proportionate reaction** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) (draft). Stop the narrator
-  over-talking and doting: replace the `3–5 paragraphs` floor with hot-swappable narration
-  **shape profiles** (default concise-but-immersive, an aggressive-concise backup), and add
-  response-first + proportionate-reaction + multi-party-restraint rules to both the session
-  rulebook (`PROSE_STYLE_RULES` / `RESPONSE_CONTRACT` / presence-fidelity) and `CHAT_RULES`,
-  leaning on the existing `## Reaction` band instead of inventing whether a remark matters.
-  Global default with an authored override; self-motivated NPC initiative is **kept** for
-  living-world texture. Phase 1 is pure prompt wording (cache-stable); Phase 2 adds a
-  deterministic `buildResponseShape` line (no new call); Phase 3 (a structured focus planner)
-  is gated on eval. Reasoning knobs stay model-default pending live probes (Aion 2.0 / GLM 5.2
-  / Owl Alpha). A scored **behavioral eval harness** follows as a separate task.
+- **Narrator prompt focus & proportionate reaction — Phase 2+** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) (active; **Phase 1 shipped
+  2026-06-27**, see Shipped). Phase 1 (prompt wording + shape profiles + dev toggle) is in;
+  what remains: the **interim manual golden-scenario eval** + reasoning probes P1–P3 (Aion 2.0 /
+  GLM 5.2 / Owl Alpha, by hand — knobs stay model-default until a probe shows a win); then, if
+  eval shows residual sprawl/doting, **Phase 2**'s deterministic `buildResponseShape` line (no new
+  call) and **Phase 3**'s structured focus planner (gated, preferring the intake-schema-extension
+  form). A scored **behavioral eval harness** follows as its own task.
 - **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -84,6 +80,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Narrator prompt focus & proportionate reaction — Phase 1** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-27. Killed the
+  `3–5 paragraphs` floor for hot-swappable narration **shape profiles** (`concise_immersive`
+  default + `aggressive_concise`, a global dev A/B knob with a dev-only `POST /api/dev/narration-shape`
+  toggle in the Inspector); added response-first + proportionate-reaction + multi-party-restraint
+  rules to the session rulebook and `CHAT_RULES` (both lanes), leaning on the existing `## Reaction`
+  band; self-motivated NPC initiative kept for living-world texture; authored Style directives
+  override. Phases 2–3 + eval remain in Next.
 - **Merge reducer decomposition — all 5 slices** —
   [merge-decomposition.plan.md](finished/merge-decomposition.plan.md) · spec
   [merge-decomposition.spec.md](finished/merge-decomposition.spec.md), 2026-06-27. The 2655-line

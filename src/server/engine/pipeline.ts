@@ -31,6 +31,7 @@ import { detectCommsIntent, isOocInput, type SceneIntent } from "./intent";
 import { runIntake, sceneIntentFromBrief } from "./intake";
 import { enqueueJob, registerJobHandler, sessionBusy } from "./jobs";
 import { applyTurnResults, stagedLocationAnchor } from "./merge";
+import { narrationShapeId } from "./prompts/constants";
 import { buildStaticRulebook, buildTurnContext } from "./prompts/narrative";
 import { recoverAbandonedTurns } from "./recovery";
 import {
@@ -704,6 +705,7 @@ async function assemblePreTurn(
     npcNames: allNpcNames,
     embodied: bundle.session.embodied,
     playerContext: bundle.session.embodied && player ? excerptBio(player.snapshot.bio) || undefined : undefined,
+    narrationShape: narrationShapeId(),
   });
 
   const gameTime = resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart);

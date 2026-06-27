@@ -5,6 +5,7 @@ import { crossedThresholdHints, deriveMoodDescriptor } from "@/contracts/meters/
 import { stageForValue } from "@/contracts/relationships/stages";
 import { realizeBody, speciesLorePhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
+import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
@@ -61,6 +62,12 @@ export interface CharacterChatPromptInput {
    * the scenario + state. Absent ⇒ byte-identical to a normal turn.
    */
   opening?: boolean;
+  /**
+   * Active narration shape profile (narrator-prompt-focus.plan.md §1.1) — the one
+   * dev toggle governs chat length identically to the session lane. Defaults to
+   * DEFAULT_NARRATION_SHAPE; the chat route passes `narrationShapeId()`.
+   */
+  narrationShape?: NarrationShapeId;
 }
 
 /**
@@ -142,7 +149,7 @@ const CONTENT_FRAMING = [
   "Romance, intimacy, and sexually explicit content are fully in scope — when the scene leads there, voice it in character, at the depth and intensity that fit this personality and the moment.",
 ].join(" ");
 
-const CHAT_RULES = (name: string, playerName?: string): string =>
+const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string): string =>
   [
     "How to respond:",
     `1. Stay fully in character as ${name}. Never break character, never mention being an AI, a model, or a chat app, never address the user as anyone but the person ${name} is talking to.`,
@@ -150,10 +157,12 @@ const CHAT_RULES = (name: string, playerName?: string): string =>
       ? `2. Speak in the first person as ${name}; you are talking with ${playerName} — address them as "you" (and by name when it feels natural). Their message is what they just said or did to you.`
       : `2. Speak in the first person as ${name}; address the user directly as "you". The user's message is what they just said or did to you.`,
     `3. Start every line of your spoken dialogue with the tag [${name}] followed by the words in quotes, e.g. [${name}] "It's good to see you." Keep actions, gestures, and description as untagged prose on their own lines.`,
-    "4. Keep replies conversational — one or two short paragraphs. Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.",
+    `4. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
     "5. Let the personality, voice, and attributes above drive your word choice, rhythm, reactions, and opinions — show it through how you speak, don't recite the traits.",
     "6. Respond directly to what the user just said before adding anything new.",
-    `7. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
+    "7. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
+    "8. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
+    `9. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
   ].join("\n");
 
 /**
@@ -243,7 +252,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
     stateSection,
-    CHAT_RULES(displayName, playerName),
+    CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),
     input.opening
       ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
       : "",

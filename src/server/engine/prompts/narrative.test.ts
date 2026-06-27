@@ -107,6 +107,8 @@ describe("buildStaticRulebook", () => {
     const b = buildStaticRulebook(rulebookInput({ npcNames: ["Fatima"] }));
     const block = (text: string) => text.slice(text.indexOf("Presence fidelity:"), text.indexOf("Wardrobe fidelity:"));
     expect(block(a)).toBe(block(b));
+    // The multi-party restraint rule lives in this (name-free) block.
+    expect(block(a)).toContain("Presence is permission to exist in the scene, not an obligation to speak");
   });
 
   it("switches to observer rules when not embodied", () => {
@@ -140,6 +142,57 @@ describe("buildStaticRulebook", () => {
     const text = buildStaticRulebook(rulebookInput());
     expect(text).toContain("Match the scene's emotional register");
     expect(text).toContain("no errands, reminders, logistics, or unrelated topics");
+  });
+
+  it("replaces the paragraph floor with the default concise-immersive shape profile", () => {
+    const text = buildStaticRulebook(rulebookInput());
+    // The old "3–5 paragraphs" floor is gone (both dash spellings).
+    expect(text).not.toContain("3–5 paragraphs");
+    expect(text).not.toContain("3-5 paragraphs");
+    // The default profile leads the prose-style rules.
+    expect(text).toContain("Write one focused beat per turn");
+    expect(text).toContain("Keep the prose vivid");
+  });
+
+  it("makes the aggressive_concise shape selectable and distinct from the default", () => {
+    const aggressive = buildStaticRulebook(rulebookInput({ narrationShape: "aggressive_concise" }));
+    const concise = buildStaticRulebook(rulebookInput({ narrationShape: "concise_immersive" }));
+    expect(aggressive).toContain("Be brief and tightly scoped");
+    expect(aggressive).not.toContain("Write one focused beat per turn");
+    expect(aggressive).not.toBe(concise);
+  });
+
+  it("is byte-stable per fixed shape profile, default resolving to concise_immersive", () => {
+    expect(buildStaticRulebook(rulebookInput({ narrationShape: "aggressive_concise" }))).toBe(
+      buildStaticRulebook(rulebookInput({ narrationShape: "aggressive_concise" })),
+    );
+    // Leaving narrationShape unset is identical to passing the default explicitly.
+    expect(buildStaticRulebook(rulebookInput())).toBe(
+      buildStaticRulebook(rulebookInput({ narrationShape: "concise_immersive" })),
+    );
+  });
+
+  it("carries the response-first rule with the authored-override clause", () => {
+    const text = buildStaticRulebook(rulebookInput());
+    expect(text).toContain("The player's input is the turn's core");
+    expect(text).toContain("authored Style directives");
+  });
+
+  it("carries the proportionate-reaction rule keyed off the Reaction block", () => {
+    const text = buildStaticRulebook(rulebookInput());
+    expect(text).toContain("Reactions are proportionate");
+    expect(text).toContain('"## Reaction"');
+    expect(text).toContain("earned, not the default");
+  });
+
+  it("keeps the self-motivated-NPC rule for living-world texture", () => {
+    expect(buildStaticRulebook(rulebookInput())).toContain("so the world feels alive");
+  });
+
+  it("introduces no hard length cap in either shape profile", () => {
+    const cap = /\d+\s+(characters|tokens|words|lines|sentences|paragraphs)/;
+    expect(buildStaticRulebook(rulebookInput({ narrationShape: "concise_immersive" }))).not.toMatch(cap);
+    expect(buildStaticRulebook(rulebookInput({ narrationShape: "aggressive_concise" }))).not.toMatch(cap);
   });
 
   it("extends presence fidelity with comms (voice-only) rules", () => {
