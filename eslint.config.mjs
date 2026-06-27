@@ -148,6 +148,34 @@ export default defineConfig([
     },
   },
 
+  // Encapsulation gate for the merge reducer (merge-decomposition.spec.md §5.5).
+  // The per-turn working state (participants/items) is mutated ONLY through
+  // WorkingState methods, which own the dirty-tracking. A direct field assignment
+  // anywhere else in merge/ would silently bypass a dirty-mark and drop a DB
+  // write, so it's a lint error. working-state.ts is the one place the mutators
+  // live, so it's exempt. Two selectors: writes THROUGH `.state` (e.g.
+  // `p.state.meters =`) and writes to the placement scalars on a working row.
+  {
+    files: ["src/server/engine/merge/**/*.{ts,tsx}"],
+    ignores: ["src/server/engine/merge/working-state.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "AssignmentExpression[left.object.property.name='state']",
+          message:
+            "Mutate participant/item state only through a WorkingState method (it owns the dirty-mark) — see merge-decomposition.spec.md §5.5.",
+        },
+        {
+          selector:
+            "AssignmentExpression[left.property.name=/^(locationId|worn|holderParticipantId|containerInstanceId|positionNote)$/]",
+          message:
+            "Mutate participant/item placement only through a WorkingState method (it owns the dirty-mark) — see merge-decomposition.spec.md §5.5.",
+        },
+      ],
+    },
+  },
+
   // Tests & fixtures: relax the rules that legitimately fire on test scaffolding
   // (non-null on known-present fixtures; loose typing of parsed HTTP responses).
   {
