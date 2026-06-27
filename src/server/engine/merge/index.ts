@@ -4,7 +4,7 @@ import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, resolveAttributes } from "@/contracts/attributes/value";
 import { isConditionExpired, type ActiveCondition } from "@/contracts/conditions/condition";
 import { diag, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
-import type { ItemDefinition, ItemInstanceState } from "@/contracts/items/item";
+import type { ItemDefinition } from "@/contracts/items/item";
 import { applyMeterDrift, crossedThresholdHints, NEUTRAL_MOOD_METER, type MeterDefinition } from "@/contracts/meters/registry";
 import {
   concealedSalience,
@@ -17,13 +17,11 @@ import {
   type Salience,
 } from "@/contracts/perception";
 import { emptyBrief, nextTurnBriefSchema, type ExposureMask, type NextTurnBrief } from "@/contracts/state/brief";
-import type { ParticipantState } from "@/contracts/state/participant-state";
 import {
   pendingCommsSchema,
   stagedIntentSchema,
   storyThreadSchema,
   type CommsLink,
-  type PendingComms,
   type SessionRuntime,
   type StagedIntent,
   type StoryThread,
@@ -58,8 +56,8 @@ import { daylightBand, minuteOfDay, resolveGameTime, type DaylightBand } from "@
 import { newId } from "@/lib/ids";
 import { parseOrNull } from "@/lib/parse";
 import { clampAffinity, stageForValue } from "@/contracts/relationships/stages";
-import { db, events, itemInstances, participantRelationships, sessionParticipants, sessions, turns } from "../db";
-import { embedTexts } from "../ai";
+import { db, events, itemInstances, participantRelationships, sessionParticipants, sessions, turns } from "../../db";
+import { embedTexts } from "../../ai";
 import {
   addFacts,
   appendEpisode,
@@ -68,9 +66,9 @@ import {
   deleteEpisodeForTurn,
   fuzzyResolve,
   type FactDraftInput,
-} from "../memory";
-import { activeLocationId, type BundlePlace, type BundleRelationship, type SessionBundle } from "./bundle";
-import { declaredRestMinutes, detectDeclaredRest, detectIntent, isOocInput } from "./intent";
+} from "../../memory";
+import { activeLocationId, type BundlePlace, type BundleRelationship, type SessionBundle } from "../bundle";
+import { declaredRestMinutes, detectDeclaredRest, detectIntent, isOocInput } from "../intent";
 import {
   AFFINITY_DECAY_WEEK_MINUTES,
   AFFINITY_DELTA_CLAMP,
@@ -85,9 +83,12 @@ import {
   THREAD_COOLING_TURNS,
   THREAD_DEDUPE_MIN_SCORE,
   THREAD_DEVELOPMENTS_CAP,
-} from "./constants";
-import { applyStagedIntents } from "./movement";
-import { effectiveMeterDefinitions, type SceneLinkInput } from "./scene";
+} from "../constants";
+import { applyStagedIntents } from "../movement";
+import { effectiveMeterDefinitions, type SceneLinkInput } from "../scene";
+import { WorkingState, type ItemPlacement, type WorkingItem, type WorkingParticipant } from "./working-state";
+
+export type { ItemPlacement, WorkingItem, WorkingParticipant };
 
 /**
  * The merge reducer (docs/turn-engine.md §Merge reducer): deterministic
@@ -98,32 +99,8 @@ import { effectiveMeterDefinitions, type SceneLinkInput } from "./scene";
  */
 
 // ---------------------------------------------------------------------------
-// Working state
+// Working state — the WorkingState ADT and its row types live in ./working-state
 // ---------------------------------------------------------------------------
-
-export interface WorkingParticipant {
-  id: string;
-  displayName: string;
-  isUser: boolean;
-  role: "player" | "companion" | "npc";
-  characterId: string | null;
-  snapshot: CharacterProfile;
-  locationId: string | null;
-  state: ParticipantState;
-}
-
-export interface WorkingItem {
-  id: string;
-  name: string;
-  itemId: string | null;
-  definition: ItemDefinition;
-  holderParticipantId: string | null;
-  worn: boolean;
-  locationId: string | null;
-  containerInstanceId: string | null;
-  positionNote: string | null;
-  state: ItemInstanceState;
-}
 
 export interface MergeTurn {
   id: string;
@@ -201,7 +178,6 @@ export interface MergePlan {
 }
 
 const SYNTHETIC_EPISODE_CHARS = 300;
-const ITEM_NOTE_CAP = 5;
 const CORRECTION_CAP = 2;
 const THRESHOLD_HINT_CAP = 2;
 const DIRECTIVE_CAP = 8;
@@ -510,13 +486,6 @@ function pickBest(
     }
   }
   return best;
-}
-
-export interface ItemPlacement {
-  holderParticipantId: string | null;
-  worn: boolean;
-  locationId: string | null;
-  containerInstanceId: string | null;
 }
 
 function held(participantId: string, worn: boolean): ItemPlacement {
@@ -1611,7 +1580,6 @@ function attributeValuesEqual(a: unknown, b: unknown): boolean {
 export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   const { bundle, turn, results, sink } = input;
   const mode: MergeMode = input.mode ?? "post_turn";
-  const droppedEvents: string[] = [];
 
   const simulant = results.simulant ?? SIMULANT_FALLBACK;
   if (!results.simulant) {
@@ -1619,31 +1587,14 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   }
   const continuity = results.continuity ?? CONTINUITY_FALLBACK;
 
-  const parts: WorkingParticipant[] = bundle.participants.map((p) => ({
-    id: p.id,
-    displayName: p.displayName,
-    isUser: p.isUser,
-    role: p.role,
-    characterId: p.characterId,
-    snapshot: p.snapshot,
-    locationId: p.locationId,
-    state: structuredClone(p.state),
-  }));
-  const items: WorkingItem[] = bundle.items.map((i) => ({
-    id: i.id,
-    name: i.name,
-    itemId: i.itemId,
-    definition: i.definition,
-    holderParticipantId: i.holderParticipantId,
-    worn: i.worn,
-    locationId: i.locationId,
-    containerInstanceId: i.containerInstanceId,
-    positionNote: i.positionNote ?? null,
-    state: structuredClone(i.state),
-  }));
-  const touchedItemIds = new Set<string>();
-  const touchedParticipantIds = new Set<string>();
-  const player = parts.find((p) => p.isUser) ?? null;
+  // The reducer's working state: the mutable per-turn copy of participants and
+  // items plus the per-turn accumulators, with dirty-tracking owned internally
+  // (merge-decomposition.spec.md §3.1). `parts`/`items` are read-only views;
+  // mutation flows exclusively through the ADT's methods.
+  const state = WorkingState.fromBundle(bundle);
+  const parts = state.participants;
+  const items = state.items;
+  const player = state.player;
 
   const resolveLocation = async (name: string): Promise<BundlePlace | null> => {
     const direct = resolveSessionLocation(name, bundle.locations);
@@ -1686,20 +1637,20 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       sink.push(
         diag("warn", "merge.participant.unresolved", `movement participant "${movement.participantName}" not found`),
       );
-      droppedEvents.push(`${movement.participantName} did not actually move to ${movement.toLocationName} (unknown character).`);
+      state.recordDrop(`${movement.participantName} did not actually move to ${movement.toLocationName} (unknown character).`);
       continue;
     }
     if (participant.isUser && turn.author !== "player") {
       sink.push(
         diag("warn", "merge.movement.player_not_author", "player movement dropped: the player only moves on player-authored turns"),
       );
-      droppedEvents.push(`The player did not actually move to ${movement.toLocationName}.`);
+      state.recordDrop(`The player did not actually move to ${movement.toLocationName}.`);
       continue;
     }
     const target = await resolveLocation(movement.toLocationName);
     if (!target) {
       sink.push(diag("warn", "merge.location.unresolved", `movement target "${movement.toLocationName}" not found`));
-      droppedEvents.push(`${participant.displayName} did not actually move to ${movement.toLocationName} (unknown location).`);
+      state.recordDrop(`${participant.displayName} did not actually move to ${movement.toLocationName} (unknown location).`);
       continue;
     }
     if (target.id === participant.locationId) continue;
@@ -1709,7 +1660,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
           context: { participantName: participant.displayName },
         }),
       );
-      droppedEvents.push(`${participant.displayName} did not actually move to ${target.name} (not adjacent).`);
+      state.recordDrop(`${participant.displayName} did not actually move to ${target.name} (not adjacent).`);
       continue;
     }
     // Link access (phase-2-plan T8, player-side only — NPC traversal reuses
@@ -1730,7 +1681,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
             context: { participantName: participant.displayName, toLocationName: target.name, kind: verdict.kind },
           }),
         );
-        droppedEvents.push(
+        state.recordDrop(
           `The player did not actually reach ${target.name} — ${verdict.reason}. Narrate the blocked way, not the arrival.`,
         );
         continue;
@@ -1742,8 +1693,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
         linkTravelMinutes(participant.locationId, target.id, bundle.links),
       );
     }
-    participant.locationId = target.id;
-    touchedParticipantIds.add(participant.id);
+    state.moveParticipant(participant, target.id);
   }
 
   // -- Step 3: item events ----------------------------------------------------
@@ -1751,14 +1701,14 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     const actor = event.byName ? findParticipant(event.byName, parts) : player;
     if (event.byName && !actor) {
       sink.push(diag("warn", "merge.participant.unresolved", `item event actor "${event.byName}" not found`));
-      droppedEvents.push(`The ${event.action} of ${event.itemName} did not take effect (unknown character ${event.byName}).`);
+      state.recordDrop(`The ${event.action} of ${event.itemName} did not take effect (unknown character ${event.byName}).`);
       continue;
     }
     const actorRef = actor ? { id: actor.id, locationId: actor.locationId } : null;
     const item = await resolveItem(event.itemName, event.action, actorRef);
     if (!item) {
       sink.push(diag("warn", "merge.item.unresolved", `item "${event.itemName}" not found in this session`));
-      droppedEvents.push(`The ${event.action} of ${event.itemName} did not take effect (no such item).`);
+      state.recordDrop(`The ${event.action} of ${event.itemName} did not take effect (no such item).`);
       continue;
     }
     const location = event.locationName ? await resolveLocation(event.locationName) : null;
@@ -1768,7 +1718,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     const planned = planItemEvent(event, { item, actor, location, container, items });
     if (!planned.ok) {
       sink.push(diag("warn", planned.code, planned.message, { context: { action: event.action, itemName: event.itemName } }));
-      droppedEvents.push(`The ${event.action} of ${item.name} did not take effect (${planned.message}).`);
+      state.recordDrop(`The ${event.action} of ${item.name} did not take effect (${planned.message}).`);
       continue;
     }
     if (planned.placement) {
@@ -1776,20 +1726,14 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
         sink.push(diag("error", "merge.item.placement_invalid", `planned placement for "${item.name}" violates exclusivity`));
         continue;
       }
-      item.holderParticipantId = planned.placement.holderParticipantId;
-      item.worn = planned.placement.worn;
-      item.locationId = planned.placement.locationId;
-      item.containerInstanceId = planned.placement.containerInstanceId;
-      item.positionNote = event.action === "place" ? (event.stateNote?.trim() || null) : null;
-      touchedItemIds.add(item.id);
+      const positionNote = event.action === "place" ? (event.stateNote?.trim() || null) : null;
+      state.placeItem(item, planned.placement, positionNote);
     }
     if (planned.open !== undefined) {
-      item.state.open = planned.open;
-      touchedItemIds.add(item.id);
+      state.setItemOpen(item, planned.open);
     }
     if (planned.note && (event.action === "alter" || !planned.placement)) {
-      item.state.notes = [...item.state.notes, planned.note].slice(-ITEM_NOTE_CAP);
-      touchedItemIds.add(item.id);
+      state.addItemNote(item, planned.note);
     }
   }
 
@@ -1869,14 +1813,16 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       participant.isUser && matchedActions.length > 0
         ? applyActionMeterEffects(drifted, matchedActions, defs, sink, participant.displayName)
         : drifted;
-    participant.state.meters = applyMeterAdjustments(
-      withActionEffects,
-      adjustmentsByParticipant.get(participant.id) ?? [],
-      defs,
-      sink,
-      participant.displayName,
+    state.setMeters(
+      participant,
+      applyMeterAdjustments(
+        withActionEffects,
+        adjustmentsByParticipant.get(participant.id) ?? [],
+        defs,
+        sink,
+        participant.displayName,
+      ),
     );
-    touchedParticipantIds.add(participant.id);
   }
 
   // Social-reaction affinity + mood (personality §6/§4): resolve the player's primary
@@ -1890,16 +1836,14 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     const t = parts.find((p) => p.id === reactionResult.moodAdjustment?.participantId);
     if (t) {
       const next = Math.min(1, Math.max(0, (t.state.meters.mood ?? NEUTRAL_MOOD_METER) + reactionResult.moodAdjustment.delta));
-      t.state.meters = { ...t.state.meters, mood: next };
-      touchedParticipantIds.add(t.id);
+      state.setMeters(t, { ...t.state.meters, mood: next });
     }
   }
   if (reactionResult?.stressAdjustment) {
     const t = parts.find((p) => p.id === reactionResult.stressAdjustment?.participantId);
     if (t) {
       const next = Math.min(1, Math.max(0, (t.state.meters.stress ?? 0) + reactionResult.stressAdjustment.delta));
-      t.state.meters = { ...t.state.meters, stress: next };
-      touchedParticipantIds.add(t.id);
+      state.setMeters(t, { ...t.state.meters, stress: next });
     }
   }
 
@@ -1923,7 +1867,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       clockMinutes,
       sink,
     );
-    participant.state.conditions = expireConditions(withOps, clockMinutes);
+    state.setConditions(participant, expireConditions(withOps, clockMinutes));
   }
 
   // Attribute changes (rare, lasting): overlays with narrative provenance.
@@ -1957,7 +1901,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
             { context: { participant: participant.displayName, attributeId: change.attributeId } },
           ),
         );
-        droppedEvents.push(
+        state.recordDrop(
           `${participant.displayName}'s ${def.label.toLowerCase()} is an inherent trait and did not change.`,
         );
       }
@@ -1973,11 +1917,10 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       sink.push(diag("warn", "merge.attribute.invalid", `attribute change for "${change.attributeId}" failed validation`));
       continue;
     }
-    participant.state.attributeOverlays = [
+    state.setAttributeOverlays(participant, [
       ...participant.state.attributeOverlays.filter((o) => !(o.id === overlay.id && o.source === "narrative")),
       overlay,
-    ];
-    touchedParticipantIds.add(participant.id);
+    ]);
   }
 
   // Activity updates.
@@ -1987,22 +1930,17 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       sink.push(diag("warn", "merge.participant.unresolved", `activity update for "${update.participantName}" dropped`));
       continue;
     }
-    participant.state.activity = update.activity;
-    if (update.posture !== undefined) participant.state.posture = update.posture;
-    touchedParticipantIds.add(participant.id);
+    state.setActivity(participant, update.activity, update.posture);
   }
 
   // Off-screen schedule ticks: never teleport on-screen NPCs, and never
   // override an explicit simulant movement/activity from this turn. Ticks
   // into/out of the player's location stage arrival/departure lines for the
   // next brief (phase-2-plan T9) — co-located ⇒ perceived, interim rule.
-  const arrivals: string[] = [];
-  const departures: string[] = [];
   // Director-staged off-screen movement (phase-4 npc-movement minimal slice):
   // carried across turns, fired beats appended to pendingComms / the next brief.
+  // Arrivals/departures, fired comms and staged directives accumulate on `state`.
   let stagedIntents = bundle.runtime.stagedIntents;
-  const firedComms: PendingComms[] = [];
-  const stagedDirectives: string[] = [];
   if (!reconcile) {
     const activeLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
     const locationNameById = new Map(bundle.locations.map((l) => [l.id, l.name]));
@@ -2040,18 +1978,17 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
         activeLocationId: activeLoc,
         locationNameById,
       });
-      if (staged.arrival) arrivals.push(staged.arrival);
-      if (staged.departure) departures.push(staged.departure);
-      p.locationId = move.toLocationId;
+      if (staged.arrival) state.stageArrival(staged.arrival);
+      if (staged.departure) state.stageDeparture(staged.departure);
+      state.moveParticipant(p, move.toLocationId);
       // In-transit hop: a "heading toward X" activity keeps the Cast tab honest
       // (no stale clinic activity at a node that isn't the clinic). On the hop
       // that arrives, leave activity to the fired beat / narrator.
       if (!move.reachedDestination) {
         const dest = locationNameById.get(move.destinationLocationId);
-        p.state.activity = dest ? `heading toward ${dest}` : "on the move";
+        state.setActivity(p, dest ? `heading toward ${dest}` : "on the move");
       }
       stagedThisTick.add(p.id);
-      touchedParticipantIds.add(p.id);
     }
     for (const f of tick.fired) {
       stagedThisTick.add(f.participantId);
@@ -2062,9 +1999,9 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
           sink,
           "merge.movement.pending_comms",
         );
-        if (pc) firedComms.push(pc);
+        if (pc) state.fireComms(pc);
       }
-      if (f.directive?.trim()) stagedDirectives.push(f.directive.trim());
+      if (f.directive?.trim()) state.stageDirective(f.directive.trim());
     }
 
     // Open new staged intents from the director's story decision (names → ids).
@@ -2111,7 +2048,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       if (participant.isUser) continue;
       if (stagedThisTick.has(participant.id)) continue;
       if (participant.locationId !== null && participant.locationId === activeLoc) continue;
-      if (touchedParticipantIds.has(participant.id) && simulantTouchedPlacement(participant, simulant, parts)) continue;
+      if (state.touchedParticipantIds.has(participant.id) && simulantTouchedPlacement(participant, simulant, parts)) continue;
       // Per-character daily jitter: shifting the compared minute by -j makes
       // this character's windows start j minutes late (or early) today.
       const jitter = scheduleJitter(participant.id, gameTime.dayIndex);
@@ -2135,12 +2072,11 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
           activeLocationId: activeLoc,
           locationNameById,
         });
-        if (staged.arrival) arrivals.push(staged.arrival);
-        if (staged.departure) departures.push(staged.departure);
-        participant.locationId = target.id;
+        if (staged.arrival) state.stageArrival(staged.arrival);
+        if (staged.departure) state.stageDeparture(staged.departure);
+        state.moveParticipant(participant, target.id);
       }
-      participant.state.activity = entry.activity;
-      touchedParticipantIds.add(participant.id);
+      state.setActivity(participant, entry.activity);
     }
   }
 
@@ -2273,7 +2209,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     // Surface-once: pending messages were rendered in this turn's pre-turn
     // context already, so they clear here; only beats fired THIS merge ride to
     // the next turn (reconcile leaves the queue untouched). Capped as a guard.
-    pendingComms: reconcile ? bundle.runtime.pendingComms : firedComms.slice(-PENDING_COMMS_CAP),
+    pendingComms: reconcile ? bundle.runtime.pendingComms : state.firedComms.slice(-PENDING_COMMS_CAP),
     stagedIntents,
     ...(affinityDecay ? { lastAffinityDecayAt: affinityDecay.lastAffinityDecayAt } : {}),
   };
@@ -2295,7 +2231,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
   const breachResult = reconcile
     ? { updates: [] as AffinityUpdate[], ownedEdgeKeys: new Set<string>(), directives: [] as string[] }
     : planCardBreachReactions(continuity.cardBreaches, parts, bundle.relationships, bundle.style.socialCards, moodAtTurnStart, sink);
-  stagedDirectives.push(...breachResult.directives);
+  for (const directive of breachResult.directives) state.stageDirective(directive);
 
   // Affinity = the player→target reaction + the witnessed-breach folds + the simulant's
   // remaining adjustments (dropped on any edge a reaction or breach already owns).
@@ -2309,17 +2245,17 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       })();
 
   const brief = reconcile
-    ? reconcileBrief(bundle.brief, droppedEvents, thresholdHints)
+    ? reconcileBrief(bundle.brief, state.droppedEvents, thresholdHints)
     : buildNextBrief({
         prior: bundle.brief,
         director: results.director,
         continuity,
         episodeSummary,
-        droppedEvents,
+        droppedEvents: state.droppedEvents,
         thresholdHints,
-        arrivals,
-        departures,
-        stagedDirectives,
+        arrivals: state.arrivals,
+        departures: state.departures,
+        stagedDirectives: state.stagedDirectives,
       });
 
   return {
@@ -2330,16 +2266,16 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     affinityDecay: affinityDecay?.edges ?? [],
     witnessedBy,
     commsChanges: comms.changes,
-    participants: parts,
-    items,
-    touchedItemIds: [...touchedItemIds],
+    participants: [...parts],
+    items: [...items],
+    touchedItemIds: [...state.touchedItemIds],
     factDrafts,
     episodeSummary,
     syntheticEpisode,
     touchedThreadIds,
     runtime,
     brief,
-    droppedEvents,
+    droppedEvents: [...state.droppedEvents],
   };
 }
 
