@@ -19,6 +19,7 @@ import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MoodChip } from "@/components/ui/mood-chip";
+import { AvatarPanel } from "@/components/avatar";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -78,6 +79,9 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
   const [toolsOpen, setToolsOpen] = useState(false);
   const [scenarioOpen, setScenarioOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState<ChatActionId | null>(null);
+  // Bumped once per fresh reply (the avatar's beat edge — a status poll never bumps it,
+  // so a one-shot reaction never replays on refresh). 0 on mount ⇒ no opening beat.
+  const [replyTick, setReplyTick] = useState(0);
   const stageRef = useRef<string | null>(null);
   const tempId = useRef(0);
   const mkId = () => `tmp-${tempId.current++}`;
@@ -164,6 +168,8 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange.
     await refreshState();
+    // Edge for the avatar's one-shot reaction beat (the fresh trace is now in chatState).
+    setReplyTick((t) => t + 1);
     return outcome;
   };
 
@@ -252,93 +258,110 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
     <div className="flex flex-col gap-5">
       <SceneStrip characterId={characterId} name={name} hasChat={lines.length > 0} />
 
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Conversation</h3>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Select
-            aria-label="Narrator model"
-            value={narratorModel}
-            onChange={(e) => setNarratorModel(e.target.value)}
-            className="h-8 w-44 text-xs"
-          >
-            {NARRATIVE_MODELS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-          {chatState ? (
-            <Button size="sm" variant="quiet" disabled={sending} onClick={promptCharacter} title={`Let ${who} open the scene`}>
-              Prompt {who}
-            </Button>
-          ) : null}
-          {chatState ? (
-            <Button size="sm" variant="quiet" onClick={() => setScenarioOpen(true)}>
-              Scenario setup
-            </Button>
-          ) : null}
-          {chatState ? (
-            <Button size="sm" variant="quiet" onClick={() => setToolsOpen(true)}>
-              State tools
-            </Button>
-          ) : null}
-          {hasAnything ? (
-            <Button size="sm" variant="quiet" onClick={() => setResetOpen(true)}>
-              Reset…
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      {/* The standing companion avatar (avatar-3d.plan.md) sits beside the conversation. */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-6">
+        {chatState ? (
+          <AvatarPanel
+            characterId={characterId}
+            name={name}
+            avatarImageId={avatarImageId}
+            cue={chatState.avatarCue}
+            trace={chatState.lastPulseTrace}
+            beatTick={replyTick}
+            className="mx-auto w-full max-w-56 lg:mx-0 lg:w-60 lg:max-w-none lg:shrink-0"
+          />
+        ) : null}
 
-      <div
-        ref={scrollRef}
-        className="flex max-h-[28rem] min-h-48 flex-col gap-3 overflow-y-auto rounded-card border border-ink-600 bg-ink-950/40 p-4"
-      >
-        {transcript.loading ? (
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-10 w-2/3" />
-            <Skeleton className="h-10 w-1/2 self-end" />
+        <div className="flex min-w-0 flex-1 flex-col gap-5">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Conversation</h3>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Select
+                aria-label="Narrator model"
+                value={narratorModel}
+                onChange={(e) => setNarratorModel(e.target.value)}
+                className="h-8 w-44 text-xs"
+              >
+                {NARRATIVE_MODELS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              {chatState ? (
+                <Button size="sm" variant="quiet" disabled={sending} onClick={promptCharacter} title={`Let ${who} open the scene`}>
+                  Prompt {who}
+                </Button>
+              ) : null}
+              {chatState ? (
+                <Button size="sm" variant="quiet" onClick={() => setScenarioOpen(true)}>
+                  Scenario setup
+                </Button>
+              ) : null}
+              {chatState ? (
+                <Button size="sm" variant="quiet" onClick={() => setToolsOpen(true)}>
+                  State tools
+                </Button>
+              ) : null}
+              {hasAnything ? (
+                <Button size="sm" variant="quiet" onClick={() => setResetOpen(true)}>
+                  Reset…
+                </Button>
+              ) : null}
+            </div>
           </div>
-        ) : transcript.error ? (
-          <ErrorState error={transcript.error} onRetry={() => transcript.reload()} />
-        ) : lines.length === 0 ? (
-          <p className="m-auto max-w-sm text-center text-sm text-paper-500">
-            Say something to {who} to start the conversation. This chat lives only here — no world, no session.
-          </p>
-        ) : (
-          lines.map((line) => (
-            <MessageBubble
-              key={line.id}
-              line={line}
-              name={name}
-              avatarImageId={avatarImageId}
-              streaming={sending}
-              onEdit={editLine}
-              onDelete={deleteLine}
+
+          <div
+            ref={scrollRef}
+            className="flex max-h-[28rem] min-h-48 flex-col gap-3 overflow-y-auto rounded-card border border-ink-600 bg-ink-950/40 p-4"
+          >
+            {transcript.loading ? (
+              <div className="flex flex-col gap-3">
+                <Skeleton className="h-10 w-2/3" />
+                <Skeleton className="h-10 w-1/2 self-end" />
+              </div>
+            ) : transcript.error ? (
+              <ErrorState error={transcript.error} onRetry={() => transcript.reload()} />
+            ) : lines.length === 0 ? (
+              <p className="m-auto max-w-sm text-center text-sm text-paper-500">
+                Say something to {who} to start the conversation. This chat lives only here — no world, no session.
+              </p>
+            ) : (
+              lines.map((line) => (
+                <MessageBubble
+                  key={line.id}
+                  line={line}
+                  name={name}
+                  avatarImageId={avatarImageId}
+                  streaming={sending}
+                  onEdit={editLine}
+                  onDelete={deleteLine}
+                />
+              ))
+            )}
+          </div>
+
+          {chatState ? (
+            <div className="flex flex-col gap-2">
+              <StatusStrip state={chatState} startingStage={startingStage} />
+              <ActionChips busy={actionBusy} disabled={sending} onAction={runAction} />
+            </div>
+          ) : null}
+
+          <div className="flex items-end gap-2">
+            <Textarea
+              rows={2}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onComposerKeyDown}
+              placeholder={`Message ${who}…  (Enter to send, Shift+Enter for a new line)`}
+              className="flex-1"
             />
-          ))
-        )}
-      </div>
-
-      {chatState ? (
-        <div className="flex flex-col gap-2">
-          <StatusStrip state={chatState} startingStage={startingStage} />
-          <ActionChips busy={actionBusy} disabled={sending} onAction={runAction} />
+            <Button variant="primary" onClick={send} busy={sending} disabled={!input.trim()}>
+              Send
+            </Button>
+          </div>
         </div>
-      ) : null}
-
-      <div className="flex items-end gap-2">
-        <Textarea
-          rows={2}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onComposerKeyDown}
-          placeholder={`Message ${who}…  (Enter to send, Shift+Enter for a new line)`}
-          className="flex-1"
-        />
-        <Button variant="primary" onClick={send} busy={sending} disabled={!input.trim()}>
-          Send
-        </Button>
       </div>
 
       <Dialog

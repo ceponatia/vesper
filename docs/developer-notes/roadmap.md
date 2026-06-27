@@ -13,33 +13,37 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-build right now. The two most recent arcs both finished in full and are in
-**Shipped**, with their docs archived to `finished/`: the **Mood** arc (projection +
-`EmotionLabel`, welcome/unwelcome touch, condition + scene-atmosphere baseline shifts, the
-mood chip on the cast card + chat strip) and **Social-reaction cards** (core engine + inline
-authoring 2026-06-25, then the library-reuse UI slice — CRUD + page + builder + import/save +
-public discovery gallery — 2026-06-26, which also graduated the auth.plan.md public-browse
-deferral, cards-first). Their leftover ideas live in **other** plans — the relationship/meter
-timeline ([deferred.plan.md](deferred.plan.md) #4) and the avatar's consumption of the
-projection (the **Mood-reactive avatars** plan below).
+- **Mood-reactive avatars** (slices 1–2) — [avatar-3d.plan.md](avatar-3d.plan.md) ·
+  spec [avatar-3d.spec.md](avatar-3d.spec.md). Started 2026-06-27. Locked v1: layered
+  sprite "card-with-life" behind a renderer-neutral `AvatarCue`/`AvatarDirector`,
+  derived token-free from the shipped **Mood** projection, landing first as a **standing
+  companion panel** in character-chat. **Slice 1** = the pure `contracts/avatar/` cue
+  contract + `deriveAvatarCue` + serialization onto the chat snapshot. **Slice 2** = the
+  `motion`-based `SpriteAvatarRenderer` mounted in chat that animates the existing
+  portrait, with **~5 real seeded expression frames** for the Lysandra dev character
+  (hybrid). Slice 3 (auto-asset gen for the whole cast) stays in **Next**. See the plan's
+  "Locked decisions" + "Build plan".
+
+The two most recent finished arcs are in **Shipped**, docs archived to `finished/`: the
+**Mood** arc (projection + `EmotionLabel`, welcome/unwelcome touch, condition +
+scene-atmosphere baseline shifts, the mood chip on the cast card + chat strip) and
+**Social-reaction cards** (core engine + inline authoring 2026-06-25, then the
+library-reuse UI slice 2026-06-26, which also graduated the auth.plan.md public-browse
+deferral, cards-first). The avatar arc above consumes Mood's projection — the last of the
+"bring characters to life" arc.
 
 ## Next (queued)
 
-- **Mood-reactive avatars** (draft feasibility) —
+- **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
-  Silent **anime, 2D-first** character avatar that emotes in real time off the
-  character's mood ("Grok companions, but more sophisticated"). Verdict: **feasible** —
-  the "rich reaction" engine **already shipped** (`personality-and-state`: `mood` meter,
-  `deriveMoodDescriptor`, likes/dislikes curve), so the avatar mostly _renders_ existing
-  state, and runtime animation is **procedural + token-free** (one-time per-character
-  asset gen; the turn only _selects_ a cue — no per-turn image/video gen). v1 = layered
-  sprites + `motion` behind a renderer-neutral `AvatarDirector`/`AvatarCue` contract (Rive
-  rig + R3F/VRM as later upgrade lanes). **Last of the "bring characters to life" arc** —
-  consumes **Mood**'s labeled-emotion projection and lands first on the **character-chat**
-  surface, so it sequences after both. Lead open Q: sprite exact-identity-but-less-fluid
-  vs a Rive reusable rig (artist + identity cap) for the unbounded user-created cast.
-  Voice deferred. Exploratory.
+  Slices 1–2 are **Active** (above) — the cue contract + the seeded-frame PoC in chat.
+  Slice 3 is the remaining lift: **automate** the per-character expression/pose frame set
+  (extend the `portrait_variant` reference-edit pipeline, identity-locked) so the avatar is
+  expressive for the **whole unbounded cast**, not just the hand-seeded dev character —
+  seed a minimal set at creation + lazy-gen novel frames on demand (cached forever, off the
+  critical path). Then wire into **in-session play** (richer data). Decision-gated upgrade
+  lanes after: Rive reusable rig, then R3F/VRM 3D. Voice deferred.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
