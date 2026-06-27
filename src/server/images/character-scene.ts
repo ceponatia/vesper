@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { resolveAttributes } from "@/contracts/attributes/value";
-import { exposedRegions, resolveWardrobeVisibility } from "@/contracts/items/visibility";
+import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
@@ -10,14 +10,11 @@ import { hasVenice, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
 import { absoluteImagePath } from "./assets";
-import { loadDefaultWardrobe } from "./avatar";
 import {
   characterAppearanceSummary,
   sceneRevealAppearance,
-  toWornInputs,
   type SceneComposerContext,
   type ScenePresentCharacter,
-  type SceneWornItem,
 } from "./prompts";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
 
@@ -47,56 +44,49 @@ export interface RenderCharacterSceneInput {
   room?: string;
   /** Recent assistant turns (oldest first) for the composer to center the shot on. */
   recentChat?: string[];
+  /** Free-text starting outfit from the chat-state scenario modal; "" ⇒ composer-inferred. */
+  outfit?: string;
+  /** Reveal intimate anatomy (the scenario modal's exposed toggle). */
+  outfitExposed?: boolean;
   sink?: DiagnosticSink;
 }
 
+/** Fully-clothed coverage: the chat's SFW default when the outfit isn't flagged exposed. */
+const FULLY_COVERED: RegionExposure = { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" };
+
 /**
- * The composer context for a single library character in the default room.
- * Mirrors engine/pipeline.buildSceneComposerContext's per-character mapping
- * (occlusion-filtered wardrobe, exposure, appearance summaries) but sources the
- * outfit from the character's default outfit rather than session item state.
+ * The composer context for a single library character in the default room
+ * (character-chat-scenario.plan.md). The character chat has **no equippable wardrobe**, so
+ * the outfit is the scenario modal's **free text** (`outfit`) and a single `outfitExposed`
+ * toggle stands in for region coverage — there are no structured items to derive it from.
+ * Exposed ⇒ fully bare (intimate-anatomy reveal on the uncensored route); otherwise fully
+ * covered (SFW). `profile.defaultOutfit` is deliberately NOT read here.
  */
-export async function buildCharacterSceneContext(input: {
+export function buildCharacterSceneContext(input: {
   name: string;
   profile: CharacterProfile;
-  userId: string;
   room: string;
   recentChat: string[];
-  sink?: DiagnosticSink;
-}): Promise<SceneComposerContext> {
-  const wardrobe = await loadDefaultWardrobe(input.userId, input.profile.defaultOutfit, input.sink);
-  // Shared with the avatar prompt's outfit gate (images/prompts.ts): instanceId
-  // is the wardrobe index, which `wardrobeByIndex` below relies on to recover
-  // each item's description/appearance.
-  const wornInputs = toWornInputs(wardrobe);
-  const views = resolveWardrobeVisibility(wornInputs);
-  const exposure = exposedRegions(wornInputs);
-  const wardrobeByIndex = new Map(wardrobe.map((item, index) => [String(index), item]));
-  const wornVisible: SceneWornItem[] = views
-    .filter((v) => v.visibility !== "hidden")
-    .map((v) => {
-      const item = wardrobeByIndex.get(v.instanceId);
-      return {
-        name: v.name,
-        visibility: v.visibility === "hinted" ? ("hinted" as const) : ("visible" as const),
-        ...(item?.description ? { description: item.description } : {}),
-        ...(item?.appearance ? { appearance: item.appearance } : {}),
-      };
-    });
+  outfit: string;
+  outfitExposed: boolean;
+}): SceneComposerContext {
+  const exposure: RegionExposure = input.outfitExposed ? exposedRegions([]) : FULLY_COVERED;
 
   const resolved = resolveAttributes(input.profile.attributes, []);
   const present: ScenePresentCharacter = {
     name: input.name,
     species: speciesLabelPhrase(input.profile.speciesId, input.profile.heritageId),
-    wornVisible,
+    // No structured items in chat — the free-text outfit overrides the (empty) wardrobe summary.
+    wornVisible: [],
+    outfitDescription: input.outfit.trim(),
     exposure,
-    // The default outfit is authoritative for this shot — exposedRegions([])
-    // (no outfit) must override a clothed reference avatar, same as a session.
+    // Authoritative for this shot: the described outfit / exposed toggle overrides a clothed
+    // reference avatar (same role exposedRegions played for the old default-outfit path).
     wardrobeTracked: true,
     appearance: characterAppearanceSummary(resolved, undefined, false, input.profile),
-    // The chat subject is the identity-locked reference (a waist-up portrait), so
-    // supplement it with the figure it can't show: the SFW lower-body shape line
-    // (always) and exposure-/silhouette-aware intimate anatomy (uncensored route).
+    // The chat subject is the identity-locked reference (a waist-up portrait), so supplement it
+    // with the figure it can't show: the SFW lower-body shape line (always) and exposure-gated
+    // intimate anatomy (uncensored route, only when the outfit is flagged exposed).
     lowerBody: sceneRevealAppearance(resolved, exposure, input.profile, { intimate: false }),
     intimateAppearance: sceneRevealAppearance(resolved, exposure, input.profile, { intimate: true }),
   };
@@ -140,13 +130,13 @@ async function loadCharacterAvatar(
  */
 export async function renderCharacterSceneImage(input: RenderCharacterSceneInput): Promise<string> {
   const room = input.room?.trim() || DEFAULT_CHAT_ROOM;
-  const context = await buildCharacterSceneContext({
+  const context = buildCharacterSceneContext({
     name: input.name,
     profile: input.profile,
-    userId: input.userId,
     room,
     recentChat: (input.recentChat ?? []).filter((t) => t.trim()),
-    sink: input.sink,
+    outfit: input.outfit ?? "",
+    outfitExposed: input.outfitExposed ?? false,
   });
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 

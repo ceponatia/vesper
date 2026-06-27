@@ -240,6 +240,19 @@ export const characterChatState = pgTable(
      * Pre-filled from the authored `playerRelationship.note`, then player-owned.
      */
     premise: text("premise").notNull().default(""),
+    /**
+     * Free-text starting outfit for THIS chat (character-chat-scenario.plan.md). Drives the
+     * chat scene-image prompt instead of structured clothing items, which chat can't equip.
+     */
+    outfit: text("outfit").notNull().default(""),
+    /** Gate for intimate-anatomy reveal in chat scene images (no structured wardrobe to derive it). */
+    outfitExposed: boolean("outfit_exposed").notNull().default(false),
+    /**
+     * SocialReactionCard[] snapshot — the cards live in THIS chat (seeded from the character's
+     * own `profile.socialCards`, then author-editable in the Scenario modal). The pulse resolves
+     * reactions against this set so taboos/rules are testable without a world/session.
+     */
+    activeSocialCards: jsonb("active_social_cards").notNull().default([]),
     /** Chat-local game clock (within-visit drift + condition-expiry driver). */
     clockMinutes: integer("clock_minutes").notNull().default(0),
     /** Wall-clock anchor for between-visit recovery; null until the first exchange. */

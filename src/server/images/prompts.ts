@@ -452,6 +452,12 @@ export interface ScenePresentCharacter {
   posture?: string;
   /** Occlusion-filtered wardrobe — the only permitted source of outfit truth. */
   wornVisible: ReadonlyArray<SceneWornItem>;
+  /**
+   * Free-text outfit that **overrides** the structured `wornVisible` summary when set
+   * (character-chat-scenario.plan.md): the character chat has no equippable wardrobe, so it
+   * supplies a described outfit directly. Sessions never set this (they have item state).
+   */
+  outfitDescription?: string;
   /** Compact attribute phrase (characterAppearanceSummary) for textual render descriptions. */
   appearance?: string;
   /**
@@ -853,8 +859,9 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
     name: entry.name,
     ...(entry.species ? { species: entry.species } : {}),
     action: action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; "),
-    // Forced from occlusion-filtered state regardless of anything the model said.
-    outfitSummary: wardrobeOutfitSummary(entry.wornVisible),
+    // Forced from occlusion-filtered state regardless of anything the model said; a free-text
+    // override (character chat — no equippable wardrobe) wins when present.
+    outfitSummary: entry.outfitDescription ?? wardrobeOutfitSummary(entry.wornVisible),
     appearance: entry.appearance ?? "",
     ...(entry.lowerBody ? { lowerBody: entry.lowerBody } : {}),
     exposure: formatExposure(entry.exposure, entry.wardrobeTracked),

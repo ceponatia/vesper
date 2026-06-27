@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   heritageFor,
   heritagesForSpecies,
-  relationshipStages,
   speciesById,
   speciesCatalog,
   type Diagnostic,
@@ -280,48 +279,25 @@ export function CharacterEditor({
       ) : null}
 
       {tab === "chat" ? (
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-wrap gap-4">
-            <Field
-              label="Starting Relationship"
-              hint="How this character feels about the player at the start of a chat — seeds the chat's affinity."
-              className="w-full max-w-xs"
-            >
-              {(id) => (
-                <Select
-                  id={id}
-                  value={draft.profile.playerRelationship?.stage ?? "stranger"}
-                  onChange={(e) =>
-                    patchProfile({
-                      playerRelationship: {
-                        stage: e.target.value,
-                        note: draft.profile.playerRelationship?.note ?? "",
-                      },
-                    })
-                  }
-                >
-                  {relationshipStages.map((stage) => (
-                    <option key={stage.id} value={stage.id}>
-                      {stage.label}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-          </div>
-          {characterId ? (
-            <CharacterChat
-              characterId={characterId}
-              name={draft.name || "Untitled"}
-              avatarImageId={avatarImageId}
-              startingStage={draft.profile.playerRelationship?.stage ?? "stranger"}
-            />
-          ) : (
-            <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
-              Save the character first — chat speaks from the saved profile and attributes.
-            </p>
-          )}
-        </div>
+        characterId ? (
+          // Starting Relationship now lives in the chat's Scenario setup modal (it writes back
+          // here via onStartingStageChange; the editor SaveBar persists it to the profile).
+          <CharacterChat
+            characterId={characterId}
+            name={draft.name || "Untitled"}
+            avatarImageId={avatarImageId}
+            startingStage={draft.profile.playerRelationship?.stage ?? "stranger"}
+            onStartingStageChange={(stage) =>
+              patchProfile({
+                playerRelationship: { stage, note: draft.profile.playerRelationship?.note ?? "" },
+              })
+            }
+          />
+        ) : (
+          <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
+            Save the character first — chat speaks from the saved profile and attributes.
+          </p>
+        )
       ) : null}
     </div>
   );

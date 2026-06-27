@@ -19,6 +19,8 @@ import { z } from "zod";
 export const CHAT_MIND_NOTE_MAX_CHARS = 320;
 /** Cap on the player-set per-chat premise (a scenario, not a bio). */
 export const CHAT_PREMISE_MAX_CHARS = 600;
+/** Cap on the per-chat free-text starting outfit (character-chat-scenario.plan.md). */
+export const CHAT_OUTFIT_MAX_CHARS = 400;
 
 /**
  * Test-bed **action chips** (character-chat-state.spec.md slice 4): one-click

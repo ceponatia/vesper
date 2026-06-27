@@ -5,10 +5,12 @@ import {
   characterProfileSchema,
   chatActionIdSchema,
   CHAT_MIND_NOTE_MAX_CHARS,
+  CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   DiagnosticCollector,
   effectiveTraitValue,
   emptyCharacterProfile,
+  socialReactionCardSchema,
   type CharacterProfile,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
@@ -46,6 +48,9 @@ const editBodySchema = z.object({
   mindNote: z.string().trim().max(CHAT_MIND_NOTE_MAX_CHARS).optional(),
   meters: z.record(z.string(), z.number()).optional(),
   conditions: z.array(activeConditionSchema).optional(),
+  outfit: z.string().max(CHAT_OUTFIT_MAX_CHARS).optional(),
+  outfitExposed: z.boolean().optional(),
+  activeSocialCards: z.array(socialReactionCardSchema).optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

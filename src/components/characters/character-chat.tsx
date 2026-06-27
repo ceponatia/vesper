@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { CHAT_ACTIONS, CHAT_PREMISE_MAX_CHARS, stageById, stageMidpoint, type ChatActionId } from "@/contracts";
+import { CHAT_ACTIONS, stageById, stageMidpoint, type ChatActionId } from "@/contracts";
 import {
   charactersApi,
   sendCharacterChat,
@@ -22,6 +22,7 @@ import { MoodChip } from "@/components/ui/mood-chip";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { ChatScenarioModal } from "./chat-scenario-modal";
 import { ChatStateToolsModal } from "./chat-state-tools";
 
 export interface CharacterChatProps {
@@ -31,9 +32,12 @@ export interface CharacterChatProps {
   /**
    * The authored Starting Relationship (`playerRelationship.stage`) from the live editor
    * draft. A fresh chat (no stored state) previews it in the strip chip so changing the
-   * dropdown updates the chip immediately — before it's even saved.
+   * dropdown updates the chip immediately — before it's even saved. Editable in the Scenario
+   * setup modal, which writes it back through `onStartingStageChange`.
    */
   startingStage: string;
+  /** Write a Starting Relationship change back to the character profile draft (editor SaveBar persists it). */
+  onStartingStageChange: (stage: string) => void;
 }
 
 interface ChatLine {
@@ -56,7 +60,7 @@ function sceneError(image: ImageRecord): string | null {
  * renders a scene image from the recent exchange (filed against the character,
  * so it also lands in the Gallery under "Character chats").
  */
-export function CharacterChat({ characterId, name, avatarImageId, startingStage }: CharacterChatProps) {
+export function CharacterChat({ characterId, name, avatarImageId, startingStage, onStartingStageChange }: CharacterChatProps) {
   const toast = useToast();
   const who = name.trim() || "this character";
 
@@ -71,9 +75,8 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage 
   // local state (not useAsyncData) so a post-send refresh can drive the
   // stage-change toast off the value it just fetched.
   const [chatState, setChatState] = useState<ChatStateSnapshot | null>(null);
-  const [premise, setPremise] = useState("");
-  const [savingPremise, setSavingPremise] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [scenarioOpen, setScenarioOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState<ChatActionId | null>(null);
   const stageRef = useRef<string | null>(null);
   const tempId = useRef(0);
@@ -98,7 +101,6 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage 
     void charactersApi.chatState(characterId).then((r) => {
       if (cancelled || !r.ok) return;
       setChatState(r.data);
-      setPremise(r.data.premise);
       stageRef.current = r.data.stage.label;
     });
     return () => {
@@ -201,21 +203,6 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage 
     }
   };
 
-  /** Persist the per-chat premise (Save). Upserts the state row server-side. */
-  const savePremise = async () => {
-    setSavingPremise(true);
-    const result = await charactersApi.saveChatPremise(characterId, premise.trim());
-    setSavingPremise(false);
-    if (result.ok) {
-      setChatState(result.data);
-      setPremise(result.data.premise);
-      stageRef.current = result.data.stage.label;
-      toast.push({ title: "Scenario saved" });
-    } else {
-      toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
-    }
-  };
-
   /** Apply a one-click test-bed action chip (offer a drink → intoxication↑, etc.). */
   const runAction = async (action: ChatActionId) => {
     setActionBusy(action);
@@ -232,7 +219,7 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage 
   /** Prompt Character (opening beat): save the premise, then stream a character-authored opening turn. */
   const promptCharacter = async () => {
     if (sendingRef.current) return;
-    await charactersApi.editChatState(characterId, { premise: premise.trim() });
+    // The premise now lives in chat-state (saved via the Scenario modal); the server reads it.
     const outcome = await runStream({ open: true, model: narratorModel });
     if (!outcome.ok) toast.push({ title: "Couldn't open the scene", description: outcome.error?.message, tone: "error" });
   };
@@ -251,7 +238,6 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage 
     const fresh = await charactersApi.chatState(characterId);
     if (fresh.ok) {
       setChatState(fresh.data);
-      setPremise(fresh.data.premise);
       stageRef.current = fresh.data.stage.label;
     }
     toast.push({
@@ -259,25 +245,16 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage 
     });
   };
 
-  const hasAnything = lines.length > 0 || (chatState !== null && (chatState.affinity !== 0 || premise.trim().length > 0));
+  const hasAnything =
+    lines.length > 0 || (chatState !== null && (chatState.affinity !== 0 || chatState.premise.trim().length > 0));
 
   return (
     <div className="flex flex-col gap-5">
       <SceneStrip characterId={characterId} name={name} hasChat={lines.length > 0} />
 
-      <PremiseBar
-        value={premise}
-        who={who}
-        saving={savingPremise}
-        promptDisabled={sending}
-        onChange={setPremise}
-        onSave={savePremise}
-        onPromptCharacter={promptCharacter}
-      />
-
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Conversation</h3>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Select
             aria-label="Narrator model"
             value={narratorModel}
@@ -290,6 +267,16 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage 
               </option>
             ))}
           </Select>
+          {chatState ? (
+            <Button size="sm" variant="quiet" disabled={sending} onClick={promptCharacter} title={`Let ${who} open the scene`}>
+              Prompt {who}
+            </Button>
+          ) : null}
+          {chatState ? (
+            <Button size="sm" variant="quiet" onClick={() => setScenarioOpen(true)}>
+              Scenario setup
+            </Button>
+          ) : null}
           {chatState ? (
             <Button size="sm" variant="quiet" onClick={() => setToolsOpen(true)}>
               State tools
@@ -404,7 +391,22 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage 
           snapshot={chatState}
           onSaved={(next) => {
             setChatState(next);
-            setPremise(next.premise);
+            stageRef.current = next.stage.label;
+          }}
+        />
+      ) : null}
+
+      {chatState ? (
+        <ChatScenarioModal
+          open={scenarioOpen}
+          onClose={() => setScenarioOpen(false)}
+          characterId={characterId}
+          who={who}
+          snapshot={chatState}
+          startingStage={startingStage}
+          onStartingStageChange={onStartingStageChange}
+          onSaved={(next) => {
+            setChatState(next);
             stageRef.current = next.stage.label;
           }}
         />
@@ -485,76 +487,6 @@ function StatusStrip({ state, startingStage }: { state: ChatStateSnapshot; start
           {p.label}
         </Tag>
       ))}
-    </div>
-  );
-}
-
-/**
- * The premise (Scenario) bar above the composer (character-chat-state.spec.md §7):
- * a collapsible free-text scenario for this chat, pre-filled from the authored
- * default and editable any time. Collapsed by default when empty so casual chats
- * aren't cluttered; it's the headline control for the "easily test scenarios" use.
- */
-function PremiseBar({
-  value,
-  who,
-  saving,
-  promptDisabled,
-  onChange,
-  onSave,
-  onPromptCharacter,
-}: {
-  value: string;
-  who: string;
-  saving: boolean;
-  promptDisabled: boolean;
-  onChange: (next: string) => void;
-  onSave: () => void;
-  onPromptCharacter: () => void;
-}) {
-  const [open, setOpen] = useState(value.trim().length > 0);
-  return (
-    <div className="rounded-card border border-ink-600 bg-ink-950/40">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-3 py-2 text-xs"
-      >
-        <span className="font-medium tracking-wide text-paper-400 uppercase">Scenario</span>
-        <span className="text-paper-500">{open ? "Hide" : value.trim() ? "Edit" : "Set the scene"}</span>
-      </button>
-      {open ? (
-        <div className="flex flex-col gap-2 px-3 pb-3">
-          <Textarea
-            rows={2}
-            value={value}
-            maxLength={CHAT_PREMISE_MAX_CHARS}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={`Set the scene for this chat with ${who} — e.g. "it's the night before you move away…"`}
-          />
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-paper-600">
-              Chat-only — it never touches {who}&rsquo;s saved bio or personality.
-            </span>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="quiet"
-                disabled={promptDisabled}
-                onClick={onPromptCharacter}
-                title={`Let ${who} open the scene from this scenario`}
-              >
-                Prompt {who}
-              </Button>
-              <Button size="sm" variant="primary" busy={saving} onClick={onSave}>
-                Save
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : value.trim() ? (
-        <p className="line-clamp-2 px-3 pb-2 text-xs text-paper-500">{value}</p>
-      ) : null}
     </div>
   );
 }

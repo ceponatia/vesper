@@ -5,6 +5,7 @@ import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
 import { characterChatMessages, characters, db, images } from "@/server/db";
+import { loadChatState } from "@/server/engine";
 import { renderCharacterSceneImage } from "@/server/images";
 
 type Params = { id: string };
@@ -86,6 +87,10 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     .limit(SCENE_CHAT_CONTEXT);
   const recentChat = recent.map((r) => r.content).reverse();
 
+  // The scene's outfit comes from the chat-state scenario modal (free text + exposed toggle),
+  // not the character's structured defaultOutfit — chat has no equippable wardrobe.
+  const chatState = await loadChatState(user.id, id);
+
   const jobId = await startJob({
     type: "scene_image",
     payload: { characterId: id },
@@ -97,6 +102,8 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         profile,
         avatarImageId: character.avatarImageId,
         recentChat,
+        outfit: chatState?.outfit ?? "",
+        outfitExposed: chatState?.outfitExposed ?? false,
       }),
     }),
   });
