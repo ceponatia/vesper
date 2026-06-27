@@ -3,7 +3,7 @@
   "pattern": "**/*.{ts,tsx}",
   "minTokens": 70,
   "threshold": 4,
-  "reporters": ["console"],
+  "reporters": ["threshold"],
   "gitignore": true,
   "absolute": false,
   "ignore": [
