@@ -13,6 +13,12 @@ export interface GenerateVariantInput {
   userId: string;
   kind: VariantKind;
   instruction: string;
+  /**
+   * Extra meta merged onto the image row — e.g. `{ avatarExpression }` / `{ avatarPose }`
+   * so the row joins the avatar manifest (`loadAvatarManifest`, avatar-3d.spec §4). Slice 2
+   * seeds these by hand; slice 3's auto-gen passes them too.
+   */
+  extraMeta?: Record<string, unknown>;
   sink?: DiagnosticSink;
 }
 
@@ -39,6 +45,7 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       variantKind: input.kind,
       demo,
       model: demo ? "demo" : `venice/${veniceEditModelId()}`,
+      ...input.extraMeta,
     },
   });
 
