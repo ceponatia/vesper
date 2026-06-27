@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cx } from "./cx";
 import { useFocusTrap } from "./use-focus-trap";
 
@@ -37,6 +38,14 @@ const CLOSED_BY_SIDE: Record<SheetSide, string> = {
  * the mobile nav drawer, and bottom action sheets. The enter slide is gated by
  * prefers-reduced-motion. No exit animation (unmounts immediately on close),
  * matching Dialog's minimalism.
+ *
+ * The overlay is **portalled to document.body**: its `fixed inset-0` must size to
+ * the viewport, but a `transform`/`filter`/`backdrop-filter` ancestor establishes
+ * a containing block for fixed descendants and would trap it. The nav drawer is
+ * mounted inside the backdrop-blurred header, so without the portal the overlay
+ * collapsed to the header's height and the panel body (links + nav-mode switch)
+ * scrolled into a sliver — the empty-drawer bug. document.body is always a clean
+ * viewport-sized containing block.
  */
 export function Sheet({ open, onClose, side = "right", title, children, className }: SheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -59,9 +68,12 @@ export function Sheet({ open, onClose, side = "right", title, children, classNam
     return () => cancelAnimationFrame(raf);
   }, [open]);
 
-  if (!open) return null;
+  // Closed, or pre-mount on the server where there's no document.body to portal
+  // into (every Sheet starts closed, so SSR always lands here and renders null —
+  // no hydration mismatch).
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       className={cx("fixed inset-0 z-50 flex bg-ink-950/60 backdrop-blur-[2px]", className)}
       onMouseDown={(e) => {
@@ -93,6 +105,7 @@ export function Sheet({ open, onClose, side = "right", title, children, classNam
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

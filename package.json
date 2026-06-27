@@ -14,6 +14,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "jscpd": "jscpd",
+    "jscpd:clones": "jscpd --reporters console",
     "test": "vitest run --exclude '**/*.int.test.ts'",
     "test:watch": "vitest --exclude '**/*.int.test.ts'",
     "test:int": "vitest run --no-file-parallelism .int.test.",
