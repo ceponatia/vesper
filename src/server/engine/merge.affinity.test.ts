@@ -6,7 +6,8 @@ import { emptyCharacterProfile } from "@/contracts/world/profile";
 import { stageForValue } from "@/contracts/relationships/stages";
 import type { BundleRelationship } from "./bundle";
 import { AFFINITY_DECAY_WEEK_MINUTES, AFFINITY_DELTA_CLAMP } from "./constants";
-import { decayAffinityValue, planAffinityDecay, planAffinityUpdates, type WorkingParticipant } from "./merge";
+import type { WorkingParticipant } from "./merge";
+import { decayAffinityValue, planAffinityDecay, planAffinityUpdates } from "./merge/phases/affinity";
 import { computeFollowScores, FOLLOW_THRESHOLD } from "./scene";
 
 function person(id: string, displayName: string, isUser = false, traits: TraitValue[] = []): WorkingParticipant {

@@ -5,13 +5,9 @@ import { stageForValue } from "@/contracts/relationships/stages";
 import { emptyParticipantState } from "@/contracts/state/participant-state";
 import { emptyCharacterProfile } from "@/contracts/world/profile";
 import type { BundleRelationship } from "./bundle";
-import {
-  combineAffinityUpdates,
-  planReactionAffinity,
-  type AffinityUpdate,
-  type ReactionAffinityResult,
-  type WorkingParticipant,
-} from "./merge";
+import type { WorkingParticipant } from "./merge";
+import { combineAffinityUpdates, planReactionAffinity } from "./merge/phases/reactions";
+import type { AffinityUpdate, ReactionAffinityResult } from "./merge/types";
 
 function player(id: string, displayName: string): WorkingParticipant {
   return { id, displayName, isUser: true, role: "player", characterId: null, snapshot: emptyCharacterProfile(), locationId: "loc-1", state: emptyParticipantState() };

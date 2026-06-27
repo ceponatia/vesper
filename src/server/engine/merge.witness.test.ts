@@ -7,7 +7,9 @@ import { emptySessionRuntime } from "@/contracts/state/session-runtime";
 import type { AgentResults, SimulantResult } from "@/contracts/turns/agent-results";
 import { emptyCharacterProfile, emptyWorldLore, emptyWorldStyle } from "@/contracts/world/profile";
 import type { BundleItem, BundleParticipant, BundlePlace, SessionBundle } from "./bundle";
-import { planCommsEvents, planTurnEffects, turnSalienceSet, type MergeTurn, type WorkingParticipant } from "./merge";
+import { type MergeTurn, type WorkingParticipant, planTurnEffects } from "./merge";
+import { planCommsEvents } from "./merge/phases/comms";
+import { turnSalienceSet } from "./merge/phases/witness";
 
 // ---------------------------------------------------------------------------
 // Fixtures (mirrors merge.test.ts; kept local so witness tests stand alone)
