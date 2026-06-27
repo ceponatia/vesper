@@ -39,7 +39,7 @@ type TurnChunkEvent = { segmentIndex: number; speaker: string | null; content: s
 
 `turns/intent-brief.ts` is the **pre-narration** intake agent's output (phase-4 pre-narrator, [turn-engine.md](../turn-engine.md) §Intake agent) — the one agent contract produced *before* the narration exists.
 
-It is emitted on the **`tool` model** (which now has a second consumer — previously only the image scene composer used it). Like the post-turn agents, it references entities **by display name** (present NPCs, items, locations), every field is `.default()`ed (so the empty brief is today's behavior), and it persists on the turn row (`turns.intent_brief` JSONB).
+It is emitted on the **agent model** (`agentModelId()`, which defaults to the state model and is overridable per-world from the World tab — the same resolver the post-turn agents use), **not** the tool model (that backs only the image scene composer). Like the post-turn agents, it references entities **by display name** (present NPCs, items, locations), every field is `.default()`ed (so the empty brief is today's behavior), and it persists on the turn row (`turns.intent_brief` JSONB).
 
 ```ts
 type IntentBrief = {
@@ -50,6 +50,8 @@ type IntentBrief = {
   examineItem?: string;                                             // item name
   enterLocation?: string;                                           // location phrase
   addressedNpcs: string[];                                          // NPC display names
+  socialActs: { concept: string; target: string }[];               // directed interaction concepts; empty on regex fallback
+  narratedNpcBehaviors: { npc: string; concept?: string; summary?: string }[];  // puppet-guardrail seam; empty on regex fallback
   // PERSISTED SEAMS — written in v1, not yet enforced:
   movement: { kind: "none" | "self" | "narrated_npc" | "co_travel_request" | "implied_subspace";
               destination?: string; coTravelTargets: string[] };   // movement-authority-spec consumes later
@@ -63,6 +65,7 @@ type IntentBrief = {
 | --- | --- | --- |
 | Action | `actionType` | Defaults to `"other"`. |
 | Mirror | `lookTarget`, `touchTarget`, `smellTarget`, `tasteTarget`, `examineItem`, `enterLocation`, `addressedNpcs` | The regex-`SceneIntent` mirror — `sceneIntentFromBrief(brief)` is lossless. Targets are NPC display names; `examineItem` is an item name; `enterLocation` is a location phrase. |
+| Reaction seams | `socialActs`, `narratedNpcBehaviors` | `socialActs` are directed interaction concepts (`{ concept, target }`); `narratedNpcBehaviors` is the puppet-guardrail seam (`{ npc, concept?, summary? }`). Both empty on the regex fallback. |
 | Seams (persisted, not yet enforced) | `movement`, `appointment`, `check` | Written in v1; downstream resolvers are separate phase-4 specs. |
 | Diagnostics | `notes` | One-line rationale, diagnostics only. |
 

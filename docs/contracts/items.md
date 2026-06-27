@@ -9,6 +9,8 @@ type ItemDefinition = {
   kind: "clothing" | "object" | "container";
   name: string; description: string;
   coverage?: BodyLocationId[];                 // clothing
+  category?: string;                           // clothing — editor template id (never in prompts)
+  subtype?: string;                            // object — object subtype id (vocabulary)
   layer?: 0 | 1 | 2 | 3;                        // 0 underwear … 3 outerwear
   opacity?: "opaque" | "sheer";
   sensory?: { appearance?: string; scent?: string; tactile?: string };
@@ -23,6 +25,8 @@ type ItemDefinition = {
 | `kind` | `clothing`, `object`, or `container`. Embedded in item rows / instance snapshots, not self-identified. |
 | `name` / `description` | Display text. |
 | `coverage` | Body-location ids the garment covers (clothing only). |
+| `category` | Clothing only: the coverage-template id this item started from. **Editor display only** — never serialized into gameplay prompts (see [Clothing categories](#clothing-categories)). |
+| `subtype` | Object only: the object-subtype id — vocabulary for `kind: "object"` items (see [Object subtypes](#object-subtypes)). |
 | `layer` | `0` underwear → `3` outerwear. |
 | `opacity` | `opaque` or `sheer`. |
 | `sensory` | Optional `appearance` / `scent` / `tactile` notes. |

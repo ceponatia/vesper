@@ -7,8 +7,8 @@ The prime directive: **an error may degrade a turn, it must never disrupt the ga
 Every value crossing a trust boundary — JSONB columns, LLM output, API request bodies, file payloads — goes through `src/lib/parse.ts`:
 
 ```ts
-parseOr<T>(schema: ZodType<T>, raw: unknown, fallback: T, diag?: DiagnosticSink): T
-parseOrNull<T>(schema: ZodType<T>, raw: unknown, diag?: DiagnosticSink): T | null
+parseOr<T>(schema: ZodType<T>, raw: unknown, fallback: T, sink?: DiagnosticSink, path?: string): T
+parseOrNull<T>(schema: ZodType<T>, raw: unknown, sink?: DiagnosticSink, path?: string): T | null
 ```
 
 - Never `JSON.parse` + `schema.parse` inline. `parseOr` handles string-or-object input, catches, records a diagnostic, returns the fallback.
@@ -49,7 +49,7 @@ Schema design rules that make this work:
 
 The pre-narration **intake agent** ([turn-engine.md](turn-engine.md) §Intake agent) is the cleanest shape this rule can take. It is a *new* LLM call on the critical path — the kind of addition the prime directive is most wary of — yet it can never make a turn worse than today's, because its degraded default **is the deterministic code path the engine ran before it existed**:
 
-- It runs `generateChecked` (the full ladder above) on the `tool` model, but is additionally wrapped in a hard timeout (`INTAKE_TIMEOUT_MS = 1500`).
+- It runs `generateChecked` (the full ladder above) on the `tool` model, but is additionally wrapped in a hard timeout (`INTAKE_TIMEOUT_MS = 3000`).
 - On timeout, generation failure, demo mode, or when disabled by env, it falls back to `intentBriefFromSceneIntent(detectIntent(input))` — the regex intent that was the live behavior before intake — and records a diagnostic. The narration never blocks on the agent.
 - So the **worst case is exactly prior behavior**: no failed turn, no missing classification beyond what regex always missed, just a diagnostic noting the degrade. "Intake off" is a tested, safe state by construction, not a separately-maintained path. This is the pattern to copy when adding any future pre-narrator check: make its fallback the previously-shipped deterministic step, time-box it, and the new call is pure upside.
 

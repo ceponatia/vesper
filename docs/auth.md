@@ -70,7 +70,7 @@ The two failure codes are distinct so clients can redirect-to-sign-in vs. retry
 
 The account's **default player character** (a light name + short bio the player
 is represented by in character chat — `docs/developer-notes/player-character.plan.md`)
-is a JSONB blob on the `users` row (`StoredPlayerPersona`, `contracts/players`),
+is a JSONB blob on the `users` row (`StoredPlayerPersona`, `src/contracts/players`),
 edited via `PATCH /api/users/me` and the `/settings` page.
 
 Every consumer reads it through **one resolver**, `resolvePlayerPersona(ownerId)`
@@ -80,7 +80,7 @@ and never throws: a missing/blank name falls back to the account name, so a chat
 turn always has someone to address. The resolved `PlayerPersona.id` is `null`
 today (an inline persona); if the persona later graduates to a real library
 character, only the resolver changes — callers keep reading the same shape. The
-character-chat prompt threads it in as the addressee (`engine/prompts/character-chat.ts`).
+character-chat prompt threads it in as the addressee (`src/server/engine/prompts/character-chat.ts`).
 
 ## Sign-in methods
 

@@ -21,8 +21,8 @@ configure:
 - **Triggers** — which **interaction concepts** breach this card. These are a
   fixed vocabulary, not free keywords: `flirt`, `proposition`, `public_display`,
   `physical_affection`, `compliment`, `gift`, `tease`, `insult`, `criticize`,
-  `boundary_push`, `jealousy_trigger`, `reassure`, `confide`. Autocomplete offers
-  the full list. A card with no triggers never fires.
+  `boundary_push`, `jealousy_trigger`, `reassure`, `confide`, `foot_contact`.
+  Autocomplete offers the full list. A card with no triggers never fires.
 - **Tag overrides** — a per-tag flip. A character carrying a given disposition
   tag reacts *differently* to this card. The canonical example: a `foot-fetish`
   taboo defaults to revulsion, but a character tagged `foot-fetish-positive`

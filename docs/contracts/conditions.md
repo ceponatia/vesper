@@ -7,7 +7,7 @@ Conditions are discrete, temporary states a character can be in — "soaked", "e
 A condition can overlay attribute values while it's active:
 
 ```ts
-type ConditionEffect = { attributeId: AttributeId; value: unknown };
+type ConditionEffect = { attributeId: AttributeId; value: string | string[] | number | boolean };
 // no source of its own — applied AS source "condition"
 ```
 
@@ -19,7 +19,7 @@ type ActiveCondition = {
   startedAtMinutes: number;         // game clock
   durationMinutes?: number;         // engine expires it
   source?: { kind: "narrative" | "item" | "environment" | "manual"; id?: string };
-  attributeEffects?: ConditionEffect[];
+  attributeEffects: ConditionEffect[];
   senseEffects?: { sight?: "reduced" | "blocked"; hearing?: "reduced" | "blocked" };
   promptHint?: string;
 };

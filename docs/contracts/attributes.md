@@ -6,7 +6,7 @@ Attributes are the individual descriptive facts about a character — eye color,
 
 ## Ids and definitions
 
-Every attribute id is `category.name` — e.g. `eyes.color`, `hair.length`, `build.height`. Categories are a closed list in `attributes/categories.ts`; you extend it by adding to the array.
+Every attribute id is `category.name` — e.g. `eyes.color`, `hair.length`, `build.height`. Categories are a closed list in `attributes/category-ids.ts`; you extend it by adding to the array.
 
 Each attribute is described by an `AttributeDefinition`:
 
@@ -15,6 +15,7 @@ type AttributeDefinition = {
   id: `${AttributeCategory}.${string}`;
   label: string;
   kind: "physical" | "biological" | "presentation" | "cultural" | "condition" | "sensory";
+  category: AttributeCategory;
   valueType: "enum" | "enum_list" | "number" | "text" | "flag";
   description: string;
   mutability: "inherent" | "mutable";
@@ -42,6 +43,7 @@ type AttributeDefinition = {
 | `id` | `category.name`, e.g. `eyes.color`. |
 | `label` | Human-readable name shown in editors. |
 | `kind` | Which family the attribute belongs to (see below). |
+| `category` | The attribute's category, from the closed list (`category-ids.ts`). |
 | `valueType` | The shape of the value (see below). |
 | `description` | Plain-language explanation of the attribute. |
 | `mutability` | `inherent` or `mutable` — who is allowed to change it (see below). |
@@ -131,11 +133,11 @@ The starter set is roughly 50 attributes. (Expansion toward aionchat's per-anato
 | face | shape, freckles, expression_default |
 | brows, lips, teeth, ears | brows; lips; teeth (shape — even … sharp_canines / fanged / serrated — condition); ears |
 | horns | shape, length, count, texture, color |
-| neck, shoulders, chest | — |
+| neck, shoulders, chest | neck (length, throat_prominence); shoulders (width, slope); chest (size, hair) |
 | wings | type, span, color, carriage |
-| waist, hips | — |
+| waist, hips | waist (definition); hips (width) |
 | tail | type, length, tip, color |
-| arms, hands, legs, feet | — |
+| arms, hands, legs, feet | arms (build, hair); hands (size, texture, nails); legs (build, length, hair); feet (size, arch, nails, smell, toes) |
 | voice | pitch, timbre, accent, cadence |
 | presentation | style, grooming, scent_baseline |
 | movement | gait, posture_default |

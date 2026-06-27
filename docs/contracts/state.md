@@ -41,9 +41,19 @@ One open narrative thread the session is tracking.
 ```ts
 type StoryThread = {
   id: string; title: string; summary: string;
+  kind: "investigation" | "ongoing";          // investigation tracks a goal; ongoing is a standing topic only updated
   status: "open" | "cooling" | "resolved" | "archived";
   source: "anchor" | "emergent" | "player";
+  question: string;                           // investigation: the core question/goal in one line
+  closeConditions: string[];                  // investigation: the events that would close it
+  developments: StoryThreadDevelopment[];     // accumulated major beats, oldest→newest (capped in the merge)
   openedAtTurn: number; lastTouchedTurn: number; touchCount: number;
+};
+
+type StoryThreadDevelopment = {               // one accumulated beat; kind is a display-only soft tag
+  turn: number;
+  text: string;
+  kind: "evidence" | "statement" | "event" | "lead" | "update";
 };
 ```
 
@@ -58,6 +68,7 @@ type SessionRuntime = {
   encounteredParticipantIds: string[];           // full (sight) encounters only — see ../perception.md first-impression fidelity
   unlockedLoreIds: string[];
   lastInteractedTurn: Record<string, number>;  // participantId → turn number of last targeted interaction
+  lastAffinityDecayAt?: number;                // session clock-minutes through which affinity decay has been applied (whole weeks)
   commsLinks: Array<{ kind: "call" | "text"; withParticipantId: string; since: number }>;  // active call/text links (../perception.md §Comms)
   pendingComms: Array<{ fromParticipantId: string; kind: "call" | "text"; gist: string; urgency: "low"|"normal"|"high" }>;  // NPC-initiated messages, surface-once; written by the movement system on a staged beat's arrival (../turn-engine.md §Director-staged movement)
   stagedIntents: StagedIntent[];                 // director-staged off-screen NPC moves + on-arrival beats (phase-4 npc-movement minimal slice; ../turn-engine.md)
@@ -122,8 +133,9 @@ Controls how often scene images are generated. There's no subject field — the 
 ```ts
 type SceneGenState = {                        // no subject field: the composer picks the focal NPC
   interval: number;                           // every N turns; 0 = off
-  lastGeneratedTurn?: number;                 //   from whoever is co-located with the player
-  status: "idle" | "generating" | "failed";   //   (docs/images.md §Scene images)
+  lastGeneratedTurn?: number;                 // turn number when an image was last generated
+  status: "idle" | "generating" | "failed";   // (docs/images.md §Scene images)
+  referenceMode: "single" | "multi";          // single = one identity anchor; multi = up to three references via Venice /image/multi-edit
 };
 ```
 
@@ -134,10 +146,17 @@ The authored character: bio, personality, body-config, attributes, default outfi
 ```ts
 type CharacterProfile = {
   bio: string; personality: string; voice?: string;
-  speciesId: string; bodyPlanId: string;      // registry ids ("human" / "succubus" / "faerie" / …, "humanoid" seeded)
+  speciesId: string;                          // registry id ("human" / "succubus" / "faerie" / …)
+  heritageId?: string;                        // optional heritage within the species (overlay); absent ⇒ bare species
+  bodyPlanId: string;                         // registry id ("humanoid" seeded)
   intimateRegions: string[];                  // body-config: present intimate region groups (default []); see body.md §realized body
   bodyFeatures?: string[];                    // additive feature groups; absent ⇒ species defaults, [] ⇒ explicit none
   attributes: AttributeValue[];               // base/creation-sourced
+  tags: string[];                             // reusable disposition tags social-reaction cards key overrides on
+  preferences: Preference[];                  // bespoke likes/dislikes resolved against a classified social act
+  socialCards: SocialReactionCard[];          // the character's own default lines/taboos (tried before the world's)
+  traits: TraitValue[];                       // atomic personality traits — numeric scalars with registry-defined bands
+  playerRelationship: { stage: string; note: string };  // authored default stance (stage id + one-line note); seeds the character chat
   aliases: string[];
   defaultOutfit: string[];                    // item definition ids (owner's library)
   schedule?: Array<{ startMinute: number; endMinute: number; locationName: string; activity: string;

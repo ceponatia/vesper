@@ -12,6 +12,10 @@
 
 On the character page, **Generate avatar** builds the canonical portrait from the saved attributes *and the default outfit* — dress the character before generating, or you'll get invented clothing. Variants (pose / outfit / expression / setting) are identity-locked edits of the avatar; any variant can be promoted to canonical.
 
+## Character chat
+
+Once a character is saved, the **Chat** tab lets you talk to them one-on-one — no world, no session, just a quick way to hear their voice and feel out their personality. **Scenario setup** sets the stage for the conversation: the relationship you start out in, a short premise for the moment, what they're wearing, and which social cards apply. As you talk, the character's mood and how they're warming to you shift in response. When a moment is worth seeing, **Generate scene** paints an image from your recent exchange. Everything here stays in the chat — it never touches the character's saved bio or personality.
+
 ## Manual editing
 
 Every forge field is a normal form field; the same editor serves hand-built characters from **Characters → New**. Diagnostics (red = failed, amber = something was dropped/adjusted) appear above the tabs.
