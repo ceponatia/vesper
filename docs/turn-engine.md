@@ -128,7 +128,15 @@ Violations become next-turn correction directives (self-expiring — the brief i
 
 ## Merge reducer
 
-`engine/merge.ts` — deterministic, fully unit-testable, no LLM. Order:
+`engine/merge/` — deterministic, fully unit-testable, no LLM. The reducer plans over a
+`WorkingState` (`merge/working-state.ts`): the mutable per-turn copy of participants/items
+behind an ADT that owns dirty-tracking — every world mutation goes through a method that
+marks the right dirty set, so a dropped DB write from a forgotten mark is structurally
+impossible (an ESLint `no-restricted-syntax` gate forbids direct field assignment outside
+that file). Name→row resolution lives in `merge/grounding.ts`; `planTurnEffects` (the
+orchestrator) and `applyTurnResults` (the one write transaction) in `merge/index.ts`. The
+ongoing decomposition is [merge-decomposition.plan.md](developer-notes/merge-decomposition.plan.md).
+Order:
 
 1. **Ground names → rows**: participants by display name (case-insensitive; canonical casing from the row); items via the resolver (exact name → alias → embedding-fuzzy ≥0.75 against in-scope instances only — bounded search space; action-aware preference, e.g. `remove` prefers worn instances). Unresolvable references → diagnostic (`merge.item.unresolved`, `merge.participant.unresolved`), event dropped, and the dropped event is recorded in `brief.droppedEvents` so the next turn can gently correct any narration/state divergence.
 2. **Validate moves** against the session location graph (adjacent links only; player never moved unless author is the player). Invalid → diagnostic, dropped. Player moves additionally pass the link-access check (`checkLinkAccess` in `contracts/world/access` — one pure rule, shared with future NPC traversal): `locked` blocks even a key-holder (`keyItemId` reserved), `timeWindow` checks the **turn-start** minute of day (windows wrap past midnight; zero-length degrades to open), a bound `doorItemId` instance whose state is closed+locked seals the link, `private` has no player effect yet. Blocked → `merge.movement.access_denied` + a `droppedEvents` note so the next narration plays the locked door instead of teleporting through it. A link without an `access` field parses to `public` at the bundle boundary — exactly today's behavior.

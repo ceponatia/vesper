@@ -1,9 +1,13 @@
 # Merge reducer decomposition — plan
 
-Status: **draft** (proposal, awaiting go-ahead). A behavior-preserving refactor —
-no feature payoff, pure maintainability. Produced by the Code Complete "complete
-review" pass (`docs/prompts/complete-review.md`) over `src/server/engine/merge.ts`,
-the codebase's largest file and the highest-confusion area in the turn engine.
+Status: **Slices 1–3 shipped — 2026-06-27** (`merge/` folder + `WorkingState` ADT +
+encapsulation lint gate + `grounding.ts`); **Slices 4–5 next** (the phase split + the
+`plan.ts`/`apply.ts` move — deferred to a quiet window, see roadmap `## Next`). A
+behavior-preserving refactor — no feature payoff, pure maintainability. Produced by the
+Code Complete "complete review" pass (`docs/prompts/complete-review.md`) over
+`src/server/engine/merge.ts`, the codebase's largest file and the highest-confusion area
+in the turn engine. Slices land green per `pnpm verify`; the merge suite (189 pure tests)
+is the behavior gate (Postgres-backed `engine.int.test.ts` runs in CI).
 
 Spec (full checklist scoring, target design, test strategy):
 [merge-decomposition.spec.md](merge-decomposition.spec.md). System doc:
@@ -54,7 +58,13 @@ Each slice ends `pnpm verify`-green (lint + typecheck + test + jscpd) and is ind
 revertible. Ordering is by safety: the ADT and the pure toolkit first (lowest risk), the
 phase split last (highest churn).
 
-### Slice 1 — Characterization safety net (do before touching code)
+### Slice 1 — Characterization safety net (do before touching code) — _not done as a separate pass_
+
+**Status:** the existing 189-test merge suite was used as the behavior gate (green after
+every change); no new characterization tests were backfilled. If Slice 4 (the phase split)
+finds a phase with only helper-level coverage, add the end-to-end assertion there before
+extracting it.
+
 
 Confirm the existing suite pins **observable orchestration output**, not just helpers.
 For each phase, assert at the `planTurnEffects` boundary: its `droppedEvents`, its dirty
@@ -62,7 +72,7 @@ sets (`touchedItemIds` / participant writes), and its `runtime`/`brief` deltas. 
 where a subsystem has helper-level coverage (e.g. `planAffinityDecay` unit tests) but no
 end-to-end assertion that `planTurnEffects` wired it. This slice adds **tests only**.
 
-### Slice 2 — `merge/working-state.ts`: the `WorkingState` ADT
+### Slice 2 — `merge/working-state.ts`: the `WorkingState` ADT — ✅ shipped 2026-06-27
 
 A class, following the established mutable-accumulator precedent (`EventChannel` in
 `pipeline.ts`, `DiagnosticCollector` in `contracts/diagnostics.ts`). It owns
@@ -86,7 +96,7 @@ so any regression localizes to the ADT. This slice also lands the **encapsulatio
 forbids direct field assignment to participant/item state outside `working-state.ts`, so the
 manual-dirty-tracking bug class can never return.
 
-### Slice 3 — `merge/grounding.ts`: extract the pure resolution toolkit
+### Slice 3 — `merge/grounding.ts`: extract the pure resolution toolkit — ✅ shipped 2026-06-27
 
 Move the stateless name→row helpers (`findParticipant`, `groundParticipants`,
 `resolveSessionLocation`, `resolveItemByName`, `scoreItemCandidate`, `isAdjacent`,
@@ -94,7 +104,7 @@ Move the stateless name→row helpers (`findParticipant`, `groundParticipants`,
 already pure and well-tested; this is a file move + import update. Unrelated info leaves
 the reducer (checklist 7).
 
-### Slice 4 — `merge/phases/*.ts`: one file per phase
+### Slice 4 — `merge/phases/*.ts`: one file per phase — ⬜ remaining (re-measured: `planTurnEffects` ≈ 700 lines)
 
 Extract each inline phase of `planTurnEffects` into `(state: WorkingState, ctx) => void`
 (or returning a typed plan-fragment). One file per phase: `movements`, `item-events`,
@@ -105,7 +115,7 @@ Extract **one phase per commit**, verify between each. `planTurnEffects` shrinks
 ordering becomes visible in one place (checklist 5 & 8). Most per-subsystem planners
 (`plan*`/`apply*`) already exist; the phase file is just the glue that lives inline today.
 
-### Slice 5 — `merge/apply.ts` + barrel tightening
+### Slice 5 — `merge/apply.ts` + barrel tightening — ⬜ remaining (do after Slice 4: `plan.ts` needs the phases distributed first to avoid an index↔plan cycle)
 
 Isolate `applyTurnResults` (the DB-write layer) into its own file; optionally split its
 three transaction write-loops (participants, affinity edges+events, items) into small
