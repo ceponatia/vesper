@@ -17,33 +17,16 @@ import {
   THREAD_DEVELOPMENTS_CAP,
 } from "./constants";
 import type { SceneLinkInput } from "./scene";
-import {
-  advanceClock,
-  applyConditionEvents,
-  applyMeterAdjustments,
-  applyThreadSignals,
-  assertPlacementExclusive,
-  buildNextBrief,
-  clampMinutes,
-  coolThreads,
-  dedupeThreadProposals,
-  expireConditions,
-  findParticipant,
-  isAdjacent,
-  planCardBreachReactions,
-  planItemEvent,
-  planTurnEffects,
-  reconcileBrief,
-  resolveItemByName,
-  resolveSessionLocation,
-  scheduleEntryAt,
-  scheduleMoveStaging,
-  stagedLocationAnchor,
-  syntheticEpisodeSummary,
-  type MergeTurn,
-  type WorkingItem,
-  type WorkingParticipant,
-} from "./merge";
+import { type MergeTurn, type WorkingItem, type WorkingParticipant, planTurnEffects, stagedLocationAnchor } from "./merge";
+import { findParticipant, isAdjacent, resolveItemByName, resolveSessionLocation } from "./merge/grounding";
+import { planCardBreachReactions } from "./merge/phases/affinity";
+import { buildNextBrief, reconcileBrief } from "./merge/phases/brief";
+import { applyConditionEvents, expireConditions } from "./merge/phases/conditions";
+import { syntheticEpisodeSummary } from "./merge/phases/facts";
+import { assertPlacementExclusive, planItemEvent } from "./merge/phases/items";
+import { advanceClock, applyMeterAdjustments, clampMinutes } from "./merge/phases/meters";
+import { scheduleEntryAt, scheduleMoveStaging } from "./merge/phases/schedule";
+import { applyThreadSignals, coolThreads, dedupeThreadProposals } from "./merge/phases/threads";
 import { meterDefinitions } from "@/contracts/meters/registry";
 
 // ---------------------------------------------------------------------------

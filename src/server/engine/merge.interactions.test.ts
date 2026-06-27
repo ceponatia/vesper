@@ -7,7 +7,7 @@ import { emptySessionRuntime } from "@/contracts/state/session-runtime";
 import type { AgentResults, SimulantResult } from "@/contracts/turns/agent-results";
 import { emptyCharacterProfile, emptyWorldLore, emptyWorldStyle } from "@/contracts/world/profile";
 import type { BundleParticipant, BundlePlace, SessionBundle } from "./bundle";
-import { planTurnEffects, type MergeMode, type MergeTurn } from "./merge";
+import { type MergeMode, type MergeTurn, planTurnEffects } from "./merge";
 
 /**
  * Interaction bookkeeping in the merge (multi-character phase 1, pinned by

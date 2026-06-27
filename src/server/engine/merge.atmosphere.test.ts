@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultExposureMask, type ExposureMask } from "@/contracts/state/brief";
-import { resolveAtmosphere } from "./merge";
+import { resolveAtmosphere } from "./merge/phases/brief";
 
 const exposure = (over: Partial<ExposureMask> = {}): ExposureMask => ({ ...defaultExposureMask(), ...over });
 

@@ -5,15 +5,9 @@ import { meterDefinitions } from "@/contracts/meters/registry";
 import { DAYLIGHT_BAND_START_MINUTES, daylightBand, DEFAULT_CALENDAR_START, resolveGameTime } from "@/lib/clock";
 import { DEFAULT_LINK_TRAVEL_MINUTES, FALLBACK_MINUTES_ADVANCED, MAX_MINUTES_ADVANCED, REST_CLAMP_MINUTES, SCHEDULE_JITTER_MINUTES } from "./constants";
 import { declaredRestMinutes, detectDeclaredRest } from "./intent";
-import {
-  applyActionMeterEffects,
-  clampRestMinutes,
-  linkTravelMinutes,
-  resolveTurnMinutes,
-  scheduleEntryAt,
-  scheduleJitter,
-  type ScheduleEntry,
-} from "./merge";
+import { linkTravelMinutes } from "./merge/grounding";
+import { applyActionMeterEffects, clampRestMinutes, resolveTurnMinutes } from "./merge/phases/meters";
+import { type ScheduleEntry, scheduleEntryAt, scheduleJitter } from "./merge/phases/schedule";
 import type { SceneLinkInput } from "./scene";
 
 const shower = actionById("shower")!; // 20m, hygiene set 0.95
