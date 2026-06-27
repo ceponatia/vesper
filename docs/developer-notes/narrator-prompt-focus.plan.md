@@ -1,6 +1,8 @@
 # Narrator prompt focus & proportionate reaction
 
-Status: **draft** (not yet sequenced; Phase 1 is shovel-ready, Phases 2–3 gated on the live probes in §Open questions)
+Status: **active** — Phase 1 (prompt wording + shape profiles + dev toggle) **shipped 2026-06-27**;
+Phases 2–3, the interim manual golden-scenario eval, and the reasoning probes P1–P3 remain (gated
+per §Open questions / §Rollout plan). The behavioral eval harness is a separate follow-on task.
 
 Goal: make narration stay on the player's current beat, react in proportion to
 what the player actually did, and stop doting. Concretely:
@@ -283,7 +285,20 @@ per-section narrator prompt trick.
 All Phase 1 + Phase 2 changes are wording/derivation in the existing pure builders.
 No new model call. Exact targets and proposed text below.
 
-### Phase 1 — low-risk wording (cached `system`; immediate)
+### Phase 1 — low-risk wording (cached `system`; immediate) — **shipped 2026-06-27**
+
+> **Shipped note (2026-06-27).** All of 1.1–1.7 landed: `NARRATION_SHAPE_PROFILES` /
+> `narrationShapeId` / the dev override store in `prompts/constants.ts` (replacing
+> `PARAGRAPH_GUIDANCE`, now removed); `proseStyleRules(shape)` + the reframed self-motivated
+> rule, new proportionate-reaction rule, response-first `RESPONSE_CONTRACT` rule, and the
+> multi-party presence-fidelity rule in `narrative.ts`; the shape profile + proportionate +
+> stay-in-voice rules in `character-chat.ts`'s `CHAT_RULES`; `narrationShape: narrationShapeId()`
+> wired into both lanes (`pipeline.ts`, the chat route); the dev-only `POST/GET /api/dev/narration-shape`
+> route (404 in prod, gated like impersonate) + a `NarrationShapeToggle` in the admin Inspector tab;
+> snapshot tests in `narrative.test.ts` / `character-chat.test.ts`; and the `docs/prompts.md`
+> §Narration shape & proportionate reaction section. The authored override (1.7) reuses the existing
+> fenced Style-directive / `narratorGuidance` channels — no new schema. **Next:** interim manual
+> golden-scenario eval (step 2) + probes P1–P3 (step 3) before Phase 2.
 
 **1.1 Replace the paragraph floor with selectable shape profiles (decision 1).**
 Make narration length a hot-swappable, eval-sweepable A/B knob instead of one

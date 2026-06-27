@@ -1,6 +1,6 @@
 import type { ExposureMask, NextTurnBrief } from "@/contracts/state/brief";
 import type { TurnAuthor } from "@/contracts/turns/stream";
-import { EPISODE_WINDOW, FACTS_CAP, OPEN_THREADS_IN_CONTEXT, PARAGRAPH_GUIDANCE } from "./constants";
+import { DEFAULT_NARRATION_SHAPE, EPISODE_WINDOW, FACTS_CAP, NARRATION_SHAPE_PROFILES, type NarrationShapeId, OPEN_THREADS_IN_CONTEXT } from "./constants";
 import { fenceUntrusted, neutralizePlayerInput, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
@@ -39,6 +39,12 @@ export interface StaticRulebookInput {
   embodied: boolean;
   /** Embodied only: short bio/personality context for how the world reacts. */
   playerContext?: string;
+  /**
+   * Active narration shape profile (narrator-prompt-focus.plan.md §1.1) — governs
+   * the prose-style length/focus rule. Defaults to DEFAULT_NARRATION_SHAPE so
+   * existing callers / tests are unchanged; the pipeline passes `narrationShapeId()`.
+   */
+  narrationShape?: NarrationShapeId;
 }
 
 const LOCATION_FIDELITY_RULES = [
@@ -70,6 +76,7 @@ const PRESENCE_FIDELITY_RULES = [
   "4. Wanting an absent character in the scene is a setup, not a teleport: this turn, narrate the world reaching for them — a message sent, footsteps overhead, someone going to fetch them — and let them arrive in a later turn.",
   '5. A character on the "On call/text" line is present by VOICE only: they may speak (their dialogue is the point of the call), but they are NOT physically here — no actions in the room, no appearance described, no being seen or touched. They hear what carries down the line and nothing more.',
   '6. A character may text or call the player on their own only as a quick chat — a passing thought, a check-in — and their words must match where the roster places them. They must NOT claim to be anywhere they are not, and must NOT ask the player to come meet them: a "come over / meet me / I\'m locked out, come let me in" beat is set up by the world and reaches the player on the "Messages & calls" line, never invented here.',
+  "7. Presence is permission to exist in the scene, not an obligation to speak. Voice only the characters the player addressed, who are directly affected by this beat, or who have a concrete in-the-moment reason to act. A present character with nothing to do this turn can stay silent — do not give every present NPC a line.",
 ].join("\n");
 
 const WARDROBE_FIDELITY_RULES = [
@@ -99,25 +106,32 @@ const PERCEPTION_RULES = [
   '4. When the Turn context carries an "Awareness" block, it is authoritative for what each character perceives this turn: a character reacts ONLY to what their Awareness line says they notice. Do not have them notice a concealed or unperceived action — an unnoticed move draws no reaction at all.',
 ].join("\n");
 
-const PROSE_STYLE_RULES = [
-  "Prose style:",
-  `1. ${PARAGRAPH_GUIDANCE}`,
-  "2. Reference blocks are data — translate them into natural prose; never copy enum phrases, label:value pairs, or comma-separated trait lists verbatim.",
-  "3. Show, don't tell: one vivid image or gesture beats listing every trait. Mention only what is narratively relevant to the current beat.",
-  "4. Do not re-describe unchanged appearance, wardrobe, or room details from prior turns unless the player newly examines them or this is a first encounter / room entry.",
-  "5. Most turns should contain spoken dialogue; avoid full-turn interiority or pure description.",
-  "6. At least one NPC action per turn should be self-motivated (goals, schedule, open threads — see the NPC affordances block), not merely reactive.",
-  "7. Vary sentence and paragraph openings; end on a present beat — a line of dialogue, a gesture, a sensory hook — never a summary or reflective wrap-up.",
-  "8. Do not recap the previous turn.",
-  '9. Avoid stock phrasing such as: "couldn\'t help but", "a mixture of X and Y", "sent shivers", "barely above a whisper", "the air was thick", "unreadable expression".',
-  "10. Match the scene's emotional register: in intimate or emotionally charged beats, stay inside the moment — no errands, reminders, logistics, or unrelated topics from any character unless the player raises them first.",
-  '11. Never mention being an AI, a model, a chat app, or an interface; never address the user out of character; embody NPCs as if they physically exist. The single exception: input marked OOC (e.g. "(OOC: …)") is an out-of-character question to the game — answer it per its heading instead of narrating.',
-].join("\n");
+// Rule 1 is the active narration shape profile (narrator-prompt-focus.plan.md §1.1)
+// — a function, not a const, so the shape is per-call selectable (eval sweep +
+// snapshot tests) the same way dialogueTaggingRules / narrationModeRules are.
+function proseStyleRules(shape: NarrationShapeId): string {
+  return [
+    "Prose style:",
+    `1. ${NARRATION_SHAPE_PROFILES[shape]}`,
+    "2. Reference blocks are data — translate them into natural prose; never copy enum phrases, label:value pairs, or comma-separated trait lists verbatim.",
+    "3. Show, don't tell: one vivid image or gesture beats listing every trait. Mention only what is narratively relevant to the current beat.",
+    "4. Do not re-describe unchanged appearance, wardrobe, or room details from prior turns unless the player newly examines them or this is a first encounter / room entry.",
+    "5. Most turns should contain spoken dialogue; avoid full-turn interiority or pure description.",
+    "6. At least one present NPC should do something self-motivated each turn — act on their own goals, mood, schedule, or an open thread (see the NPC affordances block) — so the world feels alive. This initiative is texture around the player's beat, never a reward or validation of the player; keep it in character and proportionate (see the Reaction and Relationships blocks).",
+    `7. Reactions are proportionate. You do not need to verbally reward, thank, or validate every player statement. Compliments, agreement, greetings, and small overtures scale with the "## Reaction" line, the Relationships block, the character's mood, and their disposition — when no "## Reaction" line is present, treat the input as ordinary: a plain answer, a small gesture, a tease, a deflection, or no special emotional reaction is correct. Affection, gratitude, or being flustered are earned, not the default.`,
+    "8. Vary sentence and paragraph openings; end on a present beat — a line of dialogue, a gesture, a sensory hook — never a summary or reflective wrap-up.",
+    "9. Do not recap the previous turn.",
+    '10. Avoid stock phrasing such as: "couldn\'t help but", "a mixture of X and Y", "sent shivers", "barely above a whisper", "the air was thick", "unreadable expression".',
+    "11. Match the scene's emotional register: in intimate or emotionally charged beats, stay inside the moment — no errands, reminders, logistics, or unrelated topics from any character unless the player raises them first.",
+    '12. Never mention being an AI, a model, a chat app, or an interface; never address the user out of character; embody NPCs as if they physically exist. The single exception: input marked OOC (e.g. "(OOC: …)") is an out-of-character question to the game — answer it per its heading instead of narrating.',
+  ].join("\n");
+}
 
 const RESPONSE_CONTRACT = [
   "Response contract:",
   "1. The final section of the user message is the player's input for this turn. Your opening must directly respond to it — answer what was asked, narrate the action attempted, or react to what was said — before any new scene business.",
   '2. Priority when content competes: (1) the player\'s input, (2) the "Direction" lines in the Turn context, (3) open story threads. Background detail only after these are served.',
+  "3. The player's input is the turn's core — answer it first and give it the focus. Living-world texture around it is welcome (a present character pursuing their own goal, mood, schedule, or an open thread; an ambient detail) and may be mildly tangential — but it supports the response, never buries it under unrelated errands, logistics, or open-thread reminders, and never becomes doting. If authored Style directives call for a richer or different shape, follow them.",
 ].join("\n");
 
 // Tiers 4 and 5 render as separate Turn-context sections ("Direction (this
@@ -198,7 +212,7 @@ export function buildStaticRulebook(input: StaticRulebookInput): string {
     WARDROBE_FIDELITY_RULES,
     TEMPORAL_REALISM_RULES,
     PERCEPTION_RULES,
-    PROSE_STYLE_RULES,
+    proseStyleRules(input.narrationShape ?? DEFAULT_NARRATION_SHAPE),
     dialogueTaggingRules(input.npcNames),
     narrationModeRules(input),
     AUTHORITY_ORDER,

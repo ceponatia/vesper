@@ -25,4 +25,14 @@ export * from "./prompts/agents";
 export * from "./prompts/intake";
 export * from "./prompts/inner-note";
 // prompts/constants re-exports engine constants; only its unique values here.
-export { AGENT_INPUT_CAP, AGENT_NARRATION_CAP, PARAGRAPH_GUIDANCE } from "./prompts/constants";
+export {
+  AGENT_INPUT_CAP,
+  AGENT_NARRATION_CAP,
+  DEFAULT_NARRATION_SHAPE,
+  NARRATION_SHAPE_IDS,
+  NARRATION_SHAPE_PROFILES,
+  type NarrationShapeId,
+  narrationShapeId,
+  readDevNarrationShape,
+  setDevNarrationShape,
+} from "./prompts/constants";
