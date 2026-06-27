@@ -1419,24 +1419,89 @@ function attributeValuesEqual(a: unknown, b: unknown): boolean {
   return a === b;
 }
 
-export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
-  const { bundle, turn, results, sink } = input;
+// ---------------------------------------------------------------------------
+// Orchestrator — planTurnEffects as an explicit ordered phase pipeline over the
+// WorkingState ADT (merge-decomposition.spec.md §3.3). Each phase is a named
+// `(ctx, state) => void` step: it reads the shared `PhaseContext` and mutates
+// the world copy only through `WorkingState`'s methods. The load-bearing
+// ordering invariants (drift → reaction mood-nudge; reaction edges → affinity
+// combine; staged-intent tick → schedule tick) are now stated once, as the
+// order of the PHASES list, instead of being smeared across one 700-line body.
+// ---------------------------------------------------------------------------
+
+/**
+ * The shared per-turn context threaded through every phase. Holds the read-only
+ * inputs each phase needs (bundle/turn/results/sink/deps + the resolved
+ * `defs`/`turnStartMinute` and the name→row resolver closures) plus the mutable
+ * scratch one phase produces for a later phase to consume (clock outputs,
+ * turn-start mood, the reaction/breach folds, the runtime-building pieces). The
+ * *world copy* itself never lives here — it is owned by `WorkingState`, mutated
+ * only through its methods. `buildMergePlan` reads `ctx` + `state` to assemble
+ * the final `MergePlan`.
+ */
+interface PhaseContext {
+  // -- read-only inputs (set once in createPhaseContext) --
+  readonly bundle: SessionBundle;
+  readonly turn: MergeTurn;
+  readonly results: AgentResults;
+  readonly simulant: SimulantResult;
+  readonly continuity: ContinuityResult;
+  readonly mode: MergeMode;
+  readonly reconcile: boolean;
+  readonly sink: DiagnosticSink;
+  readonly deps: GroundingDeps | undefined;
+  readonly logMissesForSessionId: string | undefined;
+  readonly defs: readonly MeterDefinition[];
+  /** Turn-START minute-of-day — movement/rest resolve against the moment the player acts. */
+  readonly turnStartMinute: number;
+  readonly resolveLocation: (name: string) => Promise<BundlePlace | null>;
+  readonly resolveItem: (
+    name: string,
+    action: ItemAction,
+    actor: { id: string; locationId: string | null } | null,
+  ) => Promise<WorkingItem | null>;
+
+  // -- mutable scratch / outputs (filled by phases, in order) --
+  playerTravelMinutes: number;
+  minutes: number;
+  minutesCause: string;
+  clockMinutes: number;
+  /** Turn-start mood per participant, captured before drift (reactions read it for μ). */
+  moodAtTurnStart: Map<string, number>;
+  /** Crossed-threshold hints per participant, captured before drift (brief diffs against them). */
+  hintsBefore: Map<string, string[]>;
+  reactionResult: ReactionAffinityResult | null;
+  stagedIntents: StagedIntent[];
+  factDrafts: FactDraftInput[];
+  episodeSummary: string;
+  syntheticEpisode: boolean;
+  threads: StoryThread[];
+  touchedThreadIds: string[];
+  newlyUnlocked: string[];
+  witnessedBy: string[];
+  interacted: Set<string>;
+  visitedLocationIds: string[];
+  encounteredParticipantIds: string[];
+  lastInteractedTurn: Record<string, number>;
+  comms: CommsPlanResult;
+  affinityDecay: AffinityDecayResult | null;
+  thresholdHints: string[];
+  breachResult: CardBreachResult;
+  affinityUpdates: AffinityUpdate[];
+  brief: NextTurnBrief;
+}
+
+type Phase = (ctx: PhaseContext, state: WorkingState) => void | Promise<void>;
+
+function createPhaseContext(input: PlanInput, state: WorkingState): PhaseContext {
+  const { bundle, sink } = input;
   const mode: MergeMode = input.mode ?? "post_turn";
 
-  const simulant = results.simulant ?? SIMULANT_FALLBACK;
-  if (!results.simulant) {
+  const simulant = input.results.simulant ?? SIMULANT_FALLBACK;
+  if (!input.results.simulant) {
     sink.push(diag("warn", "merge.simulant.degraded", "simulant failed — no state changes; clock advances by fallback"));
   }
-  const continuity = results.continuity ?? CONTINUITY_FALLBACK;
-
-  // The reducer's working state: the mutable per-turn copy of participants and
-  // items plus the per-turn accumulators, with dirty-tracking owned internally
-  // (merge-decomposition.spec.md §3.1). `parts`/`items` are read-only views;
-  // mutation flows exclusively through the ADT's methods.
-  const state = WorkingState.fromBundle(bundle);
-  const parts = state.participants;
-  const items = state.items;
-  const player = state.player;
+  const continuity = input.results.continuity ?? CONTINUITY_FALLBACK;
 
   const resolveLocation = async (name: string): Promise<BundlePlace | null> => {
     const direct = resolveSessionLocation(name, bundle.locations);
@@ -1456,25 +1521,68 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     action: ItemAction,
     actor: { id: string; locationId: string | null } | null,
   ): Promise<WorkingItem | null> => {
-    const direct = resolveItemByName(name, action, items, actor);
+    const direct = resolveItemByName(name, action, state.items, actor);
     if (direct) return direct;
     if (!input.deps?.resolveLibraryItem) return null;
     try {
       const match = await input.deps.resolveLibraryItem(name);
       if (!match) return null;
-      return pickBest(items.filter((i) => i.itemId === match.id), action, actor);
+      return pickBest(state.items.filter((i) => i.itemId === match.id), action, actor);
     } catch {
       return null;
     }
   };
 
-  // -- Step 2: movements (validated against the session location graph) ------
-  // Movement and declared rest both resolve against the turn-START time: the
-  // player walks through (or is blocked by) the door at the moment they act.
-  const turnStartMinute = minuteOfDay(resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart));
-  let playerTravelMinutes = 0;
+  return {
+    bundle,
+    turn: input.turn,
+    results: input.results,
+    simulant,
+    continuity,
+    mode,
+    reconcile: mode === "reconcile",
+    sink,
+    deps: input.deps,
+    logMissesForSessionId: input.logMissesForSessionId,
+    defs: effectiveMeterDefinitions(bundle.style),
+    turnStartMinute: minuteOfDay(resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart)),
+    resolveLocation,
+    resolveItem,
+    playerTravelMinutes: 0,
+    minutes: 0,
+    minutesCause: "reconcile",
+    clockMinutes: bundle.clockMinutes,
+    moodAtTurnStart: new Map(),
+    hintsBefore: new Map(),
+    reactionResult: null,
+    stagedIntents: bundle.runtime.stagedIntents,
+    factDrafts: [],
+    episodeSummary: "",
+    syntheticEpisode: false,
+    threads: bundle.runtime.storyThreads,
+    touchedThreadIds: [],
+    newlyUnlocked: [],
+    witnessedBy: [],
+    interacted: new Set(),
+    visitedLocationIds: [],
+    encounteredParticipantIds: [],
+    lastInteractedTurn: {},
+    comms: { links: bundle.runtime.commsLinks, changes: [] },
+    affinityDecay: null,
+    thresholdHints: [],
+    breachResult: { updates: [], ownedEdgeKeys: new Set<string>(), directives: [] },
+    affinityUpdates: [],
+    brief: bundle.brief,
+  };
+}
+
+// -- Step 2: movements (validated against the session location graph) --------
+// Movement and declared rest both resolve against the turn-START time: the
+// player walks through (or is blocked by) the door at the moment they act.
+async function phaseMovements(ctx: PhaseContext, state: WorkingState): Promise<void> {
+  const { simulant, turn, bundle, sink, turnStartMinute } = ctx;
   for (const movement of simulant.movements.slice(0, MAX_MOVEMENTS)) {
-    const participant = findParticipant(movement.participantName, parts);
+    const participant = findParticipant(movement.participantName, state.participants);
     if (!participant) {
       sink.push(
         diag("warn", "merge.participant.unresolved", `movement participant "${movement.participantName}" not found`),
@@ -1489,7 +1597,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       state.recordDrop(`The player did not actually move to ${movement.toLocationName}.`);
       continue;
     }
-    const target = await resolveLocation(movement.toLocationName);
+    const target = await ctx.resolveLocation(movement.toLocationName);
     if (!target) {
       sink.push(diag("warn", "merge.location.unresolved", `movement target "${movement.toLocationName}" not found`));
       state.recordDrop(`${participant.displayName} did not actually move to ${movement.toLocationName} (unknown location).`);
@@ -1510,7 +1618,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     // field parsed to public at the bundle boundary: today's behavior.
     if (participant.isUser && participant.locationId !== null) {
       const link = findLink(participant.locationId, target.id, bundle.links);
-      const door = link?.doorItemId ? (items.find((i) => i.id === link.doorItemId)?.state ?? null) : null;
+      const door = link?.doorItemId ? (state.items.find((i) => i.id === link.doorItemId)?.state ?? null) : null;
       const verdict = checkLinkAccess({
         access: link?.access ?? { kind: "public" },
         minuteOfDay: turnStartMinute,
@@ -1530,34 +1638,38 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       }
     }
     if (participant.isUser) {
-      playerTravelMinutes = Math.max(
-        playerTravelMinutes,
+      ctx.playerTravelMinutes = Math.max(
+        ctx.playerTravelMinutes,
         linkTravelMinutes(participant.locationId, target.id, bundle.links),
       );
     }
     state.moveParticipant(participant, target.id);
   }
+}
 
-  // -- Step 3: item events ----------------------------------------------------
+// -- Step 3: item events ----------------------------------------------------
+async function phaseItemEvents(ctx: PhaseContext, state: WorkingState): Promise<void> {
+  const { simulant, sink } = ctx;
+  const player = state.player;
   for (const event of simulant.itemEvents.slice(0, MAX_ITEM_EVENTS)) {
-    const actor = event.byName ? findParticipant(event.byName, parts) : player;
+    const actor = event.byName ? findParticipant(event.byName, state.participants) : player;
     if (event.byName && !actor) {
       sink.push(diag("warn", "merge.participant.unresolved", `item event actor "${event.byName}" not found`));
       state.recordDrop(`The ${event.action} of ${event.itemName} did not take effect (unknown character ${event.byName}).`);
       continue;
     }
     const actorRef = actor ? { id: actor.id, locationId: actor.locationId } : null;
-    const item = await resolveItem(event.itemName, event.action, actorRef);
+    const item = await ctx.resolveItem(event.itemName, event.action, actorRef);
     if (!item) {
       sink.push(diag("warn", "merge.item.unresolved", `item "${event.itemName}" not found in this session`));
       state.recordDrop(`The ${event.action} of ${event.itemName} did not take effect (no such item).`);
       continue;
     }
-    const location = event.locationName ? await resolveLocation(event.locationName) : null;
+    const location = event.locationName ? await ctx.resolveLocation(event.locationName) : null;
     const container = event.containerName
-      ? await resolveItem(event.containerName, "open", actorRef)
+      ? await ctx.resolveItem(event.containerName, "open", actorRef)
       : null;
-    const planned = planItemEvent(event, { item, actor, location, container, items });
+    const planned = planItemEvent(event, { item, actor, location, container, items: state.items });
     if (!planned.ok) {
       sink.push(diag("warn", planned.code, planned.message, { context: { action: event.action, itemName: event.itemName } }));
       state.recordDrop(`The ${event.action} of ${item.name} did not take effect (${planned.message}).`);
@@ -1578,9 +1690,11 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       state.addItemNote(item, planned.note);
     }
   }
+}
 
-  // -- Step 4: clock, meters (drift THEN deltas), conditions, schedules -------
-  const reconcile = mode === "reconcile";
+// -- Step 4: clock, meters (drift THEN deltas) ------------------------------
+function phaseClockAndMeters(ctx: PhaseContext, state: WorkingState): void {
+  const { reconcile, turn, results, simulant, bundle, sink, defs } = ctx;
   // Registered actions: matched in the player's own input only (companion/
   // director turns keep the pure estimate) — docs/developer-notes/time-and-travel-spec.phase3.md.
   const matchedActions = !reconcile && turn.author === "player" ? matchActions(turn.input) : [];
@@ -1595,28 +1709,27 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     : resolveTurnMinutes(
         {
           estimate: results.simulant ? simulant.minutesAdvanced : null,
-          travelMinutes: playerTravelMinutes,
+          travelMinutes: ctx.playerTravelMinutes,
           actions: matchedActions,
-          rest: declaredRest ? declaredRestMinutes(declaredRest, turnStartMinute) : null,
+          rest: declaredRest ? declaredRestMinutes(declaredRest, ctx.turnStartMinute) : null,
         },
         sink,
       );
-  const minutes = resolved.minutes;
-  const minutesCause = resolved.cause;
-  const clockMinutes = bundle.clockMinutes + minutes;
+  ctx.minutes = resolved.minutes;
+  ctx.minutesCause = resolved.cause;
+  ctx.clockMinutes = bundle.clockMinutes + ctx.minutes;
 
-  const defs = effectiveMeterDefinitions(bundle.style);
   // The active scene's tone (scene-atmosphere.spec §5) shifts the mood baseline of NPCs
   // *in the player's location* — the brief describes that scene.
-  const playerLocationId = parts.find((p) => p.isUser)?.locationId ?? null;
+  const playerLocationId = state.participants.find((p) => p.isUser)?.locationId ?? null;
   // Turn-start mood, captured before drift mutates it — the social reaction reads this
   // for its μ so the narrated hint and the applied delta agree (the §6 key invariant).
-  const moodAtTurnStart = new Map(parts.map((p) => [p.id, p.state.meters.mood ?? NEUTRAL_MOOD_METER]));
-  const hintsBefore = new Map(parts.map((p) => [p.id, crossedThresholdHints(p.state.meters, defs)]));
+  ctx.moodAtTurnStart = new Map(state.participants.map((p) => [p.id, p.state.meters.mood ?? NEUTRAL_MOOD_METER]));
+  ctx.hintsBefore = new Map(state.participants.map((p) => [p.id, crossedThresholdHints(p.state.meters, defs)]));
 
   const adjustmentsByParticipant = new Map<string, MeterAdjustment[]>();
   for (const adj of simulant.meterAdjustments.slice(0, MAX_METER_ADJUSTMENTS)) {
-    const participant = findParticipant(adj.participantName, parts);
+    const participant = findParticipant(adj.participantName, state.participants);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `meter adjustment for "${adj.participantName}" dropped`));
       continue;
@@ -1626,7 +1739,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     adjustmentsByParticipant.set(participant.id, list);
   }
 
-  for (const participant of parts) {
+  for (const participant of state.participants) {
     // Per-character drift: traits shift the resting baseline/recovery (spec §4); thresholds
     // and agent adjustments still use the global defs. *Standing* mood influences (mood.spec
     // §5) shift the mood baseline so drift pulls toward an influenced target without
@@ -1648,7 +1761,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
           );
     const drifted = reconcile
       ? participant.state.meters
-      : applyMeterDrift(participant.state.meters, minutes, driftDefs);
+      : applyMeterDrift(participant.state.meters, ctx.minutes, driftDefs);
     // Registered-action effects (shower ⇒ hygiene) apply after drift and
     // before agent deltas, so narration-grounded corrections still win.
     const withActionEffects =
@@ -1666,34 +1779,40 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       ),
     );
   }
+}
 
-  // Social-reaction affinity + mood (personality §6/§4): resolve the player's primary
-  // social act against the target's disposition over turn-start feeling + mood, then nudge
-  // the target's mood (post-drift — the event moved it this turn). Affinity is applied via
-  // the return's affinityUpdates; the mood nudge is a direct meter write here.
+// Social-reaction affinity + mood (personality §6/§4): resolve the player's primary
+// social act against the target's disposition over turn-start feeling + mood, then nudge
+// the target's mood (post-drift — the event moved it this turn). Affinity is applied via
+// the return's affinityUpdates; the mood nudge is a direct meter write here.
+function phaseReactions(ctx: PhaseContext, state: WorkingState): void {
+  const { reconcile, turn, bundle, sink } = ctx;
   const reactionResult = reconcile
     ? null
-    : planReactionAffinity(turn.intentBrief?.socialActs ?? [], parts, bundle.relationships, sink, moodAtTurnStart, bundle.style.socialCards);
+    : planReactionAffinity(turn.intentBrief?.socialActs ?? [], state.participants, bundle.relationships, sink, ctx.moodAtTurnStart, bundle.style.socialCards);
+  ctx.reactionResult = reactionResult;
   if (reactionResult?.moodAdjustment) {
-    const t = parts.find((p) => p.id === reactionResult.moodAdjustment?.participantId);
+    const t = state.participants.find((p) => p.id === reactionResult.moodAdjustment?.participantId);
     if (t) {
       const next = Math.min(1, Math.max(0, (t.state.meters.mood ?? NEUTRAL_MOOD_METER) + reactionResult.moodAdjustment.delta));
       state.setMeters(t, { ...t.state.meters, mood: next });
     }
   }
   if (reactionResult?.stressAdjustment) {
-    const t = parts.find((p) => p.id === reactionResult.stressAdjustment?.participantId);
+    const t = state.participants.find((p) => p.id === reactionResult.stressAdjustment?.participantId);
     if (t) {
       const next = Math.min(1, Math.max(0, (t.state.meters.stress ?? 0) + reactionResult.stressAdjustment.delta));
       state.setMeters(t, { ...t.state.meters, stress: next });
     }
   }
+}
 
-
-  // Conditions: agent ops first, then duration expiry against the new clock.
+// Conditions: agent ops first, then duration expiry against the new clock.
+function phaseConditions(ctx: PhaseContext, state: WorkingState): void {
+  const { simulant, sink, clockMinutes } = ctx;
   const conditionsByParticipant = new Map<string, ConditionEvent[]>();
   for (const event of simulant.conditionEvents.slice(0, MAX_CONDITION_EVENTS)) {
-    const participant = findParticipant(event.participantName, parts);
+    const participant = findParticipant(event.participantName, state.participants);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `condition event for "${event.participantName}" dropped`));
       continue;
@@ -1702,7 +1821,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     list.push(event);
     conditionsByParticipant.set(participant.id, list);
   }
-  for (const participant of parts) {
+  for (const participant of state.participants) {
     const withOps = applyConditionEvents(
       participant.state.conditions,
       conditionsByParticipant.get(participant.id) ?? [],
@@ -1711,14 +1830,17 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     );
     state.setConditions(participant, expireConditions(withOps, clockMinutes));
   }
+}
 
-  // Attribute changes (rare, lasting): overlays with narrative provenance.
-  // Inherent traits (eye color, gender, species, bone structure) are protected — a
-  // narrative overlay may not rewrite them (overlaySourceMayChange). A rejected change
-  // drops with a diagnostic + a droppedEvents correction so the narrator is re-grounded
-  // next turn instead of the drift silently sticking and re-applying every turn.
+// Attribute changes (rare, lasting): overlays with narrative provenance.
+// Inherent traits (eye color, gender, species, bone structure) are protected — a
+// narrative overlay may not rewrite them (overlaySourceMayChange). A rejected change
+// drops with a diagnostic + a droppedEvents correction so the narrator is re-grounded
+// next turn instead of the drift silently sticking and re-applying every turn.
+function phaseAttributes(ctx: PhaseContext, state: WorkingState): void {
+  const { simulant, sink } = ctx;
   for (const change of simulant.attributeChanges.slice(0, MAX_ATTRIBUTE_CHANGES)) {
-    const participant = findParticipant(change.participantName, parts);
+    const participant = findParticipant(change.participantName, state.participants);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `attribute change for "${change.participantName}" dropped`));
       continue;
@@ -1764,208 +1886,229 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       overlay,
     ]);
   }
+}
 
-  // Activity updates.
+// Activity updates.
+function phaseActivities(ctx: PhaseContext, state: WorkingState): void {
+  const { simulant, sink } = ctx;
   for (const update of simulant.activityUpdates.slice(0, MAX_ACTIVITY_UPDATES)) {
-    const participant = findParticipant(update.participantName, parts);
+    const participant = findParticipant(update.participantName, state.participants);
     if (!participant) {
       sink.push(diag("warn", "merge.participant.unresolved", `activity update for "${update.participantName}" dropped`));
       continue;
     }
     state.setActivity(participant, update.activity, update.posture);
   }
+}
 
-  // Off-screen schedule ticks: never teleport on-screen NPCs, and never
-  // override an explicit simulant movement/activity from this turn. Ticks
-  // into/out of the player's location stage arrival/departure lines for the
-  // next brief (phase-2-plan T9) — co-located ⇒ perceived, interim rule.
-  // Director-staged off-screen movement (phase-4 npc-movement minimal slice):
-  // carried across turns, fired beats appended to pendingComms / the next brief.
-  // Arrivals/departures, fired comms and staged directives accumulate on `state`.
-  let stagedIntents = bundle.runtime.stagedIntents;
-  if (!reconcile) {
-    const activeLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
-    const locationNameById = new Map(bundle.locations.map((l) => [l.id, l.name]));
-    const gameTime = resolveGameTime(clockMinutes, bundle.style.calendarStart);
-    const minute = minuteOfDay(gameTime);
+// Off-screen schedule ticks: never teleport on-screen NPCs, and never
+// override an explicit simulant movement/activity from this turn. Ticks
+// into/out of the player's location stage arrival/departure lines for the
+// next brief (phase-2-plan T9) — co-located ⇒ perceived, interim rule.
+// Director-staged off-screen movement (phase-4 npc-movement minimal slice):
+// carried across turns, fired beats appended to pendingComms / the next brief.
+// Arrivals/departures, fired comms and staged directives accumulate on `state`.
+function phaseScheduleTick(ctx: PhaseContext, state: WorkingState): void {
+  const { reconcile, bundle, results, turn, sink, simulant } = ctx;
+  if (reconcile) return;
+  const player = state.player;
+  const activeLoc = player?.locationId ?? activeLocationId({ participants: state.participants, locations: bundle.locations });
+  const locationNameById = new Map(bundle.locations.map((l) => [l.id, l.name]));
+  const gameTime = resolveGameTime(ctx.clockMinutes, bundle.style.calendarStart);
+  const minute = minuteOfDay(gameTime);
 
-    // Staged-intent tick — runs BEFORE the schedule tick so a committed NPC is
-    // not yanked back to its routine. The director only decides (proposes the
-    // goal); this advances the NPC one hop and fires the on-arrival beat. New
-    // intents the director just authored are appended AFTER the advance, so
-    // their first hop is next turn (they have to set out).
-    const stagedThisTick = new Set<string>();
-    const cancelIds = new Set(results.director?.stageMovement?.cancel ?? []);
-    const surviving = stagedIntents.filter((s) => !cancelIds.has(s.id));
-    const itemById = new Map(items.map((i) => [i.id, i] as const));
-    const doorStateForLink = (link: SceneLinkInput): DoorState | null =>
-      link.doorItemId ? (itemById.get(link.doorItemId)?.state ?? null) : null;
-    const tick = applyStagedIntents({
-      intents: surviving,
-      locationByParticipant: new Map(parts.map((p) => [p.id, p.locationId] as const)),
-      knownParticipantIds: new Set(parts.map((p) => p.id)),
-      links: bundle.links,
-      doorStateForLink,
-      minuteOfDay: minute,
-      turnNumber: turn.number,
-      sink,
+  // Staged-intent tick — runs BEFORE the schedule tick so a committed NPC is
+  // not yanked back to its routine. The director only decides (proposes the
+  // goal); this advances the NPC one hop and fires the on-arrival beat. New
+  // intents the director just authored are appended AFTER the advance, so
+  // their first hop is next turn (they have to set out).
+  const stagedThisTick = new Set<string>();
+  const cancelIds = new Set(results.director?.stageMovement?.cancel ?? []);
+  const surviving = ctx.stagedIntents.filter((s) => !cancelIds.has(s.id));
+  const itemById = new Map(state.items.map((i) => [i.id, i] as const));
+  const doorStateForLink = (link: SceneLinkInput): DoorState | null =>
+    link.doorItemId ? (itemById.get(link.doorItemId)?.state ?? null) : null;
+  const tick = applyStagedIntents({
+    intents: surviving,
+    locationByParticipant: new Map(state.participants.map((p) => [p.id, p.locationId] as const)),
+    knownParticipantIds: new Set(state.participants.map((p) => p.id)),
+    links: bundle.links,
+    doorStateForLink,
+    minuteOfDay: minute,
+    turnNumber: turn.number,
+    sink,
+  });
+  for (const move of tick.moves) {
+    const p = state.participants.find((x) => x.id === move.participantId);
+    if (!p) continue;
+    const staged = scheduleMoveStaging({
+      displayName: p.displayName,
+      fromLocationId: move.fromLocationId,
+      toLocationId: move.toLocationId,
+      activeLocationId: activeLoc,
+      locationNameById,
     });
-    for (const move of tick.moves) {
-      const p = parts.find((x) => x.id === move.participantId);
-      if (!p) continue;
+    if (staged.arrival) state.stageArrival(staged.arrival);
+    if (staged.departure) state.stageDeparture(staged.departure);
+    state.moveParticipant(p, move.toLocationId);
+    // In-transit hop: a "heading toward X" activity keeps the Cast tab honest
+    // (no stale clinic activity at a node that isn't the clinic). On the hop
+    // that arrives, leave activity to the fired beat / narrator.
+    if (!move.reachedDestination) {
+      const dest = locationNameById.get(move.destinationLocationId);
+      state.setActivity(p, dest ? `heading toward ${dest}` : "on the move");
+    }
+    stagedThisTick.add(p.id);
+  }
+  for (const f of tick.fired) {
+    stagedThisTick.add(f.participantId);
+    if (f.comms) {
+      const pc = parseOrNull(
+        pendingCommsSchema,
+        { fromParticipantId: f.participantId, kind: f.comms.kind, gist: f.comms.gist, urgency: f.comms.urgency },
+        sink,
+        "merge.movement.pending_comms",
+      );
+      if (pc) state.fireComms(pc);
+    }
+    if (f.directive?.trim()) state.stageDirective(f.directive.trim());
+  }
+
+  // Open new staged intents from the director's story decision (names → ids).
+  const newIntents: StagedIntent[] = [];
+  for (const stage of results.director?.stageMovement?.stage ?? []) {
+    const npc = findParticipant(stage.npcName, state.participants);
+    const dest = resolveSessionLocation(stage.destinationName, bundle.locations);
+    if (!npc || npc.isUser || !dest) {
+      sink.push(
+        diag("warn", "merge.movement.intent_unresolved", `staged movement "${stage.npcName}" → "${stage.destinationName}" dropped`, {
+          context: { npcResolved: !!npc, destResolved: !!dest },
+        }),
+      );
+      continue;
+    }
+    const dup = [...tick.intents, ...newIntents].some(
+      (s) => s.participantId === npc.id && s.destinationLocationId === dest.id,
+    );
+    if (dup) continue;
+    const threadId = stage.threadTitle
+      ? bundle.runtime.storyThreads.find((t) => t.title.trim().toLowerCase() === stage.threadTitle?.trim().toLowerCase())?.id
+      : undefined;
+    const parsed = parseOrNull(
+      stagedIntentSchema,
+      {
+        id: newId(),
+        participantId: npc.id,
+        destinationLocationId: dest.id,
+        reason: stage.reason,
+        threadId,
+        onArrival: { comms: stage.onArrivalComms, directive: stage.onArrivalDirective },
+        status: "active",
+        openedAtTurn: turn.number,
+        expiresInTurns: STAGED_INTENT_DEFAULT_BUDGET,
+      },
+      sink,
+      "merge.movement.intent",
+    );
+    if (parsed) newIntents.push(parsed);
+  }
+  ctx.stagedIntents = [...tick.intents, ...newIntents];
+
+  for (const participant of state.participants) {
+    if (participant.isUser) continue;
+    if (stagedThisTick.has(participant.id)) continue;
+    if (participant.locationId !== null && participant.locationId === activeLoc) continue;
+    if (state.touchedParticipantIds.has(participant.id) && simulantTouchedPlacement(participant, simulant, state.participants)) continue;
+    // Per-character daily jitter: shifting the compared minute by -j makes
+    // this character's windows start j minutes late (or early) today.
+    const jitter = scheduleJitter(participant.id, gameTime.dayIndex);
+    const jitteredMinute = (((minute - jitter) % 1440) + 1440) % 1440;
+    const entry = scheduleEntryAt(participant.snapshot.schedule, jitteredMinute, gameTime.weekdayIndex);
+    if (!entry) continue;
+    const target = resolveSessionLocation(entry.locationName, bundle.locations);
+    if (!target) {
+      sink.push(
+        diag("info", "merge.schedule.unknown_location", `schedule location "${entry.locationName}" not found`, {
+          context: { participantName: participant.displayName },
+        }),
+      );
+      continue;
+    }
+    if (participant.locationId !== target.id) {
       const staged = scheduleMoveStaging({
-        displayName: p.displayName,
-        fromLocationId: move.fromLocationId,
-        toLocationId: move.toLocationId,
+        displayName: participant.displayName,
+        fromLocationId: participant.locationId,
+        toLocationId: target.id,
         activeLocationId: activeLoc,
         locationNameById,
       });
       if (staged.arrival) state.stageArrival(staged.arrival);
       if (staged.departure) state.stageDeparture(staged.departure);
-      state.moveParticipant(p, move.toLocationId);
-      // In-transit hop: a "heading toward X" activity keeps the Cast tab honest
-      // (no stale clinic activity at a node that isn't the clinic). On the hop
-      // that arrives, leave activity to the fired beat / narrator.
-      if (!move.reachedDestination) {
-        const dest = locationNameById.get(move.destinationLocationId);
-        state.setActivity(p, dest ? `heading toward ${dest}` : "on the move");
-      }
-      stagedThisTick.add(p.id);
+      state.moveParticipant(participant, target.id);
     }
-    for (const f of tick.fired) {
-      stagedThisTick.add(f.participantId);
-      if (f.comms) {
-        const pc = parseOrNull(
-          pendingCommsSchema,
-          { fromParticipantId: f.participantId, kind: f.comms.kind, gist: f.comms.gist, urgency: f.comms.urgency },
-          sink,
-          "merge.movement.pending_comms",
-        );
-        if (pc) state.fireComms(pc);
-      }
-      if (f.directive?.trim()) state.stageDirective(f.directive.trim());
-    }
-
-    // Open new staged intents from the director's story decision (names → ids).
-    const newIntents: StagedIntent[] = [];
-    for (const stage of results.director?.stageMovement?.stage ?? []) {
-      const npc = findParticipant(stage.npcName, parts);
-      const dest = resolveSessionLocation(stage.destinationName, bundle.locations);
-      if (!npc || npc.isUser || !dest) {
-        sink.push(
-          diag("warn", "merge.movement.intent_unresolved", `staged movement "${stage.npcName}" → "${stage.destinationName}" dropped`, {
-            context: { npcResolved: !!npc, destResolved: !!dest },
-          }),
-        );
-        continue;
-      }
-      const dup = [...tick.intents, ...newIntents].some(
-        (s) => s.participantId === npc.id && s.destinationLocationId === dest.id,
-      );
-      if (dup) continue;
-      const threadId = stage.threadTitle
-        ? bundle.runtime.storyThreads.find((t) => t.title.trim().toLowerCase() === stage.threadTitle?.trim().toLowerCase())?.id
-        : undefined;
-      const parsed = parseOrNull(
-        stagedIntentSchema,
-        {
-          id: newId(),
-          participantId: npc.id,
-          destinationLocationId: dest.id,
-          reason: stage.reason,
-          threadId,
-          onArrival: { comms: stage.onArrivalComms, directive: stage.onArrivalDirective },
-          status: "active",
-          openedAtTurn: turn.number,
-          expiresInTurns: STAGED_INTENT_DEFAULT_BUDGET,
-        },
-        sink,
-        "merge.movement.intent",
-      );
-      if (parsed) newIntents.push(parsed);
-    }
-    stagedIntents = [...tick.intents, ...newIntents];
-
-    for (const participant of parts) {
-      if (participant.isUser) continue;
-      if (stagedThisTick.has(participant.id)) continue;
-      if (participant.locationId !== null && participant.locationId === activeLoc) continue;
-      if (state.touchedParticipantIds.has(participant.id) && simulantTouchedPlacement(participant, simulant, parts)) continue;
-      // Per-character daily jitter: shifting the compared minute by -j makes
-      // this character's windows start j minutes late (or early) today.
-      const jitter = scheduleJitter(participant.id, gameTime.dayIndex);
-      const jitteredMinute = (((minute - jitter) % 1440) + 1440) % 1440;
-      const entry = scheduleEntryAt(participant.snapshot.schedule, jitteredMinute, gameTime.weekdayIndex);
-      if (!entry) continue;
-      const target = resolveSessionLocation(entry.locationName, bundle.locations);
-      if (!target) {
-        sink.push(
-          diag("info", "merge.schedule.unknown_location", `schedule location "${entry.locationName}" not found`, {
-            context: { participantName: participant.displayName },
-          }),
-        );
-        continue;
-      }
-      if (participant.locationId !== target.id) {
-        const staged = scheduleMoveStaging({
-          displayName: participant.displayName,
-          fromLocationId: participant.locationId,
-          toLocationId: target.id,
-          activeLocationId: activeLoc,
-          locationNameById,
-        });
-        if (staged.arrival) state.stageArrival(staged.arrival);
-        if (staged.departure) state.stageDeparture(staged.departure);
-        state.moveParticipant(participant, target.id);
-      }
-      state.setActivity(participant, entry.activity);
-    }
+    state.setActivity(participant, entry.activity);
   }
+}
 
-  // -- Step 5/6 planning: facts, episode, threads ------------------------------
+// -- Step 5/6 planning: facts + episode --------------------------------------
+function phaseFactsEpisode(ctx: PhaseContext, state: WorkingState): void {
+  const { results, bundle, turn, sink } = ctx;
   const archivist: ArchivistResult | null = results.archivist;
   const locByName = (name: string) => resolveSessionLocation(name, bundle.locations);
-  const factDrafts: FactDraftInput[] = (archivist?.facts ?? []).map((draft) => {
+  ctx.factDrafts = (archivist?.facts ?? []).map((draft) => {
     let subjectId: string | null = null;
     if (draft.subjectKind === "character" || draft.subjectKind === "player") {
-      subjectId = findParticipant(draft.subjectName, parts)?.id ?? null;
+      subjectId = findParticipant(draft.subjectName, state.participants)?.id ?? null;
     } else if (draft.subjectKind === "location") {
       subjectId = locByName(draft.subjectName)?.id ?? null;
     } else if (draft.subjectKind === "item") {
-      subjectId = resolveItemByName(draft.subjectName, "alter", items, null)?.id ?? null;
+      subjectId = resolveItemByName(draft.subjectName, "alter", state.items, null)?.id ?? null;
     }
     return { ...draft, subjectId };
   });
 
   const syntheticEpisode = !archivist || !archivist.episodeSummary.trim();
-  const episodeSummary = syntheticEpisode ? syntheticEpisodeSummary(turn.narration) : archivist.episodeSummary.trim();
+  ctx.episodeSummary = syntheticEpisode ? syntheticEpisodeSummary(turn.narration) : archivist.episodeSummary.trim();
+  ctx.syntheticEpisode = syntheticEpisode;
   if (syntheticEpisode) {
     sink.push(diag("warn", "merge.episode.synthetic", "archivist failed — synthetic episode written from the narration"));
   }
+}
 
-  let threads = bundle.runtime.storyThreads;
-  let touchedThreadIds: string[] = [];
-  if (!reconcile) {
-    const raw = results.director?.threadSignals ?? { touch: [], develop: [], propose: [], resolve: [] };
-    // Conservative semantic dedup folds near-duplicate proposals into develops
-    // before the pure reducer runs (degrades to exact-title dedup if no embedder).
-    const signals = input.deps?.embedThreadTexts
-      ? await dedupeThreadProposals(threads, raw, input.deps.embedThreadTexts, turn.number, sink)
-      : raw;
-    const applied = applyThreadSignals(threads, signals, turn.number, sink);
-    threads = coolThreads(applied.threads, turn.number);
-    touchedThreadIds = applied.touchedIds;
-  }
+// Story threads (docs/story-threads.md): touch/develop/propose/resolve, with a
+// semantic-dedup backstop that degrades to exact-title dedup with no embedder.
+async function phaseThreads(ctx: PhaseContext): Promise<void> {
+  const { reconcile, results, bundle, turn, sink } = ctx;
+  if (reconcile) return;
+  const threads = bundle.runtime.storyThreads;
+  const raw = results.director?.threadSignals ?? { touch: [], develop: [], propose: [], resolve: [] };
+  // Conservative semantic dedup folds near-duplicate proposals into develops
+  // before the pure reducer runs (degrades to exact-title dedup if no embedder).
+  const signals = ctx.deps?.embedThreadTexts
+    ? await dedupeThreadProposals(threads, raw, ctx.deps.embedThreadTexts, turn.number, sink)
+    : raw;
+  const applied = applyThreadSignals(threads, signals, turn.number, sink);
+  ctx.threads = coolThreads(applied.threads, turn.number);
+  ctx.touchedThreadIds = applied.touchedIds;
+}
 
-  // Lore unlocks from this turn's fact tags (exact lowercase tag match).
-  const factTags = factDrafts.flatMap((d) => d.tags);
-  const newlyUnlocked = computeUnlocks(factTags, bundle.loreChunks, {
+// Lore unlocks from this turn's fact tags (exact lowercase tag match).
+function phaseLore(ctx: PhaseContext): void {
+  const { bundle } = ctx;
+  const factTags = ctx.factDrafts.flatMap((d) => d.tags);
+  ctx.newlyUnlocked = computeUnlocks(factTags, bundle.loreChunks, {
     alreadyUnlockedIds: bundle.runtime.unlockedLoreIds,
-    sessionId: input.logMissesForSessionId,
+    sessionId: ctx.logMissesForSessionId,
   });
+}
 
-  const witnessLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
-  const coLocatedNpcs = parts.filter((p) => !p.isUser && p.locationId !== null && p.locationId === witnessLoc);
+// Witness set (presence-and-perception-spec §witness sets) + the camera-following
+// runtime pieces (visited locations, encountered participants, last-interacted).
+function phaseWitness(ctx: PhaseContext, state: WorkingState): void {
+  const { reconcile, bundle, turn, simulant, sink } = ctx;
+  const player = state.player;
+  const witnessLoc = player?.locationId ?? activeLocationId({ participants: state.participants, locations: bundle.locations });
+  const coLocatedNpcs = state.participants.filter((p) => !p.isUser && p.locationId !== null && p.locationId === witnessLoc);
 
   // Targeted interactions (decision: co-presence alone never counts):
   // intent-detected targets, the speaking NPC on companion turns, and
@@ -1978,7 +2121,7 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
       const intent = detectIntent(turn.input, coLocatedNpcs.map((p) => p.displayName), []);
       for (const name of [intent.lookTarget, intent.touchTarget, intent.smellTarget, intent.tasteTarget]) {
         if (!name) continue;
-        const target = findParticipant(name, parts);
+        const target = findParticipant(name, state.participants);
         if (target && !target.isUser) interacted.add(target.id);
       }
       for (const npc of coLocatedNpcs) {
@@ -1987,16 +2130,17 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     }
     if (turn.author === "companion" && turn.speakerParticipantId) interacted.add(turn.speakerParticipantId);
   }
+  ctx.interacted = interacted;
 
-  // Witness set (presence-and-perception-spec §witness sets): the placed player
-  // plus every co-located NPC who perceived a salient action this turn. Falls
-  // back to interim co-location semantics when there is no placed player to
-  // anchor the turn's salience on. One set per turn, stamped on every draft.
-  const witnessedBy = computeWitnessSet({
+  // Witness set: the placed player plus every co-located NPC who perceived a
+  // salient action this turn. Falls back to interim co-location semantics when
+  // there is no placed player to anchor the turn's salience on. One set per
+  // turn, stamped on every draft.
+  ctx.witnessedBy = computeWitnessSet({
     player,
     coLocatedNpcs,
     witnessLoc,
-    parts,
+    parts: state.participants,
     simulant,
     turn,
     interacted,
@@ -2005,120 +2149,185 @@ export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
     band: daylightBand(resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart)),
     sink,
   });
-  for (const draft of factDrafts) draft.witnessedBy = witnessedBy;
+  for (const draft of ctx.factDrafts) draft.witnessedBy = ctx.witnessedBy;
 
   // Runtime: visited locations + encountered participants follow the camera.
-  const finalActiveLoc = player?.locationId ?? activeLocationId({ participants: parts, locations: bundle.locations });
+  const finalActiveLoc = player?.locationId ?? activeLocationId({ participants: state.participants, locations: bundle.locations });
   const visited = new Set(bundle.runtime.visitedLocationIds);
   if (finalActiveLoc) visited.add(finalActiveLoc);
   const encountered = new Set(bundle.runtime.encounteredParticipantIds);
-  for (const p of parts) {
+  for (const p of state.participants) {
     if (!p.isUser && p.locationId !== null && p.locationId === finalActiveLoc) encountered.add(p.id);
   }
+  ctx.visitedLocationIds = [...visited];
+  ctx.encounteredParticipantIds = [...encountered];
 
   const lastInteractedTurn = { ...bundle.runtime.lastInteractedTurn };
   for (const id of interacted) lastInteractedTurn[id] = turn.number;
+  ctx.lastInteractedTurn = lastInteractedTurn;
+}
 
-  // Comms links (presence-spec §comms): persist opens/closes to runtime, log
-  // per-turn changes. Post_turn only — reconcile leaves the link state alone
-  // (consistent with affinity/schedule gating).
-  const comms = reconcile
+// Comms links (presence-spec §comms): persist opens/closes to runtime, log
+// per-turn changes. Post_turn only — reconcile leaves the link state alone
+// (consistent with affinity/schedule gating).
+function phaseComms(ctx: PhaseContext, state: WorkingState): void {
+  const { reconcile, simulant, bundle, clockMinutes, sink } = ctx;
+  ctx.comms = reconcile
     ? { links: bundle.runtime.commsLinks, changes: [] as CommsChange[] }
-    : planCommsEvents(simulant.commsEvents.slice(0, MAX_COMMS_EVENTS), bundle.runtime.commsLinks, clockMinutes, parts, sink);
+    : planCommsEvents(simulant.commsEvents.slice(0, MAX_COMMS_EVENTS), bundle.runtime.commsLinks, clockMinutes, state.participants, sink);
+}
 
-  // Affinity decay (defaults doc §Affinity stages): time-driven, so it only
-  // runs when the clock advances — reconcile leaves edges and marker alone.
-  const affinityDecay = reconcile
+// Affinity decay (defaults doc §Affinity stages): time-driven, so it only
+// runs when the clock advances — reconcile leaves edges and marker alone.
+function phaseAffinityDecay(ctx: PhaseContext, state: WorkingState): void {
+  const { reconcile, bundle, clockMinutes, sink } = ctx;
+  ctx.affinityDecay = reconcile
     ? null
     : planAffinityDecay(
         {
           relationships: bundle.relationships,
           clockMinutes,
           lastAffinityDecayAt: bundle.runtime.lastAffinityDecayAt,
-          traitsByParticipant: new Map(parts.map((p) => [p.id, p.snapshot.traits])),
+          traitsByParticipant: new Map(state.participants.map((p) => [p.id, p.snapshot.traits])),
         },
         sink,
       );
+}
 
-  const runtime: SessionRuntime = {
-    ...bundle.runtime,
-    storyThreads: threads,
-    visitedLocationIds: [...visited],
-    encounteredParticipantIds: [...encountered],
-    unlockedLoreIds: [...new Set([...bundle.runtime.unlockedLoreIds, ...newlyUnlocked])],
-    lastInteractedTurn,
-    commsLinks: comms.links,
-    // Surface-once: pending messages were rendered in this turn's pre-turn
-    // context already, so they clear here; only beats fired THIS merge ride to
-    // the next turn (reconcile leaves the queue untouched). Capped as a guard.
-    pendingComms: reconcile ? bundle.runtime.pendingComms : state.firedComms.slice(-PENDING_COMMS_CAP),
-    stagedIntents,
-    ...(affinityDecay ? { lastAffinityDecayAt: affinityDecay.lastAffinityDecayAt } : {}),
-  };
-
-  // -- Step 7: next-turn brief --------------------------------------------------
+// Newly crossed meter-threshold hints (diffed against the pre-drift snapshot).
+function phaseThresholdHints(ctx: PhaseContext, state: WorkingState): void {
+  const { defs } = ctx;
   const thresholdHints: string[] = [];
-  for (const participant of parts) {
+  for (const participant of state.participants) {
     if (participant.isUser) continue;
-    const before = hintsBefore.get(participant.id) ?? [];
+    const before = ctx.hintsBefore.get(participant.id) ?? [];
     const after = crossedThresholdHints(participant.state.meters, defs);
     for (const hint of after) {
       if (!before.includes(hint)) thresholdHints.push(`${participant.displayName}: ${hint}`);
     }
   }
+  ctx.thresholdHints = thresholdHints;
+}
 
+// Affinity = the player→target reaction + the witnessed-breach folds + the
+// simulant's remaining adjustments (dropped on any edge a reaction or breach owns).
+function phaseAffinity(ctx: PhaseContext, state: WorkingState): void {
+  const { reconcile, continuity, bundle, sink, simulant } = ctx;
   // Witnessed-breach reactions (social-reaction-cards.plan.md §Resolution #2): the
   // continuity agent flagged card breaches; resolve each witness's reaction (their tags +
   // the §6 curve) into witness→player affinity, and a directive per breach into the brief.
-  const breachResult = reconcile
+  ctx.breachResult = reconcile
     ? { updates: [] as AffinityUpdate[], ownedEdgeKeys: new Set<string>(), directives: [] as string[] }
-    : planCardBreachReactions(continuity.cardBreaches, parts, bundle.relationships, bundle.style.socialCards, moodAtTurnStart, sink);
-  for (const directive of breachResult.directives) state.stageDirective(directive);
+    : planCardBreachReactions(continuity.cardBreaches, state.participants, bundle.relationships, bundle.style.socialCards, ctx.moodAtTurnStart, sink);
+  for (const directive of ctx.breachResult.directives) state.stageDirective(directive);
 
-  // Affinity = the player→target reaction + the witnessed-breach folds + the simulant's
-  // remaining adjustments (dropped on any edge a reaction or breach already owns).
-  const affinityUpdates: AffinityUpdate[] = reconcile
+  ctx.affinityUpdates = reconcile
     ? []
     : (() => {
-        const simulantUpdates = planAffinityUpdates(simulant.affinityAdjustments.slice(0, MAX_AFFINITY_ADJUSTMENTS), parts, sink);
-        const owned = new Set<string>([...(reactionResult?.ownedEdgeKeys ?? []), ...breachResult.ownedEdgeKeys]);
+        const simulantUpdates = planAffinityUpdates(simulant.affinityAdjustments.slice(0, MAX_AFFINITY_ADJUSTMENTS), state.participants, sink);
+        const owned = new Set<string>([...(ctx.reactionResult?.ownedEdgeKeys ?? []), ...ctx.breachResult.ownedEdgeKeys]);
         const kept = simulantUpdates.filter((u) => !owned.has(`${u.fromParticipantId}::${u.toParticipantId}::${u.kind}`));
-        return [...(reactionResult?.updates ?? []), ...breachResult.updates, ...kept];
+        return [...(ctx.reactionResult?.updates ?? []), ...ctx.breachResult.updates, ...kept];
       })();
+}
 
-  const brief = reconcile
-    ? reconcileBrief(bundle.brief, state.droppedEvents, thresholdHints)
+// -- Step 7: next-turn brief --------------------------------------------------
+function phaseBrief(ctx: PhaseContext, state: WorkingState): void {
+  const { reconcile, bundle, results, continuity } = ctx;
+  ctx.brief = reconcile
+    ? reconcileBrief(bundle.brief, state.droppedEvents, ctx.thresholdHints)
     : buildNextBrief({
         prior: bundle.brief,
         director: results.director,
         continuity,
-        episodeSummary,
+        episodeSummary: ctx.episodeSummary,
         droppedEvents: state.droppedEvents,
-        thresholdHints,
+        thresholdHints: ctx.thresholdHints,
         arrivals: state.arrivals,
         departures: state.departures,
         stagedDirectives: state.stagedDirectives,
       });
+}
 
+/** Assemble the persisted runtime from the bundle + the camera-following pieces. */
+function buildRuntime(ctx: PhaseContext, state: WorkingState): SessionRuntime {
+  const { bundle, reconcile } = ctx;
   return {
-    minutes,
-    minutesCause,
-    clockMinutes,
-    affinityUpdates,
-    affinityDecay: affinityDecay?.edges ?? [],
-    witnessedBy,
-    commsChanges: comms.changes,
-    participants: [...parts],
-    items: [...items],
+    ...bundle.runtime,
+    storyThreads: ctx.threads,
+    visitedLocationIds: ctx.visitedLocationIds,
+    encounteredParticipantIds: ctx.encounteredParticipantIds,
+    unlockedLoreIds: [...new Set([...bundle.runtime.unlockedLoreIds, ...ctx.newlyUnlocked])],
+    lastInteractedTurn: ctx.lastInteractedTurn,
+    commsLinks: ctx.comms.links,
+    // Surface-once: pending messages were rendered in this turn's pre-turn
+    // context already, so they clear here; only beats fired THIS merge ride to
+    // the next turn (reconcile leaves the queue untouched). Capped as a guard.
+    pendingComms: reconcile ? bundle.runtime.pendingComms : state.firedComms.slice(-PENDING_COMMS_CAP),
+    stagedIntents: ctx.stagedIntents,
+    ...(ctx.affinityDecay ? { lastAffinityDecayAt: ctx.affinityDecay.lastAffinityDecayAt } : {}),
+  };
+}
+
+/** Package the per-turn world copy + accumulators into the MergePlan. */
+function buildMergePlan(ctx: PhaseContext, state: WorkingState): MergePlan {
+  return {
+    minutes: ctx.minutes,
+    minutesCause: ctx.minutesCause,
+    clockMinutes: ctx.clockMinutes,
+    affinityUpdates: ctx.affinityUpdates,
+    affinityDecay: ctx.affinityDecay?.edges ?? [],
+    witnessedBy: ctx.witnessedBy,
+    commsChanges: ctx.comms.changes,
+    participants: [...state.participants],
+    items: [...state.items],
     touchedItemIds: [...state.touchedItemIds],
-    factDrafts,
-    episodeSummary,
-    syntheticEpisode,
-    touchedThreadIds,
-    runtime,
-    brief,
+    factDrafts: ctx.factDrafts,
+    episodeSummary: ctx.episodeSummary,
+    syntheticEpisode: ctx.syntheticEpisode,
+    touchedThreadIds: ctx.touchedThreadIds,
+    runtime: buildRuntime(ctx, state),
+    brief: ctx.brief,
     droppedEvents: [...state.droppedEvents],
   };
+}
+
+/**
+ * The phase pipeline, in load-bearing order. The ordering invariants that were
+ * formerly enforced only by line position + prose comments are stated here once:
+ * drift (clock-and-meters) precedes the reaction mood-nudge; the reaction's owned
+ * edges precede the affinity combine; the staged-intent tick precedes the schedule
+ * tick (inside schedule-tick). `brief` is last — it reads everything.
+ */
+const PHASES: readonly Phase[] = [
+  phaseMovements,
+  phaseItemEvents,
+  phaseClockAndMeters,
+  phaseReactions,
+  phaseConditions,
+  phaseAttributes,
+  phaseActivities,
+  phaseScheduleTick,
+  phaseFactsEpisode,
+  phaseThreads,
+  phaseLore,
+  phaseWitness,
+  phaseComms,
+  phaseAffinityDecay,
+  phaseThresholdHints,
+  phaseAffinity,
+  phaseBrief,
+];
+
+export async function planTurnEffects(input: PlanInput): Promise<MergePlan> {
+  // The reducer's working state: the mutable per-turn copy of participants and
+  // items plus the per-turn accumulators, with dirty-tracking owned internally
+  // (merge-decomposition.spec.md §3.1). Mutation flows exclusively through the
+  // ADT's methods; everything else threads through the PhaseContext.
+  const state = WorkingState.fromBundle(input.bundle);
+  const ctx = createPhaseContext(input, state);
+  for (const phase of PHASES) await phase(ctx, state);
+  return buildMergePlan(ctx, state);
 }
 
 /** Did the simulant explicitly move or re-task this participant this turn? */
