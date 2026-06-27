@@ -37,7 +37,7 @@ checklist (full table in the spec §2). The load-bearing findings:
   plan function, per-subsystem planners, one-line pure utilities). Most exist only so unit
   tests can reach them; nothing marks public vs. exported-for-test.
 
-What's *good* and must be preserved: the **external** interface is tiny and stable
+What's _good_ and must be preserved: the **external** interface is tiny and stable
 (`applyTurnResults` is the only production caller, from `pipeline.ts:910,962`), and the
 module has ~3700 lines of tests across 7 files. The refactor rides that safety net.
 
@@ -122,23 +122,31 @@ relative intra-module ones. The public/internal boundary is restored (checklist 
   feature.
 - **No feature payoff.** Pure maintainability — justified by `merge.ts` being the place
   future engine work (world-simulation, the deferred phases) must keep extending. Worth it
-  *because* the file keeps growing, not despite it.
+  _because_ the file keeps growing, not despite it.
 - **Behavior-preserving is the hard contract.** Every slice must leave `MergePlan` and the
   DB writes byte-identical. The merge suite (7 files, ~3700 lines) + `engine.int.test.ts`
-  (811 lines) is the gate; jscpd must not regress (the split should *reduce* duplication).
+  (811 lines) is the gate; jscpd must not regress (the split should _reduce_ duplication).
 
 ## Open questions
 
-- **Class vs. opaque-module ADT for `WorkingState`.** A class fits the mutable-accumulator
-  precedent and the lint allows it, but the codebase is otherwise ~functional (5 classes
-  total). Alternative: an opaque type + a `working-state.ts` function module. Recommendation
-  in spec §3.1 — **class**, for the encapsulated dirty-tracking. Confirm before Slice 2.
-- **Phase return-by-value vs. mutate-in-place.** Phases could return plan-fragments (purer,
-  easier to test) or mutate the shared `WorkingState` (closer to today, smaller diff).
-  Recommendation: mutate `WorkingState`, return only the non-state fragments a phase
-  contributes (e.g. `factDrafts`). See spec §3.3.
+Resolved 2026-06-27 (rulings recorded in the spec):
+
+- ~~**Class vs. opaque-module ADT for `WorkingState`.**~~ → **class** (spec §3.1). The
+  deciding factor is the invariant, not taste: a missed dirty-mark must be made
+  _structurally_ impossible, and only private fields enforce that — an opaque type relies
+  on convention. Follows the `EventChannel`/`DiagnosticCollector` grain.
+- ~~**Phase return-by-value vs. mutate-in-place.**~~ → **mutate-in-place, every phase
+  returns `void`** (spec §3.3). All per-turn outputs (incl. `factDrafts`/`affinityUpdates`)
+  accumulate on `WorkingState`; `plan.ts` becomes `for (p of PHASES) p(state, ctx); return
+state.toMergePlan()`. `brief` is the lone exception (reads everything → final
+  `state.toBrief()`).
+
+Still open:
+
 - Should Slice 4 stop short of the full 14-phase split if the orchestrator is already
   legible after, say, extracting only the 3 largest phases (schedule-tick, clock-and-meters,
-  witness)? Decide after Slice 3 lands and the function is re-measured.
-</content>
-</invoke>
+  witness)? Decide after Slice 3 lands and the function is re-measured. **Metric for the
+  call:** the goal is that `plan.ts` reads as one clean ordered phase list — extract a phase
+  when it's large _or_ carries a non-obvious ordering dependency; a trivial phase with no
+  ordering significance may stay inline or share a file with a sibling. Optimize for the
+  legibility of the orchestrator, not file symmetry.
