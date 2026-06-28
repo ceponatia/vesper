@@ -45,8 +45,8 @@ import {
   resolveSocialReaction,
   type SocialReaction,
 } from "@/contracts/personality/reactions";
-import { bandForValue, INTIMATE_TRAIT_CATEGORY, traitRegistry } from "@/contracts/personality/traits";
-import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
+import { dispositionBands, traitRegistry } from "@/contracts/personality/traits";
+import type { TraitValue } from "@/contracts/personality/traits/value";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { IntentBrief, NarrationFocus } from "@/contracts/turns/intent-brief";
 import { MAX_NPC_PAIR_AWARENESS_LINES } from "./constants";
@@ -735,16 +735,7 @@ export function buildCanonicalFactsBlock(bundle: SceneBundleInput): string {
  * clamps), so a stale value never breaks the block.
  */
 function dispositionParts(traits: readonly TraitValue[], intimateOnly: boolean, withHint = true): string[] {
-  const parts: string[] = [];
-  for (const value of resolveTraits(traits, [])) {
-    const def = traitRegistry.byId(value.id);
-    if (!def) continue;
-    if ((def.category === INTIMATE_TRAIT_CATEGORY) !== intimateOnly) continue;
-    const band = bandForValue(def, value.value);
-    if (!band) continue;
-    parts.push(`${def.label}: ${band.label}${withHint && band.promptHint ? ` (${band.promptHint})` : ""}`);
-  }
-  return parts;
+  return dispositionBands(traitRegistry, traits, { intimateOnly, withHint });
 }
 
 /**
@@ -773,7 +764,7 @@ export function buildDispositionBlock(bundle: SceneBundleInput): string {
   }
   if (!lines.length) return "";
   return [
-    "## Disposition (stable temperament — play it consistently in tone and initiative; never recite verbatim)",
+    "## Disposition (each character's standing temperament — ENACT it, don't just stay consistent: it governs whether they open up or deflect, lead or defer, push back or go along, warm quickly or stay cool, hold steady or flare. Let the strongest traits visibly shape what each character says and does this turn; never name a trait or recite a band.)",
     ...lines,
   ].join("\n");
 }

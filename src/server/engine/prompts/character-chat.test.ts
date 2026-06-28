@@ -47,6 +47,34 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("Phrasing guidance:");
   });
 
+  it("surfaces the authored personality sliders as a binding Disposition block", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({
+        traits: [
+          { id: "temperament.warmth", value: -70, source: "creation" },
+          { id: "social.guardedness", value: 80, source: "creation" },
+          { id: "intimate.libido", value: 80, source: "creation" },
+        ],
+      }),
+    });
+    // The everyday sliders surface as bands…
+    expect(prompt).toContain("Disposition (your standing temperament");
+    expect(prompt).toContain("Warmth: cold");
+    expect(prompt).toContain("Guardedness: guarded");
+    // …intimate sliders only behind the intimate framing…
+    expect(prompt).toContain("When the moment turns intimate");
+    expect(prompt).toContain("Libido: high");
+    // …and the rule makes them behaviorally binding, not flavor.
+    expect(prompt).toContain("behavioral law");
+    expect(prompt).toContain("Speak and act your age");
+  });
+
+  it("omits the Disposition block when no sliders are authored", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile({ traits: [] }) });
+    expect(prompt).not.toContain("Disposition (your standing temperament");
+  });
+
   it("carries the in-character + dialogue-tag rules", () => {
     const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
     expect(prompt).toContain("Stay fully in character as Mara");

@@ -29,7 +29,7 @@ describe("agent system prompts", () => {
     // little extra over the base for the comms-location-contradiction clause
     // (npc-movement-spec) — see docs/story-threads.md, docs/perception.md.
     const budget = (name: string): number =>
-      ({ DIRECTOR_SYSTEM: 6200, CONTINUITY_SYSTEM: 2900, SIMULANT_SYSTEM: 2800 })[name] ?? 2600;
+      ({ DIRECTOR_SYSTEM: 6700, CONTINUITY_SYSTEM: 2900, SIMULANT_SYSTEM: 2800 })[name] ?? 2600;
     for (const [name, text] of Object.entries(SYSTEMS)) {
       expect(text.length, name).toBeLessThan(budget(name));
     }
@@ -286,5 +286,27 @@ describe("buildDirectorPrompt", () => {
     expect(text).toContain("- Scene: Tea in the kitchen.");
     expect(text).toContain("- Story so far: Two days at the inn.");
     expect(text).toContain("- Exposure: appearance ambient, scent none, touch none");
+  });
+
+  it("surfaces present characters' disposition for in-temperament direction", () => {
+    const text = buildDirectorPrompt({
+      playerInput: "input",
+      narration: "narration",
+      author: "player",
+      priorBrief: emptyBrief(),
+      threads: [],
+      turnNumber: 1,
+      presentNames: ["Maya"],
+      presentDisposition: [
+        { name: "Maya", bands: ["Warmth: cold", "Guardedness: guarded"] },
+        { name: "Rhett", bands: [] }, // no authored sliders → dropped
+      ],
+      absentNpcs: [],
+      locationNames: ["The Kitchen"],
+      stagedIntents: [],
+    });
+    expect(text).toContain("Present characters' disposition (honor it in characterNotes and directives):");
+    expect(text).toContain("- Maya: Warmth: cold; Guardedness: guarded");
+    expect(text).not.toContain("- Rhett:");
   });
 });

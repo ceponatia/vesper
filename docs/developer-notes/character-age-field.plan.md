@@ -44,6 +44,14 @@ The product is romance/fantasy-first (immortal beings, ancient mages); a number
 field can't hold "ageless" / "centuries old". The narrator reads it as text
 either way, and `formatAge` keeps bare numbers reading naturally.
 
+## Follow-up shipped (2026-06-28)
+
+The age field is now also a **characterization driver**, not just a consistency
+fact: a prose rule (session) and chat rule make the narrator let each character's
+age/life-stage shape diction, references, patience, and energy — shipped together
+with the personality-slider hardening in
+[personality-enactment.plan.md](personality-enactment.plan.md).
+
 ## Deliberate call: narrator loses the apparent-age visual cue
 
 Per the split, the narrator no longer sees apparent age at all. Appearance the

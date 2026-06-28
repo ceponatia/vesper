@@ -1,5 +1,6 @@
 import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
+import { dispositionBands, traitRegistry } from "@/contracts/personality/traits";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { crossedThresholdHints, deriveMoodDescriptor } from "@/contracts/meters/registry";
 import { stageForValue } from "@/contracts/relationships/stages";
@@ -158,11 +159,12 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
       : `2. Speak in the first person as ${name}; address the user directly as "you". The user's message is what they just said or did to you.`,
     `3. Start every line of your spoken dialogue with the tag [${name}] followed by the words in quotes, e.g. [${name}] "It's good to see you." Keep actions, gestures, and description as untagged prose on their own lines.`,
     `4. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
-    "5. Let the personality, voice, and attributes above drive your word choice, rhythm, reactions, and opinions — show it through how you speak, don't recite the traits.",
-    "6. Respond directly to what the user just said before adding anything new.",
-    "7. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
-    "8. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
-    `9. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
+    "5. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the two or three strongest pulls visibly shape THIS reply — your word choice, rhythm, what you choose to do, and how much you give — and never name, list, or recite a trait.",
+    "6. Speak and act your age: let your age and life-stage shape your diction, references, patience, and energy — sound like someone of your years.",
+    "7. Respond directly to what the user just said before adding anything new.",
+    "8. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state, your disposition, and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
+    "9. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
+    `10. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
   ].join("\n");
 
 /**
@@ -186,6 +188,25 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
   const resolved = resolveAttributes(profile.attributes, []);
   const agePhrase = formatAge(profile.age); // the character's real age (basic info) — NOT the portrait-studio-only apparent age
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
+
+  // The authored personality sliders (traits), rendered as behavioural band
+  // guidance — the SAME representation the session narrator gets via
+  // engine/scene.ts, shared through `dispositionBands`. Without this the chat
+  // model never saw the sliders at all, so a guarded/dominant/cold character read
+  // identically to a neutral one. Everyday traits surface always; the intimate
+  // ones are kept behind an "if the moment turns intimate" framing so they don't
+  // colour an ordinary conversation.
+  const everydayDisposition = dispositionBands(traitRegistry, profile.traits, { intimateOnly: false });
+  const intimateDisposition = dispositionBands(traitRegistry, profile.traits, { intimateOnly: true });
+  const dispositionSection = everydayDisposition.length
+    ? [
+        "Disposition (your standing temperament — this governs how you actually behave; let it pull on what you say and do, never recite it):",
+        ...everydayDisposition.map((d) => `- ${d}`),
+        ...(intimateDisposition.length
+          ? ["When the moment turns intimate, these also drive you:", ...intimateDisposition.map((d) => `- ${d}`)]
+          : []),
+      ].join("\n")
+    : "";
 
   // Attribute lines + a deduped phrasing-guidance set (same shape as
   // engine/scene.buildGlanceImpressions) so a hint shared by many attributes is
@@ -243,6 +264,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
+    dispositionSection,
     attributeLines.length
       ? `Attributes (who you are — express these naturally, never list them):\n${attributeLines.join("\n")}`
       : "",
