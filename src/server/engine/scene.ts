@@ -37,10 +37,17 @@ import { interactionConceptById } from "@/contracts/personality/interactions";
 import type { Preference } from "@/contracts/personality/preference";
 import { checkPuppetContradiction } from "@/contracts/personality/puppet";
 import { socialTraitScale } from "@/contracts/personality/modulation";
-import { evaluateSocialReaction, moodMeterToFactor, resolveSocialReaction } from "@/contracts/personality/reactions";
+import {
+  evaluateSocialReaction,
+  type EvaluatedReaction,
+  moodMeterToFactor,
+  resolveSocialReaction,
+  type SocialReaction,
+} from "@/contracts/personality/reactions";
 import { bandForValue, INTIMATE_TRAIT_CATEGORY, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { MAX_NPC_PAIR_AWARENESS_LINES } from "./constants";
 import type { SceneIntent } from "./intent";
 
@@ -1179,36 +1186,158 @@ export interface ReactionLineInput {
 }
 
 /**
- * Authored-disposition reaction line (docs/developer-notes/personality-and-state.spec.md
- * §6). Resolves the player's primary social act against the target NPC's bespoke
- * disposition and renders the verdict for the narrator — so the model is *told* how
- * the character takes it (over the affinity-aware curve) instead of improvising it.
- * The same resolve/evaluate pair runs in the merge, so this hint and the applied
- * affinity delta can't disagree. Empty when no act, no present target, or no match.
+ * The matched, evaluated PRIMARY social act — the shared verdict behind both the
+ * `## Reaction` line (`buildReactionLine`) and the response-shape reaction-scale
+ * line (`buildResponseShape`). Evaluating it once and feeding both is what
+ * guarantees the two restate a single identical verdict and can never disagree
+ * (narrator-prompt-focus.plan.md §Phase 2).
  */
-export function buildReactionLine(input: ReactionLineInput): string {
+export interface PrimaryReaction {
+  npc: ReactionLineInput["presentNpcs"][number];
+  reaction: SocialReaction;
+  evaluated: EvaluatedReaction;
+}
+
+/**
+ * Resolve + evaluate the player's primary social act against its target NPC's
+ * bespoke disposition, affinity, and mood — the same resolve/curve pair the merge
+ * applies, so the hint and the applied affinity delta can't disagree. Null when
+ * there is no act, no present target by that name, or no disposition match — i.e.
+ * exactly the cases where `buildReactionLine` renders nothing.
+ */
+export function evaluatePrimaryReaction(input: ReactionLineInput): PrimaryReaction | null {
   const primary = input.socialActs[0];
-  if (!primary) return "";
+  if (!primary) return null;
   const npc = input.presentNpcs.find((n) => n.displayName.toLowerCase() === primary.target.toLowerCase());
-  if (!npc) return "";
+  if (!npc) return null;
   const reaction = resolveSocialReaction(
     { concept: primary.concept, target: primary.target },
     { tags: npc.tags, preferences: npc.preferences, cards: [...npc.socialCards, ...input.worldCards] },
   );
-  if (!reaction) return "";
+  if (!reaction) return null;
   const feeling = input.relationships.find(
     (r) => r.kind === "feeling" && r.fromParticipantId === npc.id && r.toParticipantId === input.playerId,
   );
   const evaluated = evaluateSocialReaction(reaction, feeling?.value ?? 0, moodMeterToFactor(npc.mood), socialTraitScale(reaction, npc.traits));
-  const concept = interactionConceptById(primary.concept);
+  return { npc, reaction, evaluated };
+}
+
+/**
+ * Authored-disposition reaction line (docs/developer-notes/personality-and-state.spec.md
+ * §6). Renders the verdict for the narrator — so the model is *told* how the
+ * character takes it (over the affinity-aware curve) instead of improvising it.
+ * Takes the shared `evaluatePrimaryReaction` result (defaulted so single-arg
+ * callers/tests compute it inline); the pipeline passes the value it also feeds
+ * `buildResponseShape`. Empty when no act, no present target, or no match.
+ */
+export function buildReactionLine(
+  input: ReactionLineInput,
+  primary: PrimaryReaction | null = evaluatePrimaryReaction(input),
+): string {
+  if (!primary) return "";
+  const { npc, reaction, evaluated } = primary;
+  const concept = interactionConceptById(reaction.conceptId);
   const verb = concept?.verb ?? "made a social overture to";
-  const label = (concept?.label ?? primary.concept).toLowerCase();
+  const label = (concept?.label ?? reaction.conceptId).toLowerCase();
   const valenceWord = reaction.valence === "dislike" ? "dislikes" : "likes";
   const hint = evaluated.hint ? ` ${evaluated.hint}.` : "";
   return [
     "## Reaction (authored disposition — play this; do not re-decide whether they mind)",
     `- ${input.playerName} ${verb} ${npc.displayName} — ${npc.displayName} ${valenceWord} this (${label}) and ${evaluated.band}.${hint}`,
   ].join("\n");
+}
+
+// A reaction at or above this evaluated magnitude already has a full "## Reaction"
+// line (band "is pleased" / "is delighted" / "is clearly displeased" / "is stung",
+// per reactions.ts `bandFor`'s magnitude<4/≥4 split above its <2 "mildly" band) — so
+// the response-shape scale line DEFERS to it to avoid double-stating; below it the
+// scale line reinforces a light, proportionate reaction.
+const STRONG_REACTION_MAGNITUDE = 2;
+
+// actionTypes whose turn has an in-place "respond first, stay on the beat" shape.
+// `move` is owned by the movement rules + turn digest, `meta` by the OOC heading,
+// and `other` is the degraded/unclassified default — none get a (possibly wrong)
+// current-beat line; reaction-scale and speaker-focus still apply to them.
+const RESPOND_IN_PLACE_ACTIONS: ReadonlySet<IntentBrief["actionType"]> = new Set([
+  "converse",
+  "comms",
+  "observe",
+  "social_attempt",
+  "intimate",
+  "touch",
+  "manipulate_item",
+  "rest",
+]);
+
+export interface ResponseShapeInput {
+  /** intake's coarse action classification (intent-brief.actionType). */
+  actionType: IntentBrief["actionType"];
+  /** NPC display names the player addressed this turn (intent-brief.addressedNpcs). */
+  addressedNpcs: readonly string[];
+  /** Present NPC display names (the "Who is where" Present set) — for addressed ∩ present. */
+  presentNpcNames: readonly string[];
+  /** Shared primary-reaction verdict (evaluatePrimaryReaction) — null ⇒ no act/target/match. */
+  primaryReaction: PrimaryReaction | null;
+  /** Open story threads surfaced this turn — gates whether a new topic is licensed. */
+  openThreadCount: number;
+  /** Direction lines this turn — also license a new topic. */
+  directiveCount: number;
+}
+
+/**
+ * Deterministic "response shape" line (narrator-prompt-focus.plan.md §Phase 2) — a
+ * volatile, restatement-only sibling of `buildTurnDigest`. It turns data already in
+ * the turn (intake's actionType / addressedNpcs, the present roster, the shared
+ * primary-reaction verdict, open-thread + Direction counts) into terse steers: stay
+ * on the player's beat, react in proportion, and don't voice a chorus. It invents
+ * nothing — every line restates a block the narrator already has — and renders ""
+ * when nothing is constrained, exactly like `buildTurnDigest`.
+ */
+export function buildResponseShape(input: ResponseShapeInput): string {
+  const lines: string[] = [];
+
+  // Current beat — respond first; a new topic is licensed only by a Direction or an
+  // open thread (otherwise explicitly forbidden). Skipped for move/meta/other.
+  if (RESPOND_IN_PLACE_ACTIONS.has(input.actionType)) {
+    const focus = input.actionType === "observe" ? "answer what the player is examining" : "respond to the player's input";
+    const newTopic =
+      input.directiveCount > 0 || input.openThreadCount > 0
+        ? "open a new topic only if a Direction or open thread calls for it"
+        : "don't introduce an unrelated new topic this turn";
+    lines.push(`- Current beat: ${focus} and keep the turn's focus there; ${newTopic}.`);
+  }
+
+  // Reaction scale — the ABSENCE of a strong band is itself the instruction
+  // (Phase 1 rule 7 in the abstract; here as a concrete per-turn line). A strong
+  // band emits nothing: the "## Reaction" line already states it.
+  if (!input.primaryReaction) {
+    lines.push("- Reaction scale: ordinary — no special emotional reaction is owed; do not escalate affection, gratitude, or fluster.");
+  } else if (input.primaryReaction.evaluated.magnitude < STRONG_REACTION_MAGNITUDE) {
+    lines.push('- Reaction scale: small — keep the reaction light and proportionate; play the "## Reaction" line, do not amplify it.');
+  }
+
+  // Speaker focus — only addressed-and-present characters owe an answer; others stay
+  // silent unless directly affected (the multi-party restraint made concrete). Names
+  // are framework-derived from typed participants, never echoed player prose.
+  const present = new Set(input.presentNpcNames.map((n) => n.toLowerCase()));
+  const seen = new Set<string>();
+  const addressedPresent: string[] = [];
+  for (const name of input.addressedNpcs) {
+    const key = name.toLowerCase();
+    if (present.has(key) && !seen.has(key)) {
+      seen.add(key);
+      addressedPresent.push(name);
+    }
+  }
+  if (addressedPresent.length) {
+    const verb = addressedPresent.length === 1 ? "needs" : "need";
+    lines.push(
+      `- Speaker focus: only ${addressedPresent.join(" and ")} ${verb} to answer; another present character speaks only if directly affected or acting on their own goal.`,
+    );
+  }
+
+  if (!lines.length) return "";
+  return ["## Response shape (this turn — derived, not new facts)", ...lines].join("\n");
 }
 
 export interface PuppetDeflectionInput {

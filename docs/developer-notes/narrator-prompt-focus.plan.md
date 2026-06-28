@@ -1,8 +1,11 @@
 # Narrator prompt focus & proportionate reaction
 
 Status: **active** — Phase 1 (prompt wording + shape profiles + dev toggle) **shipped 2026-06-27**;
-Phases 2–3, the interim manual golden-scenario eval, and the reasoning probes P1–P3 remain (gated
-per §Open questions / §Rollout plan). The behavioral eval harness is a separate follow-on task.
+Phase 2 (deterministic "response shape" line) **shipped 2026-06-27** — built ahead of the interim-eval
+gate on direct instruction, so the interim manual eval is now a *validation* pass over Phases 1+2
+rather than a go/no-go for building Phase 2. Phase 3 (planner), the interim manual golden-scenario
+eval, and the reasoning probes P1–P3 remain (gated per §Open questions / §Rollout plan). The
+behavioral eval harness is a separate follow-on task.
 
 Goal: make narration stay on the player's current beat, react in proportion to
 what the player actually did, and stop doting. Concretely:
@@ -482,10 +485,26 @@ overridable *by construction* — proportionality scales with disposition + rela
 without any new knob. Document this in `docs/prompts.md` so authors know directives like
 "lush, descriptive narration" are the lever.
 
-### Phase 2 — deterministic "response shape" line (volatile `user`; no new call)
+### Phase 2 — deterministic "response shape" line (volatile `user`; no new call) — **shipped 2026-06-27**
 
-Once Phase 1 ships and is evaluated, add a derived, restatement-only shape line to
-the turn context — same discipline as `buildTurnDigest` (restate, never invent).
+> **Shipped note (2026-06-27).** Landed as specified: `evaluatePrimaryReaction` +
+> `PrimaryReaction` factored out of `buildReactionLine` in `scene.ts` (the band is evaluated
+> **once** in `pipeline.ts` and fed to both the `## Reaction` line and the new shape line, so
+> they can't disagree — `buildReactionLine` gained a defaulted second param so its single-arg
+> callers/tests are unchanged); new pure `buildResponseShape(...)` + `ResponseShapeInput` in
+> `scene.ts`; `TurnContextInput.responseShape?` rendered immediately after `turnDigest` (before
+> wardrobe) in `narrative.ts`; pipeline wiring (hoisted `reactionInput`/`primaryReaction`/
+> `openThreads`, `presentNpcNames: npcNames`, `directiveCount`/`openThreadCount`); unit tests in
+> `scene.test.ts` (`buildResponseShape` describe — ordinary/small/strong scale, new-topic gate,
+> beat-omitted for move/meta/other, speaker focus, renders-"") + ordering/omission tests in
+> `narrative.test.ts`; `docs/prompts.md` turn-context + narration-shape sections. The
+> **current-beat** line is skipped for `move`/`meta`/`other` (owned by movement rules / OOC
+> heading / left unconstrained); reaction-scale + speaker-focus still apply. `pnpm verify` green.
+> The **character-chat Phase 2** analogue below stays **deferred** (gate on eval), as planned.
+> **Next:** the interim manual eval is now a validation pass over Phases 1+2; Phase 3 stays gated.
+
+The derived, restatement-only shape line in the turn context — same discipline as
+`buildTurnDigest` (restate, never invent).
 
 - **New pure builder** `buildResponseShape(...)` in `src/server/engine/scene.ts`,
   next to `buildTurnDigest`. Inputs come straight from data already in
@@ -705,12 +724,15 @@ verification is the interim manual eval above. When built:
    mechanism + dev toggle, both-lanes coverage, and the authored-override lever). Run
    `pnpm verify`. (Roadmap line already added.)
 2. **Interim manual eval** (matrix + golden scenarios) on the dev account, sweeping both
-   profiles via `NARRATION_SHAPE`. Go/no-go for Phase 2 and for picking the default profile.
+   profiles via `NARRATION_SHAPE`. Now a **validation pass over Phases 1+2** (Phase 2 was built
+   ahead of this gate on direct instruction) + picking the default profile; a red result iterates
+   the prompt wording, and informs whether Phase 3 is needed.
 3. **Reasoning probes P1–P3** by hand (independent of Phase 1). Only if a probe shows a
    clear win, add a per-model `reasoning` knob to `narrativeProviderOptions`
    (`provider.ts:83`) — never for Aion 2.0.
-4. **Phase 2 shape line** if eval shows residual sprawl/doting. New `buildResponseShape`
-   + `TurnContextInput.responseShape` + pipeline wiring + tests.
+4. **Phase 2 shape line** — **shipped 2026-06-27**. New `buildResponseShape` +
+   `evaluatePrimaryReaction`/`PrimaryReaction` + `TurnContextInput.responseShape` + pipeline
+   wiring + tests + `docs/prompts.md`.
 5. **Phase 3 planner** only if Phase 1–2 still insufficient on ≥2 narrators — preferring
    the intake-schema-extension form over a new agent leg.
 6. **Behavioral eval harness** — a **separate follow-on task** (its own roadmap line) once

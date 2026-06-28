@@ -273,6 +273,19 @@ describe("buildTurnContext", () => {
     expect(legacy).not.toContain("## This turn (binding digest");
   });
 
+  it("renders the response shape between the digest and the wardrobe block", () => {
+    const text = buildTurnContext(
+      contextInput({ responseShape: "## Response shape (this turn — derived, not new facts)\n- Current beat: respond." }),
+    );
+    expect(text.indexOf("## This turn (binding digest")).toBeLessThan(text.indexOf("## Response shape"));
+    expect(text.indexOf("## Response shape")).toBeLessThan(text.indexOf("## Visible wardrobe"));
+  });
+
+  it("omits the response-shape block when there is nothing to steer", () => {
+    expect(buildTurnContext(contextInput({ responseShape: "" }))).not.toContain("## Response shape");
+    expect(buildTurnContext(contextInput({ responseShape: undefined }))).not.toContain("## Response shape");
+  });
+
   it("caps facts, episodes, and open threads at the documented limits", () => {
     const text = buildTurnContext(
       contextInput({

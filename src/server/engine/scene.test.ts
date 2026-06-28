@@ -29,6 +29,7 @@ import {
   buildPuppetDeflection,
   buildReactionLine,
   buildRelationshipBlock,
+  buildResponseShape,
   buildSceneSnapshot,
   buildTurnDigest,
   buildWardrobeBlock,
@@ -36,9 +37,12 @@ import {
   computeFollowScores,
   deriveActionSalience,
   effectiveMeterDefinitions,
+  evaluatePrimaryReaction,
   excerptBio,
   scaleFramingLine,
   type LocationScale,
+  type PrimaryReaction,
+  type ReactionLineInput,
   type RelationshipBlockInput,
   type SceneBundleInput,
   type SceneItemInput,
@@ -1102,6 +1106,94 @@ describe("buildReactionLine", () => {
     expect(buildReactionLine({ ...base, socialActs: [] })).toBe("");
     expect(buildReactionLine({ ...base, socialActs: [{ concept: "compliment", target: "Nobody" }] })).toBe("");
     expect(buildReactionLine({ ...base, socialActs: [{ concept: "insult", target: "Sabrina" }] })).toBe("");
+  });
+
+  it("renders identically whether the verdict is passed in or computed inline", () => {
+    const input = { ...base, socialActs: [{ concept: "compliment", target: "Sabrina" }] };
+    expect(buildReactionLine(input, evaluatePrimaryReaction(input))).toBe(buildReactionLine(input));
+  });
+});
+
+describe("buildResponseShape", () => {
+  // Reuse the reaction fixtures so the response-shape scale line and the "## Reaction"
+  // line are evaluated from the same disposition — the whole point of the shared seam.
+  const reactionInput = (over: Partial<ReactionLineInput>): ReactionLineInput => ({
+    playerId: "p-brian",
+    playerName: "Brian",
+    presentNpcs: [
+      { id: "p-sabrina", displayName: "Sabrina", tags: [], traits: [], socialCards: [], mood: 0.5, preferences: [{ target: "compliment", valence: "dislike", intensity: 7, hint: "finds flattery cloying" }] },
+    ],
+    relationships: [{ fromParticipantId: "p-sabrina", toParticipantId: "p-brian", kind: "feeling", value: 0 }],
+    worldCards: [],
+    socialActs: [],
+    ...over,
+  });
+  const strongReaction: PrimaryReaction = evaluatePrimaryReaction(reactionInput({ socialActs: [{ concept: "compliment", target: "Sabrina" }] }))!;
+  // intensity 4 fully absorbed by +100 goodwill ⇒ a sub-threshold "lets it slide" band.
+  const weakReaction: PrimaryReaction = evaluatePrimaryReaction(
+    reactionInput({
+      presentNpcs: [{ id: "p-sabrina", displayName: "Sabrina", tags: [], traits: [], socialCards: [], mood: 0.5, preferences: [{ target: "compliment", valence: "dislike", intensity: 4 }] }],
+      relationships: [{ fromParticipantId: "p-sabrina", toParticipantId: "p-brian", kind: "feeling", value: 100 }],
+      socialActs: [{ concept: "compliment", target: "Sabrina" }],
+    }),
+  )!;
+
+  const base = {
+    actionType: "converse" as const,
+    addressedNpcs: [] as string[],
+    presentNpcNames: ["Mara", "Jon"],
+    primaryReaction: null,
+    openThreadCount: 0,
+    directiveCount: 0,
+  };
+
+  it("steers to an ordinary, no-escalation reaction when there is no verdict", () => {
+    const shape = buildResponseShape(base);
+    expect(shape).toContain("## Response shape (this turn — derived, not new facts)");
+    expect(shape).toContain("Reaction scale: ordinary");
+    expect(shape).toContain("do not escalate affection");
+  });
+
+  it("steers to a small, proportionate reaction for a weak band", () => {
+    const shape = buildResponseShape({ ...base, primaryReaction: weakReaction });
+    expect(shape).toContain("Reaction scale: small");
+  });
+
+  it("suppresses the scale line for a strong band, deferring to the ## Reaction line", () => {
+    const shape = buildResponseShape({ ...base, primaryReaction: strongReaction });
+    expect(shape).not.toContain("Reaction scale:");
+  });
+
+  it("forbids an unrelated new topic when no Direction or thread licenses one", () => {
+    expect(buildResponseShape(base)).toContain("don't introduce an unrelated new topic");
+  });
+
+  it("licenses a new topic only via a Direction or open thread", () => {
+    expect(buildResponseShape({ ...base, openThreadCount: 1 })).toContain("open a new topic only if a Direction or open thread");
+    expect(buildResponseShape({ ...base, directiveCount: 1 })).toContain("open a new topic only if a Direction or open thread");
+  });
+
+  it("omits the current-beat line for move / meta / other (owned elsewhere)", () => {
+    for (const actionType of ["move", "meta", "other"] as const) {
+      expect(buildResponseShape({ ...base, actionType })).not.toContain("Current beat:");
+    }
+  });
+
+  it("focuses speech on addressed-and-present characters only", () => {
+    const shape = buildResponseShape({ ...base, addressedNpcs: ["Mara"] });
+    expect(shape).toContain("Speaker focus: only Mara needs to answer");
+    // not addressed-and-present ⇒ no false constraint
+    expect(buildResponseShape({ ...base, addressedNpcs: ["Elsewhere"] })).not.toContain("Speaker focus:");
+  });
+
+  it("conjugates and joins multiple addressed-present names", () => {
+    const shape = buildResponseShape({ ...base, addressedNpcs: ["Mara", "Jon"] });
+    expect(shape).toContain("only Mara and Jon need to answer");
+  });
+
+  it("renders nothing when nothing is constrained", () => {
+    // move (no beat line) + a strong band (no scale line) + nobody addressed ⇒ "".
+    expect(buildResponseShape({ ...base, actionType: "move", primaryReaction: strongReaction })).toBe("");
   });
 });
 
