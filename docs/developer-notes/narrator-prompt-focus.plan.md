@@ -1,13 +1,14 @@
 # Narrator prompt focus & proportionate reaction
 
-Status: **active** — Phases 1, 2 & 3 all **shipped 2026-06-27**. Phase 1 (prompt wording + shape
-profiles + dev toggle); Phase 2 (deterministic "response shape" line); Phase 3 (narration-focus
-planner, folded into the intake brief as an optional `focus` sub-object — the preferred
-intake-schema-extension form, no new LLM call). Phases 2 & 3 were built ahead of the interim-eval
-gate on direct instruction, so the interim manual eval is now a *validation* pass over the whole
-prompt stack rather than a go/no-go for building them. **Remaining:** the interim manual
-golden-scenario eval, the reasoning probes P1–P3, and the optional character-chat Phase-2/3 analogues
-(all gated per §Open questions / §Rollout plan); the behavioral eval harness is a separate follow-on task.
+Status: **active** — Phases 1, 2 & 3 all **shipped 2026-06-27**; the **behavioral eval harness shipped
+2026-06-28**. Phase 1 (prompt wording + shape profiles + dev toggle); Phase 2 (deterministic "response
+shape" line); Phase 3 (narration-focus planner, folded into the intake brief as an optional `focus`
+sub-object — the preferred intake-schema-extension form, no new LLM call); the harness
+(`pnpm eval:narration` — `scripts/eval/narration/`) automates the golden-scenario eval + probes P1–P3.
+Phases 2 & 3 + the harness were built ahead of the interim-eval gate on direct instruction.
+**Remaining is now execution, not building:** *running* the harness (live OpenRouter spend — the user's
+call) to pick the default profile + decide each model's reasoning knob, and the optional character-chat
+Phase-2/3 analogues (gated on those results).
 
 Goal: make narration stay on the player's current beat, react in proportion to
 what the player actually did, and stop doting. Concretely:
@@ -698,11 +699,26 @@ logistics.
 
 ---
 
-## Behavioral eval harness (follow-on task)
+## Behavioral eval harness (follow-on task) — **shipped 2026-06-28**
+
+> **Shipped note (2026-06-28).** Built at `scripts/eval/narration/` (`pnpm eval:narration`), mirroring
+> the `scripts/eval/scene-images/` precedent. `fixtures.ts` holds the six golden scenarios, each
+> assembling a **real** prompt through the shipped builders (`buildStaticRulebook` / `buildTurnContext`
+> / `buildResponseShape` / `buildReactionLine`; `buildCharacterChatSystemPrompt` for the chat lane) —
+> the Phase-1/2/3 surface is real, the scenery blocks are hand-authored fixtures. `run.ts` sweeps
+> (scenario × model × shape profile × reasoning), streams via the real `openrouter().chat()` path,
+> computes the deterministic metrics (paragraphs / segments / **distinct speakers** via
+> `parseSegments` / output tokens / TTFT / latency / routed provider), and scores each with an
+> LLM judge (`generateChecked`, the 5-dim rubric). Flags: `--models` / `--profiles` / `--reasoning`
+> (probes P1–P3) / `--scenarios` / `--no-focus` (a Phase-2-vs-Phase-3 A/B) / `--no-judge` / `--dry-run`
+> (assemble + print prompts, **no spend**). Conservative defaults (aion, both profiles, reasoning
+> default) keep a first run cheap. **Never in `pnpm verify` / CI.** Verified end-to-end via `--dry-run`;
+> a live scored run is the user's call (spend). See `scripts/eval/narration/README.md`. The spec below
+> is the design it implements.
 
 Sequenced **after** the prompt phases (decision 4, clarified 2026-06-27) — its **own
-build task with its own roadmap line**, not part of Phase 1. Until it exists,
-verification is the interim manual eval above. When built:
+build task with its own roadmap line**, not part of Phase 1. Until it existed,
+verification was the interim manual eval above. As built:
 
 - **Placement:** a standalone script (`scripts/eval-narration.ts`, run via a
   `pnpm eval:narration` alias) or a vitest file guarded to skip unless
@@ -755,8 +771,9 @@ verification is the interim manual eval above. When built:
    wiring + tests + `docs/prompts.md`.
 5. **Phase 3 planner** — **shipped 2026-06-27** in the intake-schema-extension form (optional
    `focus` sub-object on `IntentBrief`, consumed by `buildResponseShape`); no new agent leg.
-6. **Behavioral eval harness** — a **separate follow-on task** (its own roadmap line) once
-   the prompt work is in, automating steps 2–3.
+6. **Behavioral eval harness** — **shipped 2026-06-28** (`pnpm eval:narration`,
+   `scripts/eval/narration/`). Automates steps 2–3 (golden scenarios × models × profiles ×
+   reasoning → deterministic metrics + LLM-judge rubric). Running it (live spend) is the user's call.
 
 Each phase is independently shippable and independently revertible (Phase 1 is prompt
 wording + an additive, dev-only profile toggle with no player-facing runtime change;

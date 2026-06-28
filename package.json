@@ -26,7 +26,8 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/db-seed.ts",
-    "db:backfill-image-refs": "tsx scripts/backfill-image-references.ts"
+    "db:backfill-image-refs": "tsx scripts/backfill-image-references.ts",
+    "eval:narration": "tsx scripts/eval/narration/run.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"
