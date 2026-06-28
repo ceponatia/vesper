@@ -232,6 +232,13 @@ export interface TurnContextInput {
   clockLine: string;
   /** Output of scene.buildTurnDigest — the binding per-turn allowances list, rendered first ("" / absent when nothing to constrain). */
   turnDigest?: string;
+  /**
+   * Output of scene.buildResponseShape (narrator-prompt-focus.plan.md §Phase 2) — the
+   * volatile, derived focus / reaction-scale / speaker-focus steers, rendered right
+   * after the digest so the two restatement-only blocks sit together ("" / absent
+   * when nothing to steer).
+   */
+  responseShape?: string;
   /** e.g. "25 minutes since the previous turn". */
   elapsedLine?: string;
   /** Outputs of the scene.ts builders ("" when not applicable). */
@@ -327,6 +334,7 @@ export function buildTurnContext(input: TurnContextInput): string {
     "## Turn context (authoritative world state — reference only; respond to the input at the end)",
     `Current time: ${input.clockLine}${input.elapsedLine ? `\nElapsed: ${input.elapsedLine} (authoritative)` : ""}`,
     input.turnDigest ?? "",
+    input.responseShape ?? "",
     input.wardrobeBlock,
     input.sceneSnapshot,
     input.presenceRoster,

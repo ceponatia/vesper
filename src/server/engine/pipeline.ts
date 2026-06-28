@@ -50,12 +50,15 @@ import {
   buildPuppetDeflection,
   buildReactionLine,
   buildRelationshipBlock,
+  buildResponseShape,
   buildSceneSnapshot,
   buildTurnDigest,
   buildWardrobeBlock,
   classifyPresenceChannels,
+  evaluatePrimaryReaction,
   excerptBio,
   type CommsStaging,
+  type ReactionLineInput,
 } from "./scene";
 import { createSegmenter, parseSegments } from "./segmenter";
 import { exposedRegions, resolveWardrobeVisibility } from "@/contracts/items/visibility";
@@ -740,6 +743,29 @@ async function assemblePreTurn(
     mood: p.state.meters.mood ?? NEUTRAL_MOOD_METER,
   }));
 
+  // The primary social-act verdict, evaluated ONCE and shared by the Reaction line
+  // and the response-shape reaction-scale line so the two can never disagree
+  // (narrator-prompt-focus.plan.md §Phase 2).
+  const reactionInput: ReactionLineInput | null = player
+    ? {
+        playerId: player.id,
+        playerName: player.displayName,
+        socialActs: intentBrief.socialActs,
+        presentNpcs: dispositionNpcs,
+        relationships: bundle.relationships,
+        worldCards: bundle.style.socialCards,
+      }
+    : null;
+  const primaryReaction = reactionInput ? evaluatePrimaryReaction(reactionInput) : null;
+
+  // Open threads surfaced to the narrator this turn — hoisted so the count gates the
+  // response shape's "new topic allowed?" steer and the same list renders below.
+  const openThreads = bundle.runtime.storyThreads
+    .filter((t) => t.status === "open")
+    .sort((a, b) => b.lastTouchedTurn - a.lastTouchedTurn)
+    .slice(0, OPEN_THREADS_IN_CONTEXT)
+    .map((t) => ({ title: t.title, summary: t.summary }));
+
   const turnContext = buildTurnContext({
     clockLine: formatGameClock(gameTime),
     elapsedLine: lastMinutes > 0 ? `${formatElapsed(lastMinutes)} since the previous turn` : undefined,
@@ -751,6 +777,22 @@ async function assemblePreTurn(
       promptLocationId,
       anchor.blocked ? { targetName: anchor.blocked.target.name, reason: anchor.blocked.reason } : null,
     ),
+    // Derived focus / reaction-scale / speaker-focus steers — a restatement-only
+    // sibling of the digest, rendered right after it (narrator-prompt-focus §Phase 2).
+    // Only for in-character player turns: OOC / director / companion turns carry an
+    // empty brief (like intake), so the derived shape would be noise there — and it
+    // must stay consistent with the Reaction line, which is also silent on them.
+    responseShape:
+      !ooc && body.author === "player"
+        ? buildResponseShape({
+            actionType: intentBrief.actionType,
+            addressedNpcs: intentBrief.addressedNpcs,
+            presentNpcNames: npcNames,
+            primaryReaction,
+            openThreadCount: openThreads.length,
+            directiveCount: bundle.brief.directives.length,
+          })
+        : "",
     sceneSnapshot: buildSceneSnapshot(bundle, promptLocationId, { forceFull }),
     // Anchored on promptLocationId, like the snapshot/affordances: on a staged
     // move the roster must describe the room being narrated (its occupants are
@@ -769,16 +811,7 @@ async function assemblePreTurn(
             relationships: bundle.relationships,
           })
         : "",
-      player
-        ? buildReactionLine({
-            playerId: player.id,
-            playerName: player.displayName,
-            socialActs: intentBrief.socialActs,
-            presentNpcs: dispositionNpcs,
-            relationships: bundle.relationships,
-            worldCards: bundle.style.socialCards,
-          })
-        : "",
+      reactionInput ? buildReactionLine(reactionInput, primaryReaction) : "",
       player
         ? buildPuppetDeflection({
             narratedNpcBehaviors: intentBrief.narratedNpcBehaviors,
@@ -803,11 +836,7 @@ async function assemblePreTurn(
     sceneLore,
     // characterNotes already folded into the facts channel — one list, not three.
     brief: { ...bundle.brief, characterNotes: [] },
-    openThreads: bundle.runtime.storyThreads
-      .filter((t) => t.status === "open")
-      .sort((a, b) => b.lastTouchedTurn - a.lastTouchedTurn)
-      .slice(0, OPEN_THREADS_IN_CONTEXT)
-      .map((t) => ({ title: t.title, summary: t.summary })),
+    openThreads,
     exposure,
     playerInput: body.input,
     author: body.author,
