@@ -34,15 +34,14 @@ deferral, cards-first). The avatar arc above consumes Mood's projection — the 
 
 ## Next (queued)
 
-- **Narrator prompt focus & proportionate reaction — eval & probes** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) (active; **Phases 1, 2 & 3 all
-  shipped 2026-06-27**, see Shipped). All three prompt phases are in (shape profiles + dev toggle,
-  the deterministic `buildResponseShape` line, and the intake-folded narration-focus planner); what
-  remains is **verification**, not building: the **interim manual golden-scenario eval** (now a
-  validation pass over the whole prompt stack + default-profile pick) + reasoning probes P1–P3
-  (Aion 2.0 / GLM 5.2 / Owl Alpha, by hand — knobs stay model-default until a probe shows a win),
-  plus the optional **character-chat focus analogue** (gate on eval). A scored **behavioral eval
-  harness** follows as its own task.
+- **Narrator prompt focus & proportionate reaction — run the eval** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) (active; **Phases 1, 2 & 3 + the
+  eval harness all shipped**, see Shipped). All the *building* is done — three prompt phases (shape
+  profiles + dev toggle, the deterministic `buildResponseShape` line, the intake-folded narration-focus
+  planner) and the scored **eval harness** (`pnpm eval:narration`). What remains is **execution**:
+  *run* the harness (live OpenRouter spend — the user's call) across Aion 2.0 / GLM 5.2 / Owl Alpha ×
+  both profiles × reasoning settings to pick the default profile + decide each model's reasoning knob,
+  then the optional **character-chat focus analogue** (gated on those results).
 - **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -81,6 +80,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Narrator prompt focus & proportionate reaction — behavioral eval harness** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-28. `pnpm eval:narration`
+  (`scripts/eval/narration/`) — assembles **real** prompts (the shipped builders) for six golden
+  scenarios, sweeps (scenario × model × shape profile × reasoning), streams via OpenRouter, and reports
+  deterministic metrics (paragraphs / segments / distinct speakers / tokens / TTFT / latency / provider)
+  + an LLM-judge rubric. `--no-focus` is a Phase-2-vs-Phase-3 A/B; `--dry-run` inspects prompts with no
+  spend; conservative defaults. Never in `pnpm verify` / CI. Automates the interim eval + probes P1–P3.
 - **Narrator prompt focus & proportionate reaction — Phase 3** —
   [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-27. The structured
   narration-focus planner, built in the **preferred intake-schema-extension form** (no new LLM
