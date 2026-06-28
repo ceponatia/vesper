@@ -156,11 +156,48 @@ export const intentBriefSchema = z.object({
     })
     .optional(),
 
+  /**
+   * Narration-focus planner (narrator-prompt-focus.plan.md §Phase 3) — the intake
+   * agent's read of HOW the narrator should shape this turn's response, folded into
+   * the brief instead of run as a second LLM call. Consumed by `buildResponseShape`
+   * (engine/scene.ts) to enrich the §Phase-2 "## Response shape" steers.
+   *
+   * **`.optional()` at the object level — deliberately NOT `.default()`ed**, unlike
+   * the rest of this brief: its absence is the signal that there is no planner
+   * signal (the regex fallback / `emptyIntentBrief()` / any degrade leaves it
+   * `undefined`), so `buildResponseShape` degrades cleanly to its deterministic
+   * derivation. When the agent DOES emit it, each leaf is `.catch().default()`ed so
+   * one bad field doesn't drop the object. It only shapes focus + reaction scale; it
+   * never overrides deterministic authority (presence/wardrobe/movement/perception,
+   * or the authored reaction band — which always wins over `reactionScale`).
+   */
+  focus: z
+    .object({
+      /** The narrator's primary job this turn — finer than `actionType`. */
+      primaryResponse: z
+        .enum(["converse", "answer_question", "resolve_action", "react_emotionally", "transition_scene", "ooc_answer"])
+        .catch("converse")
+        .default("converse"),
+      /** How large any in-world reaction to the player should be (the authored band overrides this). */
+      reactionScale: z.enum(["none", "small", "moderate", "strong"]).catch("none").default("none"),
+      /** Whether the narrator may open a new thread beyond the player's beat. */
+      allowedNewTopic: z.enum(["none", "one_open_thread", "urgent_scene_event"]).catch("none").default("none"),
+      /** The turn's overall form — the per-turn analogue of the global shape profile. */
+      suggestedShape: z
+        .enum(["concise_exchange", "scene_establishing", "multi_party", "action_resolution"])
+        .catch("concise_exchange")
+        .default("concise_exchange"),
+    })
+    .optional(),
+
   /** One-line rationale for the classification — diagnostics/inspector only. */
   notes: z.string().default(""),
 });
 
 export type IntentBrief = z.infer<typeof intentBriefSchema>;
+
+/** The narration-focus planner sub-brief (present only when intake emits it). */
+export type NarrationFocus = NonNullable<IntentBrief["focus"]>;
 
 /** The degraded/empty brief — identical to today's behavior (no intent detected). */
 export function emptyIntentBrief(): IntentBrief {

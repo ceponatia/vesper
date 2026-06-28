@@ -1195,6 +1195,58 @@ describe("buildResponseShape", () => {
     // move (no beat line) + a strong band (no scale line) + nobody addressed ⇒ "".
     expect(buildResponseShape({ ...base, actionType: "move", primaryReaction: strongReaction })).toBe("");
   });
+
+  describe("with the Phase-3 narration-focus planner", () => {
+    const focus = {
+      primaryResponse: "answer_question" as const,
+      reactionScale: "none" as const,
+      allowedNewTopic: "none" as const,
+      suggestedShape: "concise_exchange" as const,
+    };
+
+    it("uses the planner's finer beat verb over the actionType derivation", () => {
+      const shape = buildResponseShape({ ...base, focus });
+      expect(shape).toContain("answer the player's question directly");
+    });
+
+    it("derives the beat from a move turn when the planner says transition_scene", () => {
+      // actionType move would omit the beat on the Phase-2 path; the planner overrides.
+      const shape = buildResponseShape({ ...base, actionType: "move", focus: { ...focus, primaryResponse: "transition_scene" } });
+      expect(shape).toContain("carry the scene transition");
+    });
+
+    it("emits a Shape line only for expansion shapes, not concise_exchange", () => {
+      expect(buildResponseShape({ ...base, focus })).not.toContain("Shape:");
+      expect(buildResponseShape({ ...base, focus: { ...focus, suggestedShape: "scene_establishing" } })).toContain(
+        "Shape: an establishing beat",
+      );
+    });
+
+    it("maps the planner's reaction scale when there is no authored band", () => {
+      expect(buildResponseShape({ ...base, focus: { ...focus, reactionScale: "moderate" } })).toContain("Reaction scale: moderate");
+      expect(buildResponseShape({ ...base, focus: { ...focus, reactionScale: "strong" } })).toContain("Reaction scale: strong");
+    });
+
+    it("lets the authored band override the planner's reaction scale", () => {
+      // strong authored band ⇒ defer to ## Reaction (no scale line), even if the planner said moderate.
+      expect(buildResponseShape({ ...base, primaryReaction: strongReaction, focus: { ...focus, reactionScale: "moderate" } })).not.toContain(
+        "Reaction scale:",
+      );
+      // weak authored band ⇒ "small", regardless of the planner's read.
+      expect(buildResponseShape({ ...base, primaryReaction: weakReaction, focus: { ...focus, reactionScale: "strong" } })).toContain(
+        "Reaction scale: small",
+      );
+    });
+
+    it("licenses a new topic per the planner's allowedNewTopic", () => {
+      expect(buildResponseShape({ ...base, focus: { ...focus, allowedNewTopic: "one_open_thread" } })).toContain("pick up one open thread");
+      expect(buildResponseShape({ ...base, focus: { ...focus, allowedNewTopic: "urgent_scene_event" } })).toContain("urgent scene event");
+    });
+
+    it("omits the beat line for an ooc_answer planner verdict", () => {
+      expect(buildResponseShape({ ...base, focus: { ...focus, primaryResponse: "ooc_answer" } })).not.toContain("Current beat:");
+    });
+  });
 });
 
 describe("buildPuppetDeflection", () => {

@@ -1,11 +1,13 @@
 # Narrator prompt focus & proportionate reaction
 
-Status: **active** — Phase 1 (prompt wording + shape profiles + dev toggle) **shipped 2026-06-27**;
-Phase 2 (deterministic "response shape" line) **shipped 2026-06-27** — built ahead of the interim-eval
-gate on direct instruction, so the interim manual eval is now a *validation* pass over Phases 1+2
-rather than a go/no-go for building Phase 2. Phase 3 (planner), the interim manual golden-scenario
-eval, and the reasoning probes P1–P3 remain (gated per §Open questions / §Rollout plan). The
-behavioral eval harness is a separate follow-on task.
+Status: **active** — Phases 1, 2 & 3 all **shipped 2026-06-27**. Phase 1 (prompt wording + shape
+profiles + dev toggle); Phase 2 (deterministic "response shape" line); Phase 3 (narration-focus
+planner, folded into the intake brief as an optional `focus` sub-object — the preferred
+intake-schema-extension form, no new LLM call). Phases 2 & 3 were built ahead of the interim-eval
+gate on direct instruction, so the interim manual eval is now a *validation* pass over the whole
+prompt stack rather than a go/no-go for building them. **Remaining:** the interim manual
+golden-scenario eval, the reasoning probes P1–P3, and the optional character-chat Phase-2/3 analogues
+(all gated per §Open questions / §Rollout plan); the behavioral eval harness is a separate follow-on task.
 
 Goal: make narration stay on the player's current beat, react in proportion to
 what the player actually did, and stop doting. Concretely:
@@ -552,10 +554,28 @@ chat analogue could add a one-line "react in proportion to your current state" s
 *only when* state indicates neutral/low warmth — but Phase 1's CHAT_RULES change may
 suffice; gate on eval.
 
-### Phase 3 — optional structured pre-narration focus planner (later-phase only)
+### Phase 3 — structured pre-narration focus planner — **shipped 2026-06-27**
 
-**Only if Phase 1 + 2 are insufficient on the golden scenarios.** A small structured
-classifier, not prose. Clearly marked deferred.
+> **Shipped note (2026-06-27).** Built in the **preferred intake-schema-extension form** (not a
+> second LLM leg): an optional `focus` sub-object on `intentBriefSchema`
+> (`src/contracts/turns/intent-brief.ts`) with `primaryResponse` / `reactionScale` /
+> `allowedNewTopic` / `suggestedShape` (each leaf `.catch().default()`ed; the object **`.optional()`,
+> not `.default()`ed**, so its *absence* is the degrade sentinel). The intake agent emits it
+> (`prompts/intake.ts` — production spec + rule 7 + focus in examples A/D and a new establishing
+> example F). `buildResponseShape` (`scene.ts`) consumes it: finer beat verb (`PRIMARY_RESPONSE_BEAT`),
+> explicit new-topic license (`ALLOWED_NEW_TOPIC`), an optional `Shape:` line (`SUGGESTED_SHAPE_LINE` —
+> concise_exchange stays silent), and `reactionScale` (`FOCUS_REACTION_SCALE`) **only when there is no
+> authored band** — the deterministic band always wins. Absent `focus`, it falls back to the Phase-2
+> derivation. Pipeline passes `focus: intentBrief.focus`. No new agent leg, no DB migration (JSONB
+> `turns.intent_brief`, backward-compatible). Tests: schema (`intent-brief.test.ts`), prompt
+> (`intake.test.ts`), builder (`scene.test.ts` "with the Phase-3 narration-focus planner"). `pnpm
+> verify` green. The originally-specced `directTargets` field was **dropped** (redundant with
+> `addressedNpcs`, which already drives speaker focus) and the planner's `notes` (the brief's
+> top-level `notes` covers rationale). **Deferred:** the character-chat focus analogue.
+
+The form below describes the original spec (a separate `narrationFocusBriefSchema` was the fallback
+shape); we shipped the **intake-extension** variant it marks as preferred. A small structured
+classifier, not prose.
 
 - **Schema** `narrationFocusBriefSchema` (new, alongside `intent-brief.ts`),
   `.default()`-ed per field so parsed-empty is the degraded fallback (same convention
@@ -733,8 +753,8 @@ verification is the interim manual eval above. When built:
 4. **Phase 2 shape line** — **shipped 2026-06-27**. New `buildResponseShape` +
    `evaluatePrimaryReaction`/`PrimaryReaction` + `TurnContextInput.responseShape` + pipeline
    wiring + tests + `docs/prompts.md`.
-5. **Phase 3 planner** only if Phase 1–2 still insufficient on ≥2 narrators — preferring
-   the intake-schema-extension form over a new agent leg.
+5. **Phase 3 planner** — **shipped 2026-06-27** in the intake-schema-extension form (optional
+   `focus` sub-object on `IntentBrief`, consumed by `buildResponseShape`); no new agent leg.
 6. **Behavioral eval harness** — a **separate follow-on task** (its own roadmap line) once
    the prompt work is in, automating steps 2–3.
 

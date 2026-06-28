@@ -71,4 +71,36 @@ describe("intentBriefSchema", () => {
     expect(parsed.appointment?.timePhrase).toBe("5:30");
     expect(parsed.check?.stakes).toBe("high");
   });
+
+  it("leaves the narration-focus planner UNDEFINED when absent (the degrade sentinel)", () => {
+    // Unlike the rest of the brief, focus is .optional() not .default()ed: its
+    // absence is what tells buildResponseShape to use its Phase-2 derivation.
+    expect(emptyIntentBrief().focus).toBeUndefined();
+    expect(intentBriefSchema.parse({ actionType: "converse" }).focus).toBeUndefined();
+  });
+
+  it("fills focus defaults for a partial object and catches a bad leaf", () => {
+    const parsed = intentBriefSchema.parse({
+      focus: { primaryResponse: "answer_question", reactionScale: "nuclear" }, // bad enum
+    });
+    expect(parsed.focus).toEqual({
+      primaryResponse: "answer_question",
+      reactionScale: "none", // caught → default
+      allowedNewTopic: "none",
+      suggestedShape: "concise_exchange",
+    });
+  });
+
+  it("round-trips a fully-specified narration-focus planner", () => {
+    const parsed = intentBriefSchema.parse({
+      focus: {
+        primaryResponse: "transition_scene",
+        reactionScale: "strong",
+        allowedNewTopic: "urgent_scene_event",
+        suggestedShape: "scene_establishing",
+      },
+    });
+    expect(parsed.focus?.primaryResponse).toBe("transition_scene");
+    expect(parsed.focus?.suggestedShape).toBe("scene_establishing");
+  });
 });
