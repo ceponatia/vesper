@@ -41,7 +41,13 @@ deferral, cards-first). The avatar arc above consumes Mood's projection — the 
   planner) and the scored **eval harness** (`pnpm eval:narration`). What remains is **execution**:
   *run* the harness (live OpenRouter spend — the user's call) across Aion 2.0 / GLM 5.2 / Owl Alpha ×
   both profiles × reasoning settings to pick the default profile + decide each model's reasoning knob,
-  then the optional **character-chat focus analogue** (gated on those results).
+  **Runs 1 & 2 (2026-06-28) are done** — recorded in
+  [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md). Run 1 = the 108-cell
+  matrix (absolute judge, compressed to 4.4–5.0); Run 2 = a **pairwise re-judge** (`eval:narration:compare`,
+  Gemini 3.1 Pro) that breaks the compression. Sharp findings: profile is a **per-model split** (Aion→concise,
+  GLM→aggressive) ⇒ global-vs-per-lane tension; reasoning ⇒ Aion `effort:low`, GLM `low`, Owl `off`.
+  **Decisions still not ruled.** Remaining follow-ups: a self-consistency judge vote + the `--no-focus`
+  Phase-3 A/B (tooling ready). Then the optional **character-chat focus analogue** (gated on those results).
 - **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -80,6 +86,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character real age vs apparent age** —
+  [character-age-field.plan.md](character-age-field.plan.md), 2026-06-28. New free-text
+  `profile.age` (basic info) split from the visual `identity.apparent_age` attribute: the
+  **narrator** reads real age (`formatAge` — canonical facts + character-chat identity), the
+  **portrait studio** keeps apparent age, and **scene image generators drop it**
+  (`characterAppearanceSummary` skips it) so renders lean on the avatar reference. Wired through
+  editor, forge, fixtures + seed.
 - **Narrator prompt focus & proportionate reaction — behavioral eval harness** —
   [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-28. `pnpm eval:narration`
   (`scripts/eval/narration/`) — assembles **real** prompts (the shipped builders) for six golden

@@ -45,6 +45,33 @@ Env: `EVAL_JUDGE_MODEL` (default `z-ai/glm-5.2` — set to your strongest availa
 
 Results print as a table and write to `data/eval/narration/results.json`.
 
+## Pairwise / ranking comparison (sharper judge)
+
+The absolute 1–5 judge **compresses** (run 1 clustered at 4.4–5.0 — see
+`docs/developer-notes/narrator-prompt-focus.eval-results.md`). A *relative* judge that ranks
+candidates which differ on ONE axis discriminates far better. `compare.ts` does that over an
+**existing `results.json`** — it **re-judges the saved narrations, no regeneration**:
+
+```bash
+pnpm eval:narration:compare                       # axes profile,reasoning over results.json
+pnpm eval:narration:compare --axis profile        # just the profile decision
+pnpm eval:narration:compare --axis focus --vs data/eval/narration/results-nofocus.json
+pnpm eval:narration:compare --limit 2 --dry-run   # inspect the comparison groups, no judge calls
+```
+
+- **Controlled groups:** `--axis profile` groups by (scenario × model × reasoning) and ranks
+  `concise` vs `aggressive` within each group; `--axis reasoning` holds (scenario × model × profile)
+  and ranks the reasoning variants. Candidate order is shuffled (FNV-1a on the group key) so the same
+  value isn't always "A" — position-bias mitigation.
+- **`--axis focus`** pairs a focus-on `results.json` against a focus-off one (`--vs`, from a
+  `pnpm eval:narration --no-focus` run) by (scenario × model × profile × reasoning) — the Phase-3 A/B.
+- **Output:** per-axis **win-rate** (how often a value ranked #1), **Borda%** (full-ordering points),
+  and **per-dimension wins**, overall + per-model. Group verdicts write to `comparison.json`.
+- **Judge model:** set `EVAL_JUDGE_MODEL` to a **strong** model so it out-classes the cast it scores
+  — e.g. `EVAL_JUDGE_MODEL=google/gemini-3.1-pro-preview` (there is no `gemini-3.5-pro` slug). A strong
+  judge is usually a reasoning model, so the rank judge uses a 1500-token budget to avoid
+  reasoning-tokens-eat-the-output empties.
+
 ## Scope guard
 
 The harness **measures** — a low score is a signal to iterate the prompt wording, never a build

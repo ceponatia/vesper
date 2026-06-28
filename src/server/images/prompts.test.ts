@@ -632,6 +632,16 @@ describe("characterAppearanceSummary", () => {
       "Wing type: membranous",
     );
   });
+
+  it("omits apparent age — scene images lean on the avatar reference for how old a character looks", () => {
+    const summary = characterAppearanceSummary([
+      { id: "identity.apparent_age", value: "late_thirties", source: "base" },
+      { id: "hair.color", value: "red", source: "base" },
+    ]);
+    expect(summary).toContain("Hair color: red");
+    expect(summary).not.toContain("late thirties");
+    expect(summary).not.toContain("Apparent age");
+  });
 });
 
 describe("intimateSceneAppearance (exposure-gated)", () => {

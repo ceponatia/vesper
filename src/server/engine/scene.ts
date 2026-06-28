@@ -31,6 +31,7 @@ import { INTIMATE_ATTRIBUTE_CATEGORIES } from "@/contracts/body/locations";
 import { realizeBody, speciesLorePhrase } from "@/contracts/species";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
+import { formatAge } from "@/contracts/world/profile";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { interactionConceptById } from "@/contracts/personality/interactions";
@@ -697,15 +698,16 @@ export function buildWardrobeBlock(bundle: SceneBundleInput, opts?: { includeSen
 }
 
 /**
- * Identity-level truths the narrator must never contradict: display name,
- * apparent age (resolved attribute), and a 2–3 sentence bio excerpt.
+ * Identity-level truths the narrator must never contradict: display name, real
+ * `age` (the profile's free-text basic-info field — NOT the visual
+ * `identity.apparent_age` attribute, which is portrait-studio-only), and a 2–3
+ * sentence bio excerpt.
  */
 export function buildCanonicalFactsBlock(bundle: SceneBundleInput): string {
   const lines: string[] = [];
   for (const p of npcs(bundle)) {
-    const effective = resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays);
-    const age = effective.find((v) => v.id === "identity.apparent_age");
-    const agePhrase = typeof age?.value === "string" ? ` — appears ${humanize(age.value)}` : "";
+    const age = formatAge(p.snapshot.age);
+    const agePhrase = age ? ` — ${age}` : "";
     // Species is an identity truth ("who they ARE"); surface it (label + any
     // authored cultural lore) for non-human casts so the narrator knows the
     // character is an elf / succubus. Generic visual looks go to the image
@@ -888,6 +890,7 @@ export function buildGlanceImpressions(
     });
     const phrases: string[] = [];
     for (const value of effective) {
+      if (value.id === "identity.apparent_age") continue; // visual age is portrait-studio-only; the narrator gets real `age` in canonical facts
       const def = attributeRegistry.byId(value.id);
       if (!def) continue;
       if (!realizedBody.isAttributeApplicable(def)) continue;

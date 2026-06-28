@@ -184,6 +184,14 @@ export function CharacterEditor({
               )}
             </Field>
           ) : null}
+          <Field
+            label="Age"
+            hint="Real/chronological age — a number, or e.g. “ancient” / “312 years”. Distinct from the look (Attributes → Apparent age)."
+          >
+            {(id) => (
+              <Input id={id} value={draft.profile.age} onChange={(e) => patchProfile({ age: e.target.value })} />
+            )}
+          </Field>
           <Field label="Bio" className="sm:col-span-2">
             {(id) => (
               <Textarea id={id} rows={5} value={draft.profile.bio} onChange={(e) => patchProfile({ bio: e.target.value })} />

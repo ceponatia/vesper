@@ -179,6 +179,8 @@ const profileSectionSchema = z.object({
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().default(""),
+  /** Real/chronological age, free text — the narrator's `profile.age`, distinct from the visual `identity.apparent_age` attribute. */
+  age: z.string().default(""),
   aliases: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
   /** Disposition tags (personality §6) — social-reaction labels, distinct from the library tags above. */
@@ -283,7 +285,9 @@ function profilePrompt(context: CharacterForgeContext): string {
     context.prompt,
     "",
     "Produce: a display name, a 2-4 sentence bio, a personality sketch (quirks, humor, flaws),",
-    "voice notes (how they sound and speak), any aliases or nicknames, and 3-6 lowercase library tags",
+    "voice notes (how they sound and speak), their real/chronological age (a plain number when human-scaled,",
+    "or a phrase like \"ancient\" / \"over 300 years\" for long-lived beings — this is their TRUE age, which may",
+    "differ from how old they look), any aliases or nicknames, and 3-6 lowercase library tags",
     "(for search/categorization).",
     "",
     "Then infer the character's social DISPOSITION from the personality (used by the game, not just prose):",
@@ -323,6 +327,8 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
   };
   const voice = section.voice.trim();
   if (voice) profile.voice = voice;
+  const age = section.age.trim();
+  if (age) profile.age = age;
   const species = speciesForForgeContext(context);
   if (species) {
     const heritage = heritageForForgeContext(context);
@@ -993,6 +999,7 @@ export function demoCharacterProfileSection(): ProfileSection {
     personality:
       "Dry, watchful, unhurried. Keeps a soft spot for green deckhands and a colder shelf for smooth talkers. Allergic to paperwork, flattery, and being thanked.",
     voice: "Low and gravelled; clipped harbor slang; says less than she knows and means more than she says.",
+    age: "52",
     aliases: ["Voss", "the harbor-master"],
     tags: ["harbor", "gruff", "mentor", "working-class"],
     dispositionTags: ["stoic", "proud", "gentle"],

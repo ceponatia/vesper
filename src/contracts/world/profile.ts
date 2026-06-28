@@ -27,6 +27,16 @@ export const characterProfileSchema = z.object({
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().optional(),
+  /**
+   * The character's real / chronological age, free text — a basic-info field the
+   * **narrator** reads, deliberately separate from the visual
+   * `identity.apparent_age` attribute the **portrait studio** reads (the two
+   * aren't always aligned: a 500-year-old who reads late-thirties). Free text so
+   * fantasy ages ("ancient", "312 years", "immortal") sit alongside a plain
+   * number; `formatAge` reads a bare number as years. Default "" ⇒ old rows parse
+   * unchanged and surface no age line (degraded-safe).
+   */
+  age: z.string().default(""),
   speciesId: z.string().default("human"),
   /**
    * Optional heritage within the species (e.g. "dark_elf" inside "elf") — a pure
@@ -101,6 +111,19 @@ export type CharacterProfile = z.infer<typeof characterProfileSchema>;
 
 export function emptyCharacterProfile(): CharacterProfile {
   return characterProfileSchema.parse({});
+}
+
+/**
+ * Present a character's real `age` (free text) for the narrator. A bare number
+ * is read as years ("312" → "312 years old"); any phrasing the author wrote
+ * ("ancient", "centuries old", "immortal", "312 years") is used verbatim. Empty
+ * for a blank age. Shared by every narrator surface so the phrasing stays
+ * consistent (engine/scene.ts canonical facts + character-chat identity block).
+ */
+export function formatAge(age: string): string {
+  const trimmed = age.trim();
+  if (!trimmed) return "";
+  return /^\d+$/.test(trimmed) ? `${trimmed} years old` : trimmed;
 }
 
 export const worldStyleSchema = z.object({

@@ -4,7 +4,7 @@ import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { crossedThresholdHints, deriveMoodDescriptor } from "@/contracts/meters/registry";
 import { stageForValue } from "@/contracts/relationships/stages";
 import { realizeBody, speciesLorePhrase } from "@/contracts/species";
-import type { CharacterProfile } from "@/contracts/world/profile";
+import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
@@ -184,8 +184,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
   });
 
   const resolved = resolveAttributes(profile.attributes, []);
-  const age = resolved.find((v) => v.id === "identity.apparent_age");
-  const agePhrase = typeof age?.value === "string" ? humanize(age.value) : "";
+  const agePhrase = formatAge(profile.age); // the character's real age (basic info) — NOT the portrait-studio-only apparent age
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
 
   // Attribute lines + a deduped phrasing-guidance set (same shape as
@@ -194,7 +193,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
   const attributeLines: string[] = [];
   const hints = new Set<string>();
   for (const value of resolved) {
-    if (value.id === "identity.apparent_age") continue; // surfaced in the identity block
+    if (value.id === "identity.apparent_age") continue; // visual age is portrait-studio-only; the narrator gets real `age` (identity block)
     const def = attributeRegistry.byId(value.id);
     if (!def) continue; // unknown vocabulary — never leak a raw id
     if (!realizedBody.isAttributeApplicable(def)) continue;
@@ -215,7 +214,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     playerName
       ? `You are ${displayName}, speaking with ${playerName} in a one-on-one conversation.`
       : `You are ${displayName}, speaking with the user in a one-on-one conversation.`,
-    agePhrase ? `You appear ${agePhrase}.` : "",
+    agePhrase ? `You are ${agePhrase}.` : "",
     species ? `Species: ${species}.` : "",
   ]
     .filter(Boolean)

@@ -4,9 +4,10 @@
 
 1. **Characters → Forge**, describe the person in prose ("a weary harbor-master in her forties, dry humor, bad knee…"). Heritage, profession, age and era cues all feed the attribute inference — the richer the prompt, the better the defaults.
 2. The forge drafts three sections independently — profile, attributes, outfit — and each has its own **Regenerate** button. Nothing is saved yet; abandoning the page writes nothing.
-3. **Attributes**: core visuals (hair color, eye color, skin tone, height, frame, apparent age) are always filled — inferred from the prompt when possible, seeded defaults otherwise. Everything is editable in the attribute picker; AI-filled values carry the `AI` chip until you touch them.
-4. **Outfit**: garments that match items already in your library by name link to them; the rest appear under "Suggested new items".
-5. **Save character**. Suggested outfit items become real library items automatically (tagged `suggested`, reused by name if one already exists) and land in the character's default outfit. Nothing silently disappears — anything dropped during save shows up as a notice.
+3. **Profile** also carries an **Age** field (basic info) — the character's *real* age, a number or free phrase ("ancient", "312 years"). It is deliberately separate from the **Apparent age** attribute (how old they *look*): the narrator reads the real age, while the portrait studio reads apparent age, so a centuries-old being can still read late-thirties on the page.
+4. **Attributes**: core visuals (hair color, eye color, skin tone, height, frame, apparent age) are always filled — inferred from the prompt when possible, seeded defaults otherwise. Everything is editable in the attribute picker; AI-filled values carry the `AI` chip until you touch them.
+5. **Outfit**: garments that match items already in your library by name link to them; the rest appear under "Suggested new items".
+6. **Save character**. Suggested outfit items become real library items automatically (tagged `suggested`, reused by name if one already exists) and land in the character's default outfit. Nothing silently disappears — anything dropped during save shows up as a notice.
 
 ## Portraits
 

@@ -63,6 +63,8 @@ export interface SeedCharacter {
   bio: string;
   personality: string;
   voice: string;
+  /** Real/chronological age (free text) — the narrator's `profile.age`, distinct from the visual `identity.apparent_age` attribute. */
+  age: string;
   aliases: string[];
   attributes: AttributeValue[];
   /** SeedItem keys (clothing) worn at session spawn. */
@@ -499,6 +501,7 @@ const maya: SeedCharacter = {
   personality:
     "Warm and wry, generous with teasing and stingy with complaints. Reads weather and people the same way: quietly, constantly, and a half-step ahead. Deflects anything tender with a joke, then circles back to it later when she's ready. Fiercely loyal to the harbor's people; allergic to being fussed over.",
   voice: "Low and unhurried, teasing delivered straight-faced; her coastal lilt broadens when she laughs or swears.",
+  age: "38",
   aliases: ["Maya Brennan", "Captain Brennan", "the pilot"],
   attributes: [
     base("identity.gender", "female"),
@@ -578,6 +581,7 @@ const jonas: SeedCharacter = {
   personality:
     "Quiet and exact, with a long fuse and a dry, surprising wit that arrives about once an evening. Listens more than he speaks; remembers everything. Kindness expressed through small repairs — a sticking door eased, a chair re-glued — rather than words. Carries old grief gently, like something fragile he's decided to keep.",
   voice: "Low and soft-spoken, words placed carefully with pauses you learn to wait through.",
+  age: "54",
   aliases: ["Jonas Keller", "the luthier"],
   attributes: [
     base("identity.gender", "male"),

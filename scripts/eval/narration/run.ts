@@ -2,11 +2,11 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { streamText, type JSONValue, type ModelMessage } from "ai";
-import { z } from "zod";
-import { generateChecked, isDemoMode, narrativeProviderOptions, openrouter, routedProvider } from "../../../src/server/ai";
+import { isDemoMode, narrativeProviderOptions, openrouter, routedProvider } from "../../../src/server/ai";
 import type { NarrationShapeId } from "../../../src/server/engine/prompts/constants";
 import { parseSegments } from "../../../src/server/engine/segmenter";
 import { EVAL_SCENARIOS, type EvalScenario } from "./fixtures";
+import { judgeAbsolute, judgeAvg, type Judgement } from "./judge";
 
 /**
  * Behavioral eval harness for narration (narrator-prompt-focus.plan.md §Behavioral
@@ -28,7 +28,6 @@ import { EVAL_SCENARIOS, type EvalScenario } from "./fixtures";
  */
 
 const OUT = process.env.EVAL_OUT || "data/eval/narration";
-const JUDGE_MODEL = process.env.EVAL_JUDGE_MODEL || "z-ai/glm-5.2";
 const NARRATIVE_TEMPERATURE = 0.8;
 
 const MODEL_ALIASES: Record<string, string> = {
@@ -135,54 +134,6 @@ async function streamNarration(
   return { text, metrics: { paragraphs, segments: segments.length, distinctSpeakers, outputTokens, ttftMs, totalMs, provider: routedProvider(meta) } };
 }
 
-const judgeSchema = z.object({
-  answeredFirst: z.number().int().min(1).max(5).catch(3),
-  proportionate: z.number().int().min(1).max(5).catch(3),
-  onBeat: z.number().int().min(1).max(5).catch(3),
-  noUnrequestedLogistics: z.number().int().min(1).max(5).catch(3),
-  voice: z.number().int().min(1).max(5).catch(3),
-  note: z.string().catch(""),
-});
-type Judgement = z.infer<typeof judgeSchema>;
-
-const JUDGE_SYSTEM =
-  "You are a strict evaluator of interactive-fiction narration. Score the narration 1–5 on each rubric dimension (1 = fails badly, 5 = excellent). " +
-  "Be harsh about over-rewarding/doting and topic sprawl. Output only the structured scores and a one-line note.";
-
-function judgePrompt(scenario: EvalScenario, narration: string): string {
-  return [
-    `Scenario: ${scenario.title}`,
-    `Player input: ${scenario.playerInput}`,
-    `What a good response does: ${scenario.expectation}`,
-    scenario.authoredReaction ? `Authored reaction verdict (proportionality must match this, not exceed it):\n${scenario.authoredReaction}` : "",
-    "",
-    "Rubric (1–5 each):",
-    "- answeredFirst: does the opening directly address the player's input before any new business?",
-    "- proportionate: is the emotional reaction proportionate (not doting/over-rewarding ordinary input)?",
-    "- onBeat: does it stay on the player's beat without unrelated topic sprawl?",
-    "- noUnrequestedLogistics: free of unrequested errands/logistics/thread-reminder dumps?",
-    "- voice: distinct, in-character, vivid prose?",
-    "",
-    "Narration to score:",
-    narration,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-async function judge(scenario: EvalScenario, narration: string): Promise<Judgement | null> {
-  const r = await generateChecked<Judgement>({
-    schema: judgeSchema,
-    system: JUDGE_SYSTEM,
-    prompt: judgePrompt(scenario, narration),
-    modelId: JUDGE_MODEL,
-    temperature: 0,
-    maxOutputTokens: 500,
-    code: "eval.judge",
-  });
-  return r.value;
-}
-
 interface ResultRow {
   scenario: string;
   lane: string;
@@ -194,9 +145,6 @@ interface ResultRow {
   narration: string;
   error?: string;
 }
-
-const judgeAvg = (j: Judgement): number =>
-  (j.answeredFirst + j.proportionate + j.onBeat + j.noUnrequestedLogistics + j.voice) / 5;
 
 function pad(value: string | number, width: number): string {
   return String(value).padEnd(width);
@@ -280,7 +228,7 @@ async function main(): Promise<void> {
     try {
       const prompt = scenario.build(profile, { focus: args.focus });
       const { text, metrics } = await streamNarration(model, reasoning, prompt, scenario.knownNames);
-      const judgement = args.judge ? await judge(scenario, text) : null;
+      const judgement = args.judge ? await judgeAbsolute(scenario, text) : null;
       rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, metrics, judgement, narration: text });
       process.stdout.write(` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}\n`);
     } catch (err) {
