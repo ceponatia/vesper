@@ -205,6 +205,10 @@ export async function runPostTurnAgents(
     threads: bundle.runtime.storyThreads.filter((t) => t.status === "open" || t.status === "cooling"),
     turnNumber: turn.number,
     presentNames,
+    // Present NPCs' standing trait bands so direction/notes fit their temperament (DIRECTOR_SYSTEM Rule 7).
+    presentDisposition: present
+      .filter((p) => !p.isUser)
+      .map((p) => ({ name: p.displayName, bands: dispositionBandSummary(p.snapshot.traits) })),
     // Off-screen NPCs the director may pre-position (the Cast-tab notion of "elsewhere").
     absentNpcs: bundle.participants
       .filter((p) => !p.isUser && p.locationId !== anchorLoc)

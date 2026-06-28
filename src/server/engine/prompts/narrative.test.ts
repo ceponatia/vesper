@@ -189,6 +189,13 @@ describe("buildStaticRulebook", () => {
     expect(buildStaticRulebook(rulebookInput())).toContain("so the world feels alive");
   });
 
+  it("carries the characterization rule tying disposition and age to behavior", () => {
+    const text = buildStaticRulebook(rulebookInput());
+    expect(text).toContain("Characterize from the blocks");
+    expect(text).toContain("age and life-stage shape diction");
+    expect(text).toContain("open up or deflect, lead or defer");
+  });
+
   it("introduces no hard length cap in either shape profile", () => {
     const cap = /\d+\s+(characters|tokens|words|lines|sentences|paragraphs)/;
     expect(buildStaticRulebook(rulebookInput({ narrationShape: "concise_immersive" }))).not.toMatch(cap);

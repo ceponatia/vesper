@@ -86,6 +86,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Personality enactment — sliders & age drive dialogue/action** —
+  [personality-enactment.plan.md](personality-enactment.plan.md), 2026-06-28. Made the authored
+  trait **sliders** (and the new real age) actually steer how characters talk and act: character-chat
+  now **surfaces the sliders at all** (it never did) as a binding Disposition block; the session
+  disposition block + a new Prose rule shift from "stay consistent" to **enact**; the **director**
+  agent gets present-character disposition so its next-turn steer fits temperament. Shared
+  `dispositionBands` renderer; age/life-stage characterization rule (the `character-age-field` follow-up).
 - **Character real age vs apparent age** —
   [character-age-field.plan.md](character-age-field.plan.md), 2026-06-28. New free-text
   `profile.age` (basic info) split from the visual `identity.apparent_age` attribute: the

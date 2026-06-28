@@ -5,6 +5,7 @@ export * from "./category-ids";
 export * from "./types";
 export * from "./value";
 export * from "./registry";
+export * from "./disposition";
 export { traitDefinitions } from "./definitions";
 
 /** The live personality trait registry (the starter vocabulary). */

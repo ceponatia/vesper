@@ -105,6 +105,7 @@ Rules:
 4. Resolve an investigation the moment its need is met — task finished, question answered, problem fixed; mundane completion counts as much as dramatic payoff. Never keep touching/developing a finished thread: an open thread re-enters every future turn's context and is otherwise raised again as if unsettled. Ongoing threads and long-running arcs still in motion stay open.
 5. One subject, one thread. Before proposing, scan the listed threads: if the beat belongs to an existing one, develop THAT thread — never open a near-duplicate (don't add "X's odd behavior" when "Investigating X" already exists).
 6. An absent NPC cannot be made present, relocated, or made to send a "come here"/location-claiming message through a directive — stage it. stageMovement is the only way to move an off-screen NPC, and the beat fires when they arrive, never the turn you stage it.
+7. Honor each present character's disposition (listed when set): characterNotes and directives must fit their temperament — a guarded character resists opening up, a dominant one takes the lead, a volatile one flares, a warm one softens readily. Never steer a character to act against their disposition without an earned, in-world cause.
 
 Example A — keep one thread warm, develop another with a real clue:
 {"sceneSummary":"Over tea, Maya lets slip her brother sailed for Tamis.","storySoFar":"Two days earning Maya's trust; tonight she named where her brother went.","characterNotes":["Maya is softening."],"directives":["Keep the pace slow."],"memoryQueries":["Maya's brother Tamis"],"exposure":{"appearance":"close","scent":"ambient","touch":"none"},"atmosphere":"warm","threadSignals":{"touch":[{"id":"th_innkeep","title":"Earning Maya's trust"}],"develop":[{"id":"th_brother","entry":"Maya let slip her brother sailed for Tamis.","entryKind":"evidence"}],"propose":[],"resolve":[]},"imageMoment":{"worthIt":false,"description":""}}
@@ -241,6 +242,12 @@ export interface DirectorPromptInput {
   threads: StoryThread[];
   turnNumber: number;
   presentNames: string[];
+  /**
+   * Present NPCs' standing trait bands ("Warmth: cold") so the director's
+   * characterNotes and directives fit each one's temperament (Rule 7). Empty /
+   * absent ⇒ no disposition block (unchanged behavior for a traitless cast).
+   */
+  presentDisposition?: Array<{ name: string; bands: string[] }>;
   /** Absent (off-screen) NPCs and where they currently are — candidates to pre-position. */
   absentNpcs: Array<{ name: string; locationName: string | null }>;
   /** All session location names, so a staged destination names a real place. */
@@ -261,9 +268,13 @@ export function buildDirectorPrompt(input: DirectorPromptInput): string {
   const staged = input.stagedIntents.map(
     (s) => `- [${s.id}] ${s.npcName} → ${s.destinationName}${s.reason ? ` (${s.reason})` : ""}`,
   );
+  const disposition = (input.presentDisposition ?? []).filter((p) => p.bands.length > 0);
   return [
     `Turn number: ${input.turnNumber}`,
     `Present characters: ${input.presentNames.join(", ") || "none"}`,
+    disposition.length
+      ? `Present characters' disposition (honor it in characterNotes and directives):\n${disposition.map((p) => `- ${p.name}: ${p.bands.join("; ")}`).join("\n")}`
+      : "",
     `Absent characters (off-screen — where they are now): ${
       input.absentNpcs.length ? input.absentNpcs.map((n) => `${n.name} (${n.locationName ?? "unknown"})`).join(", ") : "none"
     }`,
@@ -274,5 +285,7 @@ export function buildDirectorPrompt(input: DirectorPromptInput): string {
       input.priorBrief.characterNotes.join("; ") || "none"
     }\n- Exposure: appearance ${input.priorBrief.exposure.appearance}, scent ${input.priorBrief.exposure.scent}, touch ${input.priorBrief.exposure.touch}`,
     turnSection(input.playerInput, input.narration, input.author),
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
