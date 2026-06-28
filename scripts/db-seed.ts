@@ -182,6 +182,7 @@ async function create(tx: Tx, ownerId: string, fixture: SeedWorldFixture): Promi
         bio: c.bio,
         personality: c.personality,
         voice: c.voice,
+        age: c.age,
         speciesId: "human",
         bodyPlanId: "humanoid",
         attributes: c.attributes,

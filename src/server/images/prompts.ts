@@ -592,6 +592,11 @@ const APPEARANCE_SUMMARY_CHARS = 200;
  * Compact appearance phrase from resolved attribute values (registry labels,
  * unknown ids skipped) — describes a character textually in a render prompt
  * when they are not the identity reference.
+ *
+ * **Apparent age is omitted here** (it is in `buildAvatarPrompt`'s subject line):
+ * scene images lean on the character's portrait avatar as the source of how old
+ * they look, so re-stating an apparent-age band in the textual summary only risks
+ * fighting the reference image. Apparent age stays a portrait-studio concept.
  */
 export function characterAppearanceSummary(
   attributes: ReadonlyArray<AttributeValue>,
@@ -602,6 +607,7 @@ export function characterAppearanceSummary(
   const parts: string[] = [];
   const realizedBody = profile ? realizedBodyForProfile(profile) : undefined;
   for (const value of attributes) {
+    if (value.id === "identity.apparent_age") continue; // portrait-studio-only — scene images use the avatar reference for age
     const def = attributeRegistry.byId(value.id);
     if (!def) continue;
     if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;

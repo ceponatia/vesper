@@ -11,6 +11,7 @@ function profile(overrides: Partial<CharacterProfile> = {}): CharacterProfile {
     bio: "A harbor-town glassblower with salt in her hair.",
     personality: "Wry, guarded, fiercely loyal once you earn it.",
     voice: "Low and dry, with a coastal lilt.",
+    age: "29",
     attributes: [
       attr("identity.apparent_age", "late twenties"),
       attr("identity.gender", "female"),
@@ -26,7 +27,9 @@ describe("buildCharacterChatSystemPrompt", () => {
   it("embodies the named character and surfaces identity, personality, and voice", () => {
     const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
     expect(prompt).toContain("You are Mara");
-    expect(prompt).toContain("late twenties");
+    // Identity block carries the real age (profile field), not the apparent-age attribute.
+    expect(prompt).toContain("You are 29 years old.");
+    expect(prompt).not.toContain("late twenties");
     expect(prompt).toContain("Wry, guarded, fiercely loyal");
     expect(prompt).toContain("Low and dry, with a coastal lilt.");
     expect(prompt).toContain("A harbor-town glassblower");

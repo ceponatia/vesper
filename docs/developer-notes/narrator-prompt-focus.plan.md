@@ -715,6 +715,16 @@ logistics.
 > default) keep a first run cheap. **Never in `pnpm verify` / CI.** Verified end-to-end via `--dry-run`;
 > a live scored run is the user's call (spend). See `scripts/eval/narration/README.md`. The spec below
 > is the design it implements.
+>
+> **Runs 1 & 2 (2026-06-28) are recorded in [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md).**
+> **Run 1** = the full 108-cell matrix (3 models × 2 profiles × 3 reasoning × 6 scenarios) scored by the
+> absolute 1–5 judge — which *compressed* to 4.4–5.0, so its close calls are noise. **Run 2** = a
+> **pairwise/ranking re-judge** of run 1's saved narrations (`pnpm eval:narration:compare`,
+> `google/gemini-3.1-pro-preview`) that breaks the compression — **the sharper read.** Headlines:
+> the profile "tie" was hiding a **per-model split** (Aion→`concise_immersive` 83%, GLM→`aggressive_concise`
+> 71%, Owl→aggressive) ⇒ a global-vs-per-lane tension; reasoning ⇒ **Aion `effort:low`** (67%), **GLM `low`**,
+> **Owl `off`** (a reversal of run 1); P1 reconfirmed (Aion rejects `enabled:false`). **Decisions still not
+> ruled.** Open follow-ups: a self-consistency judge vote, and the `--no-focus` Phase-3 A/B (tooling ready).
 
 Sequenced **after** the prompt phases (decision 4, clarified 2026-06-27) — its **own
 build task with its own roadmap line**, not part of Phase 1. Until it existed,

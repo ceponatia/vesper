@@ -138,6 +138,7 @@ function makeBundle(over: Partial<SceneBundleInput> = {}): SceneBundleInput {
         locationId: "loc_kitchen",
         snapshot: profile({
           bio: "Maya grew up on the coast and fears deep water. She runs the inn alone. She bakes when nervous, which is often.",
+          age: "34",
           attributes: [
             { id: "identity.apparent_age", value: "mid_twenties", source: "creation" },
             { id: "hair.color", value: "auburn", source: "creation" },
@@ -287,10 +288,12 @@ describe("buildWardrobeBlock", () => {
 });
 
 describe("buildCanonicalFactsBlock", () => {
-  it("renders name, apparent age, and a bio excerpt per NPC", () => {
+  it("renders name, real age, and a bio excerpt per NPC", () => {
     const block = buildCanonicalFactsBlock(makeBundle());
     expect(block).toContain("## Canonical character facts (authoritative truth");
-    expect(block).toContain("- Maya — appears mid twenties.");
+    // The narrator gets the real `age` (profile field), never the visual apparent-age band.
+    expect(block).toContain("- Maya — 34 years old.");
+    expect(block).not.toContain("mid twenties");
     expect(block).toContain("Maya grew up on the coast and fears deep water.");
     expect(block).not.toContain("Brian");
   });
@@ -399,7 +402,8 @@ describe("buildGlanceImpressions", () => {
     const block = buildGlanceImpressions(makeBundle(), {});
     expect(block).toContain("- Maya (first encounter — full impression)");
     expect(block).toContain("hair color: auburn");
-    expect(block).toContain("apparent age: mid twenties");
+    // Apparent age is portrait-studio-only now — it never reaches the narrator's visual impression.
+    expect(block).not.toContain("apparent age");
     expect(block).toContain("Phrasing guidance:");
   });
 
