@@ -791,6 +791,9 @@ async function assemblePreTurn(
             primaryReaction,
             openThreadCount: openThreads.length,
             directiveCount: bundle.brief.directives.length,
+            // Phase-3 planner: richer steers when intake emitted it; undefined on the
+            // regex/degrade path ⇒ buildResponseShape uses its Phase-2 derivation.
+            focus: intentBrief.focus,
           })
         : "",
     sceneSnapshot: buildSceneSnapshot(bundle, promptLocationId, { forceFull }),

@@ -47,7 +47,7 @@ import {
 import { bandForValue, INTIMATE_TRAIT_CATEGORY, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import type { IntentBrief } from "@/contracts/turns/intent-brief";
+import type { IntentBrief, NarrationFocus } from "@/contracts/turns/intent-brief";
 import { MAX_NPC_PAIR_AWARENESS_LINES } from "./constants";
 import type { SceneIntent } from "./intent";
 
@@ -1257,7 +1257,8 @@ const STRONG_REACTION_MAGNITUDE = 2;
 // actionTypes whose turn has an in-place "respond first, stay on the beat" shape.
 // `move` is owned by the movement rules + turn digest, `meta` by the OOC heading,
 // and `other` is the degraded/unclassified default — none get a (possibly wrong)
-// current-beat line; reaction-scale and speaker-focus still apply to them.
+// current-beat line; reaction-scale and speaker-focus still apply to them. Used only
+// on the Phase-2 derivation path (no planner `focus`).
 const RESPOND_IN_PLACE_ACTIONS: ReadonlySet<IntentBrief["actionType"]> = new Set([
   "converse",
   "comms",
@@ -1269,6 +1270,37 @@ const RESPOND_IN_PLACE_ACTIONS: ReadonlySet<IntentBrief["actionType"]> = new Set
   "rest",
 ]);
 
+// Phase-3 narration-focus (intent-brief.focus) → prose steers. null ⇒ no line for
+// that case (ooc_answer has no in-scene beat; concise_exchange is the default form).
+const PRIMARY_RESPONSE_BEAT: Record<NarrationFocus["primaryResponse"], string | null> = {
+  converse: "respond to the player's input",
+  answer_question: "answer the player's question directly",
+  resolve_action: "resolve the action the player took and show its outcome",
+  react_emotionally: "react to the emotional beat the player landed",
+  transition_scene: "carry the scene transition the player set in motion",
+  ooc_answer: null,
+};
+
+const ALLOWED_NEW_TOPIC: Record<NarrationFocus["allowedNewTopic"], string> = {
+  none: "don't introduce an unrelated new topic this turn",
+  one_open_thread: "you may pick up one open thread only if it follows naturally",
+  urgent_scene_event: "a new topic is warranted — an urgent scene event is in play",
+};
+
+const FOCUS_REACTION_SCALE: Record<NarrationFocus["reactionScale"], string> = {
+  none: "ordinary — no special emotional reaction is owed; do not escalate affection, gratitude, or fluster.",
+  small: "small — a light, in-character reaction; do not escalate to affection or doting.",
+  moderate: "moderate — a genuine but measured reaction is warranted.",
+  strong: "strong — a real emotional reaction is warranted this turn.",
+};
+
+const SUGGESTED_SHAPE_LINE: Record<NarrationFocus["suggestedShape"], string | null> = {
+  concise_exchange: null,
+  scene_establishing: "an establishing beat — fuller scene-setting is warranted.",
+  multi_party: "a multi-character beat — several present characters are involved.",
+  action_resolution: "action resolution — show the action's outcome concretely.",
+};
+
 export interface ResponseShapeInput {
   /** intake's coarse action classification (intent-brief.actionType). */
   actionType: IntentBrief["actionType"];
@@ -1278,42 +1310,66 @@ export interface ResponseShapeInput {
   presentNpcNames: readonly string[];
   /** Shared primary-reaction verdict (evaluatePrimaryReaction) — null ⇒ no act/target/match. */
   primaryReaction: PrimaryReaction | null;
-  /** Open story threads surfaced this turn — gates whether a new topic is licensed. */
+  /** Open story threads surfaced this turn — gates whether a new topic is licensed (Phase-2 path). */
   openThreadCount: number;
-  /** Direction lines this turn — also license a new topic. */
+  /** Direction lines this turn — also license a new topic (Phase-2 path). */
   directiveCount: number;
+  /**
+   * Phase-3 narration-focus planner (intent-brief.focus). When present, it supplies
+   * the richer current-beat / new-topic / shape / reaction-scale signals; when absent
+   * (regex fallback / any degrade), the builder falls back to the Phase-2 derivation.
+   */
+  focus?: NarrationFocus;
 }
 
 /**
- * Deterministic "response shape" line (narrator-prompt-focus.plan.md §Phase 2) — a
- * volatile, restatement-only sibling of `buildTurnDigest`. It turns data already in
- * the turn (intake's actionType / addressedNpcs, the present roster, the shared
- * primary-reaction verdict, open-thread + Direction counts) into terse steers: stay
- * on the player's beat, react in proportion, and don't voice a chorus. It invents
- * nothing — every line restates a block the narrator already has — and renders ""
- * when nothing is constrained, exactly like `buildTurnDigest`.
+ * The "## Response shape" steer block (narrator-prompt-focus.plan.md §Phase 2/3) — a
+ * volatile, restatement-only sibling of `buildTurnDigest`: stay on the player's beat,
+ * shape the turn, react in proportion, and don't voice a chorus. It invents nothing
+ * (every line restates data already in the turn) and renders "" when nothing is
+ * constrained, like `buildTurnDigest`.
+ *
+ * Two signal tiers: the §Phase-3 `focus` planner (the intake agent's read) supplies
+ * the finer beat/topic/shape/reaction steers when present; absent it, the builder
+ * derives the same lines deterministically from `actionType` / open-thread + Direction
+ * counts (§Phase 2). The **authored reaction band always wins** over the planner's
+ * `reactionScale` — it's authoritative and the "## Reaction" line plays it.
  */
 export function buildResponseShape(input: ResponseShapeInput): string {
+  const { focus } = input;
   const lines: string[] = [];
 
-  // Current beat — respond first; a new topic is licensed only by a Direction or an
-  // open thread (otherwise explicitly forbidden). Skipped for move/meta/other.
-  if (RESPOND_IN_PLACE_ACTIONS.has(input.actionType)) {
-    const focus = input.actionType === "observe" ? "answer what the player is examining" : "respond to the player's input";
+  // Current beat — respond first; a new topic is licensed only as stated. The planner
+  // gives a finer verb + topic license; absent it, derive from actionType + whether a
+  // Direction / open thread is present (Phase-2 path).
+  if (focus) {
+    const beat = PRIMARY_RESPONSE_BEAT[focus.primaryResponse];
+    if (beat) lines.push(`- Current beat: ${beat} and keep the turn's focus there; ${ALLOWED_NEW_TOPIC[focus.allowedNewTopic]}.`);
+  } else if (RESPOND_IN_PLACE_ACTIONS.has(input.actionType)) {
+    const beat = input.actionType === "observe" ? "answer what the player is examining" : "respond to the player's input";
     const newTopic =
       input.directiveCount > 0 || input.openThreadCount > 0
         ? "open a new topic only if a Direction or open thread calls for it"
         : "don't introduce an unrelated new topic this turn";
-    lines.push(`- Current beat: ${focus} and keep the turn's focus there; ${newTopic}.`);
+    lines.push(`- Current beat: ${beat} and keep the turn's focus there; ${newTopic}.`);
   }
 
-  // Reaction scale — the ABSENCE of a strong band is itself the instruction
-  // (Phase 1 rule 7 in the abstract; here as a concrete per-turn line). A strong
-  // band emits nothing: the "## Reaction" line already states it.
-  if (!input.primaryReaction) {
-    lines.push("- Reaction scale: ordinary — no special emotional reaction is owed; do not escalate affection, gratitude, or fluster.");
-  } else if (input.primaryReaction.evaluated.magnitude < STRONG_REACTION_MAGNITUDE) {
-    lines.push('- Reaction scale: small — keep the reaction light and proportionate; play the "## Reaction" line, do not amplify it.');
+  // Shape — Phase-3 only; the per-turn analogue of the global shape profile. Emitted
+  // only for the expansion shapes (concise_exchange is the default, so it says nothing).
+  if (focus) {
+    const shape = SUGGESTED_SHAPE_LINE[focus.suggestedShape];
+    if (shape) lines.push(`- Shape: ${shape}`);
+  }
+
+  // Reaction scale — the authored band ALWAYS wins (authoritative; the "## Reaction"
+  // line plays it): a strong band says nothing here (defer to it), a weak band → "small".
+  // With no band, use the planner's read; with neither, "ordinary" (the no-signal default).
+  if (input.primaryReaction) {
+    if (input.primaryReaction.evaluated.magnitude < STRONG_REACTION_MAGNITUDE) {
+      lines.push('- Reaction scale: small — keep the reaction light and proportionate; play the "## Reaction" line, do not amplify it.');
+    }
+  } else {
+    lines.push(`- Reaction scale: ${FOCUS_REACTION_SCALE[focus?.reactionScale ?? "none"]}`);
   }
 
   // Speaker focus — only addressed-and-present characters owe an answer; others stay

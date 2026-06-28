@@ -34,14 +34,14 @@ deferral, cards-first). The avatar arc above consumes Mood's projection — the 
 
 ## Next (queued)
 
-- **Narrator prompt focus & proportionate reaction — Phase 3+** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) (active; **Phases 1 & 2 shipped
-  2026-06-27**, see Shipped). Prompt wording + shape profiles + dev toggle (Phase 1) and the
-  deterministic `buildResponseShape` line (Phase 2) are in; what remains: the **interim manual
-  golden-scenario eval** (now a validation pass over Phases 1+2 + default-profile pick) + reasoning
-  probes P1–P3 (Aion 2.0 / GLM 5.2 / Owl Alpha, by hand — knobs stay model-default until a probe
-  shows a win); then, only if eval still shows residual sprawl/doting, **Phase 3**'s structured
-  focus planner (gated, preferring the intake-schema-extension form). A scored **behavioral eval
+- **Narrator prompt focus & proportionate reaction — eval & probes** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) (active; **Phases 1, 2 & 3 all
+  shipped 2026-06-27**, see Shipped). All three prompt phases are in (shape profiles + dev toggle,
+  the deterministic `buildResponseShape` line, and the intake-folded narration-focus planner); what
+  remains is **verification**, not building: the **interim manual golden-scenario eval** (now a
+  validation pass over the whole prompt stack + default-profile pick) + reasoning probes P1–P3
+  (Aion 2.0 / GLM 5.2 / Owl Alpha, by hand — knobs stay model-default until a probe shows a win),
+  plus the optional **character-chat focus analogue** (gate on eval). A scored **behavioral eval
   harness** follows as its own task.
 - **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
@@ -81,6 +81,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Narrator prompt focus & proportionate reaction — Phase 3** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-27. The structured
+  narration-focus planner, built in the **preferred intake-schema-extension form** (no new LLM
+  leg): an optional `focus` sub-object on `IntentBrief` (`primaryResponse` / `reactionScale` /
+  `allowedNewTopic` / `suggestedShape`) the intake agent emits, consumed by `buildResponseShape` to
+  enrich the "## Response shape" steers — finer beat verb, explicit new-topic license, an optional
+  `Shape:` line. `.optional()` (absent ⇒ deterministic Phase-2 derivation); the **authored reaction
+  band always overrides** the planner's `reactionScale`. Built ahead of the interim-eval gate on
+  direct instruction.
 - **Narrator prompt focus & proportionate reaction — Phase 2** —
   [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-27. Added the
   deterministic, restatement-only **"Response shape"** line to the turn context (right after the

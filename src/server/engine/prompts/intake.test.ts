@@ -59,4 +59,14 @@ describe("INTAKE_SYSTEM", () => {
   it("carries the untrusted-data notice", () => {
     expect(INTAKE_SYSTEM).toContain("untrusted DATA");
   });
+
+  it("instructs the Phase-3 narration-focus planner (focus) and shows it in an example", () => {
+    expect(INTAKE_SYSTEM).toContain("focus:");
+    expect(INTAKE_SYSTEM).toContain("primaryResponse");
+    expect(INTAKE_SYSTEM).toContain("reactionScale");
+    expect(INTAKE_SYSTEM).toContain("allowedNewTopic");
+    expect(INTAKE_SYSTEM).toContain("suggestedShape");
+    // at least one example carries a focus object
+    expect(INTAKE_SYSTEM).toContain('"focus":{"primaryResponse"');
+  });
 });

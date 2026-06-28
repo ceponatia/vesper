@@ -39,7 +39,7 @@ type TurnChunkEvent = { segmentIndex: number; speaker: string | null; content: s
 
 `turns/intent-brief.ts` is the **pre-narration** intake agent's output (phase-4 pre-narrator, [turn-engine.md](../turn-engine.md) §Intake agent) — the one agent contract produced *before* the narration exists.
 
-It is emitted on the **agent model** (`agentModelId()`, which defaults to the state model and is overridable per-world from the World tab — the same resolver the post-turn agents use), **not** the tool model (that backs only the image scene composer). Like the post-turn agents, it references entities **by display name** (present NPCs, items, locations), every field is `.default()`ed (so the empty brief is today's behavior), and it persists on the turn row (`turns.intent_brief` JSONB).
+It is emitted on the **agent model** (`agentModelId()`, which defaults to the state model and is overridable per-world from the World tab — the same resolver the post-turn agents use), **not** the tool model (that backs only the image scene composer). Like the post-turn agents, it references entities **by display name** (present NPCs, items, locations), every field is `.default()`ed (so the empty brief is today's behavior) — **except** the optional `focus` planner, whose *absence* is itself the degrade signal (see below) — and it persists on the turn row (`turns.intent_brief` JSONB).
 
 ```ts
 type IntentBrief = {
@@ -57,6 +57,12 @@ type IntentBrief = {
               destination?: string; coTravelTargets: string[] };   // movement-authority-spec consumes later
   appointment?: { withNpc?: string; location?: string; timePhrase?: string; reason: string };  // scheduled-arrivals-spec
   check?: { relevantAttributeIds: string[]; stakes: "low" | "med" | "high" };  // future attribute/skill-check resolution
+  // PHASE-3 narration-focus planner — OPTIONAL (absent ⇒ buildResponseShape uses its deterministic derivation):
+  focus?: { primaryResponse: "converse" | "answer_question" | "resolve_action"
+                           | "react_emotionally" | "transition_scene" | "ooc_answer";
+            reactionScale: "none" | "small" | "moderate" | "strong";          // authored band overrides this
+            allowedNewTopic: "none" | "one_open_thread" | "urgent_scene_event";
+            suggestedShape: "concise_exchange" | "scene_establishing" | "multi_party" | "action_resolution" };
   notes: string;                                                   // one-line rationale, diagnostics only
 };
 ```
@@ -67,6 +73,7 @@ type IntentBrief = {
 | Mirror | `lookTarget`, `touchTarget`, `smellTarget`, `tasteTarget`, `examineItem`, `enterLocation`, `addressedNpcs` | The regex-`SceneIntent` mirror — `sceneIntentFromBrief(brief)` is lossless. Targets are NPC display names; `examineItem` is an item name; `enterLocation` is a location phrase. |
 | Reaction seams | `socialActs`, `narratedNpcBehaviors` | `socialActs` are directed interaction concepts (`{ concept, target }`); `narratedNpcBehaviors` is the puppet-guardrail seam (`{ npc, concept?, summary? }`). Both empty on the regex fallback. |
 | Seams (persisted, not yet enforced) | `movement`, `appointment`, `check` | Written in v1; downstream resolvers are separate phase-4 specs. |
+| Narration focus (Phase 3) | `focus` | The intake agent's read of HOW to shape the response — `primaryResponse` / `reactionScale` / `allowedNewTopic` / `suggestedShape`. Consumed by `engine/scene.ts` `buildResponseShape` to enrich the "## Response shape" steers (narrator-prompt-focus §Phase 3). **`.optional()`, not `.default()`ed**: its absence (regex fallback / any degrade) tells `buildResponseShape` to fall back to its deterministic Phase-2 derivation. Never overrides deterministic authority — the **authored reaction band wins** over `reactionScale`. |
 | Diagnostics | `notes` | One-line rationale, diagnostics only. |
 
 **Conversion in both directions is lossless across the mirror fields:**
