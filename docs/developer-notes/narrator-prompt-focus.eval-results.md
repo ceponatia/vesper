@@ -2,18 +2,108 @@
 
 Record of the live runs of the behavioral eval harness
 ([narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) §Behavioral eval harness;
-`pnpm eval:narration`, `scripts/eval/narration/`). Captured **2026-06-28**. This is the
+`pnpm eval:narration`, `scripts/eval/narration/`). Captured **2026-06-28 / -29**. This is the
 data the plan's "remaining is execution" step was gated on — *picking the default shape
-profile* and *deciding each model's reasoning knob*. **No decisions are recorded as made
-here** — this is the evidence; the rulings will land in the plan when chosen.
+profile*, *deciding each model's reasoning knob*, and *confirming the Phase-3 focus planner
+earns its keep*.
 
 - **Run 1** — the full 108-cell matrix scored by the **absolute 1–5 judge** (GLM 5.2). It
   *compressed* to 4.4–5.0, so its small deltas are noise. Detailed below from §What was run.
 - **Run 2** — a **pairwise / ranking re-judge** of run 1's *saved* narrations (no
   regeneration) by a stronger judge (`google/gemini-3.1-pro-preview`), via
   `pnpm eval:narration:compare`. Relative ranking breaks the compression — this is **the
-  sharper read, and it supersedes run 1's close calls.** It is summarized first, immediately
-  below; run 1's tables remain underneath as the underlying per-cell data.
+  sharper read, and it supersedes run 1's close calls.** It ruled the profile + reasoning knobs.
+- **Run 3 (2026-06-29)** — the **Phase-3 focus A/B**: a fresh matched pair of generation runs
+  (focus-on vs `--no-focus`, same 18-cell matrix) re-judged pairwise by the same strong judge
+  (`compare --axis focus`). The one open eval question — *does the intake `focus` planner beat the
+  free deterministic Phase-2 derivation?* **Verdict: no measurable net win.** Summarized first,
+  immediately below; Runs 2 then 1 follow.
+
+---
+
+## Run 3 — Phase-3 focus A/B: the planner does **not** earn its keep (2026-06-29)
+
+**Question.** The Phase-3 narration-focus planner ships as an optional `focus` sub-object on the
+intake `IntentBrief` (no extra LLM leg — folded into intake), consumed by `buildResponseShape`.
+Both prior runs held focus **on** for every cell, so the planner's *marginal* value over the free,
+zero-cost Phase-2 deterministic derivation (`buildResponseShape` with `focus` absent) was never
+isolated. This run isolates it.
+
+**Method.** Two fresh generation runs over the **same** matrix — 6 golden scenarios × 3 narrators
+(aion / glm / owl) × `concise_immersive` × reasoning `default` (= the production-wired
+`NARRATOR_REASONING` knobs) — one with the planner (`results.json`), one with `--no-focus`
+(`results-nofocus.json`). Then `pnpm eval:narration:compare --axis focus --vs …`
+(`EVAL_JUDGE_MODEL=google/gemini-3.1-pro-preview`) re-judged the saved narrations pairwise,
+holding (scenario × model × profile × reasoning) fixed and ranking focus-on vs focus-off with
+shuffled labels (position-bias control). **17 paired live groups** (one cell — `owl/intimate`
+focus-on — died on a transient Stealth-provider 400; its pair was dropped).
+
+**A built-in negative control.** A dry-run diff showed the planner's output is **byte-identical to
+the free Phase-2 derivation on 2 of the 6 golden scenarios** — `hi-quiet-room` (its `focus` encodes
+exactly what the derivation already infers: converse / no reaction / no new topic / concise) and
+`chat-compliment` (the chat-lane fixture ignores `focus` entirely). On those scenarios focus-on and
+focus-off send the *same prompt*, so any win is pure sampling noise — a clean check on judge bias.
+
+### Result — a wash, and the controls confirm it's noise
+
+| value | groups | win-rate | Borda% | answeredFirst | proportionate | onBeat | noLogistics | voice |
+|---|---|---|---|---|---|---|---|---|
+| focus-on  | 17 | **53%** | 53% | **2** | 2 | 1 | 0 | **9** |
+| focus-off | 17 | 47% | 47% | 0 | 2 | **4** | **2** | 7 |
+
+| split | focus-on wins | focus-off wins | on-rate |
+|---|---|---|---|
+| **discriminating** scenarios (prompt actually differs) | 6 | 5 | **55%** |
+| **control** scenarios (byte-identical prompt — pure noise) | 3 | 3 | **50%** |
+
+Per-model win-rate (incl. controls): **aion 50/50**, **glm** focus-**off** 67% (4/6), **owl**
+focus-**on** 80% (4/5). On discriminating groups only, aion and glm are both **2–2**; owl leans on
+(2–1, n=3, one cell lost).
+
+### Read
+
+- **No net win.** 55% on the 11 discriminating groups vs a **50/50 control baseline** is within
+  noise for n=11 (one group flip ≈ 9pts). The planner does not beat the free derivation.
+- **Most verdicts turn on `voice`** (prose richness) — sampling noise between two temp-0.8
+  generations, *not* a planner-targeted dimension. Strip voice and it's dead even.
+- **The planner did not improve its own target dimensions.** `onBeat` went to focus-**off** 4–1
+  and `noUnrequestedLogistics` to focus-**off** 2–0 — the deterministic derivation was at least as
+  tight. The planner's *one* real edge is **`answeredFirst` (2–0)**: its sharper beat verb ("answer
+  the question directly" / "react to the emotional beat") genuinely helps answer-first ordering
+  (judge on `question/owl`: *"answers the question with its very first word, whereas [focus-off]
+  delays … with a paragraph of action"*; same on `intimate/aion`).
+- **A proportionality *risk*, not just a null.** On `compliment/glm` focus-**off** won
+  proportionality outright: the planner's `react_emotionally` beat verb nudged GLM to *over-state*
+  the reaction — judge: *"[focus-off] captures the 'plays it cool' directive through subtle action,
+  whereas [focus-on] explicitly tells the player she liked it and didn't hide it."* That is the exact
+  doting the whole plan targets — and here the planner made it **worse** on the chat default model.
+  (On `compliment/owl` it cut the other way, so this is a model-dependent hazard, not a constant.)
+
+### Ruling
+
+- **Do not build the deferred character-chat focus analogue.** That build was explicitly gated on
+  this A/B "confirming the planner earns its keep" — it does not, and on the chat default (GLM) the
+  planner actively hurt proportionality in the one emotional case. The gate fails closed.
+- **Keep the session-lane planner as-is for now** — it costs **no extra runtime LLM call** (folded
+  into intake, degrade-safe to the Phase-2 derivation), and its `answeredFirst` edge is real. Ripping
+  it out isn't urgent; expanding it isn't justified. Net: **leave it, don't grow it.**
+- **Follow-up (wording bug):** revisit the planner's `react_emotionally` / `reactionScale` →
+  `buildResponseShape` mapping so an emotional beat verb can't read as license to over-react; the
+  deterministic authored band must stay the proportionality authority (it already wins when present —
+  the leak here is on the *beat verb*, not the scale line).
+
+### Run 3 caveats
+
+- **Single judge, single pass; n=11 discriminating.** Same self-consistency-vote gap as Run 2;
+  the small sample means only large effects would show, and none did.
+- **One profile (`concise_immersive`) × one reasoning (`default`).** Focus was not crossed with
+  profile/reasoning — a planner benefit specific to `aggressive_concise` or a different knob is
+  untested (judged unlikely: the planner text is profile-independent).
+- **Provider-tail noise** (owl Stealth 400 + a 47s owl tail) cost one pair and jitters latency — the
+  quality verdict is unaffected (it's pairwise per matched cell).
+- Raw rows: `data/eval/narration/results.json` (focus-on) + `results-nofocus.json` (focus-off);
+  group verdicts: `comparison-focus.json`. Run 1/2 artifacts preserved as `results-run1.json` /
+  `comparison-run2.json`.
 
 ---
 
@@ -93,8 +183,9 @@ All four were ruled and landed in code (see narrator-prompt-focus.plan.md §Deci
 - **Single judge, single pass per group.** No self-consistency vote yet — a follow-up could
   run each group through the judge N times (or a second strong judge) and keep majority
   orderings. Position bias is mitigated (shuffled labels) but not eliminated.
-- **Focus (Phase 3) still not isolated** — `--axis focus` is built and ready but needs a
-  `pnpm eval:narration --no-focus` generation run to diff against (separate spend).
+- **Focus (Phase 3) now isolated — see Run 3 above (2026-06-29).** `--axis focus` was run against a
+  `--no-focus` generation pair; verdict: **the planner does not earn its keep** (53/47 wash, 50/50 on
+  the byte-identical controls).
 - Group verdicts (with the judge's per-group rationale) are in
   `data/eval/narration/comparison.json`.
 
@@ -264,9 +355,10 @@ the plan + code. Kept for the audit trail:
   (`pnpm eval:narration:compare`, `google/gemini-3.1-pro-preview`) broke the compression and
   surfaced the per-model profile split + the sharpened reasoning rulings. Remaining nicety: a
   **self-consistency vote** (N passes or a second strong judge per group).
-- **Isolate Phase 3.** Both runs held focus **on**, so the Phase-3 planner's contribution is
-  unmeasured. The `--axis focus` comparison is **built and ready**; it needs a
-  `pnpm eval:narration --no-focus` generation run to diff against (`compare --axis focus --vs`)
-  to confirm the planner earns its keep before relying on it.
+- **Isolate Phase 3 — DONE (Run 3 above, 2026-06-29).** The `--axis focus` A/B ran against a
+  fresh `--no-focus` pair. **The planner does not earn its keep** — 53/47 overall, 55/45 on the
+  discriminating scenarios vs a 50/50 control baseline, and it lost `onBeat`/`noUnrequestedLogistics`
+  to the free derivation. Ruling: **don't build the character-chat focus analogue;** keep (don't grow)
+  the zero-cost session planner. See Run 3 §Ruling.
 - **Provider-tail noise.** A few 70s+ cells (Owl/GLM) were provider hiccups, not model
   behavior — re-run flaky cells if their numbers matter to a decision.
