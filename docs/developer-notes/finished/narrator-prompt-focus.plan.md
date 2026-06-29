@@ -1,6 +1,14 @@
 # Narrator prompt focus & proportionate reaction
 
-Status: **active** — Phases 1, 2 & 3 all **shipped 2026-06-27**; the **behavioral eval harness shipped
+Status: **shipped — 2026-06-29.** Phases 1–3, the behavioral eval harness, the model rulings (per-lane
+default profile + per-model reasoning knobs), and the gated Phase-3 focus A/B (eval Run 3) are all done;
+the plan's goal — focused, proportionate narration without a length floor — is delivered. **Only leftover:**
+an optional self-consistency judge vote to harden Run 2's close calls — parked in
+[deferred.plan.md](deferred.plan.md) (a methodology nicety, not blocking; the rulings already stand on the
+data). The Phase-3 A/B ruled the planner does **not** earn its keep, so the character-chat focus analogue
+it gated is **ruled out** (not built). Archived to `finished/` 2026-06-29. (Historical detail below.)
+
+Phases 1, 2 & 3 all **shipped 2026-06-27**; the **behavioral eval harness shipped
 2026-06-28**; eval **Runs 1 & 2 + the model rulings shipped 2026-06-29** (the **per-lane default profile**
 and the **per-model reasoning knobs** — see §Decisions locked 1 and §Reasoning strategy below). Phase 1
 (prompt wording + shape profiles + dev toggle); Phase 2 (deterministic "response shape" line); Phase 3

@@ -7,6 +7,17 @@ leaves here (a one-line "graduated → …" tombstone is fine). This file is the
 anchor; supporting detail files named `<topic>.deferred.md` nest under it in the
 editor.
 
+## Narration eval: self-consistency judge vote
+
+_Raised 2026-06-29 (the one leftover when [finished/narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md) shipped)._
+The pairwise narration judge (`pnpm eval:narration:compare`) ranks each group **once**, with a
+single judge. Run 2's close calls (and Run 3's 53/47 focus wash) would be firmer with a
+**self-consistency vote**: rank each group N times (or with a second strong judge) and keep the
+majority ordering. Position bias is already mitigated (shuffled labels) but not eliminated. A
+methodology nicety, not blocking — the shipped rulings (per-lane profile, per-model reasoning,
+"focus planner doesn't earn its keep") already stand on the current data. Pick up only if a future
+ruling hinges on a margin this thin.
+
 ## Plan docs: drop hard phase numbers
 
 _Raised 2026-06-16._ The `phase-N` scheme bakes **both** a doc's identity and its
