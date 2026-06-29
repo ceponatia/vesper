@@ -642,6 +642,21 @@ describe("characterAppearanceSummary", () => {
     expect(summary).not.toContain("late thirties");
     expect(summary).not.toContain("Apparent age");
   });
+
+  it("never leaks an excludeFromPrompts attribute (identity.natal_sex) — gender still renders", () => {
+    const attrs: AttributeValue[] = [
+      { id: "identity.gender", value: "androgynous_born_female", source: "base" },
+      { id: "identity.natal_sex", value: "female", source: "base" },
+      { id: "hair.color", value: "red", source: "base" },
+    ];
+    const summary = characterAppearanceSummary(attrs);
+    expect(summary).toContain("androgynous born female"); // the gender variant does steer rendering
+    expect(summary).not.toContain("Natal sex");
+    // The avatar prompt (subject phrase) also carries gender but never natal sex.
+    const avatar = buildAvatarPrompt("Mira", profileWith({ attributes: attrs }), "realistic");
+    expect(avatar).toMatch(/Subject: Mira\b.*androgynous born female/);
+    expect(avatar).not.toContain("Natal sex");
+  });
 });
 
 describe("intimateSceneAppearance (exposure-gated)", () => {

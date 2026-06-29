@@ -100,6 +100,16 @@ export function AttributePicker({
   );
   const effectiveBodyFeatures = bodyFeatures ?? [...body.bodyFeatures];
 
+  // `identity.natal_sex` is a scaffold surfaced only for an androgynous / nonbinary
+  // presentation, where the gender label doesn't already imply sex at birth; for a
+  // plain female / male gender it's redundant, so it's hidden (docs/contracts/attributes.md
+  // §Natal sex, deferred.plan.md). A definition is shown when the realized body says it's
+  // applicable AND it clears this conditional gate.
+  const genderValue = byId.get("identity.gender")?.value;
+  const natalSexRelevant = typeof genderValue === "string" && /^(androgynous|nonbinary)_born_/.test(genderValue);
+  const isVisible = (def: AttributeDefinition): boolean =>
+    body.isAttributeApplicable(def) && (def.id !== "identity.natal_sex" || natalSexRelevant);
+
   const onSet = (id: string, value: AttributeValue["value"]) =>
     onChange(setAttribute(values, id as AttributeValue["id"], value));
   const onRemove = (id: string) => onChange(removeAttribute(values, id));
@@ -112,7 +122,7 @@ export function AttributePicker({
   // Applicable (present-on-this-body) definitions for a category, by id.
   const definitionsFor = (category: string): AttributeDefinition[] => {
     const group = attributeGroups.find((g) => g.category === category);
-    return group ? group.definitions.filter((d) => body.isAttributeApplicable(d)) : [];
+    return group ? group.definitions.filter((d) => isVisible(d)) : [];
   };
   const nestedGroupsFor = (categories: readonly string[]): NestedGroup[] =>
     categories
@@ -125,7 +135,7 @@ export function AttributePicker({
         // Each tab owns a disjoint slice of the vocabulary (see PERSONALITY_CATEGORIES).
         if (PERSONALITY_CATEGORY_SET.has(group.category) !== (scope === "personality")) return null;
         if (NESTED_CATEGORIES.has(group.category)) return null; // rendered nested below
-        const definitions = group.definitions.filter((d) => body.isAttributeApplicable(d));
+        const definitions = group.definitions.filter((d) => isVisible(d));
         const nested = group.category === "chest" ? nestedGroupsFor(NESTED_UNDER_CHEST) : [];
         if (definitions.length === 0 && nested.length === 0) return null; // gated off
         return (

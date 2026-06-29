@@ -7,9 +7,24 @@ export const identityGroup = defineAttributeGroup("identity", [
     kind: "physical",
     category: "identity",
     valueType: "enum",
-    description: "Presented gender.",
+    // The androgynous / nonbinary presentations are split by sex at birth
+    // (…_born_female / …_born_male) so image generation can render the right
+    // underlying build — an androgynous presentation reads very differently on a
+    // natal-female vs natal-male frame. Pick the variant matching the character's
+    // natal sex; female / male presentations imply it. (A structured
+    // `identity.natal_sex` scaffold below will take this over later — see
+    // deferred.plan.md §Natal sex.)
+    description:
+      "Presented gender. For an androgynous or nonbinary presentation, choose the variant matching the character's sex at birth.",
     mutability: "inherent",
-    allowedValues: ["female", "male", "androgynous", "nonbinary"],
+    allowedValues: [
+      "female",
+      "male",
+      "androgynous_born_female",
+      "androgynous_born_male",
+      "nonbinary_born_female",
+      "nonbinary_born_male",
+    ],
     aliases: ["gender"],
     identityAnchor: true,
     // coreVisual so the forge always fills it: gender is the seed input for the
@@ -17,11 +32,37 @@ export const identityGroup = defineAttributeGroup("identity", [
     // character with no intimate anatomy at all (was audit E1).
     coreVisual: true,
     // Creation-time body-config seed (not a lock — the editor stays
-    // authoritative). androgynous / nonbinary seed nothing; the author chooses.
+    // authoritative). The born-sex variants seed the matching natal anatomy by
+    // default (an androgynous-born-female still has natal female anatomy unless
+    // the author edits it); a flat-chested or transitioned look is one edit away.
     activatesGroups: {
       female: { intimateRegions: ["vulva", "breasts"] },
       male: { intimateRegions: ["penis", "testicles"] },
+      androgynous_born_female: { intimateRegions: ["vulva", "breasts"] },
+      androgynous_born_male: { intimateRegions: ["penis", "testicles"] },
+      nonbinary_born_female: { intimateRegions: ["vulva", "breasts"] },
+      nonbinary_born_male: { intimateRegions: ["penis", "testicles"] },
     },
+  },
+  {
+    id: "identity.natal_sex",
+    label: "Natal sex",
+    kind: "biological",
+    category: "identity",
+    valueType: "enum",
+    // A structured scaffold for the character's sex at birth, distinct from
+    // presented `gender`. Deliberately NOT wired into any generated prompt yet
+    // (`excludeFromPrompts`) — the gender `…_born_…` variant carries natal sex
+    // into image gen for now. The editor surfaces this only for an androgynous /
+    // nonbinary presentation (redundant for plain female / male). Planned
+    // expansion (intersex, trans handling, model-facing meaning of each gender,
+    // possibly superseding the gender born-variants): deferred.plan.md §Natal sex.
+    description:
+      "Sex assigned at birth (structured scaffold — not yet used in image or narrator prompts; the gender born-variant steers rendering for now).",
+    mutability: "inherent",
+    allowedValues: ["female", "male"],
+    aliases: ["natal sex", "birth sex", "sex at birth", "assigned sex"],
+    excludeFromPrompts: true,
   },
   {
     id: "identity.apparent_age",

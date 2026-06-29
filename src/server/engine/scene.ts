@@ -884,6 +884,7 @@ export function buildGlanceImpressions(
       if (value.id === "identity.apparent_age") continue; // visual age is portrait-studio-only; the narrator gets real `age` in canonical facts
       const def = attributeRegistry.byId(value.id);
       if (!def) continue;
+      if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
       if (!realizedBody.isAttributeApplicable(def)) continue;
       if (!intimateAttrAllowed(def, exposure)) continue; // intimate detail only when the exposure mask earns it
       const phrase = attributePhrase(def, value.value);

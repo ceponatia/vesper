@@ -125,7 +125,7 @@ The starter set is roughly 50 attributes. (Expansion toward aionchat's per-anato
 
 | Category group | Attributes |
 | --- | --- |
-| identity | gender, apparent_age, heritage |
+| identity | gender, natal_sex, apparent_age, heritage |
 | build | height, frame, musculature, weight_presentation |
 | skin | tone, undertone, texture, markings |
 | hair | color, length, texture, style |
@@ -145,6 +145,8 @@ The starter set is roughly 50 attributes. (Expansion toward aionchat's per-anato
 A few notes on this vocabulary:
 
 - **Identity is free text where it must be.** `gender`, `apparent_age`, and `heritage` are all flagged `identityAnchor`. `heritage` is free text because real-world ethnicities and fantasy ancestries can't share a closed list. Structural **species** is *not* an attribute — it's `CharacterProfile.speciesId` ([body.md](body.md)).
+- **`gender` encodes natal sex for ambiguous presentations.** The androgynous and nonbinary presentations are split by sex at birth — `androgynous_born_female` / `androgynous_born_male` / `nonbinary_born_female` / `nonbinary_born_male` (alongside plain `female` / `male`) — so image generation renders the right underlying build (an androgynous look reads very differently on a natal-female vs natal-male frame), and so each born-variant seeds the matching natal anatomy via `activatesGroups` (overridable in the editor). The value humanizes straight into the image subject phrase ("androgynous born female").
+- **`natal_sex` is a forward-looking scaffold** (`identity.natal_sex`, enum `female`/`male`): a structured sex-at-birth field, distinct from presented `gender`. It is flagged **`excludeFromPrompts`** — stored, authored, and editable, but **not yet surfaced in any generated prompt** (image, narrator, or chat); the gender born-variant carries natal sex into rendering for now. The editor surfaces it **only for an androgynous / nonbinary presentation** (it's redundant for plain `female` / `male`). The planned expansion — intersex/trans handling, a model-facing definition of what each gender means in-game, and possibly superseding the gender born-variants — lives in [deferred.plan.md](../developer-notes/deferred.plan.md) §Natal sex. When wiring it into prompts later, drop `excludeFromPrompts` and add the render logic to the attribute-iterating builders that currently skip it.
 - **Supernatural / non-human palettes are first-class.** `skin.tone`, `eyes.color`, and `hair.color` carry unnatural options (ashen / grey / blue skin, gold / red / solid-black / glowing eyes, fae hair), and `eyes.pupil` (vertical-slit, goat) reads non-human. All of these are flagged `autoDefaultExcludes`, so a human is never *auto*-assigned one — the forge or editor may still pick them, and a species rule can require them.
 
 ## Values with provenance
