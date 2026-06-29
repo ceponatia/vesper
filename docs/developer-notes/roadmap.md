@@ -14,26 +14,15 @@ progress) · **shipped — <date>** · **parked**.
 ## Active (building now)
 
 Nothing mid-flight. The last arc — **Mood-reactive avatars slices 1–2** and the
-**Narrator prompt focus** rulings (default profile + per-model reasoning, wired
-2026-06-29) — shipped (see **Shipped**). The next build is the top of **Next** below:
-either **avatar slice 3** (auto-asset gen — a weeks-long pipeline lift) or a lighter
-item (intimacy notes / world-map polish) for a faster win — author's call. One optional,
-spend-gated narrator follow-up remains in Next (a self-consistency judge vote); the Phase-3
-`--no-focus` A/B ran 2026-06-29 (the planner did **not** earn its keep — see Shipped).
+**Narrator prompt focus** work (rulings + the Phase-3 focus A/B) — shipped (see **Shipped**)
+and the latter is now **fully closed out** (plan archived to `finished/`; its one optional
+leftover, a self-consistency judge vote, parked in [deferred.plan.md](deferred.plan.md)). The
+next build is the top of **Next** below: either **avatar slice 3** (auto-asset gen — a
+weeks-long pipeline lift) or a lighter item (intimacy notes / world-map polish) for a faster
+win — author's call.
 
 ## Next (queued)
 
-- **Narrator prompt focus — optional follow-ups** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) · eval
-  [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md). The build **and the
-  rulings are shipped** (Phases 1–3 + the eval harness; then 2026-06-29 the **per-lane default profile**
-  — session `concise_immersive`, chat `aggressive_concise` — and the **per-model reasoning knobs** Aion/GLM
-  `effort:low`, Owl `off`; see Shipped). The Phase-3 `--no-focus` A/B has now **run (eval Run 3,
-  2026-06-29) and the intake `focus` planner did *not* earn its keep** (53/47 wash; 50/50 on
-  byte-identical controls; lost `onBeat`/`noUnrequestedLogistics` to the free Phase-2 derivation) — so
-  the deferred **character-chat focus analogue is ruled out** (don't build it), and the zero-cost session
-  planner is kept but not grown. What's left is **one optional, spend-gated** item: a self-consistency
-  judge vote to harden Run 2's close calls. Doesn't block other work.
 - **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -73,16 +62,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **Narrator prompt focus — Phase-3 focus A/B (planner does not earn its keep)** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) · eval
-  [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md) §Run 3, 2026-06-29. Ran the
+  [narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md) · eval
+  [narrator-prompt-focus.eval-results.md](finished/narrator-prompt-focus.eval-results.md) §Run 3, 2026-06-29. Ran the
   gated `--axis focus` A/B (fresh focus-on vs `--no-focus` pair, pairwise re-judge by
   `gemini-3.1-pro-preview`): the intake `focus` planner is a **53/47 wash** vs the free Phase-2 derivation
   (50/50 on byte-identical controls; it *lost* `onBeat`/`noUnrequestedLogistics` and risked over-reaction on
   GLM). Ruling: **don't build the deferred character-chat focus analogue**; keep but don't grow the
   zero-cost session planner. (Live OpenRouter spend — 36 generations + 17 judge calls.)
 - **Narrator prompt focus — eval rulings (profile + reasoning)** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) · eval
-  [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md), 2026-06-29. Turned eval
+  [narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md) · eval
+  [narrator-prompt-focus.eval-results.md](finished/narrator-prompt-focus.eval-results.md), 2026-06-29. Turned eval
   Run 2 into code: the shape profile is now a **per-lane resting default** (`NARRATION_LANE_DEFAULTS` —
   session `concise_immersive`, chat `aggressive_concise`), resolving the global-vs-per-lane tension the
   per-model split exposed (the dev toggle still force-overrides both lanes); and `narrativeProviderOptions`
@@ -104,14 +93,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   (`characterAppearanceSummary` skips it) so renders lean on the avatar reference. Wired through
   editor, forge, fixtures + seed.
 - **Narrator prompt focus & proportionate reaction — behavioral eval harness** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-28. `pnpm eval:narration`
+  [narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md), 2026-06-28. `pnpm eval:narration`
   (`scripts/eval/narration/`) — assembles **real** prompts (the shipped builders) for six golden
   scenarios, sweeps (scenario × model × shape profile × reasoning), streams via OpenRouter, and reports
   deterministic metrics (paragraphs / segments / distinct speakers / tokens / TTFT / latency / provider)
   + an LLM-judge rubric. `--no-focus` is a Phase-2-vs-Phase-3 A/B; `--dry-run` inspects prompts with no
   spend; conservative defaults. Never in `pnpm verify` / CI. Automates the interim eval + probes P1–P3.
 - **Narrator prompt focus & proportionate reaction — Phase 3** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-27. The structured
+  [narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md), 2026-06-27. The structured
   narration-focus planner, built in the **preferred intake-schema-extension form** (no new LLM
   leg): an optional `focus` sub-object on `IntentBrief` (`primaryResponse` / `reactionScale` /
   `allowedNewTopic` / `suggestedShape`) the intake agent emits, consumed by `buildResponseShape` to
@@ -120,7 +109,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   band always overrides** the planner's `reactionScale`. Built ahead of the interim-eval gate on
   direct instruction.
 - **Narrator prompt focus & proportionate reaction — Phase 2** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-27. Added the
+  [narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md), 2026-06-27. Added the
   deterministic, restatement-only **"Response shape"** line to the turn context (right after the
   digest): per-turn **current-beat** (stay on the input; new topic only via a Direction/thread),
   **reaction-scale** (absence of a strong band → "ordinary, don't escalate"; weak → "small";
@@ -129,7 +118,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   **once** (`evaluatePrimaryReaction`) and shared with the `## Reaction` line so they can't
   disagree. Built ahead of the interim-eval gate on direct instruction.
 - **Narrator prompt focus & proportionate reaction — Phase 1** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md), 2026-06-27. Killed the
+  [narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md), 2026-06-27. Killed the
   `3–5 paragraphs` floor for hot-swappable narration **shape profiles** (`concise_immersive`
   default + `aggressive_concise`, a global dev A/B knob with a dev-only `POST /api/dev/narration-shape`
   toggle in the Inspector); added response-first + proportionate-reaction + multi-party-restraint
