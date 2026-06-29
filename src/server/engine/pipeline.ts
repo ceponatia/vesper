@@ -10,7 +10,7 @@ import { daylightBand, formatElapsed, formatGameClock, resolveGameTime } from "@
 import { log } from "@/server/log";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { fillPlayerToken } from "@/lib/player-token";
-import { isDemoMode, narrativeModelId, narrativeProviderOptions, openrouter, routedProvider } from "../ai";
+import { isDemoMode, narrativeModelId, narrativeProviderOptions, openrouter, routedProvider, stripNarratorArtifactStream } from "../ai";
 import type { TurnProvider } from "@/contracts/turns/agent-results";
 import { db, facts, jobs, sessions, turnMessages, turns } from "../db";
 import {
@@ -237,7 +237,12 @@ async function runNarrationTask(sessionId: string, body: SubmitTurnBody, channel
     const live = isDemoMode()
       ? null
       : liveNarrativeStream(narrativeModelId(bundle.world.narrativeModel), pre.system, pre.messages);
-    const stream = live ? live.textStream : demoNarrative(body.input, pre.npcNames);
+    // Strip the Aion "uncensored response" wrapper tags that leak into narration
+    // (server/ai/narrator-artifacts.ts) before the segmenter and `narration`
+    // accumulator see them — keeps the artifact out of both the live feed and the
+    // persisted `turns.narration` (which is fed back as history). Demo output has
+    // no tags, but wrapping it too keeps one path.
+    const stream = stripNarratorArtifactStream(live ? live.textStream : demoNarrative(body.input, pre.npcNames));
 
     const segmenter = createSegmenter(pre.allNpcNames);
     let narration = "";

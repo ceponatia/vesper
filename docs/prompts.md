@@ -54,6 +54,14 @@ The narrator's job is to stay on the player's beat and react in proportion — n
 
 **Authored override.** Concise + proportionate is the global default, but it **yields to authored Style directives / `narratorGuidance`** (the fenced channels already in `buildStaticRulebook`): a directive like "lush, descriptive narration" is the lever for richer/warmer prose — no new schema. Character-level warmth is overridable by construction: proportionality scales with disposition + relationship + `## Reaction`, so a canonically devoted character at high affinity dotes correctly without any new knob.
 
+## Narrator viewpoint
+
+Both lanes pin a **single fixed viewpoint** so the narrator never drifts between persons. Narrate the character in the **third person** (`Mara …`, she/he/they); address the player in the **second person** (`you` — never `I`/`me`, never third person); allow first-person `I`/`me`/`my` **only inside the character's quoted dialogue** (`[Mara] "…"`). The session lane enforces this via `narrationModeRules` (embodied: address the player as "you", never by name; observer: third person only, no "you"). The chat lane's `How to respond:` rule 2 (`prompts/character-chat.ts`) says the same — this replaced the old "speak in the first person as `<name>`" wording, which fought the roleplay models' third-person training and let Aion 2.0 wander between persons (occasionally narrating the *player* as "I").
+
+## Narrator output cleanup (Aion artifact tags)
+
+`aion-labs/aion-2.0` (the session default narrator, and a selectable chat narrator) wraps its answer in an internal `<uncensored_response>…</uncensored_response>` template and **leaks the marker** into the visible stream — most often the closing tag at the end of a reply, in misspelled / negated forms (`</unsensored_response>`, `</censored_response>`). Both narrator lanes run the model stream through `stripNarratorArtifactStream` (`server/ai/narrator-artifacts.ts`) before the segmenter / accumulator sees it. Stripping the **stream** cleans both surfaces at once: the live deltas the client renders, and the accumulated text that gets persisted (chat reply / `turns.narration`) and fed back as history — which matters because a persisted tag teaches the model in-context to emit it *more* (a self-reinforcing loop). The stripper removes tags split across token boundaries (buffering only a trailing partial-tag run) and swallows whitespace glued to a tag so removal leaves no blank line.
+
 ## Agent prompts
 
 Each post-turn agent has a tight system prompt: role, what to extract, what NOT to do (no inventing entities, names exactly as written, ignore quoted/hypothetical dialogue for physical events), and 2–3 worked examples. Agent user messages contain only that agent's state slice (see [turn-engine.md](turn-engine.md)). Keep agent prompts under ~600 tokens each — they run every turn.
