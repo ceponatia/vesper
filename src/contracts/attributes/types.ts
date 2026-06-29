@@ -90,6 +90,16 @@ export const attributeDefinitionSchema = z.object({
    */
   identityAnchor: z.boolean().optional(),
   /**
+   * Excluded from every **generated prompt** (image, narrator, chat) while still
+   * stored, authored, and editable. For an attribute we track but have NOT wired
+   * into generation yet — e.g. `identity.natal_sex`, a scaffold for future
+   * structured natal-sex handling (the gender `…_born_…` variant steers image
+   * rendering for now). Each attribute-iterating prompt builder skips a flagged
+   * def, the same per-surface pattern the `apparent_age` exclusions use. See
+   * docs/contracts/attributes.md + deferred.plan.md (§Natal sex).
+   */
+  excludeFromPrompts: z.boolean().optional(),
+  /**
    * Enum members that are valid vocabulary but must never be chosen as an
    * *automatic* default — neither the forge's tier-3 unconstrained fallback
    * fill (character-forge.ts §fillCoreVisualDefaults) nor the picker's initial

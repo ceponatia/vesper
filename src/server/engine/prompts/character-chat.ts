@@ -64,9 +64,9 @@ export interface CharacterChatPromptInput {
    */
   opening?: boolean;
   /**
-   * Active narration shape profile (narrator-prompt-focus.plan.md §1.1) — the one
-   * dev toggle governs chat length identically to the session lane. Defaults to
-   * DEFAULT_NARRATION_SHAPE; the chat route passes `narrationShapeId()`.
+   * Active narration shape profile (narrator-prompt-focus.plan.md §1.1) — the dev
+   * toggle still forces chat length when set. Defaults to DEFAULT_NARRATION_SHAPE; the
+   * chat route passes `narrationShapeId("chat")` (resting default `aggressive_concise`).
    */
   narrationShape?: NarrationShapeId;
 }
@@ -217,6 +217,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     if (value.id === "identity.apparent_age") continue; // visual age is portrait-studio-only; the narrator gets real `age` (identity block)
     const def = attributeRegistry.byId(value.id);
     if (!def) continue; // unknown vocabulary — never leak a raw id
+    if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
     if (!realizedBody.isAttributeApplicable(def)) continue;
     const phrase = attributePhrase(def.label, def.unit, value.value);
     if (!phrase) continue;

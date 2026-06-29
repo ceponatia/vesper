@@ -212,6 +212,7 @@ export function buildAvatarPrompt(
   for (const value of profile.attributes) {
     const def = attributeRegistry.byId(value.id);
     if (!def) continue; // unknown vocabulary — skip rather than leak raw ids into the prompt
+    if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
     if (!realizedBody.isAttributeApplicable(def)) continue; // stale/gated attributes must not outlive the realized body
     // Waist-up portrait: drop below-the-waist anatomy (feet, legs, hips, pelvic
     // intimate) — but keep signature feature morphology (a succubus tail roots
@@ -610,6 +611,7 @@ export function characterAppearanceSummary(
     if (value.id === "identity.apparent_age") continue; // portrait-studio-only — scene images use the avatar reference for age
     const def = attributeRegistry.byId(value.id);
     if (!def) continue;
+    if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
     if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
     if (isNonVisualAttribute(def)) continue; // voice/scent don't render in an image
     if (!allowIntimate && isIntimateAttribute(def)) continue; // scene composer (gemini tool model) is moderation-prone

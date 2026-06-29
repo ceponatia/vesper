@@ -297,6 +297,44 @@ matches the framing.
 See [cast-tiers-and-affinity-spec.phase3.md](finished/cast-tiers-and-affinity-spec.phase3.md)
 §Problem (role definition) and §Design: tiers.
 
+## Natal sex — structured sex-at-birth
+
+_Raised 2026-06-29, alongside the gender born-variant change._ The character
+`identity.gender` enum now splits androgynous / nonbinary by sex at birth
+(`androgynous_born_female` / `…_born_male` / `nonbinary_born_*`) so image generation
+gets the natal build, and a separate **`identity.natal_sex`** attribute (enum
+`female`/`male`) was created as a **scaffold** — flagged `excludeFromPrompts` (stored
++ authored + editable, but not yet surfaced in any generated prompt) and shown in the
+editor **only for an androgynous / nonbinary presentation** (redundant for plain
+female/male). The born-variant on `gender` carries natal sex into rendering for now;
+`natal_sex` is the placeholder for doing this properly later. See
+[../contracts/attributes.md](../contracts/attributes.md) §"`natal_sex` is a
+forward-looking scaffold".
+
+What "fleshing it out" should cover (none built yet):
+
+- **Wire `natal_sex` into prompts** as the source of truth (drop `excludeFromPrompts`
+  and add render logic to the attribute-iterating builders that currently skip it —
+  `characterAppearanceSummary` / `buildAvatarPrompt` in `images/prompts.ts`,
+  `buildGlanceImpressions` in `engine/scene.ts`, the chat loop in
+  `prompts/character-chat.ts`), and decide whether it then **supersedes** the gender
+  born-variants (collapsing `gender` back toward `female`/`male`/`androgynous`/
+  `nonbinary` + a separate natal-sex axis) — which would also cleanly cover **trans
+  presentations** the born-variant enum can't (e.g. female-presenting, natal male).
+- **A model-facing definition of each gender term** — the open question from the
+  2026-06-29 discussion: tell the narrator/image models what `androgynous` vs
+  `nonbinary` actually *mean for this game* (presentation vs identity), since for a
+  purely visual prompt they otherwise overlap. Likely a `promptHints`-style gloss or a
+  small rulebook note, gated on whether `natal_sex` becomes the visual driver.
+- **Wider value set** — `intersex` (and possibly more) on `natal_sex`, and the matching
+  body-config seeding story.
+- **Auto-consistency** — keep `natal_sex` and the gender born-variant in agreement
+  (derive one from the other, or warn on mismatch) instead of two hand-set fields.
+- **A general conditional-visibility mechanism** — the editor currently hard-codes the
+  `natal_sex`↔gender dependency in `attribute-picker.tsx`; a declarative `showWhen` on
+  the attribute definition would generalize it (only worth building if a second
+  conditional attribute appears).
+
 ## Relationship & meter timeline — _UX audit feature #4_
 
 _Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #4)._

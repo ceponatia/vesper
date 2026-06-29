@@ -10,9 +10,11 @@ describe("seedBodyConfigFromAttributes", () => {
     expect(seedBodyConfigFromAttributes([gender("male")]).intimateRegions).toEqual(["penis", "testicles"]);
   });
 
-  it("seeds nothing for androgynous / nonbinary (the author chooses)", () => {
-    expect(seedBodyConfigFromAttributes([gender("androgynous")]).intimateRegions).toEqual([]);
-    expect(seedBodyConfigFromAttributes([gender("nonbinary")]).intimateRegions).toEqual([]);
+  it("seeds the natal anatomy for the androgynous / nonbinary born-sex variants (overridable)", () => {
+    expect(seedBodyConfigFromAttributes([gender("androgynous_born_female")]).intimateRegions).toEqual(["vulva", "breasts"]);
+    expect(seedBodyConfigFromAttributes([gender("androgynous_born_male")]).intimateRegions).toEqual(["penis", "testicles"]);
+    expect(seedBodyConfigFromAttributes([gender("nonbinary_born_female")]).intimateRegions).toEqual(["vulva", "breasts"]);
+    expect(seedBodyConfigFromAttributes([gender("nonbinary_born_male")]).intimateRegions).toEqual(["penis", "testicles"]);
   });
 
   it("seeds nothing from an empty attribute list or an attribute with no activation", () => {
