@@ -37,6 +37,13 @@ export interface EvalScenario {
   knownNames: string[];
   /** The authored "## Reaction" verdict (if any) — the judge cross-checks proportionality against it. */
   authoredReaction?: string;
+  /**
+   * The scenario deliberately makes a sense salient (closeness/approach/intimacy), so a
+   * single natural sensory hook is *welcome* here (character-chat-sensory.plan.md). Flips on
+   * the opt-in deterministic "used a sensory cue" metric (`run.ts`). Absent ⇒ the metric is
+   * not reported — most turns should mention nothing, so it's never a universal score.
+   */
+  sensoryRelevant?: boolean;
   build: (shape: NarrationShapeId, opts: { focus: boolean }) => { system: string; messages: ModelMessage[] };
 }
 
@@ -293,6 +300,29 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
         narrationShape: shape,
       }),
       messages: [{ role: "user", content: "You always know exactly what to say. You're kind of amazing, you know that?" }],
+    }),
+  },
+  {
+    id: "chat-sensory-closeness",
+    title: "Character-chat — closeness makes a sense noticeable",
+    lane: "chat",
+    expectation:
+      "Stays focused and third-person, answering the approach. Because Sabrina comes close, it MAY weave in one natural scent/sensory detail (her perfume) — a single grounded hook inside an action, never a list. It must not dump attributes or over-describe; an ordinary distant line would mention nothing of the kind.",
+    playerInput: "I step into the room and Sabrina comes closer.",
+    knownNames: ["Sabrina"],
+    sensoryRelevant: true,
+    build: (shape) => ({
+      system: buildCharacterChatSystemPrompt({
+        name: "Sabrina",
+        profile: characterProfileSchema.parse({
+          bio: "Sabrina keeps the front desk of a small seaside inn. Warm, a little shy, quick to color when someone she likes walks in.",
+          personality: "Gentle, attentive, easily flustered. Shows feeling in small gestures rather than big declarations.",
+          attributes: [{ id: "presentation.scent_baseline", value: "soft floral perfume", source: "creation" }],
+        }),
+        state: { meters: {}, affinity: 25, conditions: [], premise: "A slow afternoon at the inn's front desk; no one else is around." },
+        narrationShape: shape,
+      }),
+      messages: [{ role: "user", content: "I step into the room and Sabrina comes closer." }],
     }),
   },
 ];

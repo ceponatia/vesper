@@ -266,4 +266,84 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(opening).toMatch(/Begin the conversation yourself/);
     expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain("Opening beat");
   });
+
+  // --- Opportunistic sensory cues (character-chat-sensory.plan.md) ---
+
+  it("surfaces presentation.scent_baseline as a closeness-gated Sensory cues block, not a flat attribute line", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Sabrina",
+      profile: profile({
+        attributes: [
+          attr("identity.gender", "female"),
+          attr("hair.color", "auburn"),
+          attr("presentation.scent_baseline", "soft floral perfume"),
+        ],
+      }),
+    });
+    expect(prompt).toContain("Sensory cues");
+    expect(prompt).toContain("soft floral perfume");
+    // The scent value lives only in the cue block — not also as a flat Attributes line.
+    expect(prompt.split("soft floral perfume")).toHaveLength(2);
+    expect(prompt.indexOf("Sensory cues")).toBeLessThan(prompt.indexOf("soft floral perfume"));
+    // Ordinary physical attributes still render in Attributes as before.
+    expect(prompt).toContain("auburn");
+    // The exposure-mask phrasing hint (meaningless without a chat exposure mask) is dropped.
+    expect(prompt).not.toContain("exposure mask's scent range");
+  });
+
+  it("states the restraint discipline: opportunistic, closeness-gated, never listed — and a CHAT rule reinforces it", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Sabrina",
+      profile: profile({ attributes: [attr("presentation.scent_baseline", "soft floral perfume")] }),
+    });
+    expect(prompt).toMatch(/use only when the beat earns them/i);
+    expect(prompt).toMatch(/proximity, touch, intimacy, a first impression/i);
+    expect(prompt).toMatch(/never recite a label/i);
+    expect(prompt).toMatch(/Do not force sensory detail into ordinary, distant conversation/i);
+    // Never a checklist / mandatory.
+    expect(prompt).not.toMatch(/always (mention|include|describe|note)[^.]{0,24}(scent|smell)/i);
+  });
+
+  it("keeps voice (audible at distance) and physical attributes in Attributes, never the sensory cues", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({
+        attributes: [
+          attr("hair.color", "auburn"),
+          attr("voice.pitch", "low"),
+          attr("presentation.scent_baseline", "soft floral perfume"),
+        ],
+      }),
+    });
+    // Voice is sensory but perceptible at any distance — it stays a normal attribute line.
+    expect(prompt).toContain("pitch: low");
+    const sectionStart = prompt.indexOf("Sensory cues");
+    const sectionEnd = prompt.indexOf("\n\n", sectionStart);
+    const cueBlock = prompt.slice(sectionStart, sectionEnd);
+    expect(cueBlock).toContain("soft floral perfume");
+    expect(cueBlock).not.toContain("pitch");
+  });
+
+  it("does not promote intimate scent/taste into ordinary chat sensory cues", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Sabrina",
+      profile: profile({
+        intimateRegions: ["vulva"],
+        attributes: [
+          attr("presentation.scent_baseline", "soft floral perfume"),
+          attr("vulva.scent", "INTIMATE_SCENT_SENTINEL"),
+        ],
+      }),
+    });
+    // The everyday scent still surfaces…
+    expect(prompt).toContain("Sensory cues");
+    expect(prompt).toContain("soft floral perfume");
+    // …but the intimate one reaches the chat nowhere — not the cue block, not the flat list.
+    expect(prompt).not.toContain("INTIMATE_SCENT_SENTINEL");
+    expect(prompt).not.toMatch(/vulva scent/i);
+  });
+
+  it("omits the Sensory cues block entirely when no proximity sense is authored (prompt unchanged)", () => {
+    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain("Sensory cues");
+  });
 });

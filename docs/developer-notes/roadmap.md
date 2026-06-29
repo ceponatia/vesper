@@ -13,12 +13,9 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-flight. The last arc — **Mood-reactive avatars slices 1–2** and the
-**Narrator prompt focus** work (rulings + the Phase-3 focus A/B) — shipped (see **Shipped**)
-and the latter is now **fully closed out** (plan archived to `finished/`; its one optional
-leftover, a self-consistency judge vote, parked in [deferred.plan.md](deferred.plan.md)). The
-next build is the top of **Next** below: either **avatar slice 3** (auto-asset gen — a
-weeks-long pipeline lift) or a lighter item (intimacy notes / world-map polish) for a faster
+Nothing mid-flight. The last item — **Character chat opportunistic sensory cues** — shipped (see
+**Shipped**). The next build is the top of **Next** below: either **avatar slice 3** (auto-asset
+gen — a weeks-long pipeline lift) or a lighter item (intimacy notes / world-map polish) for a faster
 win — author's call.
 
 ## Next (queued)
@@ -38,14 +35,6 @@ win — author's call.
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
   the intimate exposure tier. Standalone — builds on the shipped species note split +
   the phase-4 exposure mask; feeds mood's intimacy-beat inputs but doesn't gate them.
-- **Character chat — opportunistic sensory cues** —
-  [character-chat-sensory.plan.md](character-chat-sensory.plan.md). A prompt-only pass so
-  `presentation.scent_baseline` (and future proximity-gated, non-intimate senses) surface in the
-  Chat tab **only when the beat earns it** (closeness, approach, first impression, intimacy, or a
-  scent-salient input) — a dedicated closeness-gated "Sensory cues" section + a CHAT rule, never a
-  checklist; voice stays always-on in Attributes, intimate sensory stays gated out. Small, standalone;
-  adds a `chat-sensory-closeness` eval fixture. Escalation (a one-turn chat "beat cue" wrapper) is
-  deferred unless prompt-only proves insufficient.
 - **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
   minimap) remain — optional polish on a feature already delivering its core value.
@@ -69,6 +58,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character chat — opportunistic sensory cues** —
+  [character-chat-sensory.plan.md](character-chat-sensory.plan.md), 2026-06-29. Prompt-only: a
+  closeness-gated **"Sensory cues"** block surfaces `presentation.scent_baseline` (via `sensoryCues`
+  in `prompts/character-chat.ts`) *only when the beat earns it* — promoted out of the flat Attributes
+  list, exposure-mask hint dropped, plus a `CHAT_RULES` rule (one cue on closeness/notice/intimacy,
+  never forced or listed). Voice stays an always-on Attributes line; intimate scent/taste gated out
+  (`isIntimateAttributeCategory`). Tests + a `chat-sensory-closeness` eval fixture + an opt-in
+  `sensoryRelevant` deterministic metric. Escalation (one-turn chat "beat cue" wrapper) deferred.
 - **Narrator prompt focus — Phase-3 focus A/B (planner does not earn its keep)** —
   [narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md) · eval
   [narrator-prompt-focus.eval-results.md](finished/narrator-prompt-focus.eval-results.md) §Run 3, 2026-06-29. Ran the
