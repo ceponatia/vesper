@@ -74,14 +74,19 @@ Per-model (Borda%; `off` is impossible for Aion — rejected):
 - **Owl → `off`** — this **flips run 1** (whose compressed absolute had owl-default best). The
   relative judge says reasoning *hurts* Owl, and `off` ranks best (71%).
 
-### How Run 2 updates the rulings (still unmade — the user's call)
+### How Run 2 updates the rulings — **RULED & WIRED 2026-06-29**
 
-1. **Default profile** — a real, now-sharp decision **with a global-vs-per-lane tension**:
-   global `concise_immersive` (favors the session default Aion + voice) vs global
-   `aggressive_concise` (favors chat/GLM + proportionality) vs making the profile per-lane.
+All four were ruled and landed in code (see narrator-prompt-focus.plan.md §Decisions locked 1 +
+§Reasoning strategy; `NARRATION_LANE_DEFAULTS` in `prompts/constants.ts`, `NARRATOR_REASONING` in
+`server/ai/provider.ts`):
+
+1. **Default profile** → resolved the global-vs-per-lane tension by going **per-lane**: session
+   `concise_immersive` (favors Aion + voice), chat `aggressive_concise` (favors GLM + proportionality).
+   The dev override stays global (force-overrides both lanes).
 2. **Aion reasoning** → **`effort:low`** (now positively supported, not just a doting patch).
-3. **GLM reasoning** → **`low`** (default a close second; `off` worst).
-4. **Owl reasoning** → **`off`** (reasoning degrades it — a reversal from run 1).
+3. **GLM reasoning** → **`low`** (default a close second; `off` worst). `off` noted in code as the
+   latency-optimized swap for chat if TTFT outranks the marginal quality.
+4. **Owl reasoning** → **`enabled:false`** (reasoning degrades it — a reversal from run 1).
 
 ### Run 2 caveats
 
@@ -241,15 +246,17 @@ prose is vivid though slightly ornate for a one-word input.*
 The errand-invention / unrequested-logistics failure the whole plan targets **still
 surfaces on Aion-default** but is rare and was suppressed by `effort:low` here.
 
-## Open decisions (to be ruled in the plan)
+## Open decisions — **all RULED & WIRED 2026-06-29** (see §"How Run 2 updates the rulings")
 
-1. **Default profile** → keep `concise_immersive` (recommended — no mandate to switch,
-   richer immersive register) vs switch to `aggressive_concise`.
-2. **Aion reasoning** → leave `default` vs add an `effort:low` knob (it fixed the one
-   anti-doting miss; costs nothing on quality but isn't faster). `off` is off the table.
-3. **GLM reasoning** → `default` vs `off` (chat-latency win, equal quality) vs `low`
-   (marginal quality nudge).
-4. **Owl reasoning** → leave `default` (clear — reasoning degrades it).
+These were the run-1 framing (absolute judge); Run 2 sharpened them and they are now ruled in
+the plan + code. Kept for the audit trail:
+
+1. **Default profile** → ~~keep `concise_immersive` vs switch to `aggressive_concise`~~ → **per-lane**
+   (session `concise_immersive`, chat `aggressive_concise`) — Run 2's per-model split made a single
+   global default wrong for one lane.
+2. **Aion reasoning** → ~~leave `default` vs add `effort:low`~~ → **`effort:low`**.
+3. **GLM reasoning** → ~~`default` vs `off` vs `low`~~ → **`low`** (`off` noted as the latency swap).
+4. **Owl reasoning** → ~~leave `default`~~ → **`enabled:false`** (Run 2: `off` best).
 
 ## Methodology follow-ups (before locking rulings)
 

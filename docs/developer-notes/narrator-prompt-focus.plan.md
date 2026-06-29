@@ -1,14 +1,16 @@
 # Narrator prompt focus & proportionate reaction
 
 Status: **active** — Phases 1, 2 & 3 all **shipped 2026-06-27**; the **behavioral eval harness shipped
-2026-06-28**. Phase 1 (prompt wording + shape profiles + dev toggle); Phase 2 (deterministic "response
-shape" line); Phase 3 (narration-focus planner, folded into the intake brief as an optional `focus`
-sub-object — the preferred intake-schema-extension form, no new LLM call); the harness
-(`pnpm eval:narration` — `scripts/eval/narration/`) automates the golden-scenario eval + probes P1–P3.
-Phases 2 & 3 + the harness were built ahead of the interim-eval gate on direct instruction.
-**Remaining is now execution, not building:** *running* the harness (live OpenRouter spend — the user's
-call) to pick the default profile + decide each model's reasoning knob, and the optional character-chat
-Phase-2/3 analogues (gated on those results).
+2026-06-28**; eval **Runs 1 & 2 + the model rulings shipped 2026-06-29** (the **per-lane default profile**
+and the **per-model reasoning knobs** — see §Decisions locked 1 and §Reasoning strategy below). Phase 1
+(prompt wording + shape profiles + dev toggle); Phase 2 (deterministic "response shape" line); Phase 3
+(narration-focus planner, folded into the intake brief as an optional `focus` sub-object — the preferred
+intake-schema-extension form, no new LLM call); the harness (`pnpm eval:narration` —
+`scripts/eval/narration/`) automates the golden-scenario eval + probes P1–P3. Phases 2 & 3 + the harness
+were built ahead of the interim-eval gate on direct instruction. **All building + the model rulings are
+now done.** What remains is **optional and spend-gated**: the character-chat Phase-2/3 focus analogue
+(gated on a Phase-3 `--no-focus` A/B that confirms the planner earns its keep), and a self-consistency
+judge vote to harden Run 2's close calls.
 
 Goal: make narration stay on the player's current beat, react in proportion to
 what the player actually did, and stop doting. Concretely:
@@ -41,15 +43,25 @@ curve this plan leans on), [pre-narrator-agents.spec.md](pre-narrator-agents.spe
 
 ## Decisions locked (2026-06-27 review)
 
-1. **Length is a live, dev-toggled shape profile; default "concise but immersive."**
-   (Toggle surface / global-only / both-lanes resolved 2026-06-27.) Define named narration
-   *shape profiles* and pick the active one via a **dev-settings UI toggle** — live, no
-   restart, dev-only and gated like the impersonate route so it never ships to players —
-   governing **both** the session and character-chat lanes identically. Ship
-   `concise_immersive` (default: short for trivial inputs, a few rich paragraphs for a
-   normal beat) + an `aggressive_concise` backup. The profile is a **global dev/code A/B
-   knob only — NOT per-world**; authors tune richness via authored Style directives
-   (decision 2). See revised **Phase 1.1 + 1.6**.
+1. **Length is a live, dev-toggled shape profile; per-lane resting default.**
+   (Toggle surface / both-lanes / default resolved 2026-06-27; the **resting default re-ruled
+   per-lane 2026-06-29** — see the callout below.) Define named narration *shape profiles* and
+   pick the active one via a **dev-settings UI toggle** — live, no restart, dev-only and gated
+   like the impersonate route so it never ships to players. Ship `concise_immersive` (short for
+   trivial inputs, a few rich paragraphs for a normal beat) + an `aggressive_concise` backup. The
+   profile stays a **dev/code knob — NOT per-world**; authors tune richness via authored Style
+   directives (decision 2). See revised **Phase 1.1 + 1.6**.
+
+   > **Re-ruled 2026-06-29 (eval Run 2).** The original "single **global** default governing both
+   > lanes identically" did not survive the data: the pairwise re-judge
+   > ([eval-results](narrator-prompt-focus.eval-results.md) §Run 2) found a **per-model split** — the
+   > session narrator (Aion 2.0) prefers `concise_immersive` (83% + best voice), the chat default
+   > (GLM 5.2) prefers `aggressive_concise` (71%). So the **resting default is now per-lane**
+   > (`NARRATION_LANE_DEFAULTS` in `prompts/constants.ts`: session `concise_immersive`, chat
+   > `aggressive_concise`); `narrationShapeId(lane)` takes a lane. The **dev override stays global** (the
+   > toggle force-overrides *both* lanes when set, for A/B testing) — only the fall-through default became
+   > per-lane, so nothing is exposed per-world. The dev toggle gained a "Default (per-lane)" state that
+   > clears the override.
 2. **Global default + authored override.** Apply concise + proportionate everywhere, but
    the rules explicitly **yield to authored Style directives / `narratorGuidance`** (and
    character disposition) that call for richer or warmer narration — reusing the existing
@@ -283,6 +295,19 @@ output-token / paragraph count (verbosity), and topicality on the golden scenari
 If selective reasoning is ultimately wanted, prefer the Phase 3 **structured
 planner/classifier** call (cheap model, `disableReasoning` per model) over any
 per-section narrator prompt trick.
+
+> **Ruled + wired 2026-06-29 (eval Runs 1 & 2 — [eval-results](narrator-prompt-focus.eval-results.md)).**
+> The matrix above was the *pre-probe* conservative stance; the live eval resolved it. The knobs now live
+> in `NARRATOR_REASONING` (`server/ai/provider.ts`), applied by `narrativeProviderOptions` to **both** lanes:
+> - **Aion 2.0** → `effort:"low"`. Run 2 ranked it 67% vs 33% default — it suppresses the residual "hi"-beat
+>   doting at no quality cost. Probe **P1 reconfirmed**: `enabled:false` is still rejected ("Reasoning is
+>   mandatory for this endpoint") — all 12 `off` cells died — so `off` stays off the table. (Note `effort` was
+>   a *token-usage* no-op in the 2026-06-21 probe; the eval measured *output* and found `low` a positive signal.)
+> - **GLM 5.2** → `effort:"low"` (Run 2 Borda 61%; default a close second). `off` is the deterministic
+>   *latency* win (sub-500ms TTFT) if chat first-token latency ever outranks the marginal quality — a one-line
+>   swap in `NARRATOR_REASONING`.
+> - **Owl Alpha** → `enabled:false`. Both runs agree reasoning *hurts* it; Run 2 ranked `off` best (71%). It
+>   accepts the param (no rejection). This **reverses** the matrix's "send nothing until verified" — it's verified.
 
 ---
 
@@ -769,13 +794,14 @@ verification was the interim manual eval above. As built:
    PROSE_STYLE_RULES / RESPONSE_CONTRACT / presence-fidelity descriptions, the shape-profile
    mechanism + dev toggle, both-lanes coverage, and the authored-override lever). Run
    `pnpm verify`. (Roadmap line already added.)
-2. **Interim manual eval** (matrix + golden scenarios) on the dev account, sweeping both
-   profiles via `NARRATION_SHAPE`. Now a **validation pass over Phases 1+2** (Phase 2 was built
-   ahead of this gate on direct instruction) + picking the default profile; a red result iterates
-   the prompt wording, and informs whether Phase 3 is needed.
-3. **Reasoning probes P1–P3** by hand (independent of Phase 1). Only if a probe shows a
-   clear win, add a per-model `reasoning` knob to `narrativeProviderOptions`
-   (`provider.ts:83`) — never for Aion 2.0.
+2. **Eval → default profile** — **ruled 2026-06-29**. Superseded by the automated harness (step 6):
+   eval Runs 1 & 2 picked a **per-lane default** (`NARRATION_LANE_DEFAULTS` — session
+   `concise_immersive`, chat `aggressive_concise`), re-ruling decision 1's "global-only". Wired in
+   `prompts/constants.ts`; the dev override stays global.
+3. **Reasoning probes P1–P3** — **ruled + wired 2026-06-29** (eval Runs 1 & 2, not by hand). The
+   per-model `reasoning` knob now lives in `NARRATOR_REASONING` (`server/ai/provider.ts`), applied by
+   `narrativeProviderOptions` to both lanes: Aion 2.0 `effort:low`, GLM 5.2 `effort:low`, Owl Alpha
+   `enabled:false`. (Aion `enabled:false` stays rejected — P1 reconfirmed.) See §Reasoning strategy.
 4. **Phase 2 shape line** — **shipped 2026-06-27**. New `buildResponseShape` +
    `evaluatePrimaryReaction`/`PrimaryReaction` + `TurnContextInput.responseShape` + pipeline
    wiring + tests + `docs/prompts.md`.
@@ -860,12 +886,15 @@ follow-on task. None blocks Phase 1 (which sets no reasoning knob).
 ## Acceptance criteria
 
 - The `3–5 paragraphs` floor is gone; replaced by selectable shape profiles
-  (`NARRATION_SHAPE_PROFILES`), default `concise_immersive`, with an `aggressive_concise`
-  backup. The profile is per-call selectable (builder input), flipped live by a **dev-only
-  UI toggle** (gated like impersonate, never shipped to players), governs **both** the
-  session and chat lanes, and is **global-only (no per-world field)**. No hard
-  character/token/line/word/sentence/paragraph cap in either profile or anywhere in the
-  narrator/chat prompts.
+  (`NARRATION_SHAPE_PROFILES`), with a **per-lane resting default** (`NARRATION_LANE_DEFAULTS` —
+  session `concise_immersive`, chat `aggressive_concise`; re-ruled 2026-06-29 from "global-only" —
+  decision 1). The profile is per-call selectable (builder input), force-overridden for **both**
+  lanes live by a **dev-only UI toggle** (gated like impersonate, never shipped to players), and is
+  **not a per-world field**. No hard character/token/line/word/sentence/paragraph cap in either
+  profile or anywhere in the narrator/chat prompts.
+- The narrator `reasoning` knob is **per-model** (`NARRATOR_REASONING`, `server/ai/provider.ts`),
+  eval-ruled and applied to both lanes: Aion 2.0 `effort:low`, GLM 5.2 `effort:low`, Owl Alpha
+  `enabled:false`; unlisted models send no reasoning option. Aion never sends `enabled:false`.
 - A proportionate-reaction rule exists in **both** lanes (`PROSE_STYLE_RULES` and
   `CHAT_RULES`), naming the `## Reaction` / Relationships / mood / disposition signals
   and stating the no-verdict default.

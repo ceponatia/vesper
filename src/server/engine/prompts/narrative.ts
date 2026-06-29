@@ -41,8 +41,8 @@ export interface StaticRulebookInput {
   playerContext?: string;
   /**
    * Active narration shape profile (narrator-prompt-focus.plan.md §1.1) — governs
-   * the prose-style length/focus rule. Defaults to DEFAULT_NARRATION_SHAPE so
-   * existing callers / tests are unchanged; the pipeline passes `narrationShapeId()`.
+   * the prose-style length/focus rule. Defaults to DEFAULT_NARRATION_SHAPE so existing
+   * callers / tests are unchanged; the pipeline passes `narrationShapeId("session")`.
    */
   narrationShape?: NarrationShapeId;
 }

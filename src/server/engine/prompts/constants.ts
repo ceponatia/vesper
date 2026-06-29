@@ -20,8 +20,24 @@ export type NarrationShapeId = "concise_immersive" | "aggressive_concise";
 /** All shape ids — the validation vocabulary for the dev toggle + route. */
 export const NARRATION_SHAPE_IDS = ["concise_immersive", "aggressive_concise"] as const;
 
-/** The shipped default: focus without losing the immersive register. */
+/** Builder-level fallback when no `narrationShape` is threaded (tests / safety). The
+ *  *runtime* per-lane resting defaults live in NARRATION_LANE_DEFAULTS below. */
 export const DEFAULT_NARRATION_SHAPE: NarrationShapeId = "concise_immersive";
+
+/**
+ * Per-lane resting default shape profile (narrator-prompt-focus.plan.md decision 1,
+ * re-ruled 2026-06-29). Run 2 of the behavioral eval
+ * (narrator-prompt-focus.eval-results.md) found a per-model split the single global
+ * default couldn't serve: the **session** narrator (Aion 2.0) prefers
+ * `concise_immersive` (83% pairwise + best voice), while the **chat** default (GLM 5.2)
+ * prefers `aggressive_concise` (71%). The live dev override still forces BOTH lanes when
+ * set (the global A/B toggle); this is only the default the resolver falls through to.
+ */
+export type NarrationLane = "session" | "chat";
+export const NARRATION_LANE_DEFAULTS: Record<NarrationLane, NarrationShapeId> = {
+  session: "concise_immersive",
+  chat: "aggressive_concise",
+};
 
 export const NARRATION_SHAPE_PROFILES: Record<NarrationShapeId, string> = {
   // Default: focus without losing the immersive register.
@@ -65,13 +81,15 @@ export function setDevNarrationShape(shape: NarrationShapeId | null): void {
 }
 
 /**
- * The active narration shape. Resolution order: the live dev override → the
- * NARRATION_SHAPE env (headless / eval default) → DEFAULT_NARRATION_SHAPE. Per-call
- * callers (tests, eval harness) pass an explicit shape to the builders and skip this.
+ * The active narration shape for a lane. Resolution order: the live dev override
+ * (global — forces both lanes when set) → the NARRATION_SHAPE env (headless / eval
+ * default) → the per-lane resting default (NARRATION_LANE_DEFAULTS). Per-call callers
+ * (tests, eval harness) pass an explicit shape to the builders and skip this.
  */
-export function narrationShapeId(): NarrationShapeId {
-  const pick = readDevNarrationShape() ?? process.env.NARRATION_SHAPE; // dev override is undefined in prod
-  return pick === "aggressive_concise" ? "aggressive_concise" : DEFAULT_NARRATION_SHAPE;
+export function narrationShapeId(lane: NarrationLane): NarrationShapeId {
+  const override = readDevNarrationShape() ?? process.env.NARRATION_SHAPE; // undefined in prod
+  if (override === "concise_immersive" || override === "aggressive_concise") return override;
+  return NARRATION_LANE_DEFAULTS[lane];
 }
 
 /** Max characters of player input echoed inside agent prompts. */

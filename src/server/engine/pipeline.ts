@@ -331,8 +331,8 @@ function liveNarrativeStream(modelId: string, system: string, messages: ModelMes
     // dominant cost (pre-narrator-agents.followups.md §2d). For a long stream this
     // optimises time-to-first-token; switch to sort:"throughput" if sustained
     // tokens/sec matters more than first-token latency. narrativeProviderOptions
-    // also drops per-model bad endpoints (DeepInfra on GLM 5.2) and pins the
-    // reasoning floor for abliterated narrators (Aion 2.0) so they don't think long.
+    // also drops per-model bad endpoints (DeepInfra on GLM 5.2) and applies the
+    // eval-ruled per-model reasoning knob (Aion/GLM effort:low, Owl off).
     providerOptions: narrativeProviderOptions(modelId, { sortLatency: true }),
   });
   return {
@@ -708,7 +708,7 @@ async function assemblePreTurn(
     npcNames: allNpcNames,
     embodied: bundle.session.embodied,
     playerContext: bundle.session.embodied && player ? excerptBio(player.snapshot.bio) || undefined : undefined,
-    narrationShape: narrationShapeId(),
+    narrationShape: narrationShapeId("session"),
   });
 
   const gameTime = resolveGameTime(bundle.clockMinutes, bundle.style.calendarStart);

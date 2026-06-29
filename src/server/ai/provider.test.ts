@@ -16,26 +16,35 @@ describe("providerRouting", () => {
 });
 
 describe("narrativeProviderOptions", () => {
-  // No reasoning knob is ever set: Aion's AionLabs endpoint ignores effort and
-  // reasoning.max_tokens (2026-06-21 probe — see provider.ts), so the floor was
-  // removed. These options now carry only provider routing.
-  it("sets no reasoning knob for the Aion narrator — only latency routing", () => {
-    expect(narrativeProviderOptions("aion-labs/aion-2.0")).toBeUndefined();
+  // Per-model reasoning knobs are eval-ruled (narrator-prompt-focus.eval-results.md
+  // Run 2 — see NARRATOR_REASONING in provider.ts): Aion/GLM effort:low, Owl enabled:false.
+  it("sets effort:low for the Aion narrator, even with no routing", () => {
+    expect(narrativeProviderOptions("aion-labs/aion-2.0")).toEqual({
+      openrouter: { reasoning: { effort: "low" } },
+    });
     expect(narrativeProviderOptions("aion-labs/aion-2.0", { sortLatency: true })).toEqual({
-      openrouter: { provider: { sort: "latency" } },
+      openrouter: { provider: { sort: "latency" }, reasoning: { effort: "low" } },
     });
   });
 
-  it("wraps latency routing + per-model exclusions in the openrouter envelope", () => {
+  it("combines latency routing, per-model exclusions, and the reasoning knob", () => {
+    // GLM 5.2: latency routing + DeepInfra exclusion + effort:low.
+    expect(narrativeProviderOptions("z-ai/glm-5.2", { sortLatency: true })).toEqual({
+      openrouter: { provider: { sort: "latency", ignore: ["deepinfra"] }, reasoning: { effort: "low" } },
+    });
+    // Owl Alpha: reasoning disabled (Run 2: reasoning hurts it), no provider knob.
+    expect(narrativeProviderOptions("openrouter/owl-alpha")).toEqual({
+      openrouter: { reasoning: { enabled: false } },
+    });
+  });
+
+  it("carries only provider routing for a model with no reasoning ruling", () => {
     expect(narrativeProviderOptions("deepseek/deepseek-v4-flash", { sortLatency: true })).toEqual({
       openrouter: { provider: { sort: "latency" } },
     });
-    expect(narrativeProviderOptions("z-ai/glm-5.2", { sortLatency: true })).toEqual({
-      openrouter: { provider: { sort: "latency", ignore: ["deepinfra"] } },
-    });
   });
 
-  it("returns undefined when no routing knob applies", () => {
+  it("returns undefined when nothing applies (no routing, no reasoning ruling)", () => {
     expect(narrativeProviderOptions("deepseek/deepseek-v4-flash")).toBeUndefined();
   });
 });

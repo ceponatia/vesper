@@ -1,8 +1,10 @@
 # Mood-reactive character avatars (feasibility)
 
-Status: **active** (2026-06-27) — building slices 1–2 (the cue contract + the
-seeded-frame "card-with-life" PoC in character-chat). Slice 3 (auto-asset gen for the
-whole cast) is queued in `roadmap.md`. The 2026-06-21 feasibility study is below; the
+Status: **slices 1–2 shipped — 2026-06-27** (the `contracts/avatar/` cue contract +
+`deriveAvatarCue`, and the CSS-keyframe `SpriteAvatarRenderer` + standing companion panel
+in character-chat, with ~5 hand-seeded Lysandra frames — see "Implementation deviations"
+below for where the build departed from the spec). **Slice 3** (auto-asset gen for the
+whole cast) is **next** in `roadmap.md`. The 2026-06-21 feasibility study is below; the
 2026-06-27 build decisions are locked in **"Locked decisions"** just under Scope.
 Companion design notes from GPT live in [avatar-3d.notes.md](avatar-3d.notes.md) — read
 it for the `AvatarCue` / `AvatarDirector` detail; the concrete cue contract + enums are
@@ -28,13 +30,13 @@ questions" below); the build-shaping calls:
 
 ### Build plan (slices)
 
-1. **Slice 1 — contract + derivation (pure, this session).** New `src/contracts/avatar/`:
+1. **Slice 1 — contract + derivation (pure) — shipped 2026-06-27.** New `src/contracts/avatar/`:
    the `AvatarCue` Zod schema, the avatar-only enums (`PoseLabel`/`ReactionLabel`/
    `TransitionLabel`), the `AvatarManifest` type, and `deriveAvatarCue` (a pure read over
    the already-derived `EmotionResult` + the social-reaction beat + free-text posture +
    atmosphere). Unit-tested. Serialize the cue onto the chat-state snapshot
    (`chatStateSnapshot`, which already derives the emotion the cue wraps).
-2. **Slice 2 — sprite renderer + chat panel (this session).** A server **manifest
+2. **Slice 2 — sprite renderer + chat panel — shipped 2026-06-27.** A server **manifest
    resolver** (reads the character's `portrait_variant` rows tagged `meta.avatarExpression`,
    falls back to the canonical avatar) behind `GET …/avatar/manifest`; a client
    `SpriteAvatarRenderer` (`motion`) doing breathing/drift, expression crossfade, one-shot
