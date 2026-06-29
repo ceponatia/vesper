@@ -31,8 +31,11 @@ export default defineConfig([
   // ---------------------------------------------------------------------------
   // Type-aware guardrails (whole repo). These encode the failure modes agents
   // hit in a large codebase: `any` escape hatches, dropped awaits, suppressed
-  // errors, unhandled union variants, circular deps. See
+  // errors, unhandled union variants. See
   // docs/developer-notes/monorepo-evaluation.md (lint hardening).
+  // (Circular-dependency detection lives in `pnpm lint:cycles` / madge, not
+  // here: `import/no-cycle` was ~90% of lint wall-time and ~0.3 GB of its RAM
+  // because it re-resolves the whole module graph per file.)
   // ---------------------------------------------------------------------------
   {
     files: ["**/*.{ts,tsx}"],
@@ -65,7 +68,7 @@ export default defineConfig([
       "@typescript-eslint/consistent-type-imports": ["error", { disallowTypeAnnotations: false }],
       "@typescript-eslint/no-import-type-side-effects": "error",
       "@typescript-eslint/naming-convention": NAMING_CONVENTION,
-      "import/no-cycle": "error",
+      // Cycle detection moved to `pnpm lint:cycles` (madge) — see comment above.
       "import/no-duplicates": "error",
     },
   },
