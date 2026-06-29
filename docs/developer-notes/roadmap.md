@@ -38,6 +38,14 @@ win — author's call.
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
   the intimate exposure tier. Standalone — builds on the shipped species note split +
   the phase-4 exposure mask; feeds mood's intimacy-beat inputs but doesn't gate them.
+- **Character chat — opportunistic sensory cues** —
+  [character-chat-sensory.plan.md](character-chat-sensory.plan.md). A prompt-only pass so
+  `presentation.scent_baseline` (and future proximity-gated, non-intimate senses) surface in the
+  Chat tab **only when the beat earns it** (closeness, approach, first impression, intimacy, or a
+  scent-salient input) — a dedicated closeness-gated "Sensory cues" section + a CHAT rule, never a
+  checklist; voice stays always-on in Attributes, intimate sensory stays gated out. Small, standalone;
+  adds a `chat-sensory-closeness` eval fixture. Escalation (a one-turn chat "beat cue" wrapper) is
+  deferred unless prompt-only proves insufficient.
 - **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
   minimap) remain — optional polish on a feature already delivering its core value.
