@@ -30,6 +30,15 @@ import { judgeAbsolute, judgeAvg, type Judgement } from "./judge";
 const OUT = process.env.EVAL_OUT || "data/eval/narration";
 const NARRATIVE_TEMPERATURE = 0.8;
 
+/**
+ * Opt-in deterministic check for a single sensory hook — reported ONLY for scenarios
+ * flagged `sensoryRelevant` (character-chat-sensory.plan.md §7). Most chat turns should
+ * mention nothing of the kind, so this is never a universal score: a non-flagged
+ * scenario that happens to mention scent is not a failure and isn't measured.
+ */
+const SENSORY_CUE_RE =
+  /\b(scent|smell|smells|smelling|smelled|perfume|cologne|fragrance|aroma|musk|soap|cedar|lavender|vanilla|jasmine|floral|warmth|warm skin|breath|softness)\b/i;
+
 const MODEL_ALIASES: Record<string, string> = {
   aion: "aion-labs/aion-2.0",
   glm: "z-ai/glm-5.2",
@@ -143,6 +152,8 @@ interface ResultRow {
   metrics: CellMetrics;
   judgement: Judgement | null;
   narration: string;
+  /** Did a `sensoryRelevant` scenario weave in a sensory hook? undefined ⇒ not flagged (not measured). */
+  sensoryCue?: boolean;
   error?: string;
 }
 
@@ -163,6 +174,7 @@ function printTable(rows: ResultRow[]): void {
     pad("ttft", 6),
     pad("total", 7),
     pad("judge", 6),
+    pad("sens", 5),
     "provider",
   ].join(" ");
   console.log(`\n${header}`);
@@ -186,6 +198,7 @@ function printTable(rows: ResultRow[]): void {
         pad(`${m.ttftMs}ms`, 6),
         pad(`${m.totalMs}ms`, 7),
         pad(r.judgement ? judgeAvg(r.judgement).toFixed(1) : "-", 6),
+        pad(r.sensoryCue === undefined ? "-" : r.sensoryCue ? "Y" : "N", 5),
         m.provider ?? "?",
       ].join(" "),
     );
@@ -229,8 +242,9 @@ async function main(): Promise<void> {
       const prompt = scenario.build(profile, { focus: args.focus });
       const { text, metrics } = await streamNarration(model, reasoning, prompt, scenario.knownNames);
       const judgement = args.judge ? await judgeAbsolute(scenario, text) : null;
-      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, metrics, judgement, narration: text });
-      process.stdout.write(` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}\n`);
+      const sensoryCue = scenario.sensoryRelevant ? SENSORY_CUE_RE.test(text) : undefined;
+      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, metrics, judgement, narration: text, sensoryCue });
+      process.stdout.write(` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}\n`);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       rows.push({

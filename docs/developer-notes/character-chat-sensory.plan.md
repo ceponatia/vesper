@@ -1,8 +1,15 @@
 # Character chat — opportunistic sensory cues
 
-Status: **next** — queued, settled. A prompt-only pass to surface proximity-gated sensory
-detail (scent first) in the sessionless Chat tab, *when the beat earns it*. No session
-exposure/proximity simulation in this pass (that's the deferred escalation, §Follow-up).
+Status: **shipped — 2026-06-29.** The prompt-only pass landed: `sensoryCues` +
+`buildSensorySection` in `prompts/character-chat.ts` surface `presentation.scent_baseline` as a
+closeness-gated "Sensory cues" block (promoted out of the flat Attributes list, exposure-mask hint
+dropped) + a new `CHAT_RULES` rule; voice stays in Attributes, intimate scent/taste gated out via
+`isIntimateAttributeCategory`; tests in `character-chat.test.ts`; the `chat-sensory-closeness` eval
+fixture + an opt-in `sensoryRelevant` deterministic metric (`run.ts`); `docs/prompts.md` updated.
+`pnpm verify` green. **Leftovers (both deferred, not blocking):** an optional live scored eval pass
+(`pnpm eval:narration --scenarios chat-sensory`, spend) to confirm the model uses the cue with
+restraint, and the §Follow-up "beat cue" wrapper if prompt-only proves insufficient. (Original plan
+below.)
 
 Related: [prompts.md](../prompts.md) §Exposure gating (the **session-lane** sense machinery
 this deliberately does *not* port yet), [contracts/attributes.md](../contracts/attributes.md)

@@ -1,10 +1,11 @@
 import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
+import { isIntimateAttributeCategory } from "@/contracts/body/locations";
 import { dispositionBands, traitRegistry } from "@/contracts/personality/traits";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { crossedThresholdHints, deriveMoodDescriptor } from "@/contracts/meters/registry";
 import { stageForValue } from "@/contracts/relationships/stages";
-import { realizeBody, speciesLorePhrase } from "@/contracts/species";
+import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
@@ -133,6 +134,64 @@ function excerpt(text: string, max: number): string {
   return collapsed.length <= max ? collapsed : `${collapsed.slice(0, max).trimEnd()}…`;
 }
 
+interface SensoryCue {
+  /** The attribute id, so the flat Attributes loop can skip what we've claimed. */
+  id: string;
+  /** The rendered `label: value` phrase (reused from `attributePhrase`). */
+  phrase: string;
+}
+
+/**
+ * Proximity-gated, non-intimate sensory attributes — surfaced as *opportunistic*
+ * "use only when the beat earns it" cues (character-chat-sensory.plan.md) instead of
+ * flat attribute lines, because scent reads as embodiment when close and as a checklist
+ * when listed unconditionally. The filter (kind sensory, not `voice`, not intimate)
+ * resolves to `presentation.scent_baseline` today; a future non-voice/non-intimate
+ * sensory attribute (a skin-warmth/texture sense) would qualify automatically.
+ *
+ * - **Voice is excluded** (`category === "voice"`): pitch/timbre/cadence are audible at
+ *   any conversational distance, so they are NOT closeness-gated — they stay in the
+ *   normal Attributes block.
+ * - **Intimate scent/taste is excluded** (`isIntimateAttributeCategory`): chat carries
+ *   no exposure/intimacy signal to earn it, so it surfaces nowhere here.
+ *
+ * Same applicability + exclusion guards as the main attribute loop, so a stale or
+ * prompt-excluded attribute never leaks.
+ */
+function sensoryCues(resolved: readonly AttributeValue[], realizedBody: RealizedBody): SensoryCue[] {
+  const cues: SensoryCue[] = [];
+  for (const value of resolved) {
+    const def = attributeRegistry.byId(value.id);
+    if (!def || def.kind !== "sensory") continue;
+    if (def.category === "voice") continue; // audible at distance — not a closeness cue
+    if (isIntimateAttributeCategory(def.category)) continue; // no exposure signal in chat earns it
+    if (def.excludeFromPrompts) continue;
+    if (!realizedBody.isAttributeApplicable(def)) continue;
+    const phrase = attributePhrase(def.label, def.unit, value.value);
+    if (!phrase) continue;
+    cues.push({ id: value.id, phrase });
+  }
+  return cues;
+}
+
+/**
+ * The "Sensory cues" section: the character's proximity-gated senses as an
+ * opportunistic hook, never a checklist (character-chat-sensory.plan.md §3). The
+ * per-cue lines are `label: value` for the model's reference; the framing forbids
+ * reciting them and ties any use to closeness/relevance. "" when there are no cues, so
+ * the prompt stays byte-identical for an unscented character.
+ */
+function buildSensorySection(cues: SensoryCue[], name: string): string {
+  if (!cues.length) return "";
+  return [
+    "Sensory cues (use only when the beat earns them — never list them):",
+    ...cues.map((c) => `- ${name}'s ${c.phrase}`),
+    "- Work a sensory detail into action only when proximity, touch, intimacy, a first impression, or " +
+      "the player's input makes it noticeable. One grounded hook woven into what you do is enough — " +
+      "never recite a label: value, and never force sensory detail into ordinary distant conversation.",
+  ].join("\n");
+}
+
 /**
  * The mature-content license. The session turn engine grants this implicitly —
  * via the world's style/content directives plus the per-turn exposure
@@ -164,7 +223,8 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     "7. Respond directly to what the user just said before adding anything new.",
     "8. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state, your disposition, and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
     "9. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
-    `10. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
+    "10. When you move close, the player notices you closely, or the moment turns intimate, you may work in one relevant sensory cue if you have one — scent, warmth, texture, the sound of your voice — woven into a gesture or action. One is enough. Do not force sensory detail into ordinary, distant conversation, and never list it.",
+    `11. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
   ].join("\n");
 
 /**
@@ -208,6 +268,13 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
       ].join("\n")
     : "";
 
+  // Proximity-gated sensory attributes (scent) become an opportunistic "Sensory cues"
+  // block instead of flat attribute lines (character-chat-sensory.plan.md). Compute them
+  // first so the attribute loop can skip what we've claimed (and drop their exposure-mask
+  // phrasing hint, which references a mask the chat lane doesn't have).
+  const cues = sensoryCues(resolved, realizedBody);
+  const claimedSensory = new Set(cues.map((c) => c.id));
+
   // Attribute lines + a deduped phrasing-guidance set (same shape as
   // engine/scene.buildGlanceImpressions) so a hint shared by many attributes is
   // stated once instead of repeated per line.
@@ -215,9 +282,11 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
   const hints = new Set<string>();
   for (const value of resolved) {
     if (value.id === "identity.apparent_age") continue; // visual age is portrait-studio-only; the narrator gets real `age` (identity block)
+    if (claimedSensory.has(value.id)) continue; // surfaced in the Sensory cues block, not as a flat line
     const def = attributeRegistry.byId(value.id);
     if (!def) continue; // unknown vocabulary — never leak a raw id
     if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
+    if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue; // intimate scent/taste: chat has no exposure signal to earn it
     if (!realizedBody.isAttributeApplicable(def)) continue;
     const phrase = attributePhrase(def.label, def.unit, value.value);
     if (!phrase) continue;
@@ -270,6 +339,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
       ? `Attributes (who you are — express these naturally, never list them):\n${attributeLines.join("\n")}`
       : "",
     hints.size ? `Phrasing guidance:\n${[...hints].map((h) => `- ${h}`).join("\n")}` : "",
+    buildSensorySection(cues, displayName),
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
