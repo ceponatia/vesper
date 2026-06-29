@@ -765,6 +765,12 @@ export const charactersApi = {
 export interface ChatStreamOutcome {
   ok: boolean;
   error?: ApiError;
+  /**
+   * The caller aborted via `signal` (e.g. a Rerun cancelled this in-flight reply).
+   * Distinct from an error: the server keeps draining + persisting the reply, so the
+   * caller should just stop expecting tokens, not surface a failure toast.
+   */
+  aborted?: boolean;
 }
 
 /**
@@ -772,11 +778,17 @@ export interface ChatStreamOutcome {
  * stream, docs/developer-notes/character-chat.plan.md). `onChunk` fires per
  * decoded delta; the reply is persisted server-side, so a dropped stream still
  * leaves the transcript whole on the next reload. Never throws.
+ *
+ * Pass an `AbortSignal` to cancel the wait for a reply (Rerun): aborting stops the
+ * client reading the stream but cannot stop inference already running — the server
+ * drains + persists the full reply regardless, and the next transcript reload
+ * reconciles. An abort surfaces as `{ ok: true, aborted: true }`, never an error.
  */
 export async function sendCharacterChat(
   characterId: string,
   body: { content?: string; model?: string; open?: boolean },
   onChunk: (delta: string) => void,
+  signal?: AbortSignal,
 ): Promise<ChatStreamOutcome> {
   let res: Response;
   try {
@@ -785,8 +797,10 @@ export async function sendCharacterChat(
       cache: "no-store",
       headers: { "content-type": "application/json", accept: "text/plain" },
       body: JSON.stringify(body),
+      signal,
     });
   } catch (err) {
+    if (signal?.aborted) return { ok: true, aborted: true };
     return { ok: false, error: { status: 0, code: "network_error", message: err instanceof Error ? err.message : "Network error" } };
   }
   if (!res.ok) {
@@ -812,10 +826,11 @@ export async function sendCharacterChat(
     const tail = decoder.decode();
     if (tail) onChunk(tail);
   } catch {
-    // Stream interrupted — the partial reply already reached onChunk and the
-    // server persisted the full reply; the next transcript reload reconciles.
+    // Stream interrupted (network drop or an explicit abort) — the partial reply
+    // already reached onChunk and the server persisted the full reply; the next
+    // transcript reload reconciles.
   }
-  return { ok: true };
+  return { ok: true, aborted: signal?.aborted ?? false };
 }
 
 /** Wrapper for the entity-image GET (`{ image }`, nullable) used by the studio. */

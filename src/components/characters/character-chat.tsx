@@ -88,6 +88,11 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
   // Mirrors `sending` synchronously so the post-send id-reconcile can bail if a
   // new send started in the await window (state would be stale in the closure).
   const sendingRef = useRef(false);
+  // The in-flight reply's AbortController (null when idle). Rerun aborts it so the
+  // UI stops expecting tokens; the server still drains + persists the reply, and the
+  // post-resend transcript reload reconciles. Each stream owns it while active —
+  // a superseding stream (rerun) installs its own, so a stale one can't clear it.
+  const abortRef = useRef<AbortController | null>(null);
 
   // Seed the editable transcript from the load exactly once per character (the
   // "adjust state while rendering" pattern) so a streamed/optimistic reply is
@@ -147,13 +152,31 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
       ...(userLine !== undefined ? [{ id: mkId(), role: "user" as const, content: userLine }] : []),
       { id: assistantId, role: "assistant" as const, content: "" },
     ]);
+    const controller = new AbortController();
+    abortRef.current = controller;
     sendingRef.current = true;
     setSending(true);
-    const outcome = await sendCharacterChat(characterId, body, (delta) => {
-      setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + delta } : l)));
-    });
-    sendingRef.current = false;
-    setSending(false);
+    const outcome = await sendCharacterChat(
+      characterId,
+      body,
+      (delta) => {
+        setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + delta } : l)));
+      },
+      controller.signal,
+    );
+    // Only release the busy state if we're still the active stream — a rerun may
+    // have aborted us and installed its own controller, which now owns `sending`.
+    const superseded = abortRef.current !== controller;
+    if (!superseded) {
+      abortRef.current = null;
+      sendingRef.current = false;
+      setSending(false);
+    }
+    if (outcome.aborted || superseded) {
+      // Cancelled by a rerun: drop our empty bubble and let the newer flow own the UI.
+      setLines((prev) => prev.filter((l) => !(l.id === assistantId && l.content === "")));
+      return outcome;
+    }
     if (!outcome.ok) {
       // Drop the empty reply bubble (a partial reply, if any streamed, stays).
       setLines((prev) => prev.filter((l) => !(l.id === assistantId && l.content === "")));
@@ -199,6 +222,33 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
       setLines((prev) => prev.filter((l) => l.id !== id));
     } else {
       toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
+    }
+  };
+
+  /**
+   * Rerun a user message: cancel any in-flight reply, snip this line and everything
+   * after it out of the transcript, then re-send the same prompt for a fresh reply.
+   * Aborting only stops the UI waiting — inference already running can't be stopped,
+   * so the server still drains/persists that reply; we delete its row here and the
+   * post-resend transcript reload reconciles to server truth. The user line is
+   * deleted too because the resend re-inserts it (the POST always appends the line),
+   * so keeping it would duplicate it.
+   */
+  const rerun = async (id: string) => {
+    const idx = lines.findIndex((l) => l.id === id);
+    const target = lines[idx];
+    if (!target || target.role !== "user") return;
+    const content = target.content;
+    // Cancel the in-flight reply (if any) so its stream stops updating the UI.
+    abortRef.current?.abort();
+    // Drop this line + everything after it optimistically, and delete the persisted
+    // rows server-side (temp/streaming lines have no row yet — skip them; ignore 404s).
+    const doomed = lines.slice(idx).filter((l) => !l.id.startsWith("tmp-"));
+    setLines((prev) => prev.slice(0, idx));
+    await Promise.all(doomed.map((l) => charactersApi.deleteChatMessage(characterId, l.id)));
+    const outcome = await runStream({ content, model: narratorModel }, content);
+    if (!outcome.ok && !outcome.aborted) {
+      toast.push({ title: "Rerun failed", description: outcome.error?.message, tone: "error" });
     }
   };
 
@@ -336,6 +386,7 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
                   streaming={sending}
                   onEdit={editLine}
                   onDelete={deleteLine}
+                  onRerun={rerun}
                 />
               ))
             )}
@@ -550,12 +601,34 @@ function ResetOption({
   );
 }
 
+/** Circular-arrow "rerun" glyph (stroke-based, 24×24 box — matches the nav icons). */
+function RerunIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={className}
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v5h-5" />
+    </svg>
+  );
+}
+
 /**
  * One chat line: the user on the right, the character (with avatar) on the left.
  * Hovering a persisted line reveals Edit / Delete — the recovery levers for a
- * refusal (edit rewrites the line in place; delete snips it out of the window).
- * Optimistic, still-streaming, and temp-id lines expose no actions: there is no
- * server row to target until the send settles and ids reconcile.
+ * refusal (edit rewrites the line in place; delete snips it out of the window) —
+ * and, on the user's own lines, Rerun: re-send this prompt for a fresh reply,
+ * dropping everything after it (and cancelling any in-flight reply). Rerun stays
+ * available while a reply streams, precisely so it can interrupt one; Edit/Delete
+ * don't (mutating mid-stream is ambiguous). Optimistic / still-streaming temp-id
+ * lines expose no actions: there is no server row to target until ids reconcile.
  */
 function MessageBubble({
   line,
@@ -564,6 +637,7 @@ function MessageBubble({
   streaming,
   onEdit,
   onDelete,
+  onRerun,
 }: {
   line: ChatLine;
   name: string;
@@ -571,10 +645,14 @@ function MessageBubble({
   streaming: boolean;
   onEdit: (id: string, content: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<void>;
+  onRerun: (id: string) => void;
 }) {
   const isUser = line.role === "user";
   const pending = !isUser && line.content === "" && streaming;
-  const actionable = !pending && !streaming && !line.id.startsWith("tmp-");
+  const persisted = !pending && !line.id.startsWith("tmp-");
+  // Edit/Delete only on a settled line; Rerun also mid-stream so it can interrupt.
+  const canModify = persisted && !streaming;
+  const canRerun = isUser && persisted;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(line.content);
   const [saving, setSaving] = useState(false);
@@ -629,25 +707,40 @@ function MessageBubble({
             >
               {pending ? <span className="text-paper-500">…</span> : line.content}
             </div>
-            {actionable ? (
+            {canModify || canRerun ? (
               // `.hover-reveal` (globals.css): hover-gated on pointer devices,
               // always shown on touch — the only way these reach a phone. Padded
               // so each is a comfortable finger target, not an 11px glyph.
-              <div className="hover-reveal -mx-1 flex gap-1">
-                <button
-                  type="button"
-                  onClick={startEdit}
-                  className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void onDelete(line.id)}
-                  className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
-                >
-                  Delete
-                </button>
+              <div className="hover-reveal -mx-1 flex items-center gap-1">
+                {canModify ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={startEdit}
+                      className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDelete(line.id)}
+                      className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
+                    >
+                      Delete
+                    </button>
+                  </>
+                ) : null}
+                {canRerun ? (
+                  <button
+                    type="button"
+                    onClick={() => onRerun(line.id)}
+                    aria-label="Rerun from here"
+                    title="Re-send this message — replaces everything after it with a fresh reply"
+                    className="rounded px-2 py-1 text-paper-500 hover:text-accent-300"
+                  >
+                    <RerunIcon className="size-3.5" />
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </>
