@@ -156,7 +156,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       premise: driftedState.premise,
     },
     opening,
-    narrationShape: narrationShapeId(),
+    narrationShape: narrationShapeId("chat"),
   });
   // The opening beat has no player turn — give the model a synthetic (non-persisted)
   // cue to respond to so it produces the character's first line.

@@ -13,41 +13,25 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-- **Mood-reactive avatars** (slices 1–2) — [avatar-3d.plan.md](avatar-3d.plan.md) ·
-  spec [avatar-3d.spec.md](avatar-3d.spec.md). Started 2026-06-27. Locked v1: layered
-  sprite "card-with-life" behind a renderer-neutral `AvatarCue`/`AvatarDirector`,
-  derived token-free from the shipped **Mood** projection, landing first as a **standing
-  companion panel** in character-chat. **Slice 1** = the pure `contracts/avatar/` cue
-  contract + `deriveAvatarCue` + serialization onto the chat snapshot. **Slice 2** = the
-  `motion`-based `SpriteAvatarRenderer` mounted in chat that animates the existing
-  portrait, with **~5 real seeded expression frames** for the Lysandra dev character
-  (hybrid). Slice 3 (auto-asset gen for the whole cast) stays in **Next**. See the plan's
-  "Locked decisions" + "Build plan".
-
-The two most recent finished arcs are in **Shipped**, docs archived to `finished/`: the
-**Mood** arc (projection + `EmotionLabel`, welcome/unwelcome touch, condition +
-scene-atmosphere baseline shifts, the mood chip on the cast card + chat strip) and
-**Social-reaction cards** (core engine + inline authoring 2026-06-25, then the
-library-reuse UI slice 2026-06-26, which also graduated the auth.plan.md public-browse
-deferral, cards-first). The avatar arc above consumes Mood's projection — the last of the
-"bring characters to life" arc.
+Nothing mid-flight. The last arc — **Mood-reactive avatars slices 1–2** and the
+**Narrator prompt focus** rulings (default profile + per-model reasoning, wired
+2026-06-29) — shipped (see **Shipped**). The next build is the top of **Next** below:
+either **avatar slice 3** (auto-asset gen — a weeks-long pipeline lift) or a lighter
+item (intimacy notes / world-map polish) for a faster win — author's call. Two optional,
+spend-gated narrator follow-ups also remain in Next (Phase-3 `--no-focus` A/B, a
+self-consistency judge vote).
 
 ## Next (queued)
 
-- **Narrator prompt focus & proportionate reaction — run the eval** —
-  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) (active; **Phases 1, 2 & 3 + the
-  eval harness all shipped**, see Shipped). All the *building* is done — three prompt phases (shape
-  profiles + dev toggle, the deterministic `buildResponseShape` line, the intake-folded narration-focus
-  planner) and the scored **eval harness** (`pnpm eval:narration`). What remains is **execution**:
-  *run* the harness (live OpenRouter spend — the user's call) across Aion 2.0 / GLM 5.2 / Owl Alpha ×
-  both profiles × reasoning settings to pick the default profile + decide each model's reasoning knob,
-  **Runs 1 & 2 (2026-06-28) are done** — recorded in
-  [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md). Run 1 = the 108-cell
-  matrix (absolute judge, compressed to 4.4–5.0); Run 2 = a **pairwise re-judge** (`eval:narration:compare`,
-  Gemini 3.1 Pro) that breaks the compression. Sharp findings: profile is a **per-model split** (Aion→concise,
-  GLM→aggressive) ⇒ global-vs-per-lane tension; reasoning ⇒ Aion `effort:low`, GLM `low`, Owl `off`.
-  **Decisions still not ruled.** Remaining follow-ups: a self-consistency judge vote + the `--no-focus`
-  Phase-3 A/B (tooling ready). Then the optional **character-chat focus analogue** (gated on those results).
+- **Narrator prompt focus — optional follow-ups** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) · eval
+  [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md). The build **and the
+  rulings are shipped** (Phases 1–3 + the eval harness; then 2026-06-29 the **per-lane default profile**
+  — session `concise_immersive`, chat `aggressive_concise` — and the **per-model reasoning knobs** Aion/GLM
+  `effort:low`, Owl `off`; see Shipped). What's left is **optional and spend-gated**: (1) the Phase-3
+  `--no-focus` A/B (tooling ready) to confirm the intake `focus` planner earns its keep before building the
+  deferred **character-chat focus analogue**; (2) a self-consistency judge vote to harden Run 2's close
+  calls. Neither blocks other work.
 - **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -86,6 +70,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Narrator prompt focus — eval rulings (profile + reasoning)** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) · eval
+  [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md), 2026-06-29. Turned eval
+  Run 2 into code: the shape profile is now a **per-lane resting default** (`NARRATION_LANE_DEFAULTS` —
+  session `concise_immersive`, chat `aggressive_concise`), resolving the global-vs-per-lane tension the
+  per-model split exposed (the dev toggle still force-overrides both lanes); and `narrativeProviderOptions`
+  gained a **per-model reasoning knob** (`NARRATOR_REASONING` — Aion 2.0 `effort:low`, GLM 5.2 `effort:low`,
+  Owl Alpha `enabled:false`), applied to both lanes. Decision 1 re-ruled from "global-only"; tests + dev
+  toggle ("Default (per-lane)" state) updated. No-spend (rulings already had the data).
 - **Personality enactment — sliders & age drive dialogue/action** —
   [personality-enactment.plan.md](personality-enactment.plan.md), 2026-06-28. Made the authored
   trait **sliders** (and the new real age) actually steer how characters talk and act: character-chat
@@ -133,6 +126,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   rules to the session rulebook and `CHAT_RULES` (both lanes), leaning on the existing `## Reaction`
   band; self-motivated NPC initiative kept for living-world texture; authored Style directives
   override. Phases 2–3 + eval remain in Next.
+- **Mood-reactive avatars — slices 1–2 (cue contract + chat PoC)** —
+  [avatar-3d.plan.md](avatar-3d.plan.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md), 2026-06-27.
+  The renderer-neutral `contracts/avatar/` cue contract + pure `deriveAvatarCue` (read over the shipped
+  Mood projection + social-reaction beat + posture + atmosphere, serialized onto the chat snapshot), and
+  a CSS-keyframe `SpriteAvatarRenderer` + standing companion panel mounted in character-chat —
+  breathing/drift/crossfade + one-shot reaction beats over the existing portrait, with ~5 hand-seeded
+  Lysandra expression frames (`scripts/seed-avatar-expressions.ts`). Implementation deviated from the
+  spec (no Zustand/XState/`motion` dep yet; manifest = `portrait_variant` rows tagged
+  `meta.avatarExpression`; blink deferred) — recorded in the plan. **Slice 3** (auto-asset gen for the
+  unbounded cast) stays in Next.
 - **Merge reducer decomposition — all 5 slices** —
   [merge-decomposition.plan.md](finished/merge-decomposition.plan.md) · spec
   [merge-decomposition.spec.md](finished/merge-decomposition.spec.md), 2026-06-27. The 2655-line

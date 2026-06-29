@@ -49,6 +49,29 @@ const PROVIDER_IGNORE: Readonly<Record<string, readonly string[]>> = {
 export type OpenRouterRouting = Record<string, JSONValue>;
 
 /**
+ * Per-model narrator `reasoning` knob, keyed by model id. Ruled from the behavioral
+ * eval (narrator-prompt-focus.eval-results.md, Run 2 — the pairwise re-judge, 2026-06-29):
+ *
+ * - **Aion 2.0** (session default) → `effort:"low"`: Run 2 ranked it 67% vs 33% for
+ *   default — it suppresses the residual "hi"-beat doting/errand-invention at no quality
+ *   cost. (`enabled:false` stays **off the table** — the AionLabs endpoint rejects it,
+ *   "Reasoning is mandatory for this endpoint"; all 12 `off` eval cells died.)
+ * - **GLM 5.2** (chat default) → `effort:"low"`: Run 2's sharper read put `low` first
+ *   (Borda 61%), default a close second, `off` worst. (`off` is the deterministic *latency*
+ *   win — sub-500ms TTFT — if chat first-token latency ever outranks the marginal quality.)
+ * - **Owl Alpha** → `enabled:false`: both runs agree reasoning *hurts* it; Run 2 ranked
+ *   `off` best (71%). Owl accepts the param (no rejection in either run).
+ *
+ * Applies to BOTH lanes (session + chat) since both build options here, so a model gets
+ * its knob wherever it narrates. Models not listed send no reasoning option (model default).
+ */
+const NARRATOR_REASONING: Readonly<Record<string, JSONValue>> = {
+  "aion-labs/aion-2.0": { effort: "low" },
+  "z-ai/glm-5.2": { effort: "low" },
+  "openrouter/owl-alpha": { enabled: false },
+};
+
+/**
  * Build the OpenRouter `provider` routing block for a model: latency-sorted when
  * `sortLatency` is set, plus any per-model exclusions from PROVIDER_IGNORE.
  * Returns undefined when neither knob applies, so callers can omit `provider`
@@ -66,26 +89,26 @@ export function providerRouting(modelId: string, opts: { sortLatency?: boolean }
  * The full `providerOptions.openrouter` block for a **narrator** generation — the
  * session turn stream (pipeline.ts) and the character-chat stream
  * (engine/character-chat.ts) both build their provider options here, so the two
- * lanes never drift. Currently just wraps latency routing + per-model provider
- * exclusions (providerRouting) in the `openrouter` envelope. Returns undefined
- * when nothing applies, so callers can omit `providerOptions` entirely rather
- * than send an empty object.
+ * lanes never drift. Wraps latency routing + per-model provider exclusions
+ * (providerRouting) and the per-model reasoning knob (NARRATOR_REASONING) in the
+ * `openrouter` envelope. Returns undefined when nothing applies, so callers can omit
+ * `providerOptions` entirely rather than send an empty object.
  *
- * No reasoning knob is set here on purpose: the default narrator (Aion 2.0,
- * `aion-labs/aion-2.0`) is served only by the first-party AionLabs endpoint,
- * which **ignores** OpenRouter's reasoning controls — a 2026-06-21 live probe
- * showed `effort:"minimal"` and even `reasoning.max_tokens:128` left reasoning
- * usage unchanged (~220 tok/turn, identical to baseline), and `effort:"none"` /
- * `reasoning.enabled:false` are rejected outright ("Reasoning is mandatory for
- * this endpoint"). So flooring effort bought nothing; it was removed. If a
- * narrator that *does* honor effort is added, reintroduce a per-model knob here.
+ * The reasoning knob is per-model and eval-ruled (NARRATOR_REASONING above — Aion
+ * `effort:low`, GLM `effort:low`, Owl `enabled:false`). Note `effort:"minimal"` was a
+ * no-op on Aion in a 2026-06-21 probe; the 2026-06-28 behavioral eval (Run 2) measured
+ * *output* rather than reasoning-token usage and found `effort:"low"` a positive signal.
  */
 export function narrativeProviderOptions(
   modelId: string,
   opts: { sortLatency?: boolean } = {},
 ): { openrouter: Record<string, JSONValue> } | undefined {
+  const openrouter: Record<string, JSONValue> = {};
   const provider = providerRouting(modelId, opts);
-  return provider ? { openrouter: { provider } } : undefined;
+  if (provider) openrouter.provider = provider;
+  const reasoning = NARRATOR_REASONING[modelId];
+  if (reasoning) openrouter.reasoning = reasoning;
+  return Object.keys(openrouter).length > 0 ? { openrouter } : undefined;
 }
 
 let cachedProvider: OpenRouterProvider | undefined;

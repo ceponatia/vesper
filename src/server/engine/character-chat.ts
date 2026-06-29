@@ -47,8 +47,8 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
   const messages: ModelMessage[] = windowed.map((m) => ({ role: m.role, content: m.content }));
   const modelId = narrativeModelId(input.model);
   // Same provider options as the session narrator (server/ai/provider.ts): drop
-  // per-model bad endpoints (DeepInfra on GLM 5.2) and pin the reasoning floor for
-  // abliterated narrators (Aion 2.0); undefined for every other model.
+  // per-model bad endpoints (DeepInfra on GLM 5.2) and apply the eval-ruled per-model
+  // reasoning knob (the chat default GLM 5.2 → effort:low); undefined for plain models.
   const result = streamText({
     model: openrouter().chat(modelId),
     system: input.system,
