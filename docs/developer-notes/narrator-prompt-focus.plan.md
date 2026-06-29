@@ -8,9 +8,12 @@ and the **per-model reasoning knobs** — see §Decisions locked 1 and §Reasoni
 intake-schema-extension form, no new LLM call); the harness (`pnpm eval:narration` —
 `scripts/eval/narration/`) automates the golden-scenario eval + probes P1–P3. Phases 2 & 3 + the harness
 were built ahead of the interim-eval gate on direct instruction. **All building + the model rulings are
-now done.** What remains is **optional and spend-gated**: the character-chat Phase-2/3 focus analogue
-(gated on a Phase-3 `--no-focus` A/B that confirms the planner earns its keep), and a self-consistency
-judge vote to harden Run 2's close calls.
+now done.** The **Phase-3 focus A/B ran 2026-06-29 (eval Run 3) and the planner did *not* earn its keep**
+(53/47 wash; 50/50 on byte-identical controls; it lost `onBeat`/`noUnrequestedLogistics` to the free
+Phase-2 derivation and risked *over*-reaction on GLM) — so the **character-chat focus analogue it gated
+is ruled out** (don't build it); the zero-cost session planner is kept as-is but not grown. What remains
+is **one optional, spend-gated** item: a self-consistency judge vote to harden Run 2's close calls. See
+[eval-results](narrator-prompt-focus.eval-results.md) §Run 3.
 
 Goal: make narration stay on the player's current beat, react in proportion to
 what the player actually did, and stop doting. Concretely:
@@ -597,7 +600,11 @@ suffice; gate on eval.
 > (`intake.test.ts`), builder (`scene.test.ts` "with the Phase-3 narration-focus planner"). `pnpm
 > verify` green. The originally-specced `directTargets` field was **dropped** (redundant with
 > `addressedNpcs`, which already drives speaker focus) and the planner's `notes` (the brief's
-> top-level `notes` covers rationale). **Deferred:** the character-chat focus analogue.
+> top-level `notes` covers rationale). ~~**Deferred:** the character-chat focus analogue.~~ **Ruled out
+> 2026-06-29 (eval Run 3):** the focus A/B showed the planner does not beat the free Phase-2 derivation,
+> so the chat analogue is not worth building; see [eval-results](narrator-prompt-focus.eval-results.md)
+> §Run 3. (A noted wording follow-up: the `react_emotionally` beat verb can read as license to
+> over-react — keep the deterministic authored band as the proportionality authority.)
 
 The form below describes the original spec (a separate `narrationFocusBriefSchema` was the fallback
 shape); we shipped the **intake-extension** variant it marks as preferred. A small structured
@@ -748,8 +755,10 @@ logistics.
 > `google/gemini-3.1-pro-preview`) that breaks the compression — **the sharper read.** Headlines:
 > the profile "tie" was hiding a **per-model split** (Aion→`concise_immersive` 83%, GLM→`aggressive_concise`
 > 71%, Owl→aggressive) ⇒ a global-vs-per-lane tension; reasoning ⇒ **Aion `effort:low`** (67%), **GLM `low`**,
-> **Owl `off`** (a reversal of run 1); P1 reconfirmed (Aion rejects `enabled:false`). **Decisions still not
-> ruled.** Open follow-ups: a self-consistency judge vote, and the `--no-focus` Phase-3 A/B (tooling ready).
+> **Owl `off`** (a reversal of run 1); P1 reconfirmed (Aion rejects `enabled:false`). Those four
+> decisions are now **ruled & wired** (§Decisions locked 1 + §Reasoning strategy). The **Phase-3 focus
+> A/B ran 2026-06-29 (Run 3) — the planner does *not* earn its keep**, so the character-chat focus
+> analogue is ruled out. The one remaining open follow-up is a **self-consistency judge vote**.
 
 Sequenced **after** the prompt phases (decision 4, clarified 2026-06-27) — its **own
 build task with its own roadmap line**, not part of Phase 1. Until it existed,

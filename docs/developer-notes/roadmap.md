@@ -17,9 +17,9 @@ Nothing mid-flight. The last arc — **Mood-reactive avatars slices 1–2** and 
 **Narrator prompt focus** rulings (default profile + per-model reasoning, wired
 2026-06-29) — shipped (see **Shipped**). The next build is the top of **Next** below:
 either **avatar slice 3** (auto-asset gen — a weeks-long pipeline lift) or a lighter
-item (intimacy notes / world-map polish) for a faster win — author's call. Two optional,
-spend-gated narrator follow-ups also remain in Next (Phase-3 `--no-focus` A/B, a
-self-consistency judge vote).
+item (intimacy notes / world-map polish) for a faster win — author's call. One optional,
+spend-gated narrator follow-up remains in Next (a self-consistency judge vote); the Phase-3
+`--no-focus` A/B ran 2026-06-29 (the planner did **not** earn its keep — see Shipped).
 
 ## Next (queued)
 
@@ -28,10 +28,12 @@ self-consistency judge vote).
   [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md). The build **and the
   rulings are shipped** (Phases 1–3 + the eval harness; then 2026-06-29 the **per-lane default profile**
   — session `concise_immersive`, chat `aggressive_concise` — and the **per-model reasoning knobs** Aion/GLM
-  `effort:low`, Owl `off`; see Shipped). What's left is **optional and spend-gated**: (1) the Phase-3
-  `--no-focus` A/B (tooling ready) to confirm the intake `focus` planner earns its keep before building the
-  deferred **character-chat focus analogue**; (2) a self-consistency judge vote to harden Run 2's close
-  calls. Neither blocks other work.
+  `effort:low`, Owl `off`; see Shipped). The Phase-3 `--no-focus` A/B has now **run (eval Run 3,
+  2026-06-29) and the intake `focus` planner did *not* earn its keep** (53/47 wash; 50/50 on
+  byte-identical controls; lost `onBeat`/`noUnrequestedLogistics` to the free Phase-2 derivation) — so
+  the deferred **character-chat focus analogue is ruled out** (don't build it), and the zero-cost session
+  planner is kept but not grown. What's left is **one optional, spend-gated** item: a self-consistency
+  judge vote to harden Run 2's close calls. Doesn't block other work.
 - **Mood-reactive avatars — slice 3 (auto-asset gen)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) · notes
   [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -70,6 +72,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Narrator prompt focus — Phase-3 focus A/B (planner does not earn its keep)** —
+  [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) · eval
+  [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md) §Run 3, 2026-06-29. Ran the
+  gated `--axis focus` A/B (fresh focus-on vs `--no-focus` pair, pairwise re-judge by
+  `gemini-3.1-pro-preview`): the intake `focus` planner is a **53/47 wash** vs the free Phase-2 derivation
+  (50/50 on byte-identical controls; it *lost* `onBeat`/`noUnrequestedLogistics` and risked over-reaction on
+  GLM). Ruling: **don't build the deferred character-chat focus analogue**; keep but don't grow the
+  zero-cost session planner. (Live OpenRouter spend — 36 generations + 17 judge calls.)
 - **Narrator prompt focus — eval rulings (profile + reasoning)** —
   [narrator-prompt-focus.plan.md](narrator-prompt-focus.plan.md) · eval
   [narrator-prompt-focus.eval-results.md](narrator-prompt-focus.eval-results.md), 2026-06-29. Turned eval
