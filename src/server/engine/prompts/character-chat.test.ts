@@ -82,6 +82,24 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toMatch(/never mention being an AI/i);
   });
 
+  it("fixes a third-person viewpoint: character in third person, player as 'you', first person only in quotes", () => {
+    const withPlayer = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    // Narration is third person for the character…
+    expect(withPlayer).toMatch(/narrate in the third person/i);
+    expect(withPlayer).not.toContain("Speak in the first person");
+    // …the player is always second person, never first/third…
+    expect(withPlayer).toMatch(/never as "I"\/"me"/);
+    // …and the only first-person license is inside the character's quoted dialogue.
+    expect(withPlayer).toMatch(/only place first-person.*may appear is inside Mara's own quoted dialogue/i);
+    // The prose example is third-person, not "I lean…".
+    expect(withPlayer).toContain("Mara leans against the doorframe");
+
+    // The faceless (no-player) variant keeps the same viewpoint discipline.
+    const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(faceless).toMatch(/narrate in the third person/i);
+    expect(faceless).toMatch(/never as "I"\/"me"/);
+  });
+
   it("grants the mature-content license the sessionless chat otherwise lacks", () => {
     // The session engine licenses explicit content via world directives + exposure
     // rules; the chat carries neither, so the prompt must state the frame itself or
@@ -180,7 +198,7 @@ describe("buildCharacterChatSystemPrompt", () => {
   it("keeps the faceless 'the user' phrasing when no player is given (prompt unchanged)", () => {
     const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
     expect(prompt).toContain("speaking with the user");
-    expect(prompt).toContain('address the user directly as "you"');
+    expect(prompt).toContain('Address the user directly as "you"');
   });
 
   it("is byte-identical when the state block is absent (existing behavior)", () => {

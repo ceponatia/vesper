@@ -1,5 +1,5 @@
 import { streamText, type ModelMessage } from "ai";
-import { isDemoMode, narrativeModelId, narrativeProviderOptions, openrouter } from "../ai";
+import { isDemoMode, narrativeModelId, narrativeProviderOptions, openrouter, stripNarratorArtifactStream } from "../ai";
 import { CHARACTER_CHAT_HISTORY_TURNS } from "./constants";
 import { NARRATIVE_TEMPERATURE } from "./pipeline";
 
@@ -56,7 +56,10 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
     temperature: NARRATIVE_TEMPERATURE,
     providerOptions: narrativeProviderOptions(modelId),
   });
-  for await (const delta of result.textStream) yield delta;
+  // Strip the Aion "uncensored response" wrapper tags that leak into the stream
+  // (server/ai/narrator-artifacts.ts) — this cleans the live feed AND, because
+  // the route persists the accumulated deltas, the stored reply + history.
+  yield* stripNarratorArtifactStream(result.textStream);
 }
 
 /** Deterministic placeholder for demo mode — tagged like a real narrator line. */
