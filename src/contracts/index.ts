@@ -13,6 +13,8 @@ export * from "./relationships/stages";
 export * from "./relationships/authored";
 export * from "./relationships/bond";
 export * from "./conditions/condition";
+export * from "./conditions/catalog";
+export * from "./conditions/overlays";
 export * from "./perception";
 export * from "./items/item";
 export * from "./items/coverage";

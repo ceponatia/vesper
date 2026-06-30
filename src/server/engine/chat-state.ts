@@ -26,6 +26,7 @@ import {
   resolveSocialReaction,
   socialReactionCardSchema,
   socialTraitScale,
+  splitStateCues,
   stageForValue,
   stageMidpoint,
   type ActiveCondition,
@@ -38,6 +39,7 @@ import {
   type EmotionLabel,
   type SocialReactionCard,
 } from "@/contracts";
+import { catalogConditionForLabel } from "@/contracts/conditions/catalog";
 import { parseOr } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, type GenerateCheckedResult } from "../ai";
 import { characterChatMessages, characterChatState, db } from "../db";
@@ -77,6 +79,12 @@ export interface ChatState {
   outfitExposed: boolean;
   /** The social cards live in THIS chat — seeded from `profile.socialCards`, then authoritative. */
   activeSocialCards: SocialReactionCard[];
+  /**
+   * Meter bands last surfaced to the narrator as a "just shifted" beat
+   * (character-chat-state-narration.spec.md §5): `{ meterId: band }`. The anti-repetition gate
+   * diffs current bands against this so an unchanged state never re-fires a beat.
+   */
+  surfacedCues: Record<string, string>;
   lastPulseTrace: ChatPulseTrace;
   clockMinutes: number;
   lastInteractionAt: Date | null;
@@ -106,6 +114,8 @@ export interface ChatStateSnapshot {
   outfitExposed: boolean;
   /** The cards live in THIS chat (editable in the scenario modal). */
   activeSocialCards: SocialReactionCard[];
+  /** Meter bands last surfaced as a "just shifted" beat (§5) — for the state-tools debug view. */
+  surfacedCues: Record<string, string>;
   lastPulseTrace: ChatPulseTrace;
   /** Read-only chat-clock + wall-clock anchor, surfaced for the state-tools modal (slice 4). */
   clockMinutes: number;
@@ -121,6 +131,7 @@ export interface ChatStateSnapshot {
 const metersSchema = z.record(z.string(), z.number());
 const conditionsSchema = z.array(activeConditionSchema);
 const activeSocialCardsSchema = z.array(socialReactionCardSchema);
+const surfacedCuesSchema = z.record(z.string(), z.string());
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 const clamp01 = (n: number): number => clamp(n, 0, 1);
@@ -144,6 +155,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     outfitExposed: false,
     // Seeded from the character's own cards, then author-editable + authoritative in the chat.
     activeSocialCards: [...(profile.socialCards ?? [])],
+    surfacedCues: {},
     lastPulseTrace: emptyChatPulseTrace(),
     clockMinutes: 0,
     lastInteractionAt: null,
@@ -167,6 +179,7 @@ export async function loadChatState(
       outfit: characterChatState.outfit,
       outfitExposed: characterChatState.outfitExposed,
       activeSocialCards: characterChatState.activeSocialCards,
+      surfacedCues: characterChatState.surfacedCues,
       clockMinutes: characterChatState.clockMinutes,
       lastInteractionAt: characterChatState.lastInteractionAt,
     })
@@ -183,6 +196,7 @@ export async function loadChatState(
     outfit: row.outfit,
     outfitExposed: row.outfitExposed,
     activeSocialCards: parseOr(activeSocialCardsSchema, row.activeSocialCards, [], sink, "character_chat_state.active_social_cards"),
+    surfacedCues: parseOr(surfacedCuesSchema, row.surfacedCues, {}, sink, "character_chat_state.surfaced_cues"),
     lastPulseTrace: parseOr(
       chatPulseTraceSchema,
       row.lastPulseTrace,
@@ -442,11 +456,15 @@ export async function finalizeChatState(input: {
     exchange: input.exchange,
     sink: input.sink,
   });
+  // Record the meter bands the narrator saw THIS turn (from the drifted, pre-pulse meters)
+  // as next turn's `prevBands`, so an unchanged state never re-fires a "just shifted" beat
+  // (character-chat-state-narration.spec.md §5).
+  const surfacedCues = splitStateCues(input.driftedState.meters, input.driftedState.surfacedCues).nextBands;
   await saveChatState({
     ownerId: input.ownerId,
     characterId: input.characterId,
     promptMessageId: input.promptMessageId,
-    state: { ...state, lastInteractionAt: input.now },
+    state: { ...state, surfacedCues, lastInteractionAt: input.now },
   });
 }
 
@@ -466,11 +484,12 @@ export async function saveChatState(args: {
   const meters = JSON.stringify(state.meters);
   const conditions = JSON.stringify(state.conditions);
   const trace = JSON.stringify(state.lastPulseTrace);
+  const surfacedCues = JSON.stringify(state.surfacedCues);
   await db().execute(sql`
     insert into ${characterChatState}
-      (owner_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, premise, clock_minutes, last_interaction_at, updated_at)
+      (owner_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, premise, clock_minutes, last_interaction_at, updated_at)
     select ${ownerId}, ${characterId}, ${meters}::jsonb, ${state.affinity}, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${state.premise}, ${state.clockMinutes}, ${state.lastInteractionAt}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${state.premise}, ${state.clockMinutes}, ${state.lastInteractionAt}, now()
     where exists (select 1 from ${characterChatMessages} where id = ${promptMessageId})
     on conflict (owner_id, character_id) do update set
       meters = excluded.meters,
@@ -478,6 +497,7 @@ export async function saveChatState(args: {
       conditions = excluded.conditions,
       mind_note = excluded.mind_note,
       last_pulse_trace = excluded.last_pulse_trace,
+      surfaced_cues = excluded.surfaced_cues,
       premise = excluded.premise,
       clock_minutes = excluded.clock_minutes,
       last_interaction_at = excluded.last_interaction_at,
@@ -501,6 +521,7 @@ export async function persistChatState(ownerId: string, characterId: string, sta
     outfit: state.outfit,
     outfitExposed: state.outfitExposed,
     activeSocialCards: state.activeSocialCards,
+    surfacedCues: state.surfacedCues,
     clockMinutes: state.clockMinutes,
     lastInteractionAt: state.lastInteractionAt,
   };
@@ -545,7 +566,7 @@ export async function editChatState(args: {
   if (patch.affinity !== undefined) next.affinity = clampAffinity(patch.affinity);
   if (patch.mindNote !== undefined) next.mindNote = patch.mindNote.trim().slice(0, CHAT_MIND_NOTE_MAX_CHARS);
   if (patch.meters !== undefined) next.meters = clampMeters(patch.meters);
-  if (patch.conditions !== undefined) next.conditions = patch.conditions;
+  if (patch.conditions !== undefined) next.conditions = patch.conditions.map(seedConditionEffects);
   if (patch.outfit !== undefined) next.outfit = patch.outfit.slice(0, CHAT_OUTFIT_MAX_CHARS);
   if (patch.outfitExposed !== undefined) next.outfitExposed = patch.outfitExposed;
   if (patch.activeSocialCards !== undefined) next.activeSocialCards = patch.activeSocialCards;
@@ -591,6 +612,19 @@ export function applyChatAction(state: ChatState, action: ChatActionId): ChatSta
 function upsertCondition(conditions: readonly ActiveCondition[], next: ActiveCondition): ActiveCondition[] {
   const rest = conditions.filter((c) => c.id !== next.id);
   return [...rest, next];
+}
+
+/**
+ * Fill a condition's structured effects from the catalog (character-chat-state-narration.spec.md
+ * §2) when the author gave none, so a recognised label (e.g. "disheveled") arrives with the
+ * attribute overlays that actually shift grooming/scent/hair in the prompt. Author-supplied
+ * effects always win; an unrecognised label is left untouched.
+ */
+function seedConditionEffects(condition: ActiveCondition): ActiveCondition {
+  if (condition.attributeEffects.length > 0) return condition;
+  const entry = catalogConditionForLabel(condition.label);
+  if (!entry) return condition;
+  return { ...condition, attributeEffects: entry.attributeEffects, promptHint: condition.promptHint ?? entry.promptHint };
 }
 
 /** Clamp every meter value to [0,1], keeping the registry keys. */
@@ -649,6 +683,7 @@ export function chatStateSnapshot(
     outfit: state.outfit,
     outfitExposed: state.outfitExposed,
     activeSocialCards: state.activeSocialCards,
+    surfacedCues: state.surfacedCues,
     lastPulseTrace: state.lastPulseTrace,
     clockMinutes: state.clockMinutes,
     lastInteractionAt: state.lastInteractionAt ? state.lastInteractionAt.toISOString() : null,

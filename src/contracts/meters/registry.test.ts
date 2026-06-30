@@ -7,6 +7,8 @@ import {
   meterBaselineOf,
   meterById,
   meterDefinitions,
+  meterStateCue,
+  splitStateCues,
   type MeterDefinition,
 } from "./registry";
 
@@ -136,5 +138,61 @@ describe("crossedThresholdHints", () => {
 
   it("emits nothing for healthy values or unknown meter ids", () => {
     expect(crossedThresholdHints({ hygiene: 0.9, stress: 0.1, mystery: 0 })).toEqual([]);
+  });
+});
+
+describe("meterStateCue", () => {
+  it("returns the deepest crossed band with its hint", () => {
+    const cue = meterStateCue("intoxication", 0.8); // crosses 0.35 and 0.7 — deepest is 0.7
+    expect(cue?.band).toBe("intoxication:0.7");
+    expect(cue?.hint).toBe(meterById("intoxication")?.thresholds[1]?.promptHint);
+  });
+
+  it("picks the shallower band when only it is crossed", () => {
+    const cue = meterStateCue("intoxication", 0.5); // crosses only 0.35
+    expect(cue?.band).toBe("intoxication:0.35");
+  });
+
+  it("scales intensity with depth past the bound (0 at the line → toward 1 at the pole)", () => {
+    const justOver = meterStateCue("intoxication", 0.71)?.intensity ?? 0;
+    const deep = meterStateCue("intoxication", 0.95)?.intensity ?? 0;
+    expect(justOver).toBeLessThan(deep);
+    expect(deep).toBeGreaterThan(0.5);
+    expect(deep).toBeLessThanOrEqual(1);
+  });
+
+  it("handles below-thresholds (hygiene) with the deepest band", () => {
+    const cue = meterStateCue("hygiene", 0.2); // crosses 0.55 and 0.3 — deepest is 0.3
+    expect(cue?.band).toBe("hygiene:0.3");
+  });
+
+  it("returns null for an uncrossed meter or an unknown id", () => {
+    expect(meterStateCue("intoxication", 0)).toBeNull();
+    expect(meterStateCue("mystery", 0.9)).toBeNull();
+  });
+});
+
+describe("splitStateCues", () => {
+  it("foregrounds a newly-crossed band and reports it in nextBands", () => {
+    const split = splitStateCues({ intoxication: 0.8 }, {});
+    expect(split.foreground?.meterId).toBe("intoxication");
+    expect(split.standing).toEqual([]);
+    expect(split.nextBands).toEqual({ intoxication: "intoxication:0.7" });
+  });
+
+  it("a band unchanged from last turn is standing, not foreground", () => {
+    const split = splitStateCues({ intoxication: 0.8 }, { intoxication: "intoxication:0.7" });
+    expect(split.foreground).toBeNull();
+    expect(split.standing.map((c) => c.meterId)).toEqual(["intoxication"]);
+  });
+
+  it("keeps at most one foreground cue (the most intense); the rest are standing (D7)", () => {
+    const split = splitStateCues({ intoxication: 0.95, hygiene: 0.5 }, {});
+    expect(split.foreground?.meterId).toBe("intoxication"); // deeper intensity wins
+    expect(split.standing.map((c) => c.meterId)).toEqual(["hygiene"]);
+  });
+
+  it("no crossed bands ⇒ empty split", () => {
+    expect(splitStateCues({ intoxication: 0, hygiene: 0.9 })).toEqual({ foreground: null, standing: [], nextBands: {} });
   });
 });

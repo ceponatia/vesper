@@ -347,3 +347,103 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain("Sensory cues");
   });
 });
+
+describe("buildCharacterChatSystemPrompt — state as a narration system", () => {
+  const drunkMeters = { meters: { intoxication: 0.8 }, affinity: 0, conditions: [] };
+
+  it("foregrounds a newly-crossed meter band as a one-time 'just shifting' beat", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), state: drunkMeters });
+    expect(prompt).toContain("Right now this is shifting");
+    expect(prompt).toContain("Drunk:"); // the intoxication >0.7 threshold hint
+  });
+
+  it("does not re-foreground a band already surfaced last turn — it rides as standing coloring", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { ...drunkMeters, surfacedCues: { intoxication: "intoxication:0.7" } },
+    });
+    expect(prompt).not.toContain("Right now this is shifting");
+    expect(prompt).toContain("Your current state");
+    expect(prompt).toContain("Drunk:"); // still colors, just not re-announced
+  });
+
+  it("overlays an active condition's attributeEffects onto the attributes (grooming → unkempt)", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: {
+        meters: {},
+        affinity: 0,
+        conditions: [
+          {
+            id: "c1",
+            label: "disheveled",
+            startedAtMinutes: 0,
+            attributeEffects: [{ attributeId: "presentation.grooming", value: "unkempt" }],
+          },
+        ],
+      },
+    });
+    expect(prompt).toContain("unkempt");
+  });
+
+  it("never lets a condition rewrite an inherent attribute (eye colour) in the prompt", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({ attributes: [attr("eyes.color", "grey")] }),
+      state: {
+        meters: {},
+        affinity: 0,
+        conditions: [
+          { id: "c1", label: "x", startedAtMinutes: 0, attributeEffects: [{ attributeId: "eyes.color", value: "crimson" }] },
+        ],
+      },
+    });
+    expect(prompt).toContain("grey");
+    expect(prompt).not.toContain("crimson");
+  });
+
+  it("surfaces social cards as soft framing without the mechanical severity number", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: {
+        meters: {},
+        affinity: 0,
+        conditions: [],
+        activeSocialCards: [
+          {
+            id: "k1",
+            label: "No flirting in public",
+            description: "Keep it private.",
+            kind: "taboo",
+            triggers: [],
+            severity: 80,
+            reactionOverrides: [],
+          },
+        ],
+      },
+    });
+    expect(prompt).toContain("What you care about");
+    expect(prompt).toContain("No flirting in public");
+    expect(prompt).not.toContain("80");
+  });
+
+  it("relaxes the disposition when intoxicated (render-time disinhibition only)", () => {
+    const traits = [{ id: "social.guardedness", value: 90, source: "creation" as const }];
+    const sober = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({ traits }),
+      state: { meters: { intoxication: 0 }, affinity: 0, conditions: [] },
+    });
+    const drunk = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({ traits }),
+      state: { meters: { intoxication: 0.9 }, affinity: 0, conditions: [] },
+    });
+    expect(sober).toContain("Disposition");
+    expect(drunk).toContain("Disposition");
+    expect(drunk).not.toEqual(sober); // the guardedness band reads lower when drunk
+  });
+});

@@ -295,6 +295,9 @@ export const chatStateSnapshotSchema = z.object({
   outfit: textOr(""),
   outfitExposed: z.boolean().catch(false),
   activeSocialCards: z.array(socialReactionCardSchema).catch([]),
+  // Meter bands last surfaced as a "just shifted" beat (character-chat-state-narration.spec.md
+  // §5) — for the state-tools "State → narration" debug readout.
+  surfacedCues: z.record(z.string(), z.string()).catch({}),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
 /** The reset scope of the three chat reset actions (Reset All / Chat / State). */

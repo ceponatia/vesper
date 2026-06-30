@@ -1,7 +1,7 @@
 # Character chat — state as a narration system — spec
 
-Status: **draft** (design detail for the plan; mechanics A–E settled in shape, the
-collected Open questions at the end are live). Read with
+Status: **implemented — 2026-06-30** (all mechanics built; this stays the design-of-record.
+The Decisions section below records the rulings as shipped). Read with
 [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) — that
 plan is the build order; **this is the truth** for how each piece works. Leans on the
 shipped light-state mechanics ([character-chat-state.spec.md](finished/character-chat-state.spec.md))

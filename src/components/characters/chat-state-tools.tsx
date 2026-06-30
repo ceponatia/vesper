@@ -4,7 +4,9 @@ import { useState } from "react";
 import {
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
+  conditionAttributeOverlays,
   meterDefinitions,
+  splitStateCues,
   stageForValue,
   type ActiveCondition,
 } from "@/contracts";
@@ -70,6 +72,12 @@ function StateToolsForm({
 
   const stage = stageForValue(affinity);
   const trace = snapshot.lastPulseTrace;
+
+  // What the live (edited) state would surface to the narrator next turn
+  // (character-chat-state-narration.spec.md §5/§9): the foreground "just shifted" beat vs the
+  // standing cues, diffed against the bands surfaced last turn, plus the condition overlays.
+  const cueSplit = splitStateCues(meters, snapshot.surfacedCues);
+  const overlays = conditionAttributeOverlays(conditions);
 
   const addCondition = () => {
     const label = newCondition.trim();
@@ -221,6 +229,34 @@ function StateToolsForm({
         ) : (
           <p className="mt-1 text-paper-500">No act classified last turn.</p>
         )}
+      </div>
+
+      <div className="rounded-card border border-ink-600 bg-ink-950/40 p-3 text-xs text-paper-400">
+        <span className="block font-medium tracking-wide text-paper-400 uppercase">State → narration</span>
+        <ul className="mt-1 space-y-0.5">
+          <li>
+            Just-shifted beat:{" "}
+            <span className="text-paper-300">{cueSplit.foreground ? cueSplit.foreground.hint : "—"}</span>
+          </li>
+          <li>
+            Standing cues:{" "}
+            <span className="text-paper-300">
+              {cueSplit.standing.length ? cueSplit.standing.map((c) => c.meterId).join(", ") : "—"}
+            </span>
+          </li>
+          <li>
+            Surfaced last turn:{" "}
+            <span className="text-paper-300">
+              {Object.keys(snapshot.surfacedCues).length ? Object.values(snapshot.surfacedCues).join(", ") : "—"}
+            </span>
+          </li>
+          <li>
+            Condition overlays:{" "}
+            <span className="text-paper-300">
+              {overlays.length ? overlays.map((o) => `${o.id}=${String(o.value)}`).join(", ") : "—"}
+            </span>
+          </li>
+        </ul>
       </div>
 
       <div className="flex justify-end gap-2 border-t border-ink-600 pt-3">

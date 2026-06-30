@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { resolveAttributes } from "@/contracts/attributes/value";
+import type { ActiveCondition } from "@/contracts/conditions/condition";
+import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
@@ -48,7 +50,33 @@ export interface RenderCharacterSceneInput {
   outfit?: string;
   /** Reveal intimate anatomy (the scenario modal's exposed toggle). */
   outfitExposed?: boolean;
+  /** Live chat meters — fold a visible-state note (flushed/tipsy/disheveled/tired) into the shot (D4). */
+  meters?: Record<string, number>;
+  /** Active conditions — overlay grooming/scent/hair so a "disheveled" character renders that way (D4). */
+  conditions?: ActiveCondition[];
   sink?: DiagnosticSink;
+}
+
+/**
+ * A short **visible-state** phrase for the scene image (character-chat-state-narration.spec.md
+ * §8): the meters with a visual signature, in image-appropriate wording (the narrator-facing
+ * threshold hints are behavioral, so this is a separate, render-tuned mapping). "" when the
+ * character reads rested and presentable. Mood/affect ride the avatar reference, not this note.
+ */
+export function visualStateNote(meters: Record<string, number> = {}): string {
+  const parts: string[] = [];
+  const intoxication = meters.intoxication ?? 0;
+  if (intoxication > 0.7) parts.push("flushed and visibly unsteady from drink");
+  else if (intoxication > 0.35) parts.push("lightly flushed and loose from a drink or two");
+  const hygiene = meters.hygiene ?? 1;
+  if (hygiene < 0.3) parts.push("unwashed — hair gone lank, skin sheened, clothes rumpled");
+  else if (hygiene < 0.55) parts.push("a little disheveled, hair loosened and skin warm");
+  const energy = meters.energy ?? 1;
+  if (energy < 0.2) parts.push("exhausted and heavy-lidded");
+  else if (energy < 0.45) parts.push("tired, eyes heavy");
+  const arousal = meters.arousal ?? 0;
+  if (arousal > 0.55) parts.push("flushed, eyes bright and breath shallow");
+  return parts.join("; ");
 }
 
 /** Fully-clothed coverage: the chat's SFW default when the outfit isn't flagged exposed. */
@@ -69,10 +97,19 @@ export function buildCharacterSceneContext(input: {
   recentChat: string[];
   outfit: string;
   outfitExposed: boolean;
+  meters?: Record<string, number>;
+  conditions?: ActiveCondition[];
 }): SceneComposerContext {
   const exposure: RegionExposure = input.outfitExposed ? exposedRegions([]) : FULLY_COVERED;
 
-  const resolved = resolveAttributes(input.profile.attributes, []);
+  // Active conditions overlay attributes (grooming/scent/hair) the same way the chat prompt
+  // does (character-chat-state-narration.spec.md §2/§8), and a visible-state note layers the
+  // meters with a visual signature — so the render reflects how the character actually is now.
+  const resolved = resolveAttributes(input.profile.attributes, conditionAttributeOverlays(input.conditions ?? []));
+  const stateNote = visualStateNote(input.meters);
+  const appearance = [characterAppearanceSummary(resolved, undefined, false, input.profile), stateNote]
+    .filter(Boolean)
+    .join(". ");
   const present: ScenePresentCharacter = {
     name: input.name,
     species: speciesLabelPhrase(input.profile.speciesId, input.profile.heritageId),
@@ -83,7 +120,7 @@ export function buildCharacterSceneContext(input: {
     // Authoritative for this shot: the described outfit / exposed toggle overrides a clothed
     // reference avatar (same role exposedRegions played for the old default-outfit path).
     wardrobeTracked: true,
-    appearance: characterAppearanceSummary(resolved, undefined, false, input.profile),
+    appearance,
     // The chat subject is the identity-locked reference (a waist-up portrait), so supplement it
     // with the figure it can't show: the SFW lower-body shape line (always) and exposure-gated
     // intimate anatomy (uncensored route, only when the outfit is flagged exposed).
@@ -137,6 +174,8 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     recentChat: (input.recentChat ?? []).filter((t) => t.trim()),
     outfit: input.outfit ?? "",
     outfitExposed: input.outfitExposed ?? false,
+    meters: input.meters,
+    conditions: input.conditions,
   });
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 

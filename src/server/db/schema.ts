@@ -244,6 +244,12 @@ export const characterChatState = pgTable(
     /** ChatPulseTrace — last-exchange debug trace for the state-tools modal; parsed defensively. */
     lastPulseTrace: jsonb("last_pulse_trace").notNull().default({}),
     /**
+     * Record<string,string> — the meter bands last surfaced as a "just shifted" beat
+     * (character-chat-state-narration.spec.md §5), `{ meterId: band }`. The anti-repetition
+     * gate diffs current bands against this so an unchanged state never re-fires a beat.
+     */
+    surfacedCues: jsonb("surfaced_cues").notNull().default({}),
+    /**
      * Player-set scenario framing for THIS chat ("it's the night before she moves
      * away…"). Chat-only by construction — no session ever reads it (spec §1.2).
      * Pre-filled from the authored `playerRelationship.note`, then player-owned.
