@@ -9,6 +9,7 @@ import {
   type Diagnostic,
 } from "@/contracts";
 import type { CharacterDraft, CharacterForgeSection } from "@/lib/client/api";
+import { resolveChatModelId } from "@/lib/narrative-models";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -40,6 +41,13 @@ export interface CharacterEditorProps {
   avatarImageId?: string | null;
   onAvatarChanged?: () => void;
   diagnostics?: readonly Diagnostic[];
+  /**
+   * The owner's persisted chat-tab narrator pick + a setter that saves it. Held by the
+   * page (not here) so it survives the chat tab unmounting on a tab switch; the forge
+   * page omits both — it never shows the chat tab (no `characterId`).
+   */
+  chatModel?: string;
+  onChatModelChange?: (modelId: string) => void;
 }
 
 /** The character form — the forge review UI *is* the editor (docs/authoring.md). */
@@ -52,6 +60,8 @@ export function CharacterEditor({
   avatarImageId = null,
   onAvatarChanged,
   diagnostics = [],
+  chatModel,
+  onChatModelChange,
 }: CharacterEditorProps) {
   const [tab, setTab] = useState<EditorTab>("profile");
 
@@ -300,6 +310,8 @@ export function CharacterEditor({
                 playerRelationship: { stage, note: draft.profile.playerRelationship?.note ?? "" },
               })
             }
+            chatModel={resolveChatModelId(chatModel)}
+            onChatModelChange={onChatModelChange ?? (() => undefined)}
           />
         ) : (
           <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">

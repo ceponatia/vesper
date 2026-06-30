@@ -11,6 +11,33 @@ progress) · **shipped — <date>** · **parked**.
 > Order is priority, top-down. Each entry links its plan; the plan links its
 > spec/detail.
 
+## To be Planned
+
+This section is for the product owner to add ideas for features and improvements. AI agents
+must _not_ add anything to this section. AI agents _may_ remove items from this section once
+they have incorporated them into the roadmap below and either created a new plan or updated
+an existing plan that will include this work.
+
+- **Character chat as a primary feature** - Character chat began as a testing ground for
+  one-on-one chats between the player and an npc. This feature has grown considerably and
+  is now an enjoyable, light experience in its own right. I would like to expand it to function
+  more like the session chat, albeit with only one character and without location entities (for now).
+  Location would be determined solely through narration.
+  This system would have RAG implemented for memory as well as its current context window for short
+  term memory. It would be able to track mutable attributes and other state changes. We will also
+  need to expand the dev-only debug modal to account for more of these additions and changes.
+- **Expanded character chat state as narration system** - Character chat currently already tracks
+  state changes like hygiene, energy, drunkenness, etc. but these are not utilized by the narrator
+  almost at all. We need to connect them to the character chat's narrator, likely through a pre-turn
+  agent that parses intent and relevant fields _or_ we can provide the entire character's state
+  to the narrator since there is a lot less state with only one character and no locations.
+  An example would be something like: drunkenness is 75, narrator starts writing that the character
+  stumbles when she walks, dialogue is slurred, and inhibition gets a temporary change to make her
+  less inhibited. Similarly with hygiene, a low hygiene would modify scent, texture, and sometimes
+  visual attributes to make them dirtier and then be mentioned occasionally in narration. We need to
+  be careful to make sure the narrator doesn't re-write these every single turn as it is sometimes
+  wont to do.
+
 ## Active (building now)
 
 Nothing mid-flight. The last item — **Mood-reactive avatars — slice 3** — shipped (see
@@ -47,6 +74,12 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character-chat model persists per character** — docs [ui.md](../ui.md) (chat tab),
+  2026-06-30. The Chat tab's narrator dropdown now saves the pick to a new
+  `characters.chatModel` scalar on change (mirrors `worlds.narrativeModel`; migration
+  `drizzle/0016`) — value hoisted to `character-edit-page.tsx` so it survives the tab
+  unmounting, resolved through `resolveChatModelId` (unknown/empty ⇒ chat default), and
+  kept off both the resettable `character_chat_state` row and the editor's profile draft.
 - **Mood-reactive avatars — slice 3 (auto-asset gen + in-session play)** —
   [avatar-3d.plan.md](avatar-3d.plan.md) §"Slice 3 — finalized design" · spec
   [avatar-3d.spec.md](avatar-3d.spec.md), 2026-06-30. Automated the per-character **expression
@@ -66,7 +99,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 - **Character chat — opportunistic sensory cues** —
   [character-chat-sensory.plan.md](character-chat-sensory.plan.md), 2026-06-29. Prompt-only: a
   closeness-gated **"Sensory cues"** block surfaces `presentation.scent_baseline` (via `sensoryCues`
-  in `prompts/character-chat.ts`) *only when the beat earns it* — promoted out of the flat Attributes
+  in `prompts/character-chat.ts`) _only when the beat earns it_ — promoted out of the flat Attributes
   list, exposure-mask hint dropped, plus a `CHAT_RULES` rule (one cue on closeness/notice/intimacy,
   never forced or listed). Voice stays an always-on Attributes line; intimate scent/taste gated out
   (`isIntimateAttributeCategory`). Tests + a `chat-sensory-closeness` eval fixture + an opt-in
@@ -76,7 +109,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   [narrator-prompt-focus.eval-results.md](finished/narrator-prompt-focus.eval-results.md) §Run 3, 2026-06-29. Ran the
   gated `--axis focus` A/B (fresh focus-on vs `--no-focus` pair, pairwise re-judge by
   `gemini-3.1-pro-preview`): the intake `focus` planner is a **53/47 wash** vs the free Phase-2 derivation
-  (50/50 on byte-identical controls; it *lost* `onBeat`/`noUnrequestedLogistics` and risked over-reaction on
+  (50/50 on byte-identical controls; it _lost_ `onBeat`/`noUnrequestedLogistics` and risked over-reaction on
   GLM). Ruling: **don't build the deferred character-chat focus analogue**; keep but don't grow the
   zero-cost session planner. (Live OpenRouter spend — 36 generations + 17 judge calls.)
 - **Narrator prompt focus — eval rulings (profile + reasoning)** —
@@ -107,8 +140,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   (`scripts/eval/narration/`) — assembles **real** prompts (the shipped builders) for six golden
   scenarios, sweeps (scenario × model × shape profile × reasoning), streams via OpenRouter, and reports
   deterministic metrics (paragraphs / segments / distinct speakers / tokens / TTFT / latency / provider)
-  + an LLM-judge rubric. `--no-focus` is a Phase-2-vs-Phase-3 A/B; `--dry-run` inspects prompts with no
-  spend; conservative defaults. Never in `pnpm verify` / CI. Automates the interim eval + probes P1–P3.
+  - an LLM-judge rubric. `--no-focus` is a Phase-2-vs-Phase-3 A/B; `--dry-run` inspects prompts with no
+    spend; conservative defaults. Never in `pnpm verify` / CI. Automates the interim eval + probes P1–P3.
 - **Narrator prompt focus & proportionate reaction — Phase 3** —
   [narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md), 2026-06-27. The structured
   narration-focus planner, built in the **preferred intake-schema-extension form** (no new LLM
@@ -229,7 +262,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   **premise** (chat-only scenario), and a cheap reaction pulse that reuses the
   personality §6 curve to move affinity/mood + refresh the mindNote (degrades to
   drift-only). Surfaced as a prompt "Current state" + scenario block, a `GET/PATCH/POST
-  …/chat/state` API, a status strip + stage-change toast + premise bar, and three
+…/chat/state` API, a status strip + stage-change toast + premise bar, and three
   reset scopes (all/chat/state). **Slice 4** added the texture (arousal-from-intimate,
   action chips, light conditions) and test-bed affordances (a **state-tools modal**
   with the last-turn debug trace, and the **Prompt Character** opening beat). Only the

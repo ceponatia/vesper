@@ -1,0 +1,1 @@
+ALTER TABLE "characters" ADD COLUMN "chat_model" text DEFAULT '' NOT NULL;

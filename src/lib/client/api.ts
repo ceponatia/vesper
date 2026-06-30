@@ -249,6 +249,8 @@ export type CharacterSummary = z.infer<typeof characterSummarySchema>;
 export const characterDetailSchema = characterSummarySchema.extend({
   profile: characterProfileSchema.catch(() => emptyCharacterProfile()),
   visibility: visibilitySchema,
+  /** The owner's last character-chat narrator pick (a NARRATIVE_MODELS id); empty ⇒ the chat default. */
+  chatModel: textOr(""),
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 

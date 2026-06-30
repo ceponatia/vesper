@@ -7,6 +7,7 @@ import {
   charactersApi,
   type CharacterDraft,
 } from "@/lib/client/api";
+import { resolveChatModelId } from "@/lib/narrative-models";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PublishToggle } from "@/components/library/publish-toggle";
@@ -25,6 +26,10 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const detail = useAsyncData(() => charactersApi.get(characterId), [characterId]);
 
   const [draft, setDraft] = useState<CharacterDraft | null>(null);
+  // The chat tab's narrator pick lives here (not in the chat component) so it outlives
+  // that tab unmounting on a tab switch; persisted out-of-band to `characters.chatModel`
+  // (not the editor draft), so it's saved on pick rather than via the SaveBar.
+  const [chatModel, setChatModel] = useState<string>(() => resolveChatModelId(null));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -48,10 +53,12 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         profile: detail.data.profile,
       }),
     );
+    setChatModel(resolveChatModelId(detail.data.chatModel));
   } else if (seedAction === "clear") {
     setSeededId(null);
     setDraft(null);
     setDirty(false);
+    setChatModel(resolveChatModelId(null));
   }
 
   const save = async () => {
@@ -71,6 +78,15 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
       detail.reload({ silent: true });
     } else {
       toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+    }
+  };
+
+  /** Persist the chat-tab narrator pick immediately (save-on-update), out-of-band from the SaveBar. */
+  const saveChatModel = async (modelId: string) => {
+    setChatModel(modelId);
+    const result = await charactersApi.update(characterId, { chatModel: modelId });
+    if (!result.ok) {
+      toast.push({ title: "Couldn't save the chat model", description: result.error.message, tone: "error" });
     }
   };
 
@@ -122,6 +138,8 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         characterId={characterId}
         avatarImageId={detail.data?.avatarImageId ?? null}
         onAvatarChanged={() => detail.reload({ silent: true })}
+        chatModel={chatModel}
+        onChatModelChange={(modelId) => void saveChatModel(modelId)}
       />
       <SaveBar
         dirty={dirty}

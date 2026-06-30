@@ -72,6 +72,8 @@ export const characterPatchSchema = z.object({
   tags: tagsSchema.optional(),
   /** Publish/un-publish toggle (auth.plan.md). */
   visibility: visibilitySchema.optional(),
+  /** Persisted character-chat narrator pick (a NARRATIVE_MODELS id); empty ⇒ the chat default. */
+  chatModel: z.string().trim().max(120).optional(),
 });
 export type CharacterPatchBody = z.infer<typeof characterPatchSchema>;
 
