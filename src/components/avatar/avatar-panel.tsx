@@ -1,9 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import {
   type AtmosphereLabel,
   type AvatarCue,
-  type ChatPulseTrace,
   deriveReactionBeat,
   EMPTY_AVATAR_MANIFEST,
   type ReactionLabel,
@@ -14,19 +14,32 @@ import { MoodChip } from "@/components/ui/mood-chip";
 import { cx } from "@/components/ui/cx";
 import { SpriteAvatar } from "./sprite-avatar";
 
+/**
+ * A source-agnostic one-shot beat input (avatar-3d.plan.md §"In-session beat"): the panel
+ * derives the `ReactionLabel` from this, so each surface builds its own (character-chat from
+ * the chat pulse trace at magnitude 1; in-session play from the real merge reaction beat with
+ * its evaluated magnitude). `valence: null` ⇒ no beat.
+ */
+export interface AvatarBeatInput {
+  valence: "like" | "dislike" | null;
+  /** Evaluated reaction magnitude — drives the strong-tier beat (laugh/flinch vs nod/sigh). */
+  magnitude: number;
+  concept?: string | null;
+}
+
 export interface AvatarPanelProps {
   characterId: string;
   name: string;
   /** Canonical avatar — the base/fallback frame while the manifest loads or lacks a frame. */
   avatarImageId: string | null;
-  /** Baseline cue from the chat snapshot (reaction always `none` here). */
+  /** Baseline cue (reaction always `none` here — the beat rides `beat`/`beatTick`). */
   cue: AvatarCue;
-  /** Last pulse trace — the one-shot beat is derived from its valence/concept. */
-  trace: ChatPulseTrace;
+  /** The latest one-shot beat input; null ⇒ no beat. Fires only when `beatTick` changes. */
+  beat: AvatarBeatInput | null;
   /**
-   * Increments once per fresh reply (the chat's reply edge). `0` on mount ⇒ no beat; a
-   * change keys a single beat replay. Polls don't bump it, so beats never replay on a
-   * status refresh — the spec's hysteresis without a timer.
+   * Increments once per fresh reaction edge (chat reply / new session turn). `0` ⇒ no beat;
+   * a change keys a single replay. Polls don't bump it, so beats never replay on a refresh —
+   * the spec's hysteresis without a timer.
    */
   beatTick: number;
   className?: string;
@@ -43,23 +56,58 @@ const ATMOSPHERE_TINT: Record<AtmosphereLabel, string | null> = {
   hopeful: "linear-gradient(180deg, rgba(210,184,133,0.12), transparent 60%)",
 };
 
+/** A novel emotion's frame is lazy-generated server-side; refetch the manifest after ~this long. */
+const LAZY_GEN_POLL_MS = 5_000;
+
 /**
- * The standing companion panel (avatar-3d.plan.md, slice 2): a portrait-sized avatar that
- * emotes live as the chat progresses, mounted beside the conversation. It derives the
- * one-shot reaction beat from the latest pulse trace (mild beat — the strong laugh/flinch
- * tier needs the real magnitude, which session-play threads later) and fetches the asset
- * manifest once. Degrades gracefully: no manifest / no frames ⇒ the base portrait with
+ * The standing companion panel (avatar-3d.plan.md): a portrait-sized avatar that emotes live
+ * as the conversation/session progresses. It fetches the asset manifest once, **lazy-gens** a
+ * missing expression frame on demand (then refetches), and pulses a one-shot beat off the
+ * latest reaction. Degrades gracefully: no manifest / no frames ⇒ the base portrait with
  * procedural life only.
  */
-export function AvatarPanel({ characterId, name, avatarImageId, cue, trace, beatTick, className }: AvatarPanelProps) {
+export function AvatarPanel({ characterId, name, avatarImageId, cue, beat, beatTick, className }: AvatarPanelProps) {
   const manifest = useAsyncData(() => charactersApi.avatarManifest(characterId), [characterId]);
   const resolved = manifest.data ?? EMPTY_AVATAR_MANIFEST;
+  const reload = manifest.reload;
+
+  // Lazy-gen: when the current sustained emotion has no frame (and isn't `neutral`, which
+  // falls back to the base portrait), request it once, then refetch the manifest so it swaps
+  // in when ready. The ref guard is mutated inside the effect (never render) and the
+  // setState-bearing reload runs only after the await — strict-react-hooks safe.
+  const currentEmotion = cue.character.emotion;
+  // Wait for the real manifest before deciding a frame is missing — until it loads, `resolved`
+  // is the EMPTY manifest (every frame reads absent), which would fire a redundant POST on
+  // every mount even when the frame already exists.
+  const loaded = manifest.data !== null;
+  const hasFrame = currentEmotion in resolved.expressions;
+  const requestedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!loaded || currentEmotion === "neutral" || hasFrame) return;
+    const key = `${characterId}:${currentEmotion}`;
+    if (requestedRef.current.has(key)) return;
+    requestedRef.current.add(key);
+    let active = true;
+    void (async () => {
+      const res = await charactersApi.requestExpression(characterId, currentEmotion);
+      if (!active) return;
+      if (!res.ok) {
+        requestedRef.current.delete(key); // allow a later retry (e.g. a 429)
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, LAZY_GEN_POLL_MS));
+      if (active) reload({ silent: true });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [characterId, currentEmotion, hasFrame, loaded, reload]);
 
   const beatReaction: ReactionLabel =
-    beatTick > 0 && trace.valence
+    beatTick > 0 && beat?.valence
       ? deriveReactionBeat(
-          { valence: trace.valence, magnitude: 1, band: "", hint: "" },
-          trace.concept ?? undefined,
+          { valence: beat.valence, magnitude: beat.magnitude, band: "", hint: "" },
+          beat.concept ?? undefined,
           cue.character.emotion,
         )
       : "none";

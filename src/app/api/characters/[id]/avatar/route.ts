@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { avatarImageModels, DEFAULT_AVATAR_IMAGE_MODEL } from "@/contracts";
 import { characters, db } from "@/server/db";
+import { enqueueAvatarSeed } from "@/server/engine";
 import { generateAvatar } from "@/server/images";
 import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
 
@@ -36,9 +37,13 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const jobId = await startJob({
     type: "avatar",
     payload: { characterId: id, style: body.value.style, model: body.value.model },
-    run: async () => ({
-      imageId: await generateAvatar({ characterId: id, userId: user.id, style: body.value.style, model: body.value.model }),
-    }),
+    run: async () => {
+      const imageId = await generateAvatar({ characterId: id, userId: user.id, style: body.value.style, model: body.value.model });
+      // Seed the full expression set off the critical path (avatar-3d.plan.md §"Jobs"). A
+      // separate detached engine job — keeps the avatar job fast; no-ops if the avatar failed.
+      await enqueueAvatarSeed(id, user.id);
+      return { imageId };
+    },
   });
   return jsonOk({ jobId, characterId: id }, 202);
 });

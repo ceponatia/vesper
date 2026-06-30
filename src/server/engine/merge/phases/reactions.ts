@@ -10,7 +10,7 @@ import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { AFFINITY_DELTA_CLAMP } from "../../constants";
 import type { BundleRelationship } from "../../bundle";
 import { findParticipant } from "../grounding";
-import type { AffinityUpdate, PhaseContext, ReactionAffinityResult } from "../types";
+import type { AffinityUpdate, PhaseContext, ReactionAffinityResult, ReactionBeat } from "../types";
 import type { WorkingParticipant, WorkingState } from "../working-state";
 
 /**
@@ -68,11 +68,24 @@ export function planReactionAffinity(
       const welcomeness = resolveTouchWelcomeness({ affinityStage: stageId });
       const intimate = interactionConceptById(primary.concept)?.intimate ?? false;
       const d = touchMoodDeltas(welcomeness, { intimate, traits: target.snapshot.traits });
+      // Avatar beat for an un-carded touch (avatar-3d): the romance beats the pre-narration
+      // evaluator misses. A `neutral` touch is too faint to pulse; an intimate touch lands at
+      // the strong tier. Cosmetic — it never touches affinity (touches own no edge here).
+      const touchBeat: ReactionBeat | undefined =
+        welcomeness === "neutral"
+          ? undefined
+          : {
+              participantId: target.id,
+              concept: primary.concept,
+              valence: welcomeness === "welcome" ? "like" : "dislike",
+              magnitude: intimate ? 2 : 1,
+            };
       return {
         updates: [],
         ownedEdgeKeys: new Set(),
         moodAdjustment: Math.abs(d.mood) >= 0.005 ? { participantId: target.id, delta: d.mood } : undefined,
         stressAdjustment: Math.abs(d.stress) >= 0.005 ? { participantId: target.id, delta: d.stress } : undefined,
+        ...(touchBeat ? { beat: touchBeat } : {}),
       };
     }
     return empty;
@@ -97,7 +110,15 @@ export function planReactionAffinity(
     delta === 0
       ? []
       : [{ fromParticipantId: target.id, toParticipantId: player.id, kind: "feeling" as const, delta, reason: `reaction:${reaction.conceptId}` }];
-  return { updates, ownedEdgeKeys, moodAdjustment };
+  // The avatar beat for a carded reaction: the curve verdict the narrator's `## Reaction`
+  // line also restates (a single evaluation), so the pulse agrees with the prose.
+  const beat: ReactionBeat = {
+    participantId: target.id,
+    concept: reaction.conceptId,
+    valence: evaluated.valence,
+    magnitude: evaluated.magnitude,
+  };
+  return { updates, ownedEdgeKeys, moodAdjustment, beat };
 }
 
 /** Reaction updates win their edge; simulant updates on an owned edge are dropped. */

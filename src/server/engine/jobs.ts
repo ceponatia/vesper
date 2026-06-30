@@ -19,6 +19,7 @@ export type JobType =
   | "chat_summary"
   | "scene_image"
   | "avatar"
+  | "avatar_seed"
   | "portrait_variant"
   | "entity_image"
   | "embed_refresh"

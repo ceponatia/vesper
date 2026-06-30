@@ -1,2 +1,2 @@
 export { SpriteAvatar, type AvatarRendererProps } from "./sprite-avatar";
-export { AvatarPanel, type AvatarPanelProps } from "./avatar-panel";
+export { AvatarPanel, type AvatarBeatInput, type AvatarPanelProps } from "./avatar-panel";

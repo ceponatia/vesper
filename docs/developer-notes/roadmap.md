@@ -13,23 +13,12 @@ progress) · **shipped — <date>** · **parked**.
 
 ## Active (building now)
 
-Nothing mid-flight. The last item — **Character chat opportunistic sensory cues** — shipped (see
-**Shipped**). The next build is the top of **Next** below: either **avatar slice 3** (auto-asset
-gen — a weeks-long pipeline lift) or a lighter item (intimacy notes / world-map polish) for a faster
-win — author's call.
+Nothing mid-flight. The last item — **Mood-reactive avatars — slice 3** — shipped (see
+**Shipped**). Next build is the top of **Next** below (intimacy notes / world-map polish), or
+the decision-gated avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
 
 ## Next (queued)
 
-- **Mood-reactive avatars — slice 3 (auto-asset gen)** —
-  [avatar-3d.plan.md](avatar-3d.plan.md) · notes
-  [avatar-3d.notes.md](avatar-3d.notes.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md).
-  Slices 1–2 are **Active** (above) — the cue contract + the seeded-frame PoC in chat.
-  Slice 3 is the remaining lift: **automate** the per-character expression/pose frame set
-  (extend the `portrait_variant` reference-edit pipeline, identity-locked) so the avatar is
-  expressive for the **whole unbounded cast**, not just the hand-seeded dev character —
-  seed a minimal set at creation + lazy-gen novel frames on demand (cached forever, off the
-  critical path). Then wire into **in-session play** (richer data). Decision-gated upgrade
-  lanes after: Rive reusable rig, then R3F/VRM 3D. Voice deferred.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -58,6 +47,22 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Mood-reactive avatars — slice 3 (auto-asset gen + in-session play)** —
+  [avatar-3d.plan.md](avatar-3d.plan.md) §"Slice 3 — finalized design" · spec
+  [avatar-3d.spec.md](avatar-3d.spec.md), 2026-06-30. Automated the per-character **expression
+  frame set** (all 11 `EmotionLabel`s, seeded at avatar-ready via a new `avatar_seed` engine
+  job + lazy-gen on demand through `POST …/avatar/expressions`, identity-locked Venice edits,
+  cached forever) so the **whole unbounded cast** is expressive — `server/images/avatar-expressions.ts`
+  (Venice concurrency semaphore + negative-cache that retries transient failures but tombstones
+  content rejections; **Model-B** delete-on-face-change instead of a clone-breaking
+  `sourceImageId` filter). Plus a **live standing companion avatar in session play** (Scene tab):
+  per-participant `avatarCue` on the status payload, a **stable** focal (companion→tier→id), and a
+  one-shot **reaction beat** sourced from the merge — `planReactionAffinity` now emits a
+  `ReactionBeat` on both the carded branch **and** the un-carded **touch** branch (the romance
+  beats), threaded additively to `agentResults.reaction` and fired once via a mount-baseline
+  guard. Two adversarial workflows (design + impl review) gated it; no migration. **Deferred:**
+  pose frames, touch reactions in the narrator line, a global detached-job recovery sweep. Decision-gated
+  upgrade lanes remain (Rive rig, then R3F/VRM 3D; voice deferred).
 - **Character chat — opportunistic sensory cues** —
   [character-chat-sensory.plan.md](character-chat-sensory.plan.md), 2026-06-29. Prompt-only: a
   closeness-gated **"Sensory cues"** block surfaces `presentation.scent_baseline` (via `sensoryCues`
