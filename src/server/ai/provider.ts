@@ -64,8 +64,6 @@ export type OpenRouterRouting = Record<string, JSONValue>;
  * - **GLM 5.2** (chat default) → `effort:"low"`: Run 2's sharper read put `low` first
  *   (Borda 61%), default a close second, `off` worst. (`off` is the deterministic *latency*
  *   win — sub-500ms TTFT — if chat first-token latency ever outranks the marginal quality.)
- * - **Owl Alpha** → `enabled:false`: both runs agree reasoning *hurts* it; Run 2 ranked
- *   `off` best (71%). Owl accepts the param (no rejection in either run).
  *
  * Applies to BOTH lanes (session + chat) since both build options here, so a model gets
  * its knob wherever it narrates. Models not listed send no reasoning option (model default).
@@ -73,7 +71,6 @@ export type OpenRouterRouting = Record<string, JSONValue>;
 const NARRATOR_REASONING: Readonly<Record<string, JSONValue>> = {
   "aion-labs/aion-2.0": { effort: "low" },
   "z-ai/glm-5.2": { effort: "low" },
-  "openrouter/owl-alpha": { enabled: false },
 };
 
 /**
@@ -103,7 +100,7 @@ export function providerRouting(
  * `providerOptions` entirely rather than send an empty object.
  *
  * The reasoning knob is per-model and eval-ruled (NARRATOR_REASONING above — Aion
- * `effort:low`, GLM `effort:low`, Owl `enabled:false`). Note `effort:"minimal"` was a
+ * `effort:low`, GLM `effort:low`). Note `effort:"minimal"` was a
  * no-op on Aion in a 2026-06-21 probe; the 2026-06-28 behavioral eval (Run 2) measured
  * *output* rather than reasoning-token usage and found `effort:"low"` a positive signal.
  */
@@ -132,35 +129,35 @@ export function openrouter(): OpenRouterProvider {
   return cachedProvider;
 }
 
+// Text-model selection is **code or UI only** — there is no env override layer.
+// The narrator + in-session agent models come from the curated code defaults
+// (lib/narrative-models.ts, lib/agent-models.ts) or a per-world UI choice (world
+// creation + World tab); embeddings + the tool model default purely in code. A
+// retired/typo'd env value can no longer silently shadow these (it once pinned the
+// agent model to the pulled `openrouter/owl-alpha` stealth slug).
 export function narrativeModelId(worldModel?: string | null): string {
-  return (
-    worldModel?.trim() ||
-    process.env.NARRATIVE_MODEL ||
-    MODEL_DEFAULTS.narrative
-  );
+  return worldModel?.trim() || MODEL_DEFAULTS.narrative;
 }
 
 export function stateModelId(): string {
-  return process.env.STATE_MODEL || MODEL_DEFAULTS.state;
+  return MODEL_DEFAULTS.state;
 }
 
 export function toolModelId(): string {
-  return process.env.TOOL_MODEL || MODEL_DEFAULTS.tool;
+  return MODEL_DEFAULTS.tool;
 }
 
 /**
  * Resolver for the **in-session, non-narrator text agents** (intake + the four
  * post-turn agents): the world's per-session override (set from the World tab),
- * else `AGENT_MODEL`, else the curated default (deepseek-v4-flash). The authoring
- * agents and the image pipeline deliberately do NOT call this — they stay on the
- * plain `stateModelId`/`toolModelId` defaults, outside the session switch.
+ * else the curated default (lib/agent-models.ts). The authoring agents and the
+ * image pipeline deliberately do NOT call this — they stay on the plain
+ * `stateModelId`/`toolModelId` defaults, outside the session switch.
  */
 export function agentModelId(worldAgentModel?: string | null): string {
-  return (
-    worldAgentModel?.trim() || process.env.AGENT_MODEL || MODEL_DEFAULTS.state
-  );
+  return worldAgentModel?.trim() || MODEL_DEFAULTS.state;
 }
 
 export function embeddingModelId(): string {
-  return process.env.EMBEDDING_MODEL || MODEL_DEFAULTS.embedding;
+  return MODEL_DEFAULTS.embedding;
 }

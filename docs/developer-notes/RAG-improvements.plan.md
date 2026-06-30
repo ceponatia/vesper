@@ -256,7 +256,7 @@ meaningful semantic ranking (`facts.test.ts` only asserts identical→1, unrelat
 is to **snapshot real embedding vectors** for a small curated corpus + query set
 as frozen fixtures, then run the ranking math offline (no API call in CI). That
 keeps tests deterministic and fast. Caveat from embedder isolation: fixtures are
-bound to one `EMBEDDING_MODEL` and must be re-snapshotted when it changes —
+bound to one embedding model and must be re-snapshotted when it changes —
 acceptable, and the snapshot job is small. The harness should also exercise the
 adjacent knobs (`FACT_MIN_CONFIDENCE`, the `*_RETRIEVAL_LIMIT`s), not just the
 score floors.
@@ -334,7 +334,7 @@ blocker the first draft hung step 3 on. Concrete first steps:
 - **#2** — RRF `k`; fusion per-leg vs across legs.
 - **#4** — grounded/unresolved asymmetry; do renames re-ground historical facts?
 - **#6** — frozen real-vector fixtures: corpus size and location; re-snapshot on
-  `EMBEDDING_MODEL` change.
+  embedding-model change.
 - **#7** — ~~do we revisit the "no pre-narration LLM" decision~~ (answered — it was
   reversed and an intake agent shipped); the live question is now: do we spend the
   existing pre-narrator slot on a synthesized scene digest, or keep history

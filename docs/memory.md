@@ -1,6 +1,6 @@
 # Memory & RAG
 
-`src/server/memory/` — three memory systems share one embedding space (1536-dim, OpenRouter `EMBEDDING_MODEL`, pgvector cosine). All retrieval calls run in the pre-turn parallel fan-out.
+`src/server/memory/` — three memory systems share one embedding space (1536-dim, the code-default embedding model in `server/ai/provider.ts` `MODEL_DEFAULTS`, pgvector cosine). All retrieval calls run in the pre-turn parallel fan-out.
 
 ## Episodes (episodic memory)
 
@@ -46,7 +46,7 @@ A player can author an interior note for an NPC (cast card → "Inner note"): a 
 
 ## Embedder isolation
 
-Every embedding row records its `embedder` (model id, or `"pseudo"` for demo mode's deterministic hash-based 1536-dim vectors). All similarity queries filter on the current embedder, so pseudo and real vectors — or two different real models after an `EMBEDDING_MODEL` change — never compare against each other. The failure mode of switching embedders mid-session is reduced recall (old rows stop matching), never corrupted thresholds; an `embed_refresh` job re-embeds a session's rows on demand.
+Every embedding row records its `embedder` (model id, or `"pseudo"` for demo mode's deterministic hash-based 1536-dim vectors). All similarity queries filter on the current embedder, so pseudo and real vectors — or two different real models after an embedding-model change — never compare against each other. The failure mode of switching embedders mid-session is reduced recall (old rows stop matching), never corrupted thresholds; an `embed_refresh` job re-embeds a session's rows on demand.
 
 ## Tuning knobs
 

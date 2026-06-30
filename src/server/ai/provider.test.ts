@@ -17,7 +17,7 @@ describe("providerRouting", () => {
 
 describe("narrativeProviderOptions", () => {
   // Per-model reasoning knobs are eval-ruled (narrator-prompt-focus.eval-results.md
-  // Run 2 — see NARRATOR_REASONING in provider.ts): Aion/GLM effort:low, Owl enabled:false.
+  // Run 2 — see NARRATOR_REASONING in provider.ts): Aion/GLM effort:low.
   it("sets effort:low for the Aion narrator, even with no routing", () => {
     expect(narrativeProviderOptions("aion-labs/aion-2.0")).toEqual({
       openrouter: { reasoning: { effort: "low" } },
@@ -31,10 +31,6 @@ describe("narrativeProviderOptions", () => {
     // GLM 5.2: latency routing + DeepInfra exclusion + effort:low.
     expect(narrativeProviderOptions("z-ai/glm-5.2", { sortLatency: true })).toEqual({
       openrouter: { provider: { sort: "latency", ignore: ["deepinfra"] }, reasoning: { effort: "low" } },
-    });
-    // Owl Alpha: reasoning disabled (Run 2: reasoning hurts it), no provider knob.
-    expect(narrativeProviderOptions("openrouter/owl-alpha")).toEqual({
-      openrouter: { reasoning: { enabled: false } },
     });
   });
 
