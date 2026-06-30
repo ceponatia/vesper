@@ -112,7 +112,7 @@ export interface ExtractInnerNoteResult {
 }
 
 /**
- * One generateChecked call (STATE_MODEL, temperature 0). Demo mode and a
+ * One generateChecked call (the state-model default, temperature 0). Demo mode and a
  * twice-failed validation both land on the degraded default — the verbatim
  * note as one knowledge fact plus guidance — with the diagnostics the
  * resilience ladder records (`inner_note.extraction.degraded` / `.parse_failed`).

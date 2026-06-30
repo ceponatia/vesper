@@ -21,13 +21,13 @@ export interface AgentModelOption {
 export const AGENT_MODELS: readonly AgentModelOption[] = [
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
-  { id: "openrouter/owl-alpha", label: "Owl Alpha" },
 ];
 
 /**
  * The in-session agent model used when neither the world nor the env override
- * one. DeepSeek 4 Flash: no reasoning by default, fast, and ~30× cheaper per
- * call than the former gemini-3.5-flash default (which mandated reasoning it
- * could not disable — see pre-narrator-agents.followups.md §2a).
+ * one. GLM 5.2: capable and reasonably fast, and already a curated narrator
+ * option. Replaced the retired `openrouter/owl-alpha` stealth slug — OpenRouter
+ * returns "No endpoints found" once an alpha model is pulled, which failed every
+ * agent call that fell back to the default.
  */
-export const DEFAULT_AGENT_MODEL_ID = "openrouter/owl-alpha";
+export const DEFAULT_AGENT_MODEL_ID = "z-ai/glm-5.2";

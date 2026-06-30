@@ -33,7 +33,6 @@ import {
 const MODEL_ALIASES: Record<string, string> = {
   "aion-labs/aion-2.0": "aion",
   "z-ai/glm-5.2": "glm",
-  "openrouter/owl-alpha": "owl",
   "deepseek/deepseek-v4-flash": "deepseek",
   "google/gemini-3.5-flash": "gemini",
 };

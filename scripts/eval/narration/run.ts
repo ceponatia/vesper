@@ -18,7 +18,7 @@ import { judgeAbsolute, judgeAvg, type Judgement } from "./judge";
  * the rubric with an LLM judge. Prints a table and writes results JSON.
  *
  *   pnpm eval:narration                       # default: aion narrator, both profiles, judge on
- *   pnpm eval:narration --models aion,glm,owl --reasoning default,off,low
+ *   pnpm eval:narration --models aion,glm --reasoning default,off,low
  *   pnpm eval:narration --scenarios hi,compliment --profiles concise --no-judge
  *   pnpm eval:narration --no-focus            # strip the §Phase-3 planner (Phase-2 A/B)
  *   pnpm eval:narration --dry-run             # assemble + print prompts, no model calls, no spend
@@ -42,7 +42,6 @@ const SENSORY_CUE_RE =
 const MODEL_ALIASES: Record<string, string> = {
   aion: "aion-labs/aion-2.0",
   glm: "z-ai/glm-5.2",
-  owl: "openrouter/owl-alpha",
   deepseek: "deepseek/deepseek-v4-flash",
   gemini: "google/gemini-3.5-flash",
 };

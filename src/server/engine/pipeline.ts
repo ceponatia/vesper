@@ -337,7 +337,7 @@ function liveNarrativeStream(modelId: string, system: string, messages: ModelMes
     // optimises time-to-first-token; switch to sort:"throughput" if sustained
     // tokens/sec matters more than first-token latency. narrativeProviderOptions
     // also drops per-model bad endpoints (DeepInfra on GLM 5.2) and applies the
-    // eval-ruled per-model reasoning knob (Aion/GLM effort:low, Owl off).
+    // eval-ruled per-model reasoning knob (Aion/GLM effort:low).
     providerOptions: narrativeProviderOptions(modelId, { sortLatency: true }),
   });
   return {

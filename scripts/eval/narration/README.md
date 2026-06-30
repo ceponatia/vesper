@@ -14,7 +14,7 @@ It automates the interim manual eval + reasoning probes P1–P3.
 ```bash
 pnpm eval:narration                       # aion narrator, both shape profiles, judge on
 pnpm eval:narration --dry-run             # assemble + print every prompt; NO model calls, NO spend
-pnpm eval:narration --models aion,glm,owl --reasoning default,off,low
+pnpm eval:narration --models aion,glm --reasoning default,off,low
 pnpm eval:narration --scenarios hi,compliment --profiles concise --no-judge
 pnpm eval:narration --no-focus            # strip the §Phase-3 planner — a Phase-2-vs-Phase-3 A/B
 ```
@@ -25,7 +25,7 @@ shape`, `## Reaction`).
 
 ### Axes (all comma-separated; defaults in parens)
 
-- `--models` (`aion`) — `aion` · `glm` · `owl` · `deepseek` · `gemini`, or any OpenRouter id.
+- `--models` (`aion`) — `aion` · `glm` · `deepseek` · `gemini`, or any OpenRouter id.
 - `--profiles` (`concise,aggressive`) — the two `NARRATION_SHAPE_PROFILES`.
 - `--reasoning` (`default`) — `default` · `off` (`reasoning.enabled:false`) · `low` (`effort:low`). This is probes P1–P3.
 - `--scenarios` (all) — substring match on scenario id (`hi`, `compliment`, `question`, `multi-party`, `intimate`, `chat`).

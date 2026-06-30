@@ -22,16 +22,17 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 
 ## Environment
 
+> **Text models are not env-configurable.** The narrator + in-session agent models
+> are chosen in code (`lib/narrative-models.ts`, `lib/agent-models.ts`) or per-world
+> in the UI (world creation + World tab); the scene-composer/tool model and the
+> embedding model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`).
+> Only the Venice **image** models below remain env-overridable.
+
 | Var | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev` | App database |
 | `OPENROUTER_API_KEY` | — | All text models + embeddings + text-to-image |
 | `VENICE_API_KEY` | — | Reference image editing |
-| `NARRATIVE_MODEL` | `aion-labs/aion-2.0` | Default narrator for new worlds (per-world override at creation) |
-| `AGENT_MODEL` | `deepseek/deepseek-v4-flash` | In-session agents (intake + post-turn); per-world override from the World tab |
-| `STATE_MODEL` | `google/gemini-2.5-flash` | Default for all `generateChecked` calls — the forge/authoring agents (in-session agents use `AGENT_MODEL`) |
-| `TOOL_MODEL` | `google/gemini-2.5-flash` | Scene composer (image pipeline) |
-| `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | 1536-dim embeddings |
 | `VENICE_IMAGE_MODEL` | `qwen-image-2` | Venice uncensored text-to-image (avatars, entity images, scene t2i fallback) |
 | `VENICE_IMAGE_EDIT_MODEL` | `qwen-image-2-edit` | Single-reference editing (portrait variants + scene images) |
 | `VENICE_MULTI_EDIT_MODEL` | `qwen-edit-uncensored` | Multi-reference editing (`/image/multi-edit`, ≤3 refs) |
