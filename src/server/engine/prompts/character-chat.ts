@@ -1,9 +1,13 @@
 import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
-import { dispositionBands, traitRegistry } from "@/contracts/personality/traits";
+import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
-import { crossedThresholdHints, deriveMoodDescriptor } from "@/contracts/meters/registry";
+import { deriveMoodDescriptor, splitStateCues } from "@/contracts/meters/registry";
+import type { SocialReactionCard } from "@/contracts/personality/cards";
+import { stateDispositionOverlays } from "@/contracts/personality/modulation";
+import { dispositionBands, traitRegistry } from "@/contracts/personality/traits";
+import { resolveTraits } from "@/contracts/personality/traits/value";
 import { stageForValue } from "@/contracts/relationships/stages";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
@@ -57,6 +61,18 @@ export interface CharacterChatPromptInput {
     mindNote?: string;
     /** The per-chat scenario framing (§1.2) — the strongest framing in the prompt. */
     premise?: string;
+    /**
+     * Meter bands surfaced as a "just shifted" beat last turn (character-chat-state-narration.spec.md
+     * §5): `{ meterId: band }`. The anti-repetition gate foregrounds a band only when it differs
+     * from this; absent ⇒ today's behavior (every crossed band is "new").
+     */
+    surfacedCues?: Record<string, string>;
+    /** Free-text current outfit (scenario modal) — a light scene anchor for the narrator (§6). */
+    outfit?: string;
+    /** Whether the outfit reads more exposed than usual (tone hint only). */
+    outfitExposed?: boolean;
+    /** Active social cards — surfaced as soft "what you care about" framing, never severity (§6, D3). */
+    activeSocialCards?: SocialReactionCard[];
   };
   /**
    * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): the
@@ -70,6 +86,13 @@ export interface CharacterChatPromptInput {
    * chat route passes `narrationShapeId("chat")` (resting default `aggressive_concise`).
    */
   narrationShape?: NarrationShapeId;
+  /**
+   * A one-turn cue invitation (character-chat-state-narration.spec.md §7), pre-rendered by the
+   * route from the player's input (proximity / touch / intimacy via `chatCueInviteLine`). Present
+   * ⇒ a line telling the narrator an opportunistic sensory/state cue can land THIS turn; absent
+   * ⇒ no line (today's behavior). Pre-rendered so this builder stays pure over a plain string.
+   */
+  cueInvite?: string;
 }
 
 /**
@@ -96,23 +119,58 @@ export function warmthHintForStage(stageId: string, name: string): string {
   return hint ? `${name} ${hint} — let it show in how you behave, don't announce it.` : "";
 }
 
+/** Cap on surfaced social-card framing lines, so a big card set can't flood the prompt. */
+const CARD_FRAMING_CAP = 4;
+
 /**
- * The compact "Current state" block: a derived mood phrase, crossed meter
- * thresholds, the stage warmth steer, active condition hints, and the dynamic
- * mindNote. "" when nothing is notable (a rested, neutral character) ⇒ no block.
+ * The "Current state" block (character-chat-state-narration.spec.md §5): **standing
+ * coloring** (mood phrase, unchanged meter bands, stage warmth, condition hints, mindNote,
+ * outfit) the narrator should let bias its tone, plus at most ONE **foregrounded** "just
+ * shifted" beat for a meter band that changed this turn (so e.g. tipping into drunk is marked
+ * once, then rides as coloring). The change-gate (`splitStateCues`) diffs current bands
+ * against `state.surfacedCues` (last turn's). "" when nothing is notable ⇒ no block.
  */
 function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>, name: string): string {
+  const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {});
   const lines: string[] = [];
   const mood = deriveMoodDescriptor(state.meters);
   if (mood) lines.push(`- You are feeling ${mood} right now.`);
-  for (const hint of crossedThresholdHints(state.meters)) lines.push(`- ${hint}`);
+  for (const cue of standing) lines.push(`- ${cue.hint}`);
   const warmth = warmthHintForStage(stageForValue(state.affinity).id, name);
   if (warmth) lines.push(`- ${warmth}`);
   for (const condition of state.conditions) if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
   const mindNote = state.mindNote?.trim();
   if (mindNote) lines.push(`- On your mind: ${mindNote}`);
-  if (!lines.length) return "";
-  return `Your current state (let this color how you speak and react — never recite it):\n${lines.join("\n")}`;
+  const outfit = state.outfit?.trim();
+  if (outfit) lines.push(`- You're wearing ${outfit}${state.outfitExposed ? ", and more exposed than usual" : ""}.`);
+
+  const blocks: string[] = [];
+  if (lines.length) {
+    blocks.push(`Your current state (let this color how you speak and react — never recite it):\n${lines.join("\n")}`);
+  }
+  if (foreground) {
+    blocks.push(
+      `Right now this is shifting: ${foreground.hint} Mark it once, in action, as it changes — then let it ride; don't restate it on later turns.`,
+    );
+  }
+  return blocks.join("\n\n");
+}
+
+/**
+ * Soft "what you care about / won't stand for" framing for the chat's active social cards
+ * (§6, D3): the card's theme only — **never** its mechanical `severity`, which the post-turn
+ * pulse owns. Lets the narrator avoid contradicting a taboo/rule it can't otherwise see,
+ * without pre-playing the reaction. Fenced (cards can be library-cloned ⇒ untrusted). "" when
+ * there are no cards.
+ */
+function buildSocialFramingSection(cards: readonly SocialReactionCard[]): string {
+  if (!cards.length) return "";
+  const lines = cards.slice(0, CARD_FRAMING_CAP).map((card) => {
+    const lead = card.kind === "taboo" ? "Won't stand for" : "Holds to";
+    const desc = card.description.trim();
+    return `- ${lead}: ${card.label}${desc ? ` — ${desc}` : ""}`;
+  });
+  return `What you care about (your own values — let them shape how you take what's said and done; react in character, never recite):\n${fenceUntrusted("values", lines.join("\n"))}`;
 }
 
 const humanize = (value: string): string => value.replaceAll("_", " ").trim();
@@ -224,7 +282,8 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     "8. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state, your disposition, and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
     "9. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
     "10. When you move close, the player notices you closely, or the moment turns intimate, you may work in one relevant sensory cue if you have one — scent, warmth, texture, the sound of your voice — woven into a gesture or action. One is enough. Do not force sensory detail into ordinary, distant conversation, and never list it.",
-    `11. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
+    "11. Your physical state above is behavioral law: act it out continuously — intoxication loosens and slurs you, low hygiene and dishevelment show at close range, exhaustion drags at you. But you have a long memory for it: a state you are already in is simply how you are right now, so let it colour your manner and word choice WITHOUT describing it afresh each turn. Only when a state visibly SHIFTS (you sober up, tip into drunk, grow tired) do you mark it once, in action, then let it ride.",
+    `12. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
   ].join("\n");
 
 /**
@@ -245,7 +304,10 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     bodyFeatures: profile.bodyFeatures,
   });
 
-  const resolved = resolveAttributes(profile.attributes, []);
+  // Active conditions overlay attributes (character-chat-state-narration.spec.md §2): a
+  // "disheveled"/"unwashed" condition shifts grooming/scent/hair while active. The overlay
+  // helper guards against rewriting inherent attributes (eye colour, species).
+  const resolved = resolveAttributes(profile.attributes, conditionAttributeOverlays(input.state?.conditions ?? []));
   const agePhrase = formatAge(profile.age); // the character's real age (basic info) — NOT the portrait-studio-only apparent age
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
 
@@ -256,8 +318,12 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
   // identically to a neutral one. Everyday traits surface always; the intimate
   // ones are kept behind an "if the moment turns intimate" framing so they don't
   // colour an ordinary conversation.
-  const everydayDisposition = dispositionBands(traitRegistry, profile.traits, { intimateOnly: false });
-  const intimateDisposition = dispositionBands(traitRegistry, profile.traits, { intimateOnly: true });
+  // Transient disinhibition (§4): high intoxication/arousal lowers inhibition, guardedness,
+  // and composure at render time only (source "condition" overlays, pre-resolved here);
+  // authored sliders are never written, and the shift recedes as the meters drift back.
+  const shiftedTraits = resolveTraits(profile.traits, stateDispositionOverlays(profile.traits, input.state?.meters ?? {}));
+  const everydayDisposition = dispositionBands(traitRegistry, shiftedTraits, { intimateOnly: false });
+  const intimateDisposition = dispositionBands(traitRegistry, shiftedTraits, { intimateOnly: true });
   const dispositionSection = everydayDisposition.length
     ? [
         "Disposition (your standing temperament — this governs how you actually behave; let it pull on what you say and do, never recite it):",
@@ -322,6 +388,8 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     : "";
   // The dynamic "Current state" block (§6); "" when nothing is notable.
   const stateSection = input.state ? buildStateSection(input.state, displayName) : "";
+  // Soft social-card framing (§6, D3): what the character values, never the card severity.
+  const socialFraming = buildSocialFramingSection(input.state?.activeSocialCards ?? []);
 
   const sections = [
     CONTENT_FRAMING,
@@ -335,6 +403,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
     dispositionSection,
+    socialFraming,
     attributeLines.length
       ? `Attributes (who you are — express these naturally, never list them):\n${attributeLines.join("\n")}`
       : "",
@@ -344,6 +413,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
     stateSection,
+    input.cueInvite?.trim() ?? "",
     CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),
     input.opening
       ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`

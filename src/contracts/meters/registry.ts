@@ -188,3 +188,93 @@ export function crossedThresholdHints(
   }
   return hints;
 }
+
+/**
+ * A graded meter cue (character-chat-state-narration.spec.md §3): the single **deepest**
+ * crossed threshold for one meter, as a stable `band` key + the `hint` prose + an
+ * `intensity` (0–1, how far past the crossed bound the value sits, for "slightly tipsy" →
+ * "badly drunk" scaling). Unlike `crossedThresholdHints` (every crossed hint as flat text),
+ * this yields ONE band per meter whose key the chat anti-repetition gate (§5) diffs across
+ * turns. The band vocabulary stays in `meterDefinitions` (a new band is a threshold edit,
+ * not code). Returns null when no threshold is crossed.
+ */
+export interface MeterCue {
+  meterId: string;
+  /** Stable change-detection key for the crossed band, e.g. `"intoxication:0.7"`. */
+  band: string;
+  hint: string;
+  /** 0–1: depth past the crossed bound (0 = just over the line, 1 = at the pole). */
+  intensity: number;
+}
+
+export function meterStateCue(
+  meterId: string,
+  value: number,
+  definitions: readonly MeterDefinition[] = meterDefinitions,
+): MeterCue | null {
+  const def = definitions.find((m) => m.id === meterId);
+  if (!def) return null;
+  // The most-severe crossed band is the threshold whose bound is *closest* to the current
+  // value (smallest gap) — the one most recently crossed going deeper. True for both
+  // below-meters (lower bound = worse) and above-meters (higher bound = worse).
+  let chosen: { bound: number; dir: "below" | "above"; hint: string; gap: number } | null = null;
+  for (const t of def.thresholds) {
+    let bound: number | undefined;
+    let dir: "below" | "above" | undefined;
+    if (t.below !== undefined && value < t.below) {
+      bound = t.below;
+      dir = "below";
+    } else if (t.above !== undefined && value > t.above) {
+      bound = t.above;
+      dir = "above";
+    }
+    if (bound === undefined || dir === undefined) continue;
+    const gap = Math.abs(value - bound);
+    if (!chosen || gap < chosen.gap) chosen = { bound, dir, hint: t.promptHint, gap };
+  }
+  if (!chosen) return null;
+  const intensity =
+    chosen.dir === "below"
+      ? (chosen.bound - value) / Math.max(chosen.bound, 1e-6)
+      : (value - chosen.bound) / Math.max(1 - chosen.bound, 1e-6);
+  return { meterId, band: `${meterId}:${chosen.bound}`, hint: chosen.hint, intensity: Math.min(1, Math.max(0, intensity)) };
+}
+
+/** The anti-repetition split (character-chat-state-narration.spec.md §5). */
+export interface StateCueSplit {
+  /** The single cue to mark as a fresh "just shifted" beat this turn (band changed), or null. */
+  foreground: MeterCue | null;
+  /** Cues whose band is unchanged from last turn — carried as standing coloring, not restated. */
+  standing: MeterCue[];
+  /** Current band per meter, to persist as next turn's `prevBands` (`surfaced_cues`). */
+  nextBands: Record<string, string>;
+}
+
+/**
+ * Split the current meter cues into one **foreground** "just changed" cue and the
+ * **standing** cues, given the bands surfaced last turn (`prevBands`). A cue is foreground
+ * when its band differs from `prevBands` (newly crossed or deepened); to protect the concise
+ * profile (D7) at most ONE foreground cue is kept — the most intense — and the rest fall back
+ * to standing coloring. `nextBands` is the current band per meter, persisted as next turn's
+ * `prevBands` so an unchanged state never re-fires a beat. Pure; empty meters ⇒ empty split.
+ */
+export function splitStateCues(
+  meters: Record<string, number>,
+  prevBands: Readonly<Record<string, string>> = {},
+  definitions: readonly MeterDefinition[] = meterDefinitions,
+): StateCueSplit {
+  const cues: MeterCue[] = [];
+  const nextBands: Record<string, string> = {};
+  for (const def of definitions) {
+    const value = meters[def.id];
+    if (value === undefined) continue;
+    const cue = meterStateCue(def.id, value, definitions);
+    if (!cue) continue;
+    cues.push(cue);
+    nextBands[def.id] = cue.band;
+  }
+  const changed = cues.filter((c) => prevBands[c.meterId] !== c.band).sort((a, b) => b.intensity - a.intensity);
+  const foreground = changed[0] ?? null;
+  const standing = cues.filter((c) => c !== foreground);
+  return { foreground, standing, nextBands };
+}

@@ -23,22 +23,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-Nothing mid-flight. The last item — **Mood-reactive avatars — slice 3** — shipped (see
-**Shipped**). Next build is the top of **Next** below — the character-chat state→narration
-slice, then the primary-feature arc — or the decision-gated avatar upgrade lanes (Rive
-reusable rig, then R3F/VRM 3D) — author's call.
+Nothing mid-flight. The last item — **Character chat — state as a narration system** —
+shipped (see **Shipped**). Next build is the top of **Next** below — the character-chat
+primary-feature arc (gated on its memory-keying decision) — or the decision-gated avatar
+upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
 
 ## Next (queued)
 
-- **Character chat — state as a narration system** —
-  [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) · spec
-  [character-chat-state-narration.spec.md](character-chat-state-narration.spec.md) (next).
-  Wire the already-tracked chat state (meters/conditions/affinity) into the narrator so it's
-  *enacted* — intoxication → looser posture, slurred edges, a temporary inhibition drop; low
-  hygiene → modified scent/texture/visual — **without** re-describing it every turn. Mostly
-  prompt-layer (+ a no-migration condition→attribute overlay that reuses the session mechanism);
-  graduates the scenario plan's "surface outfit/cards to the narrator" and the sensory plan's
-  deferred one-turn beat cue. Ships first; partly sets up the payoff of the primary-feature arc.
 - **Character chat as a primary feature** —
   [character-chat-primary.plan.md](character-chat-primary.plan.md) (draft). The big arc: make
   chat function like the session lane for a *single* character with no location entities (location
@@ -74,6 +65,18 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character chat — state as a narration system** —
+  [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) · spec
+  [character-chat-state-narration.spec.md](character-chat-state-narration.spec.md), 2026-06-30.
+  The chat narrator now **enacts** the tracked `character_chat_state` instead of listing it:
+  condition→attribute overlays (a designed-but-unbuilt seam, guarded so a condition can't rewrite
+  an inherent attribute), graded meter cues with a **band-change anti-repetition gate** (new
+  `surfaced_cues` column, migration `0017`) so a state is marked once when it *shifts* then rides as
+  coloring, render-time **disinhibition** (intoxication lowers inhibition/guardedness/composure),
+  soft social-card framing (theme not severity), a regex-first **one-turn intent cue**
+  (`engine/chat-intent.ts`), a **state-aware chat scene image** (`visualStateNote` + overlays), and a
+  "State → narration" debug readout. Owner decisions D1–D7 recorded in the spec; `pnpm verify` green
+  (1620 tests). Graduated the deferred state-aware chat scene image.
 - **Character-chat model persists per character** — docs [ui.md](../ui.md) (chat tab),
   2026-06-30. The Chat tab's narrator dropdown now saves the pick to a new
   `characters.chatModel` scalar on change (mirrors `worlds.narrativeModel`; migration

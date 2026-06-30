@@ -1,7 +1,7 @@
 # Character chat — state as a narration system — plan
 
-Status: **next** (queued — first priority; design mostly settled. Prompt-layer
-work plus one no-migration overlay reuse; no new tables).
+Status: **shipped — 2026-06-30** (all nine build steps + the seven decisions D1–D7).
+See the Completion note at the foot.
 
 Design/decisions: [character-chat-state-narration.spec.md](character-chat-state-narration.spec.md)
 — read it first; it is the truth (types, the overlay guard, the anti-repetition algorithm,
@@ -151,3 +151,29 @@ defaults — flag if you want them revisited.
   overlay is **unbuilt in both lanes today** (the `attributeEffects` field is consumed
   nowhere) — this plan builds the pure helper; the session can adopt it later.
 - Sibling arc: [character-chat-primary.plan.md](character-chat-primary.plan.md).
+
+## Completion note (2026-06-30)
+
+All nine steps shipped; `pnpm verify` green (1620 tests). What landed and where:
+
+- **Contracts (pure):** `conditions/overlays.ts` (`conditionAttributeOverlays`, inherent-attr
+  guard), `conditions/catalog.ts` (label→effects), `meters/registry.ts` (`meterStateCue` +
+  `splitStateCues` for the band-change gate), `personality/modulation.ts`
+  (`stateDispositionOverlays` — inhibition + guardedness + composure, **D2**). All barrel-exported.
+- **Prompt builder** (`engine/prompts/character-chat.ts`): condition overlays into
+  `resolveAttributes`; disposition pre-resolved with the disinhibition overlays; `buildStateSection`
+  renders standing vs. one foreground beat; `buildSocialFramingSection` (soft cards, **D3**); outfit
+  line; new `CHAT_RULES` rule 11 (state is behavioral law, mark only on shift) + the `cueInvite` slot.
+- **Intent classifier** (`engine/chat-intent.ts`, **D1** "both"): regex-first `detectChatCue` +
+  `chatCueInviteLine`, route-rendered (no model call), non-persisted.
+- **State + schema:** `character_chat_state.surfaced_cues` jsonb (migration `0017`), computed from the
+  drifted pre-pulse meters and persisted in both `saveChatState` (guarded) and `persistChatState`
+  (opening). Conditions seeded from the catalog in `editChatState`. Snapshot carries `surfacedCues`.
+- **Scene image (D4):** `images/character-scene.ts` `visualStateNote` + condition overlays; route
+  threads `meters`/`conditions`.
+- **Debug surface:** the State-tools modal's "State → narration" readout (foreground/standing/surfaced/overlays).
+- **Docs:** `prompts.md` (§Character-chat state as a narration system), `ui.md` (Chat tab),
+  `images.md` (state-aware chat scene). Deferred scene-image entry tombstoned in `deferred.plan.md`.
+
+**Deferred to follow-ups:** `senseEffects` (D6, out of v1); a model-upgrade of the regex intent
+classifier; richer catalog vocabulary. None block the feature.

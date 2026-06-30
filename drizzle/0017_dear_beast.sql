@@ -1,0 +1,1 @@
+ALTER TABLE "character_chat_state" ADD COLUMN "surfaced_cues" jsonb DEFAULT '{}'::jsonb NOT NULL;

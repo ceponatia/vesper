@@ -4,9 +4,11 @@ import {
   affinityDecayRetention,
   AFFINITY_DECAY_RETENTION_MAX,
   AFFINITY_GAIN_SCALE_MAX,
+  DISINHIBITION_TRAITS,
   personalizeMeters,
   scaleAffinityGain,
   socialTraitScale,
+  stateDispositionOverlays,
   TRAIT_SCALE_MAX,
 } from "./modulation";
 import type { SocialReaction } from "./reactions";
@@ -150,5 +152,43 @@ describe("affinityDecayRetention", () => {
     expect(affinityDecayRetention([trait("temperament.warmth", 100), trait("temperament.composure", 100)])).toBeLessThanOrEqual(
       AFFINITY_DECAY_RETENTION_MAX,
     );
+  });
+});
+
+describe("stateDispositionOverlays", () => {
+  const traits: TraitValue[] = [
+    trait("intimate.inhibition", 60),
+    trait("social.guardedness", 40),
+    trait("temperament.composure", 50),
+    trait("temperament.warmth", 30),
+  ];
+
+  it("no shift below the floor (sober)", () => {
+    expect(stateDispositionOverlays(traits, { intoxication: 0.1 })).toEqual([]);
+    expect(stateDispositionOverlays(traits, {})).toEqual([]);
+  });
+
+  it("lowers all three disinhibition traits when drunk, source condition", () => {
+    const out = stateDispositionOverlays(traits, { intoxication: 0.8 });
+    expect(out.map((o) => o.id).sort()).toEqual([...DISINHIBITION_TRAITS].sort());
+    for (const o of out) {
+      expect(o.source).toBe("condition");
+      const before = traits.find((t) => t.id === o.id)?.value ?? 0;
+      expect(o.value).toBeLessThan(before);
+    }
+  });
+
+  it("never fabricates a disposition the character did not author", () => {
+    const out = stateDispositionOverlays([trait("intimate.inhibition", 50)], { intoxication: 0.9 });
+    expect(out.map((o) => o.id)).toEqual(["intimate.inhibition"]); // guardedness/composure absent ⇒ not added
+  });
+
+  it("does not push a trait below -100", () => {
+    const out = stateDispositionOverlays([trait("social.guardedness", -90)], { intoxication: 1 });
+    expect(out[0]?.value).toBeGreaterThanOrEqual(-100);
+  });
+
+  it("empty traits ⇒ no overlays (today's behavior)", () => {
+    expect(stateDispositionOverlays([], { intoxication: 1 })).toEqual([]);
   });
 });

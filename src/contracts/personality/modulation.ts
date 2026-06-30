@@ -95,6 +95,50 @@ export function personalizeMeters(defs: readonly MeterDefinition[], traits: read
 }
 
 // ---------------------------------------------------------------------------
+// Transient disposition shift — the "inhibition" lever
+// (character-chat-state-narration.spec.md §4).
+// ---------------------------------------------------------------------------
+
+/** Traits a high intoxication/arousal state temporarily relaxes (in points, down). */
+export const DISINHIBITION_TRAITS = ["intimate.inhibition", "social.guardedness", "temperament.composure"] as const;
+/** At full drive, lower each affected trait by up to this many points (bounded by the floor). */
+export const DISINHIBITION_SPAN = 45;
+/** Below this combined drive there is no shift (mirrors the intoxication "tipsy" threshold). */
+export const DISINHIBITION_FLOOR = 0.35;
+/** Arousal contributes to disinhibition at this fraction of intoxication's weight. */
+export const AROUSAL_DISINHIBITION_WEIGHT = 0.3;
+
+/**
+ * Render-time disposition overlays from physical state (spec §4): high `intoxication`
+ * (and, lighter, `arousal`) temporarily lowers `intimate.inhibition`, `social.guardedness`,
+ * and `temperament.composure` so a drunk character reads looser, less guarded, and more
+ * volatile — without ever writing the authored sliders. Returns `source:"condition"`
+ * overlays (precedence 3, so they win over the authored `creation` value) for the prompt's
+ * `dispositionBands` to pre-resolve; the shift recedes as the meters drift back. **Only
+ * traits the character actually authored are shifted** (we never invent a disposition the
+ * author didn't give). Empty when below the floor, or no relevant traits ⇒ today's behavior.
+ */
+export function stateDispositionOverlays(
+  traits: readonly TraitValue[],
+  meters: Record<string, number>,
+): TraitValue[] {
+  if (traits.length === 0) return [];
+  const intoxication = meters.intoxication ?? 0;
+  const arousal = meters.arousal ?? 0;
+  const drive = Math.min(1, intoxication + AROUSAL_DISINHIBITION_WEIGHT * arousal);
+  if (drive < DISINHIBITION_FLOOR) return [];
+  const drop = DISINHIBITION_SPAN * drive;
+  const resolved = resolveTraits(traits, []);
+  const overlays: TraitValue[] = [];
+  for (const id of DISINHIBITION_TRAITS) {
+    const current = resolved.find((t) => t.id === id);
+    if (!current) continue; // only shift authored traits — never fabricate a disposition
+    overlays.push({ id, value: Math.max(-100, current.value - drop), source: "condition" });
+  }
+  return overlays;
+}
+
+// ---------------------------------------------------------------------------
 // Affinity dynamics — trait-scaled gain asymmetry + decay retention (spec §4/§5).
 // These ride the *simulant's* raw, event-grounded affinity deltas (the unrecognized
 // edges; recognized social acts are scaled by `socialTraitScale` in the curve instead)

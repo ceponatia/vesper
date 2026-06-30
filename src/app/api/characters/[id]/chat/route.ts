@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { characterProfileSchema, DiagnosticCollector, emptyCharacterProfile } from "@/contracts";
+import { characterProfileSchema, DiagnosticCollector, emptyCharacterProfile, splitStateCues } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { CHAT_RATE_LIMIT, errorText, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
@@ -9,7 +9,9 @@ import { characterChatMessages, characterChatSummaries, db, images } from "@/ser
 import {
   buildCharacterChatSystemPrompt,
   CHARACTER_CHAT_SUMMARIZE_AT,
+  chatCueInviteLine,
   deleteChatState,
+  detectChatCue,
   driftChatState,
   enqueueChatSummary,
   finalizeChatState,
@@ -154,9 +156,15 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       conditions: driftedState.conditions,
       mindNote: driftedState.mindNote,
       premise: driftedState.premise,
+      surfacedCues: driftedState.surfacedCues,
+      outfit: driftedState.outfit,
+      outfitExposed: driftedState.outfitExposed,
+      activeSocialCards: driftedState.activeSocialCards,
     },
     opening,
     narrationShape: narrationShapeId("chat"),
+    // One-turn cue invitation (§7): an opening beat has no player input to read.
+    cueInvite: opening ? undefined : chatCueInviteLine(detectChatCue(body.value.content ?? ""), character.name),
   });
   // The opening beat has no player turn — give the model a synthetic (non-persisted)
   // cue to respond to so it produces the character's first line.
@@ -171,7 +179,10 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         .insert(characterChatMessages)
         .values({ ownerId: user.id, characterId: id, role: "assistant", content: full });
       try {
-        await persistChatState(user.id, id, { ...driftedState, lastInteractionAt: now });
+        // The opening beat shows state to the narrator too — record the bands surfaced so the
+        // first real turn doesn't re-announce them (character-chat-state-narration.spec.md §5).
+        const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
+        await persistChatState(user.id, id, { ...driftedState, surfacedCues, lastInteractionAt: now });
       } catch (err) {
         log.error("api.chat", "chat-state opening persist failed", { error: errorText(err) });
       }

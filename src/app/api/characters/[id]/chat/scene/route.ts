@@ -104,6 +104,8 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         recentChat,
         outfit: chatState?.outfit ?? "",
         outfitExposed: chatState?.outfitExposed ?? false,
+        meters: chatState?.meters,
+        conditions: chatState?.conditions,
       }),
     }),
   });
