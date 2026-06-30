@@ -3,7 +3,9 @@
 Status: **next** (queued — first priority; design mostly settled. Prompt-layer
 work plus one no-migration overlay reuse; no new tables).
 
-This plan is the task list and build order. It builds on the shipped **light state**
+Design/decisions: [character-chat-state-narration.spec.md](character-chat-state-narration.spec.md)
+— read it first; it is the truth (types, the overlay guard, the anti-repetition algorithm,
+the collected open questions). This plan is the task list and build order. It builds on the shipped **light state**
 ([character-chat-state.plan.md](finished/character-chat-state.plan.md) · spec
 [character-chat-state.spec.md](finished/character-chat-state.spec.md), the truth for
 the tracked meters/affinity/conditions/mindNote) and the shipped **opportunistic
@@ -34,18 +36,20 @@ narrator must **not re-describe these every single turn** — state is standing
 
 ## Build order
 
-1. **Condition → attribute overlays in chat (high-leverage reuse, no migration).**
+1. **Condition → attribute overlays in chat (high-leverage, no migration).**
    Build an overlay array from `state.conditions[].attributeEffects` and pass it to
    `resolveAttributes(profile.attributes, overlays)` in `buildCharacterChatSystemPrompt`
-   (today the second arg is `[]`). This reuses the session's proven condition→attribute
-   mechanism verbatim (`engine/scene.ts` + `merge/phases/conditions.ts`) — a "flushed"
-   or "disheveled" condition can now actually overlay skin/scent/hair attributes instead
-   of contributing only its free-text `promptHint`. Requires giving chat conditions real
-   `attributeEffects` (today `chat-state.ts` + the state-tools modal create every
-   condition with `attributeEffects: []`); seed a small starter set (drunk → looser
-   movement/speech; unwashed → scent/skin; flushed → already exists for arousal). Decide
-   whether `senseEffects` (perception impairment) also applies in a single-character chat
-   (probably yes for intoxication — it dulls the character's *own* read of the player).
+   (today the second arg is `[]`). Note: this is a **designed-but-unbuilt seam** — the
+   `attributeEffects` field and the `condition` provenance source (precedence 3) both exist,
+   but *nothing consumes them* (both creation sites set `attributeEffects: []`), so this slice
+   builds the conversion (the session lane can adopt the same pure helper later). A "flushed"
+   or "unwashed" condition then actually overlays skin/scent/hair attributes instead of
+   contributing only its free-text `promptHint`. **Guard:** the overlay helper filters each
+   effect through `overlaySourceMayChange(def.mutability, "condition")` so a condition can
+   never rewrite an inherent attribute (eye colour, species) in the prompt — `resolveAttributes`
+   itself is unguarded last-write-wins. Requires giving chat conditions real `attributeEffects`
+   via a small label→effects catalog (today `chat-state.ts` + the state-tools modal create
+   every condition with `attributeEffects: []`). `senseEffects` is **out of v1** (spec §2; D6).
 
 2. **Graded meter → prose (beyond the single on/off threshold).** `meterDefinitions[].thresholds`
    in `contracts/meters/registry.ts` is the single source of meter→prose (e.g. intoxication
@@ -58,9 +62,11 @@ narrator must **not re-describe these every single turn** — state is standing
    high intoxication should *temporarily* lower inhibition. Drive this through the existing
    Disposition block (`dispositionBands` in the prompt) rather than mutating authored traits:
    a transient modulation (mirroring `personalizeMeters` in `contracts/personality/modulation.ts`,
-   but prose-facing) that nudges the `guardedness` band down while intoxication/arousal is
-   high, and restores as the meter drifts back. Standing trait values are never written —
-   this is a render-time shift only, so it can never corrupt the character.
+   but prose-facing) that lowers **three** traits while intoxication/arousal is high —
+   `intimate.inhibition`, `social.guardedness`, **and** `temperament.composure` (drunk reads
+   more volatile, not just looser; **D2**) — applied as `source:"condition"` trait overlays
+   pre-resolved into `dispositionBands`, restoring as the meter drifts back. Standing trait
+   values are never written — render-time only, so it can never corrupt the character.
 
 4. **Anti-repetition: standing vs. changed cues.** The core risk. Model state cues as
    **standing background coloring** plus a **foregrounded beat only on change** — i.e. a cue
@@ -78,53 +84,47 @@ narrator must **not re-describe these every single turn** — state is standing
    prompt" and "Should the chat narrator also see the outfit text and active cards." The
    route already has `outfit` / `outfitExposed` / `activeSocialCards` on the drifted state but
    does **not** pass them to `buildStateSection`. Thread them in as part of "what colors this
-   turn" (outfit as a light scene anchor; cards as the live taboo/rule frame the pulse already
-   resolves against).
+   turn": outfit as a light scene anchor; cards as **soft framing only** — their theme ("what
+   you care about / won't stand for"), never their mechanical `severity`, so the narrator can't
+   pre-play the reaction the post-turn pulse owns (**D3**).
 
-6. **(Optional) one-turn intent cue.** Graduate the sensory plan's deferred **beat-cue
-   wrapper**: a tiny pre-narrator classifier (regex first cut, mirroring `engine/intent.ts`;
-   chat has *no* pre-turn agent today, so this is a clean insertion point) that reads the
-   player input for proximity / approach / touch / intimacy / first-encounter signals and
-   raises a one-turn hint so a state cue (scent on closeness, slur on a long exchange) fires
-   when the beat invites it. Must not persist into chat history. Decide against the cheaper
-   alternative (just hand the whole state to the narrator — viable because there's one
-   character and no locations) in Open questions.
+6. **One-turn intent cue (both layers — D1).** Whole-state surfacing (steps 1–5) is the base;
+   *also* build a pre-narrator classifier (regex first cut, mirroring `engine/intent.ts`; chat
+   has *no* pre-turn agent today, so this is a clean insertion point) that reads the player
+   input for proximity / approach / touch / intimacy / first-encounter signals and raises a
+   one-turn hint so an opportunistic cue (scent on closeness, a state beat on a touch) fires
+   when the beat invites it. Must not persist into chat history; runs regex-first (no hot-path
+   LLM call). Seeds the pre-narrator intake the primary-feature plan wants — build once, shared.
 
-7. **State → scene image (graduate the deferred state-aware chat scene image).**
-   `deferred.plan.md` "State-aware chat scene image" folds mood/meters (flushed, tipsy,
-   tired), conditions, and the `mindNote` into `renderCharacterSceneImage`'s prompt. The
-   intake's "modify … visual attributes to make them dirtier" wants exactly this for the
-   visual axis. The state + render path already exist; this only enriches the prompt. Carry
-   it here as a slice (or split to its own follow-up if it wants a separate playtest read).
+7. **State → scene image (bundled — D4).** Fold the §-state derivations (graded bands +
+   condition overlays) into `renderCharacterSceneImage`'s prompt so low hygiene / intoxication
+   make the render dirtier / flushed — the visual axis of the intake's "modify … visual
+   attributes." Reuse the **same** helpers as steps 1–3 so prose, the standing avatar
+   (`chatStateSnapshot.avatarCue`), and the scene image agree. Graduates the
+   `deferred.plan.md` entry (leave a tombstone there).
 
 8. **Debug surface.** Extend the State-tools modal (`components/characters/chat-state-tools.tsx`)
    to show *what actually reached the narrator* this turn — the resolved overlay set, the
    graded meter bands, the inhibition shift, and which cues were foregrounded vs. standing —
    so the gating is tunable by observation. (The larger inspector lives in the primary plan.)
 
-9. **Docs + tests.** Update `../ui.md` (Chat tab — what the state strip now drives) and
+9. **Docs + tests.** Update `../ui.md` (Chat tab — what the state strip now drives),
    `../prompts.md` (chat lane — the new state-enactment block + the anti-repetition rule,
-   alongside the existing Sensory cues section). Tests: pure derivations (graded bands,
-   overlay assembly, inhibition shift) + a chat eval fixture asserting a state beat fires on
-   a band change and **not** on the following steady-state turn.
+   alongside the existing Sensory cues section), and `../images.md` (chat scene image now
+   state-aware); tombstone the graduated entry in `deferred.plan.md`. Tests: pure derivations
+   (graded bands, overlay assembly incl. the inherent-attribute guard, the three-trait
+   disposition shift, the intent classifier) + a chat eval fixture asserting a state beat fires
+   on a band change and **not** on the following steady-state turn.
 
-## Open questions
+## Decisions
 
-- **Whole-state-to-narrator vs. pre-turn intent agent (step 6).** Single character + no
-  locations makes "just give the narrator the whole state and trust the anti-repetition
-  rule" cheap and viable; the intent classifier is more precise but more machinery.
-  **Proposed:** ship steps 1–5 with whole-state + the change-gating rule first, add the
-  classifier only if playtests show the narrator over- or under-firing cues.
-- **Inhibition mechanism (step 3).** Transient `guardedness` band shift (proposed) vs. a
-  dedicated `intoxicated`/`uninhibited` condition with `attributeEffects` vs. a real
-  temporary disposition override. The band shift is the least invasive and reuses
-  `dispositionBands`.
-- **Scene image in or out (step 7).** Bundle here vs. keep as its own follow-up — depends on
-  whether the visual hygiene/intoxication cues read well enough in the prompt to be worth the
-  image-pipeline touch.
-- **Where the "last-surfaced band" lives (step 4).** A new small jsonb on `character_chat_state`
-  (durable across turns, survives reload) vs. derive from the prior verbatim/snapshot
-  (no migration). Prefer no-migration if the prior snapshot is reliably in hand.
+All seven open questions are resolved — the rulings (D1–D7) live in the spec's **## Decisions**
+section ([character-chat-state-narration.spec.md](character-chat-state-narration.spec.md)). In
+brief: build **both** whole-state surfacing and the intent classifier here (D1); the inhibition
+shift lowers inhibition + guardedness + composure (D2); cards are **soft framing only** (D3);
+the scene-image visual axis is **bundled** here (D4); `surfaced_cues` is a new jsonb column
+(D5); `senseEffects` is out of v1 (D6); one state change-beat per turn (D7). D5–D7 are adopted
+defaults — flag if you want them revisited.
 
 ## Not in scope (this plan)
 
@@ -144,7 +144,10 @@ narrator must **not re-describe these every single turn** — state is standing
   ([finished/character-chat-scenario.plan.md](finished/character-chat-scenario.plan.md)) and
   the state-aware chat scene image ([deferred.plan.md](deferred.plan.md)).
 - Reused contracts: `contracts/meters/registry.ts`, `contracts/conditions/condition.ts`
-  (`attributeEffects`/`senseEffects`), `contracts/personality/modulation.ts`,
-  `contracts/mood/emotion-label.ts`. Session-side reference for condition→attribute overlays:
-  `engine/scene.ts` + `engine/merge/phases/conditions.ts`.
+  (`attributeEffects`/`senseEffects`), `contracts/registry/provenance.ts` (the `condition`
+  source), `contracts/attributes/value.ts` (`overlaySourceMayChange`),
+  `contracts/personality/modulation.ts` (`personalizeMeters` is the pattern for the new
+  `stateDispositionOverlays`), `contracts/mood/emotion-label.ts`. The condition→attribute
+  overlay is **unbuilt in both lanes today** (the `attributeEffects` field is consumed
+  nowhere) — this plan builds the pure helper; the session can adopt it later.
 - Sibling arc: [character-chat-primary.plan.md](character-chat-primary.plan.md).

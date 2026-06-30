@@ -31,7 +31,8 @@ reusable rig, then R3F/VRM 3D) — author's call.
 ## Next (queued)
 
 - **Character chat — state as a narration system** —
-  [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) (next).
+  [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) · spec
+  [character-chat-state-narration.spec.md](character-chat-state-narration.spec.md) (next).
   Wire the already-tracked chat state (meters/conditions/affinity) into the narrator so it's
   *enacted* — intoxication → looser posture, slurred edges, a temporary inhibition drop; low
   hygiene → modified scent/texture/visual — **without** re-describing it every turn. Mostly

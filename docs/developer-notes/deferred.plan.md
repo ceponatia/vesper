@@ -401,12 +401,11 @@ The audit **deliberately skipped** perf benchmarking because the dev Turbopack b
 pass** focused on the dashboard and the play screen (the heaviest route) for real numbers.
 Not blocking — do it when perf becomes a question. From [ux-audit.plan.md](ux-audit.plan.md).
 
-## State-aware chat scene image — _split from character-chat-state slice 4_
+## State-aware chat scene image — _graduated 2026-06-30 → [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) (slice 7 / spec §8, D4)_
 
 _Raised 2026-06-24, the one piece of [character-chat-state.plan.md](character-chat-state.plan.md)
-slice 4 not built (the rest shipped 2026-06-24)._ Fold the chat's current light state —
-mood/meters (e.g. flushed, tipsy, tired), active conditions, and the disposition `mindNote` —
-into the **chat scene-image prompt**, so a generated scene reflects how the character actually
-is right now, not just the recent dialogue. The state + the render path already exist
-(`renderCharacterSceneImage`); this only enriches the prompt. Deferred from slice 4 because it
-touches the image pipeline and wants a playtest read on which state cues read well visually.
+slice 4 not built. Graduated 2026-06-30 into the state-as-narration plan, which bundles the
+visual axis with the prose enactment so they reuse the same state derivations — fold the chat's
+light state (mood/meters: flushed, tipsy, tired; active conditions; the `mindNote`) into the
+**chat scene-image prompt** (`renderCharacterSceneImage`) so a generated scene reflects how the
+character actually is right now. Detail now lives in that plan/spec._
