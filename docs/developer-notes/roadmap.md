@@ -18,34 +18,33 @@ must _not_ add anything to this section. AI agents _may_ remove items from this 
 they have incorporated them into the roadmap below and either created a new plan or updated
 an existing plan that will include this work.
 
-- **Character chat as a primary feature** - Character chat began as a testing ground for
-  one-on-one chats between the player and an npc. This feature has grown considerably and
-  is now an enjoyable, light experience in its own right. I would like to expand it to function
-  more like the session chat, albeit with only one character and without location entities (for now).
-  Location would be determined solely through narration.
-  This system would have RAG implemented for memory as well as its current context window for short
-  term memory. It would be able to track mutable attributes and other state changes. We will also
-  need to expand the dev-only debug modal to account for more of these additions and changes.
-- **Expanded character chat state as narration system** - Character chat currently already tracks
-  state changes like hygiene, energy, drunkenness, etc. but these are not utilized by the narrator
-  almost at all. We need to connect them to the character chat's narrator, likely through a pre-turn
-  agent that parses intent and relevant fields _or_ we can provide the entire character's state
-  to the narrator since there is a lot less state with only one character and no locations.
-  An example would be something like: drunkenness is 75, narrator starts writing that the character
-  stumbles when she walks, dialogue is slurred, and inhibition gets a temporary change to make her
-  less inhibited. Similarly with hygiene, a low hygiene would modify scent, texture, and sometimes
-  visual attributes to make them dirtier and then be mentioned occasionally in narration. We need to
-  be careful to make sure the narrator doesn't re-write these every single turn as it is sometimes
-  wont to do.
+_(Currently empty — the two character-chat ideas that were here graduated to plans on
+2026-06-30; see the top of **Next** below.)_
 
 ## Active (building now)
 
 Nothing mid-flight. The last item — **Mood-reactive avatars — slice 3** — shipped (see
-**Shipped**). Next build is the top of **Next** below (intimacy notes / world-map polish), or
-the decision-gated avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
+**Shipped**). Next build is the top of **Next** below — the character-chat state→narration
+slice, then the primary-feature arc — or the decision-gated avatar upgrade lanes (Rive
+reusable rig, then R3F/VRM 3D) — author's call.
 
 ## Next (queued)
 
+- **Character chat — state as a narration system** —
+  [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) (next).
+  Wire the already-tracked chat state (meters/conditions/affinity) into the narrator so it's
+  *enacted* — intoxication → looser posture, slurred edges, a temporary inhibition drop; low
+  hygiene → modified scent/texture/visual — **without** re-describing it every turn. Mostly
+  prompt-layer (+ a no-migration condition→attribute overlay that reuses the session mechanism);
+  graduates the scenario plan's "surface outfit/cards to the narrator" and the sensory plan's
+  deferred one-turn beat cue. Ships first; partly sets up the payoff of the primary-feature arc.
+- **Character chat as a primary feature** —
+  [character-chat-primary.plan.md](character-chat-primary.plan.md) (draft). The big arc: make
+  chat function like the session lane for a *single* character with no location entities (location
+  via narration only) — **RAG long-term memory** (facts + episodes) atop the existing window +
+  rolling summary, **mutable-attribute + fuller state tracking**, and an **expanded dev debug
+  modal**. Load-bearing open question: key chat memory by minting a synthetic session row vs.
+  widening `facts`/`episodes` to `(ownerId, characterId)`.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
