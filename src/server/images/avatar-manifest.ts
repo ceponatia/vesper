@@ -16,10 +16,16 @@ const EXPRESSION_KEYS = new Set<string>(emotionLabelEnum.options);
 const POSE_KEYS = new Set<string>(poseLabelEnum.options);
 
 /** Read a string-valued meta tag defensively (jsonb is `unknown` at this boundary). */
-function metaTag(meta: unknown, key: string): string | null {
+export function metaTag(meta: unknown, key: string): string | null {
   if (!meta || typeof meta !== "object") return null;
   const value = (meta as Record<string, unknown>)[key];
   return typeof value === "string" ? value : null;
+}
+
+/** Read a boolean meta flag defensively (jsonb is `unknown` at this boundary). */
+export function metaFlag(meta: unknown, key: string): boolean {
+  if (!meta || typeof meta !== "object") return false;
+  return (meta as Record<string, unknown>)[key] === true;
 }
 
 export async function loadAvatarManifest(characterId: string, ownerId: string): Promise<AvatarManifest> {

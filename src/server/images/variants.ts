@@ -119,5 +119,9 @@ export async function promoteVariant(characterId: string, imageId: string): Prom
     .where(eq(characters.id, characterId))
     .returning({ id: characters.id });
   if (updated.length === 0) return { ok: false, error: "character not found" };
+  // The canonical face changed — the caller (route) must drop the now-stale expression
+  // frames via `clearAvatarExpressionFrames`. It is NOT called here: variants.ts is imported
+  // by avatar-expressions.ts (generateVariant), so importing back would be a cycle
+  // (`lint:cycles`). Clearing is a pure delete with no enqueue, so the route owns it.
   return { ok: true };
 }

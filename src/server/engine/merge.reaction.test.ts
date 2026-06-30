@@ -124,6 +124,33 @@ describe("planReactionAffinity — welcome/unwelcome touch (mood.spec §5)", () 
   });
 });
 
+describe("planReactionAffinity — avatar reaction beat (avatar-3d)", () => {
+  it("a carded reaction emits a beat matching the curve verdict (the narrator line's value)", () => {
+    const sabrina = npc("p-sabrina", "Sabrina", [{ target: "compliment", valence: "dislike", intensity: 7 }]);
+    const r = planReactionAffinity([{ concept: "compliment", target: "Sabrina" }], [brian, sabrina], [feeling(0)]);
+    expect(r.beat).toMatchObject({ participantId: "p-sabrina", concept: "compliment", valence: "dislike" });
+    expect(r.beat!.magnitude).toBeGreaterThan(0);
+  });
+
+  it("a welcome touch emits a like-beat; an unwelcome touch a dislike-beat", () => {
+    const sabrina = npc("p-sabrina", "Sabrina");
+    const touch = [{ concept: "physical_affection", target: "Sabrina" }];
+    expect(planReactionAffinity(touch, [brian, sabrina], [feeling(55)]).beat?.valence).toBe("like"); // warm
+    expect(planReactionAffinity(touch, [brian, sabrina], [feeling(-25)]).beat?.valence).toBe("dislike"); // cool
+  });
+
+  it("a neutral (ambiguous) touch fires no beat", () => {
+    const sabrina = npc("p-sabrina", "Sabrina");
+    const r = planReactionAffinity([{ concept: "physical_affection", target: "Sabrina" }], [brian, sabrina], [feeling(0)]);
+    expect(r.beat).toBeUndefined();
+  });
+
+  it("no resolvable act ⇒ no beat", () => {
+    expect(planReactionAffinity([], [brian, npc("p-sabrina", "Sabrina")], []).beat).toBeUndefined();
+    expect(planReactionAffinity([{ concept: "insult", target: "Sabrina" }], [brian, npc("p-sabrina", "Sabrina")], [feeling(0)]).beat).toBeUndefined();
+  });
+});
+
 describe("combineAffinityUpdates", () => {
   it("the reaction wins its edge; the simulant's update on that edge is dropped, others kept", () => {
     const reaction: ReactionAffinityResult = {

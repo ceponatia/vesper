@@ -21,7 +21,7 @@ export interface AgentModelOption {
 export const AGENT_MODELS: readonly AgentModelOption[] = [
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
-  { id: "openrouter/owl-alpha", label: "Owl (alpha)" },
+  { id: "openrouter/owl-alpha", label: "Owl Alpha" },
 ];
 
 /**
@@ -30,4 +30,4 @@ export const AGENT_MODELS: readonly AgentModelOption[] = [
  * call than the former gemini-3.5-flash default (which mandated reasoning it
  * could not disable — see pre-narrator-agents.followups.md §2a).
  */
-export const DEFAULT_AGENT_MODEL_ID = "deepseek/deepseek-v4-flash";
+export const DEFAULT_AGENT_MODEL_ID = "openrouter/owl-alpha";

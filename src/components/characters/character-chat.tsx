@@ -316,7 +316,11 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
             name={name}
             avatarImageId={avatarImageId}
             cue={chatState.avatarCue}
-            trace={chatState.lastPulseTrace}
+            beat={{
+              valence: chatState.lastPulseTrace.valence,
+              magnitude: 1,
+              concept: chatState.lastPulseTrace.concept,
+            }}
             beatTick={replyTick}
             className="mx-auto w-full max-w-56 lg:mx-0 lg:w-60 lg:max-w-none lg:shrink-0"
           />

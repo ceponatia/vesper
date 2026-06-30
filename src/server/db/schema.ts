@@ -815,7 +815,7 @@ export const jobs = pgTable(
     id: id(),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
     type: text("type", {
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep"],
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "scene_image", "avatar", "avatar_seed", "portrait_variant", "entity_image", "embed_refresh", "image_sweep"],
     }).notNull(),
     status: text("status", { enum: ["queued", "running", "done", "failed"] }).notNull().default("queued"),
     runnerId: text("runner_id"),

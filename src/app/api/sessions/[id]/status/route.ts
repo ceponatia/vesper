@@ -5,7 +5,14 @@ import { agentModelId, narrativeModelId } from "@/server/ai";
 import { db, images, jobs, sessions, turns } from "@/server/db";
 import { HEARTBEAT_STALE_MS, loadSessionBundle } from "@/server/engine";
 import { findOwnedSession } from "../../_shared/access";
-import { buildStatusPayload, parseClockDelta, type ClockDelta, type SceneGalleryEntry } from "../../_shared/status-payload";
+import {
+  buildStatusPayload,
+  parseClockDelta,
+  parseReactionBeat,
+  type ClockDelta,
+  type SceneGalleryEntry,
+  type SessionReactionBeat,
+} from "../../_shared/status-payload";
 
 type Params = { id: string };
 
@@ -30,15 +37,30 @@ async function sceneImages(sessionId: string): Promise<SceneImageRow[]> {
     .limit(SCENE_GALLERY_LIMIT);
 }
 
-/** The latest completed turn's time advance — null until a merge has written one. */
-async function latestClockDelta(sessionId: string): Promise<ClockDelta | null> {
+interface LatestTurnFacts {
+  number: number;
+  clockDelta: ClockDelta | null;
+  reactionBeat: SessionReactionBeat | null;
+}
+
+/**
+ * Facts the status payload reads off the latest completed turn: its number (the beat
+ * replay-guard baseline), the time advance, and the one-shot avatar reaction beat — all from
+ * one row. Null until a merge has written a ready turn.
+ */
+async function latestTurnFacts(sessionId: string): Promise<LatestTurnFacts | null> {
   const [turn] = await db()
-    .select({ agentResults: turns.agentResults })
+    .select({ number: turns.number, agentResults: turns.agentResults })
     .from(turns)
     .where(and(eq(turns.sessionId, sessionId), eq(turns.status, "ready")))
     .orderBy(desc(turns.number))
     .limit(1);
-  return turn ? parseClockDelta(turn.agentResults) : null;
+  if (!turn) return null;
+  return {
+    number: turn.number,
+    clockDelta: parseClockDelta(turn.agentResults),
+    reactionBeat: parseReactionBeat(turn.agentResults, turn.number),
+  };
 }
 
 /**
@@ -75,10 +97,10 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   if (!session) return jsonError("not_found", "session not found", 404);
 
   const sink = new DiagnosticCollector();
-  const [bundle, sceneRows, clockDelta] = await Promise.all([
+  const [bundle, sceneRows, facts] = await Promise.all([
     loadSessionBundle(id, sink),
     sceneImages(id),
-    latestClockDelta(id),
+    latestTurnFacts(id),
   ]);
   if (!bundle) return jsonError("not_found", "session not found", 404);
   await reconcileSceneGen(id, bundle);
@@ -90,7 +112,9 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
       sceneGallery: [...sceneRows].reverse().map(({ id: imageId, createdAt, prompt }) => ({ id: imageId, createdAt, prompt })),
       narrativeModel: narrativeModelId(bundle.world.narrativeModel),
       agentModel: agentModelId(bundle.world.agentModel),
-      clockDelta,
+      clockDelta: facts?.clockDelta ?? null,
+      reactionBeat: facts?.reactionBeat ?? null,
+      latestTurn: facts?.number ?? null,
     }),
   );
 });

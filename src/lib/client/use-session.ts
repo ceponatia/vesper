@@ -7,6 +7,7 @@ import { calendarStartSchema } from "@/lib/clock";
 import { apiGet, toApiError, withQuery, type ApiError } from "@/lib/client/api";
 import { consumeTurnStream, type TurnChunkPayload } from "@/lib/client/turn-stream";
 import type { TurnAuthor } from "@/contracts/turns/stream";
+import { avatarCueSchema } from "@/contracts/avatar/cue";
 import { emotionLabelSchema } from "@/contracts/mood/emotion-label";
 
 /**
@@ -268,6 +269,8 @@ export const statusParticipantSchema = z.preprocess(
     tier: z.enum(["major", "minor", "extra"]).catch("minor"),
     isUser: z.boolean().catch(false),
     avatarImageId: optionalText,
+    /** Library character id — the key for the standing avatar's manifest fetch; player → null. */
+    characterId: optionalText,
     locationId: optionalText,
     locationName: optionalText,
     activity: z.string().catch("idle"),
@@ -275,6 +278,11 @@ export const statusParticipantSchema = z.preprocess(
     meters: z.record(z.string(), z.number()).catch({}),
     /** Derived discrete emotion for the mood chip; player/legacy payloads → null. */
     emotion: emotionChipSchema,
+    /** The standing avatar's sustained cue (avatar-3d); player/legacy payloads → null. */
+    avatarCue: avatarCueSchema
+      .nullish()
+      .catch(null)
+      .transform((v) => v ?? null),
     conditions: arrayOf(conditionChipSchema),
     wardrobe: arrayOf(wardrobeEntrySchema),
     /**
@@ -368,6 +376,16 @@ const clockDeltaSchema = z.object({
 });
 export type ClockDelta = z.infer<typeof clockDeltaSchema>;
 
+/** The latest turn's one-shot avatar reaction beat (avatar-3d); old/no-act turns have none. */
+const reactionBeatSchema = z.object({
+  participantId: z.string().min(1),
+  concept: z.string().catch(""),
+  valence: z.enum(["like", "dislike"]).catch("like"),
+  magnitude: z.number().catch(0),
+  turn: z.number().catch(0),
+});
+export type SessionReactionBeat = z.infer<typeof reactionBeatSchema>;
+
 export interface StatusLocation {
   id: string | null;
   name: string;
@@ -395,6 +413,10 @@ export interface SessionStatus {
     gallery: SceneImage[];
     gen: SceneGen;
   };
+  /** The latest turn's one-shot avatar reaction beat (avatar-3d), or null when none. */
+  reactionBeat: SessionReactionBeat | null;
+  /** The latest ready turn number — the standing avatar's mount-baseline for the beat. */
+  latestTurn: number | null;
 }
 
 const locationSchema = z.object({
@@ -463,6 +485,8 @@ export function parseSessionStatus(raw: unknown): SessionStatus | null {
     items: arrayOf(statusItemSchema).parse(firstPresent(obj, ["items", "itemInstances"]) ?? []),
     threads: arrayOf(statusThreadSchema).parse(threadsRaw),
     scene: { currentImageId, gallery, gen: sceneGenSchema.catch({ interval: 0, status: "idle", referenceMode: "single" }).parse(genRaw) },
+    reactionBeat: reactionBeatSchema.nullish().catch(null).parse(firstPresent(obj, ["reactionBeat"])) ?? null,
+    latestTurn: z.number().nullish().catch(null).parse(firstPresent(obj, ["latestTurn"])) ?? null,
   };
 }
 

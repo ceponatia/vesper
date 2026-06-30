@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { relationshipToPlayer } from "./cast-relationship";
 import { ParticipantCard } from "./participant-card";
+import { SessionAvatar } from "./session-avatar";
 
 const INTERVALS = [
   { value: 0, label: "Off" },
@@ -75,6 +76,9 @@ export function SceneTab({ session }: { session: UseSession }) {
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {/* The standing companion avatar (avatar-3d) emotes live above the scene image. */}
+      <SessionAvatar status={session.status} />
+
       {shownId ? (
         <button
           type="button"

@@ -1,11 +1,12 @@
 # Mood-reactive character avatars (feasibility)
 
-Status: **slices 1–2 shipped — 2026-06-27** (the `contracts/avatar/` cue contract +
-`deriveAvatarCue`, and the CSS-keyframe `SpriteAvatarRenderer` + standing companion panel
-in character-chat, with ~5 hand-seeded Lysandra frames — see "Implementation deviations"
-below for where the build departed from the spec). **Slice 3** (auto-asset gen for the
-whole cast) is **next** in `roadmap.md`. The 2026-06-21 feasibility study is below; the
-2026-06-27 build decisions are locked in **"Locked decisions"** just under Scope.
+Status: **slices 1–3 shipped** (slices 1–2 — 2026-06-27; slice 3 — 2026-06-30). Slice 3 is
+the auto-asset-gen pipeline (all 11 expression frames per character, seeded at avatar-ready +
+lazy-gen on demand, identity-locked, cached forever) for the **whole unbounded cast**, plus a
+**live standing companion avatar in session play** (sustained-emotion crossfades + a per-turn
+reaction beat sourced from the merge, which now also emits beats for un-carded **touches**).
+The critique-hardened design is in **"Slice 3 — finalized design"** below; the
+2026-06-27 slice-1–2 build decisions are in **"Locked decisions"** just under Scope.
 Companion design notes from GPT live in [avatar-3d.notes.md](avatar-3d.notes.md) — read
 it for the `AvatarCue` / `AvatarDirector` detail; the concrete cue contract + enums are
 in [avatar-3d.spec.md](avatar-3d.spec.md).
@@ -42,9 +43,14 @@ questions" below); the build-shaping calls:
    `SpriteAvatarRenderer` (`motion`) doing breathing/drift, expression crossfade, one-shot
    reaction beats, and hysteresis; mounted as the standing companion panel in
    `character-chat.tsx`. Plus `scripts/seed-avatar-expressions.ts` to hand-seed Lysandra.
-3. **Slice 3 — auto-asset gen (queued, `roadmap.md` Next).** Automate the per-character
-   expression/pose frame set (extend the reference-edit pipeline), seed-at-creation +
-   lazy-gen, then wire into in-session play.
+3. **Slice 3 — auto-asset gen + in-session play — shipped 2026-06-30.** The per-character
+   expression frame set is automated + a live standing companion avatar mounts in session
+   play. Finalized, critique-hardened design below. Two adversarial workflows (design + impl)
+   ran; the impl review's 4 confirmed mediums (transient-failure tombstone, fresh-session
+   first-beat suppression, lazy-gen premature POST, detached-job recovery JSDoc) were fixed.
+   **Deferred:** pose-frame gen (renderer reads only expressions); surfacing touch reactions
+   to the **narrator** line (this slice keeps that to the avatar beat only); a global
+   detached-job stale-recovery sweep (pre-existing gap, idempotency-mitigated).
 
 ### Implementation deviations from the spec (recorded 2026-06-27)
 
@@ -61,6 +67,132 @@ questions" below); the build-shaping calls:
 - **Blink deferred** — a convincing blink needs a closed-eye **face layer**, which a single
   full-frame portrait can't supply; it returns with slice-3 layering. Breathing + drift +
   crossfade + reaction beats carry the "alive" feel meanwhile.
+
+## Slice 3 — finalized design (2026-06-30, critique-hardened)
+
+A four-critic adversarial design review (correctness/resilience · session+merge ·
+cost/ops · boundaries/tests/docs) ran before any code. It caught a **shipping blocker**
+and two false premises; the design below is the revision. User rulings: **seed all 11
+emotions up front for every character** (single-character gen + whole world cast); **build
+the in-session one-shot beat** *and* **improve the per-turn reaction** (don't defer it).
+
+### Manifest staleness — Model B (delete-on-face-change, NOT a sourceImageId filter)
+
+The original plan filtered manifest frames by `images.sourceImageId === avatarImageId`.
+**Rejected (blocker):** `cloneEntityImages` copies `portrait_variant` rows with
+`sourceImageId = the original image's id` (provenance) and `clone.ts` remaps only
+`characters.avatarImageId` — so that filter strips **every** expression frame from any
+cloned character (a regression vs slice 2). Instead:
+
+- **No filter.** `loadAvatarManifest` stays newest-wins by `meta.avatarExpression` tag.
+- A frame depicts whatever avatar it was edited from. When an avatar's **face actually
+  changes** (regen / promote / upload), `clearAvatarExpressionFrames(characterId, ownerId)`
+  (pure DB+file delete in `server/images`, **no enqueue → no cycle**) drops the stale
+  expression set; seed/lazy-gen refill against the new face. **Clones keep their copied
+  frames** — a clone's avatar is a pixel-copy of the same face, so the frames are valid by
+  construction (clone-safe, zero special-casing). This also bounds storage (old frames are
+  deleted, not orphaned).
+- Call sites: `generateAvatar` success (regen clears; create is a no-op — no frames yet),
+  `promoteVariant`, the upload-promote helper — all in `server/images`.
+
+### Gen pipeline — `server/images/avatar-expressions.ts` (generates, never enqueues)
+
+- `EXPRESSION_INSTRUCTIONS: Record<EmotionLabel, string>` — face-only anime/stylized
+  reference-edit instructions for all 11 labels (the 5 proven dev ones + playful, flustered,
+  surprised, angry, afraid, aroused; `aroused` is **facial only** — the identity-lock keeps
+  the body locked). **Single home** — `scripts/seed-avatar-expressions.ts` imports it (jscpd).
+- `coveredExpressionEmotions(characterId, ownerId)` — emotions to **skip**: a frame that is
+  `ready`/`pending`, **or** a give-up tombstone. **Negative cache (cost):** a content-rejected
+  or ≥K-failed emotion is tombstoned (`meta.avatarExpressionGaveUp`) so the moderation-prone
+  `aroused` frame can't become a money-pump. Failures classified via `classifyImageFailure`
+  (never retry a content rejection; retry-once a transient 429/5xx).
+- `generateAvatarExpression(characterId, userId, emotion, sink?)` — gated on a **ready**
+  canonical avatar (no fail-row thrash); dedup via the covered set; one `generateVariant`
+  (`kind:"expression"`, `extraMeta:{avatarExpression: emotion}`); classify+tombstone on
+  failure; returns a real status.
+- `seedAvatarExpressions(characterId, userId, emotions?, sink?)` — loops
+  `generateAvatarExpression` over the missing target set, **concurrency-bounded by a
+  module-level Venice semaphore** (caps the fan-out across concurrent seed jobs/users);
+  re-queries status and emits an **aggregate diagnostic** (seeded/failed/skipped). Idempotent
+  ⇒ resumable.
+- **Boundary rule (enforced by `lint:cycles`):** this module may **generate** but must never
+  **enqueue** — all `enqueueJob`/route glue lives in `server/api`/`server/engine`.
+
+### Jobs — new engine `avatar_seed` type (heartbeat + poison-cap + recovery)
+
+Seed rides the **engine** runner (`enqueueJob`, `sessionId: null`), not route `startJob` — so
+it gets a heartbeat and the poison-job attempt cap. (Stale-recovery is session-scoped, so a
+detached seed row isn't swept on a process death — the same pre-existing gap as the
+world-image backfill; harmless because `seedAvatarExpressions` is **idempotent**, so a later
+trigger just fills the missing frames.) New `avatar_seed`
+JobType; handler in `server/engine` calls `seedAvatarExpressions`. Payload
+`{characterId, ownerId, emotions?}` — omitted ⇒ all missing (seed-at-create), single-element
+⇒ lazy-gen. Enqueued from: the avatar **route**'s job continuation (after `generateAvatar`
+resolves a ready avatar), `queueWorldImageGeneration` (per newly-avatared cast member), and
+the lazy-gen endpoint.
+
+- **Seed-at-create / regen:** the `POST …/avatar` job, after `generateAvatar`, enqueues a
+  full `avatar_seed` (regen first cleared the old set).
+- **Promote / upload:** **clear only**, no auto-reseed (avoids the studio re-seed storm) —
+  lazy-gen refills the common emotions as they arise.
+- **Lazy-gen:** `POST /api/characters/[id]/avatar/expressions { emotion }` — owner-scoped,
+  rate-limited, idempotent; enqueues a single-emotion `avatar_seed`. `AvatarPanel` fires it
+  from an **effect** (keyed `[characterId, emotion, hasFrame]`, ref-guard mutated inside the
+  effect, `reload({silent:true})` only after the await — satisfies strict react-hooks) when
+  the current emotion lacks a frame, at beat boundaries only.
+
+### In-session standing avatar (section F)
+
+- `status-payload.ts`: `participantEmotion` computes the `EmotionResult` once, then
+  `deriveAvatarCue({ emotion, posture: p.state.posture, atmosphere: bundle.brief.atmosphere,
+  sceneId: activeLocationId(bundle) })`. Add `characterId` (soft library pointer, for the
+  manifest fetch) + `avatarCue` to `StatusParticipant`; mirror in `use-session.ts`.
+- **Stable focal** (not the per-turn reaction target → no mid-conversation avatar-swapping):
+  among participants present with the player & `!isUser`, prefer `role==="companion"`, then
+  tier major>minor>extra, then first by id. Player-alone ⇒ no panel.
+- Mount an `AvatarPanel` for the focal (top of the Scene tab). The library `characterId`
+  fetches the manifest; base = `manifest.baseImageId` (library-current, consistent with the
+  frames), snapshot `avatarImageId` only as ultimate fallback. **Known v1 limit:** if the
+  library avatar changed post-spawn, the standing avatar reflects library-current while scene
+  images use the spawn snapshot — accepted, documented (re-snapshot on restart exists).
+
+### In-session beat + per-turn-reaction improvement (section G)
+
+Sourced from the **merge**, not pre-narration — the merge's reaction phase is the one place
+that already sees **both** carded reactions **and** un-carded touches (the romance beats the
+pre-narration `evaluatePrimaryReaction` misses). Additive, no narrator-prompt change:
+
+- `ReactionAffinityResult.beat?: ReactionBeat` (`{participantId, concept, valence, magnitude}`),
+  set in `planReactionAffinity` on **both** branches — carded → from `evaluated`; **touch
+  fallback → synthesized from welcome-ness** (valence = welcome?like:dislike, magnitude scaled
+  from the touch). This is the "improve per-turn reaction" ruling: touches now produce a
+  reaction beat where before they produced only a silent mood/stress nudge.
+- Thread `ctx.reactionResult.beat` → `MergePlan.reactionBeat` (in `buildMergePlan`) →
+  `apply.ts` writes `agentResults.reaction` beside the existing `clock` blob (live-turn branch;
+  the reconcile branch's `jsonb ||` preserves it).
+- The status route projects `reactionBeat` (top-level, **not** folded into `avatarCue` whose
+  reaction is always `none` in the payload) **with the turn `number`** + the latest ready turn
+  number. **Replay guard:** the client captures a mount-baseline turn and fires the beat once
+  only when `reactionBeat.turn > baseline && participantId === focal.id` — so the shipped
+  char-chat "no beat on mount" invariant holds in session too.
+- `AvatarPanel` beat derivation is **lifted out** to a source-agnostic normalized input
+  (`{valence, magnitude, concept}`); the chat caller passes `magnitude: 1` (unchanged
+  behavior), the session caller passes the **real** magnitude (so strong-tier laugh/flinch
+  fire). Chat caller updated in the same change.
+
+### Seeding scope & demo
+
+All 11 up front for **every** character (user ruling), incl. world cast — the Venice
+semaphore + negative cache + recovery make the fan-out safe. Demo mode still seeds (monogram
+per emotion, label includes the emotion so frames differ). Backfill script generalized through
+`seedAvatarExpressions` (idempotent), **explicit owner required**, `--dry-run`/`--limit`.
+
+### Not in this slice
+
+No DB migration (meta-tagged variants + jsonb blobs only). **Pose** frames still not
+generated (renderer consumes only expressions; the layering question, spec §5, is unresolved).
+Surfacing touch reactions to the **narrator** line (vs only the avatar beat) is a follow-up —
+this slice keeps the narrator-prompt-focus tuning untouched.
 
 Topic slug `avatar-3d` (historical — the conclusion is **2D-first, 3D later**, but
 the slug stays stable so the plan + notes nest together; see CLAUDE.md).

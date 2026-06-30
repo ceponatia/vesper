@@ -87,28 +87,61 @@ Derivation is pure (`src/contracts`/`src/lib`); it's built where the turn result
 assembled and serialized into the turn stream. The **client renderer never imports
 `server/*`** (CLAUDE.md boundaries) — it receives the validated cue.
 
+**Two derivation surfaces (shipped).** (1) **Character-chat** — `chatStateSnapshot`
+(`engine/chat-state.ts`) wraps the chat state's emotion (pose `idle`, atmosphere `calm`).
+(2) **In-session play** — `buildStatusPayload` derives an `avatarCue` per participant from
+the richer session state (real `posture` → pose, `bundle.brief.atmosphere`, active location
+as `sceneId`) and ships it on `StatusParticipant` alongside the library `characterId` (the
+manifest key). The standing avatar mounts in the Scene tab for the **stable focal** NPC
+(present-with-player → companion → tier → id; never the per-turn reaction target, so it
+doesn't swap mid-scene).
+
+**The one-shot beat (in-session).** The cue's `reaction` is always `none` in the payload;
+the transient beat travels a **separate top-level `reactionBeat`** ({participantId, concept,
+valence, magnitude, turn}). It is sourced from the **merge** — `planReactionAffinity` emits a
+`ReactionBeat` on both the carded-reaction branch (the curve verdict, agreeing with the
+narrator's `## Reaction` line) **and** the un-carded **touch** branch (synthesized from
+welcome-ness — the romance beats the pre-narration evaluator misses), threaded
+`ctx.reactionResult.beat` → `MergePlan.reactionBeat` → `apply.ts` writes
+`agentResults.reaction`. The status route projects it with the turn number; the client fires
+it **once** via a mount-baseline guard (`reactionBeat.turn > baseline` and the target is the
+focal), reusing the chat avatar's `beatTick` mechanism. Surfacing touch reactions to the
+**narrator** line (not just the avatar) is a deferred follow-up.
+
 ## 4. Asset manifest & lazy-gen keying
 
 Controlled enum values map to asset keys; keys resolve to generated/cached frames
 (or procedural motion presets for reactions):
 
 ```ts
+// As shipped (contracts/avatar/cue.ts) — emotion/pose/outfit → image-row id, plus the
+// always-present base. Reactions are NOT in the manifest (they are procedural motion). The
+// keys are plain strings so an unknown tag never throws at the parse boundary.
 type AvatarManifest = {
-  expressions: Record<EmotionLabel, AssetKey>;
-  poses: Record<PoseLabel, AssetKey>;
-  reactions: Record<ReactionLabel, AssetKey | MotionPreset>;  // many are procedural
-  outfits: Record<string /*outfitId*/, AssetKey>;
+  baseImageId: string | null;                       // the canonical avatar (fallback frame)
+  expressions: Record<EmotionLabel, AssetKey>;      // the only channel slice 3 generates
+  poses: Record<PoseLabel, AssetKey>;               // reserved; not generated yet (renderer reads only expressions)
+  outfits: Record<string /*outfitId*/, AssetKey>;   // reserved
 };
 ```
 
 A renderable still is keyed by **(emotion × pose × outfit × exposure)**, where
 *exposure* is the rendered region-coverage state (`covered`/`sheer`/`bare` from
 `resolveWardrobeVisibility`) — i.e. what the frame actually shows, distinct from the
-`aroused` emotion's intimate-context gate (mood.spec §2). Most of
-that space never occurs — **lazy-gen** (plan §"asset model") generates a key on first
-use (async, off critical path), serves the nearest cached frame meanwhile, and
-caches forever. Reaction beats are mostly **procedural motion** (a scale-bounce, a
+`aroused` emotion's intimate-context gate (mood.spec §2). Slice 3 generates the
+**expression** channel only (the renderer reads only that); pose/outfit/exposure stay the
+lazy-gen seam. Reaction beats are mostly **procedural motion** (a scale-bounce, a
 quick overlay), not generated frames.
+
+**Staleness keying — Model B (shipped 2026-06-30, supersedes the `sourceImageId` filter
+idea).** The manifest has **no avatar-membership filter**: `loadAvatarManifest` is
+newest-wins per `meta.avatarExpression`. A frame belongs to whatever avatar it was edited
+from; when the canonical **face changes** (regen / promote / upload),
+`clearAvatarExpressionFrames` deletes the stale set and seed/lazy-gen refill. A
+`sourceImageId === avatarImageId` filter was rejected — `cloneEntityImages` writes
+`sourceImageId` as original-image provenance and clones remap only `avatarImageId`, so that
+filter would strip every frame from a cloned character. Model B is clone-safe by
+construction (a clone's avatar is a pixel-copy, so its copied frames still depict it).
 
 ## 5. The layering decision (key asset-architecture question)
 

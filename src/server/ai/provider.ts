@@ -1,4 +1,7 @@
-import { createOpenRouter, type OpenRouterProvider } from "@openrouter/ai-sdk-provider";
+import {
+  createOpenRouter,
+  type OpenRouterProvider,
+} from "@openrouter/ai-sdk-provider";
 import type { JSONValue, ProviderMetadata } from "ai";
 import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
 import { DEFAULT_NARRATIVE_MODEL_ID } from "@/lib/narrative-models";
@@ -25,7 +28,9 @@ export function isDemoMode(): boolean {
  * Returns null when the metadata is absent. Used for the Inspector's per-leg
  * provider attribution — correlate it with latency to spot slow providers.
  */
-export function routedProvider(meta: ProviderMetadata | undefined): string | null {
+export function routedProvider(
+  meta: ProviderMetadata | undefined,
+): string | null {
   const provider = meta?.openrouter?.provider;
   return typeof provider === "string" ? provider : null;
 }
@@ -77,7 +82,10 @@ const NARRATOR_REASONING: Readonly<Record<string, JSONValue>> = {
  * Returns undefined when neither knob applies, so callers can omit `provider`
  * entirely rather than send an empty object.
  */
-export function providerRouting(modelId: string, opts: { sortLatency?: boolean } = {}): OpenRouterRouting | undefined {
+export function providerRouting(
+  modelId: string,
+  opts: { sortLatency?: boolean } = {},
+): OpenRouterRouting | undefined {
   const routing: OpenRouterRouting = {};
   if (opts.sortLatency) routing.sort = "latency";
   const ignore = PROVIDER_IGNORE[modelId];
@@ -125,7 +133,11 @@ export function openrouter(): OpenRouterProvider {
 }
 
 export function narrativeModelId(worldModel?: string | null): string {
-  return worldModel?.trim() || process.env.NARRATIVE_MODEL || MODEL_DEFAULTS.narrative;
+  return (
+    worldModel?.trim() ||
+    process.env.NARRATIVE_MODEL ||
+    MODEL_DEFAULTS.narrative
+  );
 }
 
 export function stateModelId(): string {
@@ -144,13 +156,11 @@ export function toolModelId(): string {
  * plain `stateModelId`/`toolModelId` defaults, outside the session switch.
  */
 export function agentModelId(worldAgentModel?: string | null): string {
-  return worldAgentModel?.trim() || process.env.AGENT_MODEL || MODEL_DEFAULTS.state;
+  return (
+    worldAgentModel?.trim() || process.env.AGENT_MODEL || MODEL_DEFAULTS.state
+  );
 }
 
 export function embeddingModelId(): string {
   return process.env.EMBEDDING_MODEL || MODEL_DEFAULTS.embedding;
 }
-
-// Image generation no longer routes through OpenRouter. After the 2026-06-19
-// Flux removal (scene-images.plan.md) every image lane is Venice/Qwen — see
-// `server/ai/venice.ts`. OpenRouter stays for text/LLM work only.
