@@ -9,7 +9,7 @@ import {
   type ChatStateSnapshot,
   type ImageRecord,
 } from "@/lib/client/api";
-import { DEFAULT_CHARACTER_CHAT_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
+import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -39,6 +39,14 @@ export interface CharacterChatProps {
   startingStage: string;
   /** Write a Starting Relationship change back to the character profile draft (editor SaveBar persists it). */
   onStartingStageChange: (stage: string) => void;
+  /**
+   * The narrator model the dropdown shows (a resolved `NARRATIVE_MODELS` id). Owned by
+   * the page so it outlives this tab unmounting — picking a model here calls
+   * `onChatModelChange`, which updates that state *and* persists it to the character
+   * (`characters.chatModel`), so the choice is still selected on return.
+   */
+  chatModel: string;
+  onChatModelChange: (modelId: string) => void;
 }
 
 interface ChatLine {
@@ -61,14 +69,21 @@ function sceneError(image: ImageRecord): string | null {
  * renders a scene image from the recent exchange (filed against the character,
  * so it also lands in the Gallery under "Character chats").
  */
-export function CharacterChat({ characterId, name, avatarImageId, startingStage, onStartingStageChange }: CharacterChatProps) {
+export function CharacterChat({
+  characterId,
+  name,
+  avatarImageId,
+  startingStage,
+  onStartingStageChange,
+  chatModel,
+  onChatModelChange,
+}: CharacterChatProps) {
   const toast = useToast();
   const who = name.trim() || "this character";
 
   const transcript = useAsyncData(() => charactersApi.chatTranscript(characterId), [characterId]);
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [input, setInput] = useState("");
-  const [narratorModel, setNarratorModel] = useState(DEFAULT_CHARACTER_CHAT_MODEL_ID);
   const [sending, setSending] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState<ChatResetScope | null>(null);
@@ -200,7 +215,7 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
     const content = input.trim();
     if (!content || sendingRef.current) return;
     setInput("");
-    const outcome = await runStream({ content, model: narratorModel }, content);
+    const outcome = await runStream({ content, model: chatModel }, content);
     if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
   };
 
@@ -246,7 +261,7 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
     const doomed = lines.slice(idx).filter((l) => !l.id.startsWith("tmp-"));
     setLines((prev) => prev.slice(0, idx));
     await Promise.all(doomed.map((l) => charactersApi.deleteChatMessage(characterId, l.id)));
-    const outcome = await runStream({ content, model: narratorModel }, content);
+    const outcome = await runStream({ content, model: chatModel }, content);
     if (!outcome.ok && !outcome.aborted) {
       toast.push({ title: "Rerun failed", description: outcome.error?.message, tone: "error" });
     }
@@ -276,7 +291,7 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
   const promptCharacter = async () => {
     if (sendingRef.current) return;
     // The premise now lives in chat-state (saved via the Scenario modal); the server reads it.
-    const outcome = await runStream({ open: true, model: narratorModel });
+    const outcome = await runStream({ open: true, model: chatModel });
     if (!outcome.ok) toast.push({ title: "Couldn't open the scene", description: outcome.error?.message, tone: "error" });
   };
 
@@ -332,8 +347,8 @@ export function CharacterChat({ characterId, name, avatarImageId, startingStage,
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Select
                 aria-label="Narrator model"
-                value={narratorModel}
-                onChange={(e) => setNarratorModel(e.target.value)}
+                value={chatModel}
+                onChange={(e) => onChatModelChange(e.target.value)}
                 className="h-8 w-44 text-xs"
               >
                 {NARRATIVE_MODELS.map((option) => (

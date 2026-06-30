@@ -33,3 +33,14 @@ export const DEFAULT_NARRATIVE_MODEL_ID = "aion-labs/aion-2.0";
  * {@link NARRATIVE_MODELS} so the dropdown shows it selected.
  */
 export const DEFAULT_CHARACTER_CHAT_MODEL_ID = "z-ai/glm-5.2";
+
+/**
+ * Resolve a persisted/over-the-wire character-chat model id to a curated one: a
+ * known {@link NARRATIVE_MODELS} id passes through, while an empty or unrecognised
+ * value (no saved pick, or an id dropped from the registry) falls back to
+ * {@link DEFAULT_CHARACTER_CHAT_MODEL_ID}. Keeps the chat dropdown's `value` always
+ * matching a real option and never streams a blank model to the server.
+ */
+export function resolveChatModelId(id: string | null | undefined): string {
+  return id && NARRATIVE_MODELS.some((option) => option.id === id) ? id : DEFAULT_CHARACTER_CHAT_MODEL_ID;
+}

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_NARRATIVE_MODEL_ID, NARRATIVE_MODELS } from "./narrative-models";
+import {
+  DEFAULT_CHARACTER_CHAT_MODEL_ID,
+  DEFAULT_NARRATIVE_MODEL_ID,
+  NARRATIVE_MODELS,
+  resolveChatModelId,
+} from "./narrative-models";
 
 describe("NARRATIVE_MODELS", () => {
   it("every entry is an OpenRouter slug (vendor/model) with a label", () => {
@@ -16,5 +21,24 @@ describe("NARRATIVE_MODELS", () => {
 
   it("the default narrator is one of the listed options", () => {
     expect(NARRATIVE_MODELS.some((o) => o.id === DEFAULT_NARRATIVE_MODEL_ID)).toBe(true);
+  });
+});
+
+describe("resolveChatModelId", () => {
+  it("passes a curated id through unchanged", () => {
+    for (const option of NARRATIVE_MODELS) {
+      expect(resolveChatModelId(option.id)).toBe(option.id);
+    }
+  });
+
+  it("falls back to the chat default for empty / null / unknown ids", () => {
+    expect(resolveChatModelId("")).toBe(DEFAULT_CHARACTER_CHAT_MODEL_ID);
+    expect(resolveChatModelId(null)).toBe(DEFAULT_CHARACTER_CHAT_MODEL_ID);
+    expect(resolveChatModelId(undefined)).toBe(DEFAULT_CHARACTER_CHAT_MODEL_ID);
+    expect(resolveChatModelId("vendor/retired-model")).toBe(DEFAULT_CHARACTER_CHAT_MODEL_ID);
+  });
+
+  it("the chat default is itself a curated option", () => {
+    expect(NARRATIVE_MODELS.some((o) => o.id === DEFAULT_CHARACTER_CHAT_MODEL_ID)).toBe(true);
   });
 });

@@ -50,6 +50,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (body.value.name !== undefined) update.name = body.value.name;
   if (body.value.tags !== undefined) update.tags = body.value.tags;
   if (body.value.visibility !== undefined) update.visibility = body.value.visibility;
+  if (body.value.chatModel !== undefined) update.chatModel = body.value.chatModel;
   if (body.value.profile !== undefined) {
     const current = parseOr(characterProfileSchema, existing.profile, emptyCharacterProfile(), undefined, "characters.profile");
     update.profile = { ...current, ...body.value.profile };
