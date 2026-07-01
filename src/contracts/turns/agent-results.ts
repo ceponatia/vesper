@@ -35,6 +35,22 @@ export const itemEventActionSchema = z.enum([
   "alter",
 ]);
 
+/**
+ * One proposed lasting attribute change (a haircut, a dye job, a new tattoo, weight). The
+ * SINGLE mutability contract shared by the session simulant and the character-chat archivist
+ * (character-chat-primary.spec.md §3, D3): both emit this shape and both apply it through the
+ * `overlaySourceMayChange(def.mutability, "narrative")` guard, so an inherent trait (eye colour,
+ * species, gender) can never be rewritten in either lane.
+ */
+export const attributeChangeSchema = z.object({
+  participantName: z.string().min(1),
+  attributeId: z.string().min(1),
+  value: z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]),
+  note: z.string().optional(),
+});
+
+export type AttributeChange = z.infer<typeof attributeChangeSchema>;
+
 export const simulantResultSchema = z.object({
   minutesAdvanced: z.number().int().catch(30).default(30),
   movements: z
@@ -82,16 +98,7 @@ export const simulantResultSchema = z.object({
       }),
     )
     .default([]),
-  attributeChanges: z
-    .array(
-      z.object({
-        participantName: z.string().min(1),
-        attributeId: z.string().min(1),
-        value: z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]),
-        note: z.string().optional(),
-      }),
-    )
-    .default([]),
+  attributeChanges: z.array(attributeChangeSchema).default([]),
   activityUpdates: z
     .array(
       z.object({

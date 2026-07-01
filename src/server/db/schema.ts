@@ -268,6 +268,24 @@ export const characterChatState = pgTable(
      * reactions against this set so taboos/rules are testable without a world/session.
      */
     activeSocialCards: jsonb("active_social_cards").notNull().default([]),
+    /**
+     * string[] — the chat archivist's memory-retrieval queries for the NEXT turn
+     * (character-chat-primary.spec.md §2), mirroring the session director's `memoryQueries`.
+     * Produced post-turn, consumed at the next prompt build to seed RAG recall.
+     */
+    memoryQueries: jsonb("memory_queries").notNull().default([]),
+    /**
+     * AttributeValue[] — persisted narrative attribute overlays that EVOLVE over a chat
+     * (character-chat-primary.spec.md §3): the attribute proposer merges `source:"narrative"`
+     * overlays here (inherent traits guarded), and the prompt builder resolves them on top of
+     * the authored base. Distinct from the transient condition overlays (render-time only).
+     */
+    attributeOverlays: jsonb("attribute_overlays").notNull().default([]),
+    /**
+     * ChatMemoryTrace — last-turn RAG debug (character-chat-primary.spec.md §5): what was
+     * retrieved + extracted this exchange, for the dev inspector. Parsed defensively.
+     */
+    lastMemoryTrace: jsonb("last_memory_trace").notNull().default({}),
     /** Chat-local game clock (within-visit drift + condition-expiry driver). */
     clockMinutes: integer("clock_minutes").notNull().default(0),
     /** Wall-clock anchor for between-visit recovery; null until the first exchange. */
@@ -717,7 +735,13 @@ export const episodes = pgTable(
   "episodes",
   {
     id: id(),
-    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    // Memory keying is mutually exclusive (character-chat-primary.spec §1): either a
+    // session (the turn lane) or a character chat (owner+character). Enforced by the
+    // `episodes_scope_exactly_one` CHECK below. `turnNumber` is a per-chat exchange
+    // ordinal in the chat lane, a real turn number in the session lane.
+    sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id").references(() => users.id),
+    characterId: text("character_id").references(() => characters.id, { onDelete: "cascade" }),
     turnNumber: integer("turn_number").notNull(),
     summary: text("summary").notNull(),
     threadIds: jsonb("thread_ids").notNull().default([]),
@@ -729,7 +753,15 @@ export const episodes = pgTable(
   },
   (t) => [
     index("episodes_session_idx").on(t.sessionId, t.turnNumber),
+    index("episodes_chat_idx").on(t.ownerId, t.characterId, t.turnNumber),
     index("episodes_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
+    check(
+      "episodes_scope_exactly_one",
+      sql`(
+        (${t.sessionId} IS NOT NULL AND ${t.ownerId} IS NULL AND ${t.characterId} IS NULL) OR
+        (${t.sessionId} IS NULL AND ${t.ownerId} IS NOT NULL AND ${t.characterId} IS NOT NULL)
+      )`,
+    ),
   ],
 );
 
@@ -737,7 +769,11 @@ export const facts = pgTable(
   "facts",
   {
     id: id(),
-    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    // Mutually-exclusive memory keying — see `episodes` above and the
+    // `facts_scope_exactly_one` CHECK below (character-chat-primary.spec §1).
+    sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id").references(() => users.id),
+    characterId: text("character_id").references(() => characters.id, { onDelete: "cascade" }),
     kind: text("kind").notNull(),
     verb: text("verb"),
     subjectKind: text("subject_kind").notNull().default("character"),
@@ -761,7 +797,15 @@ export const facts = pgTable(
   },
   (t) => [
     index("facts_session_status_idx").on(t.sessionId, t.status),
+    index("facts_chat_status_idx").on(t.ownerId, t.characterId, t.status),
     index("facts_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
+    check(
+      "facts_scope_exactly_one",
+      sql`(
+        (${t.sessionId} IS NOT NULL AND ${t.ownerId} IS NULL AND ${t.characterId} IS NULL) OR
+        (${t.sessionId} IS NULL AND ${t.ownerId} IS NOT NULL AND ${t.characterId} IS NOT NULL)
+      )`,
+    ),
   ],
 );
 

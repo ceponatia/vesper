@@ -5,6 +5,7 @@ import { currentEmbedder, embedText, embedTexts, toVectorLiteral, type Embedded 
 import { db, facts } from "../db";
 import { logEvent } from "../events";
 import { FACT_MIN_CONFIDENCE, FACT_RETRIEVAL_LIMIT, SUPERSEDE_CANDIDATES, SUPERSEDE_MIN_SCORE } from "./constants";
+import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
 
 /** Draft optionally pre-grounded by the merge reducer (subject_id resolution). */
 export type FactDraftInput = FactDraft & {
@@ -67,7 +68,7 @@ export function cosineSimilarity(a: readonly number[], b: readonly number[]): nu
  * vectors (facts keep their audit value, drop out of RAG + supersedence).
  */
 export async function addFacts(
-  sessionId: string,
+  scope: MemoryScope,
   drafts: readonly FactDraftInput[],
   sourceTurnId: string | null,
   sink?: DiagnosticSink,
@@ -82,7 +83,7 @@ export async function addFacts(
     if (!normalizeSubjectName(draft.subjectName) || !draft.text.trim()) {
       sink?.push(
         diag("warn", "memory.facts.invalid_draft", "fact draft with empty subject or text dropped", {
-          context: { sessionId, subjectName: draft.subjectName },
+          context: { scope: scopeLabel(scope), subjectName: draft.subjectName },
         }),
       );
       continue;
@@ -95,7 +96,7 @@ export async function addFacts(
         "info",
         "memory.facts.low_confidence_dropped",
         `${droppedLowConfidence} fact draft(s) under confidence ${FACT_MIN_CONFIDENCE} dropped`,
-        { context: { sessionId, dropped: droppedLowConfidence } },
+        { context: { scope: scopeLabel(scope), dropped: droppedLowConfidence } },
       ),
     );
   }
@@ -107,7 +108,7 @@ export async function addFacts(
   } catch (err) {
     sink?.push(
       diag("error", "memory.facts.embed_failed", `fact embedding failed: ${errorText(err)}`, {
-        context: { sessionId, draftCount: eligible.length },
+        context: { scope: scopeLabel(scope), draftCount: eligible.length },
       }),
     );
   }
@@ -133,7 +134,7 @@ export async function addFacts(
           .from(facts)
           .where(
             and(
-              eq(facts.sessionId, sessionId),
+              memoryScopeWhere(facts, scope),
               eq(facts.status, "active"),
               eq(facts.embedder, emb.embedder),
               isNotNull(facts.embedding),
@@ -147,7 +148,7 @@ export async function addFacts(
       const [inserted] = await tx
         .insert(facts)
         .values({
-          sessionId,
+          ...memoryScopeValues(scope),
           kind: draft.kind,
           verb: draft.verb ?? null,
           subjectKind: draft.subjectKind,
@@ -185,7 +186,7 @@ export async function addFacts(
  * prompt builder's concern).
  */
 export async function retrieveFacts(
-  sessionId: string,
+  scope: MemoryScope,
   queryText: string,
   limit = FACT_RETRIEVAL_LIMIT,
   sink?: DiagnosticSink,
@@ -199,7 +200,7 @@ export async function retrieveFacts(
   } catch (err) {
     sink?.push(
       diag("error", "memory.facts.embed_failed", `query embedding failed: ${errorText(err)}`, {
-        context: { sessionId },
+        context: { scope: scopeLabel(scope) },
       }),
     );
     return [];
@@ -217,7 +218,7 @@ export async function retrieveFacts(
     .from(facts)
     .where(
       and(
-        eq(facts.sessionId, sessionId),
+        memoryScopeWhere(facts, scope),
         eq(facts.status, "active"),
         eq(facts.embedder, currentEmbedder()),
         isNotNull(facts.embedding),
@@ -226,8 +227,9 @@ export async function retrieveFacts(
     .orderBy(sql`${facts.embedding} <=> ${vec}::vector`)
     .limit(limit);
 
-  await logEvent(sessionId, "retrieval", {
+  await logEvent(scopeSessionId(scope), "retrieval", {
     kind: "facts",
+    scope: scopeLabel(scope),
     query: query.slice(0, 300),
     candidates: hits.map((h) => ({ id: h.id, subjectName: h.subjectName, score: round(h.score) })),
   });
@@ -247,6 +249,15 @@ export async function retractFactsFromTurn(turnId: string): Promise<string[]> {
     .where(and(eq(facts.sourceTurnId, turnId), eq(facts.status, "active")))
     .returning({ id: facts.id });
   return retracted.map((r) => r.id);
+}
+
+/**
+ * Hard-delete every fact in a scope. Sessions cascade-delete their facts with the session
+ * row, so this is the chat lane's bulk purge (the single "Clear Chat" — character-chat-primary.spec.md §4).
+ */
+export async function deleteFactsForScope(scope: MemoryScope): Promise<number> {
+  const deleted = await db().delete(facts).where(memoryScopeWhere(facts, scope)).returning({ id: facts.id });
+  return deleted.length;
 }
 
 function errorText(err: unknown): string {

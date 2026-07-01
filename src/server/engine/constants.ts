@@ -85,6 +85,14 @@ export const CHAT_PULSE_MAX_OUTPUT_TOKENS = 256;
  */
 export const CHAT_PULSE_TIMEOUT_MS = 4000;
 /**
+ * The chat archivist-lite (character-chat-primary.spec.md §2) runs in parallel with the
+ * pulse in the same post-flush finalizer, so its budget also only delays controller.close().
+ * It emits more than the pulse (an episode summary + facts + queries) so it gets a larger
+ * token cap and a slightly longer timeout; a miss degrades to the summary+window path.
+ */
+export const CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS = 700;
+export const CHAT_ARCHIVIST_TIMEOUT_MS = 6000;
+/**
  * Arousal a pulse-classified **intimate** act adds (slice 4): full for an intimate
  * concept (e.g. a proposition), half for courtship / physical-affection. Skipped
  * when the act is disliked. Clamped to [0,1] like every meter.

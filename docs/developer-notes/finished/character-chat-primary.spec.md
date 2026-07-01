@@ -1,10 +1,10 @@
 # Character chat as a primary feature — spec (settled mechanics)
 
-Status: **next** — settled and ready to build. This is the truth for the arc (the
-resolved decisions + the load-bearing keying design). The task list and build order
-live in [character-chat-primary.plan.md](character-chat-primary.plan.md); read this
-first, then that. All five of the plan's original open questions are resolved — the
-rulings are **## Decisions** (D1–D5) below.
+Status: **shipped — 2026-07-01** (all seven build slices; `pnpm verify` green). This is the
+truth for the arc (the resolved decisions + the load-bearing keying design + a Completion
+note at the foot recording two refinements taken during the build). The task list and build
+order live in [character-chat-primary.plan.md](character-chat-primary.plan.md). All five of
+the plan's original open questions are resolved — the rulings are **## Decisions** (D1–D5) below.
 
 Builds on the shipped character-chat family — the sessionless 1-on-1, the rolling
 summary, the light state, the scenario setup (all under `finished/`) and the just-shipped
@@ -208,3 +208,40 @@ Same as the plan: location entities / presence / movement / items / wardrobe-as-
 lore / story threads are permanently out (chat is one character, location via narration only).
 Pure state→narration enactment shipped separately
 ([character-chat-state-narration](character-chat-state-narration.plan.md)).
+
+## Completion note (2026-07-01)
+
+All seven slices shipped; `pnpm verify` green (1631 pure + 167 integration tests). What landed:
+
+- **Keying (D1, §1):** `facts`/`episodes` `session_id` now nullable + `(owner_id, character_id)`
+  columns, a `*_scope_exactly_one` CHECK, and chat indexes (migration `0018`). A `MemoryScope`
+  union + `memoryScopeWhere` / `memoryScopeValues` / `sessionScope` / `chatScope` (`memory/scope.ts`)
+  thread through `addFacts` / `appendEpisode` / `retrieve*` / `recentEpisodes` / `deleteEpisodeForTurn`
+  / `preTurnRetrieve`; every session call-site wraps its id in `sessionScope(…)`. Added
+  `latestEpisodeNumber` (the chat exchange-ordinal source) and `deleteFactsForScope` /
+  `deleteEpisodesForScope` (the Clear-Chat purge).
+- **RAG (§2):** `engine/chat-memory.ts` (`retrieveChatMemory` pre-turn, `runChatArchivist` +
+  `writeChatMemory` post-turn) + the `chatArchivistSchema` contract + `prompts/chat-archivist.ts`.
+  `finalizeChatState` runs the **pulse ‖ archivist** in parallel (`Promise.all`); the shared timeout
+  race lives in `engine/chat-generate.ts` (`withGenerateTimeout`, reused by both legs). Retrieval
+  injects a "Your memory" block in `buildCharacterChatSystemPrompt`; `memory_queries` persists on
+  the state for next-turn recall (migration `0019`).
+- **Refinement — attribute proposer folded into the archivist (§3):** rather than a **third**
+  parallel model call, `attributeChanges` (the shared `attributeChangeSchema`, D3) rides on the
+  archivist result and applies via `applyChatAttributeOverlays` (the `overlaySourceMayChange` guard)
+  into a persisted `attribute_overlays` column (migration `0019`), resolved beneath the transient
+  condition overlays. This is the §2 "fewest model calls" default extended to attribute changes —
+  the fan-out is **two** legs, not three.
+- **Refinement — slice 4 (intake-lite) folded, not built:** its two goals were already covered —
+  memory-query seeding by the archivist's `memoryQueries`, response-shape steering by the shipped
+  `detectChatCue`/`cueInvite` (state-narration lane). No separate pre-turn classifier was added.
+- **Reset (D4, §4):** single **Clear Chat** — one scopeless `DELETE …/chat` wiping transcript +
+  summary + state + `deleteChatMemory` (facts/episodes) + the scene-prompt scrub; `ChatResetScope`
+  and the three-button modal removed.
+- **Inspector (§5):** a `last_memory_trace` column (migration `0020`) + `chatMemoryTraceSchema`
+  capture what was retrieved/extracted each turn; the State-tools modal grew a "Memory (last turn)"
+  readout + a persisted-attribute-overlays line, and the snapshot now carries `attributeOverlays`.
+
+**Adopted-default outcomes:** DB `CHECK` invariant kept; `ownerId` included; one-call archivist
+(now also carrying attributeChanges); `turnNumber` reused as the chat exchange ordinal. None
+revisited.

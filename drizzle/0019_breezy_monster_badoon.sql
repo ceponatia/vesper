@@ -1,0 +1,2 @@
+ALTER TABLE "character_chat_state" ADD COLUMN "memory_queries" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "character_chat_state" ADD COLUMN "attribute_overlays" jsonb DEFAULT '[]'::jsonb NOT NULL;

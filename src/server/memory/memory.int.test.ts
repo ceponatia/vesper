@@ -7,8 +7,12 @@ import { characters, db, episodes, events, facts, items, locations, loreChunks, 
 import {
   addFacts,
   appendEpisode,
+  chatScope,
   computeUnlocks,
   deleteEpisodeForTurn,
+  deleteEpisodesForScope,
+  deleteFactsForScope,
+  latestEpisodeNumber,
   eligibleRetrievalChunks,
   embeddingTextFor,
   fuzzyResolve,
@@ -21,6 +25,7 @@ import {
   retrieveEpisodes,
   retrieveFacts,
   retrieveLoreChunks,
+  sessionScope,
 } from "./index";
 
 async function probe(): Promise<boolean> {
@@ -101,18 +106,18 @@ describe.skipIf(!ready)("memory integration", () => {
     beforeAll(async () => {
       sessionId = await makeSession("episodes");
       for (let i = 0; i < summaries.length; i++) {
-        await appendEpisode(sessionId, i + 1, summaries[i]!, [`thread-${i + 1}`]);
+        await appendEpisode(sessionScope(sessionId), i + 1, summaries[i]!, [`thread-${i + 1}`]);
       }
     });
 
     it("recentEpisodes returns the last n in chronological order with parsed threadIds", async () => {
-      const recent = await recentEpisodes(sessionId, 2);
+      const recent = await recentEpisodes(sessionScope(sessionId), 2);
       expect(recent.map((e) => e.turnNumber)).toEqual([5, 6]);
       expect(recent[0]?.threadIds).toEqual(["thread-5"]);
     });
 
     it("retrieves an older episode by similarity", async () => {
-      const hits = await retrieveEpisodes(sessionId, summaries[1]!);
+      const hits = await retrieveEpisodes(sessionScope(sessionId), summaries[1]!);
       expect(hits).toHaveLength(1);
       expect(hits[0]?.turnNumber).toBe(2);
       expect(hits[0]?.score).toBeGreaterThan(0.99);
@@ -120,7 +125,7 @@ describe.skipIf(!ready)("memory integration", () => {
 
     it("excludes the most recent EPISODE_WINDOW turn numbers", async () => {
       // turn 5 is inside the recency window (max 6 − window 4 ⇒ cutoff 2)
-      const hits = await retrieveEpisodes(sessionId, summaries[4]!);
+      const hits = await retrieveEpisodes(sessionScope(sessionId), summaries[4]!);
       expect(hits).toHaveLength(0);
     });
 
@@ -134,7 +139,7 @@ describe.skipIf(!ready)("memory integration", () => {
         embedding: pseudoEmbed(query),
         embedder: "stale-model",
       });
-      const hits = await retrieveEpisodes(sessionId, query);
+      const hits = await retrieveEpisodes(sessionScope(sessionId), query);
       expect(hits).toHaveLength(0);
     });
 
@@ -147,10 +152,10 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("deleteEpisodeForTurn removes exactly that turn's episode", async () => {
-      expect(await deleteEpisodeForTurn(sessionId, 6)).toBe(1);
-      const recent = await recentEpisodes(sessionId, 2);
+      expect(await deleteEpisodeForTurn(sessionScope(sessionId), 6)).toBe(1);
+      const recent = await recentEpisodes(sessionScope(sessionId), 2);
       expect(recent.map((e) => e.turnNumber)).toEqual([4, 5]);
-      expect(await deleteEpisodeForTurn(sessionId, 6)).toBe(0);
+      expect(await deleteEpisodeForTurn(sessionScope(sessionId), 6)).toBe(0);
     });
   });
 
@@ -166,7 +171,7 @@ describe.skipIf(!ready)("memory integration", () => {
     it("drops low-confidence drafts with a diagnostic and inserts the rest", async () => {
       const sink = new DiagnosticCollector();
       const result = await addFacts(
-        sessionId,
+        sessionScope(sessionId),
         [
           draft({ subjectName: "Mara", text: "Mara might be hiding something.", confidence: 0.2 }),
           draft({ subjectName: "Mara", text: "Mara's hair is red." }),
@@ -186,7 +191,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("supersedes a same-subject fact above the similarity threshold in one transaction", async () => {
-      const result = await addFacts(sessionId, [draft({ subjectName: "MARA", text: "Mara's hair is red." })], "turn-b");
+      const result = await addFacts(sessionScope(sessionId), [draft({ subjectName: "MARA", text: "Mara's hair is red." })], "turn-b");
       expect(result.insertedIds).toHaveLength(1);
       expect(result.supersededIds).toEqual([firstId]);
       secondId = result.insertedIds[0]!;
@@ -198,12 +203,12 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("does not supersede across subjects even at similarity 1", async () => {
-      const result = await addFacts(sessionId, [draft({ subjectName: "Tobias", text: "Mara's hair is red." })], "turn-c");
+      const result = await addFacts(sessionScope(sessionId), [draft({ subjectName: "Tobias", text: "Mara's hair is red." })], "turn-c");
       expect(result.supersededIds).toHaveLength(0);
     });
 
     it("retrieves only active facts", async () => {
-      const hits = await retrieveFacts(sessionId, "Mara's hair is red.");
+      const hits = await retrieveFacts(sessionScope(sessionId), "Mara's hair is red.");
       const ids = hits.map((h) => h.id);
       expect(ids).toContain(secondId);
       expect(ids).not.toContain(firstId);
@@ -216,7 +221,7 @@ describe.skipIf(!ready)("memory integration", () => {
       const [oldRow] = await db().select({ status: facts.status }).from(facts).where(eq(facts.id, firstId));
       expect(oldRow?.status).toBe("superseded");
 
-      const hits = await retrieveFacts(sessionId, "Mara's hair is red.");
+      const hits = await retrieveFacts(sessionScope(sessionId), "Mara's hair is red.");
       expect(hits.map((h) => h.id)).not.toContain(secondId);
       expect(hits.map((h) => h.subjectName)).toContain("tobias");
     });
@@ -224,7 +229,7 @@ describe.skipIf(!ready)("memory integration", () => {
     it("supersedes within a single batch (earlier draft is a candidate for later ones)", async () => {
       const batchSession = await makeSession("facts-batch");
       const result = await addFacts(
-        batchSession,
+        sessionScope(batchSession),
         [
           draft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
           draft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
@@ -357,11 +362,11 @@ describe.skipIf(!ready)("memory integration", () => {
 
     beforeAll(async () => {
       sessionId = await makeSession("fanout");
-      await appendEpisode(sessionId, 1, query, []);
+      await appendEpisode(sessionScope(sessionId), 1, query, []);
       for (let turn = 2; turn <= 6; turn++) {
-        await appendEpisode(sessionId, turn, `Filler episode number ${turn}.`, []);
+        await appendEpisode(sessionScope(sessionId), turn, `Filler episode number ${turn}.`, []);
       }
-      await addFacts(sessionId, [draft({ subjectName: "vault", subjectKind: "location", text: query })], "turn-f");
+      await addFacts(sessionScope(sessionId), [draft({ subjectName: "vault", subjectKind: "location", text: query })], "turn-f");
       await db().insert(loreChunks).values({ worldId, ...loreBody, tier: "retrieval" as const });
       await indexLoreChunks(worldId);
     });
@@ -387,6 +392,75 @@ describe.skipIf(!ready)("memory integration", () => {
         .from(events)
         .where(and(eq(events.sessionId, sessionId), eq(events.type, "retrieval")));
       expect(logged.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  // The widened keying (character-chat-primary.spec.md §1, D1): facts + episodes keyed on
+  // (ownerId, characterId) instead of a session, and isolated from the session lane.
+  describe("chat-scope memory (the widening — D1)", () => {
+    let characterId: string;
+
+    beforeAll(async () => {
+      const [char] = await db()
+        .insert(characters)
+        .values({ ownerId, name: "Chat Mara" })
+        .returning({ id: characters.id });
+      if (!char) throw new Error("character insert failed");
+      characterId = char.id;
+    });
+
+    // pseudoEmbed (test mode) is hash-based, so recall only matches near-identical text —
+    // like the episodes suite above, query with the exact stored text to score a hit.
+    const episodeText = "They talked about her sister's wedding in Prague.";
+    const factText = "The player's sister is getting married in Prague.";
+
+    it("round-trips an episode + a fact under the chat scope, and recalls them", async () => {
+      const scope = chatScope(ownerId, characterId);
+      // The chat lane's exchange ordinal starts at 0 and advances via latestEpisodeNumber.
+      expect(await latestEpisodeNumber(scope)).toBe(0);
+      await appendEpisode(scope, 1, episodeText, []);
+      expect(await latestEpisodeNumber(scope)).toBe(1);
+      await addFacts(scope, [draft({ subjectName: "the player", subjectKind: "player", text: factText })], null);
+
+      const epHits = await retrieveEpisodes(scope, episodeText, { window: 0 });
+      expect(epHits.map((h) => h.summary)).toContain(episodeText);
+      const factHits = await retrieveFacts(scope, factText);
+      expect(factHits.map((h) => h.text)).toContain(factText);
+    });
+
+    it("is isolated from the session lane (neither scope sees the other's rows)", async () => {
+      const chat = chatScope(ownerId, characterId);
+      const sessionSecret = "Mara keeps a session-only secret.";
+      const session = sessionScope(await makeSession("isolation"));
+      await addFacts(session, [draft({ subjectName: "Mara", text: sessionSecret })], "turn-iso");
+
+      const chatSees = await retrieveFacts(chat, sessionSecret);
+      expect(chatSees.map((h) => h.text)).not.toContain(sessionSecret);
+      const sessionSees = await retrieveFacts(session, factText);
+      expect(sessionSees.map((h) => h.text)).not.toContain(factText);
+    });
+
+    it("rejects a row keyed to BOTH a session and a chat (the exactly-one CHECK)", async () => {
+      const badSession = await makeSession("check");
+      await expect(
+        db().insert(episodes).values({
+          sessionId: badSession,
+          ownerId,
+          characterId,
+          turnNumber: 1,
+          summary: "impossible dual-keyed row",
+          threadIds: [],
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("deleteFactsForScope / deleteEpisodesForScope purge only the chat's memory (Clear Chat — §4)", async () => {
+      const scope = chatScope(ownerId, characterId);
+      expect(await latestEpisodeNumber(scope)).toBeGreaterThan(0);
+      await deleteFactsForScope(scope);
+      await deleteEpisodesForScope(scope);
+      expect(await latestEpisodeNumber(scope)).toBe(0);
+      expect(await retrieveFacts(scope, factText)).toEqual([]);
     });
   });
 });

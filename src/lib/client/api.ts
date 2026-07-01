@@ -9,7 +9,9 @@ import {
   avatarImageModelLabels,
   avatarManifestSchema,
   NEUTRAL_AVATAR_CUE,
+  attributeValueSchema,
   type ChatActionId,
+  chatMemoryTraceSchema,
   chatPulseTraceSchema,
   DEFAULT_AVATAR_IMAGE_MODEL,
   type AvatarImageModel,
@@ -298,10 +300,20 @@ export const chatStateSnapshotSchema = z.object({
   // Meter bands last surfaced as a "just shifted" beat (character-chat-state-narration.spec.md
   // §5) — for the state-tools "State → narration" debug readout.
   surfacedCues: z.record(z.string(), z.string()).catch({}),
+  // Persisted narrative attribute overlays (character-chat-primary.spec.md §3) + the last-turn
+  // RAG debug trace (§5) — both surfaced to the chat inspector in the state-tools modal.
+  attributeOverlays: z.array(attributeValueSchema).catch([]),
+  lastMemoryTrace: chatMemoryTraceSchema.catch(() => ({
+    retrievedFacts: [],
+    retrievedEpisodes: [],
+    episodeSummary: "",
+    factsAdded: 0,
+    memoryQueries: [],
+    attributeChanges: [],
+    degraded: false,
+  })),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
-/** The reset scope of the three chat reset actions (Reset All / Chat / State). */
-export type ChatResetScope = "all" | "chat" | "state";
 /** A partial edit applied by the premise Save or the state-tools modal (slice 4). */
 export interface ChatStateEdit {
   premise?: string;
@@ -745,12 +757,10 @@ export const charactersApi = {
   chatTranscript: (id: string) =>
     apiGet(listOf(chatMessageSchema, "messages"), `/api/characters/${id}/chat`),
   /**
-   * The three reset actions (character-chat-state.spec.md §5): `all` wipes
-   * messages + summary + state, `chat` keeps the state row, `state` keeps the
-   * transcript and re-seeds state from authored defaults.
+   * The single **Clear Chat** (character-chat-primary.spec.md §4): wipes the transcript,
+   * summary, light state, and RAG memory (facts + episodes) — everything for this chat.
    */
-  resetChat: (id: string, scope: ChatResetScope = "all") =>
-    apiDelete(`/api/characters/${id}/chat?scope=${scope}`),
+  resetChat: (id: string) => apiDelete(`/api/characters/${id}/chat`),
   // --- Light chat state (character-chat-state.spec.md) ---
   chatState: (id: string) => apiGet(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`),
   /** Edit chat state fields from the state-tools / scenario-setup modals; returns the refreshed snapshot. */

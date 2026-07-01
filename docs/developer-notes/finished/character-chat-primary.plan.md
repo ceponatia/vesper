@@ -1,6 +1,8 @@
 # Character chat as a primary feature — plan
 
-Status: **next** (settled — all five open questions resolved; high priority, no code yet).
+Status: **shipped — 2026-07-01** (all seven slices; `pnpm verify` green). See the spec's
+Completion note for what landed + the two build-time refinements (attribute proposer folded
+into the archivist; intake-lite folded into the shipped `detectChatCue` + archivist queries).
 
 Design/decisions: [character-chat-primary.spec.md](character-chat-primary.spec.md) — read
 it first; it is the truth (the resolved decisions D1–D5, the load-bearing keying design, the

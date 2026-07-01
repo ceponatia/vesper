@@ -63,8 +63,10 @@ describe("preTurnRetrieve", () => {
     expect(result.factHits).toEqual(["Mara distrusts the harbormaster."]);
     expect(result.loreHits).toEqual([{ title: "The Harbor", body: "Smugglers run the docks." }]);
     const queryText = "the harbor meeting\nI walk to the docks.";
-    expect(mockEpisodes).toHaveBeenCalledWith("sess-1", queryText, expect.anything());
-    expect(mockFacts).toHaveBeenCalledWith("sess-1", queryText, expect.any(Number), undefined);
+    // Session-lane call-sites now wrap the id in a MemoryScope (character-chat-primary.spec §1).
+    const scope = { kind: "session", sessionId: "sess-1" };
+    expect(mockEpisodes).toHaveBeenCalledWith(scope, queryText, expect.anything());
+    expect(mockFacts).toHaveBeenCalledWith(scope, queryText, expect.any(Number), undefined);
     expect(mockLore).toHaveBeenCalledWith("world-1", queryText, ["l1"], expect.objectContaining({ sessionId: "sess-1" }));
   });
 

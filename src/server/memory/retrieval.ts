@@ -2,6 +2,7 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { FACT_RETRIEVAL_LIMIT } from "./constants";
 import { retrieveEpisodes } from "./episodes";
 import { retrieveFacts } from "./facts";
+import { sessionScope } from "./scope";
 import {
   eligibleRetrievalChunks,
   loadWorldLoreChunks,
@@ -41,9 +42,10 @@ export async function preTurnRetrieve(input: PreTurnRetrieveInput): Promise<PreT
     .join("\n");
   if (!queryText) return { episodeHits: [], factHits: [], loreHits: [] };
 
+  const scope = sessionScope(input.session.id);
   const [episodesResult, factsResult, loreResult] = await Promise.allSettled([
-    retrieveEpisodes(input.session.id, queryText, { sink: input.sink }),
-    retrieveFacts(input.session.id, queryText, FACT_RETRIEVAL_LIMIT, input.sink),
+    retrieveEpisodes(scope, queryText, { sink: input.sink }),
+    retrieveFacts(scope, queryText, FACT_RETRIEVAL_LIMIT, input.sink),
     retrieveLoreLeg(input, queryText),
   ]);
 

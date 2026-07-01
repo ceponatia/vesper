@@ -70,6 +70,15 @@ The chat lane *enacts* the tracked `character_chat_state` (character-chat-state-
 
 The matching scene-image enrichment is in [images.md](images.md) (§state-aware chat scene). The State-tools modal grows a "State → narration" debug readout (foreground/standing cues, surfaced bands, condition overlays).
 
+## Character-chat long-term memory (RAG)
+
+The primary-feature arc (character-chat-primary.spec.md) gives the chat lane the RAG memory the session lane has, keyed per-chat (see [memory.md](memory.md) §Memory keying). Two prompt-side effects in `buildCharacterChatSystemPrompt`, both byte-identical to before when their inputs are empty:
+
+- **Retrieval block.** The route calls `retrieveChatMemory` (`engine/chat-memory.ts`) before building the prompt — cosine RAG over the chat's own facts + episodes, keyed on last turn's persisted `memoryQueries` + the player input — and passes the hits as a `memory: { facts, episodes }` input. The builder renders a fenced **"Your memory"** block placed *beneath* the rolling-summary recap: the summary is the short-term reinforcement layer, RAG reaches past its horizon (D5). Layering top→deep: verbatim window → rolling summary → RAG recall.
+- **Evolving attribute overlays (§3).** `resolveAttributes` now takes `[...state.attributeOverlays, ...conditionAttributeOverlays(conditions)]` — the **persisted** narrative overlays (a recorded haircut/dye) resolve on top of the authored base and *beneath* the transient condition overlays. A `narrative` overlay outranks a `creation`-sourced authored value but not a `manual` one (SOURCE_PRECEDENCE), exactly like the session lane.
+
+Post-turn, `finalizeChatState` runs the reaction pulse ‖ the **archivist-lite** (`runChatArchivist`, prompt in `prompts/chat-archivist.ts`) in parallel; the archivist emits the episode summary, `FactDraft[]`, next-turn `memoryQueries`, and (folded in, not a separate call) the simulant `attributeChanges` — applied via the `overlaySourceMayChange` guard (`applyChatAttributeOverlays`). The inspector's "Memory (last turn)" readout shows what was retrieved/extracted.
+
 ## Narrator viewpoint
 
 Both lanes pin a **single fixed viewpoint** so the narrator never drifts between persons. Narrate the character in the **third person** (`Mara …`, she/he/they); address the player in the **second person** (`you` — never `I`/`me`, never third person); allow first-person `I`/`me`/`my` **only inside the character's quoted dialogue** (`[Mara] "…"`). The session lane enforces this via `narrationModeRules` (embodied: address the player as "you", never by name; observer: third person only, no "you"). The chat lane's `How to respond:` rule 2 (`prompts/character-chat.ts`) says the same — this replaced the old "speak in the first person as `<name>`" wording, which fought the roleplay models' third-person training and let Aion 2.0 wander between persons (occasionally narrating the *player* as "I").

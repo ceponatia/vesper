@@ -6,6 +6,7 @@ import { currentEmbedder, embedText, toVectorLiteral, type Embedded } from "../a
 import { db, episodes } from "../db";
 import { logEvent } from "../events";
 import { EPISODE_MIN_SCORE, EPISODE_RETRIEVAL_LIMIT, EPISODE_WINDOW } from "./constants";
+import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
 
 const stringArraySchema = z.array(z.string());
 
@@ -36,7 +37,7 @@ export interface RetrieveEpisodesOptions {
  * window must stay contiguous) — it just never surfaces via RAG.
  */
 export async function appendEpisode(
-  sessionId: string,
+  scope: MemoryScope,
   turnNumber: number,
   summary: string,
   threadIds: readonly string[],
@@ -49,14 +50,14 @@ export async function appendEpisode(
   } catch (err) {
     sink?.push(
       diag("error", "memory.episodes.embed_failed", `episode embedding failed: ${errorText(err)}`, {
-        context: { sessionId, turnNumber },
+        context: { scope: scopeLabel(scope), turnNumber },
       }),
     );
   }
   const [inserted] = await db()
     .insert(episodes)
     .values({
-      sessionId,
+      ...memoryScopeValues(scope),
       turnNumber,
       summary,
       threadIds: [...threadIds],
@@ -70,7 +71,7 @@ export async function appendEpisode(
 }
 
 /** Last `n` episodes, chronological order (for the narrative recency window). */
-export async function recentEpisodes(sessionId: string, n: number, sink?: DiagnosticSink): Promise<EpisodeRecord[]> {
+export async function recentEpisodes(scope: MemoryScope, n: number, sink?: DiagnosticSink): Promise<EpisodeRecord[]> {
   const rows = await db()
     .select({
       id: episodes.id,
@@ -79,7 +80,7 @@ export async function recentEpisodes(sessionId: string, n: number, sink?: Diagno
       threadIds: episodes.threadIds,
     })
     .from(episodes)
-    .where(eq(episodes.sessionId, sessionId))
+    .where(memoryScopeWhere(episodes, scope))
     .orderBy(desc(episodes.turnNumber))
     .limit(Math.max(0, n));
   return rows.reverse().map((row) => ({
@@ -96,7 +97,7 @@ export async function recentEpisodes(sessionId: string, n: number, sink?: Diagno
  * EPISODE_WINDOW turn numbers — those are already in the turn context.
  */
 export async function retrieveEpisodes(
-  sessionId: string,
+  scope: MemoryScope,
   queryText: string,
   opts: RetrieveEpisodesOptions = {},
 ): Promise<EpisodeHit[]> {
@@ -112,7 +113,7 @@ export async function retrieveEpisodes(
   } catch (err) {
     opts.sink?.push(
       diag("error", "memory.episodes.embed_failed", `query embedding failed: ${errorText(err)}`, {
-        context: { sessionId },
+        context: { scope: scopeLabel(scope) },
       }),
     );
     return [];
@@ -121,7 +122,7 @@ export async function retrieveEpisodes(
   const [agg] = await db()
     .select({ maxTurn: sql<number | null>`max(${episodes.turnNumber})` })
     .from(episodes)
-    .where(eq(episodes.sessionId, sessionId));
+    .where(memoryScopeWhere(episodes, scope));
   if (agg?.maxTurn == null) return [];
   const cutoff = agg.maxTurn - window;
 
@@ -136,7 +137,7 @@ export async function retrieveEpisodes(
     .from(episodes)
     .where(
       and(
-        eq(episodes.sessionId, sessionId),
+        memoryScopeWhere(episodes, scope),
         eq(episodes.embedder, currentEmbedder()),
         isNotNull(episodes.embedding),
         lte(episodes.turnNumber, cutoff),
@@ -146,8 +147,9 @@ export async function retrieveEpisodes(
     .limit(limit);
 
   const hits = candidates.filter((c) => c.score >= minScore);
-  await logEvent(sessionId, "retrieval", {
+  await logEvent(scopeSessionId(scope), "retrieval", {
     kind: "episodes",
+    scope: scopeLabel(scope),
     query: query.slice(0, 300),
     minScore,
     windowCutoff: cutoff,
@@ -157,12 +159,33 @@ export async function retrieveEpisodes(
   return hits;
 }
 
+/**
+ * Highest episode `turnNumber` in a scope, or 0 when none. The chat lane has no `turns`
+ * table, so it uses this as its per-chat exchange-ordinal source (next = latest + 1).
+ */
+export async function latestEpisodeNumber(scope: MemoryScope): Promise<number> {
+  const [agg] = await db()
+    .select({ maxTurn: sql<number | null>`max(${episodes.turnNumber})` })
+    .from(episodes)
+    .where(memoryScopeWhere(episodes, scope));
+  return agg?.maxTurn ?? 0;
+}
+
 /** Rerun support: drop the turn's episode before the input is resubmitted. */
-export async function deleteEpisodeForTurn(sessionId: string, turnNumber: number): Promise<number> {
+export async function deleteEpisodeForTurn(scope: MemoryScope, turnNumber: number): Promise<number> {
   const deleted = await db()
     .delete(episodes)
-    .where(and(eq(episodes.sessionId, sessionId), eq(episodes.turnNumber, turnNumber)))
+    .where(and(memoryScopeWhere(episodes, scope), eq(episodes.turnNumber, turnNumber)))
     .returning({ id: episodes.id });
+  return deleted.length;
+}
+
+/**
+ * Hard-delete every episode in a scope — the chat lane's bulk purge (sessions cascade with
+ * their session row). Used by the single "Clear Chat" (character-chat-primary.spec.md §4).
+ */
+export async function deleteEpisodesForScope(scope: MemoryScope): Promise<number> {
+  const deleted = await db().delete(episodes).where(memoryScopeWhere(episodes, scope)).returning({ id: episodes.id });
   return deleted.length;
 }
 
