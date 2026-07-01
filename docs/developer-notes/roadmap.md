@@ -25,18 +25,20 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 Nothing mid-flight. The last item — **Character chat — state as a narration system** —
 shipped (see **Shipped**). Next build is the top of **Next** below — the character-chat
-primary-feature arc (gated on its memory-keying decision) — or the decision-gated avatar
-upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
+primary-feature arc (now settled: all five open questions resolved, spec promoted) — or the
+decision-gated avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
 
 ## Next (queued)
 
 - **Character chat as a primary feature** —
-  [character-chat-primary.plan.md](character-chat-primary.plan.md) (draft). The big arc: make
-  chat function like the session lane for a *single* character with no location entities (location
-  via narration only) — **RAG long-term memory** (facts + episodes) atop the existing window +
-  rolling summary, **mutable-attribute + fuller state tracking**, and an **expanded dev debug
-  modal**. Load-bearing open question: key chat memory by minting a synthetic session row vs.
-  widening `facts`/`episodes` to `(ownerId, characterId)`.
+  [character-chat-primary.plan.md](character-chat-primary.plan.md) · spec
+  [character-chat-primary.spec.md](character-chat-primary.spec.md) (next — settled). The big
+  arc: make chat function like the session lane for a *single* character with no location
+  entities (location via narration only) — **RAG long-term memory** (facts + episodes) atop the
+  existing window + rolling summary, **mutable-attribute + fuller state tracking**, and an
+  **expanded dev debug modal**. All five open questions resolved (spec D1–D5): the load-bearing
+  keying decision landed on **widening** `facts`/`episodes` to a nullable session +
+  `(ownerId, characterId)` key (not a synthetic session row).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at

@@ -34,7 +34,7 @@ export const EXPRESSION_INSTRUCTIONS: Record<EmotionLabel, string> = {
   happy: "a warm, happy expression — a genuine smile, bright eyes, cheeks lifted",
   affectionate: "a tender, affectionate expression — a soft loving smile, warm half-lidded eyes",
   playful: "a playful, teasing expression — a mischievous half-smile, one brow arched, sparkling eyes",
-  flustered: "a flustered, bashful expression — blushing cheeks, a shy averted glance, lips pressed in a small embarrassed smile",
+  flustered: "a flustered, bashful expression — a shy averted glance, lips pressed in a small embarrassed smile",
   concerned: "a concerned expression — a slightly furrowed brow, lips parted, attentive worried eyes",
   sad: "a sad, downcast expression — softened brow, lowered gaze, a faint frown",
   angry: "an angry expression — brows drawn down and together, jaw set, eyes hard and direct",

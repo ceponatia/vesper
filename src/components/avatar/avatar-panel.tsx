@@ -123,7 +123,6 @@ export function AvatarPanel({ characterId, name, avatarImageId, cue, beat, beatT
           fallbackImageId={avatarImageId}
           name={name}
           beat={{ key: beatTick, reaction: beatReaction }}
-          className="absolute inset-0"
         />
         {tint ? (
           <div
