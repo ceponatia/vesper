@@ -96,7 +96,11 @@ export function SpriteAvatar({ cue, manifest, fallbackImageId, name, beat, class
   const transformBeat = playing && playing !== "blush" && playing !== "none" ? BEAT_CLASS[playing] : undefined;
 
   return (
-    <div className={cx("relative overflow-hidden", className)}>
+    // `relative h-full w-full` makes the renderer fill (and self-size to) the box it's given
+    // and own the positioning context for the blush overlay below — never depend on the caller
+    // for a height. (A caller-passed `absolute inset-0` used to lose the cascade to this
+    // `relative`, collapsing the whole h-full subtree to zero height — a black box.)
+    <div className={cx("relative h-full w-full overflow-hidden", className)}>
       <div className="avatar-drift h-full w-full">
         <div className="avatar-breathe h-full w-full">
           <div

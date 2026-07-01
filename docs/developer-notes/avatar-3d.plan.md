@@ -133,8 +133,12 @@ the lazy-gen endpoint.
 
 - **Seed-at-create / regen:** the `POST …/avatar` job, after `generateAvatar`, enqueues a
   full `avatar_seed` (regen first cleared the old set).
-- **Promote / upload:** **clear only**, no auto-reseed (avoids the studio re-seed storm) —
+- **Promote:** **clear only**, no auto-reseed (avoids the studio re-seed storm) —
   lazy-gen refills the common emotions as they arise.
+- **Upload:** **clear then reseed** the full set (owner ruling 2026-06-30 — upload now matches
+  generate; the avatar is promoted synchronously so it's already `ready` and the seed proceeds).
+  Supersedes the original "upload clears only" decision; an uploaded avatar otherwise had no
+  way to get expression frames except by chatting a character off `neutral`.
 - **Lazy-gen:** `POST /api/characters/[id]/avatar/expressions { emotion }` — owner-scoped,
   rate-limited, idempotent; enqueues a single-emotion `avatar_seed`. `AvatarPanel` fires it
   from an **effect** (keyed `[characterId, emotion, hasFrame]`, ref-guard mutated inside the

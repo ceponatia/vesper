@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db } from "@/server/db";
+import { enqueueAvatarSeed } from "@/server/engine";
 import { clearAvatarExpressionFrames, uploadAvatar } from "@/server/images";
 import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 
@@ -41,7 +42,12 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const result = await uploadAvatar({ characterId: id, userId: user.id, dataUrl: body.value.image });
   if (!result.ok) return jsonError("bad_request", result.error, 400);
   // The canonical face changed: drop now-stale expression frames (avatar-3d.plan.md
-  // §"Manifest staleness — Model B"). Lazy-gen refills against the uploaded avatar.
+  // §"Manifest staleness — Model B"), then reseed the full set against the uploaded face —
+  // upload now matches generate (the avatar is promoted synchronously, so it's already
+  // `ready` and the seed proceeds). The clear-then-seed order means the negative cache is
+  // empty when the seed runs, so all 11 regenerate; `seedAvatarExpressions` is idempotent
+  // and blocks nothing.
   await clearAvatarExpressionFrames(id, user.id);
+  await enqueueAvatarSeed(id, user.id);
   return jsonOk({ avatarImageId: result.avatarImageId }, 201);
 });
