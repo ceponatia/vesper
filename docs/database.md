@@ -67,8 +67,10 @@ leaves the snapshot intact.
 | --- | --- |
 | `turns` | `session_id`, `number` (unique with session), `author` (`player`/`director`/`companion`), `speaker_participant_id?` (set only when `author='companion'`), `input`, `narration`, `status` (`pending`/`narrating`/`processing`/`ready`/`failed`), `heartbeat_at` (liveness for recovery — see turn-engine.md), `minutes`, `agent_results` JSONB (raw per-agent outputs, for inspector/replay), `intent_brief` JSONB (pre-narrator intake output / `IntentBrief` — empty `{}` when intake didn't run), `diagnostics` JSONB, `model`, `usage` JSONB, `providers` JSONB (per-leg provider attribution + latency — which OpenRouter upstream served the narrator and each post-turn agent) |
 | `turn_messages` | `turn_id`, `seq`, `role` (`player`/`narrator`/`character`/`system`), `speaker?`, `content` |
-| `episodes` | `session_id`, `turn_number`, `summary`, `thread_ids` JSONB, `witnessed_by` JSONB (see [memory.md](memory.md)), `embedding` vector, `embedder` |
-| `facts` | `session_id`, `kind`, `verb?`, `subject_kind`, `subject_id?`, `subject_name` (stored lowercased), `text`, `tags` JSONB, `confidence` real, `canon` bool (default true; reserved), `witnessed_by` JSONB, `status` (`active`/`superseded`/`retracted`), `superseded_by_id?`, `source_turn_id?`, `embedding` vector, `embedder`, `superseded_at?` |
+| `episodes` | `session_id?`, `owner_id?` + `character_id?` (chat-scope key), `turn_number`, `summary`, `thread_ids` JSONB, `witnessed_by` JSONB (see [memory.md](memory.md)), `embedding` vector, `embedder` |
+| `facts` | `session_id?`, `owner_id?` + `character_id?` (chat-scope key), `kind`, `verb?`, `subject_kind`, `subject_id?`, `subject_name` (stored lowercased), `text`, `tags` JSONB, `confidence` real, `canon` bool (default true; reserved), `witnessed_by` JSONB, `status` (`active`/`superseded`/`retracted`), `superseded_by_id?`, `source_turn_id?`, `embedding` vector, `embedder`, `superseded_at?` |
+
+`episodes` and `facts` serve two clients (see [memory.md](memory.md) §Memory keying): a **session** (`session_id` set) or a **character chat** (`owner_id` + `character_id` set). `session_id` is nullable and a `*_scope_exactly_one` CHECK enforces that exactly one keying is present (migration `0018`).
 
 Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`). Similarity queries always filter `embedder = currentEmbedder()` — pseudo (demo) vectors and real vectors never compare against each other, and an embedding-model change degrades to reduced recall (+ an `embed_refresh` job can re-embed) instead of silently corrupted thresholds.
 
@@ -83,7 +85,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 
 ## Indexes that matter
 
-- `turns(session_id, number)` unique; `turn_messages(turn_id, seq)`; `facts(session_id, status)`; `episodes(session_id, turn_number)`.
+- `turns(session_id, number)` unique; `turn_messages(turn_id, seq)`; `facts(session_id, status)` + `facts(owner_id, character_id, status)`; `episodes(session_id, turn_number)` + `episodes(owner_id, character_id, turn_number)` (the chat-scope variants).
 - HNSW (`vector_cosine_ops`) on `facts.embedding`, `episodes.embedding`, `lore_chunks.embedding`. The library `search_embedding` columns are unindexed — owner-scoped libraries are small enough to scan.
 - `jobs(status, type)` composite index for queue claims.
 - A leading-column composite **covers** a plain index on its first column, so don't add both: `session_participants_session_idx` and `participant_relationships_session_idx` were dropped (migration 0006, UX-audit P8) as redundant with the `…_name_unique` / `…_edge_unique` composites that already lead with `session_id`.

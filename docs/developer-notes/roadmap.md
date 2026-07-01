@@ -23,22 +23,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-Nothing mid-flight. The last item — **Character chat — state as a narration system** —
-shipped (see **Shipped**). Next build is the top of **Next** below — the character-chat
-primary-feature arc (now settled: all five open questions resolved, spec promoted) — or the
-decision-gated avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
+Nothing mid-flight. The last item — **Character chat as a primary feature** — shipped (see
+**Shipped**). Next build is the top of **Next** below — Intimacy notes — or the decision-gated
+avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
 
 ## Next (queued)
 
-- **Character chat as a primary feature** —
-  [character-chat-primary.plan.md](character-chat-primary.plan.md) · spec
-  [character-chat-primary.spec.md](character-chat-primary.spec.md) (next — settled). The big
-  arc: make chat function like the session lane for a *single* character with no location
-  entities (location via narration only) — **RAG long-term memory** (facts + episodes) atop the
-  existing window + rolling summary, **mutable-attribute + fuller state tracking**, and an
-  **expanded dev debug modal**. All five open questions resolved (spec D1–D5): the load-bearing
-  keying decision landed on **widening** `facts`/`episodes` to a nullable session +
-  `(ownerId, characterId)` key (not a synthetic session row).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -67,6 +57,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character chat as a primary feature** —
+  [finished/character-chat-primary.plan.md](finished/character-chat-primary.plan.md) · spec
+  [finished/character-chat-primary.spec.md](finished/character-chat-primary.spec.md), 2026-07-01. Chat now works like
+  the session lane for a *single* character (location via narration only): **RAG long-term memory**
+  (per-chat facts + episodes) atop the window + rolling summary, **mutable attributes** that evolve
+  over a chat, and a **dev memory inspector**. The load-bearing keying decision (D1) landed on
+  **widening** `facts`/`episodes` to a nullable session + `(ownerId, characterId)` key via a
+  `MemoryScope` union (migration `0018`); the post-turn fan-out is pulse ‖ archivist-lite (D2), the
+  archivist also carries the attribute proposer (D3) and next-turn queries; the three resets
+  collapsed to one **Clear Chat** (D4). Migrations `0018`–`0020`.
 - **Character chat — state as a narration system** —
   [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) · spec
   [character-chat-state-narration.spec.md](character-chat-state-narration.spec.md), 2026-06-30.

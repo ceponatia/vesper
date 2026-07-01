@@ -1,0 +1,1 @@
+ALTER TABLE "character_chat_state" ADD COLUMN "last_memory_trace" jsonb DEFAULT '{}'::jsonb NOT NULL;

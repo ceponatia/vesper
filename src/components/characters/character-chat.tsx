@@ -2,13 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { CHAT_ACTIONS, stageById, stageMidpoint, type ChatActionId } from "@/contracts";
-import {
-  charactersApi,
-  sendCharacterChat,
-  type ChatResetScope,
-  type ChatStateSnapshot,
-  type ImageRecord,
-} from "@/lib/client/api";
+import { charactersApi, sendCharacterChat, type ChatStateSnapshot, type ImageRecord } from "@/lib/client/api";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
@@ -86,7 +80,7 @@ export function CharacterChat({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [resetting, setResetting] = useState<ChatResetScope | null>(null);
+  const [resetting, setResetting] = useState(false);
   // Light chat state (character-chat-state.spec.md): the strip + premise. Held in
   // local state (not useAsyncData) so a post-send refresh can drive the
   // stage-change toast off the value it just fetched.
@@ -295,25 +289,23 @@ export function CharacterChat({
     if (!outcome.ok) toast.push({ title: "Couldn't open the scene", description: outcome.error?.message, tone: "error" });
   };
 
-  /** One of the three reset actions (character-chat-state.spec.md §5). */
-  const runReset = async (scope: ChatResetScope) => {
-    setResetting(scope);
-    const result = await charactersApi.resetChat(characterId, scope);
-    setResetting(null);
+  /** The single Clear Chat (character-chat-primary.spec.md §4): wipes transcript, summary, state, and memory. */
+  const clearChat = async () => {
+    setResetting(true);
+    const result = await charactersApi.resetChat(characterId);
+    setResetting(false);
     setResetOpen(false);
     if (!result.ok) {
-      toast.push({ title: "Reset failed", description: result.error.message, tone: "error" });
+      toast.push({ title: "Clear failed", description: result.error.message, tone: "error" });
       return;
     }
-    if (scope !== "state") setLines([]);
+    setLines([]);
     const fresh = await charactersApi.chatState(characterId);
     if (fresh.ok) {
       setChatState(fresh.data);
       stageRef.current = fresh.data.stage.label;
     }
-    toast.push({
-      title: scope === "all" ? "Chat fully reset" : scope === "chat" ? "Transcript cleared" : "State reset",
-    });
+    toast.push({ title: "Chat cleared" });
   };
 
   const hasAnything =
@@ -374,7 +366,7 @@ export function CharacterChat({
               ) : null}
               {hasAnything ? (
                 <Button size="sm" variant="quiet" onClick={() => setResetOpen(true)}>
-                  Reset…
+                  Clear chat…
                 </Button>
               ) : null}
             </div>
@@ -439,39 +431,25 @@ export function CharacterChat({
         onClose={() => {
           if (!resetting) setResetOpen(false);
         }}
-        title="Reset this chat"
+        title="Clear this chat?"
         footer={
-          <Button onClick={() => setResetOpen(false)} disabled={resetting !== null}>
-            Cancel
-          </Button>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setResetOpen(false)} disabled={resetting}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={clearChat} disabled={resetting}>
+              {resetting ? "Clearing…" : "Clear chat"}
+            </Button>
+          </div>
         }
       >
-        <div className="flex flex-col gap-3 text-sm">
-          <p className="text-paper-400">
-            Pick what to reset. The transcript and {who}&rsquo;s disposition (affinity, mood, scenario) are separate.
+        <div className="flex flex-col gap-3 text-sm text-paper-400">
+          <p>
+            This erases everything for your conversation with {who}: the transcript, the running summary,{" "}
+            {who}&rsquo;s disposition (affinity, mood, scenario), and everything {who} remembers about you. It starts
+            fresh from the authored defaults and can&rsquo;t be undone.
           </p>
-          <ResetOption
-            title="Reset state"
-            description={`Keep the transcript; re-seed ${who}'s disposition and scenario from the authored defaults.`}
-            busy={resetting === "state"}
-            disabled={resetting !== null}
-            onClick={() => runReset("state")}
-          />
-          <ResetOption
-            title="Reset chat"
-            description="Clear the messages and summary but keep the current disposition and scenario, to start a fresh transcript."
-            busy={resetting === "chat"}
-            disabled={resetting !== null}
-            onClick={() => runReset("chat")}
-          />
-          <ResetOption
-            title="Reset all"
-            description="Clear everything — messages, summary, and disposition. Generated scene images are kept (find them in the Gallery)."
-            tone="danger"
-            busy={resetting === "all"}
-            disabled={resetting !== null}
-            onClick={() => runReset("all")}
-          />
+          <p className="text-xs text-paper-500">Generated scene images are kept — find them in the Gallery.</p>
         </div>
       </Dialog>
 
@@ -581,42 +559,6 @@ function StatusStrip({ state, startingStage }: { state: ChatStateSnapshot; start
         </Tag>
       ))}
     </div>
-  );
-}
-
-/** One labeled choice in the reset dialog. */
-function ResetOption({
-  title,
-  description,
-  tone = "default",
-  busy,
-  disabled,
-  onClick,
-}: {
-  title: string;
-  description: string;
-  tone?: "default" | "danger";
-  busy: boolean;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`rounded-card border px-3 py-2 text-left transition-colors disabled:opacity-60 ${
-        tone === "danger"
-          ? "border-danger-500/40 hover:border-danger-500/70"
-          : "border-ink-600 hover:border-accent-500/60"
-      }`}
-    >
-      <span className={`text-sm font-medium ${tone === "danger" ? "text-danger-300" : "text-paper-200"}`}>
-        {title}
-        {busy ? " …" : ""}
-      </span>
-      <span className="mt-0.5 block text-xs text-paper-500">{description}</span>
-    </button>
   );
 }
 

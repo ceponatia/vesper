@@ -12,7 +12,7 @@ import { parseOr, parseOrNull } from "@/lib/parse";
 import { generateChecked } from "../ai";
 import { db, sessionParticipants, sessions } from "../db";
 import { logEvent } from "../events";
-import { addFacts, type FactDraftInput } from "../memory";
+import { addFacts, sessionScope, type FactDraftInput } from "../memory";
 import { enqueueJob, registerJobHandler } from "./jobs";
 import { buildInnerNotePrompt, INNER_NOTE_SYSTEM } from "./prompts/inner-note";
 
@@ -175,7 +175,7 @@ export async function processInnerNote(payload: InnerNoteJobPayload, jobId?: str
     // Interiority is the NPC's alone — exactly what the knowledge ledger consumes.
     witnessedBy: [participant.id],
   }));
-  const added = await addFacts(payload.sessionId, drafts, null, sink);
+  const added = await addFacts(sessionScope(payload.sessionId), drafts, null, sink);
 
   // Append guidance to the session brief so the VERY NEXT turn reflects it
   // (facts alone retrieve probabilistically). Serialized with the merge by

@@ -72,6 +72,8 @@ function StateToolsForm({
 
   const stage = stageForValue(affinity);
   const trace = snapshot.lastPulseTrace;
+  const memory = snapshot.lastMemoryTrace;
+  const attributeOverlays = snapshot.attributeOverlays;
 
   // What the live (edited) state would surface to the narrator next turn
   // (character-chat-state-narration.spec.md §5/§9): the foreground "just shifted" beat vs the
@@ -256,7 +258,47 @@ function StateToolsForm({
               {overlays.length ? overlays.map((o) => `${o.id}=${String(o.value)}`).join(", ") : "—"}
             </span>
           </li>
+          <li>
+            Attribute overlays (persisted):{" "}
+            <span className="text-paper-300">
+              {attributeOverlays.length
+                ? attributeOverlays.map((o) => `${o.id}=${String(o.value)}`).join(", ")
+                : "—"}
+            </span>
+          </li>
         </ul>
+      </div>
+
+      <div className="rounded-card border border-ink-600 bg-ink-950/40 p-3 text-xs text-paper-400">
+        <span className="block font-medium tracking-wide text-paper-400 uppercase">Memory (last turn)</span>
+        {memory.degraded ? (
+          <p className="mt-1 text-paper-500">Archivist degraded — no memory extracted this turn.</p>
+        ) : (
+          <ul className="mt-1 space-y-0.5">
+            <li>
+              Recalled: <span className="text-paper-300">{memory.retrievedFacts.length} facts</span> ·{" "}
+              <span className="text-paper-300">{memory.retrievedEpisodes.length} episodes</span>
+            </li>
+            <li>
+              Extracted: <span className="text-paper-300">{memory.factsAdded} new facts</span>
+              {memory.episodeSummary ? " · +1 episode" : ""}
+            </li>
+            {memory.episodeSummary ? (
+              <li className="text-paper-500">
+                Episode: <span className="text-paper-400">{memory.episodeSummary}</span>
+              </li>
+            ) : null}
+            <li>
+              Next-turn queries:{" "}
+              <span className="text-paper-300">{memory.memoryQueries.length ? memory.memoryQueries.join("; ") : "—"}</span>
+            </li>
+            {memory.attributeChanges.length ? (
+              <li>
+                Attribute changes: <span className="text-paper-300">{memory.attributeChanges.join(", ")}</span>
+              </li>
+            ) : null}
+          </ul>
+        )}
       </div>
 
       <div className="flex justify-end gap-2 border-t border-ink-600 pt-3">

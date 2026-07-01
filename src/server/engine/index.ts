@@ -19,6 +19,8 @@ export * from "./character-chat";
 export * from "./chat-intent";
 export * from "./chat-summary";
 export * from "./chat-state";
+export * from "./chat-memory";
+export * from "./prompts/chat-archivist";
 export * from "./prompts/chat-summary";
 export * from "./prompts/chat-state";
 export * from "./prompts/narrative";

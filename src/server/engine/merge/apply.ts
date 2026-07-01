@@ -4,7 +4,7 @@ import { clampAffinity, stageForValue } from "@/contracts/relationships/stages";
 import type { AgentResults, TurnProviders } from "@/contracts/turns/agent-results";
 import { embedTexts } from "../../ai";
 import { db, events, itemInstances, participantRelationships, sessionParticipants, sessions, turns } from "../../db";
-import { addFacts, appendEpisode, deleteEpisodeForTurn, fuzzyResolve } from "../../memory";
+import { addFacts, appendEpisode, deleteEpisodeForTurn, fuzzyResolve, sessionScope } from "../../memory";
 import type { SessionBundle } from "../bundle";
 import { planTurnEffects } from "./plan";
 import type { GroundingDeps, MergeMode, MergePlan, MergeTurn } from "./types";
@@ -59,11 +59,12 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
   // Facts and the episode are written through the memory module (each
   // internally transactional; embeddings degrade per docs/memory.md). The
   // world-state merge below is the single atomic transaction.
-  await addFacts(bundle.session.id, plan.factDrafts, turn.id, sink);
+  const scope = sessionScope(bundle.session.id);
+  await addFacts(scope, plan.factDrafts, turn.id, sink);
   if (mode === "reconcile") {
-    await deleteEpisodeForTurn(bundle.session.id, turn.number);
+    await deleteEpisodeForTurn(scope, turn.number);
   }
-  await appendEpisode(bundle.session.id, turn.number, plan.episodeSummary, plan.touchedThreadIds, sink, plan.witnessedBy);
+  await appendEpisode(scope, turn.number, plan.episodeSummary, plan.touchedThreadIds, sink, plan.witnessedBy);
 
   const touchedItems = new Set(plan.touchedItemIds);
   const diagnosticsJson = JSON.stringify(recorded);

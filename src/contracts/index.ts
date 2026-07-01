@@ -37,4 +37,5 @@ export * from "./turns/intent-brief";
 export * from "./turns/inner-note";
 export * from "./turns/chat-summary";
 export * from "./turns/chat-pulse";
+export * from "./turns/chat-archivist";
 export * from "./turns/stream";

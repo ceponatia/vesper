@@ -22,7 +22,7 @@ import {
   type SceneComposerContext,
   type ScenePresentCharacter,
 } from "../images";
-import { preTurnRetrieve, recentEpisodes, retractFactsFromTurn, deleteEpisodeForTurn } from "../memory";
+import { preTurnRetrieve, recentEpisodes, retractFactsFromTurn, deleteEpisodeForTurn, sessionScope } from "../memory";
 import { runPostTurnAgents } from "./agents";
 import { activeLocationId, bundlePlayerName, loadSessionBundle, type SessionBundle } from "./bundle";
 import { EPISODE_WINDOW, FACTS_CAP, HEARTBEAT_INTERVAL_MS, MAX_CHAINED_ACTIONS, NARRATIVE_HISTORY_TURNS, OPEN_THREADS_IN_CONTEXT, TURN_READY_POLL_MS, TURN_READY_WAIT_MS } from "./constants";
@@ -587,7 +587,7 @@ async function assemblePreTurn(
       sink,
     }),
     recentTurnHistory(bundle.session.id, NARRATIVE_HISTORY_TURNS),
-    recentEpisodes(bundle.session.id, EPISODE_WINDOW, sink),
+    recentEpisodes(sessionScope(bundle.session.id), EPISODE_WINDOW, sink),
     activeRelationshipFacts(bundle.session.id),
     intakeLeg,
   ]);
@@ -1229,7 +1229,7 @@ export async function deleteMessage(input: { sessionId: string; userId: string; 
       .limit(1);
     if (!remaining) {
       await retractFactsFromTurn(row.turnId);
-      await deleteEpisodeForTurn(input.sessionId, row.turnNumber);
+      await deleteEpisodeForTurn(sessionScope(input.sessionId), row.turnNumber);
       await db().delete(turns).where(eq(turns.id, row.turnId));
     } else if (row.seq > 0) {
       await rebuildNarration(row.turnId);
@@ -1271,7 +1271,7 @@ export async function* rerunTurn(input: {
   }
 
   await retractFactsFromTurn(row.turnId);
-  await deleteEpisodeForTurn(input.sessionId, row.turnNumber);
+  await deleteEpisodeForTurn(sessionScope(input.sessionId), row.turnNumber);
   await db().delete(turns).where(eq(turns.id, row.turnId)); // cascades turn_messages
 
   yield* submitTurn({

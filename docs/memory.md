@@ -2,6 +2,15 @@
 
 `src/server/memory/` — three memory systems share one embedding space (1536-dim, the code-default embedding model in `server/ai/provider.ts` `MODEL_DEFAULTS`, pgvector cosine). All retrieval calls run in the pre-turn parallel fan-out.
 
+## Memory keying — sessions vs character chat
+
+`facts` and `episodes` serve **two** clients, distinguished by a `MemoryScope` discriminated union (`memory/scope.ts`), never a bare session id:
+
+- **session** (`{ kind: "session", sessionId }`) — the turn lane. Rows key on `session_id` (FK → `sessions`, cascade).
+- **chat** (`{ kind: "chat", ownerId, characterId }`) — the sessionless character chat (character-chat-primary.spec.md §1). Rows key on `(owner_id, character_id)`, mirroring `character_chat_state`.
+
+`session_id` is nullable and each row also has nullable `owner_id`/`character_id`; a `*_scope_exactly_one` CHECK enforces that **exactly one** keying is set. Every `addFacts` / `appendEpisode` / `retrieve*` / `recentEpisodes` / `deleteEpisodeForTurn` takes a scope; `memoryScopeWhere(table, scope)` builds the filter and `memoryScopeValues(scope)` the insert columns. Use `sessionScope(id)` / `chatScope(owner, char)` at call sites. Chat specifics: no `turns` table, so facts get `sourceTurnId = null` (the `inner-note.ts` template) and episodes use a per-chat exchange ordinal (`latestEpisodeNumber(scope) + 1`) as `turn_number`; subjects resolve name-only (no participant rows). The chat lane's own pre/post-turn wiring (retrieve → archivist-lite → write) lives in `engine/chat-memory.ts`; its single **Clear Chat** purges via `deleteFactsForScope` / `deleteEpisodesForScope`.
+
 ## Episodes (episodic memory)
 
 One row per turn: the archivist's 2–4 sentence summary, embedded. Serves two needs:

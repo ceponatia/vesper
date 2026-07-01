@@ -176,6 +176,46 @@ describe("buildCharacterChatSystemPrompt", () => {
     );
   });
 
+  it("surfaces retrieved RAG memory (facts + episodes) as a recall block (spec §2)", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      memory: {
+        facts: ["The player's sister is getting married in Prague."],
+        episodes: ["They argued about the harbor job, then made up."],
+      },
+    });
+    expect(prompt).toContain("Your memory");
+    expect(prompt).toContain("The player's sister is getting married in Prague.");
+    expect(prompt).toContain("They argued about the harbor job, then made up.");
+    // Recall sits above the per-line response rules (it's context, not dialogue).
+    expect(prompt.indexOf("Your memory")).toBeLessThan(prompt.indexOf("How to respond:"));
+  });
+
+  it("omits the memory block when nothing was retrieved (prompt unchanged)", () => {
+    expect(buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() })).not.toContain("Your memory");
+    expect(
+      buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), memory: { facts: [], episodes: [] } }),
+    ).not.toContain("Your memory");
+  });
+
+  it("resolves a persisted narrative attribute overlay on top of the authored base (spec §3)", () => {
+    // The authored base is `creation`-sourced (hair.color: auburn); a `narrative` overlay
+    // outranks it (SOURCE_PRECEDENCE narrative > creation), exactly as the session lane.
+    const overlaid = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: {
+        meters: {},
+        affinity: 0,
+        conditions: [],
+        attributeOverlays: [{ id: "hair.color", value: "silver", source: "narrative" }],
+      },
+    });
+    expect(overlaid).toContain("silver");
+    expect(overlaid).not.toContain("auburn");
+  });
+
   it("addresses the player by name and surfaces their persona when a player is given", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Mara",

@@ -255,36 +255,17 @@ describe("Prompt Character (opening beat)", () => {
   });
 });
 
-describe("the three reset scopes", () => {
-  it("Reset Chat deletes messages + summary but keeps the state row", async (t) => {
+describe("the single Clear Chat (character-chat-primary.spec.md §4)", () => {
+  it("wipes messages, summary, AND the state row in one action", async (t) => {
     if (!ready) return t.skip();
     // Ensure a state row + a message exist.
     await chatPost(postReq(ids.warm, { content: "seed a message" }), ctx(ids.warm)).then((r) => r.text());
     expect(await messageCount(ids.warm)).toBeGreaterThan(0);
-
-    const res = await chatDelete(delReq(ids.warm, "chat"), ctx(ids.warm));
-    expect(res.status).toBe(200);
-    expect(await messageCount(ids.warm)).toBe(0);
-    expect(await stateRow(ids.warm)).not.toBeNull(); // state preserved
-  });
-
-  it("Reset State deletes the state row but keeps the transcript", async (t) => {
-    if (!ready) return t.skip();
-    await chatPost(postReq(ids.warm, { content: "another message" }), ctx(ids.warm)).then((r) => r.text());
     expect(await stateRow(ids.warm)).not.toBeNull();
 
-    const res = await chatDelete(delReq(ids.warm, "state"), ctx(ids.warm));
+    const res = await chatDelete(delReq(ids.warm), ctx(ids.warm));
     expect(res.status).toBe(200);
-    expect(await stateRow(ids.warm)).toBeNull(); // state gone
-    expect(await messageCount(ids.warm)).toBeGreaterThan(0); // transcript preserved
-  });
-
-  it("Reset All deletes messages + summary + state", async (t) => {
-    if (!ready) return t.skip();
-    await chatPost(postReq(ids.warm, { content: "final message" }), ctx(ids.warm)).then((r) => r.text());
-
-    const res = await chatDelete(delReq(ids.warm, "all"), ctx(ids.warm));
-    expect(res.status).toBe(200);
+    // Everything is gone — no scope leaves a hidden transcript or disposition behind.
     expect(await messageCount(ids.warm)).toBe(0);
     expect(await stateRow(ids.warm)).toBeNull();
   });

@@ -40,6 +40,13 @@ export interface CharacterChatPromptInput {
    */
   priorSummary?: string;
   /**
+   * Retrieved long-term memory for THIS turn (character-chat-primary.spec.md §2): cosine-RAG
+   * hits over the chat's OWN facts + episodes, injected as a recall block that sits beneath the
+   * rolling summary — the summary is the short-term reinforcement layer (D5), this reaches past
+   * its horizon. Absent/empty ⇒ no block, so a fresh chat's prompt is unchanged.
+   */
+  memory?: { facts: string[]; episodes: string[] };
+  /**
    * The **default player character** the user is speaking as
    * (player-character.plan.md), resolved via `resolvePlayerPersona`. Present ⇒ the
    * character addresses the player by `name` (and reads the optional `persona`
@@ -73,6 +80,12 @@ export interface CharacterChatPromptInput {
     outfitExposed?: boolean;
     /** Active social cards — surfaced as soft "what you care about" framing, never severity (§6, D3). */
     activeSocialCards?: SocialReactionCard[];
+    /**
+     * Persisted narrative attribute overlays that EVOLVE over the chat (character-chat-primary.spec.md
+     * §3): resolved on top of the authored base, BENEATH the transient condition overlays. Absent ⇒
+     * today's behavior (authored attributes only). A haircut/dye recorded by the archivist lands here.
+     */
+    attributeOverlays?: AttributeValue[];
   };
   /**
    * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): the
@@ -171,6 +184,30 @@ function buildSocialFramingSection(cards: readonly SocialReactionCard[]): string
     return `- ${lead}: ${card.label}${desc ? ` — ${desc}` : ""}`;
   });
   return `What you care about (your own values — let them shape how you take what's said and done; react in character, never recite):\n${fenceUntrusted("values", lines.join("\n"))}`;
+}
+
+/**
+ * The RAG recall block (character-chat-primary.spec.md §2): the character's retrieved
+ * facts + older episodes for this turn. Placed beneath the rolling-summary recap — the
+ * summary carries the recent horizon, this reaches past it. Fenced like the recap (both
+ * derive from prior player/character text, so an injection smuggled into a remembered line
+ * reads as recalled context, not authority). "" when nothing was retrieved.
+ */
+function buildMemorySection(memory: NonNullable<CharacterChatPromptInput["memory"]>): string {
+  const facts = memory.facts.map((f) => f.trim()).filter(Boolean);
+  const episodes = memory.episodes.map((e) => e.trim()).filter(Boolean);
+  if (!facts.length && !episodes.length) return "";
+  const lines: string[] = [];
+  if (facts.length) {
+    lines.push("What you know (established between you — treat as true; draw on it only when the moment calls for it):");
+    for (const fact of facts) lines.push(`- ${fact}`);
+  }
+  if (episodes.length) {
+    if (lines.length) lines.push("");
+    lines.push("Earlier moments you remember (from before the recent exchanges):");
+    for (const episode of episodes) lines.push(`- ${episode}`);
+  }
+  return `Your memory (things established earlier in your history together):\n${fenceUntrusted("memory", lines.join("\n"))}`;
 }
 
 const humanize = (value: string): string => value.replaceAll("_", " ").trim();
@@ -304,10 +341,15 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     bodyFeatures: profile.bodyFeatures,
   });
 
-  // Active conditions overlay attributes (character-chat-state-narration.spec.md §2): a
-  // "disheveled"/"unwashed" condition shifts grooming/scent/hair while active. The overlay
-  // helper guards against rewriting inherent attributes (eye colour, species).
-  const resolved = resolveAttributes(profile.attributes, conditionAttributeOverlays(input.state?.conditions ?? []));
+  // Attribute overlays resolve in provenance order (character-chat-primary.spec.md §3): the
+  // authored base, then the PERSISTED narrative overlays that evolve over the chat (a recorded
+  // haircut/dye), then the TRANSIENT condition overlays (a "disheveled"/"unwashed" condition
+  // shifting grooming/scent/hair while active). Both overlay sources are pre-guarded against
+  // rewriting inherent attributes (eye colour, species) at their write sites.
+  const resolved = resolveAttributes(profile.attributes, [
+    ...(input.state?.attributeOverlays ?? []),
+    ...conditionAttributeOverlays(input.state?.conditions ?? []),
+  ]);
   const agePhrase = formatAge(profile.age); // the character's real age (basic info) — NOT the portrait-studio-only apparent age
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
 
@@ -412,6 +454,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
+    input.memory ? buildMemorySection(input.memory) : "",
     stateSection,
     input.cueInvite?.trim() ?? "",
     CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),

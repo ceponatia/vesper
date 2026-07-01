@@ -10,6 +10,7 @@ import {
   buildCharacterChatSystemPrompt,
   CHARACTER_CHAT_SUMMARIZE_AT,
   chatCueInviteLine,
+  deleteChatMemory,
   deleteChatState,
   detectChatCue,
   driftChatState,
@@ -20,6 +21,7 @@ import {
   loadVerbatimWindow,
   narrationShapeId,
   persistChatState,
+  retrieveChatMemory,
   seedChatState,
   streamCharacterChat,
 } from "@/server/engine";
@@ -145,10 +147,23 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const storedState = await loadChatState(user.id, id, sink);
   const driftedState = driftChatState(storedState ?? seedChatState(profile), now, profile, { advance: true });
 
+  // RAG long-term memory (character-chat-primary.spec.md §2): recall the chat's own facts +
+  // episodes, keyed on last turn's memory queries + this input. A failed leg degrades to []
+  // with a diagnostic (never a failed reply); an opening beat has no input yet but may still
+  // recall via stored queries. Runs before prompt build so hits ride in as a recall block.
+  const memory = await retrieveChatMemory({
+    ownerId: user.id,
+    characterId: id,
+    queries: driftedState.memoryQueries,
+    input: opening ? "" : (body.value.content ?? ""),
+    sink,
+  });
+
   const system = buildCharacterChatSystemPrompt({
     name: character.name,
     profile,
     priorSummary: summaryState?.summary,
+    memory,
     player: { name: player.name, persona: player.persona },
     state: {
       meters: driftedState.meters,
@@ -160,6 +175,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       outfit: driftedState.outfit,
       outfitExposed: driftedState.outfitExposed,
       activeSocialCards: driftedState.activeSocialCards,
+      attributeOverlays: driftedState.attributeOverlays,
     },
     opening,
     narrationShape: narrationShapeId("chat"),
@@ -206,6 +222,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         driftedState,
         now,
         exchange: { player: body.value.content ?? "", assistant: full },
+        retrieved: memory,
         sink,
       });
     } catch (err) {
@@ -244,52 +261,46 @@ export async function persistAssistantReply(args: {
 }
 
 /**
- * DELETE /api/characters/:id/chat?scope=all|chat|state — the three reset actions
- * (character-chat-state.spec.md §5), replacing the old single clear:
+ * DELETE /api/characters/:id/chat — the single **Clear Chat** (character-chat-primary.spec.md
+ * §4, D4): one action that wipes EVERYTHING for this conversation. It supersedes the old
+ * three-scope reset (all/chat/state) — testing showed no value in clearing chat or state alone.
+ * It deletes, in order:
  *
- * - **all** (default): delete messages + summary + the light-state row — the full
- *   wipe (the old clear-chat behavior, now also dropping state).
- * - **chat**: delete messages + summary but KEEP the state row, so a tester can
- *   start a fresh transcript while preserving the current disposition + premise.
- * - **state**: delete the state row only, keeping the transcript — it re-seeds
- *   lazily from the authored defaults on the next exchange (Reset State).
+ * - the transcript (`character_chat_messages`) and the running summary
+ *   (`character_chat_summaries` — its watermark + recap are this chat's short-term memory);
+ * - the light-state row (`deleteChatState`);
+ * - the RAG long-term memory — this chat's facts + episodes (`deleteChatMemory`, §2);
+ * - the scene-image prompt text (kind="scene"): the assets survive, but their prompts embed
+ *   recent chat lines, so a cleared conversation must not leave old context visible in the
+ *   gallery enlarge view. Only the derived `prompt` is reset (column default "").
  *
- * The running summary travels with the transcript (its watermark + recap are this
- * conversation's memory; a cleared chat must not keep a hidden recap — correctness
- * + privacy). The scene images (kind="scene") survive, but their prompts embed
- * recent chat lines, so the prompt text is blanked: a cleared conversation must not
- * leave old chat context visible (the gallery enlarge view shows `prompt`). The
- * asset stays; only its derived prompt is reset (column default "").
+ * State + memory then re-seed lazily from the authored defaults on the next exchange.
  */
-export const DELETE = withUser<Params>(async (user, req: NextRequest, ctx) => {
+export const DELETE = withUser<Params>(async (user, _req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   if (!(await loadOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
-  const scopeParam = req.nextUrl.searchParams.get("scope");
-  const scope = scopeParam === "chat" || scopeParam === "state" ? scopeParam : "all";
 
-  if (scope !== "state") {
-    await db()
-      .delete(characterChatMessages)
-      .where(and(eq(characterChatMessages.ownerId, user.id), eq(characterChatMessages.characterId, id)));
-    await db()
-      .delete(characterChatSummaries)
-      .where(and(eq(characterChatSummaries.ownerId, user.id), eq(characterChatSummaries.characterId, id)));
-    await db()
-      .update(images)
-      .set({ prompt: "" })
-      .where(
-        and(
-          eq(images.ownerId, user.id),
-          eq(images.kind, "scene"),
-          eq(images.entityKind, "character"),
-          eq(images.entityId, id),
-        ),
-      );
-  }
-  if (scope !== "chat") {
-    await deleteChatState(user.id, id);
-  }
-  return jsonOk({ cleared: true, scope });
+  await db()
+    .delete(characterChatMessages)
+    .where(and(eq(characterChatMessages.ownerId, user.id), eq(characterChatMessages.characterId, id)));
+  await db()
+    .delete(characterChatSummaries)
+    .where(and(eq(characterChatSummaries.ownerId, user.id), eq(characterChatSummaries.characterId, id)));
+  await deleteChatState(user.id, id);
+  await deleteChatMemory(user.id, id);
+  await db()
+    .update(images)
+    .set({ prompt: "" })
+    .where(
+      and(
+        eq(images.ownerId, user.id),
+        eq(images.kind, "scene"),
+        eq(images.entityKind, "character"),
+        eq(images.entityId, id),
+      ),
+    );
+
+  return jsonOk({ cleared: true });
 });
 
 /**

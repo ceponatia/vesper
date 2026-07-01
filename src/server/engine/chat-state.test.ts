@@ -9,6 +9,7 @@ import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } 
 import { CHAT_AROUSAL_INTIMATE, CHAT_RESET_MINUTES, CHAT_TICK_MINUTES } from "./constants";
 import {
   applyChatAction,
+  applyChatAttributeOverlays,
   applyChatPulse,
   chatStateSnapshot,
   driftChatState,
@@ -287,5 +288,35 @@ describe("chatStateSnapshot — mood chip (mood.spec §4)", () => {
   it("persisted defaults true and is honored when set false (fresh-chat seed preview)", () => {
     expect(chatStateSnapshot(seedChatState(profile())).persisted).toBe(true);
     expect(chatStateSnapshot(seedChatState(profile()), { persisted: false }).persisted).toBe(false);
+  });
+});
+
+describe("applyChatAttributeOverlays (mutable-attribute evolution — spec §3)", () => {
+  it("adds a mutable narrative overlay (a dye job)", () => {
+    const sink = new DiagnosticCollector();
+    const out = applyChatAttributeOverlays([], [{ participantName: "Mara", attributeId: "hair.color", value: "auburn" }], sink);
+    expect(out).toContainEqual(expect.objectContaining({ id: "hair.color", value: "auburn", source: "narrative" }));
+    expect(sink.items).toHaveLength(0);
+  });
+
+  it("rejects an inherent attribute change with a diagnostic (the guard)", () => {
+    const sink = new DiagnosticCollector();
+    const out = applyChatAttributeOverlays([], [{ participantName: "Mara", attributeId: "eyes.color", value: "violet" }], sink);
+    expect(out).toHaveLength(0);
+    expect(sink.items.some((d) => d.code === "chat_state.attribute.inherent_change_rejected")).toBe(true);
+  });
+
+  it("drops an unknown attribute id with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const out = applyChatAttributeOverlays([], [{ participantName: "Mara", attributeId: "nonsense.attr", value: "x" }], sink);
+    expect(out).toHaveLength(0);
+    expect(sink.items.some((d) => d.code === "chat_state.attribute.unknown")).toBe(true);
+  });
+
+  it("dedupes by attribute id (last write wins), preserving other overlays", () => {
+    const first = applyChatAttributeOverlays([], [{ participantName: "Mara", attributeId: "hair.color", value: "auburn" }]);
+    const second = applyChatAttributeOverlays(first, [{ participantName: "Mara", attributeId: "hair.color", value: "silver" }]);
+    expect(second.filter((o) => o.id === "hair.color")).toHaveLength(1);
+    expect(second.find((o) => o.id === "hair.color")?.value).toBe("silver");
   });
 });
