@@ -19,10 +19,13 @@ coverage/
 .idea
 scratchpad/
 
-# Local-only UI/QA artifacts — Playwright scratch + audit screenshots embed
-# app-generated imagery; keep them out of the image.
+# Local-only UI/QA artifacts — Playwright scratch.
 .playwright-mcp/
-docs/developer-notes/ux-audit-assets/
+
+# Working docs (plans, specs, notes, GPT/owner reviews) — dev-only, never referenced
+# by the app; keep them out of the deployed image. Subsumes the old
+# ux-audit-assets exclusion (the whole developer-notes folder is now excluded).
+docs/developer-notes/
 
 # Generated/eval imagery under docs — regenerable; text docs (.md) stay.
 docs/**/*.png
