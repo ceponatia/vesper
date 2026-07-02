@@ -31,15 +31,19 @@ review follow-on batches (bottom of Next) — author's call.
 
 - **Character chat — the standalone experience** —
   [character-chat-standalone.plan.md](character-chat-standalone.plan.md) · spec
-  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (**draft** — open
-  questions need owner rulings; placement here is provisional, owner to confirm priority).
-  Chat graduates from an editor tab to a product surface: its own Chats page + full-screen
-  conversation, multiple named conversations per character (archive replaces Clear; memory
-  groups decide what carries across), reply regeneration/go-on/stop, a player-facing memory
-  panel, a visible relationship arc + time awareness, and the chat-lane engine
-  consolidation. **Absorbs** review batch 3 (§D) entirely plus the chat-side items of §C/§E,
-  the chat-relevant RAG-improvements ideas, and the parked timeline/export/rebuild-summary
-  leftovers.
+  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (**draft** — first
+  PM review folded 2026-07-02; rulings in the spec's Decisions, remaining open questions
+  pending). **Chat is the current product focus** (session lane blocked on NPC navigation;
+  chat is the proving ground — D6). Chat graduates from an editor tab to a product surface:
+  its own Chats page + full-screen conversation, multiple named conversations (with
+  multi-character headroom; archive replaces Clear; memory groups decide what carries
+  across), a measurement pass proving state/personality actually show in the writing, a
+  thorough edit/rerun toolset (another-take/go-on/stop), a complete **dev** memory/state
+  inspector (player-facing browsing ruled out — D2), a relationship that gates behavior,
+  **in-game** time skips (wall-clock time ruled out of the fiction — D3), and the chat-lane
+  engine consolidation. **Absorbs** review batch 3 (§D) entirely plus the chat-side items
+  of §C/§E, the chat-relevant RAG-improvements ideas, the personality-enactment measurement
+  follow-up, and the parked timeline/export/rebuild-summary leftovers.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
