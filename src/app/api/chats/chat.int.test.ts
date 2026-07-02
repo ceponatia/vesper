@@ -219,7 +219,7 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     expect(got.messages.length).toBeGreaterThanOrEqual(2);
     expect(got.messages[0]?.role).toBe("user");
     expect(got.chat.id).toBe(chat.id);
-    expect(got.character).toEqual({ id: ids.character, name: "Mara" });
+    expect(got.character).toEqual({ id: ids.character, name: "Mara", avatarImageId: null, chatModel: "" });
 
     const del = await chatDelete(delReq(chat.id), ctx(chat.id));
     expect(del.status).toBe(200);

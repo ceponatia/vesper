@@ -30,38 +30,31 @@ export function ChatStateToolsModal({
   open,
   onClose,
   chatId,
-  ensureChat,
   who,
   snapshot,
   onSaved,
 }: {
   open: boolean;
   onClose: () => void;
-  /** Null until a conversation exists; Save then creates one via `ensureChat`. */
-  chatId: string | null;
-  ensureChat: () => Promise<string | null>;
+  chatId: string;
   who: string;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
 }) {
   return (
     <Dialog open={open} onClose={onClose} title={`State tools — ${who}`} className="max-w-lg">
-      {open ? (
-        <StateToolsForm chatId={chatId} ensureChat={ensureChat} snapshot={snapshot} onSaved={onSaved} onClose={onClose} />
-      ) : null}
+      {open ? <StateToolsForm chatId={chatId} snapshot={snapshot} onSaved={onSaved} onClose={onClose} /> : null}
     </Dialog>
   );
 }
 
 function StateToolsForm({
   chatId,
-  ensureChat,
   snapshot,
   onSaved,
   onClose,
 }: {
-  chatId: string | null;
-  ensureChat: () => Promise<string | null>;
+  chatId: string;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
   onClose: () => void;
@@ -100,14 +93,7 @@ function StateToolsForm({
 
   const save = async () => {
     setSaving(true);
-    // A state edit is one of the actions that lazily creates the conversation.
-    const id = chatId ?? (await ensureChat());
-    if (!id) {
-      setSaving(false);
-      toast.push({ title: "Update failed", description: "The conversation couldn't be created.", tone: "error" });
-      return;
-    }
-    const result = await chatsApi.editState(id, { affinity, meters, conditions, mindNote, premise });
+    const result = await chatsApi.editState(chatId, { affinity, meters, conditions, mindNote, premise });
     setSaving(false);
     if (result.ok) {
       onSaved(result.data);

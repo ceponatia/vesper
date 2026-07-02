@@ -26,8 +26,18 @@ until it runs. **Slice 3 (The conversation model) built 2026-07-02** — `charac
 `/api/characters/:id/chat*` outright (create with the shared-vs-fresh memory choice;
 archive via PATCH; hard delete purges a memory group only when unreferenced), and the
 editor tab adapted (adopts the latest conversation, lazy single-flight create, Delete
-chat). Archive/rename UI and the Chats destination are slice 4. Next per build order:
-slice 4 (the destination).
+chat). **Slice 4 (The destination) built 2026-07-02** — the `/chat` hub (messenger rows
+with mood + stage chips, Active/Archived shelves, rename/archive/delete, New conversation
+with the D7 memory choice, `?new=` entry), the full-screen `/chat/:chatId` conversation
+page (mobile-first column, header menu with model/scenario/state-tools/rename/archive/
+delete, collapsible portrait+scene panel, archived read-only banner), and the entry
+points: Chats in the top nav + a primary bottom-tab slot (D12; bar suppressed on the
+conversation page), the dashboard's "Continue talking to…" lead, a "Chat" action on
+character library cards, and the editor Chat tab reduced to authoring (Chat defaults +
+Starting Relationship, moved out of the scenario modal) + a conversations list —
+playing now lives on /chat. **Scenario presets UI still deferred** (table shipped in
+slice 3; CRUD/UI now rides slice 5's controls work). Next per build order: slice 5
+(in-the-moment controls) with slice 2's live measurement run still awaiting the owner.
 
 Design/decisions: [character-chat-standalone.spec.md](character-chat-standalone.spec.md) —
 the technical detail (schemas, file touch-points, migration shape, refactor analysis,

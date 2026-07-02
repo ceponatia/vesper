@@ -7,8 +7,6 @@ import {
   MOOD_BRIGHT_MIN,
   MOOD_LOW_MAX,
   NEUTRAL_MOOD_METER,
-  stageById,
-  stageMidpoint,
   type ChatActionId,
 } from "@/contracts";
 import type { ChatStateSnapshot } from "@/lib/client/api";
@@ -73,21 +71,17 @@ function meterPips(meters: Record<string, number>): { id: string; label: string;
 /**
  * The status strip above the composer: an affinity stage chip (heart) + meter
  * pips, shown only when off-baseline so casual chats stay clean
- * (character-chat-state.spec.md §7). Fed by GET …/chat/state, refetched per send.
+ * (character-chat-state.spec.md §7). Fed by GET …/state, refetched per send —
+ * a pre-first-exchange snapshot is the server's seed-on-read, which already
+ * carries the authored Starting Relationship.
  */
-export function StatusStrip({ state, startingStage }: { state: ChatStateSnapshot; startingStage: string }) {
+export function StatusStrip({ state }: { state: ChatStateSnapshot }) {
   const pips = meterPips(state.meters);
-  // A fresh chat (no stored row) previews the authored Starting Relationship, so editing
-  // the dropdown moves the chip at once. Once the chat has its own disposition we show
-  // that — the seed is then inert (Reset state re-seeds from the authored default).
-  const seed = state.persisted ? undefined : stageById(startingStage);
-  const stageLabel = seed?.label ?? state.stage.label;
-  const affinity = seed ? stageMidpoint(startingStage) : state.affinity;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <MoodChip emotion={state.emotion} className="text-xs" />
-      <Tag tone="accent" title={`Affinity ${affinity}`}>
-        <span aria-hidden>♥</span> {stageLabel}
+      <Tag tone="accent" title={`Affinity ${state.affinity}`}>
+        <span aria-hidden>♥</span> {state.stage.label}
       </Tag>
       {pips.map((p) => (
         <Tag key={p.id} tone={p.tone}>

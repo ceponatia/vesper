@@ -1,9 +1,19 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { characterChats, characters, chatParticipants, db } from "@/server/db";
+import {
+  activeConditionSchema,
+  characterProfileSchema,
+  deriveEmotionLabel,
+  effectiveTraitValue,
+  emptyCharacterProfile,
+  NEUTRAL_MOOD_METER,
+  stageForValue,
+} from "@/contracts";
 import { newId } from "@/lib/ids";
+import { parseOr } from "@/lib/parse";
+import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { characterChats, characterChatState, characters, chatParticipants, db } from "@/server/db";
 
 /**
  * The conversations collection (docs/character-chat.md; character-chat-standalone.spec.md
@@ -23,7 +33,15 @@ const createBodySchema = z.object({
   memory: z.enum(["shared", "fresh"]),
 });
 
-/** GET /api/chats?characterId=…&archived=1 — the user's conversations, newest first. */
+const listMetersSchema = z.record(z.string(), z.number());
+const listConditionsSchema = z.array(activeConditionSchema);
+
+/**
+ * GET /api/chats?characterId=…&archived=1 — the user's conversations, newest first.
+ * Each row carries the relationship-stage + mood chips (derived server-side from the
+ * participant's last-persisted state row, the same projection as `chatStateSnapshot`
+ * — no drift-on-read; a list is a glance, not a turn). No state row yet ⇒ null chips.
+ */
 export const GET = withUser(async (user, req: NextRequest) => {
   const url = new URL(req.url);
   const characterId = url.searchParams.get("characterId") ?? undefined;
@@ -38,6 +56,10 @@ export const GET = withUser(async (user, req: NextRequest) => {
       characterId: characters.id,
       characterName: characters.name,
       avatarImageId: characters.avatarImageId,
+      profile: characters.profile,
+      affinity: characterChatState.affinity,
+      meters: characterChatState.meters,
+      conditions: characterChatState.conditions,
       lastLine: sql<string | null>`(
         select left(m.content, 160) from character_chat_messages m
         where m.chat_id = ${characterChats.id}
@@ -47,6 +69,13 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .from(characterChats)
     .innerJoin(chatParticipants, eq(chatParticipants.chatId, characterChats.id))
     .innerJoin(characters, eq(characters.id, chatParticipants.characterId))
+    .leftJoin(
+      characterChatState,
+      and(
+        eq(characterChatState.chatId, characterChats.id),
+        eq(characterChatState.characterId, chatParticipants.characterId),
+      ),
+    )
     .where(
       and(
         eq(characterChats.ownerId, user.id),
@@ -57,7 +86,32 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .orderBy(desc(characterChats.lastMessageAt))
     .limit(LIST_LIMIT);
 
-  return jsonOk({ chats: rows });
+  const chats = rows.map(({ profile, affinity, meters, conditions, ...rest }) => {
+    if (affinity === null) return { ...rest, stage: null, emotion: null };
+    const parsedMeters = parseOr(listMetersSchema, meters ?? {}, {}, undefined, "character_chat_state.meters");
+    const parsedConditions = parseOr(listConditionsSchema, conditions ?? [], [], undefined, "character_chat_state.conditions");
+    const prof = parseOr(characterProfileSchema, profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+    const stage = stageForValue(affinity);
+    // Mirrors chatStateSnapshot's mood-chip inputs (mood.spec §4): chat is an
+    // intimate-capable 1-on-1, dominance tilts a low-valence read angry vs sad.
+    const emotion = deriveEmotionLabel({
+      mood: parsedMeters.mood ?? NEUTRAL_MOOD_METER,
+      arousal: parsedMeters.arousal ?? 0,
+      stress: parsedMeters.stress ?? 0,
+      energy: parsedMeters.energy ?? 1,
+      affinityStage: stage.id,
+      conditions: parsedConditions,
+      intimateContext: true,
+      dominance: effectiveTraitValue(prof.traits, "social.dominance"),
+    });
+    return {
+      ...rest,
+      stage: { id: stage.id, label: stage.label },
+      emotion: { label: emotion.emotion, intensity: emotion.intensity },
+    };
+  });
+
+  return jsonOk({ chats });
 });
 
 /** POST /api/chats — create a conversation with the D7 memory choice. */

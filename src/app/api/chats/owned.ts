@@ -10,7 +10,7 @@ import { characterChats, characters, chatParticipants, db } from "@/server/db";
 export interface OwnedChat {
   chat: { id: string; ownerId: string; title: string; archivedAt: Date | null; lastMessageAt: Date };
   participant: { characterId: string; memoryGroupId: string };
-  character: { id: string; name: string; profile: unknown; avatarImageId: string | null };
+  character: { id: string; name: string; profile: unknown; avatarImageId: string | null; chatModel: string };
 }
 
 export async function loadOwnedChat(chatId: string, userId: string): Promise<OwnedChat | null> {
@@ -26,6 +26,7 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
       characterName: characters.name,
       profile: characters.profile,
       avatarImageId: characters.avatarImageId,
+      chatModel: characters.chatModel,
     })
     .from(characterChats)
     .innerJoin(chatParticipants, eq(chatParticipants.chatId, characterChats.id))
@@ -42,6 +43,12 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
       lastMessageAt: row.lastMessageAt,
     },
     participant: { characterId: row.characterId, memoryGroupId: row.memoryGroupId },
-    character: { id: row.characterId, name: row.characterName, profile: row.profile, avatarImageId: row.avatarImageId },
+    character: {
+      id: row.characterId,
+      name: row.characterName,
+      profile: row.profile,
+      avatarImageId: row.avatarImageId,
+      chatModel: row.chatModel,
+    },
   };
 }

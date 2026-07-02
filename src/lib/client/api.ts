@@ -758,18 +758,46 @@ export const chatSummarySchema = z.object({
   characterName: textOr(""),
   avatarImageId: optionalId,
   lastLine: optionalText,
+  /** Relationship-stage chip, derived server-side from the last-persisted state; null before the first exchange. */
+  stage: z.object({ id: z.string(), label: z.string() }).nullable().catch(null),
+  /** Mood chip (`EmotionLabel` + intensity), same derivation as the state snapshot; null before the first exchange. */
+  emotion: z.object({ label: z.string(), intensity: z.number() }).nullable().catch(null),
 });
 export type ChatSummary = z.infer<typeof chatSummarySchema>;
 
+/**
+ * Full `GET /api/chats/:chatId` envelope: the transcript plus the chat header
+ * (title/archived) and the character card (name, portrait, saved narrator pick) —
+ * everything the full-screen conversation page needs in one call.
+ */
+export const chatTranscriptSchema = z.object({
+  messages: listOf(chatMessageSchema, "messages"),
+  chat: z.object({ id: idSchema, title: textOr(""), archivedAt: optionalText }),
+  character: z.object({
+    id: idSchema,
+    name: nameSchema,
+    avatarImageId: optionalId,
+    /** The owner's last narrator pick (`characters.chatModel`); "" ⇒ the chat default. */
+    chatModel: textOr(""),
+  }),
+});
+export type ChatTranscript = z.infer<typeof chatTranscriptSchema>;
+
 export const chatsApi = {
-  /** Active conversations, newest first; scoped to one character when `characterId` is given. */
-  list: (characterId?: string) =>
-    apiGet(listOf(chatSummarySchema, "chats"), withQuery("/api/chats", { characterId })),
+  /** Active conversations, newest first; scoped to one character and/or the archived shelf. */
+  list: (opts: { characterId?: string; archived?: boolean } = {}) =>
+    apiGet(
+      listOf(chatSummarySchema, "chats"),
+      withQuery("/api/chats", { characterId: opts.characterId, archived: opts.archived ? "1" : undefined }),
+    ),
+  /** Rename, archive, or restore a conversation. */
+  update: (chatId: string, patch: { title?: string; archived?: boolean }) =>
+    apiPatch(z.unknown(), `/api/chats/${chatId}`, patch),
   /** Create a conversation — D7 memory choice: `"shared"` continues the history, `"fresh"` is a clean island. */
   create: (body: { characterId: string; title?: string; memory: "shared" | "fresh" }) =>
     apiPost(createdRefSchema, "/api/chats", body),
-  /** The transcript, oldest first (the route also returns chat/character headers; unused this slice). */
-  transcript: (chatId: string) => apiGet(listOf(chatMessageSchema, "messages"), `/api/chats/${chatId}`),
+  /** The full conversation envelope: transcript (oldest first) + chat header + character card. */
+  transcript: (chatId: string) => apiGet(chatTranscriptSchema, `/api/chats/${chatId}`),
   /**
    * Hard-delete the conversation (character-chat-standalone.spec.md §1.4): transcript,
    * summary, light state, and RAG memory all go with it; scene images survive in the Gallery.

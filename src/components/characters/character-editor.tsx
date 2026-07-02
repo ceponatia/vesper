@@ -298,16 +298,22 @@ export function CharacterEditor({
 
       {tab === "chat" ? (
         characterId ? (
-          // Starting Relationship now lives in the chat's Scenario setup modal (it writes back
-          // here via onStartingStageChange; the editor SaveBar persists it to the profile).
+          // The tab is a summary surface (defaults + conversation list) — playing happens
+          // on /chat/[chatId]. Starting Relationship writes back into the draft here; the
+          // editor SaveBar persists it to the profile.
           <CharacterChat
             characterId={characterId}
             name={draft.name || "Untitled"}
-            avatarImageId={avatarImageId}
             startingStage={draft.profile.playerRelationship?.stage ?? "stranger"}
             onStartingStageChange={(stage) =>
               patchProfile({
                 playerRelationship: { stage, note: draft.profile.playerRelationship?.note ?? "" },
+              })
+            }
+            startingNote={draft.profile.playerRelationship?.note ?? ""}
+            onStartingNoteChange={(note) =>
+              patchProfile({
+                playerRelationship: { stage: draft.profile.playerRelationship?.stage ?? "stranger", note },
               })
             }
             chatModel={resolveChatModelId(chatModel)}

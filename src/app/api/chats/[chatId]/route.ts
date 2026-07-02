@@ -62,7 +62,14 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   return jsonOk({
     messages: rows.reverse(),
     chat: { id: owned.chat.id, title: owned.chat.title, archivedAt: owned.chat.archivedAt },
-    character: { id: owned.character.id, name: owned.character.name },
+    character: {
+      id: owned.character.id,
+      name: owned.character.name,
+      // The conversation page renders the portrait/scene panel and the narrator-model
+      // menu from this envelope — one GET settles the whole screen.
+      avatarImageId: owned.character.avatarImageId,
+      chatModel: owned.character.chatModel,
+    },
   });
 });
 

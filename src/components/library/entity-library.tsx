@@ -57,6 +57,8 @@ interface EntityConfig {
   create: () => Promise<ApiResult<CreatedRef>>;
   /** Optional segmented type-buckets over a card field (items use `kind`). */
   buckets?: { field: (card: LibraryCard) => string | undefined; options: { id: string; label: string }[] };
+  /** Optional per-card quick action (hover-revealed; characters use it for "Chat"). */
+  cardAction?: { label: string; ariaLabel: (card: LibraryCard) => string; href: (card: LibraryCard) => string };
   /** Optional batch image generation for the given entity ids (those visible
    *  under the active filter) that are still missing an image. */
   generateImages?: (ids: readonly string[]) => Promise<ApiResult<{ queued: number }>>;
@@ -97,6 +99,13 @@ const configs: Record<LibraryEntity, EntityConfig> = {
         : result;
     },
     create: () => charactersApi.create({ name: "Untitled character" }),
+    // The Chats-hub entry point (character-chat-standalone.spec.md §2.2):
+    // ?new= opens the new-conversation dialog pre-picked with this character.
+    cardAction: {
+      label: "Chat",
+      ariaLabel: (card) => `Chat with ${card.name}`,
+      href: (card) => `/chat?new=${card.id}`,
+    },
   },
   locations: {
     title: "Locations",
@@ -266,6 +275,8 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   };
 
   const cardsAll = list.data ?? [];
+  // Narrowed const so the per-card onClick closure keeps the defined-ness check.
+  const cardAction = config.cardAction;
   const cards = config.buckets && bucket !== "all" ? cardsAll.filter((c) => config.buckets?.field(c) === bucket) : cardsAll;
   const fresh = !list.loading && !list.error && cardsAll.length === 0 && search === "" && tag === "";
   // Entities visible under the active filter that still lack an image — the
@@ -452,6 +463,22 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
                     ))}
                   </div>
                 </div>
+                {cardAction ? (
+                  // A button (not a nested anchor — the card is already a Link);
+                  // `.hover-reveal` keeps it quiet on pointer devices, always visible on touch.
+                  <button
+                    type="button"
+                    aria-label={cardAction.ariaLabel(card)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      router.push(cardAction.href(card));
+                    }}
+                    className="hover-reveal ml-auto shrink-0 cursor-pointer self-start rounded-md border border-ink-600 bg-ink-850/90 px-2 py-1 text-xs text-paper-300 hover:border-accent-500/60 hover:text-accent-300"
+                  >
+                    {cardAction.label}
+                  </button>
+                ) : null}
               </Card>
             </Link>
           ))}

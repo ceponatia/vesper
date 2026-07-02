@@ -33,7 +33,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (stored !== "tabs") void Promise.resolve().then(() => setNavMode(stored));
   }, []);
 
-  const immersive = pathname.startsWith("/sessions/");
+  // Immersive surfaces own the bottom edge (their composer would collide with the
+  // fixed tab bar): the play screen and the full-screen conversation page — but not
+  // the /chat hub, which is a normal list page.
+  const immersive = pathname.startsWith("/sessions/") || /^\/chat\/[^/]+/.test(pathname);
   const showBottomBar = navMode === "tabs" && !immersive;
 
   // The sign-in page stands alone — no nav chrome (you're not "in" the app yet).
