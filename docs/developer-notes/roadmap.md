@@ -23,28 +23,26 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-Nothing mid-flight. The last item — the **mood-reactive avatars rollback** — shipped
-(see **Shipped**). Next build is the top of **Next** below — Intimacy notes — or one of the
-review follow-on batches (bottom of Next) — author's call.
+- **Character chat — the standalone experience** —
+  [character-chat-standalone.plan.md](character-chat-standalone.plan.md) · spec
+  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (**active** — all
+  rulings settled, D1–D15 in the spec's Decisions; build started 2026-07-02 with slice 1,
+  Foundations). **Chat is the current product focus** (session lane blocked on NPC
+  navigation; chat is the proving ground — D6). Chat graduates from an editor tab to a
+  product surface: its own Chats page + full-screen conversation, multiple named
+  conversations (with multi-character headroom; archive replaces Clear; player-chosen
+  shared-history vs fresh-start memory — D7), a measurement pass proving
+  state/personality actually show in the writing, a thorough edit/rerun toolset
+  (another-take/go-on/stop), a complete **dev** memory/state inspector (player-facing
+  browsing ruled out — D2; "remember this" is the one player exception — D15), a
+  relationship that gates behavior (D11), **in-game** time skips (wall-clock time ruled
+  out of the fiction — D3/D8; flavor-only v1 — D14), and the chat-lane engine
+  consolidation. **Absorbs** review batch 3 (§D) entirely plus the chat-side items of
+  §C/§E, the chat-relevant RAG-improvements ideas, the personality-enactment measurement
+  follow-up, and the parked timeline/export/rebuild-summary leftovers.
 
 ## Next (queued)
 
-- **Character chat — the standalone experience** —
-  [character-chat-standalone.plan.md](character-chat-standalone.plan.md) · spec
-  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (**draft** — two
-  PM review rounds folded 2026-07-02; rulings D1–D13 in the spec's Decisions; two narrowed
-  open questions remain: time-skip v1 semantics, "remember this"). **Chat is the current
-  product focus** (session lane blocked on NPC navigation; chat is the proving ground —
-  D6). Chat graduates from an editor tab to a product surface: its own Chats page +
-  full-screen conversation, multiple named conversations (with multi-character headroom;
-  archive replaces Clear; player-chosen shared-history vs fresh-start memory — D7), a
-  measurement pass proving state/personality actually show in the writing, a
-  thorough edit/rerun toolset (another-take/go-on/stop), a complete **dev** memory/state
-  inspector (player-facing browsing ruled out — D2), a relationship that gates behavior,
-  **in-game** time skips (wall-clock time ruled out of the fiction — D3), and the chat-lane
-  engine consolidation. **Absorbs** review batch 3 (§D) entirely plus the chat-side items
-  of §C/§E, the chat-relevant RAG-improvements ideas, the personality-enactment measurement
-  follow-up, and the parked timeline/export/rebuild-summary leftovers.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at

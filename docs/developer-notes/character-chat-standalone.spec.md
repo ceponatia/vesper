@@ -1,10 +1,9 @@
 # Character chat — the standalone experience — spec
 
-Status: **draft** — mirrors [character-chat-standalone.plan.md](character-chat-standalone.plan.md)
-(read it first for the product framing). Two PM review rounds (2026-07-02) are folded in:
-the rulings live in **## Decisions** below. Only the plan's two narrowed open questions
-remain (OQ1 time-skip v1 semantics → §8.1; OQ2 "remember this" → §6.4) — both sections
-carry the proposed default. Nothing here is built.
+Status: **active** — mirrors [character-chat-standalone.plan.md](character-chat-standalone.plan.md)
+(read it first for the product framing). All rulings are settled (**## Decisions** D1–D15,
+across three PM review rounds on 2026-07-02). Building started 2026-07-02 with slice 1
+(Foundations, §3).
 
 ## Decisions (rulings to date — 2026-07-02 PM reviews)
 
@@ -56,6 +55,12 @@ carry the proposed default. Nothing here is built.
   Chats page exists — "for now", revisitable. §2.2.
 - **D13 — voice stays parked.** No current plans; noted as potentially useful once the
   rest is nailed down. No spec section.
+- **D14 — time-skip v1 semantics: flavor-only confirmed.** A skip advances the clock,
+  lets running timed conditions expire, and produces the one-shot skip note — meters do
+  not change; the time-effects system stays scaffolded, not wired (§8.1).
+- **D15 — "remember this" ships with the pinned design.** A pinned `origin:"player"`
+  fact with standard supersedence plus the archivist-can't-override asymmetry invariant
+  (§6.4).
 
 ## 0. Architecture today (orientation, not design)
 
@@ -388,7 +393,7 @@ per-query embedding + RRF fusion + per-source attribution in the trace, **#4** p
 measurement precondition — build its chat fixtures alongside §5's. The session lane
 inherits all four automatically.
 
-### 6.4 "Remember this" (proposed default — plan OQ2)
+### 6.4 "Remember this" (ruled — D15)
 
 Player-side and **write-only** (no browsing, per D2). The PM's three questions, answered
 in the design:
@@ -470,7 +475,7 @@ Real time is out of the fiction entirely, and the wall-clock recovery drift is *
 outright** (D8 — one time model, no hidden second clock). `lastInteractionAt` survives
 only as Chats-list ordering.
 
-### 8.1 Time skips (v1 semantics: proposed default — plan OQ1)
+### 8.1 Time skips (v1 semantics ruled — D14)
 
 - `POST /api/chats/[chatId]/time-skip { amount: "moments" | "hours" | "overnight" | "days" }`
   — maps to in-game minutes and advances `clockMinutes`.
@@ -597,10 +602,4 @@ subsystems in one plan.
 
 ## Open questions
 
-Owned by the plan ([character-chat-standalone.plan.md](character-chat-standalone.plan.md)
-§Open questions) — resolve there; rulings get recorded in **## Decisions** above. Two
-remain, each with its proposed default already written in place: **OQ1** — time-skip v1
-semantics (§8.1: flavor + condition expiry + scaffold, meters untouched; the alternative
-is a flat recover-toward-rested on skip); **OQ2** — "remember this" (§6.4: pinned
-`origin:"player"` fact with supersedence + the asymmetry invariant; the alternative is
-keeping all memory interaction dev-only for v1).
+None — all resolved; see **## Decisions** (D1–D15).

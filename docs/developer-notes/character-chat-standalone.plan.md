@@ -1,9 +1,9 @@
 # Character chat — the standalone experience — plan
 
-Status: **draft** — two PM review rounds folded (2026-07-02); the rulings are recorded in
-the spec's **## Decisions** (D1–D13). **Two narrowed open questions remain** (time-skip
-v1 semantics; the "remember this" design) — both carry proposed defaults below, and
-confirming them makes this plan buildable.
+Status: **active** — all open questions are resolved (rulings D1–D15 in the spec's
+**## Decisions**; final two confirmed 2026-07-02: time skips are flavor-only in v1, and
+"remember this" ships as the pinned player-memory design). Building started 2026-07-02
+with slice 1 (Foundations).
 
 Design/decisions: [character-chat-standalone.spec.md](character-chat-standalone.spec.md) —
 the technical detail (schemas, file touch-points, migration shape, refactor analysis,
@@ -198,7 +198,7 @@ to test and perfect memory until players never have to think about it. So:
 - **Retrieval quality**: apply the already-drafted retrieval improvements that matter most
   for chat (a relevance floor so irrelevant memories stop leaking in; better merging of
   duplicate memories; per-query retrieval) — shared work that also benefits sessions.
-- **"Remember this"** (proposed — open question 2): the one player-facing exception,
+- **"Remember this"** (ruled): the one player-facing exception,
   write-only (no browsing). What the player tells the character to keep is stored as a
   specially-marked, **pinned** memory that always reaches the character and takes
   precedence over anything learned in play; when it directly contradicts an older
@@ -229,8 +229,8 @@ Make the arc both visible and consequential — today it is neither:
 ### 7. In-game time, not wall-clock time
 
 Ruling: **real-world time never passes in the fiction**, and the hidden wall-clock drift
-is **removed outright** in favor of player-chosen time skips. What a skip _does_ is the
-remaining question — the proposed v1 (open question 1):
+is **removed outright** in favor of player-chosen time skips. What a skip _does_ in v1 is
+also ruled — narrative flavor only:
 
 - **Time skips as a player choice**: when reopening a conversation (or at any point via
   the menu), the player can choose to let fictional time pass — _continue the scene_
@@ -369,23 +369,8 @@ running alongside.
 
 ## Open questions
 
-Only two remain, both narrowed to a confirm; everything else from the earlier rounds is
-ruled and recorded in the spec's **## Decisions** (D1–D13).
-
-1. **Time-skip v1 semantics — confirm the proposed default.** Skips are narrative flavor
-   in v1: the in-game clock advances, already-running timed effects expire, the character
-   may acknowledge the gap — but meters don't silently change, and the full
-   "what happens during time" system is scaffolded (skips recorded with durations), not
-   wired. The alternative — a flat "recover toward rested" rule on every skip — is
-   simpler for the common case ("overnight at home") but flattens the nuance you raised
-   (the desert scenario), so it's not the default proposal. Confirm flavor-only, or
-   choose flat-recovery-for-now.
-2. **"Remember this" — confirm the proposed design.** Player-side, write-only: stored as
-   a pinned, player-marked memory that always reaches the character; on save it
-   automatically retires older memories that directly contradict it (the same
-   "updated memory replaces old" machinery that already runs); subtler conflicts are
-   cleaned in the dev inspector; and the background memory-writer can never overwrite or
-   retire a player's note. Confirm, or keep all memory interaction dev-only for v1.
+None — all questions from the three review rounds are resolved; the rulings live in the
+spec's **## Decisions** (D1–D15).
 
 ## Related
 
