@@ -31,13 +31,14 @@ review follow-on batches (bottom of Next) — author's call.
 
 - **Character chat — the standalone experience** —
   [character-chat-standalone.plan.md](character-chat-standalone.plan.md) · spec
-  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (**draft** — first
-  PM review folded 2026-07-02; rulings in the spec's Decisions, remaining open questions
-  pending). **Chat is the current product focus** (session lane blocked on NPC navigation;
-  chat is the proving ground — D6). Chat graduates from an editor tab to a product surface:
-  its own Chats page + full-screen conversation, multiple named conversations (with
-  multi-character headroom; archive replaces Clear; memory groups decide what carries
-  across), a measurement pass proving state/personality actually show in the writing, a
+  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (**draft** — two
+  PM review rounds folded 2026-07-02; rulings D1–D13 in the spec's Decisions; two narrowed
+  open questions remain: time-skip v1 semantics, "remember this"). **Chat is the current
+  product focus** (session lane blocked on NPC navigation; chat is the proving ground —
+  D6). Chat graduates from an editor tab to a product surface: its own Chats page +
+  full-screen conversation, multiple named conversations (with multi-character headroom;
+  archive replaces Clear; player-chosen shared-history vs fresh-start memory — D7), a
+  measurement pass proving state/personality actually show in the writing, a
   thorough edit/rerun toolset (another-take/go-on/stop), a complete **dev** memory/state
   inspector (player-facing browsing ruled out — D2), a relationship that gates behavior,
   **in-game** time skips (wall-clock time ruled out of the fiction — D3), and the chat-lane
