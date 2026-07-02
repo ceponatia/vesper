@@ -1,6 +1,6 @@
-import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { emptyIntentBrief, intentBriefSchema, type IntentBrief } from "@/contracts/turns/intent-brief";
-import { agentModelId, generateChecked, isDemoMode, type GenerateCheckedResult } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import { INTAKE_MAX_OUTPUT_TOKENS, INTAKE_TIMEOUT_MS } from "./constants";
 import { detectIntent, type SceneIntent } from "./intent";
 import { buildIntakePrompt, INTAKE_SYSTEM, type IntakePromptInput } from "./prompts/intake";
@@ -57,35 +57,11 @@ export async function runIntake(input: IntakeInput): Promise<IntentBrief> {
     degradeSeverity: "warn",
   });
 
-  return withTimeout(work, controller, fallback, input.sink);
-}
-
-/**
- * Race the intake call against the timeout. generateChecked never throws (it
- * owns the resilience ladder and resolves to the fallback on degrade), but a
- * slow model must not stall the critical path: on timeout we **abort** the call
- * (so its orphaned tail emits no diagnostics) and proceed on the regex fallback.
- */
-async function withTimeout(
-  work: Promise<GenerateCheckedResult<IntentBrief>>,
-  controller: AbortController,
-  fallback: () => IntentBrief,
-  sink?: DiagnosticSink,
-): Promise<IntentBrief> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<IntentBrief>((resolve) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      sink?.push(diag("warn", "agent.intake.timeout", `intake exceeded ${INTAKE_TIMEOUT_MS}ms; using regex fallback`));
-      resolve(fallback());
-    }, INTAKE_TIMEOUT_MS);
-  });
-  const settled = work.then((r) => r.value ?? fallback()).catch(() => fallback());
-  try {
-    return await Promise.race([settled, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  // Race against the timeout (shared `withGenerateTimeout` — server/ai): a slow
+  // model must not stall the critical path; on timeout the call is aborted (so its
+  // orphaned tail emits no diagnostics) and the turn proceeds on the regex fallback.
+  const { value } = await withGenerateTimeout(work, controller, INTAKE_TIMEOUT_MS, "agent.intake.timeout", input.sink);
+  return value ?? fallback();
 }
 
 // ---------------------------------------------------------------------------

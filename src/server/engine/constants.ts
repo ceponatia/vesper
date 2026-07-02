@@ -127,6 +127,14 @@ export const MAX_NPC_PAIR_AWARENESS_LINES = 4;
 
 /** Heartbeats older than this mark a turn/job as abandoned (recovery). */
 export const HEARTBEAT_STALE_MS = 60_000;
+/**
+ * Age at which a detached api-side job (`startJob` — running, never heartbeated)
+ * is failed by the recovery sweep (codebase-review D4). Generous, because these
+ * jobs run in-process with no heartbeat to distinguish slow from dead: an image
+ * render can legitimately take minutes, and a survivor that settles after being
+ * swept just overwrites the row with its real outcome.
+ */
+export const API_JOB_STALE_MS = 15 * 60_000;
 /** Heartbeat refresh cadence while streaming/processing. */
 export const HEARTBEAT_INTERVAL_MS = 5_000;
 /**

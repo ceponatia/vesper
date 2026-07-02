@@ -213,18 +213,20 @@ export const characterChatSummaries = pgTable(
 );
 
 /**
- * Character-chat light state (docs/developer-notes/character-chat-state.spec.md).
- * One row per (ownerId, characterId): the chat's only memory beyond the message
- * window and the rolling summary — the full meter registry, an affinity scalar,
- * optional self-expiring conditions, a dynamic "what's on their mind" note, a
- * player-set per-chat premise, the chat-local game clock, and a wall-clock anchor
- * for between-visit recovery. A pure CREATE (not an extension of
- * character_chat_summaries) so the migration never hits drizzle's rename prompt
- * and the pulse stays independent of the summary fold. No row ⇒ a fresh stateless
- * chat (today's behavior); the first POST lazily seeds one. Reset semantics:
- * **Reset All** deletes this row + messages + summary, **Reset Chat** deletes
- * messages + summary while preserving this row, **Reset State** deletes this row
- * only (it re-seeds lazily from the authored defaults, transcript intact).
+ * Character-chat state (docs/character-chat.md; origin:
+ * docs/developer-notes/finished/character-chat-state.spec.md). One row per
+ * (ownerId, characterId): the chat's tracked state beside the message window,
+ * the rolling summary, and the chat-scoped facts/episodes — the full meter
+ * registry, an affinity scalar, optional self-expiring conditions, a dynamic
+ * "what's on their mind" note, a player-set per-chat premise, scenario fields
+ * (outfit/cards), the RAG carry-overs (memory queries, attribute overlays,
+ * traces), the chat-local game clock, and a wall-clock anchor for between-visit
+ * recovery. A pure CREATE (not an extension of character_chat_summaries) so the
+ * migration never hits drizzle's rename prompt and the pulse stays independent
+ * of the summary fold. No row ⇒ a fresh stateless chat; the first POST lazily
+ * seeds one. Lifecycle: the single **Clear Chat** (`clearCharacterChat`) deletes
+ * this row with the transcript + summary + chat memory
+ * (character-chat-primary.spec.md §4, D4 — supersedes the old three-scope reset).
  */
 export const characterChatState = pgTable(
   "character_chat_state",
@@ -874,7 +876,7 @@ export const jobs = pgTable(
     id: id(),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
     type: text("type", {
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep"],
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep"],
     }).notNull(),
     status: text("status", { enum: ["queued", "running", "done", "failed"] }).notNull().default("queued"),
     runnerId: text("runner_id"),

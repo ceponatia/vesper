@@ -1,4 +1,4 @@
-import { jsonError } from "@/server/api";
+import { drainingStreamResponse, jsonError } from "@/server/api";
 import type { TurnStreamEvent } from "@/server/engine";
 
 /**
@@ -34,59 +34,32 @@ function firstEventError(event: TurnStreamEvent): Response {
   return jsonError(code, message, engineErrorStatus(code));
 }
 
+/** Re-yield the already-awaited first event ahead of the rest of the generator. */
+async function* withFirst(
+  first: TurnStreamEvent,
+  rest: AsyncGenerator<TurnStreamEvent, void, unknown>,
+): AsyncGenerator<TurnStreamEvent, void, unknown> {
+  yield first;
+  yield* rest;
+}
+
 /**
  * Wrap a turn-event generator in a streaming Response. The first event is
  * awaited before committing to a stream so `session_busy` (and friends) can
- * be a clean 409 JSON response per the docs.
+ * be a clean 409 JSON response per the docs. The drain-despite-disconnect
+ * discipline lives in the shared `drainingStreamResponse` (docs/resilience.md
+ * §5) — a client abort never interrupts the engine.
  */
 export async function streamTurnEvents(gen: AsyncGenerator<TurnStreamEvent, void, unknown>): Promise<Response> {
   const first = await gen.next();
   if (first.done) return jsonError("turn_failed", "the turn produced no events", 500);
   if (first.value.event === "error") return firstEventError(first.value);
 
-  const encoder = new TextEncoder();
-  const firstEvent = first.value;
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let open = true;
-      const send = (event: TurnStreamEvent): void => {
-        if (!open) return;
-        try {
-          controller.enqueue(encoder.encode(sseFrame(event)));
-        } catch {
-          // Client gone: SSE writes are best-effort; keep draining so the
-          // engine generator finishes normally.
-          open = false;
-        }
-      };
-      send(firstEvent);
-      for (;;) {
-        let next: IteratorResult<TurnStreamEvent, void>;
-        try {
-          next = await gen.next();
-        } catch {
-          send({ event: "error", data: { code: "turn_failed", message: "the turn stream failed" } });
-          break;
-        }
-        if (next.done) break;
-        send(next.value);
-      }
-      if (open) {
-        try {
-          controller.close();
-        } catch {
-          // already closed by a consumer cancel — nothing to do
-        }
-      }
-    },
-    cancel() {
-      // Client abort is a display problem only; the detached engine task
-      // persists the turn regardless and the start() loop drains the events.
-    },
-  });
-
-  return new Response(stream, {
-    status: 200,
+  return drainingStreamResponse({
+    gen: withFirst(first.value, gen),
+    encode: sseFrame,
+    onStreamError: (send) =>
+      send(sseFrame({ event: "error", data: { code: "turn_failed", message: "the turn stream failed" } })),
     headers: {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",

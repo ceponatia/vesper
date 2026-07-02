@@ -14,6 +14,7 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 | [contracts/](contracts/README.md) | Attribute registry, body model, meters, conditions — and how to extend them |
 | [database.md](database.md) | Drizzle schema, pgvector, migration workflow |
 | [turn-engine.md](turn-engine.md) | The turn lifecycle: pre-turn assembly, narrative streaming, post-turn agent fan-out |
+| [character-chat.md](character-chat.md) | The sessionless chat lane: exchange pipeline, tracked state, chat memory, jobs, API |
 | [prompts.md](prompts.md) | Prompt architecture: static rulebook, turn context, caching, speaker tags |
 | [memory.md](memory.md) | Episodes, semantic facts + supersedence, lore tiers, retrieval |
 | [story-threads.md](story-threads.md) | Thread kinds, lifecycle, semantic dedup, accumulated developments, the detail modal |

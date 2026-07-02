@@ -4,12 +4,14 @@ import { CHARACTER_CHAT_HISTORY_TURNS } from "./constants";
 import { NARRATIVE_TEMPERATURE } from "./pipeline";
 
 /**
- * The character-chat harness (docs/developer-notes/character-chat.plan.md):
- * streaming for the 1-on-1 Chat tab. Mirrors pipeline.liveNarrativeStream — the
- * same `streamText` + `openrouter().chat()` shape (the `@openrouter`-only
- * boundary is satisfied via the `../ai` barrel exactly as the pipeline does) —
- * but with no session, no post-turn pipeline, no persistence here (the route
- * owns the transcript). A flat message window is the model's only memory.
+ * The character-chat model stream (docs/character-chat.md): the narrator leg of
+ * the chat lane. Mirrors pipeline.liveNarrativeStream — the same `streamText` +
+ * `openrouter().chat()` shape (the `@openrouter`-only boundary is satisfied via
+ * the `../ai` barrel exactly as the pipeline does). This file only streams: the
+ * exchange orchestration (state, RAG recall, persistence, the post-turn fan-out)
+ * lives in `chat-pipeline.ts`; this stream's short-term memory is the verbatim
+ * window it is handed (the rolling summary + RAG recall ride in the system
+ * prompt).
  */
 
 export interface ChatTurn {

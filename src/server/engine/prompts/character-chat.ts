@@ -15,16 +15,18 @@ import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeI
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * The character-chat harness prompt (docs/developer-notes/character-chat.plan.md).
+ * The character-chat system prompt (docs/character-chat.md).
  *
- * A focused, single-character system prompt for the 1-on-1 Chat tab — built to
- * tune how faithfully the narrator voices a character's PERSONALITY from its
- * saved attributes, without standing up a session. It deliberately reuses the
- * SAME representation the in-game narrator gets — resolved attribute values via
- * the registry, plus each attribute's `promptHints` as phrasing guidance (the
- * narrator keeps hints; only the image prompt strips them, images/prompts.ts) —
- * but drops all the session machinery (presence, wardrobe state, meters,
- * exposure, RAG). Pure and snapshot-testable; no IO.
+ * A focused, single-character system prompt for the chat lane. It deliberately
+ * reuses the SAME representation the in-game narrator gets — resolved attribute
+ * values via the registry, plus each attribute's `promptHints` as phrasing
+ * guidance (the narrator keeps hints; only the image prompt strips them,
+ * images/prompts.ts) — and carries the chat lane's own layers: the tracked state
+ * (meters/conditions/affinity, enacted per docs/prompts.md §Character-chat state
+ * as a narration system), the rolling-summary recap, and the RAG "Your memory"
+ * block. What it still deliberately drops is the session's world machinery:
+ * presence, locations, wardrobe state, the exposure mask. Pure and
+ * snapshot-testable; no IO.
  */
 
 const BIO_EXCERPT_CHARS = 600;
