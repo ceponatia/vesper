@@ -29,6 +29,17 @@ review follow-on batches (bottom of Next) — author's call.
 
 ## Next (queued)
 
+- **Character chat — the standalone experience** —
+  [character-chat-standalone.plan.md](character-chat-standalone.plan.md) · spec
+  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (**draft** — open
+  questions need owner rulings; placement here is provisional, owner to confirm priority).
+  Chat graduates from an editor tab to a product surface: its own Chats page + full-screen
+  conversation, multiple named conversations per character (archive replaces Clear; memory
+  groups decide what carries across), reply regeneration/go-on/stop, a player-facing memory
+  panel, a visible relationship arc + time awareness, and the chat-lane engine
+  consolidation. **Absorbs** review batch 3 (§D) entirely plus the chat-side items of §C/§E,
+  the chat-relevant RAG-improvements ideas, and the parked timeline/export/rebuild-summary
+  leftovers.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -44,15 +55,15 @@ review follow-on batches (bottom of Next) — author's call.
   needs a `world-simulation.plan.md` when it becomes active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
-- **Codebase-review follow-on batches (2–4)** — findings
+- **Codebase-review follow-on batches (2 & 4, session-side remainder)** — findings
   [codebase-review.md](codebase-review.md) §C–E; no plans yet (each needs its
   `<topic>.plan.md` when it becomes active): **prompt intelligence** (§C — session-lane
-  cast voices, content-framing/no-refusal port, intimate + dialogue craft rules,
-  schema-match fixes, forge upgrades), **chat-lane consolidation** (§D — extract
-  `submitChatMessage`, share the forked session-lane machinery, write
-  `docs/character-chat.md`), **dedup & cleanup sweep** (§E). Sequenced after batch 1 per
-  the 2026-07-02 agreement; where they slot versus the feature work above is the
-  author's call.
+  cast voices, content-framing/no-refusal port, intimate + dialogue craft rules for the
+  session lane, forge upgrades), **dedup & cleanup sweep** (§E — non-chat items).
+  **Batch 3 (§D chat-lane consolidation) and the chat-side items of §C/§E are absorbed
+  into [character-chat-standalone.plan.md](character-chat-standalone.plan.md)** (top of
+  this list). Sequenced after batch 1 per the 2026-07-02 agreement; where the remainder
+  slots versus the feature work above is the author's call.
 
 ## Someday / parking lot
 
