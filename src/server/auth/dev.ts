@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { auth } from "./auth";
 import { accounts, db, users } from "../db";
+import { log } from "@/server/log";
 
 /**
  * Dev/QA session minting (auth.plan.md). The old `vesper_user` cookie =
@@ -41,8 +42,21 @@ export async function devImpersonate(userId: string): Promise<Response | null> {
  * uxtest admin's id is fixed (every Tsukikage Onsen `ownerId` references it), so
  * we can't recreate it via sign-up. Hashing uses Better Auth's own hasher so
  * `signInEmail` verifies it.
+ *
+ * Refuses in production unless `DEV_PASSWORD` is explicitly set (codebase-review
+ * B1): the fallback password is committed to the repo and the credential is
+ * reachable through the PUBLIC sign-in surface — the impersonate route's 404
+ * doesn't protect it. Returns whether the credential was provisioned.
  */
-export async function ensureDevCredential(userId: string): Promise<void> {
+export async function ensureDevCredential(userId: string): Promise<boolean> {
+  if (process.env.NODE_ENV === "production" && !process.env.DEV_PASSWORD) {
+    log.warn(
+      "auth.dev",
+      "refusing to provision the default dev credential in production — set DEV_PASSWORD explicitly if impersonation is really wanted here",
+      { userId },
+    );
+    return false;
+  }
   const ctx = await auth.$context;
   const hash = await ctx.password.hash(DEV_PASSWORD);
   const [existing] = await db()
@@ -52,9 +66,10 @@ export async function ensureDevCredential(userId: string): Promise<void> {
     .limit(1);
   if (existing) {
     await db().update(accounts).set({ password: hash }).where(eq(accounts.id, existing.id));
-    return;
+    return true;
   }
   await db()
     .insert(accounts)
     .values({ userId, accountId: userId, providerId: CREDENTIAL_PROVIDER, password: hash });
+  return true;
 }

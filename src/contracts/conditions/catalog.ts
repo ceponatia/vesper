@@ -1,4 +1,4 @@
-import type { ConditionEffect } from "./condition";
+import { normalizeConditionLabel, type ConditionEffect } from "./condition";
 
 /**
  * Known condition label → its structured effects (character-chat-state-narration.spec.md §2).
@@ -34,9 +34,7 @@ export const CONDITION_CATALOG: Readonly<Record<string, CatalogCondition>> = {
   },
 };
 
-const normalizeLabel = (label: string): string => label.trim().toLowerCase();
-
 /** The catalog entry for a label (case/space-insensitive), or undefined if unrecognised. */
 export function catalogConditionForLabel(label: string): CatalogCondition | undefined {
-  return CONDITION_CATALOG[normalizeLabel(label)];
+  return CONDITION_CATALOG[normalizeConditionLabel(label)];
 }

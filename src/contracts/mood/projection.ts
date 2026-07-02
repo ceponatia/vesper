@@ -1,4 +1,4 @@
-import type { ActiveCondition } from "../conditions/condition";
+import { conditionKey, type ActiveCondition } from "../conditions/condition";
 import type { EvaluatedReaction } from "../personality/reactions";
 import type { RelationshipStage } from "../relationships/stages";
 import { stageAtLeast } from "./affinity";
@@ -87,9 +87,9 @@ export const DOMINANCE_ANGER_MIN = 20;
 const SURPRISE_CONCEPTS: ReadonlySet<string> = new Set(["boundary_push"]);
 /** Concept ids that, at low–mid affinity, read `flustered`. */
 const FLIRT_CONCEPTS: ReadonlySet<string> = new Set(["flirt", "compliment", "proposition"]);
-/** Condition ids that directly tint the baseline. */
-const FLUSTERED_CONDITION_IDS: ReadonlySet<string> = new Set(["flustered", "bashful"]);
-const TIPSY_CONDITION_IDS: ReadonlySet<string> = new Set(["tipsy", "drunk", "intoxicated"]);
+/** Condition labels (normalized — see `conditionKey`) that directly tint the baseline. */
+const FLUSTERED_CONDITION_LABELS: ReadonlySet<string> = new Set(["flustered", "bashful"]);
+const TIPSY_CONDITION_LABELS: ReadonlySet<string> = new Set(["tipsy", "drunk", "intoxicated"]);
 
 const clamp01 = (n: number): number => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5);
 
@@ -107,8 +107,8 @@ function valenceIntensity(mood: number): number {
   return clamp01(Math.abs(clamp01(mood) - 0.5) / 0.5);
 }
 
-function hasCondition(conditions: readonly ActiveCondition[], ids: ReadonlySet<string>): boolean {
-  return conditions.some((c) => ids.has(c.id));
+function hasCondition(conditions: readonly ActiveCondition[], labels: ReadonlySet<string>): boolean {
+  return conditions.some((c) => labels.has(conditionKey(c)));
 }
 
 /** The transient beat (mood.spec §4): wins briefly when a strong reaction is present. */
@@ -147,8 +147,8 @@ function resolveBaseline(i: EmotionInputs): EmotionResult {
   }
 
   // Condition tints.
-  if (hasCondition(i.conditions, FLUSTERED_CONDITION_IDS)) return { emotion: "flustered", intensity: 0.6 };
-  if (hasCondition(i.conditions, TIPSY_CONDITION_IDS) && mood >= VALENCE_LOW) {
+  if (hasCondition(i.conditions, FLUSTERED_CONDITION_LABELS)) return { emotion: "flustered", intensity: 0.6 };
+  if (hasCondition(i.conditions, TIPSY_CONDITION_LABELS) && mood >= VALENCE_LOW) {
     // Loosened: a tipsy, not-low mood reads playful/affectionate.
     return { emotion: stageAtLeast(i.affinityStage, AFFECTIONATE_STAGE) ? "affectionate" : "playful", intensity: 0.55 };
   }

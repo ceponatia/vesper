@@ -24,6 +24,7 @@ import {
   retrieveChatMemory,
   seedChatState,
   streamCharacterChat,
+  tryKeyedLock,
 } from "@/server/engine";
 import { log } from "@/server/log";
 import { resolvePlayerPersona } from "@/server/players";
@@ -101,18 +102,44 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     return jsonError("rate_limited", "too many chat messages; try again in a minute", 429);
   }
 
-  const opening = body.value.open === true;
-
-  // Normal turn: mint the user line's id up front so the assistant persist can be
-  // guarded against it (persistAssistantReply): if a concurrent clear or
-  // single-message delete removes this row mid-stream, the reply is dropped rather
-  // than orphaned. The opening beat has no player line, so no guard row.
-  const promptMessageId = newId();
-  if (!opening) {
-    await db()
-      .insert(characterChatMessages)
-      .values({ id: promptMessageId, ownerId: user.id, characterId: id, role: "user", content: body.value.content ?? "" });
+  // One exchange in flight per chat (codebase-review A6) — the session lane's CAS +
+  // per-session queue equivalent. Without it, two concurrent POSTs each load + drift
+  // the same state row and the finalizers land last-write-wins (one exchange's
+  // affinity/mood/clock silently discarded). Held until the stream settles
+  // (streamReply's onSettled); a second submit mid-stream is a double-send → 409.
+  let releaseChatLock!: () => void;
+  const chatLockGate = new Promise<void>((resolve) => {
+    releaseChatLock = resolve;
+  });
+  const chatLock = tryKeyedLock(`chat_exchange:${user.id}:${id}`, () => chatLockGate);
+  if (chatLock === null) {
+    return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
   }
+  void chatLock; // resolves via releaseChatLock; never rejects
+
+  try {
+    return await runExchange(body.value, character);
+  } catch (err) {
+    releaseChatLock();
+    throw err;
+  }
+
+  async function runExchange(
+    input: z.infer<typeof sendBodySchema>,
+    character: NonNullable<Awaited<ReturnType<typeof loadOwnedCharacter>>>,
+  ): Promise<Response> {
+    const opening = input.open === true;
+
+    // Normal turn: mint the user line's id up front so the assistant persist can be
+    // guarded against it (persistAssistantReply): if a concurrent clear or
+    // single-message delete removes this row mid-stream, the reply is dropped rather
+    // than orphaned. The opening beat has no player line, so no guard row.
+    const promptMessageId = newId();
+    if (!opening) {
+      await db()
+        .insert(characterChatMessages)
+        .values({ id: promptMessageId, ownerId: user.id, characterId: id, role: "user", content: input.content ?? "" });
+    }
 
   // The running summary covers everything up to its watermark; the verbatim
   // window is every message after it (includes the line just inserted). No
@@ -155,7 +182,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     ownerId: user.id,
     characterId: id,
     queries: driftedState.memoryQueries,
-    input: opening ? "" : (body.value.content ?? ""),
+    input: opening ? "" : (input.content ?? ""),
     sink,
   });
 
@@ -180,56 +207,65 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     opening,
     narrationShape: narrationShapeId("chat"),
     // One-turn cue invitation (§7): an opening beat has no player input to read.
-    cueInvite: opening ? undefined : chatCueInviteLine(detectChatCue(body.value.content ?? ""), character.name),
+    cueInvite: opening ? undefined : chatCueInviteLine(detectChatCue(input.content ?? ""), character.name),
   });
   // The opening beat has no player turn — give the model a synthetic (non-persisted)
   // cue to respond to so it produces the character's first line.
   const modelHistory = opening ? [...history, { role: "user" as const, content: OPENING_CUE }] : history;
-  const gen = streamCharacterChat({ system, history: modelHistory, name: character.name, model: body.value.model });
+  const gen = streamCharacterChat({ system, history: modelHistory, name: character.name, model: input.model });
 
   if (opening) {
     // Opening beat: persist only the character's line (no guard row exists), then
     // fold drift into the state — no pulse, since there was no player act to react to.
-    return streamReply(gen, async (full) => {
-      await db()
-        .insert(characterChatMessages)
-        .values({ ownerId: user.id, characterId: id, role: "assistant", content: full });
-      try {
-        // The opening beat shows state to the narrator too — record the bands surfaced so the
-        // first real turn doesn't re-announce them (character-chat-state-narration.spec.md §5).
-        const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
-        await persistChatState(user.id, id, { ...driftedState, surfacedCues, lastInteractionAt: now });
-      } catch (err) {
-        log.error("api.chat", "chat-state opening persist failed", { error: errorText(err) });
-      }
-    });
+    return streamReply(
+      gen,
+      async (full) => {
+        await db()
+          .insert(characterChatMessages)
+          .values({ ownerId: user.id, characterId: id, role: "assistant", content: full });
+        try {
+          // The opening beat shows state to the narrator too — record the bands surfaced so the
+          // first real turn doesn't re-announce them (character-chat-state-narration.spec.md §5).
+          const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
+          await persistChatState(user.id, id, { ...driftedState, surfacedCues, lastInteractionAt: now });
+        } catch (err) {
+          log.error("api.chat", "chat-state opening persist failed", { error: errorText(err) });
+        }
+      },
+      releaseChatLock,
+    );
   }
 
   // Finalizer (turn end): persist the reply, then run the reaction pulse + fold
   // drift into the persisted state. The reply has already flushed to the client,
   // so this is invisible to perceived latency; a pulse failure degrades to
   // drift-only state and never affects the saved reply.
-  return streamReply(gen, async (full) => {
-    await persistAssistantReply({ ownerId: user.id, characterId: id, promptMessageId, content: full });
-    try {
-      await finalizeChatState({
-        ownerId: user.id,
-        characterId: id,
-        promptMessageId,
-        profile,
-        characterName: character.name,
-        playerName: player.name,
-        driftedState,
-        now,
-        exchange: { player: body.value.content ?? "", assistant: full },
-        retrieved: memory,
-        sink,
-      });
-    } catch (err) {
-      log.error("api.chat", "chat-state finalize failed", { error: errorText(err) });
-    }
-    if (sink.items.length) log.info("api.chat", "chat-state diagnostics", { codes: sink.items.map((d) => d.code) });
-  });
+  return streamReply(
+    gen,
+    async (full) => {
+      await persistAssistantReply({ ownerId: user.id, characterId: id, promptMessageId, content: full });
+      try {
+        await finalizeChatState({
+          ownerId: user.id,
+          characterId: id,
+          promptMessageId,
+          profile,
+          characterName: character.name,
+          playerName: player.name,
+          driftedState,
+          now,
+          exchange: { player: input.content ?? "", assistant: full },
+          retrieved: memory,
+          sink,
+        });
+      } catch (err) {
+        log.error("api.chat", "chat-state finalize failed", { error: errorText(err) });
+      }
+      if (sink.items.length) log.info("api.chat", "chat-state diagnostics", { codes: sink.items.map((d) => d.code) });
+    },
+    releaseChatLock,
+  );
+  }
 });
 
 /**
@@ -280,25 +316,29 @@ export const DELETE = withUser<Params>(async (user, _req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   if (!(await loadOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
 
-  await db()
-    .delete(characterChatMessages)
-    .where(and(eq(characterChatMessages.ownerId, user.id), eq(characterChatMessages.characterId, id)));
-  await db()
-    .delete(characterChatSummaries)
-    .where(and(eq(characterChatSummaries.ownerId, user.id), eq(characterChatSummaries.characterId, id)));
-  await deleteChatState(user.id, id);
-  await deleteChatMemory(user.id, id);
-  await db()
-    .update(images)
-    .set({ prompt: "" })
-    .where(
-      and(
-        eq(images.ownerId, user.id),
-        eq(images.kind, "scene"),
-        eq(images.entityKind, "character"),
-        eq(images.entityId, id),
-      ),
-    );
+  // One transaction (codebase-review A9): a crash mid-clear must not leave a
+  // half-cleared conversation (transcript gone, memory still recalling it).
+  await db().transaction(async (tx) => {
+    await tx
+      .delete(characterChatMessages)
+      .where(and(eq(characterChatMessages.ownerId, user.id), eq(characterChatMessages.characterId, id)));
+    await tx
+      .delete(characterChatSummaries)
+      .where(and(eq(characterChatSummaries.ownerId, user.id), eq(characterChatSummaries.characterId, id)));
+    await deleteChatState(user.id, id, tx);
+    await deleteChatMemory(user.id, id, tx);
+    await tx
+      .update(images)
+      .set({ prompt: "" })
+      .where(
+        and(
+          eq(images.ownerId, user.id),
+          eq(images.kind, "scene"),
+          eq(images.entityKind, "character"),
+          eq(images.entityId, id),
+        ),
+      );
+  });
 
   return jsonOk({ cleared: true });
 });
@@ -308,39 +348,46 @@ export const DELETE = withUser<Params>(async (user, _req: NextRequest, ctx) => {
  * enqueued as they arrive and accumulated; the full reply is persisted once the
  * stream finishes. A client disconnect flips `open` off but keeps draining so
  * the persisted reply is always whole (mirrors sse.streamTurnEvents).
+ * `onSettled` runs once everything (drain + persist) has finished, on every
+ * path — including an empty reply, where `persist` is skipped — so it is safe
+ * to release the per-chat exchange lock there.
  */
-function streamReply(gen: AsyncGenerator<string>, persist: (full: string) => Promise<void>): Response {
+function streamReply(gen: AsyncGenerator<string>, persist: (full: string) => Promise<void>, onSettled?: () => void): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let open = true;
       let full = "";
       try {
-        for await (const delta of gen) {
-          full += delta;
-          if (!open) continue; // client gone: keep draining to capture the whole reply
+        try {
+          for await (const delta of gen) {
+            full += delta;
+            if (!open) continue; // client gone: keep draining to capture the whole reply
+            try {
+              controller.enqueue(encoder.encode(delta));
+            } catch {
+              open = false; // consumer cancelled — writes are best-effort from here
+            }
+          }
+        } catch (err) {
+          log.warn("api.chat", "reply stream failed", { error: errorText(err) });
+        }
+        if (full.trim()) {
           try {
-            controller.enqueue(encoder.encode(delta));
-          } catch {
-            open = false; // consumer cancelled — writes are best-effort from here
+            await persist(full);
+          } catch (err) {
+            log.error("api.chat", "failed to persist assistant reply", { error: errorText(err) });
           }
         }
-      } catch (err) {
-        log.warn("api.chat", "reply stream failed", { error: errorText(err) });
-      }
-      if (full.trim()) {
-        try {
-          await persist(full);
-        } catch (err) {
-          log.error("api.chat", "failed to persist assistant reply", { error: errorText(err) });
+        if (open) {
+          try {
+            controller.close();
+          } catch {
+            // already closed by a consumer cancel — nothing to do
+          }
         }
-      }
-      if (open) {
-        try {
-          controller.close();
-        } catch {
-          // already closed by a consumer cancel — nothing to do
-        }
+      } finally {
+        onSettled?.();
       }
     },
     cancel() {

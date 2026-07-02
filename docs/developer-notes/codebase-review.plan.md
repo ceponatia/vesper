@@ -1,7 +1,26 @@
 # Codebase review — batch 1: correctness & security fixes
 
-Status: **next** (agreed as the next build 2026-07-02; flip to **active** when
-work starts)
+Status: **shipped — 2026-07-02**
+
+**Completion note.** All 17 items landed in one pass; `pnpm verify` (1648 pure
+tests) + the full int suite (172) green; no migration needed. Implementation
+notes beyond the rulings: A2 took the "prefer" shape — `saveChatState` /
+`persistChatState` collapsed into one `upsertChatState` so the column list
+exists once; A6 + A8 ride a new shared `engine/keyed-lock.ts` (`tryKeyedLock` →
+409 `chat_busy` on the chat POST, `withKeyedLock` serializing summary folds —
+A8's "claim-time recheck" became lock-serialization: the second fold's own
+recompute no-ops under the lock, no partial index); the chat lock releases via
+a new guaranteed `onSettled` hook on `streamReply` (the persist callback alone
+is skipped on empty replies); the transactional Clear threads a new `DbWriter`
+executor type through `deleteChatState`/`deleteChatMemory`/
+`delete{Facts,Episodes}ForScope`; item 14 added `pipLabel` to the meters
+registry thresholds + shared `MOOD_BRIGHT_MIN`/`MOOD_LOW_MAX` (chip bounds now
+strict-compare, aligning the strip exactly with narration cues); item 3 carries
+the taste-raise semantics in the axis doc line + prior-brief render (`taste`
+added to all example exposures as the field's shape). Punted to batch 3 (as
+planned): relocating the chat lock into a `submitChatMessage` extraction.
+Docs touched: auth.md (secret boot-check + seed guard), contracts/conditions.md
+(label is the match key), contracts/meters-actions.md (`pipLabel`).
 
 Source: [codebase-review.md](codebase-review.md) §A–B (the 2026-07-02
 five-agent review of the Opus-era diff). This plan is batch 1 of four; batches

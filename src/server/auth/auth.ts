@@ -70,12 +70,26 @@ async function sendMagicLink({ email, url }: { email: string; url: string }): Pr
 // when their client-id/secret env vars are set (none in this deployment).
 const signupDisabled = process.env.ALLOW_SIGNUP !== "true";
 
+/**
+ * Hard-fail at init when the secret is missing in production (codebase-review B2):
+ * Better Auth otherwise falls back to its built-in dev secret with only a console
+ * warning, which would make every session cookie forgeable. Dev keeps the warning
+ * (a fixed local secret is a non-issue and zero-config matters there).
+ */
+function requiredSecret(): string | undefined {
+  const secret = process.env.BETTER_AUTH_SECRET;
+  if (!secret && process.env.NODE_ENV === "production") {
+    throw new Error("BETTER_AUTH_SECRET is required in production — set it (e.g. `fly secrets set BETTER_AUTH_SECRET=…`)");
+  }
+  return secret;
+}
+
 export const auth = betterAuth({
   database: drizzleAdapter(db(), {
     provider: "pg",
     schema: { user: users, session: authSessions, account: accounts, verification: verifications },
   }),
-  secret: process.env.BETTER_AUTH_SECRET,
+  secret: requiredSecret(),
   baseURL: process.env.BETTER_AUTH_URL,
   trustedOrigins: configuredTrustedOrigins(),
   emailAndPassword: { enabled: true, disableSignUp: signupDisabled },

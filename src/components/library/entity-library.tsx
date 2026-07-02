@@ -235,12 +235,20 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const list = useAsyncData(() => config.list(search, tag, scope), [entity, search, tag, scope]);
   const { reload } = list;
 
-  // Debounce: schedule the search update on input.
-  const [timer, setTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  // Debounce: schedule the search update on input. The timer lives in a ref —
+  // in state, two keystrokes between renders both read the stale value, so the
+  // first timeout never cleared (duplicate fetches; codebase-review A10) — and
+  // is cleared on unmount so no setSearch fires on a dead component.
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
   const onQuery = (value: string) => {
     setQuery(value);
-    if (timer) clearTimeout(timer);
-    setTimer(setTimeout(() => setSearch(value), 300));
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setSearch(value), 300);
   };
 
   const allTags = useMemo(() => {

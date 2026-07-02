@@ -21,6 +21,13 @@ function getPool(): Pool {
 
 export type Db = NodePgDatabase<typeof schema>;
 
+/**
+ * The write surface shared by the root client and a `db().transaction` callback —
+ * helpers that take this (defaulting to `db()`) can run standalone or inside a
+ * caller's transaction (e.g. the chat Clear's atomic wipe).
+ */
+export type DbWriter = Pick<Db, "insert" | "update" | "delete">;
+
 let cached: Db | undefined;
 
 export function db(): Db {

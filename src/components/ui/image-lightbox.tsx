@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { imageUrl } from "@/lib/client/api";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
+import { useFocusTrap } from "./use-focus-trap";
 
 export interface ImageLightboxProps {
   /** Image to enlarge, or null to render nothing. */
@@ -23,22 +24,15 @@ export interface ImageLightboxProps {
 
 /**
  * Full-screen image viewer: darkened backdrop, image scaled to fit the
- * viewport. Backdrop click and Escape close (same idiom as Dialog). For admin
- * users a `prompt` renders in a side panel beside the image (dev troubleshooting).
+ * viewport. Escape/backdrop close and Tab stays inside via the shared
+ * `useFocusTrap` (same idiom as Dialog — the hand-rolled Escape handler let Tab
+ * escape to the page behind the overlay, codebase-review A10). For admin users
+ * a `prompt` renders in a side panel beside the image (dev troubleshooting).
  */
 export function ImageLightbox({ imageId, alt, onClose, caption, prompt }: ImageLightboxProps) {
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useIsAdmin();
-
-  useEffect(() => {
-    if (!imageId) return;
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [imageId, onClose]);
+  useFocusTrap(Boolean(imageId), onClose, panelRef);
 
   if (!imageId) return null;
 
@@ -47,16 +41,17 @@ export function ImageLightbox({ imageId, alt, onClose, caption, prompt }: ImageL
 
   return (
     <div
+      ref={panelRef}
       role="dialog"
       aria-modal="true"
       aria-label={alt}
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center gap-4 bg-ink-950/85 p-6 backdrop-blur-[2px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <button
-        ref={closeRef}
         type="button"
         onClick={onClose}
         aria-label="Close image"

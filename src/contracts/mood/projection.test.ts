@@ -13,7 +13,15 @@ const base: EmotionInputs = {
   intimateContext: false,
 };
 
-const cond = (id: string): ActiveCondition => ({ id, label: id, startedAtMinutes: 0, attributeEffects: [] });
+// Realistic shape: conditions get a random id app-wide (the merge assigns `newId()`);
+// the semantic word lives only in `label`. Matching must key on the label, never the id.
+let condSeq = 0;
+const cond = (label: string): ActiveCondition => ({
+  id: `c_${++condSeq}k9x2m`,
+  label,
+  startedAtMinutes: 0,
+  attributeEffects: [],
+});
 const reaction = (valence: "like" | "dislike", magnitude: number): EvaluatedReaction => ({
   valence,
   magnitude,
@@ -84,6 +92,11 @@ describe("deriveEmotionLabel — condition tints", () => {
 
   it("tipsy + not-low mood ⇒ playful (loosened)", () => {
     expect(deriveEmotionLabel({ ...base, mood: 0.55, conditions: [cond("tipsy")] }).emotion).toBe("playful");
+  });
+
+  it("matches on the normalized label, never the random id", () => {
+    // Regression: production conditions carry `newId()`-style ids — tints must still fire.
+    expect(deriveEmotionLabel({ ...base, conditions: [cond(" Flustered ")] }).emotion).toBe("flustered");
   });
 });
 

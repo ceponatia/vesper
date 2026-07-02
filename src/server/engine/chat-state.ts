@@ -48,7 +48,7 @@ import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode } from "../ai";
-import { characterChatMessages, characterChatState, db } from "../db";
+import { characterChatMessages, characterChatState, db, type DbWriter } from "../db";
 import { withGenerateTimeout } from "./chat-generate";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
 import {
@@ -539,13 +539,25 @@ export async function finalizeChatState(input: {
   ]);
 
   // Write the extracted long-term memory (episode + facts) under the chat scope. Off the
-  // reply path; degrades internally (a failed leg / embedding just adds a diagnostic).
-  await writeChatMemory({
-    ownerId: input.ownerId,
-    characterId: input.characterId,
-    archivist: archivist.value,
-    sink: input.sink,
-  });
+  // reply path; degrades internally (a failed leg / embedding just adds a diagnostic) —
+  // and additionally fenced here, because a hard infra throw in the memory write must
+  // not cost the pulse's state changes: `saveChatState` below always runs.
+  try {
+    await writeChatMemory({
+      ownerId: input.ownerId,
+      characterId: input.characterId,
+      archivist: archivist.value,
+      sink: input.sink,
+    });
+  } catch (error) {
+    input.sink?.push(
+      diag(
+        "warn",
+        "chat_state.memory.write_failed",
+        `long-term memory write failed; state still persisted: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  }
 
   // Record the meter bands the narrator saw THIS turn (from the drifted, pre-pulse meters)
   // as next turn's `prevBands`, so an unchanged state never re-fires a "just shifted" beat
@@ -581,18 +593,21 @@ export async function finalizeChatState(input: {
 }
 
 /**
- * Upsert the state row, guarded on the prompting user-message still existing — the
- * same `INSERT … WHERE EXISTS` shape as `persistAssistantReply`, so a clear (Reset
- * All) landing mid-stream can't resurrect a deleted state row. jsonb values are
- * cast from text params; `last_interaction_at` binds a Date.
+ * Upsert the state row — the ONE place the full column list lives, so the guarded
+ * (mid-exchange) and unguarded (author-edit) paths can never drift apart
+ * (codebase-review A2: the guarded insert once omitted the outfit/cards columns,
+ * so a fresh chat's first exchange silently discarded the seeded social cards).
+ * With `guardMessageId`, the write only lands while that prompting user message
+ * still exists — the same `INSERT … WHERE EXISTS` shape as `persistAssistantReply`,
+ * so a clear (Reset All) landing mid-stream can't resurrect a deleted state row.
+ * jsonb values are cast from text params; `last_interaction_at` binds a Date.
  */
-export async function saveChatState(args: {
-  ownerId: string;
-  characterId: string;
-  promptMessageId: string;
-  state: ChatState;
-}): Promise<void> {
-  const { ownerId, characterId, promptMessageId, state } = args;
+async function upsertChatState(
+  ownerId: string,
+  characterId: string,
+  state: ChatState,
+  guardMessageId?: string,
+): Promise<void> {
   const meters = JSON.stringify(state.meters);
   const conditions = JSON.stringify(state.conditions);
   const trace = JSON.stringify(state.lastPulseTrace);
@@ -600,12 +615,16 @@ export async function saveChatState(args: {
   const memoryQueries = JSON.stringify(state.memoryQueries);
   const attributeOverlays = JSON.stringify(state.attributeOverlays);
   const memoryTrace = JSON.stringify(state.lastMemoryTrace);
+  const activeSocialCards = JSON.stringify(state.activeSocialCards);
+  const guard = guardMessageId
+    ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
+    : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (owner_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, attribute_overlays, last_memory_trace, premise, clock_minutes, last_interaction_at, updated_at)
+      (owner_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, last_interaction_at, updated_at)
     select ${ownerId}, ${characterId}, ${meters}::jsonb, ${state.affinity}, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.clockMinutes}, ${state.lastInteractionAt}, now()
-    where exists (select 1 from ${characterChatMessages} where id = ${promptMessageId})
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${state.lastInteractionAt}, now()
+    where ${guard}
     on conflict (owner_id, character_id) do update set
       meters = excluded.meters,
       affinity = excluded.affinity,
@@ -617,6 +636,9 @@ export async function saveChatState(args: {
       attribute_overlays = excluded.attribute_overlays,
       last_memory_trace = excluded.last_memory_trace,
       premise = excluded.premise,
+      outfit = excluded.outfit,
+      outfit_exposed = excluded.outfit_exposed,
+      active_social_cards = excluded.active_social_cards,
       clock_minutes = excluded.clock_minutes,
       last_interaction_at = excluded.last_interaction_at,
       updated_at = now()
@@ -624,35 +646,25 @@ export async function saveChatState(args: {
 }
 
 /**
+ * Persist the state at the end of an exchange, guarded on the prompting user
+ * message still existing (see `upsertChatState`).
+ */
+export async function saveChatState(args: {
+  ownerId: string;
+  characterId: string;
+  promptMessageId: string;
+  state: ChatState;
+}): Promise<void> {
+  await upsertChatState(args.ownerId, args.characterId, args.state, args.promptMessageId);
+}
+
+/**
  * Persist a full state row unguarded — for explicit author edits (the premise Save,
  * the state-tools modal, action chips) where no exchange is in flight, so the
- * stream-race guard (`saveChatState`) is unnecessary. Upserts every field.
+ * stream-race guard is unnecessary. Upserts every field.
  */
 export async function persistChatState(ownerId: string, characterId: string, state: ChatState): Promise<void> {
-  const row = {
-    meters: state.meters,
-    affinity: state.affinity,
-    conditions: state.conditions,
-    mindNote: state.mindNote,
-    lastPulseTrace: state.lastPulseTrace,
-    lastMemoryTrace: state.lastMemoryTrace,
-    premise: state.premise,
-    outfit: state.outfit,
-    outfitExposed: state.outfitExposed,
-    activeSocialCards: state.activeSocialCards,
-    surfacedCues: state.surfacedCues,
-    memoryQueries: state.memoryQueries,
-    attributeOverlays: state.attributeOverlays,
-    clockMinutes: state.clockMinutes,
-    lastInteractionAt: state.lastInteractionAt,
-  };
-  await db()
-    .insert(characterChatState)
-    .values({ ownerId, characterId, ...row })
-    .onConflictDoUpdate({
-      target: [characterChatState.ownerId, characterChatState.characterId],
-      set: { ...row, updatedAt: new Date() },
-    });
+  await upsertChatState(ownerId, characterId, state);
 }
 
 /** A partial edit to a chat state from the premise Save or the state-tools modal (slice 4). */
@@ -756,8 +768,8 @@ function clampMeters(meters: Record<string, number>): Record<string, number> {
 }
 
 /** Delete the state row (Reset All / Reset State). Lazily re-seeds from authored defaults on next use. */
-export async function deleteChatState(ownerId: string, characterId: string): Promise<void> {
-  await db()
+export async function deleteChatState(ownerId: string, characterId: string, dbc: DbWriter = db()): Promise<void> {
+  await dbc
     .delete(characterChatState)
     .where(and(eq(characterChatState.ownerId, ownerId), eq(characterChatState.characterId, characterId)));
 }

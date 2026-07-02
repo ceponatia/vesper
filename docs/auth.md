@@ -151,14 +151,19 @@ The signed-session cookie replaced the raw-id `vesper_user` cookie, so dev/QA
 needs a real session. `POST /api/dev/impersonate { userId }` (dev-only — **404 in
 production**) signs in with the shared dev credential and returns the Set-Cookie.
 The seed (`pnpm db:seed`) provisions that credential (`DEV_PASSWORD`, default
-`vesper-dev-password`) on the Player and the `uxtest` admin. `GET /api/dev/me`
-(dev-only) returns the resolved user. See [CLAUDE.md](../CLAUDE.md) for the QA flow.
+`vesper-dev-password`) on the Player and the `uxtest` admin — **except in
+production**, where `ensureDevCredential` refuses unless `DEV_PASSWORD` is
+explicitly set (the default is committed to the repo and the credential is
+reachable through the public sign-in surface). `GET /api/dev/me` (dev-only)
+returns the resolved user. See [CLAUDE.md](../CLAUDE.md) for the QA flow.
 
 ## Env
 
-`BETTER_AUTH_SECRET` (required — signs sessions), `BETTER_AUTH_URL` (app origin,
-OAuth callbacks + CSRF), the optional `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}`
-pairs, and `DEV_PASSWORD`. Full table in [getting-started.md](getting-started.md).
+`BETTER_AUTH_SECRET` (required — signs sessions; **missing in production is a
+boot-time error**, since Better Auth would otherwise fall back to a forgeable
+built-in dev secret), `BETTER_AUTH_URL` (app origin, OAuth callbacks + CSRF),
+the optional `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` pairs, and
+`DEV_PASSWORD`. Full table in [getting-started.md](getting-started.md).
 
 ## Later (not v1)
 

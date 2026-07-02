@@ -1,5 +1,5 @@
 import type { DaylightBand } from "@/lib/clock";
-import type { ActiveCondition, SenseEffects } from "../conditions/condition";
+import { conditionKey, type ActiveCondition, type SenseEffects } from "../conditions/condition";
 import type { PerceptionMods } from "./witness";
 
 /**
@@ -69,7 +69,7 @@ export function senseModsFromConditions(conditions: readonly ActiveCondition[]):
   let sight: "reduced" | "blocked" | undefined;
   let hearing: "reduced" | "blocked" | undefined;
   for (const c of conditions) {
-    const eff: SenseEffects | undefined = c.senseEffects ?? SENSE_EFFECT_BY_LABEL[c.label.trim().toLowerCase()];
+    const eff: SenseEffects | undefined = c.senseEffects ?? SENSE_EFFECT_BY_LABEL[conditionKey(c)];
     if (!eff) continue;
     sight = stronger(sight, eff.sight);
     hearing = stronger(hearing, eff.hearing);

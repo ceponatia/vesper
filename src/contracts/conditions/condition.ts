@@ -45,6 +45,21 @@ export const activeConditionSchema = z.object({
 
 export type ActiveCondition = z.infer<typeof activeConditionSchema>;
 
+/** Normalized (lowercased, trimmed) form of a condition label — the canonical match key. */
+export function normalizeConditionLabel(label: string): string {
+  return label.trim().toLowerCase();
+}
+
+/**
+ * Canonical matching key for an active condition: the **normalized label**.
+ * Conditions are created app-wide with random `id`s (`newId()`) and the semantic
+ * word in `label`, so every table keyed by condition vocabulary (catalog effects,
+ * darkness sense effects, mood shifts/tints) must match on this — never on `c.id`.
+ */
+export function conditionKey(condition: Pick<ActiveCondition, "label">): string {
+  return normalizeConditionLabel(condition.label);
+}
+
 export function isConditionExpired(condition: ActiveCondition, clockMinutes: number): boolean {
   if (condition.durationMinutes === undefined) return false;
   return clockMinutes >= condition.startedAtMinutes + condition.durationMinutes;

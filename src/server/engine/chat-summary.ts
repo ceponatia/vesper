@@ -14,6 +14,7 @@ import { characterChatMessages, characterChatSummaries, characters, db, jobs } f
 import type { ChatTurn } from "./character-chat";
 import { CHARACTER_CHAT_HISTORY_TURNS, CHARACTER_CHAT_SUMMARIZE_AT, CHARACTER_CHAT_VERBATIM_KEEP } from "./constants";
 import { enqueueJob, registerJobHandler } from "./jobs";
+import { withKeyedLock } from "./keyed-lock";
 import { buildChatSummaryFoldPrompt, CHAT_SUMMARY_SYSTEM } from "./prompts/chat-summary";
 
 /**
@@ -298,5 +299,11 @@ function errorText(err: unknown): string {
 registerJobHandler("chat_summary", async (job) => {
   const payload = parseOrNull(chatSummaryJobPayloadSchema, job.payload);
   if (!payload) throw new Error("chat_summary job missing payload");
-  await processChatSummary(payload, job.id);
+  // Serialize folds per chat (codebase-review A8): the enqueue dedupe is
+  // check-then-insert, so two near-simultaneous exchanges can both enqueue.
+  // Under the lock the second fold re-reads the advanced watermark and no-ops
+  // below the trigger instead of paying a duplicate LLM call.
+  await withKeyedLock(`chat_summary:${payload.ownerId}:${payload.characterId}`, () =>
+    processChatSummary(payload, job.id),
+  );
 });

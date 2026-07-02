@@ -1,5 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { narrativeProviderOptions, providerRouting } from "./provider";
+import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
+import { DEFAULT_NARRATIVE_MODEL_ID } from "@/lib/narrative-models";
+import { agentModelId, narrativeModelId, narrativeProviderOptions, providerRouting } from "./provider";
+
+describe("strict model-id resolvers (codebase-review B3)", () => {
+  it("passes a curated id through", () => {
+    expect(narrativeModelId("z-ai/glm-5.2")).toBe("z-ai/glm-5.2");
+    expect(agentModelId("z-ai/glm-5.2")).toBe("z-ai/glm-5.2");
+  });
+
+  it("coerces an uncurated slug to the default — never bills an arbitrary model", () => {
+    expect(narrativeModelId("openai/o5-preview")).toBe(DEFAULT_NARRATIVE_MODEL_ID);
+    expect(agentModelId("openai/o5-preview")).toBe(DEFAULT_AGENT_MODEL_ID);
+  });
+
+  it("empty / null / whitespace fall back to the default", () => {
+    expect(narrativeModelId()).toBe(DEFAULT_NARRATIVE_MODEL_ID);
+    expect(narrativeModelId(null)).toBe(DEFAULT_NARRATIVE_MODEL_ID);
+    expect(narrativeModelId("  ")).toBe(DEFAULT_NARRATIVE_MODEL_ID);
+    expect(agentModelId("")).toBe(DEFAULT_AGENT_MODEL_ID);
+  });
+});
 
 describe("providerRouting", () => {
   it("returns undefined when no routing knob applies", () => {

@@ -4,6 +4,8 @@ export const meterThresholdSchema = z.object({
   below: z.number().optional(),
   above: z.number().optional(),
   promptHint: z.string().min(1),
+  /** Short chip label for UI strips ("tipsy", "on edge") — part of the band vocabulary, so a registry edit moves the UI with it. */
+  pipLabel: z.string().optional(),
 });
 
 export const meterDefinitionSchema = z.object({
@@ -39,8 +41,8 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     initial: 0.9,
     perHour: -0.04,
     thresholds: [
-      { below: 0.55, promptHint: "Noticeably lived-in at close range: faint sweat and warm skin." },
-      { below: 0.3, promptHint: "Clearly unwashed: damp fabric, sour sweat, hair gone lank." },
+      { below: 0.55, promptHint: "Noticeably lived-in at close range: faint sweat and warm skin.", pipLabel: "lived-in" },
+      { below: 0.3, promptHint: "Clearly unwashed: damp fabric, sour sweat, hair gone lank.", pipLabel: "unwashed" },
     ],
   },
   {
@@ -50,8 +52,8 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     initial: 0.9,
     perHour: -0.05,
     thresholds: [
-      { below: 0.45, promptHint: "Tired: slower replies, longer blinks, small stretches and yawns." },
-      { below: 0.2, promptHint: "Exhausted: drifting attention, heavy eyes, leaning on furniture." },
+      { below: 0.45, promptHint: "Tired: slower replies, longer blinks, small stretches and yawns.", pipLabel: "tired" },
+      { below: 0.2, promptHint: "Exhausted: drifting attention, heavy eyes, leaning on furniture.", pipLabel: "exhausted" },
     ],
   },
   {
@@ -61,8 +63,8 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     initial: 0.15,
     perHour: -0.03,
     thresholds: [
-      { above: 0.6, promptHint: "On edge: clipped sentences, restless hands, quick glances." },
-      { above: 0.85, promptHint: "Near a breaking point: shaky voice, gaze that won't settle." },
+      { above: 0.6, promptHint: "On edge: clipped sentences, restless hands, quick glances.", pipLabel: "on edge" },
+      { above: 0.85, promptHint: "Near a breaking point: shaky voice, gaze that won't settle.", pipLabel: "near breaking" },
     ],
   },
   {
@@ -72,7 +74,7 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     initial: 0,
     perHour: -0.1,
     thresholds: [
-      { above: 0.55, promptHint: "Visibly affected: flushed skin, shallow breath, lingering eye contact." },
+      { above: 0.55, promptHint: "Visibly affected: flushed skin, shallow breath, lingering eye contact.", pipLabel: "flushed" },
     ],
   },
   {
@@ -82,8 +84,8 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     initial: 0,
     perHour: -0.12,
     thresholds: [
-      { above: 0.35, promptHint: "Tipsy: looser posture, warmer laughter, slightly imprecise gestures." },
-      { above: 0.7, promptHint: "Drunk: slurred edges on words, unsteady balance, poor judgement." },
+      { above: 0.35, promptHint: "Tipsy: looser posture, warmer laughter, slightly imprecise gestures.", pipLabel: "tipsy" },
+      { above: 0.7, promptHint: "Drunk: slurred edges on words, unsteady balance, poor judgement.", pipLabel: "drunk" },
     ],
   },
   {
@@ -148,6 +150,14 @@ export function applyMeterDrift(
 export const NEUTRAL_MOOD_METER = 0.5;
 
 /**
+ * Mood valence band cuts. Mood deliberately has NO registry thresholds (it surfaces
+ * via the derived descriptor, not raw hints), so these are its shared band bounds —
+ * used by `deriveMoodDescriptor` and the chat strip's mood pip alike.
+ */
+export const MOOD_BRIGHT_MIN = 0.65;
+export const MOOD_LOW_MAX = 0.35;
+
+/**
  * A derived mood phrase (personality-and-state.spec.md §4): blends valence (`mood`)
  * with activation (`energy`) and tension (`stress`) — mood is a *read* over state,
  * not a second source of truth. "" when there's no `mood` meter or nothing notable
@@ -158,12 +168,12 @@ export function deriveMoodDescriptor(meters: Record<string, number>): string {
   if (mood === undefined) return "";
   const stress = meters.stress ?? 0;
   const energy = meters.energy ?? 1;
-  if (mood <= 0.35) {
+  if (mood <= MOOD_LOW_MAX) {
     if (stress >= 0.6) return "low and on edge";
     if (energy <= 0.4) return "low and listless";
     return "subdued and withdrawn";
   }
-  if (mood >= 0.65) {
+  if (mood >= MOOD_BRIGHT_MIN) {
     if (energy >= 0.6) return "bright and playful";
     return "warm and content";
   }
@@ -203,6 +213,8 @@ export interface MeterCue {
   /** Stable change-detection key for the crossed band, e.g. `"intoxication:0.7"`. */
   band: string;
   hint: string;
+  /** Short chip label for the crossed band, when the threshold defines one. */
+  pipLabel?: string;
   /** 0–1: depth past the crossed bound (0 = just over the line, 1 = at the pole). */
   intensity: number;
 }
@@ -217,7 +229,7 @@ export function meterStateCue(
   // The most-severe crossed band is the threshold whose bound is *closest* to the current
   // value (smallest gap) — the one most recently crossed going deeper. True for both
   // below-meters (lower bound = worse) and above-meters (higher bound = worse).
-  let chosen: { bound: number; dir: "below" | "above"; hint: string; gap: number } | null = null;
+  let chosen: { bound: number; dir: "below" | "above"; hint: string; pipLabel?: string; gap: number } | null = null;
   for (const t of def.thresholds) {
     let bound: number | undefined;
     let dir: "below" | "above" | undefined;
@@ -230,14 +242,20 @@ export function meterStateCue(
     }
     if (bound === undefined || dir === undefined) continue;
     const gap = Math.abs(value - bound);
-    if (!chosen || gap < chosen.gap) chosen = { bound, dir, hint: t.promptHint, gap };
+    if (!chosen || gap < chosen.gap) chosen = { bound, dir, hint: t.promptHint, pipLabel: t.pipLabel, gap };
   }
   if (!chosen) return null;
   const intensity =
     chosen.dir === "below"
       ? (chosen.bound - value) / Math.max(chosen.bound, 1e-6)
       : (value - chosen.bound) / Math.max(1 - chosen.bound, 1e-6);
-  return { meterId, band: `${meterId}:${chosen.bound}`, hint: chosen.hint, intensity: Math.min(1, Math.max(0, intensity)) };
+  return {
+    meterId,
+    band: `${meterId}:${chosen.bound}`,
+    hint: chosen.hint,
+    pipLabel: chosen.pipLabel,
+    intensity: Math.min(1, Math.max(0, intensity)),
+  };
 }
 
 /** The anti-repetition split (character-chat-state-narration.spec.md §5). */

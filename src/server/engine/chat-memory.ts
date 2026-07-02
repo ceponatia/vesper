@@ -7,6 +7,7 @@ import {
   type FactDraft,
 } from "@/contracts";
 import { agentModelId, generateChecked, isDemoMode } from "../ai";
+import type { DbWriter } from "../db";
 import {
   addFacts,
   appendEpisode,
@@ -168,10 +169,10 @@ export async function writeChatMemory(input: {
  * wipe. The `character_id` FK cascade already drops these when the character is deleted; this
  * is the in-place clear that keeps the character but resets the conversation.
  */
-export async function deleteChatMemory(ownerId: string, characterId: string): Promise<void> {
+export async function deleteChatMemory(ownerId: string, characterId: string, dbc?: DbWriter): Promise<void> {
   const scope = chatScope(ownerId, characterId);
-  await deleteFactsForScope(scope);
-  await deleteEpisodesForScope(scope);
+  await deleteFactsForScope(scope, dbc);
+  await deleteEpisodesForScope(scope, dbc);
 }
 
 function errText(err: unknown): string {

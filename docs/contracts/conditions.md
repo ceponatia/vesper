@@ -27,8 +27,8 @@ type ActiveCondition = {
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Stable identifier. |
-| `label` | Human-readable name. |
+| `id` | Stable identifier — a random `newId()`, **never semantic**. |
+| `label` | Human-readable name, and the **canonical match key**: every vocabulary table (catalog effects, darkness sense effects, mood shifts/tints) matches on the normalized label via `conditionKey`, never on `id`. |
 | `severity` | `minor` / `moderate` / `severe` (optional). |
 | `startedAtMinutes` | When it began, on the game clock. |
 | `durationMinutes` | How long it lasts; the engine expires it. |

@@ -1,4 +1,4 @@
-import type { ActiveCondition } from "../conditions/condition";
+import { conditionKey, type ActiveCondition } from "../conditions/condition";
 import type { PreferenceValence } from "../personality/preference";
 import { effectiveTraitValue, type TraitValue } from "../personality/traits/value";
 import type { RelationshipStage } from "../relationships/stages";
@@ -116,7 +116,7 @@ export function touchMoodDeltas(
 // Pure + tested here; the merge wires them by adding the shift onto the mood drift target.
 // ---------------------------------------------------------------------------
 
-/** Known condition ids → resting-mood shift. Unknown ids contribute 0. */
+/** Known condition labels (normalized — see `conditionKey`) → resting-mood shift. Unknown labels contribute 0. */
 export const CONDITION_MOOD_BASELINE_SHIFTS: Readonly<Record<string, number>> = {
   tipsy: 0.05,
   drunk: 0.03,
@@ -129,9 +129,9 @@ export const CONDITION_MOOD_BASELINE_SHIFTS: Readonly<Record<string, number>> = 
 };
 export const CONDITION_BASELINE_SHIFT_CAP = 0.2;
 
-/** Net resting-mood shift from the active conditions, clamped. */
+/** Net resting-mood shift from the active conditions (matched by label), clamped. */
 export function conditionMoodBaselineShift(conditions: readonly ActiveCondition[]): number {
-  const sum = conditions.reduce((acc, c) => acc + (CONDITION_MOOD_BASELINE_SHIFTS[c.id] ?? 0), 0);
+  const sum = conditions.reduce((acc, c) => acc + (CONDITION_MOOD_BASELINE_SHIFTS[conditionKey(c)] ?? 0), 0);
   return clamp(sum, -CONDITION_BASELINE_SHIFT_CAP, CONDITION_BASELINE_SHIFT_CAP);
 }
 
