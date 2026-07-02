@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { itemsApi, locationsApi } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -51,11 +52,7 @@ export function EntityImageStudio({ entityKind, entityId, name, imageId, onImage
   });
 
   // Poll the row while a generation is in flight.
-  useEffect(() => {
-    if (!pending) return;
-    const timer = setInterval(() => reload({ silent: true }), POLL_MS);
-    return () => clearInterval(timer);
-  }, [pending, reload]);
+  usePollWhile(pending, () => reload({ silent: true }), POLL_MS);
 
   // Detect completion: a new row (id changed) reached ready/failed.
   useEffect(() => {

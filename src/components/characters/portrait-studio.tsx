@@ -12,6 +12,7 @@ import {
   type PortraitVariantKind,
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarUploadDialog } from "./avatar-upload-dialog";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -72,29 +73,21 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
 
   const hasPending = (portraits.data ?? []).some((img) => img.status === "pending") || generatingAvatar;
 
-  // Latest-ref pattern, written in an effect (never during render): the poll
-  // below always calls the current callbacks without re-subscribing on every
-  // parent render (onAvatarChanged is typically an inline arrow).
-  const reloadRef = useRef(portraits.reload);
-  const onAvatarChangedRef = useRef(onAvatarChanged);
   // Newest avatar-row id when a generation started — lets the effect below tell a
   // FAILED regen (a new avatar row that never became canonical) from an old one.
   const genBaselineRef = useRef<string | null>(null);
-  useEffect(() => {
-    reloadRef.current = portraits.reload;
-    onAvatarChangedRef.current = onAvatarChanged;
-  });
 
   // Poll while anything is generating; also nudge the parent so a finished
-  // avatar job shows up without a manual refresh.
-  useEffect(() => {
-    if (!hasPending) return;
-    const timer = setInterval(() => {
-      reloadRef.current({ silent: true });
-      onAvatarChangedRef.current();
-    }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [hasPending]);
+  // avatar job shows up without a manual refresh (the hook latest-refs the tick,
+  // so onAvatarChanged being an inline arrow never restarts the interval).
+  usePollWhile(
+    hasPending,
+    () => {
+      portraits.reload({ silent: true });
+      onAvatarChanged();
+    },
+    POLL_MS,
+  );
 
   // A failed regeneration never changes avatarImageId, so the success-path clear
   // (the previous-render block above) never fires. Detect the new failed avatar

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { chatsApi, type ImageRecord } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -37,16 +38,7 @@ export function SceneStrip({ chatId, name, hasChat }: { chatId: string; name: st
   // its own labeled tile takes over (and `generating` is released below).
   const showComposing = generating && !hasPendingRow;
 
-  // Latest-ref so the poll calls the current reload without re-subscribing.
-  const reloadRef = useRef(scenes.reload);
-  useEffect(() => {
-    reloadRef.current = scenes.reload;
-  });
-  useEffect(() => {
-    if (!hasPending) return;
-    const timer = setInterval(() => reloadRef.current({ silent: true }), POLL_MS);
-    return () => clearInterval(timer);
-  }, [hasPending]);
+  usePollWhile(hasPending, () => scenes.reload({ silent: true }), POLL_MS);
 
   // Release the button spinner once the queued row materialises; its own
   // pending tile then tracks progress (mirrors the portrait studio).

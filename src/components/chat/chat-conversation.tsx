@@ -21,6 +21,7 @@ import {
   type ChatTranscript,
 } from "@/lib/client/api";
 import { NARRATIVE_MODELS, resolveChatModelId } from "@/lib/narrative-models";
+import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsMobile } from "@/components/hooks/use-is-mobile";
 import { AvatarPanel } from "@/components/avatar";
@@ -35,7 +36,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { ModelSelect } from "@/components/ui/model-select";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -117,11 +118,19 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const menuWrapRef = useRef<HTMLDivElement>(null);
 
   // Seed the transcript + chat header from the bootstrap exactly once per chatId
-  // (the "adjust state while rendering" pattern) so a streamed/optimistic reply is
-  // never clobbered by the fetch settling. `!loading` keeps a stale previous-chat
-  // payload from seeding during a chatId switch.
+  // (decideDraftSeed via the "adjust state while rendering" pattern) so a
+  // streamed/optimistic reply is never clobbered by the fetch settling. "seed"
+  // only fires once the fetched payload is *this* chat's (loadedId === chatId), so
+  // a stale previous-chat payload can never seed during a chatId switch; "clear"
+  // drops the previous chat's transcript/header immediately on that switch instead
+  // of letting them linger until the new fetch lands.
   const [seededFor, setSeededFor] = useState<string | null>(null);
-  if (seededFor !== chatId && !bootstrap.loading && bootstrap.data) {
+  const seedAction = decideDraftSeed({
+    entityId: chatId,
+    seededId: seededFor,
+    loadedId: bootstrap.data?.chat.id ?? null,
+  });
+  if (seedAction === "seed" && bootstrap.data) {
     setSeededFor(chatId);
     setLines(bootstrap.data.messages.map(toLine));
     setTitle(bootstrap.data.chat.title);
@@ -130,6 +139,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // Resetting chatState (not stageRef — refs can't be written in render) re-runs
     // the load effect below, which re-seeds stageRef from the fresh snapshot before
     // any send can compare against it.
+    setChatState(null);
+  } else if (seedAction === "clear") {
+    setSeededFor(null);
+    setLines([]);
+    setTitle("");
+    setArchived(false);
+    setChatModel(resolveChatModelId(null));
     setChatState(null);
   }
 
@@ -764,13 +780,13 @@ function ConversationMenu({
     <div className="flex flex-col p-2">
       <label className="flex flex-col gap-1 px-2 pt-1 pb-2">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Narrator model</span>
-        <Select value={chatModel} onChange={(e) => onChatModelChange(e.target.value)} className="h-8 text-xs">
-          {NARRATIVE_MODELS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
+        <ModelSelect
+          ariaLabel="Narrator model"
+          models={NARRATIVE_MODELS}
+          value={chatModel}
+          onChange={onChatModelChange}
+          className="h-8 text-xs"
+        />
       </label>
       <div className="my-1 border-t border-ink-600" />
       <MenuItem onClick={onScenario} disabled={!hasState}>

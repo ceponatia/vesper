@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { characters, db, images } from "@/server/db";
+import { db, images } from "@/server/db";
 import { generateVariant } from "@/server/images";
 import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
+import { findOwnedCharacter } from "../owned";
 
 type Params = { id: string };
 
@@ -15,12 +16,7 @@ const portraitBodySchema = z.object({
 /** All images linked to the character (avatar + variants), newest first. */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
-  const [row] = await db()
-    .select({ id: characters.id })
-    .from(characters)
-    .where(and(eq(characters.id, id), eq(characters.ownerId, user.id)))
-    .limit(1);
-  if (!row) return jsonError("not_found", "character not found", 404);
+  if (!(await findOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
 
   // Avatar + variants only — character-chat scenes (kind="scene") are filed
   // against the character too, but belong to the Chat tab, not the studio.
@@ -48,12 +44,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   const body = await readBody(req, portraitBodySchema);
   if (!body.ok) return body.response;
-  const [row] = await db()
-    .select({ id: characters.id, avatarImageId: characters.avatarImageId })
-    .from(characters)
-    .where(and(eq(characters.id, id), eq(characters.ownerId, user.id)))
-    .limit(1);
-  if (!row) return jsonError("not_found", "character not found", 404);
+  if (!(await findOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
   if (!rateLimit(`portrait_gen:${user.id}`, GENERATION_RATE_LIMIT)) {
     return jsonError("rate_limited", "too many portrait generations; try again in a minute", 429);
   }

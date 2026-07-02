@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { z } from "zod";
 import { apiPost, sessionsApi } from "@/lib/client/api";
 import type { UseSession } from "@/lib/client/use-session";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -42,14 +43,7 @@ export function SceneTab({ session }: { session: UseSession }) {
   const generating = scene?.gen.status === "generating";
 
   // While an image is rendering, quietly re-poll status so it appears.
-  // `refresh` is stable per session id (use-session.ts), so this resubscribes
-  // only when polling starts/stops or the session changes.
-  const { refresh } = session;
-  useEffect(() => {
-    if (!generating) return;
-    const timer = setInterval(() => void refresh(), GENERATING_POLL_MS);
-    return () => clearInterval(timer);
-  }, [generating, refresh]);
+  usePollWhile(generating, () => void session.refresh(), GENERATING_POLL_MS);
 
   const act = async (body: Record<string, unknown>, failure: string) => {
     setWorking(true);

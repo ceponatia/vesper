@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
+import { ModelSelect } from "@/components/ui/model-select";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,13 +69,14 @@ export function CharacterChat({
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Chat defaults</h3>
         <Field label="Narrator model" hint="Saves on pick — every conversation with this character uses it.">
           {(id) => (
-            <Select id={id} value={chatModel} onChange={(e) => onChatModelChange(e.target.value)} className="max-w-xs">
-              {NARRATIVE_MODELS.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
+            <ModelSelect
+              id={id}
+              ariaLabel="Narrator model"
+              models={NARRATIVE_MODELS}
+              value={chatModel}
+              onChange={onChatModelChange}
+              className="max-w-xs"
+            />
           )}
         </Field>
         <Field
