@@ -75,10 +75,18 @@ const signupDisabled = process.env.ALLOW_SIGNUP !== "true";
  * Better Auth otherwise falls back to its built-in dev secret with only a console
  * warning, which would make every session cookie forgeable. Dev keeps the warning
  * (a fixed local secret is a non-issue and zero-config matters there).
+ *
+ * The `next build` phase is exempt: page-data collection evaluates this module
+ * with NODE_ENV=production inside `docker build`, where Fly secrets don't exist
+ * (they are runtime-only) — enforcing there breaks every production image build.
+ * The guard still fires the moment the BUILT server actually starts (`next
+ * start` leaves NEXT_PHASE unset), so no production process can ever run on the
+ * forgeable fallback secret.
  */
 function requiredSecret(): string | undefined {
   const secret = process.env.BETTER_AUTH_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
+  const building = process.env.NEXT_PHASE === "phase-production-build";
+  if (!secret && !building && process.env.NODE_ENV === "production") {
     throw new Error("BETTER_AUTH_SECRET is required in production — set it (e.g. `fly secrets set BETTER_AUTH_SECRET=…`)");
   }
   return secret;
