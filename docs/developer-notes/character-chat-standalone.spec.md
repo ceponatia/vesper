@@ -1,11 +1,12 @@
 # Character chat — the standalone experience — spec
 
 Status: **draft** — mirrors [character-chat-standalone.plan.md](character-chat-standalone.plan.md)
-(read it first for the product framing). First PM review (2026-07-02) is folded in: the
-rulings live in **## Decisions** below; the plan's **## Open questions** gate the sections
-marked with a Q reference. Nothing here is built.
+(read it first for the product framing). Two PM review rounds (2026-07-02) are folded in:
+the rulings live in **## Decisions** below. Only the plan's two narrowed open questions
+remain (OQ1 time-skip v1 semantics → §8.1; OQ2 "remember this" → §6.4) — both sections
+carry the proposed default. Nothing here is built.
 
-## Decisions (rulings to date — 2026-07-02 PM review)
+## Decisions (rulings to date — 2026-07-02 PM reviews)
 
 - **D1 — depth of rebuild: Option B.** Re-key the lane around a first-class conversation
   record (§1). Chat is **its own feature with its own style choices** — it shares elements
@@ -29,6 +30,32 @@ marked with a Q reference. Nothing here is built.
   location/navigation usability; chat bypasses locations by design and serves as the
   proving ground whose systems feed back into sessions later. The roadmap top-of-Next
   placement stands.
+- **D7 — memory across conversations: the player's choice at creation.** A new
+  conversation is either a truly _vanilla_ fresh start (clean memory island) or continues
+  the shared history. PM note: the value of a shared-history _new_ chat over continuing
+  the old one wasn't obvious — recorded rationale: it's "same relationship, new scene"
+  (fresh premise/outfit/setting and a tidy transcript without losing what the character
+  knows of you), pairing with archiving and time skips. §1.3.
+- **D8 — the wall-clock drift is removed outright.** Player-chosen time skips are the
+  only between-scene time mechanism (no hidden second clock). What a skip does to state
+  is v1-scoped in §8.1 (plan OQ1): narrative flavor + condition expiry, meters untouched,
+  the full time-effects system scaffolded but not wired.
+- **D9 — group chat = the lightweight library pickup.** The future multi-character chat
+  is "grab 2+ characters from the library into a shared chat" — minutes, not worlds'
+  heavy setup. Known design problem recorded for that future plan: characters carry
+  world-flavored lore (bio/background), and cross-world lore must not collide in a shared
+  room — candidate shapes are a per-character "chat lore" field vs chat-level lore. §1.1
+  reserves the schema headroom only.
+- **D10 — measurement steers, it does not gate.** The §5 eval baseline runs in parallel
+  with the feature slices and feeds tuning as it learns.
+- **D11 — relationship hard gates confirmed.** Stage floors gate intimate escalation
+  (in-character deflection, premise-overridable); in dev the gate is bypassed by directly
+  editing the relationship state in the inspector — no separate override switch needed.
+  §7.1.
+- **D12 — the dashboard leads with conversations** ("Continue talking to…") once the
+  Chats page exists — "for now", revisitable. §2.2.
+- **D13 — voice stays parked.** No current plans; noted as potentially useful once the
+  rest is nailed down. No spec section.
 
 ## 0. Architecture today (orientation, not design)
 
@@ -59,10 +86,10 @@ the retired three-mode reset.
 
 ## 1. The conversation model (plan area 2 · D1) — the load-bearing migration
 
-Q1 (memory grouping) gates §1.3; the rest is ruled by D1. Designed with **multi-character
-headroom** from day one (plan Q3 shapes the details): a conversation _may_ later hold more
-than one character, so participants are a list and per-character rows key on
-`(chat, character)` — v1 enforces exactly one participant in the app layer.
+Fully ruled (D1 shape, D7 memory choice, D9 headroom). Designed with **multi-character
+headroom** from day one: a conversation _may_ later hold more than one character, so
+participants are a list and per-character rows key on `(chat, character)` — v1 enforces
+exactly one participant in the app layer.
 
 ### 1.1 New tables
 
@@ -88,7 +115,13 @@ chat_participants
 
 v1 rule (app-enforced, no DB CHECK yet): exactly one participant per chat. Turn-taking,
 prompt shape, and image composition for >1 participant are **out of scope** — a future
-group-chat spec; this schema just avoids re-keying when it comes.
+group-chat spec; this schema just avoids re-keying when it comes. That future's ruled
+shape (D9): a lightweight library pickup (2+ characters into a shared chat, shared
+premise, per-participant memory groups). One design problem is recorded for it now, since
+it may back-propagate a character field: **lore scoping** — character bios/backgrounds
+are world-flavored, and a shared room must not mix conflicting world lore; candidates are
+a per-character "chat lore" variant of the profile vs chat-level lore that overrides the
+authored background. Nothing built here.
 
 ### 1.2 Re-keying the chat tables
 
@@ -104,9 +137,12 @@ group-chat spec; this schema just avoids re-keying when it comes.
 - `characters.chatModel` (the narrator pick) **stays per character** — a voice-tuning
   property of the character, not of a conversation. (Flag if a per-chat override is wanted.)
 
-### 1.3 Memory groups — the Q1 mechanism
+### 1.3 Memory groups (ruled — D7)
 
-Recommended design for "continue our shared history vs fresh start":
+The mechanism behind the player's create-time choice — "continue our shared history" vs
+a vanilla "fresh start". The new-conversation flow asks only when the character has prior
+chats; the two options carry the plan's plain-language framing (same relationship, new
+scene vs. clean slate).
 
 - `facts`/`episodes`: replace the chat keying columns (`owner_id`, `character_id`) with a
   single nullable **`chat_memory_group_id`**; the CHECK becomes
@@ -201,8 +237,8 @@ GET/…  /api/dev/chat-inspector/…      -- §6.1 (dev-gated, 404 in production
   conversation) — authoring stays, playing moves out.
 - Entry points: `entity-library.tsx` character card action, character page header,
   dashboard "Continue talking to…" card (most recent `last_message_at`), public-gallery
-  characters (clone-on-use, then create chat). Whether the dashboard _leads_ with chats is
-  plan Q7.
+  characters (clone-on-use, then create chat). Ruled (D12): the dashboard leads with the
+  "Continue talking to…" conversations hero for now.
 
 ### 2.3 Component split (absorbs review §E-U5 and friends)
 
@@ -352,12 +388,32 @@ per-query embedding + RRF fusion + per-source attribution in the trace, **#4** p
 measurement precondition — build its chat fixtures alongside §5's. The session lane
 inherits all four automatically.
 
-### 6.4 "Remember this" (gated on plan Q6)
+### 6.4 "Remember this" (proposed default — plan OQ2)
 
-If approved: `POST /api/chats/[chatId]/remember {content}` → `addFacts` with confidence
-1.0, `kind: "knowledge"`, `source_message_id: null` — the chat analogue of the session
-inner-note (same fencing rules; authored data, never instructions). No browsing UI —
-write-only from the player side; visible/editable only in the dev inspector.
+Player-side and **write-only** (no browsing, per D2). The PM's three questions, answered
+in the design:
+
+- **Where it lives**: alongside other memories — a normal `facts` row via `addFacts`
+  (`kind: "knowledge"`, confidence 1.0, `source_message_id: null`, the chat's memory
+  group), so retrieval, supersedence, embedding and Clear/delete all just work. Two new
+  columns distinguish it: `pinned: true` and `origin: "player"` (an `origin` text column
+  on `facts` — `"extracted" | "player" | "dev"`, default `"extracted"` — honest provenance
+  that the dev inspector also uses for its own edits).
+- **Conflicts with previously stored memories**: the existing supersedence pass runs when
+  the note lands — a sufficiently similar older fact about the same subject is
+  automatically marked superseded and drops out of retrieval (the same "updated memory
+  replaces old" machinery the archivist already uses). This is the "go back and clean up
+  past memories" lever, and it's already built; conflicts too dissimilar for the
+  automation (a subtle contradiction rather than a restatement) are cleaned in the dev
+  inspector. A broader "consistency sweep" (re-checking the whole store against pinned
+  facts at a lower threshold) is deferred until need is shown.
+- **Precedence**: manual wins, structurally. Pinned facts are always retrieved ahead of
+  the top-k and exempt from the relevance floor (§6.3), and the **asymmetric invariant**
+  holds: archivist-extracted facts can never supersede or retract a pinned player fact —
+  supersedence skips pinned targets unless the incoming fact is itself player/dev-
+  authored. Only the player (or a dev in the inspector) can retire a player note.
+- **UI**: a small composer affordance ("Remember this…") and/or a message hover action.
+  Fenced like all authored text (data, never instructions).
 
 ## 7. A relationship that matters (plan area 6)
 
@@ -368,14 +424,14 @@ write-only from the player side; visible/editable only in the dev inspector.
   address forms, and an **escalation acceptance floor** (what intimacy the character
   entertains at this stage). Rendered as a compact "Relationship law" block in the chat
   prompt (near Disposition; re-renders only on stage change, so it's cache-friendly).
-- **Hard gate (plan Q5 pending)**: intimate escalation beyond the stage floor is
+- **Hard gate (ruled — D11)**: intimate escalation beyond the stage floor is
   _deflected in character_ — a directive in the style of the session lane's
   puppet-deflection (an in-voice "not yet", never a meta refusal) — **unless the scenario
   premise explicitly licenses it** (premise wins; an AU "we're married" scenario starts
-  past the floor by construction). Two invariants regardless of Q5's answer: the
-  disinhibition overlay (intoxication) may loosen tone but **never overrides the stage
-  floor**, and authored social cards still trump everything (a taboo card deflects at any
-  stage).
+  past the floor by construction). Dev override is simply editing the relationship state
+  in the inspector (no separate switch). Two invariants: the disinhibition overlay
+  (intoxication) may loosen tone but **never overrides the stage floor**, and authored
+  social cards still trump everything (a taboo card deflects at any stage).
 - **Soft coloring everywhere**: stage modulates the existing disposition render (a
   `stage → trait overlay` table mirroring `stateDispositionOverlays`, render-time only).
 - Measured by §5's stage-contrast fixtures — this is the area most likely to need
@@ -408,25 +464,34 @@ memory appendix. (Graduates deferred #8 at chat scale.)
 A **Relationship** panel/sheet on the conversation page: stage + sparkline + milestones +
 story-so-far + open loops.
 
-## 8. In-game time (plan area 7 · D3)
+## 8. In-game time (plan area 7 · D3/D8)
 
-Real time is out of the fiction entirely. `lastInteractionAt` survives only as list
-ordering; whether the wall-clock recovery drift is deleted outright or temporarily kept is
-plan Q2 (recommendation: delete — one time model, no hidden second clock).
+Real time is out of the fiction entirely, and the wall-clock recovery drift is **removed
+outright** (D8 — one time model, no hidden second clock). `lastInteractionAt` survives
+only as Chats-list ordering.
 
-### 8.1 Time skips
+### 8.1 Time skips (v1 semantics: proposed default — plan OQ1)
 
 - `POST /api/chats/[chatId]/time-skip { amount: "moments" | "hours" | "overnight" | "days" }`
-  — maps to in-game minutes, advances `clockMinutes`, applies the recovery lerp (reusing
-  today's drift math, driven by fictional minutes), expires conditions, and stamps a
-  one-shot `pending_skip_note` on the state row.
+  — maps to in-game minutes and advances `clockMinutes`.
+- **V1: time passage is narrative flavor.** The skip does exactly three things: advances
+  the clock (which lets already-running timed conditions expire through the _existing_
+  clock-keyed expiry — no new wiring), stamps a one-shot `pending_skip_note`, and records
+  itself. **Meters do not change.** Rationale (PM, 2026-07-02): whether 12 skipped hours
+  mean recovery or deterioration is circumstance (home vs. trapped in a desert) — a flat
+  rule flattens the nuance, so the entire "what happens during time" system (self-care
+  assumptions, schedules, circumstance-aware recovery) is deferred.
+- **Scaffold, don't wire**: each skip appends `{at, clockMinutes, amount}` to a
+  `character_chat_state.skip_history` jsonb ring (cap ~50), so the future time-effects
+  system has its data and hooks without another migration. The explicit action chips
+  (freshen / rest / drink) remain the levers that actually move meters.
 - The next exchange's prompt renders the skip as a volatile one-turn line ("The next
   morning — acknowledge the gap naturally, once"), worded by stage band; the note clears
   after rendering. This is the welcome-back beat, keyed to fiction.
 - **UI**: reopening a conversation shows a lightweight "Pick up: Continue · Later ·
   Next morning · Days later" strip above the composer (default **Continue** = no-op, no
-  interruption); the same options live in the header menu mid-conversation. No modal, no
-  forced choice.
+  interruption — ruled); the same options live in the header menu mid-conversation. No
+  modal, no forced choice.
 
 ### 8.2 A life meanwhile
 
@@ -439,7 +504,8 @@ time (deferred until proven needed).
 
 Within-visit decay (meters drifting toward personalized baselines per exchange tick) is
 already in-game (`CHAT_TICK_MINUTES`) and stays. The between-visit **real-elapsed**
-recovery is the part D3 invalidates — replaced by §8.1 skips (pending Q2).
+recovery in `driftChatState` is deleted (D8) — the seed path (fresh state = rested) is
+unaffected.
 
 ### 8.4 "Has something to say" (D4 — approved experiment)
 
@@ -497,11 +563,14 @@ subsystems in one plan.
 - **Migration/integration**: §1 backfill (one chat + participant per legacy pair, group
   ids correct, CHECK swapped), archive vs delete semantics, memory-group isolation (a
   fresh-start chat retrieves nothing from the shared group), provenance retraction on
-  delete/edit/another-take, stop-truncation persistence, time-skip recovery math.
-- **Pure**: takes eviction, pre-exchange snapshot restore, skip-note thresholds/wording
-  bands, milestone derivation, open-loops last-write, relevance floor + pinned exemption,
-  stage-behavior profile rendering + the floor/premise/intoxication invariants (§7.1),
-  prompt prefix-stability snapshot.
+  delete/edit/another-take, stop-truncation persistence, pinned-supersedence asymmetry
+  (an archivist fact never retires a `origin:"player"` pinned fact; a player fact does
+  supersede a similar extracted one).
+- **Pure**: takes eviction, pre-exchange snapshot restore, skip semantics (clock advances,
+  timed conditions expire, **meters unchanged**, `skip_history` appended + capped),
+  skip-note wording bands, milestone derivation, open-loops last-write, relevance floor +
+  pinned exemption, stage-behavior profile rendering + the floor/premise/intoxication
+  invariants (§7.1), prompt prefix-stability snapshot.
 - **Degradation** (resilience rules): every new leg degrades with a diagnostic —
   inspector on retrieval failure, another-take when the snapshot column is empty (fall
   back to no-rollback + diagnostic), stop when no in-flight entry exists (404, not a
@@ -519,19 +588,19 @@ subsystems in one plan.
 - Memory groups live per participant (§1.3), not per chat.
 - `characters.chatModel` stays per character (no per-chat override).
 - Takes live in a jsonb on the message row (cap 4), not sibling rows.
-- `pinned` + `source_message_id` land on the shared `facts` table as dev-facing levers
-  (session lane adopts later, nothing breaks meanwhile).
+- `pinned`, `origin`, and `source_message_id` land on the shared `facts` table (session
+  lane adopts later, nothing breaks meanwhile).
 - Scenario presets are a small owned table now, `LibraryKind` graduation later.
 - Time-skip amounts are a fixed four-value enum mapped to minutes (no free-form
-  durations).
+  durations); skips append to a capped `skip_history` ring (~50).
 - "Has something to say" is computed at read time — no jobs, no schedules, no push.
 
 ## Open questions
 
 Owned by the plan ([character-chat-standalone.plan.md](character-chat-standalone.plan.md)
-§Open questions) — resolve there; rulings get recorded in **## Decisions** above. The
-spec-level sensitivities: Q1 decides §1.3 (per-chat-only memory would delete the group
-mechanism and simplify §1.6); Q2 decides §8.3 (delete vs demote the wall-clock drift);
-Q3 shapes §1.1's headroom (participants/turn-taking assumptions); Q4 sequences §5 against
-the feature slices; Q5 decides §7.1's hard gate; Q6 gates §6.4; Q7 is §2.2's dashboard
-question; Q8 (voice) has no spec section — it stays out unless ruled in.
+§Open questions) — resolve there; rulings get recorded in **## Decisions** above. Two
+remain, each with its proposed default already written in place: **OQ1** — time-skip v1
+semantics (§8.1: flavor + condition expiry + scaffold, meters untouched; the alternative
+is a flat recover-toward-rested on skip); **OQ2** — "remember this" (§6.4: pinned
+`origin:"player"` fact with supersedence + the asymmetry invariant; the alternative is
+keeping all memory interaction dev-only for v1).

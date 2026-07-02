@@ -1,8 +1,9 @@
 # Character chat — the standalone experience — plan
 
-Status: **draft** — first PM review folded in (2026-07-02): the rulings taken so far are
-recorded in the spec's **## Decisions** section; the remaining open questions at the foot
-still need rulings before this becomes buildable.
+Status: **draft** — two PM review rounds folded (2026-07-02); the rulings are recorded in
+the spec's **## Decisions** (D1–D13). **Two narrowed open questions remain** (time-skip
+v1 semantics; the "remember this" design) — both carry proposed defaults below, and
+confirming them makes this plan buildable.
 
 Design/decisions: [character-chat-standalone.spec.md](character-chat-standalone.spec.md) —
 the technical detail (schemas, file touch-points, migration shape, refactor analysis,
@@ -48,9 +49,9 @@ As a _product_, chat is still shaped like the developer test-bed it started as:
 - It lives as **one tab buried inside the character editor** — a place shaped for
   authoring, not for the experience the engine can now deliver. On a phone (the natural
   home of a chat feature) it competes with seven editor tabs. Breaking it out of the
-  character page is also what opens the door to **multi-character chats** later —
-  conversations with a small group, distinct from worlds in some key ways (see Open
-  questions).
+  character page is also what opens the door to **multi-character chats** later — the
+  quick "grab two characters from the library and go" experience worlds are too heavy
+  to offer.
 - Each character has **exactly one conversation, forever**. The only lifecycle action is
   "Clear chat", which destroys everything — transcript, relationship, memory. There is no
   way to keep a finished story, start a fresh scenario alongside it, or come back to an
@@ -73,8 +74,8 @@ As a _product_, chat is still shaped like the developer test-bed it started as:
 - The character tracks **real-world** time between visits (they get rested, sober up), but
   that contradicts how the fiction should work: game time is not real time, and a player
   who steps away for a week should find the character exactly where they left off — no
-  time passed. **In-game** time is what should affect behavior. The current hidden
-  wall-clock drift needs to be rethought (area 7).
+  time passed. **In-game** time is what should affect behavior. (Ruled: the wall-clock
+  drift goes away — area 7.)
 - Under the hood, chat grew feature-by-feature into a parallel mini-engine that forked
   pieces of the session engine instead of sharing them, and its orchestration lives in a
   web route instead of the engine. A real consolidation pass is expected and accepted —
@@ -107,9 +108,9 @@ Give chat its own home instead of an editor tab:
   the composer, designed mobile-first. The scenario, state-tools, and model controls move
   into a header menu rather than crowding the top of the screen.
 - **Entry points everywhere characters appear**: a "Chat" action on library cards and on
-  the character page; a "Continue talking to …" card on the dashboard; chat directly from
-  a public-gallery character (it quietly makes your own copy first, as sharing already
-  does).
+  the character page; the home dashboard **leads with conversations** ("Continue talking
+  to …") for now (ruled); chat directly from a public-gallery character (it quietly makes
+  your own copy first, as sharing already does).
 - The character editor keeps a lightweight link ("Open chat") rather than embedding the
   whole experience; the editor remains the place you _author_, the Chats page the place
   you _play_.
@@ -117,8 +118,11 @@ Give chat its own home instead of an editor tab:
   existing "Prompt character" opening beat) and a scenario suggestion instead of a blank
   box.
 - Built with **multi-character headroom**: the new structure assumes a conversation _may_
-  one day hold more than one character, even though this plan ships one-on-one only (see
-  Open questions for what a group chat would even be).
+  one day hold more than one character, even though this plan ships one-on-one only. The
+  ruled shape of that future: a lightweight pickup — grab two or three characters straight
+  from the library into a shared chat, no world setup — with each character's
+  world-specific lore kept out of the shared room (the scoping design belongs to that
+  future plan; the spec records what we reserve now).
 
 ### 2. Conversations, plural
 
@@ -130,11 +134,14 @@ One character should support many stories:
 - **Archive instead of destroy**: finishing or abandoning a conversation shelves it
   (readable later, restorable), replacing today's all-or-nothing Clear chat as the everyday
   action. A true delete remains available.
-- **Memory that respects the fiction**: when starting a new conversation you choose
-  whether it _continues the shared history_ (the character remembers everything you've
-  built) or is a _fresh start / alternate universe_ (clean memory, the relationship starts
-  where the scenario says). This is the load-bearing design choice of the whole plan — see
-  Open questions.
+- **Memory is the player's choice** (ruled): starting a new conversation asks whether it
+  _continues the shared history_ (the character remembers everything you've built) or is
+  a truly _vanilla fresh start / alternate universe_ (clean memory, the relationship
+  starts where the scenario says). Why a shared-history _new_ chat instead of just
+  continuing the old one: it's **the same relationship, a new scene** — a fresh premise,
+  outfit and setting with a tidy transcript, without losing what she knows of you. It
+  pairs naturally with archiving (shelve the beach trip, start the winter visit) and with
+  time skips (area 7) for "later, elsewhere" storytelling.
 - **Scenario presets**: save a scenario setup (premise + outfit + cards + starting
   relationship) as a reusable, nameable preset, so a favorite setup is one tap on any new
   conversation — and potentially shareable like other library content later.
@@ -142,7 +149,8 @@ One character should support many stories:
 ### 3. Prove the depth shows
 
 The engine tracks a lot; the writing must visibly reflect it, and today we can't say it
-does. Before (or alongside — see Open questions) building more features on top:
+does. Ruled: this runs **in parallel** with the feature slices and steers as it learns —
+it does not gate them.
 
 - **Measure**: behavioral evaluation scenarios that compare the same conversation with a
   system on vs. off — state on/off, personality sliders at opposite extremes, relationship
@@ -190,8 +198,14 @@ to test and perfect memory until players never have to think about it. So:
 - **Retrieval quality**: apply the already-drafted retrieval improvements that matter most
   for chat (a relevance floor so irrelevant memories stop leaking in; better merging of
   duplicate memories; per-query retrieval) — shared work that also benefits sessions.
-- One small player-facing candidate survives as an open question: **"remember this"** —
-  telling the character something to hold onto, without ever browsing the memory store.
+- **"Remember this"** (proposed — open question 2): the one player-facing exception,
+  write-only (no browsing). What the player tells the character to keep is stored as a
+  specially-marked, **pinned** memory that always reaches the character and takes
+  precedence over anything learned in play; when it directly contradicts an older
+  memory, the older one is automatically retired the same way updated memories already
+  are, and anything too subtle for that automation is cleanable in the dev inspector.
+  The background memory-writer can never overwrite or retire a player's pinned note —
+  only the player (or a dev) can.
 
 ### 6. A relationship that matters
 
@@ -200,9 +214,10 @@ Make the arc both visible and consequential — today it is neither:
 - **Consequential first**: relationship stage should actually change behavior — how
   forward or guarded the character is, what they'll initiate, what they'll go along with,
   how they greet you, what escalation they accept or deflect. These are the first real
-  _consumers_ of the number the engine already tracks; whether stages act as hard gates
-  (the character declines below a stage) or strong coloring — or both — is an open
-  question.
+  _consumers_ of the number the engine already tracks. Ruled: stages act as **hard gates**
+  on intimate escalation below a stage floor — deflected in character ("not yet"), never a
+  meta refusal — overridable by an explicit scenario premise, and in dev by simply editing
+  the relationship state in the inspector.
 - **Then visible**: a relationship panel with the current stage, how it has moved over
   time (a simple timeline), and **milestones** — first meeting, stage changes, memorable
   beats — pulled from what the engine already records. (This graduates the long-parked
@@ -213,18 +228,23 @@ Make the arc both visible and consequential — today it is neither:
 
 ### 7. In-game time, not wall-clock time
 
-Ruling: **real-world time never passes in the fiction.** A player who steps away for a
-week returns to a character for whom no time has passed. In-game time is what should
-affect behavior. Concretely:
+Ruling: **real-world time never passes in the fiction**, and the hidden wall-clock drift
+is **removed outright** in favor of player-chosen time skips. What a skip _does_ is the
+remaining question — the proposed v1 (open question 1):
 
-- **Rethink the hidden drift**: today the character's meters recover based on real elapsed
-  time between visits — that contradicts the ruling and should be replaced (or at minimum
-  demoted; see Open questions) by in-game time.
-- **Time skips as a player choice**: when reopening a conversation (or at any point), the
-  player chooses whether fictional time passes — _continue the scene_, _later that day_,
-  _the next morning_, _weeks later_. The choice advances the in-game clock, drives meter
-  recovery (she sobers up overnight, not over your lunch break), and licenses the
-  character to acknowledge the gap in-fiction ("morning — sleep well?").
+- **Time skips as a player choice**: when reopening a conversation (or at any point via
+  the menu), the player can choose to let fictional time pass — _continue the scene_
+  (the default; reopening never interrupts with a question), _later that day_, _the next
+  morning_, _days later_.
+- **In v1, time passage is narrative flavor** — the skip moves the in-game clock, timed
+  effects that were already running out (tipsy, flustered) expire naturally, and the
+  character can acknowledge the gap in-fiction ("morning — sleep well?"). But meters do
+  **not** silently change: whether twelve skipped hours mean a rested, showered character
+  or a worse-off one depends on circumstance (home in her own bed vs. trapped in a
+  desert), and a flat rule would flatten exactly that nuance. The full "what happens
+  during time" system (self-care assumptions, schedules, circumstance-aware recovery) is
+  **scaffolded but not wired**: every skip is recorded with its fictional duration so the
+  future system can be built without reworking the data.
 - **A life meanwhile** (light touch): when a skip happens, one line of "what she's been up
   to" consistent with premise and personality — texture, not simulation.
 - **They have something to say**: on the Chats page, a character with unfinished business
@@ -275,7 +295,7 @@ Three options were assessed; the PM has ruled for **Option B** (spec **Decisions
   becomes truly its own feature with its own style choices — elements shared with the
   session lane where honest, never a toned-down copy.
 - **Option C — full unification with the session engine**: assessed and **rejected**
-  (analysis stays in the spec §9). If chat ever needs a session-grade capability, port
+  (analysis stays in the spec §10). If chat ever needs a session-grade capability, port
   that one agent — not the lane.
 
 ## What this plan absorbs
@@ -305,13 +325,12 @@ moment-of-intimacy gate; the spec carries the detail.
 
 ## Suggested build order
 
-Gated on the remaining open questions; a reasonable sequence once they're ruled:
+A reasonable sequence under the rulings so far:
 
 1. **Foundations** (area 9, the Option-A step): engine extraction, de-forking, docs page,
    component split. Everything after gets cheaper. No visible product change.
-2. **Measurement baseline** (area 3): the eval scenarios and first blind-judged runs — can
-   start in parallel with 1 (the harness already exists) and its findings steer slices
-   5–7.
+2. **Measurement baseline** (area 3): the eval scenarios and first blind-judged runs —
+   runs in parallel with 1 (ruled: steer as we learn) and its findings feed slices 5–7.
 3. **The conversation model** (area 2 schema + archive + Clear-chat replacement, with
    multi-character headroom): the load-bearing migration, done in clean code.
 4. **The destination** (area 1): Chats page, full-screen conversation, entry points,
@@ -332,11 +351,17 @@ running alongside.
 
 - **Locations, presence, items, wardrobe-as-state, story threads, the world simulation** —
   chat remains location-free by design; that is its whole advantage.
-- **Group chat as a shipped feature** — this plan ships one-on-one only, but the new
-  conversation structure is built with multi-character headroom (see Open questions).
+- **Group chat as a shipped feature** — this plan ships one-on-one only; the conversation
+  structure reserves the headroom (participants, per-character state and memory), and the
+  cross-world **lore-scoping** question (keeping one character's world lore out of a
+  shared room) is recorded for that future plan.
+- **Simulating what happens during skipped time** (self-care assumptions, schedules,
+  circumstance-aware recovery) — deliberately deferred; v1 skips are narrative flavor
+  with the hooks scaffolded (see area 7).
 - **A new avatar/expression system** — parked by the rollback ruling; the idea stays alive
   and gets its own plan when re-approached.
-- **Voice (TTS / speech input)** — open question, expected answer "park".
+- **Voice (TTS / speech input)** — ruled: parked; potentially useful once everything else
+  is nailed down, no current plans.
 - **Push notifications / server-initiated messaging** — "has something to say" is
   deliberately pull-based; anything push-shaped is a separate decision.
 - **Monetization/billing-shaped concerns** (model cost controls beyond the existing
@@ -344,41 +369,23 @@ running alongside.
 
 ## Open questions
 
-Restated per convention; the spec carries the detail behind each. Rulings already taken
-(Option B; dev-only memory surfaces; in-game-time principle; proactivity experiment;
-avatar parked; chat as current focus) are recorded in the spec's **## Decisions**.
+Only two remain, both narrowed to a confirm; everything else from the earlier rounds is
+ruled and recorded in the spec's **## Decisions** (D1–D13).
 
-1. **Memory across conversations (still the load-bearing one).** When a second
-   conversation with the same character starts, what does she remember? Recommended:
-   per-conversation choice at creation — "continue our shared history" vs "fresh start" —
-   implemented as memory groups. Group-chat headroom raises the stakes: memory should
-   belong to the _character relationship_, not the conversation, so a character can carry
-   what she knows into a future group scene.
-2. **The time model, concretely.** The principle is ruled (in-game time only). Does the
-   wall-clock drift get **removed outright** in favor of player-chosen time skips
-   (recommended), or kept as a hidden convenience until skips prove themselves? And should
-   a reopened conversation _ask_ ("continue the scene / later / next day") or default to
-   "continue" with the skip available in a menu (recommended: default continue, one-tap
-   skip)?
-3. **What is a group chat, to you?** You noted multi-character chats "would differ from
-   worlds in some key ways" — which ways matter most (e.g. no locations/movement, characters
-   talking to _each other_ freely, lighter setup, player as pure participant)? Not building
-   it here, but the answer shapes the headroom being reserved (participant list, per-
-   character state, turn-taking assumptions).
-4. **Measure first, or build alongside?** Given testing shows no noticeable
-   state/personality effect today, should the measurement baseline (area 3) gate the
-   feature slices (fix enactment before building consumers on top), or run in parallel and
-   steer as it learns (recommended)?
-5. **Relationship teeth.** What should stage actually gate? Recommended: strong coloring
-   everywhere (initiative, warmth, address forms) plus a few hard gates on intimate
-   escalation below a stage floor (deflected in character, overridable by an explicit
-   scenario premise). Confirm the hard-gate part — it changes how refusals read.
-6. **"Remember this."** With memory browsing ruled dev-only: does the lightweight
-   player-side "remember this" (tell the character something to keep, no browsing)
-   survive, or is all memory interaction dev-only for now?
-7. **Dashboard.** Once the Chats page exists, does the home dashboard lead with
-   conversations ("Continue talking to…") ahead of worlds/sessions?
-8. **Voice.** Park TTS/voice-input entirely, or reserve a slot? (Recommended: park.)
+1. **Time-skip v1 semantics — confirm the proposed default.** Skips are narrative flavor
+   in v1: the in-game clock advances, already-running timed effects expire, the character
+   may acknowledge the gap — but meters don't silently change, and the full
+   "what happens during time" system is scaffolded (skips recorded with durations), not
+   wired. The alternative — a flat "recover toward rested" rule on every skip — is
+   simpler for the common case ("overnight at home") but flattens the nuance you raised
+   (the desert scenario), so it's not the default proposal. Confirm flavor-only, or
+   choose flat-recovery-for-now.
+2. **"Remember this" — confirm the proposed design.** Player-side, write-only: stored as
+   a pinned, player-marked memory that always reaches the character; on save it
+   automatically retires older memories that directly contradict it (the same
+   "updated memory replaces old" machinery that already runs); subtler conflicts are
+   cleaned in the dev inspector; and the background memory-writer can never overwrite or
+   retire a player's note. Confirm, or keep all memory interaction dev-only for v1.
 
 ## Related
 
