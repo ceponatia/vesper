@@ -36,6 +36,9 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const [deleting, setDeleting] = useState(false);
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
   const editGenRef = useRef(0);
+  /** Bumped on every chat-model pick so a superseded pick is skipped, plus the serializing chain. */
+  const chatModelGenRef = useRef(0);
+  const chatModelChainRef = useRef<Promise<void>>(Promise.resolve());
 
   // Seed the editable draft from the loaded character during render (the
   // React "adjust state while rendering" pattern). Each character is seeded
@@ -81,13 +84,24 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     }
   };
 
-  /** Persist the chat-tab narrator pick immediately (save-on-update), out-of-band from the SaveBar. */
-  const saveChatModel = async (modelId: string) => {
+  /**
+   * Persist the chat-tab narrator pick immediately (save-on-update), out-of-band
+   * from the SaveBar. PATCHes are serialized through a promise chain so rapid
+   * picks can't overlap and land out of order server-side (the unguarded version
+   * could persist a stale pick, codebase-review A10); a pick superseded before
+   * its turn is skipped entirely.
+   */
+  const saveChatModel = (modelId: string) => {
     setChatModel(modelId);
-    const result = await charactersApi.update(characterId, { chatModel: modelId });
-    if (!result.ok) {
-      toast.push({ title: "Couldn't save the chat model", description: result.error.message, tone: "error" });
-    }
+    const gen = ++chatModelGenRef.current;
+    chatModelChainRef.current = chatModelChainRef.current.then(async () => {
+      if (gen !== chatModelGenRef.current) return; // a newer pick superseded this one
+      const result = await charactersApi.update(characterId, { chatModel: modelId });
+      if (gen !== chatModelGenRef.current) return;
+      if (!result.ok) {
+        toast.push({ title: "Couldn't save the chat model", description: result.error.message, tone: "error" });
+      }
+    });
   };
 
   const remove = async () => {

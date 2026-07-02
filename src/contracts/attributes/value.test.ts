@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { attributeValueSources, overlaySourceMayChange, resolveAttributes, type AttributeValue } from "./value";
+import {
+  attributeValueSchema,
+  attributeValueSources,
+  overlaySourceMayChange,
+  resolveAttributes,
+  type AttributeValue,
+} from "./value";
 
 function av(partial: Partial<AttributeValue> & Pick<AttributeValue, "value" | "source">): AttributeValue {
   return { id: "hair.color", ...partial };
@@ -98,6 +104,26 @@ describe("resolveAttributes precedence", () => {
   it("returns base values untouched when there are no overlays", () => {
     const base = [av({ value: "brown", source: "base" })];
     expect(resolveAttributes(base, [])).toEqual(base);
+  });
+});
+
+describe("attributeValueSchema degradation", () => {
+  it("a malformed source degrades to low-precedence creation instead of rejecting", () => {
+    const parsed = attributeValueSchema.safeParse({ id: "hair.color", value: "auburn", source: "bogus" });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.source).toBe("creation");
+  });
+
+  it("one malformed source in an array cannot reject the siblings", () => {
+    const arr = attributeValueSchema.array().safeParse([
+      { id: "hair.color", value: "auburn", source: 42 },
+      { id: "eyes.color", value: "green", source: "manual" },
+    ]);
+    expect(arr.success).toBe(true);
+    if (arr.success) {
+      expect(arr.data[0]?.source).toBe("creation");
+      expect(arr.data[1]?.source).toBe("manual");
+    }
   });
 });
 

@@ -23,21 +23,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-Nothing mid-flight. The last item — **Character chat as a primary feature** — shipped (see
-**Shipped**). Next build is the top of **Next** below — **Review fixes: correctness & security**
-(agreed 2026-07-02) — then Intimacy notes or the decision-gated avatar upgrade lanes (Rive
-reusable rig, then R3F/VRM 3D) — author's call.
+Nothing mid-flight. The last item — **Review fixes (codebase-review batch 1)** — shipped
+(see **Shipped**). Next build is the top of **Next** below — Intimacy notes — or the
+decision-gated avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D), or one of the
+review follow-on batches (bottom of Next) — author's call.
 
 ## Next (queued)
 
-- **Review fixes — correctness & security (codebase-review batch 1)** —
-  [codebase-review.plan.md](codebase-review.plan.md) · findings
-  [codebase-review.md](codebase-review.md). From the 2026-07-02 five-agent review of the
-  Opus-era diff: three silently-dead gameplay systems (condition→mood keying, chat
-  social-cards drop on first exchange, the director's taste-axis reset), data-loss/race
-  edges (chat concurrency, finalizer ordering, batch-image scoping, provenance `.catch`),
-  the security trio (seed credential, `BETTER_AUTH_SECRET`, model-id validation), and four
-  small client fixes.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -75,6 +67,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Review fixes — correctness & security (codebase-review batch 1)** —
+  [codebase-review.plan.md](codebase-review.plan.md) · findings
+  [codebase-review.md](codebase-review.md), 2026-07-02. All 17 items: the three
+  silently-dead gameplay systems revived (condition→mood keys on the normalized label via
+  `conditionKey`; the chat first-exchange upsert carries the outfit/cards columns through
+  one shared `upsertChatState`; the director prompt surfaces the `taste` exposure axis),
+  the race/data-loss edges closed (per-chat exchange lock → 409 `chat_busy` via new
+  `engine/keyed-lock.ts`, serialized summary folds, fenced memory write, transactional
+  Clear, batch-image 400s, provenance leaf-`.catch`), the security trio (production
+  seed-credential guard, `BETTER_AUTH_SECRET` boot check, strict curated model-id
+  resolvers), and four client fixes (registry-driven meter pips via threshold `pipLabel`s,
+  debounce ref, lightbox focus trap, serialized chat-model PATCHes). No migration; verify
+  + full int suite green. Batches 2–4 remain queued (bottom of Next).
 - **Character chat as a primary feature** —
   [finished/character-chat-primary.plan.md](finished/character-chat-primary.plan.md) · spec
   [finished/character-chat-primary.spec.md](finished/character-chat-primary.spec.md), 2026-07-01. Chat now works like

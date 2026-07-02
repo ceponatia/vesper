@@ -315,9 +315,12 @@ async function main(): Promise<void> {
   // Provision the shared dev credential so `POST /api/dev/impersonate` can mint a
   // real signed session for the Player + the UI/QA admin (auth.plan.md).
   const uxtestId = await ensureUxtestAdmin();
-  await ensureDevCredential(user.id);
-  await ensureDevCredential(uxtestId);
-  console.log(`  dev credential set (password "${DEV_PASSWORD}") for ${DEV_EMAIL} + ${UXTEST_EMAIL}`);
+  const provisioned = (await ensureDevCredential(user.id)) && (await ensureDevCredential(uxtestId));
+  console.log(
+    provisioned
+      ? `  dev credential set (password "${DEV_PASSWORD}") for ${DEV_EMAIL} + ${UXTEST_EMAIL}`
+      : "  dev credential SKIPPED (production without an explicit DEV_PASSWORD — see server/auth/dev.ts)",
+  );
 
   const created = await db().transaction(async (tx) => {
     await wipe(tx, user.id);

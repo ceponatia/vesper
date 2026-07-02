@@ -4,7 +4,7 @@ import { generateEntityImagesBatch, missingEntityImageIds } from "@/server/image
 import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
 
 /** Optional id scope — the library sends the ids visible under the active filter. */
-const batchBodySchema = z.object({ ids: z.array(z.string()).optional() }).catch({});
+const batchBodySchema = z.object({ ids: z.array(z.string()).optional() });
 
 /**
  * Most entities a single "Generate images" press can fan out over — the
@@ -23,7 +23,11 @@ const MAX_BATCH = 100;
  */
 export const POST = withUser(async (user, req: NextRequest) => {
   const body = await readBody(req, batchBodySchema);
-  const candidates = await missingEntityImageIds("item", user.id, body.ok ? { ids: body.value.ids } : undefined);
+  // A malformed body must 400, never widen the scope (codebase-review A4): the old
+  // `body.ok ? {ids} : undefined` turned invalid JSON into "generate EVERY missing
+  // item" — an unbounded-ish paid-render batch from a bad request.
+  if (!body.ok) return body.response;
+  const candidates = await missingEntityImageIds("item", user.id, { ids: body.value.ids });
   if (candidates.length === 0) return jsonOk({ queued: 0 });
   if (!rateLimit(`item_image:${user.id}`, GENERATION_RATE_LIMIT)) {
     return jsonError("rate_limited", "too many image generations; try again in a minute", 429);

@@ -170,6 +170,16 @@ describe("meterStateCue", () => {
     expect(meterStateCue("intoxication", 0)).toBeNull();
     expect(meterStateCue("mystery", 0.9)).toBeNull();
   });
+
+  it("carries the crossed band's pipLabel so UI chips read from the registry (codebase-review A10)", () => {
+    expect(meterStateCue("intoxication", 0.8)?.pipLabel).toBe("drunk");
+    expect(meterStateCue("intoxication", 0.5)?.pipLabel).toBe("tipsy");
+    expect(meterStateCue("energy", 0.3)?.pipLabel).toBe("tired");
+    // Every authored threshold carries a chip label — a new band must name itself.
+    for (const def of meterDefinitions) {
+      for (const t of def.thresholds) expect(t.pipLabel, `${def.id} threshold`).toBeTruthy();
+    }
+  });
 });
 
 describe("splitStateCues", () => {

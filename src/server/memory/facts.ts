@@ -2,7 +2,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { FactDraft } from "@/contracts/facts/taxonomy";
 import { currentEmbedder, embedText, embedTexts, toVectorLiteral, type Embedded } from "../ai";
-import { db, facts } from "../db";
+import { db, facts, type DbWriter } from "../db";
 import { logEvent } from "../events";
 import { FACT_MIN_CONFIDENCE, FACT_RETRIEVAL_LIMIT, SUPERSEDE_CANDIDATES, SUPERSEDE_MIN_SCORE } from "./constants";
 import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
@@ -255,8 +255,8 @@ export async function retractFactsFromTurn(turnId: string): Promise<string[]> {
  * Hard-delete every fact in a scope. Sessions cascade-delete their facts with the session
  * row, so this is the chat lane's bulk purge (the single "Clear Chat" — character-chat-primary.spec.md §4).
  */
-export async function deleteFactsForScope(scope: MemoryScope): Promise<number> {
-  const deleted = await db().delete(facts).where(memoryScopeWhere(facts, scope)).returning({ id: facts.id });
+export async function deleteFactsForScope(scope: MemoryScope, dbc: DbWriter = db()): Promise<number> {
+  const deleted = await dbc.delete(facts).where(memoryScopeWhere(facts, scope)).returning({ id: facts.id });
   return deleted.length;
 }
 

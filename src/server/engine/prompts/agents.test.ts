@@ -69,6 +69,12 @@ describe("agent system prompts", () => {
     expect(CONTINUITY_SYSTEM).toContain("quoted from past speech is not acting");
     expect(DIRECTOR_SYSTEM).toContain('"threadSignals"');
     expect(DIRECTOR_SYSTEM).toContain('"memoryQueries"');
+    // The full exposure axis set, including taste (codebase-review A3: the schema
+    // carries taste with .catch("none"); a prompt that omits it resets the sense
+    // every turn). Examples carry it so shape-copying can't drop the field.
+    expect(DIRECTOR_SYSTEM).toContain("taste none|close|intimate");
+    expect(DIRECTOR_SYSTEM).toContain("STAYS raised while that contact continues");
+    expect(DIRECTOR_SYSTEM).toContain('"taste":"none"');
   });
 
   it("simulant teaches salience tagging, the obvious default, and comms events", () => {
@@ -285,7 +291,26 @@ describe("buildDirectorPrompt", () => {
     );
     expect(text).toContain("- Scene: Tea in the kitchen.");
     expect(text).toContain("- Story so far: Two days at the inn.");
-    expect(text).toContain("- Exposure: appearance ambient, scent none, touch none");
+    expect(text).toContain("- Exposure: appearance ambient, scent none, touch none, taste none");
+  });
+
+  it("carries the prior taste level so a sustained intimate scene doesn't flicker (codebase-review A3)", () => {
+    const text = buildDirectorPrompt({
+      playerInput: "input",
+      narration: "narration",
+      author: "player",
+      priorBrief: {
+        ...emptyBrief(),
+        exposure: { appearance: "intimate", scent: "intimate", touch: "intimate", taste: "intimate" },
+      },
+      threads: [],
+      turnNumber: 9,
+      presentNames: ["Maya"],
+      absentNpcs: [],
+      locationNames: ["The Kitchen"],
+      stagedIntents: [],
+    });
+    expect(text).toContain("- Exposure: appearance intimate, scent intimate, touch intimate, taste intimate");
   });
 
   it("surfaces present characters' disposition for in-temperament direction", () => {

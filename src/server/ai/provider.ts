@@ -3,8 +3,9 @@ import {
   type OpenRouterProvider,
 } from "@openrouter/ai-sdk-provider";
 import type { JSONValue, ProviderMetadata } from "ai";
-import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
-import { DEFAULT_NARRATIVE_MODEL_ID } from "@/lib/narrative-models";
+import { AGENT_MODELS, DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
+import { DEFAULT_NARRATIVE_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
+import { log } from "@/server/log";
 
 export const MODEL_DEFAULTS = {
   // The curated narrator list (lib/narrative-models.ts) is the one source for
@@ -135,8 +136,29 @@ export function openrouter(): OpenRouterProvider {
 // creation + World tab); embeddings + the tool model default purely in code. A
 // retired/typo'd env value can no longer silently shadow these (it once pinned the
 // agent model to the pulled `openrouter/owl-alpha` stealth slug).
+//
+// Both resolvers are STRICT (codebase-review B3): a stored/over-the-wire id must be
+// on its curated list, else it coerces to the default with a warning. Without this,
+// any authenticated user could bill arbitrary OpenRouter slugs (frontier-priced
+// models included) to the deployment's key via a world/character PATCH or the chat
+// POST — the doc comments always claimed "a curated id"; now it's enforced at the
+// one seam every call site already goes through.
+
+/** True when `id` is on the curated list. */
+function curated(list: readonly { id: string }[], id: string): boolean {
+  return list.some((option) => option.id === id);
+}
+
+function resolveCurated(list: readonly { id: string }[], requested: string | null | undefined, fallback: string, scope: string): string {
+  const id = requested?.trim();
+  if (!id) return fallback;
+  if (curated(list, id)) return id;
+  log.warn(scope, "uncurated model id coerced to the default", { requested: id, fallback });
+  return fallback;
+}
+
 export function narrativeModelId(worldModel?: string | null): string {
-  return worldModel?.trim() || MODEL_DEFAULTS.narrative;
+  return resolveCurated(NARRATIVE_MODELS, worldModel, MODEL_DEFAULTS.narrative, "ai.narrative_model");
 }
 
 export function stateModelId(): string {
@@ -155,7 +177,7 @@ export function toolModelId(): string {
  * `stateModelId`/`toolModelId` defaults, outside the session switch.
  */
 export function agentModelId(worldAgentModel?: string | null): string {
-  return worldAgentModel?.trim() || MODEL_DEFAULTS.state;
+  return resolveCurated(AGENT_MODELS, worldAgentModel, MODEL_DEFAULTS.state, "ai.agent_model");
 }
 
 export function embeddingModelId(): string {

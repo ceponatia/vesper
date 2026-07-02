@@ -3,7 +3,7 @@ import { z } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral, type Embedded } from "../ai";
-import { db, episodes } from "../db";
+import { db, episodes, type DbWriter } from "../db";
 import { logEvent } from "../events";
 import { EPISODE_MIN_SCORE, EPISODE_RETRIEVAL_LIMIT, EPISODE_WINDOW } from "./constants";
 import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
@@ -184,8 +184,8 @@ export async function deleteEpisodeForTurn(scope: MemoryScope, turnNumber: numbe
  * Hard-delete every episode in a scope — the chat lane's bulk purge (sessions cascade with
  * their session row). Used by the single "Clear Chat" (character-chat-primary.spec.md §4).
  */
-export async function deleteEpisodesForScope(scope: MemoryScope): Promise<number> {
-  const deleted = await db().delete(episodes).where(memoryScopeWhere(episodes, scope)).returning({ id: episodes.id });
+export async function deleteEpisodesForScope(scope: MemoryScope, dbc: DbWriter = db()): Promise<number> {
+  const deleted = await dbc.delete(episodes).where(memoryScopeWhere(episodes, scope)).returning({ id: episodes.id });
   return deleted.length;
 }
 

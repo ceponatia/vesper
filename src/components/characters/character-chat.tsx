@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { CHAT_ACTIONS, stageById, stageMidpoint, type ChatActionId } from "@/contracts";
+import {
+  CHAT_ACTIONS,
+  meterDefinitions,
+  meterStateCue,
+  MOOD_BRIGHT_MIN,
+  MOOD_LOW_MAX,
+  NEUTRAL_MOOD_METER,
+  stageById,
+  stageMidpoint,
+  type ChatActionId,
+} from "@/contracts";
 import { charactersApi, sendCharacterChat, type ChatStateSnapshot, type ImageRecord } from "@/lib/client/api";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -514,23 +524,29 @@ function ActionChips({
   );
 }
 
-/** Compact, off-baseline meter pips for the status strip (only what's worth saying). */
+/** Presentation tone per meter; band vocabulary itself lives in the registry. */
+const PIP_TONES: Record<string, TagTone> = { stress: "danger", arousal: "accent", intoxication: "accent" };
+
+/**
+ * Compact, off-baseline meter pips for the status strip (only what's worth saying).
+ * Bands + labels come from the meters registry (`pipLabel` on each threshold), so a
+ * registry edit moves this strip and the narration cues together — the old hardcoded
+ * copies silently desynced (codebase-review A10). Mood is the deliberate exception:
+ * it has no registry thresholds (derived descriptor instead), so it reads the shared
+ * valence band cuts.
+ */
 function meterPips(meters: Record<string, number>): { id: string; label: string; tone: TagTone }[] {
   const pips: { id: string; label: string; tone: TagTone }[] = [];
-  const energy = meters.energy ?? 0.9;
-  if (energy <= 0.45) pips.push({ id: "energy", label: energy <= 0.2 ? "exhausted" : "tired", tone: "default" });
-  const hygiene = meters.hygiene ?? 0.9;
-  if (hygiene <= 0.55) pips.push({ id: "hygiene", label: hygiene <= 0.3 ? "unwashed" : "lived-in", tone: "default" });
-  const stress = meters.stress ?? 0.15;
-  if (stress >= 0.6) pips.push({ id: "stress", label: stress >= 0.85 ? "near breaking" : "on edge", tone: "danger" });
-  const arousal = meters.arousal ?? 0;
-  if (arousal >= 0.55) pips.push({ id: "arousal", label: "flushed", tone: "accent" });
-  const intoxication = meters.intoxication ?? 0;
-  if (intoxication >= 0.35)
-    pips.push({ id: "intoxication", label: intoxication >= 0.7 ? "drunk" : "tipsy", tone: "accent" });
-  const mood = meters.mood ?? 0.5;
-  if (mood >= 0.65) pips.push({ id: "mood", label: "bright", tone: "ok" });
-  else if (mood <= 0.35) pips.push({ id: "mood", label: "low", tone: "default" });
+  for (const def of meterDefinitions) {
+    const value = meters[def.id];
+    if (value === undefined) continue;
+    const cue = meterStateCue(def.id, value);
+    if (!cue?.pipLabel) continue;
+    pips.push({ id: def.id, label: cue.pipLabel, tone: PIP_TONES[def.id] ?? "default" });
+  }
+  const mood = meters.mood ?? NEUTRAL_MOOD_METER;
+  if (mood >= MOOD_BRIGHT_MIN) pips.push({ id: "mood", label: "bright", tone: "ok" });
+  else if (mood <= MOOD_LOW_MAX) pips.push({ id: "mood", label: "low", tone: "default" });
   return pips;
 }
 

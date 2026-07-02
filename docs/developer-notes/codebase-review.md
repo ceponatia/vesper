@@ -31,7 +31,7 @@ of which silently disable designed gameplay systems.
 
 | Batch | Scope | Findings | Plan |
 | --- | --- | --- | --- |
-| 1 — Correctness & security | Confirmed bugs + the security trio + small client fixes | §A, §B | [codebase-review.plan.md](codebase-review.plan.md) (**next**) |
+| 1 — Correctness & security | Confirmed bugs + the security trio + small client fixes | §A, §B | [codebase-review.plan.md](codebase-review.plan.md) (**shipped — 2026-07-02**) |
 | 2 — Prompt intelligence | Session-lane voice/personality, content framing, craft rules, schema matches, forge | §C | unplanned — needs `<topic>.plan.md` when active |
 | 3 — Chat-lane consolidation | Route→engine extraction, shared machinery, `docs/character-chat.md` | §D | unplanned |
 | 4 — Dedup & cleanup sweep | Server helpers, UI hooks/primitives, contracts registry consolidation, dead code | §E | unplanned |

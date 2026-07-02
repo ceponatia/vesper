@@ -64,6 +64,8 @@ import { POST as duplicateWorldRoute } from "./worlds/[id]/duplicate/route";
 import { POST as spawnSessionRoute } from "./worlds/[id]/sessions/route";
 import { POST as forgeWorldRoute } from "./worlds/forge/route";
 import { GET as imageFileRoute } from "./images/[id]/file/route";
+import { POST as itemImagesBatchRoute } from "./items/images/route";
+import { POST as locationImagesBatchRoute } from "./locations/images/route";
 import { POST as cloneCharacterRoute } from "./characters/[id]/clone/route";
 import { GET as devMeRoute } from "./dev/me/route";
 
@@ -744,6 +746,30 @@ describe("worlds", () => {
     const libItemsAfter = await db().select({ id: items.id }).from(items).where(eq(items.ownerId, authState.user.id));
     expect(libLocationsAfter.length).toBe(libLocationsBefore.length);
     expect(libItemsAfter.length).toBe(libItemsBefore.length);
+  });
+});
+
+describe("batch entity images: malformed body must 400, never widen scope (codebase-review A4)", () => {
+  it("rejects invalid JSON instead of queueing an unscoped paid batch", async (t) => {
+    if (!ready) return t.skip();
+    for (const [route, url] of [
+      [itemImagesBatchRoute, "http://t/api/items/images"],
+      [locationImagesBatchRoute, "http://t/api/locations/images"],
+    ] as const) {
+      const res = await route(
+        new NextRequest(url, { method: "POST", body: "{not json", headers: { "content-type": "application/json" } }),
+        noParams,
+      );
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it("still accepts an empty object as the deliberate generate-all scope", async (t) => {
+    if (!ready) return t.skip();
+    // {} (no ids) is the client's "all missing" request — must not 400. AI_FAKE
+    // makes any queued render a no-op placeholder; the assertion is only the status.
+    const res = await itemImagesBatchRoute(send("http://t/api/items/images", "POST", {}), noParams);
+    expect([200, 202]).toContain(res.status);
   });
 });
 

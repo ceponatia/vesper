@@ -10,7 +10,15 @@ import {
   touchMoodDeltas,
 } from "./events";
 
-const cond = (id: string): ActiveCondition => ({ id, label: id, startedAtMinutes: 0, attributeEffects: [] });
+// Realistic shape: conditions get a random id app-wide (the merge assigns `newId()`);
+// the semantic word lives only in `label`. Matching must key on the label, never the id.
+let condSeq = 0;
+const cond = (label: string): ActiveCondition => ({
+  id: `c_${++condSeq}k9x2m`,
+  label,
+  startedAtMinutes: 0,
+  attributeEffects: [],
+});
 const trait = (id: string, value: number): TraitValue => ({ id, value, source: "creation" });
 
 describe("isTouchConcept", () => {
@@ -71,10 +79,17 @@ describe("touchMoodDeltas", () => {
 });
 
 describe("conditionMoodBaselineShift", () => {
-  it("lifts for tipsy, drops for hurt, ignores unknown ids", () => {
+  it("lifts for tipsy, drops for hurt, ignores unknown labels", () => {
     expect(conditionMoodBaselineShift([cond("tipsy")])).toBeGreaterThan(0);
     expect(conditionMoodBaselineShift([cond("hurt")])).toBeLessThan(0);
     expect(conditionMoodBaselineShift([cond("whistling")])).toBe(0);
+  });
+
+  it("matches on the normalized label, never the random id", () => {
+    // Regression: production conditions carry `newId()`-style ids — the shift
+    // must still fire, and label matching is case/space-insensitive.
+    expect(conditionMoodBaselineShift([cond(" Tipsy ")])).toBeGreaterThan(0);
+    expect(conditionMoodBaselineShift([{ ...cond("tipsy"), id: "tipsy" }])).toBeGreaterThan(0);
   });
 
   it("clamps the summed shift", () => {

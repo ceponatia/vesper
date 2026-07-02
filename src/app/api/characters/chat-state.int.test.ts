@@ -32,6 +32,7 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
+import { tryKeyedLock } from "@/server/engine";
 import { DELETE as chatDelete, POST as chatPost } from "./[id]/chat/route";
 import { GET as stateGet, PATCH as statePatch, POST as stateAction } from "./[id]/chat/state/route";
 
@@ -81,7 +82,7 @@ function actionReq(id: string, body: unknown): NextRequest {
 const delReq = (id: string, scope?: string) =>
   new NextRequest(`http://t/api/characters/${id}/chat${scope ? `?scope=${scope}` : ""}`, { method: "DELETE" });
 
-const ids = { warm: "", fresh: "", open: "" };
+const ids = { warm: "", fresh: "", open: "", carded: "" };
 
 async function stateRow(characterId: string) {
   const [row] = await db()
@@ -116,10 +117,23 @@ beforeAll(async () => {
     .insert(characters)
     .values({ ownerId: user.id, name: "Rell", profile: { playerRelationship: { stage: "warm", note: "an old flame" } } })
     .returning();
-  if (!warm || !fresh || !open) throw new Error("failed to seed characters");
+  const [carded] = await db()
+    .insert(characters)
+    .values({
+      ownerId: user.id,
+      name: "Sable",
+      profile: {
+        socialCards: [
+          { id: "card_feet", label: "No foot stuff", kind: "taboo", triggers: ["foot_contact"], severity: 70, reactionOverrides: [] },
+        ],
+      },
+    })
+    .returning();
+  if (!warm || !fresh || !open || !carded) throw new Error("failed to seed characters");
   ids.warm = warm.id;
   ids.fresh = fresh.id;
   ids.open = open.id;
+  ids.carded = carded.id;
 });
 
 afterAll(async () => {
@@ -162,6 +176,22 @@ describe("POST seeds a state row from the authored stage", () => {
     const meters = row?.meters as Record<string, number>;
     expect(meters.hygiene).toBeGreaterThan(0.5); // recovered toward rested overnight
     expect(row?.affinity).toBe(57); // affinity unchanged — no between-visit decay
+  });
+});
+
+describe("first exchange preserves the seeded state (codebase-review A2)", () => {
+  it("keeps profile-seeded social cards on the row the first exchange creates", async (t) => {
+    if (!ready) return t.skip();
+    expect(await stateRow(ids.carded)).toBeNull(); // fresh chat — the exchange itself creates the row
+    const res = await chatPost(postReq(ids.carded, { content: "Hey there" }), ctx(ids.carded));
+    await res.text(); // drains the stream ⇒ the finalizer (pulse + save) has run
+
+    const row = await stateRow(ids.carded);
+    expect(row).not.toBeNull();
+    // Regression: the guarded insert once omitted active_social_cards (+ outfit columns),
+    // so the row landed with the DB default [] and the authored taboos died after turn 1.
+    const cards = row?.activeSocialCards as { id: string }[];
+    expect(cards.map((c) => c.id)).toContain("card_feet");
   });
 });
 
@@ -268,5 +298,29 @@ describe("the single Clear Chat (character-chat-primary.spec.md §4)", () => {
     // Everything is gone — no scope leaves a hidden transcript or disposition behind.
     expect(await messageCount(ids.warm)).toBe(0);
     expect(await stateRow(ids.warm)).toBeNull();
+  });
+});
+
+describe("one exchange in flight per chat (codebase-review A6)", () => {
+  it("409s while the chat lock is held, without inserting the second user line, then recovers", async (t) => {
+    if (!ready) return t.skip();
+    // Hold the exact lock the route acquires — deterministic stand-in for a
+    // still-streaming first exchange (racing two real streams is timing-flaky).
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const held = tryKeyedLock(`chat_exchange:${authState.user.id}:${ids.carded}`, () => gate);
+    expect(held).not.toBeNull();
+
+    const before = await messageCount(ids.carded);
+    const busy = await chatPost(postReq(ids.carded, { content: "double send" }), ctx(ids.carded));
+    expect(busy.status).toBe(409);
+    expect(((await busy.json()) as { error: { code: string } }).error.code).toBe("chat_busy");
+    expect(await messageCount(ids.carded)).toBe(before); // rejected before the user line landed
+
+    release();
+    await held;
+    const ok = await chatPost(postReq(ids.carded, { content: "after release" }), ctx(ids.carded));
+    expect(ok.status).toBe(200);
+    await ok.text(); // drain so the lock releases before the suite ends
   });
 });

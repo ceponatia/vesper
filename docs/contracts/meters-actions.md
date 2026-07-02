@@ -17,7 +17,7 @@ type MeterDefinition = {
   perHour: number;                  // signed drift per game hour
   baseline?: number;
   recoveryPerHour?: number;
-  thresholds: Array<{ below?: number; above?: number; promptHint: string }>;
+  thresholds: Array<{ below?: number; above?: number; promptHint: string; pipLabel?: string }>;
 };
 ```
 
@@ -29,7 +29,7 @@ type MeterDefinition = {
 | `perHour` | Signed drift per game hour. |
 | `baseline` | The resting target. *Absent* ⇒ today's pole: `perHour < 0` ⇒ 0, else 1. |
 | `recoveryPerHour` | Rate of movement toward `baseline`. *Absent* ⇒ `|perHour|`. |
-| `thresholds` | Crossing one surfaces its `promptHint` to the narrator. |
+| `thresholds` | Crossing one surfaces its `promptHint` to the narrator; `pipLabel` is the same band's short UI chip ("tipsy") — the chat status strip derives from it, so a band edit moves narration and UI together. |
 
 **Drift.** On every clock advance, `applyMeterDrift` moves each value toward its baseline at `recoveryPerHour` — never overshooting, clamped to `[0, 1]` — and surfaces any crossed-threshold `promptHint`s to the narrator. Worlds may override or disable meters in their style config.
 

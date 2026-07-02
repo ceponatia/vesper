@@ -9,6 +9,7 @@ export * from "./bundle";
 export * from "./relationship-seeds";
 export * from "./spawn";
 export * from "./jobs";
+export * from "./keyed-lock";
 export * from "./avatar-seed";
 export * from "./recovery";
 export * from "./agents";
