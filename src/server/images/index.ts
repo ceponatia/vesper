@@ -2,8 +2,6 @@ export * from "./assets";
 export * from "./monogram";
 export * from "./prompts";
 export * from "./avatar";
-export * from "./avatar-manifest";
-export * from "./avatar-expressions";
 export * from "./variants";
 export * from "./upload";
 export * from "./entity";

@@ -1,11 +1,29 @@
 # Mood-reactive character avatars (feasibility)
 
-Status: **slices 1–3 shipped** (slices 1–2 — 2026-06-27; slice 3 — 2026-06-30). Slice 3 is
-the auto-asset-gen pipeline (all 11 expression frames per character, seeded at avatar-ready +
-lazy-gen on demand, identity-locked, cached forever) for the **whole unbounded cast**, plus a
-**live standing companion avatar in session play** (sustained-emotion crossfades + a per-turn
-reaction beat sourced from the merge, which now also emits beats for un-carded **touches**).
-The critique-hardened design is in **"Slice 3 — finalized design"** below; the
+Status: **parked — rolled back 2026-07-02** (shipped as slices 1–3 on 2026-06-27 /
+2026-06-30, then removed at the owner's request: the generated emotion frames didn't work
+well in play. A better mood-reactive system will be planned fresh later; this doc stays as
+the feasibility/design record).
+
+## Rollback (2026-07-02)
+
+The whole emotion-image layer was removed: `server/images/avatar-expressions.ts`
+(`EXPRESSION_INSTRUCTIONS`, seed/lazy-gen, negative cache, clear-on-face-change) and
+`avatar-manifest.ts`; the `avatar_seed` engine job + every enqueue (avatar route, upload
+route, `queueWorldImageGeneration`); the `…/avatar/expressions` (lazy-gen) and
+`…/avatar/manifest` routes; `contracts/avatar/` (cue schema + `deriveAvatarCue`); the merge
+`ReactionBeat` threading (`agentResults.reaction`, status `reactionBeat`/`latestTurn`); the
+`avatarCue` fields on the chat-state snapshot and status participants; and the
+`SpriteAvatar` renderer with its `globals.css` keyframes. Already-generated frames (and any
+orphaned `avatar_seed` job rows) are deleted by `scripts/delete-avatar-expression-frames.ts`
+— run once per environment (done locally 2026-07-02; run on Fly at next deploy).
+
+What **stays**: the `AvatarPanel` box beside character-chat and atop the session Scene tab,
+now a plain larger view of the canonical portrait (`selectFocalParticipant` still picks the
+stable focal NPC — companion → tier → id, requiring an avatar image).
+
+The original design record follows, unchanged, for the future re-plan:
+the critique-hardened slice-3 design is in **"Slice 3 — finalized design"** below; the
 2026-06-27 slice-1–2 build decisions are in **"Locked decisions"** just under Scope.
 Companion design notes from GPT live in [avatar-3d.notes.md](avatar-3d.notes.md) — read
 it for the `AvatarCue` / `AvatarDirector` detail; the concrete cue contract + enums are

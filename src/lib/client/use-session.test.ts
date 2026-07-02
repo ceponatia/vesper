@@ -234,8 +234,6 @@ describe("parseSessionStatus", () => {
       items: [],
       threads: [],
       scene: { currentImageId: null, gallery: [], gen: { interval: 0, status: "idle", referenceMode: "single" } },
-      reactionBeat: null,
-      latestTurn: null,
     });
   });
 

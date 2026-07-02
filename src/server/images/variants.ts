@@ -13,12 +13,6 @@ export interface GenerateVariantInput {
   userId: string;
   kind: VariantKind;
   instruction: string;
-  /**
-   * Extra meta merged onto the image row — e.g. `{ avatarExpression }` / `{ avatarPose }`
-   * so the row joins the avatar manifest (`loadAvatarManifest`, avatar-3d.spec §4). Slice 2
-   * seeds these by hand; slice 3's auto-gen passes them too.
-   */
-  extraMeta?: Record<string, unknown>;
   sink?: DiagnosticSink;
 }
 
@@ -45,7 +39,6 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       variantKind: input.kind,
       demo,
       model: demo ? "demo" : `venice/${veniceEditModelId()}`,
-      ...input.extraMeta,
     },
   });
 
@@ -119,9 +112,5 @@ export async function promoteVariant(characterId: string, imageId: string): Prom
     .where(eq(characters.id, characterId))
     .returning({ id: characters.id });
   if (updated.length === 0) return { ok: false, error: "character not found" };
-  // The canonical face changed — the caller (route) must drop the now-stale expression
-  // frames via `clearAvatarExpressionFrames`. It is NOT called here: variants.ts is imported
-  // by avatar-expressions.ts (generateVariant), so importing back would be a cycle
-  // (`lint:cycles`). Clearing is a pure delete with no enqueue, so the route owns it.
   return { ok: true };
 }

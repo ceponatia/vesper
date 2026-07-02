@@ -12,7 +12,6 @@ import {
   clampAffinity,
   degradedChatPulse,
   emptyChatMemoryTrace,
-  deriveAvatarCue,
   deriveEmotionLabel,
   diag,
   emptyChatPulseTrace,
@@ -32,7 +31,6 @@ import {
   stageForValue,
   stageMidpoint,
   type ActiveCondition,
-  type AvatarCue,
   type AttributeChange,
   type ChatActionId,
   type CharacterProfile,
@@ -118,14 +116,6 @@ export interface ChatStateSnapshot {
   stage: { id: string; label: string };
   /** Derived discrete emotion for the chat mood chip (mood.spec §4). */
   emotion: { label: EmotionLabel; intensity: number };
-  /**
-   * The baseline avatar cue (avatar-3d.spec §3): the sustained emotion/pose/atmosphere
-   * the standing companion panel renders, derived token-free from the same state as the
-   * mood chip. `reaction` is always `none` here — one-shot beats fire client-side off a
-   * fresh pulse, never replayed on a status poll. The chat has no posture/scene tone, so
-   * pose is `idle` and atmosphere `calm`; `outfitId` carries the free-text chat outfit.
-   */
-  avatarCue: AvatarCue;
   conditions: ActiveCondition[];
   mindNote: string;
   premise: string;
@@ -784,7 +774,7 @@ export async function deleteChatState(ownerId: string, characterId: string, dbc:
  */
 export function chatStateSnapshot(
   state: ChatState,
-  opts: { dominance?: number; intimateContext?: boolean; persisted?: boolean; sceneId?: string } = {},
+  opts: { dominance?: number; intimateContext?: boolean; persisted?: boolean } = {},
 ): ChatStateSnapshot {
   const stage = stageForValue(state.affinity);
   const emotion = deriveEmotionLabel({
@@ -797,19 +787,11 @@ export function chatStateSnapshot(
     intimateContext: opts.intimateContext ?? false,
     dominance: opts.dominance ?? 0,
   });
-  // Baseline cue only — no reaction beat (those fire client-side off a fresh pulse, not
-  // on every status poll). Chat has no posture or scene tone, so pose=idle, atmosphere=calm.
-  const avatarCue = deriveAvatarCue({
-    emotion,
-    sceneId: opts.sceneId ?? "",
-    outfitId: state.outfit || undefined,
-  });
   return {
     meters: state.meters,
     affinity: state.affinity,
     stage: { id: stage.id, label: stage.label },
     emotion: { label: emotion.emotion, intensity: emotion.intensity },
-    avatarCue,
     conditions: state.conditions,
     mindNote: state.mindNote,
     premise: state.premise,

@@ -98,9 +98,6 @@ export function CharacterChat({
   const [toolsOpen, setToolsOpen] = useState(false);
   const [scenarioOpen, setScenarioOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState<ChatActionId | null>(null);
-  // Bumped once per fresh reply (the avatar's beat edge — a status poll never bumps it,
-  // so a one-shot reaction never replays on refresh). 0 on mount ⇒ no opening beat.
-  const [replyTick, setReplyTick] = useState(0);
   const stageRef = useRef<string | null>(null);
   const tempId = useRef(0);
   const mkId = () => `tmp-${tempId.current++}`;
@@ -210,8 +207,6 @@ export function CharacterChat({
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange.
     await refreshState();
-    // Edge for the avatar's one-shot reaction beat (the fresh trace is now in chatState).
-    setReplyTick((t) => t + 1);
     return outcome;
   };
 
@@ -325,20 +320,12 @@ export function CharacterChat({
     <div className="flex flex-col gap-5">
       <SceneStrip characterId={characterId} name={name} hasChat={lines.length > 0} />
 
-      {/* The standing companion avatar (avatar-3d.plan.md) sits beside the conversation. */}
+      {/* The standing companion portrait sits beside the conversation. */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-6">
         {chatState ? (
           <AvatarPanel
-            characterId={characterId}
             name={name}
             avatarImageId={avatarImageId}
-            cue={chatState.avatarCue}
-            beat={{
-              valence: chatState.lastPulseTrace.valence,
-              magnitude: 1,
-              concept: chatState.lastPulseTrace.concept,
-            }}
-            beatTick={replyTick}
             className="mx-auto w-full max-w-56 lg:mx-0 lg:w-60 lg:max-w-none lg:shrink-0"
           />
         ) : null}

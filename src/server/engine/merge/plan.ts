@@ -167,9 +167,6 @@ function buildMergePlan(ctx: PhaseContext, state: WorkingState): MergePlan {
     runtime: buildRuntime(ctx, state),
     brief: ctx.brief,
     droppedEvents: [...state.droppedEvents],
-    // The turn's one-shot avatar reaction beat (avatar-3d) — apply.ts writes it onto
-    // agentResults; absent when the player made no resolvable act this turn.
-    ...(ctx.reactionResult?.beat ? { reactionBeat: ctx.reactionResult.beat } : {}),
   };
 }
 

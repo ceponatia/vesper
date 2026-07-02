@@ -23,9 +23,8 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-Nothing mid-flight. The last item — **Review fixes (codebase-review batch 1)** — shipped
-(see **Shipped**). Next build is the top of **Next** below — Intimacy notes — or the
-decision-gated avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D), or one of the
+Nothing mid-flight. The last item — the **mood-reactive avatars rollback** — shipped
+(see **Shipped**). Next build is the top of **Next** below — Intimacy notes — or one of the
 review follow-on batches (bottom of Next) — author's call.
 
 ## Next (queued)
@@ -67,6 +66,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Mood-reactive avatars — rollback** —
+  [avatar-3d.plan.md](avatar-3d.plan.md) §Rollback, 2026-07-02. The emotion-image layer
+  (slices 1–3 below) removed at the owner's request — the generated frames didn't work well.
+  Gone: `avatar_seed` job + all enqueues, `avatar-expressions.ts`/`avatar-manifest.ts`, the
+  lazy-gen + manifest routes, `contracts/avatar/`, the merge `ReactionBeat`, `avatarCue` on
+  chat/status payloads, `SpriteAvatar` + its CSS; existing frames deleted via
+  `scripts/delete-avatar-expression-frames.ts` (run per environment). Kept: `AvatarPanel` as
+  a plain larger-portrait box in chat + the Scene tab. Plan parked; a better system will be
+  planned fresh.
 - **Review fixes — correctness & security (codebase-review batch 1)** —
   [codebase-review.plan.md](codebase-review.plan.md) · findings
   [codebase-review.md](codebase-review.md), 2026-07-02. All 17 items: the three
@@ -108,7 +116,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   `drizzle/0016`) — value hoisted to `character-edit-page.tsx` so it survives the tab
   unmounting, resolved through `resolveChatModelId` (unknown/empty ⇒ chat default), and
   kept off both the resettable `character_chat_state` row and the editor's profile draft.
-- **Mood-reactive avatars — slice 3 (auto-asset gen + in-session play)** —
+- **Mood-reactive avatars — slice 3 (auto-asset gen + in-session play)** _(rolled back
+  2026-07-02 — see the rollback entry above)_ —
   [avatar-3d.plan.md](avatar-3d.plan.md) §"Slice 3 — finalized design" · spec
   [avatar-3d.spec.md](avatar-3d.spec.md), 2026-06-30. Automated the per-character **expression
   frame set** (all 11 `EmotionLabel`s, seeded at avatar-ready via a new `avatar_seed` engine
@@ -196,7 +205,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   rules to the session rulebook and `CHAT_RULES` (both lanes), leaning on the existing `## Reaction`
   band; self-motivated NPC initiative kept for living-world texture; authored Style directives
   override. Phases 2–3 + eval remain in Next.
-- **Mood-reactive avatars — slices 1–2 (cue contract + chat PoC)** —
+- **Mood-reactive avatars — slices 1–2 (cue contract + chat PoC)** _(rolled back
+  2026-07-02 — see the rollback entry above)_ —
   [avatar-3d.plan.md](avatar-3d.plan.md) · spec [avatar-3d.spec.md](avatar-3d.spec.md), 2026-06-27.
   The renderer-neutral `contracts/avatar/` cue contract + pure `deriveAvatarCue` (read over the shipped
   Mood projection + social-reaction beat + posture + atmosphere, serialized onto the chat snapshot), and

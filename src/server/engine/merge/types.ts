@@ -91,11 +91,6 @@ export interface MergePlan {
    * `runtime.commsLinks`; this is just the per-turn audit trail.
    */
   commsChanges: CommsChange[];
-  /**
-   * The turn's one-shot avatar reaction beat (avatar-3d), written to
-   * `agentResults.reaction` by `apply.ts`; absent ⇒ no beat. Post_turn only.
-   */
-  reactionBeat?: ReactionBeat;
 }
 
 export interface AffinityUpdate {
@@ -107,22 +102,6 @@ export interface AffinityUpdate {
   reason?: string;
 }
 
-/**
- * A one-shot **reaction beat** for the avatar (avatar-3d.plan.md §"In-session beat"): the
- * player's primary social act this turn, as the target NPC took it. Covers **both** carded
- * reactions (the curve verdict) **and** un-carded touches (synthesized from welcome-ness — the
- * romance beats the pre-narration evaluator misses). Surfaced via `turns.agentResults.reaction`
- * so the standing avatar can pulse it once; never affects state (cosmetic).
- */
-export interface ReactionBeat {
-  participantId: string;
-  /** Interaction concept id (e.g. `flirt`, `kiss`) — refines the beat (blush vs nod). */
-  concept: string;
-  valence: "like" | "dislike";
-  /** Evaluated magnitude (≥0): the curve's for a carded act, synthesized for a touch. */
-  magnitude: number;
-}
-
 export interface ReactionAffinityResult {
   updates: AffinityUpdate[];
   /** Edge keys (from::to::kind) a reaction resolved for — suppress simulant updates here. */
@@ -131,8 +110,6 @@ export interface ReactionAffinityResult {
   moodAdjustment?: { participantId: string; delta: number };
   /** Stress-meter nudge from an unwelcome/welcome touch (mood.spec §5); absent ⇒ none. */
   stressAdjustment?: { participantId: string; delta: number };
-  /** One-shot avatar beat for the target NPC (carded or touch); absent ⇒ no beat. */
-  beat?: ReactionBeat;
 }
 
 export interface CardBreachResult {
