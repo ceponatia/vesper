@@ -67,10 +67,18 @@ export function cosineSimilarity(a: readonly number[], b: readonly number[]): nu
  * superseded and linked. An embedding failure degrades to inserting without
  * vectors (facts keep their audit value, drop out of RAG + supersedence).
  */
+/**
+ * Where extracted facts came from: the session lane's turn row, or the chat
+ * lane's assistant message (character-chat-standalone.spec.md §4.3) — the anchor
+ * edit/delete/another-take reconciliation retracts by. `null` ⇒ no anchor
+ * (authored inner notes, player "remember this").
+ */
+export type FactSource = { turnId?: string | null; messageId?: string | null } | null;
+
 export async function addFacts(
   scope: MemoryScope,
   drafts: readonly FactDraftInput[],
-  sourceTurnId: string | null,
+  source: FactSource,
   sink?: DiagnosticSink,
 ): Promise<AddFactsResult> {
   const eligible: FactDraftInput[] = [];
@@ -158,7 +166,8 @@ export async function addFacts(
           tags: draft.tags,
           confidence: draft.confidence,
           witnessedBy: draft.witnessedBy ?? [],
-          sourceTurnId,
+          sourceTurnId: source?.turnId ?? null,
+          sourceMessageId: source?.messageId ?? null,
           embedding: emb?.vector ?? null,
           embedder: emb?.embedder ?? null,
         })
@@ -242,6 +251,20 @@ export async function retrieveFacts(
  * reactivated — history moved past them; both stay invisible to retrieval and
  * `superseded_by_id` keeps the audit trail.
  */
+/**
+ * Retract every active fact extracted from one chat assistant message (spec §4.3)
+ * — the edit/delete/another-take reconciliation. Status-flip, never a row delete
+ * (audit trail), same as the session lane's turn retraction below.
+ */
+export async function retractFactsForMessage(messageId: string): Promise<string[]> {
+  const updated = await db()
+    .update(facts)
+    .set({ status: "retracted" })
+    .where(and(eq(facts.sourceMessageId, messageId), eq(facts.status, "active")))
+    .returning({ id: facts.id });
+  return updated.map((u) => u.id);
+}
+
 export async function retractFactsFromTurn(turnId: string): Promise<string[]> {
   const retracted = await db()
     .update(facts)

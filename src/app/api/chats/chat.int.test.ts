@@ -1,13 +1,15 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@/lib/ids";
 import {
   characterChatMessages,
   characterChats,
+  characterChatState,
   characters,
   chatParticipants,
   db,
+  episodes,
   facts,
   images,
   users,
@@ -33,10 +35,12 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
-import { persistAssistantReply, tryKeyedLock } from "@/server/engine";
+import { persistAssistantReply, replyTakesSchema, tryKeyedLock, type ReplyTakes } from "@/server/engine";
 import { POST as chatsCreate } from "./route";
 import { DELETE as chatDelete, GET as chatGet, POST as chatSend } from "./[chatId]/route";
 import { DELETE as msgDelete, PATCH as msgPatch } from "./[chatId]/messages/[messageId]/route";
+import { PATCH as takePatch } from "./[chatId]/messages/[messageId]/take/route";
+import { PATCH as statePatch } from "./[chatId]/state/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -86,6 +90,30 @@ function patchMsgReq(chatId: string, messageId: string, body: unknown): NextRequ
 }
 const delMsgReq = (chatId: string, messageId: string) =>
   new NextRequest(`http://t/api/chats/${chatId}/messages/${messageId}`, { method: "DELETE" });
+function stateReq(chatId: string, body: unknown): NextRequest {
+  return new NextRequest(`http://t/api/chats/${chatId}/state`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+function takeReq(chatId: string, messageId: string, body: unknown): NextRequest {
+  return new NextRequest(`http://t/api/chats/${chatId}/messages/${messageId}/take`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Retry a probe until it returns non-null (fire-and-forget follow-ups), or null after ~3s. */
+async function pollUntil<T>(probe: () => Promise<T | null>): Promise<T | null> {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const value = await probe();
+    if (value !== null) return value;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return null;
+}
 
 /** Create a conversation through the real POST /api/chats handler (the D7 memory choice). */
 async function createChat(characterId: string, memory: "shared" | "fresh" = "fresh"): Promise<{ id: string; memoryGroupId: string }> {
@@ -104,6 +132,8 @@ async function insertMessage(chatId: string, role: "user" | "assistant", content
 }
 
 const ids = { character: "", chat: "", otherUser: "", otherCharacter: "", otherChat: "" };
+/** Memory groups this suite planted facts/episodes into directly (cleaned in afterAll). */
+const plantedGroups: string[] = [];
 
 beforeAll(async () => {
   if (!ready) return;
@@ -131,6 +161,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!ready) return;
+  // Facts/episodes have no FK to chats (purge is app-level in deleteChat), so
+  // directly-planted rows need explicit cleanup.
+  if (plantedGroups.length) {
+    await db().delete(facts).where(inArray(facts.chatMemoryGroupId, plantedGroups));
+    await db().delete(episodes).where(inArray(episodes.chatMemoryGroupId, plantedGroups));
+  }
   // images.owner_id has no ON DELETE cascade, so clear test assets before users;
   // chats own the transcript/state/summary cascades and users FK them (no cascade).
   await db().delete(images).where(eq(images.ownerId, authState.user.id));
@@ -170,6 +206,52 @@ async function factCount(groupId: string): Promise<number> {
     .from(facts)
     .where(eq(facts.chatMemoryGroupId, groupId));
   return row?.n ?? 0;
+}
+
+/** The chat's single assistant reply row with its parsed takes (regenerate updates in place). */
+async function assistantReply(chatId: string): Promise<{ id: string; content: string; takes: ReplyTakes }> {
+  const [row] = await db()
+    .select({ id: characterChatMessages.id, content: characterChatMessages.content, takes: characterChatMessages.takes })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.role, "assistant")))
+    .limit(1);
+  if (!row) throw new Error("no assistant reply row");
+  return { id: row.id, content: row.content, takes: replyTakesSchema.parse(row.takes ?? {}) };
+}
+
+async function roleCounts(chatId: string): Promise<{ user: number; assistant: number }> {
+  const all = await rows(chatId);
+  return {
+    user: all.filter((m) => m.role === "user").length,
+    assistant: all.filter((m) => m.role === "assistant").length,
+  };
+}
+
+async function stateAffinity(chatId: string): Promise<number | null> {
+  const [row] = await db()
+    .select({ affinity: characterChatState.affinity })
+    .from(characterChatState)
+    .where(eq(characterChatState.chatId, chatId))
+    .limit(1);
+  return row?.affinity ?? null;
+}
+
+/** Plant the fact + episode the archivist would have extracted (demo mode skips it). */
+async function plantMemory(groupId: string, messageId: string): Promise<void> {
+  plantedGroups.push(groupId);
+  await db().insert(facts).values({
+    chatMemoryGroupId: groupId,
+    kind: "knowledge",
+    subjectName: "mara",
+    text: "planted fact from the old take",
+    sourceMessageId: messageId,
+  });
+  await db().insert(episodes).values({
+    chatMemoryGroupId: groupId,
+    turnNumber: 1,
+    summary: "planted episode from the old take",
+    sourceMessageId: messageId,
+  });
 }
 
 describe("POST /api/chats/:chatId — send", () => {
@@ -297,6 +379,7 @@ describe("assistant-reply persist guard (delete-mid-stream race)", () => {
     if (!ready) return t.skip();
     const promptId = await insertMessage(ids.chat, "user", "race: keep me");
     await persistAssistantReply({
+      id: newId(),
       chatId: ids.chat,
       speakerCharacterId: ids.character,
       promptMessageId: promptId,
@@ -314,6 +397,7 @@ describe("assistant-reply persist guard (delete-mid-stream race)", () => {
     // Simulate a delete (whole-chat or single-message) landing before the stream settles.
     await db().delete(characterChatMessages).where(eq(characterChatMessages.id, promptId));
     await persistAssistantReply({
+      id: newId(),
       chatId: ids.chat,
       speakerCharacterId: ids.character,
       promptMessageId: promptId,
@@ -378,5 +462,174 @@ describe("memory-choice semantics (character-chat-standalone.spec.md §1.3, D7)"
     // …until the last referencing conversation goes.
     expect((await chatDelete(delReq(first.id), ctx(first.id))).status).toBe(200);
     expect(await factCount(first.memoryGroupId)).toBe(0);
+  });
+});
+
+describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)", () => {
+  it("replaces the reply in place, keeps the old take browsable, rolls back state, and retracts the old take's memory", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    // A stored state BEFORE the first exchange gives the pre-exchange snapshot a
+    // distinctive value to roll back to (the demo pulse degrades to drift-only,
+    // and drift never moves affinity, so it only moves via PATCH here).
+    expect((await statePatch(stateReq(chat.id, { affinity: 10 }), ctx(chat.id))).status).toBe(200);
+
+    await (await chatSend(postReq(chat.id, { content: "Tell me a secret" }), ctx(chat.id))).text();
+    const reply = await assistantReply(chat.id);
+    // Make take 1 distinguishable (demo replies are deterministic) and plant the
+    // memory the archivist would have extracted from it (demo mode skips it).
+    await db().update(characterChatMessages).set({ content: "OLD TAKE" }).where(eq(characterChatMessages.id, reply.id));
+    await plantMemory(chat.memoryGroupId, reply.id);
+    // Perturb the state AFTER the exchange — the exact drift+pulse effects a
+    // regenerate must not double-apply.
+    expect((await statePatch(stateReq(chat.id, { affinity: 77 }), ctx(chat.id))).status).toBe(200);
+
+    const res = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Demo mode");
+
+    const after = await assistantReply(chat.id);
+    expect(after.id).toBe(reply.id); // updated in place, never a new row
+    expect(after.content).not.toBe("OLD TAKE");
+    expect(after.content).toContain("[Mara]");
+    expect(after.takes.takes).toHaveLength(2);
+    expect(after.takes.takes[0]?.content).toBe("OLD TAKE"); // seeded lazily on the first regenerate
+    expect(after.takes.activeId).toBe(after.takes.takes[1]?.id); // the fresh take is active
+    expect(after.takes.takes[1]?.content).toBe(after.content); // content mirrors the active take
+
+    // Memory rollback (spec §4.3): the old take's fact retracted, its episode gone.
+    const [fact] = await db().select({ status: facts.status }).from(facts).where(eq(facts.sourceMessageId, reply.id));
+    expect(fact?.status).toBe("retracted");
+    expect(await db().select({ id: episodes.id }).from(episodes).where(eq(episodes.sourceMessageId, reply.id))).toHaveLength(0);
+
+    // State rollback: the post-exchange perturbation (77) is undone; the
+    // pre-exchange snapshot value (10) is back.
+    expect(await stateAffinity(chat.id)).toBe(10);
+
+    // No stray rows: still exactly one user line + one reply.
+    expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
+  });
+
+  it("caps browsable takes at 4 across repeated regenerates, newest take always active", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    await (await chatSend(postReq(chat.id, { content: "cap me" }), ctx(chat.id))).text();
+    for (let i = 0; i < 4; i++) {
+      const res = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
+      expect(res.status).toBe(200);
+      await res.text(); // drain so the exchange settles + the lock releases
+    }
+    const reply = await assistantReply(chat.id);
+    // 5 takes were minted (the seed + 4 regenerates); the oldest was evicted.
+    expect(reply.takes.takes).toHaveLength(4);
+    expect(reply.takes.activeId).toBe(reply.takes.takes.at(-1)?.id);
+    expect(reply.takes.takes.find((tk) => tk.id === reply.takes.activeId)?.content).toBe(reply.content);
+  });
+
+  it("400s nothing_to_regenerate on an empty chat", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    const res = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("nothing_to_regenerate");
+  });
+});
+
+describe("PATCH /api/chats/:chatId/messages/:messageId/take (spec §4.1)", () => {
+  it("flips content to the picked take without minting one, and 404s a bogus takeId", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    await (await chatSend(postReq(chat.id, { content: "switch me" }), ctx(chat.id))).text();
+    const reply = await assistantReply(chat.id);
+    await db().update(characterChatMessages).set({ content: "FIRST TAKE" }).where(eq(characterChatMessages.id, reply.id));
+    await (await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id))).text();
+
+    const regenerated = await assistantReply(chat.id);
+    const firstTake = regenerated.takes.takes[0];
+    if (!firstTake) throw new Error("missing seeded take");
+    expect(firstTake.content).toBe("FIRST TAKE");
+    expect(regenerated.content).not.toBe("FIRST TAKE"); // the fresh take is displayed
+
+    const res = await takePatch(takeReq(chat.id, reply.id, { takeId: firstTake.id }), msgCtx(chat.id, reply.id));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { content: string }).content).toBe("FIRST TAKE");
+
+    const flipped = await assistantReply(chat.id);
+    expect(flipped.content).toBe("FIRST TAKE"); // the row's content mirrors the pick
+    expect(flipped.takes.activeId).toBe(firstTake.id);
+    expect(flipped.takes.takes).toHaveLength(2); // switching never mints a take
+
+    const bogus = await takePatch(takeReq(chat.id, reply.id, { takeId: "no-such-take" }), msgCtx(chat.id, reply.id));
+    expect(bogus.status).toBe(404);
+  });
+});
+
+describe("POST /api/chats/:chatId — kind=continue (go on, spec §4.2)", () => {
+  it("adds an assistant beat with no new user row and never persists the synthetic cue", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    await (await chatSend(postReq(chat.id, { content: "say more" }), ctx(chat.id))).text();
+    expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
+
+    const res = await chatSend(postReq(chat.id, { kind: "continue" }), ctx(chat.id));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("[Mara]");
+
+    expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 2 }); // a beat, not a turn
+    // The one user row is still the player's line — the continue cue was never persisted.
+    const all = await rows(chat.id);
+    expect(all.filter((m) => m.role === "user").map((m) => m.content)).toEqual(["say more"]);
+    // The beat is speaker-tagged like any reply.
+    expect(all.filter((m) => m.role === "assistant").every((m) => m.speakerCharacterId === ids.character)).toBe(true);
+  });
+});
+
+describe("message delete reconciles provenanced memory (spec §4.3)", () => {
+  it("retracts the fact and deletes the episode sourced from the snipped assistant line", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    const messageId = await insertMessage(chat.id, "assistant", "she admits she's afraid of storms");
+    await plantMemory(chat.memoryGroupId, messageId);
+
+    expect((await msgDelete(delMsgReq(chat.id, messageId), msgCtx(chat.id, messageId))).status).toBe(200);
+
+    // The reconcile is fire-and-forget behind the response — poll, don't sleep blind.
+    const factStatus = await pollUntil(async () => {
+      const [fact] = await db().select({ status: facts.status }).from(facts).where(eq(facts.sourceMessageId, messageId));
+      return fact?.status === "retracted" ? fact.status : null;
+    });
+    expect(factStatus).toBe("retracted");
+    const episodesGone = await pollUntil(async () => {
+      const remaining = await db().select({ id: episodes.id }).from(episodes).where(eq(episodes.sourceMessageId, messageId));
+      return remaining.length === 0 ? true : null;
+    });
+    expect(episodesGone).toBe(true);
+  });
+});
+
+describe("stopped replies (spec §4.2)", () => {
+  it("persists meta.stopped and the transcript GET carries it", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    const promptId = await insertMessage(chat.id, "user", "keep going");
+    const replyId = newId();
+    // A live mid-stream abort isn't deterministically reproducible through the
+    // streaming Response, so the meta path is covered at the persist seam the
+    // pipeline's settle uses when `stopChatReply` aborted the stream.
+    await persistAssistantReply({
+      id: replyId,
+      chatId: chat.id,
+      speakerCharacterId: ids.character,
+      promptMessageId: promptId,
+      content: '[Mara] "I was just about to—"',
+      meta: { stopped: true },
+    });
+
+    const got = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
+      messages: { id: string; meta: unknown }[];
+    };
+    const reply = got.messages.find((m) => m.id === replyId);
+    expect(reply).toBeDefined();
+    expect(reply?.meta).toEqual({ stopped: true });
   });
 });

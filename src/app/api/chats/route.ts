@@ -4,16 +4,20 @@ import { z } from "zod";
 import {
   activeConditionSchema,
   characterProfileSchema,
+  clampAffinity,
   deriveEmotionLabel,
   effectiveTraitValue,
   emptyCharacterProfile,
   NEUTRAL_MOOD_METER,
+  socialReactionCardSchema,
   stageForValue,
+  stageMidpoint,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { characterChats, characterChatState, characters, chatParticipants, db } from "@/server/db";
+import { characterChats, characterChatState, characters, chatParticipants, chatScenarioPresets, db } from "@/server/db";
+import { editChatState } from "@/server/engine";
 
 /**
  * The conversations collection (docs/character-chat.md; character-chat-standalone.spec.md
@@ -31,6 +35,8 @@ const createBodySchema = z.object({
   title: z.string().trim().max(120).optional(),
   /** D7: continue the shared history, or a vanilla fresh start. */
   memory: z.enum(["shared", "fresh"]),
+  /** Seed the new conversation's scenario from a saved preset (spec §1.5). */
+  presetId: z.string().min(1).optional(),
 });
 
 const listMetersSchema = z.record(z.string(), z.number());
@@ -121,7 +127,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
   const { characterId, memory } = body.value;
 
   const [character] = await db()
-    .select({ id: characters.id })
+    .select({ id: characters.id, profile: characters.profile })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, user.id)))
     .limit(1);
@@ -146,6 +152,39 @@ export const POST = withUser(async (user, req: NextRequest) => {
     await tx.insert(characterChats).values({ id: chatId, ownerId: user.id, title: body.value.title ?? "" });
     await tx.insert(chatParticipants).values({ chatId, characterId, memoryGroupId, sort: 0 });
   });
+
+  // Preset seeding (spec §1.5): write the scenario fields exactly the way the
+  // scenario modal does — through the author-edit state path, on top of the
+  // authored seed (so the character's own cards apply when the preset has none).
+  if (body.value.presetId) {
+    const [preset] = await db()
+      .select({
+        premise: chatScenarioPresets.premise,
+        outfit: chatScenarioPresets.outfit,
+        outfitExposed: chatScenarioPresets.outfitExposed,
+        socialCards: chatScenarioPresets.socialCards,
+        startingStage: chatScenarioPresets.startingStage,
+      })
+      .from(chatScenarioPresets)
+      .where(and(eq(chatScenarioPresets.id, body.value.presetId), eq(chatScenarioPresets.ownerId, user.id)))
+      .limit(1);
+    if (preset) {
+      const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+      const cards = parseOr(z.array(socialReactionCardSchema), preset.socialCards, [], undefined, "chat_scenario_presets.social_cards");
+      await editChatState({
+        chatId,
+        characterId,
+        profile,
+        patch: {
+          premise: preset.premise,
+          outfit: preset.outfit,
+          outfitExposed: preset.outfitExposed,
+          affinity: clampAffinity(stageMidpoint(preset.startingStage)),
+          ...(cards.length ? { activeSocialCards: cards } : {}),
+        },
+      });
+    }
+  }
 
   return jsonOk({ id: chatId, memoryGroupId }, 201);
 });

@@ -253,10 +253,22 @@ export const characterDetailSchema = characterSummarySchema.extend({
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
 /** One line of a conversation transcript (docs/developer-notes/character-chat-standalone.spec.md). */
+/** Alternate generations browsable on an assistant reply (character-chat-standalone.spec.md §4.1). */
+export const replyTakesSchema = z
+  .object({
+    takes: arrayOf(z.object({ id: z.string(), content: z.string(), createdAt: z.string().catch("") })),
+    activeId: z.string().catch(""),
+  })
+  .catch({ takes: [], activeId: "" });
+export type ReplyTakes = z.infer<typeof replyTakesSchema>;
+
 export const chatMessageSchema = z.object({
   id: idSchema,
   role: z.enum(["user", "assistant"]).catch("assistant"),
   content: textOr(""),
+  takes: replyTakesSchema,
+  /** `{ stopped: true }` when the player cut the reply short (spec §4.2). */
+  meta: z.object({ stopped: z.boolean().catch(false) }).catch({ stopped: false }),
   createdAt: optionalText,
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
@@ -794,7 +806,7 @@ export const chatsApi = {
   update: (chatId: string, patch: { title?: string; archived?: boolean }) =>
     apiPatch(z.unknown(), `/api/chats/${chatId}`, patch),
   /** Create a conversation — D7 memory choice: `"shared"` continues the history, `"fresh"` is a clean island. */
-  create: (body: { characterId: string; title?: string; memory: "shared" | "fresh" }) =>
+  create: (body: { characterId: string; title?: string; memory: "shared" | "fresh"; presetId?: string }) =>
     apiPost(createdRefSchema, "/api/chats", body),
   /** The full conversation envelope: transcript (oldest first) + chat header + character card. */
   transcript: (chatId: string) => apiGet(chatTranscriptSchema, `/api/chats/${chatId}`),
@@ -821,6 +833,36 @@ export const chatsApi = {
   scenes: (chatId: string) => apiGet(listOf(imageRecordSchema, "scenes", "images"), `/api/chats/${chatId}/scene`),
   /** Queue a scene render from the recent chat (single-reference); poll `scenes` for the result. */
   generateScene: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/scene`, {}),
+  /** Cut the in-flight reply short (spec §4.2); what already streamed persists with `meta.stopped`. */
+  stop: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/stop`),
+  /** Make one recorded take the displayed reply (spec §4.1 — display-only); returns its content. */
+  switchTake: (chatId: string, messageId: string, takeId: string) =>
+    apiPatch(z.object({ content: z.string().catch("") }), `/api/chats/${chatId}/messages/${messageId}/take`, { takeId }),
+};
+
+/** A saved scenario preset (character-chat-standalone.spec.md §1.5). */
+export const chatPresetSchema = z.object({
+  id: idSchema,
+  name: textOr(""),
+  premise: textOr(""),
+  outfit: textOr(""),
+  outfitExposed: z.boolean().catch(false),
+  socialCards: arrayOf(socialReactionCardSchema),
+  startingStage: textOr("stranger"),
+});
+export type ChatPreset = z.infer<typeof chatPresetSchema>;
+
+export const chatPresetsApi = {
+  list: () => apiGet(listOf(chatPresetSchema, "presets"), "/api/chat-presets"),
+  create: (body: {
+    name: string;
+    premise?: string;
+    outfit?: string;
+    outfitExposed?: boolean;
+    socialCards?: SocialReactionCard[];
+    startingStage?: string;
+  }) => apiPost(createdRefSchema, "/api/chat-presets", body),
+  remove: (presetId: string) => apiDelete(`/api/chat-presets/${presetId}`),
 };
 
 export interface ChatStreamOutcome {
@@ -847,7 +889,7 @@ export interface ChatStreamOutcome {
  */
 export async function sendChatMessage(
   chatId: string,
-  body: { content?: string; model?: string; open?: boolean },
+  body: { kind?: "send" | "open" | "continue" | "regenerate"; content?: string; model?: string },
   onChunk: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<ChatStreamOutcome> {

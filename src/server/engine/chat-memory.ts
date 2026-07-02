@@ -12,10 +12,12 @@ import {
   addFacts,
   appendEpisode,
   chatScope,
+  deleteEpisodeForMessage,
   deleteEpisodesForScope,
   deleteFactsForScope,
   FACT_RETRIEVAL_LIMIT,
   latestEpisodeNumber,
+  retractFactsForMessage,
   retrieveEpisodes,
   retrieveFacts,
   type FactDraftInput,
@@ -143,6 +145,8 @@ export async function writeChatMemory(input: {
   groupId: string;
   /** The speaking character — the interim write-only witness set. */
   characterId: string;
+  /** Provenance anchor (spec §4.3): the assistant message this exchange's memory came from. */
+  assistantMessageId: string | null;
   archivist: ChatArchivist | null;
   sink?: DiagnosticSink;
 }): Promise<void> {
@@ -153,14 +157,34 @@ export async function writeChatMemory(input: {
   const summary = result.episodeSummary.trim();
   if (summary) {
     const turnNumber = (await latestEpisodeNumber(scope)) + 1;
-    await appendEpisode(scope, turnNumber, summary, [], input.sink, [input.characterId]);
+    await appendEpisode(scope, turnNumber, summary, [], input.sink, [input.characterId], input.assistantMessageId);
   }
   if (result.facts.length) {
     const drafts: FactDraftInput[] = result.facts.map((fact: FactDraft) => ({
       ...fact,
       witnessedBy: [input.characterId],
     }));
-    await addFacts(scope, drafts, null, input.sink);
+    await addFacts(scope, drafts, { messageId: input.assistantMessageId }, input.sink);
+  }
+}
+
+/**
+ * Undo one assistant message's extracted memory (spec §4.3): retract its facts
+ * (status flip, audit kept) and delete its episode. The reconciliation behind
+ * message delete/edit and "another take" — without it the recovery levers clean
+ * the window but leave the poisoned memory in RAG.
+ */
+export async function reconcileMessageMemory(messageId: string, sink?: DiagnosticSink): Promise<void> {
+  const retracted = await retractFactsForMessage(messageId);
+  const episodes = await deleteEpisodeForMessage(messageId);
+  if (retracted.length || episodes) {
+    sink?.push(
+      diag(
+        "info",
+        "chat_memory.reconciled",
+        `retracted ${retracted.length} fact(s), deleted ${episodes} episode(s) for message ${messageId}`,
+      ),
+    );
   }
 }
 

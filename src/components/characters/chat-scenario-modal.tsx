@@ -6,10 +6,13 @@ import {
   CHAT_PREMISE_MAX_CHARS,
   type SocialReactionCard,
 } from "@/contracts";
-import { chatsApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatPresetsApi, chatsApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
+import { useAsyncData } from "@/components/hooks/use-async";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
@@ -18,9 +21,11 @@ import { useToast } from "@/components/ui/toast";
  * **chat-only** framing — scenario premise, free-text starting outfit + the
  * intimate-reveal toggle, and the social cards live in this chat. The authored
  * Starting Relationship moved to the editor's Chat-defaults card (it's a profile
- * field, not chat state). The form mounts fresh each open (Dialog unmounts its
- * children when closed), so the `useState` initializers re-seed from the snapshot
- * without an effect.
+ * field, not chat state). Scenario presets (character-chat-standalone.spec.md
+ * §1.5) ride on top: "Apply preset" fills the draft fields (Save still persists),
+ * and "Save as preset" captures the current draft as a reusable bundle. The form
+ * mounts fresh each open (Dialog unmounts its children when closed), so the
+ * `useState` initializers re-seed from the snapshot without an effect.
  */
 export function ChatScenarioModal({
   open,
@@ -64,6 +69,55 @@ function ScenarioForm({
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
   const [saving, setSaving] = useState(false);
 
+  // --- Scenario presets (spec §1.5) — the form mounts per open, so this loads then.
+  const presets = useAsyncData(() => chatPresetsApi.list(), []);
+  const [appliedPresetId, setAppliedPresetId] = useState("");
+  const [presetNameOpen, setPresetNameOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [presetBusy, setPresetBusy] = useState(false);
+
+  /** Fill the draft fields from a preset — the user still hits Save to persist. */
+  const applyPreset = (presetId: string) => {
+    setAppliedPresetId(presetId);
+    const preset = (presets.data ?? []).find((p) => p.id === presetId);
+    if (!preset) return;
+    setPremise(preset.premise);
+    setOutfit(preset.outfit);
+    setOutfitExposed(preset.outfitExposed);
+    if (preset.socialCards.length) setCards([...preset.socialCards]);
+  };
+
+  const deletePreset = async () => {
+    if (!appliedPresetId || presetBusy) return;
+    setPresetBusy(true);
+    const result = await chatPresetsApi.remove(appliedPresetId);
+    setPresetBusy(false);
+    if (result.ok) {
+      setAppliedPresetId("");
+      presets.reload({ silent: true });
+      toast.push({ title: "Preset deleted" });
+    } else {
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
+    }
+  };
+
+  /** Capture the current draft (startingStage stays the server default, "stranger"). */
+  const savePreset = async () => {
+    const name = presetName.trim();
+    if (!name || presetBusy) return;
+    setPresetBusy(true);
+    const result = await chatPresetsApi.create({ name, premise, outfit, outfitExposed, socialCards: cards });
+    setPresetBusy(false);
+    if (result.ok) {
+      setPresetNameOpen(false);
+      setPresetName("");
+      presets.reload({ silent: true });
+      toast.push({ title: "Preset saved", description: `"${name}" is available on any new conversation.` });
+    } else {
+      toast.push({ title: "Preset save failed", description: result.error.message, tone: "error" });
+    }
+  };
+
   // Only the touched fields go into the patch: a pre-first-exchange save upserts the
   // state row, and the server seeds the untouched rest from the profile (authored
   // stage, the character's own social cards) — an untouched field must not clobber
@@ -88,6 +142,33 @@ function ScenarioForm({
 
   return (
     <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
+      {(presets.data?.length ?? 0) > 0 ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Apply preset</span>
+          <div className="flex items-center gap-2">
+            <Select
+              value={appliedPresetId}
+              onChange={(e) => applyPreset(e.target.value)}
+              aria-label="Apply a saved scenario preset"
+              className="flex-1"
+            >
+              <option value="">Choose a saved scenario…</option>
+              {(presets.data ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+            {appliedPresetId ? (
+              <Button size="sm" variant="danger" busy={presetBusy} onClick={() => void deletePreset()}>
+                Delete
+              </Button>
+            ) : null}
+          </div>
+          <span className="text-[11px] text-paper-600">Fills the fields below — hit Save to apply it to this chat.</span>
+        </div>
+      ) : null}
+
       <label className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Scenario</span>
         <Textarea
@@ -133,13 +214,42 @@ function ScenarioForm({
         />
       </div>
 
-      <div className="flex justify-end gap-2 border-t border-ink-600 pt-3">
-        <Button onClick={onClose} disabled={saving}>
-          Cancel
-        </Button>
-        <Button variant="primary" busy={saving} onClick={() => void save()}>
-          Save
-        </Button>
+      <div className="flex items-center gap-2 border-t border-ink-600 pt-3">
+        {presetNameOpen ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Input
+              autoFocus
+              value={presetName}
+              maxLength={80}
+              placeholder="Preset name…"
+              aria-label="Preset name"
+              onChange={(e) => setPresetName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void savePreset();
+                if (e.key === "Escape") setPresetNameOpen(false);
+              }}
+              className="h-8 flex-1 text-sm"
+            />
+            <Button size="sm" busy={presetBusy} disabled={!presetName.trim()} onClick={() => void savePreset()}>
+              Save preset
+            </Button>
+            <Button size="sm" variant="quiet" disabled={presetBusy} onClick={() => setPresetNameOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="quiet" onClick={() => setPresetNameOpen(true)}>
+            Save as preset…
+          </Button>
+        )}
+        <div className="ml-auto flex gap-2">
+          <Button onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button variant="primary" busy={saving} onClick={() => void save()}>
+            Save
+          </Button>
+        </div>
       </div>
     </div>
   );

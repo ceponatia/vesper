@@ -252,6 +252,14 @@ export const characterChatMessages = pgTable(
     speakerCharacterId: text("speaker_character_id").references(() => characters.id, { onDelete: "set null" }),
     role: text("role", { enum: ["user", "assistant"] }).notNull(),
     content: text("content").notNull(),
+    /**
+     * Alternate takes on an assistant reply (character-chat-standalone.spec.md §4.1):
+     * `{ takes: [{id, content, createdAt}], activeId }`, cap TAKES_CAP. `content`
+     * above always mirrors the active take, so transcript reads stay one-column.
+     */
+    takes: jsonb("takes").notNull().default({}),
+    /** Reply metadata (e.g. `{ stopped: true }` when the player cut the stream short). */
+    meta: jsonb("meta").notNull().default({}),
     createdAt: createdAt(),
   },
   (t) => [index("character_chat_messages_chat_idx").on(t.chatId, t.createdAt)],
@@ -310,6 +318,12 @@ export const characterChatState = pgTable(
     characterId: text("character_id")
       .notNull()
       .references(() => characters.id, { onDelete: "cascade" }),
+    /**
+     * Snapshot of the ChatState as it stood BEFORE the last exchange's drift +
+     * fan-out applied (character-chat-standalone.spec.md §4.1) — the rollback
+     * target for "another take". Overwritten each exchange; `{}` ⇒ none.
+     */
+    preExchangeState: jsonb("pre_exchange_state").notNull().default({}),
     /** Record<string,number> — the full meter registry, carried verbatim (seeded from initialMeters()). */
     meters: jsonb("meters").notNull().default({}),
     /** −100…100, the character's feeling toward the player persona (seeded from playerRelationship.stage). */
@@ -824,6 +838,12 @@ export const episodes = pgTable(
     threadIds: jsonb("thread_ids").notNull().default([]),
     /** Participant ids present for the turn — interim co-location semantics; write-only until the knowledge ledger ships. */
     witnessedBy: jsonb("witnessed_by").notNull().default([]),
+    /**
+     * Chat-lane provenance (character-chat-standalone.spec.md §4.3): the assistant
+     * message this episode summarizes. Deletion targets this, not the ordinal —
+     * a shared memory group spans conversations, so ordinals alone are ambiguous.
+     */
+    sourceMessageId: text("source_message_id"),
     embedding: embedding(),
     embedder: text("embedder"),
     createdAt: createdAt(),
@@ -867,6 +887,12 @@ export const facts = pgTable(
     status: text("status", { enum: ["active", "superseded", "retracted"] }).notNull().default("active"),
     supersededById: text("superseded_by_id"),
     sourceTurnId: text("source_turn_id"),
+    /**
+     * Chat-lane provenance (character-chat-standalone.spec.md §4.3): the assistant
+     * message this fact was extracted from — the session lane's `source_turn_id`
+     * analogue. Plain text (no FK): retraction runs BEFORE the message row goes.
+     */
+    sourceMessageId: text("source_message_id"),
     embedding: embedding(),
     embedder: text("embedder"),
     createdAt: createdAt(),

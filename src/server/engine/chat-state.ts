@@ -236,6 +236,64 @@ export async function loadChatState(
   };
 }
 
+/** The persisted-snapshot shape: ChatState with the Date serialized (spec §4.1). */
+const storedChatStateSchema = z.object({
+  meters: metersSchema,
+  affinity: z.number(),
+  conditions: conditionsSchema,
+  mindNote: z.string(),
+  premise: z.string(),
+  outfit: z.string(),
+  outfitExposed: z.boolean(),
+  activeSocialCards: activeSocialCardsSchema,
+  surfacedCues: surfacedCuesSchema,
+  memoryQueries: memoryQueriesSchema,
+  attributeOverlays: attributeOverlaysSchema,
+  lastPulseTrace: chatPulseTraceSchema,
+  lastMemoryTrace: chatMemoryTraceSchema,
+  clockMinutes: z.number(),
+  lastInteractionAt: z.string().nullable(),
+});
+
+/** Serialize a ChatState for the jsonb snapshot column (Date → ISO). PURE. */
+export function serializeChatState(state: ChatState): Record<string, unknown> {
+  return { ...state, lastInteractionAt: state.lastInteractionAt ? state.lastInteractionAt.toISOString() : null };
+}
+
+/**
+ * Persist the "another take" rollback anchor (spec §4.1): the state as it stood
+ * before the exchange. Targeted UPDATE — the row exists by the time the finalizer
+ * calls this (saveChatState upserted it just before). `null` ⇒ `{}` (no snapshot,
+ * e.g. the very first exchange seeded from authored defaults).
+ */
+export async function savePreExchangeSnapshot(
+  chatId: string,
+  characterId: string,
+  state: ChatState | null,
+): Promise<void> {
+  await db()
+    .update(characterChatState)
+    .set({ preExchangeState: state ? serializeChatState(state) : {} })
+    .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)));
+}
+
+/** Load the rollback anchor, or null when none was recorded (first exchange / legacy row). */
+export async function loadPreExchangeState(chatId: string, characterId: string): Promise<ChatState | null> {
+  const [row] = await db()
+    .select({ preExchangeState: characterChatState.preExchangeState })
+    .from(characterChatState)
+    .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)))
+    .limit(1);
+  if (!row) return null;
+  const parsed = parseOrNull(storedChatStateSchema, row.preExchangeState);
+  if (!parsed) return null;
+  return {
+    ...parsed,
+    affinity: clampAffinity(parsed.affinity),
+    lastInteractionAt: parsed.lastInteractionAt ? new Date(parsed.lastInteractionAt) : null,
+  };
+}
+
 /**
  * Recompute state from the stored row + elapsed wall-clock (spec §3). PURE and
  * idempotent on read, so it runs on every read boundary (POST prompt-build and the
@@ -505,6 +563,19 @@ export async function finalizeChatState(input: {
   characterId: string;
   /** The participant's memory group (character-chat-standalone.spec.md §1.3). */
   memoryGroupId: string;
+  /** Provenance anchor (spec §4.3): the assistant message row this exchange produced/updated. */
+  assistantMessageId: string;
+  /**
+   * The STORED state as it stood before this exchange (null on a first exchange) —
+   * persisted as the row's rollback snapshot so "another take" can undo the
+   * exchange's drift + fan-out effects (spec §4.1).
+   */
+  preExchangeState: ChatState | null;
+  /**
+   * Skip the reaction pulse (a "go on" continue beat has no player act to react
+   * to); the archivist still runs — continued narrative is worth remembering.
+   */
+  skipPulse?: boolean;
   promptMessageId: string;
   profile: CharacterProfile;
   characterName: string;
@@ -517,14 +588,16 @@ export async function finalizeChatState(input: {
   sink?: DiagnosticSink;
 }): Promise<void> {
   const [pulse, archivist] = await Promise.all([
-    runChatPulse({
-      state: input.driftedState,
-      profile: input.profile,
-      characterName: input.characterName,
-      playerName: input.playerName,
-      exchange: input.exchange,
-      sink: input.sink,
-    }),
+    input.skipPulse
+      ? Promise.resolve({ state: input.driftedState, degraded: false })
+      : runChatPulse({
+          state: input.driftedState,
+          profile: input.profile,
+          characterName: input.characterName,
+          playerName: input.playerName,
+          exchange: input.exchange,
+          sink: input.sink,
+        }),
     runChatArchivist({
       characterName: input.characterName,
       playerName: input.playerName,
@@ -541,6 +614,7 @@ export async function finalizeChatState(input: {
     await writeChatMemory({
       groupId: input.memoryGroupId,
       characterId: input.characterId,
+      assistantMessageId: input.assistantMessageId,
       archivist: archivist.value,
       sink: input.sink,
     });
@@ -585,6 +659,10 @@ export async function finalizeChatState(input: {
       lastInteractionAt: input.now,
     },
   });
+  // The rollback anchor rides a targeted follow-up UPDATE (never the shared upsert
+  // column list — an author edit must not clobber it): repeated "another take"s
+  // keep rolling back to the same pre-exchange point.
+  await savePreExchangeSnapshot(input.chatId, input.characterId, input.preExchangeState);
 }
 
 /**

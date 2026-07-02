@@ -60,7 +60,7 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
   // internally transactional; embeddings degrade per docs/memory.md). The
   // world-state merge below is the single atomic transaction.
   const scope = sessionScope(bundle.session.id);
-  await addFacts(scope, plan.factDrafts, turn.id, sink);
+  await addFacts(scope, plan.factDrafts, { turnId: turn.id }, sink);
   if (mode === "reconcile") {
     await deleteEpisodeForTurn(scope, turn.number);
   }
