@@ -1,13 +1,14 @@
 import { diag, type DiagnosticSink } from "@/contracts";
-import type { GenerateCheckedResult } from "../ai";
+import type { GenerateCheckedResult } from "./generate-checked";
 
 /**
- * Race a `generateChecked` call against a hard timeout for the chat post-turn fan-out
- * (the reaction pulse ‖ the archivist-lite — character-chat-primary.spec.md §2).
- * `generateChecked` never throws (it owns the resilience ladder); on timeout we abort the
- * call — its orphaned tail then adds no diagnostics — and report a degraded miss so the
- * caller falls back (drift-only state / summary-window memory). Shared so both legs degrade
- * identically; each passes its own timeout code (`clearTimeout` in `finally` avoids a leak).
+ * Race a `generateChecked` call against a hard timeout — for any best-effort agent
+ * call that must not stall its caller (the chat post-turn fan-out legs, the
+ * pre-narrator intake). `generateChecked` never throws (it owns the resilience
+ * ladder); on timeout we abort the call — its orphaned tail then adds no
+ * diagnostics — and report a degraded miss so the caller falls back to its own
+ * degraded path. Each caller passes its own timeout diagnostic code
+ * (`clearTimeout` in `finally` avoids a leak).
  */
 export async function withGenerateTimeout<T>(
   work: Promise<GenerateCheckedResult<T>>,
@@ -20,7 +21,7 @@ export async function withGenerateTimeout<T>(
   const timeout = new Promise<{ value: T | null; degraded: boolean }>((resolve) => {
     timer = setTimeout(() => {
       controller.abort();
-      sink?.push(diag("warn", timeoutCode, `chat fan-out leg exceeded ${timeoutMs}ms; degrading`));
+      sink?.push(diag("warn", timeoutCode, `generation exceeded ${timeoutMs}ms; degrading to the fallback`));
       resolve({ value: null, degraded: true });
     }, timeoutMs);
   });

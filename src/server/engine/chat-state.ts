@@ -45,9 +45,8 @@ import { catalogConditionForLabel } from "@/contracts/conditions/catalog";
 import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
-import { agentModelId, generateChecked, isDemoMode } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import { characterChatMessages, characterChatState, db, type DbWriter } from "../db";
-import { withGenerateTimeout } from "./chat-generate";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
 import {
   AFFINITY_DELTA_CLAMP,

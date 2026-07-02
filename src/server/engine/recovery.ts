@@ -1,8 +1,8 @@
-import { and, eq, gt, inArray, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { diag } from "@/contracts/diagnostics";
 import { log } from "@/server/log";
 import { db, jobs, sessions, turns } from "../db";
-import { HEARTBEAT_STALE_MS, RECOVERY_SWEEP_INTERVAL_MS } from "./constants";
+import { API_JOB_STALE_MS, HEARTBEAT_STALE_MS, RECOVERY_SWEEP_INTERVAL_MS } from "./constants";
 import { abandonOverAttemptedJobs, kickSession, recoverStaleJobs } from "./jobs";
 
 /**
@@ -122,6 +122,28 @@ export async function sweepAbandonedSessions(): Promise<number> {
   return recovered;
 }
 
+/**
+ * Fail detached (session-less) jobs orphaned by a process death (codebase-review
+ * D4). Two populations share the gap: api-side `startJob` rows (server/api/jobs.ts
+ * — run in-process, `heartbeat_at` frozen at its insert default, updated only when
+ * the promise settles) and detached engine-queue jobs like `chat_summary`
+ * (heartbeated while running, but `recoverStaleJobs` is session-scoped and never
+ * reaches a NULL `session_id`). Either way a crash mid-run pins the row `running`
+ * forever. The predicate: running + no session + heartbeat older than
+ * API_JOB_STALE_MS — generous, because api-side rows can't distinguish slow from
+ * dead (an image render can take minutes), and a survivor that settles after
+ * being swept simply overwrites the row with its real outcome.
+ */
+export async function sweepDetachedApiJobs(): Promise<number> {
+  const cutoff = new Date(Date.now() - API_JOB_STALE_MS);
+  const failed = await db()
+    .update(jobs)
+    .set({ status: "failed", error: "abandoned: process died before the detached job settled", finishedAt: new Date() })
+    .where(and(eq(jobs.status, "running"), isNull(jobs.sessionId), lt(jobs.heartbeatAt, cutoff)))
+    .returning({ id: jobs.id });
+  return failed.length;
+}
+
 let sweepTimer: ReturnType<typeof setInterval> | undefined;
 
 /**
@@ -137,6 +159,11 @@ export function startRecoverySweep(): void {
         if (n > 0) log.info("recovery", `sweep recovered ${n} wedged session(s)`);
       })
       .catch((err: unknown) => log.error("recovery", "sweep failed", { error: errorText(err) }));
+    void sweepDetachedApiJobs()
+      .then((n) => {
+        if (n > 0) log.info("recovery", `sweep failed ${n} detached api job(s)`);
+      })
+      .catch((err: unknown) => log.error("recovery", "detached-job sweep failed", { error: errorText(err) }));
   };
   tick();
   sweepTimer = setInterval(tick, RECOVERY_SWEEP_INTERVAL_MS);

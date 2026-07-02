@@ -22,7 +22,8 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
-import { DELETE as chatDelete, GET as chatGet, persistAssistantReply, POST as chatPost } from "./[id]/chat/route";
+import { persistAssistantReply } from "@/server/engine";
+import { DELETE as chatDelete, GET as chatGet, POST as chatPost } from "./[id]/chat/route";
 import { DELETE as msgDelete, PATCH as msgPatch } from "./[id]/chat/[messageId]/route";
 
 async function probe(): Promise<boolean> {

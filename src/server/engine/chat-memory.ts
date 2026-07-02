@@ -6,7 +6,7 @@ import {
   type DiagnosticSink,
   type FactDraft,
 } from "@/contracts";
-import { agentModelId, generateChecked, isDemoMode } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import type { DbWriter } from "../db";
 import {
   addFacts,
@@ -21,7 +21,6 @@ import {
   type FactDraftInput,
 } from "../memory";
 import { CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS, CHAT_ARCHIVIST_TIMEOUT_MS } from "./constants";
-import { withGenerateTimeout } from "./chat-generate";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./prompts/chat-archivist";
 
 /**

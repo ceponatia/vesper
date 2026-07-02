@@ -91,8 +91,11 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // not the character's structured defaultOutfit — chat has no equippable wardrobe.
   const chatState = await loadChatState(user.id, id);
 
+  // Distinct from the engine queue's session `scene_image` type (codebase-review D4):
+  // this is an in-process api-side job with no heartbeat, recovered by the detached-job
+  // sweep (engine/recovery.ts sweepDetachedApiJobs) rather than the session runner.
   const jobId = await startJob({
-    type: "scene_image",
+    type: "chat_scene_image",
     payload: { characterId: id },
     run: async () => ({
       imageId: await renderCharacterSceneImage({
