@@ -1,5 +1,6 @@
-import { and, eq, ne, sql } from "drizzle-orm";
-import { characterProfileSchema, DiagnosticCollector, emptyCharacterProfile, splitStateCues } from "@/contracts";
+import { and, desc, eq, lt, ne, or, sql } from "drizzle-orm";
+import { z } from "zod";
+import { characterProfileSchema, DiagnosticCollector, diag, emptyCharacterProfile, splitStateCues } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characterChatMessages, chatParticipants, db, images } from "../db";
@@ -7,10 +8,19 @@ import { log } from "../log";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { chatCueInviteLine, detectChatCue } from "./chat-intent";
-import { deleteChatMemory, retrieveChatMemory } from "./chat-memory";
-import { driftChatState, finalizeChatState, loadChatState, persistChatState, seedChatState } from "./chat-state";
+import { deleteChatMemory, reconcileMessageMemory, retrieveChatMemory, runChatArchivist, writeChatMemory } from "./chat-memory";
+import {
+  driftChatState,
+  finalizeChatState,
+  loadChatState,
+  loadPreExchangeState,
+  persistChatState,
+  savePreExchangeSnapshot,
+  seedChatState,
+  type ChatState,
+} from "./chat-state";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
-import { CHARACTER_CHAT_SUMMARIZE_AT } from "./constants";
+import { CHARACTER_CHAT_SUMMARIZE_AT, CHAT_REPLY_TAKES_CAP } from "./constants";
 import { tryKeyedLock } from "./keyed-lock";
 import { buildCharacterChatSystemPrompt } from "./prompts/character-chat";
 import { narrationShapeId } from "./prompts/constants";
@@ -24,7 +34,18 @@ import { narrationShapeId } from "./prompts/constants";
  * work (reply persistence + the post-turn fan-out). The HTTP route stays a thin
  * parse → auth → stream shell. Keyed on the conversation (spec §1): the route
  * resolves chat + participant + character and hands their slices in.
+ *
+ * Four exchange kinds (spec §4):
+ * - **send** — the normal player turn.
+ * - **open** — the opening beat ("Prompt character"): no player line, no fan-out.
+ * - **continue** — "go on": no player line; the archivist runs (new narrative is
+ *   worth remembering) but the reaction pulse is skipped (no player act).
+ * - **regenerate** — "another take" on the LAST assistant reply: state rolls back
+ *   to the pre-exchange snapshot, the old take's memory is retracted, the reply
+ *   row is updated in place with the old take kept browsable (`takes`).
  */
+
+export type ChatExchangeKind = "send" | "open" | "continue" | "regenerate";
 
 export interface SubmitChatMessageInput {
   /** The conversation (already authorized + not archived — the route owns both checks). */
@@ -33,25 +54,108 @@ export interface SubmitChatMessageInput {
   memoryGroupId: string;
   /** The (v1 single) participant character row slice. */
   character: { id: string; name: string; profile: unknown };
-  /** The player's line; ignored (and typically absent) when `open` is true. */
+  kind: ChatExchangeKind;
+  /** The player's line — required for `send`, ignored for the other kinds. */
   content?: string;
   /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
   model?: string;
-  /**
-   * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): no
-   * player line — the character opens the scene from the premise + seeded warmth.
-   */
-  open?: boolean;
 }
 
 export type SubmitChatMessageResult =
-  | { ok: false; code: "chat_busy"; message: string }
+  | { ok: false; code: "chat_busy" | "nothing_to_regenerate"; message: string }
   | { ok: true; stream: AsyncGenerator<string, void, unknown> };
 
 /** A synthetic, non-persisted cue that gives the model a turn to respond to when the character opens the scene. */
 const OPENING_CUE = "(Open the scene. Speak first, in character.)";
+/** Synthetic cue for a "go on" continue beat — never persisted into history. */
+const CONTINUE_CUE = "(Continue naturally from your last line — one more beat. Do not repeat yourself, and do not speak for the player.)";
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+// ---------------------------------------------------------------------------
+// Reply takes (spec §4.1) — alternate generations browsable on the message row
+// ---------------------------------------------------------------------------
+
+const replyTakeSchema = z.object({ id: z.string(), content: z.string(), createdAt: z.string() });
+export const replyTakesSchema = z.object({
+  takes: z.array(replyTakeSchema).catch([]),
+  activeId: z.string().catch(""),
+});
+export type ReplyTakes = z.infer<typeof replyTakesSchema>;
+
+export const emptyReplyTakes = (): ReplyTakes => ({ takes: [], activeId: "" });
+
+/**
+ * Record a fresh take (PURE): the row's current content becomes a browsable entry
+ * (seeded lazily on the first regenerate), the new take is appended and made
+ * active, and the list is capped at CHAT_REPLY_TAKES_CAP — evicting the oldest
+ * non-active entries first.
+ */
+export function pushReplyTake(
+  prior: ReplyTakes,
+  currentContent: string,
+  newContent: string,
+  nowIso: string,
+): ReplyTakes {
+  let takes = [...prior.takes];
+  if (takes.length === 0) {
+    takes.push({ id: newId(), content: currentContent, createdAt: nowIso });
+  }
+  const fresh = { id: newId(), content: newContent, createdAt: nowIso };
+  takes.push(fresh);
+  while (takes.length > CHAT_REPLY_TAKES_CAP) {
+    const evictAt = takes.findIndex((t) => t.id !== fresh.id);
+    if (evictAt === -1) break;
+    takes.splice(evictAt, 1);
+  }
+  return { takes, activeId: fresh.id };
+}
+
+/**
+ * Make one recorded take the displayed reply: the row's `content` is updated to
+ * mirror it (spec §4.1 — transcript reads stay one-column). Returns the take's
+ * content, or null when the message/take doesn't exist. Display-only: state and
+ * memory keep reflecting the last GENERATED take (regenerate to re-run effects).
+ */
+export async function switchReplyTake(chatId: string, messageId: string, takeId: string): Promise<string | null> {
+  const [row] = await db()
+    .select({ takes: characterChatMessages.takes })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
+    .limit(1);
+  if (!row) return null;
+  const takes = parseOr(replyTakesSchema, row.takes, emptyReplyTakes(), undefined, "character_chat_messages.takes");
+  const target = takes.takes.find((t) => t.id === takeId);
+  if (!target) return null;
+  await db()
+    .update(characterChatMessages)
+    .set({ content: target.content, takes: { ...takes, activeId: target.id } })
+    .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)));
+  return target.content;
+}
+
+// ---------------------------------------------------------------------------
+// Stop (spec §4.2) — abort the in-flight reply, keep what streamed
+// ---------------------------------------------------------------------------
+
+/** In-flight reply aborts by chat id — in-process, like the exchange lock itself. */
+const inflightReplyAborts = new Map<string, AbortController>();
+
+/**
+ * Cut the in-flight reply short: the model stream aborts server-side, the
+ * accumulated prefix persists as the reply (`meta.stopped`), and the fan-out
+ * runs over the truncated text. Returns false when nothing is streaming.
+ */
+export function stopChatReply(chatId: string): boolean {
+  const controller = inflightReplyAborts.get(chatId);
+  if (!controller) return false;
+  controller.abort();
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// The exchange
+// ---------------------------------------------------------------------------
 
 /**
  * Run one chat exchange. Returns `chat_busy` if a reply is still streaming for this
@@ -63,10 +167,8 @@ const describeError = (error: unknown): string => (error instanceof Error ? erro
  * lock is released on every path (including an assembly throw before streaming).
  */
 export async function submitChatMessage(input: SubmitChatMessageInput): Promise<SubmitChatMessageResult> {
-  const { chatId, memoryGroupId } = input;
+  const { chatId, memoryGroupId, kind } = input;
   const { id: characterId, name: characterName } = input.character;
-  const opening = input.open === true;
-  const content = input.content ?? "";
 
   let releaseChatLock!: () => void;
   const chatLockGate = new Promise<void>((resolve) => {
@@ -79,35 +181,79 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
   void chatLock; // resolves via releaseChatLock; never rejects
 
   try {
-    return { ok: true, stream: await prepareExchange() };
+    return await prepareExchange();
   } catch (err) {
     releaseChatLock();
     throw err;
   }
 
   /** Pre-turn assembly: user line → window/summary → drift → recall → prompt → model stream. */
-  async function prepareExchange(): Promise<AsyncGenerator<string, void, unknown>> {
-    // Normal turn: mint the user line's id up front so the assistant persist can be
-    // guarded against it (persistAssistantReply): if a concurrent delete removes this
-    // row mid-stream, the reply is dropped rather than orphaned. The opening beat has
-    // no player line, so no guard row. Every exchange bumps the Chats-list recency.
-    const promptMessageId = newId();
-    if (!opening) {
-      await db().insert(characterChatMessages).values({ id: promptMessageId, chatId, role: "user", content });
+  async function prepareExchange(): Promise<SubmitChatMessageResult> {
+    const sink = new DiagnosticCollector();
+
+    // --- Resolve the exchange's rows per kind -------------------------------
+    // send: mint + insert the user guard row and a fresh assistant row id.
+    // open/continue: no user line; fresh assistant row id, no guard.
+    // regenerate: reuse the LAST assistant row (its id is the provenance anchor);
+    //   its prompting user line (when one exists) becomes the guard + player text.
+    let promptMessageId: string | null = null;
+    let playerContent = "";
+    let assistantMessageId = newId();
+    /** The synthetic cue appended to history when there is no player line this turn. */
+    let syntheticCue: string | null = null;
+    /** For regenerate: the current (soon-to-be-old) reply text on the row. */
+    let regenerateTarget: { id: string; content: string } | null = null;
+    let effectiveKind: ChatExchangeKind = kind;
+
+    if (kind === "send") {
+      promptMessageId = newId();
+      playerContent = input.content ?? "";
+      await db()
+        .insert(characterChatMessages)
+        .values({ id: promptMessageId, chatId, role: "user", content: playerContent });
+    } else if (kind === "open") {
+      syntheticCue = OPENING_CUE;
+    } else if (kind === "continue") {
+      syntheticCue = CONTINUE_CUE;
+    } else {
+      const target = await lastAssistantMessage(chatId);
+      if (!target) {
+        releaseChatLock();
+        return { ok: false, code: "nothing_to_regenerate", message: "there is no reply to regenerate yet" };
+      }
+      regenerateTarget = { id: target.id, content: target.content };
+      assistantMessageId = target.id;
+      const prev = await messageBefore(chatId, target);
+      if (prev?.role === "user") {
+        promptMessageId = prev.id;
+        playerContent = prev.content;
+      } else {
+        // The reply being regenerated was itself an opening/continue beat.
+        syntheticCue = prev ? CONTINUE_CUE : OPENING_CUE;
+        effectiveKind = prev ? "continue" : "open";
+      }
     }
+
+    const opening = effectiveKind === "open";
     await db().update(characterChats).set({ lastMessageAt: new Date() }).where(eq(characterChats.id, chatId));
 
-    // The running summary covers everything up to its watermark; the verbatim
-    // window is every message after it (includes the line just inserted). No
-    // summary row ⇒ the old last-40 behavior, unchanged.
-    const summaryState = await loadChatSummary(chatId);
-    const history = await loadVerbatimWindow(chatId, summaryState?.watermark ?? null);
-
-    // The verbatim tail has grown to the fold trigger → fold the oldest exchanges
-    // into the running summary. Fire-and-forget: a detached job that runs
-    // concurrently with this reply and never adds latency to it.
-    if (history.length >= CHARACTER_CHAT_SUMMARIZE_AT * 2) {
-      void enqueueChatSummary({ chatId });
+    // --- State: load (or roll back), then drift -----------------------------
+    // Regenerate restores the pre-exchange snapshot (spec §4.1) so the old take's
+    // drift + pulse effects don't double-apply, and retracts the old take's
+    // extracted memory (spec §4.3) so it can't prime the new one. A missing
+    // snapshot degrades to no-rollback with a diagnostic — never a failed reply.
+    let storedState: ChatState | null;
+    if (regenerateTarget) {
+      const restored = await loadPreExchangeState(chatId, characterId);
+      if (!restored) {
+        sink.push(
+          diag("warn", "chat_state.snapshot.missing", "no pre-exchange snapshot; regenerating without state rollback"),
+        );
+      }
+      storedState = restored ?? (await loadChatState(chatId, characterId, sink));
+      await reconcileMessageMemory(regenerateTarget.id, sink);
+    } else {
+      storedState = await loadChatState(chatId, characterId, sink);
     }
 
     const profile = parseOr(
@@ -117,27 +263,30 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       undefined,
       "characters.profile",
     );
+    const now = new Date();
+    const driftedState = driftChatState(storedState ?? seedChatState(profile), now, profile, { advance: true });
+
+    // --- Window + summary ----------------------------------------------------
+    const summaryState = await loadChatSummary(chatId);
+    const history = await loadVerbatimWindow(chatId, summaryState?.watermark ?? null);
+    // The regenerated reply must not see itself: it is the newest message, so it
+    // is the window's last row — drop it (its prompting user line stays).
+    if (regenerateTarget && history.length && history.at(-1)?.role === "assistant") history.pop();
+
+    if (history.length >= CHARACTER_CHAT_SUMMARIZE_AT * 2) {
+      void enqueueChatSummary({ chatId });
+    }
+
     // The user's default player character (player-character.plan.md), so the
     // character addresses someone by name instead of a faceless "the user".
     const owner = await chatOwnerId(chatId);
     const player = await resolvePlayerPersona(owner);
 
-    // Chat state (character-chat-state.spec.md §5), per participant (spec §1.2): load
-    // (or lazily seed from the authored defaults), then recompute drift — between-visit
-    // recovery toward rested + this exchange's within-visit tick. Pure; persisted once
-    // at turn end.
-    const now = new Date();
-    const sink = new DiagnosticCollector();
-    const storedState = await loadChatState(chatId, characterId, sink);
-    const driftedState = driftChatState(storedState ?? seedChatState(profile), now, profile, { advance: true });
-
-    // RAG long-term memory (character-chat-primary.spec.md §2): recall the participant's
-    // memory group, keyed on last turn's memory queries + this input. A failed leg
-    // degrades to [] with a diagnostic (never a failed reply).
+    // --- RAG recall (spec §2): the participant's memory group ----------------
     const memory = await retrieveChatMemory({
       groupId: memoryGroupId,
       queries: driftedState.memoryQueries,
-      input: opening ? "" : content,
+      input: playerContent,
       sink,
     });
 
@@ -161,73 +310,104 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       },
       opening,
       narrationShape: narrationShapeId("chat"),
-      // One-turn cue invitation (§7): an opening beat has no player input to read.
-      cueInvite: opening ? undefined : chatCueInviteLine(detectChatCue(content), characterName),
+      // One-turn cue invitation (§7): beats without player input have none to read.
+      cueInvite: playerContent ? chatCueInviteLine(detectChatCue(playerContent), characterName) : undefined,
     });
-    // The opening beat has no player turn — give the model a synthetic (non-persisted)
-    // cue to respond to so it produces the character's first line.
-    const modelHistory = opening ? [...history, { role: "user" as const, content: OPENING_CUE }] : history;
-    const gen = streamCharacterChat({ system, history: modelHistory, name: characterName, model: input.model });
+    const modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
 
-    // Settle work (runs once the reply has fully streamed):
-    // - opening beat: persist only the character's line (no guard row exists), then fold
-    //   drift into the state — no pulse, since there was no player act to react to. The
-    //   opening beat shows state to the narrator too, so record the bands surfaced so the
-    //   first real turn doesn't re-announce them (character-chat-state-narration.spec.md §5).
-    // - normal turn: persist the reply (guarded), then run the post-turn fan-out. The reply
-    //   has already flushed to the client, so this is invisible to perceived latency; a
-    //   pulse failure degrades to drift-only state and never affects the saved reply.
-    const settle = opening
-      ? async (full: string): Promise<void> => {
-          await db()
-            .insert(characterChatMessages)
-            .values({ chatId, speakerCharacterId: characterId, role: "assistant", content: full });
-          try {
-            const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
-            await persistChatState(chatId, characterId, { ...driftedState, surfacedCues, lastInteractionAt: now });
-          } catch (error) {
-            log.error("engine.chat", "chat-state opening persist failed", { error: describeError(error) });
-          }
+    const abortController = new AbortController();
+    inflightReplyAborts.set(chatId, abortController);
+    const gen = streamCharacterChat({
+      system,
+      history: modelHistory,
+      name: characterName,
+      model: input.model,
+      signal: abortController.signal,
+    });
+
+    // --- Settle work (runs once the reply has fully streamed) ----------------
+    const settle = async (full: string, stopped: boolean): Promise<void> => {
+      const meta = stopped ? { stopped: true } : {};
+      if (regenerateTarget) {
+        // Update the row in place: the old take stays browsable, the new one is
+        // active (spec §4.1). Row-existence is the guard — a delete landing
+        // mid-stream makes this a no-op.
+        const takes = await currentReplyTakes(chatId, regenerateTarget.id);
+        if (takes === null) return; // row deleted mid-stream
+        const next = pushReplyTake(takes, regenerateTarget.content, full, now.toISOString());
+        await db()
+          .update(characterChatMessages)
+          .set({ content: full, takes: next, meta })
+          .where(and(eq(characterChatMessages.id, regenerateTarget.id), eq(characterChatMessages.chatId, chatId)));
+      } else {
+        await persistAssistantReply({
+          id: assistantMessageId,
+          chatId,
+          speakerCharacterId: characterId,
+          promptMessageId,
+          content: full,
+          meta,
+        });
+      }
+
+      if (opening) {
+        // Opening beat: fold drift into the state — no fan-out, there was no
+        // player act and barely any narrative to archive. Record the surfaced
+        // bands so the first real turn doesn't re-announce them, and the
+        // rollback anchor so even an opening beat can be regenerated.
+        try {
+          const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
+          await persistChatState(chatId, characterId, { ...driftedState, surfacedCues, lastInteractionAt: now });
+          await savePreExchangeSnapshot(chatId, characterId, storedState);
+        } catch (error) {
+          log.error("engine.chat", "chat-state opening persist failed", { error: describeError(error) });
         }
-      : async (full: string): Promise<void> => {
-          await persistAssistantReply({ chatId, speakerCharacterId: characterId, promptMessageId, content: full });
-          try {
-            await finalizeChatState({
-              chatId,
-              characterId,
-              memoryGroupId,
-              promptMessageId,
-              profile,
-              characterName,
-              playerName: player.name,
-              driftedState,
-              now,
-              exchange: { player: content, assistant: full },
-              retrieved: memory,
-              sink,
-            });
-          } catch (error) {
-            log.error("engine.chat", "chat-state finalize failed", { error: describeError(error) });
-          }
-          if (sink.items.length) {
-            log.info("engine.chat", "chat-state diagnostics", { codes: sink.items.map((d) => d.code) });
-          }
-        };
+        return;
+      }
 
-    return streamExchange(gen, settle);
+      try {
+        await finalizeChatState({
+          chatId,
+          characterId,
+          memoryGroupId,
+          assistantMessageId,
+          preExchangeState: storedState,
+          skipPulse: effectiveKind === "continue",
+          promptMessageId: promptMessageId ?? assistantMessageId,
+          profile,
+          characterName,
+          playerName: player.name,
+          driftedState,
+          now,
+          exchange: { player: playerContent, assistant: full },
+          retrieved: memory,
+          sink,
+        });
+      } catch (error) {
+        log.error("engine.chat", "chat-state finalize failed", { error: describeError(error) });
+      }
+      if (sink.items.length) {
+        log.info("engine.chat", "chat-state diagnostics", { codes: sink.items.map((d) => d.code) });
+      }
+    };
+
+    return { ok: true, stream: streamExchange(gen, settle, abortController) };
   }
 
   /**
    * Wrap the model stream so persistence + fan-out + lock release ride the
    * generator's own completion: the route (or any consumer) just drains it. A
-   * model-stream failure keeps whatever accumulated (persisted if non-empty); an
-   * empty reply skips settle; the lock releases on every path.
+   * model-stream failure keeps whatever accumulated (persisted if non-empty); a
+   * player Stop (spec §4.2) is not a failure — the truncated prefix persists with
+   * `meta.stopped`. An empty reply skips settle; the lock releases on every path.
    */
   async function* streamExchange(
     gen: AsyncGenerator<string>,
-    settle: (full: string) => Promise<void>,
+    settle: (full: string, stopped: boolean) => Promise<void>,
+    abortController: AbortController,
   ): AsyncGenerator<string, void, unknown> {
     let full = "";
+    let stopped = false;
     try {
       try {
         for await (const delta of gen) {
@@ -235,19 +415,78 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           yield delta;
         }
       } catch (error) {
-        log.warn("engine.chat", "reply stream failed", { error: describeError(error) });
+        if (abortController.signal.aborted) {
+          stopped = true;
+        } else {
+          log.warn("engine.chat", "reply stream failed", { error: describeError(error) });
+        }
       }
+      if (abortController.signal.aborted) stopped = true;
       if (full.trim()) {
         try {
-          await settle(full);
+          await settle(full, stopped);
         } catch (error) {
           log.error("engine.chat", "failed to persist assistant reply", { error: describeError(error) });
         }
       }
     } finally {
+      inflightReplyAborts.delete(chatId);
       releaseChatLock();
     }
   }
+}
+
+/** The newest message when it is an assistant reply — the only regenerable target. */
+async function lastAssistantMessage(
+  chatId: string,
+): Promise<{ id: string; content: string; createdAt: Date } | null> {
+  const [row] = await db()
+    .select({
+      id: characterChatMessages.id,
+      role: characterChatMessages.role,
+      content: characterChatMessages.content,
+      createdAt: characterChatMessages.createdAt,
+    })
+    .from(characterChatMessages)
+    .where(eq(characterChatMessages.chatId, chatId))
+    .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
+    .limit(1);
+  if (!row || row.role !== "assistant") return null;
+  return { id: row.id, content: row.content, createdAt: row.createdAt };
+}
+
+/** The message immediately before `target`, collision-safe on the (createdAt, id) tuple. */
+async function messageBefore(
+  chatId: string,
+  target: { id: string; createdAt: Date },
+): Promise<{ id: string; role: "user" | "assistant"; content: string } | null> {
+  const [row] = await db()
+    .select({ id: characterChatMessages.id, role: characterChatMessages.role, content: characterChatMessages.content })
+    .from(characterChatMessages)
+    .where(
+      and(
+        eq(characterChatMessages.chatId, chatId),
+        ne(characterChatMessages.id, target.id),
+        or(
+          lt(characterChatMessages.createdAt, target.createdAt),
+          and(eq(characterChatMessages.createdAt, target.createdAt), lt(characterChatMessages.id, target.id)),
+        ),
+      ),
+    )
+    .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
+    .limit(1);
+  return row ?? null;
+}
+
+/** The row's current takes, or null when the row vanished (delete raced the stream). */
+async function currentReplyTakes(chatId: string, messageId: string): Promise<ReplyTakes | null> {
+  const [row] = await db()
+    .select({ takes: characterChatMessages.takes })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
+    .limit(1);
+  if (!row) return null;
+  return parseOr(replyTakesSchema, row.takes, emptyReplyTakes(), undefined, "character_chat_messages.takes");
 }
 
 /** The chat's owner id (for persona resolution) — one indexed lookup. */
@@ -262,31 +501,76 @@ async function chatOwnerId(chatId: string): Promise<string> {
 }
 
 /**
- * Persist the assistant reply, but only if the user line that prompted it still
- * exists — an atomic `INSERT … SELECT … WHERE EXISTS`. The reply is written when
- * the stream settles (even after a client disconnect, docs/resilience.md §5), so
- * a chat delete or a single-message delete that lands while the stream is still
- * draining would otherwise leave an orphan row. Keying the guard on the prompting
- * row makes the write no-op in that race. `id` is JS-generated (cuid2
- * `$defaultFn`, no DB default), so it must be supplied explicitly in the raw
- * insert; `created_at` defaults in the DB.
+ * Persist the assistant reply. With a `promptMessageId` the insert is guarded —
+ * only if the user line that prompted it still exists (atomic `INSERT … SELECT …
+ * WHERE EXISTS`), so a chat delete or a single-message delete that lands while
+ * the stream is still draining can't leave an orphan row. Beat replies
+ * (open/continue) have no prompting line and insert unguarded. `id` is supplied
+ * explicitly: it is the memory-provenance anchor (spec §4.3), minted before the
+ * fan-out needs it.
  *
  * Exported as a test seam: a real mid-stream delete isn't deterministically
  * reproducible through the streaming Response, so the guard is covered directly.
  */
 export async function persistAssistantReply(args: {
+  id: string;
   chatId: string;
   speakerCharacterId: string;
-  promptMessageId: string;
+  promptMessageId: string | null;
+  content: string;
+  meta?: Record<string, unknown>;
+}): Promise<void> {
+  const meta = JSON.stringify(args.meta ?? {});
+  const guard = args.promptMessageId
+    ? sql`exists (select 1 from ${characterChatMessages} where id = ${args.promptMessageId})`
+    : sql`true`;
+  await db().execute(sql`
+    insert into ${characterChatMessages} (id, chat_id, speaker_character_id, role, content, meta)
+    select ${args.id}, ${args.chatId}, ${args.speakerCharacterId}, 'assistant', ${args.content}, ${meta}::jsonb
+    where ${guard}
+  `);
+}
+
+/**
+ * Memory reconciliation for an edited assistant reply (spec §4.3): retract the
+ * old extraction, then re-run the archivist over the edited exchange
+ * fire-and-forget — same resilience as the live fan-out (a degraded re-extract
+ * just leaves the exchange unremembered, with the retraction already honest).
+ */
+export async function reextractEditedReply(args: {
+  chatId: string;
+  messageId: string;
+  memoryGroupId: string;
+  characterId: string;
+  characterName: string;
+  playerName: string;
   content: string;
 }): Promise<void> {
-  await db().execute(sql`
-    insert into ${characterChatMessages} (id, chat_id, speaker_character_id, role, content)
-    select ${newId()}, ${args.chatId}, ${args.speakerCharacterId}, 'assistant', ${args.content}
-    where exists (
-      select 1 from ${characterChatMessages} where id = ${args.promptMessageId}
-    )
-  `);
+  const sink = new DiagnosticCollector();
+  await reconcileMessageMemory(args.messageId, sink);
+  const [row] = await db()
+    .select({ id: characterChatMessages.id, createdAt: characterChatMessages.createdAt })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.id, args.messageId), eq(characterChatMessages.chatId, args.chatId)))
+    .limit(1);
+  if (!row) return;
+  const prev = await messageBefore(args.chatId, row);
+  const archivist = await runChatArchivist({
+    characterName: args.characterName,
+    playerName: args.playerName,
+    exchange: { player: prev?.role === "user" ? prev.content : "", assistant: args.content },
+    sink,
+  });
+  await writeChatMemory({
+    groupId: args.memoryGroupId,
+    characterId: args.characterId,
+    assistantMessageId: args.messageId,
+    archivist: archivist.value,
+    sink,
+  });
+  if (sink.items.length) {
+    log.info("engine.chat", "edited-reply re-extraction diagnostics", { codes: sink.items.map((d) => d.code) });
+  }
 }
 
 /**

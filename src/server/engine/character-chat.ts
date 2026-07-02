@@ -28,6 +28,8 @@ export interface StreamCharacterChatInput {
   name: string;
   /** Narrator model override (a curated NARRATIVE_MODELS id); falls back to the default. */
   model?: string | null;
+  /** Player Stop (spec §4.2): aborting cuts the stream; the caller keeps the accumulated prefix. */
+  signal?: AbortSignal;
 }
 
 /** Keep only the most recent CHARACTER_CHAT_HISTORY_TURNS exchanges (≈2 messages each). */
@@ -57,6 +59,7 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
     messages,
     temperature: NARRATIVE_TEMPERATURE,
     providerOptions: narrativeProviderOptions(modelId),
+    abortSignal: input.signal,
   });
   // Strip the Aion "uncensored response" wrapper tags that leak into the stream
   // (server/ai/narrator-artifacts.ts) — this cleans the live feed AND, because

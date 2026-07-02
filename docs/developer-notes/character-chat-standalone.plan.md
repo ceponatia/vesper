@@ -35,9 +35,17 @@ points: Chats in the top nav + a primary bottom-tab slot (D12; bar suppressed on
 conversation page), the dashboard's "Continue talking to…" lead, a "Chat" action on
 character library cards, and the editor Chat tab reduced to authoring (Chat defaults +
 Starting Relationship, moved out of the scenario modal) + a conversations list —
-playing now lives on /chat. **Scenario presets UI still deferred** (table shipped in
-slice 3; CRUD/UI now rides slice 5's controls work). Next per build order: slice 5
-(in-the-moment controls) with slice 2's live measurement run still awaiting the owner.
+playing now lives on /chat. **Slice 5 (In-the-moment controls) built 2026-07-02** —
+memory provenance (`source_message_id` on facts + episodes; message edit/delete now
+retract/re-extract the line's memory), the pre-exchange state snapshot, and the four
+exchange kinds: **Another take** (regenerate the last reply in place with browsable
+takes, cap 4 — state rolls back, old memory retracted), **Go on** (a continue beat —
+archivist runs, pulse skipped), **Stop** (server-side stream abort; the prefix persists
+with a "stopped" chip), plus the **scenario presets** loop (CRUD API + Save-as-preset /
+Apply-preset in the scenario modal + Start-from-preset on the new-conversation dialog,
+seeded server-side). Migration 0021–0023; 69 chat/memory integration tests. Next per
+build order: slice 6 (craft & tuning) — and slice 2's live measurement run still awaits
+the owner.
 
 Design/decisions: [character-chat-standalone.spec.md](character-chat-standalone.spec.md) —
 the technical detail (schemas, file touch-points, migration shape, refactor analysis,

@@ -8,15 +8,18 @@ import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { Input } from "@/components/ui/input";
-import { charactersApi, chatsApi, type ApiResult, type CharacterSummary } from "@/lib/client/api";
+import { Select } from "@/components/ui/select";
+import { charactersApi, chatPresetsApi, chatsApi, type ApiResult, type CharacterSummary, type ChatPreset } from "@/lib/client/api";
 
 /**
  * Start a conversation (character-chat-standalone.spec.md §2.2): pick a character
  * (skipped when the caller already knows one — the editor tab / a library card),
- * choose the D7 memory mode, optionally title it, then create + navigate to the
- * full-screen conversation. The memory choice is always shown with "shared" as the
- * default: for a first-ever chat the two are equivalent (a fresh group is minted
- * either way), so the copy speaks in "if any" terms rather than probing for priors.
+ * choose the D7 memory mode, optionally start from a saved scenario preset (spec
+ * §1.5 — the server seeds the new conversation's state from it), optionally title
+ * it, then create + navigate to the full-screen conversation. The memory choice is
+ * always shown with "shared" as the default: for a first-ever chat the two are
+ * equivalent (a fresh group is minted either way), so the copy speaks in "if any"
+ * terms rather than probing for priors.
  */
 export function NewChatDialog({
   open,
@@ -32,6 +35,7 @@ export function NewChatDialog({
   const [picked, setPicked] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [memory, setMemory] = useState<"shared" | "fresh">("shared");
+  const [presetId, setPresetId] = useState("");
   const [title, setTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +47,10 @@ export function NewChatDialog({
         ? charactersApi.list()
         : Promise.resolve<ApiResult<CharacterSummary[]>>({ ok: true, data: [] }),
     [open, needsPicker],
+  );
+  const presets = useAsyncData(
+    () => (open ? chatPresetsApi.list() : Promise.resolve<ApiResult<ChatPreset[]>>({ ok: true, data: [] })),
+    [open],
   );
   const selectedId = characterId ?? picked;
 
@@ -56,6 +64,7 @@ export function NewChatDialog({
     setPicked(null);
     setFilter("");
     setMemory("shared");
+    setPresetId("");
     setTitle("");
     setError(null);
   };
@@ -70,7 +79,12 @@ export function NewChatDialog({
     if (!selectedId || creating) return;
     setCreating(true);
     setError(null);
-    const result = await chatsApi.create({ characterId: selectedId, memory, title: title.trim() || undefined });
+    const result = await chatsApi.create({
+      characterId: selectedId,
+      memory,
+      title: title.trim() || undefined,
+      presetId: presetId || undefined,
+    });
     if (!result.ok) {
       setError(result.error.message || "could not create the conversation");
       setCreating(false);
@@ -164,6 +178,23 @@ export function NewChatDialog({
             </label>
           </div>
         </div>
+
+        {(presets.data?.length ?? 0) > 0 ? (
+          <div>
+            <p className="mb-1.5 text-xs tracking-wide text-paper-500 uppercase">Start from preset</p>
+            <Select value={presetId} onChange={(e) => setPresetId(e.target.value)} aria-label="Start from a saved scenario preset">
+              <option value="">None — a blank scenario</option>
+              {(presets.data ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-[11px] text-paper-600">
+              Seeds the premise, outfit, cards, and starting relationship from a saved scenario.
+            </p>
+          </div>
+        ) : null}
 
         <div>
           <p className="mb-1.5 text-xs tracking-wide text-paper-500 uppercase">Title (optional)</p>

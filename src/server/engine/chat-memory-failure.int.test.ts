@@ -89,6 +89,8 @@ describe("finalizeChatState under a memory-write failure", () => {
     const sink = new DiagnosticCollector();
     const now = new Date();
     await finalizeChatState({
+      assistantMessageId: "int-test-assistant-msg",
+      preExchangeState: null,
       chatId: fixture.chatId,
       characterId: fixture.characterId,
       memoryGroupId: fixture.memoryGroupId,

@@ -25,9 +25,14 @@ exchange:
 1. **Lock.** A per-conversation keyed lock (`engine/keyed-lock.ts`, key
    `chat_exchange:{chatId}`) — a second concurrent submit gets a 409
    `chat_busy`. Held until the stream settles, released on every path.
-2. **User line insert** with a pre-minted id — the guard row for the reply persist (§5).
-   The opening beat (`open: true`, the "Prompt character" button) skips this; the model
-   gets a synthetic, non-persisted cue instead.
+2. **Exchange kind** (spec §4): `send` inserts the user line with a pre-minted id — the
+   guard row for the reply persist; `open` (the "Prompt character" opening beat) and
+   `continue` ("go on") have no player line — the model gets a synthetic, non-persisted
+   cue; `regenerate` ("another take") targets the LAST assistant reply: state rolls back
+   to the pre-exchange snapshot, the old take's memory is retracted (provenance, §4.3),
+   and the reply row updates in place with the old take kept browsable (`takes`, cap
+   `CHAT_REPLY_TAKES_CAP`). A player **Stop** aborts the model stream server-side; the
+   accumulated prefix persists with `meta.stopped` and the fan-out runs over it.
 3. **Window + summary.** The rolling summary covers everything up to its watermark; the
    verbatim window (`CHARACTER_CHAT_HISTORY_TURNS` = 40 exchanges) is everything after it.
    When the unsummarized tail reaches the fold trigger, a detached `chat_summary` job is
@@ -69,11 +74,18 @@ guarded state write:
 
 - **Pulse** (`runChatPulse`): classifies the exchange onto the §6 personality curve —
   affinity/mood deltas, arousal bump for intimate concepts, mindNote refresh. Degrades to
-  drift-only state.
+  drift-only state. Skipped for `continue` beats (no player act to react to).
 - **Archivist-lite** (`runChatArchivist`): one call emitting the episode summary,
   `FactDraft[]`, next-turn `memoryQueries`, and `attributeChanges` (applied through the
   `overlaySourceMayChange` inherent-trait guard). Its memory write is additionally fenced
-  so an infra throw never costs the pulse's state.
+  so an infra throw never costs the pulse's state. Every write is **provenance-stamped**
+  (`source_message_id` on facts + episodes, spec §4.3): deleting or editing an assistant
+  line retracts/re-extracts its memory (`reconcileMessageMemory` / `reextractEditedReply`),
+  and "another take" rolls it back exactly.
+- The finalizer also persists the **pre-exchange snapshot**
+  (`character_chat_state.pre_exchange_state`) — the rollback anchor "another take"
+  restores so a regenerated exchange never double-applies drift/pulse effects. A missing
+  snapshot degrades to no-rollback with `chat_state.snapshot.missing`.
 - Both legs race a shared timeout (`withGenerateTimeout`, `server/ai`) and run on the
   agent model. Every degradation is a diagnostic, never a failed reply — the reply already
   streamed.
@@ -105,8 +117,11 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | Route | What |
 | --- | --- |
 | `GET /api/chats?characterId=&archived=1` · `POST /api/chats` | list conversations · create one (`memory: "shared" \| "fresh"` — the D7 choice) |
-| `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (plain-text token stream; `open` = opening beat; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
-| `PATCH/DELETE /api/chats/:chatId/messages/:messageId` | edit / snip one line (the poisoned-window recovery levers) |
+| `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (`kind: send \| open \| continue \| regenerate`; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
+| `POST /api/chats/:chatId/stop` | cut the in-flight reply short (spec §4.2 — the prefix persists with `meta.stopped`) |
+| `PATCH/DELETE /api/chats/:chatId/messages/:messageId` | edit / snip one line — both reconcile the line's extracted memory (spec §4.3) |
+| `PATCH /api/chats/:chatId/messages/:messageId/take` | make a recorded take the displayed reply (display-only; spec §4.1) |
+| `GET/POST /api/chat-presets` · `DELETE /api/chat-presets/:id` | scenario presets (spec §1.5); `POST /api/chats {presetId}` seeds a new conversation from one. UI: Apply/Save-as/Delete preset in `chat-scenario-modal.tsx`, "Start from preset" in `new-chat-dialog.tsx` |
 | `GET/PATCH/POST /api/chats/:chatId/state` | state snapshot (drift-on-read) · author edit · action chip |
 | `GET/POST /api/chats/:chatId/scene` | list chat scenes · queue a `chat_scene_image` render |
 
@@ -115,7 +130,8 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 `chat_state.pulse` / `.degraded` / `.timeout` · `chat_archivist.extract` / `.degraded` /
 `.timeout` · `chat_memory.episodes_failed` / `.facts_failed` ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
-`.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` — plus route
+`.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` · `chat_state.snapshot.missing` ·
+`chat_memory.reconciled` — plus route
 errors `chat_busy` (409), `chat_archived` (409), `rate_limited` (429), `not_found` (404). Degradation tests
 assert the fallback **and** the code ([testing.md](testing.md)).
 

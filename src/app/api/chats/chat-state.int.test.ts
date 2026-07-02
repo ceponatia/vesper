@@ -282,7 +282,7 @@ describe("state-tools edit (PATCH) + action chips (POST)", () => {
 describe("Prompt Character (opening beat)", () => {
   it("streams a character-authored opening with no player line, and seeds the state row", async (t) => {
     if (!ready) return t.skip();
-    const res = await chatSend(postReq(ids.open.chatId, { open: true }), ctx(ids.open.chatId));
+    const res = await chatSend(postReq(ids.open.chatId, { kind: "open" }), ctx(ids.open.chatId));
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("[Rell]"); // the character spoke (demo reply)

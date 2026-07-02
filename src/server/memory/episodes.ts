@@ -43,6 +43,8 @@ export async function appendEpisode(
   threadIds: readonly string[],
   sink?: DiagnosticSink,
   witnessedBy: readonly string[] = [],
+  /** Chat-lane provenance: the assistant message this episode summarizes (spec §4.3). */
+  sourceMessageId: string | null = null,
 ): Promise<string> {
   let embedded: Embedded | null = null;
   try {
@@ -62,6 +64,7 @@ export async function appendEpisode(
       summary,
       threadIds: [...threadIds],
       witnessedBy: [...witnessedBy],
+      sourceMessageId,
       embedding: embedded?.vector ?? null,
       embedder: embedded?.embedder ?? null,
     })
@@ -172,6 +175,15 @@ export async function latestEpisodeNumber(scope: MemoryScope): Promise<number> {
 }
 
 /** Rerun support: drop the turn's episode before the input is resubmitted. */
+/** Delete the episode(s) summarizing one chat assistant message (spec §4.3 — another-take / message delete). */
+export async function deleteEpisodeForMessage(messageId: string): Promise<number> {
+  const deleted = await db()
+    .delete(episodes)
+    .where(eq(episodes.sourceMessageId, messageId))
+    .returning({ id: episodes.id });
+  return deleted.length;
+}
+
 export async function deleteEpisodeForTurn(scope: MemoryScope, turnNumber: number): Promise<number> {
   const deleted = await db()
     .delete(episodes)

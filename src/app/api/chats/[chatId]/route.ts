@@ -22,14 +22,18 @@ const TRANSCRIPT_LIMIT = 500;
 
 const sendBodySchema = z
   .object({
+    /**
+     * Exchange kind (character-chat-standalone.spec.md §4): a normal player turn,
+     * the opening beat ("Prompt character"), a "go on" continue beat, or "another
+     * take" on the last reply.
+     */
+    kind: z.enum(["send", "open", "continue", "regenerate"]).default("send"),
     content: z.string().trim().max(4000).optional(),
     /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
     model: z.string().trim().min(1).max(120).optional(),
-    /** Opening beat ("Prompt Character"): no player line — the character opens the scene. */
-    open: z.boolean().optional(),
   })
-  .refine((b) => b.open === true || (b.content?.length ?? 0) >= 1, {
-    message: "content is required unless open is true",
+  .refine((b) => b.kind !== "send" || (b.content?.length ?? 0) >= 1, {
+    message: "content is required for a send",
     path: ["content"],
   });
 
@@ -52,6 +56,8 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
       id: characterChatMessages.id,
       role: characterChatMessages.role,
       content: characterChatMessages.content,
+      takes: characterChatMessages.takes,
+      meta: characterChatMessages.meta,
       createdAt: characterChatMessages.createdAt,
     })
     .from(characterChatMessages)
@@ -90,11 +96,11 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     chatId,
     memoryGroupId: owned.participant.memoryGroupId,
     character: { id: owned.character.id, name: owned.character.name, profile: owned.character.profile },
+    kind: body.value.kind,
     content: body.value.content,
     model: body.value.model,
-    open: body.value.open,
   });
-  if (!result.ok) return jsonError(result.code, result.message, 409);
+  if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);
 
   return drainingStreamResponse({
     gen: result.stream,

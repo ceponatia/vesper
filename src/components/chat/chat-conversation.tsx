@@ -15,6 +15,7 @@ import {
   charactersApi,
   chatsApi,
   sendChatMessage,
+  type ChatMessage,
   type ChatStateSnapshot,
   type ChatStreamOutcome,
   type ChatTranscript,
@@ -39,6 +40,15 @@ import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+
+/** Project an API transcript row onto the renderable line shape (takes + stopped ride along). */
+const toLine = (m: ChatMessage): ChatLine => ({
+  id: m.id,
+  role: m.role,
+  content: m.content,
+  takes: m.takes,
+  stopped: m.meta.stopped,
+});
 
 /**
  * The full-screen conversation page (`/chat/[chatId]`,
@@ -70,6 +80,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [chatModel, setChatModel] = useState(() => resolveChatModelId(null));
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // True from a Stop click until the truncated stream settles (disables the button).
+  const [stopping, setStopping] = useState(false);
   // Light chat state (character-chat-state.spec.md): the strip + premise. Held in
   // local state (not useAsyncData) so a post-send refresh can drive the
   // stage-change toast off the value it just fetched.
@@ -111,7 +123,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [seededFor, setSeededFor] = useState<string | null>(null);
   if (seededFor !== chatId && !bootstrap.loading && bootstrap.data) {
     setSeededFor(chatId);
-    setLines(bootstrap.data.messages.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+    setLines(bootstrap.data.messages.map(toLine));
     setTitle(bootstrap.data.chat.title);
     setArchived(bootstrap.data.chat.archivedAt !== null);
     setChatModel(resolveChatModelId(bootstrap.data.character.chatModel));
@@ -160,25 +172,36 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   };
 
   /**
-   * Shared streaming flow for a normal send and the Prompt Character opening beat:
-   * append an optimistic assistant bubble (and a user line, if any), stream the
-   * reply into it, then reconcile temp-ids against the persisted transcript and
-   * refresh the state strip. `userLine` omitted ⇒ the opening beat.
+   * Shared streaming flow for every reply kind — send, opening beat, Go on, and
+   * Another take: stream the reply into an assistant bubble, then reconcile against
+   * the persisted transcript and refresh the state strip. `userLine` appends the
+   * player's optimistic line first (a normal send); omitted ⇒ a character-only beat.
+   * `replaceId` (Another take, spec §4.1) streams into the EXISTING last reply
+   * instead of appending — the server updates that row in place, and the post-settle
+   * transcript reload picks up the recorded takes.
    */
   const runStream = async (
-    body: { content?: string; model?: string; open?: boolean },
-    userLine?: string,
+    body: { kind?: "send" | "open" | "continue" | "regenerate"; content?: string; model?: string },
+    opts: { userLine?: string; replaceId?: string } = {},
   ): Promise<ChatStreamOutcome> => {
-    const assistantId = mkId();
-    setLines((prev) => [
-      ...prev,
-      ...(userLine !== undefined ? [{ id: mkId(), role: "user" as const, content: userLine }] : []),
-      { id: assistantId, role: "assistant" as const, content: "" },
-    ]);
+    const { userLine, replaceId } = opts;
+    const assistantId = replaceId ?? mkId();
+    // The take being replaced, kept so a failed regenerate can put it back.
+    const priorLine = replaceId !== undefined ? lines.find((l) => l.id === replaceId) : undefined;
+    if (replaceId !== undefined) {
+      setLines((prev) => prev.map((l) => (l.id === replaceId ? { ...l, content: "", stopped: false } : l)));
+    } else {
+      setLines((prev) => [
+        ...prev,
+        ...(userLine !== undefined ? [{ id: mkId(), role: "user" as const, content: userLine }] : []),
+        { id: assistantId, role: "assistant" as const, content: "" },
+      ]);
+    }
     const controller = new AbortController();
     abortRef.current = controller;
     sendingRef.current = true;
     setSending(true);
+    setStopping(false); // a stuck Stop from a settle race must not disable this stream's button
     const outcome = await sendChatMessage(
       chatId,
       body,
@@ -194,19 +217,28 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       abortRef.current = null;
       sendingRef.current = false;
       setSending(false);
+      setStopping(false);
     }
     if (outcome.aborted || superseded || !outcome.ok) {
-      // Cancelled or failed: drop our empty bubble (a partial reply, if any, stays).
-      setLines((prev) => prev.filter((l) => !(l.id === assistantId && l.content === "")));
+      if (priorLine !== undefined) {
+        // Failed before any tokens (4xx — the server never touched the row): put the
+        // prior take back. A superseding rerun already snipped the line ⇒ no-op map.
+        const restore = priorLine;
+        setLines((prev) => prev.map((l) => (l.id === replaceId && l.content === "" ? restore : l)));
+      } else {
+        // Cancelled or failed: drop our empty bubble (a partial reply, if any, stays).
+        setLines((prev) => prev.filter((l) => !(l.id === assistantId && l.content === "")));
+      }
       // The server 409s sends into an archived conversation — flip to read-only.
       if (!outcome.ok && outcome.error?.code === "chat_archived") setArchived(true);
       return outcome;
     }
     // Swap the optimistic temp-ids for the persisted ids so the exchange just sent
-    // is immediately editable/deletable. Skip if another send already started.
+    // is immediately editable/deletable (and pick up recorded takes + stop marks).
+    // Skip if another send already started.
     const fresh = await chatsApi.transcript(chatId);
     if (fresh.ok && !sendingRef.current) {
-      setLines(fresh.data.messages.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+      setLines(fresh.data.messages.map(toLine));
     }
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange.
@@ -218,7 +250,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     const content = input.trim();
     if (!content || sendingRef.current || !ready || archived) return;
     setInput("");
-    const outcome = await runStream({ content, model: chatModel }, content);
+    const outcome = await runStream({ content, model: chatModel }, { userLine: content });
     if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
   };
 
@@ -263,7 +295,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     const doomed = lines.slice(idx).filter((l) => !l.id.startsWith("tmp-"));
     setLines((prev) => prev.slice(0, idx));
     await Promise.all(doomed.map((l) => chatsApi.deleteMessage(chatId, l.id)));
-    const outcome = await runStream({ content, model: chatModel }, content);
+    const outcome = await runStream({ content, model: chatModel }, { userLine: content });
     if (!outcome.ok && !outcome.aborted) {
       toast.push({ title: "Rerun failed", description: outcome.error?.message, tone: "error" });
     }
@@ -292,8 +324,60 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   /** Prompt Character (opening beat): stream a character-authored opening turn (the premise comes from chat state). */
   const promptCharacter = async () => {
     if (sendingRef.current || !ready || archived) return;
-    const outcome = await runStream({ open: true, model: chatModel });
+    const outcome = await runStream({ kind: "open", model: chatModel });
     if (!outcome.ok) toast.push({ title: "Couldn't open the scene", description: outcome.error?.message, tone: "error" });
+  };
+
+  /**
+   * Stop (spec §4.2): cut the streaming reply short SERVER-side — the model stream
+   * aborts there, what already streamed persists as the reply (`meta.stopped`), and
+   * our reader ends naturally with the truncated text. Deliberately NOT a client
+   * abort: `abortRef` stays untouched so the settled prefix keeps its bubble. A 404
+   * means the reply settled before the click landed — nothing to stop, ignore it.
+   */
+  const stopReply = async () => {
+    if (stopping) return;
+    setStopping(true);
+    const result = await chatsApi.stop(chatId);
+    if (!result.ok && result.error.status !== 404) {
+      setStopping(false);
+      toast.push({ title: "Couldn't stop the reply", description: result.error.message, tone: "error" });
+    }
+  };
+
+  /** Go on (spec §4.2): ask for the character's next beat — no user line, same streaming flow as the opening beat. */
+  const goOn = async () => {
+    if (sendingRef.current || !ready || archived) return;
+    const outcome = await runStream({ kind: "continue", model: chatModel });
+    if (!outcome.ok) toast.push({ title: "Couldn't continue", description: outcome.error?.message, tone: "error" });
+  };
+
+  /** Another take (spec §4.1): regenerate the last reply in place; earlier takes stay browsable via the pager. */
+  const anotherTake = async (id: string) => {
+    if (sendingRef.current || !ready || archived) return;
+    const outcome = await runStream({ kind: "regenerate", model: chatModel }, { replaceId: id });
+    if (!outcome.ok) {
+      toast.push({ title: "Couldn't get another take", description: outcome.error?.message, tone: "error" });
+    }
+  };
+
+  /**
+   * Show a different recorded take (spec §4.1) — display-only: state/memory follow
+   * the newest generated take, so this just swaps the row's content + activeId.
+   */
+  const switchTake = async (messageId: string, takeId: string) => {
+    const result = await chatsApi.switchTake(chatId, messageId, takeId);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't switch takes", description: result.error.message, tone: "error" });
+      return;
+    }
+    setLines((prev) =>
+      prev.map((l) =>
+        l.id === messageId
+          ? { ...l, content: result.data.content, takes: l.takes ? { ...l.takes, activeId: takeId } : l.takes }
+          : l,
+      ),
+    );
   };
 
   /**
@@ -376,6 +460,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   );
 
   const premise = chatState?.premise.trim() ?? "";
+  // Another take targets the last assistant reply (spec §4.1) — only there, only idle.
+  const lastAssistantId = [...lines].reverse().find((l) => l.role === "assistant")?.id ?? null;
+  // Go on (spec §4.2): the newest SETTLED message is a reply and nothing is streaming.
+  const lastLine = lines[lines.length - 1];
+  const canGoOn =
+    !sending && ready && !archived && lastLine?.role === "assistant" && !lastLine.id.startsWith("tmp-");
 
   return (
     // Fills the viewport below the 3.25rem app header (see app-shell.tsx — do not
@@ -497,9 +587,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 name={name}
                 avatarImageId={character?.avatarImageId ?? null}
                 streaming={sending}
+                takeTarget={!archived && line.id === lastAssistantId}
                 onEdit={editLine}
                 onDelete={deleteLine}
                 onRerun={(id) => void rerun(id)}
+                onAnotherTake={(id) => void anotherTake(id)}
+                onSwitchTake={switchTake}
               />
             ))
           )}
@@ -521,15 +614,28 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           {!archived ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
               {chatState ? <StatusStrip state={chatState} /> : <span />}
-              <Button
-                size="sm"
-                variant="quiet"
-                disabled={sending || !ready}
-                onClick={() => void promptCharacter()}
-                title={`Let ${who} open the scene`}
-              >
-                Prompt {who}
-              </Button>
+              {lines.length === 0 ? (
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  disabled={sending || !ready}
+                  onClick={() => void promptCharacter()}
+                  title={`Let ${who} open the scene`}
+                >
+                  Prompt {who}
+                </Button>
+              ) : canGoOn ? (
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  onClick={() => void goOn()}
+                  title={`Let ${who} continue without a reply from you`}
+                >
+                  Go on <span aria-hidden>→</span>
+                </Button>
+              ) : (
+                <span />
+              )}
             </div>
           ) : null}
           {chatState && !archived ? <ActionChips busy={actionBusy} disabled={sending} onAction={(a) => void runAction(a)} /> : null}
@@ -545,9 +651,17 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               }
               className="flex-1"
             />
-            <Button variant="primary" onClick={() => void send()} busy={sending} disabled={archived || !ready || !input.trim()}>
-              Send
-            </Button>
+            {sending ? (
+              // Stop swaps in for Send while a reply streams (spec §4.2): the server
+              // truncates honestly; what's on screen stays as the settled reply.
+              <Button variant="ghost" busy={stopping} onClick={() => void stopReply()} title="Stop the reply — keeps what has streamed so far">
+                Stop
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={() => void send()} disabled={archived || !ready || !input.trim()}>
+                Send
+              </Button>
+            )}
           </div>
         </div>
       </div>

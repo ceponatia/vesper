@@ -125,6 +125,12 @@ export const THREAD_DEVELOPMENTS_CAP = 20;
  */
 export const MAX_NPC_PAIR_AWARENESS_LINES = 4;
 
+/**
+ * Cap on browsable alternate takes per assistant reply (character-chat-standalone
+ * spec §4.1) — the newest takes win; the oldest non-active entries evict first.
+ */
+export const CHAT_REPLY_TAKES_CAP = 4;
+
 /** Heartbeats older than this mark a turn/job as abandoned (recovery). */
 export const HEARTBEAT_STALE_MS = 60_000;
 /**

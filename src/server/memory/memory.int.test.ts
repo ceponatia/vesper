@@ -176,7 +176,7 @@ describe.skipIf(!ready)("memory integration", () => {
           draft({ subjectName: "Mara", text: "Mara might be hiding something.", confidence: 0.2 }),
           draft({ subjectName: "Mara", text: "Mara's hair is red." }),
         ],
-        "turn-a",
+        { turnId: "turn-a" },
         sink,
       );
       expect(result.insertedIds).toHaveLength(1);
@@ -191,7 +191,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("supersedes a same-subject fact above the similarity threshold in one transaction", async () => {
-      const result = await addFacts(sessionScope(sessionId), [draft({ subjectName: "MARA", text: "Mara's hair is red." })], "turn-b");
+      const result = await addFacts(sessionScope(sessionId), [draft({ subjectName: "MARA", text: "Mara's hair is red." })], { turnId: "turn-b" });
       expect(result.insertedIds).toHaveLength(1);
       expect(result.supersededIds).toEqual([firstId]);
       secondId = result.insertedIds[0]!;
@@ -203,7 +203,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("does not supersede across subjects even at similarity 1", async () => {
-      const result = await addFacts(sessionScope(sessionId), [draft({ subjectName: "Tobias", text: "Mara's hair is red." })], "turn-c");
+      const result = await addFacts(sessionScope(sessionId), [draft({ subjectName: "Tobias", text: "Mara's hair is red." })], { turnId: "turn-c" });
       expect(result.supersededIds).toHaveLength(0);
     });
 
@@ -234,7 +234,7 @@ describe.skipIf(!ready)("memory integration", () => {
           draft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
           draft({ subjectName: "Mara", text: "Mara likes chamomile tea." }),
         ],
-        "turn-batch",
+        { turnId: "turn-batch" },
       );
       expect(result.insertedIds).toHaveLength(2);
       expect(result.supersededIds).toEqual([result.insertedIds[0]]);
@@ -366,7 +366,7 @@ describe.skipIf(!ready)("memory integration", () => {
       for (let turn = 2; turn <= 6; turn++) {
         await appendEpisode(sessionScope(sessionId), turn, `Filler episode number ${turn}.`, []);
       }
-      await addFacts(sessionScope(sessionId), [draft({ subjectName: "vault", subjectKind: "location", text: query })], "turn-f");
+      await addFacts(sessionScope(sessionId), [draft({ subjectName: "vault", subjectKind: "location", text: query })], { turnId: "turn-f" });
       await db().insert(loreChunks).values({ worldId, ...loreBody, tier: "retrieval" as const });
       await indexLoreChunks(worldId);
     });
@@ -423,7 +423,7 @@ describe.skipIf(!ready)("memory integration", () => {
       const chat = chatScope(groupId);
       const sessionSecret = "Mara keeps a session-only secret.";
       const session = sessionScope(await makeSession("isolation"));
-      await addFacts(session, [draft({ subjectName: "Mara", text: sessionSecret })], "turn-iso");
+      await addFacts(session, [draft({ subjectName: "Mara", text: sessionSecret })], { turnId: "turn-iso" });
 
       const chatSees = await retrieveFacts(chat, sessionSecret);
       expect(chatSees.map((h) => h.text)).not.toContain(sessionSecret);
