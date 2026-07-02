@@ -8,7 +8,6 @@ export * from "./meters/registry";
 export * from "./actions/registry";
 export * from "./personality";
 export * from "./mood";
-export * from "./avatar";
 export * from "./relationships/stages";
 export * from "./relationships/authored";
 export * from "./relationships/bond";

@@ -1,7 +1,5 @@
 import { z } from "zod";
 import {
-  type AvatarCue,
-  deriveAvatarCue,
   deriveEmotionLabel,
   effectiveTraitValue,
   type EmotionResult,
@@ -83,9 +81,6 @@ export interface StatusParticipant {
   tier: "major" | "minor" | "extra";
   isUser: boolean;
   avatarImageId: string | null;
-  /** Soft pointer to the source library character — the key for the avatar manifest fetch
-   *  (`GET /api/characters/[id]/avatar/manifest`); null for the player / ad-hoc cast. */
-  characterId: string | null;
   locationId: string | null;
   locationName: string | null;
   activity: string;
@@ -98,13 +93,6 @@ export interface StatusParticipant {
    * avatar's concern) — this is the held face.
    */
   emotion: { label: EmotionLabel; intensity: number } | null;
-  /**
-   * The renderer-neutral avatar cue (avatar-3d.spec §1) for the in-session standing avatar:
-   * the sustained emotion wrapped with posture → pose and the scene atmosphere. `reaction` is
-   * always `none` here (the one-shot beat travels the top-level `reactionBeat`). Null for the
-   * player. A *read*, derived alongside `emotion`.
-   */
-  avatarCue: AvatarCue | null;
   conditions: StatusCondition[];
   /** Visibility-filtered outfit (visible/hinted only) — the collapsed-card list. */
   wardrobe: StatusWardrobeItem[];
@@ -161,35 +149,6 @@ export function parseClockDelta(agentResults: unknown): ClockDelta | null {
   return parseOrNull(clockDeltaBlobSchema, agentResults)?.clock ?? null;
 }
 
-/**
- * The latest turn's one-shot avatar reaction beat (avatar-3d.spec §3), projected from the
- * `reaction` blob `apply.ts` writes onto `turns.agentResults`. Carries the `turn` number so
- * the client fires it **once** (mount-baseline replay guard) for the focal NPC only.
- */
-export interface SessionReactionBeat {
-  participantId: string;
-  concept: string;
-  valence: "like" | "dislike";
-  magnitude: number;
-  turn: number;
-}
-
-const reactionBeatBlobSchema = z.object({
-  reaction: z.object({
-    participantId: z.string().min(1),
-    concept: z.string().catch(""),
-    valence: z.enum(["like", "dislike"]).catch("like"),
-    magnitude: z.number().catch(0),
-  }),
-});
-
-/** Pure: the `reaction` blob from `turns.agentResults`, stamped with the turn number. Turns
- *  without a resolvable act (or that predate the blob) parse to null — no beat. */
-export function parseReactionBeat(agentResults: unknown, turn: number): SessionReactionBeat | null {
-  const parsed = parseOrNull(reactionBeatBlobSchema, agentResults)?.reaction;
-  return parsed ? { ...parsed, turn } : null;
-}
-
 export interface SessionStatusPayload {
   session: {
     id: string;
@@ -222,10 +181,6 @@ export interface SessionStatusPayload {
     gallery: SceneGalleryEntry[];
   };
   threads: StoryThread[];
-  /** The latest turn's one-shot avatar reaction beat (avatar-3d), or null when none. */
-  reactionBeat: SessionReactionBeat | null;
-  /** The latest ready turn number — the client's mount-baseline for the beat replay guard. */
-  latestTurn: number | null;
 }
 
 function itemRef(item: BundleItem): StatusItemRef {
@@ -262,9 +217,8 @@ function shapeCondition(condition: ActiveCondition, clockMinutes: number): Statu
 
 /**
  * The sustained baseline emotion for an NPC (mood.spec.md §4): a pure read over meters +
- * the affinity stage toward the player + conditions + the scene's intimate frame. The full
- * `EmotionResult` feeds both the cast-card mood chip and the standing avatar's cue. No
- * reaction beat (the avatar layers that on); null for the player.
+ * the affinity stage toward the player + conditions + the scene's intimate frame. Feeds
+ * the cast-card mood chip; null for the player.
  */
 function participantEmotionResult(
   p: SessionBundle["participants"][number],
@@ -320,8 +274,6 @@ export function buildStatusPayload(
     narrativeModel: string;
     agentModel: string;
     clockDelta: ClockDelta | null;
-    reactionBeat: SessionReactionBeat | null;
-    latestTurn: number | null;
   },
 ): SessionStatusPayload {
   const locationName = new Map(bundle.locations.map((l) => [l.id, l.name]));
@@ -332,8 +284,6 @@ export function buildStatusPayload(
   // can be aroused).
   const intimateContext = exposure.touch === "intimate" || exposure.appearance === "intimate";
   const activeId = activeLocationId(bundle);
-  // Continuity key for the avatar cue: the active location, falling back to the session id.
-  const sceneId = activeId ?? bundle.session.id;
 
   const participants: StatusParticipant[] = bundle.participants.map((p) => {
     const held = bundle.items.filter((i) => i.holderParticipantId === p.id && !i.worn);
@@ -347,18 +297,12 @@ export function buildStatusPayload(
       tier: p.tier,
       isUser: p.isUser,
       avatarImageId: p.avatarImageId,
-      characterId: p.characterId ?? null,
       locationId: p.locationId,
       locationName: p.locationId ? (locationName.get(p.locationId) ?? null) : null,
       activity: p.state.activity,
       posture: p.state.posture ?? null,
       meters: p.state.meters,
       emotion: emotionResult ? { label: emotionResult.emotion, intensity: emotionResult.intensity } : null,
-      // The standing avatar's sustained cue: emotion + posture→pose + scene atmosphere. The
-      // one-shot beat rides the top-level `reactionBeat`, not this (avatar-3d.spec §3).
-      avatarCue: emotionResult
-        ? deriveAvatarCue({ emotion: emotionResult, posture: p.state.posture ?? null, atmosphere: bundle.brief.atmosphere, sceneId })
-        : null,
       conditions: p.state.conditions
         .filter((c) => !isConditionExpired(c, bundle.clockMinutes))
         .map((c) => shapeCondition(c, bundle.clockMinutes)),
@@ -418,7 +362,5 @@ export function buildStatusPayload(
     // can render everything gleaned (docs/story-threads.md). Resolved/archived
     // threads are intentionally dropped — closing one removes it from the UI.
     threads: bundle.runtime.storyThreads.filter((t) => t.status === "open" || t.status === "cooling"),
-    reactionBeat: extras.reactionBeat,
-    latestTurn: extras.latestTurn,
   };
 }

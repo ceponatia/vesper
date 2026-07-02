@@ -13,7 +13,7 @@ import {
   type ItemDefinition,
 } from "@/contracts";
 import type { BundleItem, BundleParticipant, SessionBundle } from "@/server/engine";
-import { buildStatusPayload, parseClockDelta, parseReactionBeat } from "./status-payload";
+import { buildStatusPayload, parseClockDelta } from "./status-payload";
 
 function participant(overrides: Partial<BundleParticipant>): BundleParticipant {
   return {
@@ -164,8 +164,6 @@ describe("buildStatusPayload", () => {
     narrativeModel: "aion-labs/aion-2.0",
     agentModel: "deepseek/deepseek-v4-flash",
     clockDelta: { minutes: 20, cause: "shower" },
-    reactionBeat: null,
-    latestTurn: 3,
   });
 
   it("shapes session, clock, and exposure", () => {
@@ -202,17 +200,11 @@ describe("buildStatusPayload", () => {
     expect(maya?.avatarImageId).toBe("img-maya");
   });
 
-  it("derives the standing avatar's cue + characterId for an NPC, null for the player (avatar-3d)", () => {
+  it("derives the mood-chip emotion for an NPC, null for the player (mood.spec §4)", () => {
     const maya = payload.participants.find((p) => p.id === "maya");
-    expect(maya?.characterId).toBe("char-maya");
-    expect(maya?.avatarCue).not.toBeNull();
-    // Posture "standing" doesn't match a special pose → idle; reaction is never set here.
-    expect(maya?.avatarCue?.character.pose).toBe("idle");
-    expect(maya?.avatarCue?.character.reaction).toBe("none");
-    expect(maya?.avatarCue?.character.emotion).toBe(maya?.emotion?.label);
+    expect(maya?.emotion).not.toBeNull();
 
     const player = payload.participants.find((p) => p.id === "player");
-    expect(player?.avatarCue).toBeNull();
     expect(player?.emotion).toBeNull();
   });
 
@@ -271,8 +263,6 @@ describe("buildStatusPayload", () => {
       narrativeModel: "aion-labs/aion-2.0",
       agentModel: "deepseek/deepseek-v4-flash",
       clockDelta: null,
-      reactionBeat: null,
-      latestTurn: null,
     });
     expect(withoutDelta.clock.delta).toBeNull();
   });
@@ -308,23 +298,5 @@ describe("parseClockDelta", () => {
 
   it("tolerates a missing cause", () => {
     expect(parseClockDelta({ clock: { minutes: 5 } })).toEqual({ minutes: 5, cause: "" });
-  });
-});
-
-describe("parseReactionBeat (avatar-3d)", () => {
-  it("reads the reaction blob and stamps the turn number", () => {
-    const blob = { simulant: {}, reaction: { participantId: "p-maya", concept: "flirt", valence: "like", magnitude: 1.5 } };
-    expect(parseReactionBeat(blob, 7)).toEqual({ participantId: "p-maya", concept: "flirt", valence: "like", magnitude: 1.5, turn: 7 });
-  });
-
-  it("degrades to null on turns with no reaction, and on garbage", () => {
-    expect(parseReactionBeat({ simulant: {} }, 3)).toBeNull(); // no act this turn
-    expect(parseReactionBeat(null, 3)).toBeNull();
-    expect(parseReactionBeat("nope", 3)).toBeNull();
-    expect(parseReactionBeat({ reaction: { concept: "flirt" } }, 3)).toBeNull(); // missing participantId
-  });
-
-  it("tolerates a garbage valence by defaulting to like", () => {
-    expect(parseReactionBeat({ reaction: { participantId: "p1", valence: "weird" } }, 1)?.valence).toBe("like");
   });
 });

@@ -219,9 +219,6 @@ export async function applyTurnResults(input: ApplyTurnInput): Promise<MergePlan
             continuity: results.continuity,
             director: results.director,
             clock: { minutes: plan.minutes, cause: plan.minutesCause },
-            // One-shot avatar reaction beat (avatar-3d) — projected by the status route,
-            // fired once by the in-session standing avatar. Omitted ⇒ no beat this turn.
-            ...(plan.reactionBeat ? { reaction: plan.reactionBeat } : {}),
           },
           diagnostics: sql`${turns.diagnostics} || ${diagnosticsJson}::jsonb`,
           providers: sql`${turns.providers} || ${providersJson}::jsonb`,

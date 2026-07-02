@@ -8,7 +8,6 @@ import { DEFAULT_AVATAR_IMAGE_MODEL, type AvatarImageModel } from "@/contracts";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { createImageAsset, failImage, saveImageBuffer } from "./assets";
-import { clearAvatarExpressionFrames } from "./avatar-expressions";
 import { monogramSvg } from "./monogram";
 import { buildAvatarPrompt, type AvatarWardrobeItem, type AvatarStyle } from "./prompts";
 
@@ -70,10 +69,6 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     const saved = await saveImageBuffer(asset.id, buffer, input.sink);
     if (saved?.status === "ready") {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
-      // The face changed: drop expression frames edited from the prior avatar (a fresh
-      // create has none — no-op). Seed-at-create (enqueued by the route after this resolves)
-      // refills against the new avatar. avatar-3d.plan.md §"Manifest staleness — Model B".
-      await clearAvatarExpressionFrames(input.characterId, input.userId);
     }
     void logEvent(null, "image.avatar", {
       imageId: asset.id,

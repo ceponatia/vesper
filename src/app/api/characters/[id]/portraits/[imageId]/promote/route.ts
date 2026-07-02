@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { characters, db } from "@/server/db";
-import { clearAvatarExpressionFrames, promoteVariant } from "@/server/images";
+import { promoteVariant } from "@/server/images";
 import { jsonError, jsonOk, withUser } from "@/server/api";
 
 type Params = { id: string; imageId: string };
@@ -20,8 +20,5 @@ export const POST = withUser<Params>(async (user, _req, ctx) => {
     const notFound = result.error?.includes("not found") || result.error?.includes("belong");
     return jsonError(notFound ? "not_found" : "not_ready", result.error ?? "promotion failed", notFound ? 404 : 409);
   }
-  // The canonical face changed: drop now-stale expression frames (avatar-3d.plan.md
-  // §"Manifest staleness — Model B"). No auto-reseed — lazy-gen refills on demand.
-  await clearAvatarExpressionFrames(id, user.id);
   return jsonOk({ ok: true, avatarImageId: imageId });
 });

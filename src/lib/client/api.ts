@@ -4,11 +4,8 @@ import {
   type ActiveCondition,
   ambientSchema as ambientBaseSchema,
   authoredRelationshipSchema,
-  avatarCueSchema,
   avatarImageModels,
   avatarImageModelLabels,
-  avatarManifestSchema,
-  NEUTRAL_AVATAR_CUE,
   attributeValueSchema,
   type ChatActionId,
   chatMemoryTraceSchema,
@@ -21,7 +18,6 @@ import {
   emptyWorldLore,
   emptyWorldStyle,
   diagnosticSchema,
-  type EmotionLabel,
   emotionLabelSchema,
   itemDefinitionSchema,
   itemKindSchema,
@@ -273,8 +269,6 @@ export const chatStateSnapshotSchema = z.object({
   emotion: z
     .object({ label: emotionLabelSchema, intensity: z.number().min(0).max(1).catch(0) })
     .catch({ label: "neutral", intensity: 0 }),
-  // The baseline avatar cue (avatar-3d.spec §3) — drives the standing companion panel.
-  avatarCue: avatarCueSchema.catch(NEUTRAL_AVATAR_CUE),
   conditions: z.array(activeConditionSchema).catch([]),
   mindNote: textOr(""),
   premise: textOr(""),
@@ -748,11 +742,6 @@ export const charactersApi = {
   promotePortrait: (id: string, imageId: string) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits/${imageId}/promote`, {}),
   deletePortrait: (id: string, imageId: string) => apiDelete(`/api/characters/${id}/portraits/${imageId}`),
-  /** The avatar asset manifest (avatar-3d.spec §4) — emotion/pose labels → frame image ids. */
-  avatarManifest: (id: string) => apiGet(avatarManifestSchema, `/api/characters/${id}/avatar/manifest`),
-  /** Lazy-gen one expression frame on demand (avatar-3d) — idempotent; poll the manifest after. */
-  requestExpression: (id: string, emotion: EmotionLabel) =>
-    apiPost(z.unknown(), `/api/characters/${id}/avatar/expressions`, { emotion }),
   // --- Sessionless in-character chat (docs/developer-notes/character-chat.plan.md) ---
   chatTranscript: (id: string) =>
     apiGet(listOf(chatMessageSchema, "messages"), `/api/characters/${id}/chat`),

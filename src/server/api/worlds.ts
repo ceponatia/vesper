@@ -38,7 +38,7 @@ import {
   worlds,
   type Db,
 } from "@/server/db";
-import { DEFAULT_INTER_AREA_TRAVEL_MINUTES, enqueueAvatarSeed } from "@/server/engine";
+import { DEFAULT_INTER_AREA_TRAVEL_MINUTES } from "@/server/engine";
 import { generateAvatarsBatch, generateEntityImagesBatch, missingEntityImageIds } from "@/server/images";
 import { indexLoreChunks } from "@/server/memory";
 import { log } from "@/server/log";
@@ -605,11 +605,6 @@ export function queueWorldImageGeneration(ownerId: string, worldId: string): voi
         generateEntityImagesBatch("item", itemIds, ownerId),
         generateAvatarsBatch(characterIds, ownerId),
       ]);
-      // Seed the expression set for each newly-avatared cast member (avatar-3d.plan.md
-      // §"Jobs"). Detached engine jobs, Venice-semaphore-bounded — off the critical path; a
-      // failed/absent avatar seed no-ops. Reused library cast (avatar already present) is
-      // skipped, exactly like avatar gen above.
-      for (const characterId of characterIds) await enqueueAvatarSeed(characterId, ownerId);
       // Refresh the world cast's baked avatar pointer from the (now generated)
       // source characters — same-owner copies share the image asset
       // (world-instances.plan.md §Images). Reads stay snapshot-only.
