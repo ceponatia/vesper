@@ -24,11 +24,20 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 ## Active (building now)
 
 Nothing mid-flight. The last item — **Character chat as a primary feature** — shipped (see
-**Shipped**). Next build is the top of **Next** below — Intimacy notes — or the decision-gated
-avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
+**Shipped**). Next build is the top of **Next** below — **Review fixes: correctness & security**
+(agreed 2026-07-02) — then Intimacy notes or the decision-gated avatar upgrade lanes (Rive
+reusable rig, then R3F/VRM 3D) — author's call.
 
 ## Next (queued)
 
+- **Review fixes — correctness & security (codebase-review batch 1)** —
+  [codebase-review.plan.md](codebase-review.plan.md) · findings
+  [codebase-review.md](codebase-review.md). From the 2026-07-02 five-agent review of the
+  Opus-era diff: three silently-dead gameplay systems (condition→mood keying, chat
+  social-cards drop on first exchange, the director's taste-axis reset), data-loss/race
+  edges (chat concurrency, finalizer ordering, batch-image scoping, provenance `.catch`),
+  the security trio (seed credential, `BETTER_AUTH_SECRET`, model-id validation), and four
+  small client fixes.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -44,6 +53,15 @@ avatar upgrade lanes (Rive reusable rig, then R3F/VRM 3D) — author's call.
   needs a `world-simulation.plan.md` when it becomes active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
+- **Codebase-review follow-on batches (2–4)** — findings
+  [codebase-review.md](codebase-review.md) §C–E; no plans yet (each needs its
+  `<topic>.plan.md` when it becomes active): **prompt intelligence** (§C — session-lane
+  cast voices, content-framing/no-refusal port, intimate + dialogue craft rules,
+  schema-match fixes, forge upgrades), **chat-lane consolidation** (§D — extract
+  `submitChatMessage`, share the forked session-lane machinery, write
+  `docs/character-chat.md`), **dedup & cleanup sweep** (§E). Sequenced after batch 1 per
+  the 2026-07-02 agreement; where they slot versus the feature work above is the
+  author's call.
 
 ## Someday / parking lot
 
