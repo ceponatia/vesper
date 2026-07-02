@@ -148,6 +148,13 @@
       "when": 1782914526879,
       "tag": "0020_new_prowler",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1783016844823,
+      "tag": "0021_common_cammi",
+      "breakpoints": true
     }
   ]
 }

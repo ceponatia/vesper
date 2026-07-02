@@ -162,11 +162,84 @@ export const characters = pgTable(
 );
 
 /**
- * The character-chat harness transcript (docs/developer-notes/character-chat.plan.md).
- * A flat, per-character message log for the editor's Chat tab — deliberately
- * isolated from sessions (no turns, episodes, facts, or RAG). Clearing the chat
- * deletes these rows; the generated scene images (kind="scene") survive, but
- * their chat-derived prompt text is scrubbed (character-chat.followups.md §3).
+ * A conversation (docs/character-chat.md; character-chat-standalone.spec.md §1):
+ * the chat lane's first-class record — the transcript, rolling summary, and
+ * per-participant state hang off `chat_id`, so one character can host many
+ * stories (a long-running main thread beside a fresh alternate-universe
+ * scenario). Built with multi-character headroom: membership is the
+ * `chat_participants` join table (v1 enforces exactly one row per chat,
+ * app-level). `archived_at` shelves a conversation read-only (restorable);
+ * hard delete cascades transcript + summary + state (memory-group purge is
+ * app-level — see `deleteChat`).
+ */
+export const characterChats = pgTable(
+  "character_chats",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    /** User-editable; "" renders as an auto-title (the character's name). */
+    title: text("title").notNull().default(""),
+    createdAt: createdAt(),
+    /** Recency anchor for the Chats list; bumped on every exchange. */
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (t) => [index("character_chats_owner_recency_idx").on(t.ownerId, t.lastMessageAt)],
+);
+
+/**
+ * Chat membership (character-chat-standalone.spec.md §1.1). `memory_group_id`
+ * keys this participant's facts/episodes scope (memory groups — D7):
+ * "continue our shared history" chats reuse the character's existing group,
+ * "fresh start / AU" chats mint a new one — every AU is its own island, and a
+ * future group chat keeps each character's memory their own.
+ */
+export const chatParticipants = pgTable(
+  "chat_participants",
+  {
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => characterChats.id, { onDelete: "cascade" }),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    memoryGroupId: text("memory_group_id").notNull(),
+    sort: integer("sort").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.chatId, t.characterId] }),
+    index("chat_participants_character_idx").on(t.characterId),
+  ],
+);
+
+/**
+ * Reusable scenario setups (character-chat-standalone.spec.md §1.5): a nameable
+ * premise/outfit/cards/starting-stage bundle, seeded into a new conversation's
+ * state exactly the way the scenario modal writes those fields. A small owned
+ * table now; `LibraryKind` graduation (sharing/cloning) later if wanted.
+ */
+export const chatScenarioPresets = pgTable(
+  "chat_scenario_presets",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    name: text("name").notNull(),
+    premise: text("premise").notNull().default(""),
+    outfit: text("outfit").notNull().default(""),
+    outfitExposed: boolean("outfit_exposed").notNull().default(false),
+    /** SocialReactionCard[] — same shape as `character_chat_state.active_social_cards`. */
+    socialCards: jsonb("social_cards").notNull().default([]),
+    startingStage: text("starting_stage").notNull().default("stranger"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("chat_scenario_presets_owner_idx").on(t.ownerId)],
+);
+
+/**
+ * The character-chat transcript (docs/character-chat.md). A flat message log per
+ * conversation — deliberately isolated from sessions (no turns). Clearing (hard
+ * delete) removes the chat row and these cascade; the generated scene images
+ * (kind="scene") survive, but their chat-derived prompt text is scrubbed.
  */
 export const characterChatMessages = pgTable(
   "character_chat_messages",
@@ -176,11 +249,18 @@ export const characterChatMessages = pgTable(
     characterId: text("character_id")
       .notNull()
       .references(() => characters.id, { onDelete: "cascade" }),
+    /** The conversation (nullable only during the slice-3 migration window; NOT NULL after). */
+    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "cascade" }),
+    /** Which participant spoke an assistant line (multi-character headroom; null on user lines). */
+    speakerCharacterId: text("speaker_character_id").references(() => characters.id, { onDelete: "set null" }),
     role: text("role", { enum: ["user", "assistant"] }).notNull(),
     content: text("content").notNull(),
     createdAt: createdAt(),
   },
-  (t) => [index("character_chat_messages_owner_character_idx").on(t.ownerId, t.characterId, t.createdAt)],
+  (t) => [
+    index("character_chat_messages_owner_character_idx").on(t.ownerId, t.characterId, t.createdAt),
+    index("character_chat_messages_chat_idx").on(t.chatId, t.createdAt),
+  ],
 );
 
 /**
@@ -201,6 +281,8 @@ export const characterChatSummaries = pgTable(
     characterId: text("character_id")
       .notNull()
       .references(() => characters.id, { onDelete: "cascade" }),
+    /** The conversation (nullable only during the slice-3 migration window; PK after). */
+    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "cascade" }),
     summary: text("summary").notNull().default(""),
     /** (watermarkAt, watermarkId) = the newest message folded into `summary`; both null until the first fold. */
     watermarkAt: timestamp("watermark_at", { withTimezone: true }),
@@ -235,6 +317,8 @@ export const characterChatState = pgTable(
     characterId: text("character_id")
       .notNull()
       .references(() => characters.id, { onDelete: "cascade" }),
+    /** The conversation (nullable only during the slice-3 migration window; PK (chat_id, character_id) after). */
+    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "cascade" }),
     /** Record<string,number> — the full meter registry, carried verbatim (seeded from initialMeters()). */
     meters: jsonb("meters").notNull().default({}),
     /** −100…100, the character's feeling toward the player persona (seeded from playerRelationship.stage). */
@@ -744,6 +828,8 @@ export const episodes = pgTable(
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
     ownerId: text("owner_id").references(() => users.id),
     characterId: text("character_id").references(() => characters.id, { onDelete: "cascade" }),
+    /** Memory-group keying (character-chat-standalone.spec.md §1.3) — replaces (owner,character) for chat scope. */
+    chatMemoryGroupId: text("chat_memory_group_id"),
     turnNumber: integer("turn_number").notNull(),
     summary: text("summary").notNull(),
     threadIds: jsonb("thread_ids").notNull().default([]),
@@ -776,6 +862,8 @@ export const facts = pgTable(
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
     ownerId: text("owner_id").references(() => users.id),
     characterId: text("character_id").references(() => characters.id, { onDelete: "cascade" }),
+    /** Memory-group keying (character-chat-standalone.spec.md §1.3) — replaces (owner,character) for chat scope. */
+    chatMemoryGroupId: text("chat_memory_group_id"),
     kind: text("kind").notNull(),
     verb: text("verb"),
     subjectKind: text("subject_kind").notNull().default("character"),
