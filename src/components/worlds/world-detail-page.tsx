@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { fillPlayerToken } from "@/lib/player-token";
 import { sessionsApi, worldsApi, type LoreChunkEntry } from "@/lib/client/api";
 import { WorldMapGraph } from "./world-map-graph";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsMobile } from "@/components/hooks/use-is-mobile";
+import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -39,17 +40,7 @@ export function WorldDetailPage({ worldId }: { worldId: string }) {
   // Poll while a world-image backfill runs so freshly-generated art appears and the
   // "Generating artwork…" hint clears on its own (UX-audit M7); capped at ~5 min.
   const imageJobActive = world.data?.imageJobActive ?? false;
-  const reloadWorld = world.reload;
-  useEffect(() => {
-    if (!imageJobActive) return;
-    let polls = 0;
-    const timer = setInterval(() => {
-      polls += 1;
-      reloadWorld({ silent: true });
-      if (polls >= 60) clearInterval(timer);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [imageJobActive, reloadWorld]);
+  usePollWhile(imageJobActive, () => world.reload({ silent: true }), 5000, { maxPolls: 60 });
 
   if (world.loading) {
     return (

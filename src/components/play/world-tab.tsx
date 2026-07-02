@@ -7,7 +7,7 @@ import type { StatusItem, UseSession } from "@/lib/client/use-session";
 import { AGENT_MODELS } from "@/lib/agent-models";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { Card } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
+import { ModelSelect } from "@/components/ui/model-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
@@ -24,7 +24,6 @@ function NarratorSelect({ session }: { session: UseSession }) {
   const [saving, setSaving] = useState(false);
   const status = session.status;
   const current = status?.narrativeModel ?? "";
-  const known = NARRATIVE_MODELS.some((o) => o.id === current);
 
   const select = async (modelId: string) => {
     if (saving || modelId === current || !status?.worldId) return;
@@ -41,20 +40,14 @@ function NarratorSelect({ session }: { session: UseSession }) {
   return (
     <section className="flex flex-col gap-1.5">
       <SectionTitle>Narrator</SectionTitle>
-      <Select
-        aria-label="Narrator model"
+      <ModelSelect
+        ariaLabel="Narrator model"
+        models={NARRATIVE_MODELS}
         value={current}
         disabled={saving || !status?.worldId}
-        onChange={(e) => void select(e.target.value)}
+        onChange={(modelId) => void select(modelId)}
         className="text-xs"
-      >
-        {!known ? <option value={current}>{current || "—"}</option> : null}
-        {NARRATIVE_MODELS.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </Select>
+      />
       {saving ? <p className="text-[11px] text-paper-500 italic">Switching…</p> : null}
     </section>
   );
@@ -71,7 +64,6 @@ function AgentSelect({ session }: { session: UseSession }) {
   const [saving, setSaving] = useState(false);
   const status = session.status;
   const current = status?.agentModel ?? "";
-  const known = AGENT_MODELS.some((o) => o.id === current);
 
   const select = async (modelId: string) => {
     if (saving || modelId === current || !status?.worldId) return;
@@ -88,20 +80,14 @@ function AgentSelect({ session }: { session: UseSession }) {
   return (
     <section className="flex flex-col gap-1.5">
       <SectionTitle>Agents (non-narrator)</SectionTitle>
-      <Select
-        aria-label="Agent model"
+      <ModelSelect
+        ariaLabel="Agent model"
+        models={AGENT_MODELS}
         value={current}
         disabled={saving || !status?.worldId}
-        onChange={(e) => void select(e.target.value)}
+        onChange={(modelId) => void select(modelId)}
         className="text-xs"
-      >
-        {!known ? <option value={current}>{current || "—"}</option> : null}
-        {AGENT_MODELS.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </Select>
+      />
       <p className="text-[11px] text-paper-500">Intake + post-turn agents. Not the narrator, world/character creation, or images.</p>
       {saving ? <p className="text-[11px] text-paper-500 italic">Switching…</p> : null}
     </section>

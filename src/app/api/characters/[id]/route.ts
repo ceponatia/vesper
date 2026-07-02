@@ -13,17 +13,9 @@ import {
   readBody,
   withUser,
 } from "@/server/api";
+import { findOwnedCharacter } from "./owned";
 
 type Params = { id: string };
-
-async function findCharacter(ownerId: string, id: string) {
-  const [row] = await db()
-    .select()
-    .from(characters)
-    .where(and(eq(characters.id, id), eq(characters.ownerId, ownerId)))
-    .limit(1);
-  return row;
-}
 
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
@@ -43,7 +35,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   const body = await readBody(req, characterPatchSchema);
   if (!body.ok) return body.response;
-  const existing = await findCharacter(user.id, id);
+  const existing = await findOwnedCharacter(id, user.id);
   if (!existing) return jsonError("not_found", "character not found", 404);
 
   const update: Partial<typeof characters.$inferInsert> = {};
@@ -69,7 +61,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
 
 export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
-  const existing = await findCharacter(user.id, id);
+  const existing = await findOwnedCharacter(id, user.id);
   if (!existing) return jsonError("not_found", "character not found", 404);
   // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
   // library delete never breaks them and never hits a FK — no in-use guard.

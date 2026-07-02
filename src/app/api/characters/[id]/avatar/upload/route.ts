@@ -1,9 +1,8 @@
 import type { NextRequest } from "next/server";
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { characters, db } from "@/server/db";
 import { uploadAvatar } from "@/server/images";
 import { GENERATION_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { findOwnedCharacter } from "../../owned";
 
 type Params = { id: string };
 
@@ -28,12 +27,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   const body = await readBody(req, uploadBodySchema);
   if (!body.ok) return body.response;
-  const [row] = await db()
-    .select({ id: characters.id })
-    .from(characters)
-    .where(and(eq(characters.id, id), eq(characters.ownerId, user.id)))
-    .limit(1);
-  if (!row) return jsonError("not_found", "character not found", 404);
+  if (!(await findOwnedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
   if (!rateLimit(`avatar_gen:${user.id}`, GENERATION_RATE_LIMIT)) {
     return jsonError("rate_limited", "too many avatar uploads; try again in a minute", 429);
   }

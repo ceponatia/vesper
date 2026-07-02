@@ -13,6 +13,7 @@ import {
   type CreatedRef,
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -301,6 +302,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
     if (!config.generateImages || missingIds.length === 0) return;
     setConfirmGen(false);
     setBatchIds(new Set(missingIds));
+    pollsRef.current = 0; // rearm the poll counter for this batch
     setGeneratingBatch(true);
     const result = await config.generateImages(missingIds);
     setGeneratingBatch(false);
@@ -322,23 +324,21 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
 
   // Refresh the grid while a batch runs so images appear as they land; stop
   // once every entity in the running batch has one, or after a safety cap. The
-  // scoped-missing count is read through a ref so the interval sees fresh data.
+  // hook latest-refs the tick, so each poll sees the fresh scoped-missing count;
+  // the poll count lives in a ref (reset when a batch starts) because the stop
+  // condition is stateful — it flips `batchRunning` rather than just going quiet.
   const scopedMissing =
     batchIds.size === 0 ? 0 : cardsAll.filter((c) => batchIds.has(c.id) && !c.imageId).length;
-  const missingRef = useRef(scopedMissing);
-  useEffect(() => {
-    missingRef.current = scopedMissing;
-  });
-  useEffect(() => {
-    if (!batchRunning) return;
-    let polls = 0;
-    const timer = setInterval(() => {
-      polls += 1;
+  const pollsRef = useRef(0);
+  usePollWhile(
+    batchRunning,
+    () => {
+      pollsRef.current += 1;
       reload({ silent: true });
-      if ((polls >= 2 && missingRef.current === 0) || polls >= 90) setBatchRunning(false);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [batchRunning, reload]);
+      if ((pollsRef.current >= 2 && scopedMissing === 0) || pollsRef.current >= 90) setBatchRunning(false);
+    },
+    5000,
+  );
 
   return (
     <PageContainer wide>

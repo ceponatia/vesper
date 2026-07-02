@@ -8,9 +8,14 @@ de-forks (shared `withGenerateTimeout` in server/ai, shared `drainingStreamRespo
 shared `evaluateActReaction` — chat regained the touch-welcomeness fallback), the
 `chat_scene_image` job type + detached-job recovery sweep, stale-header fixes,
 `docs/character-chat.md`, and the component split (character-chat.tsx 842→460 +
-chat-message/chat-scene-strip/chat-status). One leftover rides with slice 4's cleanup:
-the cross-cutting shared-primitive adoptions (usePollWhile / ModelSelect / draft-seed /
-findOwned — they touch non-chat features). **Slice 2 (Measurement baseline) instrument
+chat-message/chat-scene-strip/chat-status). Its leftover — the cross-cutting
+shared-primitive adoptions (they touch non-chat features) — **built 2026-07-02**:
+`usePollWhile` (components/hooks/use-poll-while.ts) adopted at all six hand-rolled poll
+loops, `ModelSelect` (components/ui/model-select.tsx, keeps the off-list-id-renders-as-is
+quirk) at the three curated dropdowns, chat-conversation reseeded via `decideDraftSeed`
+(a chatId switch now clears the stale transcript instead of letting it linger), and
+`findOwnedCharacter` (app/api/characters/[id]/owned.ts) replacing the six inline
+ownership probes on the character write routes. **Slice 2 (Measurement baseline) instrument
 built 2026-07-02** — the five spec-§5 paired contrast fixtures (`chat-contrast-*`, one
 shared character, real `buildCharacterChatSystemPrompt`), the blind pair judge +
 `--axis contrast` accuracy report (≥80%-per-axis bar) in the eval harness, `--seeds`
