@@ -2,12 +2,14 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isDemoMode } from "../../../src/server/ai";
-import { EVAL_SCENARIOS, type EvalScenario } from "./fixtures";
+import { CONTRAST_AXES, EVAL_SCENARIOS, type ContrastGroupId, type EvalScenario } from "./fixtures";
 import {
   CANDIDATE_LABELS,
   JUDGE_DIMS,
   JUDGE_MODEL,
+  judgeContrast,
   type CandidateLabel,
+  type ContrastJudgement,
   type JudgeDim,
   type Ranking,
   type RankCandidate,
@@ -24,7 +26,16 @@ import {
  *   pnpm eval:narration:compare                       # axes profile,reasoning over the default results.json
  *   pnpm eval:narration:compare --axis profile        # just the profile decision
  *   pnpm eval:narration:compare --axis focus --vs data/eval/narration/results-nofocus.json
+ *   pnpm eval:narration:compare --axis contrast       # blind-identify the §5 paired-contrast fixtures
  *   pnpm eval:narration:compare --limit 2 --dry-run   # inspect groups, no judge calls
+ *
+ * `--axis contrast` (character-chat-standalone.spec.md §5) pairs the `chat-contrast-*`
+ * fixtures by their `contrast` metadata (group + flagged/control variant) within one
+ * results.json, holding (model × profile × reasoning × seed) fixed. The blind judge
+ * sees both replies unlabeled, must identify the flagged variant, and rates the
+ * difference's visibility; the report scores identification accuracy per axis against
+ * the ≥80% bar (below it the axis is declared NOT enacted) plus the deterministic
+ * lexical-cue separation where the axis defines a cue list.
  *
  * Point EVAL_JUDGE_MODEL at a strong judge (e.g. google/gemini-3.5-pro) so it
  * out-classes the cast it scores.
@@ -47,6 +58,8 @@ interface ResultRow {
   model: string;
   profile: string; // "concise" | "aggressive"
   reasoning: string; // "default" | "off" | "low"
+  /** Replicate index (run.ts --seeds). Absent in pre-seed results files ⇒ treated as 0. */
+  seed?: number;
   metrics: CellMetrics;
   narration: string;
   error?: string;
@@ -63,18 +76,24 @@ function getOrInit<K, V>(m: Map<K, V>, k: K, init: () => V): V {
   return created;
 }
 
-type AxisName = "profile" | "reasoning" | "focus";
-const ALL_AXES: AxisName[] = ["profile", "reasoning"]; // focus needs --vs and is opt-in
+type AxisName = "profile" | "reasoning" | "focus" | "contrast";
+const ALL_AXES: AxisName[] = ["profile", "reasoning"]; // focus (needs --vs) and contrast are opt-in
 
 /** Group key = everything that identifies a comparison EXCEPT the compared axis. */
 function groupKeyFor(axis: AxisName, r: ResultRow): string {
+  const seed = `s${r.seed ?? 0}`;
   switch (axis) {
     case "profile":
-      return `${r.scenario}|${shortModel(r.model)}|${r.reasoning}`;
+      return `${r.scenario}|${shortModel(r.model)}|${r.reasoning}|${seed}`;
     case "reasoning":
-      return `${r.scenario}|${shortModel(r.model)}|${r.profile}`;
+      return `${r.scenario}|${shortModel(r.model)}|${r.profile}|${seed}`;
     case "focus":
-      return `${r.scenario}|${shortModel(r.model)}|${r.profile}|${r.reasoning}`;
+      return `${r.scenario}|${shortModel(r.model)}|${r.profile}|${r.reasoning}|${seed}`;
+    case "contrast": {
+      // Pair members are DIFFERENT scenarios sharing a contrast group — key on the group.
+      const group = EVAL_SCENARIOS.find((s) => s.id === r.scenario)?.contrast?.group ?? "?";
+      return `${group}|${shortModel(r.model)}|${r.profile}|${r.reasoning}|${seed}`;
+    }
   }
 }
 const axisValueOf = (axis: AxisName, r: ResultRow): string => (axis === "profile" ? r.profile : axis === "reasoning" ? r.reasoning : "");
@@ -151,6 +170,96 @@ function buildFocusGroups(on: ResultRow[], off: ResultRow[]): Group[] {
   return groups;
 }
 
+// ---------------------------------------------------------------------------
+// Contrast axis — blind identification of the §5 paired fixtures.
+// ---------------------------------------------------------------------------
+
+interface ContrastPair {
+  key: string;
+  group: ContrastGroupId;
+  /** The pair's shared player input (byte-identical across both variants). */
+  playerInput: string;
+  /** Exactly two, labeled A/B in the hash-shuffled order; `value` is "flagged" | "control". */
+  candidates: GroupCandidate[];
+}
+
+interface ContrastSlot {
+  group: ContrastGroupId;
+  playerInput: string;
+  variants: Partial<Record<"flagged" | "control", ResultRow>>;
+}
+
+/** Pair flagged vs control rows by contrast group within (model × profile × reasoning × seed). */
+function buildContrastPairs(rows: ResultRow[]): ContrastPair[] {
+  const byKey = new Map<string, ContrastSlot>();
+  for (const r of rows.filter(isLive)) {
+    const scenario = EVAL_SCENARIOS.find((s) => s.id === r.scenario);
+    const contrast = scenario?.contrast;
+    if (!scenario || !contrast) continue;
+    const key = groupKeyFor("contrast", r);
+    const slot = getOrInit(byKey, key, (): ContrastSlot => ({ group: contrast.group, playerInput: scenario.playerInput, variants: {} }));
+    if (!slot.variants[contrast.variant]) slot.variants[contrast.variant] = r; // drop accidental dupes
+  }
+  const pairs: ContrastPair[] = [];
+  for (const [key, slot] of byKey) {
+    const flagged = slot.variants.flagged;
+    const control = slot.variants.control;
+    if (!flagged || !control) continue;
+    const candidates = toCandidates(key, [
+      ["flagged", flagged],
+      ["control", control],
+    ]);
+    if (candidates.length === 2) pairs.push({ key, group: slot.group, playerInput: slot.playerInput, candidates });
+  }
+  return pairs;
+}
+
+/** The spec §5 acceptance bar: below this per-axis accuracy the axis is declared NOT enacted. */
+const CONTRAST_BAR = 0.8;
+
+interface ContrastAcc {
+  pairs: number;
+  identified: number;
+  visSum: number;
+  /** Pairs whose axis defines a lexical cue list. */
+  cuePairs: number;
+  /** …of those, pairs where the cue hit the flagged reply and NOT the control. */
+  cueSeparated: number;
+}
+const emptyContrastAcc = (): ContrastAcc => ({ pairs: 0, identified: 0, visSum: 0, cuePairs: 0, cueSeparated: 0 });
+
+interface ContrastVerdict {
+  key: string;
+  group: ContrastGroupId;
+  candidates: Array<{ label: CandidateLabel; value: string; model: string }>;
+  judgement: ContrastJudgement;
+  correct: boolean;
+  /** Lexical-cue hits (only when the axis defines a cue list). */
+  flaggedCue?: boolean;
+  controlCue?: boolean;
+}
+
+function printContrastTable(byGroup: Map<string, ContrastAcc>): void {
+  console.log(
+    `\n=== AXIS: contrast — blind pair identification, bar ≥${CONTRAST_BAR * 100}% correct per axis (judge: ${JUDGE_MODEL}) ===`,
+  );
+  console.log([pad("axis", 9), pad("pairs", 6), pad("correct", 8), pad("accuracy", 9), pad("bar", 5), pad("vis~", 5), "cueSep"].join(" "));
+  for (const [group, a] of [...byGroup.entries()].sort((x, y) => x[0].localeCompare(y[0]))) {
+    const pass = a.pairs === 0 ? "-" : a.identified / a.pairs >= CONTRAST_BAR ? "PASS" : "FAIL";
+    console.log(
+      [
+        pad(group, 9),
+        pad(a.pairs, 6),
+        pad(a.identified, 8),
+        pad(pct(a.identified, a.pairs), 9),
+        pad(pass, 5),
+        pad(a.pairs ? (a.visSum / a.pairs).toFixed(1) : "-", 5),
+        a.cuePairs ? `${a.cueSeparated}/${a.cuePairs}` : "-",
+      ].join(" "),
+    );
+  }
+}
+
 interface Acc {
   groups: number;
   wins: number;
@@ -218,16 +327,86 @@ function printAxisTable(axis: AxisName, byValue: Map<string, Acc>): void {
   }
 }
 
-function printPerModel(axis: AxisName, byModelValue: Map<string, Acc>): void {
-  console.log(`\n--- ${axis}: per-model win-rate (wins / groups, Borda%) ---`);
+/** Per-model breakdown over a `model|value`-keyed accumulator map; `fmt` renders one cell. */
+function printPerModel<T>(header: string, byModelValue: Map<string, T>, fmt: (acc: T) => string): void {
+  console.log(header);
   const models = [...new Set([...byModelValue.keys()].map((k) => k.split("|")[0] ?? k))].sort();
   for (const m of models) {
     const parts = [...byModelValue.entries()]
       .filter(([k]) => k.startsWith(`${m}|`))
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([k, a]) => `${k.split("|")[1] ?? k}: ${a.wins}/${a.groups} (${pct(a.borda, a.bordaMax)})`);
+      .map(([k, a]) => `${k.split("|")[1] ?? k}: ${fmt(a)}`);
     console.log(`  ${pad(m, 8)} ${parts.join("   ")}`);
   }
+}
+
+/**
+ * The contrast axis end-to-end: pair, blind-judge, accumulate per axis + per model,
+ * print the accuracy-vs-bar table. Returns null on dry-run (groups printed, no calls).
+ */
+async function runContrastAxis(
+  rows: ResultRow[],
+  args: CompareArgs,
+): Promise<{ byGroup: Map<string, ContrastAcc>; verdicts: ContrastVerdict[] } | null> {
+  let pairs = buildContrastPairs(rows);
+  if (args.limit) pairs = pairs.slice(0, args.limit);
+  console.log(`\naxis 'contrast': ${pairs.length} blind pairs (flagged vs control; ≥${CONTRAST_BAR * 100}% identification bar per axis)`);
+
+  if (args.dryRun) {
+    for (const p of pairs) console.log(`  ${pad(p.key, 40)} ${p.candidates.map((c) => `${c.label}=${c.value}`).join(" ")}`);
+    return null;
+  }
+
+  const byGroup = new Map<string, ContrastAcc>();
+  const byModelGroup = new Map<string, ContrastAcc>();
+  const verdicts: ContrastVerdict[] = [];
+  for (const p of pairs) {
+    const axisSpec = CONTRAST_AXES[p.group];
+    const a = p.candidates.find((c) => c.label === "A");
+    const b = p.candidates.find((c) => c.label === "B");
+    const flaggedCand = p.candidates.find((c) => c.value === "flagged");
+    const controlCand = p.candidates.find((c) => c.value === "control");
+    if (!a || !b || !flaggedCand || !controlCand) continue;
+    process.stdout.write(`  judging ${p.key} …`);
+    const judgement = await judgeContrast({
+      playerInput: p.playerInput,
+      flagged: axisSpec.flagged,
+      control: axisSpec.control,
+      a: a.narration,
+      b: b.narration,
+    });
+    if (!judgement) {
+      process.stdout.write(` (no verdict)\n`);
+      continue;
+    }
+    const correct = judgement.flagged !== null && judgement.flagged === flaggedCand.label;
+    const cueRe = axisSpec.cueRe;
+    const flaggedCue = cueRe ? cueRe.test(flaggedCand.narration) : undefined;
+    const controlCue = cueRe ? cueRe.test(controlCand.narration) : undefined;
+    const accs = [getOrInit(byGroup, p.group, emptyContrastAcc), getOrInit(byModelGroup, `${flaggedCand.model}|${p.group}`, emptyContrastAcc)];
+    for (const acc of accs) {
+      acc.pairs += 1;
+      if (correct) acc.identified += 1;
+      acc.visSum += judgement.visibility;
+      if (cueRe) {
+        acc.cuePairs += 1;
+        if (flaggedCue === true && controlCue === false) acc.cueSeparated += 1;
+      }
+    }
+    verdicts.push({
+      key: p.key,
+      group: p.group,
+      candidates: p.candidates.map((c) => ({ label: c.label, value: c.value, model: c.model })),
+      judgement,
+      correct,
+      flaggedCue,
+      controlCue,
+    });
+    process.stdout.write(` ${correct ? "correct" : judgement.flagged === null ? "unidentified" : "WRONG"} (vis ${judgement.visibility})\n`);
+  }
+  printContrastTable(byGroup);
+  printPerModel(`\n--- contrast: per-model identification (correct / pairs) ---`, byModelGroup, (acc) => `${acc.identified}/${acc.pairs}`);
+  return { byGroup, verdicts };
 }
 
 interface CompareArgs {
@@ -280,8 +459,13 @@ async function main(): Promise<void> {
 
   const verdicts: GroupVerdict[] = [];
   const summary: Record<string, { byValue: Record<string, Acc>; invalidOverall: number }> = {};
+  let contrastResult: { byGroup: Map<string, ContrastAcc>; verdicts: ContrastVerdict[] } | null = null;
 
   for (const axis of args.axes) {
+    if (axis === "contrast") {
+      contrastResult = await runContrastAxis(rows, args);
+      continue;
+    }
     let groups: Group[];
     if (axis === "focus") {
       if (!args.vsPath) {
@@ -316,15 +500,18 @@ async function main(): Promise<void> {
     }
     if (invalidOverall) console.log(`  (${invalidOverall} group(s) returned an unusable overall ordering — counted for dimension wins only)`);
     printAxisTable(axis, byValue);
-    printPerModel(axis, byModelValue);
+    printPerModel(`\n--- ${axis}: per-model win-rate (wins / groups, Borda%) ---`, byModelValue, (a) => `${a.wins}/${a.groups} (${pct(a.borda, a.bordaMax)})`);
     summary[axis] = { byValue: Object.fromEntries(byValue), invalidOverall };
   }
 
   if (!args.dryRun) {
     await fs.mkdir(args.outDir, { recursive: true });
     const outPath = path.join(args.outDir, "comparison.json");
-    await fs.writeFile(outPath, `${JSON.stringify({ judge: JUDGE_MODEL, axes: args.axes, summary, verdicts }, null, 2)}\n`);
-    console.log(`\nwrote ${verdicts.length} group verdicts → ${outPath}`);
+    const contrast = contrastResult
+      ? { bar: CONTRAST_BAR, byGroup: Object.fromEntries(contrastResult.byGroup), verdicts: contrastResult.verdicts }
+      : undefined;
+    await fs.writeFile(outPath, `${JSON.stringify({ judge: JUDGE_MODEL, axes: args.axes, summary, contrast, verdicts }, null, 2)}\n`);
+    console.log(`\nwrote ${verdicts.length + (contrastResult?.verdicts.length ?? 0)} group verdicts → ${outPath}`);
   }
 }
 

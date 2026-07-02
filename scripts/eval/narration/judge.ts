@@ -155,3 +155,67 @@ export async function rankNarrations(scenario: EvalScenario, candidates: RankCan
   });
   return r.value;
 }
+
+// ---------------------------------------------------------------------------
+// Blind contrast judge — paired fixtures that differ on ONE flipped input
+// (character-chat-standalone.spec.md §5). The judge sees both replies unlabeled,
+// must say WHICH was generated with the flagged input, and rate how visible the
+// difference is. Per-axis identification accuracy is the measurement (bar: ≥80%
+// of seeds correct — below it the axis is declared NOT enacted and gets tuned).
+// ---------------------------------------------------------------------------
+
+export const contrastJudgeSchema = z.object({
+  /**
+   * Which reply carried the flagged input. A parse failure degrades to null —
+   * "unidentified", counted as incorrect — NEVER to a default guess, which would
+   * bias accuracy toward the 50% floor's lucky side.
+   */
+  flagged: z.enum(["A", "B"]).nullable().catch(null),
+  /** How visible the difference reads: 1 = indistinguishable (a coin flip), 5 = unmistakable. */
+  visibility: z.number().int().min(1).max(5).catch(1),
+  note: z.string().catch(""),
+});
+export type ContrastJudgement = z.infer<typeof contrastJudgeSchema>;
+
+const CONTRAST_SYSTEM =
+  "You are a strict evaluator of interactive-fiction character writing. You will see two replies (A and B) from the same character " +
+  "to the same player message, generated from prompts identical except for ONE hidden difference. Judge only from the text of the " +
+  "replies. Decide which reply was generated with the flagged condition, and rate how visible the difference is " +
+  "(1 = indistinguishable, you are guessing; 3 = detectable if you look for it; 5 = unmistakable in normal reading).";
+
+export interface ContrastJudgeInput {
+  playerInput: string;
+  /** What the flagged reply was generated with (CONTRAST_AXES[group].flagged). */
+  flagged: string;
+  /** What the control reply was generated with. */
+  control: string;
+  a: string;
+  b: string;
+}
+
+export async function judgeContrast(input: ContrastJudgeInput): Promise<ContrastJudgement | null> {
+  const prompt = [
+    `Player message: ${input.playerInput}`,
+    `Hidden difference: one reply was generated ${input.flagged}; the other was generated ${input.control}.`,
+    "",
+    "--- Reply A ---",
+    input.a,
+    "",
+    "--- Reply B ---",
+    input.b,
+    "",
+    'Return: "flagged" = the label (A or B) of the reply generated with the flagged condition; ' +
+      '"visibility" = 1-5 how visible the difference is; "note" = one line naming the textual evidence you used.',
+  ].join("\n");
+  const r = await generateChecked<ContrastJudgement>({
+    schema: contrastJudgeSchema,
+    system: CONTRAST_SYSTEM,
+    prompt,
+    modelId: JUDGE_MODEL,
+    temperature: 0,
+    // Same reasoning-headroom rationale as the rank judge above.
+    maxOutputTokens: 1500,
+    code: "eval.contrastjudge",
+  });
+  return r.value;
+}

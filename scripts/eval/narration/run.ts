@@ -5,14 +5,14 @@ import { streamText, type JSONValue, type ModelMessage } from "ai";
 import { isDemoMode, narrativeProviderOptions, openrouter, routedProvider } from "../../../src/server/ai";
 import type { NarrationShapeId } from "../../../src/server/engine/prompts/constants";
 import { parseSegments } from "../../../src/server/engine/segmenter";
-import { EVAL_SCENARIOS, type EvalScenario } from "./fixtures";
+import { CONTRAST_AXES, EVAL_SCENARIOS, type EvalScenario } from "./fixtures";
 import { judgeAbsolute, judgeAvg, type Judgement } from "./judge";
 
 /**
  * Behavioral eval harness for narration (narrator-prompt-focus.plan.md §Behavioral
  * eval harness). LIVE OpenRouter spend — **never** wired into `pnpm verify` / CI.
- * For each cell of (scenario × model × shape profile × reasoning) it assembles the
- * real prompt (fixtures.ts), streams the narrator, computes deterministic metrics
+ * For each cell of (scenario × model × shape profile × reasoning × seed) it assembles
+ * the real prompt (fixtures.ts), streams the narrator, computes deterministic metrics
  * (paragraphs / segments / distinct speakers / tokens / TTFT / latency / routed
  * provider via segmenter.parseSegments), and — unless --no-judge — scores it 1–5 on
  * the rubric with an LLM judge. Prints a table and writes results JSON.
@@ -21,7 +21,13 @@ import { judgeAbsolute, judgeAvg, type Judgement } from "./judge";
  *   pnpm eval:narration --models aion,glm --reasoning default,off,low
  *   pnpm eval:narration --scenarios hi,compliment --profiles concise --no-judge
  *   pnpm eval:narration --no-focus            # strip the §Phase-3 planner (Phase-2 A/B)
+ *   pnpm eval:narration --scenarios chat-contrast --seeds 5 --no-judge   # the §5 contrast pairs (blind-judge via compare.ts)
  *   pnpm eval:narration --dry-run             # assemble + print prompts, no model calls, no spend
+ *
+ * `--seeds N` repeats every cell N times (temperature 0.8 makes each a fresh sample) —
+ * the replicate axis the paired-contrast bar ("≥80% of seeds per axis",
+ * character-chat-standalone.spec.md §5) is scored over via
+ * `pnpm eval:narration:compare --axis contrast`.
  *
  * The harness MEASURES; a low score is a signal to iterate prompt wording, never a
  * build failure. It automates the interim manual eval + probes P1–P3.
@@ -62,6 +68,8 @@ interface Args {
   profiles: NarrationShapeId[];
   reasoning: Reasoning[];
   scenarios: EvalScenario[];
+  /** Repeats per cell — the replicate axis for the contrast pairs' per-seed bar. */
+  seeds: number;
   focus: boolean;
   judge: boolean;
   dryRun: boolean;
@@ -89,8 +97,10 @@ function parseArgs(argv: string[]): Args {
   const reasoning = (list("reasoning") ?? ["default"]).map((r) => (r === "off" || r === "low" ? r : "default")) as Reasoning[];
   const wanted = list("scenarios");
   const scenarios = wanted ? EVAL_SCENARIOS.filter((s) => wanted.some((w) => s.id.includes(w))) : EVAL_SCENARIOS;
+  const seedsRaw = Number(flags.get("seeds") ?? "1");
+  const seeds = Number.isFinite(seedsRaw) && seedsRaw >= 1 ? Math.floor(seedsRaw) : 1;
 
-  return { models, profiles, reasoning, scenarios, focus: !bools.has("no-focus"), judge: !bools.has("no-judge"), dryRun: bools.has("dry-run") };
+  return { models, profiles, reasoning, scenarios, seeds, focus: !bools.has("no-focus"), judge: !bools.has("no-judge"), dryRun: bools.has("dry-run") };
 }
 
 /** Narrator provider options with an optional per-cell reasoning override (probes P1–P3). */
@@ -148,11 +158,19 @@ interface ResultRow {
   model: string;
   profile: string;
   reasoning: Reasoning;
+  /** Replicate index (0-based) — pairs seed-to-seed in compare.ts's contrast axis. */
+  seed: number;
   metrics: CellMetrics;
   judgement: Judgement | null;
   narration: string;
   /** Did a `sensoryRelevant` scenario weave in a sensory hook? undefined ⇒ not flagged (not measured). */
   sensoryCue?: boolean;
+  /**
+   * Did the reply hit its contrast axis's lexical cue list (CONTRAST_AXES[group].cueRe —
+   * the sensoryRelevant pattern)? Expected on the flagged variant, NOT the control.
+   * undefined ⇒ not a contrast scenario, or its axis has no cue list (not measured).
+   */
+  contrastCue?: boolean;
   error?: string;
 }
 
@@ -174,6 +192,7 @@ function printTable(rows: ResultRow[]): void {
     pad("total", 7),
     pad("judge", 6),
     pad("sens", 5),
+    pad("cue", 4),
     "provider",
   ].join(" ");
   console.log(`\n${header}`);
@@ -198,6 +217,7 @@ function printTable(rows: ResultRow[]): void {
         pad(`${m.totalMs}ms`, 7),
         pad(r.judgement ? judgeAvg(r.judgement).toFixed(1) : "-", 6),
         pad(r.sensoryCue === undefined ? "-" : r.sensoryCue ? "Y" : "N", 5),
+        pad(r.contrastCue === undefined ? "-" : r.contrastCue ? "Y" : "N", 4),
         m.provider ?? "?",
       ].join(" "),
     );
@@ -208,12 +228,16 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const cells = args.scenarios.flatMap((scenario) =>
     args.models.flatMap((model) =>
-      args.profiles.flatMap((profile) => args.reasoning.map((reasoning) => ({ scenario, model, profile, reasoning }))),
+      args.profiles.flatMap((profile) =>
+        args.reasoning.flatMap((reasoning) =>
+          Array.from({ length: args.seeds }, (_, seed) => ({ scenario, model, profile, reasoning, seed })),
+        ),
+      ),
     ),
   );
 
   console.log(
-    `narration eval — ${cells.length} cells (${args.scenarios.length} scenarios × ${args.models.length} models × ${args.profiles.length} profiles × ${args.reasoning.length} reasoning)` +
+    `narration eval — ${cells.length} cells (${args.scenarios.length} scenarios × ${args.models.length} models × ${args.profiles.length} profiles × ${args.reasoning.length} reasoning × ${args.seeds} seeds)` +
       `${args.focus ? "" : " [no-focus]"}${args.judge ? "" : " [no-judge]"}${args.dryRun ? " [dry-run]" : ""}`,
   );
 
@@ -234,16 +258,20 @@ async function main(): Promise<void> {
   }
 
   const rows: ResultRow[] = [];
-  for (const { scenario, model, profile, reasoning } of cells) {
-    const label = `${scenario.id} ${shortModel(model)} ${shortProfile(profile)}/${reasoning}`;
+  for (const { scenario, model, profile, reasoning, seed } of cells) {
+    const label = `${scenario.id}${args.seeds > 1 ? `#${seed}` : ""} ${shortModel(model)} ${shortProfile(profile)}/${reasoning}`;
     process.stdout.write(`running ${label} …`);
     try {
       const prompt = scenario.build(profile, { focus: args.focus });
       const { text, metrics } = await streamNarration(model, reasoning, prompt, scenario.knownNames);
       const judgement = args.judge ? await judgeAbsolute(scenario, text) : null;
       const sensoryCue = scenario.sensoryRelevant ? SENSORY_CUE_RE.test(text) : undefined;
-      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, metrics, judgement, narration: text, sensoryCue });
-      process.stdout.write(` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}\n`);
+      const cueRe = scenario.contrast ? CONTRAST_AXES[scenario.contrast.group].cueRe : undefined;
+      const contrastCue = cueRe ? cueRe.test(text) : undefined;
+      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, seed, metrics, judgement, narration: text, sensoryCue, contrastCue });
+      process.stdout.write(
+        ` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}${contrastCue === undefined ? "" : ` cue ${contrastCue ? "Y" : "N"}`}\n`,
+      );
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       rows.push({
@@ -252,6 +280,7 @@ async function main(): Promise<void> {
         model,
         profile: shortProfile(profile),
         reasoning,
+        seed,
         metrics: { paragraphs: 0, segments: 0, distinctSpeakers: 0, outputTokens: 0, ttftMs: 0, totalMs: 0, provider: null },
         judgement: null,
         narration: "",

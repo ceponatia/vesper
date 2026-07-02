@@ -28,7 +28,8 @@ shape`, `## Reaction`).
 - `--models` (`aion`) — `aion` · `glm` · `deepseek` · `gemini`, or any OpenRouter id.
 - `--profiles` (`concise,aggressive`) — the two `NARRATION_SHAPE_PROFILES`.
 - `--reasoning` (`default`) — `default` · `off` (`reasoning.enabled:false`) · `low` (`effort:low`). This is probes P1–P3.
-- `--scenarios` (all) — substring match on scenario id (`hi`, `compliment`, `question`, `multi-party`, `intimate`, `chat`).
+- `--scenarios` (all) — substring match on scenario id (`hi`, `compliment`, `question`, `multi-party`, `intimate`, `chat`, `chat-contrast`).
+- `--seeds` (`1`) — repeats per cell (temperature 0.8 ⇒ fresh samples); the replicate axis the contrast bar is scored over.
 - `--no-focus` — drop the Phase-3 `focus` planner from every prompt (`buildResponseShape` falls back to its deterministic Phase-2 derivation).
 - `--no-judge` — deterministic metrics only (cheaper).
 - `--dry-run` — print prompts, make no calls.
@@ -67,6 +68,39 @@ pnpm eval:narration:compare --limit 2 --dry-run   # inspect the comparison group
   `pnpm eval:narration --no-focus` run) by (scenario × model × profile × reasoning) — the Phase-3 A/B.
 - **Output:** per-axis **win-rate** (how often a value ranked #1), **Borda%** (full-ordering points),
   and **per-dimension wins**, overall + per-model. Group verdicts write to `comparison.json`.
+
+## Paired contrast fixtures — does the chat engine's depth show? (`--axis contrast`)
+
+The measurement baseline for character-chat-standalone.plan.md area 3 / spec §5 (the PM reports NO
+noticeable effect from the personality sliders or tracked state in play). `fixtures.ts` carries five
+`chat-contrast-*` pairs over ONE character (Wren), each **identical except one flipped input**, all
+through the real `buildCharacterChatSystemPrompt`:
+
+| axis      | flagged / control                                | fixture ids                                    |
+| --------- | ------------------------------------------------ | ---------------------------------------------- |
+| `state`   | heavy tracked state vs `state` omitted entirely  | `chat-contrast-state-on` / `-state-off`        |
+| `sliders` | Warmth +80 & Inhibition −80 vs −80 & +80         | `chat-contrast-warm` / `-cold`                 |
+| `stage`   | affinity 93 (devoted) vs 0 (stranger)            | `chat-contrast-lover` / `-stranger`            |
+| `drunk`   | intoxication 0.8 (standing cue + disinhibition shift) vs 0 | `chat-contrast-drunk` / `-sober`     |
+| `memory`  | 3 planted facts + 1 episode vs no `memory` input | `chat-contrast-memory-on` / `-memory-off`      |
+
+```bash
+pnpm eval:narration --scenarios chat-contrast --models aion,glm --seeds 5 --no-judge   # generate (live spend)
+pnpm eval:narration:compare --axis contrast                                            # blind pair judging
+pnpm eval:narration:compare --axis contrast --dry-run                                  # inspect pairing, no calls
+```
+
+`compare.ts` pairs flagged vs control by the fixtures' `contrast` metadata within
+(model × profile × reasoning × seed), hash-shuffles which reply is "A" (position-bias mitigation),
+and the **blind judge** — told only the player message and what the hidden difference *is* — must
+identify which reply carries the flag and rate the difference's visibility (1 = indistinguishable,
+5 = unmistakable). A judge parse failure degrades to *unidentified* (counted incorrect), never a
+defaulted guess. **Acceptance bar: ≥80% correct identification per axis** — the table prints
+PASS/FAIL; below the bar the axis is declared **not enacted** and its prompt wording gets tuned and
+re-run (spec §5 outcome routing). Where an axis defines a lexical cue list (`CONTRAST_AXES[..].cueRe`
+— state/drunk/memory), the deterministic `cueSep` column reports flagged-hits-cue-and-control-doesn't
+(the `sensoryRelevant` pattern; also per-row as the `cue` column in `run.ts`), a judge-drift guard.
+After tuning, the pairs stay as the permanent regression harness.
 - **Judge model:** set `EVAL_JUDGE_MODEL` to a **strong** model so it out-classes the cast it scores
   — e.g. `EVAL_JUDGE_MODEL=google/gemini-3.1-pro-preview` (there is no `gemini-3.5-pro` slug). A strong
   judge is usually a reasoning model, so the rank judge uses a 1500-token budget to avoid
