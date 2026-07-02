@@ -1,11 +1,7 @@
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { NEUTRAL_MOOD_METER } from "@/contracts/meters/registry";
-import { isTouchConcept, resolveTouchWelcomeness, touchMoodDeltas } from "@/contracts/mood";
-import { interactionConceptById } from "@/contracts/personality/interactions";
-import { socialTraitScale } from "@/contracts/personality/modulation";
-import { evaluateSocialReaction, moodMeterToFactor, moodNudge, resolveSocialReaction } from "@/contracts/personality/reactions";
+import { evaluateActReaction } from "@/contracts/personality/act-reaction";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
-import { stageForValue } from "@/contracts/relationships/stages";
 import type { IntentBrief } from "@/contracts/turns/intent-brief";
 import { AFFINITY_DELTA_CLAMP } from "../../constants";
 import type { BundleRelationship } from "../../bundle";
@@ -48,55 +44,48 @@ export function planReactionAffinity(
     return empty;
   }
 
-  const reaction = resolveSocialReaction(
-    { concept: primary.concept, target: primary.target },
-    // The NPC's own cards win over the world's (personal line beats society's).
-    { tags: target.snapshot.tags, preferences: target.snapshot.preferences, cards: [...target.snapshot.socialCards, ...worldCards] },
-  );
-
   const feeling = relationships.find(
     (r) => r.kind === "feeling" && r.fromParticipantId === target.id && r.toParticipantId === player.id,
   );
 
-  if (!reaction) {
-    // Welcome/unwelcome touch (mood.spec §5): a touch concept with no matching
-    // preference swings mood (+ stress) by affinity-stage welcome-ness — the no-
-    // authoring, auto-scaling fallback. A preference-matched touch instead flows
-    // through the reaction curve below (the authored verdict is the override).
-    if (isTouchConcept(primary.concept)) {
-      const stageId = stageForValue(feeling?.value ?? 0).id;
-      const welcomeness = resolveTouchWelcomeness({ affinityStage: stageId });
-      const intimate = interactionConceptById(primary.concept)?.intimate ?? false;
-      const d = touchMoodDeltas(welcomeness, { intimate, traits: target.snapshot.traits });
-      return {
-        updates: [],
-        ownedEdgeKeys: new Set(),
-        moodAdjustment: Math.abs(d.mood) >= 0.005 ? { participantId: target.id, delta: d.mood } : undefined,
-        stressAdjustment: Math.abs(d.stress) >= 0.005 ? { participantId: target.id, delta: d.stress } : undefined,
-      };
-    }
-    return empty;
+  // The shared §6 sequence (contracts/personality/act-reaction.ts): preference/card
+  // match → curve; unmatched touch → welcome-ness fallback (mood.spec §5); else none.
+  // The NPC's own cards win over the world's (personal line beats society's).
+  const outcome = evaluateActReaction({
+    act: { concept: primary.concept, target: primary.target },
+    disposition: { tags: target.snapshot.tags, preferences: target.snapshot.preferences, cards: [...target.snapshot.socialCards, ...worldCards] },
+    affinity: feeling?.value ?? 0,
+    moodMeter: moodByParticipant?.get(target.id) ?? target.state.meters.mood ?? NEUTRAL_MOOD_METER,
+    traits: target.snapshot.traits,
+    deltaClamp: AFFINITY_DELTA_CLAMP,
+  });
+
+  if (outcome.kind === "none") return empty;
+  if (outcome.kind === "touch") {
+    return {
+      updates: [],
+      ownedEdgeKeys: new Set(),
+      moodAdjustment: Math.abs(outcome.moodDelta) >= 0.005 ? { participantId: target.id, delta: outcome.moodDelta } : undefined,
+      stressAdjustment: Math.abs(outcome.stressDelta) >= 0.005 ? { participantId: target.id, delta: outcome.stressDelta } : undefined,
+    };
   }
 
-  const mood = moodByParticipant?.get(target.id) ?? target.state.meters.mood ?? NEUTRAL_MOOD_METER;
-  const evaluated = evaluateSocialReaction(
-    reaction,
-    feeling?.value ?? 0,
-    moodMeterToFactor(mood),
-    socialTraitScale(reaction, target.snapshot.traits),
-  );
   const ownedEdgeKeys = new Set([`${target.id}::${player.id}::feeling`]);
-
   // The reaction also nudges the target's mood (a like lifts, a dislike lowers).
-  const md = moodNudge(evaluated);
-  const moodAdjustment = Math.abs(md) >= 0.005 ? { participantId: target.id, delta: md } : undefined;
-
-  const signed = evaluated.valence === "dislike" ? -evaluated.magnitude : evaluated.magnitude;
-  const delta = Math.max(-AFFINITY_DELTA_CLAMP, Math.min(AFFINITY_DELTA_CLAMP, Math.round(signed)));
+  const moodAdjustment =
+    Math.abs(outcome.moodDelta) >= 0.005 ? { participantId: target.id, delta: outcome.moodDelta } : undefined;
   const updates =
-    delta === 0
+    outcome.affinityDelta === 0
       ? []
-      : [{ fromParticipantId: target.id, toParticipantId: player.id, kind: "feeling" as const, delta, reason: `reaction:${reaction.conceptId}` }];
+      : [
+          {
+            fromParticipantId: target.id,
+            toParticipantId: player.id,
+            kind: "feeling" as const,
+            delta: outcome.affinityDelta,
+            reason: `reaction:${outcome.conceptId}`,
+          },
+        ];
   return { updates, ownedEdgeKeys, moodAdjustment };
 }
 

@@ -3,6 +3,7 @@ export * from "./tags";
 export * from "./preference";
 export * from "./cards";
 export * from "./reactions";
+export * from "./act-reaction";
 export * from "./puppet";
 export * from "./modulation";
 export * from "./traits";
