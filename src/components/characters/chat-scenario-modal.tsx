@@ -4,84 +4,58 @@ import { useState } from "react";
 import {
   CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
-  relationshipStages,
   type SocialReactionCard,
 } from "@/contracts";
 import { chatsApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The Scenario setup modal (character-chat-scenario.plan.md): one place to configure a chat for
- * testing. It mixes the authored **Starting Relationship** (a profile field — written through to
- * the editor draft and saved with the character via the page's Save) with the **chat-only** fields
- * (scenario premise, free-text starting outfit + intimate-reveal toggle, and the social cards live
- * in this chat). The form mounts fresh each open (Dialog unmounts its children when closed), so the
- * `useState` initializers re-seed from the snapshot without an effect.
+ * The Scenario setup modal (character-chat-scenario.plan.md): configure the
+ * **chat-only** framing — scenario premise, free-text starting outfit + the
+ * intimate-reveal toggle, and the social cards live in this chat. The authored
+ * Starting Relationship moved to the editor's Chat-defaults card (it's a profile
+ * field, not chat state). The form mounts fresh each open (Dialog unmounts its
+ * children when closed), so the `useState` initializers re-seed from the snapshot
+ * without an effect.
  */
 export function ChatScenarioModal({
   open,
   onClose,
   chatId,
-  ensureChat,
   who,
   snapshot,
   onSaved,
-  startingStage,
-  onStartingStageChange,
 }: {
   open: boolean;
   onClose: () => void;
-  /** Null until a conversation exists; Save then creates one via `ensureChat`. */
-  chatId: string | null;
-  ensureChat: () => Promise<string | null>;
+  chatId: string;
   who: string;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
-  startingStage: string;
-  onStartingStageChange: (stage: string) => void;
 }) {
   return (
     <Dialog open={open} onClose={onClose} title={`Scenario setup — ${who}`} className="max-w-lg">
-      {open ? (
-        <ScenarioForm
-          chatId={chatId}
-          ensureChat={ensureChat}
-          who={who}
-          snapshot={snapshot}
-          onSaved={onSaved}
-          onClose={onClose}
-          startingStage={startingStage}
-          onStartingStageChange={onStartingStageChange}
-        />
-      ) : null}
+      {open ? <ScenarioForm chatId={chatId} who={who} snapshot={snapshot} onSaved={onSaved} onClose={onClose} /> : null}
     </Dialog>
   );
 }
 
 function ScenarioForm({
   chatId,
-  ensureChat,
   who,
   snapshot,
   onSaved,
   onClose,
-  startingStage,
-  onStartingStageChange,
 }: {
-  chatId: string | null;
-  ensureChat: () => Promise<string | null>;
+  chatId: string;
   who: string;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
   onClose: () => void;
-  startingStage: string;
-  onStartingStageChange: (stage: string) => void;
 }) {
   const toast = useToast();
   const [premise, setPremise] = useState(snapshot.premise);
@@ -90,11 +64,10 @@ function ScenarioForm({
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
   const [saving, setSaving] = useState(false);
 
-  // The chat-only fields save here; Starting Relationship rides the editor's own SaveBar.
-  // Only the touched fields go into the patch: a pre-chat save creates the conversation,
-  // and the server seeds the new state row from the profile (authored stage, the
-  // character's own social cards) — an untouched field must not clobber that seed with
-  // this form's blank pre-chat default.
+  // Only the touched fields go into the patch: a pre-first-exchange save upserts the
+  // state row, and the server seeds the untouched rest from the profile (authored
+  // stage, the character's own social cards) — an untouched field must not clobber
+  // that seed with this form's blank default.
   const save = async () => {
     const patch: ChatStateEdit = {};
     if (premise !== snapshot.premise) patch.premise = premise;
@@ -102,14 +75,7 @@ function ScenarioForm({
     if (outfitExposed !== snapshot.outfitExposed) patch.outfitExposed = outfitExposed;
     if (JSON.stringify(cards) !== JSON.stringify(snapshot.activeSocialCards)) patch.activeSocialCards = cards;
     setSaving(true);
-    // Saving scenario edits is one of the actions that lazily creates the conversation.
-    const id = chatId ?? (await ensureChat());
-    if (!id) {
-      setSaving(false);
-      toast.push({ title: "Save failed", description: "The conversation couldn't be created.", tone: "error" });
-      return;
-    }
-    const result = await chatsApi.editState(id, patch);
+    const result = await chatsApi.editState(chatId, patch);
     setSaving(false);
     if (result.ok) {
       onSaved(result.data);
@@ -122,21 +88,6 @@ function ScenarioForm({
 
   return (
     <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
-      <Field
-        label="Starting Relationship"
-        hint="How this character feels about the player at the start of a chat — saved with the character (use the page's Save)."
-      >
-        {(id) => (
-          <Select id={id} value={startingStage} onChange={(e) => onStartingStageChange(e.target.value)}>
-            {relationshipStages.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
-
       <label className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Scenario</span>
         <Textarea
@@ -186,7 +137,7 @@ function ScenarioForm({
         <Button onClick={onClose} disabled={saving}>
           Cancel
         </Button>
-        <Button variant="primary" busy={saving} onClick={save}>
+        <Button variant="primary" busy={saving} onClick={() => void save()}>
           Save
         </Button>
       </div>

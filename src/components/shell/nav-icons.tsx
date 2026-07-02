@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 export type NavIconName =
   | "home"
+  | "chats"
   | "worlds"
   | "characters"
   | "locations"
@@ -17,6 +18,12 @@ const PATHS: Record<NavIconName, ReactNode> = {
     <>
       <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
       <path d="M9 21v-6h6v6" />
+    </>
+  ),
+  chats: (
+    <>
+      <path d="M20 12.5a7.5 7.5 0 0 1-7.5 7.5c-1.3 0-2.5-.3-3.6-.8L4 20.5l1.3-4.4A7.5 7.5 0 1 1 20 12.5z" />
+      <path d="M9 11.5h6M9 14.5h3.5" />
     </>
   ),
   worlds: (

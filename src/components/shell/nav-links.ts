@@ -13,6 +13,7 @@ export interface NavDest {
  * cycle (AppShell renders the latter two).
  */
 export const NAV_LINKS: readonly NavDest[] = [
+  { href: "/chat", label: "Chats", icon: "chats" },
   { href: "/worlds", label: "Worlds", icon: "worlds" },
   { href: "/characters", label: "Characters", icon: "characters" },
   { href: "/locations", label: "Locations", icon: "locations" },
@@ -21,16 +22,21 @@ export const NAV_LINKS: readonly NavDest[] = [
   { href: "/gallery", label: "Gallery", icon: "gallery" },
 ];
 
-/** Bottom-tab-bar primary slots (4) — Home included; rest go to the More sheet. */
+/**
+ * Bottom-tab-bar primary slots (4) — Home included; rest go to the More sheet.
+ * Chats takes a primary slot (the companion experience is the front door —
+ * character-chat-standalone.plan.md area 1 / D12); Gallery moves to overflow.
+ */
 export const PRIMARY_NAV: readonly NavDest[] = [
   { href: "/", label: "Home", icon: "home" },
-  { href: "/worlds", label: "Worlds", icon: "worlds" },
+  { href: "/chat", label: "Chats", icon: "chats" },
   { href: "/characters", label: "Characters", icon: "characters" },
-  { href: "/gallery", label: "Gallery", icon: "gallery" },
+  { href: "/worlds", label: "Worlds", icon: "worlds" },
 ];
 
 /** Bottom-tab-bar overflow, surfaced via the "More" sheet. */
 export const OVERFLOW_NAV: readonly NavDest[] = [
+  { href: "/gallery", label: "Gallery", icon: "gallery" },
   { href: "/locations", label: "Locations", icon: "locations" },
   { href: "/items", label: "Items", icon: "items" },
   { href: "/social-cards", label: "Social cards", icon: "social-cards" },

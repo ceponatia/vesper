@@ -131,7 +131,8 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | One-turn cue regex | `server/engine/chat-intent.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Scene image | `server/images/character-scene.ts` ([images.md](images.md) §state-aware chat scene) |
-| UI | `components/characters/character-chat.tsx` + siblings ([ui.md](ui.md) Chat tab) |
+| UI — the conversation | `components/chat/chat-conversation.tsx` (full-screen `/chat/[chatId]`, [ui.md](ui.md) §The conversation page) + siblings in `components/characters/` (`chat-message`, `chat-scene-strip`, `chat-status`, `chat-state-tools`, `chat-scenario-modal`) |
+| UI — editor Chat tab | `components/characters/character-chat.tsx` — a summary surface only (Chat defaults + conversation list), never the transcript |
 
 History: the feature shipped across the `character-chat*` plan family (see
 `developer-notes/finished/` and the roadmap's Shipped list); current direction lives in

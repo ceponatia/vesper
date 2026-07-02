@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { charactersApi, sessionsApi, worldsApi } from "@/lib/client/api";
+import { charactersApi, chatsApi, sessionsApi, worldsApi } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Card } from "@/components/ui/card";
@@ -11,8 +11,13 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton, SkeletonCards } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 
-/** Dashboard (docs/ui.md): continue-session hero, recent worlds, cast strip. */
+/**
+ * Dashboard (docs/ui.md): conversations lead (the companion experience is the
+ * front door — character-chat-standalone D12), then the continue-session hero,
+ * recent worlds, cast strip.
+ */
 export function Dashboard() {
+  const chats = useAsyncData(() => chatsApi.list(), []);
   const sessions = useAsyncData(() => sessionsApi.recent(), []);
   const worlds = useAsyncData(() => worldsApi.list(), []);
   const cast = useAsyncData(() => charactersApi.list(), []);
@@ -22,8 +27,65 @@ export function Dashboard() {
   const freshInstall =
     !sessions.loading && !worlds.loading && recent.length === 0 && (worlds.data ?? []).length === 0;
 
+  const recentChats = chats.data ?? [];
+  const latestChat = recentChats[0];
+
   return (
     <PageContainer wide>
+      {/* Conversations (D12: the dashboard leads with chats — hidden entirely until one exists) */}
+      {latestChat ? (
+        <section className="mb-10">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="prose-display text-xl">Conversations</h2>
+            <Link href="/chat" className="text-sm text-paper-400 hover:text-paper-100">
+              All chats →
+            </Link>
+          </div>
+          <Link href={`/chat/${latestChat.id}`} className="group block">
+            <Card interactive className="flex items-center gap-5 px-6 py-5">
+              <EntityImage
+                imageId={latestChat.avatarImageId}
+                name={latestChat.characterName}
+                className="size-16 shrink-0 rounded-full border border-ink-600 text-lg"
+              />
+              <div className="min-w-0">
+                <p className="text-xs tracking-wide text-paper-500 uppercase">Continue talking to</p>
+                <h1 className="prose-display mt-0.5 truncate text-2xl group-hover:text-accent-300">
+                  {latestChat.characterName}
+                  {latestChat.title ? <span className="text-paper-400"> — {latestChat.title}</span> : null}
+                </h1>
+                {latestChat.lastLine ? (
+                  <p className="mt-1 truncate text-sm text-paper-400">{latestChat.lastLine}</p>
+                ) : null}
+              </div>
+              <span className="prose-display ml-auto shrink-0 text-3xl text-paper-500 transition-transform group-hover:translate-x-1 group-hover:text-accent-300">
+                →
+              </span>
+            </Card>
+          </Link>
+          {recentChats.length > 1 ? (
+            <ul className="mt-3 flex flex-col gap-1.5">
+              {recentChats.slice(1, 5).map((chat) => (
+                <li key={chat.id}>
+                  <Link
+                    href={`/chat/${chat.id}`}
+                    className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-paper-300 hover:bg-ink-800"
+                  >
+                    <EntityImage
+                      imageId={chat.avatarImageId}
+                      name={chat.characterName}
+                      className="size-7 shrink-0 rounded-full text-[10px]"
+                    />
+                    <span className="shrink-0">{chat.characterName}</span>
+                    {chat.lastLine ? <span className="truncate text-xs text-paper-500">{chat.lastLine}</span> : null}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
+
       {/* Hero */}
       <section className="mb-10">
         {sessions.loading ? (
