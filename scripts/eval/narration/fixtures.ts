@@ -1,8 +1,8 @@
 import type { ModelMessage } from "ai";
 import { defaultExposureMask, emptyBrief, type ExposureMask } from "../../../src/contracts/state/brief";
 import type { NarrationFocus } from "../../../src/contracts/turns/intent-brief";
-import { characterProfileSchema } from "../../../src/contracts/world/profile";
-import { buildCharacterChatSystemPrompt } from "../../../src/server/engine/prompts/character-chat";
+import { characterProfileSchema, type CharacterProfile } from "../../../src/contracts/world/profile";
+import { buildCharacterChatSystemPrompt, type CharacterChatPromptInput } from "../../../src/server/engine/prompts/character-chat";
 import type { NarrationShapeId } from "../../../src/server/engine/prompts/constants";
 import { buildStaticRulebook, buildTurnContext } from "../../../src/server/engine/prompts/narrative";
 import { buildReactionLine, buildResponseShape, evaluatePrimaryReaction, type ReactionLineInput } from "../../../src/server/engine/scene";
@@ -25,6 +25,55 @@ import { buildReactionLine, buildResponseShape, evaluatePrimaryReaction, type Re
  * §Phase-3 planner off (`--no-focus`) for a Phase-2-vs-Phase-3 A/B.
  */
 
+/**
+ * One paired-contrast axis (character-chat-standalone.spec.md §5): the shared vocabulary
+ * for a `flagged`/`control` fixture pair that is identical except ONE flipped input. The
+ * blind pair judge (`judge.judgeContrast`) is told both descriptions and must say which
+ * reply carries the flag; `cueRe` is the optional deterministic lexical check (the
+ * `sensoryRelevant` pattern) expected to hit the flagged reply and not the control.
+ */
+export interface ContrastAxisSpec {
+  /** What the flagged reply was generated with — shown verbatim to the blind pair judge. */
+  flagged: string;
+  /** What the control reply was generated with. */
+  control: string;
+  /** Optional lexical cue expected in the flagged reply only (deterministic secondary metric). */
+  cueRe?: RegExp;
+}
+
+/** The five measured axes — spec §5 (a)–(e). */
+export type ContrastGroupId = "state" | "sliders" | "stage" | "drunk" | "memory";
+
+export const CONTRAST_AXES: Record<ContrastGroupId, ContrastAxisSpec> = {
+  state: {
+    flagged:
+      "with a heavy tracked state bearing on the character: exhausted, stressed, mood low and on edge, rain-soaked, preoccupied by a lease problem",
+    control: "with no tracked state at all (no meters, no conditions, nothing on her mind)",
+    cueRe: /\b(tired|exhaust\w*|weary|drained|yawn\w*|heavy eyes|damp|soaked|chill|shiver\w*|lease|landlord|on edge|frazzled|stressed)\b/i,
+  },
+  sliders: {
+    flagged:
+      "with the personality sliders at the warm, uninhibited pole (Warmth +80: openly affectionate and caring; Inhibition −80: free and unembarrassed)",
+    control:
+      "with the same sliders at the cold, inhibited pole (Warmth −80: keeps feeling at arm's length; Inhibition +80: easily embarrassed, holds back)",
+  },
+  stage: {
+    flagged: "with the relationship at the devoted stage (affinity 93 — deeply attached, protective, wholly yours)",
+    control: "with the relationship at the stranger stage (affinity 0 — no established relationship)",
+  },
+  drunk: {
+    flagged: "drunk (intoxication 0.8 — slurred edges, loose and disinhibited, poor judgement)",
+    control: "stone sober (intoxication 0)",
+    cueRe: /\b(slur\w*|sway\w*|wobbl\w*|unsteady|stumbl\w*|hiccup\w*|giggl\w*|dizzy|blurr?y|tipsy|drunk|buzzed)\b/i,
+  },
+  memory: {
+    flagged:
+      "with long-term memory of the player available (a cello recital coming up, a shellfish allergy, a running joke about an espresso machine named Brenda, a shared downpour on the pier)",
+    control: "with no long-term memory of the player",
+    cueRe: /\b(cello|recital|shellfish|espresso|brenda|pier|downpour)\b/i,
+  },
+};
+
 export interface EvalScenario {
   id: string;
   title: string;
@@ -37,6 +86,14 @@ export interface EvalScenario {
   knownNames: string[];
   /** The authored "## Reaction" verdict (if any) — the judge cross-checks proportionality against it. */
   authoredReaction?: string;
+  /**
+   * Paired-contrast membership (character-chat-standalone.spec.md §5): the two scenarios
+   * of a pair share a `group` (a CONTRAST_AXES key) and are identical except ONE flipped
+   * input; `variant` marks the side carrying the flag. Pairs are selected as a group via
+   * the `chat-contrast` id prefix (`--scenarios chat-contrast`) and blind-judged by
+   * `eval:narration:compare --axis contrast`. Absent ⇒ not part of a contrast pair.
+   */
+  contrast?: { group: ContrastGroupId; variant: "flagged" | "control" };
   /**
    * The scenario deliberately makes a sense salient (closeness/approach/intimacy), so a
    * single natural sensory hook is *welcome* here (character-chat-sensory.plan.md). Flips on
@@ -129,6 +186,139 @@ const complimentPrimary = evaluatePrimaryReaction(complimentReaction);
 
 /** A focus planner, included unless `--no-focus` strips it (returns undefined). */
 const withFocus = (focus: boolean, value: NarrationFocus): NarrationFocus | undefined => (focus ? value : undefined);
+
+// ---------------------------------------------------------------------------
+// Paired contrast fixtures — chat lane (character-chat-standalone.spec.md §5).
+//
+// The measurement baseline for "prove the depth shows": five pairs, each identical
+// except ONE flipped input, all built through the REAL buildCharacterChatSystemPrompt
+// over ONE consistent character (Wren). The PM reports NO noticeable effect from the
+// personality sliders or the tracked state in play — these pairs are the instrument
+// that proves/disproves it (blind identification bar: ≥80% of seeds per axis), and
+// the permanent regression guard afterwards.
+// ---------------------------------------------------------------------------
+
+// Wren's authored sliders sit deliberately mid-range (guarded 45 / inhibited 45 /
+// composed 50) so the drunk pair's render-time disinhibition (stateDispositionOverlays:
+// −36 points at intoxication 0.8) visibly flips their bands in the assembled prompt
+// (guarded→private, inhibited→modest, even-keeled→reactive).
+const WREN_BIO =
+  "Wren owns the cliffside bookshop-café at the edge of town. Sharp-eyed and quick-witted, she keeps odd hours, strong opinions about coffee, and a soft spot she rarely shows.";
+const WREN_PERSONALITY =
+  "Observant, dry, quick with a comeback but listens more than she talks. Curious about people; allergic to small talk.";
+const WREN_BASE_TRAITS: Record<string, number> = {
+  "temperament.warmth": 0,
+  "temperament.composure": 50,
+  "social.guardedness": 45,
+  "intimate.inhibition": 45,
+};
+
+/** The one shared contrast character; `traitOverrides` is the sliders pair's flipped input. */
+function wrenProfile(traitOverrides: Record<string, number> = {}): CharacterProfile {
+  const values = { ...WREN_BASE_TRAITS, ...traitOverrides };
+  return characterProfileSchema.parse({
+    bio: WREN_BIO,
+    personality: WREN_PERSONALITY,
+    traits: Object.entries(values).map(([id, value]) => ({ id, value, source: "creation" })),
+  });
+}
+
+type ChatState = NonNullable<CharacterChatPromptInput["state"]>;
+
+/** Meters that cross no threshold and derive no mood phrase — the neutral base each pair shares. */
+const NEUTRAL_METERS: Record<string, number> = { mood: 0.5, energy: 0.8, stress: 0.2, hygiene: 0.9, arousal: 0, intoxication: 0 };
+
+// Axis (a) flagged state: everything buildStateSection can surface — mood phrase
+// ("low and on edge"), exhausted + on-edge meter bands, a condition hint, a mindNote,
+// an outfit. `surfacedCues` pre-marks both bands so they ride as STANDING coloring
+// (the mid-conversation case the PM reports as invisible), not a fresh foreground beat.
+const BURDENED_STATE: ChatState = {
+  meters: { ...NEUTRAL_METERS, mood: 0.2, energy: 0.15, stress: 0.7 },
+  affinity: 0,
+  conditions: [
+    {
+      id: "cond-rain-soaked",
+      label: "rain-soaked",
+      startedAtMinutes: 0,
+      attributeEffects: [],
+      promptHint: "Caught in the rain earlier: hair still damp, clothes clinging, a chill she can't quite shake.",
+    },
+  ],
+  mindNote: "The landlord called about the shop's lease again this morning and it hasn't left her mind.",
+  surfacedCues: { energy: "energy:0.2", stress: "stress:0.6" },
+  outfit: "a rumpled flannel shirt and paint-spattered jeans",
+};
+
+// Axis (d): identical bar-night state, intoxication flipped 0 ↔ 0.8. The drunk band is
+// pre-surfaced so drunkenness rides as standing coloring plus the disinhibition trait
+// shift — the sustained-state path, not a "tips into drunk" beat.
+const barState = (intoxication: number): ChatState => ({
+  meters: { ...NEUTRAL_METERS, intoxication },
+  affinity: 40,
+  conditions: [],
+  premise: "The tail end of a long night at the harbor bar down the street from the shop; last call has come and gone.",
+  surfacedCues: { intoxication: "intoxication:0.7" },
+});
+
+// Axis (c): identical closing-up state, affinity flipped 0 (stranger) ↔ 93 (devoted).
+const registerState = (affinity: number): ChatState => ({
+  meters: { ...NEUTRAL_METERS },
+  affinity,
+  conditions: [],
+  premise: "Late evening at the bookshop-café; Wren is cashing out the register as you get ready to leave.",
+});
+
+// Axis (b): the sliders pair shares this state; only the profile's traits flip.
+const CLOSING_STATE: ChatState = {
+  meters: { ...NEUTRAL_METERS },
+  affinity: 40,
+  conditions: [],
+  premise: "Closing time at the bookshop-café; the last customer has just left.",
+};
+
+// Axis (e): the memory pair shares this state; only the `memory` input flips.
+const AFTERNOON_STATE: ChatState = {
+  meters: { ...NEUTRAL_METERS },
+  affinity: 40,
+  conditions: [],
+  premise: "A gray, slow afternoon in the bookshop-café.",
+};
+const PLANTED_MEMORY: NonNullable<CharacterChatPromptInput["memory"]> = {
+  facts: [
+    "The player plays cello and has a recital coming up at the end of the month.",
+    "The player is badly allergic to shellfish.",
+    "You and the player have a running joke about the shop's temperamental espresso machine, which you named Brenda.",
+  ],
+  episodes: [
+    "A month ago the two of you got caught in a downpour on the pier and shared your coat on the walk back, laughing the whole way.",
+  ],
+};
+
+// One player input per pair — byte-identical across the pair's two variants.
+const CONTRAST_STATE_INPUT = "Long day? Come out with us tonight — everyone's meeting at the bonfire on the beach.";
+const CONTRAST_SLIDERS_INPUT = "I keep finding excuses to come back to this shop. Mostly it's you, if I'm honest.";
+const CONTRAST_STAGE_INPUT = "I'm about to head home. Walk with me?";
+const CONTRAST_DRUNK_INPUT = "Tell me the truth — what did you think of me the first time I walked in here?";
+const CONTRAST_MEMORY_INPUT = "What a week I've had. Distract me — ask me about anything else.";
+
+/** Assemble a contrast-pair chat prompt through the real builder (shape swept, focus N/A in chat). */
+function chatContrastBuild(o: {
+  profile: CharacterProfile;
+  state?: ChatState;
+  memory?: CharacterChatPromptInput["memory"];
+  playerInput: string;
+}): EvalScenario["build"] {
+  return (shape) => ({
+    system: buildCharacterChatSystemPrompt({
+      name: "Wren",
+      profile: o.profile,
+      state: o.state,
+      memory: o.memory,
+      narrationShape: shape,
+    }),
+    messages: [{ role: "user", content: o.playerInput }],
+  });
+}
 
 export const EVAL_SCENARIOS: EvalScenario[] = [
   {
@@ -324,5 +514,126 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
       }),
       messages: [{ role: "user", content: "I step into the room and Sabrina comes closer." }],
     }),
+  },
+  // ── Paired contrast fixtures (spec §5) — select the whole set with `--scenarios chat-contrast` ──
+  {
+    id: "chat-contrast-state-on",
+    title: "Contrast (state) — tracked state on: exhausted / stressed / rain-soaked",
+    lane: "chat",
+    contrast: { group: "state", variant: "flagged" },
+    expectation:
+      "The tracked state should visibly color the reply — fatigue, frayed nerves, the damp chill, the lease worry — acted out in manner and word choice, never recited. A bonfire invitation should meet a worn-down answer.",
+    playerInput: CONTRAST_STATE_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: BURDENED_STATE, playerInput: CONTRAST_STATE_INPUT }),
+  },
+  {
+    id: "chat-contrast-state-off",
+    title: "Contrast (state) — tracked state stripped (control)",
+    lane: "chat",
+    contrast: { group: "state", variant: "control" },
+    expectation: "A natural in-character reply generated with no state input at all — the blind pair's baseline.",
+    playerInput: CONTRAST_STATE_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), playerInput: CONTRAST_STATE_INPUT }),
+  },
+  {
+    id: "chat-contrast-warm",
+    title: "Contrast (sliders) — Warmth +80 / Inhibition −80",
+    lane: "chat",
+    contrast: { group: "sliders", variant: "flagged" },
+    expectation:
+      "The warm, uninhibited pole should show: open affection, unembarrassed reciprocation of the flirtation — behavior, not a recited trait.",
+    playerInput: CONTRAST_SLIDERS_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({
+      profile: wrenProfile({ "temperament.warmth": 80, "intimate.inhibition": -80 }),
+      state: CLOSING_STATE,
+      playerInput: CONTRAST_SLIDERS_INPUT,
+    }),
+  },
+  {
+    id: "chat-contrast-cold",
+    title: "Contrast (sliders) — Warmth −80 / Inhibition +80 (control)",
+    lane: "chat",
+    contrast: { group: "sliders", variant: "control" },
+    expectation:
+      "The cold, inhibited pole should show: the flirtation held at arm's length, deflection or visible embarrassment — behavior, not a recited trait.",
+    playerInput: CONTRAST_SLIDERS_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({
+      profile: wrenProfile({ "temperament.warmth": -80, "intimate.inhibition": 80 }),
+      state: CLOSING_STATE,
+      playerInput: CONTRAST_SLIDERS_INPUT,
+    }),
+  },
+  {
+    id: "chat-contrast-lover",
+    title: "Contrast (stage) — relationship at devoted (affinity 93)",
+    lane: "chat",
+    contrast: { group: "stage", variant: "flagged" },
+    expectation:
+      "Devoted-stage warmth should show: easy intimacy, attachment, saying yes like it's obvious — tracked in behavior, not announced.",
+    playerInput: CONTRAST_STAGE_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: registerState(93), playerInput: CONTRAST_STAGE_INPUT }),
+  },
+  {
+    id: "chat-contrast-stranger",
+    title: "Contrast (stage) — relationship at stranger (affinity 0, control)",
+    lane: "chat",
+    contrast: { group: "stage", variant: "control" },
+    expectation:
+      "Stranger-stage distance should show: polite, measured, no assumed familiarity — a walk-me-home ask from a near-stranger lands differently.",
+    playerInput: CONTRAST_STAGE_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: registerState(0), playerInput: CONTRAST_STAGE_INPUT }),
+  },
+  {
+    id: "chat-contrast-drunk",
+    title: "Contrast (drunk) — intoxication 0.8, standing",
+    lane: "chat",
+    contrast: { group: "drunk", variant: "flagged" },
+    expectation:
+      "Sustained drunkenness should show continuously: looser and more candid than she'd ever be sober (the disinhibition shift), slurred edges and imprecision in action — without re-describing being drunk afresh.",
+    playerInput: CONTRAST_DRUNK_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: barState(0.8), playerInput: CONTRAST_DRUNK_INPUT }),
+  },
+  {
+    id: "chat-contrast-sober",
+    title: "Contrast (drunk) — stone sober (control)",
+    lane: "chat",
+    contrast: { group: "drunk", variant: "control" },
+    expectation: "Sober Wren stays guarded: the probing question gets her usual deflection or a carefully measured answer.",
+    playerInput: CONTRAST_DRUNK_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: barState(0), playerInput: CONTRAST_DRUNK_INPUT }),
+  },
+  {
+    id: "chat-contrast-memory-on",
+    title: "Contrast (memory) — planted long-term memories",
+    lane: "chat",
+    contrast: { group: "memory", variant: "flagged" },
+    expectation:
+      "Recall should visibly land: asked to pick a topic, she reaches for something she knows (the cello recital, Brenda the espresso machine, the pier) instead of inventing a generic subject.",
+    playerInput: CONTRAST_MEMORY_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({
+      profile: wrenProfile(),
+      state: AFTERNOON_STATE,
+      memory: PLANTED_MEMORY,
+      playerInput: CONTRAST_MEMORY_INPUT,
+    }),
+  },
+  {
+    id: "chat-contrast-memory-off",
+    title: "Contrast (memory) — no memory (control)",
+    lane: "chat",
+    contrast: { group: "memory", variant: "control" },
+    expectation: "With nothing remembered, she must invent a topic cold — a fine reply, but it can't reference their shared history.",
+    playerInput: CONTRAST_MEMORY_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: AFTERNOON_STATE, playerInput: CONTRAST_MEMORY_INPUT }),
   },
 ];
