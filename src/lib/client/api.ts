@@ -252,7 +252,7 @@ export const characterDetailSchema = characterSummarySchema.extend({
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
-/** One line of the sessionless character-chat transcript (docs/developer-notes/character-chat.plan.md). */
+/** One line of a conversation transcript (docs/developer-notes/character-chat-standalone.spec.md). */
 export const chatMessageSchema = z.object({
   id: idSchema,
   role: z.enum(["user", "assistant"]).catch("assistant"),
@@ -742,32 +742,57 @@ export const charactersApi = {
   promotePortrait: (id: string, imageId: string) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits/${imageId}/promote`, {}),
   deletePortrait: (id: string, imageId: string) => apiDelete(`/api/characters/${id}/portraits/${imageId}`),
-  // --- Sessionless in-character chat (docs/developer-notes/character-chat.plan.md) ---
-  chatTranscript: (id: string) =>
-    apiGet(listOf(chatMessageSchema, "messages"), `/api/characters/${id}/chat`),
+};
+
+// ---------------------------------------------------------------------------
+// Conversations (character-chat-standalone.spec.md §2.1) — chat-id addressed
+// ---------------------------------------------------------------------------
+
+/** One conversation row from `GET /api/chats` (the list / editor-tab picker shape). */
+export const chatSummarySchema = z.object({
+  id: idSchema,
+  title: textOr(""),
+  archivedAt: optionalText,
+  lastMessageAt: optionalText,
+  characterId: optionalId,
+  characterName: textOr(""),
+  avatarImageId: optionalId,
+  lastLine: optionalText,
+});
+export type ChatSummary = z.infer<typeof chatSummarySchema>;
+
+export const chatsApi = {
+  /** Active conversations, newest first; scoped to one character when `characterId` is given. */
+  list: (characterId?: string) =>
+    apiGet(listOf(chatSummarySchema, "chats"), withQuery("/api/chats", { characterId })),
+  /** Create a conversation — D7 memory choice: `"shared"` continues the history, `"fresh"` is a clean island. */
+  create: (body: { characterId: string; title?: string; memory: "shared" | "fresh" }) =>
+    apiPost(createdRefSchema, "/api/chats", body),
+  /** The transcript, oldest first (the route also returns chat/character headers; unused this slice). */
+  transcript: (chatId: string) => apiGet(listOf(chatMessageSchema, "messages"), `/api/chats/${chatId}`),
   /**
-   * The single **Clear Chat** (character-chat-primary.spec.md §4): wipes the transcript,
-   * summary, light state, and RAG memory (facts + episodes) — everything for this chat.
+   * Hard-delete the conversation (character-chat-standalone.spec.md §1.4): transcript,
+   * summary, light state, and RAG memory all go with it; scene images survive in the Gallery.
    */
-  resetChat: (id: string) => apiDelete(`/api/characters/${id}/chat`),
-  // --- Light chat state (character-chat-state.spec.md) ---
-  chatState: (id: string) => apiGet(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`),
+  remove: (chatId: string) => apiDelete(`/api/chats/${chatId}`),
+  // --- Light chat state (character-chat-state.spec.md), keyed per conversation ---
+  state: (chatId: string) => apiGet(chatStateSnapshotSchema, `/api/chats/${chatId}/state`),
   /** Edit chat state fields from the state-tools / scenario-setup modals; returns the refreshed snapshot. */
-  editChatState: (id: string, patch: ChatStateEdit) =>
-    apiPatch(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`, patch),
+  editState: (chatId: string, patch: ChatStateEdit) =>
+    apiPatch(chatStateSnapshotSchema, `/api/chats/${chatId}/state`, patch),
   /** Apply a one-click action chip (offer a drink → intoxication↑, etc.); returns the refreshed snapshot. */
-  applyChatAction: (id: string, action: ChatActionId) =>
-    apiPost(chatStateSnapshotSchema, `/api/characters/${id}/chat/state`, { action }),
+  applyAction: (chatId: string, action: ChatActionId) =>
+    apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/state`, { action }),
   /** Overwrite one chat message's text in place (recovery lever for a poisoned transcript). */
-  editChatMessage: (id: string, messageId: string, content: string) =>
-    apiPatch(z.unknown(), `/api/characters/${id}/chat/${messageId}`, { content }),
+  editMessage: (chatId: string, messageId: string, content: string) =>
+    apiPatch(z.unknown(), `/api/chats/${chatId}/messages/${messageId}`, { content }),
   /** Delete a single chat message (snip a refusal out of the context window). */
-  deleteChatMessage: (id: string, messageId: string) => apiDelete(`/api/characters/${id}/chat/${messageId}`),
-  /** Rendered scenes for the chat tab (kind="scene"), newest first. */
-  chatScenes: (id: string) =>
-    apiGet(listOf(imageRecordSchema, "scenes", "images"), `/api/characters/${id}/chat/scene`),
-  /** Queue a scene render from the recent chat (single-reference); poll chatScenes for the result. */
-  generateChatScene: (id: string) => apiPost(z.unknown(), `/api/characters/${id}/chat/scene`, {}),
+  deleteMessage: (chatId: string, messageId: string) =>
+    apiDelete(`/api/chats/${chatId}/messages/${messageId}`),
+  /** Rendered scenes for the conversation's character (kind="scene"), newest first. */
+  scenes: (chatId: string) => apiGet(listOf(imageRecordSchema, "scenes", "images"), `/api/chats/${chatId}/scene`),
+  /** Queue a scene render from the recent chat (single-reference); poll `scenes` for the result. */
+  generateScene: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/scene`, {}),
 };
 
 export interface ChatStreamOutcome {
@@ -782,25 +807,25 @@ export interface ChatStreamOutcome {
 }
 
 /**
- * Send a chat message and stream the character's reply (plain-text token
- * stream, docs/developer-notes/character-chat.plan.md). `onChunk` fires per
- * decoded delta; the reply is persisted server-side, so a dropped stream still
- * leaves the transcript whole on the next reload. Never throws.
+ * Send a message into a conversation and stream the character's reply
+ * (plain-text token stream, docs/developer-notes/character-chat-standalone.spec.md).
+ * `onChunk` fires per decoded delta; the reply is persisted server-side, so a
+ * dropped stream still leaves the transcript whole on the next reload. Never throws.
  *
  * Pass an `AbortSignal` to cancel the wait for a reply (Rerun): aborting stops the
  * client reading the stream but cannot stop inference already running — the server
  * drains + persists the full reply regardless, and the next transcript reload
  * reconciles. An abort surfaces as `{ ok: true, aborted: true }`, never an error.
  */
-export async function sendCharacterChat(
-  characterId: string,
+export async function sendChatMessage(
+  chatId: string,
   body: { content?: string; model?: string; open?: boolean },
   onChunk: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<ChatStreamOutcome> {
   let res: Response;
   try {
-    res = await fetch(`/api/characters/${characterId}/chat`, {
+    res = await fetch(`/api/chats/${chatId}`, {
       method: "POST",
       cache: "no-store",
       headers: { "content-type": "application/json", accept: "text/plain" },

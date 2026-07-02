@@ -1,0 +1,129 @@
+import type { NextRequest } from "next/server";
+import { desc, eq } from "drizzle-orm";
+import { z } from "zod";
+import { CHAT_RATE_LIMIT, drainingStreamResponse, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { characterChats, characterChatMessages, db } from "@/server/db";
+import { deleteChat, submitChatMessage } from "@/server/engine";
+import { loadOwnedChat } from "../owned";
+
+type Params = { chatId: string };
+
+/**
+ * One conversation (docs/character-chat.md): GET reads the transcript; POST runs
+ * one exchange through the engine pipeline (`submitChatMessage`) and streams the
+ * reply as plain text (the reply persists server-side when the stream settles,
+ * even after a client disconnect); PATCH renames / archives / restores; DELETE is
+ * the one destructive verb (`deleteChat` — archive is the everyday action,
+ * character-chat-standalone.spec.md §1.4).
+ */
+
+/** Cap on transcript rows returned (oldest-first after slice). */
+const TRANSCRIPT_LIMIT = 500;
+
+const sendBodySchema = z
+  .object({
+    content: z.string().trim().max(4000).optional(),
+    /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
+    model: z.string().trim().min(1).max(120).optional(),
+    /** Opening beat ("Prompt Character"): no player line — the character opens the scene. */
+    open: z.boolean().optional(),
+  })
+  .refine((b) => b.open === true || (b.content?.length ?? 0) >= 1, {
+    message: "content is required unless open is true",
+    path: ["content"],
+  });
+
+const patchBodySchema = z
+  .object({
+    title: z.string().trim().max(120).optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine((b) => b.title !== undefined || b.archived !== undefined, { message: "nothing to update" });
+
+/** GET /api/chats/:chatId — the transcript, oldest first. */
+export const GET = withUser<Params>(async (user, _req, ctx) => {
+  const { chatId } = await ctx.params;
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (!owned) return jsonError("not_found", "chat not found", 404);
+
+  // Newest-first slice (so the cap keeps the most recent), reversed to display order.
+  const rows = await db()
+    .select({
+      id: characterChatMessages.id,
+      role: characterChatMessages.role,
+      content: characterChatMessages.content,
+      createdAt: characterChatMessages.createdAt,
+    })
+    .from(characterChatMessages)
+    .where(eq(characterChatMessages.chatId, chatId))
+    .orderBy(desc(characterChatMessages.createdAt))
+    .limit(TRANSCRIPT_LIMIT);
+
+  return jsonOk({
+    messages: rows.reverse(),
+    chat: { id: owned.chat.id, title: owned.chat.title, archivedAt: owned.chat.archivedAt },
+    character: { id: owned.character.id, name: owned.character.name },
+  });
+});
+
+/** POST /api/chats/:chatId — submit one exchange and stream the reply as plain text. */
+export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
+  const { chatId } = await ctx.params;
+  const body = await readBody(req, sendBodySchema);
+  if (!body.ok) return body.response;
+
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (!owned) return jsonError("not_found", "chat not found", 404);
+  if (owned.chat.archivedAt) return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
+  if (!rateLimit(`chat:${user.id}`, CHAT_RATE_LIMIT)) {
+    return jsonError("rate_limited", "too many chat messages; try again in a minute", 429);
+  }
+
+  const result = await submitChatMessage({
+    chatId,
+    memoryGroupId: owned.participant.memoryGroupId,
+    character: { id: owned.character.id, name: owned.character.name, profile: owned.character.profile },
+    content: body.value.content,
+    model: body.value.model,
+    open: body.value.open,
+  });
+  if (!result.ok) return jsonError(result.code, result.message, 409);
+
+  return drainingStreamResponse({
+    gen: result.stream,
+    encode: (delta) => delta,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      "x-accel-buffering": "no",
+    },
+  });
+});
+
+/** PATCH /api/chats/:chatId — rename, archive, or restore. */
+export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
+  const { chatId } = await ctx.params;
+  const body = await readBody(req, patchBodySchema);
+  if (!body.ok) return body.response;
+
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (!owned) return jsonError("not_found", "chat not found", 404);
+
+  await db()
+    .update(characterChats)
+    .set({
+      ...(body.value.title !== undefined ? { title: body.value.title } : {}),
+      ...(body.value.archived !== undefined ? { archivedAt: body.value.archived ? new Date() : null } : {}),
+    })
+    .where(eq(characterChats.id, chatId));
+  return jsonOk({ id: chatId });
+});
+
+/** DELETE /api/chats/:chatId — hard delete (see engine `deleteChat`). */
+export const DELETE = withUser<Params>(async (user, _req, ctx) => {
+  const { chatId } = await ctx.params;
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (!owned) return jsonError("not_found", "chat not found", 404);
+  await deleteChat({ id: owned.chat.id, ownerId: owned.chat.ownerId });
+  return jsonOk({ deleted: true });
+});

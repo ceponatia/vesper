@@ -1,7 +1,11 @@
 # Character chat
 
 The sessionless 1-on-1 chat lane: talk to any saved library character directly — no world,
-no session, location conveyed only through narration. It began as a voice-tuning test-bed
+no session, location conveyed only through narration. Since slice 3 of the standalone arc,
+the unit is a **conversation** (`character_chats`): one character can host many
+conversations (a main story beside a fresh alternate universe), each with its own
+transcript, rolling summary, and per-participant state, and a **memory group** deciding
+what carries across (see §Memory below). It began as a voice-tuning test-bed
 and is now a **primary feature** (and the current product focus — see
 [developer-notes/character-chat-standalone.plan.md](developer-notes/character-chat-standalone.plan.md)):
 it carries its own tracked state, long-term RAG memory, evolving attributes, scenario
@@ -15,11 +19,11 @@ share **one implementation** — the chat lane must never re-fork session machin
 
 All orchestration lives in `engine/chat-pipeline.ts` (`submitChatMessage`) — the chat
 analogue of the session lane's `submitTurn`. The HTTP route
-(`app/api/characters/[id]/chat/route.ts`) is a thin parse → auth → stream shell. One
+(`app/api/chats/[chatId]/route.ts`) is a thin parse → auth → stream shell. One
 exchange:
 
-1. **Lock.** A per-chat keyed lock (`engine/keyed-lock.ts`, key
-   `chat_exchange:{owner}:{character}`) — a second concurrent submit gets a 409
+1. **Lock.** A per-conversation keyed lock (`engine/keyed-lock.ts`, key
+   `chat_exchange:{chatId}`) — a second concurrent submit gets a 409
    `chat_busy`. Held until the stream settles, released on every path.
 2. **User line insert** with a pre-minted id — the guard row for the reply persist (§5).
    The opening beat (`open: true`, the "Prompt character" button) skips this; the model
@@ -31,10 +35,11 @@ exchange:
 4. **State drift.** `driftChatState` (pure): between-visit recovery toward rested +
    this exchange's within-visit tick on the chat-local clock. Lazily seeds from the
    authored defaults when no row exists.
-5. **RAG recall.** `retrieveChatMemory` — cosine retrieval over the chat's own facts +
-   episodes (`MemoryScope` `chat`, [memory.md](memory.md) §Memory keying), keyed on last
-   turn's persisted `memoryQueries` + this input. Each leg degrades to `[]` with a
-   diagnostic.
+5. **RAG recall.** `retrieveChatMemory` — cosine retrieval over the participant's
+   **memory group** (`MemoryScope` `{kind:"chat", groupId}`, [memory.md](memory.md)
+   §Memory keying), keyed on last turn's persisted `memoryQueries` + this input.
+   Shared-history conversations share a group; fresh starts are islands. Each leg
+   degrades to `[]` with a diagnostic.
 6. **Prompt build.** `buildCharacterChatSystemPrompt` (pure, snapshot-tested) — see
    [prompts.md](prompts.md) §§Character-chat sensory cues / state as a narration system /
    long-term memory, plus the regex-only one-turn cue (`engine/chat-intent.ts`).
@@ -49,7 +54,7 @@ exchange:
 
 ## Tracked state
 
-One `character_chat_state` row per (owner, character): the full meter registry, affinity,
+One `character_chat_state` row per **(chat, participant)** — PK `(chat_id, character_id)`: the full meter registry, affinity,
 self-expiring conditions, the `mindNote`, the per-chat scenario (premise, free-text outfit
 + exposed flag, active social cards), the anti-repetition `surfacedCues` bands, the RAG
 carry-overs (`memoryQueries`, persisted narrative `attributeOverlays`, `lastPulseTrace` /
@@ -78,7 +83,7 @@ guarded state write:
 | Type | Path | Recovery |
 | --- | --- | --- |
 | `chat_summary` | engine queue (`enqueueChatSummary`), detached (`session_id` NULL); folds the oldest verbatim exchanges into the rolling summary, serialized per chat via `withKeyedLock` | heartbeated while running; a dead row is failed by the detached-job sweep |
-| `chat_scene_image` | api-side `startJob` from `chat/scene/route.ts` (in-process, no heartbeat) | `sweepDetachedApiJobs` (`engine/recovery.ts`) fails any session-less running job whose heartbeat is older than `API_JOB_STALE_MS` |
+| `chat_scene_image` | api-side `startJob` from `chats/[chatId]/scene/route.ts` (in-process, no heartbeat) | `sweepDetachedApiJobs` (`engine/recovery.ts`) fails any session-less running job whose heartbeat is older than `API_JOB_STALE_MS` |
 
 ## Persistence guards
 
@@ -86,19 +91,24 @@ guarded state write:
   keyed on the prompting user line, so a Clear Chat or message delete landing mid-stream
   can't resurrect an orphan reply.
 - **State write** (`saveChatState`): same guard shape, keyed on the same row.
-- **Clear Chat** (`clearCharacterChat`): one transaction deleting transcript + summary +
-  state + chat-scoped facts/episodes + the scene-image prompt scrub (assets survive).
+- **Delete** (`deleteChat` — the one destructive verb; **archive** via `PATCH
+  {archived:true}` is the everyday shelve/restore action): one transaction — the chat
+  row's FK cascades take transcript + summary + participants + state; the scene-image
+  prompt scrub runs (assets survive); the memory group is purged only when no other
+  conversation references it.
 
 ## API surface
 
-All under `/api/characters/:id/chat` (owner-scoped via `loadOwnedCharacter`):
+All under `/api/chats` (ownership resolves through the chat row — `chats/owned.ts`
+`loadOwnedChat`):
 
 | Route | What |
 | --- | --- |
-| `GET /chat` · `POST /chat` · `DELETE /chat` | transcript · one exchange (plain-text token stream; `open` = opening beat) · Clear Chat |
-| `PATCH/DELETE /chat/:messageId` | edit / snip one line (the poisoned-window recovery levers) |
-| `GET/PATCH/POST /chat/state` | state snapshot (drift-on-read) · author edit · action chip |
-| `GET/POST /chat/scene` | list chat scenes · queue a `chat_scene_image` render |
+| `GET /api/chats?characterId=&archived=1` · `POST /api/chats` | list conversations · create one (`memory: "shared" \| "fresh"` — the D7 choice) |
+| `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (plain-text token stream; `open` = opening beat; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
+| `PATCH/DELETE /api/chats/:chatId/messages/:messageId` | edit / snip one line (the poisoned-window recovery levers) |
+| `GET/PATCH/POST /api/chats/:chatId/state` | state snapshot (drift-on-read) · author edit · action chip |
+| `GET/POST /api/chats/:chatId/scene` | list chat scenes · queue a `chat_scene_image` render |
 
 ## Diagnostics
 
@@ -106,7 +116,7 @@ All under `/api/characters/:id/chat` (owner-scoped via `loadOwnedCharacter`):
 `.timeout` · `chat_memory.episodes_failed` / `.facts_failed` ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
 `.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` — plus route
-errors `chat_busy` (409), `rate_limited` (429), `not_found` (404). Degradation tests
+errors `chat_busy` (409), `chat_archived` (409), `rate_limited` (429), `not_found` (404). Degradation tests
 assert the fallback **and** the code ([testing.md](testing.md)).
 
 ## Where things live

@@ -10,7 +10,7 @@ import {
 import { parseOrNull } from "@/lib/parse";
 import { log } from "@/server/log";
 import { generateChecked } from "../ai";
-import { characterChatMessages, characterChatSummaries, characters, db, jobs } from "../db";
+import { characterChatMessages, characterChatSummaries, characters, chatParticipants, db, jobs } from "../db";
 import type { ChatTurn } from "./character-chat";
 import { CHARACTER_CHAT_HISTORY_TURNS, CHARACTER_CHAT_SUMMARIZE_AT, CHARACTER_CHAT_VERBATIM_KEEP } from "./constants";
 import { enqueueJob, registerJobHandler } from "./jobs";
@@ -38,8 +38,7 @@ export interface ChatSummaryState {
 }
 
 export const chatSummaryJobPayloadSchema = z.object({
-  ownerId: z.string().min(1),
-  characterId: z.string().min(1),
+  chatId: z.string().min(1),
 });
 
 export type ChatSummaryJobPayload = z.infer<typeof chatSummaryJobPayloadSchema>;
@@ -60,7 +59,7 @@ export function afterWatermark(watermark: ChatWatermark): SQL | undefined {
 }
 
 /** Load the running summary + watermark for a chat, or null when none exists yet. */
-export async function loadChatSummary(ownerId: string, characterId: string): Promise<ChatSummaryState | null> {
+export async function loadChatSummary(chatId: string): Promise<ChatSummaryState | null> {
   const [row] = await db()
     .select({
       summary: characterChatSummaries.summary,
@@ -69,7 +68,7 @@ export async function loadChatSummary(ownerId: string, characterId: string): Pro
       coveredExchanges: characterChatSummaries.coveredExchanges,
     })
     .from(characterChatSummaries)
-    .where(and(eq(characterChatSummaries.ownerId, ownerId), eq(characterChatSummaries.characterId, characterId)))
+    .where(eq(characterChatSummaries.chatId, chatId))
     .limit(1);
   if (!row) return null;
   return {
@@ -86,15 +85,14 @@ export async function loadChatSummary(ownerId: string, characterId: string): Pro
  * the int suite agree on exactly one definition.
  */
 export async function loadVerbatimWindow(
-  ownerId: string,
-  characterId: string,
+  chatId: string,
   watermark: ChatWatermark,
 ): Promise<ChatTurn[]> {
   const wmCond = afterWatermark(watermark);
   const rows = await db()
     .select({ role: characterChatMessages.role, content: characterChatMessages.content })
     .from(characterChatMessages)
-    .where(and(eq(characterChatMessages.ownerId, ownerId), eq(characterChatMessages.characterId, characterId), ...(wmCond ? [wmCond] : [])))
+    .where(and(eq(characterChatMessages.chatId, chatId), ...(wmCond ? [wmCond] : [])))
     .orderBy(desc(characterChatMessages.createdAt))
     .limit(CHARACTER_CHAT_HISTORY_TURNS * 2);
   return rows.reverse();
@@ -160,7 +158,7 @@ export function normalizeChatSummary(
  * fire-and-forget (`void enqueueChatSummary(...)`) without an unhandled
  * rejection. Runs as a `sessionId: null` job ⇒ the existing detached runner path.
  */
-export async function enqueueChatSummary(args: { ownerId: string; characterId: string }): Promise<void> {
+export async function enqueueChatSummary(args: { chatId: string }): Promise<void> {
   try {
     const [pending] = await db()
       .select({ id: jobs.id })
@@ -169,8 +167,7 @@ export async function enqueueChatSummary(args: { ownerId: string; characterId: s
         and(
           eq(jobs.type, "chat_summary"),
           or(eq(jobs.status, "queued"), eq(jobs.status, "running")),
-          sql`${jobs.payload} ->> 'characterId' = ${args.characterId}`,
-          sql`${jobs.payload} ->> 'ownerId' = ${args.ownerId}`,
+          sql`${jobs.payload} ->> 'chatId' = ${args.chatId}`,
         ),
       )
       .limit(1);
@@ -189,28 +186,27 @@ export async function enqueueChatSummary(args: { ownerId: string; characterId: s
  */
 export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?: string): Promise<void> {
   const sink = new DiagnosticCollector();
-  const { ownerId, characterId } = payload;
+  const { chatId } = payload;
 
+  // The (v1 single) participant names the fold prompt's character; a chat deleted
+  // mid-flight is a logged no-op, never a crash loop.
   const [character] = await db()
     .select({ name: characters.name })
-    .from(characters)
-    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
+    .from(chatParticipants)
+    .innerJoin(characters, eq(characters.id, chatParticipants.characterId))
+    .where(eq(chatParticipants.chatId, chatId))
     .limit(1);
   if (!character) {
-    log.warn("chat_summary", "character missing; fold dropped", { ownerId, characterId, jobId });
+    log.warn("chat_summary", "chat/participant missing; fold dropped", { chatId, jobId });
     return;
   }
 
-  const existing = await loadChatSummary(ownerId, characterId);
+  const existing = await loadChatSummary(chatId);
   const priorSummary = existing?.summary ?? "";
   const watermark = existing?.watermark ?? null;
   const wmCond = afterWatermark(watermark);
 
-  const tailWhere = and(
-    eq(characterChatMessages.ownerId, ownerId),
-    eq(characterChatMessages.characterId, characterId),
-    ...(wmCond ? [wmCond] : []),
-  );
+  const tailWhere = and(eq(characterChatMessages.chatId, chatId), ...(wmCond ? [wmCond] : []));
 
   const [counted] = await db()
     .select({ n: sql<number>`count(*)::int` })
@@ -220,7 +216,7 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
 
   const foldCount = planChatFold(unsummarized);
   if (foldCount === null) {
-    log.info("chat_summary", "below fold trigger; no-op", { ownerId, characterId, unsummarized, jobId });
+    log.info("chat_summary", "below fold trigger; no-op", { chatId, unsummarized, jobId });
     return;
   }
 
@@ -249,8 +245,7 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
   const folded = normalizeChatSummary(priorSummary, value, degraded, sink);
   if (!folded.advance) {
     log.warn("chat_summary", "fold did not advance", {
-      ownerId,
-      characterId,
+      chatId,
       degraded,
       diagnostics: sink.items.map((d) => d.code),
     });
@@ -261,15 +256,14 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
   await db()
     .insert(characterChatSummaries)
     .values({
-      ownerId,
-      characterId,
+      chatId,
       summary: folded.summary,
       watermarkAt: last.createdAt,
       watermarkId: last.id,
       coveredExchanges,
     })
     .onConflictDoUpdate({
-      target: [characterChatSummaries.ownerId, characterChatSummaries.characterId],
+      target: [characterChatSummaries.chatId],
       set: {
         summary: folded.summary,
         watermarkAt: last.createdAt,
@@ -280,8 +274,7 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
     });
 
   log.info("chat_summary", "folded chat tail into summary", {
-    ownerId,
-    characterId,
+    chatId,
     foldedMessages: foldCount,
     coveredExchanges,
     summaryChars: folded.summary.length,
@@ -303,7 +296,5 @@ registerJobHandler("chat_summary", async (job) => {
   // check-then-insert, so two near-simultaneous exchanges can both enqueue.
   // Under the lock the second fold re-reads the advanced watermark and no-ops
   // below the trigger instead of paying a duplicate LLM call.
-  await withKeyedLock(`chat_summary:${payload.ownerId}:${payload.characterId}`, () =>
-    processChatSummary(payload, job.id),
-  );
+  await withKeyedLock(`chat_summary:${payload.chatId}`, () => processChatSummary(payload, job.id));
 });

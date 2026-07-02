@@ -7,7 +7,7 @@ import {
   relationshipStages,
   type SocialReactionCard,
 } from "@/contracts";
-import { charactersApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatsApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -27,7 +27,8 @@ import { useToast } from "@/components/ui/toast";
 export function ChatScenarioModal({
   open,
   onClose,
-  characterId,
+  chatId,
+  ensureChat,
   who,
   snapshot,
   onSaved,
@@ -36,7 +37,9 @@ export function ChatScenarioModal({
 }: {
   open: boolean;
   onClose: () => void;
-  characterId: string;
+  /** Null until a conversation exists; Save then creates one via `ensureChat`. */
+  chatId: string | null;
+  ensureChat: () => Promise<string | null>;
   who: string;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
@@ -47,7 +50,8 @@ export function ChatScenarioModal({
     <Dialog open={open} onClose={onClose} title={`Scenario setup — ${who}`} className="max-w-lg">
       {open ? (
         <ScenarioForm
-          characterId={characterId}
+          chatId={chatId}
+          ensureChat={ensureChat}
           who={who}
           snapshot={snapshot}
           onSaved={onSaved}
@@ -61,7 +65,8 @@ export function ChatScenarioModal({
 }
 
 function ScenarioForm({
-  characterId,
+  chatId,
+  ensureChat,
   who,
   snapshot,
   onSaved,
@@ -69,7 +74,8 @@ function ScenarioForm({
   startingStage,
   onStartingStageChange,
 }: {
-  characterId: string;
+  chatId: string | null;
+  ensureChat: () => Promise<string | null>;
   who: string;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
@@ -85,9 +91,25 @@ function ScenarioForm({
   const [saving, setSaving] = useState(false);
 
   // The chat-only fields save here; Starting Relationship rides the editor's own SaveBar.
+  // Only the touched fields go into the patch: a pre-chat save creates the conversation,
+  // and the server seeds the new state row from the profile (authored stage, the
+  // character's own social cards) — an untouched field must not clobber that seed with
+  // this form's blank pre-chat default.
   const save = async () => {
+    const patch: ChatStateEdit = {};
+    if (premise !== snapshot.premise) patch.premise = premise;
+    if (outfit !== snapshot.outfit) patch.outfit = outfit;
+    if (outfitExposed !== snapshot.outfitExposed) patch.outfitExposed = outfitExposed;
+    if (JSON.stringify(cards) !== JSON.stringify(snapshot.activeSocialCards)) patch.activeSocialCards = cards;
     setSaving(true);
-    const result = await charactersApi.editChatState(characterId, { premise, outfit, outfitExposed, activeSocialCards: cards });
+    // Saving scenario edits is one of the actions that lazily creates the conversation.
+    const id = chatId ?? (await ensureChat());
+    if (!id) {
+      setSaving(false);
+      toast.push({ title: "Save failed", description: "The conversation couldn't be created.", tone: "error" });
+      return;
+    }
+    const result = await chatsApi.editState(id, patch);
     setSaving(false);
     if (result.ok) {
       onSaved(result.data);

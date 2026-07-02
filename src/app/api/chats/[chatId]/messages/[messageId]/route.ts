@@ -1,0 +1,53 @@
+import type { NextRequest } from "next/server";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
+import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { characterChatMessages, db } from "@/server/db";
+import { loadOwnedChat } from "../../../owned";
+
+type Params = { chatId: string; messageId: string };
+
+/**
+ * Per-message edits on a conversation transcript (docs/character-chat.md). PATCH
+ * overwrites one message's text in place; DELETE removes a single message. Both are
+ * the recovery levers for a "poisoned" transcript: a single refusal persisted into
+ * the window primes more refusals on every later turn — snipping or rewriting the
+ * offending line restores the conversation without nuking it (the whole-conversation
+ * DELETE lives on the parent route). Ownership resolves through the chat row; a miss
+ * is a 404, never a silent no-op.
+ */
+
+const editBodySchema = z.object({
+  content: z.string().trim().min(1).max(4000),
+});
+
+/** PATCH /api/chats/:chatId/messages/:messageId — overwrite one message's text. */
+export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
+  const { chatId, messageId } = await ctx.params;
+  const body = await readBody(req, editBodySchema);
+  if (!body.ok) return body.response;
+  if (!(await loadOwnedChat(chatId, user.id))) return jsonError("not_found", "chat not found", 404);
+
+  const [updated] = await db()
+    .update(characterChatMessages)
+    .set({ content: body.value.content })
+    .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
+    .returning({ id: characterChatMessages.id });
+
+  if (!updated) return jsonError("not_found", "message not found", 404);
+  return jsonOk({ id: updated.id });
+});
+
+/** DELETE /api/chats/:chatId/messages/:messageId — remove a single message. */
+export const DELETE = withUser<Params>(async (user, _req, ctx) => {
+  const { chatId, messageId } = await ctx.params;
+  if (!(await loadOwnedChat(chatId, user.id))) return jsonError("not_found", "chat not found", 404);
+
+  const [deleted] = await db()
+    .delete(characterChatMessages)
+    .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
+    .returning({ id: characterChatMessages.id });
+
+  if (!deleted) return jsonError("not_found", "message not found", 404);
+  return jsonOk({ deleted: true });
+});
