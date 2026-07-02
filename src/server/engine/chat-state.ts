@@ -15,18 +15,13 @@ import {
   deriveEmotionLabel,
   diag,
   emptyChatPulseTrace,
-  evaluateSocialReaction,
   initialMeters,
   interactionConceptById,
   isConditionExpired,
   meterDefinitions,
-  moodMeterToFactor,
-  moodNudge,
   NEUTRAL_MOOD_METER,
   personalizeMeters,
-  resolveSocialReaction,
   socialReactionCardSchema,
-  socialTraitScale,
   splitStateCues,
   stageForValue,
   stageMidpoint,
@@ -42,6 +37,7 @@ import {
   type SocialReactionCard,
 } from "@/contracts";
 import { catalogConditionForLabel } from "@/contracts/conditions/catalog";
+import { evaluateActReaction } from "@/contracts/personality/act-reaction";
 import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
@@ -306,26 +302,30 @@ export function applyChatPulse(
   let valence: "like" | "dislike" | null = null;
   let affinityDelta = 0;
   let moodDelta = 0;
+  let stressDelta = 0;
   const changed: string[] = [];
 
   if (concept) {
-    const reaction = resolveSocialReaction(
-      { concept, target: characterName },
-      // World-less chat: the cards active in THIS chat (scenario modal) apply —
-      // seeded from the character's own `profile.socialCards`, then author-editable.
-      { tags: profile.tags, preferences: profile.preferences, cards: state.activeSocialCards },
-    );
-    if (reaction) {
-      valence = reaction.valence;
-      const evaluated = evaluateSocialReaction(
-        reaction,
-        state.affinity,
-        moodMeterToFactor(state.meters.mood ?? NEUTRAL_MOOD_METER),
-        socialTraitScale(reaction, profile.traits),
-      );
-      const signed = evaluated.valence === "dislike" ? -evaluated.magnitude : evaluated.magnitude;
-      affinityDelta = clamp(Math.round(signed), -AFFINITY_DELTA_CLAMP, AFFINITY_DELTA_CLAMP);
-      moodDelta = moodNudge(evaluated);
+    // The shared §6 sequence (contracts/personality/act-reaction.ts — one implementation
+    // across both lanes). World-less chat: the cards active in THIS chat (scenario modal)
+    // apply — seeded from the character's own `profile.socialCards`, then author-editable.
+    const outcome = evaluateActReaction({
+      act: { concept, target: characterName },
+      disposition: { tags: profile.tags, preferences: profile.preferences, cards: state.activeSocialCards },
+      affinity: state.affinity,
+      moodMeter: state.meters.mood ?? NEUTRAL_MOOD_METER,
+      traits: profile.traits,
+      deltaClamp: AFFINITY_DELTA_CLAMP,
+    });
+    if (outcome.kind === "reaction") {
+      valence = outcome.evaluated.valence;
+      affinityDelta = outcome.affinityDelta;
+      moodDelta = outcome.moodDelta;
+    } else if (outcome.kind === "touch") {
+      // Welcome/unwelcome touch (mood.spec §5) — session-lane parity restored by the
+      // de-fork: an unmatched touch swings mood (+ stress) by affinity-stage welcome-ness.
+      moodDelta = outcome.moodDelta;
+      stressDelta = outcome.stressDelta;
     }
   }
 
@@ -341,6 +341,10 @@ export function applyChatPulse(
   if (Math.abs(moodDelta) >= 0.005 && next.meters.mood !== undefined) {
     next.meters.mood = clamp01(next.meters.mood + moodDelta);
     changed.push("mood");
+  }
+  if (Math.abs(stressDelta) >= 0.005 && next.meters.stress !== undefined) {
+    next.meters.stress = clamp01(next.meters.stress + stressDelta);
+    changed.push("stress");
   }
   if (arousalDelta >= 0.005 && next.meters.arousal !== undefined) {
     next.meters.arousal = clamp01(next.meters.arousal + arousalDelta);
