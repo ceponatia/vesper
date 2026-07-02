@@ -24,20 +24,20 @@ import {
   persistChatState,
   seedChatState,
 } from "@/server/engine";
-import { loadOwnedCharacter } from "../owned";
+import { loadOwnedChat, type OwnedChat } from "../../owned";
 
-type Params = { id: string };
+type Params = { chatId: string };
 
 /**
- * The character-chat light-state API (character-chat-state.spec.md §5 + slice 4), a
- * sibling of the plain-text reply stream so state never inlines into prose:
+ * The conversation-state API (character-chat-state.spec.md §5 + slice 4), keyed per
+ * participant (character-chat-standalone.spec.md §1.2), a sibling of the plain-text
+ * reply stream so state never inlines into prose:
  *
  * - **GET** → the strip / premise-bar / state-tools snapshot, with the same
  *   drift-on-read the prompt build applies. No row ⇒ a rested seed from the
- *   authored defaults (today's behavior made visible).
+ *   authored defaults.
  * - **PATCH** → an author edit (premise **Save** + the state-tools modal): upsert
- *   the provided fields (seeding the rest if absent), so the player can set the
- *   scene before the first message or tune disposition for testing.
+ *   the provided fields (seeding the rest if absent).
  * - **POST `{ action }`** → a one-click test-bed action chip (offer a drink →
  *   intoxication↑, etc.), applied deterministically server-side.
  */
@@ -65,46 +65,53 @@ const snapshotOpts = (profile: CharacterProfile) => ({
   intimateContext: true,
 });
 
+const parseProfile = (owned: OwnedChat, sink?: DiagnosticCollector) =>
+  parseOr(characterProfileSchema, owned.character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
+
 export const GET = withUser<Params>(async (user, _req, ctx) => {
-  const { id } = await ctx.params;
-  const character = await loadOwnedCharacter(id, user.id);
-  if (!character) return jsonError("not_found", "character not found", 404);
+  const { chatId } = await ctx.params;
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (!owned) return jsonError("not_found", "chat not found", 404);
 
   const sink = new DiagnosticCollector();
-  const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
-  const stored = await loadChatState(user.id, id, sink);
+  const profile = parseProfile(owned, sink);
+  const stored = await loadChatState(chatId, owned.participant.characterId, sink);
   const state = stored ? driftChatState(stored, new Date(), profile, { advance: false }) : seedChatState(profile);
   return jsonOk(chatStateSnapshot(state, { ...snapshotOpts(profile), persisted: stored !== null }));
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  const { id } = await ctx.params;
-  const character = await loadOwnedCharacter(id, user.id);
-  if (!character) return jsonError("not_found", "character not found", 404);
+  const { chatId } = await ctx.params;
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (!owned) return jsonError("not_found", "chat not found", 404);
 
   const body = await readBody(req, editBodySchema);
   if (!body.ok) return body.response;
 
-  const sink = new DiagnosticCollector();
-  const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
-  const state = await editChatState({ ownerId: user.id, characterId: id, profile, patch: body.value });
+  const profile = parseProfile(owned);
+  const state = await editChatState({
+    chatId,
+    characterId: owned.participant.characterId,
+    profile,
+    patch: body.value,
+  });
   return jsonOk(chatStateSnapshot(state, snapshotOpts(profile)));
 });
 
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  const { id } = await ctx.params;
-  const character = await loadOwnedCharacter(id, user.id);
-  if (!character) return jsonError("not_found", "character not found", 404);
+  const { chatId } = await ctx.params;
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (!owned) return jsonError("not_found", "chat not found", 404);
 
   const body = await readBody(req, actionBodySchema);
   if (!body.ok) return body.response;
 
   const sink = new DiagnosticCollector();
-  const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
-  const stored = await loadChatState(user.id, id, sink);
+  const profile = parseProfile(owned, sink);
+  const stored = await loadChatState(chatId, owned.participant.characterId, sink);
   // Apply the chip to the current (recovered) state, then persist.
   const current = stored ? driftChatState(stored, new Date(), profile, { advance: false }) : seedChatState(profile);
   const next = applyChatAction(current, body.value.action);
-  await persistChatState(user.id, id, next);
+  await persistChatState(chatId, owned.participant.characterId, next);
   return jsonOk(chatStateSnapshot(next, snapshotOpts(profile)));
 });

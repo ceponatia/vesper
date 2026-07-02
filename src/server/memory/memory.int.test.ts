@@ -395,19 +395,10 @@ describe.skipIf(!ready)("memory integration", () => {
     });
   });
 
-  // The widened keying (character-chat-primary.spec.md §1, D1): facts + episodes keyed on
-  // (ownerId, characterId) instead of a session, and isolated from the session lane.
-  describe("chat-scope memory (the widening — D1)", () => {
-    let characterId: string;
-
-    beforeAll(async () => {
-      const [char] = await db()
-        .insert(characters)
-        .values({ ownerId, name: "Chat Mara" })
-        .returning({ id: characters.id });
-      if (!char) throw new Error("character insert failed");
-      characterId = char.id;
-    });
+  // Chat-lane keying (character-chat-standalone.spec.md §1.3): facts + episodes keyed on
+  // a memory-group id instead of a session, and isolated from the session lane.
+  describe("chat-scope memory (memory groups)", () => {
+    const groupId = "int-test-memory-group";
 
     // pseudoEmbed (test mode) is hash-based, so recall only matches near-identical text —
     // like the episodes suite above, query with the exact stored text to score a hit.
@@ -415,7 +406,7 @@ describe.skipIf(!ready)("memory integration", () => {
     const factText = "The player's sister is getting married in Prague.";
 
     it("round-trips an episode + a fact under the chat scope, and recalls them", async () => {
-      const scope = chatScope(ownerId, characterId);
+      const scope = chatScope(groupId);
       // The chat lane's exchange ordinal starts at 0 and advances via latestEpisodeNumber.
       expect(await latestEpisodeNumber(scope)).toBe(0);
       await appendEpisode(scope, 1, episodeText, []);
@@ -429,7 +420,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("is isolated from the session lane (neither scope sees the other's rows)", async () => {
-      const chat = chatScope(ownerId, characterId);
+      const chat = chatScope(groupId);
       const sessionSecret = "Mara keeps a session-only secret.";
       const session = sessionScope(await makeSession("isolation"));
       await addFacts(session, [draft({ subjectName: "Mara", text: sessionSecret })], "turn-iso");
@@ -445,8 +436,7 @@ describe.skipIf(!ready)("memory integration", () => {
       await expect(
         db().insert(episodes).values({
           sessionId: badSession,
-          ownerId,
-          characterId,
+          chatMemoryGroupId: groupId,
           turnNumber: 1,
           summary: "impossible dual-keyed row",
           threadIds: [],
@@ -455,7 +445,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
 
     it("deleteFactsForScope / deleteEpisodesForScope purge only the chat's memory (Clear Chat — §4)", async () => {
-      const scope = chatScope(ownerId, characterId);
+      const scope = chatScope(groupId);
       expect(await latestEpisodeNumber(scope)).toBeGreaterThan(0);
       await deleteFactsForScope(scope);
       await deleteEpisodesForScope(scope);

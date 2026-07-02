@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { charactersApi, type ImageRecord } from "@/lib/client/api";
+import { chatsApi, type ApiResult, type ImageRecord } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -17,10 +17,27 @@ function sceneError(image: ImageRecord): string | null {
   return error ? error : null;
 }
 
-/** Manual scene-image renderer + history strip for the chat. */
-export function SceneStrip({ characterId, name, hasChat }: { characterId: string; name: string; hasChat: boolean }) {
+/**
+ * Manual scene-image renderer + history strip for the chat. `chatId` is null until a
+ * conversation exists — the list then stays empty and Generate creates one lazily via
+ * `ensureChat` (in practice it's disabled until the first exchange anyway).
+ */
+export function SceneStrip({
+  chatId,
+  ensureChat,
+  name,
+  hasChat,
+}: {
+  chatId: string | null;
+  ensureChat: () => Promise<string | null>;
+  name: string;
+  hasChat: boolean;
+}) {
   const toast = useToast();
-  const scenes = useAsyncData(() => charactersApi.chatScenes(characterId), [characterId]);
+  const scenes = useAsyncData(
+    () => (chatId ? chatsApi.scenes(chatId) : Promise.resolve<ApiResult<ImageRecord[]>>({ ok: true, data: [] })),
+    [chatId],
+  );
   const [generating, setGenerating] = useState(false);
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const baselineRef = useRef(0);
@@ -54,7 +71,13 @@ export function SceneStrip({ characterId, name, hasChat }: { characterId: string
   const generate = async () => {
     baselineRef.current = sceneList.length;
     setGenerating(true);
-    const result = await charactersApi.generateChatScene(characterId);
+    const id = chatId ?? (await ensureChat());
+    if (!id) {
+      setGenerating(false);
+      toast.push({ title: "Scene failed to queue", description: "The conversation couldn't be created.", tone: "error" });
+      return;
+    }
+    const result = await chatsApi.generateScene(id);
     if (!result.ok) {
       setGenerating(false);
       toast.push({ title: "Scene failed to queue", description: result.error.message, tone: "error" });

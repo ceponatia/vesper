@@ -245,22 +245,16 @@ export const characterChatMessages = pgTable(
   "character_chat_messages",
   {
     id: id(),
-    ownerId: text("owner_id").notNull().references(() => users.id),
-    characterId: text("character_id")
+    chatId: text("chat_id")
       .notNull()
-      .references(() => characters.id, { onDelete: "cascade" }),
-    /** The conversation (nullable only during the slice-3 migration window; NOT NULL after). */
-    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "cascade" }),
+      .references(() => characterChats.id, { onDelete: "cascade" }),
     /** Which participant spoke an assistant line (multi-character headroom; null on user lines). */
     speakerCharacterId: text("speaker_character_id").references(() => characters.id, { onDelete: "set null" }),
     role: text("role", { enum: ["user", "assistant"] }).notNull(),
     content: text("content").notNull(),
     createdAt: createdAt(),
   },
-  (t) => [
-    index("character_chat_messages_owner_character_idx").on(t.ownerId, t.characterId, t.createdAt),
-    index("character_chat_messages_chat_idx").on(t.chatId, t.createdAt),
-  ],
+  (t) => [index("character_chat_messages_chat_idx").on(t.chatId, t.createdAt)],
 );
 
 /**
@@ -277,12 +271,9 @@ export const characterChatMessages = pgTable(
 export const characterChatSummaries = pgTable(
   "character_chat_summaries",
   {
-    ownerId: text("owner_id").notNull().references(() => users.id),
-    characterId: text("character_id")
+    chatId: text("chat_id")
       .notNull()
-      .references(() => characters.id, { onDelete: "cascade" }),
-    /** The conversation (nullable only during the slice-3 migration window; PK after). */
-    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "cascade" }),
+      .references(() => characterChats.id, { onDelete: "cascade" }),
     summary: text("summary").notNull().default(""),
     /** (watermarkAt, watermarkId) = the newest message folded into `summary`; both null until the first fold. */
     watermarkAt: timestamp("watermark_at", { withTimezone: true }),
@@ -291,7 +282,7 @@ export const characterChatSummaries = pgTable(
     coveredExchanges: integer("covered_exchanges").notNull().default(0),
     updatedAt: updatedAt(),
   },
-  (t) => [primaryKey({ columns: [t.ownerId, t.characterId] })],
+  (t) => [primaryKey({ columns: [t.chatId] })],
 );
 
 /**
@@ -313,12 +304,12 @@ export const characterChatSummaries = pgTable(
 export const characterChatState = pgTable(
   "character_chat_state",
   {
-    ownerId: text("owner_id").notNull().references(() => users.id),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => characterChats.id, { onDelete: "cascade" }),
     characterId: text("character_id")
       .notNull()
       .references(() => characters.id, { onDelete: "cascade" }),
-    /** The conversation (nullable only during the slice-3 migration window; PK (chat_id, character_id) after). */
-    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "cascade" }),
     /** Record<string,number> — the full meter registry, carried verbatim (seeded from initialMeters()). */
     meters: jsonb("meters").notNull().default({}),
     /** −100…100, the character's feeling toward the player persona (seeded from playerRelationship.stage). */
@@ -378,7 +369,7 @@ export const characterChatState = pgTable(
     lastInteractionAt: timestamp("last_interaction_at", { withTimezone: true }),
     updatedAt: updatedAt(),
   },
-  (t) => [primaryKey({ columns: [t.ownerId, t.characterId] })],
+  (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],
 );
 
 export const locations = pgTable(
@@ -821,14 +812,12 @@ export const episodes = pgTable(
   "episodes",
   {
     id: id(),
-    // Memory keying is mutually exclusive (character-chat-primary.spec §1): either a
-    // session (the turn lane) or a character chat (owner+character). Enforced by the
-    // `episodes_scope_exactly_one` CHECK below. `turnNumber` is a per-chat exchange
+    // Memory keying is mutually exclusive: either a session (the turn lane) or a chat
+    // memory group (character-chat-standalone.spec.md §1.3). Enforced by the
+    // `episodes_scope_exactly_one` CHECK below. `turnNumber` is a per-group exchange
     // ordinal in the chat lane, a real turn number in the session lane.
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
-    ownerId: text("owner_id").references(() => users.id),
-    characterId: text("character_id").references(() => characters.id, { onDelete: "cascade" }),
-    /** Memory-group keying (character-chat-standalone.spec.md §1.3) — replaces (owner,character) for chat scope. */
+    /** Memory-group keying (character-chat-standalone.spec.md §1.3) — the chat lane's scope. */
     chatMemoryGroupId: text("chat_memory_group_id"),
     turnNumber: integer("turn_number").notNull(),
     summary: text("summary").notNull(),
@@ -841,13 +830,13 @@ export const episodes = pgTable(
   },
   (t) => [
     index("episodes_session_idx").on(t.sessionId, t.turnNumber),
-    index("episodes_chat_idx").on(t.ownerId, t.characterId, t.turnNumber),
+    index("episodes_chat_group_idx").on(t.chatMemoryGroupId, t.turnNumber),
     index("episodes_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
     check(
       "episodes_scope_exactly_one",
       sql`(
-        (${t.sessionId} IS NOT NULL AND ${t.ownerId} IS NULL AND ${t.characterId} IS NULL) OR
-        (${t.sessionId} IS NULL AND ${t.ownerId} IS NOT NULL AND ${t.characterId} IS NOT NULL)
+        (${t.sessionId} IS NOT NULL AND ${t.chatMemoryGroupId} IS NULL) OR
+        (${t.sessionId} IS NULL AND ${t.chatMemoryGroupId} IS NOT NULL)
       )`,
     ),
   ],
@@ -860,9 +849,7 @@ export const facts = pgTable(
     // Mutually-exclusive memory keying — see `episodes` above and the
     // `facts_scope_exactly_one` CHECK below (character-chat-primary.spec §1).
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
-    ownerId: text("owner_id").references(() => users.id),
-    characterId: text("character_id").references(() => characters.id, { onDelete: "cascade" }),
-    /** Memory-group keying (character-chat-standalone.spec.md §1.3) — replaces (owner,character) for chat scope. */
+    /** Memory-group keying (character-chat-standalone.spec.md §1.3) — the chat lane's scope. */
     chatMemoryGroupId: text("chat_memory_group_id"),
     kind: text("kind").notNull(),
     verb: text("verb"),
@@ -887,13 +874,13 @@ export const facts = pgTable(
   },
   (t) => [
     index("facts_session_status_idx").on(t.sessionId, t.status),
-    index("facts_chat_status_idx").on(t.ownerId, t.characterId, t.status),
+    index("facts_chat_group_idx").on(t.chatMemoryGroupId, t.status),
     index("facts_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
     check(
       "facts_scope_exactly_one",
       sql`(
-        (${t.sessionId} IS NOT NULL AND ${t.ownerId} IS NULL AND ${t.characterId} IS NULL) OR
-        (${t.sessionId} IS NULL AND ${t.ownerId} IS NOT NULL AND ${t.characterId} IS NOT NULL)
+        (${t.sessionId} IS NOT NULL AND ${t.chatMemoryGroupId} IS NULL) OR
+        (${t.sessionId} IS NULL AND ${t.chatMemoryGroupId} IS NOT NULL)
       )`,
     ),
   ],

@@ -179,7 +179,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
 
 /** Load the stored state for a chat, parsing every jsonb at the trust boundary, or null when no row exists. */
 export async function loadChatState(
-  ownerId: string,
+  chatId: string,
   characterId: string,
   sink?: DiagnosticSink,
 ): Promise<ChatState | null> {
@@ -202,7 +202,7 @@ export async function loadChatState(
       lastInteractionAt: characterChatState.lastInteractionAt,
     })
     .from(characterChatState)
-    .where(and(eq(characterChatState.ownerId, ownerId), eq(characterChatState.characterId, characterId)))
+    .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)))
     .limit(1);
   if (!row) return null;
   return {
@@ -501,8 +501,10 @@ function arousalBumpForConcept(concept: string): number {
  * degrades to a diagnostic without touching the already-flushed reply.
  */
 export async function finalizeChatState(input: {
-  ownerId: string;
+  chatId: string;
   characterId: string;
+  /** The participant's memory group (character-chat-standalone.spec.md §1.3). */
+  memoryGroupId: string;
   promptMessageId: string;
   profile: CharacterProfile;
   characterName: string;
@@ -537,7 +539,7 @@ export async function finalizeChatState(input: {
   // not cost the pulse's state changes: `saveChatState` below always runs.
   try {
     await writeChatMemory({
-      ownerId: input.ownerId,
+      groupId: input.memoryGroupId,
       characterId: input.characterId,
       archivist: archivist.value,
       sink: input.sink,
@@ -571,7 +573,7 @@ export async function finalizeChatState(input: {
     degraded: archivist.degraded,
   };
   await saveChatState({
-    ownerId: input.ownerId,
+    chatId: input.chatId,
     characterId: input.characterId,
     promptMessageId: input.promptMessageId,
     state: {
@@ -596,7 +598,7 @@ export async function finalizeChatState(input: {
  * jsonb values are cast from text params; `last_interaction_at` binds a Date.
  */
 async function upsertChatState(
-  ownerId: string,
+  chatId: string,
   characterId: string,
   state: ChatState,
   guardMessageId?: string,
@@ -614,11 +616,11 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (owner_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, last_interaction_at, updated_at)
-    select ${ownerId}, ${characterId}, ${meters}::jsonb, ${state.affinity}, ${conditions}::jsonb, ${state.mindNote},
+      (chat_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, last_interaction_at, updated_at)
+    select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.affinity}, ${conditions}::jsonb, ${state.mindNote},
            ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${state.lastInteractionAt}, now()
     where ${guard}
-    on conflict (owner_id, character_id) do update set
+    on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
       affinity = excluded.affinity,
       conditions = excluded.conditions,
@@ -643,12 +645,12 @@ async function upsertChatState(
  * message still existing (see `upsertChatState`).
  */
 export async function saveChatState(args: {
-  ownerId: string;
+  chatId: string;
   characterId: string;
   promptMessageId: string;
   state: ChatState;
 }): Promise<void> {
-  await upsertChatState(args.ownerId, args.characterId, args.state, args.promptMessageId);
+  await upsertChatState(args.chatId, args.characterId, args.state, args.promptMessageId);
 }
 
 /**
@@ -656,8 +658,8 @@ export async function saveChatState(args: {
  * the state-tools modal, action chips) where no exchange is in flight, so the
  * stream-race guard is unnecessary. Upserts every field.
  */
-export async function persistChatState(ownerId: string, characterId: string, state: ChatState): Promise<void> {
-  await upsertChatState(ownerId, characterId, state);
+export async function persistChatState(chatId: string, characterId: string, state: ChatState): Promise<void> {
+  await upsertChatState(chatId, characterId, state);
 }
 
 /** A partial edit to a chat state from the premise Save or the state-tools modal (slice 4). */
@@ -680,13 +682,13 @@ export interface ChatStateEdit {
  * on a message — there is no exchange in flight.
  */
 export async function editChatState(args: {
-  ownerId: string;
+  chatId: string;
   characterId: string;
   profile: CharacterProfile;
   patch: ChatStateEdit;
 }): Promise<ChatState> {
-  const { ownerId, characterId, profile, patch } = args;
-  const base = (await loadChatState(ownerId, characterId)) ?? seedChatState(profile, patch.premise);
+  const { chatId, characterId, profile, patch } = args;
+  const base = (await loadChatState(chatId, characterId)) ?? seedChatState(profile, patch.premise);
   const next: ChatState = { ...base, meters: { ...base.meters } };
   if (patch.premise !== undefined) next.premise = patch.premise.trim().slice(0, CHAT_PREMISE_MAX_CHARS);
   if (patch.affinity !== undefined) next.affinity = clampAffinity(patch.affinity);
@@ -696,7 +698,7 @@ export async function editChatState(args: {
   if (patch.outfit !== undefined) next.outfit = patch.outfit.slice(0, CHAT_OUTFIT_MAX_CHARS);
   if (patch.outfitExposed !== undefined) next.outfitExposed = patch.outfitExposed;
   if (patch.activeSocialCards !== undefined) next.activeSocialCards = patch.activeSocialCards;
-  await persistChatState(ownerId, characterId, next);
+  await persistChatState(chatId, characterId, next);
   return next;
 }
 
@@ -758,13 +760,6 @@ function clampMeters(meters: Record<string, number>): Record<string, number> {
   const out: Record<string, number> = {};
   for (const [id, value] of Object.entries(meters)) out[id] = clamp01(value);
   return out;
-}
-
-/** Delete the state row (Reset All / Reset State). Lazily re-seeds from authored defaults on next use. */
-export async function deleteChatState(ownerId: string, characterId: string, dbc: DbWriter = db()): Promise<void> {
-  await dbc
-    .delete(characterChatState)
-    .where(and(eq(characterChatState.ownerId, ownerId), eq(characterChatState.characterId, characterId)));
 }
 
 /**

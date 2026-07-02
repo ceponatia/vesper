@@ -27,8 +27,8 @@ import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./prompts/chat-
  * Character-chat long-term memory (character-chat-primary.spec.md §2), the RAG half the
  * sessionless chat previously lacked. Three concerns:
  *
- * - `retrieveChatMemory` — PRE-turn recall: cosine RAG over the chat's own facts + episodes
- *   (scoped `(ownerId, characterId)`), keyed on last turn's `memoryQueries` + the player input.
+ * - `retrieveChatMemory` — PRE-turn recall: cosine RAG over the participant's memory group
+ *   (spec §1.3), keyed on last turn's `memoryQueries` + the player input.
  * - `runChatArchivist` — POST-turn extraction: one cheap structured call (the pulse recipe —
  *   reasoning off, latency-sorted routing, no repair, hard timeout) emitting an episode summary,
  *   durable facts, and next-turn queries. Runs in parallel with the reaction pulse.
@@ -47,8 +47,8 @@ export interface ChatMemoryHits {
 }
 
 export async function retrieveChatMemory(input: {
-  ownerId: string;
-  characterId: string;
+  /** The participant's memory group (character-chat-standalone.spec.md §1.3). */
+  groupId: string;
   /** Last turn's `memoryQueries` (persisted on the chat state). */
   queries: readonly string[];
   /** This turn's player input. */
@@ -61,7 +61,7 @@ export async function retrieveChatMemory(input: {
     .join("\n");
   if (!queryText) return { facts: [], episodes: [] };
 
-  const scope = chatScope(input.ownerId, input.characterId);
+  const scope = chatScope(input.groupId);
   const [ep, fa] = await Promise.allSettled([
     retrieveEpisodes(scope, queryText, { sink: input.sink }),
     retrieveFacts(scope, queryText, FACT_RETRIEVAL_LIMIT, input.sink),
@@ -139,14 +139,16 @@ export async function runChatArchivist(
  * the row's audit value, drops it from RAG).
  */
 export async function writeChatMemory(input: {
-  ownerId: string;
+  /** The participant's memory group (spec §1.3). */
+  groupId: string;
+  /** The speaking character — the interim write-only witness set. */
   characterId: string;
   archivist: ChatArchivist | null;
   sink?: DiagnosticSink;
 }): Promise<void> {
   const result = input.archivist;
   if (!result) return;
-  const scope = chatScope(input.ownerId, input.characterId);
+  const scope = chatScope(input.groupId);
 
   const summary = result.episodeSummary.trim();
   if (summary) {
@@ -163,13 +165,12 @@ export async function writeChatMemory(input: {
 }
 
 /**
- * Purge a chat's long-term memory — its facts + episodes. Part of the single "Clear Chat"
- * (character-chat-primary.spec.md §4), alongside `deleteChatState` and the transcript/summary
- * wipe. The `character_id` FK cascade already drops these when the character is deleted; this
- * is the in-place clear that keeps the character but resets the conversation.
+ * Purge a memory group's facts + episodes. Called by `deleteChat` when the deleted
+ * conversation was the LAST one referencing its group (character-chat-standalone.spec.md
+ * §1.4) — shared-history siblings keep the group alive.
  */
-export async function deleteChatMemory(ownerId: string, characterId: string, dbc?: DbWriter): Promise<void> {
-  const scope = chatScope(ownerId, characterId);
+export async function deleteChatMemory(groupId: string, dbc?: DbWriter): Promise<void> {
+  const scope = chatScope(groupId);
   await deleteFactsForScope(scope, dbc);
   await deleteEpisodesForScope(scope, dbc);
 }

@@ -10,8 +10,24 @@ shared `evaluateActReaction` — chat regained the touch-welcomeness fallback), 
 `docs/character-chat.md`, and the component split (character-chat.tsx 842→460 +
 chat-message/chat-scene-strip/chat-status). One leftover rides with slice 4's cleanup:
 the cross-cutting shared-primitive adoptions (usePollWhile / ModelSelect / draft-seed /
-findOwned — they touch non-chat features). Next per build order: slice 2 (measurement
-baseline) alongside slice 3 (the conversation model).
+findOwned — they touch non-chat features). **Slice 2 (Measurement baseline) instrument
+built 2026-07-02** — the five spec-§5 paired contrast fixtures (`chat-contrast-*`, one
+shared character, real `buildCharacterChatSystemPrompt`), the blind pair judge +
+`--axis contrast` accuracy report (≥80%-per-axis bar) in the eval harness, `--seeds`
+replicates, and per-axis lexical-cue metrics — see
+`scripts/eval/narration/README.md` §Paired contrast fixtures; validated by dry-run
+(each pair's prompts differ exactly on the flipped axis). The first live blind-judged
+run (spend) is the owner's call and still pending — slice 2's findings step stays open
+until it runs. **Slice 3 (The conversation model) built 2026-07-02** — `character_chats`
++ `chat_participants` (per-participant memory groups, D7) + `chat_scenario_presets`
+(table only; CRUD/UI ride slice 4), migrations 0021 (additive + backfill) / 0022
+(re-key: messages/summary/state onto the chat, facts/episodes onto
+`chat_memory_group_id`), the `/api/chats` route family replacing
+`/api/characters/:id/chat*` outright (create with the shared-vs-fresh memory choice;
+archive via PATCH; hard delete purges a memory group only when unreferenced), and the
+editor tab adapted (adopts the latest conversation, lazy single-flight create, Delete
+chat). Archive/rename UI and the Chats destination are slice 4. Next per build order:
+slice 4 (the destination).
 
 Design/decisions: [character-chat-standalone.spec.md](character-chat-standalone.spec.md) —
 the technical detail (schemas, file touch-points, migration shape, refactor analysis,

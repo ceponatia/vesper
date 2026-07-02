@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatActionId } from "@/contracts";
-import { charactersApi, sendCharacterChat, type ChatStateSnapshot } from "@/lib/client/api";
+import {
+  chatsApi,
+  chatStateSnapshotSchema,
+  sendChatMessage,
+  type ChatMessage,
+  type ChatStateSnapshot,
+  type ChatStreamOutcome,
+} from "@/lib/client/api";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
@@ -42,12 +49,27 @@ export interface CharacterChatProps {
   onChatModelChange: (modelId: string) => void;
 }
 
+/** What the mount-time bootstrap resolves: the adopted conversation (or none) + its transcript. */
+interface ChatBootstrap {
+  chatId: string | null;
+  messages: ChatMessage[];
+}
+
 /**
- * The sessionless in-character chat tab (docs/developer-notes/character-chat.plan.md):
- * talk to a saved library character directly. Messages persist to
- * `character_chat_messages`; replies stream token-by-token; a manual button
- * renders a scene image from the recent exchange (filed against the character,
- * so it also lands in the Gallery under "Character chats").
+ * Stand-in snapshot for a tab whose conversation doesn't exist yet: there is no state
+ * row to read (and GET must not create one), so the pre-chat Scenario form seeds from
+ * parsed defaults. The form only patches the fields the author touched, so the server's
+ * profile seeding (authored stage, social cards) still applies when the row is created.
+ */
+const EMPTY_CHAT_STATE: ChatStateSnapshot = chatStateSnapshotSchema.parse({ persisted: false });
+
+/**
+ * The in-character chat tab (docs/developer-notes/character-chat-standalone.spec.md):
+ * talk to a saved library character directly. Conversations are first-class rows now —
+ * the tab adopts the character's most recent active conversation on mount, and a fresh
+ * tab creates one lazily on the first action that needs it (`ensureChat`). Replies
+ * stream token-by-token; a manual button renders a scene image from the recent exchange
+ * (filed against the character, so it also lands in the Gallery under "Character chats").
  */
 export function CharacterChat({
   characterId,
@@ -61,12 +83,30 @@ export function CharacterChat({
   const toast = useToast();
   const who = name.trim() || "this character";
 
-  const transcript = useAsyncData(() => charactersApi.chatTranscript(characterId), [characterId]);
+  // Adopt the most recent active conversation for this character (or none), and load
+  // its transcript in the same fetch so the tab settles in one shape. The full Chats
+  // hub / picker is a later slice — the editor tab shows a single conversation.
+  const bootstrap = useAsyncData<ChatBootstrap>(async () => {
+    const chats = await chatsApi.list(characterId);
+    if (!chats.ok) return chats;
+    const latest = chats.data[0]?.id ?? null;
+    if (latest === null) return { ok: true, data: { chatId: null, messages: [] } };
+    const transcript = await chatsApi.transcript(latest);
+    if (!transcript.ok) return transcript;
+    return { ok: true, data: { chatId: latest, messages: transcript.data } };
+  }, [characterId]);
+  // Actions are held until the adopt-or-none lookup settles, so a send can never
+  // create a second conversation while the existing one is still resolving.
+  const ready = !bootstrap.loading && bootstrap.error === null;
+
+  // The active conversation id: seeded from the bootstrap, null for a fresh tab
+  // (created lazily by ensureChat), reset to null by Delete chat.
+  const [chatId, setChatId] = useState<string | null>(null);
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetting, setResetting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // Light chat state (character-chat-state.spec.md): the strip + premise. Held in
   // local state (not useAsyncData) so a post-send refresh can drive the
   // stage-change toast off the value it just fetched.
@@ -86,20 +126,47 @@ export function CharacterChat({
   // a superseding stream (rerun) installs its own, so a stale one can't clear it.
   const abortRef = useRef<AbortController | null>(null);
 
-  // Seed the editable transcript from the load exactly once per character (the
-  // "adjust state while rendering" pattern) so a streamed/optimistic reply is
+  // Single-flight lazy create (character-chat-standalone.spec.md §2): every "first
+  // action that needs a conversation" funnels through this promise, so rapid actions
+  // can't double-create. It stays resolved after success (later calls reuse the id);
+  // a failure clears it so the next action retries.
+  const createRef = useRef<Promise<string | null> | null>(null);
+  const ensureChat = useCallback((): Promise<string | null> => {
+    if (chatId) return Promise.resolve(chatId);
+    createRef.current ??= chatsApi.create({ characterId, memory: "shared" }).then((result) => {
+      if (!result.ok) {
+        createRef.current = null; // allow the next action to retry
+        return null;
+      }
+      setChatId(result.data.id);
+      return result.data.id;
+    });
+    return createRef.current;
+  }, [chatId, characterId]);
+
+  // A character switch invalidates any settled/in-flight create for the old one.
+  useEffect(() => {
+    createRef.current = null;
+  }, [characterId]);
+
+  // Seed the conversation + transcript from the bootstrap exactly once per character
+  // (the "adjust state while rendering" pattern) so a streamed/optimistic reply is
   // never clobbered by the fetch settling; switching characters re-seeds.
   const [seededFor, setSeededFor] = useState<string | null>(null);
-  if (seededFor !== characterId && !transcript.loading && transcript.data) {
+  if (seededFor !== characterId && !bootstrap.loading && bootstrap.data) {
     setSeededFor(characterId);
-    setLines(transcript.data.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+    setChatId(bootstrap.data.chatId);
+    setLines(bootstrap.data.messages.map((m) => ({ id: m.id, role: m.role, content: m.content })));
   }
 
-  // Load the light state once per character (the premise pre-fills from the
-  // authored default). Writes happen past the await, so no in-render setState.
+  // Load the light state once a conversation exists. With no chat there is no state
+  // row to read (and GET must not create one), so the strip/state UI simply waits.
+  // Keyed on chatState too: a settled write (modal save, post-send refresh) cancels a
+  // straggling initial GET instead of letting it clobber the fresher snapshot.
   useEffect(() => {
+    if (!chatId || chatState !== null) return;
     let cancelled = false;
-    void charactersApi.chatState(characterId).then((r) => {
+    void chatsApi.state(chatId).then((r) => {
       if (cancelled || !r.ok) return;
       setChatState(r.data);
       stageRef.current = r.data.stage.label;
@@ -107,7 +174,7 @@ export function CharacterChat({
     return () => {
       cancelled = true;
     };
-  }, [characterId]);
+  }, [chatId, chatState]);
 
   // Auto-scroll the message *list* (not the page) to the newest line as the
   // conversation grows / streams. Setting the container's scrollTop directly keeps
@@ -120,9 +187,9 @@ export function CharacterChat({
   }, [lines]);
 
   /** Refetch the state strip; toast when the affinity stage changed (the romance arc made visible). */
-  const refreshState = async () => {
+  const refreshState = async (id: string) => {
     const prior = stageRef.current;
-    const result = await charactersApi.chatState(characterId);
+    const result = await chatsApi.state(id);
     if (!result.ok) return;
     setChatState(result.data);
     if (prior && result.data.stage.label !== prior) {
@@ -133,11 +200,15 @@ export function CharacterChat({
 
   /**
    * Shared streaming flow for both a normal send and the Prompt Character opening
-   * beat: append an optimistic assistant bubble (and a user line, if any), stream
-   * the reply into it, then reconcile temp-ids against the persisted transcript and
-   * refresh the state strip. `userLine` omitted ⇒ the opening beat (no player line).
+   * beat: append an optimistic assistant bubble (and a user line, if any), resolve
+   * the conversation (creating it lazily on this first action), stream the reply
+   * into it, then reconcile temp-ids against the persisted transcript and refresh
+   * the state strip. `userLine` omitted ⇒ the opening beat (no player line).
    */
-  const runStream = async (body: { content?: string; model?: string; open?: boolean }, userLine?: string) => {
+  const runStream = async (
+    body: { content?: string; model?: string; open?: boolean },
+    userLine?: string,
+  ): Promise<ChatStreamOutcome> => {
     const assistantId = mkId();
     setLines((prev) => [
       ...prev,
@@ -148,8 +219,21 @@ export function CharacterChat({
     abortRef.current = controller;
     sendingRef.current = true;
     setSending(true);
-    const outcome = await sendCharacterChat(
-      characterId,
+    const id = await ensureChat();
+    if (id === null) {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        sendingRef.current = false;
+        setSending(false);
+      }
+      setLines((prev) => prev.filter((l) => !(l.id === assistantId && l.content === "")));
+      return {
+        ok: false,
+        error: { status: 0, code: "chat_create_failed", message: "The conversation couldn't be created." },
+      };
+    }
+    const outcome = await sendChatMessage(
+      id,
       body,
       (delta) => {
         setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + delta } : l)));
@@ -176,19 +260,19 @@ export function CharacterChat({
     }
     // Swap the optimistic temp-ids for the persisted ids so the exchange just sent
     // is immediately editable/deletable. Skip if another send already started.
-    const fresh = await charactersApi.chatTranscript(characterId);
+    const fresh = await chatsApi.transcript(id);
     if (fresh.ok && !sendingRef.current) {
       setLines(fresh.data.map((m) => ({ id: m.id, role: m.role, content: m.content })));
     }
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange.
-    await refreshState();
+    await refreshState(id);
     return outcome;
   };
 
   const send = async () => {
     const content = input.trim();
-    if (!content || sendingRef.current) return;
+    if (!content || sendingRef.current || !ready) return;
     setInput("");
     const outcome = await runStream({ content, model: chatModel }, content);
     if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
@@ -196,7 +280,8 @@ export function CharacterChat({
 
   /** Overwrite one message's text in place; updates the line on success. */
   const editLine = async (id: string, content: string): Promise<boolean> => {
-    const result = await charactersApi.editChatMessage(characterId, id, content);
+    if (!chatId) return false;
+    const result = await chatsApi.editMessage(chatId, id, content);
     if (result.ok) {
       setLines((prev) => prev.map((l) => (l.id === id ? { ...l, content } : l)));
       return true;
@@ -207,7 +292,8 @@ export function CharacterChat({
 
   /** Delete a single message; removes the line on success. */
   const deleteLine = async (id: string) => {
-    const result = await charactersApi.deleteChatMessage(characterId, id);
+    if (!chatId) return;
+    const result = await chatsApi.deleteMessage(chatId, id);
     if (result.ok) {
       setLines((prev) => prev.filter((l) => l.id !== id));
     } else {
@@ -225,6 +311,7 @@ export function CharacterChat({
    * so keeping it would duplicate it.
    */
   const rerun = async (id: string) => {
+    if (!chatId) return;
     const idx = lines.findIndex((l) => l.id === id);
     const target = lines[idx];
     if (!target || target.role !== "user") return;
@@ -235,7 +322,7 @@ export function CharacterChat({
     // rows server-side (temp/streaming lines have no row yet — skip them; ignore 404s).
     const doomed = lines.slice(idx).filter((l) => !l.id.startsWith("tmp-"));
     setLines((prev) => prev.slice(0, idx));
-    await Promise.all(doomed.map((l) => charactersApi.deleteChatMessage(characterId, l.id)));
+    await Promise.all(doomed.map((l) => chatsApi.deleteMessage(chatId, l.id)));
     const outcome = await runStream({ content, model: chatModel }, content);
     if (!outcome.ok && !outcome.aborted) {
       toast.push({ title: "Rerun failed", description: outcome.error?.message, tone: "error" });
@@ -251,8 +338,9 @@ export function CharacterChat({
 
   /** Apply a one-click test-bed action chip (offer a drink → intoxication↑, etc.). */
   const runAction = async (action: ChatActionId) => {
+    if (!chatId) return;
     setActionBusy(action);
-    const result = await charactersApi.applyChatAction(characterId, action);
+    const result = await chatsApi.applyAction(chatId, action);
     setActionBusy(null);
     if (result.ok) {
       setChatState(result.data);
@@ -262,43 +350,43 @@ export function CharacterChat({
     }
   };
 
-  /** Prompt Character (opening beat): save the premise, then stream a character-authored opening turn. */
+  /** Prompt Character (opening beat): stream a character-authored opening turn (the premise comes from chat state). */
   const promptCharacter = async () => {
-    if (sendingRef.current) return;
-    // The premise now lives in chat-state (saved via the Scenario modal); the server reads it.
+    if (sendingRef.current || !ready) return;
     const outcome = await runStream({ open: true, model: chatModel });
     if (!outcome.ok) toast.push({ title: "Couldn't open the scene", description: outcome.error?.message, tone: "error" });
   };
 
-  /** The single Clear Chat (character-chat-primary.spec.md §4): wipes transcript, summary, state, and memory. */
-  const clearChat = async () => {
-    setResetting(true);
-    const result = await charactersApi.resetChat(characterId);
-    setResetting(false);
-    setResetOpen(false);
+  /**
+   * Delete chat (character-chat-standalone.spec.md §1.4): hard-delete the conversation
+   * row — transcript, summary, state, and its memory go with it — then reset to the
+   * fresh-tab shape (a next action lazily creates a new conversation).
+   */
+  const deleteChat = async () => {
+    if (!chatId) return;
+    setDeleting(true);
+    const result = await chatsApi.remove(chatId);
+    setDeleting(false);
+    setDeleteOpen(false);
     if (!result.ok) {
-      toast.push({ title: "Clear failed", description: result.error.message, tone: "error" });
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
       return;
     }
+    createRef.current = null; // the settled create points at the deleted row
+    setChatId(null);
     setLines([]);
-    const fresh = await charactersApi.chatState(characterId);
-    if (fresh.ok) {
-      setChatState(fresh.data);
-      stageRef.current = fresh.data.stage.label;
-    }
-    toast.push({ title: "Chat cleared" });
+    setChatState(null);
+    stageRef.current = null;
+    toast.push({ title: "Chat deleted" });
   };
-
-  const hasAnything =
-    lines.length > 0 || (chatState !== null && (chatState.affinity !== 0 || chatState.premise.trim().length > 0));
 
   return (
     <div className="flex flex-col gap-5">
-      <SceneStrip characterId={characterId} name={name} hasChat={lines.length > 0} />
+      <SceneStrip chatId={chatId} ensureChat={ensureChat} name={name} hasChat={lines.length > 0} />
 
       {/* The standing companion portrait sits beside the conversation. */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:gap-6">
-        {chatState ? (
+        {ready ? (
           <AvatarPanel
             name={name}
             avatarImageId={avatarImageId}
@@ -322,12 +410,12 @@ export function CharacterChat({
                   </option>
                 ))}
               </Select>
-              {chatState ? (
+              {ready ? (
                 <Button size="sm" variant="quiet" disabled={sending} onClick={promptCharacter} title={`Let ${who} open the scene`}>
                   Prompt {who}
                 </Button>
               ) : null}
-              {chatState ? (
+              {ready ? (
                 <Button size="sm" variant="quiet" onClick={() => setScenarioOpen(true)}>
                   Scenario setup
                 </Button>
@@ -337,9 +425,9 @@ export function CharacterChat({
                   State tools
                 </Button>
               ) : null}
-              {hasAnything ? (
-                <Button size="sm" variant="quiet" onClick={() => setResetOpen(true)}>
-                  Clear chat…
+              {chatId ? (
+                <Button size="sm" variant="quiet" onClick={() => setDeleteOpen(true)}>
+                  Delete chat…
                 </Button>
               ) : null}
             </div>
@@ -349,13 +437,13 @@ export function CharacterChat({
             ref={scrollRef}
             className="flex max-h-[28rem] min-h-48 flex-col gap-3 overflow-y-auto rounded-card border border-ink-600 bg-ink-950/40 p-4"
           >
-            {transcript.loading ? (
+            {bootstrap.loading ? (
               <div className="flex flex-col gap-3">
                 <Skeleton className="h-10 w-2/3" />
                 <Skeleton className="h-10 w-1/2 self-end" />
               </div>
-            ) : transcript.error ? (
-              <ErrorState error={transcript.error} onRetry={() => transcript.reload()} />
+            ) : bootstrap.error ? (
+              <ErrorState error={bootstrap.error} onRetry={() => bootstrap.reload()} />
             ) : lines.length === 0 ? (
               <p className="m-auto max-w-sm text-center text-sm text-paper-500">
                 Say something to {who} to start the conversation. This chat lives only here — no world, no session.
@@ -392,7 +480,7 @@ export function CharacterChat({
               placeholder={`Message ${who}…  (Enter to send, Shift+Enter for a new line)`}
               className="flex-1"
             />
-            <Button variant="primary" onClick={send} busy={sending} disabled={!input.trim()}>
+            <Button variant="primary" onClick={send} busy={sending} disabled={!input.trim() || !ready}>
               Send
             </Button>
           </div>
@@ -400,27 +488,27 @@ export function CharacterChat({
       </div>
 
       <Dialog
-        open={resetOpen}
+        open={deleteOpen}
         onClose={() => {
-          if (!resetting) setResetOpen(false);
+          if (!deleting) setDeleteOpen(false);
         }}
-        title="Clear this chat?"
+        title="Delete this chat?"
         footer={
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setResetOpen(false)} disabled={resetting}>
+            <Button onClick={() => setDeleteOpen(false)} disabled={deleting}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={clearChat} disabled={resetting}>
-              {resetting ? "Clearing…" : "Clear chat"}
+            <Button variant="danger" onClick={deleteChat} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete chat"}
             </Button>
           </div>
         }
       >
         <div className="flex flex-col gap-3 text-sm text-paper-400">
           <p>
-            This erases everything for your conversation with {who}: the transcript, the running summary,{" "}
-            {who}&rsquo;s disposition (affinity, mood, scenario), and everything {who} remembers about you. It starts
-            fresh from the authored defaults and can&rsquo;t be undone.
+            This deletes the conversation and its memory: the transcript, the running summary, {who}&rsquo;s
+            disposition (affinity, mood, scenario), and everything {who} remembers about you from it. A new chat
+            starts fresh from the authored defaults — this can&rsquo;t be undone.
           </p>
           <p className="text-xs text-paper-500">Generated scene images are kept — find them in the Gallery.</p>
         </div>
@@ -430,7 +518,8 @@ export function CharacterChat({
         <ChatStateToolsModal
           open={toolsOpen}
           onClose={() => setToolsOpen(false)}
-          characterId={characterId}
+          chatId={chatId}
+          ensureChat={ensureChat}
           who={who}
           snapshot={chatState}
           onSaved={(next) => {
@@ -440,13 +529,14 @@ export function CharacterChat({
         />
       ) : null}
 
-      {chatState ? (
+      {ready ? (
         <ChatScenarioModal
           open={scenarioOpen}
           onClose={() => setScenarioOpen(false)}
-          characterId={characterId}
+          chatId={chatId}
+          ensureChat={ensureChat}
           who={who}
-          snapshot={chatState}
+          snapshot={chatState ?? EMPTY_CHAT_STATE}
           startingStage={startingStage}
           onStartingStageChange={onStartingStageChange}
           onSaved={(next) => {
