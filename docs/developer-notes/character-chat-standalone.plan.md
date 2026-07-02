@@ -2,8 +2,16 @@
 
 Status: **active** — all open questions are resolved (rulings D1–D15 in the spec's
 **## Decisions**; final two confirmed 2026-07-02: time skips are flavor-only in v1, and
-"remember this" ships as the pinned player-memory design). Building started 2026-07-02
-with slice 1 (Foundations).
+"remember this" ships as the pinned player-memory design). **Slice 1 (Foundations)
+built 2026-07-02** — engine pipeline extraction (`engine/chat-pipeline.ts`), the three
+de-forks (shared `withGenerateTimeout` in server/ai, shared `drainingStreamResponse`,
+shared `evaluateActReaction` — chat regained the touch-welcomeness fallback), the
+`chat_scene_image` job type + detached-job recovery sweep, stale-header fixes,
+`docs/character-chat.md`, and the component split (character-chat.tsx 842→460 +
+chat-message/chat-scene-strip/chat-status). One leftover rides with slice 4's cleanup:
+the cross-cutting shared-primitive adoptions (usePollWhile / ModelSelect / draft-seed /
+findOwned — they touch non-chat features). Next per build order: slice 2 (measurement
+baseline) alongside slice 3 (the conversation model).
 
 Design/decisions: [character-chat-standalone.spec.md](character-chat-standalone.spec.md) —
 the technical detail (schemas, file touch-points, migration shape, refactor analysis,
