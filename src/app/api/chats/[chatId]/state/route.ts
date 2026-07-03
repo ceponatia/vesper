@@ -58,6 +58,8 @@ const editBodySchema = z.object({
   memoryQueries: z.array(z.string().trim().max(200)).max(6).optional(),
   surfacedCues: z.record(z.string(), z.string()).optional(),
   attributeOverlays: z.array(attributeValueSchema).optional(),
+  /** Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle). */
+  sceneAuto: z.enum(["off", "milestones"]).optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

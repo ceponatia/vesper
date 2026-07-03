@@ -334,6 +334,48 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     expect(scene).toBeDefined(); // asset itself survives the delete
     expect(scene?.prompt).toBe(""); // but its chat-derived prompt is blanked
   });
+
+  it("chat-keyed scenes scrub per conversation — a sibling chat's scenes keep their prompts (slice 9)", async (t) => {
+    if (!ready) return t.skip();
+    const chatA = await createChat(ids.character);
+    const chatB = await createChat(ids.character);
+    const [sceneA] = await db()
+      .insert(images)
+      .values({
+        ownerId: authState.user.id,
+        kind: "scene",
+        entityKind: "character",
+        entityId: ids.character,
+        chatId: chatA.id,
+        anchorMessageId: "anchor-a",
+        path: "images/test/scene-a.webp",
+        prompt: "Chat A's secret moment.",
+      })
+      .returning();
+    const [sceneB] = await db()
+      .insert(images)
+      .values({
+        ownerId: authState.user.id,
+        kind: "scene",
+        entityKind: "character",
+        entityId: ids.character,
+        chatId: chatB.id,
+        anchorMessageId: "anchor-b",
+        path: "images/test/scene-b.webp",
+        prompt: "Chat B's secret moment.",
+      })
+      .returning();
+
+    const del = await chatDelete(delReq(chatA.id), ctx(chatA.id));
+    expect(del.status).toBe(200);
+
+    const [a] = await db().select({ prompt: images.prompt, chatId: images.chatId }).from(images).where(eq(images.id, sceneA!.id));
+    const [b] = await db().select({ prompt: images.prompt, chatId: images.chatId }).from(images).where(eq(images.id, sceneB!.id));
+    expect(a?.prompt).toBe(""); // A's scene scrubbed…
+    expect(a?.chatId).toBeNull(); // …and its FK SET NULL by the chat delete (asset survives)
+    expect(b?.prompt).toBe("Chat B's secret moment."); // the sibling conversation is untouched
+    await chatDelete(delReq(chatB.id), ctx(chatB.id));
+  });
 });
 
 describe("PATCH + DELETE /api/chats/:chatId/messages/:messageId", () => {

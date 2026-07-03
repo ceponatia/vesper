@@ -134,6 +134,8 @@ export interface ChatState {
   skipHistory: SkipRecord[];
   /** One-shot skip note (spec §8.1): rendered as a volatile prompt line next exchange, then cleared. */
   pendingSkipNote: string;
+  /** Auto scene-generation mode (slice 9): "off" | "milestones" — text with headroom for future modes. */
+  sceneAuto: string;
 }
 
 /** The strip / state-tools / premise-bar projection returned by GET …/chat/state. */
@@ -165,6 +167,8 @@ export interface ChatStateSnapshot {
   lastMemoryTrace: ChatMemoryTrace;
   /** Read-only chat clock (the only time model, D3/D8), surfaced for the state-tools modal. */
   clockMinutes: number;
+  /** Auto scene-generation mode (slice 9) — the scenario modal's toggle. */
+  sceneAuto: string;
   /**
    * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
    * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
@@ -216,6 +220,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     milestones: [],
     skipHistory: [],
     pendingSkipNote: "",
+    sceneAuto: "off",
   };
 }
 
@@ -246,6 +251,7 @@ export async function loadChatState(
       milestones: characterChatState.milestones,
       skipHistory: characterChatState.skipHistory,
       pendingSkipNote: characterChatState.pendingSkipNote,
+      sceneAuto: characterChatState.sceneAuto,
     })
     .from(characterChatState)
     .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)))
@@ -289,6 +295,7 @@ export async function loadChatState(
     milestones: parseOr(milestonesSchema, row.milestones, [], sink, "character_chat_state.milestones"),
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
     pendingSkipNote: row.pendingSkipNote,
+    sceneAuto: row.sceneAuto,
   };
 }
 
@@ -317,6 +324,7 @@ const storedChatStateSchema = z.object({
   milestones: milestonesSchema.catch([]).default([]),
   skipHistory: skipHistorySchema.catch([]).default([]),
   pendingSkipNote: z.string().catch("").default(""),
+  sceneAuto: z.string().catch("off").default("off"),
 });
 
 /**
@@ -636,7 +644,10 @@ export async function finalizeChatState(input: {
   /** What RAG retrieved for THIS turn (from the route's pre-turn recall), for the debug trace. */
   retrieved?: { facts: string[]; episodes: string[]; detail?: RetrievedMemoryDetail[] };
   sink?: DiagnosticSink;
-}): Promise<void> {
+}): Promise<{
+  /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
+  bigMoment: boolean;
+}> {
   const [pulse, archivist] = await Promise.all([
     input.skipPulse
       ? Promise.resolve({ state: input.driftedState, degraded: false })
@@ -711,19 +722,20 @@ export async function finalizeChatState(input: {
           stage: stageForValue(postAffinity).id,
         })
       : input.driftedState.relationshipHistory;
-  const milestones = appendMilestones(
-    input.driftedState.milestones,
-    deriveExchangeMilestones({
-      at,
-      messageId: input.assistantMessageId,
-      characterName: input.characterName,
-      firstExchange,
-      preAffinity,
-      postAffinity,
-      affinityDelta: pulseTrace?.affinityDelta ?? 0,
-      concept: pulseTrace?.concept ?? null,
-    }),
-  );
+  const exchangeMilestones = deriveExchangeMilestones({
+    at,
+    messageId: input.assistantMessageId,
+    characterName: input.characterName,
+    firstExchange,
+    preAffinity,
+    postAffinity,
+    affinityDelta: pulseTrace?.affinityDelta ?? 0,
+    concept: pulseTrace?.concept ?? null,
+  });
+  const milestones = appendMilestones(input.driftedState.milestones, exchangeMilestones);
+  // "Big moment" (slice 9 auto scenes): a stage crossing or a strong card-driven
+  // reaction — not the routine first exchange, which has barely a scene to render.
+  const bigMoment = exchangeMilestones.some((m) => m.kind === "stage_up" || m.kind === "stage_down" || m.kind === "strong_reaction");
   const lastMemoryTrace: ChatMemoryTrace = {
     retrievedFacts: input.retrieved?.facts ?? [],
     retrievedEpisodes: input.retrieved?.episodes ?? [],
@@ -755,6 +767,7 @@ export async function finalizeChatState(input: {
   // column list — an author edit must not clobber it): repeated "another take"s
   // keep rolling back to the same pre-exchange point.
   await savePreExchangeSnapshot(input.chatId, input.characterId, input.preExchangeState);
+  return { bigMoment };
 }
 
 /**
@@ -790,9 +803,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, updated_at)
+      (chat_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, scene_auto, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.affinity}, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -814,6 +827,7 @@ async function upsertChatState(
       milestones = excluded.milestones,
       skip_history = excluded.skip_history,
       pending_skip_note = excluded.pending_skip_note,
+      scene_auto = excluded.scene_auto,
       updated_at = now()
   `);
 }
@@ -859,6 +873,8 @@ export interface ChatStateEdit {
   memoryQueries?: string[];
   surfacedCues?: Record<string, string>;
   attributeOverlays?: AttributeValue[];
+  /** Auto scene-generation mode (slice 9): "off" | "milestones". */
+  sceneAuto?: string;
 }
 
 /**
@@ -893,6 +909,7 @@ export async function editChatState(args: {
   }
   if (patch.surfacedCues !== undefined) next.surfacedCues = patch.surfacedCues;
   if (patch.attributeOverlays !== undefined) next.attributeOverlays = patch.attributeOverlays;
+  if (patch.sceneAuto !== undefined) next.sceneAuto = patch.sceneAuto;
   await persistChatState(chatId, characterId, next);
   return next;
 }
@@ -998,6 +1015,7 @@ export function chatStateSnapshot(
     lastPulseTrace: state.lastPulseTrace,
     lastMemoryTrace: state.lastMemoryTrace,
     clockMinutes: state.clockMinutes,
+    sceneAuto: state.sceneAuto,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
   };

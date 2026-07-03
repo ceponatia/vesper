@@ -54,6 +54,10 @@ export interface RenderCharacterSceneInput {
   meters?: Record<string, number>;
   /** Active conditions — overlay grooming/scent/hair so a "disheveled" character renders that way (D4). */
   conditions?: ActiveCondition[];
+  /** The conversation this scene belongs to (slice 9 inline moments) — scopes list + scrub. */
+  chatId?: string;
+  /** The assistant message the scene illustrates — the inline-transcript anchor. */
+  anchorMessageId?: string;
   sink?: DiagnosticSink;
 }
 
@@ -205,7 +209,13 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     // Fail-visible: with an avatar anchoring the shot, never silently degrade to a
     // text-to-image render of a *different-looking* person — fail and let the tab retry.
     requireReferenceIdentity: true,
-    linkage: { ownerId: input.userId, entityKind: "character", entityId: input.characterId },
+    linkage: {
+      ownerId: input.userId,
+      entityKind: "character",
+      entityId: input.characterId,
+      chatId: input.chatId,
+      anchorMessageId: input.anchorMessageId,
+    },
     logResult: (imageId, status, started) =>
       void logEvent(null, "image.character_scene", {
         imageId,

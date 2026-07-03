@@ -2,16 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { chatsApi, type ImageRecord } from "@/lib/client/api";
-import { useAsyncData } from "@/components/hooks/use-async";
-import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
-
-const POLL_MS = 2500;
 
 function sceneError(image: ImageRecord): string | null {
   const error = image.meta?.error?.trim();
@@ -21,24 +17,35 @@ function sceneError(image: ImageRecord): string | null {
 /**
  * Manual scene-image renderer + history strip for a conversation. Generate is
  * disabled until the first exchange — the scene is composed from the transcript.
+ * The scene list is OWNED by the conversation page (slice 9 — one fetch/poll
+ * shared with the inline transcript moments); this strip renders it and queues.
  */
-export function SceneStrip({ chatId, name, hasChat }: { chatId: string; name: string; hasChat: boolean }) {
+export function SceneStrip({
+  chatId,
+  name,
+  hasChat,
+  scenes: sceneList,
+  onRefresh,
+}: {
+  chatId: string;
+  name: string;
+  hasChat: boolean;
+  /** The conversation's scene list (newest first), owned by the page. */
+  scenes: ImageRecord[];
+  /** Silent refetch of the shared list (after queueing). */
+  onRefresh: () => void;
+}) {
   const toast = useToast();
-  const scenes = useAsyncData(() => chatsApi.scenes(chatId), [chatId]);
   const [generating, setGenerating] = useState(false);
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const baselineRef = useRef(0);
 
-  const sceneList = scenes.data ?? [];
   const hasPendingRow = sceneList.some((s) => s.status === "pending");
-  const hasPending = hasPendingRow || generating;
   // Show an immediate placeholder the instant "Generate" is clicked — the image
   // row doesn't exist until the (slow) composer step finishes, so without this
   // the strip would give no feedback during compose. Once the pending row lands,
   // its own labeled tile takes over (and `generating` is released below).
   const showComposing = generating && !hasPendingRow;
-
-  usePollWhile(hasPending, () => scenes.reload({ silent: true }), POLL_MS);
 
   // Release the button spinner once the queued row materialises; its own
   // pending tile then tracks progress (mirrors the portrait studio).
@@ -56,7 +63,7 @@ export function SceneStrip({ chatId, name, hasChat }: { chatId: string; name: st
       return;
     }
     toast.push({ title: "Scene queued", description: "Rendering from the recent conversation." });
-    scenes.reload({ silent: true });
+    onRefresh();
   };
 
   return (

@@ -327,6 +327,8 @@ export const chatStateSnapshotSchema = z.object({
   openLoops: z.array(z.string()).catch([]),
   // The live next-turn RAG queries column (not the trace) — editable in the state tools (§6.1).
   memoryQueries: z.array(z.string()).catch([]),
+  // Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle).
+  sceneAuto: z.string().catch("off"),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
 /**
@@ -346,6 +348,7 @@ export interface ChatStateEdit {
   memoryQueries?: string[];
   surfacedCues?: Record<string, string>;
   attributeOverlays?: AttributeValue[];
+  sceneAuto?: "off" | "milestones";
 }
 
 export const locationSummarySchema = z.object({
@@ -605,6 +608,9 @@ export const imageRecordSchema = z.object({
   prompt: textOr(""),
   sourceImageId: optionalId,
   createdAt: optionalText,
+  /** Slice 9 (inline scene moments): the conversation + assistant message a chat scene anchors to. */
+  chatId: optionalId,
+  anchorMessageId: optionalId,
   /** Row meta — `source: "upload"` marks uploads; failed rows carry `error`. */
   meta: z
     .object({

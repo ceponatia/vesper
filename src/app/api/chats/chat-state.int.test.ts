@@ -253,6 +253,17 @@ describe("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
   });
 });
 
+describe("sceneAuto toggle (slice 9)", () => {
+  it("PATCH persists the auto-scene mode and it round-trips on GET", async (t) => {
+    if (!ready) return t.skip();
+    const res = await statePatch(patchReq(ids.fresh.chatId, { sceneAuto: "milestones" }), ctx(ids.fresh.chatId));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { sceneAuto: string }).sceneAuto).toBe("milestones");
+    const get = await stateGet(getReq(), ctx(ids.fresh.chatId));
+    expect(((await get.json()) as { sceneAuto: string }).sceneAuto).toBe("milestones");
+  });
+});
+
 describe("first exchange preserves the seeded state (codebase-review A2)", () => {
   it("keeps profile-seeded social cards on the row the first exchange creates", async (t) => {
     if (!ready) return t.skip();

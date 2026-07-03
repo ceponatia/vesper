@@ -6,6 +6,7 @@ import { CHAT_RATE_LIMIT, drainingStreamResponse, jsonError, jsonOk, rateLimit, 
 import { characterChats, characterChatMessages, db } from "@/server/db";
 import { deleteChat, submitChatMessage } from "@/server/engine";
 import { loadOwnedChat } from "../owned";
+import { queueChatScene } from "./scene/queue";
 
 type Params = { chatId: string };
 
@@ -105,6 +106,11 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     // the character's own narrator pick, not MODEL_DEFAULTS.narrative.
     model: body.value.model ?? resolveChatModelId(owned.character.chatModel),
     cue: body.value.cue,
+    // "Auto at big moments" (slice 9): the engine signals, this route queues — a scene
+    // render anchored to the exchange's reply, deduped against live renders.
+    onBigMoment: ({ assistantMessageId }) => {
+      void queueChatScene({ userId: user.id, chatId, character: owned.character, anchorMessageId: assistantMessageId });
+    },
   });
   if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);
 
