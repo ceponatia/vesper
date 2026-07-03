@@ -66,6 +66,7 @@ function ScenarioForm({
   const [premise, setPremise] = useState(snapshot.premise);
   const [outfit, setOutfit] = useState(snapshot.outfit);
   const [outfitExposed, setOutfitExposed] = useState(snapshot.outfitExposed);
+  const [sceneAuto, setSceneAuto] = useState(snapshot.sceneAuto === "milestones");
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
   const [saving, setSaving] = useState(false);
 
@@ -127,6 +128,8 @@ function ScenarioForm({
     if (premise !== snapshot.premise) patch.premise = premise;
     if (outfit !== snapshot.outfit) patch.outfit = outfit;
     if (outfitExposed !== snapshot.outfitExposed) patch.outfitExposed = outfitExposed;
+    const sceneAutoMode = sceneAuto ? "milestones" : "off";
+    if (sceneAutoMode !== snapshot.sceneAuto) patch.sceneAuto = sceneAutoMode;
     if (JSON.stringify(cards) !== JSON.stringify(snapshot.activeSocialCards)) patch.activeSocialCards = cards;
     setSaving(true);
     const result = await chatsApi.editState(chatId, patch);
@@ -201,6 +204,19 @@ function ScenarioForm({
         </label>
         <span className="text-[11px] text-paper-600">
           Drives chat scene images only — the chat has no equippable wardrobe, so this stands in for it.
+        </span>
+        <label className="flex items-center gap-2 text-xs text-paper-400">
+          <input
+            type="checkbox"
+            checked={sceneAuto}
+            onChange={(e) => setSceneAuto(e.target.checked)}
+            className="size-4 accent-accent-500"
+          />
+          Auto-generate a scene at big moments
+        </label>
+        <span className="text-[11px] text-paper-600">
+          A relationship-stage change or a strong reaction paints the moment into the transcript on its own.
+          Generation otherwise stays yours to trigger.
         </span>
       </label>
 

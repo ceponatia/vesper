@@ -1,32 +1,27 @@
 import type { NextRequest } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
-import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
-import { parseOr } from "@/lib/parse";
-import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, startJob, withUser } from "@/server/api";
-import { characterChatMessages, db, images } from "@/server/db";
-import { loadChatState } from "@/server/engine";
-import { renderCharacterSceneImage } from "@/server/images";
+import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import { db, images } from "@/server/db";
 import { loadOwnedChat } from "../../owned";
+import { queueChatScene } from "./queue";
 
 type Params = { chatId: string };
 
 /**
- * Manual scene image for a conversation (docs/character-chat.md). POST queues a
- * sessionless scene render (a `chat_scene_image` job — the api-side path, recovered
- * by the detached-job sweep) centred on the recent chat; GET lists the character's
- * rendered scenes so the strip can poll for the new one. The asset stays filed
- * against the character (kind="scene", entityKind="character") until scene images
- * are chat-keyed, so it also surfaces in the Gallery under "Character chats".
+ * Scene images for a conversation (docs/character-chat.md; slice 9 — inline scene
+ * moments). POST queues a sessionless scene render (a `chat_scene_image` job — the
+ * api-side path, recovered by the detached-job sweep) centred on the recent chat and
+ * anchored to the newest assistant line; GET lists this CHAT's scenes (plus the
+ * character's legacy un-chat-keyed ones) so the strip and the inline transcript
+ * moments can poll for the new one. Assets stay filed against the character too
+ * (kind="scene", entityKind="character"), so they still surface in the Gallery.
  */
-
-/** How many recent assistant lines the scene composer centres the shot on. */
-const SCENE_CHAT_CONTEXT = 6;
 
 /** POST body: no options today — character-chat scenes are single-reference (one subject). */
 const sceneBodySchema = z.object({});
 
-/** GET /api/chats/:chatId/scene — the participant character's chat scenes, newest first. */
+/** GET /api/chats/:chatId/scene — this chat's scenes (+ legacy unanchored), newest first. */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
@@ -41,6 +36,9 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
         eq(images.kind, "scene"),
         eq(images.entityKind, "character"),
         eq(images.entityId, owned.character.id),
+        // Chat-keyed rows scope to THIS conversation; legacy rows (pre-slice-9, no
+        // chatId) stay visible everywhere the character chats, as before.
+        or(eq(images.chatId, chatId), isNull(images.chatId)),
       ),
     )
     .orderBy(desc(images.createdAt));
@@ -58,44 +56,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     return jsonError("rate_limited", "too many scene renders; try again in a minute", 429);
   }
 
-  const profile = parseOr(
-    characterProfileSchema,
-    owned.character.profile ?? {},
-    emptyCharacterProfile(),
-    undefined,
-    "characters.profile",
-  );
-
-  const recent = await db()
-    .select({ content: characterChatMessages.content })
-    .from(characterChatMessages)
-    .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.role, "assistant")))
-    .orderBy(desc(characterChatMessages.createdAt))
-    .limit(SCENE_CHAT_CONTEXT);
-  const recentChat = recent.map((r) => r.content).reverse();
-
-  // The scene's outfit comes from the conversation's state (scenario modal free text +
-  // exposed toggle), not the character's structured defaultOutfit — chat has no
-  // equippable wardrobe.
-  const chatState = await loadChatState(chatId, owned.participant.characterId);
-
-  const jobId = await startJob({
-    type: "chat_scene_image",
-    payload: { chatId, characterId: owned.character.id },
-    run: async () => ({
-      imageId: await renderCharacterSceneImage({
-        characterId: owned.character.id,
-        userId: user.id,
-        name: owned.character.name,
-        profile,
-        avatarImageId: owned.character.avatarImageId,
-        recentChat,
-        outfit: chatState?.outfit ?? "",
-        outfitExposed: chatState?.outfitExposed ?? false,
-        meters: chatState?.meters,
-        conditions: chatState?.conditions,
-      }),
-    }),
-  });
+  const jobId = await queueChatScene({ userId: user.id, chatId, character: owned.character });
+  if (!jobId) return jsonError("scene_busy", "a scene is already rendering for this chat", 409);
   return jsonOk({ jobId, chatId }, 202);
 });

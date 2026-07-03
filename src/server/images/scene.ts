@@ -154,6 +154,9 @@ export interface SceneAssetLinkage {
   /** Library-entity scenes (character chat) set these instead of a session. */
   entityKind?: ImageEntityKind;
   entityId?: string;
+  /** Chat scenes also carry their conversation + anchor message (slice 9 inline moments). */
+  chatId?: string;
+  anchorMessageId?: string;
 }
 
 export interface RenderResolvedSceneInput {
@@ -259,6 +262,8 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     sessionId: linkage.sessionId,
     entityKind: linkage.entityKind,
     entityId: linkage.entityId,
+    chatId: linkage.chatId,
+    anchorMessageId: linkage.anchorMessageId,
     prompt: promptFor(primary),
     sourceImageId: anchorRef?.imageId,
     meta: {

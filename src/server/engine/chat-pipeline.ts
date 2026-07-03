@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { characterProfileSchema, DiagnosticCollector, diag, emptyCharacterProfile, splitStateCues } from "@/contracts";
 import { newId } from "@/lib/ids";
@@ -69,6 +69,13 @@ export interface SubmitChatMessageInput {
    * that. Only read for `kind: "continue"`.
    */
   cue?: string;
+  /**
+   * "Auto at big moments" hook (slice 9): fired fire-and-forget after the finalizer
+   * when the exchange landed a stage crossing / strong reaction AND the chat's
+   * `sceneAuto` mode is "milestones". The route owns what happens (queue a scene
+   * render anchored to this reply) — the engine only signals.
+   */
+  onBigMoment?: (info: { assistantMessageId: string }) => void;
 }
 
 export type SubmitChatMessageResult =
@@ -372,7 +379,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }
 
       try {
-        await finalizeChatState({
+        const finalized = await finalizeChatState({
           chatId,
           characterId,
           memoryGroupId,
@@ -389,6 +396,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           retrieved: memory,
           sink,
         });
+        // "Auto at big moments" (slice 9): opt-in per chat, fire-and-forget — a failed
+        // or skipped render never touches the settled reply.
+        if (finalized.bigMoment && driftedState.sceneAuto === "milestones") {
+          input.onBigMoment?.({ assistantMessageId });
+        }
       } catch (error) {
         log.error("engine.chat", "chat-state finalize failed", { error: describeError(error) });
       }
@@ -657,12 +669,13 @@ export async function previewChatPrompt(input: {
  * Hard-delete a conversation (character-chat-standalone.spec.md §1.4 — archive is
  * the everyday action; this is the one destructive verb). One transaction: the
  * chat row's FK cascades take the transcript, summary, participant rows, and
- * per-participant state; the scene-image prompt text is scrubbed (assets survive,
- * but their prompts embed chat lines — still character-keyed, so scenes from a
- * sibling conversation with the same character are scrubbed too; acceptable until
- * scene images are chat-keyed); and each participant's memory group is purged
- * **only when no other conversation references it** — shared-history siblings
- * keep the relationship's memory alive (D7).
+ * per-participant state; the scene-image prompt text is scrubbed (assets survive
+ * in the Gallery, but their prompts embed chat lines — chat-keyed rows scrub
+ * per-conversation; legacy pre-slice-9 rows have no chatId, so those still scrub
+ * character-wide, hitting sibling conversations' legacy scenes too); and each
+ * participant's memory group is purged **only when no other conversation
+ * references it** — shared-history siblings keep the relationship's memory
+ * alive (D7).
  */
 export async function deleteChat(chat: { id: string; ownerId: string }): Promise<void> {
   const participants = await db()
@@ -671,6 +684,7 @@ export async function deleteChat(chat: { id: string; ownerId: string }): Promise
     .where(eq(chatParticipants.chatId, chat.id));
 
   await db().transaction(async (tx) => {
+    await tx.update(images).set({ prompt: "" }).where(eq(images.chatId, chat.id));
     for (const p of participants) {
       await tx
         .update(images)
@@ -681,6 +695,7 @@ export async function deleteChat(chat: { id: string; ownerId: string }): Promise
             eq(images.kind, "scene"),
             eq(images.entityKind, "character"),
             eq(images.entityId, p.characterId),
+            isNull(images.chatId),
           ),
         );
     }

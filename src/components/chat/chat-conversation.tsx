@@ -25,9 +25,11 @@ import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { useIsMobile } from "@/components/hooks/use-is-mobile";
+import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarPanel } from "@/components/avatar";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
 import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
+import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
 import { ChatScenarioModal } from "@/components/characters/chat-scenario-modal";
 import { SceneStrip } from "@/components/characters/chat-scene-strip";
@@ -73,6 +75,18 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // One GET settles the whole screen: transcript + chat header + character card.
   const bootstrap = useAsyncData<ChatTranscript>(() => chatsApi.transcript(chatId), [chatId]);
   const ready = !bootstrap.loading && bootstrap.error === null;
+
+  // The conversation's scene images — ONE fetch/poll shared by the strip and the
+  // inline transcript moments (slice 9). Polls only while a render is pending;
+  // refetched after each settled exchange (an auto scene may have queued).
+  const scenes = useAsyncData(() => chatsApi.scenes(chatId), [chatId]);
+  const sceneList = scenes.data ?? [];
+  usePollWhile(
+    sceneList.some((s) => s.status === "pending"),
+    () => scenes.reload({ silent: true }),
+    2500,
+  );
+  const sceneAnchors = scenesByAnchor(sceneList);
   const character = bootstrap.data?.character ?? null;
   const name = character?.name ?? "";
   const who = name.trim() || "this character";
@@ -297,8 +311,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       setLines(fresh.data.messages.map(toLine));
     }
     // The pulse + drift settle server-side as the stream finalizes; refetch the
-    // strip so the disposition (and any stage change) shows after the exchange.
+    // strip so the disposition (and any stage change) shows after the exchange —
+    // and the scene list, since a big moment may have auto-queued a render (slice 9).
     await refreshState();
+    scenes.reload({ silent: true });
     return outcome;
   };
 
@@ -667,7 +683,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               className="mx-auto w-32 shrink-0 sm:mx-0 sm:w-40"
             />
             <div className="min-w-0 flex-1">
-              <SceneStrip chatId={chatId} name={name} hasChat={lines.length > 0} />
+              <SceneStrip
+                chatId={chatId}
+                name={name}
+                hasChat={lines.length > 0}
+                scenes={sceneList}
+                onRefresh={() => scenes.reload({ silent: true })}
+              />
             </div>
           </div>
         ) : null}
@@ -688,22 +710,27 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               Say something to {who} to start the conversation — or let them open the scene with Prompt {who} below.
             </p>
           ) : (
-            lines.map((line) => (
-              <MessageBubble
-                key={line.id}
-                line={line}
-                name={name}
-                avatarImageId={character?.avatarImageId ?? null}
-                streaming={sending}
-                takeTarget={!archived && line.id === lastAssistantId}
-                onEdit={editLine}
-                onDelete={deleteLine}
-                onRerun={(id) => void rerun(id)}
-                onAnotherTake={(id) => void anotherTake(id)}
-                onSwitchTake={switchTake}
-                onRemember={archived ? undefined : openRemember}
-              />
-            ))
+            lines.map((line) => {
+              const moments = sceneAnchors.get(line.id);
+              return (
+                <div key={line.id} className="flex flex-col gap-2">
+                  <MessageBubble
+                    line={line}
+                    name={name}
+                    avatarImageId={character?.avatarImageId ?? null}
+                    streaming={sending}
+                    takeTarget={!archived && line.id === lastAssistantId}
+                    onEdit={editLine}
+                    onDelete={deleteLine}
+                    onRerun={(id) => void rerun(id)}
+                    onAnotherTake={(id) => void anotherTake(id)}
+                    onSwitchTake={switchTake}
+                    onRemember={archived ? undefined : openRemember}
+                  />
+                  {moments ? <SceneMomentRow images={moments} name={name} /> : null}
+                </div>
+              );
+            })
           )}
         </div>
       </div>

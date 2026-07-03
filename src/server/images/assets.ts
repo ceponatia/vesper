@@ -33,6 +33,10 @@ export interface CreateImageAssetOptions {
   entityKind?: ImageEntityKind;
   entityId?: string;
   sessionId?: string;
+  /** Chat scoping for conversation scenes (slice 9) — the images row's SET-NULL FK. */
+  chatId?: string;
+  /** The assistant message the scene illustrates (inline-transcript anchor, no FK). */
+  anchorMessageId?: string;
   prompt?: string;
   sourceImageId?: string;
   meta?: Record<string, unknown>;
@@ -50,6 +54,8 @@ export async function createImageAsset(opts: CreateImageAssetOptions): Promise<I
       entityKind: opts.entityKind,
       entityId: opts.entityId,
       sessionId: opts.sessionId,
+      chatId: opts.chatId,
+      anchorMessageId: opts.anchorMessageId,
       path: imageRelativePath(opts.ownerId, id),
       prompt: opts.prompt ?? "",
       sourceImageId: opts.sourceImageId,

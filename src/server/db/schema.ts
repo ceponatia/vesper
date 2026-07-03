@@ -407,6 +407,13 @@ export const characterChatState = pgTable(
      */
     pendingSkipNote: text("pending_skip_note").notNull().default(""),
     /**
+     * Auto scene-generation mode (plan area 8, slice 9): "off" (default — generation
+     * stays player-triggered) or "milestones" (queue a scene when an exchange lands a
+     * stage crossing / strong reaction). Text with headroom for future modes
+     * (e.g. an interval), never a boolean.
+     */
+    sceneAuto: text("scene_auto").notNull().default("off"),
+    /**
      * Chat-local game clock (within-visit tick + condition expiry + player time skips).
      * The ONLY time model (D3/D8): real-world elapsed time never touches state — the
      * wall-clock anchor and its between-visit recovery were removed outright.
@@ -969,6 +976,20 @@ export const images = pgTable(
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
+    /**
+     * The conversation a chat scene was rendered for (character-chat-standalone plan
+     * area 8, slice 9): scopes the scene list/scrub per chat instead of character-wide.
+     * SET NULL so deleting a chat keeps the asset in the Gallery. Null on legacy rows
+     * and non-chat images.
+     */
+    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "set null" }),
+    /**
+     * The assistant message this scene illustrates — the inline-transcript anchor
+     * (slice 9). Plain text, no FK: messages are individually deletable, and a dangling
+     * anchor just means the image renders in the strip only. Captured at queue time
+     * (newest assistant line for manual renders; the exchange's reply for auto).
+     */
+    anchorMessageId: text("anchor_message_id"),
     /** Relative to data/, e.g. images/<ownerId>/<imageId>.webp */
     path: text("path").notNull(),
     prompt: text("prompt").notNull().default(""),
@@ -981,6 +1002,7 @@ export const images = pgTable(
     index("images_owner_idx").on(t.ownerId),
     index("images_entity_idx").on(t.entityKind, t.entityId),
     index("images_session_idx").on(t.sessionId),
+    index("images_chat_idx").on(t.chatId),
   ],
 );
 
