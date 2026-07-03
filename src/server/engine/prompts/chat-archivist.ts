@@ -10,7 +10,7 @@ import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
  * Pure and snapshot-testable; no IO.
  */
 
-export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private one-on-one in-character chat. After each exchange you read the player's latest message and the character's reply, then produce a single JSON object with three fields:
+export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private one-on-one in-character chat. After each exchange you read the player's latest message and the character's reply, then produce a single JSON object with four fields:
 
 1. "episodeSummary": 1-3 sentences, past tense, third person, capturing WHAT HAPPENED this exchange (the beat, not a stat dump). Empty string if nothing memorable happened (idle small talk).
 2. "facts": durable declarative knowledge worth recalling much later — relationship shifts, revealed preferences, promises, disclosed history, named people/places. One sentence each; "subjectName" exactly as written (usually the character or the player); "subjectKind" one of character|player|location|item|world; "confidence" 0-1. Prefer a few strong facts to many weak ones; 0-3 per exchange is typical, [] is fine. Never record transient physical state (mood, arousal, tipsiness) as a fact — that is tracked elsewhere.
@@ -24,7 +24,10 @@ Rules:
 4. ${UNTRUSTED_DATA_NOTICE}
 
 Example — the player tells the character their sister is getting married in Prague:
-{"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"]}`;
+{"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"],"attributeChanges":[]}
+
+Example — the character has her long hair cut to a bob during the scene:
+{"episodeSummary":"Mara let the player talk her into the salon chair and had her long hair cut to a sharp chin-length bob; she kept checking her reflection afterward, half thrilled and half unsure.","facts":[],"memoryQueries":["Mara's new haircut"],"attributeChanges":[{"participantName":"Mara","attributeId":"hair.length","value":"chin-length bob"}]}`;
 
 export interface ChatArchivistPromptInput {
   characterName: string;

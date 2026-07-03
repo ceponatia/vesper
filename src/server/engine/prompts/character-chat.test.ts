@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import type { AttributeValue } from "@/contracts/attributes/value";
-import { buildCharacterChatSystemPrompt } from "./character-chat";
+import { buildCharacterChatPromptParts, buildCharacterChatSystemPrompt } from "./character-chat";
 
 const attr = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue => ({ id, value, source: "creation" });
 
@@ -158,13 +158,14 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("How to respond:");
   });
 
-  it("surfaces a prior summary as a continuity-context block, before the response rules", () => {
+  it("surfaces a prior summary as a continuity-context block, in the volatile tail", () => {
     const recap = "You met at the night market and traded names. Established:\n- The user is Theo.";
     const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), priorSummary: recap });
     expect(prompt).toContain("Earlier in this conversation");
     expect(prompt).toContain("The user is Theo.");
-    // It's context, not dialogue, and must sit above the per-line response rules.
-    expect(prompt.indexOf("Earlier in this conversation")).toBeLessThan(prompt.indexOf("How to respond:"));
+    // The recap changes as the summary folds, so it rides the volatile tail BELOW the
+    // stable rules (spec §9 prompt-cache layout).
+    expect(prompt.indexOf("Earlier in this conversation")).toBeGreaterThan(prompt.indexOf("How to respond:"));
   });
 
   it("omits the recap block entirely when there is no prior summary (prompt unchanged)", () => {
@@ -188,8 +189,8 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("Your memory");
     expect(prompt).toContain("The player's sister is getting married in Prague.");
     expect(prompt).toContain("They argued about the harbor job, then made up.");
-    // Recall sits above the per-line response rules (it's context, not dialogue).
-    expect(prompt.indexOf("Your memory")).toBeLessThan(prompt.indexOf("How to respond:"));
+    // Recall is per-turn volatile, so it rides the tail below the stable rules (spec §9).
+    expect(prompt.indexOf("Your memory")).toBeGreaterThan(prompt.indexOf("How to respond:"));
   });
 
   it("omits the memory block when nothing was retrieved (prompt unchanged)", () => {
@@ -269,8 +270,8 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toMatch(/warm toward you/i);
     expect(prompt).toContain("bright and playful");
     expect(prompt).toContain("She's glad he came back.");
-    // The state block sits above the per-line response rules.
-    expect(prompt.indexOf("Your current state")).toBeLessThan(prompt.indexOf("How to respond:"));
+    // State is per-turn volatile, so it rides the tail below the stable rules (spec §9).
+    expect(prompt.indexOf("Your current state")).toBeGreaterThan(prompt.indexOf("How to respond:"));
   });
 
   it("surfaces a crossed meter threshold (drift made visible)", () => {
@@ -485,5 +486,122 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
     expect(sober).toContain("Disposition");
     expect(drunk).toContain("Disposition");
     expect(drunk).not.toEqual(sober); // the guardedness band reads lower when drunk
+  });
+});
+
+describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () => {
+  it("keeps the prefix byte-identical across consecutive turns with unchanged authored inputs", () => {
+    const turn1 = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      priorSummary: "You met at the night market.",
+      memory: { facts: ["The player fears heights."], episodes: [] },
+      state: {
+        meters: { mood: 0.9, intoxication: 0.8 },
+        affinity: 57,
+        conditions: [],
+        mindNote: "Glad he came back.",
+        premise: "A rainy evening at the glassworks.",
+      },
+      cueInvite: "He is close enough to touch — a sensory cue may land this turn.",
+    });
+    const turn2 = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      priorSummary: "You met at the night market. Then you argued about the harbor job.",
+      memory: { facts: [], episodes: ["They argued about the harbor job."] },
+      state: {
+        meters: { mood: 0.1, intoxication: 0 },
+        affinity: -30,
+        conditions: [],
+        mindNote: "Stung by the argument.",
+        premise: "A rainy evening at the glassworks.",
+      },
+    });
+    expect(turn1.prefix).toBe(turn2.prefix);
+    expect(turn1.tail).not.toBe(turn2.tail);
+  });
+
+  it("joins prefix + tail into the full system prompt", () => {
+    const input = { name: "Mara", profile: profile(), priorSummary: "You met at the night market." };
+    const parts = buildCharacterChatPromptParts(input);
+    expect(parts.tail).not.toBe("");
+    expect(buildCharacterChatSystemPrompt(input)).toBe(`${parts.prefix}\n\n${parts.tail}`);
+  });
+
+  it("ends the stable prefix with the rules and keeps every volatile in the tail", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      priorSummary: "You met at the night market.",
+      memory: { facts: ["The player fears heights."], episodes: [] },
+      state: { meters: { mood: 0.9 }, affinity: 0, conditions: [] },
+      opening: true,
+    });
+    expect(parts.prefix).toContain("How to respond:");
+    expect(parts.prefix).not.toContain("Earlier in this conversation");
+    expect(parts.prefix).not.toContain("Your memory");
+    expect(parts.prefix).not.toContain("Your current state");
+    expect(parts.prefix).not.toContain("Opening beat");
+    expect(parts.tail).toContain("Earlier in this conversation");
+    expect(parts.tail).toContain("Your memory");
+    expect(parts.tail).toContain("Your current state");
+    expect(parts.tail).toContain("Opening beat");
+    expect(parts.tail).not.toContain("How to respond:");
+  });
+
+  it("renders the disinhibition shift as a tail override, leaving the prefix Disposition authored", () => {
+    // 60 drops to ~19.5 fully drunk — across the guarded→private band boundary (33),
+    // so the shift is visible; a shift that stays inside its band renders nothing.
+    const traits = [{ id: "social.guardedness", value: 60, source: "creation" as const }];
+    const sober = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile({ traits }),
+      state: { meters: { intoxication: 0 }, affinity: 0, conditions: [] },
+    });
+    const drunk = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile({ traits }),
+      state: { meters: { intoxication: 0.9 }, affinity: 0, conditions: [] },
+    });
+    // The authored band stays in the (unchanged) prefix; the shift rides the tail.
+    expect(drunk.prefix).toBe(sober.prefix);
+    expect(drunk.prefix).toContain("Guardedness: guarded");
+    expect(drunk.tail).toContain("loosening you");
+    expect(drunk.tail).toContain("Guardedness: private");
+    expect(sober.tail).not.toContain("loosening you");
+  });
+
+  it("renders condition attribute effects as a tail override, not by rewriting the prefix Attributes", () => {
+    const condition = {
+      id: "c1",
+      label: "disheveled",
+      startedAtMinutes: 0,
+      attributeEffects: [{ attributeId: "presentation.grooming" as const, value: "unkempt" }],
+    };
+    const withCondition = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [condition] },
+    });
+    const without = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [] },
+    });
+    expect(withCondition.prefix).toBe(without.prefix);
+    expect(withCondition.prefix).not.toContain("unkempt");
+    expect(withCondition.tail).toContain("While your current condition lasts");
+    expect(withCondition.tail).toContain("unkempt");
+  });
+
+  it("carries the dialogue-craft rule and the intimate-craft block in the stable rules (C3/C4)", () => {
+    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    expect(parts.prefix).toContain("Dialogue is speech, not prose");
+    expect(parts.prefix).toContain("the truest answer is no words at all");
+    expect(parts.prefix).toContain("When a scene turns intimate:");
+    expect(parts.prefix).toContain("Hold escalation to the player's pace");
+    expect(parts.prefix).toContain("Keep body and clothing continuity");
+    expect(parts.prefix).toContain("concrete sensation");
   });
 });
