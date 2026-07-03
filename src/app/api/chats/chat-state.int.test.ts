@@ -29,6 +29,7 @@ vi.mock("@/server/auth", () => ({
 import { POST as chatsCreate } from "./route";
 import { DELETE as chatDelete, POST as chatSend } from "./[chatId]/route";
 import { GET as stateGet, PATCH as statePatch, POST as stateAction } from "./[chatId]/state/route";
+import { POST as timeSkip } from "./[chatId]/time-skip/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -81,6 +82,7 @@ const ids = {
   fresh: { characterId: "", chatId: "" },
   open: { characterId: "", chatId: "" },
   carded: { characterId: "", chatId: "" },
+  skipper: { characterId: "", chatId: "" },
 };
 
 async function stateRow(f: Fixture) {
@@ -142,11 +144,13 @@ beforeAll(async () => {
       },
     })
     .returning();
-  if (!warm || !fresh || !open || !carded) throw new Error("failed to seed characters");
+  const [skipper] = await db().insert(characters).values({ ownerId: user.id, name: "Vex", profile: {} }).returning();
+  if (!warm || !fresh || !open || !carded || !skipper) throw new Error("failed to seed characters");
   ids.warm = { characterId: warm.id, chatId: await createChat(warm.id) };
   ids.fresh = { characterId: fresh.id, chatId: await createChat(fresh.id) };
   ids.open = { characterId: open.id, chatId: await createChat(open.id) };
   ids.carded = { characterId: carded.id, chatId: await createChat(carded.id) };
+  ids.skipper = { characterId: skipper.id, chatId: await createChat(skipper.id) };
 });
 
 afterAll(async () => {
@@ -167,18 +171,18 @@ describe("POST seeds a state row from the authored stage", () => {
     const row = await stateRow(ids.warm);
     expect(row).not.toBeNull();
     expect(row?.affinity).toBe(stageMidpoint("warm")); // seeded from "warm"
-    expect(row?.lastInteractionAt).not.toBeNull();
     expect((row?.lastPulseTrace as { degraded?: boolean })?.degraded).toBe(true); // pulse degraded in demo
     // The premise pre-filled from the authored note.
     expect(row?.premise).toBe("childhood friend");
   });
 
-  it("a later visit recovers meters toward rested but never decays affinity (spec §10)", async (t) => {
+  it("no time passes between visits — meters and affinity hold however long the gap (D3/D8)", async (t) => {
     if (!ready) return t.skip();
-    // Simulate a long gap with degraded meters since the last visit.
+    // Degraded meters from a previous visit; there is no wall-clock anchor anymore,
+    // so a "return" exchange applies only the within-visit tick — no recovery lerp.
     await db()
       .update(characterChatState)
-      .set({ meters: { hygiene: 0.2, energy: 0.2, mood: 0.5 }, affinity: 57, lastInteractionAt: new Date(Date.now() - 24 * 60 * 60_000) })
+      .set({ meters: { hygiene: 0.2, energy: 0.2, mood: 0.5 }, affinity: 57 })
       .where(and(eq(characterChatState.chatId, ids.warm.chatId), eq(characterChatState.characterId, ids.warm.characterId)));
 
     const res = await chatSend(postReq(ids.warm.chatId, { content: "Back again" }), ctx(ids.warm.chatId));
@@ -186,8 +190,66 @@ describe("POST seeds a state row from the authored stage", () => {
 
     const row = await stateRow(ids.warm);
     const meters = row?.meters as Record<string, number>;
-    expect(meters.hygiene).toBeGreaterThan(0.5); // recovered toward rested overnight
-    expect(row?.affinity).toBe(57); // affinity unchanged — no between-visit decay
+    // One CHAT_TICK_MINUTES of ordinary decay at most — nothing recovered toward rested.
+    expect(meters.hygiene).toBeLessThanOrEqual(0.2);
+    expect(row?.affinity).toBe(57); // affinity unchanged — no between-visit decay (spec §10)
+  });
+});
+
+describe("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
+  const skipReq = (chatId: string, amount: string) =>
+    new NextRequest(`http://t/api/chats/${chatId}/time-skip`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ amount }),
+    });
+
+  it("degrades a skip on a missing state row to seed + skip (spec §11), persisting the seeded row", async (t) => {
+    if (!ready) return t.skip();
+    expect(await stateRow(ids.skipper)).toBeNull(); // no exchange yet ⇒ no row
+    const res = await timeSkip(skipReq(ids.skipper.chatId, "hours"), ctx(ids.skipper.chatId));
+    expect(res.status).toBe(200);
+    const snapshot = (await res.json()) as { clockMinutes: number };
+    expect(snapshot.clockMinutes).toBe(180);
+    const row = await stateRow(ids.skipper);
+    expect(row).not.toBeNull();
+    expect(row?.clockMinutes).toBe(180);
+    expect(row?.pendingSkipNote).not.toBe("");
+  });
+
+  it("expires timed conditions, leaves meters untouched, records the ring, and the next exchange clears the note", async (t) => {
+    if (!ready) return t.skip();
+    // Plant a timed condition + distinctive meters on the row the previous test seeded.
+    await db()
+      .update(characterChatState)
+      .set({
+        meters: { hygiene: 0.33, energy: 0.44 },
+        conditions: [{ id: "tipsy", label: "Tipsy", startedAtMinutes: 180, durationMinutes: 90, attributeEffects: [] }],
+      })
+      .where(and(eq(characterChatState.chatId, ids.skipper.chatId), eq(characterChatState.characterId, ids.skipper.characterId)));
+
+    const res = await timeSkip(skipReq(ids.skipper.chatId, "overnight"), ctx(ids.skipper.chatId));
+    expect(res.status).toBe(200);
+    const row = await stateRow(ids.skipper);
+    expect(row?.clockMinutes).toBe(180 + 540);
+    expect(row?.conditions).toEqual([]); // 180+90 < 720 ⇒ expired through the clock filter
+    expect(row?.meters).toEqual({ hygiene: 0.33, energy: 0.44 }); // D14: meters untouched
+    const ring = row?.skipHistory as { amount: string }[];
+    expect(ring.map((r) => r.amount)).toEqual(["hours", "overnight"]);
+
+    // The next exchange renders the note once, then clears it (one-shot).
+    const send = await chatSend(postReq(ids.skipper.chatId, { content: "Morning." }), ctx(ids.skipper.chatId));
+    await send.text();
+    const after = await stateRow(ids.skipper);
+    expect(after?.pendingSkipNote).toBe("");
+  });
+
+  it("409s a skip into an archived conversation", async (t) => {
+    if (!ready) return t.skip();
+    await db().update(characterChats).set({ archivedAt: new Date() }).where(eq(characterChats.id, ids.skipper.chatId));
+    const res = await timeSkip(skipReq(ids.skipper.chatId, "days"), ctx(ids.skipper.chatId));
+    expect(res.status).toBe(409);
+    await db().update(characterChats).set({ archivedAt: null }).where(eq(characterChats.id, ids.skipper.chatId));
   });
 });
 

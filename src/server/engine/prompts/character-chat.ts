@@ -5,10 +5,12 @@ import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { deriveMoodDescriptor, splitStateCues } from "@/contracts/meters/registry";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
-import { stateDispositionOverlays } from "@/contracts/personality/modulation";
+import { stageDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, traitRegistry } from "@/contracts/personality/traits";
-import { resolveTraits } from "@/contracts/personality/traits/value";
+import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
+import { stageBehaviorProfile, type EscalationTier } from "@/contracts/relationships/profile";
 import { stageForValue } from "@/contracts/relationships/stages";
+import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
@@ -86,6 +88,12 @@ export interface CharacterChatPromptInput {
      * so long conversations get narrative pull, not just recall. Absent/empty ⇒ no line.
      */
     openLoops?: string[];
+    /**
+     * The one-shot time-skip note (spec §8.1, `pendingSkipNote`): a volatile one-turn
+     * tail line ("The next morning — acknowledge the gap naturally, once"), pre-worded
+     * by stage band via `chatSkipNote`. Absent/empty ⇒ no line; cleared by the finalizer.
+     */
+    skipNote?: string;
     /** Active social cards — surfaced as soft "what you care about" framing, never severity (§6, D3). */
     activeSocialCards?: SocialReactionCard[];
     /**
@@ -116,28 +124,72 @@ export interface CharacterChatPromptInput {
   cueInvite?: string;
 }
 
-/**
- * A behavioral warmth instruction keyed off the affinity stage id — how warmly the
- * character should *act* now (character-chat-state.spec.md §6). `stranger` (and any
- * unknown id) returns "" so a neutral default chat adds no line (today's behavior);
- * every off-neutral stage gets a one-line steer.
- */
-const WARMTH_HINTS: Record<string, string> = {
-  hostile: "regards you with hostility — cold and adversarial, looking for the exit or the upper hand",
-  wary: "is wary of you — guarded, slow to trust, keeping their distance",
-  cool: "is cool toward you — politely distant, unbothered whether you stay or go",
-  acquaintance: "treats you as an acquaintance — friendly enough, but keeping it light",
-  friendly: "considers you a friend — relaxed and warm, glad you're here",
-  warm: "is genuinely warm toward you — easy affection and teasing, openly fond",
-  close: "holds you close — trusting and intimate in tone, unguarded with you",
-  cherished: "cherishes you — tender and devoted, lit up by your attention",
-  devoted: "is devoted to you — deeply attached, protective, wholly yours",
-  smitten: "is utterly smitten with you — head over heels, and unable to hide it",
+/** Reader-facing phrase per escalation tier (the D11 floor rendered as law). */
+const ESCALATION_TIER_PHRASES: Record<EscalationTier, string> = {
+  distant: "no romantic or physical escalation at all",
+  flirtation: "light flirtation, nothing physical",
+  affectionate_touch: "warm, affectionate touch",
+  heated: "heated kisses and close contact, stopping short of intimacy",
+  intimate: "full intimacy",
 };
 
-export function warmthHintForStage(stageId: string, name: string): string {
-  const hint = WARMTH_HINTS[stageId];
-  return hint ? `${name} ${hint} — let it show in how you behave, don't announce it.` : "";
+/**
+ * The "Relationship law" block (character-chat-standalone.spec.md §7.1) — the first
+ * real consumer of the relationship stage: initiative/openness/address bands plus
+ * the D11 escalation hard gate, rendered as behavioral law beside the Disposition.
+ * Lives in the §9 stable prefix (it re-renders only on a stage change, which is
+ * cache-friendly). The gate's three rulings are stated in the block itself: the
+ * scenario premise overrides the floor, disinhibition never raises it, and authored
+ * values (social cards) outrank everything.
+ */
+function buildRelationshipLawSection(affinity: number, name: string): string {
+  const stage = stageForValue(affinity);
+  const profile = stageBehaviorProfile(stage.id);
+  return [
+    `Relationship law (how far things have actually come between you — ${stage.label.toLowerCase()} — this governs your behavior; never recite it):`,
+    `- Initiative: ${profile.initiative}.`,
+    `- Openness: ${profile.openness}.`,
+    `- Address: ${profile.address}.`,
+    `- Escalation: at this stage ${name} entertains ${ESCALATION_TIER_PHRASES[profile.escalationFloor]}. Anything past that, deflect as ${name} would — ${profile.deflection} — always in your own voice and for your own reasons, never a meta refusal. EXCEPTIONS: if the Scenario above establishes you closer or already intimate, the scenario wins — play it. Being drunk or aroused may loosen your tone, but it never moves this line. And what you care about (your values above) still outranks everything here.`,
+  ].join("\n");
+}
+
+/** Lead line per skip amount (spec §8.1) — the fictional gap the next reply opens on. */
+const SKIP_LEADS: Record<ChatSkipAmount, string> = {
+  moments: "A little while has passed since your last exchange.",
+  hours: "Hours have passed — it's later the same day.",
+  overnight: "The night has passed — it's the next morning.",
+  days: "Several days have passed since you last spoke.",
+};
+
+/** Stage-band tone for acknowledging the gap (warmer stages notice the absence more). */
+function skipToneForStage(stageId: string): string {
+  switch (stageId) {
+    case "hostile":
+    case "wary":
+    case "cool":
+      return "Acknowledge the gap curtly, once — time apart hasn't softened anything on its own.";
+    case "friendly":
+    case "warm":
+      return "Acknowledge the gap warmly, once — you noticed the time apart.";
+    case "close":
+    case "cherished":
+    case "devoted":
+    case "smitten":
+      return "Acknowledge the gap like someone who missed them — once, without making a speech of it.";
+    default:
+      return "Acknowledge the gap naturally, once.";
+  }
+}
+
+/**
+ * The one-shot skip note (spec §8.1–8.2): stamped onto the state when the player
+ * skips time, rendered as a volatile one-turn prompt line, cleared after the
+ * exchange that rendered it. Carries the "a life meanwhile" license (§8.2) —
+ * one line of what the character was doing, prompt-only, no extra model call.
+ */
+export function chatSkipNote(amount: ChatSkipAmount, stageId: string): string {
+  return `${SKIP_LEADS[amount]} ${skipToneForStage(stageId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
 }
 
 /** Cap on surfaced social-card framing lines, so a big card set can't flood the prompt. */
@@ -151,14 +203,13 @@ const CARD_FRAMING_CAP = 4;
  * once, then rides as coloring). The change-gate (`splitStateCues`) diffs current bands
  * against `state.surfacedCues` (last turn's). "" when nothing is notable ⇒ no block.
  */
-function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>, name: string): string {
+function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>): string {
   const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {});
   const lines: string[] = [];
   const mood = deriveMoodDescriptor(state.meters);
   if (mood) lines.push(`- You are feeling ${mood} right now.`);
   for (const cue of standing) lines.push(`- ${cue.hint}`);
-  const warmth = warmthHintForStage(stageForValue(state.affinity).id, name);
-  if (warmth) lines.push(`- ${warmth}`);
+  // (The old per-stage warmth steer moved into the prefix's Relationship-law block, §7.1.)
   for (const condition of state.conditions) if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
   const mindNote = state.mindNote?.trim();
   if (mindNote) lines.push(`- On your mind: ${mindNote}`);
@@ -394,11 +445,14 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // model never saw the sliders at all, so a guarded/dominant/cold character read
   // identically to a neutral one. Everyday traits surface always; the intimate
   // ones are kept behind an "if the moment turns intimate" framing so they don't
-  // colour an ordinary conversation. The prefix renders the AUTHORED bands only;
+  // colour an ordinary conversation. The prefix renders the STAGE-COLORED bands
+  // (spec §7.1 soft coloring — a warm relationship reads warmer than the authored
+  // resting sliders; re-renders only on a stage change, which is cache-friendly);
   // the transient disinhibition shift (§4 — intoxication/arousal loosening
   // inhibition, guardedness, composure at render time) surfaces as a volatile
   // tail block listing just the bands it changed.
-  const baseTraits = resolveTraits(profile.traits, []);
+  const stageId = stageForValue(input.state?.affinity ?? 0).id;
+  const baseTraits = resolveTraits(profile.traits, stageDispositionOverlays(stageId, profile.traits));
   const everydayDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: false });
   const intimateDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: true });
   const dispositionSection = everydayDisposition.length
@@ -464,7 +518,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     ? `Scenario for this chat (the situation you are in — play inside it):\n${fenceUntrusted("scenario", premise)}`
     : "";
   // The dynamic "Current state" block (§6); "" when nothing is notable.
-  const stateSection = input.state ? buildStateSection(input.state, displayName) : "";
+  const stateSection = input.state ? buildStateSection(input.state) : "";
   // Soft social-card framing (§6, D3): what the character values, never the card severity.
   const socialFraming = buildSocialFramingSection(input.state?.activeSocialCards ?? []);
 
@@ -480,6 +534,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
     dispositionSection,
+    buildRelationshipLawSection(input.state?.affinity ?? 0, displayName),
     socialFraming,
     attributeLines.length
       ? `Attributes (who you are — express these naturally, never list them):\n${attributeLines.join("\n")}`
@@ -489,13 +544,15 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),
   ];
 
+  const skipNote = input.state?.skipNote?.trim();
   const tailSections = [
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
     input.memory ? buildMemorySection(input.memory) : "",
     stateSection,
-    buildDisinhibitionSection(profile, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
+    skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "",
+    buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
     buildTransientAppearanceSection(input, stableResolved, realizedBody),
     input.cueInvite?.trim() ?? "",
     input.opening
@@ -513,19 +570,19 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
  * The volatile disinhibition block (§4 / spec §9 cache layout): high
  * intoxication/arousal lowers inhibition, guardedness, and composure at render time
  * only (source "condition" overlays; authored sliders are never written, and the
- * shift recedes as the meters drift back). Renders ONLY the band lines the shift
- * actually changed, as overrides of the prefix's Disposition block — sober ⇒ "" ⇒
- * the tail is unchanged.
+ * shift recedes as the meters drift back). Computed against the STAGE-COLORED base
+ * (spec §7.1 — the prefix's Disposition block), rendering ONLY the band lines the
+ * shift actually changed as overrides — sober ⇒ "" ⇒ the tail is unchanged.
  */
 function buildDisinhibitionSection(
-  profile: CharacterProfile,
+  baseTraits: readonly TraitValue[],
   meters: Record<string, number>,
   baseEveryday: readonly string[],
   baseIntimate: readonly string[],
 ): string {
-  const overlays = stateDispositionOverlays(profile.traits, meters);
+  const overlays = stateDispositionOverlays(baseTraits, meters);
   if (!overlays.length) return "";
-  const shiftedTraits = resolveTraits(profile.traits, overlays);
+  const shiftedTraits = resolveTraits(baseTraits, overlays);
   const baseLines = new Set([...baseEveryday, ...baseIntimate]);
   const changed = [
     ...dispositionBands(traitRegistry, shiftedTraits, { intimateOnly: false }),

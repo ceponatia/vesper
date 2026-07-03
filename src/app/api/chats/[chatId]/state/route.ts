@@ -83,7 +83,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const sink = new DiagnosticCollector();
   const profile = parseProfile(owned, sink);
   const stored = await loadChatState(chatId, owned.participant.characterId, sink);
-  const state = stored ? driftChatState(stored, new Date(), profile, { advance: false }) : seedChatState(profile);
+  const state = stored ? driftChatState(stored, profile, { advance: false }) : seedChatState(profile);
   return jsonOk(chatStateSnapshot(state, { ...snapshotOpts(profile), persisted: stored !== null }));
 });
 
@@ -116,8 +116,8 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const sink = new DiagnosticCollector();
   const profile = parseProfile(owned, sink);
   const stored = await loadChatState(chatId, owned.participant.characterId, sink);
-  // Apply the chip to the current (recovered) state, then persist.
-  const current = stored ? driftChatState(stored, new Date(), profile, { advance: false }) : seedChatState(profile);
+  // Apply the chip to the current state, then persist.
+  const current = stored ? driftChatState(stored, profile, { advance: false }) : seedChatState(profile);
   const next = applyChatAction(current, body.value.action);
   await persistChatState(chatId, owned.participant.characterId, next);
   return jsonOk(chatStateSnapshot(next, snapshotOpts(profile)));

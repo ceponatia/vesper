@@ -1,0 +1,272 @@
+"use client";
+
+import { useState } from "react";
+import { useAsyncData } from "@/components/hooks/use-async";
+import { useIsMobile } from "@/components/hooks/use-is-mobile";
+import { Button } from "@/components/ui/button";
+import { cx } from "@/components/ui/cx";
+import { ErrorState } from "@/components/ui/error-state";
+import { Sheet } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tag } from "@/components/ui/tag";
+import { useToast } from "@/components/ui/toast";
+import { stageById, type MilestoneKind, type RelationshipSample } from "@/contracts";
+import { chatsApi, type ChatRelationship } from "@/lib/client/api";
+import { timeAgo } from "@/lib/relative-time";
+
+/**
+ * The Relationship panel (character-chat-standalone.spec.md §7): stage +
+ * affinity, the history sparkline (§7.2), milestones, unfinished business
+ * (open loops, §6.2), the story so far with the rebuild recovery lever (§7.3),
+ * and transcript export (§7.4). Hosted in the shared Sheet — bottom on phones,
+ * right on desktop, same split as the conversation header menu.
+ *
+ * The body mounts only while the Sheet is open (Sheet unmounts its children on
+ * close), so the payload refetches on every open — no staleness, and a chatId
+ * switch reseeds for free.
+ */
+export function ChatRelationshipPanel({
+  chatId,
+  who,
+  open,
+  onClose,
+}: {
+  chatId: string;
+  who: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const isMobile = useIsMobile();
+  return (
+    <Sheet open={open} onClose={onClose} side={isMobile ? "bottom" : "right"} title={`Relationship — ${who}`}>
+      <PanelBody chatId={chatId} />
+    </Sheet>
+  );
+}
+
+function PanelBody({ chatId }: { chatId: string }) {
+  const rel = useAsyncData(() => chatsApi.relationship(chatId), [chatId]);
+
+  if (rel.loading) {
+    return (
+      <div className="flex flex-col gap-4 p-4" aria-hidden="true">
+        <Skeleton className="h-7 w-36" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+  if (rel.error) return <ErrorState error={rel.error} onRetry={() => rel.reload()} className="m-4" />;
+  const data = rel.data;
+  if (!data) return null;
+
+  return (
+    <div className="flex flex-col gap-5 p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="prose-display text-2xl text-paper-100">{data.stage.label}</span>
+        <Tag tone="accent" title={`Affinity ${data.affinity}`}>
+          <span aria-hidden>♥</span> {data.affinity}
+        </Tag>
+      </div>
+
+      <section>
+        <SectionHeading>History</SectionHeading>
+        <Sparkline history={data.history} currentStageLabel={data.stage.label} />
+      </section>
+
+      <section>
+        <SectionHeading>Milestones</SectionHeading>
+        <Milestones milestones={data.milestones} />
+      </section>
+
+      {data.openLoops.length > 0 ? (
+        <section>
+          <SectionHeading>Unfinished business</SectionHeading>
+          <div className="flex flex-wrap gap-1.5">
+            {data.openLoops.map((loop, i) => (
+              <Tag key={`${i}:${loop}`} className="whitespace-normal">
+                {loop}
+              </Tag>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <StorySoFar chatId={chatId} storySoFar={data.storySoFar} onRebuilt={() => rel.reload({ silent: true })} />
+
+      <ExportSection chatId={chatId} />
+    </div>
+  );
+}
+
+function SectionHeading({ children }: { children: string }) {
+  return <h3 className="mb-2 text-xs font-medium tracking-wide text-paper-500 uppercase">{children}</h3>;
+}
+
+/**
+ * Affinity-over-time sparkline (§7.2): a single accent polyline over a subtle
+ * zero line, viewBox scaled to the sample count and y mapped from [-100,100].
+ * `vector-effect: non-scaling-stroke` keeps line weight honest under the
+ * non-uniform `preserveAspectRatio="none"` stretch. No chart library.
+ */
+function Sparkline({ history, currentStageLabel }: { history: RelationshipSample[]; currentStageLabel: string }) {
+  const first = history[0];
+  if (history.length < 2 || first === undefined) {
+    return <p className="text-xs text-paper-500">No history yet — it starts moving as you talk.</p>;
+  }
+  const width = history.length - 1;
+  // affinity 100 → y 0 (top), -100 → y 100 (bottom); clamp defensively.
+  const points = history
+    .map((s, i) => `${i},${(100 - Math.max(-100, Math.min(100, s.affinity))) / 2}`)
+    .join(" ");
+  const firstStageLabel = stageById(first.stage)?.label ?? first.stage;
+  return (
+    <svg
+      viewBox={`0 0 ${width} 100`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={`Relationship history: ${history.length} samples from ${firstStageLabel} to ${currentStageLabel}`}
+      className="h-12 w-full text-accent-300"
+    >
+      <line x1={0} y1={50} x2={width} y2={50} className="stroke-ink-600" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      <polyline
+        points={points}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
+/** Glyph + tone per milestone kind (§7.2) — small badges, not icon soup. */
+const MILESTONE_GLYPHS: Record<MilestoneKind, { glyph: string; className: string }> = {
+  first_exchange: { glyph: "✦", className: "text-accent-300" },
+  stage_up: { glyph: "↑", className: "text-accent-300" },
+  stage_down: { glyph: "↓", className: "text-paper-500" },
+  strong_reaction: { glyph: "!", className: "text-paper-300" },
+  player_marked: { glyph: "★", className: "text-accent-300" },
+};
+
+function Milestones({ milestones }: { milestones: ChatRelationship["milestones"] }) {
+  if (milestones.length === 0) return <p className="text-xs text-paper-500">No milestones yet.</p>;
+  // Stored append-order (oldest first); the panel reads newest first.
+  const newestFirst = [...milestones].reverse();
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {newestFirst.map((m, i) => {
+        const badge = MILESTONE_GLYPHS[m.kind];
+        const stamp = timeAgo(m.at);
+        return (
+          <li key={`${m.at}:${m.kind}:${i}`} className="flex items-baseline gap-2 text-sm">
+            <span aria-hidden className={cx("w-4 shrink-0 text-center text-xs", badge.className)}>
+              {badge.glyph}
+            </span>
+            <span className="min-w-0 flex-1 text-paper-200">{m.label}</span>
+            {stamp ? <span className="shrink-0 text-[11px] text-paper-500">{stamp}</span> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * The rolling summary, read-only (§7.3), plus the rebuild recovery lever:
+ * two-click confirm → POST …/summary/rebuild → toast + silent panel refresh.
+ */
+function StorySoFar({
+  chatId,
+  storySoFar,
+  onRebuilt,
+}: {
+  chatId: string;
+  storySoFar: string;
+  onRebuilt: () => void;
+}) {
+  const toast = useToast();
+  const [confirming, setConfirming] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+
+  const rebuild = async () => {
+    if (rebuilding) return;
+    setRebuilding(true);
+    const result = await chatsApi.rebuildSummary(chatId);
+    setRebuilding(false);
+    setConfirming(false);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't rebuild the summary", description: result.error.message, tone: "error" });
+      return;
+    }
+    toast.push({ title: "Summary rebuilt", description: "Re-folded from the full transcript.", tone: "success" });
+    onRebuilt();
+  };
+
+  return (
+    <section>
+      <SectionHeading>The story so far</SectionHeading>
+      {storySoFar ? (
+        <div className="max-h-48 overflow-y-auto rounded-md border border-ink-600 bg-ink-850 p-3 text-sm whitespace-pre-wrap text-paper-300">
+          {storySoFar}
+        </div>
+      ) : (
+        <p className="text-xs text-paper-500">No summary yet — it builds as the conversation grows.</p>
+      )}
+      <div className="mt-2">
+        {confirming ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-paper-400">
+            <span>Re-read the whole transcript and replace this summary?</span>
+            <Button size="sm" variant="quiet" busy={rebuilding} onClick={() => void rebuild()}>
+              Rebuild
+            </Button>
+            <Button size="sm" variant="quiet" disabled={rebuilding} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            variant="quiet"
+            onClick={() => setConfirming(true)}
+            title="Recovery lever — use after editing or deleting lines the summary already folded in."
+          >
+            Rebuild from full transcript
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Transcript export (§7.4): plain download anchors; the checkbox toggles the memory appendix. */
+function ExportSection({ chatId }: { chatId: string }) {
+  const [includeMemory, setIncludeMemory] = useState(false);
+  const anchorClass =
+    "inline-flex h-7 shrink-0 cursor-pointer items-center rounded-md px-2.5 text-xs text-paper-400 transition-colors hover:bg-ink-800 hover:text-paper-100";
+  return (
+    <section>
+      <SectionHeading>Export</SectionHeading>
+      <div className="flex flex-wrap items-center gap-2">
+        <a href={chatsApi.exportUrl(chatId, "md", includeMemory)} download className={anchorClass}>
+          Export Markdown
+        </a>
+        <a href={chatsApi.exportUrl(chatId, "json", includeMemory)} download className={anchorClass}>
+          Export JSON
+        </a>
+        <label className="flex items-center gap-1.5 text-xs text-paper-400">
+          <input
+            type="checkbox"
+            checked={includeMemory}
+            onChange={(e) => setIncludeMemory(e.target.checked)}
+            className="size-4 accent-accent-500"
+          />
+          Include memory
+        </label>
+      </div>
+    </section>
+  );
+}

@@ -29,7 +29,8 @@
     "db:seed": "tsx scripts/db-seed.ts",
     "db:backfill-image-refs": "tsx scripts/backfill-image-references.ts",
     "eval:narration": "tsx scripts/eval/narration/run.ts",
-    "eval:narration:compare": "tsx scripts/eval/narration/compare.ts"
+    "eval:narration:compare": "tsx scripts/eval/narration/compare.ts",
+    "eval:retrieval": "tsx scripts/eval/retrieval/run.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"

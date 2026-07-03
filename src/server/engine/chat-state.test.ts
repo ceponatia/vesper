@@ -6,11 +6,13 @@ import type { ActiveCondition } from "@/contracts/conditions/condition";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
-import { CHAT_AROUSAL_INTIMATE, CHAT_RESET_MINUTES, CHAT_TICK_MINUTES } from "./constants";
+import { SKIP_HISTORY_CAP } from "@/contracts/turns/chat-skip";
+import { CHAT_AROUSAL_INTIMATE, CHAT_SKIP_MINUTES, CHAT_TICK_MINUTES } from "./constants";
 import {
   applyChatAction,
   applyChatAttributeOverlays,
   applyChatPulse,
+  applyTimeSkip,
   chatStateSnapshot,
   driftChatState,
   runChatPulse,
@@ -25,8 +27,6 @@ function profile(overrides: Partial<CharacterProfile> = {}): CharacterProfile {
   return { ...emptyCharacterProfile(), ...overrides };
 }
 
-const ago = (minutes: number): Date => new Date(Date.now() - minutes * 60_000);
-
 describe("seedChatState", () => {
   it("seeds rested meters, neutral affinity, and an empty premise for a default profile", () => {
     const state = seedChatState(profile());
@@ -34,7 +34,10 @@ describe("seedChatState", () => {
     expect(state.affinity).toBe(0);
     expect(state.premise).toBe("");
     expect(state.mindNote).toBe(""); // never seeded — purely dynamic
-    expect(state.lastInteractionAt).toBeNull();
+    expect(state.pendingSkipNote).toBe("");
+    expect(state.skipHistory).toEqual([]);
+    expect(state.relationshipHistory).toEqual([]);
+    expect(state.milestones).toEqual([]);
   });
 
   it("seeds affinity from the authored playerRelationship stage via stageMidpoint", () => {
@@ -62,43 +65,84 @@ describe("seedChatState", () => {
   });
 });
 
-describe("driftChatState", () => {
+describe("driftChatState (D8 — in-game time only)", () => {
   const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(profile()), ...overrides });
 
   it("within-visit tick advances the clock and decays meters toward their baseline", () => {
-    const drifted = driftChatState(base(), new Date(), profile(), { advance: true });
+    const drifted = driftChatState(base(), profile(), { advance: true });
     expect(drifted.clockMinutes).toBe(CHAT_TICK_MINUTES);
     expect(drifted.meters.hygiene).toBeLessThan(0.9); // drifts toward the grime pole
     expect(drifted.meters.energy).toBeLessThan(0.9);
   });
 
-  it("between-visit recovery lerps meters toward rested by elapsed/CHAT_RESET_MINUTES", () => {
-    const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 }, lastInteractionAt: ago(CHAT_RESET_MINUTES / 2) });
-    const drifted = driftChatState(tired, new Date(), profile(), { advance: false });
-    // f = 0.5 ⇒ halfway from 0.2 back to the rested 0.9.
-    expect(drifted.meters.hygiene).toBeCloseTo(0.55, 2);
-    expect(drifted.meters.energy).toBeCloseTo(0.55, 2);
-  });
-
-  it("a full gap recovers to rested and never overshoots (cap at f=1)", () => {
-    const tired = base({ meters: { ...initialMeters(), hygiene: 0.1 }, lastInteractionAt: ago(CHAT_RESET_MINUTES * 5) });
-    const drifted = driftChatState(tired, new Date(), profile(), { advance: false });
-    expect(drifted.meters.hygiene).toBeCloseTo(0.9, 5); // exactly rested, not beyond
+  it("a read without advance is a pure pass-through — no wall-clock recovery exists (D8)", () => {
+    const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 } });
+    // However long the player was away, nothing moves: no second clock.
+    expect(driftChatState(tired, profile(), { advance: false })).toEqual(tired);
+    expect(driftChatState(tired, profile(), {})).toEqual(tired);
   });
 
   it("never decays affinity (no between-visit decay — spec §10)", () => {
-    const warm = base({ affinity: 57, lastInteractionAt: ago(CHAT_RESET_MINUTES * 10) });
-    expect(driftChatState(warm, new Date(), profile(), { advance: false }).affinity).toBe(57);
-    expect(driftChatState(warm, new Date(), profile(), { advance: true }).affinity).toBe(57);
+    const warm = base({ affinity: 57 });
+    expect(driftChatState(warm, profile(), { advance: false }).affinity).toBe(57);
+    expect(driftChatState(warm, profile(), { advance: true }).affinity).toBe(57);
   });
 
   it("expires conditions past the clock during the within-visit tick", () => {
     const condition: ActiveCondition = { id: "tipsy", label: "Tipsy", startedAtMinutes: 0, durationMinutes: 2, attributeEffects: [] };
     const withCondition = base({ conditions: [condition] });
     // Tick advances the clock past started + duration (2) ⇒ expired.
-    expect(driftChatState(withCondition, new Date(), profile(), { advance: true }).conditions).toHaveLength(0);
+    expect(driftChatState(withCondition, profile(), { advance: true }).conditions).toHaveLength(0);
     // A read (no advance) keeps the chat clock still ⇒ the condition survives.
-    expect(driftChatState(withCondition, new Date(), profile(), { advance: false }).conditions).toHaveLength(1);
+    expect(driftChatState(withCondition, profile(), { advance: false }).conditions).toHaveLength(1);
+  });
+});
+
+describe("applyTimeSkip (spec §8.1 — flavor-only v1, D14)", () => {
+  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(profile()), ...overrides });
+  const now = new Date("2026-07-02T12:00:00Z");
+
+  it("advances the clock by the amount's minutes and stamps a one-shot skip note", () => {
+    const skipped = applyTimeSkip(base(), "overnight", now);
+    expect(skipped.clockMinutes).toBe(CHAT_SKIP_MINUTES.overnight);
+    expect(skipped.pendingSkipNote).toContain("next morning");
+    expect(skipped.pendingSkipNote).toMatch(/once/);
+  });
+
+  it("meters do NOT change (D14 — narrative flavor, never a flat recovery rule)", () => {
+    const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.1, intoxication: 0.8 } });
+    const skipped = applyTimeSkip(tired, "days", now);
+    expect(skipped.meters).toEqual(tired.meters);
+    expect(skipped.affinity).toBe(tired.affinity);
+  });
+
+  it("lets already-running timed conditions expire through the existing clock-keyed filter", () => {
+    const tipsy: ActiveCondition = { id: "tipsy", label: "Tipsy", startedAtMinutes: 0, durationMinutes: 90, attributeEffects: [] };
+    const open: ActiveCondition = { id: "vow", label: "A promise", startedAtMinutes: 0, attributeEffects: [] };
+    const skipped = applyTimeSkip(base({ conditions: [tipsy, open] }), "overnight", now);
+    expect(skipped.conditions.map((c) => c.id)).toEqual(["vow"]); // timed expired; open-ended survives
+  });
+
+  it("records the skip into the capped history ring (the scaffolded time-effects data)", () => {
+    const first = applyTimeSkip(base(), "hours", now);
+    expect(first.skipHistory).toEqual([{ at: now.toISOString(), clockMinutes: CHAT_SKIP_MINUTES.hours, amount: "hours" }]);
+    const full = base({
+      skipHistory: Array.from({ length: SKIP_HISTORY_CAP }, (_, i) => ({ at: "x", clockMinutes: i, amount: "moments" as const })),
+    });
+    const capped = applyTimeSkip(full, "moments", now);
+    expect(capped.skipHistory).toHaveLength(SKIP_HISTORY_CAP);
+    expect(capped.skipHistory.at(-1)?.clockMinutes).toBe(CHAT_SKIP_MINUTES.moments);
+  });
+
+  it("words the note by stage band (a lover misses you; a stranger just notes the gap)", () => {
+    const strangerNote = applyTimeSkip(base({ affinity: 0 }), "days", now).pendingSkipNote;
+    const closeNote = applyTimeSkip(base({ affinity: 70 }), "days", now).pendingSkipNote;
+    const hostileNote = applyTimeSkip(base({ affinity: -80 }), "days", now).pendingSkipNote;
+    expect(strangerNote).toContain("naturally");
+    expect(closeNote).toContain("missed them");
+    expect(hostileNote).toContain("curtly");
+    // All bands carry the §8.2 "a life meanwhile" license.
+    for (const note of [strangerNote, closeNote, hostileNote]) expect(note).toMatch(/meanwhile/);
   });
 });
 

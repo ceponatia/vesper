@@ -19,17 +19,22 @@ export const LORE_MIN_SCORE = 0.72;
 
 /**
  * Episodic recall is deliberately loose: a vaguely related callback reads
- * better than the narrator having no memory at all.
+ * better than the narrator having no memory at all. MEASURED 2026-07-02 via
+ * `pnpm eval:retrieval` on the live embedder (text-embedding-3-small): genuinely
+ * relevant episodes score 0.35–0.51 while off-topic distractors sit < 0.2 — the
+ * old 0.55 floor was silently blocking legitimate episode recall in both lanes.
  */
-export const EPISODE_MIN_SCORE = 0.55;
+export const EPISODE_MIN_SCORE = 0.3;
 
 /**
- * Fact-relevance floor (character-chat-standalone.spec.md §6.3 #1). Starting
- * floor pending the §6.3 #6 retrieval eval — the facts floor sits below the
- * episodes' 0.55 because facts are the primary recall channel and a dropped
- * fact costs more than a loose one. Pinned facts are exempt (§6.4).
+ * Fact-relevance floor (character-chat-standalone.spec.md §6.3 #1) — the
+ * "measured relevance floor". MEASURED 2026-07-02 via `pnpm eval:retrieval`
+ * (data/eval/retrieval/results.json): paraphrase-level matches land 0.27–0.35
+ * on the live embedder and every distractor scores < 0.2, so 0.25 keeps a clean
+ * margin both ways (the initial guess of 0.5 rejected real paraphrase recall).
+ * Re-run the harness before touching this. Pinned facts are exempt (§6.4).
  */
-export const FACT_MIN_SCORE = 0.5;
+export const FACT_MIN_SCORE = 0.25;
 
 /** Cap on force-included pinned facts per retrieval (spec §6.4 — they ride ahead of the top-k). */
 export const PINNED_FACT_CAP = 8;

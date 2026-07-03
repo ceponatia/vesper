@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { charactersApi, chatsApi, sessionsApi, worldsApi } from "@/lib/client/api";
+import { ChatSayMarker } from "@/components/chat/chats-page";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Card } from "@/components/ui/card";
@@ -50,10 +51,14 @@ export function Dashboard() {
               />
               <div className="min-w-0">
                 <p className="text-xs tracking-wide text-paper-500 uppercase">Continue talking to</p>
-                <h1 className="prose-display mt-0.5 truncate text-2xl group-hover:text-accent-300">
-                  {latestChat.characterName}
-                  {latestChat.title ? <span className="text-paper-400"> — {latestChat.title}</span> : null}
-                </h1>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <h1 className="prose-display min-w-0 truncate text-2xl group-hover:text-accent-300">
+                    {latestChat.characterName}
+                    {latestChat.title ? <span className="text-paper-400"> — {latestChat.title}</span> : null}
+                  </h1>
+                  {/* "Has something to say" (§8.4) — the dot opens the chat with ?say=1 */}
+                  {latestChat.say ? <ChatSayMarker chatId={latestChat.id} say={latestChat.say} /> : null}
+                </div>
                 {latestChat.lastLine ? (
                   <p className="mt-1 truncate text-sm text-paper-400">{latestChat.lastLine}</p>
                 ) : null}
@@ -78,6 +83,7 @@ export function Dashboard() {
                     />
                     <span className="shrink-0">{chat.characterName}</span>
                     {chat.lastLine ? <span className="truncate text-xs text-paper-500">{chat.lastLine}</span> : null}
+                    {chat.say ? <ChatSayMarker chatId={chat.id} say={chat.say} className="ml-auto" /> : null}
                   </Link>
                 </li>
               ))}

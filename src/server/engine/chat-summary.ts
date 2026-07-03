@@ -282,6 +282,39 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
   });
 }
 
+/** Backstop on rebuild fold iterations (a 35-exchange trigger × 50 folds ≫ any real chat). */
+const REBUILD_MAX_FOLDS = 50;
+
+/**
+ * Re-fold the running summary from the FULL transcript (character-chat-standalone.spec.md
+ * §7.3 — the recovery lever for folded-then-deleted lines). Under the same per-chat
+ * keyed lock as the fold job: resets the summary row (empty summary, null watermark ⇒
+ * every message is unsummarized again), then folds repeatedly until the tail is below
+ * the trigger. A degraded/empty fold stalls the watermark, which ends the loop honestly
+ * (partial rebuild + diagnostics) instead of spinning on a failing model. Returns the
+ * final summary text and the fold count.
+ */
+export async function rebuildChatSummary(chatId: string): Promise<{ summary: string; folds: number }> {
+  return withKeyedLock(`chat_summary:${chatId}`, async () => {
+    await db()
+      .insert(characterChatSummaries)
+      .values({ chatId, summary: "", watermarkAt: null, watermarkId: null, coveredExchanges: 0 })
+      .onConflictDoUpdate({
+        target: [characterChatSummaries.chatId],
+        set: { summary: "", watermarkAt: null, watermarkId: null, coveredExchanges: 0, updatedAt: new Date() },
+      });
+    let folds = 0;
+    for (; folds < REBUILD_MAX_FOLDS; folds++) {
+      const before = await loadChatSummary(chatId);
+      await processChatSummary({ chatId });
+      const after = await loadChatSummary(chatId);
+      if ((after?.watermark?.id ?? null) === (before?.watermark?.id ?? null)) break; // below trigger or degraded
+    }
+    const final = await loadChatSummary(chatId);
+    return { summary: final?.summary ?? "", folds };
+  });
+}
+
 /** Output-token cap for the fold — the summary targets ~400 words; keep it cheap. */
 const CHAT_SUMMARY_MAX_OUTPUT_TOKENS = 800;
 

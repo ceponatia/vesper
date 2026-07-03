@@ -104,10 +104,10 @@ describe("finalizeChatState under a memory-write failure", () => {
       sink,
     });
 
-    // The memory throw was fenced: the state row still landed with this turn's stamp.
+    // The memory throw was fenced: the state row still landed (persisted at all ⇒ the
+    // finalizer's save ran despite the failed memory leg).
     const state = await loadChatState(fixture.chatId, fixture.characterId, sink);
     expect(state).not.toBeNull();
-    expect(state?.lastInteractionAt?.getTime()).toBe(now.getTime());
     expect(sink.items.map((d) => d.code)).toContain("chat_state.memory.write_failed");
   });
 });

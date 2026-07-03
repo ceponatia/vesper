@@ -2,6 +2,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   activeConditionSchema,
+  appendMilestones,
+  appendRelationshipSample,
   applyMeterDrift,
   chatMemoryTraceSchema,
   chatPulseSchema,
@@ -12,6 +14,7 @@ import {
   chatPulseTraceSchema,
   clampAffinity,
   degradedChatPulse,
+  deriveExchangeMilestones,
   emptyChatMemoryTrace,
   deriveEmotionLabel,
   diag,
@@ -20,8 +23,12 @@ import {
   interactionConceptById,
   isConditionExpired,
   meterDefinitions,
+  milestoneSchema,
   NEUTRAL_MOOD_METER,
   personalizeMeters,
+  relationshipSampleSchema,
+  SKIP_HISTORY_CAP,
+  skipRecordSchema,
   socialReactionCardSchema,
   splitStateCues,
   stageForValue,
@@ -33,9 +40,13 @@ import {
   type ChatMemoryTrace,
   type ChatPulse,
   type ChatPulseTrace,
+  type ChatSkipAmount,
   type DiagnosticSink,
   type EmotionLabel,
+  type Milestone,
+  type RelationshipSample,
   type RetrievedMemoryDetail,
+  type SkipRecord,
   type SocialReactionCard,
 } from "@/contracts";
 import { catalogConditionForLabel } from "@/contracts/conditions/catalog";
@@ -52,9 +63,10 @@ import {
   CHAT_AROUSAL_INTIMATE,
   CHAT_PULSE_MAX_OUTPUT_TOKENS,
   CHAT_PULSE_TIMEOUT_MS,
-  CHAT_RESET_MINUTES,
+  CHAT_SKIP_MINUTES,
   CHAT_TICK_MINUTES,
 } from "./constants";
+import { chatSkipNote } from "./prompts/character-chat";
 import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
 
 /**
@@ -108,8 +120,20 @@ export interface ChatState {
   lastPulseTrace: ChatPulseTrace;
   /** Last-turn RAG debug trace for the dev inspector (character-chat-primary.spec.md §5). */
   lastMemoryTrace: ChatMemoryTrace;
+  /**
+   * The chat-local game clock — the ONLY time model (character-chat-standalone.spec.md
+   * §8, D3/D8): within-visit ticks, condition expiry, and player time skips all key on
+   * it; real-world elapsed time never touches state.
+   */
   clockMinutes: number;
-  lastInteractionAt: Date | null;
+  /** Relationship arc samples (spec §7.2) — appended when affinity/stage moved; the sparkline. */
+  relationshipHistory: RelationshipSample[];
+  /** Recorded milestones (spec §7.2): first exchange, stage crossings, strong reactions, player-marked. */
+  milestones: Milestone[];
+  /** Player time skips (spec §8.1) — the future time-effects system's data, recorded now. */
+  skipHistory: SkipRecord[];
+  /** One-shot skip note (spec §8.1): rendered as a volatile prompt line next exchange, then cleared. */
+  pendingSkipNote: string;
 }
 
 /** The strip / state-tools / premise-bar projection returned by GET …/chat/state. */
@@ -139,9 +163,8 @@ export interface ChatStateSnapshot {
   lastPulseTrace: ChatPulseTrace;
   /** Last-turn RAG debug trace (retrieved + extracted) for the chat inspector (§5). */
   lastMemoryTrace: ChatMemoryTrace;
-  /** Read-only chat-clock + wall-clock anchor, surfaced for the state-tools modal (slice 4). */
+  /** Read-only chat clock (the only time model, D3/D8), surfaced for the state-tools modal. */
   clockMinutes: number;
-  lastInteractionAt: string | null;
   /**
    * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
    * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
@@ -156,6 +179,9 @@ const activeSocialCardsSchema = z.array(socialReactionCardSchema);
 const surfacedCuesSchema = z.record(z.string(), z.string());
 const memoryQueriesSchema = z.array(z.string());
 const attributeOverlaysSchema = z.array(attributeValueSchema);
+const relationshipHistorySchema = z.array(relationshipSampleSchema);
+const milestonesSchema = z.array(milestoneSchema);
+const skipHistorySchema = z.array(skipRecordSchema);
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 const clamp01 = (n: number): number => clamp(n, 0, 1);
@@ -186,7 +212,10 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     lastPulseTrace: emptyChatPulseTrace(),
     lastMemoryTrace: emptyChatMemoryTrace(),
     clockMinutes: 0,
-    lastInteractionAt: null,
+    relationshipHistory: [],
+    milestones: [],
+    skipHistory: [],
+    pendingSkipNote: "",
   };
 }
 
@@ -213,7 +242,10 @@ export async function loadChatState(
       openLoops: characterChatState.openLoops,
       attributeOverlays: characterChatState.attributeOverlays,
       clockMinutes: characterChatState.clockMinutes,
-      lastInteractionAt: characterChatState.lastInteractionAt,
+      relationshipHistory: characterChatState.relationshipHistory,
+      milestones: characterChatState.milestones,
+      skipHistory: characterChatState.skipHistory,
+      pendingSkipNote: characterChatState.pendingSkipNote,
     })
     .from(characterChatState)
     .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)))
@@ -247,11 +279,24 @@ export async function loadChatState(
       "character_chat_state.last_memory_trace",
     ),
     clockMinutes: row.clockMinutes,
-    lastInteractionAt: row.lastInteractionAt,
+    relationshipHistory: parseOr(
+      relationshipHistorySchema,
+      row.relationshipHistory,
+      [],
+      sink,
+      "character_chat_state.relationship_history",
+    ),
+    milestones: parseOr(milestonesSchema, row.milestones, [], sink, "character_chat_state.milestones"),
+    skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
+    pendingSkipNote: row.pendingSkipNote,
   };
 }
 
-/** The persisted-snapshot shape: ChatState with the Date serialized (spec §4.1). */
+/**
+ * The persisted-snapshot shape (spec §4.1). New fields are `.catch/.default`ed so
+ * snapshots written before their slice keep parsing — a broken parse here would
+ * silently kill every existing "another take" rollback anchor.
+ */
 const storedChatStateSchema = z.object({
   meters: metersSchema,
   affinity: z.number(),
@@ -263,20 +308,16 @@ const storedChatStateSchema = z.object({
   activeSocialCards: activeSocialCardsSchema,
   surfacedCues: surfacedCuesSchema,
   memoryQueries: memoryQueriesSchema,
-  // Defaulted: pre-slice-7 snapshots (no openLoops key) must keep parsing, or every
-  // existing "another take" rollback anchor would silently die (schema-db risk note).
   openLoops: memoryQueriesSchema.catch([]).default([]),
   attributeOverlays: attributeOverlaysSchema,
   lastPulseTrace: chatPulseTraceSchema,
   lastMemoryTrace: chatMemoryTraceSchema,
   clockMinutes: z.number(),
-  lastInteractionAt: z.string().nullable(),
+  relationshipHistory: relationshipHistorySchema.catch([]).default([]),
+  milestones: milestonesSchema.catch([]).default([]),
+  skipHistory: skipHistorySchema.catch([]).default([]),
+  pendingSkipNote: z.string().catch("").default(""),
 });
-
-/** Serialize a ChatState for the jsonb snapshot column (Date → ISO). PURE. */
-export function serializeChatState(state: ChatState): Record<string, unknown> {
-  return { ...state, lastInteractionAt: state.lastInteractionAt ? state.lastInteractionAt.toISOString() : null };
-}
 
 /**
  * Persist the "another take" rollback anchor (spec §4.1): the state as it stood
@@ -291,7 +332,7 @@ export async function savePreExchangeSnapshot(
 ): Promise<void> {
   await db()
     .update(characterChatState)
-    .set({ preExchangeState: state ? serializeChatState(state) : {} })
+    .set({ preExchangeState: state ?? {} })
     .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)));
 }
 
@@ -305,57 +346,48 @@ export async function loadPreExchangeState(chatId: string, characterId: string):
   if (!row) return null;
   const parsed = parseOrNull(storedChatStateSchema, row.preExchangeState);
   if (!parsed) return null;
-  return {
-    ...parsed,
-    affinity: clampAffinity(parsed.affinity),
-    lastInteractionAt: parsed.lastInteractionAt ? new Date(parsed.lastInteractionAt) : null,
-  };
+  return { ...parsed, affinity: clampAffinity(parsed.affinity) };
 }
 
 /**
- * Recompute state from the stored row + elapsed wall-clock (spec §3). PURE and
- * idempotent on read, so it runs on every read boundary (POST prompt-build and the
- * GET strip) and is persisted only once per exchange.
- *
- * - **Between visits** (always): each meter lerps toward its *rested* value
- *   (`initialMeters`) by `f = min(1, realElapsed / CHAT_RESET_MINUTES)` — offscreen
- *   she slept, bathed, calmed down, so state recovers toward rested rather than
- *   decaying toward grime. Affinity never moves here (no between-visit decay, §10).
- * - **Within a visit** (`advance` ⇒ an actual exchange): the chat clock ticks
- *   `CHAT_TICK_MINUTES` and meters decay that far toward their *personalized*
- *   baselines, and conditions past the clock expire.
+ * Advance the in-game state for one exchange (spec §3, re-ruled by
+ * character-chat-standalone.spec.md §8.3 / D8: the between-visit wall-clock
+ * recovery is GONE — no time passes between visits at all). PURE and idempotent
+ * on read: without `advance` it is a pass-through projection, with it the chat
+ * clock ticks `CHAT_TICK_MINUTES`, meters decay that far toward their
+ * *personalized* baselines, and conditions past the clock expire.
  */
 export function driftChatState(
   state: ChatState,
-  now: Date,
   profile: CharacterProfile,
   options: { advance?: boolean } = {},
 ): ChatState {
-  const rested = initialMeters();
-  let meters = { ...state.meters };
-
-  if (state.lastInteractionAt) {
-    const elapsedMinutes = Math.max(0, (now.getTime() - state.lastInteractionAt.getTime()) / 60_000);
-    const f = Math.min(1, elapsedMinutes / CHAT_RESET_MINUTES);
-    if (f > 0) {
-      for (const id of Object.keys(meters)) {
-        const target = rested[id];
-        const current = meters[id];
-        if (target === undefined || current === undefined) continue;
-        meters[id] = clamp01(current + (target - current) * f);
-      }
-    }
-  }
-
-  let clockMinutes = state.clockMinutes;
-  let conditions = state.conditions;
-  if (options.advance) {
-    meters = applyMeterDrift(meters, CHAT_TICK_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
-    clockMinutes += CHAT_TICK_MINUTES;
-    conditions = conditions.filter((c) => !isConditionExpired(c, clockMinutes));
-  }
-
+  if (!options.advance) return state;
+  const meters = applyMeterDrift({ ...state.meters }, CHAT_TICK_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
+  const clockMinutes = state.clockMinutes + CHAT_TICK_MINUTES;
+  const conditions = state.conditions.filter((c) => !isConditionExpired(c, clockMinutes));
   return { ...state, meters, conditions, clockMinutes };
+}
+
+/**
+ * Apply a player time skip (spec §8.1, D14 — flavor-only v1). PURE. Exactly three
+ * effects: the clock advances (which lets already-running timed conditions expire
+ * through the existing clock-keyed filter — no new wiring), the one-shot skip note
+ * is stamped (worded by the CURRENT stage band), and the skip records itself into
+ * the capped history ring. **Meters do not change** — whether twelve skipped hours
+ * mean recovery or deterioration is circumstance, and the time-effects system that
+ * could know stays scaffolded, not wired.
+ */
+export function applyTimeSkip(state: ChatState, amount: ChatSkipAmount, now: Date): ChatState {
+  const clockMinutes = state.clockMinutes + CHAT_SKIP_MINUTES[amount];
+  const record: SkipRecord = { at: now.toISOString(), clockMinutes, amount };
+  return {
+    ...state,
+    clockMinutes,
+    conditions: state.conditions.filter((c) => !isConditionExpired(c, clockMinutes)),
+    pendingSkipNote: chatSkipNote(amount, stageForValue(state.affinity).id),
+    skipHistory: [...state.skipHistory, record].slice(-SKIP_HISTORY_CAP),
+  };
 }
 
 /**
@@ -659,6 +691,39 @@ export async function finalizeChatState(input: {
   // Open loops are full-list-each-time (spec §6.2) — but a degraded archivist emits an
   // empty list that must NOT wipe the standing loops; keep the prior list on degrade.
   const openLoops = archivist.degraded ? input.driftedState.openLoops : (archivist.value?.openLoops ?? input.driftedState.openLoops);
+
+  // Relationship arc (spec §7.2): sample when the exchange moved affinity or crossed a
+  // stage (or it's the first exchange — the sparkline's baseline), and derive the
+  // exchange's milestones. When the pulse was skipped (a "go on" beat) or degraded,
+  // `lastPulseTrace` is stale/empty — treat the move as zero rather than re-reading it.
+  const at = input.now.toISOString();
+  const firstExchange = input.preExchangeState === null;
+  const preAffinity = input.preExchangeState?.affinity ?? input.driftedState.affinity;
+  const postAffinity = pulse.state.affinity;
+  const pulseTrace = input.skipPulse || pulse.state.lastPulseTrace.degraded ? null : pulse.state.lastPulseTrace;
+  const moved = postAffinity !== preAffinity || stageForValue(postAffinity).id !== stageForValue(preAffinity).id;
+  const relationshipHistory =
+    moved || firstExchange
+      ? appendRelationshipSample(input.driftedState.relationshipHistory, {
+          at,
+          clockMinutes: pulse.state.clockMinutes,
+          affinity: postAffinity,
+          stage: stageForValue(postAffinity).id,
+        })
+      : input.driftedState.relationshipHistory;
+  const milestones = appendMilestones(
+    input.driftedState.milestones,
+    deriveExchangeMilestones({
+      at,
+      messageId: input.assistantMessageId,
+      characterName: input.characterName,
+      firstExchange,
+      preAffinity,
+      postAffinity,
+      affinityDelta: pulseTrace?.affinityDelta ?? 0,
+      concept: pulseTrace?.concept ?? null,
+    }),
+  );
   const lastMemoryTrace: ChatMemoryTrace = {
     retrievedFacts: input.retrieved?.facts ?? [],
     retrievedEpisodes: input.retrieved?.episodes ?? [],
@@ -680,7 +745,10 @@ export async function finalizeChatState(input: {
       openLoops,
       attributeOverlays,
       lastMemoryTrace,
-      lastInteractionAt: input.now,
+      relationshipHistory,
+      milestones,
+      // The skip note is one-shot (spec §8.1): this exchange rendered it, so it clears.
+      pendingSkipNote: "",
     },
   });
   // The rollback anchor rides a targeted follow-up UPDATE (never the shared upsert
@@ -714,14 +782,17 @@ async function upsertChatState(
   const attributeOverlays = JSON.stringify(state.attributeOverlays);
   const memoryTrace = JSON.stringify(state.lastMemoryTrace);
   const activeSocialCards = JSON.stringify(state.activeSocialCards);
+  const relationshipHistory = JSON.stringify(state.relationshipHistory);
+  const milestones = JSON.stringify(state.milestones);
+  const skipHistory = JSON.stringify(state.skipHistory);
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, last_interaction_at, updated_at)
+      (chat_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.affinity}, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${state.lastInteractionAt}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -739,7 +810,10 @@ async function upsertChatState(
       outfit_exposed = excluded.outfit_exposed,
       active_social_cards = excluded.active_social_cards,
       clock_minutes = excluded.clock_minutes,
-      last_interaction_at = excluded.last_interaction_at,
+      relationship_history = excluded.relationship_history,
+      milestones = excluded.milestones,
+      skip_history = excluded.skip_history,
+      pending_skip_note = excluded.pending_skip_note,
       updated_at = now()
   `);
 }
@@ -924,7 +998,6 @@ export function chatStateSnapshot(
     lastPulseTrace: state.lastPulseTrace,
     lastMemoryTrace: state.lastMemoryTrace,
     clockMinutes: state.clockMinutes,
-    lastInteractionAt: state.lastInteractionAt ? state.lastInteractionAt.toISOString() : null,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
   };

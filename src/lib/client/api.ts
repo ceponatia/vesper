@@ -11,6 +11,9 @@ import {
   type ChatActionId,
   chatMemoryTraceSchema,
   chatPulseTraceSchema,
+  milestoneSchema,
+  relationshipSampleSchema,
+  type ChatSkipAmount,
   DEFAULT_AVATAR_IMAGE_MODEL,
   type AvatarImageModel,
   characterProfileSchema,
@@ -295,7 +298,6 @@ export const chatStateSnapshotSchema = z.object({
     degraded: false,
   })),
   clockMinutes: z.number().catch(0),
-  lastInteractionAt: z.string().nullable().catch(null),
   // False ⇒ a seed-on-read (no row yet); the chat strip then previews the authored
   // Starting Relationship. Defaults true so a missing flag shows the stored disposition.
   persisted: z.boolean().catch(true),
@@ -788,6 +790,13 @@ export const chatSummarySchema = z.object({
   stage: z.object({ id: z.string(), label: z.string() }).nullable().catch(null),
   /** Mood chip (`EmotionLabel` + intensity), same derivation as the state snapshot; null before the first exchange. */
   emotion: z.object({ label: z.string(), intensity: z.number() }).nullable().catch(null),
+  /**
+   * "Has something to say" (character-chat-standalone.spec.md §8.4, D4): the character's
+   * top open loop, "" when nothing is pending. Pure read-time derivation — no jobs, no
+   * push, never the wall clock. Tapping the marker opens the chat and lets them speak
+   * about exactly this.
+   */
+  say: textOr(""),
 });
 export type ChatSummary = z.infer<typeof chatSummarySchema>;
 
@@ -808,6 +817,19 @@ export const chatTranscriptSchema = z.object({
   }),
 });
 export type ChatTranscript = z.infer<typeof chatTranscriptSchema>;
+
+/** The Relationship panel payload (character-chat-standalone.spec.md §7). */
+export const chatRelationshipSchema = z.object({
+  stage: z.object({ id: z.string(), label: z.string() }).catch({ id: "stranger", label: "Stranger" }),
+  affinity: z.number().catch(0),
+  history: z.array(relationshipSampleSchema).catch([]),
+  milestones: z.array(milestoneSchema).catch([]),
+  /** The rolling summary, read-only — "the story so far" (§7.3). */
+  storySoFar: textOr(""),
+  openLoops: z.array(z.string()).catch([]),
+  clockMinutes: z.number().catch(0),
+});
+export type ChatRelationship = z.infer<typeof chatRelationshipSchema>;
 
 export const chatsApi = {
   /** Active conversations, newest first; scoped to one character and/or the archived shelf. */
@@ -855,6 +877,26 @@ export const chatsApi = {
    */
   remember: (chatId: string, content: string) =>
     apiPost(z.object({ id: z.string().nullable().catch(null) }), `/api/chats/${chatId}/remember`, { content }),
+  /**
+   * Player time skip (spec §8.1, D14 — flavor-only v1): advances the in-game clock,
+   * expires running timed conditions, stamps the one-shot skip note. Meters untouched.
+   */
+  timeSkip: (chatId: string, amount: ChatSkipAmount) =>
+    apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/time-skip`, { amount }),
+  /** The Relationship panel payload (spec §7.2–7.4 UI): stage, sparkline, milestones, story so far. */
+  relationship: (chatId: string) => apiGet(chatRelationshipSchema, `/api/chats/${chatId}/relationship`),
+  /** "Mark this moment" (spec §7.2): pin a milestone on any message. */
+  markMoment: (chatId: string, messageId: string, label?: string) =>
+    apiPost(z.object({ milestones: z.array(milestoneSchema).catch([]) }), `/api/chats/${chatId}/milestones`, {
+      messageId,
+      label,
+    }),
+  /** Re-fold the rolling summary from the full transcript (spec §7.3 — the recovery lever). */
+  rebuildSummary: (chatId: string) =>
+    apiPost(z.object({ summary: z.string().catch("") }), `/api/chats/${chatId}/summary/rebuild`, {}),
+  /** Transcript export (spec §7.4) — a plain download URL for an anchor/window.open. */
+  exportUrl: (chatId: string, format: "md" | "json", memory: boolean) =>
+    `/api/chats/${chatId}/export?format=${format}${memory ? "&memory=1" : ""}`,
   /** Make one recorded take the displayed reply (spec §4.1 — display-only); returns its content. */
   switchTake: (chatId: string, messageId: string, takeId: string) =>
     apiPatch(z.object({ content: z.string().catch("") }), `/api/chats/${chatId}/messages/${messageId}/take`, { takeId }),
@@ -909,7 +951,7 @@ export interface ChatStreamOutcome {
  */
 export async function sendChatMessage(
   chatId: string,
-  body: { kind?: "send" | "open" | "continue" | "regenerate"; content?: string; model?: string },
+  body: { kind?: "send" | "open" | "continue" | "regenerate"; content?: string; model?: string; cue?: string },
   onChunk: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<ChatStreamOutcome> {

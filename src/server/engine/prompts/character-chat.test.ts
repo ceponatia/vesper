@@ -255,7 +255,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(withoutState).not.toContain("Scenario for this chat");
   });
 
-  it("renders a warmth steer + mood + mindNote in the Current state block", () => {
+  it("renders mood + mindNote in the Current state block; the stage steer is the Relationship-law block (§7.1)", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Mara",
       profile: profile(),
@@ -267,9 +267,13 @@ describe("buildCharacterChatSystemPrompt", () => {
       },
     });
     expect(prompt).toContain("Your current state");
-    expect(prompt).toMatch(/warm toward you/i);
     expect(prompt).toContain("bright and playful");
     expect(prompt).toContain("She's glad he came back.");
+    // The old one-line warmth hint is superseded by the Relationship-law block, which
+    // names the stage and states its behavioral bands + escalation floor.
+    expect(prompt).toContain("Relationship law");
+    expect(prompt).toMatch(/warm — this governs your behavior/i);
+    expect(prompt).toContain("initiates warmly");
     // State is per-turn volatile, so it rides the tail below the stable rules (spec §9).
     expect(prompt.indexOf("Your current state")).toBeGreaterThan(prompt.indexOf("How to respond:"));
   });
@@ -512,7 +516,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
       memory: { facts: [], episodes: ["They argued about the harbor job."] },
       state: {
         meters: { mood: 0.1, intoxication: 0 },
-        affinity: -30,
+        affinity: 60, // 57 → 60: moved, but still the same "warm" stage band
         conditions: [],
         mindNote: "Stung by the argument.",
         premise: "A rainy evening at the glassworks.",
@@ -520,6 +524,48 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     });
     expect(turn1.prefix).toBe(turn2.prefix);
     expect(turn1.tail).not.toBe(turn2.tail);
+  });
+
+  it("re-renders the prefix only on a stage crossing (Relationship law is stage-keyed — §7.1/§9)", () => {
+    const at = (affinity: number) =>
+      buildCharacterChatPromptParts({
+        name: "Mara",
+        profile: profile(),
+        state: { meters: {}, affinity, conditions: [] },
+      });
+    expect(at(50).prefix).toBe(at(64).prefix); // both "warm" — cache holds
+    expect(at(50).prefix).not.toBe(at(65).prefix); // warm → close — law block re-renders
+    expect(at(65).prefix).toContain("Relationship law");
+    expect(at(65).prefix).toContain("full intimacy"); // the close-stage escalation floor
+  });
+
+  it("states the D11 gate invariants in the law block: premise wins, disinhibition never moves the line, values outrank", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [] },
+    });
+    expect(parts.prefix).toMatch(/the scenario wins/i);
+    expect(parts.prefix).toMatch(/never moves this line/i);
+    expect(parts.prefix).toMatch(/never a meta refusal/i);
+    expect(parts.prefix).toMatch(/outranks everything/i);
+  });
+
+  it("renders the pending skip note as a volatile one-turn tail line (spec §8.1)", () => {
+    const withSkip = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [], skipNote: "The night has passed — it's the next morning. Acknowledge the gap naturally, once." },
+    });
+    const without = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [] },
+    });
+    expect(withSkip.prefix).toBe(without.prefix); // volatile — never busts the cached prefix
+    expect(withSkip.tail).toContain("Time has passed in the story");
+    expect(withSkip.tail).toContain("next morning");
+    expect(without.tail).not.toContain("Time has passed in the story");
   });
 
   it("joins prefix + tail into the full system prompt", () => {
