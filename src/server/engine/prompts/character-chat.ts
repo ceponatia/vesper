@@ -80,6 +80,12 @@ export interface CharacterChatPromptInput {
     outfit?: string;
     /** Whether the outfit reads more exposed than usual (tone hint only). */
     outfitExposed?: boolean;
+    /**
+     * The character's unfinished business (character-chat-standalone.spec.md §6.2) —
+     * rendered as a standing "Unfinished business" state line (never-recite discipline),
+     * so long conversations get narrative pull, not just recall. Absent/empty ⇒ no line.
+     */
+    openLoops?: string[];
     /** Active social cards — surfaced as soft "what you care about" framing, never severity (§6, D3). */
     activeSocialCards?: SocialReactionCard[];
     /**
@@ -156,6 +162,12 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
   for (const condition of state.conditions) if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
   const mindNote = state.mindNote?.trim();
   if (mindNote) lines.push(`- On your mind: ${mindNote}`);
+  const loops = (state.openLoops ?? []).map((l) => l.trim()).filter(Boolean);
+  if (loops.length) {
+    lines.push(
+      `- Unfinished business between you: ${loops.join("; ")}. Let it tug at you when there's an opening — never recite the list.`,
+    );
+  }
   const outfit = state.outfit?.trim();
   if (outfit) lines.push(`- You're wearing ${outfit}${state.outfitExposed ? ", and more exposed than usual" : ""}.`);
 

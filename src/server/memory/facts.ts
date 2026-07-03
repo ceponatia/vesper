@@ -1,17 +1,41 @@
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { FactDraft } from "@/contracts/facts/taxonomy";
+import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, embedTexts, toVectorLiteral, type Embedded } from "../ai";
 import { db, facts, type DbWriter } from "../db";
 import { logEvent } from "../events";
-import { FACT_MIN_CONFIDENCE, FACT_RETRIEVAL_LIMIT, SUPERSEDE_CANDIDATES, SUPERSEDE_MIN_SCORE } from "./constants";
+import {
+  FACT_MIN_CONFIDENCE,
+  FACT_MIN_SCORE,
+  FACT_RETRIEVAL_LIMIT,
+  PINNED_FACT_CAP,
+  RRF_K,
+  SUPERSEDE_CANDIDATES,
+  SUPERSEDE_MIN_SCORE,
+} from "./constants";
+import { fuseByRrf, nonBlankQueries } from "./fusion";
 import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
+
+const stringArraySchema = z.array(z.string());
+
+/**
+ * Who authored a fact (character-chat-standalone.spec.md §6.4): the background
+ * archivist ("extracted", the default), the player's "remember this"
+ * ("player"), or a dev inspector edit ("dev").
+ */
+export type FactOrigin = "extracted" | "player" | "dev";
 
 /** Draft optionally pre-grounded by the merge reducer (subject_id resolution). */
 export type FactDraftInput = FactDraft & {
   subjectId?: string | null;
   /** Participant ids present when the fact originated — interim co-location semantics (decision 3); write-only until the knowledge ledger ships. */
   witnessedBy?: string[];
+  /** Force-include in retrieval + protect from extracted supersedence (spec §6.4 "remember this"). */
+  pinned?: boolean;
+  /** Provenance; defaults to "extracted" (archivist drafts). */
+  origin?: FactOrigin;
 };
 
 export interface AddFactsResult {
@@ -24,23 +48,81 @@ export interface FactHit {
   kind: string;
   subjectName: string;
   text: string;
+  /**
+   * Raw cosine similarity to the query (best across queries in the fused path).
+   * Force-included pinned rows the similarity search didn't surface carry 0 —
+   * "not scored", never a fabricated similarity.
+   */
   score: number;
+  pinned: boolean;
+  origin: FactOrigin;
+}
+
+/** A fused-retrieval hit: which queries retrieved it (spec §6.3 #2 per-source attribution). */
+export type FusedFactHit = FactHit & {
+  /** Queries that retrieved this hit; [] for force-included pinned rows no query found. */
+  sources: string[];
+};
+
+/** Full fact row for the dev inspector's list read (spec §6.1). */
+export interface FactRecord {
+  id: string;
+  kind: string;
+  subjectKind: string;
+  subjectId: string | null;
+  subjectName: string;
+  text: string;
+  tags: string[];
+  confidence: number;
+  status: "active" | "superseded" | "retracted";
+  pinned: boolean;
+  origin: FactOrigin;
+  sourceTurnId: string | null;
+  sourceMessageId: string | null;
+  supersededById: string | null;
+  createdAt: Date;
+  supersededAt: Date | null;
 }
 
 export function normalizeSubjectName(name: string): string {
   return name.trim().toLowerCase();
 }
 
+/** The incoming draft's identity fields the supersedence gate consults. */
+export interface SupersedeDraft {
+  subjectName: string;
+  subjectId?: string | null;
+  /** Defaults to "extracted" — the pinned asymmetry's least-privileged origin. */
+  origin?: FactOrigin;
+}
+
+/** The stored candidate's identity fields the supersedence gate consults. */
+export interface SupersedeCandidate {
+  subjectName: string;
+  subjectId: string | null;
+  pinned: boolean;
+  origin: FactOrigin;
+}
+
 /**
- * Supersedence gate (docs/memory.md §Semantic facts): same lowercased subject
- * AND cosine similarity at/above SUPERSEDE_MIN_SCORE. Pure — tested with
- * pseudoEmbed-derived scores.
+ * Supersedence gate (docs/memory.md §Semantic facts): same subject AND cosine
+ * similarity at/above SUPERSEDE_MIN_SCORE. Pure — tested with
+ * pseudoEmbed-derived scores. Two slice-7 refinements:
+ *
+ * - Subject identity (spec §6.3 #4): when BOTH sides carry a `subjectId`, id
+ *   equality is the test — differing ids block supersedence even when names
+ *   match (two "Twin"s are two entities), and matching ids pass even across a
+ *   rename. When either side lacks an id (all chat-lane drafts today), fall
+ *   back to lowercased-name equality.
+ * - Pinned asymmetry (spec §6.4): a pinned candidate is only superseded when
+ *   the incoming draft's origin is "player" or "dev" — an "extracted" draft
+ *   never retires a pinned fact. Pinned facts supersede others freely.
  */
-export function supersedes(draftSubjectName: string, candidateSubjectName: string, score: number): boolean {
-  return (
-    normalizeSubjectName(draftSubjectName) === normalizeSubjectName(candidateSubjectName) &&
-    score >= SUPERSEDE_MIN_SCORE
-  );
+export function supersedes(draft: SupersedeDraft, candidate: SupersedeCandidate, score: number): boolean {
+  if (score < SUPERSEDE_MIN_SCORE) return false;
+  if (candidate.pinned && (draft.origin ?? "extracted") === "extracted") return false;
+  if (draft.subjectId != null && candidate.subjectId != null) return draft.subjectId === candidate.subjectId;
+  return normalizeSubjectName(draft.subjectName) === normalizeSubjectName(candidate.subjectName);
 }
 
 /** Pure cosine similarity, mirrors pgvector's `1 - (a <=> b)`. */
@@ -137,6 +219,9 @@ export async function addFacts(
           .select({
             id: facts.id,
             subjectName: facts.subjectName,
+            subjectId: facts.subjectId,
+            pinned: facts.pinned,
+            origin: facts.origin,
             score: sql<number>`1 - (${facts.embedding} <=> ${vec}::vector)`,
           })
           .from(facts)
@@ -150,7 +235,8 @@ export async function addFacts(
           )
           .orderBy(sql`${facts.embedding} <=> ${vec}::vector`)
           .limit(SUPERSEDE_CANDIDATES);
-        toSupersede = candidates.filter((c) => supersedes(subjectName, c.subjectName, c.score)).map((c) => c.id);
+        const draftRef: SupersedeDraft = { subjectName, subjectId: draft.subjectId ?? null, origin: draft.origin };
+        toSupersede = candidates.filter((c) => supersedes(draftRef, c, c.score)).map((c) => c.id);
       }
 
       const [inserted] = await tx
@@ -165,6 +251,8 @@ export async function addFacts(
           text: draft.text,
           tags: draft.tags,
           confidence: draft.confidence,
+          pinned: draft.pinned ?? false,
+          origin: draft.origin ?? "extracted",
           witnessedBy: draft.witnessedBy ?? [],
           sourceTurnId: source?.turnId ?? null,
           sourceMessageId: source?.messageId ?? null,
@@ -189,40 +277,17 @@ export async function addFacts(
   return { insertedIds, supersededIds };
 }
 
-/**
- * Top active facts by cosine similarity (no minimum score — docs/memory.md
- * specifies only the limit for the facts channel; the ≤8 merged cap is the
- * prompt builder's concern).
- */
-export async function retrieveFacts(
-  scope: MemoryScope,
-  queryText: string,
-  limit = FACT_RETRIEVAL_LIMIT,
-  sink?: DiagnosticSink,
-): Promise<FactHit[]> {
-  const query = queryText.trim();
-  if (!query || limit <= 0) return [];
-
-  let embedded: Embedded;
-  try {
-    embedded = await embedText(query);
-  } catch (err) {
-    sink?.push(
-      diag("error", "memory.facts.embed_failed", `query embedding failed: ${errorText(err)}`, {
-        context: { scope: scopeLabel(scope) },
-      }),
-    );
-    return [];
-  }
-
-  const vec = toVectorLiteral(embedded.vector);
-  const hits = await db()
+/** Top-k active same-embedder facts by cosine similarity (shared by both retrievers). */
+async function queryFactCandidates(scope: MemoryScope, vec: string, limit: number): Promise<FactHit[]> {
+  return db()
     .select({
       id: facts.id,
       kind: facts.kind,
       subjectName: facts.subjectName,
       text: facts.text,
       score: sql<number>`1 - (${facts.embedding} <=> ${vec}::vector)`,
+      pinned: facts.pinned,
+      origin: facts.origin,
     })
     .from(facts)
     .where(
@@ -235,14 +300,189 @@ export async function retrieveFacts(
     )
     .orderBy(sql`${facts.embedding} <=> ${vec}::vector`)
     .limit(limit);
+}
+
+/**
+ * The scope's active pinned facts, newest first, capped at PINNED_FACT_CAP —
+ * force-included ahead of the similarity top-k (spec §6.4). No embedder filter:
+ * a pinned row is retrieved even when it never embedded. With a query vector
+ * the row's true cosine is reported when comparable (same embedder, non-null
+ * embedding); otherwise the honest "not scored" 0.
+ */
+async function selectPinnedFacts(scope: MemoryScope, vec: string | null): Promise<FactHit[]> {
+  const score = vec
+    ? sql<number>`coalesce(case when ${facts.embedder} = ${currentEmbedder()} then 1 - (${facts.embedding} <=> ${vec}::vector) end, 0)`
+    : sql<number>`0`;
+  return db()
+    .select({
+      id: facts.id,
+      kind: facts.kind,
+      subjectName: facts.subjectName,
+      text: facts.text,
+      score,
+      pinned: facts.pinned,
+      origin: facts.origin,
+    })
+    .from(facts)
+    .where(and(memoryScopeWhere(facts, scope), eq(facts.status, "active"), eq(facts.pinned, true)))
+    .orderBy(desc(facts.createdAt))
+    .limit(PINNED_FACT_CAP);
+}
+
+/**
+ * Single-query fact retrieval: the scope's pinned facts ride ahead of the
+ * similarity top-k (on top of `limit`, deduped by id), then scored hits at/above
+ * FACT_MIN_SCORE (pinned rows exempt from the floor — spec §6.3 #1, §6.4).
+ * A query-embedding failure degrades to the pinned-only result with a
+ * diagnostic, never a throw.
+ */
+export async function retrieveFacts(
+  scope: MemoryScope,
+  queryText: string,
+  limit = FACT_RETRIEVAL_LIMIT,
+  sink?: DiagnosticSink,
+): Promise<FactHit[]> {
+  const query = queryText.trim();
+  if (!query || limit <= 0) return [];
+
+  let embedded: Embedded | null = null;
+  try {
+    embedded = await embedText(query);
+  } catch (err) {
+    sink?.push(
+      diag("error", "memory.facts.embed_failed", `query embedding failed: ${errorText(err)}`, {
+        context: { scope: scopeLabel(scope) },
+      }),
+    );
+  }
+
+  const vec = embedded ? toVectorLiteral(embedded.vector) : null;
+  const pinnedHits = await selectPinnedFacts(scope, vec);
+  const pinnedIds = new Set(pinnedHits.map((h) => h.id));
+  const candidates = vec ? await queryFactCandidates(scope, vec, limit) : [];
+  const scored = candidates.filter((c) => !pinnedIds.has(c.id) && (c.pinned || c.score >= FACT_MIN_SCORE));
+  const hits = [...pinnedHits, ...scored];
 
   await logEvent(scopeSessionId(scope), "retrieval", {
     kind: "facts",
     scope: scopeLabel(scope),
     query: query.slice(0, 300),
-    candidates: hits.map((h) => ({ id: h.id, subjectName: h.subjectName, score: round(h.score) })),
+    minScore: FACT_MIN_SCORE,
+    pinnedCount: pinnedHits.length,
+    candidates: candidates.map((h) => ({ id: h.id, subjectName: h.subjectName, score: round(h.score) })),
+    hitIds: hits.map((h) => h.id),
   });
   return hits;
+}
+
+/**
+ * Multi-query fact retrieval (spec §6.3 #2): every query embedded in one batch
+ * call, one top-k cosine select per query, fused by reciprocal rank. The
+ * relevance floor applies to each hit's BEST raw cosine across queries (never
+ * the RRF number), pinned rows exempt and force-included ahead of the fused
+ * top-k exactly as in `retrieveFacts`. Zero usable queries or an embedding
+ * failure degrades to the pinned-only result.
+ */
+export async function retrieveFactsFused(
+  scope: MemoryScope,
+  queries: readonly string[],
+  limit = FACT_RETRIEVAL_LIMIT,
+  sink?: DiagnosticSink,
+): Promise<FusedFactHit[]> {
+  const usable = nonBlankQueries(queries);
+
+  let embedded: Embedded[] = [];
+  if (usable.length > 0 && limit > 0) {
+    try {
+      embedded = await embedTexts(usable);
+    } catch (err) {
+      sink?.push(
+        diag("error", "memory.facts.embed_failed", `query embedding failed: ${errorText(err)}`, {
+          context: { scope: scopeLabel(scope), queryCount: usable.length },
+        }),
+      );
+    }
+  }
+
+  const lists = await Promise.all(
+    embedded.map(async (emb, i) => ({
+      query: usable[i] ?? "",
+      hits: await queryFactCandidates(scope, toVectorLiteral(emb.vector), limit),
+    })),
+  );
+  const fused = fuseByRrf(lists);
+  const fusedById = new Map(fused.map((f) => [f.hit.id, f]));
+
+  const pinnedHits: FusedFactHit[] = (await selectPinnedFacts(scope, null)).map((row) => {
+    const f = fusedById.get(row.id);
+    return { ...row, score: f?.bestScore ?? 0, sources: f?.sources ?? [] };
+  });
+  const pinnedIds = new Set(pinnedHits.map((h) => h.id));
+
+  const scored: FusedFactHit[] = fused
+    .filter((f) => !pinnedIds.has(f.hit.id) && (f.hit.pinned || f.bestScore >= FACT_MIN_SCORE))
+    .slice(0, limit)
+    .map((f) => ({ ...f.hit, score: f.bestScore, sources: f.sources }));
+  const hits = [...pinnedHits, ...scored];
+
+  await logEvent(scopeSessionId(scope), "retrieval", {
+    kind: "facts",
+    fused: true,
+    scope: scopeLabel(scope),
+    queries: usable.map((q) => q.slice(0, 300)),
+    minScore: FACT_MIN_SCORE,
+    rrfK: RRF_K,
+    pinnedCount: pinnedHits.length,
+    candidates: fused.map((f) => ({
+      id: f.hit.id,
+      subjectName: f.hit.subjectName,
+      bestScore: round(f.bestScore),
+      rrfScore: round(f.rrfScore, 4),
+      sources: f.sources,
+    })),
+    hitIds: hits.map((h) => h.id),
+  });
+  return hits;
+}
+
+/**
+ * Full fact rows for a scope, newest first — the dev inspector's list read
+ * (spec §6.1). Default: active rows only; `includeInactive` adds superseded +
+ * retracted history.
+ */
+export async function listFactsForScope(
+  scope: MemoryScope,
+  opts: { includeInactive?: boolean; sink?: DiagnosticSink } = {},
+): Promise<FactRecord[]> {
+  const where = opts.includeInactive
+    ? memoryScopeWhere(facts, scope)
+    : and(memoryScopeWhere(facts, scope), eq(facts.status, "active"));
+  const rows = await db()
+    .select({
+      id: facts.id,
+      kind: facts.kind,
+      subjectKind: facts.subjectKind,
+      subjectId: facts.subjectId,
+      subjectName: facts.subjectName,
+      text: facts.text,
+      tags: facts.tags,
+      confidence: facts.confidence,
+      status: facts.status,
+      pinned: facts.pinned,
+      origin: facts.origin,
+      sourceTurnId: facts.sourceTurnId,
+      sourceMessageId: facts.sourceMessageId,
+      supersededById: facts.supersededById,
+      createdAt: facts.createdAt,
+      supersededAt: facts.supersededAt,
+    })
+    .from(facts)
+    .where(where)
+    .orderBy(desc(facts.createdAt));
+  return rows.map((row) => ({
+    ...row,
+    tags: parseOr(stringArraySchema, row.tags, [], opts.sink, "facts.tags"),
+  }));
 }
 
 /**
@@ -254,7 +494,8 @@ export async function retrieveFacts(
 /**
  * Retract every active fact extracted from one chat assistant message (spec §4.3)
  * — the edit/delete/another-take reconciliation. Status-flip, never a row delete
- * (audit trail), same as the session lane's turn retraction below.
+ * (audit trail), same as the session lane's turn retraction below. Pinned player
+ * facts carry no `source_message_id`, so they never match here (spec §6.4).
  */
 export async function retractFactsForMessage(messageId: string): Promise<string[]> {
   const updated = await db()
@@ -287,6 +528,7 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function round(score: number): number {
-  return Math.round(score * 1000) / 1000;
+function round(score: number, decimals = 3): number {
+  const factor = 10 ** decimals;
+  return Math.round(score * factor) / factor;
 }

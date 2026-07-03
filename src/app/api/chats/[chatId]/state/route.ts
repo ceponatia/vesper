@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
   activeConditionSchema,
+  attributeValueSchema,
   characterProfileSchema,
   chatActionIdSchema,
   CHAT_MIND_NOTE_MAX_CHARS,
@@ -51,6 +52,12 @@ const editBodySchema = z.object({
   outfit: z.string().max(CHAT_OUTFIT_MAX_CHARS).optional(),
   outfitExposed: z.boolean().optional(),
   activeSocialCards: z.array(socialReactionCardSchema).optional(),
+  // Inspector-grade fields (character-chat-standalone.spec.md §6.1): the dev/state-tools
+  // surface can rewrite everything stored — including the D11 gate bypass via `affinity`.
+  openLoops: z.array(z.string().trim().max(200)).max(6).optional(),
+  memoryQueries: z.array(z.string().trim().max(200)).max(6).optional(),
+  surfacedCues: z.record(z.string(), z.string()).optional(),
+  attributeOverlays: z.array(attributeValueSchema).optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

@@ -595,6 +595,23 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     expect(withCondition.tail).toContain("unkempt");
   });
 
+  it("renders open loops as an Unfinished-business state line in the tail (spec §6.2)", () => {
+    const withLoops = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [], openLoops: ["tell them about her sister", "the unopened letter"] },
+    });
+    expect(withLoops.tail).toContain("Unfinished business between you: tell them about her sister; the unopened letter");
+    expect(withLoops.tail).toContain("never recite the list");
+    const without = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, affinity: 0, conditions: [], openLoops: [] },
+    });
+    expect(without.prefix).toBe(withLoops.prefix); // loops are volatile — never in the prefix
+    expect(without.tail).not.toContain("Unfinished business");
+  });
+
   it("carries the dialogue-craft rule and the intimate-craft block in the stable rules (C3/C4)", () => {
     const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
     expect(parts.prefix).toContain("Dialogue is speech, not prose");

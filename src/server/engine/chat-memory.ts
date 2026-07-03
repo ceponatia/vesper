@@ -5,6 +5,7 @@ import {
   type ChatArchivist,
   type DiagnosticSink,
   type FactDraft,
+  type RetrievedMemoryDetail,
 } from "@/contracts";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import type { DbWriter } from "../db";
@@ -18,8 +19,8 @@ import {
   FACT_RETRIEVAL_LIMIT,
   latestEpisodeNumber,
   retractFactsForMessage,
-  retrieveEpisodes,
-  retrieveFacts,
+  retrieveEpisodesFused,
+  retrieveFactsFused,
   type FactDraftInput,
 } from "../memory";
 import { CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS, CHAT_ARCHIVIST_TIMEOUT_MS } from "./constants";
@@ -42,12 +43,22 @@ import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./prompts/chat-
  */
 
 export interface ChatMemoryHits {
-  /** Retrieved fact texts (already deduped/limited by `retrieveFacts`). */
+  /** Retrieved fact texts (pinned force-includes first, then fused top-k). */
   facts: string[];
   /** Retrieved episode summaries (older than the recency window). */
   episodes: string[];
+  /** Per-hit retrieval detail (spec §6.3 #2 — scores + per-source attribution) for the trace. */
+  detail: RetrievedMemoryDetail[];
 }
 
+/**
+ * Per-turn RAG recall (spec §6.3 #2): each query — last turn's `memoryQueries` plus
+ * the player's input — is embedded separately and retrieved independently, then
+ * fused by reciprocal rank (`retrieveFactsFused`/`retrieveEpisodesFused`); pinned
+ * player facts (§6.4) ride ahead of the top-k regardless of similarity. With no
+ * usable queries (an opening beat) the recall is pinned-facts-only — a pinned note
+ * always reaches the character.
+ */
 export async function retrieveChatMemory(input: {
   /** The participant's memory group (character-chat-standalone.spec.md §1.3). */
   groupId: string;
@@ -57,16 +68,11 @@ export async function retrieveChatMemory(input: {
   input: string;
   sink?: DiagnosticSink;
 }): Promise<ChatMemoryHits> {
-  const queryText = [...input.queries, input.input]
-    .map((q) => q.trim())
-    .filter(Boolean)
-    .join("\n");
-  if (!queryText) return { facts: [], episodes: [] };
-
+  const queries = [...input.queries, input.input];
   const scope = chatScope(input.groupId);
   const [ep, fa] = await Promise.allSettled([
-    retrieveEpisodes(scope, queryText, { sink: input.sink }),
-    retrieveFacts(scope, queryText, FACT_RETRIEVAL_LIMIT, input.sink),
+    retrieveEpisodesFused(scope, queries, undefined, input.sink),
+    retrieveFactsFused(scope, queries, FACT_RETRIEVAL_LIMIT, input.sink),
   ]);
 
   if (ep.status === "rejected") {
@@ -75,9 +81,29 @@ export async function retrieveChatMemory(input: {
   if (fa.status === "rejected") {
     input.sink?.push(diag("error", "chat_memory.facts_failed", `fact recall failed: ${errText(fa.reason)}`));
   }
+  const factHits = fa.status === "fulfilled" ? fa.value : [];
+  const episodeHits = ep.status === "fulfilled" ? ep.value : [];
   return {
-    episodes: ep.status === "fulfilled" ? ep.value.map((h) => h.summary) : [],
-    facts: fa.status === "fulfilled" ? fa.value.map((h) => h.text) : [],
+    episodes: episodeHits.map((h) => h.summary),
+    facts: factHits.map((h) => h.text),
+    detail: [
+      ...factHits.map((h) => ({
+        kind: "fact" as const,
+        id: h.id,
+        text: h.text,
+        score: h.score,
+        pinned: h.pinned,
+        sources: h.sources,
+      })),
+      ...episodeHits.map((h) => ({
+        kind: "episode" as const,
+        id: h.id,
+        text: h.summary,
+        score: h.score,
+        pinned: false,
+        sources: h.sources,
+      })),
+    ],
   };
 }
 
@@ -85,6 +111,8 @@ export interface ChatArchivistInput {
   characterName: string;
   playerName: string;
   exchange: { player: string; assistant: string };
+  /** The standing open-loops list (spec §6.2) — re-emitted in full so resolved loops fall off. */
+  openLoops?: readonly string[];
   sink?: DiagnosticSink;
 }
 
@@ -109,6 +137,7 @@ export async function runChatArchivist(
       characterName: input.characterName,
       playerName: input.playerName,
       exchange: input.exchange,
+      openLoops: input.openLoops,
     }),
     modelId: agentModelId(),
     temperature: 0,

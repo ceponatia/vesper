@@ -169,6 +169,13 @@
       "when": 1783022681485,
       "tag": "0023_rare_agent_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783040172551,
+      "tag": "0024_jazzy_layla_miller",
+      "breakpoints": true
     }
   ]
 }

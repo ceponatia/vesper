@@ -1,7 +1,8 @@
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { FACT_RETRIEVAL_LIMIT } from "./constants";
-import { retrieveEpisodes } from "./episodes";
-import { retrieveFacts } from "./facts";
+import { EPISODE_RETRIEVAL_LIMIT, FACT_RETRIEVAL_LIMIT } from "./constants";
+import { retrieveEpisodesFused } from "./episodes";
+import { retrieveFactsFused } from "./facts";
+import { nonBlankQueries } from "./fusion";
 import { sessionScope } from "./scope";
 import {
   eligibleRetrievalChunks,
@@ -33,19 +34,19 @@ export interface PreTurnRetrieval {
 /**
  * Pre-turn retrieval fan-out (docs/turn-engine.md step 3a–c): the three legs
  * run in parallel and fail independently — a failed leg degrades to [] with a
- * diagnostic, never a failed turn.
+ * diagnostic, never a failed turn. Episodes + facts run the fused multi-query
+ * path (spec §6.3 #2 — one list per memory query + the player input); lore
+ * stays single-query over the joined text.
  */
 export async function preTurnRetrieve(input: PreTurnRetrieveInput): Promise<PreTurnRetrieval> {
-  const queryText = [...input.queries, input.input]
-    .map((q) => q.trim())
-    .filter(Boolean)
-    .join("\n");
-  if (!queryText) return { episodeHits: [], factHits: [], loreHits: [] };
+  const queries = nonBlankQueries([...input.queries, input.input]);
+  if (queries.length === 0) return { episodeHits: [], factHits: [], loreHits: [] };
+  const queryText = queries.join("\n");
 
   const scope = sessionScope(input.session.id);
   const [episodesResult, factsResult, loreResult] = await Promise.allSettled([
-    retrieveEpisodes(scope, queryText, { sink: input.sink }),
-    retrieveFacts(scope, queryText, FACT_RETRIEVAL_LIMIT, input.sink),
+    retrieveEpisodesFused(scope, queries, EPISODE_RETRIEVAL_LIMIT, input.sink),
+    retrieveFactsFused(scope, queries, FACT_RETRIEVAL_LIMIT, input.sink),
     retrieveLoreLeg(input, queryText),
   ]);
 

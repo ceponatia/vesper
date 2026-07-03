@@ -23,6 +23,20 @@ export const LORE_MIN_SCORE = 0.72;
  */
 export const EPISODE_MIN_SCORE = 0.55;
 
+/**
+ * Fact-relevance floor (character-chat-standalone.spec.md §6.3 #1). Starting
+ * floor pending the §6.3 #6 retrieval eval — the facts floor sits below the
+ * episodes' 0.55 because facts are the primary recall channel and a dropped
+ * fact costs more than a loose one. Pinned facts are exempt (§6.4).
+ */
+export const FACT_MIN_SCORE = 0.5;
+
+/** Cap on force-included pinned facts per retrieval (spec §6.4 — they ride ahead of the top-k). */
+export const PINNED_FACT_CAP = 8;
+
+/** Standard reciprocal-rank-fusion constant: fused score = Σ 1/(RRF_K + rank) (spec §6.3 #2). */
+export const RRF_K = 60;
+
 /** Library fuzzy name resolution (merge grounding, forge dedup, search). */
 export const FUZZY_MIN_SCORE = 0.75;
 

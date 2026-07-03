@@ -2,10 +2,11 @@ import { and, desc, eq, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
-import { currentEmbedder, embedText, toVectorLiteral, type Embedded } from "../ai";
+import { currentEmbedder, embedText, embedTexts, toVectorLiteral, type Embedded } from "../ai";
 import { db, episodes, type DbWriter } from "../db";
 import { logEvent } from "../events";
-import { EPISODE_MIN_SCORE, EPISODE_RETRIEVAL_LIMIT, EPISODE_WINDOW } from "./constants";
+import { EPISODE_MIN_SCORE, EPISODE_RETRIEVAL_LIMIT, EPISODE_WINDOW, RRF_K } from "./constants";
+import { fuseByRrf, nonBlankQueries } from "./fusion";
 import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
 
 const stringArraySchema = z.array(z.string());
@@ -21,7 +22,22 @@ export interface EpisodeHit {
   id: string;
   turnNumber: number;
   summary: string;
+  /** Raw cosine similarity to the query (best across queries in the fused path). */
   score: number;
+}
+
+/** A fused-retrieval hit: which queries retrieved it (spec §6.3 #2 per-source attribution). */
+export type FusedEpisodeHit = EpisodeHit & { sources: string[] };
+
+/** Episode row for the dev inspector's list read (spec §6.1). */
+export interface EpisodeListRecord {
+  id: string;
+  turnNumber: number;
+  summary: string;
+  sourceMessageId: string | null;
+  createdAt: Date;
+  /** Whether the row carries an embedding — an embed-failure row keeps its audit value but stays out of RAG. */
+  embedded: boolean;
 }
 
 export interface RetrieveEpisodesOptions {
@@ -94,6 +110,42 @@ export async function recentEpisodes(scope: MemoryScope, n: number, sink?: Diagn
   }));
 }
 
+/** Highest episode `turnNumber` in a scope, or null when the scope has none. */
+async function maxTurnNumber(scope: MemoryScope): Promise<number | null> {
+  const [agg] = await db()
+    .select({ maxTurn: sql<number | null>`max(${episodes.turnNumber})` })
+    .from(episodes)
+    .where(memoryScopeWhere(episodes, scope));
+  return agg?.maxTurn ?? null;
+}
+
+/** Top-k same-embedder episodes at/under the recency cutoff by cosine similarity (shared by both retrievers). */
+async function queryEpisodeCandidates(
+  scope: MemoryScope,
+  vec: string,
+  cutoff: number,
+  limit: number,
+): Promise<EpisodeHit[]> {
+  return db()
+    .select({
+      id: episodes.id,
+      turnNumber: episodes.turnNumber,
+      summary: episodes.summary,
+      score: sql<number>`1 - (${episodes.embedding} <=> ${vec}::vector)`,
+    })
+    .from(episodes)
+    .where(
+      and(
+        memoryScopeWhere(episodes, scope),
+        eq(episodes.embedder, currentEmbedder()),
+        isNotNull(episodes.embedding),
+        lte(episodes.turnNumber, cutoff),
+      ),
+    )
+    .orderBy(sql`${episodes.embedding} <=> ${vec}::vector`)
+    .limit(limit);
+}
+
 /**
  * Cosine RAG over older episodes. Filters on `embedder = currentEmbedder()`
  * (docs/memory.md §Embedder isolation) and excludes the most recent
@@ -122,33 +174,11 @@ export async function retrieveEpisodes(
     return [];
   }
 
-  const [agg] = await db()
-    .select({ maxTurn: sql<number | null>`max(${episodes.turnNumber})` })
-    .from(episodes)
-    .where(memoryScopeWhere(episodes, scope));
-  if (agg?.maxTurn == null) return [];
-  const cutoff = agg.maxTurn - window;
+  const maxTurn = await maxTurnNumber(scope);
+  if (maxTurn == null) return [];
+  const cutoff = maxTurn - window;
 
-  const vec = toVectorLiteral(embedded.vector);
-  const candidates = await db()
-    .select({
-      id: episodes.id,
-      turnNumber: episodes.turnNumber,
-      summary: episodes.summary,
-      score: sql<number>`1 - (${episodes.embedding} <=> ${vec}::vector)`,
-    })
-    .from(episodes)
-    .where(
-      and(
-        memoryScopeWhere(episodes, scope),
-        eq(episodes.embedder, currentEmbedder()),
-        isNotNull(episodes.embedding),
-        lte(episodes.turnNumber, cutoff),
-      ),
-    )
-    .orderBy(sql`${episodes.embedding} <=> ${vec}::vector`)
-    .limit(limit);
-
+  const candidates = await queryEpisodeCandidates(scope, toVectorLiteral(embedded.vector), cutoff, limit);
   const hits = candidates.filter((c) => c.score >= minScore);
   await logEvent(scopeSessionId(scope), "retrieval", {
     kind: "episodes",
@@ -163,15 +193,95 @@ export async function retrieveEpisodes(
 }
 
 /**
+ * Multi-query episode RAG (spec §6.3 #2): every query embedded in one batch
+ * call, one top-k select per query with the same recency-window exclusion,
+ * EPISODE_MIN_SCORE applied per query on raw cosine, then fused by reciprocal
+ * rank. An embedding failure degrades to [] with a diagnostic, never a throw.
+ */
+export async function retrieveEpisodesFused(
+  scope: MemoryScope,
+  queries: readonly string[],
+  limit = EPISODE_RETRIEVAL_LIMIT,
+  sink?: DiagnosticSink,
+): Promise<FusedEpisodeHit[]> {
+  const usable = nonBlankQueries(queries);
+  if (usable.length === 0 || limit <= 0) return [];
+
+  let embedded: Embedded[];
+  try {
+    embedded = await embedTexts(usable);
+  } catch (err) {
+    sink?.push(
+      diag("error", "memory.episodes.embed_failed", `query embedding failed: ${errorText(err)}`, {
+        context: { scope: scopeLabel(scope), queryCount: usable.length },
+      }),
+    );
+    return [];
+  }
+
+  const maxTurn = await maxTurnNumber(scope);
+  if (maxTurn == null) return [];
+  const cutoff = maxTurn - EPISODE_WINDOW;
+
+  const lists = await Promise.all(
+    embedded.map(async (emb, i) => ({
+      query: usable[i] ?? "",
+      hits: (await queryEpisodeCandidates(scope, toVectorLiteral(emb.vector), cutoff, limit)).filter(
+        (c) => c.score >= EPISODE_MIN_SCORE,
+      ),
+    })),
+  );
+  const fused = fuseByRrf(lists);
+  const hits: FusedEpisodeHit[] = fused
+    .slice(0, limit)
+    .map((f) => ({ ...f.hit, score: f.bestScore, sources: f.sources }));
+
+  await logEvent(scopeSessionId(scope), "retrieval", {
+    kind: "episodes",
+    fused: true,
+    scope: scopeLabel(scope),
+    queries: usable.map((q) => q.slice(0, 300)),
+    minScore: EPISODE_MIN_SCORE,
+    rrfK: RRF_K,
+    windowCutoff: cutoff,
+    candidates: fused.map((f) => ({
+      id: f.hit.id,
+      turnNumber: f.hit.turnNumber,
+      bestScore: round(f.bestScore),
+      rrfScore: round(f.rrfScore, 4),
+      sources: f.sources,
+    })),
+    hitIds: hits.map((h) => h.id),
+  });
+  return hits;
+}
+
+/**
+ * Every episode in a scope, oldest first — the dev inspector's list read
+ * (spec §6.1). `embedded` reports embedder null-ness (an embed-failure row
+ * stays out of RAG but keeps its recency-window/audit value).
+ */
+export async function listEpisodesForScope(scope: MemoryScope): Promise<EpisodeListRecord[]> {
+  return db()
+    .select({
+      id: episodes.id,
+      turnNumber: episodes.turnNumber,
+      summary: episodes.summary,
+      sourceMessageId: episodes.sourceMessageId,
+      createdAt: episodes.createdAt,
+      embedded: sql<boolean>`${episodes.embedder} is not null`,
+    })
+    .from(episodes)
+    .where(memoryScopeWhere(episodes, scope))
+    .orderBy(episodes.turnNumber);
+}
+
+/**
  * Highest episode `turnNumber` in a scope, or 0 when none. The chat lane has no `turns`
  * table, so it uses this as its per-chat exchange-ordinal source (next = latest + 1).
  */
 export async function latestEpisodeNumber(scope: MemoryScope): Promise<number> {
-  const [agg] = await db()
-    .select({ maxTurn: sql<number | null>`max(${episodes.turnNumber})` })
-    .from(episodes)
-    .where(memoryScopeWhere(episodes, scope));
-  return agg?.maxTurn ?? 0;
+  return (await maxTurnNumber(scope)) ?? 0;
 }
 
 /** Rerun support: drop the turn's episode before the input is resubmitted. */
@@ -205,6 +315,7 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function round(score: number): number {
-  return Math.round(score * 1000) / 1000;
+function round(score: number, decimals = 3): number {
+  const factor = 10 ** decimals;
+  return Math.round(score * factor) / factor;
 }

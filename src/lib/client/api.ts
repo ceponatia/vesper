@@ -7,6 +7,7 @@ import {
   avatarImageModels,
   avatarImageModelLabels,
   attributeValueSchema,
+  type AttributeValue,
   type ChatActionId,
   chatMemoryTraceSchema,
   chatPulseTraceSchema,
@@ -316,11 +317,20 @@ export const chatStateSnapshotSchema = z.object({
     factsAdded: 0,
     memoryQueries: [],
     attributeChanges: [],
+    retrievedDetail: [],
     degraded: false,
   })),
+  // The character's unfinished business (character-chat-standalone.spec.md §6.2) — shown in
+  // the relationship panel and driving the hub's "has something to say" marker (§8.4).
+  openLoops: z.array(z.string()).catch([]),
+  // The live next-turn RAG queries column (not the trace) — editable in the state tools (§6.1).
+  memoryQueries: z.array(z.string()).catch([]),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
-/** A partial edit applied by the premise Save or the state-tools modal (slice 4). */
+/**
+ * A partial edit applied by the premise Save or the state-tools modal (slice 4),
+ * extended to inspector-grade coverage (character-chat-standalone.spec.md §6.1).
+ */
 export interface ChatStateEdit {
   premise?: string;
   affinity?: number;
@@ -330,6 +340,10 @@ export interface ChatStateEdit {
   outfit?: string;
   outfitExposed?: boolean;
   activeSocialCards?: SocialReactionCard[];
+  openLoops?: string[];
+  memoryQueries?: string[];
+  surfacedCues?: Record<string, string>;
+  attributeOverlays?: AttributeValue[];
 }
 
 export const locationSummarySchema = z.object({
@@ -835,6 +849,12 @@ export const chatsApi = {
   generateScene: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/scene`, {}),
   /** Cut the in-flight reply short (spec §4.2); what already streamed persists with `meta.stopped`. */
   stop: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/stop`),
+  /**
+   * "Remember this" (spec §6.4, D15): pin a player note into the chat's long-term memory —
+   * always retrieved, floor-exempt, and never overridden by the background memory-writer.
+   */
+  remember: (chatId: string, content: string) =>
+    apiPost(z.object({ id: z.string().nullable().catch(null) }), `/api/chats/${chatId}/remember`, { content }),
   /** Make one recorded take the displayed reply (spec §4.1 — display-only); returns its content. */
   switchTake: (chatId: string, messageId: string, takeId: string) =>
     apiPatch(z.object({ content: z.string().catch("") }), `/api/chats/${chatId}/messages/${messageId}/take`, { takeId }),
