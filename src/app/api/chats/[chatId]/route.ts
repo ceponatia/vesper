@@ -32,6 +32,8 @@ const sendBodySchema = z
     content: z.string().trim().max(4000).optional(),
     /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
     model: z.string().trim().min(1).max(120).optional(),
+    /** "Has something to say" opener cue (spec §8.4) — only read for kind "continue". */
+    cue: z.string().trim().max(200).optional(),
   })
   .refine((b) => b.kind !== "send" || (b.content?.length ?? 0) >= 1, {
     message: "content is required for a send",
@@ -102,6 +104,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     // A headless POST without a model must agree with the UI (spec §9): default to
     // the character's own narrator pick, not MODEL_DEFAULTS.narrative.
     model: body.value.model ?? resolveChatModelId(owned.character.chatModel),
+    cue: body.value.cue,
   });
   if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);
 

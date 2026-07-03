@@ -63,6 +63,12 @@ export interface SubmitChatMessageInput {
   content?: string;
   /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
   model?: string;
+  /**
+   * "Has something to say" opener (spec §8.4): the open loop the player tapped,
+   * threaded as the continue beat's cue line so the character opens about exactly
+   * that. Only read for `kind: "continue"`.
+   */
+  cue?: string;
 }
 
 export type SubmitChatMessageResult =
@@ -268,7 +274,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       "characters.profile",
     );
     const now = new Date();
-    const driftedState = driftChatState(storedState ?? seedChatState(profile), now, profile, { advance: true });
+    const driftedState = driftChatState(storedState ?? seedChatState(profile), profile, { advance: true });
 
     // --- Window + summary ----------------------------------------------------
     const summaryState = await loadChatSummary(chatId);
@@ -303,8 +309,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       state: promptStateSlice(driftedState),
       opening,
       narrationShape: narrationShapeId("chat"),
-      // One-turn cue invitation (§7): beats without player input have none to read.
-      cueInvite: playerContent ? chatCueInviteLine(detectChatCue(playerContent), characterName) : undefined,
+      // One-turn cue invitation (§7): beats without player input have none to read —
+      // except a "has something to say" continue (§8.4), whose tapped open loop is
+      // threaded here so the character opens about exactly the right thing.
+      cueInvite: playerContent
+        ? chatCueInviteLine(detectChatCue(playerContent), characterName)
+        : effectiveKind === "continue" && input.cue?.trim()
+          ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
+          : undefined,
     });
     const modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
 
@@ -346,11 +358,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       if (opening) {
         // Opening beat: fold drift into the state — no fan-out, there was no
         // player act and barely any narrative to archive. Record the surfaced
-        // bands so the first real turn doesn't re-announce them, and the
+        // bands so the first real turn doesn't re-announce them, clear the
+        // one-shot skip note this beat just rendered (spec §8.1), and store the
         // rollback anchor so even an opening beat can be regenerated.
         try {
           const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
-          await persistChatState(chatId, characterId, { ...driftedState, surfacedCues, lastInteractionAt: now });
+          await persistChatState(chatId, characterId, { ...driftedState, surfacedCues, pendingSkipNote: "" });
           await savePreExchangeSnapshot(chatId, characterId, storedState);
         } catch (error) {
           log.error("engine.chat", "chat-state opening persist failed", { error: describeError(error) });
@@ -580,6 +593,7 @@ function promptStateSlice(state: ChatState): NonNullable<CharacterChatPromptInpu
     activeSocialCards: state.activeSocialCards,
     attributeOverlays: state.attributeOverlays,
     openLoops: state.openLoops,
+    skipNote: state.pendingSkipNote,
   };
 }
 
@@ -613,7 +627,7 @@ export async function previewChatPrompt(input: {
     "characters.profile",
   );
   const stored = await loadChatState(input.chatId, input.character.id, sink);
-  const state = driftChatState(stored ?? seedChatState(profile), new Date(), profile, {});
+  const state = driftChatState(stored ?? seedChatState(profile), profile, {});
   const summaryState = await loadChatSummary(input.chatId);
   const player = await resolvePlayerPersona(await chatOwnerId(input.chatId));
   const memory = await retrieveChatMemory({

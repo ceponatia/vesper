@@ -384,10 +384,34 @@ export const characterChatState = pgTable(
      * relationship panel, and read by the "has something to say" derivation (§8.4).
      */
     openLoops: jsonb("open_loops").notNull().default([]),
-    /** Chat-local game clock (within-visit drift + condition-expiry driver). */
+    /**
+     * RelationshipSample[] ring (spec §7.2, cap ~200): `{at, clockMinutes, affinity, stage}`
+     * appended by the finalizer when affinity moved or the stage crossed — the sparkline.
+     */
+    relationshipHistory: jsonb("relationship_history").notNull().default([]),
+    /**
+     * Milestone[] (spec §7.2, append-only, capped): first exchange, stage changes (both
+     * directions), strong card-driven reactions, player-marked moments — each
+     * `{at, kind, label, messageId?}`.
+     */
+    milestones: jsonb("milestones").notNull().default([]),
+    /**
+     * SkipRecord[] ring (spec §8.1, cap ~50): `{at, clockMinutes, amount}` per player time
+     * skip — the future time-effects system's data, recorded now so it needs no migration.
+     */
+    skipHistory: jsonb("skip_history").notNull().default([]),
+    /**
+     * One-shot skip note (spec §8.1): stamped by a time skip, rendered as a volatile
+     * one-turn prompt line ("The next morning — acknowledge the gap naturally, once"),
+     * cleared when the exchange that rendered it persists. "" ⇒ none pending.
+     */
+    pendingSkipNote: text("pending_skip_note").notNull().default(""),
+    /**
+     * Chat-local game clock (within-visit tick + condition expiry + player time skips).
+     * The ONLY time model (D3/D8): real-world elapsed time never touches state — the
+     * wall-clock anchor and its between-visit recovery were removed outright.
+     */
     clockMinutes: integer("clock_minutes").notNull().default(0),
-    /** Wall-clock anchor for between-visit recovery; null until the first exchange. */
-    lastInteractionAt: timestamp("last_interaction_at", { withTimezone: true }),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],

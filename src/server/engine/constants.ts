@@ -63,17 +63,23 @@ export const CHARACTER_CHAT_SUMMARIZE_AT = 35;
 export const CHARACTER_CHAT_VERBATIM_KEEP = 15;
 
 /**
- * Character-chat light state (docs/developer-notes/character-chat-state.spec.md §3).
- * The chat has no in-world clock, so synthesise one. Within a visit each exchange
- * advances the chat clock CHAT_TICK_MINUTES and decays meters that far (the session
- * decay model, scaled tiny). Between visits, real elapsed time maps to a recovery
- * fraction over CHAT_RESET_MINUTES and meters lerp toward rested (initialMeters) —
- * so an idle character comes back freshly bathed and rested, not perpetually filthy.
- * (Affinity never decays — chat is a light, often-ephemeral test-bed, spec §10.)
+ * Character-chat light state (docs/developer-notes/character-chat-state.spec.md §3,
+ * re-ruled by character-chat-standalone.spec.md §8, D3/D8). The chat clock is the
+ * ONLY time model: within a visit each exchange advances it CHAT_TICK_MINUTES and
+ * decays meters that far (the session decay model, scaled tiny); between visits no
+ * time passes at all — a player away for a week returns to a scene where nothing
+ * moved. Player-chosen time skips (CHAT_SKIP_MINUTES) are the one between-scene
+ * lever, and in v1 they are narrative flavor only: clock + condition expiry + the
+ * skip note — meters untouched (D14). (Affinity never decays, spec §10.)
  */
 export const CHAT_TICK_MINUTES = 4;
-/** Real minutes of absence that fully recover meters toward rested (≈ a few hours). */
-export const CHAT_RESET_MINUTES = 180;
+/** In-game minutes per player skip amount (spec §8.1 — a fixed four-value map, never free-form). */
+export const CHAT_SKIP_MINUTES: Record<"moments" | "hours" | "overnight" | "days", number> = {
+  moments: 30,
+  hours: 180,
+  overnight: 540,
+  days: 4320,
+};
 /** Run the reaction pulse every Nth exchange (1 = every exchange; batch later if cost bites). */
 export const CHAT_PULSE_EVERY_N = 1;
 /** Output-token cap for the pulse call — a concept id + a short mindNote; keep it cheap/fast. */

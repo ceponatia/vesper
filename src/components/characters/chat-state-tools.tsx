@@ -234,12 +234,8 @@ function StateToolsForm({
 
       <div className="rounded-card border border-ink-600 bg-ink-950/40 p-3 text-xs text-paper-400">
         <div className="flex justify-between">
-          <span>Chat clock</span>
+          <span>Chat clock (in-game — the only time model, D3/D8)</span>
           <span className="text-paper-300">{snapshot.clockMinutes} min</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Last visit</span>
-          <span className="text-paper-300">{formatLastInteraction(snapshot.lastInteractionAt)}</span>
         </div>
       </div>
 
@@ -353,8 +349,3 @@ function signed(n: number): string {
   return `${n > 0 ? "+" : "−"}${body}`;
 }
 
-function formatLastInteraction(iso: string | null): string {
-  if (!iso) return "never";
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
-}

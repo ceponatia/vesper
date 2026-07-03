@@ -1,0 +1,1 @@
+ALTER TABLE "character_chat_state" DROP COLUMN "last_interaction_at";

@@ -23,6 +23,38 @@ import { timeAgo } from "@/lib/relative-time";
 
 type Shelf = "active" | "archived";
 
+/**
+ * "Has something to say" marker (character-chat-standalone.spec.md §8.4, D4):
+ * a small accent dot on rows whose `ChatSummary.say` is non-empty — the
+ * character's top open loop, surfaced as the tooltip/aria reason. Clicking it
+ * bypasses plain row navigation and opens the chat with `?say=1`, so they can
+ * speak about exactly this. Shared by the Chats hub and the dashboard rows.
+ */
+export function ChatSayMarker({ chatId, say, className }: { chatId: string; say: string; className?: string }) {
+  const router = useRouter();
+  if (!say) return null;
+  return (
+    <button
+      type="button"
+      title={say}
+      aria-label={`Has something to say: ${say}`}
+      onClick={(e) => {
+        // Hosted over (hub) or inside (dashboard) a row-navigation link — this
+        // click means "open about this", not the plain row open.
+        e.preventDefault();
+        e.stopPropagation();
+        router.push(`/chat/${chatId}?say=1`);
+      }}
+      className={cx(
+        "relative z-10 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-ink-700",
+        className,
+      )}
+    >
+      <span aria-hidden className="block size-2 rounded-full bg-accent-400" />
+    </button>
+  );
+}
+
 const SHELVES: { id: Shelf; label: string }[] = [
   { id: "active", label: "Active" },
   { id: "archived", label: "Archived" },
@@ -171,6 +203,8 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
         <div className="flex flex-col gap-3">
           {chats.map((chat) => {
             const stamp = chat.lastMessageAt ? timeAgo(chat.lastMessageAt) : null;
+            // §8.4 marker — active shelf only (an archived chat has nothing pending to surface).
+            const say = archived ? "" : chat.say;
             return (
               <Card key={chat.id} interactive className="group relative">
                 {/* Overlay link = whole-row navigation; the positioned action cluster below paints above it. */}
@@ -191,7 +225,10 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
                         {chat.characterName}
                       </span>
                       {chat.title ? <span className="min-w-0 truncate text-xs text-paper-500">{chat.title}</span> : null}
-                      {stamp ? <span className="ml-auto shrink-0 text-[11px] text-paper-500">{stamp}</span> : null}
+                      {say ? <ChatSayMarker chatId={chat.id} say={say} className="ml-auto self-center" /> : null}
+                      {stamp ? (
+                        <span className={cx("shrink-0 text-[11px] text-paper-500", !say && "ml-auto")}>{stamp}</span>
+                      ) : null}
                     </div>
                     <p className="mt-0.5 truncate text-sm text-paper-400">{chat.lastLine ?? "No messages yet"}</p>
                     {chat.emotion || chat.stage ? (

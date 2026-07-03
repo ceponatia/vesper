@@ -8,6 +8,7 @@ import {
   personalizeMeters,
   scaleAffinityGain,
   socialTraitScale,
+  stageDispositionOverlays,
   stateDispositionOverlays,
   TRAIT_SCALE_MAX,
 } from "./modulation";
@@ -190,5 +191,35 @@ describe("stateDispositionOverlays", () => {
 
   it("empty traits ⇒ no overlays (today's behavior)", () => {
     expect(stateDispositionOverlays([], { intoxication: 1 })).toEqual([]);
+  });
+});
+
+describe("stageDispositionOverlays (character-chat-standalone.spec.md §7.1 soft coloring)", () => {
+  const traits: TraitValue[] = [
+    trait("temperament.warmth", 10),
+    trait("social.guardedness", 40),
+    trait("intimate.inhibition", 60),
+  ];
+
+  it("stranger (and unknown ids) shift nothing — the neutral default renders authored bands", () => {
+    expect(stageDispositionOverlays("stranger", traits)).toEqual([]);
+    expect(stageDispositionOverlays("no-such-stage", traits)).toEqual([]);
+  });
+
+  it("a warm stage warms and un-guards; a hostile one cools and guards — source condition", () => {
+    const close = stageDispositionOverlays("close", traits);
+    expect(close.find((o) => o.id === "temperament.warmth")?.value).toBe(30); // 10 + 20
+    expect(close.find((o) => o.id === "social.guardedness")?.value).toBe(15); // 40 - 25
+    for (const o of close) expect(o.source).toBe("condition");
+    const hostile = stageDispositionOverlays("hostile", traits);
+    expect(hostile.find((o) => o.id === "temperament.warmth")?.value).toBe(-20); // 10 - 30
+    expect(hostile.find((o) => o.id === "social.guardedness")?.value).toBe(70); // 40 + 30
+  });
+
+  it("never fabricates a disposition the character did not author, and clamps to ±100", () => {
+    const only = stageDispositionOverlays("smitten", [trait("temperament.warmth", 90)]);
+    expect(only.map((o) => o.id)).toEqual(["temperament.warmth"]);
+    expect(only[0]?.value).toBe(100); // 90 + 35, clamped
+    expect(stageDispositionOverlays("smitten", [])).toEqual([]);
   });
 });

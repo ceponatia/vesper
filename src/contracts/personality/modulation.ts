@@ -139,6 +139,55 @@ export function stateDispositionOverlays(
 }
 
 // ---------------------------------------------------------------------------
+// Stage soft-coloring — relationship stage → trait overlay
+// (character-chat-standalone.spec.md §7.1).
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-stage trait shifts (in points) — the render-time "soft coloring everywhere"
+ * of spec §7.1, mirroring `stateDispositionOverlays`' shape: a warm stage reads
+ * as warmer/less guarded/less inhibited than the authored resting sliders; a
+ * hostile one reads colder and more walled-off. Deliberately modest — the stage
+ * *colors* disposition, the authored sliders remain the character. `stranger`
+ * shifts nothing (the neutral default renders exactly the authored bands).
+ */
+export const STAGE_TRAIT_SHIFTS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  hostile: { "temperament.warmth": -30, "social.guardedness": +30, "social.agreeableness": -20 },
+  wary: { "temperament.warmth": -15, "social.guardedness": +20 },
+  cool: { "temperament.warmth": -10, "social.guardedness": +10 },
+  stranger: {},
+  acquaintance: { "temperament.warmth": +5 },
+  friendly: { "temperament.warmth": +10, "social.guardedness": -10 },
+  warm: { "temperament.warmth": +15, "social.guardedness": -15, "intimate.inhibition": -5 },
+  close: { "temperament.warmth": +20, "social.guardedness": -25, "intimate.inhibition": -10 },
+  cherished: { "temperament.warmth": +25, "social.guardedness": -30, "intimate.inhibition": -15 },
+  devoted: { "temperament.warmth": +30, "social.guardedness": -35, "intimate.inhibition": -20 },
+  smitten: { "temperament.warmth": +35, "social.guardedness": -40, "intimate.inhibition": -25 },
+};
+
+/**
+ * Render-time disposition overlays from the relationship stage (spec §7.1 "soft
+ * coloring everywhere"). Same contract as `stateDispositionOverlays`: **only traits
+ * the character actually authored are shifted** (never fabricate a disposition),
+ * `source:"condition"` overlays consumed by `dispositionBands` at prompt build. The
+ * D11 invariant lives elsewhere: this loosens *tone* only — the escalation floor is
+ * the stage profile's, and no overlay raises it. Unknown stage / no shifts ⇒ [].
+ */
+export function stageDispositionOverlays(stageId: string, traits: readonly TraitValue[]): TraitValue[] {
+  if (traits.length === 0) return [];
+  const shifts = STAGE_TRAIT_SHIFTS[stageId];
+  if (!shifts) return [];
+  const resolved = resolveTraits(traits, []);
+  const overlays: TraitValue[] = [];
+  for (const [id, delta] of Object.entries(shifts)) {
+    const current = resolved.find((t) => t.id === id);
+    if (!current) continue; // only shift authored traits
+    overlays.push({ id, value: Math.max(-100, Math.min(100, current.value + delta)), source: "condition" });
+  }
+  return overlays;
+}
+
+// ---------------------------------------------------------------------------
 // Affinity dynamics — trait-scaled gain asymmetry + decay retention (spec §4/§5).
 // These ride the *simulant's* raw, event-grounded affinity deltas (the unrecognized
 // edges; recognized social acts are scaled by `socialTraitScale` in the curve instead)

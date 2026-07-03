@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import type { ChatActionId } from "@/contracts";
+import type { ChatActionId, ChatSkipAmount } from "@/contracts";
 import {
   charactersApi,
   chatsApi,
@@ -26,6 +26,8 @@ import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { useIsMobile } from "@/components/hooks/use-is-mobile";
 import { AvatarPanel } from "@/components/avatar";
+import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
+import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
 import { ChatScenarioModal } from "@/components/characters/chat-scenario-modal";
 import { SceneStrip } from "@/components/characters/chat-scene-strip";
@@ -101,6 +103,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [rememberOpen, setRememberOpen] = useState(false);
   const [rememberText, setRememberText] = useState("");
   const [rememberBusy, setRememberBusy] = useState(false);
+  // The Relationship panel (spec §7) + the reopen pickup strip / time skips (spec §8.1).
+  const [relationshipOpen, setRelationshipOpen] = useState(false);
+  const [pickupDismissed, setPickupDismissed] = useState(false);
+  const [skipBusy, setSkipBusy] = useState(false);
+  // "Has something to say" (spec §8.4): a marker tap arrives as ?say=1 — surfaced as a
+  // one-tap opener banner (generation stays player-triggered), the param stripped so a
+  // reload doesn't re-offer it.
+  const [wantsSay, setWantsSay] = useState(false);
   const isAdmin = useIsAdmin();
   // The portrait/scene disclosure: null = breakpoint default (collapsed on phones,
   // open at ≥md); a tap remembers the choice for this mount only (component state).
@@ -154,7 +164,27 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     setArchived(false);
     setChatModel(resolveChatModelId(null));
     setChatState(null);
+    setPickupDismissed(false);
+    setWantsSay(false);
   }
+
+  // Read (and strip) the ?say=1 marker-tap param once per chat mount (spec §8.4).
+  // Deferred past a microtask per the strict hooks rule (no sync setState in effects).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("say") === "1") {
+        window.history.replaceState(null, "", url.pathname);
+        setWantsSay(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId]);
 
   // Load the light state (the conversation always exists, so GET always returns a
   // snapshot — a seed-on-read pre-first-exchange). Keyed on chatState too: a settled
@@ -204,10 +234,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
    * transcript reload picks up the recorded takes.
    */
   const runStream = async (
-    body: { kind?: "send" | "open" | "continue" | "regenerate"; content?: string; model?: string },
+    body: { kind?: "send" | "open" | "continue" | "regenerate"; content?: string; model?: string; cue?: string },
     opts: { userLine?: string; replaceId?: string } = {},
   ): Promise<ChatStreamOutcome> => {
     const { userLine, replaceId } = opts;
+    // Any exchange consumes the reopen affordances (spec §8.1/§8.4) for this visit.
+    setPickupDismissed(true);
+    setWantsSay(false);
     const assistantId = replaceId ?? mkId();
     // The take being replaced, kept so a failed regenerate can put it back.
     const priorLine = replaceId !== undefined ? lines.find((l) => l.id === replaceId) : undefined;
@@ -484,6 +517,29 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     toast.push({ title: "Noted", description: `${who} will always remember that.` });
   };
 
+  /** Apply a player time skip (spec §8.1) — from the pickup strip or the header menu. */
+  const skipTime = async (amount: ChatSkipAmount) => {
+    if (skipBusy || archived) return;
+    setSkipBusy(true);
+    const result = await chatsApi.timeSkip(chatId, amount);
+    setSkipBusy(false);
+    setPickupDismissed(true);
+    if (!result.ok) {
+      toast.push({ title: "Time skip failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    setChatState(result.data);
+    stageRef.current = result.data.stage.label;
+    toast.push({ title: "Time passes…", description: `${who} will pick the scene up from there.` });
+  };
+
+  /** The §8.4 opener: let the character speak about their top open loop. */
+  const letThemSpeak = async () => {
+    const cue = chatState?.openLoops[0];
+    const outcome = await runStream({ kind: "continue", model: chatModel, cue });
+    if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
+  };
+
   /** Menu actions close the menu, then open their surface (dialog/modal). */
   const menuAction = (open: () => void) => () => {
     setMenuOpen(false);
@@ -496,8 +552,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       hasState={chatState !== null}
       archived={archived}
       archiveBusy={archiveBusy}
+      skipBusy={skipBusy || sending}
       onScenario={menuAction(() => setScenarioOpen(true))}
       onStateTools={menuAction(() => setToolsOpen(true))}
+      onRelationship={menuAction(() => setRelationshipOpen(true))}
+      onTimeSkip={(amount) => {
+        setMenuOpen(false);
+        void skipTime(amount);
+      }}
       onRename={menuAction(() => setRenameOpen(true))}
       onArchiveToggle={() => void toggleArchived()}
       onDelete={menuAction(() => setDeleteOpen(true))}
@@ -648,6 +710,28 @@ export function ChatConversation({ chatId }: { chatId: string }) {
 
       <div className="shrink-0 border-t border-ink-600 bg-ink-900/95 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          {/* Reopen pickup (spec §8.1): a lightweight, dismissable choice — Continue is the default no-op. */}
+          {ready && !archived && lines.length > 0 && !pickupDismissed && !sending ? (
+            <ChatPickupStrip
+              who={who}
+              busy={skipBusy}
+              onPick={(amount) => {
+                if (amount === null) setPickupDismissed(true);
+                else void skipTime(amount);
+              }}
+            />
+          ) : null}
+          {/* "Has something to say" opener (spec §8.4): the tapped marker's one-tap beat. */}
+          {wantsSay && !archived && !sending && (chatState?.openLoops.length ?? 0) > 0 ? (
+            <div className="flex items-center justify-between gap-2 rounded-card border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-xs text-paper-300">
+              <span className="truncate" title={chatState?.openLoops[0]}>
+                {who} has something on their mind.
+              </span>
+              <Button size="sm" variant="quiet" onClick={() => void letThemSpeak()}>
+                Let {who} speak
+              </Button>
+            </div>
+          ) : null}
           {premise && !archived ? (
             <button
               type="button"
@@ -822,6 +906,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           }}
         />
       ) : null}
+
+      <ChatRelationshipPanel chatId={chatId} who={who} open={relationshipOpen} onClose={() => setRelationshipOpen(false)} />
     </div>
   );
 }
@@ -836,8 +922,11 @@ function ConversationMenu({
   hasState,
   archived,
   archiveBusy,
+  skipBusy,
   onScenario,
   onStateTools,
+  onRelationship,
+  onTimeSkip,
   onRename,
   onArchiveToggle,
   onDelete,
@@ -848,8 +937,13 @@ function ConversationMenu({
   hasState: boolean;
   archived: boolean;
   archiveBusy: boolean;
+  skipBusy: boolean;
   onScenario: () => void;
   onStateTools: () => void;
+  /** The Relationship panel (spec §7): stage, sparkline, milestones, story so far. */
+  onRelationship: () => void;
+  /** Mid-conversation time skip (spec §8.1) — the same options as the pickup strip. */
+  onTimeSkip: (amount: ChatSkipAmount) => void;
   onRename: () => void;
   onArchiveToggle: () => void;
   onDelete: () => void;
@@ -872,10 +966,38 @@ function ConversationMenu({
       <MenuItem onClick={onScenario} disabled={!hasState}>
         Scenario setup
       </MenuItem>
+      <MenuItem onClick={onRelationship} disabled={!hasState}>
+        Relationship
+      </MenuItem>
       <MenuItem onClick={onStateTools} disabled={!hasState}>
         State tools
       </MenuItem>
       {onInspector ? <MenuItem onClick={onInspector}>Inspector</MenuItem> : null}
+      {!archived ? (
+        <div className="flex flex-col gap-1 px-2 py-1.5">
+          <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Let time pass</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                ["moments", "Moments"],
+                ["hours", "Hours"],
+                ["overnight", "Overnight"],
+                ["days", "Days"],
+              ] as const
+            ).map(([amount, label]) => (
+              <button
+                key={amount}
+                type="button"
+                disabled={skipBusy}
+                onClick={() => onTimeSkip(amount)}
+                className="cursor-pointer rounded-md border border-ink-600 px-2 py-1 text-xs text-paper-300 transition-colors hover:border-accent-500/50 hover:text-paper-100 disabled:cursor-not-allowed disabled:text-paper-600"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <MenuItem onClick={onRename}>Rename…</MenuItem>
       <MenuItem onClick={onArchiveToggle} disabled={archiveBusy}>
         {archived ? "Restore" : "Archive"}

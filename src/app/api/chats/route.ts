@@ -41,6 +41,7 @@ const createBodySchema = z.object({
 
 const listMetersSchema = z.record(z.string(), z.number());
 const listConditionsSchema = z.array(activeConditionSchema);
+const listLoopsSchema = z.array(z.string());
 
 /**
  * GET /api/chats?characterId=…&archived=1 — the user's conversations, newest first.
@@ -66,6 +67,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       affinity: characterChatState.affinity,
       meters: characterChatState.meters,
       conditions: characterChatState.conditions,
+      openLoops: characterChatState.openLoops,
       lastLine: sql<string | null>`(
         select left(m.content, 160) from character_chat_messages m
         where m.chat_id = ${characterChats.id}
@@ -92,8 +94,12 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .orderBy(desc(characterChats.lastMessageAt))
     .limit(LIST_LIMIT);
 
-  const chats = rows.map(({ profile, affinity, meters, conditions, ...rest }) => {
-    if (affinity === null) return { ...rest, stage: null, emotion: null };
+  const chats = rows.map(({ profile, affinity, meters, conditions, openLoops, ...rest }) => {
+    // "Has something to say" (spec §8.4, D4): a pure read-time derivation off the open
+    // loops — no jobs, no push, never the wall clock. The top loop is the reason.
+    const loops = parseOr(listLoopsSchema, openLoops ?? [], [], undefined, "character_chat_state.open_loops");
+    const say = loops[0]?.trim() ?? "";
+    if (affinity === null) return { ...rest, stage: null, emotion: null, say };
     const parsedMeters = parseOr(listMetersSchema, meters ?? {}, {}, undefined, "character_chat_state.meters");
     const parsedConditions = parseOr(listConditionsSchema, conditions ?? [], [], undefined, "character_chat_state.conditions");
     const prof = parseOr(characterProfileSchema, profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
@@ -114,6 +120,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       ...rest,
       stage: { id: stage.id, label: stage.label },
       emotion: { label: emotion.emotion, intensity: emotion.intensity },
+      say,
     };
   });
 
