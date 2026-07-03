@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { resolveChatModelId } from "@/lib/narrative-models";
 import { CHAT_RATE_LIMIT, drainingStreamResponse, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 import { characterChats, characterChatMessages, db } from "@/server/db";
 import { deleteChat, submitChatMessage } from "@/server/engine";
@@ -98,7 +99,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     character: { id: owned.character.id, name: owned.character.name, profile: owned.character.profile },
     kind: body.value.kind,
     content: body.value.content,
-    model: body.value.model,
+    // A headless POST without a model must agree with the UI (spec §9): default to
+    // the character's own narrator pick, not MODEL_DEFAULTS.narrative.
+    model: body.value.model ?? resolveChatModelId(owned.character.chatModel),
   });
   if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);
 

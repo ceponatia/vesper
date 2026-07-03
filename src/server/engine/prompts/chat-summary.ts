@@ -20,7 +20,7 @@ Rules:
 2. Drop the LEAST important narrative detail first when trimming; never drop an Established bullet to save space. Keep the whole thing under about 400 words.
 3. Past tense, third-person-neutral notes — NOT dialogue, NOT quoted lines, NOT a script. This is context for the character, not words to say.
 4. Record only what actually occurred in the given lines or the prior summary. Never invent events, facts, or feelings that are not there.
-5. Refer to the character and the user as they are named or addressed in the lines (the user is "the user" / "you" if unnamed).
+5. Write about both people in the third person, using their names exactly as they appear in the lines (an unnamed user is "the user"). Never address anyone as "you" — this is a note about the conversation, not a message to either of them.
 6. ${UNTRUSTED_DATA_NOTICE}`;
 
 export interface ChatSummaryFoldPromptInput {
