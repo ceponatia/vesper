@@ -1,7 +1,18 @@
 import { and, eq , sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { FactDraft } from "@/contracts/facts/taxonomy";
+
+// Wrap the batch embedder so the fused-retrieval degradation tests can fail ONE
+// call (mockRejectedValueOnce); every other call passes through to the real
+// (pseudo, AI_FAKE) implementation. `embedText` calls its module-local
+// embedTexts internally, so the single-query paths stay untouched.
+vi.mock("../ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ai")>();
+  return { ...actual, embedTexts: vi.fn(actual.embedTexts) };
+});
+
+import { embedTexts } from "../ai";
 import { pseudoEmbed } from "../ai/embeddings";
 import { characters, db, episodes, events, facts, items, locations, loreChunks, sessions, users, worlds } from "../db";
 import {
@@ -12,21 +23,28 @@ import {
   deleteEpisodeForTurn,
   deleteEpisodesForScope,
   deleteFactsForScope,
+  FACT_MIN_SCORE,
   latestEpisodeNumber,
   eligibleRetrievalChunks,
   embeddingTextFor,
   fuzzyResolve,
   indexLoreChunks,
+  listEpisodesForScope,
+  listFactsForScope,
   loadWorldLoreChunks,
   preTurnRetrieve,
   recentEpisodes,
   refreshSearchEmbedding,
   retractFactsFromTurn,
   retrieveEpisodes,
+  retrieveEpisodesFused,
   retrieveFacts,
+  retrieveFactsFused,
   retrieveLoreChunks,
   sessionScope,
 } from "./index";
+
+const mockEmbedTexts = vi.mocked(embedTexts);
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -451,6 +469,279 @@ describe.skipIf(!ready)("memory integration", () => {
       await deleteEpisodesForScope(scope);
       expect(await latestEpisodeNumber(scope)).toBe(0);
       expect(await retrieveFacts(scope, factText)).toEqual([]);
+    });
+  });
+
+  // Slice 7 (character-chat-standalone.spec.md §6.3 retrieval quality + §6.4 pinned facts).
+  // pseudoEmbed is hash-based: hits need near-identical text, misses need clearly different text.
+  describe("retrieval quality + pinned facts (slice 7)", () => {
+    it("applies the relevance floor: a dissimilar fact is a candidate but never a hit", async () => {
+      const scope = sessionScope(await makeSession("floor"));
+      const onTopic = "Mara keeps a spare key under the third floorboard.";
+      const offTopic = "The eastern gate collapsed during the siege.";
+      const { insertedIds } = await addFacts(
+        scope,
+        [
+          draft({ subjectName: "Mara", text: onTopic }),
+          draft({ subjectName: "gate", subjectKind: "location", text: offTopic }),
+        ],
+        { turnId: "turn-floor" },
+      );
+      const hits = await retrieveFacts(scope, onTopic);
+      expect(hits.map((h) => h.id)).toEqual([insertedIds[0]]);
+      expect(hits[0]).toMatchObject({ pinned: false, origin: "extracted" });
+      expect(hits[0]?.score).toBeGreaterThanOrEqual(FACT_MIN_SCORE);
+    });
+
+    it("force-includes pinned facts ahead of scored hits despite a dissimilar query", async () => {
+      const scope = sessionScope(await makeSession("pinned"));
+      const pinnedText = "The player is allergic to shellfish.";
+      const scoredText = "Tobias hums sea shanties while cooking.";
+      const pinnedRes = await addFacts(
+        scope,
+        [
+          {
+            ...draft({ subjectName: "the player", subjectKind: "player", text: pinnedText, confidence: 1 }),
+            pinned: true,
+            origin: "player" as const,
+          },
+        ],
+        null,
+      );
+      const scoredRes = await addFacts(scope, [draft({ subjectName: "Tobias", text: scoredText })], {
+        turnId: "turn-p",
+      });
+
+      const hits = await retrieveFacts(scope, scoredText);
+      expect(hits.map((h) => h.id)).toEqual([pinnedRes.insertedIds[0], scoredRes.insertedIds[0]]);
+      expect(hits[0]).toMatchObject({ pinned: true, origin: "player" });
+      // in retrieval only because it's pinned — its true similarity sits under the floor
+      expect(hits[0]?.score).toBeLessThan(FACT_MIN_SCORE);
+    });
+
+    it("an extracted draft never retires a similar pinned player fact (asymmetry, blocked direction)", async () => {
+      const scope = sessionScope(await makeSession("asym-blocked"));
+      const text = "The player's cat is named Biscuit.";
+      const pinnedRes = await addFacts(
+        scope,
+        [
+          {
+            ...draft({ subjectName: "the player", subjectKind: "player", text, confidence: 1 }),
+            pinned: true,
+            origin: "player" as const,
+          },
+        ],
+        null,
+      );
+      const extractedRes = await addFacts(
+        scope,
+        [draft({ subjectName: "the player", subjectKind: "player", text })],
+        { turnId: "turn-asym" },
+      );
+      expect(extractedRes.insertedIds).toHaveLength(1);
+      expect(extractedRes.supersededIds).toEqual([]);
+      const [row] = await db()
+        .select({ status: facts.status })
+        .from(facts)
+        .where(eq(facts.id, pinnedRes.insertedIds[0]!));
+      expect(row?.status).toBe("active");
+    });
+
+    it("a player draft supersedes a similar extracted fact (asymmetry, allowed direction)", async () => {
+      const scope = sessionScope(await makeSession("asym-allowed"));
+      const text = "Mara's hair is auburn.";
+      const extracted = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-e" });
+      const player = await addFacts(
+        scope,
+        [{ ...draft({ subjectName: "Mara", text, confidence: 1 }), pinned: true, origin: "player" as const }],
+        null,
+      );
+      expect(player.supersededIds).toEqual(extracted.insertedIds);
+      const [row] = await db()
+        .select({ status: facts.status, supersededById: facts.supersededById })
+        .from(facts)
+        .where(eq(facts.id, extracted.insertedIds[0]!));
+      expect(row).toMatchObject({ status: "superseded", supersededById: player.insertedIds[0] });
+    });
+
+    it("prefers subjectId equality in supersedence: differing ids block, matching ids pass a rename", async () => {
+      const scope = sessionScope(await makeSession("subject-ids"));
+      const text = "The twin wears a silver locket.";
+      const first = await addFacts(scope, [{ ...draft({ subjectName: "Twin", text }), subjectId: "char-a" }], {
+        turnId: "turn-s1",
+      });
+      // same name + identical text, different id ⇒ two entities, no supersede
+      const second = await addFacts(scope, [{ ...draft({ subjectName: "Twin", text }), subjectId: "char-b" }], {
+        turnId: "turn-s2",
+      });
+      expect(second.supersededIds).toEqual([]);
+      // different name, same id ⇒ same entity, supersedes exactly the id-matched row
+      const renamed = await addFacts(
+        scope,
+        [{ ...draft({ subjectName: "Twin Renamed", text }), subjectId: "char-a" }],
+        { turnId: "turn-s3" },
+      );
+      expect(renamed.supersededIds).toEqual(first.insertedIds);
+    });
+
+    it("fused fact retrieval unions per-query hits with per-source attribution, pinned in front", async () => {
+      const scope = sessionScope(await makeSession("fused-facts"));
+      const t1 = "Mara adores honey pastries.";
+      const t2 = "Tobias fears the open sea.";
+      const t3 = "The archive basement floods every spring.";
+      const tp = "The player hates thunderstorms.";
+      await addFacts(
+        scope,
+        [
+          draft({ subjectName: "Mara", text: t1 }),
+          draft({ subjectName: "Tobias", text: t2 }),
+          draft({ subjectName: "archive", subjectKind: "location", text: t3 }),
+        ],
+        { turnId: "turn-fu" },
+      );
+      await addFacts(
+        scope,
+        [
+          {
+            ...draft({ subjectName: "the player", subjectKind: "player", text: tp, confidence: 1 }),
+            pinned: true,
+            origin: "player" as const,
+          },
+        ],
+        null,
+      );
+
+      const hits = await retrieveFactsFused(scope, [t1, t2], 5);
+      expect(hits).toHaveLength(3);
+      // pinned rides in front despite scoring under the floor for both queries
+      // (with a corpus smaller than the top-k every row is a candidate of every
+      // query, so it still carries honest sources + its true best cosine)
+      expect(hits[0]).toMatchObject({ text: tp, pinned: true, sources: [t1, t2] });
+      expect(hits[0]?.score).toBeLessThan(FACT_MIN_SCORE);
+      const byText = new Map(hits.map((h) => [h.text, h]));
+      expect(byText.get(t1)?.sources).toContain(t1);
+      expect(byText.get(t2)?.sources).toContain(t2);
+      expect(byText.has(t3)).toBe(false); // under the floor for both queries
+
+      // a query that matches the pinned fact attributes it and carries its real score
+      const pinnedHit = (await retrieveFactsFused(scope, [tp], 5))[0];
+      expect(pinnedHit).toMatchObject({ text: tp, sources: [tp] });
+      expect(pinnedHit?.score).toBeGreaterThan(0.99);
+    });
+
+    it("zero usable queries degrade fused facts to the pinned-only result", async () => {
+      const scope = sessionScope(await makeSession("fused-blank"));
+      const tp = "The player never drinks coffee after dusk.";
+      await addFacts(
+        scope,
+        [
+          {
+            ...draft({ subjectName: "the player", subjectKind: "player", text: tp, confidence: 1 }),
+            pinned: true,
+            origin: "player" as const,
+          },
+        ],
+        null,
+      );
+      await addFacts(scope, [draft({ subjectName: "Mara", text: "Mara naps at noon." })], { turnId: "turn-b" });
+      const hits = await retrieveFactsFused(scope, ["", "   "], 5);
+      expect(hits.map((h) => h.text)).toEqual([tp]);
+      expect(hits[0]).toMatchObject({ sources: [], score: 0 });
+    });
+
+    it("query-embed failure degrades fused facts to pinned-only with a diagnostic", async () => {
+      const scope = sessionScope(await makeSession("fused-degrade"));
+      const tp = "The player owns a one-eyed parrot.";
+      await addFacts(
+        scope,
+        [
+          {
+            ...draft({ subjectName: "the player", subjectKind: "player", text: tp, confidence: 1 }),
+            pinned: true,
+            origin: "player" as const,
+          },
+        ],
+        null,
+      );
+      const sink = new DiagnosticCollector();
+      mockEmbedTexts.mockRejectedValueOnce(new Error("provider down"));
+      const hits = await retrieveFactsFused(scope, ["anything at all"], 5, sink);
+      expect(hits.map((h) => h.text)).toEqual([tp]);
+      expect(sink.items.some((d) => d.code === "memory.facts.embed_failed" && d.severity === "error")).toBe(true);
+    });
+
+    it("fused episode retrieval unions per-query hits with sources and keeps the recency window", async () => {
+      const scope = sessionScope(await makeSession("fused-episodes"));
+      const s1 = "Mara bartered for passage on the grain barge.";
+      const s2 = "Tobias confessed to forging the ledger.";
+      await appendEpisode(scope, 1, s1, []);
+      await appendEpisode(scope, 2, s2, []);
+      for (let turn = 3; turn <= 6; turn++) {
+        await appendEpisode(scope, turn, `Nothing notable happened on day ${turn}.`, []);
+      }
+
+      const hits = await retrieveEpisodesFused(scope, [s1, s2], 5);
+      expect(hits.map((h) => h.turnNumber).sort()).toEqual([1, 2]);
+      expect(hits.find((h) => h.turnNumber === 1)?.sources).toEqual([s1]);
+      expect(hits.find((h) => h.turnNumber === 2)?.sources).toEqual([s2]);
+      expect(hits.every((h) => h.score > 0.99)).toBe(true);
+
+      // in-window episodes (turn > cutoff 2) stay excluded even on an exact-match query
+      expect(await retrieveEpisodesFused(scope, ["Nothing notable happened on day 5."], 5)).toEqual([]);
+    });
+
+    it("query-embed failure degrades fused episodes to [] with a diagnostic", async () => {
+      const scope = sessionScope(await makeSession("fused-ep-degrade"));
+      const sink = new DiagnosticCollector();
+      mockEmbedTexts.mockRejectedValueOnce(new Error("provider down"));
+      expect(await retrieveEpisodesFused(scope, ["anything"], 5, sink)).toEqual([]);
+      expect(sink.items.some((d) => d.code === "memory.episodes.embed_failed" && d.severity === "error")).toBe(true);
+    });
+
+    it("listFactsForScope hides superseded/retracted rows unless includeInactive", async () => {
+      const scope = sessionScope(await makeSession("list-facts"));
+      const text = "Mara owes the guild forty crowns.";
+      const first = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-l1" });
+      const second = await addFacts(scope, [draft({ subjectName: "Mara", text })], { turnId: "turn-l2" });
+      await addFacts(scope, [draft({ subjectName: "Tobias", text: "Tobias lost his spectacles." })], {
+        turnId: "turn-l3",
+      });
+      await retractFactsFromTurn("turn-l3");
+
+      const active = await listFactsForScope(scope);
+      expect(active.map((r) => r.id)).toEqual(second.insertedIds);
+
+      const all = await listFactsForScope(scope, { includeInactive: true });
+      expect(all).toHaveLength(3);
+      expect(all.map((r) => r.status).sort()).toEqual(["active", "retracted", "superseded"]);
+      const superseded = all.find((r) => r.id === first.insertedIds[0]);
+      expect(superseded).toMatchObject({
+        status: "superseded",
+        supersededById: second.insertedIds[0],
+        origin: "extracted",
+        pinned: false,
+        sourceTurnId: "turn-l1",
+        subjectName: "mara",
+        tags: [],
+      });
+      expect(superseded?.createdAt).toBeInstanceOf(Date);
+      expect(superseded?.supersededAt).toBeInstanceOf(Date);
+    });
+
+    it("listEpisodesForScope returns rows in turn order with the embedded flag", async () => {
+      const sessionId = await makeSession("list-episodes");
+      const scope = sessionScope(sessionId);
+      await appendEpisode(scope, 1, "First.", [], undefined, [], "msg-1");
+      await appendEpisode(scope, 2, "Second.", []);
+      // an embed-failure row: present for audit/recency, invisible to RAG
+      await db().insert(episodes).values({ sessionId, turnNumber: 3, summary: "Unembedded.", threadIds: [] });
+
+      const rows = await listEpisodesForScope(scope);
+      expect(rows.map((r) => r.turnNumber)).toEqual([1, 2, 3]);
+      expect(rows[0]).toMatchObject({ summary: "First.", sourceMessageId: "msg-1", embedded: true });
+      expect(rows[1]).toMatchObject({ sourceMessageId: null, embedded: true });
+      expect(rows[2]).toMatchObject({ summary: "Unembedded.", embedded: false });
+      expect(rows[0]?.createdAt).toBeInstanceOf(Date);
     });
   });
 });

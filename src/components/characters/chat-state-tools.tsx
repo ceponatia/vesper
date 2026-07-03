@@ -66,6 +66,10 @@ function StateToolsForm({
   const [mindNote, setMindNote] = useState(snapshot.mindNote);
   const [premise, setPremise] = useState(snapshot.premise);
   const [newCondition, setNewCondition] = useState("");
+  // Inspector-grade fields (character-chat-standalone.spec.md §6.1): open loops +
+  // next-turn memory queries, edited as one-per-line text.
+  const [openLoops, setOpenLoops] = useState(snapshot.openLoops.join("\n"));
+  const [memoryQueries, setMemoryQueries] = useState(snapshot.memoryQueries.join("\n"));
   const [saving, setSaving] = useState(false);
 
   const stage = stageForValue(affinity);
@@ -91,9 +95,20 @@ function StateToolsForm({
     ]);
   };
 
+  /** One-per-line textarea → trimmed list (blank lines drop). */
+  const toLines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
+
   const save = async () => {
     setSaving(true);
-    const result = await chatsApi.editState(chatId, { affinity, meters, conditions, mindNote, premise });
+    const result = await chatsApi.editState(chatId, {
+      affinity,
+      meters,
+      conditions,
+      mindNote,
+      premise,
+      openLoops: toLines(openLoops),
+      memoryQueries: toLines(memoryQueries),
+    });
     setSaving(false);
     if (result.ok) {
       onSaved(result.data);
@@ -194,6 +209,26 @@ function StateToolsForm({
           maxLength={CHAT_PREMISE_MAX_CHARS}
           onChange={(e) => setPremise(e.target.value)}
           placeholder="The scenario this chat plays inside…"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Open loops (one per line, max 3)</span>
+        <Textarea
+          rows={2}
+          value={openLoops}
+          onChange={(e) => setOpenLoops(e.target.value)}
+          placeholder={"Unfinished business the character carries…\ne.g. promised to tell them about her sister"}
+        />
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Next-turn memory queries (one per line)</span>
+        <Textarea
+          rows={2}
+          value={memoryQueries}
+          onChange={(e) => setMemoryQueries(e.target.value)}
+          placeholder="What next turn's recall should search for…"
         />
       </label>
 

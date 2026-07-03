@@ -1,21 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 
-vi.mock("./episodes", () => ({ retrieveEpisodes: vi.fn() }));
-vi.mock("./facts", () => ({ retrieveFacts: vi.fn() }));
+vi.mock("./episodes", () => ({ retrieveEpisodesFused: vi.fn() }));
+vi.mock("./facts", () => ({ retrieveFactsFused: vi.fn() }));
 vi.mock("./lore", () => ({
   loadWorldLoreChunks: vi.fn(),
   eligibleRetrievalChunks: vi.fn(),
   retrieveLoreChunks: vi.fn(),
 }));
 
-import { retrieveEpisodes } from "./episodes";
-import { retrieveFacts } from "./facts";
+import { EPISODE_RETRIEVAL_LIMIT, FACT_RETRIEVAL_LIMIT } from "./constants";
+import { retrieveEpisodesFused } from "./episodes";
+import { retrieveFactsFused } from "./facts";
 import { eligibleRetrievalChunks, loadWorldLoreChunks, retrieveLoreChunks } from "./lore";
 import { preTurnRetrieve } from "./retrieval";
 
-const mockEpisodes = vi.mocked(retrieveEpisodes);
-const mockFacts = vi.mocked(retrieveFacts);
+const mockEpisodes = vi.mocked(retrieveEpisodesFused);
+const mockFacts = vi.mocked(retrieveFactsFused);
 const mockLoad = vi.mocked(loadWorldLoreChunks);
 const mockEligible = vi.mocked(eligibleRetrievalChunks);
 const mockLore = vi.mocked(retrieveLoreChunks);
@@ -34,9 +35,20 @@ function baseInput(sink?: DiagnosticCollector) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mockEpisodes.mockResolvedValue([{ id: "e1", turnNumber: 2, summary: "They met at the harbor.", score: 0.9 }]);
+  mockEpisodes.mockResolvedValue([
+    { id: "e1", turnNumber: 2, summary: "They met at the harbor.", score: 0.9, sources: ["the harbor meeting"] },
+  ]);
   mockFacts.mockResolvedValue([
-    { id: "f1", kind: "knowledge", subjectName: "mara", text: "Mara distrusts the harbormaster.", score: 0.8 },
+    {
+      id: "f1",
+      kind: "knowledge",
+      subjectName: "mara",
+      text: "Mara distrusts the harbormaster.",
+      score: 0.8,
+      pinned: false,
+      origin: "extracted",
+      sources: ["the harbor meeting"],
+    },
   ]);
   mockLoad.mockResolvedValue([]);
   mockEligible.mockReturnValue([
@@ -57,17 +69,22 @@ beforeEach(() => {
 });
 
 describe("preTurnRetrieve", () => {
-  it("merges queries + input and fans out to all three legs", async () => {
+  it("fans the query list out to the fused legs and the joined text to lore", async () => {
     const result = await preTurnRetrieve(baseInput());
     expect(result.episodeHits).toEqual(["They met at the harbor."]);
     expect(result.factHits).toEqual(["Mara distrusts the harbormaster."]);
     expect(result.loreHits).toEqual([{ title: "The Harbor", body: "Smugglers run the docks." }]);
-    const queryText = "the harbor meeting\nI walk to the docks.";
-    // Session-lane call-sites now wrap the id in a MemoryScope (character-chat-primary.spec §1).
+    const queries = ["the harbor meeting", "I walk to the docks."];
+    // Session-lane call-sites wrap the id in a MemoryScope (character-chat-primary.spec §1).
     const scope = { kind: "session", sessionId: "sess-1" };
-    expect(mockEpisodes).toHaveBeenCalledWith(scope, queryText, expect.anything());
-    expect(mockFacts).toHaveBeenCalledWith(scope, queryText, expect.any(Number), undefined);
-    expect(mockLore).toHaveBeenCalledWith("world-1", queryText, ["l1"], expect.objectContaining({ sessionId: "sess-1" }));
+    expect(mockEpisodes).toHaveBeenCalledWith(scope, queries, EPISODE_RETRIEVAL_LIMIT, undefined);
+    expect(mockFacts).toHaveBeenCalledWith(scope, queries, FACT_RETRIEVAL_LIMIT, undefined);
+    expect(mockLore).toHaveBeenCalledWith(
+      "world-1",
+      queries.join("\n"),
+      ["l1"],
+      expect.objectContaining({ sessionId: "sess-1" }),
+    );
   });
 
   it("a failed leg degrades to [] with a diagnostic, other legs unaffected", async () => {

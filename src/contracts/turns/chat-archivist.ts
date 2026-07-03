@@ -29,6 +29,8 @@ import { attributeChangeSchema } from "./agent-results";
 export const CHAT_ARCHIVIST_MAX_FACTS = 6;
 /** Cap on memory queries carried to the next turn. */
 export const CHAT_ARCHIVIST_MAX_QUERIES = 3;
+/** Cap on open loops (character-chat-standalone.spec.md §6.2) — a short list stays a pull, not a backlog. */
+export const CHAT_ARCHIVIST_MAX_OPEN_LOOPS = 3;
 
 export const chatArchivistSchema = z.object({
   episodeSummary: z.string().catch("").default(""),
@@ -43,13 +45,24 @@ export const chatArchivistSchema = z.object({
     .default([])
     .transform((queries) => queries.slice(0, CHAT_ARCHIVIST_MAX_QUERIES)),
   attributeChanges: z.array(attributeChangeSchema).catch([]).default([]),
+  /**
+   * The character's unfinished business (spec §6.2): the FULL list each exchange —
+   * still-open items carried, resolved ones dropped, new ones added — so stale loops
+   * fall off naturally without a separate resolution signal. Rendered as the
+   * "Unfinished business" state line and read by "has something to say" (§8.4).
+   */
+  openLoops: z
+    .array(z.string().trim().min(1))
+    .catch([])
+    .default([])
+    .transform((loops) => loops.slice(0, CHAT_ARCHIVIST_MAX_OPEN_LOOPS)),
 });
 
 export type ChatArchivist = z.infer<typeof chatArchivistSchema>;
 
 /** Degraded default: nothing extracted — the turn keeps its reply and the summary+window memory. */
 export function degradedChatArchivist(): ChatArchivist {
-  return { episodeSummary: "", facts: [], memoryQueries: [], attributeChanges: [] };
+  return { episodeSummary: "", facts: [], memoryQueries: [], attributeChanges: [], openLoops: [] };
 }
 
 /**
@@ -71,11 +84,32 @@ export const chatMemoryTraceSchema = z.object({
   memoryQueries: z.array(z.string()).catch([]).default([]),
   /** Applied attribute overlays this turn, rendered "id=value". */
   attributeChanges: z.array(z.string()).catch([]).default([]),
+  /**
+   * Per-hit retrieval detail (spec §6.3 #2 — per-source attribution): what each
+   * retrieved fact/episode scored and WHICH queries surfaced it (RRF fusion inputs).
+   * Old rows without it parse to [] (texts-only trace stays readable).
+   */
+  retrievedDetail: z
+    .array(
+      z.object({
+        kind: z.enum(["fact", "episode"]).catch("fact"),
+        id: z.string().catch(""),
+        text: z.string().catch(""),
+        score: z.number().catch(0),
+        pinned: z.boolean().catch(false),
+        sources: z.array(z.string()).catch([]),
+      }),
+    )
+    .catch([])
+    .default([]),
   /** True when the archivist leg degraded (demo / timeout / parse) — no memory written. */
   degraded: z.boolean().catch(false).default(false),
 });
 
 export type ChatMemoryTrace = z.infer<typeof chatMemoryTraceSchema>;
+
+/** One retrieved-hit detail row (spec §6.3 #2 per-source attribution). */
+export type RetrievedMemoryDetail = ChatMemoryTrace["retrievedDetail"][number];
 
 export function emptyChatMemoryTrace(): ChatMemoryTrace {
   return chatMemoryTraceSchema.parse({});

@@ -61,6 +61,7 @@ export function MessageBubble({
   onRerun,
   onAnotherTake,
   onSwitchTake,
+  onRemember,
 }: {
   line: ChatLine;
   name: string;
@@ -73,6 +74,8 @@ export function MessageBubble({
   onRerun: (id: string) => void;
   onAnotherTake: (id: string) => void;
   onSwitchTake: (id: string, takeId: string) => Promise<void>;
+  /** "Remember this" (spec §6.4): opens the pinned-note dialog prefilled with this line. Absent ⇒ no action. */
+  onRemember?: (content: string) => void;
 }) {
   const isUser = line.role === "user";
   const pending = !isUser && line.content === "" && streaming;
@@ -190,6 +193,16 @@ export function MessageBubble({
                         className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
                       >
                         Another take
+                      </button>
+                    ) : null}
+                    {onRemember && canModify ? (
+                      <button
+                        type="button"
+                        onClick={() => onRemember(line.content)}
+                        title={`Pin this as something ${name || "the character"} always remembers`}
+                        className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
+                      >
+                        Remember
                       </button>
                     ) : null}
                     {canRerun ? (

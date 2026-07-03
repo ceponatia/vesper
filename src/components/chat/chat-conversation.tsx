@@ -23,6 +23,7 @@ import {
 import { NARRATIVE_MODELS, resolveChatModelId } from "@/lib/narrative-models";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { useIsMobile } from "@/components/hooks/use-is-mobile";
 import { AvatarPanel } from "@/components/avatar";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
@@ -95,6 +96,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  // "Remember this" (spec §6.4): the pinned-note dialog, openable from the composer
+  // affordance (blank) or a message hover action (prefilled with that line).
+  const [rememberOpen, setRememberOpen] = useState(false);
+  const [rememberText, setRememberText] = useState("");
+  const [rememberBusy, setRememberBusy] = useState(false);
+  const isAdmin = useIsAdmin();
   // The portrait/scene disclosure: null = breakpoint default (collapsed on phones,
   // open at ≥md); a tap remembers the choice for this mount only (component state).
   const [panelChoice, setPanelChoice] = useState<boolean | null>(null);
@@ -455,6 +462,28 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     router.push("/chat");
   };
 
+  /** Open the "Remember this" dialog, optionally prefilled from a message line. */
+  const openRemember = (prefill: string) => {
+    setRememberText(prefill.trim().slice(0, 500));
+    setRememberOpen(true);
+  };
+
+  /** Pin the note into the chat's long-term memory (spec §6.4, D15). */
+  const saveRemember = async () => {
+    const content = rememberText.trim();
+    if (!content) return;
+    setRememberBusy(true);
+    const result = await chatsApi.remember(chatId, content);
+    setRememberBusy(false);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't save the note", description: result.error.message, tone: "error" });
+      return;
+    }
+    setRememberOpen(false);
+    setRememberText("");
+    toast.push({ title: "Noted", description: `${who} will always remember that.` });
+  };
+
   /** Menu actions close the menu, then open their surface (dialog/modal). */
   const menuAction = (open: () => void) => () => {
     setMenuOpen(false);
@@ -472,6 +501,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       onRename={menuAction(() => setRenameOpen(true))}
       onArchiveToggle={() => void toggleArchived()}
       onDelete={menuAction(() => setDeleteOpen(true))}
+      onInspector={isAdmin ? menuAction(() => router.push(`/chat/${chatId}/inspector`)) : undefined}
     />
   );
 
@@ -609,6 +639,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 onRerun={(id) => void rerun(id)}
                 onAnotherTake={(id) => void anotherTake(id)}
                 onSwitchTake={switchTake}
+                onRemember={archived ? undefined : openRemember}
               />
             ))
           )}
@@ -667,6 +698,20 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               }
               className="flex-1"
             />
+            {!archived ? (
+              <button
+                type="button"
+                onClick={() => openRemember("")}
+                disabled={!ready}
+                aria-label="Remember this…"
+                title={`Tell ${who} something to always remember`}
+                className="touch-target inline-flex cursor-pointer items-center justify-center rounded-md px-2 py-2 text-paper-500 transition-colors hover:text-accent-300 disabled:cursor-not-allowed disabled:text-paper-600"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="size-4.5">
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
+            ) : null}
             {sending ? (
               // Stop swaps in for Send while a reply streams (spec §4.2): the server
               // truncates honestly; what's on screen stays as the settled reply.
@@ -718,6 +763,38 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         />
       ) : null}
 
+      <Dialog
+        open={rememberOpen}
+        onClose={() => {
+          if (!rememberBusy) setRememberOpen(false);
+        }}
+        title="Remember this"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setRememberOpen(false)} disabled={rememberBusy}>
+              Cancel
+            </Button>
+            <Button variant="primary" busy={rememberBusy} onClick={() => void saveRemember()} disabled={!rememberText.trim()}>
+              Remember
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-paper-400">
+            {who} will always keep this in mind — it outranks anything picked up in play, and only you can change it.
+          </p>
+          <Textarea
+            rows={3}
+            value={rememberText}
+            maxLength={500}
+            onChange={(e) => setRememberText(e.target.value)}
+            placeholder="e.g. I'm allergic to peanuts. / My brother's name is Jonas."
+            autoFocus
+          />
+        </div>
+      </Dialog>
+
       {chatState ? (
         <ChatStateToolsModal
           open={toolsOpen}
@@ -764,6 +841,7 @@ function ConversationMenu({
   onRename,
   onArchiveToggle,
   onDelete,
+  onInspector,
 }: {
   chatModel: string;
   onChatModelChange: (modelId: string) => void;
@@ -775,6 +853,8 @@ function ConversationMenu({
   onRename: () => void;
   onArchiveToggle: () => void;
   onDelete: () => void;
+  /** Admin-only (spec §6.1): navigate to the dev memory inspector. Absent ⇒ item hidden. */
+  onInspector?: () => void;
 }) {
   return (
     <div className="flex flex-col p-2">
@@ -795,6 +875,7 @@ function ConversationMenu({
       <MenuItem onClick={onStateTools} disabled={!hasState}>
         State tools
       </MenuItem>
+      {onInspector ? <MenuItem onClick={onInspector}>Inspector</MenuItem> : null}
       <MenuItem onClick={onRename}>Rename…</MenuItem>
       <MenuItem onClick={onArchiveToggle} disabled={archiveBusy}>
         {archived ? "Restore" : "Archive"}

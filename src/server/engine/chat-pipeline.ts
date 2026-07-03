@@ -22,7 +22,11 @@ import {
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
 import { CHARACTER_CHAT_SUMMARIZE_AT, CHAT_REPLY_TAKES_CAP } from "./constants";
 import { tryKeyedLock } from "./keyed-lock";
-import { buildCharacterChatSystemPrompt } from "./prompts/character-chat";
+import {
+  buildCharacterChatPromptParts,
+  buildCharacterChatSystemPrompt,
+  type CharacterChatPromptInput,
+} from "./prompts/character-chat";
 import { narrationShapeId } from "./prompts/constants";
 
 /**
@@ -296,18 +300,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       priorSummary: summaryState?.summary,
       memory,
       player: { name: player.name, persona: player.persona },
-      state: {
-        meters: driftedState.meters,
-        affinity: driftedState.affinity,
-        conditions: driftedState.conditions,
-        mindNote: driftedState.mindNote,
-        premise: driftedState.premise,
-        surfacedCues: driftedState.surfacedCues,
-        outfit: driftedState.outfit,
-        outfitExposed: driftedState.outfitExposed,
-        activeSocialCards: driftedState.activeSocialCards,
-        attributeOverlays: driftedState.attributeOverlays,
-      },
+      state: promptStateSlice(driftedState),
       opening,
       narrationShape: narrationShapeId("chat"),
       // One-turn cue invitation (§7): beats without player input have none to read.
@@ -571,6 +564,79 @@ export async function reextractEditedReply(args: {
   if (sink.items.length) {
     log.info("engine.chat", "edited-reply re-extraction diagnostics", { codes: sink.items.map((d) => d.code) });
   }
+}
+
+/** The prompt builder's per-turn state slice from a drifted ChatState — shared by the live exchange and the inspector preview. */
+function promptStateSlice(state: ChatState): NonNullable<CharacterChatPromptInput["state"]> {
+  return {
+    meters: state.meters,
+    affinity: state.affinity,
+    conditions: state.conditions,
+    mindNote: state.mindNote,
+    premise: state.premise,
+    surfacedCues: state.surfacedCues,
+    outfit: state.outfit,
+    outfitExposed: state.outfitExposed,
+    activeSocialCards: state.activeSocialCards,
+    attributeOverlays: state.attributeOverlays,
+    openLoops: state.openLoops,
+  };
+}
+
+/** The dev inspector's "what reaches the narrator" view (spec §5/§6.1). */
+export interface ChatPromptPreview {
+  prefix: string;
+  tail: string;
+  memory: { facts: string[]; episodes: string[] };
+  memoryQueries: string[];
+}
+
+/**
+ * Rebuild "what would reach the narrator now" for the dev inspector (spec §5 dev
+ * affordance, §6.1): the same assembly as a live exchange — stored state (read-only
+ * drift), rolling summary, persona, RAG recall — rendered into the §9 prompt parts,
+ * without touching state, history, or the exchange lock. Reflects the POST-exchange
+ * state (i.e. the NEXT turn's prompt), which is what comparing live play against the
+ * eval fixtures wants.
+ */
+export async function previewChatPrompt(input: {
+  chatId: string;
+  memoryGroupId: string;
+  character: { id: string; name: string; profile: unknown };
+}): Promise<ChatPromptPreview> {
+  const sink = new DiagnosticCollector();
+  const profile = parseOr(
+    characterProfileSchema,
+    input.character.profile ?? {},
+    emptyCharacterProfile(),
+    undefined,
+    "characters.profile",
+  );
+  const stored = await loadChatState(input.chatId, input.character.id, sink);
+  const state = driftChatState(stored ?? seedChatState(profile), new Date(), profile, {});
+  const summaryState = await loadChatSummary(input.chatId);
+  const player = await resolvePlayerPersona(await chatOwnerId(input.chatId));
+  const memory = await retrieveChatMemory({
+    groupId: input.memoryGroupId,
+    queries: state.memoryQueries,
+    input: "",
+    sink,
+  });
+  const parts = buildCharacterChatPromptParts({
+    name: input.character.name,
+    profile,
+    priorSummary: summaryState?.summary,
+    memory,
+    player: { name: player.name, persona: player.persona },
+    state: promptStateSlice(state),
+    narrationShape: narrationShapeId("chat"),
+  });
+  return {
+    prefix: parts.prefix,
+    tail: parts.tail,
+    memory: { facts: memory.facts, episodes: memory.episodes },
+    memoryQueries: state.memoryQueries,
+  };
 }
 
 /**

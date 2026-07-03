@@ -1,6 +1,7 @@
 export * from "./constants";
 export * from "./episodes";
 export * from "./facts";
+export * from "./fusion";
 export * from "./scope";
 export * from "./lore";
 export * from "./retrieval";

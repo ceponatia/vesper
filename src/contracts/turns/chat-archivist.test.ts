@@ -3,6 +3,7 @@ import {
   chatArchivistSchema,
   chatMemoryTraceSchema,
   CHAT_ARCHIVIST_MAX_FACTS,
+  CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
   CHAT_ARCHIVIST_MAX_QUERIES,
   degradedChatArchivist,
   emptyChatMemoryTrace,
@@ -38,6 +39,17 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
     expect(parsed.episodeSummary).toBe("");
     expect(parsed.facts).toHaveLength(CHAT_ARCHIVIST_MAX_FACTS);
     expect(parsed.memoryQueries).toHaveLength(CHAT_ARCHIVIST_MAX_QUERIES);
+  });
+
+  it("keeps, caps, and cleans openLoops (spec §6.2 — full-list-each-time)", () => {
+    const parsed = chatArchivistSchema.parse({
+      openLoops: Array.from({ length: CHAT_ARCHIVIST_MAX_OPEN_LOOPS + 2 }, (_, i) => ` loop ${i} `),
+    });
+    expect(parsed.openLoops).toHaveLength(CHAT_ARCHIVIST_MAX_OPEN_LOOPS);
+    expect(parsed.openLoops[0]).toBe("loop 0");
+    // A malformed list degrades to [] without rejecting the object.
+    expect(chatArchivistSchema.parse({ openLoops: "not-a-list" }).openLoops).toEqual([]);
+    expect(degradedChatArchivist().openLoops).toEqual([]);
   });
 });
 

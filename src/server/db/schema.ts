@@ -377,6 +377,13 @@ export const characterChatState = pgTable(
      * retrieved + extracted this exchange, for the dev inspector. Parsed defensively.
      */
     lastMemoryTrace: jsonb("last_memory_trace").notNull().default({}),
+    /**
+     * string[] — the character's unfinished business (character-chat-standalone.spec.md
+     * §6.2): ≤3 short phrases the archivist re-emits in full each exchange (resolved loops
+     * fall off naturally). Rendered as an "Unfinished business" state line, shown in the
+     * relationship panel, and read by the "has something to say" derivation (§8.4).
+     */
+    openLoops: jsonb("open_loops").notNull().default([]),
     /** Chat-local game clock (within-visit drift + condition-expiry driver). */
     clockMinutes: integer("clock_minutes").notNull().default(0),
     /** Wall-clock anchor for between-visit recovery; null until the first exchange. */
@@ -882,6 +889,19 @@ export const facts = pgTable(
     confidence: real("confidence").notNull().default(0.5),
     /** false ⇒ belief only (a told lie): known to its knowers, excluded from the narrator's truth channel. */
     canon: boolean("canon").notNull().default(true),
+    /**
+     * Player/dev-pinned (character-chat-standalone.spec.md §6.4 "remember this"): always
+     * retrieved ahead of the top-k, exempt from the relevance floor, and never superseded
+     * or retracted by an archivist-extracted fact (the asymmetric invariant) — only a
+     * player/dev-authored fact (or the inspector) can retire it.
+     */
+    pinned: boolean("pinned").notNull().default(false),
+    /**
+     * Honest provenance (spec §6.4): who authored this fact — the background archivist
+     * ("extracted", the default), the player's "remember this" ("player"), or a dev
+     * inspector edit ("dev"). Session-lane rows keep the harmless default.
+     */
+    origin: text("origin", { enum: ["extracted", "player", "dev"] }).notNull().default("extracted"),
     /** Participant ids co-located at insert (interim semantics; perception refines to true witness sets). Write-only until the knowledge ledger ships. */
     witnessedBy: jsonb("witnessed_by").notNull().default([]),
     status: text("status", { enum: ["active", "superseded", "retracted"] }).notNull().default("active"),

@@ -5,6 +5,7 @@ import {
   applyMeterDrift,
   chatMemoryTraceSchema,
   chatPulseSchema,
+  CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
@@ -34,6 +35,7 @@ import {
   type ChatPulseTrace,
   type DiagnosticSink,
   type EmotionLabel,
+  type RetrievedMemoryDetail,
   type SocialReactionCard,
 } from "@/contracts";
 import { catalogConditionForLabel } from "@/contracts/conditions/catalog";
@@ -92,6 +94,12 @@ export interface ChatState {
    */
   memoryQueries: string[];
   /**
+   * The character's unfinished business (character-chat-standalone.spec.md §6.2): ≤3 short
+   * phrases the archivist re-emits in full each exchange (resolved loops fall off). Rendered
+   * as an "Unfinished business" state line; read by "has something to say" (§8.4).
+   */
+  openLoops: string[];
+  /**
    * Persisted narrative attribute overlays that evolve over the chat (spec §3): `source:"narrative"`
    * values the attribute proposer merges in (inherent traits guarded), resolved on top of the
    * authored base at prompt-build time. Distinct from the transient condition overlays.
@@ -122,6 +130,10 @@ export interface ChatStateSnapshot {
   activeSocialCards: SocialReactionCard[];
   /** Meter bands last surfaced as a "just shifted" beat (§5) — for the state-tools debug view. */
   surfacedCues: Record<string, string>;
+  /** The character's unfinished business (spec §6.2) — relationship panel + "has something to say". */
+  openLoops: string[];
+  /** Next-turn RAG queries (the live column, not the trace) — editable in the state tools (§6.1). */
+  memoryQueries: string[];
   /** Persisted narrative attribute overlays (character-chat-primary.spec.md §3) — for the inspector. */
   attributeOverlays: AttributeValue[];
   lastPulseTrace: ChatPulseTrace;
@@ -169,6 +181,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     activeSocialCards: [...(profile.socialCards ?? [])],
     surfacedCues: {},
     memoryQueries: [],
+    openLoops: [],
     attributeOverlays: [],
     lastPulseTrace: emptyChatPulseTrace(),
     lastMemoryTrace: emptyChatMemoryTrace(),
@@ -197,6 +210,7 @@ export async function loadChatState(
       activeSocialCards: characterChatState.activeSocialCards,
       surfacedCues: characterChatState.surfacedCues,
       memoryQueries: characterChatState.memoryQueries,
+      openLoops: characterChatState.openLoops,
       attributeOverlays: characterChatState.attributeOverlays,
       clockMinutes: characterChatState.clockMinutes,
       lastInteractionAt: characterChatState.lastInteractionAt,
@@ -216,6 +230,7 @@ export async function loadChatState(
     activeSocialCards: parseOr(activeSocialCardsSchema, row.activeSocialCards, [], sink, "character_chat_state.active_social_cards"),
     surfacedCues: parseOr(surfacedCuesSchema, row.surfacedCues, {}, sink, "character_chat_state.surfaced_cues"),
     memoryQueries: parseOr(memoryQueriesSchema, row.memoryQueries, [], sink, "character_chat_state.memory_queries"),
+    openLoops: parseOr(memoryQueriesSchema, row.openLoops, [], sink, "character_chat_state.open_loops"),
     attributeOverlays: parseOr(attributeOverlaysSchema, row.attributeOverlays, [], sink, "character_chat_state.attribute_overlays"),
     lastPulseTrace: parseOr(
       chatPulseTraceSchema,
@@ -248,6 +263,9 @@ const storedChatStateSchema = z.object({
   activeSocialCards: activeSocialCardsSchema,
   surfacedCues: surfacedCuesSchema,
   memoryQueries: memoryQueriesSchema,
+  // Defaulted: pre-slice-7 snapshots (no openLoops key) must keep parsing, or every
+  // existing "another take" rollback anchor would silently die (schema-db risk note).
+  openLoops: memoryQueriesSchema.catch([]).default([]),
   attributeOverlays: attributeOverlaysSchema,
   lastPulseTrace: chatPulseTraceSchema,
   lastMemoryTrace: chatMemoryTraceSchema,
@@ -584,7 +602,7 @@ export async function finalizeChatState(input: {
   now: Date;
   exchange: { player: string; assistant: string };
   /** What RAG retrieved for THIS turn (from the route's pre-turn recall), for the debug trace. */
-  retrieved?: { facts: string[]; episodes: string[] };
+  retrieved?: { facts: string[]; episodes: string[]; detail?: RetrievedMemoryDetail[] };
   sink?: DiagnosticSink;
 }): Promise<void> {
   const [pulse, archivist] = await Promise.all([
@@ -602,6 +620,7 @@ export async function finalizeChatState(input: {
       characterName: input.characterName,
       playerName: input.playerName,
       exchange: input.exchange,
+      openLoops: input.driftedState.openLoops,
       sink: input.sink,
     }),
   ]);
@@ -637,6 +656,9 @@ export async function finalizeChatState(input: {
   const attributeOverlays = archivist.value
     ? applyChatAttributeOverlays(input.driftedState.attributeOverlays, archivist.value.attributeChanges, input.sink)
     : input.driftedState.attributeOverlays;
+  // Open loops are full-list-each-time (spec §6.2) — but a degraded archivist emits an
+  // empty list that must NOT wipe the standing loops; keep the prior list on degrade.
+  const openLoops = archivist.degraded ? input.driftedState.openLoops : (archivist.value?.openLoops ?? input.driftedState.openLoops);
   const lastMemoryTrace: ChatMemoryTrace = {
     retrievedFacts: input.retrieved?.facts ?? [],
     retrievedEpisodes: input.retrieved?.episodes ?? [],
@@ -644,6 +666,7 @@ export async function finalizeChatState(input: {
     factsAdded: archivist.value?.facts.length ?? 0,
     memoryQueries: archivist.value?.memoryQueries ?? [],
     attributeChanges: (archivist.value?.attributeChanges ?? []).map((c) => `${c.attributeId}=${String(c.value)}`),
+    retrievedDetail: input.retrieved?.detail ?? [],
     degraded: archivist.degraded,
   };
   await saveChatState({
@@ -654,6 +677,7 @@ export async function finalizeChatState(input: {
       ...pulse.state,
       surfacedCues,
       memoryQueries: archivist.value?.memoryQueries ?? [],
+      openLoops,
       attributeOverlays,
       lastMemoryTrace,
       lastInteractionAt: input.now,
@@ -686,6 +710,7 @@ async function upsertChatState(
   const trace = JSON.stringify(state.lastPulseTrace);
   const surfacedCues = JSON.stringify(state.surfacedCues);
   const memoryQueries = JSON.stringify(state.memoryQueries);
+  const openLoops = JSON.stringify(state.openLoops);
   const attributeOverlays = JSON.stringify(state.attributeOverlays);
   const memoryTrace = JSON.stringify(state.lastMemoryTrace);
   const activeSocialCards = JSON.stringify(state.activeSocialCards);
@@ -694,9 +719,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, last_interaction_at, updated_at)
+      (chat_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, last_interaction_at, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.affinity}, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${state.lastInteractionAt}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${state.lastInteractionAt}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -706,6 +731,7 @@ async function upsertChatState(
       last_pulse_trace = excluded.last_pulse_trace,
       surfaced_cues = excluded.surfaced_cues,
       memory_queries = excluded.memory_queries,
+      open_loops = excluded.open_loops,
       attribute_overlays = excluded.attribute_overlays,
       last_memory_trace = excluded.last_memory_trace,
       premise = excluded.premise,
@@ -740,7 +766,12 @@ export async function persistChatState(chatId: string, characterId: string, stat
   await upsertChatState(chatId, characterId, state);
 }
 
-/** A partial edit to a chat state from the premise Save or the state-tools modal (slice 4). */
+/**
+ * A partial edit to a chat state from the premise Save or the state-tools modal
+ * (slice 4), extended to inspector-grade coverage of every stored column
+ * (character-chat-standalone.spec.md §6.1 — full editability is the dev tooling's
+ * contract; the gate bypass for stage floors is simply editing `affinity` here, D11).
+ */
 export interface ChatStateEdit {
   premise?: string;
   affinity?: number;
@@ -750,6 +781,10 @@ export interface ChatStateEdit {
   outfit?: string;
   outfitExposed?: boolean;
   activeSocialCards?: SocialReactionCard[];
+  openLoops?: string[];
+  memoryQueries?: string[];
+  surfacedCues?: Record<string, string>;
+  attributeOverlays?: AttributeValue[];
 }
 
 /**
@@ -776,6 +811,14 @@ export async function editChatState(args: {
   if (patch.outfit !== undefined) next.outfit = patch.outfit.slice(0, CHAT_OUTFIT_MAX_CHARS);
   if (patch.outfitExposed !== undefined) next.outfitExposed = patch.outfitExposed;
   if (patch.activeSocialCards !== undefined) next.activeSocialCards = patch.activeSocialCards;
+  if (patch.openLoops !== undefined) {
+    next.openLoops = patch.openLoops.map((l) => l.trim()).filter(Boolean).slice(0, CHAT_ARCHIVIST_MAX_OPEN_LOOPS);
+  }
+  if (patch.memoryQueries !== undefined) {
+    next.memoryQueries = patch.memoryQueries.map((q) => q.trim()).filter(Boolean);
+  }
+  if (patch.surfacedCues !== undefined) next.surfacedCues = patch.surfacedCues;
+  if (patch.attributeOverlays !== undefined) next.attributeOverlays = patch.attributeOverlays;
   await persistChatState(chatId, characterId, next);
   return next;
 }
@@ -875,6 +918,8 @@ export function chatStateSnapshot(
     outfitExposed: state.outfitExposed,
     activeSocialCards: state.activeSocialCards,
     surfacedCues: state.surfacedCues,
+    openLoops: state.openLoops,
+    memoryQueries: state.memoryQueries,
     attributeOverlays: state.attributeOverlays,
     lastPulseTrace: state.lastPulseTrace,
     lastMemoryTrace: state.lastMemoryTrace,
