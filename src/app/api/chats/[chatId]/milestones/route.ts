@@ -11,7 +11,7 @@ import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { characterChatMessages, db } from "@/server/db";
 import { loadChatState, persistChatState, seedChatState } from "@/server/engine";
-import { loadOwnedChat } from "../../owned";
+import { chatBusyResponse, loadOwnedChat } from "../../owned";
 
 type Params = { chatId: string };
 
@@ -36,6 +36,8 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
 
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
+  const busy = chatBusyResponse(chatId);
+  if (busy) return busy;
 
   const [message] = await db()
     .select({ id: characterChatMessages.id, content: characterChatMessages.content })

@@ -262,12 +262,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     let storedState: ChatState | null;
     if (regenerateTarget) {
       const restored = await loadPreExchangeState(chatId, characterId);
-      if (!restored) {
+      if (restored.found) {
+        // A recorded anchor. `state: null` means the anchor was `{}` — a first
+        // exchange with no prior state — so drift re-seeds from the authored
+        // defaults below, exactly as the original first exchange did (F3).
+        storedState = restored.state;
+      } else {
         sink.push(
           diag("warn", "chat_state.snapshot.missing", "no pre-exchange snapshot; regenerating without state rollback"),
         );
+        storedState = await loadChatState(chatId, characterId, sink);
       }
-      storedState = restored ?? (await loadChatState(chatId, characterId, sink));
       await reconcileMessageMemory(regenerateTarget.id, sink);
     } else {
       storedState = await loadChatState(chatId, characterId, sink);

@@ -23,26 +23,19 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Character chat — the standalone experience** —
-  [character-chat-standalone.plan.md](character-chat-standalone.plan.md) · spec
-  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (**active** — all
-  rulings settled, D1–D15 in the spec's Decisions; build started 2026-07-02 with slice 1,
-  Foundations). **Chat is the current product focus** (session lane blocked on NPC
-  navigation; chat is the proving ground — D6). Chat graduates from an editor tab to a
-  product surface: its own Chats page + full-screen conversation, multiple named
-  conversations (with multi-character headroom; archive replaces Clear; player-chosen
-  shared-history vs fresh-start memory — D7), a measurement pass proving
-  state/personality actually show in the writing, a thorough edit/rerun toolset
-  (another-take/go-on/stop), a complete **dev** memory/state inspector (player-facing
-  browsing ruled out — D2; "remember this" is the one player exception — D15), a
-  relationship that gates behavior (D11), **in-game** time skips (wall-clock time ruled
-  out of the fiction — D3/D8; flavor-only v1 — D14), and the chat-lane engine
-  consolidation. **Absorbs** review batch 3 (§D) entirely plus the chat-side items of
-  §C/§E, the chat-relevant RAG-improvements ideas, the personality-enactment measurement
-  follow-up, and the parked timeline/export/rebuild-summary leftovers.
+_(Nothing mid-build — the character-chat standalone plan shipped 2026-07-02; see
+**Shipped** below. Chat remains the product focus (D6): the top of **Next** is its
+measurement follow-through.)_
 
 ## Next (queued)
 
+- **Character chat — enactment measurement run** (the shipped plan's one leftover) —
+  [character-chat-standalone.plan.md](character-chat-standalone.plan.md) §slice 2 / spec
+  §5. The paired-contrast fixtures + blind pair judge are built and dry-run validated;
+  the first **live judged run is owner-gated spend** (`pnpm eval:narration`, then
+  `pnpm eval:narration:compare --axis contrast`). Bar: ≥80% blind identification per
+  axis, else the axis's prompt wording gets tuned and re-run — the craft rules and
+  relationship-law block shipped in slices 6/8 are the levers.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -80,6 +73,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character chat — the standalone experience** —
+  [character-chat-standalone.plan.md](character-chat-standalone.plan.md) · spec
+  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) — 2026-07-02 —
+  all nine slices in one arc: chat became a product surface (/chat hub + full-screen
+  conversation, conversations-plural on a re-keyed schema, presets, takes/go-on/stop),
+  then slices 6–9 finished it — prompt-cache split + craft rules, the measured-floor
+  RAG upgrade (fusion, pinned "remember this", open loops) + the complete dev
+  inspector + retrieval eval harness, the relationship that governs behavior
+  (stage law/history/milestones/panel/export/rebuild) + in-game-only time with player
+  skips, and inline anchored scene moments with opt-in auto-at-big-moments. Post-ship
+  review (2026-07-06) fixed four rollback/lock correctness bugs —
+  [character-chat-standalone.followups.md](character-chat-standalone.followups.md).
+  Leftover: the live enactment measurement run (top of **Next**).
 - **Mood-reactive avatars — rollback** —
   [avatar-3d.plan.md](avatar-3d.plan.md) §Rollback, 2026-07-02. The emotion-image layer
   (slices 1–3 below) removed at the owner's request — the generated frames didn't work well.

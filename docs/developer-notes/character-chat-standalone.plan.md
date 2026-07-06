@@ -1,8 +1,11 @@
 # Character chat — the standalone experience — plan
 
-Status: **active** — all open questions are resolved (rulings D1–D15 in the spec's
-**## Decisions**; final two confirmed 2026-07-02: time skips are flavor-only in v1, and
-"remember this" ships as the pinned player-memory design). **Slice 1 (Foundations)
+Status: **shipped — 2026-07-02** — all nine build-order slices are built (ledger below).
+One leftover: **slice 2's live blind-judged eval run** (`pnpm eval:narration` +
+`--axis contrast`) is a spend action reserved for the owner, and the §5 tuning loop
+("iterate until ≥80% blind identification per axis") only closes once it runs — tracked
+as its own roadmap **Next** line. All open questions were resolved before the build
+(rulings D1–D15 in the spec's **## Decisions**). **Slice 1 (Foundations)
 built 2026-07-02** — engine pipeline extraction (`engine/chat-pipeline.ts`), the three
 de-forks (shared `withGenerateTimeout` in server/ai, shared `drainingStreamResponse`,
 shared `evaluateActReaction` — chat regained the touch-welcomeness fallback), the
@@ -48,9 +51,42 @@ takes, cap 4 — state rolls back, old memory retracted), **Go on** (a continue 
 archivist runs, pulse skipped), **Stop** (server-side stream abort; the prefix persists
 with a "stopped" chip), plus the **scenario presets** loop (CRUD API + Save-as-preset /
 Apply-preset in the scenario modal + Start-from-preset on the new-conversation dialog,
-seeded server-side). Migration 0021–0023; 69 chat/memory integration tests. Next per
-build order: slice 6 (craft & tuning) — and slice 2's live measurement run still awaits
-the owner.
+seeded server-side). Migration 0021–0023; 69 chat/memory integration tests. **Slice 6 (Craft & tuning) built
+2026-07-02** — archivist field-count fix + haircut `attributeChanges` example (C6), the
+third-person-strict summary rule + pulse worked example (C8), the dialogue-craft rule +
+intimate-craft block in `CHAT_RULES` (C3/C4), the §9 prompt-cache restructure
+(`buildCharacterChatPromptParts`: stable prefix / volatile tail, byte-stability
+snapshot-tested), and the headless-POST narrator default fixed to the character's pick.
+**Slice 7 (Memory quality + dev inspector) built 2026-07-02** — the shared-memory
+retrieval upgrades (relevance floor w/ pinned exemption, per-query embedding + RRF fusion
+with per-source trace attribution, subjectId-preferring supersedence; the session lane
+inherits), `facts.pinned`/`facts.origin`, "remember this" (pinned `origin:"player"`
+notes + composer/hover UI, D15), open loops (§6.2, full-list-each-time), the complete
+dev inspector (`/api/dev/chat-inspector/*` + `/chat/:id/inspector`, facts/episodes CRUD,
+summary edit, what-reaches-the-narrator prompt preview), and the **retrieval eval
+harness** (`pnpm eval:retrieval`, spec §6.3 #6) whose first real-embedder run measured
+the floors and retuned them (facts 0.5→0.25, episodes 0.55→0.3 — recall 0.57→1.00, zero
+floor leaks). Migration 0024. **Slice 8 (The living relationship & in-game time) built
+2026-07-02** — `stageBehaviorProfile` + the prefix "Relationship law" block (initiative/
+openness/address + the D11 escalation floor; premise overrides, disinhibition never
+raises it), stage soft-coloring overlays, relationship history ring + milestones (+
+mark-this-moment), the Relationship panel (stage, sparkline, milestones, story-so-far,
+open loops), summary rebuild lever, md/json export w/ optional memory appendix; the
+wall-clock drift **removed outright** (D8 — `last_interaction_at` dropped), player time
+skips (flavor-only v1 per D14: clock + condition expiry + a stage-worded one-shot skip
+note + the scaffolding ring; meters untouched) with the reopen pickup strip + menu
+options, and the "has something to say" marker (D4 — read-time, open-loops-keyed) on the
+hub/dashboard with a one-tap cued opener. Migrations 0025–0026. **Slice 9 (Inline scene
+moments) built 2026-07-02** — scene images chat-keyed + anchored to the assistant message
+they illustrate (queue-time capture), rendered inline in the transcript under that
+message (one shared fetch/poll with the strip), per-chat prompt scrub on delete, and the
+opt-in "auto at big moments" mode (`scene_auto`, scenario-modal toggle; a stage crossing
+or strong reaction queues an anchored render fire-and-forget). Migration 0027. The
+design decisions slice 9 adopted (the spec had no section for it) are recorded in spec
+§12. **Post-ship follow-ups (2026-07-06)** — the adversarial review after slices 6–9
+found four real correctness bugs around the "another take" rollback anchor and the
+mid-stream state lock (plus one ruled-by-design item); all fixed with tests and recorded
+in [character-chat-standalone.followups.md](character-chat-standalone.followups.md).
 
 Design/decisions: [character-chat-standalone.spec.md](character-chat-standalone.spec.md) —
 the technical detail (schemas, file touch-points, migration shape, refactor analysis,

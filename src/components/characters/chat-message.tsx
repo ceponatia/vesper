@@ -62,6 +62,7 @@ export function MessageBubble({
   onAnotherTake,
   onSwitchTake,
   onRemember,
+  onMarkMoment,
 }: {
   line: ChatLine;
   name: string;
@@ -76,6 +77,8 @@ export function MessageBubble({
   onSwitchTake: (id: string, takeId: string) => Promise<void>;
   /** "Remember this" (spec §6.4): opens the pinned-note dialog prefilled with this line. Absent ⇒ no action. */
   onRemember?: (content: string) => void;
+  /** "Mark this moment" (spec §7.2): pin a player milestone on this message. Absent ⇒ no action. */
+  onMarkMoment?: (id: string) => void;
 }) {
   const isUser = line.role === "user";
   const pending = !isUser && line.content === "" && streaming;
@@ -203,6 +206,16 @@ export function MessageBubble({
                         className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
                       >
                         Remember
+                      </button>
+                    ) : null}
+                    {onMarkMoment && canModify ? (
+                      <button
+                        type="button"
+                        onClick={() => onMarkMoment(line.id)}
+                        title="Mark this as a milestone in the relationship"
+                        className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
+                      >
+                        Mark moment
                       </button>
                     ) : null}
                     {canRerun ? (

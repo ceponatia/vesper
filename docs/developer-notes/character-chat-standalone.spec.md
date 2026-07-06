@@ -1,9 +1,11 @@
 # Character chat — the standalone experience — spec
 
-Status: **active** — mirrors [character-chat-standalone.plan.md](character-chat-standalone.plan.md)
-(read it first for the product framing). All rulings are settled (**## Decisions** D1–D15,
-across three PM review rounds on 2026-07-02). Building started 2026-07-02 with slice 1
-(Foundations, §3).
+Status: **shipped — 2026-07-02** — mirrors [character-chat-standalone.plan.md](character-chat-standalone.plan.md)
+(read it first for the product framing and the per-slice build ledger). All rulings are
+settled (**## Decisions** D1–D15, across three PM review rounds on 2026-07-02); all nine
+slices built the same day. One leftover: the §5 live blind-judged eval run (spend) is the
+owner's, and the ≥80%-per-axis tuning loop closes when it runs. §12 records the slice-9
+design (inline scene moments), which this spec originally had no section for.
 
 ## Decisions (rulings to date — 2026-07-02 PM reviews)
 
@@ -519,6 +521,14 @@ unseen milestone`. Renders the marker; tapping sends `{kind: "continue"}` with t
 threaded as the cue line, so the character opens _about the right thing_. Wall-clock
 absence is deliberately **not** a trigger (D3).
 
+> **As built (v1):** the marker keys on **open loops only** — "unseen milestone" needs a
+> per-chat seen-cursor column that read-time derivation can't fake (milestones are minted
+> by exchanges, so `at > lastMessageAt` never distinguishes seen from unseen), and the
+> experiment didn't justify the extra state. Revisit if loops alone under-fire. Tapping
+> the marker routes to `/chat/:id?say=1`, which surfaces a **one-tap opener banner** —
+> the continue beat (cued to the top loop) still fires only on an explicit tap, keeping
+> generation player-triggered.
+
 ## 9. Prompt intelligence — chat items (absorbs review §C chat-side)
 
 - **C6**: `prompts/chat-archivist.ts` says "three fields", lists four — fix the count and
@@ -585,6 +595,32 @@ subsystems in one plan.
   repeat; dialogue/intimate craft rules move the judge rubric; takes actually differ
   (temperature sanity).
 
+## 12. Inline scene moments (slice 9 — recorded post-hoc; plan area 8 was the only source)
+
+The plan's area 8 shipped without a spec section; these are the adopted decisions:
+
+- **Anchoring**: `images` gains nullable `chat_id` (FK → `character_chats`, **SET NULL**
+  on chat delete — assets outlive their conversation in the Gallery) and
+  `anchor_message_id` (plain text, **no FK** — messages are individually deletable, and a
+  dangling anchor degrades to strip-only rendering, never an error). The anchor is
+  captured at **queue time**: the newest assistant line for a manual render, the
+  exchange's own reply for an auto render. Legacy rows (null `chat_id`) stay visible in
+  every conversation with the character, exactly as before.
+- **Scoping**: `GET …/scene` lists this chat's scenes plus legacy un-keyed ones; the
+  hard-delete prompt scrub is per-conversation for chat-keyed rows (a sibling chat's
+  scenes keep their prompts) and character-wide only for legacy rows.
+- **Inline rendering**: ready anchored scenes render as a thumbnail row under the
+  matching transcript message (shared lightbox); the strip stays as the generator +
+  full history. One fetch/poll on the conversation page feeds both.
+- **Auto at big moments**: `character_chat_state.scene_auto` — `"off"` (default) |
+  `"milestones"`, a text mode with headroom for future values (never a boolean). When
+  on, an exchange whose finalizer derives a `stage_up`/`stage_down`/`strong_reaction`
+  milestone queues one anchored render, fire-and-forget, deduped against any live
+  `chat_scene_image` job for the chat. The first exchange deliberately doesn't trigger.
+- **Known caveat**: a scene anchored to a reply later replaced by "another take"
+  illustrates the superseded beat. Accepted — the image remains a true record of a take
+  the player saw.
+
 ## Adopted defaults to flag (revisit on request)
 
 - Participants are a join table from day one with app-enforced single membership (no DB
@@ -597,8 +633,22 @@ subsystems in one plan.
   lane adopts later, nothing breaks meanwhile).
 - Scenario presets are a small owned table now, `LibraryKind` graduation later.
 - Time-skip amounts are a fixed four-value enum mapped to minutes (no free-form
-  durations); skips append to a capped `skip_history` ring (~50).
-- "Has something to say" is computed at read time — no jobs, no schedules, no push.
+  durations; moments 30 / hours 180 / overnight 540 / days 4320); skips append to a
+  capped `skip_history` ring (~50).
+- "Has something to say" is computed at read time — no jobs, no schedules, no push —
+  and v1 keys on open loops only (§8.4 as-built note; milestone-unseen tracking needs a
+  seen cursor and waits for demonstrated need).
+- Escalation tiers are a fixed five-value order (`distant → flirtation →
+  affectionate_touch → heated → intimate`); the per-stage floor + the stage→trait
+  soft-coloring deltas are data tables (`contracts/relationships/profile.ts`,
+  `STAGE_TRAIT_SHIFTS` in `contracts/personality/modulation.ts`) — tune by editing them.
+- The relevance floors are **measured, not guessed**: `pnpm eval:retrieval` (spec §6.3
+  #6) against the live embedder set `FACT_MIN_SCORE = 0.25` and `EPISODE_MIN_SCORE
+  = 0.3` (2026-07-02 run: relevant paraphrases 0.27–0.35, episodes 0.35–0.51,
+  distractors < 0.2). Re-run the harness before retuning.
+- Milestones/relationship-history/skip-history roll back with the pre-exchange snapshot
+  on "another take" (they live on the state row) — an undone exchange's milestones
+  vanish with it, by design.
 
 ## Open questions
 

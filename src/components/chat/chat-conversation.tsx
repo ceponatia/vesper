@@ -549,6 +549,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     toast.push({ title: "Time passes…", description: `${who} will pick the scene up from there.` });
   };
 
+  /** "Mark this moment" (spec §7.2): pin a player milestone on a message. */
+  const markMoment = async (messageId: string) => {
+    const result = await chatsApi.markMoment(chatId, messageId);
+    if (result.ok) {
+      toast.push({ title: "Moment marked", description: "It now shows in the Relationship panel." });
+    } else {
+      toast.push({ title: "Couldn't mark the moment", description: result.error.message, tone: "error" });
+    }
+  };
+
   /** The §8.4 opener: let the character speak about their top open loop. */
   const letThemSpeak = async () => {
     const cue = chatState?.openLoops[0];
@@ -726,6 +736,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                     onAnotherTake={(id) => void anotherTake(id)}
                     onSwitchTake={switchTake}
                     onRemember={archived ? undefined : openRemember}
+                    onMarkMoment={archived ? undefined : (id) => void markMoment(id)}
                   />
                   {moments ? <SceneMomentRow images={moments} name={name} /> : null}
                 </div>

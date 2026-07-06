@@ -348,24 +348,21 @@ What "fleshing it out" should cover (none built yet):
 
 ## Relationship & meter timeline — _UX audit feature #4_
 
-_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #4)._
-The post-turn agents already emit per-turn **affinity and meter deltas** (visible in the
-dev Inspector), so the data to chart a romance arc exists — nothing new to compute. Idea: a
-small **sparkline / timeline in the Cast panel** so a player can *see* affinity and meters
-move across a session, not just read the current value.
-
-Parked **separately** from [personality-and-state.plan.md](personality-and-state.plan.md)
-§4 (the affinity-levels / mood work it naturally pairs with) because that plan is
-**mid-build** — promote this alongside it, or sooner if a quick standalone visualization is
-wanted. Routed here from [ux-audit.plan.md](ux-audit.plan.md).
+_Raised 2026-06-17 (UX audit §6 #4). **Graduated at chat scale 2026-07-02** →
+[character-chat-standalone.plan.md](character-chat-standalone.plan.md) slice 8: the chat
+Relationship panel ships an affinity sparkline (`relationship_history` ring) + milestones._
+What stays parked: the **session-scale** version — a sparkline/timeline in the Cast panel
+charting affinity + meters across a session (the per-turn deltas the post-turn agents
+already emit). Promote it by porting the chat panel's shape onto session data.
 
 ## Session transcript export / share — _UX audit feature #8_
 
-_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #8)._
-Export a session's narrative feed as **Markdown** (and/or a shareable read-only view) — a
-natural fit for a romance-story product where players want to keep or share the story they
-played. Low effort, no model change (the episode/feed data already exists). From
-[ux-audit.plan.md](ux-audit.plan.md).
+_Raised 2026-06-17 (UX audit §6 #8). **Graduated at chat scale 2026-07-02** →
+[character-chat-standalone.plan.md](character-chat-standalone.plan.md) slice 8:
+`GET /api/chats/:id/export?format=md|json` (+ optional memory appendix) ships from the
+chat Relationship panel._ What stays parked: the **session** narrative-feed export
+(and/or a shareable read-only view) — port the chat exporter's shape onto the
+episode/feed data when wanted.
 
 ## Scene image: pin / set as session cover — _UX audit feature #9_
 

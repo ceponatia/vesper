@@ -10,7 +10,7 @@ import {
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { applyTimeSkip, chatStateSnapshot, loadChatState, persistChatState, seedChatState } from "@/server/engine";
-import { loadOwnedChat } from "../../owned";
+import { chatBusyResponse, loadOwnedChat } from "../../owned";
 
 type Params = { chatId: string };
 
@@ -35,6 +35,8 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (owned.chat.archivedAt) {
     return jsonError("chat_archived", "this conversation is archived; restore it to continue", 409);
   }
+  const busy = chatBusyResponse(chatId);
+  if (busy) return busy;
 
   const sink = new DiagnosticCollector();
   const profile = parseOr(characterProfileSchema, owned.character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
