@@ -26,9 +26,11 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
+import { withKeyedLock } from "@/server/engine";
 import { POST as chatsCreate } from "./route";
 import { DELETE as chatDelete, POST as chatSend } from "./[chatId]/route";
 import { GET as stateGet, PATCH as statePatch, POST as stateAction } from "./[chatId]/state/route";
+import { POST as markMoment } from "./[chatId]/milestones/route";
 import { POST as timeSkip } from "./[chatId]/time-skip/route";
 
 async function probe(): Promise<boolean> {
@@ -83,6 +85,9 @@ const ids = {
   open: { characterId: "", chatId: "" },
   carded: { characterId: "", chatId: "" },
   skipper: { characterId: "", chatId: "" },
+  regen: { characterId: "", chatId: "" },
+  premised: { characterId: "", chatId: "" },
+  busy: { characterId: "", chatId: "" },
 };
 
 async function stateRow(f: Fixture) {
@@ -145,12 +150,21 @@ beforeAll(async () => {
     })
     .returning();
   const [skipper] = await db().insert(characters).values({ ownerId: user.id, name: "Vex", profile: {} }).returning();
-  if (!warm || !fresh || !open || !carded || !skipper) throw new Error("failed to seed characters");
+  const [regen] = await db().insert(characters).values({ ownerId: user.id, name: "Wynn", profile: {} }).returning();
+  const [premised] = await db()
+    .insert(characters)
+    .values({ ownerId: user.id, name: "Cass", profile: { playerRelationship: { stage: "warm", note: "old flame" } } })
+    .returning();
+  const [busy] = await db().insert(characters).values({ ownerId: user.id, name: "Bly", profile: {} }).returning();
+  if (!warm || !fresh || !open || !carded || !skipper || !regen || !premised || !busy) throw new Error("failed to seed characters");
   ids.warm = { characterId: warm.id, chatId: await createChat(warm.id) };
   ids.fresh = { characterId: fresh.id, chatId: await createChat(fresh.id) };
   ids.open = { characterId: open.id, chatId: await createChat(open.id) };
   ids.carded = { characterId: carded.id, chatId: await createChat(carded.id) };
   ids.skipper = { characterId: skipper.id, chatId: await createChat(skipper.id) };
+  ids.regen = { characterId: regen.id, chatId: await createChat(regen.id) };
+  ids.premised = { characterId: premised.id, chatId: await createChat(premised.id) };
+  ids.busy = { characterId: busy.id, chatId: await createChat(busy.id) };
 });
 
 afterAll(async () => {
@@ -293,6 +307,78 @@ describe("PATCH …/chats/:chatId/state { premise }", () => {
     const post = await chatSend(postReq(ids.fresh.chatId, { content: "Hi" }), ctx(ids.fresh.chatId));
     await post.text();
     expect((await stateRow(ids.fresh))?.premise).toBe("it's the night before she moves away");
+  });
+});
+
+describe("regenerating the FIRST exchange rolls back cleanly (followups F3)", () => {
+  it("re-seeds from the authored defaults — no double clock tick, no stacked milestone", async (t) => {
+    if (!ready) return t.skip();
+    // The first send creates the row: one clock tick, one first_exchange milestone, one baseline sample,
+    // and the recorded rollback anchor is the `{}` sentinel (there was no prior state).
+    const send = await chatSend(postReq(ids.regen.chatId, { content: "Hello" }), ctx(ids.regen.chatId));
+    await send.text();
+    const first = await stateRow(ids.regen);
+    expect(first).not.toBeNull();
+    const tick = first?.clockMinutes ?? 0;
+    expect(tick).toBeGreaterThan(0);
+    expect(first?.preExchangeState).toEqual({});
+    expect((first?.milestones as { kind: string }[]).filter((m) => m.kind === "first_exchange")).toHaveLength(1);
+
+    // Regenerate the reply. Pre-fix, the `{}` anchor failed to parse and the rollback silently
+    // fell back to the POST-exchange state — so drift ticked the clock a SECOND time. Now `{}`
+    // rolls back to a re-seed, so the clock lands on exactly one tick again.
+    const regen = await chatSend(postReq(ids.regen.chatId, { kind: "regenerate" }), ctx(ids.regen.chatId));
+    await regen.text();
+    const after = await stateRow(ids.regen);
+    expect(after?.clockMinutes).toBe(tick); // NOT 2×tick (the double-apply bug)
+    expect((after?.milestones as { kind: string }[]).filter((m) => m.kind === "first_exchange")).toHaveLength(1);
+    expect((after?.relationshipHistory as unknown[]).length).toBe(1);
+  });
+});
+
+describe("first_exchange survives a pre-existing state row (followups F4)", () => {
+  it("records the baseline sample + first_exchange even when a premise Save created the row first", async (t) => {
+    if (!ready) return t.skip();
+    // A premise Save creates the state row BEFORE any message — so on the first send
+    // `loadChatState` returns non-null and the old `preExchangeState === null` test missed it.
+    await statePatch(patchReq(ids.premised.chatId, { premise: "reunited after years" }), ctx(ids.premised.chatId));
+    expect(await stateRow(ids.premised)).not.toBeNull();
+
+    const send = await chatSend(postReq(ids.premised.chatId, { content: "It's really you." }), ctx(ids.premised.chatId));
+    await send.text();
+    const row = await stateRow(ids.premised);
+    expect((row?.milestones as { kind: string }[]).filter((m) => m.kind === "first_exchange")).toHaveLength(1);
+    expect((row?.relationshipHistory as unknown[]).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("state mutations 409 while a reply streams (followups F1)", () => {
+  it("time-skip / PATCH / action / mark-moment are all rejected while the chat_exchange lock is held", async (t) => {
+    if (!ready) return t.skip();
+    const chatId = ids.busy.chatId;
+    // A NextRequest body is a single-use stream, so build a fresh one per call.
+    const skipReq = () =>
+      new NextRequest(`http://t/api/chats/${chatId}/time-skip`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount: "hours" }),
+      });
+    const markReq = () =>
+      new NextRequest(`http://t/api/chats/${chatId}/milestones`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messageId: "whatever", label: "x" }),
+      });
+    // Hold the exchange lock (what a live streaming reply holds across its whole settle),
+    // then every state-row mutation must 409 rather than clobber the pending finalize.
+    await withKeyedLock(`chat_exchange:${chatId}`, async () => {
+      expect((await timeSkip(skipReq(), ctx(chatId))).status).toBe(409);
+      expect((await statePatch(patchReq(chatId, { premise: "x" }), ctx(chatId))).status).toBe(409);
+      expect((await stateAction(actionReq(chatId, { action: "drink" }), ctx(chatId))).status).toBe(409);
+      expect((await markMoment(markReq(), ctx(chatId))).status).toBe(409);
+    });
+    // Lock released ⇒ the same mutation now succeeds.
+    expect((await timeSkip(skipReq(), ctx(chatId))).status).toBe(200);
   });
 });
 

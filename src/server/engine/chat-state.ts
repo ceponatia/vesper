@@ -55,7 +55,7 @@ import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
-import { characterChatMessages, characterChatState, db, type DbWriter } from "../db";
+import { characterChatMessages, characterChatState, db } from "../db";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
 import {
   AFFINITY_DELTA_CLAMP,
@@ -70,15 +70,17 @@ import { chatSkipNote } from "./prompts/character-chat";
 import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
 
 /**
- * The character-chat light-state engine (docs/developer-notes/character-chat-state.spec.md).
+ * The character-chat light-state engine (docs/developer-notes/character-chat-state.spec.md,
+ * time model re-ruled by character-chat-standalone.spec.md §8, D3/D8).
  * Grows the sessionless 1-on-1 chat into a state-aware quick chat by reusing the
  * pure contracts — meters, affinity stages, conditions, and the §6 social-reaction
  * curve — with one new table and at most one cheap structured pulse per exchange.
- * Two regimes drive state for free: a per-exchange tick decays meters within a
- * visit, and real elapsed time recovers them toward rested between visits. The
- * pulse classifies the player's act and refreshes the mindNote; the deterministic
- * curve turns that into affinity + mood deltas. Degrades to drift-only on any pulse
- * failure (resilience.md §3) — never blocks or fails a reply.
+ * In-game time is the ONLY clock: a per-exchange tick decays meters within a visit,
+ * player time skips (`applyTimeSkip`) are the one between-scene lever, and no time
+ * passes between visits at all. The pulse classifies the player's act and refreshes
+ * the mindNote; the deterministic curve turns that into affinity + mood deltas.
+ * Degrades to drift-only on any pulse failure (resilience.md §3) — never blocks or
+ * fails a reply.
  */
 
 /** The in-memory state for one chat, drifted/seeded/pulsed and persisted as a row. */
@@ -330,31 +332,60 @@ const storedChatStateSchema = z.object({
 /**
  * Persist the "another take" rollback anchor (spec §4.1): the state as it stood
  * before the exchange. Targeted UPDATE — the row exists by the time the finalizer
- * calls this (saveChatState upserted it just before). `null` ⇒ `{}` (no snapshot,
- * e.g. the very first exchange seeded from authored defaults).
+ * calls this (saveChatState upserted it just before). `null` ⇒ `{}` — the recorded
+ * sentinel for "there was no pre-exchange state" (a first exchange seeded from the
+ * authored defaults); `loadPreExchangeState` maps `{}` back to a null rollback
+ * target (re-seed). With `guardMessageId` the write only lands while that prompting
+ * message still exists (followups F5) — same guard as the paired `saveChatState`, so
+ * a mid-stream delete can't leave the anchor pointing at a state that was never saved.
  */
 export async function savePreExchangeSnapshot(
   chatId: string,
   characterId: string,
   state: ChatState | null,
+  guardMessageId?: string,
 ): Promise<void> {
+  const guard = guardMessageId
+    ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
+    : sql`true`;
   await db()
     .update(characterChatState)
     .set({ preExchangeState: state ?? {} })
-    .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)));
+    .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId), guard));
 }
 
-/** Load the rollback anchor, or null when none was recorded (first exchange / legacy row). */
-export async function loadPreExchangeState(chatId: string, characterId: string): Promise<ChatState | null> {
+/**
+ * Load the "another take" rollback anchor (followups F3). Three outcomes, because a
+ * first exchange's anchor and a missing/corrupt one must NOT collapse to the same
+ * thing (the old bug: regenerating the first reply parsed the recorded `{}`, failed,
+ * and silently fell back to the POST-exchange state — double-ticking the clock and
+ * re-applying the pulse):
+ * - `{ found: true, state }` — a recorded prior state to roll back to.
+ * - `{ found: true, state: null }` — the anchor is `{}` (first exchange, no prior
+ *   state): the caller re-seeds from the authored defaults, exactly as the live
+ *   first exchange did.
+ * - `{ found: false, state: null }` — no row: degrade to no-rollback with a diagnostic.
+ */
+export async function loadPreExchangeState(
+  chatId: string,
+  characterId: string,
+): Promise<{ found: boolean; state: ChatState | null }> {
   const [row] = await db()
     .select({ preExchangeState: characterChatState.preExchangeState })
     .from(characterChatState)
     .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)))
     .limit(1);
-  if (!row) return null;
+  if (!row) return { found: false, state: null };
+  // `{}` (the null-pre-state sentinel, and the column default) ⇒ re-seed on rollback.
+  if (isEmptyJsonObject(row.preExchangeState)) return { found: true, state: null };
   const parsed = parseOrNull(storedChatStateSchema, row.preExchangeState);
-  if (!parsed) return null;
-  return { ...parsed, affinity: clampAffinity(parsed.affinity) };
+  if (!parsed) return { found: false, state: null };
+  return { found: true, state: { ...parsed, affinity: clampAffinity(parsed.affinity) } };
+}
+
+/** True for a jsonb `{}` — the recorded "no pre-exchange state" rollback sentinel. */
+function isEmptyJsonObject(value: unknown): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
 }
 
 /**
@@ -611,7 +642,7 @@ function arousalBumpForConcept(concept: string): number {
  * Close the turn: run the post-turn fan-out — the reaction pulse ‖ the archivist-lite
  * (character-chat-primary.spec.md §2, D2) — in PARALLEL on the drifted state + the
  * just-finished exchange, write the extracted long-term memory (episode + facts), then
- * stamp `lastInteractionAt` + next turn's memory queries and persist (guarded). Called
+ * fold in the relationship samples/milestones + next turn's memory queries and persist (guarded). Called
  * from the chat route's stream finalizer after `persistAssistantReply`, so the whole
  * fan-out only delays `controller.close()` — invisible to perceived latency, and any leg
  * degrades to a diagnostic without touching the already-flushed reply.
@@ -708,7 +739,12 @@ export async function finalizeChatState(input: {
   // exchange's milestones. When the pulse was skipped (a "go on" beat) or degraded,
   // `lastPulseTrace` is stale/empty — treat the move as zero rather than re-reading it.
   const at = input.now.toISOString();
-  const firstExchange = input.preExchangeState === null;
+  // "First exchange" for the arc baseline + first_exchange milestone (followups F4):
+  // no relationship sample has been recorded yet. Robust to a state row that
+  // pre-exists the first send — a premise Save, an opening beat, a pickup skip all
+  // create the row, so keying on `preExchangeState === null` would miss them and
+  // silently skip the baseline sample + milestone.
+  const firstExchange = input.driftedState.relationshipHistory.length === 0;
   const preAffinity = input.preExchangeState?.affinity ?? input.driftedState.affinity;
   const postAffinity = pulse.state.affinity;
   const pulseTrace = input.skipPulse || pulse.state.lastPulseTrace.degraded ? null : pulse.state.lastPulseTrace;
@@ -765,8 +801,9 @@ export async function finalizeChatState(input: {
   });
   // The rollback anchor rides a targeted follow-up UPDATE (never the shared upsert
   // column list — an author edit must not clobber it): repeated "another take"s
-  // keep rolling back to the same pre-exchange point.
-  await savePreExchangeSnapshot(input.chatId, input.characterId, input.preExchangeState);
+  // keep rolling back to the same pre-exchange point. Guarded on the same prompting
+  // message as saveChatState (F5), so a mid-stream delete leaves neither half written.
+  await savePreExchangeSnapshot(input.chatId, input.characterId, input.preExchangeState, input.promptMessageId);
   return { bigMoment };
 }
 
@@ -778,7 +815,7 @@ export async function finalizeChatState(input: {
  * With `guardMessageId`, the write only lands while that prompting user message
  * still exists — the same `INSERT … WHERE EXISTS` shape as `persistAssistantReply`,
  * so a clear (Reset All) landing mid-stream can't resurrect a deleted state row.
- * jsonb values are cast from text params; `last_interaction_at` binds a Date.
+ * jsonb values are cast from text params.
  */
 async function upsertChatState(
   chatId: string,

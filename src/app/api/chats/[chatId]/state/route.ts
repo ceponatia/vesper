@@ -25,7 +25,7 @@ import {
   persistChatState,
   seedChatState,
 } from "@/server/engine";
-import { loadOwnedChat, type OwnedChat } from "../../owned";
+import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
 
 type Params = { chatId: string };
 
@@ -93,6 +93,8 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
+  const busy = chatBusyResponse(chatId);
+  if (busy) return busy;
 
   const body = await readBody(req, editBodySchema);
   if (!body.ok) return body.response;
@@ -111,6 +113,8 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
+  const busy = chatBusyResponse(chatId);
+  if (busy) return busy;
 
   const body = await readBody(req, actionBodySchema);
   if (!body.ok) return body.response;

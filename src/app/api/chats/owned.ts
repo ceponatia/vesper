@@ -1,5 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { characterChats, characters, chatParticipants, db } from "@/server/db";
+import { keyedLockBusy } from "@/server/engine";
+import { jsonError } from "@/server/api";
 
 /**
  * Resolve a conversation the user owns, with its (v1 single) participant and the
@@ -51,4 +53,20 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
       chatModel: row.chatModel,
     },
   };
+}
+
+/**
+ * 409 while a reply is streaming for this chat (character-chat-standalone.followups
+ * F1): the exchange holds the `chat_exchange:<id>` lock across the whole stream, and
+ * its finalizer rewrites the full state-row column list from the pre-exchange
+ * snapshot. So a state mutation that lands mid-stream — a time skip, a marked moment,
+ * an author edit, an action chip — would be silently clobbered by the finalize save
+ * (the skip note cleared unrendered, the clock reverted). The mutation routes call
+ * this before touching the state row; `null` ⇒ clear to proceed. Matches the
+ * exchange's own `chat_busy` code so the client handles both the same way.
+ */
+export function chatBusyResponse(chatId: string): ReturnType<typeof jsonError> | null {
+  return keyedLockBusy(`chat_exchange:${chatId}`)
+    ? jsonError("chat_busy", "a reply is still streaming; wait for it to finish before changing the scene", 409)
+    : null;
 }

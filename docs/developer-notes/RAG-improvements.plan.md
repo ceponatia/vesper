@@ -1,9 +1,16 @@
 # RAG improvements — plan
 
-Status: **draft** — initial impressions on the seven RAG ideas in
+Status: **draft** — but **items #1, #2, #4, and #6 shipped 2026-07-02** via
+[character-chat-standalone.plan.md](character-chat-standalone.plan.md) slice 7 (spec
+§6.3), implemented in shared `src/server/memory/` so both lanes inherit: **#1** the
+relevance floor (measured via the new harness — `FACT_MIN_SCORE 0.25`,
+`EPISODE_MIN_SCORE 0.3`), **#2** per-query embedding + RRF fusion with per-source
+attribution, **#4** subjectId-preferring supersedence, **#6** the retrieval eval
+harness (`pnpm eval:retrieval`, `scripts/eval/retrieval/`). The remaining ideas keep
+this doc's original framing: initial impressions on the seven RAG ideas in
 [user-guidance/ideas.md](user-guidance/ideas.md) §RAG, **re-grounded against the
 codebase 2026-06-19** (the code moved a lot after the first draft — see the
-"What changed since first draft" callout). Nothing here is settled; this doc
+"What changed since first draft" callout). Nothing else here is settled; this doc
 captures where each idea touches the code, whether I agree, rough size,
 dependencies, and the open questions to resolve before any of it becomes a spec.
 
