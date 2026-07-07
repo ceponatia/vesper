@@ -255,13 +255,14 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(withoutState).not.toContain("Scenario for this chat");
   });
 
-  it("renders mood + mindNote in the Current state block; the stage steer is the Relationship-law block (§7.1)", () => {
+  it("renders mood + mindNote in the Current state block; the regard steer is the composed Relationship block (§7.1)", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Mara",
       profile: profile(),
       state: {
         meters: { mood: 0.8, energy: 0.8, hygiene: 0.9, stress: 0.1 },
         regard: 57, // warm
+        familiarity: 42, // acquainted
         conditions: [],
         mindNote: "She's glad he came back.",
       },
@@ -269,11 +270,12 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("Your current state");
     expect(prompt).toContain("bright and playful");
     expect(prompt).toContain("She's glad he came back.");
-    // The old one-line warmth hint is superseded by the Relationship-law block, which
-    // names the stage and states its behavioral bands + escalation floor.
-    expect(prompt).toContain("Relationship law");
-    expect(prompt).toMatch(/warm — this governs your behavior/i);
-    expect(prompt).toContain("initiates warmly");
+    // The old one-line warmth hint is superseded by the composed relationship block,
+    // which names both axis bands and states the regard-keyed escalation floor.
+    expect(prompt).toContain("Relationship with the user");
+    expect(prompt).toContain("- Regard (warm): ");
+    expect(prompt).toContain("- Familiarity (acquainted): ");
+    expect(prompt).toContain("the first move is often yours");
     // State is per-turn volatile, so it rides the tail below the stable rules (spec §9).
     expect(prompt.indexOf("Your current state")).toBeGreaterThan(prompt.indexOf("How to respond:"));
   });
@@ -526,17 +528,58 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     expect(turn1.tail).not.toBe(turn2.tail);
   });
 
-  it("re-renders the prefix only on a stage crossing (Relationship law is stage-keyed — §7.1/§9)", () => {
-    const at = (regard: number) =>
+  it("re-renders the prefix only on a band crossing — either axis (the composed block is band-keyed — §7.1/§9)", () => {
+    const at = (regard: number, familiarity = 0) =>
       buildCharacterChatPromptParts({
         name: "Mara",
         profile: profile(),
-        state: { meters: {}, regard, conditions: [] },
+        state: { meters: {}, regard, familiarity, conditions: [] },
       });
     expect(at(50).prefix).toBe(at(64).prefix); // both "warm" — cache holds
     expect(at(50).prefix).not.toBe(at(65).prefix); // warm → close — law block re-renders
-    expect(at(65).prefix).toContain("Relationship law");
-    expect(at(65).prefix).toContain("full intimacy"); // the close-stage escalation floor
+    expect(at(65).prefix).toContain("Relationship with the user");
+    expect(at(65).prefix).toContain("full intimacy"); // the close-band escalation floor
+    // The knowledge axis re-renders the prefix on ITS band crossings too…
+    expect(at(50, 30).prefix).toBe(at(50, 54).prefix); // both "acquainted"
+    expect(at(50, 54).prefix).not.toBe(at(50, 55).prefix); // acquainted → familiar
+  });
+
+  it("renders the authored texture: history line, mask, and the corner note (relationship-model v2)", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Daniel" },
+      state: {
+        meters: {},
+        regard: -25, // cool
+        familiarity: 90, // deeply known
+        relationship: {
+          kind: "estranged childhood friends",
+          history: "he left town without a word; you rebuilt alone",
+          presented: { lean: "masks_warmth", note: "icily civil" },
+          looming: false,
+        },
+        conditions: [],
+      },
+    });
+    expect(parts.prefix).toContain("Relationship with Daniel");
+    expect(parts.prefix).toContain("- History: estranged childhood friends. he left town without a word");
+    expect(parts.prefix).toContain("you perform colder toward Daniel than you feel");
+    expect(parts.prefix).toContain("Familiarity is not warmth"); // deeply_known × cool corner
+    expect(parts.prefix).toContain("deflect as Mara would");
+  });
+
+  it("emits the disposition-contrast line only when regard's sign disagrees with the authored warmth lean", () => {
+    const curt = profile({ traits: [{ id: "temperament.warmth", value: -60, source: "base" as const }] });
+    const at = (p: ReturnType<typeof profile>, regard: number) =>
+      buildCharacterChatPromptParts({
+        name: "Mara",
+        profile: p,
+        state: { meters: {}, regard, conditions: [] },
+      }).prefix;
+    expect(at(curt, 57)).toContain("one of the few exceptions"); // curt generally, warm to YOU
+    expect(at(curt, -25)).not.toContain("one of the few exceptions"); // signs agree — no line
+    expect(at(profile(), 57)).not.toContain("one of the few exceptions"); // no authored lean — no line
   });
 
   it("states the D11 gate invariants in the law block: premise wins, disinhibition never moves the line, values outrank", () => {

@@ -248,6 +248,27 @@ export function relationshipRegionLabel(familiarity: number, regard: number): st
   return regionLabels[`${fam.id}|${reg.id}`] ?? `${fam.label} · ${reg.label}`;
 }
 
+/** Authored warmth lean at or past this reads as a general disposition worth contrasting. */
+const CONTRAST_WARMTH_LEAN = 20;
+
+/**
+ * The disposition-contrast line (plan §Disposition interplay 3): when regard's
+ * sign disagrees with the authored warmth lean, the divergence is stated
+ * explicitly — the contrast IS the characterization ("curt with everyone; Mara
+ * is the exception") — instead of leaving the trope for the model to infer from
+ * two distant blocks. "" when they agree, when regard is neutral, or when no
+ * warmth was authored.
+ */
+export function dispositionContrastLine(input: { name: string; warmth: number; regard: number }): string {
+  if (input.warmth <= -CONTRAST_WARMTH_LEAN && input.regard >= 15) {
+    return `You are curt and guarded with people in general; ${input.name} is one of the few exceptions — around ${input.name}, the guard drops.`;
+  }
+  if (input.warmth >= CONTRAST_WARMTH_LEAN && input.regard <= -15) {
+    return `You are warm with people in general; ${input.name} is a pointed exception — with ${input.name}, the warmth does not come.`;
+  }
+  return "";
+}
+
 export interface ComposeRelationshipLawInput {
   /** The other party's display name (the edge's target). */
   name: string;

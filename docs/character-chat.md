@@ -63,9 +63,9 @@ exchange:
    pinned-only, episodes to `[]`).
 6. **Prompt build.** `buildCharacterChatPromptParts` (pure, snapshot-tested) — split
    for provider prefix caching (spec §9) into a **stable prefix** (identity → persona →
-   scenario → background → stage-colored disposition → **Relationship law** → cards →
+   scenario → background → regard-colored disposition → the composed **Relationship** block → cards →
    attributes → sensory cues → rules; byte-identical across turns, re-rendering only on
-   a stage crossing — asserted by a prefix-byte-stability test) and a **volatile tail**
+   a band crossing on either relationship axis — asserted by a prefix-byte-stability test) and a **volatile tail**
    (recap, memory, state, skip note, disinhibition + transient-appearance overrides,
    cue invite, beat instructions). See [prompts.md](prompts.md) §§Character-chat sensory
    cues / state as a narration system / long-term memory, plus the regex-only one-turn
@@ -123,7 +123,7 @@ guarded state write:
   and "another take" rolls it back exactly.
 - The finalizer also appends the **relationship arc** (`appendRelationshipSample` /
   `deriveExchangeMilestones`, `contracts/relationships/history.ts`), clears the one-shot
-  skip note, and returns `{bigMoment}` — true on a stage crossing or strong reaction —
+  skip note, and returns `{bigMoment}` — true on a regard-band crossing or strong reaction —
   which the route uses to queue an **auto scene** anchored to the reply when the chat's
   `scene_auto` is `"milestones"` (`queueChatScene`, deduped against live renders,
   fire-and-forget; a failed queue log-warns and never touches the settled reply). Caveat:
@@ -219,7 +219,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Rolling summary + fold job + rebuild | `server/engine/chat-summary.ts` |
 | One-turn cue regex | `server/engine/chat-intent.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
-| Relationship law / stage profiles | `contracts/relationships/profile.ts` (`stageBehaviorProfile`, escalation tiers) + `contracts/relationships/history.ts` (samples/milestones) |
+| Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |
 | RRF fusion (pure) | `server/memory/fusion.ts` ([memory.md](memory.md)) |
 | Scene image | `server/images/character-scene.ts` ([images.md](images.md) §state-aware chat scene); queue + anchor + dedupe in `app/api/chats/[chatId]/scene/queue.ts` (`queueChatScene`) |
 | Dev inspector | `app/api/dev/chat-inspector/*` (routes) + `components/chat/chat-inspector-{page,facts,episodes}.tsx` behind `/chat/[chatId]/inspector` (admin-gated) |
