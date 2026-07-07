@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { familiarityBands, PLAYER_RELATIONSHIP_NOTE_MAX, regardBands } from "@/contracts";
+import { PLAYER_RELATIONSHIP_NOTE_MAX, type AuthoredRelationshipRecord } from "@/contracts";
+import { RelationshipRecordEditor } from "@/components/characters/relationship-record-editor";
 import { chatsApi } from "@/lib/client/api";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { timeAgo } from "@/lib/relative-time";
@@ -13,7 +14,6 @@ import { Card } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { ModelSelect } from "@/components/ui/model-select";
-import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -22,13 +22,13 @@ export interface CharacterChatProps {
   name: string;
   /**
    * The authored Starting Relationship (`profile.playerRelationship`) from the live
-   * editor draft: the two band picks (relationship-model v2 axes) and the one-line
-   * note that pre-fills a new chat's premise. Writes back through the setter into
-   * the draft — the editor SaveBar persists it with the character. (Kind/history/
-   * mask texture + the live law preview arrive with the plan's slice 4 control.)
+   * editor draft: the full authored record (bands + kind/history/mask texture,
+   * edited through `RelationshipRecordEditor` with its live law preview) plus the
+   * one-line note that pre-fills a new chat's premise. Writes back through the
+   * setter into the draft — the editor SaveBar persists it with the character.
    */
-  starting: { familiarity: string; regard: string; note: string };
-  onStartingChange: (next: { familiarity: string; regard: string; note: string }) => void;
+  starting: AuthoredRelationshipRecord & { note: string };
+  onStartingChange: (next: AuthoredRelationshipRecord & { note: string }) => void;
   /**
    * The narrator model the dropdown shows (a resolved `NARRATIVE_MODELS` id). Owned by
    * the page so it outlives this tab unmounting — picking a model here calls
@@ -76,47 +76,22 @@ export function CharacterChat({
             />
           )}
         </Field>
+        <div>
+          <p className="mb-2 text-xs font-medium tracking-wide text-paper-400 uppercase">Starting relationship</p>
+          <p className="mb-3 text-xs text-paper-500">
+            How things stand between {who} and the player when a chat begins — saved with the character (use the
+            page&apos;s Save). New conversations seed from this; the state tools can diverge any one chat later.
+          </p>
+          <RelationshipRecordEditor
+            value={starting}
+            onChange={(next) => onStartingChange({ ...starting, ...next })}
+            selfName={who}
+            targetName="the player"
+          />
+        </div>
         <Field
-          label="Starting familiarity"
-          hint={`How well ${who} and the player know each other when a chat begins — saved with the character (use the page's Save).`}
-        >
-          {(id) => (
-            <Select
-              id={id}
-              value={starting.familiarity}
-              onChange={(e) => onStartingChange({ ...starting, familiarity: e.target.value })}
-              className="max-w-xs"
-            >
-              {familiarityBands.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.label}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Field
-          label="Starting regard"
-          hint={`How ${who} feels about the player when a chat begins — knowing someone and liking them are separate axes.`}
-        >
-          {(id) => (
-            <Select
-              id={id}
-              value={starting.regard}
-              onChange={(e) => onStartingChange({ ...starting, regard: e.target.value })}
-              className="max-w-xs"
-            >
-              {regardBands.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.label}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Field
-          label="Relationship note"
-          hint="One line of shared history — it pre-fills a new conversation's premise."
+          label="Premise note"
+          hint="One line that pre-fills a new conversation's premise (the scene, not the relationship)."
         >
           {(id) => (
             <Textarea

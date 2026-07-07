@@ -304,16 +304,8 @@ export function CharacterEditor({
           <CharacterChat
             characterId={characterId}
             name={draft.name || "Untitled"}
-            starting={{
-              familiarity: draft.profile.playerRelationship.familiarity,
-              regard: draft.profile.playerRelationship.regard,
-              note: draft.profile.playerRelationship.note,
-            }}
-            onStartingChange={(next) =>
-              patchProfile({
-                playerRelationship: { ...draft.profile.playerRelationship, ...next },
-              })
-            }
+            starting={draft.profile.playerRelationship}
+            onStartingChange={(next) => patchProfile({ playerRelationship: next })}
             chatModel={resolveChatModelId(chatModel)}
             onChatModelChange={onChatModelChange ?? (() => undefined)}
           />
