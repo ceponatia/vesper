@@ -5,7 +5,8 @@ import { meterDefinitionSchema } from "../meters/registry";
 import { socialReactionCardSchema } from "../personality/cards";
 import { preferenceSchema } from "../personality/preference";
 import { traitValueSchema } from "../personality/traits/value";
-import { stageIdSchema } from "../relationships/stages";
+import { stageToBandIds } from "../relationships/bands";
+import { authoredRelationshipRecordSchema } from "../relationships/record";
 import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
 
 /**
@@ -86,21 +87,30 @@ export const characterProfileSchema = z.object({
   traits: z.array(traitValueSchema).default([]),
   /**
    * The character's authored default stance toward the player
-   * (character-chat-state.spec.md §1.1). v1 seeds the **character chat**: `stage`
-   * → the chat's starting affinity (`stageMidpoint`), and the one-line `note`
-   * pre-fills the chat's default premise (§1.2). Default `stranger`/"" ⇒ affinity
-   * 0 and no default premise ⇒ today's behavior. Stored as `playerRelationship`
-   * (intrinsic stance toward the player, broader than chat) but shown on the
-   * character-sheet **Chat** tab as **Starting Relationship**. Every part has a
-   * `.catch` so a malformed value self-heals rather than failing the whole profile.
+   * (character-chat-state.spec.md §1.1; relationship-model.plan.md slice 2): the
+   * AUTHORED relationship record — two band picks + kind/history/mask texture —
+   * that seeds a new chat's live scalars at band midpoints, plus the one-line
+   * `note` that pre-fills the chat's default premise (§1.2). The legacy
+   * `{stage, note}` shape heals in the preprocess (old `stage` maps through
+   * `stageToBandIds`). Default strangers/neutral/"" ⇒ zeroed axes and no default
+   * premise ⇒ today's behavior. Stored as `playerRelationship` (intrinsic stance
+   * toward the player, broader than chat) but shown on the character-sheet
+   * **Chat** tab as **Starting Relationship**. Every part has a `.catch` so a
+   * malformed value self-heals rather than failing the whole profile.
    */
-  playerRelationship: z
-    .object({
-      stage: stageIdSchema.default("stranger"),
-      note: z.string().max(PLAYER_RELATIONSHIP_NOTE_MAX).catch("").default(""),
-    })
-    .catch({ stage: "stranger", note: "" })
-    .default({ stage: "stranger", note: "" }),
+  playerRelationship: z.preprocess(
+    (value) => {
+      if (typeof value !== "object" || value === null) return value;
+      const legacy = value as Record<string, unknown>;
+      if (typeof legacy.stage !== "string" || "familiarity" in legacy || "regard" in legacy) return value;
+      const bands = stageToBandIds(legacy.stage);
+      return { ...legacy, familiarity: bands.familiarity, regard: bands.regard };
+    },
+    authoredRelationshipRecordSchema
+      .extend({ note: z.string().max(PLAYER_RELATIONSHIP_NOTE_MAX).catch("").default("") })
+      .catch({ familiarity: "strangers", regard: "neutral", kind: "", history: "", presented: undefined, looming: false, note: "" })
+      .default({ familiarity: "strangers", regard: "neutral", kind: "", history: "", presented: undefined, looming: false, note: "" }),
+  ),
   aliases: z.array(z.string()).default([]),
   /** Item definition ids from the owner's library. */
   defaultOutfit: z.array(z.string()).default([]),

@@ -5,6 +5,7 @@ import {
   appendMilestones,
   appendRelationshipSample,
   applyMeterDrift,
+  authoredRecordToLive,
   chatMemoryTraceSchema,
   chatPulseSchema,
   CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
@@ -12,13 +13,16 @@ import {
   CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   chatPulseTraceSchema,
-  clampAffinity,
+  clampFamiliarity,
+  clampRegard,
   degradedChatPulse,
   deriveExchangeMilestones,
   emptyChatMemoryTrace,
+  emptyRelationshipTexture,
   deriveEmotionLabel,
   diag,
   emptyChatPulseTrace,
+  familiarityBandForValue,
   initialMeters,
   interactionConceptById,
   isConditionExpired,
@@ -26,13 +30,15 @@ import {
   milestoneSchema,
   NEUTRAL_MOOD_METER,
   personalizeMeters,
+  regardBandForValue,
+  regardBandToStageId,
   relationshipSampleSchema,
+  relationshipTextureSchema,
   SKIP_HISTORY_CAP,
   skipRecordSchema,
   socialReactionCardSchema,
   splitStateCues,
-  stageForValue,
-  stageMidpoint,
+  tickFamiliarity,
   type ActiveCondition,
   type AttributeChange,
   type ChatActionId,
@@ -45,6 +51,7 @@ import {
   type EmotionLabel,
   type Milestone,
   type RelationshipSample,
+  type RelationshipTexture,
   type RetrievedMemoryDetail,
   type SkipRecord,
   type SocialReactionCard,
@@ -86,7 +93,14 @@ import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
 /** The in-memory state for one chat, drifted/seeded/pulsed and persisted as a row. */
 export interface ChatState {
   meters: Record<string, number>;
-  affinity: number;
+  /** The feeling axis (was `affinity`) — volatile, moved by the reaction pulse. −100..100. */
+  regard: number;
+  /** The knowledge axis (relationship-model.plan.md) — a slow ratchet, 0..100, never down. */
+  familiarity: number;
+  /** Familiarity gained this scene (ratchet cap accounting); resets on a time skip. */
+  familiaritySceneGain: number;
+  /** Authored relationship texture (kind/history/mask/looming) — the record minus the scalar columns. */
+  relationship: RelationshipTexture;
   conditions: ActiveCondition[];
   mindNote: string;
   premise: string;
@@ -143,8 +157,13 @@ export interface ChatState {
 /** The strip / state-tools / premise-bar projection returned by GET …/chat/state. */
 export interface ChatStateSnapshot {
   meters: Record<string, number>;
-  affinity: number;
-  stage: { id: string; label: string };
+  regard: number;
+  familiarity: number;
+  /** The regard band (was `stage`) — the volatile axis's chip. */
+  regardBand: { id: string; label: string };
+  familiarityBand: { id: string; label: string };
+  /** Authored relationship texture (kind/history/mask/looming). */
+  relationship: RelationshipTexture;
   /** Derived discrete emotion for the chat mood chip (mood.spec §4). */
   emotion: { label: EmotionLabel; intensity: number };
   conditions: ActiveCondition[];
@@ -194,16 +213,23 @@ const clamp01 = (n: number): number => clamp(n, 0, 1);
 
 /**
  * Seed a fresh state from the character's authored defaults (spec §1.1–1.2):
- * meters rested (`initialMeters`), affinity from `playerRelationship.stage` via
- * `stageMidpoint` (`stranger` ⇒ 0 ⇒ today's behavior), and a `premise` pre-filled
- * from `playerRelationship.note` (or the caller's explicit premise, e.g. a
- * PATCH-before-first-message). `mindNote` starts empty — it is purely dynamic. Pure.
+ * meters rested (`initialMeters`), both relationship axes + texture from the
+ * authored `playerRelationship` record (band midpoints via
+ * `authoredRecordToLive`; the strangers/neutral default ⇒ zeroed axes ⇒ today's
+ * behavior), and a `premise` pre-filled from `playerRelationship.note` (or the
+ * caller's explicit premise, e.g. a PATCH-before-first-message). `mindNote`
+ * starts empty — it is purely dynamic. Pure.
  */
 export function seedChatState(profile: CharacterProfile, premise?: string): ChatState {
-  const note = profile.playerRelationship?.note ?? "";
+  const authored = profile.playerRelationship;
+  const note = authored?.note ?? "";
+  const live = authoredRecordToLive(authored ?? { familiarity: "strangers", regard: "neutral", kind: "", history: "", presented: undefined, looming: false });
   return {
     meters: initialMeters(),
-    affinity: clampAffinity(stageMidpoint(profile.playerRelationship?.stage ?? "stranger")),
+    regard: live.regard,
+    familiarity: live.familiarity,
+    familiaritySceneGain: 0,
+    relationship: { kind: live.kind, history: live.history, presented: live.presented, looming: live.looming },
     conditions: [],
     mindNote: "",
     premise: (premise ?? note).trim().slice(0, CHAT_PREMISE_MAX_CHARS),
@@ -235,7 +261,10 @@ export async function loadChatState(
   const [row] = await db()
     .select({
       meters: characterChatState.meters,
-      affinity: characterChatState.affinity,
+      regard: characterChatState.regard,
+      familiarity: characterChatState.familiarity,
+      familiaritySceneGain: characterChatState.familiaritySceneGain,
+      relationship: characterChatState.relationshipRecord,
       conditions: characterChatState.conditions,
       mindNote: characterChatState.mindNote,
       lastPulseTrace: characterChatState.lastPulseTrace,
@@ -261,7 +290,10 @@ export async function loadChatState(
   if (!row) return null;
   return {
     meters: parseOr(metersSchema, row.meters, initialMeters(), sink, "character_chat_state.meters"),
-    affinity: clampAffinity(row.affinity),
+    regard: clampRegard(row.regard),
+    familiarity: clampFamiliarity(row.familiarity),
+    familiaritySceneGain: Math.max(0, row.familiaritySceneGain),
+    relationship: parseOr(relationshipTextureSchema, row.relationship, emptyRelationshipTexture(), sink, "character_chat_state.relationship_record"),
     conditions: parseOr(conditionsSchema, row.conditions, [], sink, "character_chat_state.conditions"),
     mindNote: row.mindNote,
     premise: row.premise,
@@ -308,7 +340,10 @@ export async function loadChatState(
  */
 const storedChatStateSchema = z.object({
   meters: metersSchema,
-  affinity: z.number(),
+  regard: z.number(),
+  familiarity: z.number().catch(0).default(0),
+  familiaritySceneGain: z.number().catch(0).default(0),
+  relationship: relationshipTextureSchema.catch(emptyRelationshipTexture()).default(emptyRelationshipTexture()),
   conditions: conditionsSchema,
   mindNote: z.string(),
   premise: z.string(),
@@ -380,7 +415,7 @@ export async function loadPreExchangeState(
   if (isEmptyJsonObject(row.preExchangeState)) return { found: true, state: null };
   const parsed = parseOrNull(storedChatStateSchema, row.preExchangeState);
   if (!parsed) return { found: false, state: null };
-  return { found: true, state: { ...parsed, affinity: clampAffinity(parsed.affinity) } };
+  return { found: true, state: { ...parsed, regard: clampRegard(parsed.regard) } };
 }
 
 /** True for a jsonb `{}` — the recorded "no pre-exchange state" rollback sentinel. */
@@ -424,7 +459,9 @@ export function applyTimeSkip(state: ChatState, amount: ChatSkipAmount, now: Dat
     ...state,
     clockMinutes,
     conditions: state.conditions.filter((c) => !isConditionExpired(c, clockMinutes)),
-    pendingSkipNote: chatSkipNote(amount, stageForValue(state.affinity).id),
+    pendingSkipNote: chatSkipNote(amount, regardBandForValue(state.regard).id),
+    // A skip is a scene boundary: the familiarity ratchet's per-scene budget resets.
+    familiaritySceneGain: 0,
     skipHistory: [...state.skipHistory, record].slice(-SKIP_HISTORY_CAP),
   };
 }
@@ -447,26 +484,28 @@ export function applyChatPulse(
   const next: ChatState = { ...state, meters: { ...state.meters } };
   const concept = pulse.playerAct?.concept ?? null;
   let valence: "like" | "dislike" | null = null;
-  let affinityDelta = 0;
+  let regardDelta = 0;
   let moodDelta = 0;
   let stressDelta = 0;
   const changed: string[] = [];
 
   if (concept) {
     // The shared §6 sequence (contracts/personality/act-reaction.ts — one implementation
-    // across both lanes). World-less chat: the cards active in THIS chat (scenario modal)
-    // apply — seeded from the character's own `profile.socialCards`, then author-editable.
+    // across both lanes; its `affinity` param IS the regard scalar — the shared-curve
+    // vocabulary renames with the sessions refactor, plan slice 7). World-less chat: the
+    // cards active in THIS chat (scenario modal) apply — seeded from the character's own
+    // `profile.socialCards`, then author-editable.
     const outcome = evaluateActReaction({
       act: { concept, target: characterName },
       disposition: { tags: profile.tags, preferences: profile.preferences, cards: state.activeSocialCards },
-      affinity: state.affinity,
+      affinity: state.regard,
       moodMeter: state.meters.mood ?? NEUTRAL_MOOD_METER,
       traits: profile.traits,
       deltaClamp: AFFINITY_DELTA_CLAMP,
     });
     if (outcome.kind === "reaction") {
       valence = outcome.evaluated.valence;
-      affinityDelta = outcome.affinityDelta;
+      regardDelta = outcome.affinityDelta;
       moodDelta = outcome.moodDelta;
     } else if (outcome.kind === "touch") {
       // Welcome/unwelcome touch (mood.spec §5) — session-lane parity restored by the
@@ -481,9 +520,9 @@ export function applyChatPulse(
   // affection — unless the character disliked it.
   const arousalDelta = concept && valence !== "dislike" ? arousalBumpForConcept(concept) : 0;
 
-  if (affinityDelta !== 0) {
-    next.affinity = clampAffinity(state.affinity + affinityDelta);
-    changed.push("affinity");
+  if (regardDelta !== 0) {
+    next.regard = clampRegard(state.regard + regardDelta);
+    changed.push("regard");
   }
   if (Math.abs(moodDelta) >= 0.005 && next.meters.mood !== undefined) {
     next.meters.mood = clamp01(next.meters.mood + moodDelta);
@@ -503,7 +542,7 @@ export function applyChatPulse(
     changed.push("mindNote");
   }
 
-  const trace: ChatPulseTrace = { concept, valence, affinityDelta, moodDelta, arousalDelta, changed, degraded: false };
+  const trace: ChatPulseTrace = { concept, valence, regardDelta, moodDelta, arousalDelta, changed, degraded: false };
   next.lastPulseTrace = trace;
   return { state: next, trace };
 }
@@ -619,7 +658,7 @@ function degradeState(state: ChatState, sink: DiagnosticSink | undefined, reason
     lastPulseTrace: {
       concept: null,
       valence: null,
-      affinityDelta: 0,
+      regardDelta: 0,
       moodDelta: 0,
       arousalDelta: 0,
       changed: [],
@@ -734,8 +773,23 @@ export async function finalizeChatState(input: {
   // empty list that must NOT wipe the standing loops; keep the prior list on degrade.
   const openLoops = archivist.degraded ? input.driftedState.openLoops : (archivist.value?.openLoops ?? input.driftedState.openLoops);
 
-  // Relationship arc (spec §7.2): sample when the exchange moved affinity or crossed a
-  // stage (or it's the first exchange — the sparkline's baseline), and derive the
+  // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
+  // exchange (bounded by the acquainted ceiling), plus a moment tick when the
+  // archivist recorded durable facts — a real disclosure or shared experience.
+  // Both draw from the per-scene budget (`familiaritySceneGain`).
+  const preFamiliarity = input.preExchangeState?.familiarity ?? input.driftedState.familiarity;
+  let familiarity = pulse.state.familiarity;
+  let familiaritySceneGain = pulse.state.familiaritySceneGain;
+  const applyTick = (kind: "trickle" | "moment") => {
+    const ticked = tickFamiliarity(familiarity, kind, familiaritySceneGain);
+    familiaritySceneGain += ticked - familiarity;
+    familiarity = ticked;
+  };
+  applyTick("trickle");
+  if ((archivist.value?.facts.length ?? 0) > 0) applyTick("moment");
+
+  // Relationship arc (spec §7.2): sample when the exchange moved regard or crossed a
+  // band (or it's the first exchange — the sparkline's baseline), and derive the
   // exchange's milestones. When the pulse was skipped (a "go on" beat) or degraded,
   // `lastPulseTrace` is stale/empty — treat the move as zero rather than re-reading it.
   const at = input.now.toISOString();
@@ -745,17 +799,18 @@ export async function finalizeChatState(input: {
   // create the row, so keying on `preExchangeState === null` would miss them and
   // silently skip the baseline sample + milestone.
   const firstExchange = input.driftedState.relationshipHistory.length === 0;
-  const preAffinity = input.preExchangeState?.affinity ?? input.driftedState.affinity;
-  const postAffinity = pulse.state.affinity;
+  const preRegard = input.preExchangeState?.regard ?? input.driftedState.regard;
+  const postRegard = pulse.state.regard;
   const pulseTrace = input.skipPulse || pulse.state.lastPulseTrace.degraded ? null : pulse.state.lastPulseTrace;
-  const moved = postAffinity !== preAffinity || stageForValue(postAffinity).id !== stageForValue(preAffinity).id;
+  const moved = postRegard !== preRegard || familiarity !== preFamiliarity;
   const relationshipHistory =
     moved || firstExchange
       ? appendRelationshipSample(input.driftedState.relationshipHistory, {
           at,
           clockMinutes: pulse.state.clockMinutes,
-          affinity: postAffinity,
-          stage: stageForValue(postAffinity).id,
+          regard: postRegard,
+          band: regardBandForValue(postRegard).id,
+          familiarity,
         })
       : input.driftedState.relationshipHistory;
   const exchangeMilestones = deriveExchangeMilestones({
@@ -763,9 +818,11 @@ export async function finalizeChatState(input: {
     messageId: input.assistantMessageId,
     characterName: input.characterName,
     firstExchange,
-    preAffinity,
-    postAffinity,
-    affinityDelta: pulseTrace?.affinityDelta ?? 0,
+    preRegard,
+    postRegard,
+    preFamiliarity,
+    postFamiliarity: familiarity,
+    regardDelta: pulseTrace?.regardDelta ?? 0,
     concept: pulseTrace?.concept ?? null,
   });
   const milestones = appendMilestones(input.driftedState.milestones, exchangeMilestones);
@@ -788,6 +845,8 @@ export async function finalizeChatState(input: {
     promptMessageId: input.promptMessageId,
     state: {
       ...pulse.state,
+      familiarity,
+      familiaritySceneGain,
       surfacedCues,
       memoryQueries: archivist.value?.memoryQueries ?? [],
       openLoops,
@@ -825,6 +884,7 @@ async function upsertChatState(
 ): Promise<void> {
   const meters = JSON.stringify(state.meters);
   const conditions = JSON.stringify(state.conditions);
+  const relationshipRecord = JSON.stringify(state.relationship);
   const trace = JSON.stringify(state.lastPulseTrace);
   const surfacedCues = JSON.stringify(state.surfacedCues);
   const memoryQueries = JSON.stringify(state.memoryQueries);
@@ -840,13 +900,16 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, affinity, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, scene_auto, updated_at)
-    select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.affinity}, ${conditions}::jsonb, ${state.mindNote},
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, scene_auto, updated_at)
+    select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
            ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
-      affinity = excluded.affinity,
+      regard = excluded.regard,
+      familiarity = excluded.familiarity,
+      familiarity_scene_gain = excluded.familiarity_scene_gain,
+      relationship_record = excluded.relationship_record,
       conditions = excluded.conditions,
       mind_note = excluded.mind_note,
       last_pulse_trace = excluded.last_pulse_trace,
@@ -899,7 +962,10 @@ export async function persistChatState(chatId: string, characterId: string, stat
  */
 export interface ChatStateEdit {
   premise?: string;
-  affinity?: number;
+  regard?: number;
+  familiarity?: number;
+  /** Authored relationship texture (kind/history/mask/looming) — the matrix/state-tools edit surface. */
+  relationship?: RelationshipTexture;
   mindNote?: string;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
@@ -931,7 +997,9 @@ export async function editChatState(args: {
   const base = (await loadChatState(chatId, characterId)) ?? seedChatState(profile, patch.premise);
   const next: ChatState = { ...base, meters: { ...base.meters } };
   if (patch.premise !== undefined) next.premise = patch.premise.trim().slice(0, CHAT_PREMISE_MAX_CHARS);
-  if (patch.affinity !== undefined) next.affinity = clampAffinity(patch.affinity);
+  if (patch.regard !== undefined) next.regard = clampRegard(patch.regard);
+  if (patch.familiarity !== undefined) next.familiarity = clampFamiliarity(patch.familiarity);
+  if (patch.relationship !== undefined) next.relationship = patch.relationship;
   if (patch.mindNote !== undefined) next.mindNote = patch.mindNote.trim().slice(0, CHAT_MIND_NOTE_MAX_CHARS);
   if (patch.meters !== undefined) next.meters = clampMeters(patch.meters);
   if (patch.conditions !== undefined) next.conditions = patch.conditions.map(seedConditionEffects);
@@ -1023,21 +1091,26 @@ export function chatStateSnapshot(
   state: ChatState,
   opts: { dominance?: number; intimateContext?: boolean; persisted?: boolean } = {},
 ): ChatStateSnapshot {
-  const stage = stageForValue(state.affinity);
+  const band = regardBandForValue(state.regard);
+  const famBand = familiarityBandForValue(state.familiarity);
   const emotion = deriveEmotionLabel({
     mood: state.meters.mood ?? NEUTRAL_MOOD_METER,
     arousal: state.meters.arousal ?? 0,
     stress: state.meters.stress ?? 0,
     energy: state.meters.energy ?? 1,
-    affinityStage: stage.id,
+    // The mood contract stays keyed to the shared stage vocabulary until slice 7.
+    affinityStage: regardBandToStageId(band.id),
     conditions: state.conditions,
     intimateContext: opts.intimateContext ?? false,
     dominance: opts.dominance ?? 0,
   });
   return {
     meters: state.meters,
-    affinity: state.affinity,
-    stage: { id: stage.id, label: stage.label },
+    regard: state.regard,
+    familiarity: state.familiarity,
+    regardBand: { id: band.id, label: band.label },
+    familiarityBand: { id: famBand.id, label: famBand.label },
+    relationship: state.relationship,
     emotion: { label: emotion.emotion, intensity: emotion.intensity },
     conditions: state.conditions,
     mindNote: state.mindNote,

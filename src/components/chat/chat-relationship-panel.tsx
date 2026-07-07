@@ -10,13 +10,13 @@ import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
-import { stageById, type MilestoneKind, type RelationshipSample } from "@/contracts";
+import { regardBandById, type MilestoneKind, type RelationshipSample } from "@/contracts";
 import { chatsApi, type ChatRelationship } from "@/lib/client/api";
 import { timeAgo } from "@/lib/relative-time";
 
 /**
- * The Relationship panel (character-chat-standalone.spec.md §7): stage +
- * affinity, the history sparkline (§7.2), milestones, unfinished business
+ * The Relationship panel (character-chat-standalone.spec.md §7): the two axes +
+ * region, the two-line history sparkline (§7.2), milestones, unfinished business
  * (open loops, §6.2), the story so far with the rebuild recovery lever (§7.3),
  * and transcript export (§7.4). Hosted in the shared Sheet — bottom on phones,
  * right on desktop, same split as the conversation header menu.
@@ -64,15 +64,23 @@ function PanelBody({ chatId }: { chatId: string }) {
   return (
     <div className="flex flex-col gap-5 p-4">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="prose-display text-2xl text-paper-100">{data.stage.label}</span>
-        <Tag tone="accent" title={`Affinity ${data.affinity}`}>
-          <span aria-hidden>♥</span> {data.affinity}
-        </Tag>
+        <span className="prose-display text-2xl text-paper-100">{data.region || data.regardBand.label}</span>
+        <div className="flex items-center gap-1.5">
+          <Tag tone="accent" title={`Regard ${data.regard}`}>
+            <span aria-hidden>♥</span> {data.regardBand.label}
+          </Tag>
+          <Tag title={`Familiarity ${data.familiarity}`}>{data.familiarityBand.label}</Tag>
+        </div>
       </div>
+      {data.relationship.kind || data.relationship.history ? (
+        <p className="-mt-3 text-xs text-paper-400">
+          {[data.relationship.kind, data.relationship.history].filter(Boolean).join(" — ")}
+        </p>
+      ) : null}
 
       <section>
         <SectionHeading>History</SectionHeading>
-        <Sparkline history={data.history} currentStageLabel={data.stage.label} />
+        <Sparkline history={data.history} currentBandLabel={data.regardBand.label} />
       </section>
 
       <section>
@@ -105,33 +113,47 @@ function SectionHeading({ children }: { children: string }) {
 }
 
 /**
- * Affinity-over-time sparkline (§7.2): a single accent polyline over a subtle
- * zero line, viewBox scaled to the sample count and y mapped from [-100,100].
+ * Relationship-over-time sparkline (§7.2, two axes since relationship-model v2):
+ * volatile regard as the accent polyline over a subtle zero line, the slow
+ * familiarity ramp as a muted second line (0..100 mapped onto the same box).
  * `vector-effect: non-scaling-stroke` keeps line weight honest under the
  * non-uniform `preserveAspectRatio="none"` stretch. No chart library.
  */
-function Sparkline({ history, currentStageLabel }: { history: RelationshipSample[]; currentStageLabel: string }) {
+function Sparkline({ history, currentBandLabel }: { history: RelationshipSample[]; currentBandLabel: string }) {
   const first = history[0];
   if (history.length < 2 || first === undefined) {
     return <p className="text-xs text-paper-500">No history yet — it starts moving as you talk.</p>;
   }
   const width = history.length - 1;
-  // affinity 100 → y 0 (top), -100 → y 100 (bottom); clamp defensively.
-  const points = history
-    .map((s, i) => `${i},${(100 - Math.max(-100, Math.min(100, s.affinity))) / 2}`)
+  // regard 100 → y 0 (top), -100 → y 100 (bottom); clamp defensively.
+  const regardPoints = history
+    .map((s, i) => `${i},${(100 - Math.max(-100, Math.min(100, s.regard))) / 2}`)
     .join(" ");
-  const firstStageLabel = stageById(first.stage)?.label ?? first.stage;
+  // familiarity 0..100 → y 100..0 on the same box.
+  const familiarityPoints = history
+    .map((s, i) => `${i},${100 - Math.max(0, Math.min(100, s.familiarity))}`)
+    .join(" ");
+  const firstBandLabel = regardBandById(first.band)?.label ?? first.band;
   return (
     <svg
       viewBox={`0 0 ${width} 100`}
       preserveAspectRatio="none"
       role="img"
-      aria-label={`Relationship history: ${history.length} samples from ${firstStageLabel} to ${currentStageLabel}`}
+      aria-label={`Relationship history: ${history.length} samples from ${firstBandLabel} to ${currentBandLabel}`}
       className="h-12 w-full text-accent-300"
     >
       <line x1={0} y1={50} x2={width} y2={50} className="stroke-ink-600" strokeWidth={1} vectorEffect="non-scaling-stroke" />
       <polyline
-        points={points}
+        points={familiarityPoints}
+        fill="none"
+        className="stroke-paper-600"
+        strokeWidth={1}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <polyline
+        points={regardPoints}
         fill="none"
         stroke="currentColor"
         strokeWidth={1.5}
@@ -148,6 +170,7 @@ const MILESTONE_GLYPHS: Record<MilestoneKind, { glyph: string; className: string
   first_exchange: { glyph: "✦", className: "text-accent-300" },
   stage_up: { glyph: "↑", className: "text-accent-300" },
   stage_down: { glyph: "↓", className: "text-paper-500" },
+  familiarity_up: { glyph: "◆", className: "text-accent-300" },
   strong_reaction: { glyph: "!", className: "text-paper-300" },
   player_marked: { glyph: "★", className: "text-accent-300" },
 };

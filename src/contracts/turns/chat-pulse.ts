@@ -69,13 +69,13 @@ export const chatPulseTraceSchema = z.object({
   concept: z.string().nullable().catch(null).default(null),
   /** Resolved valence against the character's preferences (null ⇒ no match). */
   valence: z.enum(["like", "dislike"]).nullable().catch(null).default(null),
-  /** Signed affinity move applied this exchange (post per-turn clamp). */
-  affinityDelta: z.number().catch(0).default(0),
+  /** Signed regard move applied this exchange (post per-turn clamp). */
+  regardDelta: z.number().catch(0).default(0),
   /** Signed mood-meter move applied this exchange (0–1 scale). */
   moodDelta: z.number().catch(0).default(0),
   /** Arousal-meter move from an intimate act this exchange (0–1 scale; slice 4). */
   arousalDelta: z.number().catch(0).default(0),
-  /** Which state fields the pulse changed (affinity / mood / arousal / mindNote). */
+  /** Which state fields the pulse changed (regard / mood / arousal / mindNote). */
   changed: z.array(z.string()).catch([]).default([]),
   /** True when the pulse degraded to drift-only (timeout / parse failure / demo). */
   degraded: z.boolean().catch(false).default(false),

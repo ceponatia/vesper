@@ -13,6 +13,8 @@ import {
   chatPulseTraceSchema,
   milestoneSchema,
   relationshipSampleSchema,
+  relationshipTextureSchema,
+  type RelationshipTexture,
   type ChatSkipAmount,
   DEFAULT_AVATAR_IMAGE_MODEL,
   type AvatarImageModel,
@@ -280,8 +282,11 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>;
 /** Light chat-state snapshot (character-chat-state.spec.md §5) for the strip, premise bar, and state tools. */
 export const chatStateSnapshotSchema = z.object({
   meters: z.record(z.string(), z.number()).catch({}),
-  affinity: z.number().catch(0),
-  stage: z.object({ id: z.string(), label: z.string() }).catch({ id: "stranger", label: "Stranger" }),
+  regard: z.number().catch(0),
+  familiarity: z.number().catch(0),
+  regardBand: z.object({ id: z.string(), label: z.string() }).catch({ id: "neutral", label: "Neutral" }),
+  familiarityBand: z.object({ id: z.string(), label: z.string() }).catch({ id: "strangers", label: "Strangers" }),
+  relationship: relationshipTextureSchema.catch({ kind: "", history: "", presented: undefined, looming: false }),
   emotion: z
     .object({ label: emotionLabelSchema, intensity: z.number().min(0).max(1).catch(0) })
     .catch({ label: "neutral", intensity: 0 }),
@@ -291,7 +296,7 @@ export const chatStateSnapshotSchema = z.object({
   lastPulseTrace: chatPulseTraceSchema.catch(() => ({
     concept: null,
     valence: null,
-    affinityDelta: 0,
+    regardDelta: 0,
     moodDelta: 0,
     arousalDelta: 0,
     changed: [],
@@ -337,7 +342,9 @@ export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
  */
 export interface ChatStateEdit {
   premise?: string;
-  affinity?: number;
+  regard?: number;
+  familiarity?: number;
+  relationship?: RelationshipTexture;
   mindNote?: string;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
@@ -792,8 +799,8 @@ export const chatSummarySchema = z.object({
   characterName: textOr(""),
   avatarImageId: optionalId,
   lastLine: optionalText,
-  /** Relationship-stage chip, derived server-side from the last-persisted state; null before the first exchange. */
-  stage: z.object({ id: z.string(), label: z.string() }).nullable().catch(null),
+  /** Regard-band chip, derived server-side from the last-persisted state; null before the first exchange. */
+  regardBand: z.object({ id: z.string(), label: z.string() }).nullable().catch(null),
   /** Mood chip (`EmotionLabel` + intensity), same derivation as the state snapshot; null before the first exchange. */
   emotion: z.object({ label: z.string(), intensity: z.number() }).nullable().catch(null),
   /**
@@ -824,10 +831,15 @@ export const chatTranscriptSchema = z.object({
 });
 export type ChatTranscript = z.infer<typeof chatTranscriptSchema>;
 
-/** The Relationship panel payload (character-chat-standalone.spec.md §7). */
+/** The Relationship panel payload (character-chat-standalone.spec.md §7; two axes since relationship-model v2). */
 export const chatRelationshipSchema = z.object({
-  stage: z.object({ id: z.string(), label: z.string() }).catch({ id: "stranger", label: "Stranger" }),
-  affinity: z.number().catch(0),
+  regardBand: z.object({ id: z.string(), label: z.string() }).catch({ id: "neutral", label: "Neutral" }),
+  regard: z.number().catch(0),
+  familiarityBand: z.object({ id: z.string(), label: z.string() }).catch({ id: "strangers", label: "Strangers" }),
+  familiarity: z.number().catch(0),
+  /** The named 2D corner ("Old enemy", "Beloved") or the composed middle ("Familiar · Cool"). */
+  region: textOr(""),
+  relationship: relationshipTextureSchema.catch({ kind: "", history: "", presented: undefined, looming: false }),
   history: z.array(relationshipSampleSchema).catch([]),
   milestones: z.array(milestoneSchema).catch([]),
   /** The rolling summary, read-only — "the story so far" (§7.3). */

@@ -230,11 +230,11 @@ async function roleCounts(chatId: string): Promise<{ user: number; assistant: nu
 
 async function stateAffinity(chatId: string): Promise<number | null> {
   const [row] = await db()
-    .select({ affinity: characterChatState.affinity })
+    .select({ regard: characterChatState.regard })
     .from(characterChatState)
     .where(eq(characterChatState.chatId, chatId))
     .limit(1);
-  return row?.affinity ?? null;
+  return row?.regard ?? null;
 }
 
 /** Plant the fact + episode the archivist would have extracted (demo mode skips it). */
@@ -550,8 +550,8 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
     const chat = await createChat(ids.character);
     // A stored state BEFORE the first exchange gives the pre-exchange snapshot a
     // distinctive value to roll back to (the demo pulse degrades to drift-only,
-    // and drift never moves affinity, so it only moves via PATCH here).
-    expect((await statePatch(stateReq(chat.id, { affinity: 10 }), ctx(chat.id))).status).toBe(200);
+    // and drift never moves regard, so it only moves via PATCH here).
+    expect((await statePatch(stateReq(chat.id, { regard: 10 }), ctx(chat.id))).status).toBe(200);
 
     await (await chatSend(postReq(chat.id, { content: "Tell me a secret" }), ctx(chat.id))).text();
     const reply = await assistantReply(chat.id);
@@ -561,7 +561,7 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
     await plantMemory(chat.memoryGroupId, reply.id);
     // Perturb the state AFTER the exchange — the exact drift+pulse effects a
     // regenerate must not double-apply.
-    expect((await statePatch(stateReq(chat.id, { affinity: 77 }), ctx(chat.id))).status).toBe(200);
+    expect((await statePatch(stateReq(chat.id, { regard: 77 }), ctx(chat.id))).status).toBe(200);
 
     const res = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
     expect(res.status).toBe(200);

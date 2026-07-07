@@ -208,7 +208,7 @@ describe("buildCharacterChatSystemPrompt", () => {
       profile: profile(),
       state: {
         meters: {},
-        affinity: 0,
+        regard: 0,
         conditions: [],
         attributeOverlays: [{ id: "hair.color", value: "silver", source: "narrative" }],
       },
@@ -248,7 +248,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     const withEmptyState = buildCharacterChatSystemPrompt({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [] },
+      state: { meters: {}, regard: 0, conditions: [] },
     });
     expect(withEmptyState).toBe(withoutState);
     expect(withoutState).not.toContain("Your current state");
@@ -261,7 +261,7 @@ describe("buildCharacterChatSystemPrompt", () => {
       profile: profile(),
       state: {
         meters: { mood: 0.8, energy: 0.8, hygiene: 0.9, stress: 0.1 },
-        affinity: 57, // warm
+        regard: 57, // warm
         conditions: [],
         mindNote: "She's glad he came back.",
       },
@@ -282,7 +282,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Mara",
       profile: profile(),
-      state: { meters: { ...{ hygiene: 0.2 }, mood: 0.5, energy: 0.9 }, affinity: 0, conditions: [] },
+      state: { meters: { ...{ hygiene: 0.2 }, mood: 0.5, energy: 0.9 }, regard: 0, conditions: [] },
     });
     expect(prompt).toMatch(/unwashed/i);
   });
@@ -291,7 +291,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [], premise: "It's the night before she moves away forever." },
+      state: { meters: {}, regard: 0, conditions: [], premise: "It's the night before she moves away forever." },
     });
     expect(prompt).toContain("Scenario for this chat");
     expect(prompt).toContain("the night before she moves away");
@@ -300,7 +300,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     const noPremise = buildCharacterChatSystemPrompt({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [], premise: "   " },
+      state: { meters: {}, regard: 0, conditions: [], premise: "   " },
     });
     expect(noPremise).not.toContain("Scenario for this chat");
   });
@@ -394,7 +394,7 @@ describe("buildCharacterChatSystemPrompt", () => {
 });
 
 describe("buildCharacterChatSystemPrompt — state as a narration system", () => {
-  const drunkMeters = { meters: { intoxication: 0.8 }, affinity: 0, conditions: [] };
+  const drunkMeters = { meters: { intoxication: 0.8 }, regard: 0, conditions: [] };
 
   it("foregrounds a newly-crossed meter band as a one-time 'just shifting' beat", () => {
     const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), state: drunkMeters });
@@ -419,7 +419,7 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
       profile: profile(),
       state: {
         meters: {},
-        affinity: 0,
+        regard: 0,
         conditions: [
           {
             id: "c1",
@@ -439,7 +439,7 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
       profile: profile({ attributes: [attr("eyes.color", "grey")] }),
       state: {
         meters: {},
-        affinity: 0,
+        regard: 0,
         conditions: [
           { id: "c1", label: "x", startedAtMinutes: 0, attributeEffects: [{ attributeId: "eyes.color", value: "crimson" }] },
         ],
@@ -455,7 +455,7 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
       profile: profile(),
       state: {
         meters: {},
-        affinity: 0,
+        regard: 0,
         conditions: [],
         activeSocialCards: [
           {
@@ -480,12 +480,12 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
     const sober = buildCharacterChatSystemPrompt({
       name: "Mara",
       profile: profile({ traits }),
-      state: { meters: { intoxication: 0 }, affinity: 0, conditions: [] },
+      state: { meters: { intoxication: 0 }, regard: 0, conditions: [] },
     });
     const drunk = buildCharacterChatSystemPrompt({
       name: "Mara",
       profile: profile({ traits }),
-      state: { meters: { intoxication: 0.9 }, affinity: 0, conditions: [] },
+      state: { meters: { intoxication: 0.9 }, regard: 0, conditions: [] },
     });
     expect(sober).toContain("Disposition");
     expect(drunk).toContain("Disposition");
@@ -502,7 +502,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
       memory: { facts: ["The player fears heights."], episodes: [] },
       state: {
         meters: { mood: 0.9, intoxication: 0.8 },
-        affinity: 57,
+        regard: 57,
         conditions: [],
         mindNote: "Glad he came back.",
         premise: "A rainy evening at the glassworks.",
@@ -516,7 +516,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
       memory: { facts: [], episodes: ["They argued about the harbor job."] },
       state: {
         meters: { mood: 0.1, intoxication: 0 },
-        affinity: 60, // 57 → 60: moved, but still the same "warm" stage band
+        regard: 60, // 57 → 60: moved, but still the same "warm" stage band
         conditions: [],
         mindNote: "Stung by the argument.",
         premise: "A rainy evening at the glassworks.",
@@ -527,11 +527,11 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
   });
 
   it("re-renders the prefix only on a stage crossing (Relationship law is stage-keyed — §7.1/§9)", () => {
-    const at = (affinity: number) =>
+    const at = (regard: number) =>
       buildCharacterChatPromptParts({
         name: "Mara",
         profile: profile(),
-        state: { meters: {}, affinity, conditions: [] },
+        state: { meters: {}, regard, conditions: [] },
       });
     expect(at(50).prefix).toBe(at(64).prefix); // both "warm" — cache holds
     expect(at(50).prefix).not.toBe(at(65).prefix); // warm → close — law block re-renders
@@ -543,7 +543,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     const parts = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [] },
+      state: { meters: {}, regard: 0, conditions: [] },
     });
     expect(parts.prefix).toMatch(/the scenario wins/i);
     expect(parts.prefix).toMatch(/never moves this line/i);
@@ -555,12 +555,12 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     const withSkip = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [], skipNote: "The night has passed — it's the next morning. Acknowledge the gap naturally, once." },
+      state: { meters: {}, regard: 0, conditions: [], skipNote: "The night has passed — it's the next morning. Acknowledge the gap naturally, once." },
     });
     const without = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [] },
+      state: { meters: {}, regard: 0, conditions: [] },
     });
     expect(withSkip.prefix).toBe(without.prefix); // volatile — never busts the cached prefix
     expect(withSkip.tail).toContain("Time has passed in the story");
@@ -581,7 +581,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
       profile: profile(),
       priorSummary: "You met at the night market.",
       memory: { facts: ["The player fears heights."], episodes: [] },
-      state: { meters: { mood: 0.9 }, affinity: 0, conditions: [] },
+      state: { meters: { mood: 0.9 }, regard: 0, conditions: [] },
       opening: true,
     });
     expect(parts.prefix).toContain("How to respond:");
@@ -603,12 +603,12 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     const sober = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile({ traits }),
-      state: { meters: { intoxication: 0 }, affinity: 0, conditions: [] },
+      state: { meters: { intoxication: 0 }, regard: 0, conditions: [] },
     });
     const drunk = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile({ traits }),
-      state: { meters: { intoxication: 0.9 }, affinity: 0, conditions: [] },
+      state: { meters: { intoxication: 0.9 }, regard: 0, conditions: [] },
     });
     // The authored band stays in the (unchanged) prefix; the shift rides the tail.
     expect(drunk.prefix).toBe(sober.prefix);
@@ -628,12 +628,12 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     const withCondition = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [condition] },
+      state: { meters: {}, regard: 0, conditions: [condition] },
     });
     const without = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [] },
+      state: { meters: {}, regard: 0, conditions: [] },
     });
     expect(withCondition.prefix).toBe(without.prefix);
     expect(withCondition.prefix).not.toContain("unkempt");
@@ -645,14 +645,14 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     const withLoops = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [], openLoops: ["tell them about her sister", "the unopened letter"] },
+      state: { meters: {}, regard: 0, conditions: [], openLoops: ["tell them about her sister", "the unopened letter"] },
     });
     expect(withLoops.tail).toContain("Unfinished business between you: tell them about her sister; the unopened letter");
     expect(withLoops.tail).toContain("never recite the list");
     const without = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile(),
-      state: { meters: {}, affinity: 0, conditions: [], openLoops: [] },
+      state: { meters: {}, regard: 0, conditions: [], openLoops: [] },
     });
     expect(without.prefix).toBe(withLoops.prefix); // loops are volatile — never in the prefix
     expect(without.tail).not.toContain("Unfinished business");

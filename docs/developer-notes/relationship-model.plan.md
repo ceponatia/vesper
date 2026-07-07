@@ -1,6 +1,7 @@
 # Relationship model v2 — familiarity × regard
 
-Status: active (build started 2026-07-07 — slice 1 contracts done; scoped,
+Status: active (build started 2026-07-07 — slices 1–2 done: contracts, the
+state/schema growth + the `affinity`→`regard` rename and migration 0028; scoped,
 expanded, and **settled** 2026-07-07, every open question ruled and folded into
 its section below. The multi-character substrate this plan's matrix slice
 depends on is its own plan:

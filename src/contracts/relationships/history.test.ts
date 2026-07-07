@@ -10,11 +10,13 @@ import {
   type RelationshipSample,
 } from "./history";
 
-const sample = (affinity: number, i = 0): RelationshipSample => ({
+const sample = (regard: number, i = 0): RelationshipSample => ({
   at: `2026-07-02T12:00:0${i}Z`,
   clockMinutes: i,
-  affinity,
-  stage: "stranger",
+  regard,
+  band: "neutral",
+  familiarity: 0,
+
 });
 
 describe("appendRelationshipSample / appendMilestones (capped rings, spec §7.2)", () => {
@@ -22,8 +24,8 @@ describe("appendRelationshipSample / appendMilestones (capped rings, spec §7.2)
     const full = Array.from({ length: RELATIONSHIP_HISTORY_CAP }, (_, i) => sample(i));
     const next = appendRelationshipSample(full, sample(999, 9));
     expect(next).toHaveLength(RELATIONSHIP_HISTORY_CAP);
-    expect(next.at(-1)?.affinity).toBe(999);
-    expect(next[0]?.affinity).toBe(1); // the oldest fell off
+    expect(next.at(-1)?.regard).toBe(999);
+    expect(next[0]?.regard).toBe(1); // the oldest fell off
   });
 
   it("caps milestones the same way and no-ops on an empty add", () => {
@@ -42,9 +44,9 @@ describe("deriveExchangeMilestones (spec §7.2)", () => {
     messageId: "msg1",
     characterName: "Mara",
     firstExchange: false,
-    preAffinity: 0,
-    postAffinity: 0,
-    affinityDelta: 0,
+    preRegard: 0,
+    postRegard: 0,
+    regardDelta: 0,
     concept: null,
   };
 
@@ -56,38 +58,38 @@ describe("deriveExchangeMilestones (spec §7.2)", () => {
   });
 
   it("records stage crossings in both directions (D-ruling: down too)", () => {
-    const up = deriveExchangeMilestones({ ...base, preAffinity: 14, postAffinity: 15 });
+    const up = deriveExchangeMilestones({ ...base, preRegard: 14, postRegard: 15 });
     expect(up.map((m) => m.kind)).toEqual(["stage_up"]);
-    expect(up[0]?.label).toBe("Stranger → Acquaintance");
-    const down = deriveExchangeMilestones({ ...base, preAffinity: 15, postAffinity: 14 });
+    expect(up[0]?.label).toBe("Neutral → Friendly");
+    const down = deriveExchangeMilestones({ ...base, preRegard: 15, postRegard: 14 });
     expect(down.map((m) => m.kind)).toEqual(["stage_down"]);
   });
 
   it("records a strong card-driven reaction at |delta| ≥ STRONG_REACTION_DELTA, labeled by concept", () => {
     const warm = deriveExchangeMilestones({
       ...base,
-      preAffinity: 10,
-      postAffinity: 10 + STRONG_REACTION_DELTA,
-      affinityDelta: STRONG_REACTION_DELTA,
+      preRegard: 10,
+      postRegard: 10 + STRONG_REACTION_DELTA,
+      regardDelta: STRONG_REACTION_DELTA,
       concept: "physical_affection",
     });
     expect(warm.map((m) => m.kind)).toEqual(["strong_reaction"]);
     expect(warm[0]?.label).toBe("Moved by physical affection");
-    const stung = deriveExchangeMilestones({ ...base, affinityDelta: -STRONG_REACTION_DELTA, concept: "insult" });
+    const stung = deriveExchangeMilestones({ ...base, regardDelta: -STRONG_REACTION_DELTA, concept: "insult" });
     expect(stung[0]?.label).toBe("Stung by insult");
   });
 
   it("an ordinary exchange derives nothing", () => {
-    expect(deriveExchangeMilestones({ ...base, preAffinity: 10, postAffinity: 11, affinityDelta: 1 })).toEqual([]);
+    expect(deriveExchangeMilestones({ ...base, preRegard: 10, postRegard: 11, regardDelta: 1 })).toEqual([]);
   });
 
   it("one charged, stage-crossing first exchange stacks all three", () => {
     const out = deriveExchangeMilestones({
       ...base,
       firstExchange: true,
-      preAffinity: 12,
-      postAffinity: 17,
-      affinityDelta: 5,
+      preRegard: 12,
+      postRegard: 17,
+      regardDelta: 5,
       concept: "gift",
     });
     expect(out.map((m) => m.kind)).toEqual(["first_exchange", "stage_up", "strong_reaction"]);

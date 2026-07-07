@@ -69,7 +69,7 @@ function meterPips(meters: Record<string, number>): { id: string; label: string;
 }
 
 /**
- * The status strip above the composer: an affinity stage chip (heart) + meter
+ * The status strip above the composer: a regard-band chip (heart) + meter
  * pips, shown only when off-baseline so casual chats stay clean
  * (character-chat-state.spec.md §7). Fed by GET …/state, refetched per send —
  * a pre-first-exchange snapshot is the server's seed-on-read, which already
@@ -80,8 +80,8 @@ export function StatusStrip({ state }: { state: ChatStateSnapshot }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <MoodChip emotion={state.emotion} className="text-xs" />
-      <Tag tone="accent" title={`Affinity ${state.affinity}`}>
-        <span aria-hidden>♥</span> {state.stage.label}
+      <Tag tone="accent" title={`Regard ${state.regard} · Familiarity ${state.familiarity}`}>
+        <span aria-hidden>♥</span> {state.regardBand.label}
       </Tag>
       {pips.map((p) => (
         <Tag key={p.id} tone={p.tone}>

@@ -304,16 +304,14 @@ export function CharacterEditor({
           <CharacterChat
             characterId={characterId}
             name={draft.name || "Untitled"}
-            startingStage={draft.profile.playerRelationship?.stage ?? "stranger"}
-            onStartingStageChange={(stage) =>
+            starting={{
+              familiarity: draft.profile.playerRelationship.familiarity,
+              regard: draft.profile.playerRelationship.regard,
+              note: draft.profile.playerRelationship.note,
+            }}
+            onStartingChange={(next) =>
               patchProfile({
-                playerRelationship: { stage, note: draft.profile.playerRelationship?.note ?? "" },
-              })
-            }
-            startingNote={draft.profile.playerRelationship?.note ?? ""}
-            onStartingNoteChange={(note) =>
-              patchProfile({
-                playerRelationship: { stage: draft.profile.playerRelationship?.stage ?? "stranger", note },
+                playerRelationship: { ...draft.profile.playerRelationship, ...next },
               })
             }
             chatModel={resolveChatModelId(chatModel)}

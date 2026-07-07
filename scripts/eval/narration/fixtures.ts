@@ -234,7 +234,7 @@ const NEUTRAL_METERS: Record<string, number> = { mood: 0.5, energy: 0.8, stress:
 // (the mid-conversation case the PM reports as invisible), not a fresh foreground beat.
 const BURDENED_STATE: ChatState = {
   meters: { ...NEUTRAL_METERS, mood: 0.2, energy: 0.15, stress: 0.7 },
-  affinity: 0,
+  regard: 0,
   conditions: [
     {
       id: "cond-rain-soaked",
@@ -254,16 +254,16 @@ const BURDENED_STATE: ChatState = {
 // shift — the sustained-state path, not a "tips into drunk" beat.
 const barState = (intoxication: number): ChatState => ({
   meters: { ...NEUTRAL_METERS, intoxication },
-  affinity: 40,
+  regard: 40,
   conditions: [],
   premise: "The tail end of a long night at the harbor bar down the street from the shop; last call has come and gone.",
   surfacedCues: { intoxication: "intoxication:0.7" },
 });
 
-// Axis (c): identical closing-up state, affinity flipped 0 (stranger) ↔ 93 (devoted).
-const registerState = (affinity: number): ChatState => ({
+// Axis (c): identical closing-up state, regard flipped 0 (stranger) ↔ 93 (devoted).
+const registerState = (regard: number): ChatState => ({
   meters: { ...NEUTRAL_METERS },
-  affinity,
+  regard,
   conditions: [],
   premise: "Late evening at the bookshop-café; Wren is cashing out the register as you get ready to leave.",
 });
@@ -271,7 +271,7 @@ const registerState = (affinity: number): ChatState => ({
 // Axis (b): the sliders pair shares this state; only the profile's traits flip.
 const CLOSING_STATE: ChatState = {
   meters: { ...NEUTRAL_METERS },
-  affinity: 40,
+  regard: 40,
   conditions: [],
   premise: "Closing time at the bookshop-café; the last customer has just left.",
 };
@@ -279,7 +279,7 @@ const CLOSING_STATE: ChatState = {
 // Axis (e): the memory pair shares this state; only the `memory` input flips.
 const AFTERNOON_STATE: ChatState = {
   meters: { ...NEUTRAL_METERS },
-  affinity: 40,
+  regard: 40,
   conditions: [],
   premise: "A gray, slow afternoon in the bookshop-café.",
 };
@@ -486,7 +486,7 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
           bio: "Maya runs the Harbor House kitchen. Dry humor, slow to trust, fiercely loyal once she does. Hides tenderness behind teasing.",
           personality: "Guarded, observant, wry. Deflects praise. Warms in private, never performs it.",
         }),
-        state: { meters: {}, affinity: 30, conditions: [], premise: "A quiet evening in the kitchen after the guests have gone up." },
+        state: { meters: {}, regard: 30, conditions: [], premise: "A quiet evening in the kitchen after the guests have gone up." },
         narrationShape: shape,
       }),
       messages: [{ role: "user", content: "You always know exactly what to say. You're kind of amazing, you know that?" }],
@@ -509,7 +509,7 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
           personality: "Gentle, attentive, easily flustered. Shows feeling in small gestures rather than big declarations.",
           attributes: [{ id: "presentation.scent_baseline", value: "soft floral perfume", source: "creation" }],
         }),
-        state: { meters: {}, affinity: 25, conditions: [], premise: "A slow afternoon at the inn's front desk; no one else is around." },
+        state: { meters: {}, regard: 25, conditions: [], premise: "A slow afternoon at the inn's front desk; no one else is around." },
         narrationShape: shape,
       }),
       messages: [{ role: "user", content: "I step into the room and Sabrina comes closer." }],

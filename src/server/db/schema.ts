@@ -328,8 +328,22 @@ export const characterChatState = pgTable(
     preExchangeState: jsonb("pre_exchange_state").notNull().default({}),
     /** Record<string,number> — the full meter registry, carried verbatim (seeded from initialMeters()). */
     meters: jsonb("meters").notNull().default({}),
-    /** −100…100, the character's feeling toward the player persona (seeded from playerRelationship.stage). */
-    affinity: integer("affinity").notNull().default(0),
+    /**
+     * −100…100, the FEELING axis toward the player persona (relationship-model.plan.md;
+     * was `affinity`) — volatile, moved by the reaction pulse. Seeded from the authored
+     * `playerRelationship` record at band midpoints.
+     */
+    regard: integer("regard").notNull().default(0),
+    /** 0…100, the KNOWLEDGE axis — a slow ratchet (moments + time), never down. */
+    familiarity: integer("familiarity").notNull().default(0),
+    /** Familiarity gained this scene (the ratchet's per-scene budget); resets on a time skip. */
+    familiaritySceneGain: integer("familiarity_scene_gain").notNull().default(0),
+    /**
+     * RelationshipTexture (contracts/relationships/record.ts) — the authored
+     * kind/history/mask/looming texture beside the two scalar columns; together
+     * they form the directed relationship record.
+     */
+    relationshipRecord: jsonb("relationship_record").notNull().default({}),
     /** ActiveCondition[] — optional light texture, self-expiring on clockMinutes. */
     conditions: jsonb("conditions").notNull().default([]),
     /** 1–3 sentences: "what's on their mind" — the cheap dynamic continuity note (pulse-written). */
