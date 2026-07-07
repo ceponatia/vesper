@@ -1,10 +1,10 @@
 # Relationship model v2 — familiarity × regard
 
-Status: next (scoped 2026-07-07 from an owner design conversation; expanded and
-**settled** the same day — every open question is ruled and folded into its
-section below. Unsequenced within Next; the slot is the owner's call. The
-multi-character substrate this plan's matrix slice depends on split into its own
-plan: [multi-character-chat.plan.md](multi-character-chat.plan.md).)
+Status: active (build started 2026-07-07 — slice 1 contracts done; scoped,
+expanded, and **settled** 2026-07-07, every open question ruled and folded into
+its section below. The multi-character substrate this plan's matrix slice
+depends on is its own plan:
+[multi-character-chat.plan.md](multi-character-chat.plan.md).)
 
 ## Problem
 
