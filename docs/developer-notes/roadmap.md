@@ -23,9 +23,11 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing mid-build — the character-chat standalone plan shipped 2026-07-02; see
-**Shipped** below. Chat remains the product focus (D6): the top of **Next** is its
-measurement follow-through.)_
+- **Relationship model v2 — familiarity × regard** —
+  [relationship-model.plan.md](relationship-model.plan.md) (active — build started
+  2026-07-07; slice 1 contracts done). Then the substrate plan
+  ([multi-character-chat.plan.md](multi-character-chat.plan.md)) slots between its
+  slice 4 and the matrix slice.
 
 ## Next (queued)
 
@@ -51,15 +53,6 @@ measurement follow-through.)_
   needs a `world-simulation.plan.md` when it becomes active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
-- **Relationship model v2 — familiarity × regard** —
-  [relationship-model.plan.md](relationship-model.plan.md) (next — scoped, expanded,
-  and **settled** 2026-07-07, all open questions ruled; **unsequenced, slot is the
-  owner's call**). Split the one affinity scalar into a knowledge axis + a feeling
-  axis (+ attraction headroom), authored kind/history/mask texture for cold-start,
-  disposition-as-default rules, the `affinity`→`regard` rename — plus per-pair
-  NPC↔NPC records via a per-conversation matrix seeded from a library-level
-  Relationships tab, reactive + looming absent-character injection, and a sessions
-  earmark. Its matrix slice depends on the substrate plan below.
 - **Multi-character chat — the substrate** —
   [multi-character-chat.plan.md](multi-character-chat.plan.md) (next — split out of
   the relationship plan 2026-07-07; slots after that plan's slices 1–3, before its

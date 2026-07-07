@@ -8,7 +8,8 @@ import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { stageDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
-import { stageBehaviorProfile, type EscalationTier } from "@/contracts/relationships/profile";
+import { ESCALATION_TIER_PHRASES } from "@/contracts/relationships/law";
+import { stageBehaviorProfile } from "@/contracts/relationships/profile";
 import { stageForValue } from "@/contracts/relationships/stages";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
@@ -123,15 +124,6 @@ export interface CharacterChatPromptInput {
    */
   cueInvite?: string;
 }
-
-/** Reader-facing phrase per escalation tier (the D11 floor rendered as law). */
-const ESCALATION_TIER_PHRASES: Record<EscalationTier, string> = {
-  distant: "no romantic or physical escalation at all",
-  flirtation: "light flirtation, nothing physical",
-  affectionate_touch: "warm, affectionate touch",
-  heated: "heated kisses and close contact, stopping short of intimacy",
-  intimate: "full intimacy",
-};
 
 /**
  * The "Relationship law" block (character-chat-standalone.spec.md §7.1) — the first
