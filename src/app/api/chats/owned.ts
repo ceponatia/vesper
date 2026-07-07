@@ -8,7 +8,7 @@ import { jsonError } from "@/server/api";
  * that participant's character row slice — the one indexed lookup every
  * /api/chats/[chatId] route runs before doing anything (ownership lives on the chat
  * row; character-chat-standalone.spec.md §1.2). A conversation can now hold a
- * multi-character roster (relationship-model.plan.md — creation groundwork), but
+ * multi-character roster (multi-character-chat.plan.md — creation groundwork), but
  * the whole exchange pipeline is still 1-on-1 with the primary until the
  * multi-character substrate ships; extra participants are inert.
  */

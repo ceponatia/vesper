@@ -16,7 +16,7 @@ to 4 characters — `POST /api/chats` takes `characterIds`, `chat_participants` 
 row per character, `sort 0` is the primary — but the exchange pipeline still runs 1-on-1
 against the primary; the extra participants are inert groundwork for the multi-character
 substrate in
-[developer-notes/relationship-model.plan.md](developer-notes/relationship-model.plan.md).)
+[developer-notes/multi-character-chat.plan.md](developer-notes/multi-character-chat.plan.md).)
 Where the two lanes
 share a mechanism (memory scope, the §6 reaction curve, disposition rendering, narration
 shape, artifact stripping, the generate-timeout race, the draining stream Response), they

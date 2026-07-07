@@ -1,9 +1,10 @@
 # Relationship model v2 — familiarity × regard
 
-Status: draft (scoped 2026-07-07 from an owner design conversation; expanded the
-same day with owner rulings on per-pair records, multi-character chat, and
-absent-character injection — remaining open questions below still need rulings
-before this becomes buildable slices)
+Status: next (scoped 2026-07-07 from an owner design conversation; expanded and
+**settled** the same day — every open question is ruled and folded into its
+section below. Unsequenced within Next; the slot is the owner's call. The
+multi-character substrate this plan's matrix slice depends on split into its own
+plan: [multi-character-chat.plan.md](multi-character-chat.plan.md).)
 
 ## Problem
 
@@ -14,12 +15,12 @@ independent things:
 - **Knowledge** — how well two people know each other (stranger ↔ knows them deeply)
 - **Feeling** — how they feel about each other (hostile ↔ devoted)
 
-The conflation is baked into the stage *order*: `acquaintance` (+15..32) sits
+The conflation is baked into the stage _order_: `acquaintance` (+15..32) sits
 numerically above `cool` (−35..−15), so "an acquaintance she's cool toward" is
 unrepresentable — and so is enemies-to-lovers, the canonical romance arc, on a
-romance-first product. The failing case that motivated this: *"these two have known
+romance-first product. The failing case that motivated this: _"these two have known
 each other for 20 years so are quite familiar, but she dislikes him — or at least
-pretends to."* Nothing in `{stage: id}` can say that, and at chat cold-start there
+pretends to."_ Nothing in `{stage: id}` can say that, and at chat cold-start there
 is no history or memory for the narrator to infer it from; the authored state is
 all it gets.
 
@@ -27,11 +28,14 @@ all it gets.
 
 ### Two stored axes, headroom for a third
 
-| Axis | Motion | Bands (working) | Governs |
-| --- | --- | --- | --- |
-| **Familiarity** | slow ratchet (you can't un-know someone) | `strangers → introduced → acquainted → familiar → deeply-known` | address rights (first name/nicknames), what can be assumed/referenced, disclosure *ceiling*, how well they read the other |
-| **Regard** | volatile — this is today's `affinity` once familiarity-flavored stages are evicted | today's ladder minus `stranger`/`acquaintance`: `hostile → wary → cool → neutral → friendly → warm → close → cherished → devoted → smitten` | warmth of tone, *desire* to initiate, patience/benefit of the doubt, escalation floor |
-| **Attraction** (future) | — | not built in v2 | romantic/sexual pull distinct from platonic regard — what enemies-to-lovers actually runs on |
+| Axis                    | Motion                                                                             | Bands (working)                                                                                                                             | Governs                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Familiarity**         | slow ratchet (you can't un-know someone)                                           | `strangers → introduced → acquainted → familiar → deeply-known`                                                                             | address rights (first name/nicknames), what can be assumed/referenced, disclosure _ceiling_, how well they read the other |
+| **Regard**              | volatile — this is today's `affinity` once familiarity-flavored stages are evicted | today's ladder minus `stranger`/`acquaintance`: `hostile → wary → cool → neutral → friendly → warm → close → cherished → devoted → smitten` | warmth of tone, _desire_ to initiate, patience/benefit of the doubt, escalation floor                                     |
+| **Attraction** (future) | —                                                                                  | not built in v2                                                                                                                             | romantic/sexual pull distinct from platonic regard — what enemies-to-lovers actually runs on                              |
+
+Band vocabularies **settled 2026-07-07** (owner): these names/counts are the v2
+registries — 10 regard bands, 5 familiarity bands.
 
 Store the per-target relationship as a small **record** (jsonb), not bare columns,
 so attraction later is a field addition, not a migration (forward-compatible-schema
@@ -41,18 +45,23 @@ cold-start work:
 ```ts
 {
   familiarity: bandId,          // knowledge axis (also mirrored as a scalar for the ratchet)
-  regard: number,               // the existing affinity scalar, renamed in concept only
+  regard: number,               // the affinity scalar, renamed to regard everywhere (ruling in §Dynamics)
   kind?: string,                // the label both would use: "coworkers of 20 years", "her ex-husband"
   history?: string,             // one line of shared past: "he left town without a word; she rebuilt alone"
-  presented?: string,           // the mask: how they PERFORM it when it differs from what they feel
-  // attraction?: number        // reserved
+  presented?: {                 // the mask, when how they PERFORM differs from what they feel
+    lean: "masks-warmth" | "masks-dislike",  // enum first (owner ruling 2026-07-07); absent ⇒ honest
+    note?: string,              // optional flavor: "icily civil", "syrupy-sweet in public"
+  },
+  // attraction?: number        // reserved — deferral confirmed 2026-07-07, field addition when it lands
 }
 ```
 
-`presented` covers both directions of "pretends to": performed disdain over real
-warmth (tsundere) and performed courtesy over contempt (professional mask). The
-sessions lane's `perceived` edge (belief about the other's feeling) is a different
-concept and stays as-is.
+`presented` covers both directions of "pretends to": `masks-warmth` — performed
+disdain over real warmth (tsundere) — and `masks-dislike` — performed courtesy
+over contempt (the professional mask). **Ruled 2026-07-07: enum first** so the
+engine can key composition off the lean; the optional `note` colors the render;
+absent means honest, the overwhelming default. The sessions lane's `perceived`
+edge (belief about the other's feeling) is a different concept and stays as-is.
 
 ### What the LLM sees — the composed law block
 
@@ -75,12 +84,12 @@ Relationship with Daniel (this governs your behavior; never recite it):
 
 Composition rules (the heart of the design):
 
-- **Openness = min(familiarity ceiling, regard willingness).** "You *could* finish
-  his sentences, but you *won't* give him anything" — the line one scalar can't say.
+- **Openness = min(familiarity ceiling, regard willingness).** "You _could_ finish
+  his sentences, but you _won't_ give him anything" — the line one scalar can't say.
 - **Address**: familiarity grants the register; regard decides whether it's spoken
   warmly or used as a weapon.
-- **Initiative**: familiarity makes initiating *easy* (no social risk); regard makes
-  it *wanted*. Familiar + cold = initiates freely but only transactionally.
+- **Initiative**: familiarity makes initiating _easy_ (no social risk); regard makes
+  it _wanted_. Familiar + cold = initiates freely but only transactionally.
 - **Escalation floor moves to the regard axis** (later regard × attraction). A
   20-year acquaintance she despises entertains nothing; a stranger with chemistry
   can flirt.
@@ -96,25 +105,38 @@ Block stays in the §9 stable prefix; re-renders only on band change.
 
 1. **Disposition is the default; the relationship record is the exception.**
    Disposition answers "how do you treat people you have no feelings about". The
-   disposition tags' existing `warmth` lean seeds *unseeded* relationships (aloof ⇒
+   disposition tags' existing `warmth` lean seeds _unseeded_ relationships (aloof ⇒
    slightly negative starting regard, sunny ⇒ slightly positive). Where strangers
    start comes from disposition; where specific people are comes from the record.
 2. **Disposition styles the expression of regard, never its value.** Stoic + warm
    regard = fondness through acts, not words; sunny + cool regard = cheerfully
    distant. Generalizes `stageDispositionOverlays`, re-keyed to the regard band.
 3. **Divergence is stated explicitly — the contrast is the characterization.** When
-   regard's sign disagrees with disposition's lean, emit one line: *"You are curt
+   regard's sign disagrees with disposition's lean, emit one line: _"You are curt
    with people generally; Mara is one of the few exceptions — around her, the guard
-   drops."* Don't leave the trope for the model to infer from two distant blocks.
+   drops."_ Don't leave the trope for the model to infer from two distant blocks.
 
 ### Dynamics
 
 - **Regard**: existing machinery untouched — reaction pulse, milestones, history
-  samples; the `character_chat_state.affinity` column can keep its name.
-- **Familiarity**: stored scalar, author-seeded, ratcheted by lived interaction.
-  Signal source is the memory system we already have: archivist fact extraction /
-  episode closes tick it up — "how well you know someone" *is* accumulated shared
-  history. Never decays (staleness is a non-goal for v2).
+  samples. **Rename ruling (2026-07-07, owner delegated): bite the bullet.**
+  `affinity` renames to `regard` everywhere in slice 2 — column, API fields,
+  pulse, milestones, panel. One concept, one name: keeping the old word invites
+  conflation with the single-scalar meaning it no longer has; the sweep is
+  mechanical and `pnpm verify` catches every ripple. ⚠ The column rename will
+  trip `db:generate`'s interactive rename-vs-create prompt — that step is run by
+  the owner (CLAUDE.md rule), not pushed through by an agent.
+- **Familiarity**: stored scalar, author-seeded, ratcheted by lived interaction —
+  **ruled 2026-07-07: moments + time.** Two fuels: a slow trickle from exchanges
+  spent together, **capped at `acquainted`** (time alone never makes you
+  `familiar`), plus larger ticks when the archivist records a real disclosure or
+  shared experience (fact extraction / episode closes — the note-taker we already
+  run). A **per-scene cap** keeps one intense night from taking strangers to
+  deeply-known in a single sitting. Never decays (staleness is a non-goal for v2).
+- **Kind floor — ruled 2026-07-07: warn, never override.** When the authored
+  `kind` and the familiarity band disagree, the authoring UI nudges ("'her
+  brother' usually implies at least familiar") but the authored value always
+  stands — amnesia and estranged-at-birth stories stay authorable.
 - **Milestones** split by axis: regard keeps stage_up/down; familiarity ratchets get
   their own kind ("She let you in").
 
@@ -125,8 +147,11 @@ Block stays in the §9 stable prefix; re-renders only on band change.
   the exact law block the narrator will read** — authors see the render, not an
   abstraction.
 - **Matrix visual**: a small 2D plot (familiarity x, regard y), named corner regions
-  (*old enemy*, *estranged*, *beloved*, *instant chemistry*); region label replaces
-  today's single stage chip (or two chips).
+  (_old enemy_, _estranged_, _beloved_, _instant chemistry_); region label replaces
+  today's single stage chip (or two chips). **Ruled in (2026-07-07, owner
+  delegated)**: the labels stay — they give an at-a-glance read of a 2D position
+  that two band words don't, and they live in the same sparse combo table as
+  `comboNotes`, so they're data, not code.
 - **State tools modal**: both scalars + mask editable (dev-override philosophy
   unchanged). Relationship panel chart becomes two lines — volatile regard over a
   slow familiarity ramp.
@@ -148,7 +173,7 @@ Owner rulings, 2026-07-07 (settled — not open questions):
    no locations, inventory, exposure — just narrative **presence** plus an activity
    recency signal.
 4. **Relationships are authored per conversation, not on the character.** A
-   relationship is a property of a pair *in a story* — the same two library
+   relationship is a property of a pair _in a story_ — the same two library
    characters can be exes in one conversation and strangers in an AU. The authoring
    surface is a matrix menu inside the chat.
 5. **Absent-character injection is reactive + looming** (see §"What the narrator
@@ -172,44 +197,32 @@ Owner rulings, 2026-07-07 (settled — not open questions):
   untouched; the matrix menu is one surface reading/writing both stores (the player
   is a column in the grid). Unifying everything into one edge store is a
   session-refactor concern, not a v2 one.
-- **NPC↔NPC records are static authored texture in v2** — no reaction pulse, no
-  milestones, no familiarity ratchet between NPCs. Evolution rides the archivist
-  for free: relationship-kind facts ("Maya no longer trusts Rhett") are already
-  extracted and retrieved, so lived shifts reach the narrator through memory while
-  the authored record stays the cold-start law. Pair dynamics get built once, in
-  the session refactor, for both lanes.
+- **NPC↔NPC records are static authored texture in v2** (confirmed 2026-07-07) —
+  no reaction pulse, no milestones, no familiarity ratchet between NPCs. Evolution
+  rides the archivist for free: relationship-kind facts ("Maya no longer trusts
+  Rhett") are already extracted and retrieved, so lived shifts reach the narrator
+  through memory while the authored record stays the cold-start law. Pair dynamics
+  get built once, in the session refactor, for both lanes.
+- **Library-level defaults — ruled 2026-07-07.** The character editor gains a
+  **Relationships tab**: define default edges once against other library
+  characters (and the player — the tab absorbs today's "Starting Relationship"
+  control), stored library-side in a `character_relationships` table keyed
+  `(from_character_id, to_character_id)` with FK cascade, so deleting a character
+  never leaves dangling edges (a table, not a profile field, for exactly that
+  reason). Creating a conversation seeds its matrix from these defaults for every
+  roster pair; the in-chat matrix menu overrides or adds per-conversation on
+  top — the same default-vs-override shape as `playerRelationship` today.
 
-### Multi-character chat substrate (prerequisite, chat lane)
+### Multi-character chat substrate → own plan
 
-The matrix needs conversations that can hold more than one character. This is a
-real scope expansion of the chat lane — [docs/character-chat.md](../character-chat.md)'s
-"deliberately not a session: no multi-character cast" line gets amended when this
-ships — but a bounded one:
-
-- **Roster.** A conversation gains N library characters (UI add/remove). Each gets
-  its own `character_chat_state` row — the `(chat_id, character_id)` PK was keyed
-  for exactly this. Roster of 1 = today's chat, byte-identical prompt (no
-  regression to the shipped product).
-- **Presence, not location.** One narrative flag per character: **present**
-  (sharing the player's scene) or **away** (offstage, living their life). That is
-  the only "location" tracked. NPC↔NPC co-presence away from the player is
-  narrative flavor, not state.
-- **Activity recency.** Per character, the last exchange in which they were
-  *mentioned, acted, or were spoken to* — this drives the per-character detail
-  budget in the prompt (below). Updates are deterministic-first: display-name +
-  `profile.aliases` regex over the player input and the reply (the
-  `chat-intent.ts` pattern); the chat archivist confirms presence transitions
-  post-turn; a roster panel exposes manual present/away toggles (dev-override
-  philosophy).
-- **Narration authority: the player owns himself.** When no character is present,
-  the narrator writes ONLY what the away characters are doing — never the player's
-  own actions or location. Player: *"I'm in my bedroom getting changed for our
-  date"* → narrator: *"Sabrina stands in front of her mirror, fussing over her
-  hair…"*. When characters are present, the existing shared-scene rules apply.
-- **Prompt frame.** More than one character shifts the reply voice from
-  "you are X" toward a scene narrator over the roster (the cutaway example above is
-  third person). Exact framing is an open question below; the hard constraint is
-  that roster-of-1 conversations keep today's prompt unchanged.
+The matrix needs conversations that hold more than one character. That substrate
+is its own plan now (split ruled 2026-07-07):
+**[multi-character-chat.plan.md](multi-character-chat.plan.md)** — roster,
+per-character state rows, narrative presence + activity recency, the one-block
+ensemble prompt frame, player-owns-himself narration authority, referenced-only
+reaction pulse, tier-1 memory retrieval, and frozen away-state. This plan's
+matrix slice depends on it; the presence × salience tiers below are the
+relationship-injection half of that plan's detail budget and stay here.
 
 ### What the narrator sees when — presence × salience tiers
 
@@ -219,14 +232,14 @@ triggered by the transcript, never anticipatory** — so an edge line can't caus
 introduction it colors; by the time the narrator sees it, the fiction already
 surfaced the name.
 
-| Tier | Condition | What renders |
-| --- | --- | --- |
-| 1 | Present + recently active | Full identity/state block + full composed pair law blocks for every present pair (character↔player **and** character↔character — escalation floors included, same builder) |
-| 2 | Present + quiet (no action/mention for K exchanges) | Compressed: one-line state, one-line relationship summaries |
-| 3 | Away + salient (mentioned within the window, or edge flagged **looming**) | A compact conditional edge line — *"If Mara comes up: …"* — plus the **don't-teleport guard**: *she is not with you; you may show what she's doing where she is, but never merge her into the player's scene uninvited* |
-| 4 | Away + silent | Nothing. The narrator can't be tempted by what it can't see |
+| Tier | Condition                                                                 | What renders                                                                                                                                                                                                            |
+| ---- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Present + recently active                                                 | Full identity/state block + full composed pair law blocks for every present pair (character↔player **and** character↔character — escalation floors included, same builder)                                              |
+| 2    | Present + quiet (no action/mention for K exchanges)                       | Compressed: one-line state, one-line relationship summaries                                                                                                                                                             |
+| 3    | Away + salient (mentioned within the window, or edge flagged **looming**) | A compact conditional edge line — _"If Mara comes up: …"_ — plus the **don't-teleport guard**: _she is not with you; you may show what she's doing where she is, but never merge her into the player's scene uninvited_ |
+| 4    | Away + silent                                                             | Nothing. The narrator can't be tempted by what it can't see                                                                                                                                                             |
 
-- **Looming (per-edge, opt-in flag).** For the absent person whose absence *is* the
+- **Looming (per-edge, opt-in flag).** For the absent person whose absence _is_ the
   story (the estranged brother): the edge rides in the prompt unmentioned, framed
   as interiority ("he weighs on you"), same don't-teleport guard. Everyone else
   waits for the transcript to name them.
@@ -269,19 +282,13 @@ Recorded for the session-chat refactor:
    eval fixtures (below).
 4. **UI (player edge)**: authoring control + preview, state tools, relationship
    panel 2D.
-5. **Multi-character chat substrate**: roster (conversations hold N characters),
-   per-character state rows, presence flag + activity recency, prompt reframe for
-   roster > 1, narration-authority rule, salience-tiered detail budget. Needs 1–3.
-   Big enough that it likely becomes its own `<topic>.plan.md` when sequenced —
-   this plan then depends on it rather than containing it.
-   *Creation groundwork shipped 2026-07-07*: the New-conversation dialog multi-selects
-   up to 4 characters and `POST /api/chats` takes `characterIds` (one
-   `chat_participants` row each, sort 0 = primary, per-character memory groups,
-   auto-title "A & B"); the exchange pipeline still runs 1-on-1 against the
-   primary — extra participants are inert until this slice.
+5. **Multi-character chat substrate** — now its own plan:
+   [multi-character-chat.plan.md](multi-character-chat.plan.md) (needs slices 1–3;
+   creation groundwork shipped 2026-07-07 — details there). Slice 6 depends on it.
 6. **The matrix**: `character_chat_relationships` table, matrix menu (shared cell,
-   mirrored stances, asymmetric toggle, live two-direction preview), reactive +
-   looming injection with the don't-teleport guard.
+   mirrored stances, asymmetric toggle, live two-direction preview), the character
+   editor's library-defaults **Relationships tab** + creation-time seeding,
+   reactive + looming injection with the don't-teleport guard.
 7. **(Later) Sessions lane — earmark only**: `participant_relationships` + authored
    cast edges gain the record; co-present pair rendering closes the
    `buildRelationshipBlock` NPC↔NPC gap; intake-driven salience; bond classifier's
@@ -298,38 +305,13 @@ the player's own actions).
 
 ## Open questions
 
-- **Band vocabularies**: are the working band names/counts right? Regard keeps 10 of
-  today's 11 for romance-ladder granularity; familiarity proposes 5.
-- **Rename or not**: keep the `affinity` column/API names meaning "regard", or bite
-  the rename bullet in the same change (ripples: reaction pulse, panel, milestones)?
-- **Familiarity ratchet source**: archivist-driven (facts/episodes), exchange-count
-  driven, or both? And does authored `kind` imply a familiarity floor (a "sibling"
-  can't be `strangers`)?
-- **`presented` mask**: free text only, or also a coarse enum lean (e.g. `honest` /
-  `masks-warmth` / `masks-dislike`) the engine could key off later?
-- **Attraction axis**: confirm deferred, and confirm the escalation floor stays
-  regard-only until it lands (premise-wins already covers AU intimacy).
-- **Quadrant labels**: charming or clutter? (UI-only decision, cheap either way.)
-- **Multi-character prompt frame** (slice 5): roster > 1 clearly needs third-person
-  narration (the cutaway ruling implies it) — full scene-narrator voice like
-  sessions, or an ensemble frame that keeps a focal character's interiority per
-  exchange? Affects how much of the shipped chat craft-rule work ports directly.
-- **Reaction pulse scope in multi-character chats**: run it for every present
-  character each exchange (cost scales with roster), or only for characters the
-  player's input addressed/acted toward?
-- **Memory retrieval fan-out**: per-character RAG legs per exchange (cost ×
-  roster), a shared retrieval over the union of the roster's memory groups, or
-  retrieval only for tier-1 (recently active) characters?
-- **Away-character drift**: do meters keep decaying on the chat clock while a
-  character is away, or freeze until they re-enter? (Pure math either way — pick
-  whichever reads better on re-entry.)
-- **Library-level default pair edges**: `playerRelationship` is a library default
-  the conversation seeds from — should character↔character pairs get the same (a
-  default edge authored once for a duo who always appear together, overridable per
-  conversation), or is the matrix strictly per-conversation? Rulings say *don't
-  hard-code on characters*; a seed-default is weaker than hard-coding but adds an
-  authoring surface.
-- **NPC↔NPC dynamics static in v2**: confirm the scope cut (archivist facts carry
-  evolution; pair pulse/milestones wait for the session refactor).
-- **Slice 5 as its own plan**: split the multi-character substrate into its own
-  `<topic>.plan.md` + roadmap line when this work is sequenced?
+None — every question raised in the 2026-07-07 review is ruled and folded into
+its section above: band vocabularies (settled), the `affinity` → `regard` rename
+(bite the bullet, §Dynamics), the moments+time familiarity ratchet and the
+warn-only kind floor (§Dynamics), the `presented` enum lean (§record sketch),
+the attraction axis (deferred, field reserved), quadrant labels (ruled in, §UI),
+library-level default edges (Relationships tab, §The matrix), NPC↔NPC dynamics
+static in v2 (confirmed, §The matrix). The substrate-side rulings — one-block
+ensemble prompt frame, referenced-only reaction pulse, tier-1 memory retrieval,
+away-state freeze — are recorded in
+[multi-character-chat.plan.md](multi-character-chat.plan.md).

@@ -169,7 +169,7 @@ export const characters = pgTable(
  * scenario). Built with multi-character headroom: membership is the
  * `chat_participants` join table (a roster of up to 4, sort 0 = the primary
  * participant; the exchange pipeline is still 1-on-1 with the primary until the
- * multi-character substrate ships — relationship-model.plan.md).
+ * multi-character substrate ships — multi-character-chat.plan.md).
  * `archived_at` shelves a conversation read-only (restorable);
  * hard delete cascades transcript + summary + state (memory-group purge is
  * app-level — see `deleteChat`).
