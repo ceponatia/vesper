@@ -600,7 +600,9 @@ export async function reextractEditedReply(args: {
 function promptStateSlice(state: ChatState): NonNullable<CharacterChatPromptInput["state"]> {
   return {
     meters: state.meters,
-    affinity: state.affinity,
+    regard: state.regard,
+    familiarity: state.familiarity,
+    relationship: state.relationship,
     conditions: state.conditions,
     mindNote: state.mindNote,
     premise: state.premise,

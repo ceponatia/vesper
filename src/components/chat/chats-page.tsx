@@ -231,10 +231,10 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
                       ) : null}
                     </div>
                     <p className="mt-0.5 truncate text-sm text-paper-400">{chat.lastLine ?? "No messages yet"}</p>
-                    {chat.emotion || chat.stage ? (
+                    {chat.emotion || chat.regardBand ? (
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         {chat.emotion ? <MoodChip emotion={chat.emotion} className="text-xs" /> : null}
-                        {chat.stage ? <Tag>{chat.stage.label}</Tag> : null}
+                        {chat.regardBand ? <Tag>{chat.regardBand.label}</Tag> : null}
                       </div>
                     ) : null}
                   </div>

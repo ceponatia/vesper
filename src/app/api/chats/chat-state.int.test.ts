@@ -177,26 +177,26 @@ afterAll(async () => {
 });
 
 describe("POST seeds a state row from the authored stage", () => {
-  it("creates a (chatId, characterId) row with affinity from playerRelationship.stage and a degraded pulse trace (demo)", async (t) => {
+  it("creates a (chatId, characterId) row with regard from playerRelationship and a degraded pulse trace (demo)", async (t) => {
     if (!ready) return t.skip();
     const res = await chatSend(postReq(ids.warm.chatId, { content: "Hello again" }), ctx(ids.warm.chatId));
     await res.text(); // drains the stream ⇒ the finalizer (pulse + save) has run
 
     const row = await stateRow(ids.warm);
     expect(row).not.toBeNull();
-    expect(row?.affinity).toBe(stageMidpoint("warm")); // seeded from "warm"
+    expect(row?.regard).toBe(stageMidpoint("warm")); // seeded from "warm"
     expect((row?.lastPulseTrace as { degraded?: boolean })?.degraded).toBe(true); // pulse degraded in demo
     // The premise pre-filled from the authored note.
     expect(row?.premise).toBe("childhood friend");
   });
 
-  it("no time passes between visits — meters and affinity hold however long the gap (D3/D8)", async (t) => {
+  it("no time passes between visits — meters and regard hold however long the gap (D3/D8)", async (t) => {
     if (!ready) return t.skip();
     // Degraded meters from a previous visit; there is no wall-clock anchor anymore,
     // so a "return" exchange applies only the within-visit tick — no recovery lerp.
     await db()
       .update(characterChatState)
-      .set({ meters: { hygiene: 0.2, energy: 0.2, mood: 0.5 }, affinity: 57 })
+      .set({ meters: { hygiene: 0.2, energy: 0.2, mood: 0.5 }, regard: 57 })
       .where(and(eq(characterChatState.chatId, ids.warm.chatId), eq(characterChatState.characterId, ids.warm.characterId)));
 
     const res = await chatSend(postReq(ids.warm.chatId, { content: "Back again" }), ctx(ids.warm.chatId));
@@ -206,7 +206,7 @@ describe("POST seeds a state row from the authored stage", () => {
     const meters = row?.meters as Record<string, number>;
     // One CHAT_TICK_MINUTES of ordinary decay at most — nothing recovered toward rested.
     expect(meters.hygiene).toBeLessThanOrEqual(0.2);
-    expect(row?.affinity).toBe(57); // affinity unchanged — no between-visit decay (spec §10)
+    expect(row?.regard).toBe(57); // regard unchanged — no between-visit decay (spec §10)
   });
 });
 
@@ -383,12 +383,12 @@ describe("state mutations 409 while a reply streams (followups F1)", () => {
 });
 
 describe("GET …/chats/:chatId/state", () => {
-  it("returns a drift-on-read snapshot with the stage chip and last-turn trace", async (t) => {
+  it("returns a drift-on-read snapshot with the band chip and last-turn trace", async (t) => {
     if (!ready) return t.skip();
     const res = await stateGet(getReq(), ctx(ids.warm.chatId));
     expect(res.status).toBe(200);
-    const snap = (await res.json()) as { affinity: number; stage: { id: string }; lastPulseTrace: { degraded: boolean } };
-    expect(snap.stage.id).toBeTruthy();
+    const snap = (await res.json()) as { regard: number; regardBand: { id: string }; lastPulseTrace: { degraded: boolean } };
+    expect(snap.regardBand.id).toBeTruthy();
     expect(snap.lastPulseTrace.degraded).toBe(true);
   });
 
@@ -403,15 +403,15 @@ describe("GET …/chats/:chatId/state", () => {
 });
 
 describe("state-tools edit (PATCH) + action chips (POST)", () => {
-  it("PATCH edits affinity / meters / mindNote", async (t) => {
+  it("PATCH edits regard / meters / mindNote", async (t) => {
     if (!ready) return t.skip();
     const res = await statePatch(
-      patchReq(ids.fresh.chatId, { affinity: 40, meters: { hygiene: 0.4, mood: 0.7 }, mindNote: "set by hand" }),
+      patchReq(ids.fresh.chatId, { regard: 40, meters: { hygiene: 0.4, mood: 0.7 }, mindNote: "set by hand" }),
       ctx(ids.fresh.chatId),
     );
     expect(res.status).toBe(200);
     const row = await stateRow(ids.fresh);
-    expect(row?.affinity).toBe(40);
+    expect(row?.regard).toBe(40);
     expect((row?.meters as Record<string, number>).hygiene).toBeCloseTo(0.4, 5);
     expect(row?.mindNote).toBe("set by hand");
   });
@@ -452,7 +452,7 @@ describe("Prompt Character (opening beat)", () => {
       .where(eq(characterChatMessages.chatId, ids.open.chatId));
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.role).toBe("assistant"); // no user line was inserted
-    expect((await stateRow(ids.open))?.affinity).toBe(stageMidpoint("warm")); // seeded from the authored stage
+    expect((await stateRow(ids.open))?.regard).toBe(stageMidpoint("warm")); // seeded from the authored (legacy) stage
   });
 });
 

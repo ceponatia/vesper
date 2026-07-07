@@ -62,6 +62,18 @@ const textureFields = {
   // attraction — reserved third axis; a field addition here, never a migration.
 };
 
+/**
+ * The texture half of the record on its own — what state rows store in their
+ * `relationship_record` jsonb beside the two scalar columns (the scalars are
+ * columns because dynamics move and queries read them).
+ */
+export const relationshipTextureSchema = z.object(textureFields);
+export type RelationshipTexture = z.infer<typeof relationshipTextureSchema>;
+
+export function emptyRelationshipTexture(): RelationshipTexture {
+  return relationshipTextureSchema.parse({});
+}
+
 /** Live form: axis scalars. Stored on state rows / matrix rows; dynamics move these. */
 export const relationshipRecordSchema = z.object({
   familiarity: z.number().catch(0).default(0),

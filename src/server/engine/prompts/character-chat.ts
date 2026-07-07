@@ -10,6 +10,7 @@ import { dispositionBands, traitRegistry } from "@/contracts/personality/traits"
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
 import { ESCALATION_TIER_PHRASES } from "@/contracts/relationships/law";
 import { stageBehaviorProfile } from "@/contracts/relationships/profile";
+import type { RelationshipTexture } from "@/contracts/relationships/record";
 import { stageForValue } from "@/contracts/relationships/stages";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
@@ -25,7 +26,7 @@ import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
  * values via the registry, plus each attribute's `promptHints` as phrasing
  * guidance (the narrator keeps hints; only the image prompt strips them,
  * images/prompts.ts) — and carries the chat lane's own layers: the tracked state
- * (meters/conditions/affinity, enacted per docs/prompts.md §Character-chat state
+ * (meters/conditions/regard, enacted per docs/prompts.md §Character-chat state
  * as a narration system), the rolling-summary recap, and the RAG "Your memory"
  * block. What it still deliberately drops is the session's world machinery:
  * presence, locations, wardrobe state, the exposure mask. Pure and
@@ -68,7 +69,12 @@ export interface CharacterChatPromptInput {
    */
   state?: {
     meters: Record<string, number>;
-    affinity: number;
+    /** The feeling axis (was `affinity`); the law block reads this scalar. */
+    regard: number;
+    /** The knowledge axis — consumed by the composed law block (plan slice 3). */
+    familiarity?: number;
+    /** Authored relationship texture (kind/history/mask/looming) — consumed in slice 3. */
+    relationship?: RelationshipTexture;
     conditions: ActiveCondition[];
     mindNote?: string;
     /** The per-chat scenario framing (§1.2) — the strongest framing in the prompt. */
@@ -134,8 +140,8 @@ export interface CharacterChatPromptInput {
  * scenario premise overrides the floor, disinhibition never raises it, and authored
  * values (social cards) outrank everything.
  */
-function buildRelationshipLawSection(affinity: number, name: string): string {
-  const stage = stageForValue(affinity);
+function buildRelationshipLawSection(regard: number, name: string): string {
+  const stage = stageForValue(regard);
   const profile = stageBehaviorProfile(stage.id);
   return [
     `Relationship law (how far things have actually come between you — ${stage.label.toLowerCase()} — this governs your behavior; never recite it):`,
@@ -443,7 +449,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // the transient disinhibition shift (§4 — intoxication/arousal loosening
   // inhibition, guardedness, composure at render time) surfaces as a volatile
   // tail block listing just the bands it changed.
-  const stageId = stageForValue(input.state?.affinity ?? 0).id;
+  const stageId = stageForValue(input.state?.regard ?? 0).id;
   const baseTraits = resolveTraits(profile.traits, stageDispositionOverlays(stageId, profile.traits));
   const everydayDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: false });
   const intimateDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: true });
@@ -526,7 +532,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
     dispositionSection,
-    buildRelationshipLawSection(input.state?.affinity ?? 0, displayName),
+    buildRelationshipLawSection(input.state?.regard ?? 0, displayName),
     socialFraming,
     attributeLines.length
       ? `Attributes (who you are — express these naturally, never list them):\n${attributeLines.join("\n")}`

@@ -210,7 +210,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     void chatsApi.state(chatId).then((r) => {
       if (cancelled || !r.ok) return;
       setChatState(r.data);
-      stageRef.current = r.data.stage.label;
+      stageRef.current = r.data.regardBand.label;
     });
     return () => {
       cancelled = true;
@@ -226,16 +226,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [lines]);
 
-  /** Refetch the state strip; toast when the affinity stage changed (the romance arc made visible). */
+  /** Refetch the state strip; toast when the regard band changed (the romance arc made visible). */
   const refreshState = async () => {
     const prior = stageRef.current;
     const result = await chatsApi.state(chatId);
     if (!result.ok) return;
     setChatState(result.data);
-    if (prior && result.data.stage.label !== prior) {
-      toast.push({ title: `${who} now regards you as ${result.data.stage.label.toLowerCase()}.` });
+    if (prior && result.data.regardBand.label !== prior) {
+      toast.push({ title: `${who} now regards you as ${result.data.regardBand.label.toLowerCase()}.` });
     }
-    stageRef.current = result.data.stage.label;
+    stageRef.current = result.data.regardBand.label;
   };
 
   /**
@@ -387,7 +387,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     setActionBusy(null);
     if (result.ok) {
       setChatState(result.data);
-      stageRef.current = result.data.stage.label;
+      stageRef.current = result.data.regardBand.label;
     } else {
       toast.push({ title: "Action failed", description: result.error.message, tone: "error" });
     }
@@ -545,7 +545,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       return;
     }
     setChatState(result.data);
-    stageRef.current = result.data.stage.label;
+    stageRef.current = result.data.regardBand.label;
     toast.push({ title: "Time passes…", description: `${who} will pick the scene up from there.` });
   };
 
@@ -869,7 +869,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         <div className="flex flex-col gap-3 text-sm text-paper-400">
           <p>
             This deletes the conversation and its memory: the transcript, the running summary, {who}&rsquo;s
-            disposition (affinity, mood, scenario), and everything {who} remembers about you from it. Archiving
+            disposition (regard, mood, scenario), and everything {who} remembers about you from it. Archiving
             keeps all of that — this can&rsquo;t be undone.
           </p>
           <p className="text-xs text-paper-500">Generated scene images are kept — find them in the Gallery.</p>
@@ -926,7 +926,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           snapshot={chatState}
           onSaved={(next) => {
             setChatState(next);
-            stageRef.current = next.stage.label;
+            stageRef.current = next.regardBand.label;
           }}
         />
       ) : null}
@@ -940,7 +940,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           snapshot={chatState}
           onSaved={(next) => {
             setChatState(next);
-            stageRef.current = next.stage.label;
+            stageRef.current = next.regardBand.label;
           }}
         />
       ) : null}

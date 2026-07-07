@@ -182,7 +182,7 @@ describe("chat-presets CRUD (spec §1.5)", () => {
 });
 
 describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () => {
-  it("seeds the new conversation's state row from the preset (affinity via stageMidpoint)", async (t) => {
+  it("seeds the new conversation's state row from the preset (regard via the stage bridge)", async (t) => {
     if (!ready) return t.skip();
     const created = await presetCreate(
       createReq({
@@ -210,7 +210,7 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
         premise: characterChatState.premise,
         outfit: characterChatState.outfit,
         outfitExposed: characterChatState.outfitExposed,
-        affinity: characterChatState.affinity,
+        regard: characterChatState.regard,
         activeSocialCards: characterChatState.activeSocialCards,
       })
       .from(characterChatState)
@@ -219,7 +219,7 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
     expect(state?.premise).toBe("Snowed in together at the cabin.");
     expect(state?.outfit).toBe("an oversized flannel shirt");
     expect(state?.outfitExposed).toBe(false);
-    expect(state?.affinity).toBe(stageMidpoint("friendly")); // never the raw stage string
+    expect(state?.regard).toBe(stageMidpoint("friendly")); // never the raw stage string
     const cards = state?.activeSocialCards as { id: string }[];
     expect(cards.map((c) => c.id)).toEqual(["card-quiet"]);
   });

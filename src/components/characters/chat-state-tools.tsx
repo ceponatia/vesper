@@ -5,9 +5,10 @@ import {
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   conditionAttributeOverlays,
+  familiarityBandForValue,
   meterDefinitions,
+  regardBandForValue,
   splitStateCues,
-  stageForValue,
   type ActiveCondition,
 } from "@/contracts";
 import { chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
@@ -60,7 +61,8 @@ function StateToolsForm({
   onClose: () => void;
 }) {
   const toast = useToast();
-  const [affinity, setAffinity] = useState(snapshot.affinity);
+  const [regard, setRegard] = useState(snapshot.regard);
+  const [familiarity, setFamiliarity] = useState(snapshot.familiarity);
   const [meters, setMeters] = useState<Record<string, number>>({ ...snapshot.meters });
   const [conditions, setConditions] = useState<ActiveCondition[]>(snapshot.conditions);
   const [mindNote, setMindNote] = useState(snapshot.mindNote);
@@ -72,7 +74,8 @@ function StateToolsForm({
   const [memoryQueries, setMemoryQueries] = useState(snapshot.memoryQueries.join("\n"));
   const [saving, setSaving] = useState(false);
 
-  const stage = stageForValue(affinity);
+  const regardBand = regardBandForValue(regard);
+  const familiarityBand = familiarityBandForValue(familiarity);
   const trace = snapshot.lastPulseTrace;
   const memory = snapshot.lastMemoryTrace;
   const attributeOverlays = snapshot.attributeOverlays;
@@ -101,7 +104,8 @@ function StateToolsForm({
   const save = async () => {
     setSaving(true);
     const result = await chatsApi.editState(chatId, {
-      affinity,
+      regard,
+      familiarity,
       meters,
       conditions,
       mindNote,
@@ -122,19 +126,37 @@ function StateToolsForm({
   return (
     <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Affinity</span>
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Regard</span>
         <div className="flex items-center gap-2">
           <input
             type="range"
             min={-100}
             max={100}
-            value={affinity}
-            onChange={(e) => setAffinity(Number(e.target.value))}
+            value={regard}
+            onChange={(e) => setRegard(Number(e.target.value))}
             className="w-44"
-            aria-label="Affinity"
+            aria-label="Regard"
           />
           <span className="w-24 text-right text-xs text-paper-300">
-            {affinity} · {stage.label}
+            {regard} · {regardBand.label}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Familiarity</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={familiarity}
+            onChange={(e) => setFamiliarity(Number(e.target.value))}
+            className="w-44"
+            aria-label="Familiarity"
+          />
+          <span className="w-24 text-right text-xs text-paper-300">
+            {familiarity} · {familiarityBand.label}
           </span>
         </div>
       </div>
@@ -252,7 +274,7 @@ function StateToolsForm({
               {trace.valence ? `(${trace.valence})` : "(no preference match)"}
             </li>
             <li>
-              Affinity {signed(trace.affinityDelta)} · Mood {signed(trace.moodDelta)} · Arousal{" "}
+              Regard {signed(trace.regardDelta)} · Mood {signed(trace.moodDelta)} · Arousal{" "}
               {signed(trace.arousalDelta)}
             </li>
             {trace.changed.length ? <li>Changed: {trace.changed.join(", ")}</li> : null}

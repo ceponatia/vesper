@@ -36,7 +36,7 @@ describe("chatPulseTraceSchema", () => {
     expect(emptyChatPulseTrace()).toEqual({
       concept: null,
       valence: null,
-      affinityDelta: 0,
+      regardDelta: 0,
       moodDelta: 0,
       arousalDelta: 0,
       changed: [],
@@ -45,10 +45,10 @@ describe("chatPulseTraceSchema", () => {
   });
 
   it("tolerates a malformed jsonb blob (every field catches)", () => {
-    const parsed = chatPulseTraceSchema.parse({ concept: 5, valence: "??", affinityDelta: "nope", changed: "bad" });
+    const parsed = chatPulseTraceSchema.parse({ concept: 5, valence: "??", regardDelta: "nope", changed: "bad" });
     expect(parsed.concept).toBeNull();
     expect(parsed.valence).toBeNull();
-    expect(parsed.affinityDelta).toBe(0);
+    expect(parsed.regardDelta).toBe(0);
     expect(parsed.arousalDelta).toBe(0);
     expect(parsed.changed).toEqual([]);
   });

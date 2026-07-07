@@ -4,14 +4,14 @@ import { z } from "zod";
 import {
   activeConditionSchema,
   characterProfileSchema,
-  clampAffinity,
   deriveEmotionLabel,
   effectiveTraitValue,
   emptyCharacterProfile,
   NEUTRAL_MOOD_METER,
+  regardBandForValue,
+  regardBandToStageId,
   socialReactionCardSchema,
-  stageForValue,
-  stageMidpoint,
+  stageToAxes,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
@@ -76,7 +76,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       characterName: characters.name,
       avatarImageId: characters.avatarImageId,
       profile: characters.profile,
-      affinity: characterChatState.affinity,
+      regard: characterChatState.regard,
       meters: characterChatState.meters,
       conditions: characterChatState.conditions,
       openLoops: characterChatState.openLoops,
@@ -113,16 +113,16 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .orderBy(desc(characterChats.lastMessageAt))
     .limit(LIST_LIMIT);
 
-  const chats = rows.map(({ profile, affinity, meters, conditions, openLoops, ...rest }) => {
+  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, ...rest }) => {
     // "Has something to say" (spec §8.4, D4): a pure read-time derivation off the open
     // loops — no jobs, no push, never the wall clock. The top loop is the reason.
     const loops = parseOr(listLoopsSchema, openLoops ?? [], [], undefined, "character_chat_state.open_loops");
     const say = loops[0]?.trim() ?? "";
-    if (affinity === null) return { ...rest, stage: null, emotion: null, say };
+    if (regard === null) return { ...rest, regardBand: null, emotion: null, say };
     const parsedMeters = parseOr(listMetersSchema, meters ?? {}, {}, undefined, "character_chat_state.meters");
     const parsedConditions = parseOr(listConditionsSchema, conditions ?? [], [], undefined, "character_chat_state.conditions");
     const prof = parseOr(characterProfileSchema, profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
-    const stage = stageForValue(affinity);
+    const band = regardBandForValue(regard);
     // Mirrors chatStateSnapshot's mood-chip inputs (mood.spec §4): chat is an
     // intimate-capable 1-on-1, dominance tilts a low-valence read angry vs sad.
     const emotion = deriveEmotionLabel({
@@ -130,14 +130,14 @@ export const GET = withUser(async (user, req: NextRequest) => {
       arousal: parsedMeters.arousal ?? 0,
       stress: parsedMeters.stress ?? 0,
       energy: parsedMeters.energy ?? 1,
-      affinityStage: stage.id,
+      affinityStage: regardBandToStageId(band.id),
       conditions: parsedConditions,
       intimateContext: true,
       dominance: effectiveTraitValue(prof.traits, "social.dominance"),
     });
     return {
       ...rest,
-      stage: { id: stage.id, label: stage.label },
+      regardBand: { id: band.id, label: band.label },
       emotion: { label: emotion.emotion, intensity: emotion.intensity },
       say,
     };
@@ -213,6 +213,9 @@ export const POST = withUser(async (user, req: NextRequest) => {
     if (preset) {
       const profile = parseOr(characterProfileSchema, primary.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
       const cards = parseOr(z.array(socialReactionCardSchema), preset.socialCards, [], undefined, "chat_scenario_presets.social_cards");
+      // Presets still author the old single-stage vocabulary; both axes seed
+      // through the bridge until the preset editor grows band pickers (slice 4).
+      const axes = stageToAxes(preset.startingStage);
       await editChatState({
         chatId,
         characterId: primary.id,
@@ -221,7 +224,8 @@ export const POST = withUser(async (user, req: NextRequest) => {
           premise: preset.premise,
           outfit: preset.outfit,
           outfitExposed: preset.outfitExposed,
-          affinity: clampAffinity(stageMidpoint(preset.startingStage)),
+          regard: axes.regard,
+          familiarity: axes.familiarity,
           ...(cards.length ? { activeSocialCards: cards } : {}),
         },
       });

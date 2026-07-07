@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { PLAYER_RELATIONSHIP_NOTE_MAX, relationshipStages } from "@/contracts";
+import { familiarityBands, PLAYER_RELATIONSHIP_NOTE_MAX, regardBands } from "@/contracts";
 import { chatsApi } from "@/lib/client/api";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { timeAgo } from "@/lib/relative-time";
@@ -22,14 +22,13 @@ export interface CharacterChatProps {
   name: string;
   /**
    * The authored Starting Relationship (`profile.playerRelationship`) from the live
-   * editor draft: how the character regards the player when a chat begins, plus the
-   * one-line note that pre-fills a new chat's premise. Both write back through the
-   * setters into the draft — the editor SaveBar persists them with the character.
+   * editor draft: the two band picks (relationship-model v2 axes) and the one-line
+   * note that pre-fills a new chat's premise. Writes back through the setter into
+   * the draft — the editor SaveBar persists it with the character. (Kind/history/
+   * mask texture + the live law preview arrive with the plan's slice 4 control.)
    */
-  startingStage: string;
-  onStartingStageChange: (stage: string) => void;
-  startingNote: string;
-  onStartingNoteChange: (note: string) => void;
+  starting: { familiarity: string; regard: string; note: string };
+  onStartingChange: (next: { familiarity: string; regard: string; note: string }) => void;
   /**
    * The narrator model the dropdown shows (a resolved `NARRATIVE_MODELS` id). Owned by
    * the page so it outlives this tab unmounting — picking a model here calls
@@ -52,10 +51,8 @@ export interface CharacterChatProps {
 export function CharacterChat({
   characterId,
   name,
-  startingStage,
-  onStartingStageChange,
-  startingNote,
-  onStartingNoteChange,
+  starting,
+  onStartingChange,
   chatModel,
   onChatModelChange,
 }: CharacterChatProps) {
@@ -80,19 +77,38 @@ export function CharacterChat({
           )}
         </Field>
         <Field
-          label="Starting Relationship"
-          hint={`How ${who} regards the player when a chat begins — saved with the character (use the page's Save).`}
+          label="Starting familiarity"
+          hint={`How well ${who} and the player know each other when a chat begins — saved with the character (use the page's Save).`}
         >
           {(id) => (
             <Select
               id={id}
-              value={startingStage}
-              onChange={(e) => onStartingStageChange(e.target.value)}
+              value={starting.familiarity}
+              onChange={(e) => onStartingChange({ ...starting, familiarity: e.target.value })}
               className="max-w-xs"
             >
-              {relationshipStages.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
+              {familiarityBands.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field
+          label="Starting regard"
+          hint={`How ${who} feels about the player when a chat begins — knowing someone and liking them are separate axes.`}
+        >
+          {(id) => (
+            <Select
+              id={id}
+              value={starting.regard}
+              onChange={(e) => onStartingChange({ ...starting, regard: e.target.value })}
+              className="max-w-xs"
+            >
+              {regardBands.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
                 </option>
               ))}
             </Select>
@@ -106,9 +122,9 @@ export function CharacterChat({
             <Textarea
               id={id}
               rows={2}
-              value={startingNote}
+              value={starting.note}
               maxLength={PLAYER_RELATIONSHIP_NOTE_MAX}
-              onChange={(e) => onStartingNoteChange(e.target.value)}
+              onChange={(e) => onStartingChange({ ...starting, note: e.target.value })}
               placeholder={`e.g. "you grew up next door to ${who} and just moved back"…`}
             />
           )}

@@ -82,15 +82,20 @@ exchange:
 
 ## Tracked state
 
-One `character_chat_state` row per **(chat, participant)** — PK `(chat_id, character_id)`: the full meter registry, affinity,
+One `character_chat_state` row per **(chat, participant)** — PK `(chat_id, character_id)`: the full meter registry, the two
+relationship axes (relationship-model v2: `regard` −100..100, the volatile feeling axis
+that was `affinity`; `familiarity` 0..100, the moments+time ratchet with its
+`familiarity_scene_gain` budget — trickle capped at `acquainted`, archivist facts push
+past it, reset on a time skip) plus the authored `relationship_record` texture
+(kind/history/`presented` mask/looming — `contracts/relationships/record.ts`),
 self-expiring conditions, the `mindNote`, the per-chat scenario (premise, free-text outfit
 + exposed flag, active social cards), the anti-repetition `surfacedCues` bands, the RAG
 carry-overs (`memoryQueries`, `open_loops` — the archivist's ≤3 "unfinished business"
 phrases, re-emitted in full each exchange so resolved loops fall off; persisted narrative
 `attributeOverlays`; `lastPulseTrace` / `lastMemoryTrace`), the relationship arc
-(`relationship_history` — a ≤200 sample ring `{at, clockMinutes, affinity, stage}`
-appended when affinity moved or a stage crossed; `milestones` — ≤100 of
-`first_exchange` / `stage_up` / `stage_down` / `strong_reaction` / `player_marked`),
+(`relationship_history` — a ≤200 sample ring `{at, clockMinutes, regard, band, familiarity}`
+appended when either axis moved; `milestones` — ≤100 of
+`first_exchange` / `stage_up` / `stage_down` / `familiarity_up` / `strong_reaction` / `player_marked`),
 the time model (`clock_minutes` — the **only** clock, D3/D8; `skip_history` ring ≤50;
 one-shot `pending_skip_note`), and `scene_auto` (`"off" | "milestones"`, the slice-9
 auto-scene toggle — text with headroom, never a boolean). `upsertChatState` is the
@@ -105,7 +110,7 @@ inspected/edited through the State-tools modal ([ui.md](ui.md) §The conversatio
 guarded state write:
 
 - **Pulse** (`runChatPulse`): classifies the exchange onto the §6 personality curve —
-  affinity/mood deltas, arousal bump for intimate concepts, mindNote refresh. Degrades to
+  regard/mood deltas, arousal bump for intimate concepts, mindNote refresh. Degrades to
   drift-only state. Skipped for `continue` beats (no player act to react to).
 - **Archivist-lite** (`runChatArchivist`): one call emitting five fields — the episode
   summary, `FactDraft[]`, next-turn `memoryQueries`, `attributeChanges` (applied through
@@ -183,7 +188,7 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `GET/POST /api/chats/:chatId/scene` | list **this chat's** scenes only (sibling chats / un-chat-keyed rows stay Gallery-only) · queue a `chat_scene_image` render via `queueChatScene` (409 `scene_busy` while one is live) |
 | `POST /api/chats/:chatId/remember` | "remember this" (spec §6.4, D15): pin an `origin:"player"` fact — confidence 1, no message anchor, force-retrieved, never superseded by extraction ([memory.md](memory.md)) |
 | `POST /api/chats/:chatId/time-skip` | `{amount: moments\|hours\|overnight\|days}` → `CHAT_SKIP_MINUTES`; clock + condition expiry + one-shot skip note + `skip_history`; meters untouched (D14) |
-| `GET /api/chats/:chatId/relationship` | Relationship-panel payload: stage, affinity, history samples, milestones, story-so-far, open loops |
+| `GET /api/chats/:chatId/relationship` | Relationship-panel payload: both axis bands + scalars, region label, texture, history samples, milestones, story-so-far, open loops |
 | `POST /api/chats/:chatId/milestones` | "mark this moment": append a `player_marked` milestone on a message (label defaults to a line excerpt) |
 | `POST /api/chats/:chatId/summary/rebuild` | `rebuildChatSummary` — reset + re-fold the rolling summary from the full transcript under the summary lock (heavy-write rate limited) |
 | `GET /api/chats/:chatId/export?format=md\|json&memory=1` | transcript export — title, scenario, story-so-far, transcript, opt-in memory appendix |

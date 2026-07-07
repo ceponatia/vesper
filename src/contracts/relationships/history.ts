@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { stageForValue } from "./stages";
+import { familiarityBandForValue, regardBandForValue } from "./bands";
 
 /**
  * Relationship history + milestones (character-chat-standalone.spec.md §7.2): the
@@ -8,6 +8,12 @@ import { stageForValue } from "./stages";
  * "mark this moment" action) — pure shapes + append/derive helpers here, IO in the
  * engine. They roll back with the pre-exchange snapshot for free ("another take"
  * undoes the sample/milestone its exchange recorded).
+ *
+ * v2 (relationship-model.plan.md): samples carry the REGARD scalar + band (the
+ * volatile axis — familiarity's slow ratchet gets its own milestone kind, not a
+ * per-exchange sample). The `stage_up`/`stage_down` milestone kind ids are kept as
+ * stored wire ids (rings already contain them); they now mean regard-band
+ * crossings.
  */
 
 /** Cap on history samples (~200 keeps the sparkline cheap and the row bounded). */
@@ -20,8 +26,10 @@ export const relationshipSampleSchema = z.object({
   at: z.string().catch(""),
   /** In-game clock at the sample (the fiction's own axis). */
   clockMinutes: z.number().catch(0),
-  affinity: z.number().catch(0),
-  stage: z.string().catch("stranger"),
+  regard: z.number().catch(0),
+  band: z.string().catch("neutral"),
+  /** The slow axis, sampled alongside regard so the panel can draw both lines. */
+  familiarity: z.number().catch(0),
 });
 export type RelationshipSample = z.infer<typeof relationshipSampleSchema>;
 
@@ -29,6 +37,7 @@ export const milestoneKindSchema = z.enum([
   "first_exchange",
   "stage_up",
   "stage_down",
+  "familiarity_up",
   "strong_reaction",
   "player_marked",
 ]);
@@ -56,14 +65,15 @@ export function appendMilestones(current: readonly Milestone[], added: readonly 
   return [...current, ...added].slice(-MILESTONES_CAP);
 }
 
-/** |affinityDelta| at or above this reads as a strong card-driven reaction milestone. */
+/** |regardDelta| at or above this reads as a strong card-driven reaction milestone. */
 export const STRONG_REACTION_DELTA = 4;
 
 /**
  * Derive the milestones one settled exchange produced (spec §7.2). PURE:
  * - `first_exchange` when there was no stored state before it;
- * - `stage_up` / `stage_down` when the stage band crossed (both directions);
- * - `strong_reaction` when the pulse moved affinity by ≥ STRONG_REACTION_DELTA
+ * - `stage_up` / `stage_down` when the REGARD band crossed (both directions);
+ * - `familiarity_up` when the ratchet crossed a familiarity band ("She let you in");
+ * - `strong_reaction` when the pulse moved regard by ≥ STRONG_REACTION_DELTA
  *   (the curve clamps at ±5, so this only fires on a genuinely charged beat).
  */
 export function deriveExchangeMilestones(input: {
@@ -71,10 +81,13 @@ export function deriveExchangeMilestones(input: {
   messageId?: string;
   characterName: string;
   firstExchange: boolean;
-  preAffinity: number;
-  postAffinity: number;
-  /** The pulse's signed affinity move this exchange (0 when skipped/degraded). */
-  affinityDelta: number;
+  preRegard: number;
+  postRegard: number;
+  /** The familiarity scalar before/after the exchange's ratchet ticks (equal ⇒ no crossing check). */
+  preFamiliarity?: number;
+  postFamiliarity?: number;
+  /** The pulse's signed regard move this exchange (0 when skipped/degraded). */
+  regardDelta: number;
   /** The matched concept label for the strong-reaction milestone text, if any. */
   concept?: string | null;
 }): Milestone[] {
@@ -83,19 +96,25 @@ export function deriveExchangeMilestones(input: {
   if (input.firstExchange) {
     out.push({ at, kind: "first_exchange", label: `First words with ${input.characterName}`, messageId });
   }
-  const pre = stageForValue(input.preAffinity);
-  const post = stageForValue(input.postAffinity);
+  const pre = regardBandForValue(input.preRegard);
+  const post = regardBandForValue(input.postRegard);
   if (pre.id !== post.id) {
-    const up = input.postAffinity > input.preAffinity;
     out.push({
       at,
-      kind: up ? "stage_up" : "stage_down",
-      label: up ? `${pre.label} → ${post.label}` : `${pre.label} → ${post.label}`,
+      kind: input.postRegard > input.preRegard ? "stage_up" : "stage_down",
+      label: `${pre.label} → ${post.label}`,
       messageId,
     });
   }
-  if (Math.abs(input.affinityDelta) >= STRONG_REACTION_DELTA) {
-    const warmed = input.affinityDelta > 0;
+  if (input.preFamiliarity !== undefined && input.postFamiliarity !== undefined) {
+    const preFam = familiarityBandForValue(input.preFamiliarity);
+    const postFam = familiarityBandForValue(input.postFamiliarity);
+    if (postFam.id !== preFam.id && input.postFamiliarity > input.preFamiliarity) {
+      out.push({ at, kind: "familiarity_up", label: `${input.characterName} let you in — ${postFam.label.toLowerCase()}`, messageId });
+    }
+  }
+  if (Math.abs(input.regardDelta) >= STRONG_REACTION_DELTA) {
+    const warmed = input.regardDelta > 0;
     out.push({
       at,
       kind: "strong_reaction",

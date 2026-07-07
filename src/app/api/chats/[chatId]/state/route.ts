@@ -11,6 +11,7 @@ import {
   DiagnosticCollector,
   effectiveTraitValue,
   emptyCharacterProfile,
+  relationshipTextureSchema,
   socialReactionCardSchema,
   type CharacterProfile,
 } from "@/contracts";
@@ -45,7 +46,10 @@ type Params = { chatId: string };
 
 const editBodySchema = z.object({
   premise: z.string().trim().max(CHAT_PREMISE_MAX_CHARS).optional(),
-  affinity: z.number().int().min(-100).max(100).optional(),
+  regard: z.number().int().min(-100).max(100).optional(),
+  familiarity: z.number().int().min(0).max(100).optional(),
+  /** Authored relationship texture (kind/history/mask/looming) — the state-tools edit surface. */
+  relationship: relationshipTextureSchema.optional(),
   mindNote: z.string().trim().max(CHAT_MIND_NOTE_MAX_CHARS).optional(),
   meters: z.record(z.string(), z.number()).optional(),
   conditions: z.array(activeConditionSchema).optional(),
@@ -53,7 +57,7 @@ const editBodySchema = z.object({
   outfitExposed: z.boolean().optional(),
   activeSocialCards: z.array(socialReactionCardSchema).optional(),
   // Inspector-grade fields (character-chat-standalone.spec.md §6.1): the dev/state-tools
-  // surface can rewrite everything stored — including the D11 gate bypass via `affinity`.
+  // surface can rewrite everything stored — including the D11 gate bypass via `regard`.
   openLoops: z.array(z.string().trim().max(200)).max(6).optional(),
   memoryQueries: z.array(z.string().trim().max(200)).max(6).optional(),
   surfacedCues: z.record(z.string(), z.string()).optional(),

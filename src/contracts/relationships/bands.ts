@@ -171,3 +171,26 @@ export function stageToAxes(stageId: string): { familiarity: number; regard: num
     regard: stageMidpoint(stageId),
   };
 }
+
+/**
+ * Map an old-vocabulary stage id to the two band ids (for migrating authored
+ * `{stage}` shapes into the authored record). The two evicted rungs re-home:
+ * `stranger` → `neutral`, `acquaintance` → `friendly`; every other stage id is
+ * also a regard band id.
+ */
+export function stageToBandIds(stageId: string): { familiarity: FamiliarityBandId; regard: RegardBandId } {
+  const familiarity = stageFamiliarity[stageId] ?? "strangers";
+  const regard =
+    stageId === "stranger" ? "neutral" : stageId === "acquaintance" ? "friendly" : regardBandById(stageId)?.id;
+  return { familiarity, regard: regard ?? "neutral" };
+}
+
+/**
+ * The reverse bridge for contracts still keyed to the old stage vocabulary
+ * (mood's touch welcomeness, emotion labels, disposition shifts — shared with
+ * the sessions lane until plan slice 7): every regard band id IS a stage id
+ * except `neutral`, which reads as `stranger` there.
+ */
+export function regardBandToStageId(bandId: string): string {
+  return bandId === "neutral" ? "stranger" : bandId;
+}
