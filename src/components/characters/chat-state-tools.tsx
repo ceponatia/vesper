@@ -63,6 +63,7 @@ function StateToolsForm({
   const toast = useToast();
   const [regard, setRegard] = useState(snapshot.regard);
   const [familiarity, setFamiliarity] = useState(snapshot.familiarity);
+  const [relationship, setRelationship] = useState(snapshot.relationship);
   const [meters, setMeters] = useState<Record<string, number>>({ ...snapshot.meters });
   const [conditions, setConditions] = useState<ActiveCondition[]>(snapshot.conditions);
   const [mindNote, setMindNote] = useState(snapshot.mindNote);
@@ -106,6 +107,7 @@ function StateToolsForm({
     const result = await chatsApi.editState(chatId, {
       regard,
       familiarity,
+      relationship,
       meters,
       conditions,
       mindNote,
@@ -158,6 +160,55 @@ function StateToolsForm({
           <span className="w-24 text-right text-xs text-paper-300">
             {familiarity} · {familiarityBand.label}
           </span>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Relationship texture</span>
+        <Input
+          value={relationship.kind}
+          onChange={(e) => setRelationship((r) => ({ ...r, kind: e.target.value }))}
+          placeholder='Kind — e.g. "estranged childhood friends"'
+          aria-label="Relationship kind"
+        />
+        <Input
+          value={relationship.history}
+          onChange={(e) => setRelationship((r) => ({ ...r, history: e.target.value }))}
+          placeholder="Shared history — one line the narrator can lean on"
+          aria-label="Shared history"
+        />
+        <div className="flex gap-2">
+          <select
+            value={relationship.presented?.lean ?? ""}
+            onChange={(e) => {
+              const lean = e.target.value;
+              setRelationship((r) => ({
+                ...r,
+                presented:
+                  lean === "" ? undefined : { lean: lean as "masks_warmth" | "masks_dislike", note: r.presented?.note ?? "" },
+              }));
+            }}
+            className="rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm text-paper-200"
+            aria-label="Outward mask"
+          >
+            <option value="">Honest — no mask</option>
+            <option value="masks_warmth">Acts colder than they feel</option>
+            <option value="masks_dislike">Acts warmer than they feel</option>
+          </select>
+          {relationship.presented ? (
+            <Input
+              value={relationship.presented.note}
+              onChange={(e) =>
+                setRelationship((r) => ({
+                  ...r,
+                  presented: r.presented ? { ...r.presented, note: e.target.value } : undefined,
+                }))
+              }
+              placeholder='Mask flavor — e.g. "icily civil"'
+              aria-label="Mask flavor"
+              className="flex-1"
+            />
+          ) : null}
         </div>
       </div>
 

@@ -79,6 +79,11 @@ function PanelBody({ chatId }: { chatId: string }) {
       ) : null}
 
       <section>
+        <SectionHeading>Where things stand</SectionHeading>
+        <PositionPlot history={data.history} familiarity={data.familiarity} regard={data.regard} />
+      </section>
+
+      <section>
         <SectionHeading>History</SectionHeading>
         <Sparkline history={data.history} currentBandLabel={data.regardBand.label} />
       </section>
@@ -110,6 +115,43 @@ function PanelBody({ chatId }: { chatId: string }) {
 
 function SectionHeading({ children }: { children: string }) {
   return <h3 className="mb-2 text-xs font-medium tracking-wide text-paper-500 uppercase">{children}</h3>;
+}
+
+/**
+ * The 2D relationship position (relationship-model v2 §UI, quadrant labels ruled
+ * in): familiarity on x (0..100), regard on y (−100..100), the sampled history
+ * as a faint trail behind the current point — enemies-to-lovers literally draws
+ * its arc through the plane. Corner names come from the header's region label;
+ * the plot itself stays quiet: axes, a zero line, the trail, the point.
+ */
+function PositionPlot({ history, familiarity, regard }: { history: RelationshipSample[]; familiarity: number; regard: number }) {
+  const x = (fam: number) => Math.max(0, Math.min(100, fam));
+  const y = (reg: number) => (100 - Math.max(-100, Math.min(100, reg))) / 2;
+  const trail = history.map((s) => `${x(s.familiarity)},${y(s.regard)}`).join(" ");
+  return (
+    <svg viewBox="0 0 100 100" role="img" aria-label={`Familiarity ${familiarity} of 100, regard ${regard} of ±100`} className="h-28 w-full text-accent-300">
+      <rect x={0} y={0} width={100} height={100} className="fill-ink-900/60 stroke-ink-600" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      <line x1={0} y1={50} x2={100} y2={50} className="stroke-ink-600" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      {history.length >= 2 ? (
+        <polyline
+          points={trail}
+          fill="none"
+          className="stroke-paper-600/60"
+          strokeWidth={1}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      ) : null}
+      <circle cx={x(familiarity)} cy={y(regard)} r={2.5} fill="currentColor" />
+      <text x={2} y={97} className="fill-paper-600" fontSize={5}>
+        strangers → deeply known
+      </text>
+      <text x={2} y={7} className="fill-paper-600" fontSize={5}>
+        warm ↑
+      </text>
+    </svg>
+  );
 }
 
 /**

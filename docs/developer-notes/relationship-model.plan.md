@@ -1,8 +1,12 @@
 # Relationship model v2 — familiarity × regard
 
-Status: active (build started 2026-07-07 — slices 1–3 done: contracts; the
+Status: active (build started 2026-07-07 — slices 1–4 done: contracts; the
 state/schema growth + the `affinity`→`regard` rename and migration 0028; the
-composed prompt block + disposition contrast + axis-contrast eval fixtures; scoped,
+composed prompt block + disposition contrast + axis-contrast eval fixtures; the
+player-edge UI — record editor with live law preview, state-tools texture, panel
+2D plot. Scenario presets still author the single legacy stage and seed through
+the bridge — band pickers fold into the matrix slice. Next: the substrate plan
+(multi-character-chat.plan.md), then slice 6 (the matrix); scoped,
 expanded, and **settled** 2026-07-07, every open question ruled and folded into
 its section below. The multi-character substrate this plan's matrix slice
 depends on is its own plan:
