@@ -41,8 +41,8 @@ export interface ContrastAxisSpec {
   cueRe?: RegExp;
 }
 
-/** The five measured axes — spec §5 (a)–(e). */
-export type ContrastGroupId = "state" | "sliders" | "stage" | "drunk" | "memory";
+/** The measured axes — spec §5 (a)–(e), plus the relationship-model v2 pairs (f)–(g). */
+export type ContrastGroupId = "state" | "sliders" | "stage" | "drunk" | "memory" | "familiarity" | "mask";
 
 export const CONTRAST_AXES: Record<ContrastGroupId, ContrastAxisSpec> = {
   state: {
@@ -58,8 +58,20 @@ export const CONTRAST_AXES: Record<ContrastGroupId, ContrastAxisSpec> = {
       "with the same sliders at the cold, inhibited pole (Warmth −80: keeps feeling at arm's length; Inhibition +80: easily embarrassed, holds back)",
   },
   stage: {
-    flagged: "with the relationship at the devoted stage (affinity 93 — deeply attached, protective, wholly yours)",
-    control: "with the relationship at the stranger stage (affinity 0 — no established relationship)",
+    flagged:
+      "with regard at the devoted band (93 — deeply attached, protective, wholly yours; familiarity identical across the pair)",
+    control: "with regard at the neutral band (0 — no established feeling either way; familiarity identical across the pair)",
+  },
+  familiarity: {
+    flagged:
+      "knowing the player deeply (familiarity 90 — twenty years of shared history, estranged; can reference his habits, past, and tells freely) while DISLIKING him (regard −25, identical across the pair)",
+    control:
+      "meeting the player as a total stranger (familiarity 2 — no shared history, nothing can be assumed about him) while disliking him the same amount (regard −25, identical across the pair)",
+  },
+  mask: {
+    flagged:
+      "genuinely warm toward the player (regard 57) but PERFORMING colder than she feels — a masks-warmth front (brisk, businesslike), the real warmth surfacing only off guard",
+    control: "genuinely warm toward the player (regard 57) with no mask — the warmth shows openly",
   },
   drunk: {
     flagged: "drunk (intoxication 0.8 — slurred edges, loose and disinhibited, poor judgement)",
@@ -268,6 +280,41 @@ const registerState = (regard: number): ChatState => ({
   premise: "Late evening at the bookshop-café; Wren is cashing out the register as you get ready to leave.",
 });
 
+// Axis (f): identical cool regard, familiarity flipped 2 (strangers) ↔ 90 (deeply
+// known, with the authored kind/history texture that IS what familiarity means).
+// The plan's bar: the blind judge distinguishes "familiar but hostile" from
+// "stranger but hostile".
+const estrangedState = (familiarity: number): ChatState => ({
+  meters: { ...NEUTRAL_METERS },
+  regard: -25,
+  familiarity,
+  relationship:
+    familiarity >= 55
+      ? {
+          kind: "estranged childhood friends of twenty years",
+          history: "he left town without a word years ago; you rebuilt the shop alone",
+          looming: false,
+        }
+      : undefined,
+  conditions: [],
+  premise: "He's taken the corner table at the bookshop-café and made it clear he isn't leaving until you talk to him.",
+});
+
+// Axis (g): identical warm regard + acquainted familiarity; only the mask flips.
+const maskState = (masked: boolean): ChatState => ({
+  meters: { ...NEUTRAL_METERS },
+  regard: 57,
+  familiarity: 42,
+  relationship: {
+    kind: "",
+    history: "",
+    looming: false,
+    presented: masked ? { lean: "masks_warmth", note: "brisk, businesslike, a little sharp" } : undefined,
+  },
+  conditions: [],
+  premise: "Closing time at the bookshop-café; the register is counted and he is somehow still here.",
+});
+
 // Axis (b): the sliders pair shares this state; only the profile's traits flip.
 const CLOSING_STATE: ChatState = {
   meters: { ...NEUTRAL_METERS },
@@ -300,6 +347,8 @@ const CONTRAST_SLIDERS_INPUT = "I keep finding excuses to come back to this shop
 const CONTRAST_STAGE_INPUT = "I'm about to head home. Walk with me?";
 const CONTRAST_DRUNK_INPUT = "Tell me the truth — what did you think of me the first time I walked in here?";
 const CONTRAST_MEMORY_INPUT = "What a week I've had. Distract me — ask me about anything else.";
+const CONTRAST_FAMILIARITY_INPUT = "You know exactly why I'm here. Say it.";
+const CONTRAST_MASK_INPUT = "Admit it — you're glad I stayed.";
 
 /** Assemble a contrast-pair chat prompt through the real builder (shape swept, focus N/A in chat). */
 function chatContrastBuild(o: {
@@ -635,5 +684,49 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
     playerInput: CONTRAST_MEMORY_INPUT,
     knownNames: [],
     build: chatContrastBuild({ profile: wrenProfile(), state: AFTERNOON_STATE, playerInput: CONTRAST_MEMORY_INPUT }),
+  },
+  // ── Relationship-model v2 pairs (relationship-model.plan.md §Eval): the axis split made measurable ──
+  {
+    id: "chat-contrast-familiar-hostile",
+    title: "Contrast (familiarity) — deeply known × cool: the estranged intimate",
+    lane: "chat",
+    contrast: { group: "familiarity", variant: "flagged" },
+    expectation:
+      "Twenty years of knowledge should show WITHOUT warmth: she can name what he's really here for, reference the shared past, read him precisely — while giving him nothing. Familiarity is not warmth; the dislike stays.",
+    playerInput: CONTRAST_FAMILIARITY_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: estrangedState(90), playerInput: CONTRAST_FAMILIARITY_INPUT }),
+  },
+  {
+    id: "chat-contrast-stranger-hostile",
+    title: "Contrast (familiarity) — strangers × cool (control)",
+    lane: "chat",
+    contrast: { group: "familiarity", variant: "control" },
+    expectation:
+      "Same dislike, but she genuinely has no idea why he's here and can't assume anything about him — cool deflection without any claim to know him.",
+    playerInput: CONTRAST_FAMILIARITY_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: estrangedState(2), playerInput: CONTRAST_FAMILIARITY_INPUT }),
+  },
+  {
+    id: "chat-contrast-masked",
+    title: "Contrast (mask) — warm regard behind a masks-warmth front",
+    lane: "chat",
+    contrast: { group: "mask", variant: "flagged" },
+    expectation:
+      "The performance holds: brisk, businesslike deflection of the tease — while the real warmth leaks in what she does rather than says (lingering, small accommodations, a beat too slow to object). Never openly admits being glad.",
+    playerInput: CONTRAST_MASK_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: maskState(true), playerInput: CONTRAST_MASK_INPUT }),
+  },
+  {
+    id: "chat-contrast-honest",
+    title: "Contrast (mask) — the same warmth, unmasked (control)",
+    lane: "chat",
+    contrast: { group: "mask", variant: "control" },
+    expectation: "The same warm regard with no front: the gladness can show openly, teasing or soft, without contradiction.",
+    playerInput: CONTRAST_MASK_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({ profile: wrenProfile(), state: maskState(false), playerInput: CONTRAST_MASK_INPUT }),
   },
 ];

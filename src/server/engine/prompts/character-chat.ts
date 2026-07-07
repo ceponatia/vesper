@@ -5,13 +5,12 @@ import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { deriveMoodDescriptor, splitStateCues } from "@/contracts/meters/registry";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
-import { stageDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
-import { dispositionBands, traitRegistry } from "@/contracts/personality/traits";
+import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
+import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
-import { ESCALATION_TIER_PHRASES } from "@/contracts/relationships/law";
-import { stageBehaviorProfile } from "@/contracts/relationships/profile";
+import { regardBandForValue } from "@/contracts/relationships/bands";
+import { composeRelationshipLaw, dispositionContrastLine } from "@/contracts/relationships/law";
 import type { RelationshipTexture } from "@/contracts/relationships/record";
-import { stageForValue } from "@/contracts/relationships/stages";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
@@ -132,24 +131,36 @@ export interface CharacterChatPromptInput {
 }
 
 /**
- * The "Relationship law" block (character-chat-standalone.spec.md §7.1) — the first
- * real consumer of the relationship stage: initiative/openness/address bands plus
- * the D11 escalation hard gate, rendered as behavioral law beside the Disposition.
- * Lives in the §9 stable prefix (it re-renders only on a stage change, which is
- * cache-friendly). The gate's three rulings are stated in the block itself: the
- * scenario premise overrides the floor, disinhibition never raises it, and authored
- * values (social cards) outrank everything.
+ * The composed "Relationship" block (character-chat-standalone.spec.md §7.1,
+ * rewritten by relationship-model v2): `composeRelationshipLaw` renders the two
+ * axes + authored texture (history → familiarity → regard → mask → corner →
+ * the D11 escalation gate, now keyed to REGARD), and the disposition-contrast
+ * line states the divergence when regard's sign disagrees with the authored
+ * warmth lean. Lives in the §9 stable prefix — it re-renders only on a band
+ * change on either axis (or an authored-texture edit), which is cache-friendly.
  */
-function buildRelationshipLawSection(regard: number, name: string): string {
-  const stage = stageForValue(regard);
-  const profile = stageBehaviorProfile(stage.id);
-  return [
-    `Relationship law (how far things have actually come between you — ${stage.label.toLowerCase()} — this governs your behavior; never recite it):`,
-    `- Initiative: ${profile.initiative}.`,
-    `- Openness: ${profile.openness}.`,
-    `- Address: ${profile.address}.`,
-    `- Escalation: at this stage ${name} entertains ${ESCALATION_TIER_PHRASES[profile.escalationFloor]}. Anything past that, deflect as ${name} would — ${profile.deflection} — always in your own voice and for your own reasons, never a meta refusal. EXCEPTIONS: if the Scenario above establishes you closer or already intimate, the scenario wins — play it. Being drunk or aroused may loosen your tone, but it never moves this line. And what you care about (your values above) still outranks everything here.`,
-  ].join("\n");
+function buildRelationshipSection(
+  state: CharacterChatPromptInput["state"],
+  characterName: string,
+  playerName: string | undefined,
+  traits: readonly TraitValue[],
+): string {
+  const target = playerName ?? "the user";
+  const law = composeRelationshipLaw({
+    name: target,
+    selfName: characterName,
+    familiarity: state?.familiarity ?? 0,
+    regard: state?.regard ?? 0,
+    kind: state?.relationship?.kind,
+    history: state?.relationship?.history,
+    presented: state?.relationship?.presented,
+  });
+  const contrast = dispositionContrastLine({
+    name: target,
+    warmth: effectiveTraitValue(traits, "temperament.warmth"),
+    regard: state?.regard ?? 0,
+  });
+  return contrast ? `${law}\n- ${contrast}` : law;
 }
 
 /** Lead line per skip amount (spec §8.1) — the fictional gap the next reply opens on. */
@@ -160,9 +171,9 @@ const SKIP_LEADS: Record<ChatSkipAmount, string> = {
   days: "Several days have passed since you last spoke.",
 };
 
-/** Stage-band tone for acknowledging the gap (warmer stages notice the absence more). */
-function skipToneForStage(stageId: string): string {
-  switch (stageId) {
+/** Regard-band tone for acknowledging the gap (warmer regard notices the absence more; `neutral` falls to the default arm). */
+function skipToneForBand(bandId: string): string {
+  switch (bandId) {
     case "hostile":
     case "wary":
     case "cool":
@@ -186,8 +197,8 @@ function skipToneForStage(stageId: string): string {
  * exchange that rendered it. Carries the "a life meanwhile" license (§8.2) —
  * one line of what the character was doing, prompt-only, no extra model call.
  */
-export function chatSkipNote(amount: ChatSkipAmount, stageId: string): string {
-  return `${SKIP_LEADS[amount]} ${skipToneForStage(stageId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
+export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string): string {
+  return `${SKIP_LEADS[amount]} ${skipToneForBand(regardBandId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
 }
 
 /** Cap on surfaced social-card framing lines, so a big card set can't flood the prompt. */
@@ -449,8 +460,8 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // the transient disinhibition shift (§4 — intoxication/arousal loosening
   // inhibition, guardedness, composure at render time) surfaces as a volatile
   // tail block listing just the bands it changed.
-  const stageId = stageForValue(input.state?.regard ?? 0).id;
-  const baseTraits = resolveTraits(profile.traits, stageDispositionOverlays(stageId, profile.traits));
+  const bandId = regardBandForValue(input.state?.regard ?? 0).id;
+  const baseTraits = resolveTraits(profile.traits, regardDispositionOverlays(bandId, profile.traits));
   const everydayDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: false });
   const intimateDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: true });
   const dispositionSection = everydayDisposition.length
@@ -532,7 +543,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
     dispositionSection,
-    buildRelationshipLawSection(input.state?.regard ?? 0, displayName),
+    buildRelationshipSection(input.state, displayName, playerName, profile.traits),
     socialFraming,
     attributeLines.length
       ? `Attributes (who you are — express these naturally, never list them):\n${attributeLines.join("\n")}`
