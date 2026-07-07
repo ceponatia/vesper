@@ -30,8 +30,8 @@ measurement follow-through.)_
 ## Next (queued)
 
 - **Character chat — enactment measurement run** (the shipped plan's one leftover) —
-  [character-chat-standalone.plan.md](character-chat-standalone.plan.md) §slice 2 / spec
-  §5. The paired-contrast fixtures + blind pair judge are built and dry-run validated;
+  [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)
+  §slice 2 / spec §5. The paired-contrast fixtures + blind pair judge are built and dry-run validated;
   the first **live judged run is owner-gated spend** (`pnpm eval:narration`, then
   `pnpm eval:narration:compare --axis contrast`). Bar: ≥80% blind identification per
   axis, else the axis's prompt wording gets tuned and re-run — the craft rules and
@@ -51,13 +51,18 @@ measurement follow-through.)_
   needs a `world-simulation.plan.md` when it becomes active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
+- **Relationship model v2 — familiarity × regard** —
+  [relationship-model.plan.md](relationship-model.plan.md) (draft — scoped
+  2026-07-07; **unsequenced, slot is the owner's call**). Split the one affinity
+  scalar into a knowledge axis + a feeling axis (+ attraction headroom), authored
+  kind/history/mask texture for cold-start, disposition-as-default rules.
 - **Codebase-review follow-on batches (2 & 4, session-side remainder)** — findings
   [codebase-review.md](codebase-review.md) §C–E; no plans yet (each needs its
   `<topic>.plan.md` when it becomes active): **prompt intelligence** (§C — session-lane
   cast voices, content-framing/no-refusal port, intimate + dialogue craft rules for the
   session lane, forge upgrades), **dedup & cleanup sweep** (§E — non-chat items).
   **Batch 3 (§D chat-lane consolidation) and the chat-side items of §C/§E are absorbed
-  into [character-chat-standalone.plan.md](character-chat-standalone.plan.md)** (top of
+  into [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)** (top of
   this list). Sequenced after batch 1 per the 2026-07-02 agreement; where the remainder
   slots versus the feature work above is the author's call.
 
@@ -74,8 +79,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **Character chat — the standalone experience** —
-  [character-chat-standalone.plan.md](character-chat-standalone.plan.md) · spec
-  [character-chat-standalone.spec.md](character-chat-standalone.spec.md) — 2026-07-02 —
+  [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md) · spec
+  [finished/character-chat-standalone.spec.md](finished/character-chat-standalone.spec.md) — 2026-07-02 —
   all nine slices in one arc: chat became a product surface (/chat hub + full-screen
   conversation, conversations-plural on a re-keyed schema, presets, takes/go-on/stop),
   then slices 6–9 finished it — prompt-cache split + craft rules, the measured-floor
@@ -84,7 +89,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   (stage law/history/milestones/panel/export/rebuild) + in-game-only time with player
   skips, and inline anchored scene moments with opt-in auto-at-big-moments. Post-ship
   review (2026-07-06) fixed four rollback/lock correctness bugs —
-  [character-chat-standalone.followups.md](character-chat-standalone.followups.md).
+  [finished/character-chat-standalone.followups.md](finished/character-chat-standalone.followups.md).
   Leftover: the live enactment measurement run (top of **Next**).
 - **Mood-reactive avatars — rollback** —
   [avatar-3d.plan.md](avatar-3d.plan.md) §Rollback, 2026-07-02. The emotion-image layer
