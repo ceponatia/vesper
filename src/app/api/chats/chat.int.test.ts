@@ -40,6 +40,7 @@ import { POST as chatsCreate } from "./route";
 import { DELETE as chatDelete, GET as chatGet, POST as chatSend } from "./[chatId]/route";
 import { DELETE as msgDelete, PATCH as msgPatch } from "./[chatId]/messages/[messageId]/route";
 import { PATCH as takePatch } from "./[chatId]/messages/[messageId]/take/route";
+import { GET as sceneList } from "./[chatId]/scene/route";
 import { PATCH as statePatch } from "./[chatId]/state/route";
 
 async function probe(): Promise<boolean> {
@@ -374,6 +375,42 @@ describe("GET + DELETE /api/chats/:chatId", () => {
     expect(a?.prompt).toBe(""); // A's scene scrubbed…
     expect(a?.chatId).toBeNull(); // …and its FK SET NULL by the chat delete (asset survives)
     expect(b?.prompt).toBe("Chat B's secret moment."); // the sibling conversation is untouched
+    await chatDelete(delReq(chatB.id), ctx(chatB.id));
+  });
+
+  it("scene list is scoped to the conversation — sibling and un-chat-keyed scenes never leak in", async (t) => {
+    if (!ready) return t.skip();
+    const chatA = await createChat(ids.character);
+    const chatB = await createChat(ids.character);
+    const seed = (chatId: string | null, path: string) =>
+      db()
+        .insert(images)
+        .values({
+          ownerId: authState.user.id,
+          kind: "scene",
+          entityKind: "character",
+          entityId: ids.character,
+          chatId,
+          path,
+          prompt: "moment",
+        })
+        .returning({ id: images.id });
+    const [[sceneA], [sceneB]] = await Promise.all([
+      seed(chatA.id, "images/test/scoped-a.webp"),
+      seed(chatB.id, "images/test/scoped-b.webp"),
+      seed(null, "images/test/scoped-legacy.webp"), // gallery-only; must not surface in any chat
+    ]);
+
+    const res = await sceneList(getReq(chatA.id), ctx(chatA.id));
+    expect(res.status).toBe(200);
+    const { scenes } = (await res.json()) as { scenes: { id: string }[] };
+    expect(scenes.map((s) => s.id)).toEqual([sceneA!.id]); // A's own scene only — no sibling, no legacy
+
+    const resB = await sceneList(getReq(chatB.id), ctx(chatB.id));
+    const { scenes: scenesB } = (await resB.json()) as { scenes: { id: string }[] };
+    expect(scenesB.map((s) => s.id)).toEqual([sceneB!.id]);
+
+    await chatDelete(delReq(chatA.id), ctx(chatA.id));
     await chatDelete(delReq(chatB.id), ctx(chatB.id));
   });
 });
