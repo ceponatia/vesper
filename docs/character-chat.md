@@ -173,7 +173,7 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `PATCH /api/chats/:chatId/messages/:messageId/take` | make a recorded take the displayed reply (display-only; spec §4.1) |
 | `GET/POST /api/chat-presets` · `DELETE /api/chat-presets/:id` | scenario presets (spec §1.5); `POST /api/chats {presetId}` seeds a new conversation from one. UI: Apply/Save-as/Delete preset in `chat-scenario-modal.tsx`, "Start from preset" in `new-chat-dialog.tsx` |
 | `GET/PATCH/POST /api/chats/:chatId/state` | state snapshot (drift-on-read) · author edit (`ChatStateEdit`, every stored column) · action chip |
-| `GET/POST /api/chats/:chatId/scene` | list **this chat's** scenes (+ the character's legacy null-`chatId` rows) · queue a `chat_scene_image` render via `queueChatScene` (409 `scene_busy` while one is live) |
+| `GET/POST /api/chats/:chatId/scene` | list **this chat's** scenes only (sibling chats / un-chat-keyed rows stay Gallery-only) · queue a `chat_scene_image` render via `queueChatScene` (409 `scene_busy` while one is live) |
 | `POST /api/chats/:chatId/remember` | "remember this" (spec §6.4, D15): pin an `origin:"player"` fact — confidence 1, no message anchor, force-retrieved, never superseded by extraction ([memory.md](memory.md)) |
 | `POST /api/chats/:chatId/time-skip` | `{amount: moments\|hours\|overnight\|days}` → `CHAT_SKIP_MINUTES`; clock + condition expiry + one-shot skip note + `skip_history`; meters untouched (D14) |
 | `GET /api/chats/:chatId/relationship` | Relationship-panel payload: stage, affinity, history samples, milestones, story-so-far, open loops |

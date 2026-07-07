@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 import { db, images } from "@/server/db";
@@ -12,16 +12,16 @@ type Params = { chatId: string };
  * Scene images for a conversation (docs/character-chat.md; slice 9 — inline scene
  * moments). POST queues a sessionless scene render (a `chat_scene_image` job — the
  * api-side path, recovered by the detached-job sweep) centred on the recent chat and
- * anchored to the newest assistant line; GET lists this CHAT's scenes (plus the
- * character's legacy un-chat-keyed ones) so the strip and the inline transcript
- * moments can poll for the new one. Assets stay filed against the character too
+ * anchored to the newest assistant line; GET lists this CHAT's scenes only —
+ * sibling conversations with the same character never leak in (the cross-chat
+ * view is the Gallery's job). Assets stay filed against the character too
  * (kind="scene", entityKind="character"), so they still surface in the Gallery.
  */
 
 /** POST body: no options today — character-chat scenes are single-reference (one subject). */
 const sceneBodySchema = z.object({});
 
-/** GET /api/chats/:chatId/scene — this chat's scenes (+ legacy unanchored), newest first. */
+/** GET /api/chats/:chatId/scene — this chat's scenes only, newest first. */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
@@ -36,9 +36,9 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
         eq(images.kind, "scene"),
         eq(images.entityKind, "character"),
         eq(images.entityId, owned.character.id),
-        // Chat-keyed rows scope to THIS conversation; legacy rows (pre-slice-9, no
-        // chatId) stay visible everywhere the character chats, as before.
-        or(eq(images.chatId, chatId), isNull(images.chatId)),
+        // Scoped to THIS conversation — a sibling chat's scenes (or un-chat-keyed
+        // rows) belong to the Gallery, not here.
+        eq(images.chatId, chatId),
       ),
     )
     .orderBy(desc(images.createdAt));
