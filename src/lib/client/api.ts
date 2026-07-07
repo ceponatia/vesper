@@ -847,8 +847,12 @@ export const chatsApi = {
   /** Rename, archive, or restore a conversation. */
   update: (chatId: string, patch: { title?: string; archived?: boolean }) =>
     apiPatch(z.unknown(), `/api/chats/${chatId}`, patch),
-  /** Create a conversation — D7 memory choice: `"shared"` continues the history, `"fresh"` is a clean island. */
-  create: (body: { characterId: string; title?: string; memory: "shared" | "fresh"; presetId?: string }) =>
+  /**
+   * Create a conversation — D7 memory choice: `"shared"` continues the history, `"fresh"`
+   * is a clean island. `characterIds` order matters: the first is the primary participant
+   * (roster groundwork — the conversation is still 1-on-1 with the primary for now).
+   */
+  create: (body: { characterIds: string[]; title?: string; memory: "shared" | "fresh"; presetId?: string }) =>
     apiPost(createdRefSchema, "/api/chats", body),
   /** The full conversation envelope: transcript (oldest first) + chat header + character card. */
   transcript: (chatId: string) => apiGet(chatTranscriptSchema, `/api/chats/${chatId}`),

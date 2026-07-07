@@ -11,12 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { charactersApi, chatPresetsApi, chatsApi, type ApiResult, type CharacterSummary, type ChatPreset } from "@/lib/client/api";
 
+/** Roster cap — mirrors the server's MAX_CHAT_PARTICIPANTS (relationship-model.plan.md "2–4 typical"). */
+const MAX_PICKS = 4;
+
 /**
- * Start a conversation (character-chat-standalone.spec.md §2.2): pick a character
- * (skipped when the caller already knows one — the editor tab / a library card),
- * choose the D7 memory mode, optionally start from a saved scenario preset (spec
- * §1.5 — the server seeds the new conversation's state from it), optionally title
- * it, then create + navigate to the full-screen conversation. The memory choice is
+ * Start a conversation (character-chat-standalone.spec.md §2.2): pick one or more
+ * characters (skipped when the caller already knows one — the editor tab / a
+ * library card), choose the D7 memory mode, optionally start from a saved scenario
+ * preset (spec §1.5 — the server seeds the new conversation's state from it),
+ * optionally title it, then create + navigate to the full-screen conversation.
+ * Selection order matters: the first pick is the conversation's primary
+ * participant — until the multi-character substrate ships
+ * (relationship-model.plan.md slice 5), the exchange itself is still 1-on-1 with
+ * the primary and extra picks are inert roster groundwork. The memory choice is
  * always shown with "shared" as the default: for a first-ever chat the two are
  * equivalent (a fresh group is minted either way), so the copy speaks in "if any"
  * terms rather than probing for priors.
@@ -32,7 +39,8 @@ export function NewChatDialog({
   characterId?: string;
 }) {
   const router = useRouter();
-  const [picked, setPicked] = useState<string | null>(null);
+  /** Selection order preserved — index 0 is the primary participant. */
+  const [picked, setPicked] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
   const [memory, setMemory] = useState<"shared" | "fresh">("shared");
   const [presetId, setPresetId] = useState("");
@@ -52,7 +60,7 @@ export function NewChatDialog({
     () => (open ? chatPresetsApi.list() : Promise.resolve<ApiResult<ChatPreset[]>>({ ok: true, data: [] })),
     [open],
   );
-  const selectedId = characterId ?? picked;
+  const selectedIds = characterId ? [characterId] : picked;
 
   const filtered = useMemo(() => {
     const all = characters.data ?? [];
@@ -60,8 +68,14 @@ export function NewChatDialog({
     return q ? all.filter((c) => c.name.toLowerCase().includes(q)) : all;
   }, [characters.data, filter]);
 
+  const togglePick = (id: string) => {
+    setPicked((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : prev.length < MAX_PICKS ? [...prev, id] : prev,
+    );
+  };
+
   const reset = () => {
-    setPicked(null);
+    setPicked([]);
     setFilter("");
     setMemory("shared");
     setPresetId("");
@@ -76,11 +90,11 @@ export function NewChatDialog({
   };
 
   const create = async () => {
-    if (!selectedId || creating) return;
+    if (selectedIds.length === 0 || creating) return;
     setCreating(true);
     setError(null);
     const result = await chatsApi.create({
-      characterId: selectedId,
+      characterIds: selectedIds,
       memory,
       title: title.trim() || undefined,
       presetId: presetId || undefined,
@@ -104,7 +118,7 @@ export function NewChatDialog({
           <Button onClick={close} disabled={creating}>
             Cancel
           </Button>
-          <Button variant="primary" busy={creating} disabled={!selectedId} onClick={() => void create()}>
+          <Button variant="primary" busy={creating} disabled={selectedIds.length === 0} onClick={() => void create()}>
             Start chatting
           </Button>
         </>
@@ -113,7 +127,7 @@ export function NewChatDialog({
       <div className="flex flex-col gap-4">
         {needsPicker ? (
           <div>
-            <p className="mb-2 text-xs tracking-wide text-paper-500 uppercase">Who with?</p>
+            <p className="mb-2 text-xs tracking-wide text-paper-500 uppercase">Who with? (up to {MAX_PICKS})</p>
             <Input placeholder="Filter characters…" value={filter} onChange={(e) => setFilter(e.target.value)} />
             <div className="mt-2 grid max-h-56 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
               {characters.loading ? (
@@ -121,25 +135,42 @@ export function NewChatDialog({
               ) : filtered.length === 0 ? (
                 <p className="col-span-full text-sm text-paper-500">No characters match.</p>
               ) : (
-                filtered.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setPicked(c.id)}
-                    aria-pressed={picked === c.id}
-                    className={cx(
-                      "flex flex-col items-center gap-1 rounded-md border p-1.5 text-center transition-colors",
-                      picked === c.id
-                        ? "border-accent-500 bg-ink-800"
-                        : "border-transparent hover:border-ink-600 hover:bg-ink-800/60",
-                    )}
-                  >
-                    <EntityImage imageId={c.avatarImageId} name={c.name} className="size-12 rounded-full text-sm" />
-                    <span className="w-full truncate text-[11px] text-paper-300">{c.name}</span>
-                  </button>
-                ))
+                filtered.map((c) => {
+                  const order = picked.indexOf(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => togglePick(c.id)}
+                      aria-pressed={order >= 0}
+                      className={cx(
+                        "relative flex flex-col items-center gap-1 rounded-md border p-1.5 text-center transition-colors",
+                        order >= 0
+                          ? "border-accent-500 bg-ink-800"
+                          : "border-transparent hover:border-ink-600 hover:bg-ink-800/60",
+                      )}
+                    >
+                      {order >= 0 && picked.length > 1 ? (
+                        <span
+                          aria-hidden
+                          className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-accent-500 text-[10px] font-semibold text-ink-900"
+                        >
+                          {order + 1}
+                        </span>
+                      ) : null}
+                      <EntityImage imageId={c.avatarImageId} name={c.name} className="size-12 rounded-full text-sm" />
+                      <span className="w-full truncate text-[11px] text-paper-300">{c.name}</span>
+                    </button>
+                  );
+                })
               )}
             </div>
+            {picked.length > 1 ? (
+              <p className="mt-1.5 text-[11px] text-paper-600">
+                Group chat groundwork: the first pick leads the conversation for now — the others join fully when
+                multi-character chat lands.
+              </p>
+            ) : null}
           </div>
         ) : null}
 
