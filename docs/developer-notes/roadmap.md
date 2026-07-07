@@ -52,13 +52,22 @@ measurement follow-through.)_
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **Relationship model v2 — familiarity × regard** —
-  [relationship-model.plan.md](relationship-model.plan.md) (draft — scoped
-  2026-07-07, expanded same day; **unsequenced, slot is the owner's call**). Split
-  the one affinity scalar into a knowledge axis + a feeling axis (+ attraction
-  headroom), authored kind/history/mask texture for cold-start,
-  disposition-as-default rules — plus per-pair NPC↔NPC records via a per-conversation
-  matrix, a multi-character chat substrate (presence + salience-tiered injection),
-  and a sessions earmark.
+  [relationship-model.plan.md](relationship-model.plan.md) (next — scoped, expanded,
+  and **settled** 2026-07-07, all open questions ruled; **unsequenced, slot is the
+  owner's call**). Split the one affinity scalar into a knowledge axis + a feeling
+  axis (+ attraction headroom), authored kind/history/mask texture for cold-start,
+  disposition-as-default rules, the `affinity`→`regard` rename — plus per-pair
+  NPC↔NPC records via a per-conversation matrix seeded from a library-level
+  Relationships tab, reactive + looming absent-character injection, and a sessions
+  earmark. Its matrix slice depends on the substrate plan below.
+- **Multi-character chat — the substrate** —
+  [multi-character-chat.plan.md](multi-character-chat.plan.md) (next — split out of
+  the relationship plan 2026-07-07; slots after that plan's slices 1–3, before its
+  matrix slice). Roster of 2–4 full characters per conversation, narrative presence
+  + activity recency, the one-block ensemble prompt frame, player-owns-himself
+  narration authority, referenced-only pulse + tier-1 memory legs. Creation
+  groundwork (multi-select dialog, `characterIds` API, sort-0 primary) shipped
+  2026-07-07.
 - **Codebase-review follow-on batches (2 & 4, session-side remainder)** — findings
   [codebase-review.md](codebase-review.md) §C–E; no plans yet (each needs its
   `<topic>.plan.md` when it becomes active): **prompt intelligence** (§C — session-lane

@@ -25,7 +25,7 @@ import { editChatState } from "@/server/engine";
  * POST creates one — with the D7 memory choice: "shared" reuses each character's existing
  * memory group (the relationship remembers), "fresh" mints a clean island (an alternate
  * universe). One character can host many conversations. A conversation can hold a roster
- * of up to 4 characters (relationship-model.plan.md groundwork) — the first is the
+ * of up to 4 characters (multi-character-chat.plan.md groundwork) — the first is the
  * primary participant the exchange pipeline runs against; the rest are inert until the
  * multi-character substrate ships.
  */
@@ -34,7 +34,7 @@ import { editChatState } from "@/server/engine";
 const LIST_LIMIT = 100;
 
 /**
- * Roster cap (relationship-model.plan.md §Multi-character chat substrate — "2–4
+ * Roster cap (multi-character-chat.plan.md — "2–4
  * typical"): creation groundwork accepts up to 4 characters; the conversation
  * experience itself stays 1-on-1 with the primary (sort 0) until the
  * multi-character substrate ships.
@@ -197,7 +197,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
   // scenario modal does — through the author-edit state path, on top of the
   // authored seed (so the character's own cards apply when the preset has none).
   // Seeds the PRIMARY participant only — per-participant scenario seeding is a
-  // multi-character-substrate concern (relationship-model.plan.md slice 5).
+  // multi-character-substrate concern (multi-character-chat.plan.md).
   if (body.value.presetId) {
     const [preset] = await db()
       .select({

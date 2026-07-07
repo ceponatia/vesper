@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { charactersApi, chatPresetsApi, chatsApi, type ApiResult, type CharacterSummary, type ChatPreset } from "@/lib/client/api";
 
-/** Roster cap — mirrors the server's MAX_CHAT_PARTICIPANTS (relationship-model.plan.md "2–4 typical"). */
+/** Roster cap — mirrors the server's MAX_CHAT_PARTICIPANTS (multi-character-chat.plan.md "2–4 typical"). */
 const MAX_PICKS = 4;
 
 /**
@@ -22,7 +22,7 @@ const MAX_PICKS = 4;
  * optionally title it, then create + navigate to the full-screen conversation.
  * Selection order matters: the first pick is the conversation's primary
  * participant — until the multi-character substrate ships
- * (relationship-model.plan.md slice 5), the exchange itself is still 1-on-1 with
+ * (multi-character-chat.plan.md), the exchange itself is still 1-on-1 with
  * the primary and extra picks are inert roster groundwork. The memory choice is
  * always shown with "shared" as the default: for a first-ever chat the two are
  * equivalent (a fresh group is minted either way), so the copy speaks in "if any"
