@@ -14,9 +14,19 @@ export function useFocusTrap(
   onClose: () => void,
   panelRef: RefObject<HTMLElement | null>,
 ): void {
+  // Focus-on-open lives in its own effect keyed only on `open`: callers pass
+  // inline `onClose` functions, so an effect that both depends on `onClose` and
+  // calls focus() re-runs on every parent render and yanks focus out of
+  // whatever input the user is typing in (one keystroke per click). The
+  // `contains` guard also lets an autoFocus child keep focus on open.
   useEffect(() => {
     if (!open) return;
-    panelRef.current?.focus();
+    const panel = panelRef.current;
+    if (panel && !panel.contains(document.activeElement)) panel.focus();
+  }, [open, panelRef]);
+
+  useEffect(() => {
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onClose();
