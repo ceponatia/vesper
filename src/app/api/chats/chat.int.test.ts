@@ -118,7 +118,7 @@ async function pollUntil<T>(probe: () => Promise<T | null>): Promise<T | null> {
 
 /** Create a conversation through the real POST /api/chats handler (the D7 memory choice). */
 async function createChat(characterId: string, memory: "shared" | "fresh" = "fresh"): Promise<{ id: string; memoryGroupId: string }> {
-  const res = await chatsCreate(createReq({ characterId, memory }), collectionCtx);
+  const res = await chatsCreate(createReq({ characterIds: [characterId], memory }), collectionCtx);
   if (res.status !== 201) throw new Error(`chat create failed: ${res.status}`);
   return (await res.json()) as { id: string; memoryGroupId: string };
 }

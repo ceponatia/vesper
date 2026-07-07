@@ -10,7 +10,14 @@ and is now a **primary feature** (and the current product focus — see
 [developer-notes/character-chat-standalone.plan.md](developer-notes/character-chat-standalone.plan.md)):
 it carries its own tracked state, long-term RAG memory, evolving attributes, scenario
 system, a stage-driven relationship arc, in-game time, and scene images. It is deliberately **not** a session: no locations, presence,
-exposure mask, wardrobe state, story threads, or multi-character cast. Where the two lanes
+exposure mask, wardrobe state, story threads, or multi-character cast. (One seam has
+opened toward that last point: a conversation can now be **created** with a roster of up
+to 4 characters — `POST /api/chats` takes `characterIds`, `chat_participants` holds one
+row per character, `sort 0` is the primary — but the exchange pipeline still runs 1-on-1
+against the primary; the extra participants are inert groundwork for the multi-character
+substrate in
+[developer-notes/relationship-model.plan.md](developer-notes/relationship-model.plan.md).)
+Where the two lanes
 share a mechanism (memory scope, the §6 reaction curve, disposition rendering, narration
 shape, artifact stripping, the generate-timeout race, the draining stream Response), they
 share **one implementation** — the chat lane must never re-fork session machinery.

@@ -199,7 +199,7 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
     const { id: presetId } = (await created.json()) as { id: string };
 
     const chatRes = await chatsCreate(
-      chatCreateReq({ characterId: ids.character, memory: "fresh", presetId }),
+      chatCreateReq({ characterIds: [ids.character], memory: "fresh", presetId }),
       collectionCtx,
     );
     expect(chatRes.status).toBe(201);
@@ -235,7 +235,7 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
     });
 
     const chatRes = await chatsCreate(
-      chatCreateReq({ characterId: ids.character, memory: "fresh", presetId: foreignId }),
+      chatCreateReq({ characterIds: [ids.character], memory: "fresh", presetId: foreignId }),
       collectionCtx,
     );
     expect(chatRes.status).toBe(201); // a stale/foreign preset never fails the create

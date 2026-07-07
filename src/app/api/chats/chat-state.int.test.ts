@@ -113,7 +113,7 @@ async function createChat(characterId: string): Promise<string> {
     new NextRequest("http://t/api/chats", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ characterId, memory: "fresh" }),
+      body: JSON.stringify({ characterIds: [characterId], memory: "fresh" }),
     }),
     { params: Promise.resolve({}) },
   );

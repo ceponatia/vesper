@@ -53,9 +53,12 @@ measurement follow-through.)_
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **Relationship model v2 — familiarity × regard** —
   [relationship-model.plan.md](relationship-model.plan.md) (draft — scoped
-  2026-07-07; **unsequenced, slot is the owner's call**). Split the one affinity
-  scalar into a knowledge axis + a feeling axis (+ attraction headroom), authored
-  kind/history/mask texture for cold-start, disposition-as-default rules.
+  2026-07-07, expanded same day; **unsequenced, slot is the owner's call**). Split
+  the one affinity scalar into a knowledge axis + a feeling axis (+ attraction
+  headroom), authored kind/history/mask texture for cold-start,
+  disposition-as-default rules — plus per-pair NPC↔NPC records via a per-conversation
+  matrix, a multi-character chat substrate (presence + salience-tiered injection),
+  and a sessions earmark.
 - **Codebase-review follow-on batches (2 & 4, session-side remainder)** — findings
   [codebase-review.md](codebase-review.md) §C–E; no plans yet (each needs its
   `<topic>.plan.md` when it becomes active): **prompt intelligence** (§C — session-lane

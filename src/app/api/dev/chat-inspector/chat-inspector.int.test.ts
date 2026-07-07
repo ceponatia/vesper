@@ -71,7 +71,7 @@ const delReq = (path: string) => new NextRequest(`http://t${path}`, { method: "D
 
 /** Create a conversation through the real POST /api/chats handler. */
 async function createChat(characterId: string): Promise<{ id: string; memoryGroupId: string }> {
-  const res = await chatsCreate(jsonReq("/api/chats", "POST", { characterId, memory: "fresh" }), collectionCtx);
+  const res = await chatsCreate(jsonReq("/api/chats", "POST", { characterIds: [characterId], memory: "fresh" }), collectionCtx);
   if (res.status !== 201) throw new Error(`chat create failed: ${res.status}`);
   return (await res.json()) as { id: string; memoryGroupId: string };
 }

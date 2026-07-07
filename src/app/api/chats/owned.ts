@@ -1,13 +1,16 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { characterChats, characters, chatParticipants, db } from "@/server/db";
 import { keyedLockBusy } from "@/server/engine";
 import { jsonError } from "@/server/api";
 
 /**
- * Resolve a conversation the user owns, with its (v1 single) participant and the
- * participant's character row slice — the one indexed lookup every /api/chats/[chatId]
- * route runs before doing anything (ownership lives on the chat row;
- * character-chat-standalone.spec.md §1.2).
+ * Resolve a conversation the user owns, with its PRIMARY participant (sort 0) and
+ * that participant's character row slice — the one indexed lookup every
+ * /api/chats/[chatId] route runs before doing anything (ownership lives on the chat
+ * row; character-chat-standalone.spec.md §1.2). A conversation can now hold a
+ * multi-character roster (relationship-model.plan.md — creation groundwork), but
+ * the whole exchange pipeline is still 1-on-1 with the primary until the
+ * multi-character substrate ships; extra participants are inert.
  */
 export interface OwnedChat {
   chat: { id: string; ownerId: string; title: string; archivedAt: Date | null; lastMessageAt: Date };
@@ -34,6 +37,7 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
     .innerJoin(chatParticipants, eq(chatParticipants.chatId, characterChats.id))
     .innerJoin(characters, eq(characters.id, chatParticipants.characterId))
     .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, userId)))
+    .orderBy(asc(chatParticipants.sort))
     .limit(1);
   if (!row) return null;
   return {

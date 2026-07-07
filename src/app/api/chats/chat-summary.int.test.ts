@@ -95,7 +95,7 @@ beforeAll(async () => {
     new NextRequest("http://t/api/chats", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ characterId: character.id, memory: "fresh" }),
+      body: JSON.stringify({ characterIds: [character.id], memory: "fresh" }),
     }),
     { params: Promise.resolve({}) },
   );

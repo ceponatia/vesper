@@ -188,13 +188,14 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
   const sink = new DiagnosticCollector();
   const { chatId } = payload;
 
-  // The (v1 single) participant names the fold prompt's character; a chat deleted
-  // mid-flight is a logged no-op, never a crash loop.
+  // The PRIMARY participant (sort 0) names the fold prompt's character; a chat
+  // deleted mid-flight is a logged no-op, never a crash loop.
   const [character] = await db()
     .select({ name: characters.name })
     .from(chatParticipants)
     .innerJoin(characters, eq(characters.id, chatParticipants.characterId))
     .where(eq(chatParticipants.chatId, chatId))
+    .orderBy(asc(chatParticipants.sort))
     .limit(1);
   if (!character) {
     log.warn("chat_summary", "chat/participant missing; fold dropped", { chatId, jobId });
