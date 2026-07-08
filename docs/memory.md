@@ -59,7 +59,7 @@ Both lanes retrieve facts + episodes with **per-query embedding + reciprocal-ran
 
 ## Library search embeddings
 
-`characters/locations/items.search_embedding` power fuzzy name resolution (merge-reducer grounding, forge dedup, library search). Refreshed by an `embed_refresh` job on create/update — a stale embedding degrades search, never correctness (exact-name match is tried first).
+`characters/locations/items/social_cards.search_embedding` power fuzzy name resolution (merge-reducer grounding, forge dedup, library search). Refreshed by an `embed_refresh` job on create/update — a stale embedding degrades search, never correctness (exact-name match is tried first).
 
 ## Embedder isolation
 

@@ -2,9 +2,14 @@
 
 # Relationships and disposition
 
-Two related systems live here: **relationships** (how an NPC feels about the player, as a number with readable stage labels) and **disposition** (an NPC's authored personality — traits, preferences, and tags that shape how they react).
+Two related systems live here: **relationships** (how two people relate — represented one of two ways, per lane) and **disposition** (an NPC's authored personality — traits, preferences, and tags that shape how they react).
 
-## Relationship stages
+Relationships have **two representations**, one per lane:
+
+- The **sessions lane** uses a single **affinity** scalar with readable **stage** labels (`stages.ts` — [Relationship stages](#relationship-stages-sessions-lane) below). Still the live model for `participant_relationships` / `world_cast` until the sessions refactor (relationship-model plan slice 7).
+- The **character-chat lane** uses the shipped **two-axis** model — **familiarity × regard** (`record.ts` / `bands.ts` / `law.ts` / `history.ts`; migration 0028). See [Two-axis model](#two-axis-model-familiarity--regard).
+
+## Relationship stages (sessions lane)
 
 Affinity is a single number from −100 to 100. `relationships/stages.ts` puts readable labels over it — **eleven stages**, widened from the original seven in personality Slice 5 for finer, romance-leaning progression:
 
@@ -33,6 +38,34 @@ hostile · wary · cool · stranger · acquaintance · friendly · warm · close
 | `indeterminate` | Nothing matched. |
 
 Spawn seeds the NPC's `perceived` edge from this: `mutual` and `indeterminate` mirror the feeling midpoint, `first-meeting` seeds no row (`server/engine/relationship-seeds.ts`).
+
+## Two-axis model (familiarity × regard)
+
+The **character-chat lane** replaced the single affinity scalar with **two independent axes** (relationship-model.plan.md; migration 0028 renamed the `affinity` column to `regard` and added a `familiarity` column + a `relationship_record` jsonb to `character_chat_state`). Directed from day one — "A loves B, B secretly resents A" is a data state, never a schema change.
+
+- **Familiarity** (`0..100`, slow **ratchet** — you can't un-know someone): how well two people know each other — address rights, what can be assumed/referenced, how well they read the other. It only ever climbs: exchange **trickle** (time together) lifts it at most to the top of `acquainted` (`FAMILIARITY_TRICKLE_CEILING`), while archivist **moments** (a real disclosure/shared experience) push past it, capped per scene (`FAMILIARITY_SCENE_CAP`). `tickFamiliarity` applies the ratchet.
+- **Regard** (`−100..100`, volatile — this **is** the old affinity scalar): how they feel — warmth of tone, the desire to initiate, patience, the escalation floor.
+
+**Bands, never raw values, go in prompts and gate behavior** (`bands.ts`; boundaries are data):
+
+| Axis | Bands (low → high) |
+| --- | --- |
+| familiarity (5) | strangers · introduced · acquainted · familiar · deeply_known |
+| regard (10) | hostile · wary · cool · neutral · friendly · warm · close · cherished · devoted · smitten |
+
+The regard ladder is the old stage ladder minus its two familiarity-flavored rungs — `stranger` became `neutral`, `acquaintance` folded into `friendly` (knowledge is the other axis's job now). `regardBandForValue` / `familiarityBandForValue` map a scalar to its band; `*BandMidpoint` seeds a scalar from an authored band pick.
+
+**The record** (`record.ts`) — ONE shape for every edge (character→player, character→character, library defaults):
+
+- **live** (`RelationshipRecord`): both axes as **scalars** + texture — what state rows store and dynamics move.
+- **authored** (`AuthoredRelationshipRecord`): both axes as **band picks** + texture — what authoring surfaces write; `authoredRecordToLive` seeds the scalars at band midpoints.
+- **texture** (both forms): `kind` (the label both parties use), `history` (one line of shared past), `presented?` (a **mask** — `masks_warmth` = tsundere, `masks_dislike` = the professional mask — when performance differs from feeling), `looming` (an absent person who weighs on the character unprompted). Every field self-heals (`.catch`). `attraction` is a reserved third axis (a field addition, never a migration).
+
+**The composed law** (`law.ts`) — `composeRelationshipLaw` turns the two live scalars into the prompt's relationship block, composing **two** band-profile tables (5 familiarity + 10 regard) rather than an M×N grid: openness = `min(familiarity ceiling, regard willingness)`, address register from familiarity / tone from regard, initiative (familiarity makes it easy, regard makes it wanted), and the **escalation floor keyed to regard** (`ESCALATION_TIER_PHRASES`; the D11 invariants hold — premise wins, disinhibition never raises the floor, authored values trump). The chat prompt builder calls it (slice 3); the sessions lane keeps `profile.ts` until slice 7.
+
+**History + milestones** (`history.ts`) — capped jsonb rings on the chat state row, appended by the exchange finalizer: `RelationshipSample` (`regard` + band + `familiarity`, capped `RELATIONSHIP_HISTORY_CAP` = 200) draws the panel's arc; `Milestone` (kinds `first_exchange` / `stage_up` / `stage_down` / `familiarity_up` / `strong_reaction` / `player_marked`, capped `MILESTONES_CAP` = 100) marks the beats. The `stage_up` / `stage_down` kind ids are kept as stored wire ids and now mean **regard-band** crossings.
+
+**Bridges to the old vocabulary** (`bands.ts`): `stageToAxes` / `stageToBandIds` seed both axes from an old stage id (state migration + authored-`{stage}` healing); `regardBandToStageId` maps back for contracts still keyed to stages (mood's touch welcomeness, emotion labels — shared with the sessions lane until slice 7).
 
 ## Disposition (personality)
 
@@ -97,8 +130,10 @@ Pure trait → coefficient functions (spec §5), kept deterministic in the merge
 | `personalizeMeters(defs, traits)` | Resolves per-character meter dynamics ([meters-actions.md](meters-actions.md) §Meters): `optimism` → `mood.baseline`, `libido` → `arousal.baseline` + recovery, `composure` → `stress.recovery`. |
 | `scaleAffinityGain(rawDelta, traits)` *(Slice 5)* | Scales a **simulant** affinity delta pre-clamp — warmth/agreeableness amplify gains, guardedness damps them, composure damps losses. Clamped to `[0.4, 1.8]×`. |
 | `affinityDecayRetention(traits)` *(Slice 5)* | Returns a `[0, 0.7]` retention from warmth + composure that lifts the decay floor toward the current value (a constant character holds its regard). |
+| `regardDispositionOverlays(bandId, traits)` | Render-time **soft coloring** from the regard band (`REGARD_TRAIT_SHIFTS`): warm regard reads warmer/less guarded/less inhibited, hostile colder and walled-off. Shifts **only authored** traits (never fabricates one) as `source:"condition"` overlays; `neutral` shifts nothing; familiarity deliberately does *not* color disposition. Loosens tone only — never raises the escalation floor. |
+| `stateDispositionOverlays(traits, meters)` | Transient **disinhibition** from live state: intoxication + arousal past a floor drop guardedness/inhibition, as `source:"condition"` overlays that recede as the meters drift back. Only authored traits shift. |
 
-Empty traits ⇒ unit/identity (today's behavior).
+Empty traits ⇒ unit/identity (today's behavior). The two `*DispositionOverlays` are wired into the chat prompt builder (`character-chat.ts`).
 
 ### How it's stored and resolved
 

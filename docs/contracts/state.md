@@ -146,6 +146,7 @@ The authored character: bio, personality, body-config, attributes, default outfi
 ```ts
 type CharacterProfile = {
   bio: string; personality: string; voice?: string;
+  age: string;                                // real/chronological age, free text — narrator-facing (formatAge); ≠ the visual identity.apparent_age attribute
   speciesId: string;                          // registry id ("human" / "succubus" / "faerie" / …)
   heritageId?: string;                        // optional heritage within the species (overlay); absent ⇒ bare species
   bodyPlanId: string;                         // registry id ("humanoid" seeded)
@@ -156,7 +157,10 @@ type CharacterProfile = {
   preferences: Preference[];                  // bespoke likes/dislikes resolved against a classified social act
   socialCards: SocialReactionCard[];          // the character's own default lines/taboos (tried before the world's)
   traits: TraitValue[];                       // atomic personality traits — numeric scalars with registry-defined bands
-  playerRelationship: { stage: string; note: string };  // authored default stance (stage id + one-line note); seeds the character chat
+  playerRelationship: AuthoredRelationshipRecord & { note: string };
+                                              // authored default stance toward the player: familiarity × regard band picks +
+                                              // kind/history/mask texture + one-line note; seeds a new chat's live scalars at band
+                                              // midpoints (legacy {stage, note} heals via stageToBandIds). See relationships.md
   aliases: string[];
   defaultOutfit: string[];                    // item definition ids (owner's library)
   schedule?: Array<{ startMinute: number; endMinute: number; locationName: string; activity: string;

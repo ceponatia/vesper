@@ -7,10 +7,10 @@
 | Framework | Next.js 16 (App Router) + React 19 | Single app — no workspace packages |
 | Language | TypeScript, `strict` | Plain `.ts`/`.tsx`, ESM |
 | Database | Postgres 17 + pgvector | Local `vesper-postgres` container (port 5435), database `vesper_dev` |
-| ORM | Drizzle ORM + drizzle-kit | SQL migrations generated, applied with `drizzle-kit migrate` (never `push` in CI) |
+| ORM | Drizzle ORM + drizzle-kit | SQL migrations generated with `drizzle-kit generate`, applied with `pnpm db:migrate` (the drizzle-orm migrator in `scripts/db-migrate.ts`); never `drizzle-kit push` |
 | LLM | AI SDK 6 (`ai`) + `@openrouter/ai-sdk-provider` | `streamText` for narrative, `generateChecked` (structured output + repair) for agents |
 | Embeddings | OpenRouter `/embeddings` endpoint | 1536-dim, pgvector columns on owning tables |
-| Image gen | OpenRouter image models + Venice edit API | See [images.md](images.md) |
+| Image gen | Venice/Qwen image API (text-to-image + reference edit) | Venice/Qwen end-to-end since 2026-06-19; see [images.md](images.md) |
 | Validation | Zod 4 | All registries, all JSONB boundaries, all API input |
 | Styling | Tailwind CSS 4 | Design tokens in `globals.css` `@theme` |
 | Tests | Vitest 4 | See [testing.md](testing.md) |
@@ -47,6 +47,7 @@ vesper/
       images/            # avatar/scene/variant pipelines, asset registry
       authoring/         # world forge, character forge
       auth/              # Better Auth instance + session resolution (docs/auth.md)
+      players/           # default player-character persona resolution (docs/auth.md)
       log.ts             # logging (reads LOG_LEVEL — server-only, kept out of lib)
     app/                 # Next.js routes (pages + API route handlers)
     components/          # React components

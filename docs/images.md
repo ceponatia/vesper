@@ -7,8 +7,8 @@
 - File path: `data/images/<ownerId>/<imageId>.webp` (always webp; converted on save). The `images` row carries `kind`, entity linkage, `prompt`, `source_image_id` (edit lineage), `status` (`pending`/`ready`/`failed`), `meta` (model, dimensions, timings).
 - **Row before file**: insert the row as `pending` → write `<imageId>.pending.webp` → fsync → rename → update row to `ready`. Every file on disk is always explained by a row; a crash leaves a `pending`/`failed` row, never a mystery file.
 - Serving: `GET /api/images/:id/file` (immutable cache headers — content never changes for an id).
-- Deleting an entity nulls its `image_id` references and queues file deletion. An idempotent `image_sweep` job (on-demand + periodic) reconciles rows↔files both directions, logging orphans as warnings.
-- Failed generations show a "regenerate" affordance (same prompt + parameters re-queued); `scene_image` jobs are idempotent per (session, turn, prompt).
+- Deleting an entity or session **hard-deletes** its owned `images` rows and unlinks the files immediately (best-effort `fs.unlink`, not a queued job — `deleteEntityImages`/`deleteSessionImages`). Only a **chat** deletion differs: it nulls `images.chat_id` (`SET NULL`) and deliberately keeps the asset (it survives in the Gallery). An idempotent `image_sweep` job (on-demand + periodic) reconciles rows↔files both directions, logging orphans as warnings.
+- Failed generations show a "regenerate" affordance (same prompt + parameters re-queued). Scene renders are guarded to **one in-flight `scene_image` job per session** — `POST /api/sessions/:id/scene` short-circuits when a `queued`/`running` scene job already exists for the session (the guard is keyed on session + type + status, not on turn number or prompt text).
 
 ## Pipelines
 

@@ -20,6 +20,8 @@ GET/DELETE         /api/characters/:id/portraits/:imageId   (+ POST /promote →
 GET/POST, GET/PATCH/DELETE        /api/locations, /api/locations/:id
 GET/POST, GET/PATCH/DELETE        /api/items, /api/items/:id   (coverage ids validated against the
                                                                body-locations registry → 400 invalid_coverage)
+GET/POST, GET/PATCH/DELETE        /api/social-cards, /api/social-cards/:id   (reusable reaction-card
+                                                               library; + POST /:id/clone, owner-or-public)
 ```
 
 Creates return 201 with the row. Deleting an entity referenced by a world or session is a 409 `in_use` (FK violation mapped, never a cascade).
@@ -32,7 +34,7 @@ GET/PATCH/DELETE   /api/worlds/:id             detail (incl. cast/locations/link
 POST               /api/worlds/forge           prose prompt → AI world draft (not saved); section regen
                                                like character forge
 POST               /api/worlds/from-draft      save a forge draft: cast stubs forged into characters
-                                               (cap 3; failures degrade to tagged stubs), names resolved,
+                                               (cap 5 = MAX_GENERATED_CAST; failures degrade to tagged stubs), names resolved,
                                                then the standard create path ⇒ 201 { id, diagnostics };
                                                forge-rate-limited
 POST               /api/worlds/:id/from-draft  save edits from the draft shape (same conversion; all four
@@ -79,8 +81,14 @@ POST               /api/sessions/:id/scene     { action: "generate" | "regenerat
                                                (an in-flight scene job is reused: 200 { ok: true, jobId, queued: false }) ·
                                                { action: "setInterval", interval: 0–100 } and { action: "setReferenceMode",
                                                referenceMode: "single" | "multi" } ⇒ 200 { ok: true, scene }
+POST               /api/sessions/:id/participants/:participantId/teleport
+                                               dev-only NPC teleport (404 in production): relocate a
+                                               present NPC to another session location
+DELETE             /api/sessions/:id/threads/:threadId          admin-only manual story-thread close
+                                               (flips the thread to resolved)
 GET                /api/sessions/:id/turns/:turnId/inspect     Turn Inspector: agent results, diagnostics,
-                                               retrieval events (windowed by turn timestamps). Admin-only (403)
+                                               retrieval events (windowed by turn timestamps). Disabled (404)
+                                               unless ENABLE_TURN_INSPECTOR=true (off by default); then admin-only (403)
 ```
 
 ### Misc
@@ -89,7 +97,7 @@ GET                /api/gallery                owner's ready scene images across
                                                (scenes[]: id, session, world, references[], prompt, createdAt)
 DELETE             /api/gallery/:id            hard-delete one owned scene image (row + file); 404 if not owned / not a scene
 GET                /api/images/:id/file        serve from data/ (ready rows only; owner OR public-entity image; immutable cache)
-POST               /api/characters/:id/clone   clone a public/own entity → owned private copy (also locations, items)
+POST               /api/characters/:id/clone   clone a public/own entity → owned private copy (also locations, items, social-cards)
 GET                /api/auth/*                 Better Auth surface (sign-in/up/out, OAuth, magic-link, get-session)
 GET                /api/auth-config            { providers[], emailPassword, magicLink } — enabled methods for the sign-in UI
 GET                /api/dev/me                 { user } — resolved identity (dev-only; 404 in production)

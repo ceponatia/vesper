@@ -27,6 +27,7 @@ type AttributeDefinition = {
   appliesToEntityKinds?: readonly ("character" | "item" | "location")[];
   aliases?: readonly string[];
   promptHints?: readonly string[];
+  excludeFromPrompts?: boolean;
   coreVisual?: boolean;
   imageReveal?: "shape" | "skin";
   identityAnchor?: boolean;
@@ -55,6 +56,7 @@ type AttributeDefinition = {
 | `appliesToEntityKinds` | `character`, `item`, or `location` (default: character only). |
 | `aliases` | Words that resolve to this attribute when mentioned in text — e.g. "ginger" → `hair.color`. |
 | `promptHints` | Phrasing guidance for the prompt builders. |
+| `excludeFromPrompts` | Stored, authored, and editable, but omitted from **every** generated prompt (image, narrator, chat) — a scaffold field not yet wired in (e.g. `identity.natal_sex`). Drop the flag when the render logic lands. |
 | `coreVisual` | Always filled at character creation — first by forge inference, then a seeded default from `allowedValues` (enum only). |
 | `imageReveal` | Whether/when this attribute appears in a full-body image (see **Image reveal tiers** below). |
 | `identityAnchor` | A defining physical trait inferred first at forge time; it conditions the plausible ranges for unset core visuals (`docs/authoring.md` §Character forge). **Physical attributes only** — never personality, voice, behavior, or role. New anchors are one-line registry edits. |
@@ -121,20 +123,20 @@ One spine, two registries, so traits inherit the same machinery without duplicat
 
 ## Starter vocabulary
 
-The starter set is roughly 50 attributes. (Expansion toward aionchat's per-anatomy granularity is expected — the group mechanism is the contract, the vocabulary is not.)
+The starter set is roughly 90 attributes across all categories (the table below lists the everyday + morphology groups; the intimate-anatomy groups add the rest). (Expansion toward aionchat's per-anatomy granularity is expected — the group mechanism is the contract, the vocabulary is not.)
 
 | Category group | Attributes |
 | --- | --- |
 | identity | gender, natal_sex, apparent_age, heritage |
 | build | height, frame, musculature, weight_presentation |
 | skin | tone, undertone, texture, markings |
-| hair | color, length, texture, style |
+| hair | color, length, texture, quality, style |
 | eyes | color, shape, pupil, luminosity |
 | face | shape, freckles, expression_default |
 | brows, lips, teeth, ears | brows; lips; teeth (shape — even … sharp_canines / fanged / serrated — condition); ears |
 | horns | shape, length, count, texture, color |
 | neck, shoulders, chest | neck (length, throat_prominence); shoulders (width, slope); chest (size, hair) |
-| wings | type, span, color, carriage |
+| wings | type, shape, span, color, carriage |
 | waist, hips | waist (definition); hips (width) |
 | tail | type, length, tip, color |
 | arms, hands, legs, feet | arms (build, hair); hands (size, texture, nails); legs (build, length, hair); feet (size, arch, nails, smell, toes) |
