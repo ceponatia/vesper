@@ -39,6 +39,17 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
+- **Player-input perception — NPCs hear quotes, see the visible, never read minds** —
+  [player-input-perception.plan.md](player-input-perception.plan.md) (next — planned
+  2026-07-08). The chat narrator answers the player's *internal thoughts* as if
+  spoken; teach the `CHAT_RULES` perception partition (quoted = heard, narration =
+  seen if visible, interiority = unknowable; state agents keep full visibility),
+  prompt-first with zero player burden, plus a `chat-thought-leak` eval fixture.
+  Then the opt-in **markup lane**: `*…*` thoughts / `*Name: …*` comms sigils with a
+  prefix notation legend + symmetric texted-reply output grammar, italicized
+  rendering with sigils hidden, and the RAG **visibility fence** (a fact `channel`
+  field so thought-derived facts never come back as NPC-known knowledge).
+  Session-lane port follows chat validation.
 - **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
   audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
   grows). Both live in `engine/merge/phases/threads.ts` and are documented in
@@ -63,6 +74,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
   the intimate exposure tier. Standalone — builds on the shipped species note split +
   the phase-4 exposure mask; feeds mood's intimacy-beat inputs but doesn't gate them.
+- **Attribute narrator guidance — per-value glosses + vocabulary audit** —
+  [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) (next —
+  design settled 2026-07-08). Optional `narratorGuidance` map on enum attribute
+  definitions, rendered inline like disposition bands so the narrator knows what
+  `willowy` means *here*; strict orthogonality rule (a gloss never describes another
+  attribute's dimension) + an entangled-vocabulary audit (rename members like
+  `willowy` that bake in height) with a stored-value sweep.
 - **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
   minimap) remain — optional polish on a feature already delivering its core value.
