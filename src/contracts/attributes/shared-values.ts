@@ -31,30 +31,55 @@ export const HAIR_DENSITY = [
  */
 export const INTIMATE_SCENT_BASE = [
   "clean",
+  "fresh",
+  "light",
+  "soft",
+  "warm",
+  "earthy",
   "musky",
+  "ripe",
   "heady",
-  "fishy",
-  "yeasty",
-  "sour",
+  "feral",
   "pungent",
+  "briny",
   "metallic",
+  "sour",
+  "tangy",
+  "yeasty",
+  "fishy",
+  "heavy",
+  "thick",
+  "animal",
 ] as const;
 
 /**
- * The shared core of intimate taste — the scent core plus `tangy`, a taste-only
- * note. Per-anatomy fields augment it: `vulva.taste` adds `sweet`. Composing off
- * `INTIMATE_SCENT_BASE` keeps the clean/musky/salty core in one place, so a future
- * scent term flows into taste too (only ever *adds* a value — never invalidates a
- * stored one).
+ * The shared core of intimate taste — mirrors the scent core's clean/musky/earthy
+ * register plus taste-only notes (`mild`, `bitter`, `salty`, `sharp`, `primal`,
+ * `faintly_sweet`). Per-anatomy fields augment it: `vulva.taste` adds `sweet`.
+ * Keep the two bases aligned when adding terms (only ever *add* a value — never
+ * invalidate a stored one).
  */
 export const INTIMATE_TASTE_BASE = [
   "clean",
+  "fresh",
+  "light",
+  "mild",
+  "soft",
+  "warm",
+  "earthy",
   "musky",
-  "bitter",
+  "ripe",
+  "heady",
   "briny",
+  "metallic",
   "sour",
   "tangy",
+  "bitter",
+  "yeasty",
   "faintly_sweet",
+  "salty",
+  "sharp",
+  "primal",
 ] as const;
 
 /**

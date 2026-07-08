@@ -1052,7 +1052,7 @@ export function demoCharacterAttributeSection(): AttributeSection {
     { id: "hair.texture", value: "wavy" },
     { id: "hair.style", value: "loose braid pinned up against the wind" },
     { id: "eyes.color", value: "gray_green" },
-    { id: "build.frame", value: "stocky" },
+    { id: "build.frame", value: "sturdy" },
     { id: "skin.tone", value: "tan" },
     { id: "skin.texture", value: "weathered" },
   ];

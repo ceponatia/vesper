@@ -22,8 +22,8 @@ export const dwarf = defineSpecies({
     {
       attributeId: "build.frame",
       applicability: "required",
-      defaultValue: "stocky",
-      allowedValues: ["stocky", "broad", "heavyset", "athletic"],
+      defaultValue: "sturdy",
+      allowedValues: ["sturdy", "heavy_boned"],
     },
   ],
 });

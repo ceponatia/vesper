@@ -43,11 +43,10 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     "characters.profile",
   );
   const wardrobe = character ? await loadDefaultWardrobe(input.userId, profile.defaultOutfit, input.sink) : [];
-  // Decision 3: every avatar model is now an uncensored Venice route (Flux is
-  // gone), so allowIntimate is unconditional — exposed intimate anatomy is still
-  // exposure-gated inside buildAvatarPrompt, which also drops below-waist
-  // attributes (waist-up framing).
-  const prompt = character ? buildAvatarPrompt(character.name, profile, style, wardrobe, true) : "";
+  // The portrait studio never renders intimate anatomy: buildAvatarPrompt drops
+  // intimate categories unconditionally (plus all below-waist attributes via the
+  // waist-up framing cut) — intimate detail is scene-render-only.
+  const prompt = character ? buildAvatarPrompt(character.name, profile, style, wardrobe) : "";
 
   const asset = await createImageAsset({
     ownerId: input.userId,

@@ -11,7 +11,7 @@ export const hipsGroup = defineAttributeGroup("hips", [
     mutability: "inherent",
     allowedValues: ["narrow", "slim", "average", "rounded", "wide", "very_wide"],
     bodyLocationId: "hips",
-    aliases: ["hips", "hip width", "wide hips"],
+    aliases: ["hips", "hip width", "wide hips", "curvy"],
     imageReveal: "shape",
   },
 ]);

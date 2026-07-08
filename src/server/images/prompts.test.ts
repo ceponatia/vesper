@@ -88,7 +88,7 @@ describe("buildAvatarPrompt", () => {
     expect(prompt).not.toContain("Appearance:");
   });
 
-  it("withholds intimate anatomy on the moderated route; on the uncensored route includes only EXPOSED above-waist anatomy (Decision 3)", () => {
+  it("never includes intimate anatomy — bare or dressed, the portrait studio is intimate-free", () => {
     const p = profileWith({
       intimateRegions: ["breasts"],
       attributes: [
@@ -96,26 +96,18 @@ describe("buildAvatarPrompt", () => {
         { id: "breasts.size", value: "full", source: "base" },
       ],
     });
-    // The moderated/SFW route (allowIntimate off) excludes intimate anatomy
-    // outright — even with the chest bare. (Avatar generation now always passes
-    // allowIntimate on, but the composer's appearance summary keeps it off.)
-    const moderated = buildAvatarPrompt("Mira", p, "realistic", []); // default = allowIntimate off
-    expect(moderated).toContain("Hair: red");
-    expect(moderated).not.toContain("Bust:");
-    // Uncensored route, chest bare (no top) → the region is exposed → shown (the
-    // breasts bucket renders under the "Bust" noun, value-only).
-    expect(buildAvatarPrompt("Mira", p, "realistic", [], true)).toContain("Bust: full");
-    // Uncensored route, chest covered by an opaque garment → withheld. (This is
-    // the regression: a clothed character's breasts were described regardless of
-    // coverage because intimate attributes skipped the exposure gate entirely.)
-    const dressed = buildAvatarPrompt("Mira", p, "realistic", [{ name: "Tank top", coverage: ["chest"] }], true);
+    // Chest bare (no top): still withheld — intimate detail is scene-render-only.
+    const bare = buildAvatarPrompt("Mira", p, "realistic", []);
+    expect(bare).toContain("Hair: red");
+    expect(bare).not.toContain("Bust:");
+    // Covered chest: withheld as well, trivially.
+    const dressed = buildAvatarPrompt("Mira", p, "realistic", [{ name: "Tank top", coverage: ["chest"] }]);
     expect(dressed).not.toContain("Bust:");
   });
 
-  it("drops every below-waist attribute from the waist-up portrait, on both routes", () => {
+  it("drops every below-waist attribute from the waist-up portrait", () => {
     // Mirrors Maya: pelvic + feet + leg anatomy must never reach a waist-up
-    // portrait, even on the uncensored route. Above-waist, non-intimate chest
-    // detail stays.
+    // portrait. Above-waist, non-intimate chest detail stays.
     const p = profileWith({
       intimateRegions: ["vulva"],
       attributes: [
@@ -124,18 +116,16 @@ describe("buildAvatarPrompt", () => {
         { id: "feet.size", value: "average", source: "base" },
         { id: "legs.length", value: "proportionate", source: "base" },
         { id: "hips.width", value: "rounded", source: "base" },
-        { id: "vulva.labia", value: "prominent", source: "base" }, // pelvic intimate
+        { id: "vulva.labia_minora", value: "protruding", source: "base" }, // pelvic intimate
       ],
     });
-    for (const allowIntimate of [false, true]) {
-      const prompt = buildAvatarPrompt("Mira", p, "realistic", [], allowIntimate);
-      expect(prompt).toContain("Hair: red");
-      expect(prompt).toContain("Chest: full"); // above the waist → kept (chest bucket)
-      expect(prompt).not.toContain("Feet"); // feet bucket → below waist
-      expect(prompt).not.toContain("Legs"); // legs bucket → below waist
-      expect(prompt).not.toContain("Hips"); // hips bucket → below waist
-      expect(prompt).not.toContain("Vulva"); // pelvic intimate → below waist, never in a waist-up shot
-    }
+    const prompt = buildAvatarPrompt("Mira", p, "realistic", []);
+    expect(prompt).toContain("Hair: red");
+    expect(prompt).toContain("Chest: full"); // above the waist → kept (chest bucket)
+    expect(prompt).not.toContain("Feet"); // feet bucket → below waist
+    expect(prompt).not.toContain("Legs"); // legs bucket → below waist
+    expect(prompt).not.toContain("Hips"); // hips bucket → below waist
+    expect(prompt).not.toContain("Labia"); // pelvic intimate → below waist, never in a waist-up shot
   });
 
   it("filters feature attributes through the realized body", () => {
@@ -201,7 +191,7 @@ describe("buildAvatarPrompt", () => {
         { id: "movement.gait", value: "graceful", source: "base" }, // motion — invisible in a still
       ],
     });
-    const prompt = buildAvatarPrompt("Kianna", p, "realistic", [], true);
+    const prompt = buildAvatarPrompt("Kianna", p, "realistic", []);
     expect(prompt).toContain("Hair: black"); // kept
     expect(prompt).not.toContain("Teeth");
     expect(prompt).not.toContain("canines");
@@ -261,7 +251,7 @@ describe("buildAvatarPrompt", () => {
         { id: "presentation.scent_baseline", value: "lavender and cedar", source: "base" },
       ],
     });
-    const prompt = buildAvatarPrompt("Mira", p, "realistic", [], true);
+    const prompt = buildAvatarPrompt("Mira", p, "realistic", []);
     expect(prompt).toContain("Hair: red");
     expect(prompt).not.toContain("Voice");
     expect(prompt).not.toContain("Cadence");
@@ -332,14 +322,14 @@ describe("buildAvatarPrompt field-gating invariants (whole attribute registry)",
     (d) => isIntimateAttributeCategory(d.category) && !(d.bodyLocationId !== undefined && isBelowWaist(d.bodyLocationId)),
   );
 
-  it.each(belowWaist.map((d) => d.id))("drops below-waist %s even bare + uncensored (waist-up framing)", (id) => {
-    // Bare + Qwen is the most permissive route; gone here ⇒ the waist-up cut did it.
-    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], true)).toContain("Appearance: Hair: red.");
+  it.each(belowWaist.map((d) => d.id))("drops below-waist %s even bare (waist-up framing)", (id) => {
+    // Bare is the most permissive wardrobe; gone here ⇒ the waist-up cut did it.
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [])).toContain("Appearance: Hair: red.");
   });
 
-  it.each(aboveWaistIntimate.map((d) => d.id))("withholds covered intimate %s on the uncensored route, and all intimate on the moderated route", (id) => {
-    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [fullSuit], true)).toContain("Appearance: Hair: red.");
-    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [], false)).toContain("Appearance: Hair: red.");
+  it.each(aboveWaistIntimate.map((d) => d.id))("withholds intimate %s from the portrait unconditionally — covered or bare", (id) => {
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [fullSuit])).toContain("Appearance: Hair: red.");
+    expect(buildAvatarPrompt("X", profileFor(id), "realistic", [])).toContain("Appearance: Hair: red.");
   });
 });
 
@@ -682,7 +672,7 @@ describe("sceneRevealAppearance (shape reads through clothing; skin needs exposu
     { id: "breasts.size", value: "full", source: "base" }, // shape
     { id: "breasts.shape", value: "round", source: "base" }, // shape
     { id: "breasts.nipples", value: "large", source: "base" }, // skin (torso)
-    { id: "vulva.labia", value: "prominent", source: "base" }, // untagged intimate → exposure-only
+    { id: "vulva.labia_minora", value: "protruding", source: "base" }, // untagged intimate → exposure-only
     { id: "waist.definition", value: "defined", source: "base" }, // shape
     { id: "hips.width", value: "wide", source: "base" }, // shape
     { id: "legs.build", value: "toned", source: "base" }, // shape
@@ -731,7 +721,7 @@ describe("sceneRevealAppearance (shape reads through clothing; skin needs exposu
     expect(topless).toContain("Nipples: large"); // torso bare → shown
 
     const bareBelow = sceneRevealAppearance(attrs, { ...covered, pelvis: "bare" }, profile, { intimate: true });
-    expect(bareBelow).toContain("Labia: prominent"); // untagged intimate falls back to the exposure gate
+    expect(bareBelow).toContain("Labia minora: protruding"); // untagged intimate falls back to the exposure gate
   });
 
   it("returns nothing without exposure state", () => {
