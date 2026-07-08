@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
@@ -42,31 +42,42 @@ export function NewChatDialog({
   /** Selection order preserved — index 0 is the primary participant. */
   const [picked, setPicked] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
+  const [search, setSearch] = useState(""); // debounced → server q
   const [memory, setMemory] = useState<"shared" | "fresh">("shared");
   const [presetId, setPresetId] = useState("");
   const [title, setTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The filter re-queries the server (name/tag + semantic match) instead of
+  // narrowing the capped first page — past LIST_LIMIT characters, a client-only
+  // filter can't see rows that never loaded (library-ux.plan.md §6).
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
+  const onFilter = (value: string) => {
+    setFilter(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setSearch(value.trim()), 250);
+  };
+
   const needsPicker = !characterId;
   const characters = useAsyncData(
     () =>
       open && needsPicker
-        ? charactersApi.list()
+        ? charactersApi.list(search ? { q: search } : {})
         : Promise.resolve<ApiResult<CharacterSummary[]>>({ ok: true, data: [] }),
-    [open, needsPicker],
+    [open, needsPicker, search],
   );
   const presets = useAsyncData(
     () => (open ? chatPresetsApi.list() : Promise.resolve<ApiResult<ChatPreset[]>>({ ok: true, data: [] })),
     [open],
   );
   const selectedIds = characterId ? [characterId] : picked;
-
-  const filtered = useMemo(() => {
-    const all = characters.data ?? [];
-    const q = filter.trim().toLowerCase();
-    return q ? all.filter((c) => c.name.toLowerCase().includes(q)) : all;
-  }, [characters.data, filter]);
+  const filtered = characters.data ?? [];
 
   const togglePick = (id: string) => {
     setPicked((prev) =>
@@ -77,6 +88,7 @@ export function NewChatDialog({
   const reset = () => {
     setPicked([]);
     setFilter("");
+    setSearch("");
     setMemory("shared");
     setPresetId("");
     setTitle("");
@@ -128,7 +140,7 @@ export function NewChatDialog({
         {needsPicker ? (
           <div>
             <p className="mb-2 text-xs tracking-wide text-paper-500 uppercase">Who with? (up to {MAX_PICKS})</p>
-            <Input placeholder="Filter characters…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <Input placeholder="Search characters…" value={filter} onChange={(e) => onFilter(e.target.value)} />
             <div className="mt-2 grid max-h-56 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
               {characters.loading ? (
                 <p className="col-span-full text-sm text-paper-500">Loading…</p>

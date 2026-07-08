@@ -4,7 +4,7 @@ import { useState } from "react";
 import { cardFromLibraryParts, type SocialReactionCard } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { socialCardsApi, type SocialCardSummary } from "@/lib/client/api";
-import { LibraryPickerDialog } from "@/components/library/library-picker";
+import { EntityPickerDialog } from "@/components/library/entity-picker";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -129,7 +129,7 @@ export function SocialCardsEditor({ cards, onChange, hint, emptyText }: SocialCa
         </ul>
       )}
 
-      <LibraryPickerDialog
+      <EntityPickerDialog
         open={importing}
         onClose={() => setImporting(false)}
         title="Import a social card"

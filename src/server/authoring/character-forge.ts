@@ -13,6 +13,8 @@ import {
   speciesById,
   clothingCategories,
   clothingCategoryById,
+  colorFamilyById,
+  colorFamilyIds,
   clothingLayerSchema,
   diag,
   itemDefinitionSchema,
@@ -23,6 +25,8 @@ import {
   normalizeTag,
   axisRange,
   traitRegistry,
+  wearerTargetById,
+  wearerTargets,
   type AttributeDefinition,
   type AttributeValue,
   type CharacterProfile,
@@ -755,6 +759,13 @@ const outfitItemSchema = z.object({
   description: z.string().default(""),
   /** Coverage template id (contracts/items/clothing-categories.ts); anchors coverage + layer. */
   category: z.string().optional().catch(undefined),
+  /** Wearer-target id (contracts/items/wearer.ts): who the garment is cut for. */
+  wearer: z.string().optional().catch(undefined),
+  /** Primary color: family id (contracts/items/colors.ts) + optional free-text shade. */
+  color: z
+    .object({ family: z.string().min(1), shade: z.string().optional().catch(undefined) })
+    .optional()
+    .catch(undefined),
   layer: clothingLayerSchema.optional().catch(undefined),
   coverage: z.array(z.string()).default([]),
   opacity: z.enum(["opaque", "sheer"]).catch("opaque"),
@@ -827,6 +838,14 @@ export function groundOutfitItems(section: OutfitSection, sink?: DiagnosticSink,
     if (item.category && !category) {
       sink?.push(diag("info", `${code}.unknown_category`, `ignored unknown clothing category "${item.category}" on "${item.name}"`));
     }
+    const wearer = item.wearer ? wearerTargetById(normalizeEnumToken(item.wearer)) : undefined;
+    if (item.wearer && !wearer) {
+      sink?.push(diag("info", `${code}.unknown_wearer`, `ignored unknown wearer target "${item.wearer}" on "${item.name}"`));
+    }
+    const colorFamily = item.color ? colorFamilyById(normalizeEnumToken(item.color.family)) : undefined;
+    if (item.color && !colorFamily) {
+      sink?.push(diag("info", `${code}.unknown_color`, `ignored unknown color family "${item.color.family}" on "${item.name}"`));
+    }
     const coverage: string[] = [];
     for (const raw of item.coverage) {
       const locationId = normalizeEnumToken(raw);
@@ -848,6 +867,8 @@ export function groundOutfitItems(section: OutfitSection, sink?: DiagnosticSink,
         description: item.description,
         // the category template anchors anything the model left unset
         category: category?.id,
+        wearer: wearer?.id,
+        color: colorFamily ? { family: colorFamily.id, shade: item.color?.shade } : undefined,
         coverage: coverage.length > 0 ? coverage : [...(category?.coverage ?? [])],
         layer: item.layer ?? category?.layer ?? 1,
         opacity: item.opacity,
@@ -884,6 +905,8 @@ function outfitPrompt(context: CharacterForgeContext, candidates: readonly Cloth
     "",
     `Valid coverage body locations: ${locationIds}`,
     `Clothing categories (set one per garment where it fits; it anchors coverage): ${clothingCategories.map((c) => c.id).join(", ")}`,
+    `Wearer target (set per garment): ${wearerTargets.map((w) => w.id).join(", ")} — match the character's presentation; use unisex for anything not gender-cut.`,
+    `Primary color (set per garment): "color": { "family": one of ${colorFamilyIds.join(", ")}; "shade": the precise hue in a word or two, e.g. "aqua", "olive" }.`,
     "",
     "Cover only what the garment really covers. A t-shirt covers chest, back, shoulders, waist, upper_arms — never forearms or hands. Note that arms includes hands and torso includes neck, so prefer the specific parts.",
   );

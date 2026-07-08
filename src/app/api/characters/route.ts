@@ -7,6 +7,7 @@ import {
   jsonError,
   jsonOk,
   materializeSuggestedItems,
+  parseTagsParam,
   queueEmbedRefresh,
   readBody,
   searchLibraryIds,
@@ -15,11 +16,18 @@ import {
 
 export const GET = withUser(async (user, req: NextRequest) => {
   const q = req.nextUrl.searchParams.get("q") ?? undefined;
-  const tag = req.nextUrl.searchParams.get("tag") ?? undefined;
-  const ids = await searchLibraryIds("character", user.id, { q, tag });
+  const tags = parseTagsParam(req.nextUrl.searchParams.get("tag"));
+  const ids = await searchLibraryIds("character", user.id, { q, tags });
   if (ids.length === 0) return jsonOk({ characters: [] });
+  // Summary columns only — the bare row carries the 1536-dim search embedding.
   const rows = await db()
-    .select()
+    .select({
+      id: characters.id,
+      name: characters.name,
+      tags: characters.tags,
+      avatarImageId: characters.avatarImageId,
+      updatedAt: characters.updatedAt,
+    })
     .from(characters)
     .where(and(eq(characters.ownerId, user.id), inArray(characters.id, ids)));
   const byId = new Map(rows.map((r) => [r.id, r]));

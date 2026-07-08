@@ -115,6 +115,8 @@ export const itemExtrasSchema = itemDefinitionSchema.pick({
   coverage: true,
   category: true,
   subtype: true,
+  wearer: true,
+  color: true,
   layer: true,
   opacity: true,
   sensory: true,

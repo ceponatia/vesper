@@ -5,6 +5,7 @@ import {
   jsonError,
   jsonOk,
   locationCreateSchema,
+  parseTagsParam,
   queueEmbedRefresh,
   readBody,
   searchLibraryIds,
@@ -13,11 +14,18 @@ import {
 
 export const GET = withUser(async (user, req: NextRequest) => {
   const q = req.nextUrl.searchParams.get("q") ?? undefined;
-  const tag = req.nextUrl.searchParams.get("tag") ?? undefined;
-  const ids = await searchLibraryIds("location", user.id, { q, tag });
+  const tags = parseTagsParam(req.nextUrl.searchParams.get("tag"));
+  const ids = await searchLibraryIds("location", user.id, { q, tags });
   if (ids.length === 0) return jsonOk({ locations: [] });
+  // Summary columns only — the bare row carries the 1536-dim search embedding.
   const rows = await db()
-    .select()
+    .select({
+      id: locations.id,
+      name: locations.name,
+      description: locations.description,
+      tags: locations.tags,
+      imageId: locations.imageId,
+    })
     .from(locations)
     .where(and(eq(locations.ownerId, user.id), inArray(locations.id, ids)));
   const byId = new Map(rows.map((r) => [r.id, r]));

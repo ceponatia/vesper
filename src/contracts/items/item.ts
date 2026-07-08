@@ -29,6 +29,26 @@ export const itemDefinitionSchema = z.object({
   category: z.string().optional().catch(undefined),
   /** Object only: subtype id (contracts/items/object-subtypes.ts) — vocabulary now, behavior later. */
   subtype: z.string().optional().catch(undefined),
+  /**
+   * Clothing only: wearer-target id (contracts/items/wearer.ts). Absent =
+   * unspecified, which every wearer filter treats as unisex — see
+   * `wearerMatchesFilter`.
+   */
+  wearer: z.string().optional().catch(undefined),
+  /**
+   * Primary color: `family`/`accent` are color-family ids
+   * (contracts/items/colors.ts, UI filtering/sorting only); `shade` is free
+   * text ("aqua", "olive") kept for display and image prompts. Any kind may
+   * carry one (a red car sorts too); clothing is the primary surface.
+   */
+  color: z
+    .object({
+      family: z.string().min(1),
+      shade: z.string().optional().catch(undefined),
+      accent: z.string().optional().catch(undefined),
+    })
+    .optional()
+    .catch(undefined),
   layer: clothingLayerSchema.optional(),
   opacity: z.enum(["opaque", "sheer"]).default("opaque"),
   sensory: itemSensorySchema.default({}),
