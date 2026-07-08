@@ -77,7 +77,12 @@ interface EntityConfig {
   list: (args: ListArgs) => Promise<ApiResult<LibraryCard[]>>;
   create: () => Promise<ApiResult<CreatedRef>>;
   /** Optional segmented type-buckets over a card field (items use `kind`). */
-  buckets?: { field: (card: LibraryCard) => string | undefined; options: { id: string; label: string }[] };
+  buckets?: {
+    field: (card: LibraryCard) => string | undefined;
+    options: { id: string; label: string }[];
+    /** Initial selected bucket; also suppresses the "All" tab when set (items: default to the closet view). */
+    defaultId?: string;
+  };
   /** Registry-backed facet chip rows (library-ux.plan.md §3) — filter the loaded set client-side. */
   facets?: FacetDef<LibraryCard>[];
   /** Grouped sections for the unfiltered browse (items: the "closet" view); null = flat. */
@@ -176,6 +181,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
         { id: "object", label: "Object" },
         { id: "container", label: "Container" },
       ],
+      defaultId: "clothing",
     },
     facets: itemFacetDefs<LibraryCard>(),
     groupCards: itemCardGroup,
@@ -328,7 +334,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const [sort, setSort] = useState<SortOption>("updated");
   const [view, setView] = useState<ViewMode>(() => readStoredView(entity));
   const [creating, setCreating] = useState(false);
-  const [bucket, setBucketState] = useState("all");
+  const [bucket, setBucketState] = useState(config.buckets?.defaultId ?? "all");
   // Drives the discovery gallery via config.list (social-reaction-cards.plan.md
   // step 6). Wired for social cards; the other shareable kinds pass scope through
   // but their list API still ignores it (owner-scoped) until the fast-follow.
@@ -574,7 +580,10 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
               label="Filter by type"
               value={bucket}
               onChange={setBucket}
-              options={[{ id: "all", label: "All" }, ...config.buckets.options].map((opt) => ({
+              options={[
+                ...(config.buckets.defaultId ? [] : [{ id: "all", label: "All" }]),
+                ...config.buckets.options,
+              ].map((opt) => ({
                 ...opt,
                 count: opt.id === "all" ? cardsAll.length : cardsAll.filter((c) => config.buckets?.field(c) === opt.id).length,
               }))}
