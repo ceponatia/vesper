@@ -50,6 +50,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   rendering with sigils hidden, and the RAG **visibility fence** (a fact `channel`
   field so thought-derived facts never come back as NPC-known knowledge).
   Session-lane port follows chat validation.
+- **Chat narrator POV — player-POV story narration** —
+  [chat-narrator-pov.plan.md](chat-narrator-pov.plan.md) (next — planned 2026-07-08).
+  Teach the chat narrator its second role: the story's camera behind the player's eyes.
+  Player-eye visual description (attributes/outfit reframed as "what the player sees",
+  attention/motion-gated, one detail max) + sensation landing in the player's body
+  ("the scent tickles your nose"), with an explicit involuntary-perception vs
+  voluntary-action boundary; an `attention` arm on the chat cue invite; `chat-pov-*`
+  eval fixtures + POV metric. Sequenced behind player-input-perception's slices 1–2
+  (both rewrite the CHAT_RULES rule-2 neighborhood).
 - **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
   audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
   grows). Both live in `engine/merge/phases/threads.ts` and are documented in
