@@ -39,6 +39,18 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
+- **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
+  audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
+  grows). Both live in `engine/merge/phases/threads.ts` and are documented in
+  [../story-threads.md](../story-threads.md):
+  1. **`resolve` isn't guarded by `kind`** — `applyThreadSignals` (and the admin
+     `DELETE /api/sessions/:id/threads/:threadId` close route) will resolve an
+     `ongoing` thread by id; only the director *prompt* forbids it. Gate `resolve` to
+     `investigation` kind in the reducer.
+  2. **Exact-title `propose` reopens a closed thread** — the `byTitle` fallback isn't
+     status-filtered, so a proposal whose title exactly matches a `resolved`/`archived`
+     thread `develop`s → `refresh`es it back to `open`. Exclude non-open/cooling threads
+     from `byTitle`'s candidate pool (the semantic dedup layer already does).
 - **Character chat — enactment measurement run** (the shipped plan's one leftover) —
   [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)
   §slice 2 / spec §5. The paired-contrast fixtures + blind pair judge are built and dry-run validated;
