@@ -596,7 +596,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
             aria-label="Sort"
             value={sort}
             onChange={(e) => setSort(e.target.value === "name" ? "name" : "updated")}
-            className="h-9 w-auto text-xs"
+            className="h-9 w-36 text-xs"
           >
             <option value="updated">Recent first</option>
             <option value="name">By name</option>
