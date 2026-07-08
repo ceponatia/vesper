@@ -1,10 +1,11 @@
 # Creating items
 
-Items have a **kind** — clothing, object, or container — and kind-specific fields below the shared name/description/tags.
+Items have a **kind** — clothing, object, or container — and kind-specific fields below the shared name/description/tags. Every kind can carry a **Color**: a family from the fixed palette (drives the library's filters, sorting, and swatch chips) plus a free-text **Shade** for the precise hue ("aqua", "olive") used in display and image prompts.
 
 ## Clothing
 
 - **Category** is a template: picking "top" or "pants" pre-fills coverage and layer, then you adjust. The category name never reaches the story — the narrator only sees name, description, and the final coverage, so a "top" with arm coverage removed plays as a tank top.
+- **Wearer** says who the garment is cut for — Women's, Men's, or Unisex. Leave it unspecified and it behaves as unisex: the library's wearer filter and the outfit picker always include unisex and unspecified pieces, so gender-neutral characters are covered by default.
 - **Coverage** is a tree of body locations in five groups: head, torso (incl. neck), arms (upper arms → fingers), pelvis (hips/groin/buttocks), legs. Checking a region checks all its parts; uncheck a part to carve it out — a ski mask is "head" minus "eyes", glasses are "eyes" alone, a t-shirt is the torso parts + upper arms. A *dimmed dash* on a parent means partially covered: only the checked parts count. Mind the parents: "arms" includes hands, "torso" includes the neck — prefer the specific parts.
 - Hidden layers stay hidden in images: an opaque outer layer that fully covers a lower layer keeps it out of avatar and scene prompts (a t-shirt under a closed abaya won't leak into the picture).
 - **Layer** stacks from the skin out — 0 (underwear) · 1 (base) · 2 (mid) · 3 (outerwear); higher layers occlude lower ones. **Opacity: sheer** reveals what's beneath.
@@ -20,3 +21,7 @@ Items have a **kind** — clothing, object, or container — and kind-specific f
 ## Where items come from
 
 Besides this editor: the character forge suggests outfit items (created on character save), and the world forge places items (created on world save). Both reuse an existing library item when the name matches — you never get duplicates from a save.
+
+## Organizing an existing library
+
+The `/items` library browses by structured facets (category, subtype, wearer, color, layer), so items created before those fields existed can look unsorted. The **Organize** button classifies every visible item that's missing a facet — a background pass that infers category/layer/wearer/color (and object subtypes) from each item's name and description. It only fills blanks: anything you set by hand is never overwritten, and you can run it again whenever new unclassified items pile up.

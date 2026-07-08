@@ -19,7 +19,8 @@ import {
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
-import { LibraryPickerDialog, type LibraryPickerEntry } from "@/components/library/library-picker";
+import { EntityPickerDialog, type EntityPickerEntry } from "@/components/library/entity-picker";
+import { itemCardChips } from "@/components/library/item-facets";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
@@ -837,10 +838,15 @@ function CastTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: WorldDr
     if (!result.ok) return result;
     return {
       ok: true as const,
-      data: result.data.map((c) => ({ id: c.id, name: c.name, detail: c.tags.slice(0, 3).join(", ") || undefined })),
+      data: result.data.map((c) => ({
+        id: c.id,
+        name: c.name,
+        imageId: c.avatarImageId,
+        detail: c.tags.slice(0, 3).join(", ") || undefined,
+      })),
     };
   }, []);
-  const pickCharacter = (entry: LibraryPickerEntry) => {
+  const pickCharacter = (entry: EntityPickerEntry) => {
     if (picker === "add") {
       onChange({
         ...draft,
@@ -1024,7 +1030,7 @@ function CastTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: WorldDr
           + From library
         </Button>
       </div>
-      <LibraryPickerDialog
+      <EntityPickerDialog
         open={picker !== null}
         onClose={() => setPicker(null)}
         title={picker === "add" ? "Add cast from the library" : "Link to a library character"}
@@ -1055,10 +1061,17 @@ function ItemsTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: WorldD
     if (!result.ok) return result;
     return {
       ok: true as const,
-      data: result.data.map((i) => ({ id: i.id, name: i.name, detail: i.kind, data: i.kind })),
+      data: result.data.map((i) => ({
+        id: i.id,
+        name: i.name,
+        imageId: i.imageId,
+        detail: i.kind,
+        chips: itemCardChips(i),
+        data: i.kind,
+      })),
     };
   }, []);
-  const pickItem = (entry: LibraryPickerEntry) => {
+  const pickItem = (entry: EntityPickerEntry) => {
     const kind =
       entry.data === "clothing" || entry.data === "container" || entry.data === "object" ? entry.data : "object";
     onChange({
@@ -1203,7 +1216,7 @@ function ItemsTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: WorldD
       <p className="text-xs text-paper-500">
         A placement whose name matches a library item reuses that item on save; anything else is created new.
       </p>
-      <LibraryPickerDialog
+      <EntityPickerDialog
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         title="Place an item from the library"

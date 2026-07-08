@@ -395,6 +395,30 @@ const itemDefinitionPartsSchema = z
       .nullish()
       .catch(null)
       .transform((v) => v ?? null),
+    /** Wearer-target id (contracts/items/wearer.ts); null = unspecified (matches every wearer filter). */
+    wearer: z
+      .string()
+      .nullish()
+      .catch(null)
+      .transform((v) => v ?? null),
+    /** Primary color: family/accent ids (contracts/items/colors.ts) + free-text shade. */
+    color: z
+      .object({
+        family: z.string().min(1),
+        shade: z
+          .string()
+          .nullish()
+          .catch(null)
+          .transform((v) => v ?? null),
+        accent: z
+          .string()
+          .nullish()
+          .catch(null)
+          .transform((v) => v ?? null),
+      })
+      .nullish()
+      .catch(null)
+      .transform((v) => v ?? null),
     layer: z
       .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)])
       .nullish()
@@ -408,6 +432,8 @@ const itemDefinitionPartsSchema = z
     coverage: [] as string[],
     category: null,
     subtype: null,
+    wearer: null,
+    color: null,
     layer: null,
     opacity: "opaque" as const,
     sensory: {},
@@ -422,11 +448,12 @@ export const itemSummarySchema = z.object({
   description: textOr(""),
   tags: tagsSchema,
   imageId: optionalId,
+  /** Facet slice for library chips/grouping (the list payload already carries the row's definition). */
+  definition: itemDefinitionPartsSchema,
 });
 export type ItemSummary = z.infer<typeof itemSummarySchema>;
 
 export const itemDetailSchema = itemSummarySchema.extend({
-  definition: itemDefinitionPartsSchema,
   visibility: visibilitySchema,
 });
 export type ItemDetail = z.infer<typeof itemDetailSchema>;
@@ -757,8 +784,16 @@ function forgeResponseSchema<T>(draft: z.ZodType<T>) {
 // Type alias (not interface) so it satisfies withQuery's index signature.
 export type ListParams = {
   q?: string;
+  /** Comma-separated tags are ANDed server-side. */
   tag?: string;
   kind?: string;
+  /** Items-only facet filters + sort (library-ux.plan.md). */
+  category?: string;
+  subtype?: string;
+  layer?: string;
+  wearer?: string;
+  color?: string;
+  sort?: "updated" | "name";
 };
 
 export const charactersApi = {
@@ -1023,8 +1058,8 @@ export async function sendChatMessage(
 /** Wrapper for the entity-image GET (`{ image }`, nullable) used by the studio. */
 const entityImageSchema = z.object({ image: imageRecordSchema.nullable().catch(null) });
 
-/** Batch image-generation response: how many entities were queued. */
-const batchImageSchema = z.object({ queued: z.number().catch(0) }).catch({ queued: 0 });
+/** Batch background-job response (image generation, item classify): how many entities were queued. */
+const batchQueuedSchema = z.object({ queued: z.number().catch(0) }).catch({ queued: 0 });
 
 export const locationsApi = {
   list: (params: ListParams = {}) =>
@@ -1038,7 +1073,7 @@ export const locationsApi = {
   image: (id: string) => apiGet(entityImageSchema, `/api/locations/${id}/image`),
   generateImage: (id: string) => apiPost(z.unknown(), `/api/locations/${id}/image`, {}),
   generateMissingImages: (ids?: readonly string[]) =>
-    apiPost(batchImageSchema, "/api/locations/images", ids ? { ids } : {}),
+    apiPost(batchQueuedSchema, "/api/locations/images", ids ? { ids } : {}),
 };
 
 export const itemsApi = {
@@ -1055,7 +1090,10 @@ export const itemsApi = {
   image: (id: string) => apiGet(entityImageSchema, `/api/items/${id}/image`),
   generateImage: (id: string) => apiPost(z.unknown(), `/api/items/${id}/image`, {}),
   generateMissingImages: (ids?: readonly string[]) =>
-    apiPost(batchImageSchema, "/api/items/images", ids ? { ids } : {}),
+    apiPost(batchQueuedSchema, "/api/items/images", ids ? { ids } : {}),
+  /** Backfill missing facet fields (category/wearer/color/…) on the given items. */
+  classifyMissing: (ids?: readonly string[]) =>
+    apiPost(batchQueuedSchema, "/api/items/classify", ids ? { ids } : {}),
 };
 
 export const socialCardsApi = {

@@ -6,10 +6,12 @@ import {
   bodyLocationRegistry,
   clothingCategories,
   clothingCategoryById,
+  colorFamilies,
   expandCoverage,
   objectSubtypeById,
   objectSubtypes,
   toggleCoverage,
+  wearerTargets,
   type BodyLocation,
   type ItemKind,
 } from "@/contracts";
@@ -196,6 +198,40 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
         <Field label="Tags" className="sm:col-span-2">
           {(id) => <TagInput id={id} value={form.tags} onChange={(tags) => patch({ tags })} />}
         </Field>
+        <Field label="Color" hint="Family drives library filters and sorting.">
+          {(id) => (
+            <Select
+              id={id}
+              value={form.definition.color?.family ?? ""}
+              onChange={(e) => {
+                const family = e.target.value;
+                patchDefinition({
+                  color: family ? { family, shade: form.definition.color?.shade ?? null, accent: null } : null,
+                });
+              }}
+            >
+              <option value="">—</option>
+              {colorFamilies.map((family) => (
+                <option key={family.id} value={family.id}>
+                  {family.label}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label="Shade" hint="The precise hue, e.g. “aqua”, “olive”.">
+          {(id) => (
+            <Input
+              id={id}
+              value={form.definition.color?.shade ?? ""}
+              disabled={!form.definition.color}
+              onChange={(e) => {
+                const current = form.definition.color;
+                if (current) patchDefinition({ color: { ...current, shade: e.target.value || null } });
+              }}
+            />
+          )}
+        </Field>
       </div>
 
       {form.kind === "clothing" ? (
@@ -328,7 +364,7 @@ function ClothingFields({
 
   return (
     <div className="mt-6 flex flex-col gap-5">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Category" hint="Template: pre-fills coverage and layer.">
           {(id) => (
             <Select id={id} value={definition.category ?? ""} onChange={(e) => applyCategory(e.target.value)}>
@@ -368,6 +404,22 @@ function ClothingFields({
             >
               <option value="opaque">opaque</option>
               <option value="sheer">sheer</option>
+            </Select>
+          )}
+        </Field>
+        <Field label="Wearer" hint="Unisex also fits gender-neutral characters.">
+          {(id) => (
+            <Select
+              id={id}
+              value={definition.wearer ?? ""}
+              onChange={(e) => onPatch({ wearer: e.target.value || null })}
+            >
+              <option value="">unspecified</option>
+              {wearerTargets.map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.label}
+                </option>
+              ))}
             </Select>
           )}
         </Field>

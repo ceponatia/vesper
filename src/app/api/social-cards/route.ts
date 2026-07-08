@@ -4,6 +4,7 @@ import { db, socialCards } from "@/server/db";
 import {
   jsonError,
   jsonOk,
+  parseTagsParam,
   queueEmbedRefresh,
   readBody,
   searchLibraryIds,
@@ -13,16 +14,24 @@ import {
 
 export const GET = withUser(async (user, req: NextRequest) => {
   const q = req.nextUrl.searchParams.get("q") ?? undefined;
-  const tag = req.nextUrl.searchParams.get("tag") ?? undefined;
+  const tags = parseTagsParam(req.nextUrl.searchParams.get("tag"));
   // Discovery scope (auth.plan.md): all|public|owned; default owner-only.
   const scopeParam = req.nextUrl.searchParams.get("scope");
   const scope = scopeParam === "all" || scopeParam === "public" ? scopeParam : "owned";
-  const ids = await searchLibraryIds("social_card", user.id, { q, tag, scope });
+  const ids = await searchLibraryIds("social_card", user.id, { q, tags, scope });
   if (ids.length === 0) return jsonOk({ socialCards: [] });
   // Fetch the scoped ids as viewable rows (owner-or-public) — public scope returns
   // other owners' published cards, so this can't filter to user.id alone.
+  // Summary columns only — the bare row carries the 1536-dim search embedding.
   const rows = await db()
-    .select()
+    .select({
+      id: socialCards.id,
+      name: socialCards.name,
+      description: socialCards.description,
+      tags: socialCards.tags,
+      visibility: socialCards.visibility,
+      definition: socialCards.definition,
+    })
     .from(socialCards)
     .where(
       and(

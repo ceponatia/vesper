@@ -29,7 +29,8 @@ const scoredIdRowSchema = z.object({ id: z.string(), score: z.number() });
 
 export interface LibrarySearchOptions {
   q?: string;
-  tag?: string;
+  /** Tag filters, ANDed (jsonb containment) — a row must carry every one. */
+  tags?: readonly string[];
   limit?: number;
   /**
    * Items only: restrict to one item sub-kind (clothing/object/container)
@@ -42,6 +43,21 @@ export interface LibrarySearchOptions {
    */
   itemKind?: string;
   /**
+   * Items only: definition-jsonb facet filters (library-ux.plan.md), applied
+   * **before** the result cap for the same reason as `itemKind`. `wearer`
+   * follows the registry's filter semantics (contracts/items/wearer.ts):
+   * absent/unisex rows match every wearer filter.
+   */
+  itemFacets?: {
+    category?: string;
+    subtype?: string;
+    layer?: 0 | 1 | 2 | 3;
+    wearer?: string;
+    colorFamily?: string;
+  };
+  /** Browse ordering; `updated` (default) = most-recently-updated first. */
+  sort?: "updated" | "name";
+  /**
    * Cross-account discovery scope (auth.plan.md, debuted on social cards):
    * `owned` (default) is owner-only — the long-standing behaviour every other
    * caller relies on; `public` is everyone's published rows (your own public
@@ -49,6 +65,12 @@ export interface LibrarySearchOptions {
    * `visibility` column, so pass a non-`owned` scope only for those.
    */
   scope?: "all" | "public" | "owned";
+}
+
+/** Parse a `tag` query param: comma-separated values, ANDed by the search. */
+export function parseTagsParam(value: string | null): string[] {
+  if (!value) return [];
+  return value.split(",").map((t) => t.trim()).filter(Boolean);
 }
 
 /**
@@ -65,9 +87,10 @@ export async function searchLibraryIds(
   const limit = Math.min(Math.max(opts.limit ?? LIST_LIMIT, 1), LIST_LIMIT);
   const table = sql.identifier(TABLE_NAMES[kind]);
   const q = opts.q?.trim() ?? "";
-  const tag = opts.tag?.trim() ?? "";
-  // Items only — the column exists on the items table; ignored for other kinds.
+  const tags = (opts.tags ?? []).map((t) => t.trim()).filter(Boolean);
+  // Items only — these columns/facets exist on the items table; ignored for other kinds.
   const itemKind = kind === "item" ? (opts.itemKind?.trim() ?? "") : "";
+  const facets = kind === "item" ? (opts.itemFacets ?? {}) : {};
   // Discovery scope (default owner-only, so existing callers are unchanged).
   const scope = opts.scope ?? "owned";
   const scopeCondition =
@@ -77,9 +100,24 @@ export async function searchLibraryIds(
         ? sql`(owner_id = ${ownerId} or visibility = 'public')`
         : sql`owner_id = ${ownerId}`;
 
-  const conditions: SQL[] = [scopeCondition];
-  if (itemKind) conditions.push(sql`kind = ${itemKind}`);
-  if (tag) conditions.push(sql`tags @> ${JSON.stringify([tag])}::jsonb`);
+  // Shared by the text and embedding legs, so a facet can never match in one and not the other.
+  const filterConditions: SQL[] = [scopeCondition];
+  if (itemKind) filterConditions.push(sql`kind = ${itemKind}`);
+  if (facets.category?.trim()) filterConditions.push(sql`definition->>'category' = ${facets.category.trim()}`);
+  if (facets.subtype?.trim()) filterConditions.push(sql`definition->>'subtype' = ${facets.subtype.trim()}`);
+  if (facets.layer !== undefined) filterConditions.push(sql`definition->>'layer' = ${String(facets.layer)}`);
+  if (facets.wearer?.trim()) {
+    // Absent and unisex match every wearer filter (contracts/items/wearer.ts).
+    filterConditions.push(
+      sql`(definition->>'wearer' is null or definition->>'wearer' = 'unisex' or definition->>'wearer' = ${facets.wearer.trim()})`,
+    );
+  }
+  if (facets.colorFamily?.trim()) {
+    filterConditions.push(sql`definition->'color'->>'family' = ${facets.colorFamily.trim()}`);
+  }
+  if (tags.length > 0) filterConditions.push(sql`tags @> ${JSON.stringify(tags)}::jsonb`);
+
+  const conditions: SQL[] = [...filterConditions];
   if (q) {
     const pattern = `%${escapeLikePattern(q)}%`;
     conditions.push(
@@ -87,8 +125,9 @@ export async function searchLibraryIds(
     );
   }
   const where = sql.join(conditions, sql` and `);
+  const orderBy = opts.sort === "name" ? sql`lower(name) asc` : sql`updated_at desc`;
   const textResult = await db().execute(
-    sql`select id from ${table} where ${where} order by updated_at desc limit ${limit}`,
+    sql`select id from ${table} where ${where} order by ${orderBy} limit ${limit}`,
   );
   const ids: string[] = [];
   for (const row of textResult.rows) {
@@ -106,12 +145,10 @@ export async function searchLibraryIds(
     return ids;
   }
   const embeddingConditions: SQL[] = [
-    scopeCondition,
+    ...filterConditions,
     sql`embedder = ${currentEmbedder()}`,
     sql`search_embedding is not null`,
   ];
-  if (itemKind) embeddingConditions.push(sql`kind = ${itemKind}`);
-  if (tag) embeddingConditions.push(sql`tags @> ${JSON.stringify([tag])}::jsonb`);
   const embeddingResult = await db().execute(
     sql`select id, 1 - (search_embedding <=> ${vector}::vector) as score
         from ${table}
@@ -216,6 +253,8 @@ export async function materializeSuggestedItems(
           // must be persisted so clothing reads as Top/Bra/Footwear/etc.
           category: def.category,
           subtype: def.subtype,
+          wearer: def.wearer,
+          color: def.color,
           layer: def.layer,
           opacity: def.opacity,
           sensory: def.sensory,

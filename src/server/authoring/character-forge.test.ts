@@ -363,6 +363,26 @@ describe("groundOutfitItems", () => {
     expect(items[0]?.name).toBe("Wool scarf");
     expect(sink.items.some((d) => d.code === "forge.character.outfit.invalid_item" && d.severity === "warn")).toBe(true);
   });
+
+  it("grounds wearer and color against their registries — valid values ride, unknown ones drop with info diags", () => {
+    const sink = new DiagnosticCollector();
+    const garment = { description: "", coverage: ["torso"], opacity: "opaque" as const, sensory: {}, tags: [] };
+    const items = groundOutfitItems(
+      {
+        outfit: [
+          { ...garment, name: "Sky blouse", wearer: "Feminine", color: { family: "Blue", shade: "sky" } },
+          { ...garment, name: "Odd tunic", wearer: "androgynous", color: { family: "chartreuse" } },
+        ],
+      },
+      sink,
+    );
+    expect(items[0]?.wearer).toBe("feminine");
+    expect(items[0]?.color).toEqual({ family: "blue", shade: "sky" });
+    expect(items[1]?.wearer).toBeUndefined();
+    expect(items[1]?.color).toBeUndefined();
+    expect(sink.items.some((d) => d.code === "forge.character.outfit.unknown_wearer" && d.severity === "info")).toBe(true);
+    expect(sink.items.some((d) => d.code === "forge.character.outfit.unknown_color" && d.severity === "info")).toBe(true);
+  });
 });
 
 describe("outfit category templates", () => {

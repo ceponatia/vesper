@@ -5,6 +5,7 @@ export * from "./jobs";
 export * from "./schemas";
 export * from "./visibility";
 export * from "./library";
+export * from "./item-classify";
 export * from "./clone";
 export * from "./worlds";
 export * from "./world-from-draft";

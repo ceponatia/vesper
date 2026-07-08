@@ -23,6 +23,14 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
+- **Library UX — faceted browse, item facets, shared entity picker** —
+  [library-ux.plan.md](library-ux.plan.md) (active — core pass started
+  2026-07-08: items facet bar + grouped closet view + density toggle, the new
+  `wearer`/`color` clothing facets end-to-end (contracts → editor → forge →
+  classify backfill), and the shared `EntityPicker` replacing the flat
+  outfit/location selects. Follow-up pass (other-library facets, tabbed
+  gallery hub, Library nav consolidation, scope fast-follow, pagination) is
+  ruled-in but waits on core review.)
 - **Relationship model v2 — familiarity × regard** —
   [relationship-model.plan.md](relationship-model.plan.md) (active — build started
   2026-07-07; slice 1 contracts done). Then the substrate plan

@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { charactersApi, worldsApi } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { useDebouncedValue } from "@/components/hooks/use-debounced-value";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,11 +25,22 @@ export function NewSessionWizard() {
   const toast = useToast();
   const searchParams = useSearchParams();
 
-  const worlds = useAsyncData(() => worldsApi.list(), []);
-  const characters = useAsyncData(() => charactersApi.list(), []);
+  // Both pickers search server-side (name/tag + semantic): past LIST_LIMIT
+  // entries, a client-only filter can't see rows that never loaded.
+  const [worldQuery, setWorldQuery] = useState("");
+  const worldSearch = useDebouncedValue(worldQuery.trim());
+  const worlds = useAsyncData(() => worldsApi.list(worldSearch ? { q: worldSearch } : {}), [worldSearch]);
+  const [characterQuery, setCharacterQuery] = useState("");
+  const characterSearch = useDebouncedValue(characterQuery.trim());
+  const characters = useAsyncData(
+    () => charactersApi.list(characterSearch ? { q: characterSearch } : {}),
+    [characterSearch],
+  );
 
   const [step, setStep] = useState<Step>(searchParams.get("worldId") ? "embodiment" : "world");
   const [worldId, setWorldId] = useState<string | null>(searchParams.get("worldId"));
+  /** Captured at pick time so searching the list away never blanks the title hint. */
+  const [worldName, setWorldName] = useState<string | null>(null);
   const [embodied, setEmbodied] = useState(true);
   const [playerCharacterId, setPlayerCharacterId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -36,6 +48,7 @@ export function NewSessionWizard() {
   const [prefilledWorldId, setPrefilledWorldId] = useState<string | null>(null);
 
   const selectedWorld = (worlds.data ?? []).find((w) => w.id === worldId);
+  const selectedWorldName = worldName ?? selectedWorld?.name;
 
   // Pre-fill embodiment from the world's default player character (UX-audit §1a) — a
   // changeable default: applied once per world, then the user owns the choice. Deferred
@@ -55,7 +68,7 @@ export function NewSessionWizard() {
     if (!worldId) return;
     setCreating(true);
     const result = await worldsApi.createSession(worldId, {
-      title: title.trim() || `${selectedWorld?.name ?? "Session"} — first visit`,
+      title: title.trim() || `${selectedWorldName ?? "Session"} — first visit`,
       embodied,
       ...(embodied && playerCharacterId ? { playerCharacterId } : {}),
     });
@@ -88,20 +101,31 @@ export function NewSessionWizard() {
       {step === "world" ? (
         <section>
           <h2 className="mb-4 text-sm text-paper-300">Where does this story happen?</h2>
+          <Input
+            value={worldQuery}
+            onChange={(e) => setWorldQuery(e.target.value)}
+            placeholder="Search worlds…"
+            aria-label="Search worlds"
+            className="mb-4 max-w-72"
+          />
           {worlds.loading ? (
             <SkeletonCards count={4} />
           ) : worlds.error ? (
             <ErrorState error={worlds.error} onRetry={() => worlds.reload()} />
           ) : (worlds.data ?? []).length === 0 ? (
-            <EmptyState
-              title="No worlds to play in"
-              description="Forge a world first — it takes one prose premise."
-              action={
-                <Button variant="primary" onClick={() => router.push("/worlds/forge")}>
-                  Open the world forge
-                </Button>
-              }
-            />
+            worldSearch ? (
+              <p className="text-sm text-paper-500">No worlds match.</p>
+            ) : (
+              <EmptyState
+                title="No worlds to play in"
+                description="Forge a world first — it takes one prose premise."
+                action={
+                  <Button variant="primary" onClick={() => router.push("/worlds/forge")}>
+                    Open the world forge
+                  </Button>
+                }
+              />
+            )
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {(worlds.data ?? []).map((world) => (
@@ -109,7 +133,10 @@ export function NewSessionWizard() {
                   key={world.id}
                   type="button"
                   aria-pressed={worldId === world.id}
-                  onClick={() => setWorldId(world.id)}
+                  onClick={() => {
+                    setWorldId(world.id);
+                    setWorldName(world.name);
+                  }}
                   className="text-left"
                 >
                   <Card
@@ -172,11 +199,20 @@ export function NewSessionWizard() {
               <h3 className="mb-3 text-xs font-medium tracking-wide text-paper-400 uppercase">
                 Play as (optional)
               </h3>
+              <Input
+                value={characterQuery}
+                onChange={(e) => setCharacterQuery(e.target.value)}
+                placeholder="Search characters…"
+                aria-label="Search characters"
+                className="mb-3 max-w-72"
+              />
               {characters.error ? (
                 <ErrorState error={characters.error} onRetry={() => characters.reload()} />
               ) : (characters.data ?? []).length === 0 ? (
                 <p className="text-sm text-paper-500">
-                  No library characters — you can still play; describe yourself in your first message.
+                  {characterSearch
+                    ? "No characters match."
+                    : "No library characters — you can still play; describe yourself in your first message."}
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-3">
@@ -219,14 +255,14 @@ export function NewSessionWizard() {
 
       {step === "title" ? (
         <section className="max-w-md">
-          <Field label="Session title" hint={selectedWorld ? `In ${selectedWorld.name}.` : undefined}>
+          <Field label="Session title" hint={selectedWorldName ? `In ${selectedWorldName}.` : undefined}>
             {(id) => (
               <Input
                 id={id}
                 value={title}
                 autoFocus
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder={`${selectedWorld?.name ?? "Somewhere"} — first visit`}
+                placeholder={`${selectedWorldName ?? "Somewhere"} — first visit`}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void create();
                 }}

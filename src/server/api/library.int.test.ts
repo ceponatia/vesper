@@ -3,7 +3,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DiagnosticCollector, itemDefinitionSchema } from "@/contracts";
 import { pseudoEmbed } from "@/server/ai";
 import { db, items, locations, users } from "@/server/db";
-import { connectedLocationIds, loadLocationLinks, materializeSuggestedItems, setLocationLinks } from "@/server/api";
+import {
+  connectedLocationIds,
+  loadLocationLinks,
+  materializeSuggestedItems,
+  searchLibraryIds,
+  setLocationLinks,
+} from "@/server/api";
 
 // Demo-mode integration suite for the outfit-item dedupe ladder
 // (docs/authoring.md §Saving drafts): exact-name reuse → conservative embedding
@@ -34,14 +40,16 @@ async function probe(): Promise<boolean> {
 const ready = await probe();
 
 let ownerId: string;
+let facetOwnerId: string;
 
 const suggest = (name: string) => itemDefinitionSchema.parse({ kind: "clothing", name });
 
 afterAll(async () => {
-  if (ready && ownerId) {
-    await db().delete(items).where(eq(items.ownerId, ownerId));
-    await db().delete(locations).where(eq(locations.ownerId, ownerId)); // cascades location_links
-    await db().delete(users).where(eq(users.id, ownerId));
+  for (const owner of [ownerId, facetOwnerId]) {
+    if (!ready || !owner) continue;
+    await db().delete(items).where(eq(items.ownerId, owner));
+    await db().delete(locations).where(eq(locations.ownerId, owner)); // cascades location_links
+    await db().delete(users).where(eq(users.id, owner));
   }
   await globalThis.__vesperPool?.end();
   globalThis.__vesperPool = undefined;
@@ -154,5 +162,90 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
     const [solo] = await db().insert(locations).values({ ownerId, name: "Conn Solo" }).returning({ id: locations.id });
     await setLocationLinks(ownerId, solo!.id, [solo!.id, "nonexistent-location-id"]);
     expect(await connectedLocationIds(ownerId, solo!.id)).toEqual([]);
+  });
+});
+
+// Item facet filtering (library-ux.plan.md §2): definition-jsonb conditions
+// applied before the result cap, wearer's absent/unisex-match-everything
+// semantics, multi-tag AND, and name sort.
+describe.skipIf(!ready)("searchLibraryIds item facets", () => {
+  let blouse: string;
+  let jeans: string;
+  let vest: string;
+  let kettle: string;
+
+  beforeAll(async () => {
+    const [user] = await db()
+      .insert(users)
+      .values({ email: `library-facets-${Date.now()}@test.local`, name: "Facet Int" })
+      .returning({ id: users.id });
+    if (!user) throw new Error("user insert failed");
+    facetOwnerId = user.id;
+    const made = await db()
+      .insert(items)
+      .values([
+        {
+          ownerId: facetOwnerId,
+          kind: "clothing",
+          name: "Facet Blouse",
+          tags: ["work", "summer"],
+          definition: { category: "top", layer: 1, wearer: "feminine", color: { family: "blue", shade: "sky" } },
+        },
+        {
+          ownerId: facetOwnerId,
+          kind: "clothing",
+          name: "Facet Jeans",
+          tags: ["work"],
+          definition: { category: "pants", layer: 1, wearer: "unisex", color: { family: "blue" } },
+        },
+        {
+          // No wearer, no color: must still match every wearer filter.
+          ownerId: facetOwnerId,
+          kind: "clothing",
+          name: "Facet Vest",
+          definition: { category: "top", layer: 2 },
+        },
+        {
+          ownerId: facetOwnerId,
+          kind: "object",
+          name: "Facet Kettle",
+          definition: { subtype: "tool", color: { family: "red" } },
+        },
+      ])
+      .returning({ id: items.id });
+    [blouse, jeans, vest, kettle] = made.map((m) => m.id) as [string, string, string, string];
+  });
+
+  it("filters by clothing category and object subtype", async () => {
+    const tops = await searchLibraryIds("item", facetOwnerId, { itemFacets: { category: "top" } });
+    expect(tops.sort()).toEqual([blouse, vest].sort());
+    const tools = await searchLibraryIds("item", facetOwnerId, { itemFacets: { subtype: "tool" } });
+    expect(tools).toEqual([kettle]);
+  });
+
+  it("wearer filter: gendered filter matches its own + unisex + unspecified", async () => {
+    const womens = await searchLibraryIds("item", facetOwnerId, { itemKind: "clothing", itemFacets: { wearer: "feminine" } });
+    expect(womens.sort()).toEqual([blouse, jeans, vest].sort());
+    const mens = await searchLibraryIds("item", facetOwnerId, { itemKind: "clothing", itemFacets: { wearer: "masculine" } });
+    expect(mens.sort()).toEqual([jeans, vest].sort());
+  });
+
+  it("filters by color family and layer", async () => {
+    const blues = await searchLibraryIds("item", facetOwnerId, { itemFacets: { colorFamily: "blue" } });
+    expect(blues.sort()).toEqual([blouse, jeans].sort());
+    const midLayer = await searchLibraryIds("item", facetOwnerId, { itemFacets: { layer: 2 } });
+    expect(midLayer).toEqual([vest]);
+  });
+
+  it("ANDs multiple tags", async () => {
+    const both = await searchLibraryIds("item", facetOwnerId, { tags: ["work", "summer"] });
+    expect(both).toEqual([blouse]);
+    const one = await searchLibraryIds("item", facetOwnerId, { tags: ["work"] });
+    expect(one.sort()).toEqual([blouse, jeans].sort());
+  });
+
+  it("sorts by name when asked", async () => {
+    const named = await searchLibraryIds("item", facetOwnerId, { sort: "name" });
+    expect(named).toEqual([blouse, jeans, kettle, vest]);
   });
 });

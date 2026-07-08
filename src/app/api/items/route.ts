@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
-import { itemKindSchema } from "@/contracts";
+import { z } from "zod";
+import { clothingLayerSchema, itemKindSchema } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { db, items } from "@/server/db";
 import {
@@ -8,11 +9,24 @@ import {
   itemCreateSchema,
   jsonError,
   jsonOk,
+  parseTagsParam,
   queueEmbedRefresh,
   readBody,
   searchLibraryIds,
   withUser,
 } from "@/server/api";
+
+// Explicit list columns: the bare row carries the 1536-dim search embedding —
+// megabytes of dead payload across a 100-row list (library-ux.plan.md §2).
+const LIST_COLUMNS = {
+  id: items.id,
+  kind: items.kind,
+  name: items.name,
+  description: items.description,
+  tags: items.tags,
+  imageId: items.imageId,
+  definition: items.definition,
+} as const;
 
 export const GET = withUser(async (user, req: NextRequest) => {
   // Explicit id resolution (e.g. a character's `defaultOutfit`): fetch exactly
@@ -22,24 +36,41 @@ export const GET = withUser(async (user, req: NextRequest) => {
   if (idsParam !== null) {
     const wanted = [...new Set(idsParam.split(",").map((s) => s.trim()).filter(Boolean))];
     if (wanted.length === 0) return jsonOk({ items: [] });
-    const rows = await db().select().from(items).where(and(eq(items.ownerId, user.id), inArray(items.id, wanted)));
+    const rows = await db()
+      .select(LIST_COLUMNS)
+      .from(items)
+      .where(and(eq(items.ownerId, user.id), inArray(items.id, wanted)));
     const found = new Map(rows.map((r) => [r.id, r]));
     return jsonOk({ items: wanted.flatMap((id) => found.get(id) ?? []) });
   }
 
-  const q = req.nextUrl.searchParams.get("q") ?? undefined;
-  const tag = req.nextUrl.searchParams.get("tag") ?? undefined;
-  // Optional sub-kind filter (clothing/object/container); an unknown value
+  const params = req.nextUrl.searchParams;
+  const q = params.get("q") ?? undefined;
+  const tags = parseTagsParam(params.get("tag"));
+  // Optional sub-kind + facet filters (library-ux.plan.md); an unknown value
   // degrades to no filter rather than failing the request.
-  const kind = parseOrNull(itemKindSchema, req.nextUrl.searchParams.get("kind"));
-  // Pass kind INTO the search so the result cap is applied per-kind. Otherwise a
-  // single-kind list is silently truncated by other-kind rows ranking higher by
-  // updated_at — which dropped the clothing a character's defaultOutfit references
-  // once the owner crossed LIST_LIMIT total items.
-  const ids = await searchLibraryIds("item", user.id, { q, tag, itemKind: kind ?? undefined });
+  const kind = parseOrNull(itemKindSchema, params.get("kind"));
+  const layer = parseOrNull(clothingLayerSchema, Number(params.get("layer") ?? NaN));
+  const sort = parseOrNull(z.enum(["updated", "name"]), params.get("sort"));
+  // Pass kind + facets INTO the search so the result cap is applied per-facet.
+  // Otherwise a facet-scoped list is silently truncated by other rows ranking
+  // higher by updated_at (the defaultOutfit lesson — see searchLibraryIds).
+  const ids = await searchLibraryIds("item", user.id, {
+    q,
+    tags,
+    itemKind: kind ?? undefined,
+    itemFacets: {
+      category: params.get("category") ?? undefined,
+      subtype: params.get("subtype") ?? undefined,
+      layer: layer ?? undefined,
+      wearer: params.get("wearer") ?? undefined,
+      colorFamily: params.get("color") ?? undefined,
+    },
+    sort: sort ?? undefined,
+  });
   if (ids.length === 0) return jsonOk({ items: [] });
   const rows = await db()
-    .select()
+    .select(LIST_COLUMNS)
     .from(items)
     .where(and(eq(items.ownerId, user.id), inArray(items.id, ids)));
   const byId = new Map(rows.map((r) => [r.id, r]));

@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { locationsApi, type Ambient, type LocationConnection } from "@/lib/client/api";
+import { useCallback, useRef, useState } from "react";
+import { locationsApi, type Ambient, type ApiResult, type LocationConnection } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { EntityPickerDialog, type EntityPickerEntry } from "@/components/library/entity-picker";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { EntityImageStudio } from "@/components/library/entity-image-studio";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -42,8 +43,16 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   const router = useRouter();
   const toast = useToast();
   const detail = useAsyncData(() => locationsApi.get(locationId), [locationId]);
-  // Other library locations to connect to (the connection picker's options).
-  const allLocations = useAsyncData(() => locationsApi.list(), []);
+  const [connectOpen, setConnectOpen] = useState(false);
+  // The connection picker's search (self and already-linked ids render disabled).
+  const searchConnectable = useCallback(async (q: string): Promise<ApiResult<EntityPickerEntry[]>> => {
+    const result = await locationsApi.list({ q });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      data: result.data.map((l) => ({ id: l.id, name: l.name, imageId: l.imageId, detail: l.description || undefined })),
+    };
+  }, []);
 
   const [form, setForm] = useState<LocationForm | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -107,7 +116,6 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
       if (editGenRef.current === gen) setDirty(false);
       toast.push({ title: "Location saved", tone: "success" });
       detail.reload({ silent: true });
-      allLocations.reload({ silent: true }); // a rename should refresh the picker labels
     } else {
       toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
     }
@@ -142,10 +150,6 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   }
 
   if (!form) return null;
-
-  const availableLinks = (allLocations.data ?? []).filter(
-    (l) => l.id !== locationId && !form.links.some((x) => x.id === l.id),
-  );
 
   return (
     <PageContainer>
@@ -228,28 +232,25 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
               {link.name}
             </Tag>
           ))}
-          {availableLinks.length > 0 ? (
-            <Select
-              value=""
-              aria-label="Add connection"
-              onChange={(e) => {
-                const target = availableLinks.find((l) => l.id === e.target.value);
-                if (target) patch({ links: [...form.links, { id: target.id, name: target.name }] });
-              }}
-              className="h-7 w-52 text-xs text-paper-400"
-            >
-              <option value="">+ Connect a location…</option>
-              {availableLinks.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </Select>
-          ) : form.links.length === 0 ? (
-            <span className="text-xs text-paper-500">No other locations to connect to yet.</span>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => setConnectOpen(true)}
+            className="cursor-pointer rounded-md border border-ink-600 px-2 py-0.5 text-xs text-paper-400 transition-colors hover:border-accent-500/60 hover:text-accent-300"
+          >
+            + Connect a location…
+          </button>
         </div>
       </div>
+      <EntityPickerDialog
+        open={connectOpen}
+        onClose={() => setConnectOpen(false)}
+        title="Connect a location"
+        search={searchConnectable}
+        onPick={(entry) => patch({ links: [...form.links, { id: entry.id, name: entry.name }] })}
+        disabledIds={new Set([locationId, ...form.links.map((l) => l.id)])}
+        emptyText="No other locations to connect to yet."
+        square={false}
+      />
         </>
       )}
 

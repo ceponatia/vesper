@@ -9,6 +9,7 @@ import {
   type Diagnostic,
 } from "@/contracts";
 import type { CharacterDraft, CharacterForgeSection } from "@/lib/client/api";
+import { wearerHintForGender } from "@/lib/clothing-slots";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,12 @@ import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 
 type EditorTab = "profile" | "attributes" | "personality" | "disposition" | "outfit" | "portrait" | "chat";
+
+/** The presented-gender attribute value, when set (drives the outfit picker's wearer default). */
+function genderValue(attributes: readonly { id: string; value: unknown }[]): string | undefined {
+  const value = attributes.find((a) => a.id === "identity.gender")?.value;
+  return typeof value === "string" ? value : undefined;
+}
 
 /** Split the flat attribute list into the two tabs that render it. */
 const isPersonalityAttribute = (id: string) => PERSONALITY_CATEGORIES.some((c) => id.startsWith(`${c}.`));
@@ -278,6 +285,7 @@ export function CharacterEditor({
           onChange={(defaultOutfit) => patchProfile({ defaultOutfit })}
           suggestedItems={draft.suggestedItems}
           onChangeSuggested={(suggestedItems) => onChange({ ...draft, suggestedItems })}
+          wearerHint={wearerHintForGender(genderValue(draft.profile.attributes))}
         />
       ) : null}
 
