@@ -69,7 +69,7 @@ The two failure codes are distinct so clients can redirect-to-sign-in vs. retry
 ## Default player character (`users.playerPersona`)
 
 The account's **default player character** (a light name + short bio the player
-is represented by in character chat — `docs/developer-notes/player-character.plan.md`)
+is represented by in character chat — `docs/developer-notes/finished/player-character.plan.md`)
 is a JSONB blob on the `users` row (`StoredPlayerPersona`, `src/contracts/players`),
 edited via `PATCH /api/users/me` and the `/settings` page.
 
@@ -116,9 +116,9 @@ One module owns the asymmetry — **reads widen, writes stay strict**:
 | **Browse / preview** (read for copy) | `findViewable(kind, id, me)` = owner **OR** `visibility = 'public'`. |
 | **Clone** to your library | read public source, deep-copy into a new owned row (`visibility='private'`, `clonedFromId=src`). |
 
-- **Shareable** entities (`characters`, `locations`, `items`) carry a
-  `visibility` column (`private` default | `public`). **Worlds and sessions are
-  always private** — they have no such column.
+- **Shareable** entities (`characters`, `locations`, `items`, `social_cards`)
+  carry a `visibility` column (`private` default | `public`). **Worlds and
+  sessions are always private** — they have no such column.
 - The `GET /:kind/:id` routes use `findViewable`, then scope sub-resources
   (portraits, links) to the **entity owner** so a public preview shows the
   author's art/map — not the viewer's.

@@ -11,6 +11,8 @@ type ItemDefinition = {
   coverage?: BodyLocationId[];                 // clothing
   category?: string;                           // clothing — editor template id (never in prompts)
   subtype?: string;                            // object — object subtype id (vocabulary)
+  wearer?: string;                             // clothing — wearer-target id (feminine/masculine/unisex)
+  color?: { family: string; shade?: string; accent?: string };  // color-family id + free-text shade
   layer?: 0 | 1 | 2 | 3;                        // 0 underwear … 3 outerwear
   opacity?: "opaque" | "sheer";
   sensory?: { appearance?: string; scent?: string; tactile?: string };
@@ -27,6 +29,8 @@ type ItemDefinition = {
 | `coverage` | Body-location ids the garment covers (clothing only). |
 | `category` | Clothing only: the coverage-template id this item started from. **Editor display only** — never serialized into gameplay prompts (see [Clothing categories](#clothing-categories)). |
 | `subtype` | Object only: the object-subtype id — vocabulary for `kind: "object"` items (see [Object subtypes](#object-subtypes)). |
+| `wearer` | Clothing only: wearer-target id — `feminine`/`masculine`/`unisex` (see [Wearer](#wearer)). Absent = unspecified, matched as unisex. |
+| `color` | Primary color: `family`/`accent` are color-family ids, `shade` is free text (see [Color](#color)). Any kind may carry one; clothing is the primary surface. |
 | `layer` | `0` underwear → `3` outerwear. |
 | `opacity` | `opaque` or `sheer`. |
 | `sensory` | Optional `appearance` / `scent` / `tactile` notes. |
@@ -75,6 +79,22 @@ Expanding the set is a one-file data edit.
 The only capability so far is **`holdable`** — the item *can* be carried in a hand. Holdable is a capability, never a slot binding: where a holdable item currently sits (a hand, a container, a location) is session state, so holdables stay container-storable by construction.
 
 Subtype *behavior* (vehicles moving characters, weapons in combat) is future work — each behavior gets its own design doc before any engine code, and the planned first is hand-equippable items.
+
+## Wearer
+
+`items/wearer.ts` is the vocabulary behind clothing's optional `wearer` field — who a garment is cut for:
+
+> feminine (Women's) · masculine (Men's) · unisex (Unisex)
+
+Filter semantics live with the registry so every surface agrees (`wearerMatchesFilter`): **absent = unspecified, treated as unisex** — a garment with no `wearer` matches every wearer filter, and `unisex` is additive (the "Women's" filter shows feminine + unisex + unspecified), never a third silo. This is what makes the facet work for gender-neutral characters out of the box. Extensible the usual way (add a row, e.g. a future per-species fit), never a migration.
+
+## Color
+
+`items/colors.ts` is the color-family vocabulary behind an item's optional `color` (`{ family, shade?, accent? }`). `family`/`accent` are family ids; `shade` is free text ("aqua", "olive") kept for display and image prompts:
+
+> black · white · grey · cream · brown · red · orange · yellow · green · blue · purple · pink · gold · silver · multicolor
+
+Families drive filtering, sorting, and swatch chips in the library UI (`colorFamilySortIndex` sets the sort order — neutrals first, then the hue wheel, metallics/multicolor last). Each family's `swatch` hex is **UI-only** — it never enters gameplay or image prompts (those read name/description/shade). Any item kind may carry a color (a red car sorts too); clothing is the primary surface.
 
 ## Coverage editing
 

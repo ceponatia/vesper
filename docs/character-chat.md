@@ -6,8 +6,9 @@ the unit is a **conversation** (`character_chats`): one character can host many
 conversations (a main story beside a fresh alternate universe), each with its own
 transcript, rolling summary, and per-participant state, and a **memory group** deciding
 what carries across (see §Memory below). It began as a voice-tuning test-bed
-and is now a **primary feature** (and the current product focus — see
-[developer-notes/character-chat-standalone.plan.md](developer-notes/character-chat-standalone.plan.md)):
+and is now a **primary feature** (shipped — see
+[developer-notes/finished/character-chat-standalone.plan.md](developer-notes/finished/character-chat-standalone.plan.md);
+current direction is the relationship-model v2 and multi-character chat work):
 it carries its own tracked state, long-term RAG memory, evolving attributes, scenario
 system, a stage-driven relationship arc, in-game time, and scene images. It is deliberately **not** a session: no locations, presence,
 exposure mask, wardrobe state, story threads, or multi-character cast. (One seam has
@@ -49,7 +50,7 @@ exchange:
    clock-expired conditions drop. **No time passes between visits** (spec §8, D8 — the
    wall-clock model was removed outright): the only between-scene lever is a player
    **time skip** (`POST …/time-skip`), which advances the clock, expires conditions
-   through the same filter, stamps a one-shot `pending_skip_note` (worded by stage band,
+   through the same filter, stamps a one-shot `pending_skip_note` (worded by regard band,
    `chatSkipNote`, with a "a life meanwhile" license), and records itself into the
    `skip_history` ring — **meters untouched** (D14, flavor-only v1). Lazily seeds from
    the authored defaults when no row exists.
@@ -228,5 +229,6 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | UI — editor Chat tab | `components/characters/character-chat.tsx` — a summary surface only (Chat defaults + conversation list), never the transcript |
 
 History: the feature shipped across the `character-chat*` plan family (see
-`developer-notes/finished/` and the roadmap's Shipped list); current direction lives in
-[developer-notes/character-chat-standalone.plan.md](developer-notes/character-chat-standalone.plan.md).
+`developer-notes/finished/` and the roadmap's Shipped list); the shipped standalone plan lives in
+[developer-notes/finished/character-chat-standalone.plan.md](developer-notes/finished/character-chat-standalone.plan.md).
+Current direction is the relationship-model v2 and multi-character chat plans.

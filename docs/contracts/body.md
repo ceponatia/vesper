@@ -155,7 +155,7 @@ It is **deterministic and pure** (not an attribute-fetch agent). A term resolves
 - through the body-location tree — `expand` the subtree, then gather every attribute bound to those locations via `bodyLocationId`, or
 - as a category id,
 
-with a small synonym map for colloquialisms that match neither (`mouth` → lips, `figure` / `physique` → build).
+with a small synonym map for colloquialisms that match neither (`mouth` → lips + teeth, `figure` / `physique` → build).
 
 | Function | Returns |
 | --- | --- |

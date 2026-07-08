@@ -13,7 +13,7 @@ Every thread is one of two kinds — this is the single most important distincti
 | **investigation** | a question, problem, mystery, or goal with an end state | yes — tracks `closeConditions`, gets `resolve`d when met | "Investigating Captain Thorne", "Repairing Maya's trust", "Council Chamber Wi-Fi" |
 | **ongoing** | a standing topic that is only ever updated | no — never auto-resolved, only cools when quiet | "Maya's social life" |
 
-An investigation left open after its need is met is a bug (it re-enters context and gets re-raised as if unsettled — the original Council-Chamber-Wi-Fi report). An ongoing thread that gets "resolved" is the opposite bug. The director prompt and the lifecycle both enforce this split.
+An investigation left open after its need is met is a bug (it re-enters context and gets re-raised as if unsettled — the original Council-Chamber-Wi-Fi report). An ongoing thread that gets "resolved" is the opposite bug. This split is expressed by the **director prompt** (a soft LLM instruction — "ongoing threads are never resolved"); note the deterministic lifecycle does **not** currently guard `resolve` by `kind`, so an LLM (or the admin manual-close route) that resolves an ongoing thread by id silently succeeds — the prompt is the only guardrail today.
 
 ## Data model
 
@@ -57,7 +57,7 @@ Every field is `.default()`ed, so threads written before this schema existed par
 - **Spawn** (`engine/spawn.ts`): plot anchors seed threads (`source: "anchor"`); priority `active` → `open`, else `cooling`.
 - **touch / develop / propose / resolve**: applied deterministically by `applyThreadSignals` (`engine/merge/phases/threads.ts`, pure & unit-tested). `develop` is the major-event path (appends a `{turn, text, kind}` entry, capped, and refreshes recency); `touch` is the cheap keep-warm path (refreshes recency, **no** log entry); `propose` seeds a new thread with kind/question/closeConditions and an opening development; `resolve` flips an investigation to `resolved`.
 - **cooling** (`coolThreads`): an `open` thread untouched for `THREAD_COOLING_TURNS` turns demotes to `cooling` — it leaves the narrator context but still shows in the UI and is still offered to the director. Applies to both kinds (a quiet ongoing thread cools out of the way and reactivates when developed).
-- **resolve / archive**: only investigations resolve. Resolved/archived threads drop from both the narrator context and the status payload, so they vanish from the UI. A closed thread is never resurrected by dedup.
+- **resolve / archive**: only investigations *should* resolve (the reducer does not enforce this by kind — see above). Resolved/archived threads drop from both the narrator context and the status payload, so they vanish from the UI. The **semantic** dedup layer never resurrects a closed thread (its candidate pool is open/cooling only) — but the **exact-title** fallback inside `applyThreadSignals` (`byTitle`) is **not** status-filtered, so a `propose` whose title exactly matches a resolved/archived thread reopens it (`develop` → `refresh` sets `status: "open"`). A code gap worth knowing, not intended behavior.
 
 ## Semantic dedup (the duplicate-threads backstop)
 
@@ -74,7 +74,7 @@ The embedder is injected via `GroundingDeps.embedThreadTexts` (same seam as `fuz
 
 | signal | shape | when |
 | --- | --- | --- |
-| `touch` | `{id?, title}` | thread still live, nothing major happened — no log entry |
+| `touch` | `{id?, title, summary?}` | thread still live, nothing major happened — no log entry (an optional `summary` still revises the thread's rolling summary) |
 | `develop` | `{id?, title?, entry, entryKind?, summary?}` | a **major** beat: new evidence, a *meaningful* statement, a real development — **not** flavor dialogue |
 | `propose` | `{title, kind, question?, summary, closeConditions?}` | a genuinely new thread (sparingly) |
 | `resolve` | `string[]` (ids) | investigations whose need is now met |

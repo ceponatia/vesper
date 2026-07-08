@@ -6,7 +6,7 @@ You start a session from a world — open the world and click **Begin session**.
 
 1. **World** — pick from your saved worlds (a companion cast member gives you someone to play opposite from the first beat; forge one if the cast is thin).
 2. **Embodiment** — *Play a character* (you act in-world; optionally pick which library character you are) or *Observer* (you direct from outside). The selected card is highlighted with a check.
-3. **Title** — defaults to the world name.
+3. **Title** — defaults to "*&lt;world name&gt;* — first visit".
 
 Spawning copies the world into session state: locations, links, participants, worn item instances, seeded story threads. From there the play screen streams turns; the sidebar shows participants, scene, clock, wardrobe and containers.
 
