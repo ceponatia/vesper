@@ -44,7 +44,7 @@ describe("realizeBody — anatomy gating", () => {
     expect(body.isLocationPresent("penis")).toBe(false);
     expect(body.isLocationPresent("testicles")).toBe(false);
     // Attributes follow the same gate
-    expect(body.isAttributeApplicable(def("vulva.labia"))).toBe(true);
+    expect(body.isAttributeApplicable(def("vulva.labia_minora"))).toBe(true);
     expect(body.isAttributeApplicable(def("breasts.size"))).toBe(true);
     expect(body.isAttributeApplicable(def("penis.size"))).toBe(false);
     expect(body.hasIntimateRegion("vulva")).toBe(true);
@@ -58,7 +58,7 @@ describe("realizeBody — anatomy gating", () => {
     expect(body.isLocationPresent("vulva")).toBe(false);
     expect(body.isAttributeApplicable(def("penis.size"))).toBe(true);
     expect(body.isAttributeApplicable(def("testicles.size"))).toBe(true);
-    expect(body.isAttributeApplicable(def("vulva.labia"))).toBe(false);
+    expect(body.isAttributeApplicable(def("vulva.labia_minora"))).toBe(false);
   });
 
   it("unknown group in the config is ignored (degraded-safe)", () => {

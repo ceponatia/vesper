@@ -15,9 +15,9 @@ export const orc = defineSpecies({
     {
       attributeId: "build.frame",
       applicability: "required",
-      defaultValue: "broad",
-      allowedValues: ["athletic", "stocky", "broad", "heavyset"],
-      notes: "Orcs are broad and powerfully built.",
+      defaultValue: "heavy_boned",
+      allowedValues: ["sturdy", "heavy_boned"],
+      notes: "Orcs are heavy-boned and powerfully built.",
     },
     {
       attributeId: "build.height",

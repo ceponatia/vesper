@@ -69,14 +69,38 @@ catalog already carry per-value hints).
      Snapshot/degradation tests: no gloss ⇒ byte-identical output.
 3. **Vocabulary audit (entangled members).** Sweep every enum's
    `allowedValues` for members that encode a *different* attribute's dimension.
-   Known suspect: `build.frame` **`willowy`** (always implies tall + slender —
-   collides with `build.height`); candidate replacement `slender`, owner picks
-   the word. For each rename: update `allowedValues` (+ keep the old word in
+   For each rename: update `allowedValues` (+ keep the old word in
    `aliases` so freeform authoring still maps), and run a one-off value-sweep
    script over every storage site of attribute values (library character
    profiles, world snapshot copies, session/chat attribute overlays — the
-   audit enumerates the exact tables) so no stored `willowy` survives to fail
+   audit enumerates the exact tables) so no stored old value survives to fail
    vocabulary validation.
+   - **`build.frame` already resolved in code (2026-07-08):** re-scoped to
+     skeletal gauge (`delicate / slight / average / sturdy / heavy_boned`) —
+     the one dimension not covered by height, weight, musculature, shoulders,
+     hips, or waist. This dissolved the entangled members wholesale instead of
+     renaming them (`willowy` → height+weight, `athletic` → musculature,
+     `curvy` → hips/waist, `broad` → shoulders, `heavyset` → weight). Same
+     change: `curvy` alias moved to `hips.width`, `build.musculature` dropped
+     `soft` (kept `untoned`; `soft` still means light adiposity in
+     `weight_presentation`), `build.height` uses `very_short` (not `dwarfish`
+     — fantasy-race token skews image models). Species catalogs (dwarf, orc),
+     the forge demo, and the harbor-house fixture were repointed. **The
+     stored-value sweep in this slice must still map old frame values** in DB
+     rows (`willowy`/`athletic`/`stocky`/`heavyset`/… → nearest new gauge
+     value).
+   - **Intimate vocabulary expanded in the same session:** `vulva.labia` was
+     split into `vulva.labia_majora` + `vulva.labia_minora` (stored rows under
+     the dead `vulva.labia` id need the sweep too — map `prominent` →
+     `labia_minora: protruding`), and the vulva/breasts groups gained new
+     fields (shape, mons, colors, pubic hair, texture, arousal-response
+     tendencies; breasts augmentation/fullness/areola). All new values are
+     snake_case; augmentation was split out of the size/shape scales per the
+     orthogonality rule. `feet.scent` also swapped its space-containing values
+     for a larger snake_case palette (`freshly washed`/`neutral` → `clean`,
+     `sour` → `sour_sweat`, `cheesy and vinegary` → `cheesy`,
+     `erotically stinky` → nearest of `thick_musk`/`feral`) — same sweep
+     applies to stored rows.
 4. **Authoring pass.** Draft glosses for the genuinely ambiguous enums (build,
    weight/musculature, intimate categories, voice, movement, skin), applying
    the orthogonality rule; owner reviews the batch. Data-only edit per the
@@ -91,8 +115,6 @@ catalog already carry per-value hints).
 
 ## Open questions
 
-- **`willowy` replacement word** — `slender`? (owner call; decide in slice 3
-  before the sweep script is written).
 - **Chat lane always-on?** Session lane only renders full impressions
   first-encounter; chat renders attribute lines every build (prompt-cache
   stable segment). Glosses there are cheap and cached — proposed: include

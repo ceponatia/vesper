@@ -190,7 +190,6 @@ export function buildAvatarPrompt(
   profile: CharacterProfile,
   style: AvatarStyle,
   wardrobe: ReadonlyArray<AvatarWardrobeItem> = [],
-  allowIntimate = false,
 ): string {
   const realizedBody = realizedBodyForProfile(profile);
   // Coverage of the FULL wardrobe (before the waist-up garment filter) — a
@@ -221,9 +220,10 @@ export function buildAvatarPrompt(
     if (def.bodyLocationId && isBelowWaist(def.bodyLocationId) && !isFeatureAttributeCategory(def.category)) continue;
     if (AVATAR_OMIT_ATTRIBUTES.has(def.id)) continue; // low-value in a waist-up still (scene-images "D")
     if (isNonVisualAttribute(def)) continue; // voice/scent don't render in a portrait
-    // Intimate anatomy reaches an image only on the uncensored route, and only
-    // when the region is actually bare/sheer — never under clothing.
-    if (isIntimateAttribute(def) && !(allowIntimate && intimateAttrRendersExposed(def, exposure))) continue;
+    // The portrait studio is intimate-free by rule: intimate anatomy never
+    // reaches the avatar prompt, whatever the wardrobe exposes — exposure-gated
+    // intimate detail belongs to the scene-render paths only.
+    if (isIntimateAttribute(def)) continue;
     // Chest hair is hidden under clothing — only state it when the torso reads bare/sheer.
     if (def.id === "chest.hair" && exposure.torso === "covered") continue;
     if (value.id === "identity.gender") {
