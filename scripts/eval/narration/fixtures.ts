@@ -113,6 +113,21 @@ export interface EvalScenario {
    * not reported — most turns should mention nothing, so it's never a universal score.
    */
   sensoryRelevant?: boolean;
+  /**
+   * Perception-partition leak check (player-input-perception.plan.md slice 2): the player's
+   * message plants a distinctive token INSIDE an unspoken thought, and the token appears
+   * nowhere else in the prompt. A reply matching this answered the thought — a mind-read.
+   * Flips on the deterministic `thoughtLeak` metric (`run.ts`); expected NOT to match.
+   * Absent ⇒ not measured.
+   */
+  plantedThoughtRe?: RegExp;
+  /**
+   * The scenario earns a player-POV perceptual detail (chat-narrator-pov.plan.md): the
+   * player's attention or contact makes "what you see / what reaches your senses" narration
+   * desirable. Flips on the deterministic second-person-perception metric (`povCue`,
+   * `run.ts`); expected to match. Absent ⇒ not measured.
+   */
+  povRelevant?: boolean;
   build: (shape: NarrationShapeId, opts: { focus: boolean }) => { system: string; messages: ModelMessage[] };
 }
 
@@ -350,8 +365,9 @@ const CONTRAST_MEMORY_INPUT = "What a week I've had. Distract me — ask me abou
 const CONTRAST_FAMILIARITY_INPUT = "You know exactly why I'm here. Say it.";
 const CONTRAST_MASK_INPUT = "Admit it — you're glad I stayed.";
 
-/** Assemble a contrast-pair chat prompt through the real builder (shape swept, focus N/A in chat). */
-function chatContrastBuild(o: {
+/** Assemble a chat-lane prompt through the real builder (shape swept, focus N/A in chat). */
+function chatBuild(o: {
+  name: string;
   profile: CharacterProfile;
   state?: ChatState;
   memory?: CharacterChatPromptInput["memory"];
@@ -359,7 +375,7 @@ function chatContrastBuild(o: {
 }): EvalScenario["build"] {
   return (shape) => ({
     system: buildCharacterChatSystemPrompt({
-      name: "Wren",
+      name: o.name,
       profile: o.profile,
       state: o.state,
       memory: o.memory,
@@ -368,6 +384,40 @@ function chatContrastBuild(o: {
     messages: [{ role: "user", content: o.playerInput }],
   });
 }
+
+/** Contrast pairs all speak through the one shared contrast character (Wren). */
+function chatContrastBuild(o: {
+  profile: CharacterProfile;
+  state?: ChatState;
+  memory?: CharacterChatPromptInput["memory"];
+  playerInput: string;
+}): EvalScenario["build"] {
+  return chatBuild({ name: "Wren", ...o });
+}
+
+// ---------------------------------------------------------------------------
+// Sabrina — the shared chat character for the sensory / perception / POV
+// fixtures (character-chat-sensory.plan.md, player-input-perception.plan.md §2,
+// chat-narrator-pov.plan.md §3). One profile, varied state per scenario.
+// ---------------------------------------------------------------------------
+
+const SABRINA_PROFILE: CharacterProfile = characterProfileSchema.parse({
+  bio: "Sabrina keeps the front desk of a small seaside inn. Warm, a little shy, quick to color when someone she likes walks in.",
+  personality: "Gentle, attentive, easily flustered. Shows feeling in small gestures rather than big declarations.",
+  attributes: [{ id: "presentation.scent_baseline", value: "soft floral perfume", source: "creation" }],
+});
+
+const FRONT_DESK_STATE: ChatState = {
+  meters: {},
+  regard: 25,
+  conditions: [],
+  premise: "A slow afternoon at the inn's front desk; no one else is around.",
+};
+
+// The player's message for the thought-leak pair: a quoted greeting, a visible stammer
+// and flush, and an unspoken thought carrying the planted token ("klutz") that appears
+// nowhere else in the prompt — the deterministic leak tripwire (plan §2).
+const THOUGHT_LEAK_INPUT = `"Hey, Sabrina… how are you…" I stammer slightly, my face flushing. There's no way she'd ever go for a hopeless klutz like me.`;
 
 export const EVAL_SCENARIOS: EvalScenario[] = [
   {
@@ -528,17 +578,14 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
       "Distinct character voice; focused, proportionate reply; no generic doting. Warmth tracks the affinity stage, not the single compliment.",
     playerInput: "You always know exactly what to say. You're kind of amazing, you know that?",
     knownNames: [],
-    build: (shape) => ({
-      system: buildCharacterChatSystemPrompt({
-        name: "Maya",
-        profile: characterProfileSchema.parse({
-          bio: "Maya runs the Harbor House kitchen. Dry humor, slow to trust, fiercely loyal once she does. Hides tenderness behind teasing.",
-          personality: "Guarded, observant, wry. Deflects praise. Warms in private, never performs it.",
-        }),
-        state: { meters: {}, regard: 30, conditions: [], premise: "A quiet evening in the kitchen after the guests have gone up." },
-        narrationShape: shape,
+    build: chatBuild({
+      name: "Maya",
+      profile: characterProfileSchema.parse({
+        bio: "Maya runs the Harbor House kitchen. Dry humor, slow to trust, fiercely loyal once she does. Hides tenderness behind teasing.",
+        personality: "Guarded, observant, wry. Deflects praise. Warms in private, never performs it.",
       }),
-      messages: [{ role: "user", content: "You always know exactly what to say. You're kind of amazing, you know that?" }],
+      state: { meters: {}, regard: 30, conditions: [], premise: "A quiet evening in the kitchen after the guests have gone up." },
+      playerInput: "You always know exactly what to say. You're kind of amazing, you know that?",
     }),
   },
   {
@@ -550,18 +597,81 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
     playerInput: "I step into the room and Sabrina comes closer.",
     knownNames: ["Sabrina"],
     sensoryRelevant: true,
-    build: (shape) => ({
-      system: buildCharacterChatSystemPrompt({
-        name: "Sabrina",
-        profile: characterProfileSchema.parse({
-          bio: "Sabrina keeps the front desk of a small seaside inn. Warm, a little shy, quick to color when someone she likes walks in.",
-          personality: "Gentle, attentive, easily flustered. Shows feeling in small gestures rather than big declarations.",
-          attributes: [{ id: "presentation.scent_baseline", value: "soft floral perfume", source: "creation" }],
-        }),
-        state: { meters: {}, regard: 25, conditions: [], premise: "A slow afternoon at the inn's front desk; no one else is around." },
-        narrationShape: shape,
-      }),
-      messages: [{ role: "user", content: "I step into the room and Sabrina comes closer." }],
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      playerInput: "I step into the room and Sabrina comes closer.",
+    }),
+  },
+  // ── Perception-partition fixtures (player-input-perception.plan.md §2) ──
+  {
+    id: "chat-thought-leak",
+    title: "Character-chat — planted interiority must not be answered",
+    lane: "chat",
+    expectation:
+      "Sabrina hears only the quoted greeting and sees the stammer and the flush. She may react to the visible nerves — warmly, teasingly, however fits her — and may even guess wrong about their cause. She must NOT answer, echo, or paraphrase the unspoken thought (reassuring him he isn't a klutz, or that she does want to talk to him): that is a mind-read and fails.",
+    playerInput: THOUGHT_LEAK_INPUT,
+    knownNames: ["Sabrina"],
+    plantedThoughtRe: /\bklutz\b/i,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      playerInput: THOUGHT_LEAK_INPUT,
+    }),
+  },
+  {
+    id: "chat-thought-leak-noquotes",
+    title: "Character-chat — casual unquoted message still reads as speech",
+    lane: "chat",
+    expectation:
+      "The whole message is unquoted but plainly conversational — Sabrina must treat it as spoken and answer the greeting naturally. Treating the player as silent, narrating around an unanswered question, or remarking that he 'said nothing' fails (the no-quotes graceful degradation).",
+    playerInput: "hey Sabrina, how's it going? quiet day?",
+    knownNames: ["Sabrina"],
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      playerInput: "hey Sabrina, how's it going? quiet day?",
+    }),
+  },
+  // ── Player-POV narration fixtures (chat-narrator-pov.plan.md §3) ──
+  {
+    id: "chat-pov-visual",
+    title: "Character-chat — the player's look earns one player-eye visual detail",
+    lane: "chat",
+    expectation:
+      "The player is openly looking her over. The reply should weave ONE concrete visual detail of Sabrina from the player's POV — the dress, the slit, the way she moves in it — into her in-character reaction (flustered, pleased, teasing, per her personality). Story-camera grammar ('You see…', 'the slit of her dress…') is welcome. A head-to-toe inventory, or ignoring the look entirely, both fail.",
+    playerInput: "I lean on the desk and look her up and down, taking my time about it.",
+    knownNames: ["Sabrina"],
+    povRelevant: true,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: {
+        ...FRONT_DESK_STATE,
+        premise: "Evening at the inn; Sabrina has come around the front desk to tidy the empty lounge.",
+        outfit: "a slate-blue summer dress with a slit up one side",
+      },
+      playerInput: "I lean on the desk and look her up and down, taking my time about it.",
+    }),
+  },
+  {
+    id: "chat-pov-sensory",
+    title: "Character-chat — contact lands a sense in the player's body",
+    lane: "chat",
+    expectation:
+      "The player has taken her hand and brought it close to his lips — contact plus closeness. One sensory detail should arrive IN THE PLAYER'S senses (her perfume reaching your nose, the warmth of her fingers against your lips), woven into her flustered reaction — not stated as a detached property of hers ('her hands smell of…'). One hook; never a list.",
+    playerInput: "I take her hand gently and bring it up to my lips.",
+    knownNames: ["Sabrina"],
+    sensoryRelevant: true,
+    povRelevant: true,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      playerInput: "I take her hand gently and bring it up to my lips.",
     }),
   },
   // ── Paired contrast fixtures (spec §5) — select the whole set with `--scenarios chat-contrast` ──

@@ -45,6 +45,15 @@ const NARRATIVE_TEMPERATURE = 0.8;
 const SENSORY_CUE_RE =
   /\b(scent|smell|smells|smelling|smelled|perfume|cologne|fragrance|aroma|musk|soap|cedar|lavender|vanilla|jasmine|floral|warmth|warm skin|breath|softness)\b/i;
 
+/**
+ * Opt-in deterministic check that narration lands in the PLAYER's senses
+ * (chat-narrator-pov.plan.md §3) — reported ONLY for scenarios flagged `povRelevant`.
+ * Second-person perception grammar: "you see/notice/catch…", "your eyes/nose/skin…",
+ * "…reaches/tickles/brushes your…". Expected to match on flagged scenarios.
+ */
+const POV_CUE_RE =
+  /\b(?:you (?:see|notice|catch|watch|glimpse|take in|feel|smell|taste|hear|can see|can smell|can feel|can't help but notice)|your (?:eyes?|gaze|attention|view|nose|nostrils|lips|mouth|skin|palms?|fingers|fingertips|hands?)|meets? your|(?:reach(?:es|ing)?|fill(?:s|ing)?|tickl(?:es|ing)|brush(?:es|ing)|graz(?:es|ing)|warm(?:s|ing)|drift(?:s|ing) (?:to|toward|into)) your)\b/i;
+
 const MODEL_ALIASES: Record<string, string> = {
   aion: "aion-labs/aion-2.0",
   glm: "z-ai/glm-5.2",
@@ -165,6 +174,14 @@ interface ResultRow {
   narration: string;
   /** Did a `sensoryRelevant` scenario weave in a sensory hook? undefined ⇒ not flagged (not measured). */
   sensoryCue?: boolean;
+  /** Did a `povRelevant` scenario narrate in the player's senses (POV_CUE_RE)? Expected Y. undefined ⇒ not flagged. */
+  povCue?: boolean;
+  /**
+   * Did the reply match the scenario's `plantedThoughtRe` — i.e. answer a thought the
+   * character couldn't perceive (player-input-perception.plan.md §2)? Expected N; Y is a
+   * mind-read. undefined ⇒ no planted token (not measured).
+   */
+  thoughtLeak?: boolean;
   /**
    * Did the reply hit its contrast axis's lexical cue list (CONTRAST_AXES[group].cueRe —
    * the sensoryRelevant pattern)? Expected on the flagged variant, NOT the control.
@@ -192,6 +209,8 @@ function printTable(rows: ResultRow[]): void {
     pad("total", 7),
     pad("judge", 6),
     pad("sens", 5),
+    pad("pov", 4),
+    pad("leak", 5),
     pad("cue", 4),
     "provider",
   ].join(" ");
@@ -217,6 +236,8 @@ function printTable(rows: ResultRow[]): void {
         pad(`${m.totalMs}ms`, 7),
         pad(r.judgement ? judgeAvg(r.judgement).toFixed(1) : "-", 6),
         pad(r.sensoryCue === undefined ? "-" : r.sensoryCue ? "Y" : "N", 5),
+        pad(r.povCue === undefined ? "-" : r.povCue ? "Y" : "N", 4),
+        pad(r.thoughtLeak === undefined ? "-" : r.thoughtLeak ? "Y" : "N", 5),
         pad(r.contrastCue === undefined ? "-" : r.contrastCue ? "Y" : "N", 4),
         m.provider ?? "?",
       ].join(" "),
@@ -266,11 +287,13 @@ async function main(): Promise<void> {
       const { text, metrics } = await streamNarration(model, reasoning, prompt, scenario.knownNames);
       const judgement = args.judge ? await judgeAbsolute(scenario, text) : null;
       const sensoryCue = scenario.sensoryRelevant ? SENSORY_CUE_RE.test(text) : undefined;
+      const povCue = scenario.povRelevant ? POV_CUE_RE.test(text) : undefined;
+      const thoughtLeak = scenario.plantedThoughtRe ? scenario.plantedThoughtRe.test(text) : undefined;
       const cueRe = scenario.contrast ? CONTRAST_AXES[scenario.contrast.group].cueRe : undefined;
       const contrastCue = cueRe ? cueRe.test(text) : undefined;
-      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, seed, metrics, judgement, narration: text, sensoryCue, contrastCue });
+      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, seed, metrics, judgement, narration: text, sensoryCue, povCue, thoughtLeak, contrastCue });
       process.stdout.write(
-        ` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}${contrastCue === undefined ? "" : ` cue ${contrastCue ? "Y" : "N"}`}\n`,
+        ` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}${povCue === undefined ? "" : ` pov ${povCue ? "Y" : "N"}`}${thoughtLeak === undefined ? "" : ` leak ${thoughtLeak ? "Y" : "N"}`}${contrastCue === undefined ? "" : ` cue ${contrastCue ? "Y" : "N"}`}\n`,
       );
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
