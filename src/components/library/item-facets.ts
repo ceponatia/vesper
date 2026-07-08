@@ -90,20 +90,11 @@ export function itemFacetDefs<TCard extends ItemFacetCard>(): FacetDef<TCard>[] 
   ];
 }
 
-const kindGroups: Record<string, CardGroup> = {
-  clothing: { id: "clothing", label: "Clothing", order: 0 },
-  object: { id: "object", label: "Objects", order: 1 },
-  container: { id: "container", label: "Containers", order: 2 },
-};
-
 /**
- * Grouped "closet" sections for the unfiltered browse: All → by kind,
- * Clothing → by category, Object → by subtype; containers stay flat.
+ * Grouped "closet" sections for the unfiltered browse: Clothing → by
+ * category, Object → by subtype; containers stay flat.
  */
 export function itemCardGroup(card: ItemFacetCard, bucket: string): CardGroup | null {
-  if (bucket === "all") {
-    return kindGroups[card.kind ?? ""] ?? { id: "other", label: "Other", order: 99 };
-  }
   if (bucket === "clothing") {
     const id = card.definition?.category ?? "";
     const index = clothingCategories.findIndex((c) => c.id === id);
