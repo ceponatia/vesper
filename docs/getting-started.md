@@ -34,6 +34,18 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > embedding model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`).
 > Only the Venice **image** models below remain env-overridable.
 
+> **Tool-model candidate — `aion-labs/aion-3.0`.** Added to the narrator list
+> (`lib/narrative-models.ts`) as **Aion 3.0**, it is notable beyond its narrator
+> role: per OpenRouter's `supported_parameters` it advertises `tools` +
+> `tool_choice` (function/tool calling) and `response_format` (structured JSON) —
+> unlike most narrator picks. That makes it a candidate for the **tool model**
+> (`MODEL_DEFAULTS.tool`, backing intake + the scene composer — the legs that need
+> reliable tool/structured calls) and for the in-session agent list
+> (`lib/agent-models.ts`). Tool-calling **reliability in our pipeline is unverified**
+> (Aion is a multi-model roleplay/storytelling system on the GLM family, and
+> OpenRouter's advertised params don't guarantee behavior) — **test with it before
+> promoting it to a tool/agent role.** Context 131K, $3/$6 per 1M in/out.
+
 | Var | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev` | App database |

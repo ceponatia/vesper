@@ -16,6 +16,10 @@ export interface NarrativeModelOption {
 
 export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   { id: "aion-labs/aion-2.0", label: "Aion 2.0" },
+  // Aion 3.0 additionally advertises OpenRouter `tools`/`tool_choice` +
+  // `response_format` — a candidate tool/agent model to test later (see
+  // docs/getting-started.md §Environment "Tool-model candidate").
+  { id: "aion-labs/aion-3.0", label: "Aion 3.0" },
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
   { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
