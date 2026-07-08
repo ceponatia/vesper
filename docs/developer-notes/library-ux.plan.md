@@ -1,6 +1,9 @@
 # Library UX — faceted browse, item facets, shared entity picker
 
-Status: active — core pass started 2026-07-08
+Status: active — core pass built 2026-07-08 (commit `4add351`, all seven slices
+below), deployed to Fly the same day; awaiting owner review before the
+follow-up pass. Docs: `docs/ui.md` §library grid/pickers,
+`docs/contracts/items.md` §Wearer/§Color, `docs/guide/creating-items.md`.
 
 The library list pages and every "pick an entity" form flow lean entirely on
 free-form tags and flat capped lists, while the data model already carries the
