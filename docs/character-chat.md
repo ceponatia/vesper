@@ -68,8 +68,12 @@ exchange:
    attributes → sensory cues → rules; byte-identical across turns, re-rendering only on
    a band crossing on either relationship axis — asserted by a prefix-byte-stability test) and a **volatile tail**
    (recap, memory, state, skip note, disinhibition + transient-appearance overrides,
-   cue invite, beat instructions). See [prompts.md](prompts.md) §§Character-chat sensory
-   cues / state as a narration system / long-term memory, plus the regex-only one-turn
+   cue invite, beat instructions). The rules carry the **player-input perception
+   partition** (quoted = heard, narration = seen, interiority = invisible) and the
+   **player-POV narrator camera** (involuntary perception + light reflex writable, the
+   player's agency not; attention-gated visual detail). See [prompts.md](prompts.md)
+   §§Character-chat sensory cues / player-input perception / player-POV narration /
+   state as a narration system / long-term memory, plus the regex-only one-turn
    cue (`engine/chat-intent.ts`).
 7. **Stream.** `streamCharacterChat` — the same `streamText` + `openrouter().chat()` shape
    as the session narrator, through `stripNarratorArtifactStream`. The narrator model is

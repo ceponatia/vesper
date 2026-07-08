@@ -39,26 +39,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
-- **Player-input perception — NPCs hear quotes, see the visible, never read minds** —
-  [player-input-perception.plan.md](player-input-perception.plan.md) (next — planned
-  2026-07-08). The chat narrator answers the player's *internal thoughts* as if
-  spoken; teach the `CHAT_RULES` perception partition (quoted = heard, narration =
-  seen if visible, interiority = unknowable; state agents keep full visibility),
-  prompt-first with zero player burden, plus a `chat-thought-leak` eval fixture.
-  Then the opt-in **markup lane**: `*…*` thoughts / `*Name: …*` comms sigils with a
-  prefix notation legend + symmetric texted-reply output grammar, italicized
-  rendering with sigils hidden, and the RAG **visibility fence** (a fact `channel`
-  field so thought-derived facts never come back as NPC-known knowledge).
-  Session-lane port follows chat validation.
-- **Chat narrator POV — player-POV story narration** —
-  [chat-narrator-pov.plan.md](chat-narrator-pov.plan.md) (next — planned 2026-07-08).
-  Teach the chat narrator its second role: the story's camera behind the player's eyes.
-  Player-eye visual description (attributes/outfit reframed as "what the player sees",
-  attention/motion-gated, one detail max) + sensation landing in the player's body
-  ("the scent tickles your nose"), with an explicit involuntary-perception vs
-  voluntary-action boundary; an `attention` arm on the chat cue invite; `chat-pov-*`
-  eval fixtures + POV metric. Sequenced behind player-input-perception's slices 1–2
-  (both rewrite the CHAT_RULES rule-2 neighborhood).
+- **Player-input perception — markup lane, RAG fence, session port (remainder)** —
+  [player-input-perception.plan.md](player-input-perception.plan.md) (active — the
+  prompt-only partition, slices 1–2, shipped 2026-07-08; see Shipped). Remaining:
+  the state-agent exemption audit (slice 3), the opt-in **markup lane** (`*…*`
+  thoughts / `*Name: …*` comms sigils with a prefix notation legend + symmetric
+  texted-reply output grammar, italicized rendering with sigils hidden), the RAG
+  **visibility fence** (a fact `channel` field so thought-derived facts never come
+  back as NPC-known knowledge), the session-lane port, and the eval-gated semantic
+  fallback.
 - **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
   audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
   grows). Both live in `engine/merge/phases/threads.ts` and are documented in
@@ -130,6 +119,22 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat narrator POV — player-POV story narration** —
+  [chat-narrator-pov.plan.md](chat-narrator-pov.plan.md) — 2026-07-08 — the chat model
+  is now also the story's camera behind the player's eyes: the narrator-camera rule +
+  player-body boundary (perception + light reflex writable; the player's actions,
+  speech, and named emotions never), the attention/motion-gated visual rule (one
+  detail, never an inventory), Attributes/outfit/sensory blocks reframed as what
+  reaches the player's eye and senses, an `attention` arm on the chat cue invite, and
+  `chat-pov-*` eval fixtures + `povCue` metric. Leftover: the live scored eval run
+  (owner-gated spend).
+- **Player-input perception — the prompt-only partition (slices 1–2)** —
+  [player-input-perception.plan.md](player-input-perception.plan.md) — 2026-07-08 —
+  the chat narrator now reads the player's message in channels: quoted = heard,
+  unquoted narration = seen if visible, interiority = invisible (no mind-reading,
+  with a worked example and graceful no-quotes degradation); `chat-thought-leak`
+  fixtures + a deterministic planted-token `thoughtLeak` metric. The markup lane, RAG
+  visibility fence, and session port remain in **Next**.
 - **Character chat — the standalone experience** —
   [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md) · spec
   [finished/character-chat-standalone.spec.md](finished/character-chat-standalone.spec.md) — 2026-07-02 —

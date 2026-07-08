@@ -395,6 +395,100 @@ describe("buildCharacterChatSystemPrompt", () => {
   });
 });
 
+describe("buildCharacterChatSystemPrompt — player-input perception (player-input-perception.plan.md slice 1)", () => {
+  const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+
+  it("teaches the perception partition: quoted = heard, narration = seen, interiority = invisible", () => {
+    expect(prompt).toContain("Reading the player's message (what Mara can actually perceive):");
+    expect(prompt).toMatch(/Quoted text is speech: Mara hears exactly the words inside the quotes/);
+    expect(prompt).toMatch(/Unquoted text is the story's narration/);
+    expect(prompt).toMatch(/Inner thoughts, feelings, and self-talk Theo writes into that narration reach no one/);
+    expect(prompt).toMatch(/must not answer, echo, or uncannily intuit/);
+  });
+
+  it("licenses reacting to visible correlates and wrong guesses (perceptiveness, not telepathy)", () => {
+    expect(prompt).toMatch(/notice the visible signs \(a flush, a hesitation\)/);
+    expect(prompt).toMatch(/even guess wrong/);
+  });
+
+  it("degrades gracefully: a casual unquoted message is still speech, never silence", () => {
+    expect(prompt).toMatch(/no quotes at all that reads as plain conversation is simply spoken aloud/);
+    expect(prompt).toMatch(/never treat a casual unquoted message as silence/);
+  });
+
+  it("carries the worked mind-reading example with the correct read spelled out", () => {
+    expect(prompt).toContain("There's no way Mara would want to talk to a dork like me.");
+    expect(prompt).toMatch(/answering the thought itself \("You're not a dork!"\) is mind-reading and forbidden/);
+  });
+
+  it("routes rule 2 and the respond-first rule through what the character heard and saw", () => {
+    expect(prompt).toMatch(/react to what Mara could actually hear and see in it/);
+    expect(prompt).toContain("Respond directly to what Mara just heard and saw");
+    // The old everything-is-said-at-you framing is gone.
+    expect(prompt).not.toContain("said or did to Mara — react to it");
+  });
+
+  it("keeps the partition in the faceless (no-player) variant too", () => {
+    const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(faceless).toContain("Reading the player's message (what Mara can actually perceive):");
+    expect(faceless).toMatch(/self-talk the user writes into that narration reach no one/);
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — player-POV narration (chat-narrator-pov.plan.md)", () => {
+  const withPlayer = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+  const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+
+  it("names the narrator role: the story's camera sits behind the player's eyes", () => {
+    expect(withPlayer).toContain("the story's camera sits behind Theo's eyes");
+    expect(withPlayer).toContain("You catch the scent of cedar as Mara leans past you.");
+    expect(faceless).toContain("the story's camera sits behind the user's eyes");
+  });
+
+  it("draws the player-body boundary: involuntary perception + light reflex in; actions, speech, emotions out", () => {
+    expect(withPlayer).toMatch(/involuntary perception and the small reflexes it stirs \(a breath that catches, a shiver\)/);
+    expect(withPlayer).toMatch(/never their deliberate actions, speech, or decisions/);
+    expect(withPlayer).toMatch(/never name their emotions or arousal for them/);
+    expect(withPlayer).toContain("those are Theo's alone to declare");
+  });
+
+  it("adds the attention/motion-gated visual rule (show, don't inventory)", () => {
+    expect(withPlayer).toContain("Show, don't inventory");
+    expect(withPlayer).toMatch(/give one concrete visual detail from Theo's eye/);
+    expect(withPlayer).toContain("Sight carries at any distance.");
+    expect(withPlayer).toMatch(/never a head-to-toe description, never repeated for an unchanged look/);
+  });
+
+  it("reframes Attributes as shared identity + appearance data", () => {
+    expect(withPlayer).toContain("Attributes (who you are, and what Theo sees of you");
+    expect(faceless).toContain("Attributes (who you are, and what the user sees of you");
+  });
+
+  it("words the closeness sensory rule as sensation landing in the player's senses", () => {
+    expect(withPlayer).toMatch(/written as it lands in Theo's senses \(the scent that reaches them, the warmth they feel\)/);
+  });
+
+  it("invites showing the outfit when movement or attention makes it noticeable", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, regard: 0, conditions: [], outfit: "a slate-blue dress with a slit up one side" },
+    });
+    expect(prompt).toContain("You're wearing a slate-blue dress with a slit up one side.");
+    expect(prompt).toMatch(/Let it show: when movement or the player's attention makes it noticeable/);
+  });
+
+  it("grounds intimate sensation in the player's body too", () => {
+    expect(withPlayer).toContain("The sensation lands in Theo's body as much as Mara's");
+    expect(faceless).toContain("The sensation lands in the user's body as much as Mara's");
+  });
+
+  it("keeps the restraint discipline: no always-describe mandate anywhere", () => {
+    expect(withPlayer).not.toMatch(/always (mention|include|describe|note|add)/i);
+    expect(withPlayer).not.toMatch(/every (turn|reply|response)[^.]{0,40}(describe|detail|sensory|visual)/i);
+  });
+});
+
 describe("buildCharacterChatSystemPrompt — state as a narration system", () => {
   const drunkMeters = { meters: { intoxication: 0.8 }, regard: 0, conditions: [] };
 

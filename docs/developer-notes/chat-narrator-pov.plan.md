@@ -1,7 +1,17 @@
 # Chat narrator — player-POV story narration
 
-Status: **next** (planned 2026-07-08 from owner direction; design proposed inline —
-the §Open questions are the owner calls).
+Status: **shipped — 2026-07-08.** All four slices landed in one change with
+player-input-perception's slices 1–2 (built first, per the owner's build-order call;
+this plan's rules were layered on the freshly rewritten rule-2 neighborhood): the
+narrator-camera rule 4 + player-body boundary (owner ruled **perception + light
+reflex** — breath catch/shiver in; actions, speech, decisions, named emotions/arousal
+out), the attention/motion-gated visual rule 12, the Attributes/outfit/Sensory-cue/
+intimate-block reframings, the `attention` arm on `detectChatCue` +
+`chatCueInviteLine`, the `chat-pov-visual` / `chat-pov-sensory` fixtures + the
+deterministic `povCue` metric, tests, and `docs/prompts.md` §Character-chat player-POV
+narration. **Leftovers:** the live scored eval run (owner-gated spend — also decides
+the `aggressive_concise` open question below), and the session-lane wording port
+(noted for the perception plan's slice-7 port). (Original plan below.)
 
 Related: [character-chat-sensory.plan.md](character-chat-sensory.plan.md) (the shipped
 opportunistic-cue discipline this widens), [player-input-perception.plan.md](player-input-perception.plan.md)
@@ -210,21 +220,20 @@ roadmap on ship.
 
 ## Open questions
 
-- **The reflex line (D2).** Is involuntary player reflex (breath catch, shiver,
-  goosebumps) narrator-writable, or only pure perception? Proposed: perception + light
-  reflex yes; emotion/arousal claims never. Owner call — it's the difference between
-  "the smell tickles your nose" (clearly in) and "your pulse quickens" (borderline).
-- **Does `aggressive_concise` suppress the flavor?** If the slice-3 eval shows the shape
+- **Does `aggressive_concise` suppress the flavor?** If the live eval shows the shape
   profile eating the perceptual detail, the fix is a one-line wording tweak to the chat
   profile ("concise means no padding — a grounded sensory detail inside the beat is not
-  padding"), not a new shape. Measure first.
-- **Build order with player-input-perception** (§Sequencing): after its slices 1–2, or
-  merged into one CHAT_RULES sitting? Leaning after — proven wording is easier to extend
-  than to co-draft.
+  padding"), not a new shape. Measure first (the owner-gated live run in the Status
+  leftovers).
 - **Session-lane port.** The session lane already has exposure-mask/glance machinery but
   its *narrator-eye wording* could take the same player-body arrival framing. Out of
   scope here; note for the perception plan's slice-7 port to carry both if this
   validates.
+
+Resolved (owner rulings, 2026-07-08): **the reflex line** — perception + light reflex
+(breath catch, shiver) is narrator-writable; emotions/arousal never (recorded in the
+Status note and rule 4). **Build order** — player-input-perception slices 1–2 were
+built first in the same change, and this plan's rules layered on top.
 
 ## Acceptance criteria
 

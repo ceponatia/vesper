@@ -1,6 +1,13 @@
 # Player-input perception — NPCs hear quotes, see the visible, never read minds
 
-Status: next
+Status: **active — slices 1–2 shipped 2026-07-08** (built ahead of order as the base for
+[chat-narrator-pov.plan.md](chat-narrator-pov.plan.md), per the owner's build-order call).
+Shipped: the `CHAT_RULES` "Reading the player's message" block (perception model + worked
+example, rules 2/8 routed through it — note the rules renumbered when the POV plan added
+its narrator-camera rules 4/12 in the same change), and the `chat-thought-leak` /
+`chat-thought-leak-noquotes` eval fixtures + deterministic `thoughtLeak` planted-token
+metric (`run.ts`). Remaining: slice 3 (state-agent exemption audit), the markup arc
+(4–6 incl. the RAG visibility fence), the session port (7), and the gated fallback (8).
 
 ## Problem
 
@@ -180,7 +187,7 @@ perception partition must extend into the fact store:
 Sequencing: 1–3 are the prompt-only fix (ship first, current focus); 4–6 are the
 markup arc; 7–8 follow validation.
 
-### 1. Chat-lane rules rewrite (the core fix)
+### 1. Chat-lane rules rewrite (the core fix) — shipped 2026-07-08
 
 In `src/server/engine/prompts/character-chat.ts`:
 
@@ -209,7 +216,7 @@ narrator") to confirm placement, then live probes on the Fly deploy with the
 Sabrina-style message shape against the curated chat models (GLM 5.2 default at
 minimum), using "another take" to sample variance.
 
-### 2. Eval fixtures — measure the leak
+### 2. Eval fixtures — measure the leak — shipped 2026-07-08 (base fixtures; markup variants wait on slice 4)
 
 `scripts/eval/narration/fixtures.ts` gets a `chat-thought-leak` scenario (or a small
 family): a message mixing a quoted line, a visible action, and interiority that
