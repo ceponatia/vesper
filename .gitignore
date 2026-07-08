@@ -8,6 +8,9 @@ data/
 # Local-only UI/QA artifacts — Playwright scratch + audit screenshots embed
 # app-generated imagery; keep them on the server, never commit/push.
 .playwright-mcp/
+# Playwright/manual UI-testing screenshots — always save them here, never at
+# the repo root or in docs/.
+screenshots/
 docs/developer-notes/ux-audit-assets/
 docs/prompts/
 
