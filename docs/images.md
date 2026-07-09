@@ -42,6 +42,21 @@ Library items and locations each carry one image (their `imageId` column), gener
 
 **New-world auto-generation:** saving a new world (the create routes — `POST /api/worlds/from-draft` and `POST /api/worlds`) fires `queueWorldImageGeneration`, a single background job that backfills every still-missing image the world references — cast avatars (`generateAvatarsBatch`), plus item and location images (`generateEntityImagesBatch`) — all in parallel batches of 5. It generates **only where the image is null**, so a world that reuses library entities keeps their existing images (and a reused entity that never had one still gets filled). It runs from the route, not from `createWorld`, so direct-call tests don't spawn image work; failures are logged, never surfaced to the save. The author can navigate away — images load into the cards as they finish.
 
+## Image understanding (vision input)
+
+The reverse direction — a model **looking at** a stored image — exists since the
+character-sheet forge's portrait→attributes pass
+([authoring.md](authoring.md) §In-sheet forge). It runs on **OpenRouter, not
+Venice** (Venice is generation/editing only here): `generateChecked` accepts an
+`images` option (raw bytes or base64 + mediaType, sent as message image parts) and
+`visionModelId()` (`server/ai/provider.ts` `MODEL_DEFAULTS.vision`, currently
+`qwen/qwen3-vl-235b-a22b-instruct`) is the code-default vision model — no override
+layer. First consumer: `server/authoring/portrait-attributes.ts`, which reads a
+character's ready avatar (bytes via `absoluteImagePath` + `fs.readFile`) and emits
+closed-vocabulary attribute readings. Demo mode degrades to schema defaults (an empty
+reading), never an invented one. Add a vision consumer the same way: closed output
+vocabulary, `generateChecked` + `images`, ground the output, degrade to a no-op.
+
 ## Demo mode
 
 No keys → SVG monogram placeholder (deterministic gradient from the entity name) saved through the same registry path, flagged `meta.demo: true`. Every pipeline is exercisable in CI.

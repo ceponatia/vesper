@@ -21,6 +21,48 @@ The forge returns a **draft** (never auto-saves). The forge UI renders it as the
 
 On save, `suggestedItems` in the create body are materialized as real library items (`materializeSuggestedItems` in `server/api/library.ts`): a suggestion whose name matches an existing item reuses it — never a duplicate. Failing an exact-name match, a **conservative embedding backstop** (`fuzzyResolve` at `ITEM_DEDUPE_MIN_SCORE`, same item kind) collapses a near-identical garment the agent missed (`api.library.suggested_item.fuzzy_reused`); an embedding failure degrades to a fresh insert. New rows keep the `suggested` tag; the resulting ids are appended to `profile.defaultOutfit`. A bad suggestion degrades (invalid coverage ids dropped with a diagnostic) and never fails the save.
 
+## In-sheet forge: fill, re-draft, portrait
+
+Three editor-side operations on a **saved** character's sheet (plan:
+[developer-notes/character-sheet-forge.plan.md](developer-notes/character-sheet-forge.plan.md)).
+All share the save-first discipline — the edit page flushes unsaved edits through the
+normal PATCH **before** any LLM spend, and the generated result lands as an *unsaved*
+dirty draft: the save bar is the review/undo step. The prose-prompt forge page stays —
+it creates whole characters from a prompt; these build parts of an existing sheet.
+
+- **Fill** ("✦ Forge the rest", `POST /api/characters/forge` with `mode: "fill"`): runs
+  the forge legs with the authored sheet rendered as a fixed concept
+  (`renderSheetConcept`, `server/authoring/character-fill.ts`), then applies the pure
+  fill-merge (`lib/character-fill.ts`) — the merge is the guarantee, the prompt
+  directive an optimization. Non-empty scalars are fixed; lists are additive;
+  attribute/trait ids present on the sheet are never touched; preference targets are
+  exclusive; the species and outfit clusters move all-or-nothing (species only while
+  still at the blank-create default — a bio that says "a succubus barmaid" adopts the
+  species on an otherwise untouched sheet, via the same inference as create mode). The
+  outfit leg is skipped entirely (no spend) when any garment is authored.
+- **Per-tab Re-draft** ("↻ Re-draft tab", `mode: "redraft"` + a `scope`): rewrites ONE
+  tab from the whole sheet, narrator-formatted — misplaced personality prose moves out
+  of the bio, disposition re-reads off the authored text. Five scopes
+  (`lib/character-scopes.ts`: `profile | attributes | personality | disposition |
+  outfit`) map onto the three legs (`server/authoring/character-redraft.ts`); the scope
+  merge takes only the target tab's fields, and `manual`-provenance attribute/trait
+  values mechanically survive — a re-draft that disagreed with one is reported as a
+  `forge.character.redraft.<scope>.kept_manual` diagnostic, never applied. Text fields
+  and non-provenance lists (disposition tags, preferences) ARE rewritten — that is the
+  tab's purpose; the unsaved draft is the review step. A re-draft never changes the
+  species cluster.
+- **Portrait → attributes** ("◉ From portrait",
+  `POST /api/characters/:id/attributes/from-portrait`): the codebase's first
+  image-understanding capability (`server/authoring/portrait-attributes.ts`; vision
+  model via `visionModelId()`, image parts through `generateChecked`'s `images`
+  option). Reads the character's **ready canonical avatar** (id taken from the owned
+  row, never the client) and fills **unset appearance attributes only** — the
+  vocabulary excludes personality-tab and intimate categories, output grounds against
+  the registry + realized body like every forge leg. A reading that disagrees with an
+  existing value (any provenance) lands as a `forge.character.portrait.portrait_conflict`
+  diagnostic. Keyless demo mode degrades to a no-op — it never invents a "reading" of
+  an image nobody looked at.
+
 ## World forge
 
 `POST /api/worlds/forge` with a prose premise plus two intake knobs: **number of
