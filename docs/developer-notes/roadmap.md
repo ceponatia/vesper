@@ -24,30 +24,35 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 ## Active (building now)
 
 - **Library UX — faceted browse, item facets, shared entity picker** —
-  [library-ux.plan.md](library-ux.plan.md) (active — core pass started
-  2026-07-08: items facet bar + grouped closet view + density toggle, the new
-  `wearer`/`color` clothing facets end-to-end (contracts → editor → forge →
-  classify backfill), and the shared `EntityPicker` replacing the flat
-  outfit/location selects. Follow-up pass (other-library facets, tabbed
-  gallery hub, Library nav consolidation, scope fast-follow, pagination) is
-  ruled-in but waits on core review.)
+  [library-ux.plan.md](library-ux.plan.md) (active — core pass **built + deployed
+  2026-07-08** (all seven slices, commit `4add351`): items facet bar + grouped
+  closet view + density toggle, the new `wearer`/`color` clothing facets
+  end-to-end (contracts → editor → forge → classify backfill), and the shared
+  `EntityPicker` replacing the flat outfit/location selects. **Awaiting owner
+  review**; the follow-up pass (other-library facets, tabbed gallery hub, Library
+  nav consolidation, scope fast-follow, pagination) is ruled-in but waits on it.)
 - **Relationship model v2 — familiarity × regard** —
-  [relationship-model.plan.md](relationship-model.plan.md) (active — build started
-  2026-07-07; slice 1 contracts done). Then the substrate plan
-  ([multi-character-chat.plan.md](multi-character-chat.plan.md)) slots between its
-  slice 4 and the matrix slice.
+  [relationship-model.plan.md](relationship-model.plan.md) (active — slices 1–4
+  done 2026-07-07: contracts; two-axis state + the `affinity`→`regard` rename,
+  migration 0028; the composed prompt block + axis-contrast eval fixtures; the
+  player-edge authoring UI. **Paused pending the substrate plan**
+  ([multi-character-chat.plan.md](multi-character-chat.plan.md)), which slots
+  between its slice 4 and the matrix slice.)
 
 ## Next (queued)
 
 - **Player-input perception — markup lane, RAG fence, session port (remainder)** —
-  [player-input-perception.plan.md](player-input-perception.plan.md) (active — the
-  prompt-only partition, slices 1–2, shipped 2026-07-08; see Shipped). Remaining:
-  the state-agent exemption audit (slice 3), the opt-in **markup lane** (`*…*`
-  thoughts / `*Name: …*` comms sigils with a prefix notation legend + symmetric
-  texted-reply output grammar, italicized rendering with sigils hidden), the RAG
-  **visibility fence** (a fact `channel` field so thought-derived facts never come
-  back as NPC-known knowledge), the session-lane port, and the eval-gated semantic
-  fallback.
+  [player-input-perception.plan.md](player-input-perception.plan.md) (**ready to
+  build** — slices 1–2 shipped 2026-07-08 (see Shipped); the five build-blocking
+  rulings settled 2026-07-09: asterisks = thought/comms confirmed, both comms
+  forms parse, OOC = `((…))` only + a composer auto-close/highlight assist,
+  thought-derived facts drop from the narrator, backtick sigil deferred).
+  Remaining: the state-agent exemption audit (slice 3), the opt-in **markup lane**
+  (`*…*` thoughts / `*Name: …*`·`*to Name: …*` comms sigils with a prefix notation
+  legend + symmetric texted-reply output grammar, italicized rendering with sigils
+  hidden, the `((` composer assist), the RAG **visibility fence** (a fact `channel`
+  field so thought-derived facts never come back as NPC-known knowledge), the
+  session-lane port, and the eval-gated semantic fallback.
 - **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
   audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
   grows). Both live in `engine/merge/phases/threads.ts` and are documented in
