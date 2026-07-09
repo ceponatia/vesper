@@ -1,7 +1,11 @@
 # Character sheet forge — in-sheet completion, per-tab re-drafts, portrait-derived attributes — plan
 
-Status: **draft** (design proposed 2026-07-09; open questions below await owner
-rulings — none block slice 1).
+Status: **active** (slices 1–3 built 2026-07-09 on branch
+`worktree-character-sheet-forge`; pending owner review + merge + Fly deploy for
+live UI verification. Owner ruling 2026-07-09: **the `/characters/forge` page
+stays** — it creates whole characters from a prompt; the in-sheet tools build
+parts of an existing sheet, so the in-sheet Forge is **sheet-only, no guidance
+text box**.)
 
 Builds directly on the shipped character forge
 (`server/authoring/character-forge.ts`, docs/authoring.md §Character forge) and
@@ -170,23 +174,46 @@ necessarily five separate LLM calls.
    buttons), `guide/creating-characters.md`. Update in the same change as each
    slice.
 
+## As built (2026-07-09; deviations and refinements from the design above)
+
+- Server modules: `authoring/character-fill.ts` (fill orchestration + sheet
+  render), `authoring/character-redraft.ts` (scope→leg map + directives),
+  `authoring/portrait-attributes.ts` (vision pass). Pure policy shared client
+  and server: `lib/character-fill.ts` (fill merge), `lib/character-scopes.ts`
+  (scope merge + manual reinstatement). One route change (`forge` gains
+  `mode: create|fill|redraft` + `scope`) plus
+  `POST /api/characters/:id/attributes/from-portrait`.
+- **Re-draft on non-provenance lists** (disposition tags, preferences, library
+  tags): replaced wholesale — those lists carry no `manual` stamp, and the
+  unsaved-draft review is the safety net. Provenance-carrying values keep the
+  designed guarantee (manual survives; conflicts reported as
+  `forge.character.redraft.<scope>.kept_manual`).
+- **Scopes ride the three legs** as designed (profile+disposition → profile
+  leg, attributes+personality → attributes leg); `PERSONALITY_CATEGORIES`
+  moved from the attribute picker into contracts
+  (`PERSONALITY_ATTRIBUTE_CATEGORIES` + predicates) so both sides share it.
+- **Vision**: `generateChecked` gained an `images` option (messages form);
+  code-default `qwen/qwen3-vl-235b-a22b-instruct` via `visionModelId()`
+  (checked vision-capable + cheap on the live OpenRouter catalog 2026-07-09).
+  The portrait pass has **no demo fallback** by design — keyless mode is a
+  no-op with a diagnostic, never an invented reading of an unseen image.
+- **Fill-mode int coverage** lives at the module layer
+  (`character-fill.test.ts` runs `forgeCharacterFill` end-to-end on the
+  keyless demo ladder); the route glue is three lines on the create path's
+  existing `withUser`/rate-limit plumbing, so no separate route int test.
+- Not yet done: live UI verification on Fly (deploy is manual) and a live
+  (spend) quality pass of the three new prompt shapes against real models.
+
 ## Open questions
 
-- **`/characters/forge` page fate** — in-sheet Forge on a blank character
-  subsumes the prompt-first page *if* the editor Forge gets an optional
-  guidance text box. Retire the page (CLAUDE.md prefers removing old flows) or
-  keep both? And do we want the guidance box either way? (Slice 1 builds the
-  in-sheet flow regardless; retirement is a follow-on decision.)
-- **Re-draft vs `manual` conflicts** — when another tab clearly contradicts a
-  player-set attribute (bio says towering, attribute says petite), proposed
-  default is *report, don't change*. May Re-draft correct `manual` values
-  instead?
-- **Vision conflict handling** — report-only (proposed), or offer one-click
-  "accept portrait value"? May a portrait-derived value overwrite a
-  `creation`-sourced (AI-forged, never player-touched) value, or strictly fill
-  unset ids (proposed)?
-- **Roadmap slot** — placed provisionally in `## Next` (owner to reorder; a
-  one-line move).
+- **Re-draft vs `manual` conflicts** — built as *report, don't change*. May
+  Re-draft correct `manual` values instead? (Flip = drop the reinstatement in
+  `lib/character-scopes.ts`.)
+- **Vision conflict handling** — built report-only, strictly fill-unset.
+  Wanted: a one-click "accept portrait value" on the conflict diagnostic? May
+  a portrait reading overwrite a `creation`-sourced (never player-touched)
+  value?
+- **Roadmap slot** — placed provisionally (owner to reorder; a one-line move).
 
 ## Not in scope (this plan)
 

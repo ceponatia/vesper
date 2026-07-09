@@ -38,6 +38,17 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   player-edge authoring UI. **Paused pending the substrate plan**
   ([multi-character-chat.plan.md](multi-character-chat.plan.md)), which slots
   between its slice 4 and the matrix slice.)
+- **Character sheet forge — in-sheet completion, per-tab re-drafts,
+  portrait-derived attributes** —
+  [character-sheet-forge.plan.md](character-sheet-forge.plan.md) (active —
+  slices 1–3 **built 2026-07-09** on branch `worktree-character-sheet-forge`,
+  awaiting owner review + merge + deploy): the editor's ✦ Forge-the-rest fills
+  every empty field without touching player-authored content (save-first,
+  result lands unsaved for review); per-tab ↻ Re-draft rewrites one tab
+  narrator-formatted from the whole sheet (manual attribute/trait values kept,
+  conflicts reported); ◉ From-portrait derives appearance attributes from the
+  avatar via the codebase's first vision capability (`generateChecked` image
+  parts + `visionModelId()`).
 
 ## Next (queued)
 
@@ -60,15 +71,6 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   `pnpm eval:narration:compare --axis contrast`). Bar: ≥80% blind identification per
   axis, else the axis's prompt wording gets tuned and re-run — the craft rules and
   relationship-law block shipped in slices 6/8 are the levers.
-- **Character sheet forge — in-sheet completion, per-tab re-drafts,
-  portrait-derived attributes** —
-  [character-sheet-forge.plan.md](character-sheet-forge.plan.md) (draft —
-  created 2026-07-09 on owner direction; placed here provisionally, owner to
-  reorder). Forge button in the editor fills every empty part of the sheet
-  without touching player-authored content (auto-saves first); per-tab
-  re-draft buttons rewrite one tab narrator-formatted from the whole sheet;
-  a vision model derives appearance attributes from the generated portrait
-  (the codebase's first image-understanding capability).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at

@@ -20,3 +20,24 @@ Once a character is saved, the **Chat** tab lets you talk to them one-on-one —
 ## Manual editing
 
 Every forge field is a normal form field; the same editor serves hand-built characters from **Characters → New**. Diagnostics (red = failed, amber = something was dropped/adjusted) appear above the tabs.
+
+## Finishing a half-written sheet
+
+Start typing whatever you have — a bio fragment, a few attributes, three trait
+sliders — and let the AI do the rest, from the editor itself:
+
+- **✦ Forge the rest** (top of the editor): completes every *empty* part of the
+  sheet from what you entered. It never changes anything you wrote — text you
+  typed, attributes and sliders you set, tags you added all stay byte-identical;
+  it only adds. Your edits are saved first, and the AI's additions arrive
+  *unsaved* so the save bar is your review step (revert discards them).
+- **↻ Re-draft tab** (on each content tab): rewrites *that one tab* from the whole
+  sheet, formatted for the narrator — e.g. personality prose you left in the bio
+  moves into the personality field, or the Attributes tab derives values from what
+  your text says. Unlike the Forge, this rewrites the tab's text; attribute and
+  trait values you set yourself are still kept (a disagreement shows up as a
+  notice instead of a change).
+- **◉ From portrait** (Attributes tab, once a portrait exists): a vision model
+  looks at the portrait and fills in appearance attributes it clearly shows —
+  only blanks, only what's visible; a mismatch between portrait and sheet is
+  reported, never applied.
