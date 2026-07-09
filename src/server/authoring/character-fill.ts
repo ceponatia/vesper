@@ -37,11 +37,11 @@ function formatSheetValue(value: AttributeValue["value"]): string {
 }
 
 /**
- * Render the authored sheet as the forge legs' concept text: everything the
- * player entered, compactly, followed by the fixed-content directive. An empty
- * sheet degrades to an invent-freely concept so a blank character still forges.
+ * Render the authored sheet as compact concept lines — the shared source
+ * material for the fill's fixed-concept prompt and the per-scope re-draft
+ * prompts (character-redraft.ts). Empty for a blank sheet.
  */
-export function renderSheetConcept(draft: CharacterDraft): string {
+export function renderSheetLines(draft: CharacterDraft): string[] {
   const p = draft.profile;
   const lines: string[] = [];
   if (!isPlaceholderName(draft.name)) lines.push(`Name: ${draft.name.trim()}`);
@@ -67,6 +67,16 @@ export function renderSheetConcept(draft: CharacterDraft): string {
   if (p.defaultOutfit.length > 0) {
     lines.push(`Default outfit: already authored (${p.defaultOutfit.length} garments) — fixed.`);
   }
+  return lines;
+}
+
+/**
+ * The fill's concept text: the authored sheet followed by the fixed-content
+ * directive. An empty sheet degrades to an invent-freely concept so a blank
+ * character still forges.
+ */
+export function renderSheetConcept(draft: CharacterDraft): string {
+  const lines = renderSheetLines(draft);
   if (lines.length === 0) {
     return "An original character. Nothing is authored yet — invent a compelling, grounded character freely.";
   }

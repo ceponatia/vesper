@@ -46,3 +46,24 @@ export const attributeCategories = [
 
 export const attributeCategorySchema = z.enum(attributeCategories);
 export type AttributeCategory = z.infer<typeof attributeCategorySchema>;
+
+/**
+ * The attribute categories the character sheet's "Personality" tab owns (the
+ * "Attributes" tab renders every other non-intimate category) — behavioral
+ * texture rather than physical body. One flat `attributes` array backs both
+ * tabs; this split is shared by the editor tabs and the sheet-forge scopes
+ * (character-sheet-forge.plan.md), so it lives with the category vocabulary.
+ */
+export const PERSONALITY_ATTRIBUTE_CATEGORIES = ["voice", "presentation", "movement"] as const satisfies readonly AttributeCategory[];
+
+const PERSONALITY_CATEGORY_SET = new Set<string>(PERSONALITY_ATTRIBUTE_CATEGORIES);
+
+/** True for a Personality-tab category id ("voice" | "presentation" | "movement"). */
+export function isPersonalityAttributeCategory(category: string): boolean {
+  return PERSONALITY_CATEGORY_SET.has(category);
+}
+
+/** True when an attribute id (`<category>.<name>`) belongs to a Personality-tab category. */
+export function isPersonalityAttributeId(id: string): boolean {
+  return isPersonalityAttributeCategory(id.split(".", 1)[0] ?? "");
+}
