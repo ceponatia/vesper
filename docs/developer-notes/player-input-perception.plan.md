@@ -1,6 +1,7 @@
 # Player-input perception — NPCs hear quotes, see the visible, never read minds
 
-Status: **active — slices 1–2 shipped 2026-07-08** (built ahead of order as the base for
+Status: **active — slices 1–2 shipped 2026-07-08; remainder ready to build (rulings
+settled 2026-07-09)** (slices 1–2 built ahead of order as the base for
 [chat-narrator-pov.plan.md](chat-narrator-pov.plan.md), per the owner's build-order call).
 Shipped: the `CHAT_RULES` "Reading the player's message" block (perception model + worked
 example, rules 2/8 routed through it — note the rules renumbered when the POV plan added
@@ -8,6 +9,10 @@ its narrator-camera rules 4/12 in the same change), and the `chat-thought-leak` 
 `chat-thought-leak-noquotes` eval fixtures + deterministic `thoughtLeak` planted-token
 metric (`run.ts`). Remaining: slice 3 (state-agent exemption audit), the markup arc
 (4–6 incl. the RAG visibility fence), the session port (7), and the gated fallback (8).
+The 2026-07-09 owner rulings — asterisk reassignment confirmed, both comms forms, OOC =
+double parens only + a composer assist, private facts dropped from the narrator, backtick
+sigil deferred — are folded into their sections below; only the two measurement-time
+questions remain open.
 
 ## Problem
 
@@ -109,8 +114,8 @@ into a cheap regex-grade parse.
 | `"..."` | Spoken dialogue | The one **required** rule |
 | `*...*` | **Thought** (default); **comms** when `Name:`-shaped | Optional; italicized in the UI, sigils hidden |
 | `_..._` | Italic styling only | No semantics — pure text style |
-| `(...)` / `((...))` | **OOC / direction to the narrator** | The most entrenched RP convention; lets the player steer ("(skip ahead to evening)") without polluting the fiction. Agents exclude it from in-world memory entirely |
-| `` `...` `` | In-world **written** text — a note passed, a sign, a letter | Distinct from live comms (asynchronous artifact). Nice-to-have — may defer to avoid sigil sprawl |
+| `((...))` | **OOC / direction to the narrator** | Lets the player steer ("((skip ahead to evening))") without polluting the fiction. Agents exclude it from in-world memory entirely. **Ruled 2026-07-09: double parens only** — a single `(...)` is ordinary prose (flows through the partition like any unquoted text), so prose asides ("I sit down (still catching my breath)") never misfire as OOC. The composer assist (slice 5) makes the convention discoverable: typing `((` auto-closes `))` and styles the span |
+| `` `...` `` | In-world **written** text — a note passed, a sign, a letter | Distinct from live comms (asynchronous artifact). **Deferred (ruled 2026-07-09)** — narration already reads fine without it ("I slide a note across: meet me at 8"); the parser's span-kind union keeps `written` reserved so shipping it later is a data/prompt change, not a contract change |
 | `[...]` | **Avoid in input** | Output already uses `[Name]` dialogue tags; overloading invites confusion |
 | `<...>` | **Avoid** | Collides with the injection-fencing markers and HTML |
 
@@ -121,22 +126,27 @@ handles them ("I whisper, …").
 
 ### Asterisk semantics in detail
 
-- **Comms shape:** `*Brian: Hey, u up?*` (leading name-colon) → an SMS/DM. The
-  sender is the player persona; in the 1-on-1 chat lane the recipient is
-  unambiguous. A `*to Sabrina: ...*` form reads more naturally as *sending* and
-  makes the recipient explicit for the session lane — which form(s) to accept is an
-  open question below.
+- **Comms shape — ruled 2026-07-09: both forms parse, normalized.**
+  `*Brian: Hey, u up?*` (leading name-colon, SMS-natural, sender-named) and
+  `*to Sabrina: ...*` (explicit recipient, reads as *sending*) are both accepted;
+  the parser normalizes either to `{ sender, recipient }`. The sender is the
+  player persona. Recipient resolution: explicit in the `to Name:` form; otherwise
+  the sole character in a 1-on-1. Once the chat lane holds rosters of 2–4
+  ([multi-character-chat.plan.md](multi-character-chat.plan.md)), a bare `*Name: …*`
+  is ambiguous — resolve to the character the message context addresses, and let
+  the tail note name the parser's pick so the narrator can correct it naturally
+  (the session lane needs the same resolution, slice 7).
 - **Thought shape:** any other multi-word, clause-shaped asterisk span → interiority.
 - **Emphasis guard (false-positive):** `you *really* think so?` — a single-word or
   short mid-sentence asterisk span is emphasis, not a thought. Classify a span as
   thought/comms only when it is multi-word and stands as its own clause/line;
   otherwise it's style-only (italicize and move on). Same treatment as underscores.
-- **Convention collision (flag):** in the wider RP world (character.ai, SillyTavern,
-  Discord RP) asterisks near-universally mean *actions* (`*walks in*`). Vesper can
-  reassign them (unquoted plain text already IS the action channel here), but the
-  prompt legend and an eventual UI hint must state it explicitly, and the failure
-  is graceful: an action mis-marked as a thought just doesn't get reacted to — a
-  missed beat, never a mind-read.
+- **Convention collision — ruled 2026-07-09: reassignment confirmed.** In the wider
+  RP world (character.ai, SillyTavern, Discord RP) asterisks near-universally mean
+  *actions* (`*walks in*`). Vesper reassigns them to thought/comms (unquoted plain
+  text already IS the action channel here); the prompt legend and an eventual UI
+  hint must state it explicitly, and the failure is graceful: an action mis-marked
+  as a thought just doesn't get reacted to — a missed beat, never a mind-read.
 
 ### Delivery: legend in the prefix, per-turn notes only for derived facts
 
@@ -233,8 +243,10 @@ the thought calls the player a "dork" — the word exists only in the private ch
   character ignore unquoted players).
 - When slice 4 lands, add markup variants: an asterisked thought (planted-token
   test again — sigils should make it *stronger*), a `*Name: ...*` comms message
-  (does the reply come back as a text, in the output grammar?), and an emphasis
-  false-positive (`*really*` must not be treated as a thought).
+  (does the reply come back as a text, in the output grammar?), an emphasis
+  false-positive (`*really*` must not be treated as a thought), and an OOC pair —
+  a `((…))` direction honored without any character hearing it, plus a
+  single-paren prose aside that stays in-fiction.
 - Same harness conventions as the rest: `pnpm eval:narration`, never in `verify`,
   live runs are owner-gated spend. Run before/after slice 1 wording tuning.
 
@@ -253,28 +265,38 @@ for the §6 reaction curve.
 - **Deterministic span parser** (pure — `src/lib` or `src/contracts`, no IO; in the
   regex-first spirit of `engine/chat-intent.ts`): segment a message into spans
   `{ kind: speech | narration | thought | comms | ooc | written | styled }` with the
-  emphasis guard and the `Name:` comms-shape detection. Outermost sigil wins for
+  emphasis guard, the `Name:`/`to Name:` comms-shape detection (both forms
+  normalized to `{ sender, recipient }` per §Asterisk semantics), and OOC only on
+  `((...))` (single parens are narration). `written` stays in the kind union but
+  nothing produces it yet (backtick sigil deferred). Outermost sigil wins for
   nested content (`*She said "no" — I can't believe it*` is one thought span).
   Snapshot/table tests over the shapes in §Markup lane.
 - **"Message notation" legend** in the chat prompt prefix (per §Delivery).
 - **Derived-fact tail notes**: when the parser finds comms/OOC spans in the current
   message, render the one-line volatile-tail note (comms: sender/recipient +
-  co-presence reconciliation; OOC: "the parenthetical is the player speaking to the
-  storyteller, not in-world — honor it, never have a character hear it").
+  co-presence reconciliation; OOC: "the double-parenthesized text is the player
+  speaking to the storyteller, not in-world — honor it, never have a character
+  hear it").
 - **Comms output grammar**: define the narrator's texted-reply format, add it to
   the legend/rules, and verify the parser round-trips it from history.
 - Raw message stays untouched in the transcript and for the state agents; the
   parser output feeds the prompt notes, the agents' filing hints (slice 6), and the
   renderer (slice 5).
 
-### 5. UI rendering — italicize, hide sigils
+### 5. UI rendering + composer assist — italicize, hide sigils, live OOC block
 
 A light span renderer for chat transcript messages (both player messages and
 narrator replies — `components/characters/chat-message.tsx` neighborhood):
-asterisk and underscore spans render italic with the sigils hidden; backtick
-written-text spans get a distinct treatment if that sigil ships. Reuses the slice-4
-parser (it's pure) — never a second regex implementation (jscpd gate). Export
+asterisk and underscore spans render italic with the sigils hidden; OOC spans get
+a visually distinct out-of-fiction treatment. Reuses the slice-4 parser (it's
+pure) — never a second regex implementation (jscpd gate). Export
 (`GET …/export`) keeps the raw sigils (markdown-compatible anyway).
+
+**Composer assist (owner ruling 2026-07-09):** in the chat input, typing `((`
+auto-inserts the closing `))` and styles the enclosed text distinctly (e.g. an
+amber/yellow tint) — intellisense-style, so the player *sees* they're typing
+inside an OOC block. Detection reuses the slice-4 parser. Keep it minimal: no
+popovers, no other sigils' live styling unless it falls out free.
 
 ### 6. RAG visibility fence — close the memory backdoor
 
@@ -288,8 +310,10 @@ Per §RAG is a mind-reading backdoor:
   `ooc`, generally not stored at all). The slice-4 parser output can ride along as
   a hint when sigils were used.
 - `buildMemorySection` (chat prompt): `perceived` facts render as today ("treat as
-  true"); `private` facts either drop from the narrator prompt or render under an
-  intuition-grade framing — decide during the slice; `ooc` never renders.
+  true"); `private` facts **drop from the narrator prompt entirely (ruled
+  2026-07-09)** — intuition-grade framing ("you sense…") was considered and
+  rejected as the uncanny-paraphrase risk this plan exists to kill; `ooc` never
+  renders.
 - Pulse keeps reading everything (no change).
 - Degradation tests: unknown/missing channel ⇒ `perceived` + diagnostic.
 
@@ -301,9 +325,13 @@ overlaps). The session lane has extra perceivers (multiple present NPCs, the
 perception/exposure system), so the wording generalizes to "characters perceive only
 what is audible/visible to them" — which the presence/exposure machinery already
 partially enforces spatially; this adds the speech-vs-thought axis. Comms spans need
-recipient resolution there (`*to Name:*` earns its keep). Update `docs/prompts.md`
-and the session rule tests. Sequenced behind slice 1–2 validation so we port wording
-already proven on the chat lane.
+recipient resolution there (`*to Name:*` earns its keep). The port also carries the
+lane's supporting pieces: the **session archivist files fact channels** (the shared
+`facts` table gets its `channel` column in slice 6, but the session extractor keeps
+writing the degraded default until this slice teaches it), and the **session
+transcript renderer** gets the slice-5 span treatment once players type sigils in
+that lane. Update `docs/prompts.md` and the session rule tests. Sequenced behind
+slice 1–2 validation so we port wording already proven on the chat lane.
 
 ### 8. Fallback (build only if 1–2 under-deliver): semantic segmentation for unmarked interiority
 
@@ -320,26 +348,19 @@ for **unmarked** interiority leaking despite slice 1, and it must stay invisible
 
 ## Open questions
 
-- **Asterisks vs the RP action convention** (slice 4): confirm the owner ruling to
-  reassign asterisks to thought/comms despite the wider-RP "asterisks = actions"
-  habit (unquoted text is already Vesper's action channel, and the failure mode is
-  a missed beat, not a mind-read — but it should be a deliberate call).
-- **Comms sender form** (slice 4): accept `*Name: ...*` only, `*to Name: ...*` only,
-  or both? `to Name:` is clearer for *sending* and the session lane needs an
-  explicit recipient; `Name:` matches how people actually type an SMS. Leaning
-  both, normalized by the parser.
-- **Private facts in the narrator prompt** (slice 6): drop entirely, or render as
-  intuition-grade background ("you sense…")? Dropping is safest; intuition framing
-  is richer but risks the uncanny-paraphrase failure the whole plan exists to kill.
-- **Backtick written-text sigil** (slice 4/5): ship in v1 or defer? It's the most
-  expendable sigil — narration ("I slide a note across: `meet me at 8`") already
-  reads fine without special handling.
+The five build-blocking questions were **ruled 2026-07-09** and folded into their
+sections above: asterisk reassignment confirmed (§Asterisk semantics), both comms
+forms normalized (§Asterisk semantics), OOC = double parens only + the composer
+assist (§Markup lane table, slice 5), private facts dropped from the narrator
+(slice 6), backtick sigil deferred (§Markup lane table). Two measurement-time
+questions remain:
+
 - **Ambiguous unquoted address** (slice 1 wording): in a mixed message ("*She looks
   tired today. you doing okay?*" — no quotes on the address), should the
   conversational fragment count as speech? Leaning yes (graceful degradation
   favors hearing too much over striking players mute), but the example in the
-  prompt should model the common case, not this edge. Settle during slice 1
-  probing.
+  prompt should model the common case, not this edge. Settle during the live
+  probing / eval run (owner-gated spend), not before building.
 - **Bar for slice 8**: what leak rate on the slice-2 eval justifies building the
   semantic fallback? Proposal: prompt-only ships if the planted-token leak is ≤1 in
   10 takes on the default chat model; otherwise escalate. Owner call at
@@ -355,4 +376,5 @@ for **unmarked** interiority leaking despite slice 1, and it must stay invisible
   lands.
 - `docs/memory.md` — the fact `channel` field and its narrator-rendering rule
   (slice 6).
-- `docs/ui.md` — the transcript span renderer (slice 5).
+- `docs/ui.md` — the transcript span renderer + the composer `((` auto-close/
+  highlight assist (slice 5).
