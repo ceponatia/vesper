@@ -37,6 +37,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const [saving, setSaving] = useState(false);
   const [forging, setForging] = useState(false);
   const [redrafting, setRedrafting] = useState<CharacterSheetScope | null>(null);
+  const [derivingPortrait, setDerivingPortrait] = useState(false);
   const [forgeDiagnostics, setForgeDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -143,6 +144,30 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   };
 
   /**
+   * Portrait → attributes (character-sheet-forge.plan.md slice 3): a vision
+   * pass over the canonical avatar fills unset appearance attributes;
+   * disagreements with existing values surface as diagnostics, never applied.
+   */
+  const derivePortrait = async () => {
+    if (!draft || forging || redrafting || derivingPortrait || saving) return;
+    if (dirty && !(await save())) return;
+    setDerivingPortrait(true);
+    const result = await charactersApi.attributesFromPortrait(characterId, draft);
+    setDerivingPortrait(false);
+    if (!result.ok) {
+      toast.push({ title: "Portrait read failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    const { draft: derived, diagnostics } = result.data;
+    setForgeDiagnostics(diagnostics);
+    editGenRef.current += 1;
+    // Same fill-merge as the Forge: additions only, current draft wins.
+    setDraft((current) => (current ? mergeFillDraft(current, derived) : derived));
+    setDirty(true);
+    toast.push({ title: "Portrait read", description: "Visible attributes filled in — review and save.", tone: "success" });
+  };
+
+  /**
    * Persist the chat-tab narrator pick immediately (save-on-update), out-of-band
    * from the SaveBar. PATCHes are serialized through a promise chain so rapid
    * picks can't overlap and land out of order server-side (the unguarded version
@@ -224,6 +249,8 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         onChatModelChange={(modelId) => void saveChatModel(modelId)}
         onRedraft={(scope) => void redraft(scope)}
         redrafting={redrafting}
+        onPortraitAttributes={() => void derivePortrait()}
+        derivingPortrait={derivingPortrait}
         diagnostics={forgeDiagnostics}
       />
       <SaveBar

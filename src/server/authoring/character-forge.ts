@@ -369,7 +369,7 @@ export interface AttributeSection {
   ranges: RawAttributeRange[];
 }
 
-function characterAttributeDefinitions(context?: CharacterForgeContext): readonly AttributeDefinition[] {
+export function characterAttributeDefinitions(context?: CharacterForgeContext): readonly AttributeDefinition[] {
   const realizedBody = context ? realizedBodyForForgeContext(context) : undefined;
   // Anatomy-specific attributes are excluded from the forge vocabulary until
   // the forge can also infer the body-config that realizes them. Intimate
@@ -535,7 +535,7 @@ const ATTRIBUTES_SYSTEM = [
   "For everything else, omit any attribute the concept gives no basis for — sparse is correct.",
 ].join("\n");
 
-function describeConstraint(def: AttributeDefinition, allowedValues?: readonly string[]): string {
+export function describeConstraint(def: AttributeDefinition, allowedValues?: readonly string[]): string {
   const allowed = allowedValues ?? def.allowedValues ?? [];
   switch (def.valueType) {
     case "enum":
