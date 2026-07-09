@@ -60,6 +60,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   `pnpm eval:narration:compare --axis contrast`). Bar: ≥80% blind identification per
   axis, else the axis's prompt wording gets tuned and re-run — the craft rules and
   relationship-law block shipped in slices 6/8 are the levers.
+- **Character sheet forge — in-sheet completion, per-tab re-drafts,
+  portrait-derived attributes** —
+  [character-sheet-forge.plan.md](character-sheet-forge.plan.md) (draft —
+  created 2026-07-09 on owner direction; placed here provisionally, owner to
+  reorder). Forge button in the editor fills every empty part of the sheet
+  without touching player-authored content (auto-saves first); per-tab
+  re-draft buttons rewrite one tab narrator-formatted from the whole sheet;
+  a vision model derives appearance attributes from the generated portrait
+  (the codebase's first image-understanding capability).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
