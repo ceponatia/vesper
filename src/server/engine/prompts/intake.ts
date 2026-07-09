@@ -43,7 +43,8 @@ Rules:
 5. A socialAct only fires when the player clearly performs that move toward a present character — a bare question or remark is not a social concept.
 6. socialActs vs narratedNpcBehaviors: a move the PLAYER makes toward an NPC is a socialAct; words/feelings/actions the player puts on the NPC are narratedNpcBehaviors. The same input can carry both (the player hugs Maya AND narrates her hugging back).
 7. focus is your read of HOW to shape the response — you are planning, not narrating. Default to modest values (reactionScale none/small, allowedNewTopic none, suggestedShape concise_exchange); escalate only when the input clearly warrants it. focus never licenses inventing events or overriding the scene.
-8. ${UNTRUSTED_DATA_NOTICE}
+8. The player's narration and inner thoughts are in scope for you — you read the whole message, not only what a character could hear or see, to judge what they are TRYING to do.
+9. ${UNTRUSTED_DATA_NOTICE}
 
 Example A — "I look Maya over and ask how her day went" (present: Maya):
 {"actionType":"observe","lookTarget":"Maya","addressedNpcs":["Maya"],"focus":{"primaryResponse":"answer_question","reactionScale":"none","allowedNewTopic":"none","suggestedShape":"concise_exchange"},"notes":"looks at and addresses Maya"}

@@ -15,6 +15,12 @@ describe("CHAT_ARCHIVIST_SYSTEM", () => {
     expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/re-emit the full list/i);
     expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/drop any this exchange resolved/i);
   });
+
+  it("asserts the state-agent exemption: reads narration + interiority, not just what the character perceives (player-input-perception.plan.md slice 3)", () => {
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/read the player's entire message/i);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/narration and inner thoughts/i);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/not only what the character could perceive/i);
+  });
 });
 
 describe("buildChatArchivistPrompt", () => {

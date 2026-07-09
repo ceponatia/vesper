@@ -22,7 +22,8 @@ Rules:
 1. Output ONLY the JSON object — no markdown, no commentary.
 2. Names exactly as written; never invent people, places, or events not present in the exchange.
 3. Quoted or hypothetical speech may yield facts about what was SAID (a promise, a stated preference), never about physical events that did not occur.
-4. ${UNTRUSTED_DATA_NOTICE}
+4. You read the player's entire message — narration and inner thoughts as well as spoken words — not only what the character could perceive; draw the summary and facts from all of it.
+5. ${UNTRUSTED_DATA_NOTICE}
 
 Example — the player tells the character their sister is getting married in Prague:
 {"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"],"attributeChanges":[],"openLoops":["hear how the wedding toast goes"]}
