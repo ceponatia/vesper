@@ -14,10 +14,10 @@ type Params = { chatId: string };
  * live retrieval uses, but with no window cutoff, no floor, and no limit, so the
  * dev can see exactly where each episode lands. An embed failure degrades to
  * `{ scores: [], degraded: true }`, never an error (docs/resilience.md).
- * Dev-only: **404 in production**.
+ * Admin-only: **404 for non-admin roles**.
  */
 export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (process.env.NODE_ENV === "production") return jsonError("not_found", "not found", 404);
+  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
   const { chatId } = await ctx.params;
   const q = req.nextUrl.searchParams.get("q")?.trim() ?? "";
   if (!q) return jsonError("invalid_query", "q is required", 400);

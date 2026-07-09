@@ -78,12 +78,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const ready = !bootstrap.loading && bootstrap.error === null;
 
   // The conversation's scene images — ONE fetch/poll shared by the strip and the
-  // inline transcript moments (slice 9). Polls only while a render is pending;
-  // refetched after each settled exchange (an auto scene may have queued).
+  // inline transcript moments (slice 9). Polls while a render job is live server-side
+  // (`rendering` — covers the slow composer step BEFORE the pending image row exists,
+  // the painting-forever fix) or a pending row is visible; refetched after each settled
+  // exchange (an auto scene may have queued).
   const scenes = useAsyncData(() => chatsApi.scenes(chatId), [chatId]);
-  const sceneList = scenes.data ?? [];
+  const sceneList = scenes.data?.scenes ?? [];
+  const sceneRendering = scenes.data?.rendering ?? false;
   usePollWhile(
-    sceneList.some((s) => s.status === "pending"),
+    sceneRendering || sceneList.some((s) => s.status === "pending"),
     () => scenes.reload({ silent: true }),
     2500,
   );
@@ -227,11 +230,32 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // Auto-scroll the transcript (not the page) to the newest line as the
   // conversation grows / streams. Setting scrollTop directly keeps the scroll
   // contained — `scrollIntoView` bubbles to every ancestor incl. the window.
+  // Pinning is stick-to-bottom: it holds only while the reader is AT the bottom
+  // (scrolling up to reread stops the yanking), and a ResizeObserver on the
+  // content column re-pins as async content (scene thumbnails, avatars) grows it
+  // AFTER the lines effect ran — without it the initial load landed mid-transcript
+  // once images finished, hiding the newest exchange below the fold.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
   }, [lines]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (stickRef.current) el.scrollTop = el.scrollHeight;
+    });
+    // Both boxes matter: the content column grows as thumbnails/avatars land, and
+    // the container itself shrinks when the sections above it (portrait panel,
+    // pickup strip) settle — either one un-bottoms a pinned reader.
+    observer.observe(content);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   /** Refetch the state strip; toast when the regard band changed (the romance arc made visible). */
   const refreshState = async () => {
@@ -268,6 +292,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // Any exchange consumes the reopen affordances (spec §8.1/§8.4) for this visit.
     setPickupDismissed(true);
     setWantsSay(false);
+    // An exchange the player initiates re-pins the transcript (even from a scrolled-up
+    // read) — the reply they asked for should stream into view.
+    stickRef.current = true;
     const assistantId = replaceId ?? mkId();
     // The take being replaced, kept so a failed regenerate can put it back.
     const priorLine = replaceId !== undefined ? lines.find((l) => l.id === replaceId) : undefined;
@@ -285,10 +312,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     sendingRef.current = true;
     setSending(true);
     setStopping(false); // a stuck Stop from a settle race must not disable this stream's button
+    // Whether any token ever arrived: a stream that 200s and then ends EMPTY (the
+    // server's first-token watchdog tripping on a stalled provider) persists no reply
+    // row, so without an explicit signal the pending bubble would just vanish.
+    let received = false;
     const outcome = await sendChatMessage(
       chatId,
       body,
       (delta) => {
+        received = true;
         setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + delta } : l)));
       },
       controller.signal,
@@ -328,6 +360,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // and the scene list, since a big moment may have auto-queued a render (slice 9).
     await refreshState();
     scenes.reload({ silent: true });
+    // Zero tokens on an otherwise-clean settle: the narrator produced nothing (the
+    // server logged a first-token timeout and persisted no reply), so say so — the
+    // transcript reload above already dropped the empty bubble.
+    if (!received) {
+      toast.push({
+        title: `${who} didn't reply`,
+        description: "The narrator model returned nothing — usually a timeout. Try again, or pick a different narrator model from the menu.",
+        tone: "error",
+      });
+    }
     return outcome;
   };
 
@@ -755,6 +797,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 name={name}
                 hasChat={lines.length > 0}
                 scenes={sceneList}
+                rendering={sceneRendering}
                 onRefresh={() => scenes.reload({ silent: true })}
               />
             </div>
@@ -762,8 +805,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         ) : null}
       </section>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          // Stick while within a small slack of the bottom; scrolling up releases.
+          const el = e.currentTarget;
+          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+      >
+        <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3">
           {bootstrap.loading ? (
             <div className="flex flex-col gap-3">
               <Skeleton className="h-10 w-2/3" />

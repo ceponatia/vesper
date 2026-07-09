@@ -22,6 +22,28 @@ export interface QueueChatSceneArgs {
 }
 
 /**
+ * Whether a scene render job is live (queued/running) for this chat. Doubles as the
+ * queue dedupe check and the GET route's `rendering` flag — the client polls on it
+ * through the composer step, BEFORE the pending image row exists (the
+ * painting-forever fix: without it the strip's placeholder never resolved until a
+ * manual refresh).
+ */
+export async function hasLiveChatSceneJob(chatId: string): Promise<boolean> {
+  const [live] = await db()
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.type, "chat_scene_image"),
+        or(eq(jobs.status, "queued"), eq(jobs.status, "running")),
+        sql`${jobs.payload} ->> 'chatId' = ${chatId}`,
+      ),
+    )
+    .limit(1);
+  return live !== undefined;
+}
+
+/**
  * Queue one chat scene render (`chat_scene_image` on the api-side startJob path,
  * recovered by the detached-job sweep) — shared by the manual POST …/scene route and
  * the slice-9 "auto at big moments" hook on the exchange pipeline. Assembles the same
@@ -33,18 +55,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
   try {
     // At most one live render per chat — auto can never stack renders (the same
     // check-then-insert dedupe shape as enqueueChatSummary).
-    const [pending] = await db()
-      .select({ id: jobs.id })
-      .from(jobs)
-      .where(
-        and(
-          eq(jobs.type, "chat_scene_image"),
-          or(eq(jobs.status, "queued"), eq(jobs.status, "running")),
-          sql`${jobs.payload} ->> 'chatId' = ${args.chatId}`,
-        ),
-      )
-      .limit(1);
-    if (pending) return null;
+    if (await hasLiveChatSceneJob(args.chatId)) return null;
 
     const profile = parseOr(
       characterProfileSchema,

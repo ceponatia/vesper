@@ -4,7 +4,7 @@ import { z } from "zod";
 import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 import { db, images } from "@/server/db";
 import { loadOwnedChat } from "../../owned";
-import { queueChatScene } from "./queue";
+import { hasLiveChatSceneJob, queueChatScene } from "./queue";
 
 type Params = { chatId: string };
 
@@ -21,28 +21,35 @@ type Params = { chatId: string };
 /** POST body: no options today — character-chat scenes are single-reference (one subject). */
 const sceneBodySchema = z.object({});
 
-/** GET /api/chats/:chatId/scene — this chat's scenes only, newest first. */
+/**
+ * GET /api/chats/:chatId/scene — this chat's scenes only, newest first, plus whether a
+ * render job is live (`rendering`): the pending image row doesn't exist until the slow
+ * composer step finishes, so the flag is what keeps the client polling through it.
+ */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
 
-  const scenes = await db()
-    .select()
-    .from(images)
-    .where(
-      and(
-        eq(images.ownerId, user.id),
-        eq(images.kind, "scene"),
-        eq(images.entityKind, "character"),
-        eq(images.entityId, owned.character.id),
-        // Scoped to THIS conversation — a sibling chat's scenes (or un-chat-keyed
-        // rows) belong to the Gallery, not here.
-        eq(images.chatId, chatId),
-      ),
-    )
-    .orderBy(desc(images.createdAt));
-  return jsonOk({ scenes });
+  const [scenes, rendering] = await Promise.all([
+    db()
+      .select()
+      .from(images)
+      .where(
+        and(
+          eq(images.ownerId, user.id),
+          eq(images.kind, "scene"),
+          eq(images.entityKind, "character"),
+          eq(images.entityId, owned.character.id),
+          // Scoped to THIS conversation — a sibling chat's scenes (or un-chat-keyed
+          // rows) belong to the Gallery, not here.
+          eq(images.chatId, chatId),
+        ),
+      )
+      .orderBy(desc(images.createdAt)),
+    hasLiveChatSceneJob(chatId),
+  ]);
+  return jsonOk({ scenes, rendering });
 });
 
 /** POST /api/chats/:chatId/scene — queue a scene render from the recent chat. */

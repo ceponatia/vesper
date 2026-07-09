@@ -2,13 +2,15 @@ import { z } from "zod";
 import { apiDelete, apiGet, apiPatch, apiPost, withQuery } from "@/lib/client/api";
 
 /**
- * Client data layer for the dev chat inspector
- * (character-chat-standalone.spec.md §6.1) — the `/api/dev/chat-inspector`
- * family. Kept out of `lib/client/api.ts` deliberately: this surface is
- * dev/admin-only (404 in production) and shouldn't bulk the player bundle's
- * schema module. Same rules apply, though: every response crosses a trust
- * boundary, so it is parsed with forgiving `.catch()` schemas — bad fields fall
- * back, bad list elements are dropped (docs/resilience.md §7).
+ * Client data layer for the admin chat inspector
+ * (character-chat-standalone.spec.md §6.1) — the `/api/admin/chat-inspector`
+ * family (role-gated: 404 for non-admins, so it works on the deployed build,
+ * unlike the NODE_ENV-gated `/api/dev` namespace it used to live in). Kept out
+ * of `lib/client/api.ts` deliberately: this surface is admin-only and shouldn't
+ * bulk the player bundle's schema module. Same rules apply, though: every
+ * response crosses a trust boundary, so it is parsed with forgiving `.catch()`
+ * schemas — bad fields fall back, bad list elements are dropped
+ * (docs/resilience.md §7).
  */
 
 const textOr = (fallback: string) => z.string().catch(fallback);
@@ -123,7 +125,7 @@ export interface InspectorFactCreate {
   pinned?: boolean;
 }
 
-const base = (chatId: string) => `/api/dev/chat-inspector/${chatId}`;
+const base = (chatId: string) => `/api/admin/chat-inspector/${chatId}`;
 
 export const chatInspectorApi = {
   /** Everything stored for the conversation: all facts, episodes, summary row, character card. */

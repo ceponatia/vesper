@@ -20,10 +20,10 @@ const createBodySchema = z.object({
  * seeding memory — goes through the real `addFacts` (embedding + supersedence),
  * stamped `origin: "dev"` / confidence 1 with no source anchor, so provenance
  * stays honest and reconciliation never retracts it. `subjectName` defaults to
- * the conversation's character. Dev-only: **404 in production**.
+ * the conversation's character. Admin-only: **404 for non-admin roles**.
  */
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (process.env.NODE_ENV === "production") return jsonError("not_found", "not found", 404);
+  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
   const { chatId } = await ctx.params;
   const body = await readBody(req, createBodySchema);
   if (!body.ok) return body.response;

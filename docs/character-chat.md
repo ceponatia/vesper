@@ -109,7 +109,10 @@ exchange:
    300s). On a trip it aborts the upstream call and settles through the same stop path as a
    player Stop (any partial persists with `meta.stopped`, the lock releases, a `log.warn`
    records it) — so a wedged provider can never hold the per-chat lock indefinitely (the
-   incident that motivated the fix).
+   incident that motivated the fix). A first-token trip has **zero tokens**, so nothing
+   persists — the client detects the clean-but-empty settle (no delta ever arrived) and
+   surfaces a "didn't reply" error toast instead of letting the pending bubble silently
+   vanish ([ui.md](ui.md) §Transcript).
 8. **Settle (post-flush).** When the stream finishes — the route's shared
    `drainingStreamResponse` keeps consuming after a client disconnect
    ([resilience.md](resilience.md) §5) — the reply persists (§5) and the post-turn fan-out
@@ -263,14 +266,14 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `PATCH /api/chats/:chatId/messages/:messageId/take` | make a recorded take the displayed reply (display-only; spec §4.1) |
 | `GET/POST /api/chat-presets` · `DELETE /api/chat-presets/:id` | scenario presets (spec §1.5); `POST /api/chats {presetId}` seeds a new conversation from one. UI: Apply/Save-as/Delete preset in `chat-scenario-modal.tsx`, "Start from preset" in `new-chat-dialog.tsx` |
 | `GET/PATCH/POST /api/chats/:chatId/state` | state snapshot (drift-on-read) · author edit (`ChatStateEdit`, every stored column) · action chip |
-| `GET/POST /api/chats/:chatId/scene` | list **this chat's** scenes only (sibling chats / un-chat-keyed rows stay Gallery-only) · queue a `chat_scene_image` render via `queueChatScene` (409 `scene_busy` while one is live) |
+| `GET/POST /api/chats/:chatId/scene` | list **this chat's** scenes only (sibling chats / un-chat-keyed rows stay Gallery-only) plus `rendering` — true while a `chat_scene_image` job is live (`hasLiveChatSceneJob`), which is what keeps the client polling through the composer step *before* the pending image row exists · queue a render via `queueChatScene` (409 `scene_busy` while one is live) |
 | `POST /api/chats/:chatId/remember` | "remember this" (spec §6.4, D15): pin an `origin:"player"` fact — confidence 1, no message anchor, force-retrieved, never superseded by extraction ([memory.md](memory.md)) |
 | `POST /api/chats/:chatId/time-skip` | `{amount: moments\|hours\|overnight\|days}` → `CHAT_SKIP_MINUTES`; clock + condition expiry + one-shot skip note + `skip_history`; meters untouched (D14) |
 | `GET /api/chats/:chatId/relationship` | Relationship-panel payload: both axis bands + scalars, region label, texture, history samples, milestones, story-so-far, open loops |
 | `POST /api/chats/:chatId/milestones` | "mark this moment": append a `player_marked` milestone on a message (label defaults to a line excerpt) |
 | `POST /api/chats/:chatId/summary/rebuild` | `rebuildChatSummary` — reset + re-fold the rolling summary from the full transcript under the summary lock (heavy-write rate limited) |
 | `GET /api/chats/:chatId/export?format=md\|json&memory=1` | transcript export — title, scenario, story-so-far, transcript, opt-in memory appendix |
-| `/api/dev/chat-inspector/:chatId[/…]` | dev memory inspector family (spec §6.1; **404 in production**, owner-scoped): overview (all facts incl. superseded/retracted — each labeled with its `channel`: `perceived`/`private`/`ooc`, the RAG visibility fence, [memory.md](memory.md) §Fact channel — plus episodes + summary) · facts create/PATCH (pin/retract/restore, re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH · prompt preview (`previewChatPrompt` — "what reaches the narrator") |
+| `/api/admin/chat-inspector/:chatId[/…]` | memory inspector family (spec §6.1; **admin-role-gated — 404 for non-admins**, so it works on the deployed build; owner-scoped): overview (all facts incl. superseded/retracted — each labeled with its `channel`: `perceived`/`private`/`ooc`, the RAG visibility fence, [memory.md](memory.md) §Fact channel — plus episodes + summary) · facts create/PATCH (pin/retract/restore, re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH · prompt preview (`previewChatPrompt` — "what reaches the narrator") |
 
 ## Diagnostics
 
@@ -303,7 +306,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |
 | RRF fusion (pure) | `server/memory/fusion.ts` ([memory.md](memory.md)) |
 | Scene image | `server/images/character-scene.ts` ([images.md](images.md) §state-aware chat scene); queue + anchor + dedupe in `app/api/chats/[chatId]/scene/queue.ts` (`queueChatScene`) |
-| Dev inspector | `app/api/dev/chat-inspector/*` (routes) + `components/chat/chat-inspector-{page,facts,episodes}.tsx` behind `/chat/[chatId]/inspector` (admin-gated) |
+| Admin inspector | `app/api/admin/chat-inspector/*` (role-gated routes) + `components/chat/chat-inspector-{page,facts,episodes}.tsx` behind `/chat/[chatId]/inspector` (admin-gated) |
 | Retrieval eval harness | `scripts/eval/retrieval/` (`pnpm eval:retrieval` — never in `verify`; see its README) |
 | UI — the conversation | `components/chat/chat-conversation.tsx` (full-screen `/chat/[chatId]`, [ui.md](ui.md) §The conversation page) + `components/chat/` (`chat-relationship-panel`, `chat-pickup-strip`, `chat-scene-moments`) + siblings in `components/characters/` (`chat-message`, `chat-scene-strip`, `chat-status`, `chat-state-tools`, `chat-scenario-modal`) |
 | UI — editor Chat tab | `components/characters/character-chat.tsx` — a summary surface only (Chat defaults + conversation list), never the transcript |

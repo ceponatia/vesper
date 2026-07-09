@@ -922,8 +922,18 @@ export const chatsApi = {
   /** Delete a single chat message (snip a refusal out of the context window). */
   deleteMessage: (chatId: string, messageId: string) =>
     apiDelete(`/api/chats/${chatId}/messages/${messageId}`),
-  /** Rendered scenes for the conversation's character (kind="scene"), newest first. */
-  scenes: (chatId: string) => apiGet(listOf(imageRecordSchema, "scenes", "images"), `/api/chats/${chatId}/scene`),
+  /**
+   * Rendered scenes for the conversation's character (kind="scene"), newest first, plus
+   * whether a render job is live server-side (`rendering` — true through the composer
+   * step BEFORE the pending image row exists, so pollers don't go blind there).
+   */
+  scenes: (chatId: string) =>
+    apiGet(
+      z
+        .object({ scenes: arrayOf(imageRecordSchema), rendering: z.boolean().catch(false) })
+        .catch({ scenes: [], rendering: false }),
+      `/api/chats/${chatId}/scene`,
+    ),
   /** Queue a scene render from the recent chat (single-reference); poll `scenes` for the result. */
   generateScene: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/scene`, {}),
   /** Cut the in-flight reply short (spec §4.2); what already streamed persists with `meta.stopped`. */
