@@ -66,11 +66,13 @@ function ReplyBody({ content, name }: { content: string; name: string }) {
  * One chat line: the user on the right, the character (with avatar) on the left.
  * Hovering a persisted line reveals Edit / Delete — the recovery levers for a
  * refusal (edit rewrites the line in place; delete snips it out of the window) —
- * and, on the user's own lines, Rerun: re-send this prompt for a fresh reply,
- * dropping everything after it (and cancelling any in-flight reply). Rerun stays
- * available while a reply streams, precisely so it can interrupt one; Edit/Delete
- * don't (mutating mid-stream is ambiguous). Optimistic / still-streaming temp-id
- * lines expose no actions: there is no server row to target until ids reconcile.
+ * and, on the user's own lines, Rerun: re-send this prompt for a fresh reply, dropping
+ * only the lines after it. Rerun stays available while a reply streams, precisely so it
+ * can interrupt one — the atomic rerun stops the in-flight reply and snips its successors
+ * server-side under the chat lock (data-loss-rerun fix), deleting nothing until the
+ * exchange is accepted; Edit/Delete don't (mutating mid-stream is ambiguous). Optimistic
+ * / still-streaming temp-id lines expose no actions: there is no server row to target
+ * until ids reconcile.
  *
  * Beyond parity (spec §4.1–4.2): the newest reply (`takeTarget`) also offers
  * "Another take" — regenerate in place, keeping earlier takes browsable via the

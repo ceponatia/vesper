@@ -49,3 +49,35 @@ export function tryKeyedLock<T>(key: string, fn: () => Promise<T>): Promise<T> |
   if (keyedLockBusy(key)) return null;
   return withKeyedLock(key, fn);
 }
+
+/**
+ * Bounded waiting acquire (data-loss-rerun fix). Poll `tryKeyedLock` until it wins the
+ * key or `timeoutMs` elapses; resolve to `{ held }` (the held-lock promise, which stays
+ * pending until `fn` completes) on success, or `null` on timeout. Distinct from
+ * `withKeyedLock`, whose FIFO queue waits **unboundedly**: this gives up so the caller can
+ * turn a miss into a 409 having mutated nothing. Used by the atomic rerun — stop the
+ * in-flight reply, then wait a short window for its lock to release before touching the
+ * transcript. `onAttempt` runs immediately before each try (the rerun re-issues its stop
+ * there, so a reply that only registered its abort handler after the first attempt is
+ * still caught). Each `tryKeyedLock` win is atomic within its tick, so polling can never
+ * let two acquirers through.
+ *
+ * The held-lock promise is returned WRAPPED (`{ held }`), not bare: this function is async,
+ * so returning the bare promise would await-flatten it — and in the exchange pipeline that
+ * promise never resolves until the lock is released, which would hang the acquire itself.
+ */
+export async function acquireKeyedLockWithin<T>(
+  key: string,
+  fn: () => Promise<T>,
+  opts: { timeoutMs: number; pollMs?: number; onAttempt?: () => void },
+): Promise<{ held: Promise<T> } | null> {
+  const pollMs = Math.max(1, opts.pollMs ?? 100);
+  const deadline = Date.now() + opts.timeoutMs;
+  for (;;) {
+    opts.onAttempt?.();
+    const held = tryKeyedLock(key, fn);
+    if (held !== null) return { held };
+    if (Date.now() >= deadline) return null;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}

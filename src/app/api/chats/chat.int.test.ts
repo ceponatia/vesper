@@ -35,7 +35,8 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
-import { persistAssistantReply, replyTakesSchema, tryKeyedLock, type ReplyTakes } from "@/server/engine";
+import { persistAssistantReply, replyTakesSchema, submitChatMessage, tryKeyedLock, type ReplyTakes } from "@/server/engine";
+import { log } from "@/server/log";
 import { POST as chatsCreate } from "./route";
 import { DELETE as chatDelete, GET as chatGet, POST as chatSend } from "./[chatId]/route";
 import { DELETE as msgDelete, PATCH as msgPatch } from "./[chatId]/messages/[messageId]/route";
@@ -191,6 +192,15 @@ async function rows(chatId: string) {
     .from(characterChatMessages)
     .where(eq(characterChatMessages.chatId, chatId))
     .orderBy(characterChatMessages.createdAt);
+}
+
+/** All rows as {id, role, content}, ordered by (createdAt, id) — the transcript's own order (for byte-identical comparisons). */
+async function fullRows(chatId: string): Promise<{ id: string; role: string; content: string }[]> {
+  return db()
+    .select({ id: characterChatMessages.id, role: characterChatMessages.role, content: characterChatMessages.content })
+    .from(characterChatMessages)
+    .where(eq(characterChatMessages.chatId, chatId))
+    .orderBy(characterChatMessages.createdAt, characterChatMessages.id);
 }
 
 async function messageCount(chatId: string): Promise<number> {
@@ -683,6 +693,192 @@ describe("message delete reconciles provenanced memory (spec §4.3)", () => {
       return remaining.length === 0 ? true : null;
     });
     expect(episodesGone).toBe(true);
+  });
+});
+
+describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-rerun fix)", () => {
+  it("snips only the target's successors, reuses the guard row, and streams a fresh reply", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    await (await chatSend(postReq(chat.id, { content: "first prompt" }), ctx(chat.id))).text();
+    await (await chatSend(postReq(chat.id, { content: "second prompt" }), ctx(chat.id))).text();
+    expect(await roleCounts(chat.id)).toEqual({ user: 2, assistant: 2 });
+    const user1 = (await fullRows(chat.id)).find((m) => m.role === "user" && m.content === "first prompt");
+    if (!user1) throw new Error("missing the first user line");
+
+    const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("[Mara]");
+
+    // Everything after user1 (its reply + the whole second exchange) is gone; user1 stays.
+    expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
+    const after = await fullRows(chat.id);
+    const survivor = after.find((m) => m.id === user1.id);
+    expect(survivor?.content).toBe("first prompt"); // reused in place — same id + content
+    expect(after.filter((m) => m.role === "user")).toHaveLength(1);
+    expect(after.some((m) => m.content === "second prompt")).toBe(false); // successor snipped
+  });
+
+  it("stops an in-flight reply, re-acquires the lock, and completes the rerun", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    // Drive the pipeline directly and pull ONE token, so the exchange is genuinely
+    // mid-stream: holding the lock and registered for abort (the route eagerly drains,
+    // which would settle a demo reply before we could freeze it).
+    const first = await submitChatMessage({
+      chatId: chat.id,
+      memoryGroupId: chat.memoryGroupId,
+      character: { id: ids.character, name: "Mara", profile: {} },
+      kind: "send",
+      content: "hold the line",
+    });
+    if (!first.ok) throw new Error("first send was rejected");
+    expect((await first.stream.next()).done).toBe(false); // mid-stream now
+    const [user1] = await db()
+      .select({ id: characterChatMessages.id })
+      .from(characterChatMessages)
+      .where(and(eq(characterChatMessages.chatId, chat.id), eq(characterChatMessages.role, "user")))
+      .limit(1);
+    if (!user1) throw new Error("no user line for the in-flight send");
+
+    // Firing the rerun synchronously stops `first` (its first poll aborts the stream),
+    // then it waits for the lock. Draining `first` lets it settle (as stopped) and drop
+    // the lock, which the waiting rerun then acquires.
+    const rerunPromise = submitChatMessage({
+      chatId: chat.id,
+      memoryGroupId: chat.memoryGroupId,
+      character: { id: ids.character, name: "Mara", profile: {} },
+      kind: "rerun",
+      targetMessageId: user1.id,
+    });
+    let drainedFirst = "";
+    for await (const chunk of first.stream) drainedFirst += chunk; // settle + release
+    expect(drainedFirst).toContain("Demo mode"); // the stopped exchange streamed its content
+
+    const rr = await rerunPromise;
+    expect(rr.ok).toBe(true);
+    if (!rr.ok) return;
+    let drainedRerun = "";
+    for await (const chunk of rr.stream) drainedRerun += chunk; // drain the fresh reply
+    expect(drainedRerun).toContain("[Mara]");
+
+    // The stopped exchange's reply was snipped; the rerun produced exactly one fresh reply
+    // against the reused user line — no stray rows.
+    expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
+    const after = await fullRows(chat.id);
+    expect(after.find((m) => m.role === "user")?.id).toBe(user1.id); // reused, not re-inserted
+    const [reply] = await db()
+      .select({ meta: characterChatMessages.meta })
+      .from(characterChatMessages)
+      .where(and(eq(characterChatMessages.chatId, chat.id), eq(characterChatMessages.role, "assistant")))
+      .limit(1);
+    expect(reply?.meta).toEqual({}); // the surviving reply is the complete rerun, not the stopped partial
+  });
+
+  it("409s chat_busy with the transcript byte-identical when the lock can't be re-acquired", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    await (await chatSend(postReq(chat.id, { content: "leave me be" }), ctx(chat.id))).text();
+    const user1 = (await fullRows(chat.id)).find((m) => m.role === "user");
+    if (!user1) throw new Error("missing user line");
+    const before = await fullRows(chat.id);
+
+    // Hold the exact lock and never release it within the (shrunk) wait window. There is
+    // no registered in-flight reply, so the rerun's stop is a no-op and it can never win.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const held = tryKeyedLock(`chat_exchange:${chat.id}`, () => gate);
+    expect(held).not.toBeNull();
+
+    const result = await submitChatMessage({
+      chatId: chat.id,
+      memoryGroupId: chat.memoryGroupId,
+      character: { id: ids.character, name: "Mara", profile: {} },
+      kind: "rerun",
+      targetMessageId: user1.id,
+      rerunLockWaitMs: 150, // keep the test fast — the null→chat_busy path is the point
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("chat_busy");
+    expect(await fullRows(chat.id)).toEqual(before); // nothing deleted: same rows, ids, order
+
+    release();
+    await held;
+  });
+
+  it("rejects an absent / bogus / non-user / foreign rerun target and modifies nothing", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    await (await chatSend(postReq(chat.id, { content: "keep me" }), ctx(chat.id))).text();
+    const asst = (await fullRows(chat.id)).find((m) => m.role === "assistant");
+    if (!asst) throw new Error("missing assistant reply");
+    const sibling = await createChat(ids.character);
+    const foreignUserId = await insertMessage(sibling.id, "user", "sibling line");
+    const before = await fullRows(chat.id);
+
+    // (a) messageId omitted entirely → route validation 400.
+    expect((await chatSend(postReq(chat.id, { kind: "rerun" }), ctx(chat.id))).status).toBe(400);
+    // (b) a bogus id → invalid_rerun_target 400.
+    const missing = await chatSend(postReq(chat.id, { kind: "rerun", messageId: "no-such-id" }), ctx(chat.id));
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { error: { code: string } }).error.code).toBe("invalid_rerun_target");
+    // (c) an assistant line (not a player line) → 400.
+    expect((await chatSend(postReq(chat.id, { kind: "rerun", messageId: asst.id }), ctx(chat.id))).status).toBe(400);
+    // (d) a user line from a sibling conversation → 400 (scoped by chatId).
+    expect((await chatSend(postReq(chat.id, { kind: "rerun", messageId: foreignUserId }), ctx(chat.id))).status).toBe(400);
+
+    expect(await fullRows(chat.id)).toEqual(before); // not one attempt touched the transcript
+    await chatDelete(delReq(sibling.id), ctx(sibling.id));
+  });
+
+  it("rolls back to the pre-exchange snapshot when the target is the latest exchange's prompt", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    expect((await statePatch(stateReq(chat.id, { regard: 12 }), ctx(chat.id))).status).toBe(200); // pre-exchange baseline
+    await (await chatSend(postReq(chat.id, { content: "tell me" }), ctx(chat.id))).text();
+    const user1 = (await fullRows(chat.id)).find((m) => m.role === "user");
+    if (!user1) throw new Error("missing user line");
+    expect((await statePatch(stateReq(chat.id, { regard: 80 }), ctx(chat.id))).status).toBe(200); // perturb AFTER
+
+    const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
+    expect(res.status).toBe(200);
+    await res.text();
+
+    // The rerun IS the last exchange (its only successor was the newest reply), so it rolls
+    // back the post-exchange perturbation to the snapshot, exactly like regenerate.
+    expect(await stateAffinity(chat.id)).toBe(12);
+  });
+
+  it("degrades to no state rollback (with a diagnostic) when the target is an earlier exchange", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    expect((await statePatch(stateReq(chat.id, { regard: 5 }), ctx(chat.id))).status).toBe(200);
+    await (await chatSend(postReq(chat.id, { content: "first" }), ctx(chat.id))).text();
+    const user1 = (await fullRows(chat.id)).find((m) => m.role === "user" && m.content === "first");
+    if (!user1) throw new Error("missing first user line");
+    await (await chatSend(postReq(chat.id, { content: "second" }), ctx(chat.id))).text();
+    expect((await statePatch(stateReq(chat.id, { regard: 90 }), ctx(chat.id))).status).toBe(200); // distinctive current value
+
+    const infoSpy = vi.spyOn(log, "info");
+    try {
+      const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
+      expect(res.status).toBe(200);
+      await res.text();
+
+      // Fallback: rerunning an OLDER line (successors span two exchanges) can't use the
+      // one-exchange snapshot, so state is NOT rolled back — it stays at the current 90,
+      // never the stale one-exchange-back value.
+      expect(await stateAffinity(chat.id)).toBe(90);
+      // …and the degrade is announced (resilience.md §8 — fallback AND diagnostic code).
+      const codes = infoSpy.mock.calls.flatMap((call) => {
+        const data = call[2] as { codes?: unknown } | undefined;
+        return Array.isArray(data?.codes) ? (data.codes as string[]) : [];
+      });
+      expect(codes).toContain("chat_state.rerun.no_rollback");
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 });
 

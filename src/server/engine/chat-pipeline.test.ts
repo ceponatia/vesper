@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CHAT_REPLY_TAKES_CAP } from "./constants";
-import { emptyReplyTakes, pushReplyTake, replyTakesSchema, type ReplyTakes } from "./chat-pipeline";
+import { emptyReplyTakes, pushReplyTake, replyTakesSchema, withStreamTimeouts, type ReplyTakes } from "./chat-pipeline";
 
 // pushReplyTake (character-chat-standalone.spec.md §4.1) — the PURE takes-list
 // core behind "another take": lazy seeding of the pre-regenerate reply, newest
@@ -84,5 +84,80 @@ describe("replyTakesSchema", () => {
   it("parses the legacy empty-object column default into an empty takes list", () => {
     const parsed = replyTakesSchema.parse({});
     expect(parsed).toEqual({ takes: [], activeId: "" });
+  });
+});
+
+// withStreamTimeouts (data-loss-rerun fix) — the PURE reply-stream watchdog: pass tokens
+// through, but a wedged provider trips a first-token timeout or an overall cap, which
+// aborts the upstream call so the exchange lock can never be held indefinitely.
+describe("withStreamTimeouts", () => {
+  /** Yields each token after `delayMs`; the wedged/slow provider stand-in. */
+  async function* delayedSource(tokens: string[], delayMs: number): AsyncGenerator<string> {
+    for (const token of tokens) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      yield token;
+    }
+  }
+  /** Never yields; rejects on abort so the guarded stream's abort cleanly unwinds it. */
+  async function* hangUntilAbort(signal: AbortSignal): AsyncGenerator<string> {
+    await new Promise<void>((_, reject) => {
+      if (signal.aborted) return reject(new Error("aborted"));
+      signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    });
+  }
+
+  it("passes every token through untouched when the source keeps pace", async () => {
+    const controller = new AbortController();
+    let aborted = false;
+    const guarded = withStreamTimeouts(delayedSource(["a", "b", "c"], 2), {
+      firstTokenMs: 500,
+      overallMs: 2000,
+      onAbort: () => {
+        aborted = true;
+        controller.abort();
+      },
+    });
+    const out: string[] = [];
+    for await (const token of guarded) out.push(token);
+    expect(out).toEqual(["a", "b", "c"]);
+    expect(aborted).toBe(false); // finished on its own — no watchdog trip
+  });
+
+  it("trips the first-token watchdog when no token arrives in time, aborting the upstream call", async () => {
+    const controller = new AbortController();
+    const reasons: string[] = [];
+    let aborted = false;
+    const guarded = withStreamTimeouts(hangUntilAbort(controller.signal), {
+      firstTokenMs: 20,
+      overallMs: 1000,
+      onAbort: () => {
+        aborted = true;
+        controller.abort(); // wired to the source's signal, exactly like the pipeline
+      },
+      onTimeout: (reason) => reasons.push(reason),
+    });
+    const out: string[] = [];
+    for await (const token of guarded) out.push(token);
+    expect(out).toEqual([]); // nothing streamed
+    expect(aborted).toBe(true);
+    expect(reasons).toEqual(["first_token"]);
+  });
+
+  it("trips the overall cap once tokens flow but never finish", async () => {
+    const controller = new AbortController();
+    const reasons: string[] = [];
+    // A token every 10ms, effectively forever; the first arrives well within firstTokenMs,
+    // but the whole stream is capped at 35ms.
+    const guarded = withStreamTimeouts(delayedSource(Array<string>(100).fill("x"), 10), {
+      firstTokenMs: 1000,
+      overallMs: 35,
+      onAbort: () => controller.abort(),
+      onTimeout: (reason) => reasons.push(reason),
+    });
+    const out: string[] = [];
+    for await (const token of guarded) out.push(token);
+    expect(out.length).toBeGreaterThanOrEqual(1); // some tokens landed before the cap
+    expect(out.length).toBeLessThan(100); // …but it was cut short
+    expect(reasons).toEqual(["overall"]);
   });
 });

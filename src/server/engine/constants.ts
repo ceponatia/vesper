@@ -137,6 +137,27 @@ export const MAX_NPC_PAIR_AWARENESS_LINES = 4;
  */
 export const CHAT_REPLY_TAKES_CAP = 4;
 
+/**
+ * Character-chat model-stream watchdogs (data-loss-rerun fix): a hung provider must
+ * never hold the per-chat exchange lock indefinitely (the Aion 3.0 incident, 2026-07-09).
+ * If no first token arrives within CHAT_STREAM_FIRST_TOKEN_MS, or the whole stream runs
+ * past CHAT_STREAM_OVERALL_MS, the upstream call is aborted and the exchange settles
+ * through the stop path — any partial persists (`meta.stopped`), the lock releases, and a
+ * diagnostic is recorded. Generous by design: these guard against a wedged provider, not
+ * a merely-slow one (a real narration can take tens of seconds).
+ */
+export const CHAT_STREAM_FIRST_TOKEN_MS = 60_000;
+export const CHAT_STREAM_OVERALL_MS = 300_000;
+
+/**
+ * Bounded wait for the per-chat exchange lock on an atomic rerun (data-loss-rerun
+ * fix). A rerun first stops any in-flight reply for the chat (releasing its lock as it
+ * settles), then waits up to this long to re-acquire the lock before touching the
+ * transcript. If it still can't be had (a stuck settle), the rerun 409s `chat_busy` with
+ * the transcript completely untouched — nothing is ever deleted before the lock is ours.
+ */
+export const CHAT_RERUN_LOCK_WAIT_MS = 8_000;
+
 /** Heartbeats older than this mark a turn/job as abandoned (recovery). */
 export const HEARTBEAT_STALE_MS = 60_000;
 /**

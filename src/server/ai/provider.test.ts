@@ -48,9 +48,11 @@ describe("narrativeProviderOptions", () => {
     });
   });
 
-  it("carries the provisional effort:low knob for Aion 3.0 (mirrors the 2.0 ruling)", () => {
-    expect(narrativeProviderOptions("aion-labs/aion-3.0")).toEqual({
-      openrouter: { reasoning: { effort: "low" } },
+  it("sends NO reasoning knob for Aion 3.0 (reverted 2026-07-09 — un-evaled, hang suspect)", () => {
+    // The provisional effort:low was pulled; Aion 3.0 now sends the model default.
+    expect(narrativeProviderOptions("aion-labs/aion-3.0")).toBeUndefined();
+    expect(narrativeProviderOptions("aion-labs/aion-3.0", { sortLatency: true })).toEqual({
+      openrouter: { provider: { sort: "latency" } },
     });
   });
 

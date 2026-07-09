@@ -71,12 +71,12 @@ export type OpenRouterRouting = Record<string, JSONValue>;
  */
 const NARRATOR_REASONING: Readonly<Record<string, JSONValue>> = {
   "aion-labs/aion-2.0": { effort: "low" },
-  // Aion 3.0 (added recently to the curated narrator list) mirrors the 2.0 eval ruling:
-  // `effort:"low"` to suppress the residual doting/over-production the Aion family shows at
-  // its default reasoning depth. PROVISIONAL — un-evaled; carried forward from 2.0 by
-  // family resemblance until Aion 3.0 gets its own behavioral run. (`enabled:false` stays
-  // off the table: the AionLabs endpoint rejects it — "Reasoning is mandatory".)
-  "aion-labs/aion-3.0": { effort: "low" },
+  // Aion 3.0 is DELIBERATELY absent (reverted 2026-07-09, data-loss-rerun incident). Its
+  // provisional `effort:"low"` was un-evaled and carried over from 2.0 by family
+  // resemblance, and it is a suspect in the chat-lane hang that wedged the exchange lock.
+  // Do NOT re-add a reasoning knob for Aion 3.0 without first verifying the model actually
+  // accepts the reasoning param (a rejected/ignored knob can stall the stream) and running
+  // its own behavioral eval — until then it sends the model default (no reasoning option).
   "z-ai/glm-5.2": { effort: "low" },
 };
 
