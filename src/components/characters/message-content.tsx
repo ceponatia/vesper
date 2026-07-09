@@ -35,6 +35,20 @@ export function MessageContent({ content, context }: { content: string; context?
   );
 }
 
+/**
+ * The SMS-style texted-line body: a non-italic `Name:` label followed by the italic message.
+ * Shared so the chat lane (comms span) and the session feed (`InlineProse` comms line) render
+ * an identical texted line — ONE styling implementation.
+ */
+export function CommsBody({ prefix, text }: { prefix?: string; text: string }) {
+  return (
+    <>
+      {prefix ? <span className="font-medium text-paper-300">{prefix} </span> : null}
+      <em className="italic">{text}</em>
+    </>
+  );
+}
+
 /** One render piece → its inline element (exhaustive over the four display variants). */
 function Piece({ piece }: { piece: RenderPiece }) {
   switch (piece.variant) {
@@ -45,8 +59,7 @@ function Piece({ piece }: { piece: RenderPiece }) {
     case "comms":
       return (
         <span>
-          {piece.prefix ? <span className="font-medium text-paper-300">{piece.prefix} </span> : null}
-          <em className="italic">{piece.text}</em>
+          <CommsBody prefix={piece.prefix} text={piece.text} />
         </span>
       );
     case "ooc":

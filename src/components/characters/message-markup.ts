@@ -84,6 +84,20 @@ export function messageRenderModel(content: string, context: MessageSpanContext 
 }
 
 /**
+ * Detect a line that is SOLELY a `*Name: …*` comms span → its label + body for SMS-style
+ * texted-line rendering (the session feed reuses this; dialogue-attribution). Reuses the ONE
+ * span parser — never re-implements the grammar — and returns null for anything else (ordinary
+ * prose, italics, a comms span mixed with other text), so the caller falls back to normal
+ * rendering. `written`-style asides never reach here (the parser doesn't produce comms for them).
+ */
+export function commsLine(line: string, context: MessageSpanContext = {}): { prefix?: string; text: string } | null {
+  const spans = parseMessageSpans(line, context);
+  const only = spans.length === 1 ? spans[0] : undefined;
+  if (only === undefined || only.kind !== "comms") return null;
+  return { prefix: only.sender ? `${only.sender}:` : undefined, text: only.text };
+}
+
+/**
  * Composer affordance: is the caret sitting inside an open `((…))` OOC block? A cheap
  * bracket-balance probe rather than the sigil grammar — `parseMessageSpans` is offset-
  * free (it can't answer "is my caret inside this span") and only recognizes CLOSED

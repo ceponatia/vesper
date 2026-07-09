@@ -60,7 +60,7 @@ import {
   type CommsStaging,
   type ReactionLineInput,
 } from "./scene";
-import { createSegmenter, parseSegments } from "./segmenter";
+import { createSegmenter, parseSegments } from "@/lib/segmenter";
 import { exposedRegions, resolveWardrobeVisibility } from "@/contracts/items/visibility";
 import { resolveAttributes } from "@/contracts/attributes/value";
 import { NEUTRAL_MOOD_METER } from "@/contracts/meters/registry";

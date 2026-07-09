@@ -112,6 +112,20 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Dialogue attribution — render-owned speaker presentation** — no plan doc
+  (built direct on owner instruction) — 2026-07-09 — the `[Name]` tag demoted
+  from presentation to one attribution input: the session segmenter moved to
+  pure `lib/segmenter.ts` (one parser for sessions, chat, and the eval
+  harness) with an opt-in standalone-quote rule (a whole-line double-quoted
+  utterance in a 1-on-1 attributes to the character; embedded quotes stay
+  prose — flavor NPCs live in narration by design); chat replies render
+  in-bubble per-speaker segments (tags hidden, small name labels, comms lines
+  keep SMS styling without double-labels); chat rule 3 makes the tag optional
+  and licenses flavor-NPC speech in prose; the session feed renders `*Name: …*`
+  texted lines SMS-style (closes the perception plan's comms-styling
+  follow-up). Transcripts stay byte-verbatim; session prompt contract
+  unchanged. Docs: `prompts.md` §Dialogue tagging, `ui.md`,
+  `character-chat.md`.
 - **Player-input perception — markup lane, RAG fence, session port (slices 3–7)** —
   [player-input-perception.plan.md](player-input-perception.plan.md) — 2026-07-09 —
   the plan's whole remainder in one multi-agent run: exemption lines in the

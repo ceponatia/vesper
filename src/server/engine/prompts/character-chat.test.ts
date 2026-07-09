@@ -82,6 +82,23 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toMatch(/never mention being an AI/i);
   });
 
+  it("relaxes the dialogue tag to optional (renderer-owned attribution) and keeps dialogue quoted", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    // Dialogue still goes in quotes, but the [Name] tag is now optional in the 1-on-1…
+    expect(prompt).toMatch(/spoken dialogue always goes in quotes/i);
+    expect(prompt).toMatch(/\[Mara\] tag is optional/i);
+    expect(prompt).toMatch(/attributes Mara's dialogue automatically/i);
+    // …and the old "start EVERY line with the tag" mandate is gone.
+    expect(prompt).not.toContain("Start every line of Mara's spoken dialogue with the tag");
+  });
+
+  it("licenses flavor NPCs to speak in narration prose, reserving bracketed tags for the character", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(prompt).toMatch(/Incidental people in the scene/i);
+    expect(prompt).toMatch(/never a \[bracketed\] tag/i);
+    expect(prompt).toContain("bracketed tags belong to Mara alone");
+  });
+
   it("fixes a third-person viewpoint: character in third person, player as 'you', first person only in quotes", () => {
     const withPlayer = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
     // Narration is third person for the character…

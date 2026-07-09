@@ -4,7 +4,7 @@ import path from "node:path";
 import { streamText, type JSONValue, type ModelMessage } from "ai";
 import { isDemoMode, narrativeProviderOptions, openrouter, routedProvider } from "../../../src/server/ai";
 import type { NarrationShapeId } from "../../../src/server/engine/prompts/constants";
-import { parseSegments } from "../../../src/server/engine/segmenter";
+import { parseSegments } from "../../../src/lib/segmenter";
 import { CONTRAST_AXES, EVAL_SCENARIOS, type EvalScenario } from "./fixtures";
 import { judgeAbsolute, judgeAvg, type Judgement } from "./judge";
 

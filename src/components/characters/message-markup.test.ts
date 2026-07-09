@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caretInOocBlock, messageRenderModel, type RenderPiece } from "./message-markup";
+import { caretInOocBlock, commsLine, messageRenderModel, type RenderPiece } from "./message-markup";
 
 /** Flatten the paragraph model to compact tuples for readable assertions. */
 const flat = (content: string, ctx?: Parameters<typeof messageRenderModel>[1]) =>
@@ -113,6 +113,29 @@ describe("messageRenderModel — span → display pieces (player-input-perceptio
   it("returns no paragraphs for blank / degenerate input", () => {
     expect(messageRenderModel("")).toEqual([]);
     expect(messageRenderModel("   \n  \n ")).toEqual([]);
+  });
+});
+
+describe("commsLine — SMS-style texted-line detection for the session feed", () => {
+  it("detects a solely `*Name: …*` line, returning the label + body", () => {
+    expect(commsLine("*Mara: on my way, five minutes*")).toEqual({ prefix: "Mara:", text: "on my way, five minutes" });
+  });
+
+  it("omits the prefix when the sender is unresolved (the `to Name:` form without context)", () => {
+    expect(commsLine("*to Mara: on my way*")).toEqual({ text: "on my way" });
+  });
+
+  it("returns null for an ordinary italic line (a thought, not a text)", () => {
+    expect(commsLine("*She looks up, unsure what to say.*")).toBeNull();
+  });
+
+  it("returns null for plain prose and for `**bold**` (leaves inline-markup rendering alone)", () => {
+    expect(commsLine("She sets down the cup.")).toBeNull();
+    expect(commsLine("**Don't.**")).toBeNull();
+  });
+
+  it("returns null when a comms span is mixed with other content (not a whole texted line)", () => {
+    expect(commsLine('*Mara: omw* she types, then pockets the phone.')).toBeNull();
   });
 });
 

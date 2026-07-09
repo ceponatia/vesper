@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ReplyTakes } from "@/lib/client/api";
 import { MessageContent } from "@/components/characters/message-content";
+import { chatReplySegments } from "@/components/characters/chat-segments";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +34,31 @@ function RerunIcon({ className }: { className?: string }) {
       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
       <path d="M21 3v5h-5" />
     </svg>
+  );
+}
+
+/**
+ * A narrator/character reply, rendered as in-bubble per-speaker segments
+ * (dialogue-attribution). Speaker segments get a small accent label (mirroring the
+ * session feed's speaker label) with the `[Name]` tag hidden; narrator-prose segments
+ * render bare. Content flows through `MessageContent` so the sigil grammar keeps working.
+ * Re-parsing the growing reply on each streaming render is fine — the parser is pure and
+ * cheap, and its line-oriented rules keep the unterminated tail stable.
+ */
+function ReplyBody({ content, name }: { content: string; name: string }) {
+  const segments = chatReplySegments(content, name);
+  const context = { knownNames: name ? [name] : undefined };
+  return (
+    <>
+      {segments.map((seg, i) => (
+        <div key={i} className={i > 0 ? "mt-1.5" : undefined}>
+          {seg.showLabel && seg.speaker ? (
+            <p className="mb-0.5 text-xs font-medium text-accent-300">{seg.speaker}</p>
+          ) : null}
+          <MessageContent content={seg.content} context={context} />
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -152,11 +178,17 @@ export function MessageBubble({
             >
               {pending ? (
                 <span className="text-paper-500">…</span>
-              ) : (
+              ) : isUser ? (
                 // Span renderer (player-input-perception slice 5): italicize thoughts /
                 // `_italic_`, read `*Name:*` as a text, mark `((OOC))` — sigils hidden.
-                // Applies to both sides (`name` seeds comms-recipient resolution).
+                // (`name` seeds comms-recipient resolution.)
                 <MessageContent content={line.content} context={{ knownNames: name ? [name] : undefined }} />
+              ) : (
+                // Narrator/character replies render per-speaker segments (dialogue-attribution):
+                // the `[Name]` tag is hidden behind a small speaker label, standalone whole-line
+                // quotes attribute to the character, and segment content still flows through the
+                // span renderer above. In-bubble segments — the chat lane stays "a story being told".
+                <ReplyBody content={line.content} name={name} />
               )}
               {line.stopped ? (
                 <span className="ml-1.5 inline-block rounded-sm border border-ink-600 px-1 text-[10px] tracking-wide text-paper-500 uppercase">
