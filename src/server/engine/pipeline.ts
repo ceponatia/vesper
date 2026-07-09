@@ -32,7 +32,7 @@ import { runIntake, sceneIntentFromBrief } from "./intake";
 import { enqueueJob, registerJobHandler, sessionBusy } from "./jobs";
 import { applyTurnResults, stagedLocationAnchor } from "./merge";
 import { narrationShapeId } from "./prompts/constants";
-import { buildStaticRulebook, buildTurnContext } from "./prompts/narrative";
+import { buildStaticRulebook, buildTurnContext, narrativeNotationNote } from "./prompts/narrative";
 import { recoverAbandonedTurns } from "./recovery";
 import {
   buildAbsenceNotice,
@@ -850,6 +850,15 @@ async function assemblePreTurn(
     author: body.author,
     speakerName,
     ooc,
+    // Derived-fact notation note (player-input-perception.plan.md slice 7): the shared
+    // span parser reads the current input's markup and renders a comms/OOC one-liner.
+    // Player non-OOC turns only (a director/companion turn or an OOC question carries no
+    // player persona texting anyone). knownNames is every session NPC — a text may go to
+    // someone elsewhere. The raw input is never touched; this only feeds the prompt tail.
+    notationNote:
+      !ooc && body.author === "player"
+        ? narrativeNotationNote(body.input, { playerName: player?.displayName, knownNames: allNpcNames })
+        : "",
   });
 
   const messages: ModelMessage[] = [];
