@@ -744,4 +744,55 @@ describe.skipIf(!ready)("memory integration", () => {
       expect(rows[0]?.createdAt).toBeInstanceOf(Date);
     });
   });
+
+  // Slice 6 (player-input-perception.plan.md): the RAG visibility fence. pseudoEmbed is
+  // hash-based, so query each fact with its exact stored text to score a recall hit.
+  describe("fact channel — the RAG visibility fence (slice 6)", () => {
+    const groupId = "int-test-channel-fence-group";
+    const perceivedText = "The player told her they grew up in Lisbon.";
+    const privateText = "The player secretly still resents their brother Anton.";
+    const oocText = "The player wants to jump ahead to the harvest festival.";
+
+    it("persists the archivist's channel and fences private/ooc from narrator retrieval", async () => {
+      const scope = chatScope(groupId);
+      await addFacts(
+        scope,
+        [
+          draft({ subjectName: "the player", subjectKind: "player", text: perceivedText, channel: "perceived" }),
+          draft({ subjectName: "the player", subjectKind: "player", text: privateText, channel: "private" }),
+          draft({ subjectName: "the player", subjectKind: "player", text: oocText, channel: "ooc" }),
+        ],
+        null,
+      );
+
+      // Perceived reaches the narrator; private + ooc never do (fenced in SQL before the cap).
+      expect((await retrieveFacts(scope, perceivedText)).map((h) => h.text)).toContain(perceivedText);
+      expect((await retrieveFactsFused(scope, [privateText])).map((h) => h.text)).not.toContain(privateText);
+      expect((await retrieveFacts(scope, oocText)).map((h) => h.text)).not.toContain(oocText);
+
+      // The dev inspector's list read is a SEPARATE, unfenced read: every channel is visible + labeled.
+      const listed = await listFactsForScope(scope);
+      const byText = new Map(listed.map((f) => [f.text, f.channel]));
+      expect(byText.get(perceivedText)).toBe("perceived");
+      expect(byText.get(privateText)).toBe("private");
+      expect(byText.get(oocText)).toBe("ooc");
+
+      await deleteFactsForScope(scope);
+    });
+
+    it("degrades an unknown channel to perceived with a boundary diagnostic (still retrievable)", async () => {
+      const scope = chatScope(`${groupId}-degraded`);
+      const text = "The player mentioned a cat named Biscuit.";
+      const sink = new DiagnosticCollector();
+      await addFacts(scope, [draft({ subjectName: "the player", subjectKind: "player", text, channel: "telepathic" })], null, sink);
+
+      expect(sink.items.some((d) => d.code === "parse.boundary_failed" && d.path === "facts.channel")).toBe(true);
+      const listed = await listFactsForScope(scope);
+      expect(listed.find((f) => f.text === text)?.channel).toBe("perceived");
+      // Degraded to perceived ⇒ it DOES reach the narrator (fail safe: a misclassification never mutes a real perception).
+      expect((await retrieveFacts(scope, text)).map((h) => h.text)).toContain(text);
+
+      await deleteFactsForScope(scope);
+    });
+  });
 });

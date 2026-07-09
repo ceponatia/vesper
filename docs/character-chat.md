@@ -199,7 +199,7 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `POST /api/chats/:chatId/milestones` | "mark this moment": append a `player_marked` milestone on a message (label defaults to a line excerpt) |
 | `POST /api/chats/:chatId/summary/rebuild` | `rebuildChatSummary` — reset + re-fold the rolling summary from the full transcript under the summary lock (heavy-write rate limited) |
 | `GET /api/chats/:chatId/export?format=md\|json&memory=1` | transcript export — title, scenario, story-so-far, transcript, opt-in memory appendix |
-| `/api/dev/chat-inspector/:chatId[/…]` | dev memory inspector family (spec §6.1; **404 in production**, owner-scoped): overview (all facts incl. superseded/retracted + episodes + summary) · facts create/PATCH (pin/retract/restore, re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH · prompt preview (`previewChatPrompt` — "what reaches the narrator") |
+| `/api/dev/chat-inspector/:chatId[/…]` | dev memory inspector family (spec §6.1; **404 in production**, owner-scoped): overview (all facts incl. superseded/retracted — each labeled with its `channel`: `perceived`/`private`/`ooc`, the RAG visibility fence, [memory.md](memory.md) §Fact channel — plus episodes + summary) · facts create/PATCH (pin/retract/restore, re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH · prompt preview (`previewChatPrompt` — "what reaches the narrator") |
 
 ## Diagnostics
 

@@ -21,7 +21,7 @@ If the archivist failed, a synthetic episode (first ~300 chars of narration) kee
 
 ## Semantic facts
 
-Declarative long-term knowledge (`facts` table, taxonomy in [contracts/facts.md](contracts/facts.md)). Every row carries `origin` (`"extracted"` — the archivist default — `"player"` for "remember this" notes, `"dev"` for inspector edits) and a `pinned` flag (see §Pinned facts). Lifecycle:
+Declarative long-term knowledge (`facts` table, taxonomy in [contracts/facts.md](contracts/facts.md)). Every row carries `origin` (`"extracted"` — the archivist default — `"player"` for "remember this" notes, `"dev"` for inspector edits), a `pinned` flag (see §Pinned facts), and a `channel` (see §Fact channel — the RAG visibility fence). Lifecycle:
 
 1. **Extraction**: archivist emits `FactDraft[]` with confidence; drafts under 0.4 are dropped.
 2. **Grounding**: subjects resolve to participant/location/item rows by name where possible (`subject_id`); unresolved subjects keep `subject_name` only.
@@ -30,6 +30,20 @@ Declarative long-term knowledge (`facts` table, taxonomy in [contracts/facts.md]
 5. **Edit reconciliation**: facts sourced from an edited/rerun turn (or, chat lane, an edited/deleted/regenerated assistant message via `source_message_id`) are `retracted` (not deleted — audit trail), and re-extracted from the new narration. Pinned player facts carry no message anchor, so message reconciliation never reaps them.
 
 Facts and episodes carry `witnessed_by`: as of phase 3 (presence & perception v1) this is the **perception-based witness set** computed each turn from attention × salience — `[player, ...perceivers]`, the NPCs who actually perceived a salient action this turn, not everyone co-located (see [perception.md](perception.md)). The stamp is now real perception. The knowledge-ledger **consumer** (per-character episodes / fact knowers reading the stamp, [developer-notes/character-memory-spec.phase3.md](developer-notes/finished/character-memory-spec.phase3.md)) is still phase 6 — for now the set is written truthfully and waits on its reader. Facts also carry `canon` (default true) — reserved for the lies/beliefs model, ignored by retrieval for now.
+
+### Fact channel — the RAG visibility fence
+
+Every fact carries a **`channel`** (text, default `perceived`; NOT a pg enum — forward-compatible-schema preference) recording *how the knowledge was established*, so the archivist's mind-reading backdoor stays closed: without it, a fact extracted from the player's private thoughts (*"she'd never talk to a dork like me"*) returns later in the narrator's "What you know … treat as true" block and the character "knows" something she never perceived (player-input-perception.plan.md slice 6). Vocabulary (`contracts/facts/taxonomy.ts`):
+
+| Channel | Established through | Reaches the narrator? |
+| --- | --- | --- |
+| `perceived` | Quoted speech / a visible action or expression the character saw or heard | **Yes** — renders as established knowledge, exactly as before |
+| `private` | The player's unspoken inner thoughts (a `*…*` span, or judged semantically) | **No** — excluded from narrator-bound retrieval entirely (owner ruling 2026-07-09: no intuition-grade "you sense…" framing) |
+| `ooc` | `((out-of-character))` direction — generally not stored at all | **No** — never enters in-world memory |
+
+- **Where the fence lives — retrieval, not render.** `queryFactCandidates` + `selectPinnedFacts` (`memory/facts.ts`) filter to `NARRATOR_VISIBLE_FACT_CHANNELS` (= `["perceived"]`) in SQL **before** the top-k `LIMIT`, so non-perceived facts never reach the narrator prompt **and** never eat a retrieval-cap slot. Both lanes' narrator retrieval (`retrieveFactsFused` → chat `buildMemorySection` and session `preTurnRetrieve`) inherit it; `buildMemorySection` itself is unchanged (it only ever receives perceived facts). The **pulse and the dev inspector** read facts through other paths (`listFactsForScope`) and still see every channel — the inspector labels each fact with its channel.
+- **Filed by the archivist.** The chat archivist tags each fact's channel (`prompts/chat-archivist.ts`): quoted/visible ⇒ `perceived`, thought-derived ⇒ `private`, OOC ⇒ skip. When the player used sigils, a parser-derived hint (the shared `@/lib/message-spans` parser) rides along so the classification is deterministic; without sigils it judges semantically. The **session** archivist doesn't classify yet — it writes the `perceived` default until the session-lane port (slice 7).
+- **Degraded default `perceived`, with a diagnostic.** `parseFactChannel` (the trust-boundary parser) degrades an *unknown* channel to `perceived` with a `parse.boundary_failed` diagnostic at both the write (`addFacts`) and read (`listFactsForScope`) boundaries; an *absent* channel (the session lane, existing rows migrated by `0029`) degrades silently. Failing to `perceived` is the safe direction: a misclassification surfaces a real perception, never mutes one.
 
 ### Pinned facts (player "remember this")
 

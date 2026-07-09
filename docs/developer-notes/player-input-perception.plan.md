@@ -298,7 +298,19 @@ amber/yellow tint) — intellisense-style, so the player *sees* they're typing
 inside an OOC block. Detection reuses the slice-4 parser. Keep it minimal: no
 popovers, no other sigils' live styling unless it falls out free.
 
-### 6. RAG visibility fence — close the memory backdoor
+### 6. RAG visibility fence — close the memory backdoor — shipped 2026-07-09
+
+Shipped: facts carry a `channel` (`perceived | private | ooc`; migration `0029`, text with
+headroom, degraded default `perceived`); the chat archivist classifies each fact (with a
+parser-derived hint from the shared `@/lib/message-spans` when the player used sigils) and
+skips OOC; the fence lives at **retrieval** (`queryFactCandidates` + `selectPinnedFacts`
+filter to `NARRATOR_VISIBLE_FACT_CHANNELS` in SQL before the cap, so `private`/`ooc` never
+reach the narrator and never eat a retrieval slot) — `buildMemorySection` is unchanged; the
+pulse + dev inspector (`listFactsForScope`, channel-labeled) still read every channel.
+`parseFactChannel` degrades unknown channels to `perceived` with a `parse.boundary_failed`
+diagnostic at the read + write boundaries. Full detail: [docs/memory.md](../memory.md)
+§Fact channel. Session-lane classification is deferred to slice 7 (it writes the `perceived`
+default for now).
 
 Per §RAG is a mind-reading backdoor:
 

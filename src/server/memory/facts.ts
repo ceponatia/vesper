@@ -1,7 +1,12 @@
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import type { FactDraft } from "@/contracts/facts/taxonomy";
+import {
+  NARRATOR_VISIBLE_FACT_CHANNELS,
+  parseFactChannel,
+  type FactChannel,
+  type FactDraft,
+} from "@/contracts/facts/taxonomy";
 import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, embedTexts, toVectorLiteral, type Embedded } from "../ai";
 import { db, facts, type DbWriter } from "../db";
@@ -77,6 +82,8 @@ export interface FactRecord {
   status: "active" | "superseded" | "retracted";
   pinned: boolean;
   origin: FactOrigin;
+  /** The channel this fact was established through (slice 6) — degraded-parsed from the column. */
+  channel: FactChannel;
   sourceTurnId: string | null;
   sourceMessageId: string | null;
   supersededById: string | null;
@@ -251,6 +258,9 @@ export async function addFacts(
           text: draft.text,
           tags: draft.tags,
           confidence: draft.confidence,
+          // Trust boundary (slice 6): an unknown channel from the archivist degrades to
+          // `perceived` with a diagnostic; a missing one is the ordinary un-classified write.
+          channel: parseFactChannel(draft.channel, sink),
           pinned: draft.pinned ?? false,
           origin: draft.origin ?? "extracted",
           witnessedBy: draft.witnessedBy ?? [],
@@ -277,7 +287,13 @@ export async function addFacts(
   return { insertedIds, supersededIds };
 }
 
-/** Top-k active same-embedder facts by cosine similarity (shared by both retrievers). */
+/**
+ * Top-k active same-embedder facts by cosine similarity (shared by both retrievers).
+ * FENCED to narrator-visible channels (slice 6): `private`/`ooc` facts are excluded here,
+ * in SQL BEFORE the limit, so they never reach the narrator AND never eat the cap's slots.
+ * The dev inspector's `listFactsForScope` and the pulse are separate reads — they still see
+ * every channel.
+ */
 async function queryFactCandidates(scope: MemoryScope, vec: string, limit: number): Promise<FactHit[]> {
   return db()
     .select({
@@ -296,6 +312,7 @@ async function queryFactCandidates(scope: MemoryScope, vec: string, limit: numbe
         eq(facts.status, "active"),
         eq(facts.embedder, currentEmbedder()),
         isNotNull(facts.embedding),
+        inArray(facts.channel, [...NARRATOR_VISIBLE_FACT_CHANNELS]),
       ),
     )
     .orderBy(sql`${facts.embedding} <=> ${vec}::vector`)
@@ -307,7 +324,9 @@ async function queryFactCandidates(scope: MemoryScope, vec: string, limit: numbe
  * force-included ahead of the similarity top-k (spec §6.4). No embedder filter:
  * a pinned row is retrieved even when it never embedded. With a query vector
  * the row's true cosine is reported when comparable (same embedder, non-null
- * embedding); otherwise the honest "not scored" 0.
+ * embedding); otherwise the honest "not scored" 0. FENCED to narrator-visible
+ * channels (slice 6): a pinned fact filed on a non-perceived channel still never
+ * reaches the narrator (the fence applies uniformly, force-include notwithstanding).
  */
 async function selectPinnedFacts(scope: MemoryScope, vec: string | null): Promise<FactHit[]> {
   const score = vec
@@ -324,7 +343,14 @@ async function selectPinnedFacts(scope: MemoryScope, vec: string | null): Promis
       origin: facts.origin,
     })
     .from(facts)
-    .where(and(memoryScopeWhere(facts, scope), eq(facts.status, "active"), eq(facts.pinned, true)))
+    .where(
+      and(
+        memoryScopeWhere(facts, scope),
+        eq(facts.status, "active"),
+        eq(facts.pinned, true),
+        inArray(facts.channel, [...NARRATOR_VISIBLE_FACT_CHANNELS]),
+      ),
+    )
     .orderBy(desc(facts.createdAt))
     .limit(PINNED_FACT_CAP);
 }
@@ -470,6 +496,7 @@ export async function listFactsForScope(
       status: facts.status,
       pinned: facts.pinned,
       origin: facts.origin,
+      channel: facts.channel,
       sourceTurnId: facts.sourceTurnId,
       sourceMessageId: facts.sourceMessageId,
       supersededById: facts.supersededById,
@@ -482,6 +509,9 @@ export async function listFactsForScope(
   return rows.map((row) => ({
     ...row,
     tags: parseOr(stringArraySchema, row.tags, [], opts.sink, "facts.tags"),
+    // Read boundary (slice 6): a stray/unknown channel value degrades to `perceived`
+    // with a diagnostic, so the inspector never renders an out-of-vocabulary label.
+    channel: parseFactChannel(row.channel, opts.sink),
   }));
 }
 

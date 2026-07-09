@@ -24,6 +24,8 @@ export interface FactRowLike {
   status: string;
   pinned: boolean;
   origin: string;
+  /** The channel this fact was established through (slice 6) — surfaced so the inspector can label it. */
+  channel: string;
   sourceTurnId: string | null;
   sourceMessageId: string | null;
   supersededById: string | null;
@@ -54,6 +56,7 @@ export const factReturning = {
   status: facts.status,
   pinned: facts.pinned,
   origin: facts.origin,
+  channel: facts.channel,
   sourceTurnId: facts.sourceTurnId,
   sourceMessageId: facts.sourceMessageId,
   supersededById: facts.supersededById,
@@ -84,6 +87,7 @@ export function serializeFactRow(row: FactRowLike) {
     status: row.status,
     pinned: row.pinned,
     origin: row.origin,
+    channel: row.channel,
     sourceTurnId: row.sourceTurnId,
     sourceMessageId: row.sourceMessageId,
     supersededById: row.supersededById,

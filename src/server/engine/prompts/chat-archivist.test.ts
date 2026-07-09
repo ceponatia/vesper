@@ -21,6 +21,17 @@ describe("CHAT_ARCHIVIST_SYSTEM", () => {
     expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/narration and inner thoughts/i);
     expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/not only what the character could perceive/i);
   });
+
+  it("teaches the fact channel: perceived vs private, and skip OOC (player-input-perception.plan.md slice 6)", () => {
+    // The facts field lists the channel key, the rule defines the vocabulary, and OOC is dropped.
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"channel" one of perceived\|private/i);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/quoted speech or a visible action/i);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/unspoken inner thoughts/i);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/double parentheses.*record no facts/is);
+    // Both worked examples carry an explicit channel so the model sees the full shape.
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"channel":"perceived"');
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"channel":"private"');
+  });
 });
 
 describe("buildChatArchivistPrompt", () => {
@@ -40,5 +51,31 @@ describe("buildChatArchivistPrompt", () => {
   it("renders '(none)' when no loops are open (prompt shape stays stable)", () => {
     const prompt = buildChatArchivistPrompt(base);
     expect(prompt).toContain("Currently open loops:\n(none)");
+  });
+
+  it("adds a parser-derived channel hint when the player marks a private thought (slice 6)", () => {
+    const prompt = buildChatArchivistPrompt({
+      ...base,
+      exchange: { player: '"Hey." *God, I hope she says yes.*', assistant: base.exchange.assistant },
+    });
+    expect(prompt).toContain("Channel notes (the player used notation this message):");
+    expect(prompt).toMatch(/private thought/i);
+    expect(prompt).toContain('"channel":"private"');
+  });
+
+  it("adds an OOC hint that forbids storing facts from a ((direction)) span (slice 6)", () => {
+    const prompt = buildChatArchivistPrompt({
+      ...base,
+      exchange: { player: "((skip ahead to the next morning))", assistant: base.exchange.assistant },
+    });
+    expect(prompt).toMatch(/double-parenthesized.*record NO fact/is);
+  });
+
+  it("omits the channel hint entirely when the player used no thought/OOC notation (the common case)", () => {
+    const prompt = buildChatArchivistPrompt({
+      ...base,
+      exchange: { player: '"Tell me about your sister." I lean in.', assistant: base.exchange.assistant },
+    });
+    expect(prompt).not.toContain("Channel notes");
   });
 });
