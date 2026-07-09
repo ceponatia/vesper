@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   characterProfileSchema,
@@ -34,8 +34,14 @@ import {
   type ChatState,
 } from "./chat-state";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
-import { CHARACTER_CHAT_SUMMARIZE_AT, CHAT_REPLY_TAKES_CAP } from "./constants";
-import { tryKeyedLock } from "./keyed-lock";
+import {
+  CHARACTER_CHAT_SUMMARIZE_AT,
+  CHAT_REPLY_TAKES_CAP,
+  CHAT_RERUN_LOCK_WAIT_MS,
+  CHAT_STREAM_FIRST_TOKEN_MS,
+  CHAT_STREAM_OVERALL_MS,
+} from "./constants";
+import { acquireKeyedLockWithin, tryKeyedLock } from "./keyed-lock";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
@@ -54,7 +60,7 @@ import { narrationShapeId } from "./prompts/constants";
  * parse → auth → stream shell. Keyed on the conversation (spec §1): the route
  * resolves chat + participant + character and hands their slices in.
  *
- * Four exchange kinds (spec §4):
+ * Five exchange kinds (spec §4):
  * - **send** — the normal player turn.
  * - **open** — the opening beat ("Prompt character"): no player line, no fan-out.
  * - **continue** — "go on": no player line; the archivist runs (new narrative is
@@ -62,9 +68,17 @@ import { narrationShapeId } from "./prompts/constants";
  * - **regenerate** — "another take" on the LAST assistant reply: state rolls back
  *   to the pre-exchange snapshot, the old take's memory is retracted, the reply
  *   row is updated in place with the old take kept browsable (`takes`).
+ * - **rerun** — atomic "re-send this player line" (data-loss-rerun fix): stop any
+ *   in-flight reply, re-acquire the lock (bounded wait), then in one transaction
+ *   delete only the target user line's SUCCESSORS and reuse the target itself as the
+ *   prompt guard — a fresh reply streams like a `send`. Nothing is deleted until the
+ *   lock is held and the target validates, so a failed acquire leaves the transcript
+ *   byte-identical. State mirrors regenerate (snapshot rollback when the target is the
+ *   last exchange's prompt, else no-rollback + diagnostic); deleted assistant
+ *   successors have their extracted memory retracted.
  */
 
-export type ChatExchangeKind = "send" | "open" | "continue" | "regenerate";
+export type ChatExchangeKind = "send" | "open" | "continue" | "regenerate" | "rerun";
 
 export interface SubmitChatMessageInput {
   /** The conversation (already authorized + not archived — the route owns both checks). */
@@ -76,6 +90,19 @@ export interface SubmitChatMessageInput {
   kind: ChatExchangeKind;
   /** The player's line — required for `send`, ignored for the other kinds. */
   content?: string;
+  /**
+   * The target user-message id — required for `kind: "rerun"`, ignored otherwise. The
+   * rerun snips this line's successors and re-runs from it (the line itself is reused,
+   * never deleted or re-inserted).
+   */
+  targetMessageId?: string;
+  /**
+   * Bounded-wait budget (ms) for re-acquiring the lock on a `kind: "rerun"`, after
+   * stopping any in-flight reply. Defaults to CHAT_RERUN_LOCK_WAIT_MS; overridable so a
+   * caller (or a test of the contended path) can tune how long a rerun waits before
+   * giving up with `chat_busy`.
+   */
+  rerunLockWaitMs?: number;
   /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
   model?: string;
   /**
@@ -94,7 +121,7 @@ export interface SubmitChatMessageInput {
 }
 
 export type SubmitChatMessageResult =
-  | { ok: false; code: "chat_busy" | "nothing_to_regenerate"; message: string }
+  | { ok: false; code: "chat_busy" | "nothing_to_regenerate" | "invalid_rerun_target"; message: string }
   | { ok: true; stream: AsyncGenerator<string, void, unknown> };
 
 /** A synthetic, non-persisted cue that gives the model a turn to respond to when the character opens the scene. */
@@ -192,6 +219,74 @@ export function stopChatReply(chatId: string): boolean {
   return true;
 }
 
+export interface StreamTimeoutOptions {
+  /** No first token within this many ms ⇒ abort (a wedged provider that never speaks). */
+  firstTokenMs: number;
+  /** The whole stream running past this many ms ⇒ abort (a provider that trickles forever). */
+  overallMs: number;
+  /** Abort the upstream call (wired to the exchange's AbortController). */
+  onAbort: () => void;
+  /** Record the watchdog trip (a log/diagnostic); the reply still settles via the stop path. */
+  onTimeout?: (reason: "first_token" | "overall") => void;
+}
+
+/**
+ * Guard a reply token stream with two watchdogs (data-loss-rerun fix): a first-token
+ * timeout and an overall cap. On a trip it calls `onAbort` (aborting the upstream call)
+ * and ends the stream — the caller's settle path then persists any partial with
+ * `meta.stopped` and releases the chat lock, so a hung provider can never wedge the
+ * conversation (the Aion 3.0 incident). Passes every token through untouched otherwise;
+ * a source that finishes or throws on its own flows through unchanged.
+ *
+ * PURE + testable: no engine state, just the source generator and the timeout knobs. The
+ * lost `next()` after a trip is fire-and-forget-swallowed, and the source is closed
+ * fire-and-forget in `finally` — never awaited, so a source that stays wedged even after
+ * the abort can't re-hang us here (which would defeat the whole watchdog).
+ */
+export async function* withStreamTimeouts(
+  source: AsyncGenerator<string>,
+  opts: StreamTimeoutOptions,
+): AsyncGenerator<string> {
+  const iterator = source[Symbol.asyncIterator]();
+  const overallDeadline = Date.now() + opts.overallMs;
+  let sawFirstToken = false;
+  try {
+    for (;;) {
+      const overallBudget = overallDeadline - Date.now();
+      const budget = sawFirstToken ? overallBudget : Math.min(opts.firstTokenMs, overallBudget);
+      const next = iterator.next();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), Math.max(0, budget));
+      });
+      let result: IteratorResult<string> | "timeout";
+      try {
+        result = await Promise.race([next, timeout]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      if (result === "timeout") {
+        opts.onTimeout?.(sawFirstToken ? "overall" : "first_token");
+        opts.onAbort();
+        // The lost next() settles once the abort lands upstream — swallow it so it can't
+        // surface as an unhandled rejection now that we've stopped reading.
+        void next.then(
+          () => {},
+          () => {},
+        );
+        return;
+      }
+      if (result.done) return;
+      sawFirstToken = true;
+      yield result.value;
+    }
+  } finally {
+    // Fire-and-forget close of the source — never blocking on it (a still-wedged provider
+    // must not re-hang the watchdog); the abort above already unwinds it.
+    void Promise.resolve(iterator.return?.(undefined)).catch(() => {});
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The exchange
 // ---------------------------------------------------------------------------
@@ -208,12 +303,29 @@ export function stopChatReply(chatId: string): boolean {
 export async function submitChatMessage(input: SubmitChatMessageInput): Promise<SubmitChatMessageResult> {
   const { chatId, memoryGroupId, kind } = input;
   const { id: characterId, name: characterName } = input.character;
+  const lockKey = `chat_exchange:${chatId}`;
 
   let releaseChatLock!: () => void;
   const chatLockGate = new Promise<void>((resolve) => {
     releaseChatLock = resolve;
   });
-  const chatLock = tryKeyedLock(`chat_exchange:${chatId}`, () => chatLockGate);
+  // Rerun is the ONE kind that reconciles with an in-flight reply instead of
+  // bouncing off it (data-loss-rerun fix): stop that reply so its exchange settles
+  // and drops the lock, then wait a bounded window to re-acquire — re-issuing the
+  // stop on each poll so a reply that only just registered its abort is still cut.
+  // Every other kind takes the immediate non-blocking lock (a 409 on contention).
+  // Nothing in the transcript is touched until the lock is held (prepareExchange),
+  // so a rerun that can't re-acquire returns chat_busy with the transcript intact.
+  let chatLock: Promise<void> | null;
+  if (kind === "rerun") {
+    const acquired = await acquireKeyedLockWithin(lockKey, () => chatLockGate, {
+      timeoutMs: input.rerunLockWaitMs ?? CHAT_RERUN_LOCK_WAIT_MS,
+      onAttempt: () => void stopChatReply(chatId),
+    });
+    chatLock = acquired?.held ?? null;
+  } else {
+    chatLock = tryKeyedLock(lockKey, () => chatLockGate);
+  }
   if (chatLock === null) {
     return { ok: false, code: "chat_busy", message: "a reply is still streaming for this chat; wait for it to finish" };
   }
@@ -243,33 +355,65 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     /** For regenerate: the current (soon-to-be-old) reply text on the row. */
     let regenerateTarget: { id: string; content: string } | null = null;
     let effectiveKind: ChatExchangeKind = kind;
+    /** For rerun: the assistant successors deleted this exchange (their memory is retracted). */
+    let rerunDeletedAssistantIds: string[] = [];
+    /** For rerun: whether the pre-exchange snapshot still applies (target was the last exchange's prompt). */
+    let rerunSnapshotApplies = false;
 
-    if (kind === "send") {
-      promptMessageId = newId();
-      playerContent = input.content ?? "";
-      await db()
-        .insert(characterChatMessages)
-        .values({ id: promptMessageId, chatId, role: "user", content: playerContent });
-    } else if (kind === "open") {
-      syntheticCue = OPENING_CUE;
-    } else if (kind === "continue") {
-      syntheticCue = CONTINUE_CUE;
-    } else {
-      const target = await lastAssistantMessage(chatId);
-      if (!target) {
-        releaseChatLock();
-        return { ok: false, code: "nothing_to_regenerate", message: "there is no reply to regenerate yet" };
+    switch (kind) {
+      case "send": {
+        promptMessageId = newId();
+        playerContent = input.content ?? "";
+        await db()
+          .insert(characterChatMessages)
+          .values({ id: promptMessageId, chatId, role: "user", content: playerContent });
+        break;
       }
-      regenerateTarget = { id: target.id, content: target.content };
-      assistantMessageId = target.id;
-      const prev = await messageBefore(chatId, target);
-      if (prev?.role === "user") {
-        promptMessageId = prev.id;
-        playerContent = prev.content;
-      } else {
-        // The reply being regenerated was itself an opening/continue beat.
-        syntheticCue = prev ? CONTINUE_CUE : OPENING_CUE;
-        effectiveKind = prev ? "continue" : "open";
+      case "open": {
+        syntheticCue = OPENING_CUE;
+        break;
+      }
+      case "continue": {
+        syntheticCue = CONTINUE_CUE;
+        break;
+      }
+      case "regenerate": {
+        const target = await lastAssistantMessage(chatId);
+        if (!target) {
+          releaseChatLock();
+          return { ok: false, code: "nothing_to_regenerate", message: "there is no reply to regenerate yet" };
+        }
+        regenerateTarget = { id: target.id, content: target.content };
+        assistantMessageId = target.id;
+        const prev = await messageBefore(chatId, target);
+        if (prev?.role === "user") {
+          promptMessageId = prev.id;
+          playerContent = prev.content;
+        } else {
+          // The reply being regenerated was itself an opening/continue beat.
+          syntheticCue = prev ? CONTINUE_CUE : OPENING_CUE;
+          effectiveKind = prev ? "continue" : "open";
+        }
+        break;
+      }
+      case "rerun": {
+        // Atomic snip (data-loss-rerun fix): under the lock we already hold, validate
+        // and delete ONLY the target's successors in one transaction — nothing is
+        // modified if the target is missing / not a player line. The target row itself
+        // is reused as the prompt guard, never deleted or re-inserted. From here a rerun
+        // behaves exactly like `send` (fresh assistant id, pulse runs, guarded persist);
+        // effectiveKind stays "rerun" — neither "open" nor "continue" — so the
+        // `opening`/`skipPulse` flags below both stay false.
+        const resolved = await resolveRerunTarget(chatId, input.targetMessageId);
+        if (!resolved.ok) {
+          releaseChatLock();
+          return { ok: false, code: "invalid_rerun_target", message: resolved.message };
+        }
+        promptMessageId = resolved.target.id;
+        playerContent = resolved.target.content;
+        rerunDeletedAssistantIds = resolved.deletedAssistantIds;
+        rerunSnapshotApplies = resolved.snapshotApplies;
+        break;
       }
     }
 
@@ -281,21 +425,45 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // drift + pulse effects don't double-apply, and retracts the old take's
     // extracted memory (spec §4.3) so it can't prime the new one. A missing
     // snapshot degrades to no-rollback with a diagnostic — never a failed reply.
+    // Restore the pre-exchange snapshot, or degrade to the current live state with a
+    // diagnostic when no snapshot was recorded (F3). Shared by regenerate and an
+    // applicable rerun. A found `state: null` means the anchor was `{}` — a first
+    // exchange with no prior state — so drift re-seeds from the authored defaults below,
+    // exactly as the original first exchange did.
+    const restoreOrDegrade = async (): Promise<ChatState | null> => {
+      const restored = await loadPreExchangeState(chatId, characterId);
+      if (restored.found) return restored.state;
+      sink.push(
+        diag("warn", "chat_state.snapshot.missing", "no pre-exchange snapshot; regenerating without state rollback"),
+      );
+      return loadChatState(chatId, characterId, sink);
+    };
+
     let storedState: ChatState | null;
     if (regenerateTarget) {
-      const restored = await loadPreExchangeState(chatId, characterId);
-      if (restored.found) {
-        // A recorded anchor. `state: null` means the anchor was `{}` — a first
-        // exchange with no prior state — so drift re-seeds from the authored
-        // defaults below, exactly as the original first exchange did (F3).
-        storedState = restored.state;
+      storedState = await restoreOrDegrade();
+      await reconcileMessageMemory(regenerateTarget.id, sink);
+    } else if (kind === "rerun") {
+      // Mirror regenerate's rollback when the target WAS the last exchange's prompt (its
+      // only successor was the newest reply); otherwise the snapshot covers just one
+      // exchange and can't roll back a reach-back rerun, so degrade to no rollback.
+      if (rerunSnapshotApplies) {
+        storedState = await restoreOrDegrade();
       } else {
         sink.push(
-          diag("warn", "chat_state.snapshot.missing", "no pre-exchange snapshot; regenerating without state rollback"),
+          diag(
+            "warn",
+            "chat_state.rerun.no_rollback",
+            "rerun target is not the latest exchange's prompt; regenerating without state rollback",
+          ),
         );
         storedState = await loadChatState(chatId, characterId, sink);
       }
-      await reconcileMessageMemory(regenerateTarget.id, sink);
+      // Retract the extracted memory of every assistant reply this rerun deleted
+      // (spec §4.3 — provenance), like regenerate does for the single old take.
+      for (const deletedId of rerunDeletedAssistantIds) {
+        await reconcileMessageMemory(deletedId, sink);
+      }
     } else {
       storedState = await loadChatState(chatId, characterId, sink);
     }
@@ -473,7 +641,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }
     };
 
-    return { ok: true, stream: streamExchange(gen, settle, abortController) };
+    // Guard the model stream with the first-token + overall watchdogs (data-loss-rerun
+    // fix): a wedged provider trips a timeout, which aborts the upstream call and lets
+    // the exchange settle through the same stop path as a player Stop — so the chat lock
+    // can never be held indefinitely by a hung generation.
+    const guarded = withStreamTimeouts(gen, {
+      firstTokenMs: CHAT_STREAM_FIRST_TOKEN_MS,
+      overallMs: CHAT_STREAM_OVERALL_MS,
+      onAbort: () => abortController.abort(),
+      onTimeout: (reason) => log.warn("engine.chat", "chat reply stream timed out", { chatId, reason }),
+    });
+    return { ok: true, stream: streamExchange(guarded, settle, abortController) };
   }
 
   /**
@@ -558,6 +736,61 @@ async function messageBefore(
     .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
     .limit(1);
   return row ?? null;
+}
+
+type RerunResolution =
+  | { ok: false; message: string }
+  | { ok: true; target: { id: string; content: string }; deletedAssistantIds: string[]; snapshotApplies: boolean };
+
+/**
+ * Resolve + snip a rerun target atomically (data-loss-rerun fix). In one transaction:
+ * confirm the target row exists, is a `role: "user"` line, and belongs to this chat (else
+ * `ok: false`, nothing modified — the delete only runs after validation passes), then
+ * delete ONLY its successors — every row ordered after it on the `(created_at, id)` tuple
+ * the transcript sorts by. The target row is left intact for the caller to reuse as the
+ * prompt guard. Reports the deleted assistant successors (their extracted memory is
+ * retracted upstream) and whether the pre-exchange snapshot still applies — true only
+ * when the sole successor was the newest assistant reply, i.e. this rerun IS the last
+ * exchange (so its rollback is exactly regenerate's; older reach-backs and continue beats
+ * degrade to no rollback).
+ *
+ * "Successors" is computed by ORDERING in SQL (full `created_at` precision) and slicing
+ * after the target's position — deliberately NOT by comparing `created_at` against a Date
+ * read back into JS: `Date` truncates Postgres microseconds to milliseconds, so a
+ * `created_at > $targetDate` predicate would re-select the target row itself (and other
+ * same-millisecond rows), deleting the very line we mean to keep.
+ */
+async function resolveRerunTarget(chatId: string, targetMessageId: string | undefined): Promise<RerunResolution> {
+  if (!targetMessageId) return { ok: false, message: "no target message id for the rerun" };
+  return db().transaction(async (tx) => {
+    const ordered = await tx
+      .select({
+        id: characterChatMessages.id,
+        role: characterChatMessages.role,
+        content: characterChatMessages.content,
+      })
+      .from(characterChatMessages)
+      .where(eq(characterChatMessages.chatId, chatId))
+      .orderBy(asc(characterChatMessages.createdAt), asc(characterChatMessages.id));
+    const idx = ordered.findIndex((m) => m.id === targetMessageId);
+    const target = idx === -1 ? undefined : ordered[idx];
+    if (!target || target.role !== "user") {
+      return { ok: false as const, message: "that message can't be rerun (not a player line in this conversation)" };
+    }
+    const successors = ordered.slice(idx + 1);
+    const successorIds = successors.map((s) => s.id);
+    if (successorIds.length > 0) {
+      await tx.delete(characterChatMessages).where(inArray(characterChatMessages.id, successorIds));
+    }
+    const deletedAssistantIds = successors.filter((s) => s.role === "assistant").map((s) => s.id);
+    const snapshotApplies = successors.length === 1 && successors[0]?.role === "assistant";
+    return {
+      ok: true as const,
+      target: { id: target.id, content: target.content },
+      deletedAssistantIds,
+      snapshotApplies,
+    };
+  });
 }
 
 /** The row's current takes, or null when the row vanished (delete raced the stream). */

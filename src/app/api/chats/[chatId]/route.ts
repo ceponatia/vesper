@@ -26,19 +26,25 @@ const sendBodySchema = z
   .object({
     /**
      * Exchange kind (character-chat-standalone.spec.md §4): a normal player turn,
-     * the opening beat ("Prompt character"), a "go on" continue beat, or "another
-     * take" on the last reply.
+     * the opening beat ("Prompt character"), a "go on" continue beat, "another take"
+     * on the last reply, or an atomic "rerun" of a player line (data-loss-rerun fix).
      */
-    kind: z.enum(["send", "open", "continue", "regenerate"]).default("send"),
+    kind: z.enum(["send", "open", "continue", "regenerate", "rerun"]).default("send"),
     content: z.string().trim().max(4000).optional(),
     /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
     model: z.string().trim().min(1).max(120).optional(),
     /** "Has something to say" opener cue (spec §8.4) — only read for kind "continue". */
     cue: z.string().trim().max(200).optional(),
+    /** Target user-message id — required for kind "rerun" (the line to re-send from). */
+    messageId: z.string().trim().min(1).max(120).optional(),
   })
   .refine((b) => b.kind !== "send" || (b.content?.length ?? 0) >= 1, {
     message: "content is required for a send",
     path: ["content"],
+  })
+  .refine((b) => b.kind !== "rerun" || (b.messageId?.length ?? 0) >= 1, {
+    message: "messageId is required for a rerun",
+    path: ["messageId"],
   });
 
 const patchBodySchema = z
@@ -102,6 +108,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     character: { id: owned.character.id, name: owned.character.name, profile: owned.character.profile },
     kind: body.value.kind,
     content: body.value.content,
+    // The rerun target (kind "rerun"): the player line to re-send from. The pipeline
+    // snips only its successors and reuses the line itself — nothing is deleted here.
+    targetMessageId: body.value.messageId,
     // A headless POST without a model must agree with the UI (spec §9): default to
     // the character's own narrator pick, not MODEL_DEFAULTS.narrative.
     model: body.value.model ?? resolveChatModelId(owned.character.chatModel),

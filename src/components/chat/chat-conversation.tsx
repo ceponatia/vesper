@@ -142,10 +142,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // Mirrors `sending` synchronously so the post-send id-reconcile can bail if a
   // new send started in the await window (state would be stale in the closure).
   const sendingRef = useRef(false);
-  // The in-flight reply's AbortController (null when idle). Rerun aborts it so the
-  // UI stops expecting tokens; the server still drains + persists the reply, and the
-  // post-resend transcript reload reconciles. Each stream owns it while active —
-  // a superseding stream (rerun) installs its own, so a stale one can't clear it.
+  // The in-flight reply's AbortController (null when idle). Nothing aborts it anymore
+  // (rerun stops the reply SERVER-side via the atomic rerun exchange, not a client
+  // abort) — it is kept purely as the active-stream identity token: each stream owns it
+  // while active, and a superseding stream (rerun starting while an old reply is still
+  // settling) installs its own, so the stale one can't clear `sending` or refetch over
+  // the new one's optimistic transcript.
   const abortRef = useRef<AbortController | null>(null);
   /** Bumped per chat-model pick so a superseded pick is skipped, plus the serializing chain. */
   const chatModelGenRef = useRef(0);
@@ -253,7 +255,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
    * transcript reload picks up the recorded takes.
    */
   const runStream = async (
-    body: { kind?: "send" | "open" | "continue" | "regenerate"; content?: string; model?: string; cue?: string },
+    body: {
+      kind?: "send" | "open" | "continue" | "regenerate" | "rerun";
+      content?: string;
+      model?: string;
+      cue?: string;
+      messageId?: string;
+    },
     opts: { userLine?: string; replaceId?: string } = {},
   ): Promise<ChatStreamOutcome> => {
     const { userLine, replaceId } = opts;
@@ -354,28 +362,31 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   };
 
   /**
-   * Rerun a user message: cancel any in-flight reply, snip this line and everything
-   * after it out of the transcript, then re-send the same prompt for a fresh reply.
-   * Aborting only stops the UI waiting — inference already running can't be stopped,
-   * so the server still drains/persists that reply; we delete its row here and the
-   * post-resend transcript reload reconciles to server truth. The user line is
-   * deleted too because the resend re-inserts it (the POST always appends the line).
+   * Rerun a user message (data-loss-rerun fix): re-send this prompt for a fresh reply,
+   * dropping only the lines AFTER it. This deletes NOTHING client-side and never
+   * abort-and-hopes — the atomic `kind: "rerun"` exchange does it all server-side under
+   * the chat lock (stop any in-flight reply, wait for the lock, then in one transaction
+   * snip only the target's successors and reuse the target line itself). So on any
+   * failure — a 409 because the lock couldn't be re-acquired, or anything else — the
+   * server guarantees the transcript is byte-identical, and we simply restore the lines
+   * we optimistically snipped. The target user line stays visible throughout.
    */
   const rerun = async (id: string) => {
     if (archived) return;
     const idx = lines.findIndex((l) => l.id === id);
     const target = lines[idx];
-    if (!target || target.role !== "user") return;
-    const content = target.content;
-    abortRef.current?.abort();
-    // Drop this line + everything after it optimistically, and delete the persisted
-    // rows server-side (temp/streaming lines have no row yet — skip them; ignore 404s).
-    const doomed = lines.slice(idx).filter((l) => !l.id.startsWith("tmp-"));
-    setLines((prev) => prev.slice(0, idx));
-    await Promise.all(doomed.map((l) => chatsApi.deleteMessage(chatId, l.id)));
-    const outcome = await runStream({ content, model: chatModel }, { userLine: content });
-    if (!outcome.ok && !outcome.aborted) {
-      toast.push({ title: "Rerun failed", description: outcome.error?.message, tone: "error" });
+    if (!target || target.role !== "user" || target.id.startsWith("tmp-")) return;
+    // Snapshot to restore if the server rejects (it changed nothing on a failure).
+    const prevLines = lines;
+    // Optimistically snip everything AFTER the target; the target line itself stays.
+    setLines((prev) => prev.slice(0, idx + 1));
+    const outcome = await runStream({ kind: "rerun", messageId: target.id, model: chatModel });
+    if (!outcome.ok) {
+      // Nothing was mutated server-side — put the transcript back exactly as it was.
+      setLines(prevLines);
+      if (!outcome.aborted) {
+        toast.push({ title: "Rerun failed", description: outcome.error?.message, tone: "error" });
+      }
     }
   };
 

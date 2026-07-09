@@ -112,6 +112,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat rerun data-loss fix** — no plan doc (incident fix; forensics in
+  conversation) — 2026-07-09 — Rerun clicked while a reply streamed deleted the
+  prompt server-side then 409'd off the exchange lock (the flow predated the
+  2026-07-02 lock and was never reconciled): rerun is now an atomic server-side
+  exchange kind — stop the in-flight reply first, bounded-wait lock acquire
+  (new `acquireKeyedLockWithin`), then one transaction that snips only
+  successors (SQL-ordered, no ms-truncation) and reuses the prompt row as the
+  guard; a 409 leaves the transcript byte-identical, and the client no longer
+  issues deletes (optimistic snip restores on failure). Chat streams gained
+  first-token (60s) + overall (300s) watchdogs so a hung model can't hold the
+  chat lock, and the provisional Aion 3.0 reasoning knob was reverted pending
+  verification. Six new int cases incl. transcript-untouched-on-409 +
+  rollback-degradation diagnostics.
 - **Chat reply discipline + scene memory** — no plan doc (built direct on owner
   instruction) — 2026-07-09 — the 1-on-1 chat turn grammar: a "Shaping each
   reply" prefix block (resolve-then-one-move with a worked example pair,

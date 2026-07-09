@@ -39,8 +39,30 @@ exchange:
    cue; `regenerate` ("another take") targets the LAST assistant reply: state rolls back
    to the pre-exchange snapshot, the old take's memory is retracted (provenance, §4.3),
    and the reply row updates in place with the old take kept browsable (`takes`, cap
-   `CHAT_REPLY_TAKES_CAP`). A player **Stop** aborts the model stream server-side; the
-   accumulated prefix persists with `meta.stopped` and the fan-out runs over it.
+   `CHAT_REPLY_TAKES_CAP`); `rerun` (re-send a player line, see below) is the atomic snip.
+   A player **Stop** aborts the model stream server-side; the accumulated prefix persists
+   with `meta.stopped` and the fan-out runs over it.
+
+   **Atomic rerun** (`kind: "rerun"`, `messageId` = the target user line): the ONE path
+   that reconciles with an in-flight reply instead of 409ing off it. Ordering is the whole
+   fix (`chat-pipeline.ts`, data-loss-rerun): **stop → wait → acquire → transact.** Before
+   touching anything it calls `stopChatReply` for the chat (settling any streaming reply,
+   which releases the lock), then re-acquires the lock with a **bounded wait**
+   (`acquireKeyedLockWithin`, up to `CHAT_RERUN_LOCK_WAIT_MS`, re-issuing the stop each
+   poll). If the lock still can't be had it returns 409 `chat_busy` **with the transcript
+   completely untouched** — nothing is ever deleted before the exchange is accepted. Under
+   the lock, in one transaction, it validates the target is a `user` line in this chat
+   (else 400 `invalid_rerun_target`, nothing modified) and deletes ONLY its **successors**
+   — computed by ordering in SQL and slicing after the target's position, never by a
+   `created_at > $date` predicate (JS `Date` truncates Postgres microseconds, which would
+   re-select the target itself). The target row is **reused** as the prompt guard, never
+   re-inserted; deleted assistant successors have their memory retracted
+   (`reconcileMessageMemory`), and state mirrors regenerate — the pre-exchange snapshot
+   rolls back when the target was the last exchange's prompt (sole successor = the newest
+   reply), else it degrades to no rollback with `chat_state.rerun.no_rollback`. From there
+   it streams exactly like `send`. The client (`chat-conversation.tsx`) deletes NOTHING
+   and never abort-and-hopes: it optimistically snips the lines after the target and, on
+   any failure, restores them (the server guarantees the transcript is byte-identical).
 3. **Window + summary.** The rolling summary covers everything up to its watermark; the
    verbatim window (`CHARACTER_CHAT_HISTORY_TURNS` = 40 exchanges) is everything after it.
    When the unsummarized tail reaches the fold trigger, a detached `chat_summary` job is
@@ -81,7 +103,13 @@ exchange:
    as the session narrator, through `stripNarratorArtifactStream`. The narrator model is
    the per-character pick (`characters.chatModel`, resolved through the strict curated
    list) — a headless POST without a `model` defaults to it too
-   (`resolveChatModelId`), so API and UI agree.
+   (`resolveChatModelId`), so API and UI agree. The stream is wrapped by two watchdogs
+   (`withStreamTimeouts`, data-loss-rerun): a **first-token timeout**
+   (`CHAT_STREAM_FIRST_TOKEN_MS` = 60s) and an **overall cap** (`CHAT_STREAM_OVERALL_MS` =
+   300s). On a trip it aborts the upstream call and settles through the same stop path as a
+   player Stop (any partial persists with `meta.stopped`, the lock releases, a `log.warn`
+   records it) — so a wedged provider can never hold the per-chat lock indefinitely (the
+   incident that motivated the fix).
 8. **Settle (post-flush).** When the stream finishes — the route's shared
    `drainingStreamResponse` keeps consuming after a client disconnect
    ([resilience.md](resilience.md) §5) — the reply persists (§5) and the post-turn fan-out
@@ -226,7 +254,7 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | Route | What |
 | --- | --- |
 | `GET /api/chats?characterId=&archived=1` · `POST /api/chats` | list conversations · create one (`memory: "shared" \| "fresh"` — the D7 choice) |
-| `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (`kind: send \| open \| continue \| regenerate`; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
+| `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (`kind: send \| open \| continue \| regenerate \| rerun`; `rerun` takes `messageId` = the target user line; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
 | `POST /api/chats/:chatId/stop` | cut the in-flight reply short (spec §4.2 — the prefix persists with `meta.stopped`) |
 | `PATCH/DELETE /api/chats/:chatId/messages/:messageId` | edit / snip one line — both reconcile the line's extracted memory (spec §4.3) |
 | `PATCH /api/chats/:chatId/messages/:messageId/take` | make a recorded take the displayed reply (display-only; spec §4.1) |
@@ -249,8 +277,10 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 query-embedding failure — facts degrade to pinned-only, episodes to `[]`) ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
 `.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` · `chat_state.snapshot.missing` ·
+`chat_state.rerun.no_rollback` (a rerun target that is not the last exchange's prompt —
+regenerating without state rollback) ·
 `chat_memory.reconciled` — plus route
-errors `chat_busy` (409), `chat_archived` (409), `scene_busy` (409), `rate_limited` (429),
+errors `chat_busy` (409), `chat_archived` (409), `invalid_rerun_target` (400), `scene_busy` (409), `rate_limited` (429),
 `not_found` (404). A failed `queueChatScene` (auto or manual) log-warns
 (`chat_scene` scope) and returns null — never a failed exchange. Degradation tests
 assert the fallback **and** the code ([testing.md](testing.md)).

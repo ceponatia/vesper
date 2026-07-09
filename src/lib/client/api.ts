@@ -1008,7 +1008,14 @@ export interface ChatStreamOutcome {
  */
 export async function sendChatMessage(
   chatId: string,
-  body: { kind?: "send" | "open" | "continue" | "regenerate"; content?: string; model?: string; cue?: string },
+  body: {
+    kind?: "send" | "open" | "continue" | "regenerate" | "rerun";
+    content?: string;
+    model?: string;
+    cue?: string;
+    /** Target user-message id — required for kind "rerun" (the line to re-send from). */
+    messageId?: string;
+  },
   onChunk: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<ChatStreamOutcome> {
