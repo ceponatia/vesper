@@ -2,7 +2,7 @@ import type { ModelMessage } from "ai";
 import { defaultExposureMask, emptyBrief, type ExposureMask } from "../../../src/contracts/state/brief";
 import type { NarrationFocus } from "../../../src/contracts/turns/intent-brief";
 import { characterProfileSchema, type CharacterProfile } from "../../../src/contracts/world/profile";
-import { buildCharacterChatSystemPrompt, type CharacterChatPromptInput } from "../../../src/server/engine/prompts/character-chat";
+import { buildCharacterChatSystemPrompt, chatNotationNote, type CharacterChatPromptInput } from "../../../src/server/engine/prompts/character-chat";
 import type { NarrationShapeId } from "../../../src/server/engine/prompts/constants";
 import { buildStaticRulebook, buildTurnContext } from "../../../src/server/engine/prompts/narrative";
 import { buildReactionLine, buildResponseShape, evaluatePrimaryReaction, type ReactionLineInput } from "../../../src/server/engine/scene";
@@ -128,6 +128,13 @@ export interface EvalScenario {
    * `run.ts`); expected to match. Absent ⇒ not measured.
    */
   povRelevant?: boolean;
+  /**
+   * The player sent a `*Name: …*` text (player-input-perception.plan.md slice 4): the
+   * narrator should answer as a text in the comms output grammar (`*Character: …*`). Flips
+   * on the deterministic `commsReply` metric (`run.ts`); expected to match. Absent ⇒ not
+   * measured.
+   */
+  commsReplyRe?: RegExp;
   build: (shape: NarrationShapeId, opts: { focus: boolean }) => { system: string; messages: ModelMessage[] };
 }
 
@@ -371,6 +378,10 @@ function chatBuild(o: {
   profile: CharacterProfile;
   state?: ChatState;
   memory?: CharacterChatPromptInput["memory"];
+  /** A named player persona (needed for the comms sender / notation note). */
+  player?: { name: string; persona?: string };
+  /** Pre-rendered derived-fact tail note (comms/OOC) — the real route feeds this too. */
+  notationNote?: string;
   playerInput: string;
 }): EvalScenario["build"] {
   return (shape) => ({
@@ -379,6 +390,8 @@ function chatBuild(o: {
       profile: o.profile,
       state: o.state,
       memory: o.memory,
+      player: o.player,
+      notationNote: o.notationNote,
       narrationShape: shape,
     }),
     messages: [{ role: "user", content: o.playerInput }],
@@ -418,6 +431,28 @@ const FRONT_DESK_STATE: ChatState = {
 // and flush, and an unspoken thought carrying the planted token ("klutz") that appears
 // nowhere else in the prompt — the deterministic leak tripwire (plan §2).
 const THOUGHT_LEAK_INPUT = `"Hey, Sabrina… how are you…" I stammer slightly, my face flushing. There's no way she'd ever go for a hopeless klutz like me.`;
+
+// ── Markup-lane variants (player-input-perception.plan.md slice 2, gated on slice 4) ──
+
+// The same planted-token leak, but the interiority is now explicitly asterisked on its own
+// line — the sigil + the legend should make the partition STRONGER than the unmarked case.
+const ASTERISK_THOUGHT_INPUT = `"Hey, Sabrina… how are you…" I manage, then look away.\n*There's no way she'd ever go for a hopeless klutz like me.*`;
+
+// A `*Name: …*` text message from the player. The reply should come back as a text in the
+// comms output grammar (`*Sabrina: …*`), not spoken dialogue — the narrator also gets the
+// derived-fact tail note that resolves sender/recipient and the co-presence override.
+const COMMS_TEXT_INPUT = `*Brian: hey, you awake? been thinking about you all night.*`;
+
+// The emphasis false-positive: `*really*` is a single-word mid-sentence span the parser
+// classifies as styled emphasis, NOT a thought — the narrator should answer the (unquoted,
+// conversational) line normally, never treat the emphasized word as an unheard thought.
+const EMPHASIS_INPUT = `Wait — you *really* came all the way down here just to see me?`;
+
+// OOC pair. A `((…))` direction the narrator must honor without any character hearing it…
+const OOC_DIRECTION_INPUT = `((let's skip ahead to that evening — set the scene at the little restaurant on the pier.))`;
+// …and a single-paren prose aside that stays in-fiction (never misfires as OOC): the
+// parenthetical is visible manner Sabrina can perceive, not an instruction to her.
+const PAREN_ASIDE_INPUT = `I drop into the chair across from her (still catching my breath from the run over here).`;
 
 export const EVAL_SCENARIOS: EvalScenario[] = [
   {
@@ -634,6 +669,88 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
       profile: SABRINA_PROFILE,
       state: FRONT_DESK_STATE,
       playerInput: "hey Sabrina, how's it going? quiet day?",
+    }),
+  },
+  // ── Markup-lane variants (player-input-perception.plan.md slice 2, gated on slice 4) ──
+  {
+    id: "chat-markup-thought-leak",
+    title: "Character-chat — an asterisked thought must not be answered (sigils strengthen the partition)",
+    lane: "chat",
+    expectation:
+      "The interiority is explicitly marked *…* on its own line, so the legend makes it unmistakably a private thought. Sabrina hears only the quoted greeting and sees him look away; she may react to the visible shyness. She must NOT answer, echo, or paraphrase the asterisked thought (reassuring him he isn't a klutz): that is a mind-read and fails — and the sigil should make this leak rarer than the unmarked case.",
+    playerInput: ASTERISK_THOUGHT_INPUT,
+    knownNames: ["Sabrina"],
+    plantedThoughtRe: /\bklutz\b/i,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      playerInput: ASTERISK_THOUGHT_INPUT,
+    }),
+  },
+  {
+    id: "chat-markup-comms",
+    title: "Character-chat — a *Name: …* text should come back as a text",
+    lane: "chat",
+    expectation:
+      "The player sent a text (*Brian: …*), not spoken dialogue in the room — the tail note says they are not face-to-face. Sabrina should reply as a text too, on its own line in the comms output grammar (*Sabrina: …*), in her flustered/pleased voice. Answering as if he were standing at the desk speaking aloud, or ignoring the comms frame, fails.",
+    playerInput: COMMS_TEXT_INPUT,
+    knownNames: ["Sabrina"],
+    commsReplyRe: /\*\s*Sabrina\s*:/i,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      player: { name: "Brian" },
+      notationNote: chatNotationNote(COMMS_TEXT_INPUT, { name: "Sabrina", player: "Brian", knownNames: ["Sabrina"] }),
+      playerInput: COMMS_TEXT_INPUT,
+    }),
+  },
+  {
+    id: "chat-markup-emphasis",
+    title: "Character-chat — *really* is emphasis, not a thought (false-positive guard)",
+    lane: "chat",
+    expectation:
+      "The asterisks here wrap a single emphasized word inside an ordinary spoken line — style, not interiority. Sabrina should answer the (unquoted, conversational) question naturally, treating 'really' as part of what he said. Treating the emphasized word as an unheard private thought, or going silent as if he said nothing perceivable, fails.",
+    playerInput: EMPHASIS_INPUT,
+    knownNames: ["Sabrina"],
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      playerInput: EMPHASIS_INPUT,
+    }),
+  },
+  {
+    id: "chat-markup-ooc-direction",
+    title: "Character-chat — a ((…)) direction is honored without any character hearing it",
+    lane: "chat",
+    expectation:
+      "The ((…)) text is the player steering the scene out-of-character. The narrator should honor the direction (move the scene to the restaurant on the pier that evening) while NO character hears or reacts to the instruction — Sabrina never acknowledges being told to skip ahead. Enacting the direction is right; having Sabrina 'hear' or answer the OOC text fails.",
+    playerInput: OOC_DIRECTION_INPUT,
+    knownNames: ["Sabrina"],
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      player: { name: "Brian" },
+      notationNote: chatNotationNote(OOC_DIRECTION_INPUT, { name: "Sabrina", player: "Brian", knownNames: ["Sabrina"] }),
+      playerInput: OOC_DIRECTION_INPUT,
+    }),
+  },
+  {
+    id: "chat-markup-paren-aside",
+    title: "Character-chat — a single-paren prose aside stays in-fiction",
+    lane: "chat",
+    expectation:
+      "The (parenthetical) here is ordinary narration — visible manner (he's winded from running over), NOT an OOC instruction. Sabrina perceives it as she would any action and may react to his being out of breath. Treating the parenthetical as an out-of-character direction, or breaking frame to acknowledge it, fails — single parens must never misfire as OOC.",
+    playerInput: PAREN_ASIDE_INPUT,
+    knownNames: ["Sabrina"],
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      playerInput: PAREN_ASIDE_INPUT,
     }),
   },
   // ── Player-POV narration fixtures (chat-narrator-pov.plan.md §3) ──
