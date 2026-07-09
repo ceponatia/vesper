@@ -90,6 +90,52 @@ export function formatCommsReply(sender: string, text: string): string {
   return `*${sender.trim()}: ${text.trim()}*`;
 }
 
+/** One run of a span's body text: literal, or `_…_`-emphasized (styling only — no semantics). */
+export interface EmphasisRun {
+  text: string;
+  em: boolean;
+}
+
+/**
+ * Tokenize `_…_` emphasis INSIDE a span's body text. The outermost-sigil rule keeps a
+ * quoted speech span atomic, so an underscore pair nested in dialogue ("it's _perfect_!")
+ * never becomes a `styled` span — it reaches the renderer raw. This tokenizer is the
+ * presentation-side complement: renderers pass each span body through it so `_…_` reads
+ * as italics anywhere (speech, thoughts, comms, OOC), while the span grammar and the
+ * prompt/fact side (which reads underscores as ordinary words) stay untouched. Unmatched,
+ * empty, or whitespace-only pairs stay literal, so degenerate text never drops characters.
+ */
+export function parseEmphasisRuns(text: string): EmphasisRun[] {
+  const runs: EmphasisRun[] = [];
+  let buf = "";
+  const flush = (): void => {
+    if (buf) runs.push({ text: buf, em: false });
+    buf = "";
+  };
+
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "_") {
+      const close = text.indexOf("_", i + 1);
+      if (close !== -1) {
+        const inner = text.slice(i + 1, close);
+        if (inner.trim()) {
+          flush();
+          runs.push({ text: inner, em: true });
+        } else {
+          buf += text.slice(i, close + 1);
+        }
+        i = close + 1;
+        continue;
+      }
+    }
+    buf += text[i];
+    i += 1;
+  }
+  flush();
+  return runs;
+}
+
 /** True when nothing but whitespace precedes the open sigil on its line (start-of-string or a newline). */
 function isLineEdgeBefore(text: string, openIdx: number): boolean {
   for (let k = openIdx - 1; k >= 0; k -= 1) {

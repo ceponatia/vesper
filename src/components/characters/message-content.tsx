@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import type { MessageSpanContext } from "@/lib/message-spans";
+import { parseEmphasisRuns, type MessageSpanContext } from "@/lib/message-spans";
 import { messageRenderModel, type RenderPiece } from "./message-markup";
 
 /**
@@ -10,6 +10,11 @@ import { messageRenderModel, type RenderPiece } from "./message-markup";
  * their sigils hidden, `*Name:*` comms read as a text message (label visible, body
  * italic), and `((OOC))` gets an out-of-fiction amber aside. Everything else (speech
  * quotes, narration) renders as plain text — exactly as the bubble did before.
+ *
+ * Every piece's body additionally flows through `parseEmphasisRuns`: the outermost-sigil
+ * rule keeps a speech span atomic, so a `_…_` pair nested in dialogue ("it's _perfect_!")
+ * reaches the renderer raw — the runs italicize it (and flip it upright inside an
+ * already-italic body, standard nested-emphasis typography) with the underscores hidden.
  *
  * Pieces render inline inside the bubble's `whitespace-pre-wrap`, joined by `"\n\n"`
  * between paragraphs (blank-line breaks) and single spaces the parser trimmed, so the
@@ -36,6 +41,27 @@ export function MessageContent({ content, context }: { content: string; context?
 }
 
 /**
+ * A span body with `_…_` emphasis applied (`parseEmphasisRuns` — the grammar module owns
+ * the tokenizer; this is the ONE place it maps onto elements). Inside an already-italic
+ * body (`inItalic`) an emphasized run flips upright instead, so it still reads as stress.
+ */
+function BodyText({ text, inItalic }: { text: string; inItalic?: boolean }) {
+  return (
+    <>
+      {parseEmphasisRuns(text).map((run, i) =>
+        run.em ? (
+          <em key={i} className={inItalic ? "not-italic" : "italic"}>
+            {run.text}
+          </em>
+        ) : (
+          <Fragment key={i}>{run.text}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
+/**
  * The SMS-style texted-line body: a non-italic `Name:` label followed by the italic message.
  * Shared so the chat lane (comms span) and the session feed (`InlineProse` comms line) render
  * an identical texted line — ONE styling implementation.
@@ -44,7 +70,9 @@ export function CommsBody({ prefix, text }: { prefix?: string; text: string }) {
   return (
     <>
       {prefix ? <span className="font-medium text-paper-300">{prefix} </span> : null}
-      <em className="italic">{text}</em>
+      <em className="italic">
+        <BodyText text={text} inItalic />
+      </em>
     </>
   );
 }
@@ -53,9 +81,13 @@ export function CommsBody({ prefix, text }: { prefix?: string; text: string }) {
 function Piece({ piece }: { piece: RenderPiece }) {
   switch (piece.variant) {
     case "plain":
-      return piece.text;
+      return <BodyText text={piece.text} />;
     case "italic":
-      return <em className="italic">{piece.text}</em>;
+      return (
+        <em className="italic">
+          <BodyText text={piece.text} inItalic />
+        </em>
+      );
     case "comms":
       return (
         <span>
@@ -68,7 +100,7 @@ function Piece({ piece }: { piece: RenderPiece }) {
           title="Out of character — a note to the storyteller, not heard in the scene"
           className="rounded-sm bg-accent-500/12 px-1 text-accent-300 italic"
         >
-          {piece.text}
+          <BodyText text={piece.text} inItalic />
         </span>
       );
   }
