@@ -71,6 +71,12 @@ export type OpenRouterRouting = Record<string, JSONValue>;
  */
 const NARRATOR_REASONING: Readonly<Record<string, JSONValue>> = {
   "aion-labs/aion-2.0": { effort: "low" },
+  // Aion 3.0 (added recently to the curated narrator list) mirrors the 2.0 eval ruling:
+  // `effort:"low"` to suppress the residual doting/over-production the Aion family shows at
+  // its default reasoning depth. PROVISIONAL — un-evaled; carried forward from 2.0 by
+  // family resemblance until Aion 3.0 gets its own behavioral run. (`enabled:false` stays
+  // off the table: the AionLabs endpoint rejects it — "Reasoning is mandatory".)
+  "aion-labs/aion-3.0": { effort: "low" },
   "z-ai/glm-5.2": { effort: "low" },
 };
 

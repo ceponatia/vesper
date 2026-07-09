@@ -911,3 +911,173 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     expect(parts.prefix).toContain("concrete sensation");
   });
 });
+
+describe("buildCharacterChatSystemPrompt — turn grammar (deliverable A)", () => {
+  const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+
+  it("carries the 'Resolve, then one move' rule in the stable prefix, forbidding stacked moves", () => {
+    expect(parts.prefix).toContain("Shaping each reply");
+    expect(parts.prefix).toContain("Resolve, then one move.");
+    expect(parts.prefix).toMatch(/AT MOST ONE forward move/);
+    expect(parts.prefix).toMatch(/Never stack moves/);
+    expect(parts.prefix).toMatch(/only when Mara genuinely wants that answer right now/);
+  });
+
+  it("carries the worked example pair — one beat where a question is the move, one where it is filler", () => {
+    // The question-is-the-move beat…
+    expect(parts.prefix).toContain("What did they say when you told them?");
+    expect(parts.prefix).toContain("the question earns its place");
+    // …and the action-hook beat where a question would be filler.
+    expect(parts.prefix).toMatch(/"Was that okay\?" is filler that kills the beat/);
+    expect(parts.prefix).toContain("the move is an action hook instead");
+  });
+
+  it("sets the ~3-paragraph baseline shape without introducing a hard numeric cap", () => {
+    expect(parts.prefix).toContain("about three paragraphs");
+    expect(parts.prefix).toMatch(/Ordinary small talk stays lean/);
+    // No digit-based length cap sneaks in with the new rule.
+    expect(parts.prefix).not.toMatch(/\d+\s+(characters|tokens|words|lines|sentences|paragraphs)/);
+  });
+
+  it("carries the freshness rule — every narrative paragraph must carry something new", () => {
+    expect(parts.prefix).toContain("Freshness:");
+    expect(parts.prefix).toMatch(/every narrative paragraph must carry something NEW/);
+    expect(parts.prefix).toMatch(/Never re-describe an unchanged setting, outfit, or scent/);
+  });
+
+  it("adds the intimate-frame exception to the intimate-craft block: sparse dialogue + no check-in refrain", () => {
+    expect(parts.prefix).toMatch(/let the words go SPARSE/);
+    expect(parts.prefix).toMatch(/No check-in refrain/);
+    expect(parts.prefix).toMatch(/does that feel good\?/);
+    expect(parts.prefix).toMatch(/At most once in a whole scene/);
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — response-shape + mood line (deliverable C)", () => {
+  it("renders a per-turn response-shape line pinned to the derived mood, in the tail", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: { mood: 0.8, energy: 0.8 }, regard: 0, conditions: [] },
+    });
+    expect(parts.tail).toContain("Response shape: respond to what Theo just said and did");
+    expect(parts.tail).toContain("no unrequested new topics");
+    // The mood clause pins the tone to the derived descriptor (bright and playful).
+    expect(parts.tail).toContain("Mood: bright and playful");
+    // It's a volatile steer — never in the cached prefix.
+    expect(parts.prefix).not.toContain("Response shape:");
+  });
+
+  it("omits the mood clause when there is no notable mood", () => {
+    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    expect(parts.tail).toContain("Response shape: respond to what the user just said and did");
+    expect(parts.tail).not.toContain("Mood:");
+  });
+
+  it("is suppressed on an opening beat (no player input to respond to)", () => {
+    const opening = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), opening: true });
+    expect(opening.tail).not.toContain("Response shape:");
+    expect(opening.tail).toContain("Opening beat");
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)", () => {
+  const sceneState = {
+    meters: {},
+    regard: 0,
+    conditions: [],
+    sceneMemory: {
+      current: "the living room",
+      timeOfDay: "early evening",
+      places: [{ name: "the living room", details: ["blue sofa", "tall windows"], connections: ["kitchen through the doorway"] }],
+    },
+  };
+
+  it("renders the current place, details, time of day, and connections", () => {
+    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    expect(parts.tail).toContain("Scene (the setting established so far");
+    expect(parts.tail).toContain("- Here: the living room — blue sofa; tall windows");
+    expect(parts.tail).toContain("- Time of day: early evening");
+    expect(parts.tail).toContain("- Nearby: kitchen through the doorway");
+  });
+
+  it("directs restraint on an unchanged scene, and re-establishment when it just changed", () => {
+    const unchanged = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    expect(unchanged.tail).toContain("Do not re-establish the setting; at most one fresh accent");
+    const changed = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState, sceneChanged: true });
+    expect(changed.tail).toContain("This scene just changed — establish the new setting");
+  });
+
+  it("rides the volatile tail (never busts the cached prefix) and renders nothing when empty & unchanged", () => {
+    const withScene = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    const without = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: { meters: {}, regard: 0, conditions: [] } });
+    expect(withScene.prefix).toBe(without.prefix); // scene memory is volatile — prefix unchanged
+    expect(without.tail).not.toContain("Scene (the setting established");
+    // Empty memory but the scene just changed (a bare move) still steers re-establishment.
+    const changedEmpty = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, regard: 0, conditions: [], sceneMemory: { current: "the porch", places: [{ name: "the porch", details: [], connections: [] }] } },
+      sceneChanged: true,
+    });
+    expect(changedEmpty.tail).toContain("- Here: the porch");
+    expect(changedEmpty.tail).toContain("establish the new setting");
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)", () => {
+  const scented = profile({
+    attributes: [attr("identity.gender", "female"), attr("presentation.scent_baseline", "cedar and warm skin")],
+  });
+
+  it("assembles authored scent + hygiene band for a smell/taste beat, in the tail", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: scented,
+      player: { name: "Theo" },
+      state: { meters: { hygiene: 0.2 }, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "smell", target: "hair", intimate: false },
+    });
+    expect(parts.tail).toContain("Sensory focus — Theo is breathing in Mara's hair.");
+    expect(parts.tail).toContain("cedar and warm skin");
+    expect(parts.tail).toMatch(/unwashed/i); // the low-hygiene band layered over the scent
+    expect(parts.tail).toContain("never contradict their theme");
+    expect(parts.prefix).not.toContain("Sensory focus"); // volatile
+  });
+
+  it("surfaces an intimate attribute only when the beat targets intimate anatomy the character has", () => {
+    const intimateProfile = profile({
+      intimateRegions: ["breasts"],
+      attributes: [attr("identity.gender", "female"), attr("breasts.size", "full")],
+    });
+    const earned = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: intimateProfile,
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "touch", target: "breasts", intimate: true },
+    });
+    expect(earned.tail).toContain("Sensory focus — Theo is touching Mara's breasts.");
+    // A non-intimate focus never surfaces the intimate attribute.
+    const notEarned = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: intimateProfile,
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "study", target: "dress", intimate: false },
+    });
+    expect(notEarned.tail).not.toMatch(/breasts.*full/i);
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — reply-discipline gate notes (deliverable D)", () => {
+  it("passes the pre-computed gate notes through to the volatile tail", () => {
+    const note = "Your recent replies ended in questions — end this one differently unless the moment truly demands one.";
+    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), gateNotes: note });
+    expect(parts.tail).toContain(note);
+    const without = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    expect(without.prefix).toBe(parts.prefix); // gate notes are volatile
+    expect(without.tail).not.toContain("ended in questions");
+  });
+});

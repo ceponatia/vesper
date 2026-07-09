@@ -39,6 +39,9 @@ describe("seedChatState", () => {
     expect(state.skipHistory).toEqual([]);
     expect(state.relationshipHistory).toEqual([]);
     expect(state.milestones).toEqual([]);
+    // Chat scene memory starts empty and rides the snapshot (and the FK-cascade reset).
+    expect(state.sceneMemory).toEqual({ places: [] });
+    expect(chatStateSnapshot(state).sceneMemory).toEqual({ places: [] });
   });
 
   it("seeds both axes from the authored playerRelationship record at band midpoints", () => {

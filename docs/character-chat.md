@@ -112,12 +112,43 @@ phrases, re-emitted in full each exchange so resolved loops fall off; persisted 
 appended when either axis moved; `milestones` — ≤100 of
 `first_exchange` / `stage_up` / `stage_down` / `familiarity_up` / `strong_reaction` / `player_marked`),
 the time model (`clock_minutes` — the **only** clock, D3/D8; `skip_history` ring ≤50;
-one-shot `pending_skip_note`), and `scene_auto` (`"off" | "milestones"`, the slice-9
-auto-scene toggle — text with headroom, never a boolean). `upsertChatState` is the
+one-shot `pending_skip_note`), `scene_auto` (`"off" | "milestones"`, the slice-9
+auto-scene toggle — text with headroom, never a boolean), and `scene_memory` (the
+accumulating narrator-imagined setting — see §Scene memory). `upsertChatState` is the
 **one** column-list source shared by the guarded (mid-exchange) and unguarded
 (author-edit) writers; `ChatStateEdit` covers every stored column (inspector-grade —
-open loops, memory queries, surfaced cues, attribute overlays included). State is
+open loops, memory queries, surfaced cues, attribute overlays, scene memory included). State is
 inspected/edited through the State-tools modal ([ui.md](ui.md) §The conversation page).
+
+## Scene memory
+
+Chat locations are **narrator-imagined** (not world entities — the lane has no locations,
+presence, or wardrobe state), so nothing kept an established setting consistent. `scene_memory`
+(one jsonb column, `contracts/turns/chat-scene-memory.ts` `ChatSceneMemory`) is an accumulating,
+forward-compatible memory: `{ current?, timeOfDay?, places: [{ name, details[], connections[] }] }`
+with hard caps (≤12 places, ≤8 details/place, ≤6 connections, length caps) and a `parseOr`
+degraded default (empty memory) at the load boundary. It is maintained **deterministic-first**,
+then reconciled by the archivist:
+
+1. **Pre-prompt (movement).** `detectSceneMovement` (`engine/chat-intent.ts`, regex-first) reads a
+   movement/arrival in the player's input ("I follow her to the kitchen", "we head outside") and
+   the route calls `switchScenePlace` to switch `current` (minting a stub place on first mention)
+   **before** the prompt builds, so this turn's Scene injection is right. "Just changed" = a new
+   current place this turn, or a pending time skip.
+2. **Injection.** The prompt builder renders the compact **Scene** block in the volatile tail
+   (current place + details + time of day + connections + a directive that flips on "just changed"
+   — see [prompts.md](prompts.md) §Character-chat reply discipline & scene memory).
+3. **Post-turn (reconcile).** The archivist's optional `scene` field (current-place confirmation,
+   time-of-day hint, new place details/connections — ONLY what the fiction established, lenient
+   parse) is merged onto the pre-turn memory in `finalizeChatState` via `mergeSceneMemory` (dedupe
+   + caps, oldest-out; the current place is never evicted). A degraded/empty proposal is a no-op —
+   the memory only ever accretes what the fiction established.
+
+**Reset.** Scene memory rides the ordinary chat resets: the row is on `character_chat_state`, whose
+`(chat_id)` FK cascades on `deleteChat` (the one destructive verb), so a hard delete clears it with
+the transcript/summary/memory; **archive** leaves it intact by design; and "another take"
+(regenerate) rolls it back with the rest of the state via the `pre_exchange_state` snapshot
+(`scene_memory` is in `storedChatStateSchema`), so a regenerated exchange never double-accretes.
 
 ## Post-turn fan-out
 
@@ -127,11 +158,12 @@ guarded state write:
 - **Pulse** (`runChatPulse`): classifies the exchange onto the §6 personality curve —
   regard/mood deltas, arousal bump for intimate concepts, mindNote refresh. Degrades to
   drift-only state. Skipped for `continue` beats (no player act to react to).
-- **Archivist-lite** (`runChatArchivist`): one call emitting five fields — the episode
+- **Archivist-lite** (`runChatArchivist`): one call emitting six fields — the episode
   summary, `FactDraft[]`, next-turn `memoryQueries`, `attributeChanges` (applied through
-  the `overlaySourceMayChange` inherent-trait guard), and `openLoops` (the full ≤3 list
+  the `overlaySourceMayChange` inherent-trait guard), `openLoops` (the full ≤3 list
   each time, prior loops fed back through the prompt; a **degraded** archivist keeps the
-  prior loops rather than wiping them). Its memory write is additionally fenced
+  prior loops rather than wiping them), and the optional `scene` proposal merged into
+  `scene_memory` (§Scene memory). Its memory write is additionally fenced
   so an infra throw never costs the pulse's state. Every write is **provenance-stamped**
   (`source_message_id` on facts + episodes, spec §4.3): deleting or editing an assistant
   line retracts/re-extracts its memory (`reconcileMessageMemory` / `reextractEditedReply`),
@@ -232,7 +264,8 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | State (drift/pulse/persist) | `server/engine/chat-state.ts` |
 | RAG client (recall/archivist/write) | `server/engine/chat-memory.ts` |
 | Rolling summary + fold job + rebuild | `server/engine/chat-summary.ts` |
-| One-turn cue regex | `server/engine/chat-intent.ts` |
+| One-turn player-input reads (cue / scene movement / sensory focus / reply gates) | `server/engine/chat-intent.ts` |
+| Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |
 | RRF fusion (pure) | `server/memory/fusion.ts` ([memory.md](memory.md)) |

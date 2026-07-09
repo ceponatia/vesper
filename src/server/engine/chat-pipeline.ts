@@ -1,13 +1,27 @@
 import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { characterProfileSchema, DiagnosticCollector, diag, emptyCharacterProfile, splitStateCues } from "@/contracts";
+import {
+  characterProfileSchema,
+  DiagnosticCollector,
+  diag,
+  emptyCharacterProfile,
+  samePlaceName,
+  splitStateCues,
+  switchScenePlace,
+} from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characterChatMessages, chatParticipants, db, images } from "../db";
 import { log } from "../log";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
-import { chatCueInviteLine, detectChatCue } from "./chat-intent";
+import {
+  buildChatReplyGates,
+  chatCueInviteLine,
+  detectChatCue,
+  detectSceneMovement,
+  detectSensoryFocus,
+} from "./chat-intent";
 import { deleteChatMemory, reconcileMessageMemory, retrieveChatMemory, runChatArchivist, writeChatMemory } from "./chat-memory";
 import {
   driftChatState,
@@ -87,6 +101,13 @@ export type SubmitChatMessageResult =
 const OPENING_CUE = "(Open the scene. Speak first, in character.)";
 /** Synthetic cue for a "go on" continue beat — never persisted into history. */
 const CONTINUE_CUE = "(Continue naturally from your last line — one more beat. Do not repeat yourself, and do not speak for the player.)";
+
+/**
+ * Arousal at/above which the beat counts as an "active intimate frame" for the check-in
+ * gate (deliverable D), even absent an intimate cue in this exact input — the arousal
+ * meter's "visibly affected" threshold (contracts/meters/registry.ts).
+ */
+const INTIMATE_AROUSAL_FLOOR = 0.55;
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -287,7 +308,21 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       "characters.profile",
     );
     const now = new Date();
-    const driftedState = driftChatState(storedState ?? seedChatState(profile), profile, { advance: true });
+    const baseDrifted = driftChatState(storedState ?? seedChatState(profile), profile, { advance: true });
+
+    // --- Scene memory: deterministic movement switch (pre-prompt) ------------
+    // A movement/arrival in the player's input switches the current place BEFORE the prompt
+    // builds, so THIS turn's Scene injection is right (a stub place is minted on first
+    // mention); the archivist reconciles the rest post-turn. "Just changed" = a new current
+    // place this turn, or a pending time skip (both call for re-establishing the setting once).
+    const movedTo = playerContent ? detectSceneMovement(playerContent) : null;
+    const preSceneCurrent = baseDrifted.sceneMemory.current;
+    const nextSceneMemory = movedTo ? switchScenePlace(baseDrifted.sceneMemory, movedTo) : baseDrifted.sceneMemory;
+    const sceneChanged =
+      (Boolean(nextSceneMemory.current) && !samePlaceName(preSceneCurrent, nextSceneMemory.current)) ||
+      Boolean(baseDrifted.pendingSkipNote);
+    const driftedState =
+      nextSceneMemory === baseDrifted.sceneMemory ? baseDrifted : { ...baseDrifted, sceneMemory: nextSceneMemory };
 
     // --- Window + summary ----------------------------------------------------
     const summaryState = await loadChatSummary(chatId);
@@ -313,6 +348,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       sink,
     });
 
+    // Regex-first reads of the player's input, computed once and shared: the cue arm, the
+    // sense-targeted focus, and the reply-discipline gates (over the window's last replies).
+    const cueHint = playerContent ? detectChatCue(playerContent) : null;
+    const intimateBeat = (cueHint?.intimate ?? false) || (driftedState.meters.arousal ?? 0) >= INTIMATE_AROUSAL_FLOOR;
+    const recentReplies = history.filter((m) => m.role === "assistant").map((m) => m.content);
+
     const system = buildCharacterChatSystemPrompt({
       name: characterName,
       profile,
@@ -322,14 +363,25 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       state: promptStateSlice(driftedState),
       opening,
       narrationShape: narrationShapeId("chat"),
+      // Chat scene memory: whether the setting changed this exchange (movement / time skip),
+      // which flips the Scene block's directive from "don't re-establish" to "establish once".
+      sceneChanged,
       // One-turn cue invitation (§7): beats without player input have none to read —
       // except a "has something to say" continue (§8.4), whose tapped open loop is
       // threaded here so the character opens about exactly the right thing.
-      cueInvite: playerContent
-        ? chatCueInviteLine(detectChatCue(playerContent), characterName)
+      cueInvite: cueHint
+        ? chatCueInviteLine(cueHint, characterName)
         : effectiveKind === "continue" && input.cue?.trim()
           ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
           : undefined,
+      // One-turn sense-targeted focus (scope guard): a smell/taste/touch/study beat aimed at
+      // a body region / garment ⇒ assemble the authored sensory values into a focus block.
+      sensoryFocus: playerContent ? (detectSensoryFocus(playerContent) ?? undefined) : undefined,
+      // Reply-discipline gates (deliverable D): hook-cadence + intimate check-in over the last
+      // 1–2 assistant replies. Only for real player turns (a beat has no cadence to steer).
+      gateNotes: playerContent
+        ? buildChatReplyGates({ recentReplies, intimate: intimateBeat, name: characterName })
+        : undefined,
       // Derived-fact tail note (player-input-perception.plan.md slice 4): the shared span
       // parser reads the current message's markup and renders a comms/OOC one-liner. The
       // raw message is never touched — this only feeds the prompt tail.
@@ -620,6 +672,7 @@ function promptStateSlice(state: ChatState): NonNullable<CharacterChatPromptInpu
     attributeOverlays: state.attributeOverlays,
     openLoops: state.openLoops,
     skipNote: state.pendingSkipNote,
+    sceneMemory: state.sceneMemory,
   };
 }
 

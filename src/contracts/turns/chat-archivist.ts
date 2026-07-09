@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { factDraftSchema } from "../facts/taxonomy";
 import { attributeChangeSchema } from "./agent-results";
+import { chatSceneProposalSchema } from "./chat-scene-memory";
 
 /**
  * The character-chat archivist-lite (character-chat-primary.spec.md §2): one small
@@ -56,13 +57,20 @@ export const chatArchivistSchema = z.object({
     .catch([])
     .default([])
     .transform((loops) => loops.slice(0, CHAT_ARCHIVIST_MAX_OPEN_LOOPS)),
+  /**
+   * Optional scene reconciliation (chat scene memory): ONLY what the fiction actually
+   * established this exchange — a current-place confirmation, a time-of-day hint, and new
+   * place details/connections. Lenient (a bad proposal parses to an empty object and
+   * merges as a no-op via `mergeSceneMemory`), so it never fails the turn.
+   */
+  scene: chatSceneProposalSchema,
 });
 
 export type ChatArchivist = z.infer<typeof chatArchivistSchema>;
 
 /** Degraded default: nothing extracted — the turn keeps its reply and the summary+window memory. */
 export function degradedChatArchivist(): ChatArchivist {
-  return { episodeSummary: "", facts: [], memoryQueries: [], attributeChanges: [], openLoops: [] };
+  return { episodeSummary: "", facts: [], memoryQueries: [], attributeChanges: [], openLoops: [], scene: { places: [] } };
 }
 
 /**

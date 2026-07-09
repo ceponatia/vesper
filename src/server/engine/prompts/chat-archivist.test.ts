@@ -2,13 +2,24 @@ import { describe, expect, it } from "vitest";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./chat-archivist";
 
 describe("CHAT_ARCHIVIST_SYSTEM", () => {
-  it("declares five fields and carries a worked example for each rare field", () => {
-    expect(CHAT_ARCHIVIST_SYSTEM).toContain("five fields");
+  it("declares six fields and carries a worked example for each rare field", () => {
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("six fields");
     // The attributeChanges micro-example (C6 — the haircut) so the proposer stops under-firing.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeId":"hair.length"');
     // Both examples carry every field, so the model sees the full shape.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"openLoops":[]');
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeChanges":[]');
+  });
+
+  it("declares the optional scene field and carries a worked scene example (chat scene memory)", () => {
+    // The scene field is described and gated to only established/changed settings.
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"scene":/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/chat locations are imagined by the narrator/i);
+    // A populated example shows current place + time of day + a durable detail + a connection.
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"current":"kitchen"');
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"details":["blue-tiled counter"');
+    // Non-scene exchanges emit an empty object.
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"scene":{}');
   });
 
   it("instructs full-list-each-time open loops (spec §6.2)", () => {

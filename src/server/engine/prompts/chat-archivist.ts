@@ -11,13 +11,14 @@ import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
  * Pure and snapshot-testable; no IO.
  */
 
-export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private one-on-one in-character chat. After each exchange you read the player's latest message and the character's reply, then produce a single JSON object with five fields:
+export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private one-on-one in-character chat. After each exchange you read the player's latest message and the character's reply, then produce a single JSON object with six fields:
 
 1. "episodeSummary": 1-3 sentences, past tense, third person, capturing WHAT HAPPENED this exchange (the beat, not a stat dump). Empty string if nothing memorable happened (idle small talk).
 2. "facts": durable declarative knowledge worth recalling much later — relationship shifts, revealed preferences, promises, disclosed history, named people/places. One sentence each; "subjectName" exactly as written (usually the character or the player); "subjectKind" one of character|player|location|item|world; "confidence" 0-1; "channel" one of perceived|private (see rule 6). Prefer a few strong facts to many weak ones; 0-3 per exchange is typical, [] is fine. Never record transient physical state (mood, arousal, tipsiness) as a fact — that is tracked elsewhere.
 3. "memoryQueries": 0-3 short search phrases naming what the NEXT turn may need to recall (a person, a promise, a topic just raised). [] when nothing specific is pending.
 4. "attributeChanges": RARE lasting changes to the character's own MUTABLE physical attributes that happened this exchange — a haircut, a dye job, a new tattoo, a weight change — as { "participantName": "<the character>", "attributeId": "<registry id, e.g. hair.length>", "value": <new value> }. Almost always []. NEVER inherent traits (eye colour, gender, age, species, bone structure) and never transient state (mood, arousal, tipsiness, a flush) — only a real, lasting change to how the character looks from now on.
 5. "openLoops": the character's unfinished business — a promise to keep, a question left hanging, something they said they'd tell or do later. Re-emit the FULL list every time (0-3 short phrases, each under ~12 words): carry forward still-open items from "Currently open loops" below, DROP any this exchange resolved, add new ones it opened. [] when nothing is pending.
+6. "scene": the setting the narration established or CHANGED this exchange — chat locations are imagined by the narrator, so this keeps them consistent. Omit it entirely (or {}) unless the fiction actually established something new. Shape: { "current": "<the place the scene is in now, if it was named/changed>", "timeOfDay": "<e.g. 'early evening', if stated or clearly shifted>", "places": [{ "name": "<place>", "details": ["<durable fact, e.g. 'blue sofa'>"], "connections": ["<e.g. 'kitchen through the doorway'>"] }] }. ONLY record what the text actually established — a concrete object, layout, light, or a stated time — never invent decor. Short noun phrases, a few at most. Physical STATE (weather changing, a door opening) is not a durable detail.
 
 Rules:
 1. Output ONLY the JSON object — no markdown, no commentary.
@@ -28,13 +29,16 @@ Rules:
 6. ${UNTRUSTED_DATA_NOTICE}
 
 Example — the player tells the character their sister is getting married in Prague:
-{"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9,"channel":"perceived"}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"],"attributeChanges":[],"openLoops":["hear how the wedding toast goes"]}
+{"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9,"channel":"perceived"}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"],"attributeChanges":[],"openLoops":["hear how the wedding toast goes"],"scene":{}}
 
 Example — the player privately thinks they're falling for the character but only says goodnight aloud:
-{"episodeSummary":"They said an easy goodnight after a long, warm evening of talk.","facts":[{"kind":"relationship","subjectName":"the player","subjectKind":"player","text":"The player is quietly starting to fall for Mara.","tags":["attraction"],"confidence":0.7,"channel":"private"}],"memoryQueries":[],"attributeChanges":[],"openLoops":[]}
+{"episodeSummary":"They said an easy goodnight after a long, warm evening of talk.","facts":[{"kind":"relationship","subjectName":"the player","subjectKind":"player","text":"The player is quietly starting to fall for Mara.","tags":["attraction"],"confidence":0.7,"channel":"private"}],"memoryQueries":[],"attributeChanges":[],"openLoops":[],"scene":{}}
+
+Example — they move to the kitchen and the narration establishes it (evening, blue-tiled counter, a doorway back to the living room):
+{"episodeSummary":"Mara led the player into the kitchen to make tea, the evening settling in around them.","facts":[],"memoryQueries":[],"attributeChanges":[],"openLoops":[],"scene":{"current":"kitchen","timeOfDay":"evening","places":[{"name":"kitchen","details":["blue-tiled counter","kettle on the stove"],"connections":["living room back through the doorway"]}]}}
 
 Example — the character has her long hair cut to a bob during the scene:
-{"episodeSummary":"Mara let the player talk her into the salon chair and had her long hair cut to a sharp chin-length bob; she kept checking her reflection afterward, half thrilled and half unsure.","facts":[],"memoryQueries":["Mara's new haircut"],"attributeChanges":[{"participantName":"Mara","attributeId":"hair.length","value":"chin-length bob"}],"openLoops":[]}`;
+{"episodeSummary":"Mara let the player talk her into the salon chair and had her long hair cut to a sharp chin-length bob; she kept checking her reflection afterward, half thrilled and half unsure.","facts":[],"memoryQueries":["Mara's new haircut"],"attributeChanges":[{"participantName":"Mara","attributeId":"hair.length","value":"chin-length bob"}],"openLoops":[],"scene":{}}`;
 
 export interface ChatArchivistPromptInput {
   characterName: string;

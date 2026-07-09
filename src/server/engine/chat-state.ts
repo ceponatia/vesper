@@ -13,14 +13,17 @@ import {
   CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   chatPulseTraceSchema,
+  chatSceneMemorySchema,
   clampFamiliarity,
   clampRegard,
   degradedChatPulse,
   deriveExchangeMilestones,
   emptyChatMemoryTrace,
+  emptyChatSceneMemory,
   emptyRelationshipTexture,
   deriveEmotionLabel,
   diag,
+  mergeSceneMemory,
   emptyChatPulseTrace,
   familiarityBandForValue,
   initialMeters,
@@ -46,6 +49,7 @@ import {
   type ChatMemoryTrace,
   type ChatPulse,
   type ChatPulseTrace,
+  type ChatSceneMemory,
   type ChatSkipAmount,
   type DiagnosticSink,
   type EmotionLabel,
@@ -152,6 +156,12 @@ export interface ChatState {
   pendingSkipNote: string;
   /** Auto scene-generation mode (slice 9): "off" | "milestones" — text with headroom for future modes. */
   sceneAuto: string;
+  /**
+   * Accumulating scene memory (chat-scene-memory.ts): the narrator-imagined setting kept
+   * consistent across turns — current place, time of day, named places with details +
+   * connections. Switched deterministically pre-turn, reconciled from the archivist post-turn.
+   */
+  sceneMemory: ChatSceneMemory;
 }
 
 /** The strip / state-tools / premise-bar projection returned by GET …/chat/state. */
@@ -190,6 +200,8 @@ export interface ChatStateSnapshot {
   clockMinutes: number;
   /** Auto scene-generation mode (slice 9) — the scenario modal's toggle. */
   sceneAuto: string;
+  /** Accumulating scene memory (current place / time of day / known places) — for the state-tools/inspector view. */
+  sceneMemory: ChatSceneMemory;
   /**
    * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
    * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
@@ -249,6 +261,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     skipHistory: [],
     pendingSkipNote: "",
     sceneAuto: "off",
+    sceneMemory: emptyChatSceneMemory(),
   };
 }
 
@@ -283,6 +296,7 @@ export async function loadChatState(
       skipHistory: characterChatState.skipHistory,
       pendingSkipNote: characterChatState.pendingSkipNote,
       sceneAuto: characterChatState.sceneAuto,
+      sceneMemory: characterChatState.sceneMemory,
     })
     .from(characterChatState)
     .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)))
@@ -330,6 +344,13 @@ export async function loadChatState(
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
     pendingSkipNote: row.pendingSkipNote,
     sceneAuto: row.sceneAuto,
+    sceneMemory: parseOr(
+      chatSceneMemorySchema,
+      row.sceneMemory,
+      emptyChatSceneMemory(),
+      sink,
+      "character_chat_state.scene_memory",
+    ),
   };
 }
 
@@ -362,6 +383,7 @@ const storedChatStateSchema = z.object({
   skipHistory: skipHistorySchema.catch([]).default([]),
   pendingSkipNote: z.string().catch("").default(""),
   sceneAuto: z.string().catch("off").default("off"),
+  sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
 });
 
 /**
@@ -773,6 +795,14 @@ export async function finalizeChatState(input: {
   // empty list that must NOT wipe the standing loops; keep the prior list on degrade.
   const openLoops = archivist.degraded ? input.driftedState.openLoops : (archivist.value?.openLoops ?? input.driftedState.openLoops);
 
+  // Scene memory: reconcile the archivist's `scene` proposal onto the pre-turn memory (the
+  // deterministic movement switch already applied to `driftedState.sceneMemory` before the
+  // prompt built). A degraded / empty proposal is a no-op, so the memory only ever accretes
+  // what the fiction established — never re-establishing an unchanged setting.
+  const sceneMemory = archivist.value
+    ? mergeSceneMemory(input.driftedState.sceneMemory, archivist.value.scene)
+    : input.driftedState.sceneMemory;
+
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
   // exchange (bounded by the acquainted ceiling), plus a moment tick when the
   // archivist recorded durable facts — a real disclosure or shared experience.
@@ -854,6 +884,7 @@ export async function finalizeChatState(input: {
       lastMemoryTrace,
       relationshipHistory,
       milestones,
+      sceneMemory,
       // The skip note is one-shot (spec §8.1): this exchange rendered it, so it clears.
       pendingSkipNote: "",
     },
@@ -895,14 +926,15 @@ async function upsertChatState(
   const relationshipHistory = JSON.stringify(state.relationshipHistory);
   const milestones = JSON.stringify(state.milestones);
   const skipHistory = JSON.stringify(state.skipHistory);
+  const sceneMemory = JSON.stringify(state.sceneMemory);
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, scene_auto, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, scene_auto, scene_memory, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${sceneMemory}::jsonb, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -928,6 +960,7 @@ async function upsertChatState(
       skip_history = excluded.skip_history,
       pending_skip_note = excluded.pending_skip_note,
       scene_auto = excluded.scene_auto,
+      scene_memory = excluded.scene_memory,
       updated_at = now()
   `);
 }
@@ -978,6 +1011,8 @@ export interface ChatStateEdit {
   attributeOverlays?: AttributeValue[];
   /** Auto scene-generation mode (slice 9): "off" | "milestones". */
   sceneAuto?: string;
+  /** Accumulating scene memory (current place / time of day / known places). */
+  sceneMemory?: ChatSceneMemory;
 }
 
 /**
@@ -1015,6 +1050,7 @@ export async function editChatState(args: {
   if (patch.surfacedCues !== undefined) next.surfacedCues = patch.surfacedCues;
   if (patch.attributeOverlays !== undefined) next.attributeOverlays = patch.attributeOverlays;
   if (patch.sceneAuto !== undefined) next.sceneAuto = patch.sceneAuto;
+  if (patch.sceneMemory !== undefined) next.sceneMemory = patch.sceneMemory;
   await persistChatState(chatId, characterId, next);
   return next;
 }
@@ -1126,6 +1162,7 @@ export function chatStateSnapshot(
     lastMemoryTrace: state.lastMemoryTrace,
     clockMinutes: state.clockMinutes,
     sceneAuto: state.sceneAuto,
+    sceneMemory: state.sceneMemory,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
   };
