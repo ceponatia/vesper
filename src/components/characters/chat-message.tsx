@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ReplyTakes } from "@/lib/client/api";
+import { MessageContent } from "@/components/characters/message-content";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { Textarea } from "@/components/ui/textarea";
@@ -149,7 +150,14 @@ export function MessageBubble({
                 isUser ? "bg-accent-500/15 text-paper-100" : "bg-ink-800 text-paper-200"
               }`}
             >
-              {pending ? <span className="text-paper-500">…</span> : line.content}
+              {pending ? (
+                <span className="text-paper-500">…</span>
+              ) : (
+                // Span renderer (player-input-perception slice 5): italicize thoughts /
+                // `_italic_`, read `*Name:*` as a text, mark `((OOC))` — sigils hidden.
+                // Applies to both sides (`name` seeds comms-recipient resolution).
+                <MessageContent content={line.content} context={{ knownNames: name ? [name] : undefined }} />
+              )}
               {line.stopped ? (
                 <span className="ml-1.5 inline-block rounded-sm border border-ink-600 px-1 text-[10px] tracking-wide text-paper-500 uppercase">
                   stopped

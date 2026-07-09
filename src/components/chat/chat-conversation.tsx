@@ -35,6 +35,7 @@ import { ChatScenarioModal } from "@/components/characters/chat-scenario-modal";
 import { SceneStrip } from "@/components/characters/chat-scene-strip";
 import { ChatStateToolsModal } from "@/components/characters/chat-state-tools";
 import { ActionChips, StatusStrip } from "@/components/characters/chat-status";
+import { caretInOocBlock } from "@/components/characters/message-markup";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
@@ -97,6 +98,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [archived, setArchived] = useState(false);
   const [chatModel, setChatModel] = useState(() => resolveChatModelId(null));
   const [input, setInput] = useState("");
+  // True while the composer caret sits inside a `((…))` OOC block — drives the
+  // amber affordance (player-input-perception slice 5). A plain flag, not caret
+  // state: recomputed from the live textarea on every edit / selection change.
+  const [oocActive, setOocActive] = useState(false);
   const [sending, setSending] = useState(false);
   // True from a Stop click until the truncated stream settles (disables the button).
   const [stopping, setStopping] = useState(false);
@@ -322,6 +327,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     const content = input.trim();
     if (!content || sendingRef.current || !ready || archived) return;
     setInput("");
+    setOocActive(false);
     const outcome = await runStream({ content, model: chatModel }, { userLine: content });
     if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
   };
@@ -373,10 +379,50 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     }
   };
 
+  /** Recompute the OOC affordance from the textarea's live value + caret. */
+  const refreshOoc = (el: HTMLTextAreaElement) => {
+    setOocActive(caretInOocBlock(el.value, el.selectionStart));
+  };
+
+  /**
+   * Place the caret after a controlled-value edit (the auto-close / collapse below).
+   * Deferred to the next frame so React has committed the new value onto the node —
+   * setting the range in the same tick would fight the controlled re-render. Mirrors
+   * the play composer's `requestAnimationFrame(() => …focus())` pattern.
+   */
+  const applyCaret = (el: HTMLTextAreaElement, caret: number) => {
+    requestAnimationFrame(() => {
+      el.setSelectionRange(caret, caret);
+      refreshOoc(el);
+    });
+  };
+
   const onComposerKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void send();
+      return;
+    }
+    // The composer assist only manages a collapsed caret (no selection).
+    const pos = el.selectionStart;
+    if (pos !== el.selectionEnd) return;
+    const value = el.value;
+    // OOC discoverability: typing the second "(" completes "((" → auto-insert the
+    // closing "))" with the caret between them. Skipped when "))" already follows
+    // (so an already-paired block isn't over-closed).
+    if (e.key === "(" && value[pos - 1] === "(" && value.slice(pos, pos + 2) !== "))") {
+      e.preventDefault();
+      setInput(value.slice(0, pos) + "(" + "))" + value.slice(pos));
+      applyCaret(el, pos + 1);
+      return;
+    }
+    // Backspace with the caret between "(" and "))" removes the whole auto-inserted
+    // pair instead of stranding the "))" (undo of the auto-close).
+    if (e.key === "Backspace" && value[pos - 1] === "(" && value.slice(pos, pos + 2) === "))") {
+      e.preventDefault();
+      setInput(value.slice(0, pos - 1) + value.slice(pos + 2));
+      applyCaret(el, pos - 1);
     }
   };
 
@@ -808,17 +854,31 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             </div>
           ) : null}
           {chatState && !archived ? <ActionChips busy={actionBusy} disabled={sending} onAction={(a) => void runAction(a)} /> : null}
+          {/* OOC affordance (slice 5): a clear amber signal the caret is inside a
+              ((…)) block — a note to the storyteller no one in the scene hears. */}
+          {oocActive && !archived ? (
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="rounded-sm bg-accent-500/15 px-1.5 py-0.5 font-medium tracking-wide text-accent-300 uppercase">
+                OOC
+              </span>
+              <span className="text-paper-500">To the storyteller — no one in the scene hears this.</span>
+            </div>
+          ) : null}
           <div className="flex items-end gap-2">
             <Textarea
               rows={2}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.currentTarget.value);
+                refreshOoc(e.currentTarget);
+              }}
               onKeyDown={onComposerKeyDown}
+              onSelect={(e) => refreshOoc(e.currentTarget)}
               disabled={archived}
               placeholder={
                 archived ? "This conversation is archived." : `Message ${who}…  (Enter to send, Shift+Enter for a new line)`
               }
-              className="flex-1"
+              className={cx("flex-1", oocActive && "border-accent-500 ring-1 ring-accent-500/40")}
             />
             {!archived ? (
               <button
