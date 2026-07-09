@@ -4,11 +4,12 @@ import { useState } from "react";
 import {
   heritageFor,
   heritagesForSpecies,
+  isPersonalityAttributeId,
   speciesById,
   speciesCatalog,
   type Diagnostic,
 } from "@/contracts";
-import type { CharacterDraft, CharacterForgeSection } from "@/lib/client/api";
+import type { CharacterDraft, CharacterForgeSection, CharacterSheetScope } from "@/lib/client/api";
 import { wearerHintForGender } from "@/lib/clothing-slots";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
@@ -19,7 +20,7 @@ import { Select } from "@/components/ui/select";
 import { TagInput } from "@/components/ui/tag-input";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { AttributePicker, PERSONALITY_CATEGORIES } from "./attribute-picker";
+import { AttributePicker } from "./attribute-picker";
 import { seedRequiredAttributes } from "./attribute-helpers";
 import { CharacterChat } from "./character-chat";
 import { DispositionEditor } from "./disposition-editor";
@@ -34,8 +35,6 @@ function genderValue(attributes: readonly { id: string; value: unknown }[]): str
   return typeof value === "string" ? value : undefined;
 }
 
-/** Split the flat attribute list into the two tabs that render it. */
-const isPersonalityAttribute = (id: string) => PERSONALITY_CATEGORIES.some((c) => id.startsWith(`${c}.`));
 
 export interface CharacterEditorProps {
   draft: CharacterDraft;
@@ -43,6 +42,9 @@ export interface CharacterEditorProps {
   /** Forge mode shows per-section regenerate buttons (docs/authoring.md). */
   onRegenerate?: (section: CharacterForgeSection) => void;
   regenerating?: CharacterForgeSection | null;
+  /** Edit mode shows per-tab Re-draft buttons (character-sheet-forge.plan.md). */
+  onRedraft?: (scope: CharacterSheetScope) => void;
+  redrafting?: CharacterSheetScope | null;
   /** Saved characters get the portrait studio; drafts don't exist yet. */
   characterId?: string;
   avatarImageId?: string | null;
@@ -63,6 +65,8 @@ export function CharacterEditor({
   onChange,
   onRegenerate,
   regenerating = null,
+  onRedraft,
+  redrafting = null,
   characterId,
   avatarImageId = null,
   onAvatarChanged,
@@ -72,7 +76,7 @@ export function CharacterEditor({
 }: CharacterEditorProps) {
   const [tab, setTab] = useState<EditorTab>("profile");
 
-  const personalityCount = draft.profile.attributes.filter((a) => isPersonalityAttribute(a.id)).length;
+  const personalityCount = draft.profile.attributes.filter((a) => isPersonalityAttributeId(a.id)).length;
   const tabs: TabDef<EditorTab>[] = [
     { id: "profile", label: "Profile" },
     {
@@ -142,6 +146,15 @@ export function CharacterEditor({
     outfit: "outfit",
   };
   const section = sectionFor[tab];
+  // Every content tab is re-draftable; scope ids match tab ids by design.
+  const scopeFor: Partial<Record<EditorTab, CharacterSheetScope>> = {
+    profile: "profile",
+    attributes: "attributes",
+    personality: "personality",
+    disposition: "disposition",
+    outfit: "outfit",
+  };
+  const scope = scopeFor[tab];
 
   return (
     <div className="flex flex-col gap-5">
@@ -158,6 +171,18 @@ export function CharacterEditor({
             className="self-start sm:mb-1 sm:self-auto"
           >
             ↻ Regenerate {section}
+          </Button>
+        ) : null}
+        {onRedraft && scope ? (
+          <Button
+            size="sm"
+            onClick={() => onRedraft(scope)}
+            busy={redrafting === scope}
+            disabled={redrafting !== null && redrafting !== scope}
+            className="self-start sm:mb-1 sm:self-auto"
+            title="Rewrite this tab from the whole sheet, formatted for the narrator. Text fields are rewritten; attribute and trait values you set yourself are kept."
+          >
+            ↻ Re-draft tab
           </Button>
         ) : null}
       </div>

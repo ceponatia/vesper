@@ -5,6 +5,7 @@ import {
   attributeGroups,
   FEATURE_GROUPS,
   INTIMATE_REGION_GROUPS,
+  isPersonalityAttributeCategory,
   realizeBody,
   type AttributeDefinition,
   type AttributeValue,
@@ -26,14 +27,6 @@ import {
   setAttribute,
   sliderBounds,
 } from "./attribute-helpers";
-
-/**
- * Expression-and-bearing categories that live on the **Personality** tab rather
- * than among the physical body attributes. The same flat `attributes` array
- * backs both tabs — `scope` just selects which categories each one renders.
- */
-export const PERSONALITY_CATEGORIES = ["voice", "presentation", "movement"] as const;
-const PERSONALITY_CATEGORY_SET = new Set<string>(PERSONALITY_CATEGORIES);
 
 export interface AttributePickerProps {
   values: readonly AttributeValue[];
@@ -132,8 +125,8 @@ export function AttributePicker({
   return (
     <div className="flex flex-col gap-3">
       {attributeGroups.map((group) => {
-        // Each tab owns a disjoint slice of the vocabulary (see PERSONALITY_CATEGORIES).
-        if (PERSONALITY_CATEGORY_SET.has(group.category) !== (scope === "personality")) return null;
+        // Each tab owns a disjoint slice of the vocabulary (PERSONALITY_ATTRIBUTE_CATEGORIES).
+        if (isPersonalityAttributeCategory(group.category) !== (scope === "personality")) return null;
         if (NESTED_CATEGORIES.has(group.category)) return null; // rendered nested below
         const definitions = group.definitions.filter((d) => isVisible(d));
         const nested = group.category === "chest" ? nestedGroupsFor(NESTED_UNDER_CHEST) : [];

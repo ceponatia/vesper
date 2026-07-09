@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CharacterSheetScope } from "@/lib/character-scopes";
 import {
   activeConditionSchema,
   type ActiveCondition,
@@ -674,6 +675,9 @@ export type { AvatarImageModel };
 export const characterForgeSections = ["profile", "attributes", "outfit"] as const;
 export type CharacterForgeSection = (typeof characterForgeSections)[number];
 
+// Per-tab Re-draft scopes (character-sheet-forge.plan.md); single source in lib.
+export { characterSheetScopes, type CharacterSheetScope } from "@/lib/character-scopes";
+
 export const worldForgeSections = ["premise", "locations", "lore", "cast", "items"] as const;
 export type WorldForgeSection = (typeof worldForgeSections)[number];
 
@@ -805,8 +809,13 @@ export const charactersApi = {
   remove: (id: string) => apiDelete(`/api/characters/${id}`),
   /** Clone a public (or own) character into your library as an owned, private copy. */
   clone: (id: string) => apiPost(createdRefSchema, `/api/characters/${id}/clone`, {}),
-  forge: (body: { prompt?: string; mode?: "create" | "fill"; section?: CharacterForgeSection; draft?: CharacterDraft }) =>
-    apiPost(forgeResponseSchema(characterDraftSchema), "/api/characters/forge", body),
+  forge: (body: {
+    prompt?: string;
+    mode?: "create" | "fill" | "redraft";
+    section?: CharacterForgeSection;
+    scope?: CharacterSheetScope;
+    draft?: CharacterDraft;
+  }) => apiPost(forgeResponseSchema(characterDraftSchema), "/api/characters/forge", body),
   generateAvatar: (id: string, body: { model?: AvatarImageModel } = {}) =>
     apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>

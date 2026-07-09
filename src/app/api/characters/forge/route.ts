@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { characterSheetScopeSchema } from "@/lib/character-scopes";
 import {
   applyCharacterSectionPatch,
   characterDraftSchema,
@@ -9,20 +10,24 @@ import {
   forgeCharacter,
   forgeCharacterFill,
   forgeCharacterSection,
+  redraftCharacterScope,
 } from "@/server/authoring";
 import { FORGE_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 
 const forgeBodySchema = z.object({
-  /** Required for create mode; fill mode works from the draft alone (sheet-only, no guidance). */
+  /** Required for create mode; fill and redraft work from the draft alone (sheet-only, no guidance). */
   prompt: z.string().trim().min(1).max(4000).optional(),
   /**
    * "create" (default): prose prompt → full draft, or one `section` of it.
    * "fill": complete a partially-authored sheet without overwriting anything
-   * entered (character-sheet-forge.plan.md).
+   * entered. "redraft": rewrite one tab (`scope`) from the whole sheet
+   * (character-sheet-forge.plan.md).
    */
-  mode: z.enum(["create", "fill"]).default("create"),
+  mode: z.enum(["create", "fill", "redraft"]).default("create"),
   /** Regenerate a single section against the supplied draft (docs/authoring.md). */
   section: characterForgeSectionSchema.optional(),
+  /** The tab to rewrite (redraft mode). */
+  scope: characterSheetScopeSchema.optional(),
   draft: characterDraftSchema.optional(),
 });
 
@@ -36,11 +41,16 @@ export const POST = withUser(async (user, req: NextRequest) => {
   }
 
   const sink = new DiagnosticCollector();
-  const { prompt, mode, section, draft } = body.value;
+  const { prompt, mode, section, scope, draft } = body.value;
   if (mode === "fill") {
     if (!draft) return jsonError("invalid_body", "fill mode requires the current draft", 400);
     const filled = await forgeCharacterFill({ draft, userId: user.id, sink });
     return jsonOk({ draft: filled, diagnostics: sink.items });
+  }
+  if (mode === "redraft") {
+    if (!draft || !scope) return jsonError("invalid_body", "redraft mode requires the current draft and a scope", 400);
+    const redrafted = await redraftCharacterScope({ draft, scope, userId: user.id, sink });
+    return jsonOk({ draft: redrafted, diagnostics: sink.items });
   }
   if (!prompt) return jsonError("invalid_body", "create mode requires a prompt", 400);
   if (section) {

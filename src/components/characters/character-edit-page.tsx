@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import type { Diagnostic } from "@/contracts";
 import { mergeFillDraft } from "@/lib/character-fill";
+import { mergeRedraftScope, type CharacterSheetScope } from "@/lib/character-scopes";
 import {
   characterDraftSchema,
   charactersApi,
@@ -35,6 +36,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [forging, setForging] = useState(false);
+  const [redrafting, setRedrafting] = useState<CharacterSheetScope | null>(null);
   const [forgeDiagnostics, setForgeDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -97,7 +99,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
    * review/undo step.
    */
   const forgeFill = async () => {
-    if (!draft || forging || saving) return;
+    if (!draft || forging || redrafting || saving) return;
     if (dirty && !(await save())) return;
     setForging(true);
     const result = await charactersApi.forge({ mode: "fill", draft });
@@ -114,6 +116,30 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     setDraft((current) => (current ? mergeFillDraft(current, filled) : filled));
     setDirty(true);
     toast.push({ title: "Sheet forged", description: "Review the additions, then save.", tone: "success" });
+  };
+
+  /**
+   * Per-tab Re-draft (character-sheet-forge.plan.md): rewrite ONE tab from the
+   * whole sheet, narrator-formatted. Same save-first discipline as the Forge;
+   * the scope merge keeps player-set attribute/trait values and reports any
+   * conflicts as diagnostics instead of applying them.
+   */
+  const redraft = async (scope: CharacterSheetScope) => {
+    if (!draft || forging || redrafting || saving) return;
+    if (dirty && !(await save())) return;
+    setRedrafting(scope);
+    const result = await charactersApi.forge({ mode: "redraft", scope, draft });
+    setRedrafting(null);
+    if (!result.ok) {
+      toast.push({ title: "Re-draft failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    const { draft: redrafted, diagnostics } = result.data;
+    setForgeDiagnostics(diagnostics);
+    editGenRef.current += 1;
+    setDraft((current) => (current ? mergeRedraftScope(current, redrafted, scope) : redrafted));
+    setDirty(true);
+    toast.push({ title: "Tab re-drafted", description: "Review the rewrite, then save.", tone: "success" });
   };
 
   /**
@@ -176,7 +202,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
           <Button
             onClick={() => void forgeFill()}
             busy={forging}
-            disabled={saving}
+            disabled={saving || redrafting !== null}
             title="Complete every empty part of the sheet from what you've entered — never changes what you wrote. Saves your edits first."
           >
             ✦ Forge the rest
@@ -196,6 +222,8 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         onAvatarChanged={() => detail.reload({ silent: true })}
         chatModel={chatModel}
         onChatModelChange={(modelId) => void saveChatModel(modelId)}
+        onRedraft={(scope) => void redraft(scope)}
+        redrafting={redrafting}
         diagnostics={forgeDiagnostics}
       />
       <SaveBar
