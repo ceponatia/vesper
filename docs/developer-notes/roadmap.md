@@ -41,8 +41,8 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 - **Character sheet forge — in-sheet completion, per-tab re-drafts,
   portrait-derived attributes** —
   [character-sheet-forge.plan.md](character-sheet-forge.plan.md) (active —
-  slices 1–3 **built 2026-07-09** on branch `worktree-character-sheet-forge`,
-  awaiting owner review + merge + deploy): the editor's ✦ Forge-the-rest fills
+  slices 1–3 **built + merged + deployed 2026-07-09**, awaiting owner live
+  review): the editor's ✦ Forge-the-rest fills
   every empty field without touching player-authored content (save-first,
   result lands unsaved for review); per-tab ↻ Re-draft rewrites one tab
   narrator-formatted from the whole sheet (manual attribute/trait values kept,
