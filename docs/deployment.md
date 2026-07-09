@@ -181,3 +181,11 @@ a Tailscale sidecar.) Set strong, unique `BETTER_AUTH_SECRET` and `DEV_PASSWORD`
 - **App OOMs / restarts** — bump `[[vm]] memory`; 256 MB is far too small.
 - **Images vanish after restart** — the `[[mounts]]` volume is missing or
   `DATA_ROOT` doesn't point at it.
+- **React error #418 (hydration mismatch) in the console on loads right after a
+  deploy** — deploy skew, not an app bug: a browser with cached assets from the
+  previous build straddles the Machine cutover, React logs #418, discards the
+  server HTML, and client-renders — the page still works. It self-heals and has
+  never reproduced outside the few minutes around a cutover (probed 2026-07-09:
+  warm-cache, hard-reload, and CDP cache-disabled loads across several pages on a
+  settled build were all clean). Don't chase it unless it appears on a settled
+  build.
