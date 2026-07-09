@@ -816,6 +816,9 @@ export const charactersApi = {
     scope?: CharacterSheetScope;
     draft?: CharacterDraft;
   }) => apiPost(forgeResponseSchema(characterDraftSchema), "/api/characters/forge", body),
+  /** Vision pass over the canonical avatar → unset appearance attributes filled on the draft. */
+  attributesFromPortrait: (id: string, draft: CharacterDraft) =>
+    apiPost(forgeResponseSchema(characterDraftSchema), `/api/characters/${id}/attributes/from-portrait`, { draft }),
   generateAvatar: (id: string, body: { model?: AvatarImageModel } = {}) =>
     apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>

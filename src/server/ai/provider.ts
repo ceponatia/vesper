@@ -17,6 +17,11 @@ export const MODEL_DEFAULTS = {
   state: DEFAULT_AGENT_MODEL_ID,
   tool: DEFAULT_AGENT_MODEL_ID,
   embedding: "openai/text-embedding-3-small",
+  // Image UNDERSTANDING (portrait → attributes, character-sheet-forge.plan.md)
+  // — the first vision-input capability; distinct from the Venice image
+  // GENERATION stack. Qwen3-VL 235B instruct: strong closed-vocabulary visual
+  // extraction, cheap ($0.20/M prompt), no mandatory reasoning tokens.
+  vision: "qwen/qwen3-vl-235b-a22b-instruct",
 } as const;
 
 export function isDemoMode(): boolean {
@@ -188,4 +193,9 @@ export function agentModelId(worldAgentModel?: string | null): string {
 
 export function embeddingModelId(): string {
   return MODEL_DEFAULTS.embedding;
+}
+
+/** The vision (image-understanding) model — code default only, no override layer. */
+export function visionModelId(): string {
+  return MODEL_DEFAULTS.vision;
 }

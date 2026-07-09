@@ -45,6 +45,9 @@ export interface CharacterEditorProps {
   /** Edit mode shows per-tab Re-draft buttons (character-sheet-forge.plan.md). */
   onRedraft?: (scope: CharacterSheetScope) => void;
   redrafting?: CharacterSheetScope | null;
+  /** Portrait → attributes (Attributes tab, needs a ready avatar). */
+  onPortraitAttributes?: () => void;
+  derivingPortrait?: boolean;
   /** Saved characters get the portrait studio; drafts don't exist yet. */
   characterId?: string;
   avatarImageId?: string | null;
@@ -67,6 +70,8 @@ export function CharacterEditor({
   regenerating = null,
   onRedraft,
   redrafting = null,
+  onPortraitAttributes,
+  derivingPortrait = false,
   characterId,
   avatarImageId = null,
   onAvatarChanged,
@@ -173,12 +178,24 @@ export function CharacterEditor({
             ↻ Regenerate {section}
           </Button>
         ) : null}
+        {onPortraitAttributes && tab === "attributes" && avatarImageId ? (
+          <Button
+            size="sm"
+            onClick={onPortraitAttributes}
+            busy={derivingPortrait}
+            disabled={redrafting !== null}
+            className="self-start sm:mb-1 sm:self-auto"
+            title="Read the portrait and fill in appearance attributes it clearly shows — never changes values already set (disagreements are reported)."
+          >
+            ◉ From portrait
+          </Button>
+        ) : null}
         {onRedraft && scope ? (
           <Button
             size="sm"
             onClick={() => onRedraft(scope)}
             busy={redrafting === scope}
-            disabled={redrafting !== null && redrafting !== scope}
+            disabled={(redrafting !== null && redrafting !== scope) || derivingPortrait}
             className="self-start sm:mb-1 sm:self-auto"
             title="Rewrite this tab from the whole sheet, formatted for the narrator. Text fields are rewritten; attribute and trait values you set yourself are kept."
           >

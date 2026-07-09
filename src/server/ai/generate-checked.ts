@@ -3,10 +3,24 @@ import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { isDemoMode, openrouter, providerRouting, routedProvider, stateModelId, type OpenRouterRouting } from "./provider";
 
+/** An image handed to a vision-capable model alongside the prompt text. */
+export interface GenerateImagePart {
+  /** Raw bytes or a base64 string. */
+  data: Uint8Array | string;
+  /** e.g. "image/webp". */
+  mediaType: string;
+}
+
 export interface GenerateCheckedOptions<T> {
   schema: ZodType<T>;
   system: string;
   prompt: string;
+  /**
+   * Images the model should look at (vision models only — pair with
+   * `visionModelId()`). The prompt text follows the images in one user
+   * message; everything else on the resilience ladder is unchanged.
+   */
+  images?: readonly GenerateImagePart[];
   /** OpenRouter model id; defaults to the state model. */
   modelId?: string;
   temperature?: number;
@@ -101,7 +115,7 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   let latencyMs: number | undefined;
   const attempt = async (prompt: string): Promise<T> => {
     const start = Date.now();
-    const result = await generateText({
+    const base = {
       model: openrouter().chat(opts.modelId ?? stateModelId()),
       temperature: opts.temperature ?? 0,
       maxOutputTokens: opts.maxOutputTokens ?? 4096,
@@ -113,8 +127,23 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
         "Respond with ONLY a single JSON object — no markdown fences, no commentary." +
           (schemaText ? ` It must conform to this JSON Schema:\n${schemaText}` : ""),
       ].join("\n"),
-      prompt,
-    });
+    };
+    // Images require the messages form; the plain-prompt path stays byte-identical.
+    const result =
+      opts.images && opts.images.length > 0
+        ? await generateText({
+            ...base,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  ...opts.images.map((img) => ({ type: "image" as const, image: img.data, mediaType: img.mediaType })),
+                  { type: "text" as const, text: prompt },
+                ],
+              },
+            ],
+          })
+        : await generateText({ ...base, prompt });
     latencyMs = Date.now() - start;
     provider = routedProvider(result.providerMetadata);
     return opts.schema.parse(JSON.parse(extractJsonObject(result.text)));
