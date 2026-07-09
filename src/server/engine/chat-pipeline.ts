@@ -25,6 +25,7 @@ import { tryKeyedLock } from "./keyed-lock";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
+  chatNotationNote,
   type CharacterChatPromptInput,
 } from "./prompts/character-chat";
 import { narrationShapeId } from "./prompts/constants";
@@ -329,6 +330,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         : effectiveKind === "continue" && input.cue?.trim()
           ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
           : undefined,
+      // Derived-fact tail note (player-input-perception.plan.md slice 4): the shared span
+      // parser reads the current message's markup and renders a comms/OOC one-liner. The
+      // raw message is never touched — this only feeds the prompt tail.
+      notationNote: playerContent
+        ? chatNotationNote(playerContent, { name: characterName, player: player.name, knownNames: [characterName] })
+        : undefined,
     });
     const modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
 

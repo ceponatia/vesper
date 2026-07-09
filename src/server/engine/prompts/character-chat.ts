@@ -14,6 +14,7 @@ import type { RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
+import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
@@ -128,6 +129,15 @@ export interface CharacterChatPromptInput {
    * ⇒ no line (today's behavior). Pre-rendered so this builder stays pure over a plain string.
    */
   cueInvite?: string;
+  /**
+   * Derived-fact notation note (player-input-perception.plan.md slice 4): a volatile
+   * one-turn tail line rendered by `chatNotationNote` from the parsed markup of the CURRENT
+   * player message — a comms span ("this is a text from X to you; not face-to-face for this
+   * beat") or an OOC span ("the ((…)) text is the player speaking to you, out of character").
+   * Absent/"" ⇒ no line. The sigils' meanings live in the stable-prefix legend; this note
+   * carries only what the sigils alone don't state. NEVER modify the stored user message.
+   */
+  notationNote?: string;
 }
 
 /**
@@ -199,6 +209,45 @@ function skipToneForBand(bandId: string): string {
  */
 export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string): string {
   return `${SKIP_LEADS[amount]} ${skipToneForBand(regardBandId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
+}
+
+/**
+ * The derived-fact notation note (player-input-perception.plan.md slice 4): parses the
+ * CURRENT player message through the shared `@/lib/message-spans` parser and renders the
+ * volatile one-turn tail line for any comms/OOC spans — the facts the sigils alone don't
+ * state (the sigils' *meanings* are taught once in the stable-prefix legend). Comms →
+ * sender/recipient + the co-presence reconciliation; OOC → the honor-it/never-heard rule.
+ * "" when the message carries neither (the common case). Pure, so it mirrors `chatSkipNote`:
+ * the route renders it and feeds the string back into `input.notationNote`, never touching
+ * the stored message. `player` is the persona name (comms default sender); `knownNames`
+ * resolves a bare `*Name: …*` recipient (the sole other party in a 1-on-1).
+ */
+export function chatNotationNote(
+  message: string,
+  ctx: { name: string; player?: string; knownNames?: readonly string[] },
+): string {
+  const spans = parseMessageSpans(message, {
+    playerName: ctx.player,
+    knownNames: ctx.knownNames ?? (ctx.name ? [ctx.name] : []),
+  });
+  const player = ctx.player ?? "the player";
+  const lines: string[] = [];
+
+  const comms = spans.find((s) => s.kind === "comms");
+  if (comms) {
+    const sender = comms.sender?.trim() || player;
+    lines.push(
+      `${sender} is texting you: the *${sender}: …* line is a text message from ${sender} to you, not words spoken in the room. You are not face-to-face for this beat — the comms frame temporarily overrides any assumed co-presence. Answer as a text back, on its own line in the same shape (${formatCommsReply(ctx.name, "…")}), not as spoken dialogue.`,
+    );
+  }
+
+  if (spans.some((s) => s.kind === "ooc")) {
+    lines.push(
+      `The double-parenthesized ((…)) text is ${player} speaking to you as the storyteller, out of character — honor it as direction, but never have ${ctx.name} (or anyone in the scene) hear it or react to it.`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 /** Cap on surfaced social-card framing lines, so a big card set can't flood the prompt. */
@@ -398,6 +447,14 @@ const CONTENT_FRAMING = [
  *   speech, decisions, or named emotions — the D2 owner ruling); rule 12 is the
  *   attention/motion-gated visual channel (sight carries at any distance; one detail,
  *   never an inventory).
+ * - **The "Message notation" legend** (player-input-perception.plan.md slice 4 — the
+ *   optional sigil grammar): teaches quotes = speech, `*…*` = thought (or a text when
+ *   `Name:`-shaped), `_…_` = italics only, `((…))` = OOC to the storyteller, and the
+ *   house reversal of the RP "asterisks = actions" habit (unquoted prose is the action
+ *   channel here). It also defines the narrator's texted-reply output grammar
+ *   (`*Name: …*`, which the parser round-trips from history). Static text — byte-identical
+ *   across turns; the per-turn *derived* facts (who is texting whom, co-presence) ride a
+ *   volatile tail note (`chatNotationNote`), never the stable prefix.
  */
 const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string): string => {
   const player = playerName ?? "the user";
@@ -427,6 +484,14 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     `- Inner thoughts, feelings, and self-talk ${player} writes into that narration reach no one: ${name} cannot hear them and must not answer, echo, or uncannily intuit them. ${name} may notice the visible signs (a flush, a hesitation) and guess at what's behind them — even guess wrong, the way a real person would.`,
     "- A message with no quotes at all that reads as plain conversation is simply spoken aloud — never treat a casual unquoted message as silence.",
     `- Example: ${player} writes: "Hey… how are you…" I stammer, my face flushing. There's no way ${name} would want to talk to a dork like me. — ${name} hears the greeting and sees the stammer and the flush, but the final thought reaches no one: reacting to the visible nerves is right; answering the thought itself ("You're not a dork!") is mind-reading and forbidden.`,
+    "",
+    `Message notation ${player} may use (optional shorthand — read these marks when they appear; never require them and never mention them):`,
+    `- "Quoted text" is spoken dialogue — heard exactly, as above.`,
+    `- *A phrase in single asterisks* is ${player}'s private thought by default: unspoken and unheard, treated like the interiority above (${name} cannot perceive it). The one exception: when the asterisks wrap a name and a colon — *${playerName ?? "Name"}: like this* — it is a text message ${player} is sending, not a thought; a note beneath the rules names who is texting whom whenever that happens.`,
+    `- Heads up — this is the reverse of the usual role-play habit where *asterisks mean actions*. Here plain unquoted prose is already the action channel (what ${player} does and what the scene shows), so an asterisk span is thought or a text, never an action.`,
+    `- _A phrase in single underscores_ is only italic emphasis — styling with no meaning; read it as ordinary words.`,
+    `- ((Text in double parentheses)) is ${player} speaking to you as the storyteller, out of character — follow it as direction, but ${name} never hears it and no one in the scene reacts to it. A single ( … ) is ordinary prose, not this.`,
+    `- When ${player} texts ${name} and ${name} answers by text, write ${name}'s sent message on its own line as *${name}: her words here* — the same name-and-colon shape in asterisks — so it reads as a text, not as words spoken aloud in the room.`,
     "",
     "When a scene turns intimate:",
     "- Hold escalation to the player's pace: advance only as far as their last line invites, and let anticipation do its work — never leap ahead of the moment or rush a beat to its end.",
@@ -596,6 +661,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
     buildTransientAppearanceSection(input, stableResolved, realizedBody),
     input.cueInvite?.trim() ?? "",
+    input.notationNote?.trim() ?? "",
     input.opening
       ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
       : "",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import type { AttributeValue } from "@/contracts/attributes/value";
-import { buildCharacterChatPromptParts, buildCharacterChatSystemPrompt } from "./character-chat";
+import { buildCharacterChatPromptParts, buildCharacterChatSystemPrompt, chatNotationNote } from "./character-chat";
 
 const attr = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue => ({ id, value, source: "creation" });
 
@@ -432,6 +432,95 @@ describe("buildCharacterChatSystemPrompt — player-input perception (player-inp
     const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
     expect(faceless).toContain("Reading the player's message (what Mara can actually perceive):");
     expect(faceless).toMatch(/self-talk the user writes into that narration reach no one/);
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — message-notation legend (player-input-perception.plan.md slice 4)", () => {
+  const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+
+  it("teaches the sigil grammar: quotes, asterisks (thought default), underscores, double parens", () => {
+    expect(prompt).toMatch(/Message notation Theo may use/);
+    expect(prompt).toMatch(/"Quoted text" is spoken dialogue/);
+    expect(prompt).toMatch(/single asterisks\* is Theo's private thought by default/);
+    expect(prompt).toMatch(/name and a colon — \*Theo: like this\* — it is a text message/);
+    expect(prompt).toMatch(/single underscores_ is only italic emphasis/);
+    expect(prompt).toMatch(/\(\(Text in double parentheses\)\) is Theo speaking to you as the storyteller/);
+    expect(prompt).toMatch(/A single \( … \) is ordinary prose/);
+  });
+
+  it("states the house reversal of the RP 'asterisks = actions' convention", () => {
+    expect(prompt).toMatch(/reverse of the usual role-play habit where \*asterisks mean actions\*/);
+    expect(prompt).toMatch(/plain unquoted prose is already the action channel/);
+    expect(prompt).toMatch(/an asterisk span is thought or a text, never an action/);
+  });
+
+  it("defines the comms output grammar the parser round-trips (*Name: her words*)", () => {
+    expect(prompt).toMatch(/write Mara's sent message on its own line as \*Mara: her words here\*/);
+  });
+
+  it("lives in the stable prefix and stays byte-identical across turns (cache-safe)", () => {
+    const t1 = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: { mood: 0.9 }, regard: 20, conditions: [] },
+    });
+    const t2 = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: { mood: 0.1 }, regard: 22, conditions: [], mindNote: "different" },
+    });
+    expect(t1.prefix).toContain("Message notation Theo may use");
+    expect(t1.prefix).toBe(t2.prefix);
+  });
+
+  it("falls back to a 'Name' placeholder in the faceless (no-player) variant", () => {
+    const faceless = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
+    expect(faceless).toMatch(/Message notation the user may use/);
+    expect(faceless).toMatch(/\*Name: like this\*/);
+  });
+});
+
+describe("chatNotationNote — derived-fact tail note (player-input-perception.plan.md slice 4)", () => {
+  it("renders a comms note (sender/recipient + co-presence reconciliation) for a *Name: …* message", () => {
+    const note = chatNotationNote("*Brian: hey, you up?*", { name: "Sabrina", player: "Brian", knownNames: ["Sabrina"] });
+    expect(note).toMatch(/Brian is texting you/);
+    expect(note).toMatch(/text message from Brian to you, not words spoken in the room/);
+    expect(note).toMatch(/not face-to-face for this beat — the comms frame temporarily overrides any assumed co-presence/);
+    // It points back at the output grammar so her reply comes back as a text.
+    expect(note).toContain("*Sabrina: …*");
+  });
+
+  it("renders a comms note for the explicit `to Name:` form too", () => {
+    const note = chatNotationNote("*to Sabrina: on my way*", { name: "Sabrina", player: "Brian", knownNames: ["Sabrina"] });
+    expect(note).toMatch(/Brian is texting you/);
+  });
+
+  it("renders an OOC note honoring the direction while keeping it unheard", () => {
+    const note = chatNotationNote("((skip ahead to the evening))", { name: "Sabrina", player: "Brian" });
+    expect(note).toMatch(/double-parenthesized \(\(…\)\) text is Brian speaking to you as the storyteller/);
+    expect(note).toMatch(/never have Sabrina \(or anyone in the scene\) hear it or react to it/);
+  });
+
+  it("returns '' for a plain message with no comms or OOC spans (the common case)", () => {
+    expect(chatNotationNote('"Hey there." I wave.', { name: "Sabrina", player: "Brian" })).toBe("");
+    expect(chatNotationNote("I sit down (still catching my breath).", { name: "Sabrina", player: "Brian" })).toBe("");
+    expect(chatNotationNote("*I hope she doesn't notice how nervous I am.*", { name: "Sabrina", player: "Brian" })).toBe("");
+  });
+
+  it("rides the volatile tail, never the cached prefix", () => {
+    const note = chatNotationNote("*Brian: hey*", { name: "Mara", player: "Theo", knownNames: ["Mara"] });
+    const withNote = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      notationNote: note,
+    });
+    const without = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    expect(withNote.prefix).toBe(without.prefix); // derived note never busts the prefix cache
+    expect(withNote.tail).toContain("is texting you");
+    expect(without.tail).not.toContain("is texting you");
   });
 });
 

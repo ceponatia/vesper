@@ -183,6 +183,12 @@ interface ResultRow {
    */
   thoughtLeak?: boolean;
   /**
+   * Did the reply come back as a text in the comms output grammar (`commsReplyRe` —
+   * `*Character: …*`) for a `*Name: …*` player text (player-input-perception.plan.md
+   * slice 4)? Expected Y. undefined ⇒ not a comms scenario (not measured).
+   */
+  commsReply?: boolean;
+  /**
    * Did the reply hit its contrast axis's lexical cue list (CONTRAST_AXES[group].cueRe —
    * the sensoryRelevant pattern)? Expected on the flagged variant, NOT the control.
    * undefined ⇒ not a contrast scenario, or its axis has no cue list (not measured).
@@ -211,6 +217,7 @@ function printTable(rows: ResultRow[]): void {
     pad("sens", 5),
     pad("pov", 4),
     pad("leak", 5),
+    pad("txt", 4),
     pad("cue", 4),
     "provider",
   ].join(" ");
@@ -238,6 +245,7 @@ function printTable(rows: ResultRow[]): void {
         pad(r.sensoryCue === undefined ? "-" : r.sensoryCue ? "Y" : "N", 5),
         pad(r.povCue === undefined ? "-" : r.povCue ? "Y" : "N", 4),
         pad(r.thoughtLeak === undefined ? "-" : r.thoughtLeak ? "Y" : "N", 5),
+        pad(r.commsReply === undefined ? "-" : r.commsReply ? "Y" : "N", 4),
         pad(r.contrastCue === undefined ? "-" : r.contrastCue ? "Y" : "N", 4),
         m.provider ?? "?",
       ].join(" "),
@@ -289,11 +297,12 @@ async function main(): Promise<void> {
       const sensoryCue = scenario.sensoryRelevant ? SENSORY_CUE_RE.test(text) : undefined;
       const povCue = scenario.povRelevant ? POV_CUE_RE.test(text) : undefined;
       const thoughtLeak = scenario.plantedThoughtRe ? scenario.plantedThoughtRe.test(text) : undefined;
+      const commsReply = scenario.commsReplyRe ? scenario.commsReplyRe.test(text) : undefined;
       const cueRe = scenario.contrast ? CONTRAST_AXES[scenario.contrast.group].cueRe : undefined;
       const contrastCue = cueRe ? cueRe.test(text) : undefined;
-      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, seed, metrics, judgement, narration: text, sensoryCue, povCue, thoughtLeak, contrastCue });
+      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, seed, metrics, judgement, narration: text, sensoryCue, povCue, thoughtLeak, commsReply, contrastCue });
       process.stdout.write(
-        ` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}${povCue === undefined ? "" : ` pov ${povCue ? "Y" : "N"}`}${thoughtLeak === undefined ? "" : ` leak ${thoughtLeak ? "Y" : "N"}`}${contrastCue === undefined ? "" : ` cue ${contrastCue ? "Y" : "N"}`}\n`,
+        ` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}${povCue === undefined ? "" : ` pov ${povCue ? "Y" : "N"}`}${thoughtLeak === undefined ? "" : ` leak ${thoughtLeak ? "Y" : "N"}`}${commsReply === undefined ? "" : ` txt ${commsReply ? "Y" : "N"}`}${contrastCue === undefined ? "" : ` cue ${contrastCue ? "Y" : "N"}`}\n`,
       );
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
