@@ -41,18 +41,6 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
-- **Player-input perception — markup lane, session port (remainder)** —
-  [player-input-perception.plan.md](player-input-perception.plan.md) (**ready to
-  build** — slices 1–2 shipped 2026-07-08 and slice 6 (RAG fence) shipped 2026-07-09
-  (see Shipped); the five build-blocking rulings settled 2026-07-09: asterisks =
-  thought/comms confirmed, both comms forms parse, OOC = `((…))` only + a composer
-  auto-close/highlight assist, thought-derived facts drop from the narrator, backtick
-  sigil deferred). Remaining: the state-agent exemption audit (slice 3), the opt-in
-  **markup lane** (`*…*` thoughts / `*Name: …*`·`*to Name: …*` comms sigils with a
-  prefix notation legend + symmetric texted-reply output grammar, italicized rendering
-  with sigils hidden, the `((` composer assist), the session-lane port (slice 7 — also
-  teaches the **session** archivist to file fact channels; today it writes the
-  `perceived` default), and the eval-gated semantic fallback.
 - **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
   audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
   grows). Both live in `engine/merge/phases/threads.ts` and are documented in
@@ -124,15 +112,20 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
-- **Player-input perception — RAG visibility fence (slice 6)** —
+- **Player-input perception — markup lane, RAG fence, session port (slices 3–7)** —
   [player-input-perception.plan.md](player-input-perception.plan.md) — 2026-07-09 —
-  facts now carry a `channel` (`perceived | private | ooc`; migration `0029`, degraded
-  default `perceived`): the chat archivist classifies each fact (parser-derived hint when
-  the player used sigils, skips OOC), and narrator-bound retrieval is fenced in SQL to
-  `perceived` only — so a fact drawn from the player's private thoughts never returns as
-  NPC-known knowledge, and never eats a retrieval slot. The pulse + dev inspector still see
-  every channel. Session-lane classification stays in **Next** (slice 7). Detail:
-  [../memory.md](../memory.md) §Fact channel.
+  the plan's whole remainder in one multi-agent run: exemption lines in the
+  pulse/archivist/intake prompts; the pure `lib/message-spans` parser + "Message
+  notation" legend + comms/OOC tail notes + the round-trippable `*Name: …*`
+  texted-reply grammar (eval variants + deterministic `commsReply` metric);
+  transcript span rendering (sigils hidden, OOC amber aside) + the `((` composer
+  auto-close/badge; the fact `channel` fence (migration `0029` — narrator-bound
+  retrieval SQL-fenced to `perceived`; pulse + dev inspector unfenced; detail
+  [../memory.md](../memory.md) §Fact channel); and the session-lane port (rulebook
+  perception block + legend, recipient-resolved comms notes, session archivist
+  channel filing, play-feed rendering). Left: slice 8 (semantic fallback) gated on
+  the leak measurement; the live probe/eval runs are owner-gated spend; two small
+  comms follow-ups recorded in the plan.
 - **Chat narrator POV — player-POV story narration** —
   [chat-narrator-pov.plan.md](chat-narrator-pov.plan.md) — 2026-07-08 — the chat model
   is now also the story's camera behind the player's eyes: the narrator-camera rule +

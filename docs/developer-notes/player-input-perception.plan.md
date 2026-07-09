@@ -1,18 +1,23 @@
 # Player-input perception — NPCs hear quotes, see the visible, never read minds
 
-Status: **active — slices 1–2 shipped 2026-07-08; remainder ready to build (rulings
-settled 2026-07-09)** (slices 1–2 built ahead of order as the base for
-[chat-narrator-pov.plan.md](chat-narrator-pov.plan.md), per the owner's build-order call).
-Shipped: the `CHAT_RULES` "Reading the player's message" block (perception model + worked
-example, rules 2/8 routed through it — note the rules renumbered when the POV plan added
-its narrator-camera rules 4/12 in the same change), and the `chat-thought-leak` /
-`chat-thought-leak-noquotes` eval fixtures + deterministic `thoughtLeak` planted-token
-metric (`run.ts`). Remaining: slice 3 (state-agent exemption audit), the markup arc
-(4–6 incl. the RAG visibility fence), the session port (7), and the gated fallback (8).
-The 2026-07-09 owner rulings — asterisk reassignment confirmed, both comms forms, OOC =
-double parens only + a composer assist, private facts dropped from the narrator, backtick
-sigil deferred — are folded into their sections below; only the two measurement-time
-questions remain open.
+Status: **shipped — 2026-07-09.** Slices 1–2 shipped 2026-07-08 (built ahead of order as
+the base for [chat-narrator-pov.plan.md](chat-narrator-pov.plan.md): the `CHAT_RULES`
+"Reading the player's message" block — rules 2/8 route through it, renumbered by the POV
+plan — plus the `chat-thought-leak*` fixtures + deterministic `thoughtLeak` metric).
+Slices 3–7 shipped 2026-07-09 in one multi-agent run: the state-agent exemption lines,
+the markup lane (pure `src/lib/message-spans.ts` parser, notation legend, comms/OOC tail
+notes, round-trippable `*Name: …*` texted-reply grammar, eval variants + `commsReply`
+metric), transcript span rendering + the `((` composer assist, the RAG fact-`channel`
+fence (migration `0029`), and the session-lane port (shared `prompts/notation.ts` hint
+helper). The 2026-07-09 owner rulings — asterisk reassignment confirmed, both comms
+forms, OOC = double parens only + composer assist, private facts dropped from the
+narrator, backtick sigil deferred — are folded into their sections below.
+**Leftovers:** slice 8 (semantic fallback) stays **unbuilt by design** — gated on the
+slice-2 leak measurement, and the live probe/eval runs are owner-gated spend (they also
+settle the two measurement-time open questions). Small follow-ups noted, not built:
+staging a sigil text through `commsStaging`/`pendingComms` so the recipient becomes
+formally comms-present in sessions, and comms-label styling for a narrator's
+`*Name: …*` texted reply in the session feed (it renders via `InlineProse` today).
 
 ## Problem
 
@@ -226,7 +231,7 @@ narrator") to confirm placement, then live probes on the Fly deploy with the
 Sabrina-style message shape against the curated chat models (GLM 5.2 default at
 minimum), using "another take" to sample variance.
 
-### 2. Eval fixtures — measure the leak — shipped 2026-07-08 (base fixtures; markup variants wait on slice 4)
+### 2. Eval fixtures — measure the leak — shipped (base 2026-07-08; markup variants with slice 4, 2026-07-09)
 
 `scripts/eval/narration/fixtures.ts` gets a `chat-thought-leak` scenario (or a small
 family): a message mixing a quoted line, a visible action, and interiority that
@@ -250,7 +255,7 @@ the thought calls the player a "dork" — the word exists only in the private ch
 - Same harness conventions as the rest: `pnpm eval:narration`, never in `verify`,
   live runs are owner-gated spend. Run before/after slice 1 wording tuning.
 
-### 3. State-agent prompts — assert the exemption
+### 3. State-agent prompts — assert the exemption — shipped 2026-07-09
 
 Audit `prompts/chat-state.ts`, `prompts/chat-archivist.ts`, and (session)
 `prompts/intake.ts`: confirm nothing in them would make an agent *discard*
@@ -260,7 +265,7 @@ so a future reader doesn't port the narrator's partition into the agents by
 symmetry. Pulse especially benefits: the interiority is a strong intent signal
 for the §6 reaction curve.
 
-### 4. Markup lane — parser, legend, tail notes, output grammar
+### 4. Markup lane — parser, legend, tail notes, output grammar — shipped 2026-07-09
 
 - **Deterministic span parser** (pure — `src/lib` or `src/contracts`, no IO; in the
   regex-first spirit of `engine/chat-intent.ts`): segment a message into spans
@@ -283,7 +288,7 @@ for the §6 reaction curve.
   parser output feeds the prompt notes, the agents' filing hints (slice 6), and the
   renderer (slice 5).
 
-### 5. UI rendering + composer assist — italicize, hide sigils, live OOC block
+### 5. UI rendering + composer assist — italicize, hide sigils, live OOC block — shipped 2026-07-09
 
 A light span renderer for chat transcript messages (both player messages and
 narrator replies — `components/characters/chat-message.tsx` neighborhood):
@@ -329,7 +334,7 @@ Per §RAG is a mind-reading backdoor:
 - Pulse keeps reading everything (no change).
 - Degradation tests: unknown/missing channel ⇒ `perceived` + diagnostic.
 
-### 7. Session-lane port (after chat validates)
+### 7. Session-lane port — shipped 2026-07-09
 
 Port the perception block + notation legend to the session rulebook
 (`prompts/narrative.ts` — the rule-3 neighborhood, plus the Prose rules if wording
