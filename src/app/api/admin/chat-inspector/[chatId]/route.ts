@@ -12,11 +12,11 @@ type Params = { chatId: string };
  * stored for one conversation's memory group — ALL facts (active + superseded +
  * retracted, so provenance and supersedence chains are visible), every episode,
  * the rolling-summary row, and the character card for the page header. Gated
- * exactly like `/api/dev/impersonate` — **404 in production** — plus the usual
+ * by role — **404 for non-admins** (hidden, never a 403) — plus the usual
  * ownership resolution (a miss is a 404, never a 403).
  */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
-  if (process.env.NODE_ENV === "production") return jsonError("not_found", "not found", 404);
+  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);

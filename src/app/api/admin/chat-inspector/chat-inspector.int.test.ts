@@ -4,17 +4,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@/lib/ids";
 import { characterChats, characters, chatParticipants, db, episodes, facts, images, users } from "@/server/db";
 
-// Dev chat-inspector integration suite (character-chat-standalone.spec.md §6.1):
-// the /api/dev/chat-inspector/[chatId] route family invoked directly with mocked
+// Admin chat-inspector integration suite (character-chat-standalone.spec.md §6.1):
+// the /api/admin/chat-inspector/[chatId] route family invoked directly with mocked
 // auth against DATABASE_URL. AI_FAKE forces demo mode, so every embed is the
-// deterministic pseudo embedder — no provider key or network. NODE_ENV under
-// vitest is "test", so the prod-404 gate stays open. Self-skips when the
-// database is unreachable.
+// deterministic pseudo embedder — no provider key or network. The mocked user is
+// role "admin", so the role gate (404 for non-admins — asserted below) stays open.
+// Self-skips when the database is unreachable.
 
 process.env.AI_FAKE = "1";
 
 const authState = vi.hoisted(() => ({
-  user: { id: "", email: "", name: "Inspector Int", role: "admin" as const },
+  user: { id: "", email: "", name: "Inspector Int", role: "admin" as "admin" | "user" },
 }));
 
 vi.mock("@/server/auth", () => ({
@@ -88,7 +88,7 @@ interface OverviewFact {
 }
 
 async function overviewFor(chatId: string) {
-  const res = await inspectorGet(getReq(`/api/dev/chat-inspector/${chatId}`), ctx(chatId));
+  const res = await inspectorGet(getReq(`/api/admin/chat-inspector/${chatId}`), ctx(chatId));
   expect(res.status).toBe(200);
   return (await res.json()) as {
     facts: OverviewFact[];
@@ -157,11 +157,11 @@ afterAll(async () => {
 /** The dev fact minted in the first test, exercised by the toggle/retract tests after it. */
 let devFactId = "";
 
-describe("POST /api/dev/chat-inspector/:chatId/facts (spec §6.1)", () => {
+describe("POST /api/admin/chat-inspector/:chatId/facts (spec §6.1)", () => {
   it("creates a dev fact that the overview lists with origin 'dev', confidence 1, subject defaulted", async (t) => {
     if (!ready) return t.skip();
     const res = await factCreate(
-      jsonReq(`/api/dev/chat-inspector/${ids.chat}/facts`, "POST", {
+      jsonReq(`/api/admin/chat-inspector/${ids.chat}/facts`, "POST", {
         text: "the player always brings mara tea",
         pinned: true,
       }),
@@ -183,18 +183,18 @@ describe("POST /api/dev/chat-inspector/:chatId/facts (spec §6.1)", () => {
   });
 });
 
-describe("PATCH /api/dev/chat-inspector/:chatId/facts/:factId", () => {
+describe("PATCH /api/admin/chat-inspector/:chatId/facts/:factId", () => {
   it("round-trips the pinned toggle", async (t) => {
     if (!ready) return t.skip();
     const off = await factPatch(
-      jsonReq(`/api/dev/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", { pinned: false }),
+      jsonReq(`/api/admin/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", { pinned: false }),
       factCtx(ids.chat, devFactId),
     );
     expect(off.status).toBe(200);
     expect(((await off.json()) as { fact: { pinned: boolean } }).fact.pinned).toBe(false);
 
     const on = await factPatch(
-      jsonReq(`/api/dev/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", { pinned: true }),
+      jsonReq(`/api/admin/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", { pinned: true }),
       factCtx(ids.chat, devFactId),
     );
     expect(on.status).toBe(200);
@@ -207,7 +207,7 @@ describe("PATCH /api/dev/chat-inspector/:chatId/facts/:factId", () => {
   it("retracts, then restores — restore also clears supersedence marks", async (t) => {
     if (!ready) return t.skip();
     const retract = await factPatch(
-      jsonReq(`/api/dev/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", { status: "retracted" }),
+      jsonReq(`/api/admin/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", { status: "retracted" }),
       factCtx(ids.chat, devFactId),
     );
     expect(retract.status).toBe(200);
@@ -220,7 +220,7 @@ describe("PATCH /api/dev/chat-inspector/:chatId/facts/:factId", () => {
       .where(eq(facts.id, devFactId));
 
     const restore = await factPatch(
-      jsonReq(`/api/dev/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", { status: "active" }),
+      jsonReq(`/api/admin/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", { status: "active" }),
       factCtx(ids.chat, devFactId),
     );
     expect(restore.status).toBe(200);
@@ -237,7 +237,7 @@ describe("PATCH /api/dev/chat-inspector/:chatId/facts/:factId", () => {
   it("edits fact text through the re-embed path and reports no degrade in demo mode", async (t) => {
     if (!ready) return t.skip();
     const res = await factPatch(
-      jsonReq(`/api/dev/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", {
+      jsonReq(`/api/admin/chat-inspector/${ids.chat}/facts/${devFactId}`, "PATCH", {
         text: "the player switched from tea to coffee",
       }),
       factCtx(ids.chat, devFactId),
@@ -249,7 +249,7 @@ describe("PATCH /api/dev/chat-inspector/:chatId/facts/:factId", () => {
   });
 });
 
-describe("PATCH + DELETE /api/dev/chat-inspector/:chatId/episodes/:episodeId", () => {
+describe("PATCH + DELETE /api/admin/chat-inspector/:chatId/episodes/:episodeId", () => {
   it("edits an episode summary (re-embedding it), scores it against a query, then hard-deletes it", async (t) => {
     if (!ready) return t.skip();
     const [row] = await db()
@@ -259,7 +259,7 @@ describe("PATCH + DELETE /api/dev/chat-inspector/:chatId/episodes/:episodeId", (
     if (!row) throw new Error("failed to seed episode");
 
     const res = await episodePatch(
-      jsonReq(`/api/dev/chat-inspector/${ids.chat}/episodes/${row.id}`, "PATCH", {
+      jsonReq(`/api/admin/chat-inspector/${ids.chat}/episodes/${row.id}`, "PATCH", {
         summary: "she confessed her fear of storms",
       }),
       episodeCtx(ids.chat, row.id),
@@ -275,7 +275,7 @@ describe("PATCH + DELETE /api/dev/chat-inspector/:chatId/episodes/:episodeId", (
 
     // The re-embedded row is scoreable against a test query (embedder-matched).
     const score = await scoreGet(
-      getReq(`/api/dev/chat-inspector/${ids.chat}/episodes/score?q=storms`),
+      getReq(`/api/admin/chat-inspector/${ids.chat}/episodes/score?q=storms`),
       ctx(ids.chat),
     );
     expect(score.status).toBe(200);
@@ -284,7 +284,7 @@ describe("PATCH + DELETE /api/dev/chat-inspector/:chatId/episodes/:episodeId", (
     expect(scored.scores.some((s) => s.id === row.id && typeof s.score === "number")).toBe(true);
 
     const del = await episodeDelete(
-      delReq(`/api/dev/chat-inspector/${ids.chat}/episodes/${row.id}`),
+      delReq(`/api/admin/chat-inspector/${ids.chat}/episodes/${row.id}`),
       episodeCtx(ids.chat, row.id),
     );
     expect(del.status).toBe(200);
@@ -292,11 +292,11 @@ describe("PATCH + DELETE /api/dev/chat-inspector/:chatId/episodes/:episodeId", (
   });
 });
 
-describe("PATCH /api/dev/chat-inspector/:chatId/summary", () => {
+describe("PATCH /api/admin/chat-inspector/:chatId/summary", () => {
   it("upserts the rolling summary without touching the watermark, and the overview round-trips it", async (t) => {
     if (!ready) return t.skip();
     const res = await summaryPatch(
-      jsonReq(`/api/dev/chat-inspector/${ids.chat}/summary`, "PATCH", { summary: "A quiet evening of confessions." }),
+      jsonReq(`/api/admin/chat-inspector/${ids.chat}/summary`, "PATCH", { summary: "A quiet evening of confessions." }),
       ctx(ids.chat),
     );
     expect(res.status).toBe(200);
@@ -311,10 +311,10 @@ describe("PATCH /api/dev/chat-inspector/:chatId/summary", () => {
   });
 });
 
-describe("GET /api/dev/chat-inspector/:chatId/prompt", () => {
+describe("GET /api/admin/chat-inspector/:chatId/prompt", () => {
   it("rebuilds the narrator prompt preview", async (t) => {
     if (!ready) return t.skip();
-    const res = await promptGet(getReq(`/api/dev/chat-inspector/${ids.chat}/prompt`), ctx(ids.chat));
+    const res = await promptGet(getReq(`/api/admin/chat-inspector/${ids.chat}/prompt`), ctx(ids.chat));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       prefix: string;
@@ -331,13 +331,33 @@ describe("GET /api/dev/chat-inspector/:chatId/prompt", () => {
 describe("ownership (never 403 — a foreign chat is invisible)", () => {
   it("404s the family for a chat the user does not own", async (t) => {
     if (!ready) return t.skip();
-    const get = await inspectorGet(getReq(`/api/dev/chat-inspector/${ids.otherChat}`), ctx(ids.otherChat));
+    const get = await inspectorGet(getReq(`/api/admin/chat-inspector/${ids.otherChat}`), ctx(ids.otherChat));
     expect(get.status).toBe(404);
 
     const create = await factCreate(
-      jsonReq(`/api/dev/chat-inspector/${ids.otherChat}/facts`, "POST", { text: "planted into someone else's memory" }),
+      jsonReq(`/api/admin/chat-inspector/${ids.otherChat}/facts`, "POST", { text: "planted into someone else's memory" }),
       ctx(ids.otherChat),
     );
     expect(create.status).toBe(404);
+  });
+});
+
+describe("role gate (admin-only — 404 for non-admins, even on their own chat)", () => {
+  it("404s the overview and a write for role 'user', then reopens for 'admin'", async (t) => {
+    if (!ready) return t.skip();
+    authState.user = { ...authState.user, role: "user" };
+    try {
+      const get = await inspectorGet(getReq(`/api/admin/chat-inspector/${ids.chat}`), ctx(ids.chat));
+      expect(get.status).toBe(404);
+      const create = await factCreate(
+        jsonReq(`/api/admin/chat-inspector/${ids.chat}/facts`, "POST", { text: "should never land" }),
+        ctx(ids.chat),
+      );
+      expect(create.status).toBe(404);
+    } finally {
+      authState.user = { ...authState.user, role: "admin" };
+    }
+    const reopened = await inspectorGet(getReq(`/api/admin/chat-inspector/${ids.chat}`), ctx(ids.chat));
+    expect(reopened.status).toBe(200);
   });
 });

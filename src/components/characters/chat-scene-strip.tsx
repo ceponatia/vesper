@@ -25,6 +25,7 @@ export function SceneStrip({
   name,
   hasChat,
   scenes: sceneList,
+  rendering,
   onRefresh,
 }: {
   chatId: string;
@@ -32,6 +33,8 @@ export function SceneStrip({
   hasChat: boolean;
   /** The conversation's scene list (newest first), owned by the page. */
   scenes: ImageRecord[];
+  /** A render job is live server-side (covers the composer step before the row exists). */
+  rendering: boolean;
   /** Silent refetch of the shared list (after queueing). */
   onRefresh: () => void;
 }) {
@@ -41,17 +44,19 @@ export function SceneStrip({
   const baselineRef = useRef(0);
 
   const hasPendingRow = sceneList.some((s) => s.status === "pending");
-  // Show an immediate placeholder the instant "Generate" is clicked — the image
-  // row doesn't exist until the (slow) composer step finishes, so without this
-  // the strip would give no feedback during compose. Once the pending row lands,
-  // its own labeled tile takes over (and `generating` is released below).
-  const showComposing = generating && !hasPendingRow;
+  // Show a placeholder from the instant "Generate" is clicked (`generating`, local)
+  // through the whole server-side job (`rendering` — the page polls while it's live):
+  // the image row doesn't exist until the (slow) composer step finishes, so without
+  // this the strip would give no feedback during compose — and an auto-queued or
+  // mid-compose-refreshed render would show nothing at all. Once the pending row
+  // lands, its own labeled tile takes over.
+  const showComposing = (generating || rendering) && !hasPendingRow;
 
-  // Release the button spinner once the queued row materialises; its own
-  // pending tile then tracks progress (mirrors the portrait studio).
+  // Release the button spinner once the server acknowledges the job (`rendering`)
+  // or the queued row materialises; the shared tile then tracks progress.
   useEffect(() => {
-    if (generating && sceneList.length > baselineRef.current) setGenerating(false);
-  }, [sceneList.length, generating]);
+    if (generating && (rendering || sceneList.length > baselineRef.current)) setGenerating(false);
+  }, [sceneList.length, generating, rendering]);
 
   const generate = async () => {
     baselineRef.current = sceneList.length;

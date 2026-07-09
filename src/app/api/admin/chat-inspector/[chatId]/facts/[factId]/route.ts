@@ -25,11 +25,10 @@ const patchBodySchema = z
  * hard-set `pinned` (the force-include testing lever), retract, or restore
  * (restoring also clears the supersedence marks so the row is fully live
  * again). The UPDATE is keyed on `(id, chat_memory_group_id)` — a fact outside
- * this chat's memory group is a 404, never touched. Dev-only: **404 in
- * production**.
+ * this chat's memory group is a 404, never touched. Admin-only: **404 for non-admin roles**.
  */
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (process.env.NODE_ENV === "production") return jsonError("not_found", "not found", 404);
+  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
   const { chatId, factId } = await ctx.params;
   const body = await readBody(req, patchBodySchema);
   if (!body.ok) return body.response;

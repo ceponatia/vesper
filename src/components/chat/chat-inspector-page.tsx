@@ -20,7 +20,8 @@ import { chatInspectorApi, type InspectorSummary } from "@/lib/api-inspector";
  * rolling summary, and the rebuilt "what reaches the narrator now" prompt.
  * Admin-gated client-side via `useIsAdmin` (false until confirmed, so
  * non-admins — and everyone, briefly — see a plain "Not found." fallback); the
- * `/api/dev/chat-inspector` family is additionally 404 in production.
+ * `/api/admin/chat-inspector` family is additionally role-gated server-side
+ * (404 for non-admins) — real enforcement lives there, not in this UI gate.
  */
 export function ChatInspectorPage({ chatId }: { chatId: string }) {
   const isAdmin = useIsAdmin();

@@ -25,11 +25,10 @@ const episodeReturning = {
  * episode's summary and re-embed it (an embed failure still saves the text but
  * nulls the vector — the row honestly leaves similarity retrieval, flagged
  * `embedDegraded`). Keyed on `(id, chat_memory_group_id)` so an episode outside
- * this chat's memory group is a 404, never touched. Dev-only: **404 in
- * production**.
+ * this chat's memory group is a 404, never touched. Admin-only: **404 for non-admin roles**.
  */
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  if (process.env.NODE_ENV === "production") return jsonError("not_found", "not found", 404);
+  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
   const { chatId, episodeId } = await ctx.params;
   const body = await readBody(req, patchBodySchema);
   if (!body.ok) return body.response;
@@ -56,7 +55,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
  * pruning a bad summary outright. Scope-checked the same way as PATCH.
  */
 export const DELETE = withUser<Params>(async (user, _req, ctx) => {
-  if (process.env.NODE_ENV === "production") return jsonError("not_found", "not found", 404);
+  if (user.role !== "admin") return jsonError("not_found", "not found", 404);
   const { chatId, episodeId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
