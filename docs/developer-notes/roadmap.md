@@ -112,6 +112,23 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat reply discipline + scene memory** — no plan doc (built direct on owner
+  instruction) — 2026-07-09 — the 1-on-1 chat turn grammar: a "Shaping each
+  reply" prefix block (resolve-then-one-move with a worked example pair,
+  ~three-paragraph baseline exceeded only for new scenes / major events,
+  freshness rule — never re-describe unchanged setting/outfit/scent) + sparse
+  intimate dialogue with the check-in refrain banned; an accumulating **chat
+  scene memory** (`scene_memory` jsonb on `character_chat_state`, migration
+  `0030` — capped places/details/connections, deterministic pre-turn movement
+  switch + archivist `scene` proposals merged oldest-out, injected as a Scene
+  tail block with establish-once / don't-recap directives, rollback-safe via
+  `pre_exchange_state`); the deterministic **response-shape + mood-pin** tail
+  line; **hook-cadence + check-in gates** over the last replies (span-parser
+  question detection); **sense-targeted Sensory focus** blocks
+  (smell/taste/touch/study × body region → scent baseline + hygiene band +
+  outfit + conditions, bounded-imagination clause, intimate targets gated); and
+  Aion 3.0's missing `NARRATOR_REASONING` knob (`effort: low`, provisional).
+  Docs: `prompts.md`, `character-chat.md`, `testing.md`.
 - **Dialogue attribution — render-owned speaker presentation** — no plan doc
   (built direct on owner instruction) — 2026-07-09 — the `[Name]` tag demoted
   from presentation to one attribution input: the session segmenter moved to

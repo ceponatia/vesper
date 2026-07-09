@@ -48,6 +48,12 @@ describe("narrativeProviderOptions", () => {
     });
   });
 
+  it("carries the provisional effort:low knob for Aion 3.0 (mirrors the 2.0 ruling)", () => {
+    expect(narrativeProviderOptions("aion-labs/aion-3.0")).toEqual({
+      openrouter: { reasoning: { effort: "low" } },
+    });
+  });
+
   it("combines latency routing, per-model exclusions, and the reasoning knob", () => {
     // GLM 5.2: latency routing + DeepInfra exclusion + effort:low.
     expect(narrativeProviderOptions("z-ai/glm-5.2", { sortLatency: true })).toEqual({

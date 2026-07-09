@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { chatCueInviteLine, detectChatCue, type ChatCueHint } from "./chat-intent";
+import {
+  buildChatReplyGates,
+  chatCueInviteLine,
+  detectChatCue,
+  detectSceneMovement,
+  detectSensoryFocus,
+  isCheckInReply,
+  replyEndsInQuestion,
+  type ChatCueHint,
+} from "./chat-intent";
 
 const cue = (overrides: Partial<ChatCueHint> = {}): ChatCueHint => ({
   proximity: false,
@@ -63,5 +72,108 @@ describe("chatCueInviteLine", () => {
 
   it("returns '' when nothing is invited", () => {
     expect(chatCueInviteLine(cue(), "Mara")).toBe("");
+  });
+});
+
+describe("detectSceneMovement (chat scene memory)", () => {
+  it("captures a destination after a movement verb + preposition + article", () => {
+    expect(detectSceneMovement("I follow her to the kitchen.")).toBe("kitchen");
+    expect(detectSceneMovement("Let's move to the living room.")).toBe("living room");
+    expect(detectSceneMovement("She leads you into the back garden.")).toBe("back garden");
+  });
+
+  it("captures adverbial destinations (outside / upstairs)", () => {
+    expect(detectSceneMovement("We head outside.")).toBe("outside");
+    expect(detectSceneMovement("Come on, let's go upstairs.")).toBe("upstairs");
+  });
+
+  it("does not misfire on non-movement 'to' phrases", () => {
+    expect(detectSceneMovement("I want to talk about your day.")).toBeNull();
+    expect(detectSceneMovement("Listen to the radio with me.")).toBeNull();
+    expect(detectSceneMovement("What did you do today?")).toBeNull();
+    expect(detectSceneMovement("")).toBeNull();
+  });
+});
+
+describe("detectSensoryFocus (scope guard)", () => {
+  it("detects a sense verb aimed at a body region / garment", () => {
+    expect(detectSensoryFocus("I breathe in the scent of her hair.")).toEqual({ sense: "smell", target: "hair", intimate: false });
+    expect(detectSensoryFocus("I run my fingers along your collarbone.")).toEqual({ sense: "touch", target: "collarbone", intimate: false });
+    expect(detectSensoryFocus("I take in the lines of her dress.")).toEqual({ sense: "study", target: "dress", intimate: false });
+    expect(detectSensoryFocus("I taste the salt on your neck.")).toEqual({ sense: "taste", target: "neck", intimate: false });
+  });
+
+  it("flags an intimate target", () => {
+    const hit = detectSensoryFocus("I cup her breasts.");
+    expect(hit).toEqual({ sense: "touch", target: "breasts", intimate: true });
+  });
+
+  it("returns null without a target noun (sense×TARGET only — 'I feel nervous' never fires)", () => {
+    expect(detectSensoryFocus("I feel nervous about tomorrow.")).toBeNull();
+    expect(detectSensoryFocus("She smells wonderful.")).toBeNull();
+    expect(detectSensoryFocus("What are you thinking about?")).toBeNull();
+    expect(detectSensoryFocus("")).toBeNull();
+  });
+});
+
+describe("replyEndsInQuestion (deliverable D — hook cadence)", () => {
+  it("fires when the last dialogue line ends in a question, including tag questions", () => {
+    expect(replyEndsInQuestion('She smiles. "How have you been?"')).toBe(true);
+    expect(replyEndsInQuestion('"You came back, didn\'t you?"')).toBe(true);
+  });
+
+  it("does not fire when a mid-reply question is followed by narration (the reply moves past it)", () => {
+    expect(replyEndsInQuestion('"Where were you?" She turns back to the window, not waiting.')).toBe(false);
+  });
+
+  it("does not fire when the reply ends on a statement or an action", () => {
+    expect(replyEndsInQuestion('"It\'s good to see you." She leans against the doorframe.')).toBe(false);
+    expect(replyEndsInQuestion("She just nods, saying nothing.")).toBe(false);
+  });
+
+  it("treats a texted comms line as a dialogue line", () => {
+    expect(replyEndsInQuestion("*Mara: you free tonight?*")).toBe(true);
+    expect(replyEndsInQuestion("*Mara: on my way.*")).toBe(false);
+  });
+});
+
+describe("isCheckInReply (deliverable D — intimate check-in)", () => {
+  it("matches the check-in solicitation patterns", () => {
+    expect(isCheckInReply('"Am I doing this right?" she breathes.')).toBe(true);
+    expect(isCheckInReply('"Does that feel good?"')).toBe(true);
+    expect(isCheckInReply('"Is this okay?"')).toBe(true);
+    expect(isCheckInReply('"Do you like that?"')).toBe(true);
+  });
+
+  it("does not match ordinary intimate dialogue", () => {
+    expect(isCheckInReply('"God, you feel incredible," she whispers.')).toBe(false);
+    expect(isCheckInReply("She arches into you without a word.")).toBe(false);
+  });
+});
+
+describe("buildChatReplyGates (deliverable D)", () => {
+  const q1 = '"How was your day?"';
+  const q2 = '"What did you get up to?"';
+  const statement = '"Good to see you." She sits.';
+
+  it("fires the hook-cadence note only when the last TWO replies both end in questions", () => {
+    const both = buildChatReplyGates({ recentReplies: [statement, q1, q2], intimate: false, name: "Mara" });
+    expect(both).toContain("ended in questions");
+    const one = buildChatReplyGates({ recentReplies: [q1, statement], intimate: false, name: "Mara" });
+    expect(one).toBe("");
+  });
+
+  it("fires the check-in gate only during an intimate beat when the previous reply solicited a check-in", () => {
+    const prev = '"Does that feel good?"';
+    const intimate = buildChatReplyGates({ recentReplies: [prev], intimate: true, name: "Mara" });
+    expect(intimate).toContain("No check-in questions this turn");
+    expect(intimate).toContain("Mara's experience");
+    // Same reply, non-intimate beat ⇒ no check-in gate.
+    expect(buildChatReplyGates({ recentReplies: [prev], intimate: false, name: "Mara" })).toBe("");
+  });
+
+  it("returns '' when neither gate fires", () => {
+    expect(buildChatReplyGates({ recentReplies: [statement], intimate: true, name: "Mara" })).toBe("");
+    expect(buildChatReplyGates({ recentReplies: [], intimate: true, name: "Mara" })).toBe("");
   });
 });

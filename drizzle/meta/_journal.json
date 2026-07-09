@@ -211,6 +211,13 @@
       "when": 1783609053667,
       "tag": "0029_narrow_rumiko_fujikawa",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783626159988,
+      "tag": "0030_parched_kree",
+      "breakpoints": true
     }
   ]
 }

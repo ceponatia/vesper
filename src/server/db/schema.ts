@@ -435,6 +435,14 @@ export const characterChatState = pgTable(
      * wall-clock anchor and its between-visit recovery were removed outright.
      */
     clockMinutes: integer("clock_minutes").notNull().default(0),
+    /**
+     * ChatSceneMemory (contracts/turns/chat-scene-memory.ts) — the accumulating memory of
+     * the narrator-imagined setting: current place, time of day, and a bounded set of named
+     * places with durable details + connections. Maintained deterministic-first (movement
+     * switches `current`) then reconciled from the archivist's `scene` proposal. One jsonb
+     * blob so field additions are never migrations; parsed defensively at the boundary.
+     */
+    sceneMemory: jsonb("scene_memory").notNull().default({}),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],

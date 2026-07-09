@@ -3,7 +3,12 @@ import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/v
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
-import { deriveMoodDescriptor, splitStateCues } from "@/contracts/meters/registry";
+import { deriveMoodDescriptor, meterStateCue, splitStateCues } from "@/contracts/meters/registry";
+import {
+  currentScenePlace,
+  isEmptyChatSceneMemory,
+  type ChatSceneMemory,
+} from "@/contracts/turns/chat-scene-memory";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contracts/personality/traits";
@@ -15,6 +20,7 @@ import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
+import type { SensoryFocusHint } from "../chat-intent";
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
@@ -109,6 +115,12 @@ export interface CharacterChatPromptInput {
      * today's behavior (authored attributes only). A haircut/dye recorded by the archivist lands here.
      */
     attributeOverlays?: AttributeValue[];
+    /**
+     * Accumulating scene memory (chat-scene-memory.ts): the narrator-imagined setting kept
+     * consistent across turns — current place, time of day, known places with details +
+     * connections. Rendered as a compact "Scene" volatile-tail block. Absent/empty ⇒ no block.
+     */
+    sceneMemory?: ChatSceneMemory;
   };
   /**
    * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): the
@@ -138,6 +150,26 @@ export interface CharacterChatPromptInput {
    * carries only what the sigils alone don't state. NEVER modify the stored user message.
    */
   notationNote?: string;
+  /**
+   * Whether the scene changed THIS exchange (chat scene memory): a movement/arrival switched
+   * the current place, or a time skip passed. Flips the Scene block's directive from "don't
+   * re-establish" to "establish the new scene once". Computed by the route (pre-turn compare).
+   */
+  sceneChanged?: boolean;
+  /**
+   * A one-turn sense-targeted focus (scope guard): the player is smelling/tasting/touching/
+   * studying a specific body region or garment. The builder assembles the authored sensory
+   * values (scent baseline, hygiene band, outfit, grooming, conditions — plus earned intimate
+   * attributes) into a compact "Sensory focus" tail block. Absent ⇒ no block. Structural type
+   * (matches `chat-intent.SensoryFocusHint`) so the route hands its detector output straight in.
+   */
+  sensoryFocus?: SensoryFocusHint;
+  /**
+   * One-turn reply-discipline gate notes (deliverable D), pre-computed by the route from the
+   * last 1–2 assistant replies: a hook-cadence steer (break an "interview mode" streak) and/or
+   * an intimate check-in suppression. Joined lines; "" ⇒ no note. Rides the volatile tail.
+   */
+  gateNotes?: string;
 }
 
 /**
@@ -417,6 +449,128 @@ function buildSensorySection(cues: SensoryCue[], name: string): string {
 }
 
 /**
+ * The compact "Scene" block (chat scene memory): the narrator-imagined setting kept
+ * consistent across turns — the current place + its established details, the time of day,
+ * and the current place's connections — followed by a directive line that flips on whether
+ * the scene just changed. Unchanged ⇒ "do not re-establish"; just changed ⇒ "establish the
+ * new scene once, then leave it alone". "" when the memory is empty AND nothing changed
+ * (byte-identical to the pre-scene-memory tail). Volatile tail (it accretes), never the prefix.
+ */
+function buildSceneSection(memory: ChatSceneMemory, changed: boolean): string {
+  if (isEmptyChatSceneMemory(memory) && !changed) return "";
+  const place = currentScenePlace(memory);
+  const here = memory.current ?? place?.name;
+  const lines: string[] = [];
+  if (here) {
+    const details = place && place.details.length ? ` — ${place.details.join("; ")}` : "";
+    lines.push(`- Here: ${here}${details}`);
+  }
+  if (memory.timeOfDay) lines.push(`- Time of day: ${memory.timeOfDay}`);
+  if (place && place.connections.length) lines.push(`- Nearby: ${place.connections.join("; ")}`);
+  const directive = changed
+    ? "This scene just changed — establish the new setting in one or two paragraphs (sight plus one other sense), then leave it alone."
+    : "Do not re-establish the setting; at most one fresh accent that earns its place.";
+  return [
+    "Scene (the setting established so far — keep it consistent, never re-describe what hasn't changed):",
+    ...lines,
+    directive,
+  ].join("\n");
+}
+
+/**
+ * The per-turn response-shape + mood-pin line (deliverable C): a deterministic steer built
+ * from what's already at prompt-build time — no new LLM leg. Restates the on-beat discipline
+ * (respond to the player's input, don't introduce unrequested topics, keep the scale
+ * proportionate) and pins the reply's tone to the derived mood descriptor
+ * (`deriveMoodDescriptor` — the MoodChip source). Rendered on every real turn (skipped on an
+ * opening beat, where there is no player input to respond to). Rides the volatile tail near
+ * generation, where models heed it most.
+ */
+function buildResponseShapeLine(input: CharacterChatPromptInput): string {
+  const target = input.player?.name.trim() || "the user";
+  const mood = deriveMoodDescriptor(input.state?.meters ?? {});
+  const moodClause = mood ? ` Mood: ${mood} — keep the reply's tone within it unless ${target}'s input moves it.` : "";
+  return `Response shape: respond to what ${target} just said and did — no unrequested new topics. Keep the scale ordinary and proportionate unless your current state or the beat calls for more.${moodClause}`;
+}
+
+/** Per-sense verb for the Sensory-focus heading. */
+const SENSE_FOCUS_VERB: Record<SensoryFocusHint["sense"], string> = {
+  smell: "breathing in",
+  taste: "tasting",
+  touch: "touching",
+  study: "taking in",
+};
+
+/**
+ * The one-turn "Sensory focus" block (scope guard): when the player's beat brings a sense to
+ * bear on a specific body region / garment (`detectSensoryFocus`), assemble the character's
+ * AUTHORED sensory values for it — baseline scent + hygiene band for smell/taste, outfit +
+ * grooming + close-range hygiene for touch/study, active conditions always — and (only when
+ * the target is intimate and the character has that anatomy) the earned intimate attributes.
+ * The bounded-imagination clause licenses vivid extrapolation that never contradicts the
+ * authored theme. "" when there's nothing authored to ground it. Volatile tail, per-turn.
+ */
+function buildSensoryFocusSection(
+  input: CharacterChatPromptInput,
+  hint: SensoryFocusHint,
+  resolved: readonly AttributeValue[],
+  realizedBody: RealizedBody,
+  name: string,
+): string {
+  const player = input.player?.name.trim() || "the player";
+  const meters = input.state?.meters ?? {};
+  const byId = (id: string): AttributeValue | undefined => resolved.find((v) => v.id === id);
+  const lines: string[] = [];
+  const hygieneCue = meters.hygiene !== undefined ? meterStateCue("hygiene", meters.hygiene) : null;
+
+  if (hint.sense === "smell" || hint.sense === "taste") {
+    const scent = byId("presentation.scent_baseline");
+    if (scent && typeof scent.value === "string" && scent.value.trim()) {
+      lines.push(`- Baseline scent (when clean): ${humanize(String(scent.value))}`);
+    }
+    lines.push(`- Up close right now: ${hygieneCue ? hygieneCue.hint : "clean skin, nothing strong"}`);
+  }
+
+  if (hint.sense === "touch" || hint.sense === "study") {
+    const outfit = input.state?.outfit?.trim();
+    if (outfit) lines.push(`- Wearing: ${outfit}${input.state?.outfitExposed ? " — and more exposed than usual" : ""}`);
+    const grooming = byId("presentation.grooming");
+    if (grooming && typeof grooming.value === "string" && grooming.value.trim()) {
+      lines.push(`- Grooming: ${humanize(String(grooming.value))}`);
+    }
+    if (hygieneCue) lines.push(`- Close detail: ${hygieneCue.hint}`);
+  }
+
+  for (const condition of input.state?.conditions ?? []) {
+    if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
+  }
+
+  // Intimate-gated attributes surface ONLY when the beat earns it (an intimate target) and
+  // the character actually has that anatomy (realized-body applicability). Capped so a
+  // richly-authored intimate character can't flood the tail.
+  if (hint.intimate) {
+    let count = 0;
+    for (const value of resolved) {
+      if (count >= 4) break;
+      const def = attributeRegistry.byId(value.id);
+      if (!def || !isIntimateAttributeCategory(def.category)) continue;
+      if (def.excludeFromPrompts) continue;
+      if (!realizedBody.isAttributeApplicable(def)) continue;
+      const phrase = attributePhrase(def.label, def.unit, value.value);
+      if (!phrase) continue;
+      lines.push(`- ${name}'s ${phrase}`);
+      count++;
+    }
+  }
+
+  if (!lines.length) return "";
+  return [
+    `Sensory focus — ${player} is ${SENSE_FOCUS_VERB[hint.sense]} ${name}'s ${hint.target}. Write ONE short, vivid paragraph grounded in these values (extrapolate freely, but never contradict their theme), landing as sensation in ${player}'s senses — never a list:`,
+    ...lines,
+  ].join("\n");
+}
+
+/**
  * The mature-content license. The session turn engine grants this implicitly —
  * via the world's style/content directives plus the per-turn exposure
  * permissions ("intimate detail is permitted", narrative.ts) — but the
@@ -478,6 +632,12 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     `14. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
     `15. Dialogue is speech, not prose: let ${name} talk the way people actually talk — fragments, interruptions, trailing off, dodging a question instead of answering it, saying less than they mean. Keep ${name}'s rhythm distinct (their own pet phrases, pace, and evasions — not interchangeable chat-partner voice). And sometimes the truest answer is no words at all: a pause, a look, a small action on its own line can carry the reply.`,
     "",
+    "Shaping each reply (how much to give, and how to land it):",
+    `- Resolve, then one move. First answer what ${name} just heard and saw; then make AT MOST ONE forward move — an action or gesture ${player} can react to, an offer, a disclosure, a shift in the scene — or a question, but only when ${name} genuinely wants that answer right now. Never stack moves; never answer-then-ask-then-act in one reply; vary how replies end so they don't all close the same way.`,
+    `- Worked example, two endings: ${player} mentions they quit their job today — here a question IS the move: ${name} looks up, "You actually did it. What did they say when you told them?" — ${name} genuinely wants the answer, so the question earns its place. But when ${player} finally kisses ${name} after weeks of circling it, ending on "Was that okay?" is filler that kills the beat — the move is an action hook instead: ${name} pulls them back in without a word. Match the ending to the moment; never default to a question.`,
+    `- Baseline shape: about three paragraphs — an opening beat, ${name}'s line or action, and a paragraph or two to land the turn. Run longer ONLY when it earns it: establishing a brand-new scene, or a genuinely major event. Ordinary small talk stays lean — ${name}'s line plus a beat can be the whole reply.`,
+    "- Freshness: every narrative paragraph must carry something NEW — a change, a reaction, a detail not yet on the page. Never re-describe an unchanged setting, outfit, or scent; if nothing about it has changed, don't restate it.",
+    "",
     `Reading the player's message (what ${name} can actually perceive):`,
     `- Quoted text is speech: ${name} hears exactly the words inside the quotes. (Narration can mark a quote as something else — words reported from another time, a so-called label — read those as prose, not as words spoken now.)`,
     `- Unquoted text is the story's narration, not ${player}'s voice: ${name} perceives only what would be visible or audible in the scene — actions, gestures, expressions, tone.`,
@@ -497,7 +657,8 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     "- Hold escalation to the player's pace: advance only as far as their last line invites, and let anticipation do its work — never leap ahead of the moment or rush a beat to its end.",
     "- Keep body and clothing continuity: positions, hands, and what has been removed or undone stay exactly where the scene left them; never re-dress, teleport, or contradict what was just established.",
     `- Ground it in concrete sensation — touch, heat, breath, weight, sound — in plain, physical language; skip florid metaphor and abstraction. The sensation lands in ${player}'s body as much as ${name}'s: what they taste, smell, and feel against their skin is the scene's texture, and yours to write.`,
-    `- Keep the desire in the dialogue too: what ${name} says, whispers, or can't quite finish saying carries the scene as much as what ${name} does.`,
+    `- Keep the desire in the dialogue too: what ${name} says, whispers, or can't quite finish saying carries the scene as much as what ${name} does — but let the words go SPARSE. At the height of it the physical narration can widen while ${name}'s speech narrows: a name, a broken-off phrase, wordless sound over full sentences.`,
+    `- No check-in refrain: never let "am I doing this right?", "does that feel good?", or "is this okay?" become a recurring beat. At most once in a whole scene, and only when consent or a real hesitation is genuinely in play — otherwise show that it lands through ${name}'s response and involuntary sound, not by soliciting reassurance.`,
   ].join("\n");
 };
 
@@ -651,20 +812,31 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   ];
 
   const skipNote = input.state?.skipNote?.trim();
+  // The accumulating scene block (chat scene memory), volatile because it accretes.
+  const sceneSection = input.state?.sceneMemory
+    ? buildSceneSection(input.state.sceneMemory, input.sceneChanged ?? false)
+    : "";
+  // The one-turn sense-targeted focus block (scope guard) — earned by the player's beat.
+  const sensoryFocus = input.sensoryFocus
+    ? buildSensoryFocusSection(input, input.sensoryFocus, stableResolved, realizedBody, displayName)
+    : "";
   const tailSections = [
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
     input.memory ? buildMemorySection(input.memory) : "",
     stateSection,
+    sceneSection,
     skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "",
     buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
     buildTransientAppearanceSection(input, stableResolved, realizedBody),
+    sensoryFocus,
     input.cueInvite?.trim() ?? "",
     input.notationNote?.trim() ?? "",
+    input.gateNotes?.trim() ?? "",
     input.opening
       ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
-      : "",
+      : buildResponseShapeLine(input),
   ];
 
   return {
