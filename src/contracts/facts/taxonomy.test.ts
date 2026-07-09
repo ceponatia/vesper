@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { factDraftSchema } from "./taxonomy";
+import { DiagnosticCollector } from "../diagnostics";
+import {
+  DEFAULT_FACT_CHANNEL,
+  factChannelReachesNarrator,
+  factDraftSchema,
+  NARRATOR_VISIBLE_FACT_CHANNELS,
+  parseFactChannel,
+} from "./taxonomy";
 
 const base = {
   kind: "relationship",
@@ -57,5 +64,51 @@ describe("factDraftSchema degradation", () => {
     // handled by parseOr upstream, not silently invented here.
     expect(factDraftSchema.safeParse({ ...base, subjectName: "" }).success).toBe(false);
     expect(factDraftSchema.safeParse({ ...base, text: "" }).success).toBe(false);
+  });
+
+  it("carries a channel through, defaulting to undefined when absent (validated at the write boundary)", () => {
+    expect(factDraftSchema.parse(base).channel).toBeUndefined();
+    expect(factDraftSchema.parse({ ...base, channel: "private" }).channel).toBe("private");
+    // A raw (even unknown) string passes through — the fact is kept; the write boundary validates it.
+    expect(factDraftSchema.parse({ ...base, channel: "telepathic" }).channel).toBe("telepathic");
+    // A non-string catches to undefined ⇒ the perceived default downstream (never drops the fact).
+    expect(factDraftSchema.parse({ ...base, channel: 7 }).channel).toBeUndefined();
+    expect(factDraftSchema.safeParse({ ...base, channel: "private" }).success).toBe(true);
+  });
+});
+
+describe("parseFactChannel — the fact-channel trust boundary (slice 6)", () => {
+  it("passes a known channel through with no diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    expect(parseFactChannel("private", sink)).toBe("private");
+    expect(parseFactChannel("ooc", sink)).toBe("ooc");
+    expect(parseFactChannel("perceived", sink)).toBe("perceived");
+    expect(sink.items).toHaveLength(0);
+  });
+
+  it("degrades a missing/absent channel to perceived SILENTLY (ordinary un-classified write)", () => {
+    const sink = new DiagnosticCollector();
+    expect(parseFactChannel(undefined, sink)).toBe(DEFAULT_FACT_CHANNEL);
+    expect(parseFactChannel(null, sink)).toBe(DEFAULT_FACT_CHANNEL);
+    expect(parseFactChannel("", sink)).toBe(DEFAULT_FACT_CHANNEL);
+    expect(sink.items).toHaveLength(0);
+  });
+
+  it("degrades an UNKNOWN channel to perceived WITH a boundary diagnostic (fail closed)", () => {
+    const sink = new DiagnosticCollector();
+    expect(parseFactChannel("telepathic", sink, "facts.channel")).toBe(DEFAULT_FACT_CHANNEL);
+    expect(sink.items.some((d) => d.code === "parse.boundary_failed" && d.path === "facts.channel")).toBe(true);
+  });
+});
+
+describe("factChannelReachesNarrator — the RAG visibility fence (slice 6)", () => {
+  it("admits only perceived facts to the narrator; private + ooc are fenced out", () => {
+    expect(factChannelReachesNarrator("perceived")).toBe(true);
+    expect(factChannelReachesNarrator("private")).toBe(false);
+    expect(factChannelReachesNarrator("ooc")).toBe(false);
+  });
+
+  it("derives the narrator-visible channel set as exactly [perceived]", () => {
+    expect(NARRATOR_VISIBLE_FACT_CHANNELS).toEqual(["perceived"]);
   });
 });

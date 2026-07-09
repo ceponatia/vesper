@@ -1,3 +1,4 @@
+import { parseMessageSpans, spanChannel } from "@/lib/message-spans";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
@@ -13,7 +14,7 @@ import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private one-on-one in-character chat. After each exchange you read the player's latest message and the character's reply, then produce a single JSON object with five fields:
 
 1. "episodeSummary": 1-3 sentences, past tense, third person, capturing WHAT HAPPENED this exchange (the beat, not a stat dump). Empty string if nothing memorable happened (idle small talk).
-2. "facts": durable declarative knowledge worth recalling much later — relationship shifts, revealed preferences, promises, disclosed history, named people/places. One sentence each; "subjectName" exactly as written (usually the character or the player); "subjectKind" one of character|player|location|item|world; "confidence" 0-1. Prefer a few strong facts to many weak ones; 0-3 per exchange is typical, [] is fine. Never record transient physical state (mood, arousal, tipsiness) as a fact — that is tracked elsewhere.
+2. "facts": durable declarative knowledge worth recalling much later — relationship shifts, revealed preferences, promises, disclosed history, named people/places. One sentence each; "subjectName" exactly as written (usually the character or the player); "subjectKind" one of character|player|location|item|world; "confidence" 0-1; "channel" one of perceived|private (see rule 6). Prefer a few strong facts to many weak ones; 0-3 per exchange is typical, [] is fine. Never record transient physical state (mood, arousal, tipsiness) as a fact — that is tracked elsewhere.
 3. "memoryQueries": 0-3 short search phrases naming what the NEXT turn may need to recall (a person, a promise, a topic just raised). [] when nothing specific is pending.
 4. "attributeChanges": RARE lasting changes to the character's own MUTABLE physical attributes that happened this exchange — a haircut, a dye job, a new tattoo, a weight change — as { "participantName": "<the character>", "attributeId": "<registry id, e.g. hair.length>", "value": <new value> }. Almost always []. NEVER inherent traits (eye colour, gender, age, species, bone structure) and never transient state (mood, arousal, tipsiness, a flush) — only a real, lasting change to how the character looks from now on.
 5. "openLoops": the character's unfinished business — a promise to keep, a question left hanging, something they said they'd tell or do later. Re-emit the FULL list every time (0-3 short phrases, each under ~12 words): carry forward still-open items from "Currently open loops" below, DROP any this exchange resolved, add new ones it opened. [] when nothing is pending.
@@ -23,10 +24,14 @@ Rules:
 2. Names exactly as written; never invent people, places, or events not present in the exchange.
 3. Quoted or hypothetical speech may yield facts about what was SAID (a promise, a stated preference), never about physical events that did not occur.
 4. You read the player's entire message — narration and inner thoughts as well as spoken words — not only what the character could perceive; draw the summary and facts from all of it.
-5. ${UNTRUSTED_DATA_NOTICE}
+5. Tag each fact with the CHANNEL it was established through: "perceived" when it comes from the player's quoted speech or a visible action/expression the character could see or hear; "private" when it is drawn ONLY from the player's unspoken inner thoughts (something the character never perceived). Default to "perceived" when unsure. Text inside ((double parentheses)) is out-of-character direction to you — record NO facts from it at all.
+6. ${UNTRUSTED_DATA_NOTICE}
 
 Example — the player tells the character their sister is getting married in Prague:
-{"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"],"attributeChanges":[],"openLoops":["hear how the wedding toast goes"]}
+{"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9,"channel":"perceived"}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"],"attributeChanges":[],"openLoops":["hear how the wedding toast goes"]}
+
+Example — the player privately thinks they're falling for the character but only says goodnight aloud:
+{"episodeSummary":"They said an easy goodnight after a long, warm evening of talk.","facts":[{"kind":"relationship","subjectName":"the player","subjectKind":"player","text":"The player is quietly starting to fall for Mara.","tags":["attraction"],"confidence":0.7,"channel":"private"}],"memoryQueries":[],"attributeChanges":[],"openLoops":[]}
 
 Example — the character has her long hair cut to a bob during the scene:
 {"episodeSummary":"Mara let the player talk her into the salon chair and had her long hair cut to a sharp chin-length bob; she kept checking her reflection afterward, half thrilled and half unsure.","facts":[],"memoryQueries":["Mara's new haircut"],"attributeChanges":[{"participantName":"Mara","attributeId":"hair.length","value":"chin-length bob"}],"openLoops":[]}`;
@@ -41,6 +46,33 @@ export interface ChatArchivistPromptInput {
   openLoops?: readonly string[];
 }
 
+/**
+ * Parser-derived channel hint (player-input-perception.plan.md slice 6): when the player
+ * used notation, the deterministic spans turn the fact-channel classification into a cheap
+ * parse. We surface only the parts that would file on a NON-perceived channel — a thought
+ * (⇒ private) or an OOC direction (⇒ skip) — since everything else defaults to perceived
+ * anyway; "" when the message carries no such sigil (the archivist judges semantically).
+ * Reuses the SHARED `@/lib/message-spans` parser (never a second regex — jscpd gate) and,
+ * like `chatNotationNote`, describes the notation's STRUCTURE rather than echoing the raw
+ * (untrusted) thought text back outside the fence.
+ */
+function channelHint(message: string, characterName: string, playerName: string): string {
+  const spans = parseMessageSpans(message, { playerName, knownNames: characterName ? [characterName] : [] });
+  const hasPrivate = spans.some((s) => spanChannel(s.kind) === "private");
+  const hasOoc = spans.some((s) => s.kind === "ooc");
+  if (!hasPrivate && !hasOoc) return "";
+  const lines: string[] = [];
+  if (hasPrivate) {
+    lines.push(
+      `- The *asterisked* passage is the player's private thought — ${characterName} did NOT perceive it. File any fact drawn only from it with "channel":"private".`,
+    );
+  }
+  if (hasOoc) {
+    lines.push(`- The ((double-parenthesized)) text is out-of-character direction — record NO fact from it.`);
+  }
+  return `Channel notes (the player used notation this message):\n${lines.join("\n")}`;
+}
+
 export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): string {
   const speaker = input.playerName.trim() || "Player";
   // The exchange (and the prior loops derived from it) is untrusted (player +
@@ -51,10 +83,12 @@ export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): strin
     `${input.characterName}: ${input.exchange.assistant.trim()}`,
   ].join("\n");
   const loops = (input.openLoops ?? []).map((l) => l.trim()).filter(Boolean);
+  const hint = channelHint(input.exchange.player, input.characterName, input.playerName.trim() || "the player");
   return [
     `Character: ${input.characterName}`,
     `Player: ${input.playerName.trim() || "the player"}`,
     `Currently open loops:\n${loops.length ? fenceUntrusted("open loops", loops.map((l) => `- ${l}`).join("\n")) : "(none)"}`,
     `Latest exchange:\n${fenceUntrusted("latest exchange", transcript)}`,
+    ...(hint ? [hint] : []),
   ].join("\n\n");
 }

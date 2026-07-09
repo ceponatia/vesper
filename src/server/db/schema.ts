@@ -949,6 +949,15 @@ export const facts = pgTable(
      * inspector edit ("dev"). Session-lane rows keep the harmless default.
      */
     origin: text("origin", { enum: ["extracted", "player", "dev"] }).notNull().default("extracted"),
+    /**
+     * The channel this fact was established through (player-input-perception.plan.md slice 6 —
+     * the RAG visibility fence). TEXT with headroom (NOT a pg enum — forward-compatible-schema
+     * preference); vocabulary today `perceived | private | ooc` (contracts/facts/taxonomy.ts).
+     * `perceived` renders to the narrator as established knowledge; `private` (thought-derived)
+     * and `ooc` are excluded from narrator-bound retrieval. Default `perceived` migrates every
+     * existing row and is the degraded default when classification is missing.
+     */
+    channel: text("channel").notNull().default("perceived"),
     /** Participant ids co-located at insert (interim semantics; perception refines to true witness sets). Write-only until the knowledge ledger ships. */
     witnessedBy: jsonb("witnessed_by").notNull().default([]),
     status: text("status", { enum: ["active", "superseded", "retracted"] }).notNull().default("active"),
