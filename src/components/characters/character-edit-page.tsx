@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import type { Diagnostic } from "@/contracts";
+import { mergeFillDraft } from "@/lib/character-fill";
 import {
   characterDraftSchema,
   charactersApi,
@@ -32,6 +34,8 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const [chatModel, setChatModel] = useState<string>(() => resolveChatModelId(null));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [forging, setForging] = useState(false);
+  const [forgeDiagnostics, setForgeDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
@@ -64,8 +68,8 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     setChatModel(resolveChatModelId(null));
   }
 
-  const save = async () => {
-    if (!draft) return;
+  const save = async (): Promise<boolean> => {
+    if (!draft) return false;
     const gen = editGenRef.current;
     setSaving(true);
     const result = await charactersApi.update(characterId, {
@@ -79,9 +83,37 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
       if (editGenRef.current === gen) setDirty(false);
       toast.push({ title: "Character saved", tone: "success" });
       detail.reload({ silent: true });
-    } else {
-      toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+      return true;
     }
+    toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+    return false;
+  };
+
+  /**
+   * In-sheet Forge (character-sheet-forge.plan.md): complete every empty part
+   * of the sheet from what the player entered; never overwrites it. Typed
+   * content is committed BEFORE the LLM runs (save-first, abort on failure),
+   * and the generated additions land as an unsaved draft — the save bar is the
+   * review/undo step.
+   */
+  const forgeFill = async () => {
+    if (!draft || forging || saving) return;
+    if (dirty && !(await save())) return;
+    setForging(true);
+    const result = await charactersApi.forge({ mode: "fill", draft });
+    setForging(false);
+    if (!result.ok) {
+      toast.push({ title: "Forge failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    const { draft: filled, diagnostics } = result.data;
+    setForgeDiagnostics(diagnostics);
+    // Fill-merge over the CURRENT draft so edits made while the request was in
+    // flight also beat the generated content.
+    editGenRef.current += 1;
+    setDraft((current) => (current ? mergeFillDraft(current, filled) : filled));
+    setDirty(true);
+    toast.push({ title: "Sheet forged", description: "Review the additions, then save.", tone: "success" });
   };
 
   /**
@@ -140,7 +172,17 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     <PageContainer>
       <div className="mb-6 flex items-center justify-between gap-4">
         <h1 className="prose-display text-2xl">{draft.name || "Untitled character"}</h1>
-        {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => void forgeFill()}
+            busy={forging}
+            disabled={saving}
+            title="Complete every empty part of the sheet from what you've entered — never changes what you wrote. Saves your edits first."
+          >
+            ✦ Forge the rest
+          </Button>
+          {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
+        </div>
       </div>
       <CharacterEditor
         draft={draft}
@@ -154,6 +196,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         onAvatarChanged={() => detail.reload({ silent: true })}
         chatModel={chatModel}
         onChatModelChange={(modelId) => void saveChatModel(modelId)}
+        diagnostics={forgeDiagnostics}
       />
       <SaveBar
         dirty={dirty}
