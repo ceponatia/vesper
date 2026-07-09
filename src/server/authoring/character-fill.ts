@@ -1,0 +1,142 @@
+import {
+  DEFAULT_SPECIES_ID,
+  diag,
+  heritageFor,
+  inferHeritageFromText,
+  inferSpeciesFromText,
+  speciesById,
+  type AttributeValue,
+  type DiagnosticSink,
+} from "@/contracts";
+import { isPlaceholderName, isSpeciesUnset, mergeFillDraft } from "@/lib/character-fill";
+import {
+  applyCharacterSectionPatch,
+  forgeCharacterSection,
+  type CharacterForgeContext,
+  type CharacterForgeSection,
+} from "./character-forge";
+import type { CharacterDraft } from "./drafts";
+import type { ClothingCandidateLookup, LibraryLookup } from "./library";
+
+/**
+ * Sheet fill (character-sheet-forge.plan.md): the in-sheet Forge. Runs the
+ * existing forge section legs with the authored sheet rendered as a fixed
+ * concept, then applies the fill-merge policy (lib/character-fill.ts) so
+ * nothing the player entered ever changes — the merge is the guarantee, the
+ * prompt directive just keeps the model from wasting effort restating it.
+ */
+
+const FILL_DIRECTIVE = [
+  "This is a partially-authored character sheet. Every detail listed above is",
+  "authored and FIXED — do not restate, alter, or contradict any of it.",
+  "Generate only what is missing, consistent with the authored material.",
+].join(" ");
+
+function formatSheetValue(value: AttributeValue["value"]): string {
+  return Array.isArray(value) ? value.join("+") : String(value);
+}
+
+/**
+ * Render the authored sheet as the forge legs' concept text: everything the
+ * player entered, compactly, followed by the fixed-content directive. An empty
+ * sheet degrades to an invent-freely concept so a blank character still forges.
+ */
+export function renderSheetConcept(draft: CharacterDraft): string {
+  const p = draft.profile;
+  const lines: string[] = [];
+  if (!isPlaceholderName(draft.name)) lines.push(`Name: ${draft.name.trim()}`);
+  const species = speciesById(p.speciesId);
+  if (species && species.id !== DEFAULT_SPECIES_ID) {
+    const heritage = p.heritageId ? heritageFor(species.id, p.heritageId) : undefined;
+    lines.push(`Species: ${heritage ? `${species.label} (${heritage.label} heritage)` : species.label}`);
+  }
+  if (p.age.trim()) lines.push(`Age: ${p.age.trim()}`);
+  if (p.bio.trim()) lines.push(`Bio: ${p.bio.trim()}`);
+  if (p.personality.trim()) lines.push(`Personality: ${p.personality.trim()}`);
+  if (p.voice?.trim()) lines.push(`Voice: ${p.voice.trim()}`);
+  if (p.aliases.length > 0) lines.push(`Aliases: ${p.aliases.join(", ")}`);
+  if (draft.tags.length > 0) lines.push(`Library tags: ${draft.tags.join(", ")}`);
+  if (p.tags.length > 0) lines.push(`Disposition tags: ${p.tags.join(", ")}`);
+  if (p.preferences.length > 0) {
+    lines.push(`Preferences: ${p.preferences.map((pref) => `${pref.valence}s ${pref.target} (${pref.intensity}/10)`).join("; ")}`);
+  }
+  if (p.traits.length > 0) lines.push(`Traits: ${p.traits.map((t) => `${t.id}=${t.value}`).join(", ")}`);
+  if (p.attributes.length > 0) {
+    lines.push(`Attributes: ${p.attributes.map((a) => `${a.id}=${formatSheetValue(a.value)}`).join(", ")}`);
+  }
+  if (p.defaultOutfit.length > 0) {
+    lines.push(`Default outfit: already authored (${p.defaultOutfit.length} garments) — fixed.`);
+  }
+  if (lines.length === 0) {
+    return "An original character. Nothing is authored yet — invent a compelling, grounded character freely.";
+  }
+  return [...lines, "", FILL_DIRECTIVE].join("\n");
+}
+
+/**
+ * Adopt an inferred species while the body cluster is still at the blank-create
+ * default ("a succubus barmaid" in the bio fills the species — that IS the
+ * feature on an untouched sheet). Any authored body intent freezes the cluster;
+ * mirrors the create-mode inference + the editor's species cascade.
+ */
+export function adoptInferredSpecies(draft: CharacterDraft, sink?: DiagnosticSink): CharacterDraft {
+  if (!isSpeciesUnset(draft.profile)) return draft;
+  const sheetText = [draft.name, draft.profile.bio, draft.profile.personality].join("\n");
+  const species = inferSpeciesFromText(sheetText)?.species;
+  if (!species || species.id === DEFAULT_SPECIES_ID) return draft;
+  const heritage = inferHeritageFromText(species.id, sheetText);
+  const groups = [...(species.defaultFeatureGroups ?? []), ...(heritage?.defaultFeatureGroups ?? [])];
+  sink?.push(
+    diag("info", "forge.character.fill.species_adopted", `adopted species "${species.id}" inferred from the sheet`, {
+      context: { speciesId: species.id, heritageId: heritage?.id },
+    }),
+  );
+  return {
+    ...draft,
+    profile: {
+      ...draft.profile,
+      speciesId: species.id,
+      heritageId: heritage?.id,
+      bodyPlanId: species.bodyPlanId,
+      bodyFeatures: groups.length > 0 ? [...new Set(groups)] : undefined,
+    },
+  };
+}
+
+/**
+ * The legs worth running for this sheet. Profile and attributes always run
+ * (their merges are additive per field/id); the outfit leg is skipped entirely
+ * when any garment is authored — an outfit is a coherent set, and the fill
+ * would discard the result anyway (no spend on a leg we won't use).
+ */
+export function fillSectionsToRun(draft: CharacterDraft): CharacterForgeSection[] {
+  const outfitAuthored = draft.profile.defaultOutfit.length > 0 || draft.suggestedItems.length > 0;
+  return outfitAuthored ? ["profile", "attributes"] : ["profile", "attributes", "outfit"];
+}
+
+export interface FillCharacterInput {
+  draft: CharacterDraft;
+  userId: string;
+  sink?: DiagnosticSink;
+  findItems?: LibraryLookup;
+  listCandidates?: ClothingCandidateLookup;
+  useFallbacks?: boolean;
+}
+
+/** Complete a partially-authored sheet: adopt species, run the legs, fill-merge. */
+export async function forgeCharacterFill(input: FillCharacterInput): Promise<CharacterDraft> {
+  const base = adoptInferredSpecies(input.draft, input.sink);
+  const context: CharacterForgeContext = {
+    prompt: renderSheetConcept(base),
+    userId: input.userId,
+    sink: input.sink,
+    draft: base,
+    findItems: input.findItems,
+    listCandidates: input.listCandidates,
+    useFallbacks: input.useFallbacks,
+  };
+  const patches = await Promise.all(fillSectionsToRun(base).map((section) => forgeCharacterSection(section, context)));
+  let generated = base;
+  for (const patch of patches) generated = applyCharacterSectionPatch(generated, patch);
+  return mergeFillDraft(base, generated);
+}

@@ -805,7 +805,7 @@ export const charactersApi = {
   remove: (id: string) => apiDelete(`/api/characters/${id}`),
   /** Clone a public (or own) character into your library as an owned, private copy. */
   clone: (id: string) => apiPost(createdRefSchema, `/api/characters/${id}/clone`, {}),
-  forge: (body: { prompt: string; section?: CharacterForgeSection; draft?: CharacterDraft }) =>
+  forge: (body: { prompt?: string; mode?: "create" | "fill"; section?: CharacterForgeSection; draft?: CharacterDraft }) =>
     apiPost(forgeResponseSchema(characterDraftSchema), "/api/characters/forge", body),
   generateAvatar: (id: string, body: { model?: AvatarImageModel } = {}) =>
     apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
