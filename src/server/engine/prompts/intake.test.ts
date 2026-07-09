@@ -69,4 +69,9 @@ describe("INTAKE_SYSTEM", () => {
     // at least one example carries a focus object
     expect(INTAKE_SYSTEM).toContain('"focus":{"primaryResponse"');
   });
+
+  it("asserts the state-agent exemption: reads the whole message, not just what a character perceives (player-input-perception.plan.md slice 3)", () => {
+    expect(INTAKE_SYSTEM).toMatch(/narration and inner thoughts are in scope for you/i);
+    expect(INTAKE_SYSTEM).toMatch(/not only what a character could hear or see/i);
+  });
 });

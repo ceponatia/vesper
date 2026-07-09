@@ -31,8 +31,9 @@ ${conceptCatalog()}
 Rules:
 1. Output ONLY the JSON object — no markdown, no commentary.
 2. Classify what the PLAYER did, from the character's point of view (the act is aimed at the character).
-3. The mindNote tracks the CHANGING disposition; it is not a recap of facts and must not repeat the scenario framing or quote dialogue back.
-4. ${UNTRUSTED_DATA_NOTICE}
+3. The player's whole message is yours to read — their narration and unspoken inner thoughts included, not only what the character could hear or see. Interiority is a strong signal of intent and disposition, so weigh it.
+4. The mindNote tracks the CHANGING disposition; it is not a recap of facts and must not repeat the scenario framing or quote dialogue back.
+5. ${UNTRUSTED_DATA_NOTICE}
 
 Example — the character shared bad news and the player pulled her into a hug:
 {"playerAct":{"concept":"physical_affection"},"mindNote":"Mara is steadied by the hug and a little embarrassed at being seen so raw. She trusts him more than she meant to let show."}`;
