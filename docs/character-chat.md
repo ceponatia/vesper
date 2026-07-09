@@ -120,7 +120,10 @@ exchange:
    (`components/characters/chat-segments.ts` over the shared pure `lib/segmenter`, with
    standalone-quote attribution ON since chat is one-on-one): the tag is hidden behind a small
    speaker label and a bare whole-line quote attributes to the character. Segment content still
-   flows through the `MessageContent` span renderer. Stored transcripts stay byte-verbatim. See
+   flows through the `MessageContent` span renderer, where each span body also passes through
+   `parseEmphasisRuns` (`lib/message-spans`) so a `_…_` pair nested inside quoted speech
+   ("it's _perfect_!") renders italic instead of literal underscores (outermost-sigil rule —
+   the quote stays one atomic speech span). Stored transcripts stay byte-verbatim. See
    [prompts.md](prompts.md) §Dialogue tagging and [ui.md](ui.md) §Chat.
 
 ## Tracked state

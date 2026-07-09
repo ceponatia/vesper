@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatCommsReply,
+  parseEmphasisRuns,
   parseMessageSpans,
   spanChannel,
   type MessageSpanContext,
@@ -185,6 +186,42 @@ describe("comms output grammar round-trip (slice 4)", () => {
     expect(spans[0]?.kind).toBe("comms");
     expect(spans[0]?.sender).toBe("Sabrina");
     expect(spans[0]?.text).toBe("omg. yes.");
+  });
+});
+
+describe("parseEmphasisRuns — `_…_` emphasis inside a span body (chat-formatting fix)", () => {
+  it("splits an underscore pair nested in quoted speech into an emphasized run", () => {
+    // The outermost-sigil rule keeps the quote one atomic speech span, so the
+    // underscores reach the renderer raw — the runs carry the emphasis instead.
+    const speech = parseMessageSpans(`"Oh my god, it's _perfect_!"`)[0];
+    expect(speech?.kind).toBe("speech");
+    expect(parseEmphasisRuns(`"${speech?.text ?? ""}"`)).toEqual([
+      { text: `"Oh my god, it's `, em: false },
+      { text: "perfect", em: true },
+      { text: `!"`, em: false },
+    ]);
+  });
+
+  it("handles several pairs and preserves every non-sigil character", () => {
+    expect(parseEmphasisRuns("_you_ said it was _fine_")).toEqual([
+      { text: "you", em: true },
+      { text: " said it was ", em: false },
+      { text: "fine", em: true },
+    ]);
+  });
+
+  it("keeps an unmatched underscore literal", () => {
+    expect(parseEmphasisRuns("wait_ what")).toEqual([{ text: "wait_ what", em: false }]);
+  });
+
+  it("keeps empty and whitespace-only pairs literal", () => {
+    expect(parseEmphasisRuns("a __ b")).toEqual([{ text: "a __ b", em: false }]);
+    expect(parseEmphasisRuns("a _ _ b")).toEqual([{ text: "a _ _ b", em: false }]);
+  });
+
+  it("returns a single literal run for text with no underscores, and none for empty text", () => {
+    expect(parseEmphasisRuns("just words")).toEqual([{ text: "just words", em: false }]);
+    expect(parseEmphasisRuns("")).toEqual([]);
   });
 });
 
