@@ -86,6 +86,14 @@ exchange:
    `drainingStreamResponse` keeps consuming after a client disconnect
    ([resilience.md](resilience.md) §5) — the reply persists (§5) and the post-turn fan-out
    runs (§3). All of it is off the perceived-latency path.
+9. **Render (dialogue-attribution).** The transcript owns dialogue presentation, so chat rule 3
+   makes the `[Name]` tag **optional** (dialogue stays quoted; flavor NPCs speak in narration
+   prose, never with a bracketed tag). The reply renders as in-bubble per-speaker segments
+   (`components/characters/chat-segments.ts` over the shared pure `lib/segmenter`, with
+   standalone-quote attribution ON since chat is one-on-one): the tag is hidden behind a small
+   speaker label and a bare whole-line quote attributes to the character. Segment content still
+   flows through the `MessageContent` span renderer. Stored transcripts stay byte-verbatim. See
+   [prompts.md](prompts.md) §Dialogue tagging and [ui.md](ui.md) §Chat.
 
 ## Tracked state
 

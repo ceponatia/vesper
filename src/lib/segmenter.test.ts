@@ -75,6 +75,60 @@ describe("parseSegments", () => {
   });
 });
 
+describe("parseSegments — standalone-quote attribution (attributeStandaloneQuotes)", () => {
+  const OPT = { attributeStandaloneQuotes: true };
+
+  it("attributes a whole-line quote to the sole known name, as if tagged", () => {
+    const text = 'Mara leans against the doorframe.\n"You came back."';
+    expect(parseSegments(text, ["Mara"], OPT)).toEqual([
+      { speaker: null, content: "Mara leans against the doorframe." },
+      { speaker: "Mara", content: '"You came back."' },
+    ]);
+  });
+
+  it("allows the narrator's typographic quotes too", () => {
+    expect(parseSegments("“You came back.”", ["Mara"], OPT)).toEqual([
+      { speaker: "Mara", content: "“You came back.”" },
+    ]);
+  });
+
+  it("attributes a multi-line quoted paragraph as one speaker segment", () => {
+    const text = '"It was a long week,\nand I kept thinking about the lake."';
+    expect(parseSegments(text, ["Mara"], OPT)).toEqual([
+      { speaker: "Mara", content: '"It was a long week,\nand I kept thinking about the lake."' },
+    ]);
+  });
+
+  it("leaves a quote with a trailing beat as narrator prose", () => {
+    const text = '"You came back," she says, not looking up.';
+    expect(parseSegments(text, ["Mara"], OPT)).toEqual([{ speaker: null, content: text }]);
+  });
+
+  it("leaves a quote embedded in a narration sentence as narrator prose", () => {
+    const text = 'her mother\'s voice drifts from the back: "Sabrina!"';
+    expect(parseSegments(text, ["Sabrina"], OPT)).toEqual([{ speaker: null, content: text }]);
+  });
+
+  it("is a no-op with the option off (default behavior unchanged)", () => {
+    const text = 'Mara leans against the doorframe.\n"You came back."';
+    // Both the untagged narration and the bare quote fold into one narrator segment.
+    expect(parseSegments(text, ["Mara"])).toEqual([{ speaker: null, content: text }]);
+  });
+
+  it("ignores the option when more than one name is known (ambiguous speaker)", () => {
+    const text = '"You came back."';
+    expect(parseSegments(text, KNOWN, OPT)).toEqual([{ speaker: null, content: text }]);
+  });
+
+  it("still honors explicit [Name] tags alongside standalone quotes", () => {
+    const text = '[Maya] "Tagged line."\n\n"Untagged quote."';
+    expect(parseSegments(text, ["Maya"], OPT)).toEqual([
+      // Same-speaker tag + standalone quote merge with a paragraph break, like two tags.
+      { speaker: "Maya", content: '"Tagged line."\n\n"Untagged quote."' },
+    ]);
+  });
+});
+
 describe("createSegmenter (streaming deltas)", () => {
   it("emits append-only deltas equal to the full parse", () => {
     const text = 'Morning light.\n[Maya] "Coffee?"\n\nShe was already pouring.';

@@ -1,7 +1,6 @@
 export * from "./constants";
 export * from "./intent";
 export * from "./intake";
-export * from "./segmenter";
 export * from "./scene";
 export * from "./movement";
 export * from "./demo";

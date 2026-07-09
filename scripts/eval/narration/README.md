@@ -39,8 +39,11 @@ Env: `EVAL_JUDGE_MODEL` (default `z-ai/glm-5.2` — set to your strongest availa
 ## What it measures
 
 - **Deterministic** (no judge — cheap, stable): paragraph count, segment count + **distinct NPC
-  speakers** (`segmenter.parseSegments` — catches length regressions and multi-party over-talking),
-  output tokens, TTFT, total latency, routed provider.
+  speakers** (`segmenter.parseSegments` (`@/lib/segmenter`) — catches length regressions and
+  multi-party over-talking; informational, not a pass/fail bar), output tokens, TTFT, total latency,
+  routed provider. Note: since the **chat** lane relaxed its `[Name]` tag to optional (dialogue-attribution
+  — the renderer attributes standalone quotes), chat replies now often read **0 distinct speakers**;
+  this run scores them without the renderer's standalone-quote option, so that is expected, not a regression.
 - **LLM judge** (1–5 each): `answeredFirst`, `proportionate` (cross-checked against the scenario's
   authored `## Reaction`), `onBeat`, `noUnrequestedLogistics`, `voice`.
 

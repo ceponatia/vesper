@@ -7,7 +7,7 @@ import {
 } from "@/contracts/turns/agent-results";
 import { emptyBrief } from "@/contracts/state/brief";
 import { demoAgentResults, demoNarrative } from "./demo";
-import { parseSegments } from "./segmenter";
+import { parseSegments } from "@/lib/segmenter";
 
 async function collect(gen: AsyncGenerator<string>): Promise<string[]> {
   const chunks: string[] = [];
