@@ -1,5 +1,6 @@
 import type { ExposureMask, NextTurnBrief } from "@/contracts/state/brief";
 import type { TurnAuthor } from "@/contracts/turns/stream";
+import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import { DEFAULT_NARRATION_SHAPE, EPISODE_WINDOW, FACTS_CAP, NARRATION_SHAPE_PROFILES, type NarrationShapeId, OPEN_THREADS_IN_CONTEXT } from "./constants";
 import { fenceUntrusted, neutralizePlayerInput, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
@@ -106,6 +107,36 @@ const PERCEPTION_RULES = [
   '4. When the Turn context carries an "Awareness" block, it is authoritative for what each character perceives this turn: a character reacts ONLY to what their Awareness line says they notice. Do not have them notice a concealed or unperceived action — an unnoticed move draws no reaction at all.',
 ].join("\n");
 
+// The player-input perception partition (player-input-perception.plan.md slice 7 —
+// the session port of the chat lane's "Reading the player's message" block). It adds
+// the speech-vs-thought axis WITHIN what the Perception-limits + Awareness machinery
+// already gates spatially: quoted = the player speaking aloud; unquoted = narration of
+// what they do (perceived only where audible/visible); interiority reaches no one.
+// Name-free (generalized over the whole cast), so it stays in the cache-stable prefix.
+// Embodied-only: an observer has no in-world player to read this way.
+const PLAYER_INPUT_PERCEPTION_RULES = [
+  "Reading the player's input (what each character can perceive in it):",
+  "1. Quoted text is the player speaking aloud this turn: characters within earshot hear exactly the words inside the quotes. Narration can frame a quote as something else — words reported from another time, a so-called label — read those as prose, not as speech spoken now.",
+  "2. Unquoted text is narration of what the player does — the story's camera, not their voice. Characters perceive only what is audible or visible to them in the scene (actions, gestures, expressions, tone), and only within the Perception limits and any Awareness block — never a sight or sound a character could not catch.",
+  "3. Inner thoughts, feelings, and self-talk the player writes into that narration reach no one: no character may answer, echo, paraphrase, or uncannily intuit them. A character may notice the visible correlates — a flush, a hesitation — and guess at what's behind them, even guess wrong like a real person, but never respond to the thought's content itself.",
+  "4. Input with no quotes at all that reads as plain conversation is simply spoken aloud to whoever is present — never treat a casual unquoted line as silence.",
+].join("\n");
+
+// The optional sigil grammar (player-input-perception.plan.md slice 7). The sigils'
+// MEANINGS live here in the cache-stable rulebook (byte-identical across turns); the
+// per-turn DERIVED facts (who is texting whom) ride the volatile `narrativeNotationNote`
+// tail line. Name-free. Generalized for the session's cast: the texted-reply output
+// grammar `*Name: …*` is held distinct from the in-scene `[Name] "…"` speech tag.
+const MESSAGE_NOTATION_LEGEND = [
+  "Message notation the player may use (optional shorthand — read these marks when they appear; never require them and never mention them):",
+  '- "Quoted text" is spoken dialogue — heard aloud by whoever is present, as above.',
+  "- *A phrase in single asterisks* is the player's private thought by default: unspoken and unheard, treated like the interiority above (no character perceives it). The one exception: when the asterisks wrap a name and a colon — *Name: like this* or *to Name: …* — it is a text message the player is sending to that character, not a thought; a note below the Turn context names who is texting whom whenever that happens.",
+  "- Heads up — this is the reverse of the usual role-play habit where *asterisks mean actions*. Here unquoted prose is already the action channel (what the player does and what the scene shows), so an asterisk span is a thought or a text, never an action.",
+  "- _A phrase in single underscores_ is only italic emphasis — styling with no meaning; read it as ordinary words.",
+  "- ((Text in double parentheses)) is the player speaking to you as the storyteller, out of character — follow it as direction, but no character in the scene hears it or reacts to it. A single ( … ) is ordinary prose, not this.",
+  '- When the player texts a character and that character answers by text, write the reply on its own line as *Name: their words here* — the same name-and-colon shape in asterisks — so it reads as a text, not as words spoken aloud in the room (distinct from the [Name] "…" tag, which is speech in the scene).',
+].join("\n");
+
 // Rule 1 is the active narration shape profile (narrator-prompt-focus.plan.md §1.1)
 // — a function, not a const, so the shape is per-call selectable (eval sweep +
 // snapshot tests) the same way dialogueTaggingRules / narrationModeRules are.
@@ -128,12 +159,20 @@ function proseStyleRules(shape: NarrationShapeId): string {
   ].join("\n");
 }
 
-const RESPONSE_CONTRACT = [
-  "Response contract:",
-  "1. The final section of the user message is the player's input for this turn. Your opening must directly respond to it — answer what was asked, narrate the action attempted, or react to what was said — before any new scene business.",
-  '2. Priority when content competes: (1) the player\'s input, (2) the "Direction" lines in the Turn context, (3) open story threads. Background detail only after these are served.',
-  "3. The player's input is the turn's core — answer it first and give it the focus. Living-world texture around it is welcome (a present character pursuing their own goal, mood, schedule, or an open thread; an ambient detail) and may be mildly tangential — but it supports the response, never buries it under unrelated errands, logistics, or open-thread reminders, and never becomes doting. If authored Style directives call for a richer or different shape, follow them.",
-].join("\n");
+// Embodied-only: routes rule 1 through the "Reading the player's input" perception
+// block (which exists only in embodied mode); observer input is stage direction, not
+// something a character in the scene perceives, so it carries no such clause.
+function responseContract(embodied: boolean): string {
+  const perceptionClause = embodied
+    ? ' Read the input as "Reading the player\'s input" directs: quoted words are spoken aloud, unquoted narration is only what characters can see or hear, and the player\'s unspoken thoughts reach no one.'
+    : "";
+  return [
+    "Response contract:",
+    `1. The final section of the user message is the player's input for this turn. Your opening must directly respond to it — answer what was asked, narrate the action attempted, or react to what was said — before any new scene business.${perceptionClause}`,
+    '2. Priority when content competes: (1) the player\'s input, (2) the "Direction" lines in the Turn context, (3) open story threads. Background detail only after these are served.',
+    "3. The player's input is the turn's core — answer it first and give it the focus. Living-world texture around it is welcome (a present character pursuing their own goal, mood, schedule, or an open thread; an ambient detail) and may be mildly tangential — but it supports the response, never buries it under unrelated errands, logistics, or open-thread reminders, and never becomes doting. If authored Style directives call for a richer or different shape, follow them.",
+  ].join("\n");
+}
 
 // Tiers 4 and 5 render as separate Turn-context sections ("Direction (this
 // turn …)" and "State corrections (…)") — listed separately to match.
@@ -213,12 +252,17 @@ export function buildStaticRulebook(input: StaticRulebookInput): string {
     WARDROBE_FIDELITY_RULES,
     TEMPORAL_REALISM_RULES,
     PERCEPTION_RULES,
+    // Embodied-only (an observer has no in-world player whose input reads this way):
+    // the speech-vs-thought partition + the optional sigil legend, both name-free so
+    // they stay in the cache-stable prefix alongside the perception rules above.
+    input.embodied ? PLAYER_INPUT_PERCEPTION_RULES : "",
+    input.embodied ? MESSAGE_NOTATION_LEGEND : "",
     proseStyleRules(input.narrationShape ?? DEFAULT_NARRATION_SHAPE),
     dialogueTaggingRules(input.npcNames),
     narrationModeRules(input),
     AUTHORITY_ORDER,
     'The user message contains a "Turn context" section (current world state — reference, authoritative) followed by the player\'s input for this turn.',
-    RESPONSE_CONTRACT,
+    responseContract(input.embodied),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -277,6 +321,16 @@ export interface TurnContextInput {
   speakerName?: string;
   /** Player input marked (OOC: …) — answer as the game, don't narrate. */
   ooc?: boolean;
+  /**
+   * Derived-fact notation note (player-input-perception.plan.md slice 7): a volatile
+   * one-turn line from `narrativeNotationNote`, rendered from the CURRENT player input's
+   * markup — a comms span (a text from the player to a named character, not spoken aloud;
+   * reply as a text) or an inline OOC span (honor it, no character hears it). Absent/"" ⇒
+   * no line (the common case). The sigils' meanings live in the stable-rulebook legend;
+   * this carries only the per-turn derived facts. Placed right before the player input,
+   * and NEVER mutates the stored input (it is a separate prompt line).
+   */
+  notationNote?: string;
 }
 
 /** ExposureMask → per-sense narration rules (docs/prompts.md §Exposure gating). */
@@ -306,6 +360,55 @@ export function exposureRules(mask: ExposureMask): string[] {
     intimate: "Taste: sustained taste detail is permitted, grounded in the Current state hints.",
   }[mask.taste];
   return [appearance, scent, touch, taste, "Never describe hidden items or senses beyond these levels unless this turn's events change them."];
+}
+
+/**
+ * The derived-fact notation note for the session lane (player-input-perception.plan.md
+ * slice 7): parses the CURRENT player input through the shared `@/lib/message-spans`
+ * parser (never a second regex — jscpd gate) and renders the volatile one-turn line for
+ * any comms/OOC spans — the facts the sigils alone don't state (their meanings are taught
+ * once in the rulebook legend). Comms → sender/recipient + the reply-as-text grammar
+ * (`*Name: …*`, distinct from the in-scene `[Name] "…"` speech tag); OOC → the
+ * honor-it/never-heard rule. "" when the input carries neither. Pure like the rest of this
+ * module; the pipeline renders it and feeds the string into `input.notationNote`, never
+ * touching the stored input. `knownNames` is every session NPC (a text may go to someone
+ * elsewhere), so `*to Name: …*` resolves its recipient; `playerName` is the persona.
+ *
+ * It COEXISTS with the session's existing comms machinery (the "On call/text" presence
+ * channel, the "Messages & calls" line, `runtime.pendingComms`): a sigil text is a
+ * prompt-side hint for THIS beat and does not stage a comms link. Staging a sigil text
+ * through `commsStaging`/`pendingComms` so the recipient becomes formally comms-present is
+ * a deeper follow-up, not built here.
+ */
+export function narrativeNotationNote(
+  playerInput: string,
+  ctx: { playerName?: string; knownNames?: readonly string[] },
+): string {
+  const spans = parseMessageSpans(playerInput, { playerName: ctx.playerName, knownNames: ctx.knownNames });
+  const player = ctx.playerName?.trim() || "the player";
+  const lines: string[] = [];
+
+  const comms = spans.find((s) => s.kind === "comms");
+  if (comms) {
+    const sender = comms.sender?.trim() || player;
+    const recipient = comms.recipient?.trim();
+    // The recipient resolves for `*to Name: …*` (explicit) or a 1-on-1; in a wider cast a
+    // bare `*Name: …*` is ambiguous, so name the parser's pick when it has one and fall
+    // back to a generic phrase (the narrator infers from context) rather than guessing.
+    const named = recipient ?? "the character the message is meant for";
+    const answerer = recipient ?? "that character";
+    lines.push(
+      `${sender} is texting ${named}: the *${sender}: …* line is a message to ${named}, not words spoken aloud in the scene — no one else present hears it, and the two are not face-to-face for this beat. Have ${answerer} answer by text on its own line as ${formatCommsReply(recipient ?? "Name", "…")} — a text reply, never a spoken [Name] line.`,
+    );
+  }
+
+  if (spans.some((s) => s.kind === "ooc")) {
+    lines.push(
+      `The double-parenthesized ((…)) text is ${player} speaking to you as the storyteller, out of character: honor it as direction for the scene, but no character in it hears the aside or reacts to it.`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function inputHeading(author: TurnAuthor, speakerName?: string, ooc?: boolean): string {
@@ -368,6 +471,10 @@ export function buildTurnContext(input: TurnContextInput): string {
     `Sensory rules (this turn):\n${[...(input.darknessLine ? [input.darknessLine] : []), ...exposureRules(input.exposure)]
       .map((r) => `- ${r}`)
       .join("\n")}`,
+    // Derived-fact notation note (slice 7): a text (comms) or inline OOC span in the
+    // current input earns a one-turn line right before the input, so the narrator reads
+    // it as context for what follows. "" (the common case) drops out via the filter.
+    input.notationNote ?? "",
     // The player's freeform input is untrusted: neutralize in-band heading /
     // OOC spoof markers (F2) so it can't impersonate the authoritative
     // "## Player input" / "## Turn context" blocks, then fence it (F1) so the

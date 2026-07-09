@@ -142,6 +142,9 @@ export async function runPostTurnAgents(
     locationNames: bundle.locations.map((l) => l.name),
     itemNames: scopedItems.map((i) => i.name),
     activeFacts: activeFactRows,
+    // The embodied player's name, so a `*to Name: …*` / thought sigil in the input feeds
+    // the parser-derived channel hint (slice 7). Absent for observer sessions (no player).
+    playerName: player?.displayName,
   });
 
   // In-session post-turn agents use the world's agent-model override (World tab),

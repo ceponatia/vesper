@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import type { MessageSpanContext } from "@/lib/message-spans";
 import type { FeedMessage, StatusParticipant, UseSession } from "@/lib/client/use-session";
+import { MessageContent } from "@/components/characters/message-content";
 import { Button, Spinner } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
@@ -20,6 +22,20 @@ function findSpeaker(participants: StatusParticipant[], speaker: string | null):
   if (!speaker) return null;
   const lower = speaker.toLowerCase();
   return participants.find((p) => p.displayName.toLowerCase() === lower) ?? null;
+}
+
+/**
+ * The span-renderer context for a player line (player-input-perception.plan.md slice 7):
+ * the persona name (default sender for a `*to Name: …*` text) + every session NPC name
+ * (so a `*Name: …*` comms recipient resolves). Recipient resolution only affects the
+ * comms label — a bare text still renders as a text without it.
+ */
+function playerSpanContext(participants: StatusParticipant[]): MessageSpanContext {
+  const player = participants.find((p) => p.isUser);
+  return {
+    playerName: player?.displayName,
+    knownNames: participants.filter((p) => !p.isUser).map((p) => p.displayName),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -64,15 +80,27 @@ function CharacterBody({
   );
 }
 
-function PlayerBody({ content, pending = false }: { content: string; pending?: boolean }) {
+function PlayerBody({
+  content,
+  participants,
+  pending = false,
+}: {
+  content: string;
+  participants: StatusParticipant[];
+  pending?: boolean;
+}) {
+  // Player messages get the span renderer (slice 7): thoughts / `_italic_` italicize with
+  // the sigils hidden, `*Name:*` reads as a text, `((OOC))` gets an out-of-fiction aside —
+  // the same ONE implementation the chat lane uses. `whitespace-pre-wrap` renders the
+  // inter-paragraph breaks the renderer emits (it replaces InlineProse's own wrapping <p>).
   return (
     <div
       className={cx(
-        "ml-auto max-w-[80%] rounded-2xl rounded-br-sm border border-accent-500/25 bg-accent-500/10 px-4 py-2.5 text-[15px] leading-6 text-paper-100",
+        "ml-auto max-w-[80%] rounded-2xl rounded-br-sm border border-accent-500/25 bg-accent-500/10 px-4 py-2.5 text-[15px] leading-6 whitespace-pre-wrap text-paper-100",
         pending && "opacity-80",
       )}
     >
-      <InlineProse text={content} />
+      <MessageContent content={content} context={playerSpanContext(participants)} />
     </div>
   );
 }
@@ -131,7 +159,7 @@ function MessageRow({ message, participants, actionsDisabled, onEdit, onDelete, 
       </div>
     </div>
   ) : message.role === "player" ? (
-    <PlayerBody content={message.content} />
+    <PlayerBody content={message.content} participants={participants} />
   ) : message.role === "character" && message.speaker ? (
     <CharacterBody
       speaker={message.speaker}
@@ -190,7 +218,7 @@ function StreamingBlock({ session }: { session: UseSession }) {
             participant={findSpeaker(participants, streaming.echo.speakerName)}
           />
         ) : (
-          <PlayerBody content={streaming.echo.input} pending />
+          <PlayerBody content={streaming.echo.input} participants={participants} pending />
         )
       ) : null}
       {streaming.segments.map((segment) =>

@@ -77,6 +77,15 @@ describe("agent system prompts", () => {
     expect(DIRECTOR_SYSTEM).toContain('"taste":"none"');
   });
 
+  it("teaches the archivist the fact channel: perceived vs private, skip OOC (player-input-perception.plan.md slice 7)", () => {
+    expect(ARCHIVIST_SYSTEM).toContain("channel one of perceived|private");
+    expect(ARCHIVIST_SYSTEM).toMatch(/"perceived" for anything a character saw, heard, or was told/i);
+    expect(ARCHIVIST_SYSTEM).toMatch(/"private" ONLY for a fact drawn solely from the player's unspoken inner thoughts/i);
+    expect(ARCHIVIST_SYSTEM).toMatch(/double parentheses.*record NO fact/is);
+    // Both worked examples carry an explicit channel so the model sees the full shape.
+    expect(ARCHIVIST_SYSTEM).toContain('"channel":"perceived"');
+  });
+
   it("simulant teaches salience tagging, the obvious default, and comms events", () => {
     expect(SIMULANT_SYSTEM).toContain("salience");
     expect(SIMULANT_SYSTEM).toMatch(/default obvious/i);
@@ -180,6 +189,38 @@ describe("buildArchivistPrompt", () => {
     expect(text).toContain("Items: lantern");
     expect(text).toContain("- [Maya] Maya trusts Rhett completely.");
     expect(text).toContain("quote oldFactText exactly");
+  });
+
+  const base = {
+    narration: "narration",
+    author: "player" as const,
+    characterNames: ["Maya"],
+    locationNames: ["Kitchen"],
+    itemNames: [],
+    activeFacts: [],
+  };
+
+  it("adds a parser-derived channel hint when the player marks a private thought (slice 7)", () => {
+    const text = buildArchivistPrompt({
+      ...base,
+      playerInput: '"Hi." *I really hope she forgives me.*',
+      playerName: "Alex",
+    });
+    expect(text).toContain("Channel notes (the player used notation this message):");
+    expect(text).toMatch(/private thought/i);
+    expect(text).toContain('"channel":"private"');
+    // The session phrasing generalizes over the whole cast (not a single character name).
+    expect(text).toContain("no character in the scene perceived it");
+  });
+
+  it("adds an OOC hint that forbids storing facts from a ((direction)) span (slice 7)", () => {
+    const text = buildArchivistPrompt({ ...base, playerInput: "((jump to the next morning))" });
+    expect(text).toMatch(/double-parenthesized.*record NO fact/is);
+  });
+
+  it("omits the channel hint when the player used no thought/OOC notation (the common case)", () => {
+    const text = buildArchivistPrompt({ ...base, playerInput: "I ask Maya about the letter." });
+    expect(text).not.toContain("Channel notes");
   });
 });
 

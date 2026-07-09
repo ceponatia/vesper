@@ -454,6 +454,12 @@ const OOC_DIRECTION_INPUT = `((let's skip ahead to that evening — set the scen
 // parenthetical is visible manner Sabrina can perceive, not an instruction to her.
 const PAREN_ASIDE_INPUT = `I drop into the chair across from her (still catching my breath from the run over here).`;
 
+// The chat perception leak, ported to the session lane (player-input-perception.plan.md
+// slice 7): a planted token ("washout") lives ONLY inside the unspoken thought, so a reply
+// echoing it answered something no character perceived. Distinct token from the chat
+// fixture so the two never cross-contaminate a shared prompt scan.
+const SESSION_THOUGHT_LEAK_INPUT = `"Evening, Maya." I set my bag down by the door, not quite meeting her eye. She'll never see me as anything but a washout.`;
+
 export const EVAL_SCENARIOS: EvalScenario[] = [
   {
     id: "hi-quiet-room",
@@ -670,6 +676,35 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
       state: FRONT_DESK_STATE,
       playerInput: "hey Sabrina, how's it going? quiet day?",
     }),
+  },
+  {
+    id: "session-thought-leak",
+    title: "Session — planted interiority must not be answered (the chat leak, ported)",
+    lane: "session",
+    expectation:
+      "Maya hears only the quoted greeting and sees him set his bag down and avoid her eye. She may react to the visible reticence however her disposition fits, and may guess wrong about its cause. She must NOT answer, echo, or paraphrase the unspoken thought (reassuring him he isn't a washout, or that she thinks well of him): that is a mind-read and fails.",
+    playerInput: SESSION_THOUGHT_LEAK_INPUT,
+    knownNames: ["Maya"],
+    plantedThoughtRe: /\bwashout\b/i,
+    build: (shape, { focus }) =>
+      sessionPrompt(shape, {
+        npcNames: ["Maya"],
+        canonicalFactsBlock: "## Canonical character facts\n- Maya — appears late twenties; runs the guesthouse, dry and self-possessed.",
+        sceneSnapshot: "## Scene: Front desk\nA cramped lobby at dusk, a brass bell, a tide chart pinned crooked to the wall.",
+        presenceRoster: "## Who is where (authoritative presence roster this turn)\nPresent: Maya",
+        wardrobeBlock: "## Visible wardrobe\n- Maya: a cardigan, reading glasses pushed up into her hair",
+        stateExtra: ["## Current state\n- Maya — activity: closing out the day's register"],
+        responseShape: buildResponseShape({
+          actionType: "converse",
+          addressedNpcs: ["Maya"],
+          presentNpcNames: ["Maya"],
+          primaryReaction: null,
+          openThreadCount: 0,
+          directiveCount: 0,
+          focus: withFocus(focus, { primaryResponse: "converse", reactionScale: "none", allowedNewTopic: "none", suggestedShape: "concise_exchange" }),
+        }),
+        playerInput: SESSION_THOUGHT_LEAK_INPUT,
+      }),
   },
   // ── Markup-lane variants (player-input-perception.plan.md slice 2, gated on slice 4) ──
   {

@@ -1,4 +1,4 @@
-import { parseMessageSpans, spanChannel } from "@/lib/message-spans";
+import { channelHint } from "./notation";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
@@ -46,33 +46,6 @@ export interface ChatArchivistPromptInput {
   openLoops?: readonly string[];
 }
 
-/**
- * Parser-derived channel hint (player-input-perception.plan.md slice 6): when the player
- * used notation, the deterministic spans turn the fact-channel classification into a cheap
- * parse. We surface only the parts that would file on a NON-perceived channel — a thought
- * (⇒ private) or an OOC direction (⇒ skip) — since everything else defaults to perceived
- * anyway; "" when the message carries no such sigil (the archivist judges semantically).
- * Reuses the SHARED `@/lib/message-spans` parser (never a second regex — jscpd gate) and,
- * like `chatNotationNote`, describes the notation's STRUCTURE rather than echoing the raw
- * (untrusted) thought text back outside the fence.
- */
-function channelHint(message: string, characterName: string, playerName: string): string {
-  const spans = parseMessageSpans(message, { playerName, knownNames: characterName ? [characterName] : [] });
-  const hasPrivate = spans.some((s) => spanChannel(s.kind) === "private");
-  const hasOoc = spans.some((s) => s.kind === "ooc");
-  if (!hasPrivate && !hasOoc) return "";
-  const lines: string[] = [];
-  if (hasPrivate) {
-    lines.push(
-      `- The *asterisked* passage is the player's private thought — ${characterName} did NOT perceive it. File any fact drawn only from it with "channel":"private".`,
-    );
-  }
-  if (hasOoc) {
-    lines.push(`- The ((double-parenthesized)) text is out-of-character direction — record NO fact from it.`);
-  }
-  return `Channel notes (the player used notation this message):\n${lines.join("\n")}`;
-}
-
 export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): string {
   const speaker = input.playerName.trim() || "Player";
   // The exchange (and the prior loops derived from it) is untrusted (player +
@@ -83,7 +56,13 @@ export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): strin
     `${input.characterName}: ${input.exchange.assistant.trim()}`,
   ].join("\n");
   const loops = (input.openLoops ?? []).map((l) => l.trim()).filter(Boolean);
-  const hint = channelHint(input.exchange.player, input.characterName, input.playerName.trim() || "the player");
+  // Parser-derived channel hint (slice 6) — the shared `./notation` helper, so the
+  // session archivist (slice 7) reuses it instead of cloning the sigil parse.
+  const hint = channelHint(input.exchange.player, {
+    knownNames: input.characterName ? [input.characterName] : [],
+    playerName: input.playerName.trim() || "the player",
+    perceiverClause: `${input.characterName} did NOT perceive it`,
+  });
   return [
     `Character: ${input.characterName}`,
     `Player: ${input.playerName.trim() || "the player"}`,

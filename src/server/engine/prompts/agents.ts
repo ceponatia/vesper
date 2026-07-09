@@ -3,6 +3,7 @@ import type { NextTurnBrief } from "@/contracts/state/brief";
 import type { StoryThread } from "@/contracts/state/session-runtime";
 import type { TurnAuthor } from "@/contracts/turns/stream";
 import { AGENT_INPUT_CAP, AGENT_NARRATION_CAP } from "./constants";
+import { channelHint } from "./notation";
 
 /**
  * Post-turn agent prompts (docs/prompts.md §Agent prompts). Each system
@@ -41,7 +42,7 @@ export const ARCHIVIST_SYSTEM = `You are the archivist: you condense one story t
 
 Produce:
 - episodeSummary: 2-4 sentences, past tense, story-only (no stat dumps), focused on end-state.
-- facts: durable declarative knowledge worth recalling weeks later. Kinds: relationship, knowledge, commitment, attribute_revelation, item, location, event, preference, secret. One sentence each; subjectName exactly as written; confidence 0-1.
+- facts: durable declarative knowledge worth recalling weeks later. Kinds: relationship, knowledge, commitment, attribute_revelation, item, location, event, preference, secret. One sentence each; subjectName exactly as written; confidence 0-1; channel one of perceived|private (rule 5).
 - supersedeHints: when a new fact replaces one of the listed active facts, give the new fact's index and the old fact's EXACT text.
 
 Rules:
@@ -49,12 +50,13 @@ Rules:
 2. No wardrobe or transient physical state as facts — the engine tracks those.
 3. Quoted or hypothetical speech may yield facts about what was SAID (a promise, a stated preference), never about physical events.
 4. Few strong facts beat many weak ones; 0-4 per turn is typical. Use confidence below 0.5 for inferences.
+5. Tag each fact with the CHANNEL it was established through: "perceived" for anything a character saw, heard, or was told this turn (the narrated scene, the player's quoted speech, a visible action); "private" ONLY for a fact drawn solely from the player's unspoken inner thoughts, which no character perceived. Default to "perceived" when unsure. Text inside ((double parentheses)) is out-of-character direction — record NO fact from it.
 
 Example A — Maya promises to teach the player to fish tomorrow:
-{"episodeSummary":"Maya finished gutting the trout while the player set the table. She promised to teach them to fish at the lake tomorrow morning.","facts":[{"kind":"commitment","verb":"promise","subjectName":"Maya","subjectKind":"character","text":"Maya promised to teach the player to fish at the lake tomorrow morning.","tags":["fishing","promise"],"confidence":0.9}],"supersedeHints":[]}
+{"episodeSummary":"Maya finished gutting the trout while the player set the table. She promised to teach them to fish at the lake tomorrow morning.","facts":[{"kind":"commitment","verb":"promise","subjectName":"Maya","subjectKind":"character","text":"Maya promised to teach the player to fish at the lake tomorrow morning.","tags":["fishing","promise"],"confidence":0.9,"channel":"perceived"}],"supersedeHints":[]}
 
 Example B — Maya turns on Rhett; active facts list contains "Maya trusts Rhett completely.":
-{"episodeSummary":"Maya found the forged letter in Rhett's coat and confronted him; he denied nothing. She left the room without a word.","facts":[{"kind":"relationship","subjectName":"Maya","subjectKind":"character","text":"Maya no longer trusts Rhett after finding the forged letter.","tags":["trust","rhett"],"confidence":0.85}],"supersedeHints":[{"factIndex":0,"oldFactText":"Maya trusts Rhett completely."}]}`;
+{"episodeSummary":"Maya found the forged letter in Rhett's coat and confronted him; he denied nothing. She left the room without a word.","facts":[{"kind":"relationship","subjectName":"Maya","subjectKind":"character","text":"Maya no longer trusts Rhett after finding the forged letter.","tags":["trust","rhett"],"confidence":0.85,"channel":"perceived"}],"supersedeHints":[{"factIndex":0,"oldFactText":"Maya trusts Rhett completely."}]}`;
 
 export const CONTINUITY_SYSTEM = `You are the continuity checker: you audit one turn of narration against canon and the world's social cards. You only flag.
 
@@ -189,9 +191,25 @@ export interface ArchivistPromptInput {
   itemNames: string[];
   /** Recent/similar ACTIVE facts — the only supersede candidates. */
   activeFacts: Array<{ subjectName: string; text: string }>;
+  /** The embodied player's display name, for the parser-derived channel hint (slice 7). */
+  playerName?: string;
 }
 
 export function buildArchivistPrompt(input: ArchivistPromptInput): string {
+  // Parser-derived channel hint (player-input-perception.plan.md slice 7): when the
+  // player marked a thought / OOC aside in THIS turn's input, the shared span parser
+  // makes the fact-channel classification deterministic. Reuses the same `./notation`
+  // helper the chat archivist does (no clone); "" when no such sigil was used. Player
+  // turns only — the sigil grammar is a player convention (a director/companion turn's
+  // input is stage direction / NPC speech, not the player's interiority).
+  const hint =
+    input.author === "player"
+      ? channelHint(input.playerInput, {
+          knownNames: input.characterNames,
+          playerName: input.playerName?.trim() || "the player",
+          perceiverClause: "no character in the scene perceived it",
+        })
+      : "";
   return [
     `Characters: ${input.characterNames.join(", ") || "none"}`,
     `Locations: ${input.locationNames.join(", ") || "none"}`,
@@ -200,6 +218,7 @@ export function buildArchivistPrompt(input: ArchivistPromptInput): string {
       input.activeFacts.length ? input.activeFacts.map((f) => `- [${f.subjectName}] ${f.text}`).join("\n") : "- none"
     }`,
     turnSection(input.playerInput, input.narration, input.author),
+    ...(hint ? [hint] : []),
   ].join("\n\n");
 }
 

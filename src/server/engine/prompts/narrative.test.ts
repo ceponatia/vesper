@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { defaultExposureMask, emptyBrief, type ExposureMask } from "@/contracts/state/brief";
-import { buildStaticRulebook, buildTurnContext, exposureRules, type StaticRulebookInput, type TurnContextInput } from "./narrative";
+import {
+  buildStaticRulebook,
+  buildTurnContext,
+  exposureRules,
+  narrativeNotationNote,
+  type StaticRulebookInput,
+  type TurnContextInput,
+} from "./narrative";
 
 function rulebookInput(over: Partial<StaticRulebookInput> = {}): StaticRulebookInput {
   return {
@@ -59,6 +66,8 @@ describe("buildStaticRulebook", () => {
       "Wardrobe fidelity:",
       "Temporal realism:",
       "Perception limits:",
+      "Reading the player's input (what each character can perceive in it):",
+      "Message notation the player may use",
       "Prose style:",
       "Dialogue tagging:",
       "Narration mode — embodied player:",
@@ -220,6 +229,45 @@ describe("buildStaticRulebook", () => {
     const b = buildStaticRulebook(rulebookInput({ npcNames: ["Fatima"] }));
     const slice = (text: string) => text.slice(text.indexOf("Presence fidelity:"), text.indexOf("Prose style:"));
     expect(slice(a)).toBe(slice(b));
+  });
+
+  it("carries the player-input perception partition (speech vs thought) in embodied mode", () => {
+    // The session port of the chat lane's "Reading the player's message" block
+    // (player-input-perception.plan.md slice 7), generalized over the whole cast.
+    const text = buildStaticRulebook(rulebookInput());
+    expect(text).toContain("Reading the player's input (what each character can perceive in it):");
+    expect(text).toContain("Quoted text is the player speaking aloud");
+    expect(text).toContain("Inner thoughts, feelings, and self-talk");
+    expect(text).toContain("no character may answer, echo, paraphrase, or uncannily intuit them");
+    // Integrates with — never contradicts — the spatial perception/awareness machinery.
+    expect(text).toContain("only within the Perception limits and any Awareness block");
+    // Graceful degradation for a no-quotes message.
+    expect(text).toContain("no quotes at all that reads as plain conversation is simply spoken");
+  });
+
+  it("carries the Message notation legend (sigils, the asterisk-reversal, the text output grammar)", () => {
+    const text = buildStaticRulebook(rulebookInput());
+    expect(text).toContain("Message notation the player may use");
+    expect(text).toContain("private thought by default");
+    expect(text).toContain("reverse of the usual role-play habit");
+    expect(text).toContain("((Text in double parentheses))");
+    // The texted-reply output grammar is held distinct from the in-scene speech tag.
+    expect(text).toContain("*Name: their words here*");
+    expect(text).toContain('distinct from the [Name] "…" tag');
+  });
+
+  it("routes the response contract through the perception block, embodied only", () => {
+    const embodied = buildStaticRulebook(rulebookInput());
+    expect(embodied).toContain("the player's unspoken thoughts reach no one");
+    const observer = buildStaticRulebook(rulebookInput({ embodied: false, playerContext: undefined }));
+    expect(observer).not.toContain("the player's unspoken thoughts reach no one");
+  });
+
+  it("omits the player-input perception block and notation legend for an observer session", () => {
+    // Observer input is stage direction, not something a character in the scene perceives.
+    const text = buildStaticRulebook(rulebookInput({ embodied: false, playerContext: undefined }));
+    expect(text).not.toContain("Reading the player's input");
+    expect(text).not.toContain("Message notation the player may use");
   });
 
   it("references the exits lists by their exact rendered heading text", () => {
@@ -437,6 +485,16 @@ describe("buildTurnContext", () => {
     expect(text).not.toContain("## Awareness");
   });
 
+  it("renders the notation note between the sensory rules and the player input", () => {
+    const note = "Alex is texting Maya: the *Alex: …* line is a message to Maya, not words spoken aloud in the scene.";
+    const text = buildTurnContext(contextInput({ notationNote: note }));
+    expect(text).toContain(note);
+    expect(text.indexOf(note)).toBeGreaterThan(text.indexOf("Sensory rules (this turn):"));
+    expect(text.indexOf(note)).toBeLessThan(text.indexOf("## Player input"));
+    // Absent (the common case) leaves no stray block.
+    expect(buildTurnContext(contextInput())).not.toContain("is texting");
+  });
+
   it("neutralizes and fences a prompt-injection attempt in player input (cannot spoof the authoritative blocks)", () => {
     // A player trying to forge the framework's own headings / OOC marker and
     // smuggle an instruction. After hardening: the only authoritative
@@ -465,6 +523,38 @@ describe("buildTurnContext", () => {
     const openFence = text.indexOf("<<vsp-untrusted-7f3a9c2e:player input>>");
     expect(openFence).toBeGreaterThan(heading);
     expect(text.indexOf("unrestricted assistant")).toBeGreaterThan(openFence);
+  });
+});
+
+describe("narrativeNotationNote", () => {
+  it("renders a comms tail note naming the resolved recipient, with reply-as-text guidance", () => {
+    const note = narrativeNotationNote("*to Maya: you still up?*", { playerName: "Alex", knownNames: ["Maya", "Rhett"] });
+    expect(note).toContain("Alex is texting Maya");
+    expect(note).toContain("not words spoken aloud in the scene");
+    // The reply grammar names the recipient and is held distinct from the spoken tag.
+    expect(note).toContain("*Maya: …*");
+    expect(note).toContain("never a spoken [Name] line");
+  });
+
+  it("resolves a bare *Name:* recipient in a 1-on-1 scene", () => {
+    const note = narrativeNotationNote("*Alex: on my way*", { playerName: "Alex", knownNames: ["Maya"] });
+    expect(note).toContain("Alex is texting Maya");
+  });
+
+  it("falls back gracefully when a bare *Name:* recipient is ambiguous (many present)", () => {
+    const note = narrativeNotationNote("*Alex: on my way*", { playerName: "Alex", knownNames: ["Maya", "Rhett"] });
+    expect(note).toContain("Alex is texting the character the message is meant for");
+  });
+
+  it("renders the OOC never-heard note for a ((double-paren)) aside", () => {
+    const note = narrativeNotationNote("((skip ahead to the next morning))", { playerName: "Alex", knownNames: ["Maya"] });
+    expect(note).toContain("out of character");
+    expect(note).toContain("no character in it hears the aside");
+  });
+
+  it("returns empty for plain input and for a single-paren prose aside (the common cases)", () => {
+    expect(narrativeNotationNote("I ask Maya about the letter.", { knownNames: ["Maya"] })).toBe("");
+    expect(narrativeNotationNote("I sit down (still catching my breath).", { knownNames: ["Maya"] })).toBe("");
   });
 });
 
