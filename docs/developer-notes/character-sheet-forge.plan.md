@@ -1,11 +1,11 @@
 # Character sheet forge — in-sheet completion, per-tab re-drafts, portrait-derived attributes — plan
 
-Status: **active** (slices 1–3 built 2026-07-09 on branch
-`worktree-character-sheet-forge`; pending owner review + merge + Fly deploy for
-live UI verification. Owner ruling 2026-07-09: **the `/characters/forge` page
-stays** — it creates whole characters from a prompt; the in-sheet tools build
-parts of an existing sheet, so the in-sheet Forge is **sheet-only, no guidance
-text box**.)
+Status: **active** (slices 1–3 built, merged to main, and **deployed to Fly
+2026-07-09**; awaiting the owner's live review — the on-Fly UI drive and the
+live prompt-quality pass are the remaining gate before `shipped`. Owner ruling
+2026-07-09: **the `/characters/forge` page stays** — it creates whole
+characters from a prompt; the in-sheet tools build parts of an existing sheet,
+so the in-sheet Forge is **sheet-only, no guidance text box**.)
 
 Builds directly on the shipped character forge
 (`server/authoring/character-forge.ts`, docs/authoring.md §Character forge) and
