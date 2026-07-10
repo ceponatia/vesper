@@ -56,6 +56,33 @@ narration bridges, ending on two player-directed compliments.
    ending on flattery (brushes the perception partition's worked example, "Resolve,
    then one move", and rule 9's affection-is-earned).
 
+## 2026-07-10 (later) — post-deploy observations + the separation ruling
+
+Second screenshot pair (same Cassandra world, gallery scene, Aion 3.0):
+
+- **Speaker labels confirmed model-side, not a UI bug**: pre-deploy replies embedded
+  every quote in narration-led paragraphs (neither attribution path can catch those);
+  the first post-deploy reply tagged a mixed speech+beat line and the label rendered
+  immediately. The renderer re-parses stored text identically for every message, so
+  per-message differences are always content differences.
+- **Third-person player drift**: one conversation narrates the player wholly in third
+  person ("she tugs him away", "leans into Brian's side") — rule 2 violation, but
+  self-reinforcing once the history establishes the register. Owner ruling: acceptable
+  for that conversation; watch whether FRESH Aion 3.0 chats start correctly. If drift
+  recurs from clean starts, the candidate fix is a deterministic `gateNotes` steer
+  (third-person player-name/pronoun detection over the last reply → a one-turn
+  "address the player as you" note), not more static rules.
+- **Separation ruling (implemented)**: a parted-ways beat (player walks the character
+  home, returns to their own place) drew a reply narrating the PLAYER's side — walking
+  into the loft, receiving a text, reacting. Rule 4 hardened (the player's story
+  advances only through their own messages; never script even mundane connective
+  beats) + new rule 16 (apart ⇒ the reply follows the character's side only, a scene
+  cut to her world, reaching the player solely through comms, ending on her move).
+  Known limitation: chat scene memory tracks ONE current place — a split scene isn't
+  modeled as state, so rule 16 carries the behavior alone; if the archivist's `scene`
+  proposals wobble between the two locations during a separation, a `places`-level
+  "whose location" axis is the deeper fix.
+
 ### Consciously skipped
 
 - **Renderer backstop for asterisk-emphasis** (tokenizing `*…*` pairs inside speech
