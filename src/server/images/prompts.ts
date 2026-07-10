@@ -504,7 +504,8 @@ export const SCENE_COMPOSER_SYSTEM = [
   "Fill every field of the requested object. Rules:",
   '- focalCharacter: exactly ONE name from the "Present characters" list — whoever the recent narration centers on. If the list is empty, leave it empty: a location-only shot is a valid image.',
   '- others: any remaining names from the "Present characters" list that belong in frame, each with a short phrase for what they are doing. Never include the player or anyone not on the list — characters who are not in the room must not appear.',
-  "- pose and activity: what the focal character is doing right now, from the recent narration and their recorded activity.",
+  "- pose and activity: what the focal character is doing right now, from the recent narration and their recorded activity. Pose is the body — stance, orientation, expression — in one compact phrase; activity is what they are doing in the scene. The two must not repeat each other's beats: state a facial expression ONCE, in pose (never a smile in pose and a laugh in activity — pick the single strongest beat).",
+  '- Every pose/activity/action phrase must describe that character ALONE, paintable with no player in frame. Never mention the player or their body — "walking beside the player" or "a hand resting on his arm" cannot be painted. Translate player-directed beats into their solo visual equivalent: eyes or head turned toward the player become "toward the viewer"; touching, leading, or leaning on the player becomes the character\'s own posture and motion (a hand extended slightly, glancing back mid-step); keep the expression and energy, lose the contact. Example: narration "she leads you back toward the gallery, hand on your arm, laughing" → pose "glancing back toward the viewer, mid-laugh", activity "stepping toward the main gallery, heels clicking on the stone floor".',
   '- Wardrobe: each character\'s "visible wardrobe" line is the authoritative outfit state; never infer clothing from the narration — prose lies.',
   "- setting: the current location's appearance and atmosphere as seen from where the player stands.",
   "- lighting and mood: match the time of day and the emotional tone of the recent narration.",
@@ -843,6 +844,29 @@ export function emptySceneRenderPlan(): SceneRenderPlan {
 const normalizeName = (name: string): string => name.trim().toLowerCase();
 
 /**
+ * Deterministic backstop for player references in composer pose/activity/action text
+ * (owner report 2026-07-10): the composer is instructed to translate player-directed
+ * beats into solo equivalents, but a slip hands the render an unpaintable instruction
+ * ("walking beside the player, a hand on his arm") that fights the POV rule. Gaze-type
+ * references rewrite to the viewer ("head turned toward the player" → "toward the
+ * viewer" — exactly right for a POV shot); any clause still naming the player is
+ * dropped whole. Pronoun references ("his arm") are deliberately NOT scrubbed — in a
+ * multi-character scene a pronoun may be another character; that case belongs to the
+ * composer rule, not a regex.
+ */
+export function scrubPlayerFromAction(action: string): string {
+  if (!/\bplayer\b/i.test(action)) return action;
+  // Gaze/orientation toward the player = toward the camera. Possessives ("at the
+  // player's side") are proximity, not gaze — they fall through to the clause drop.
+  const rewritten = action.replace(/\b(facing|toward|towards|at)\s+the\s+player\b(?!['’]s)/gi, "$1 the viewer");
+  return rewritten
+    .split(/[;,]/)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0 && !/\bplayer\b/i.test(clause))
+    .join(", ");
+}
+
+/**
  * Deterministic focal pick (demo mode / clamp fallback): the present NPC
  * mentioned latest in the newest narration, else the first roster entry,
  * else "" (empty room — location-only shot).
@@ -889,7 +913,13 @@ export function resolveScenePlan(
     focalEntry = byName.get(normalizeName(fallbackName)) ?? roster[0] ?? null;
   }
 
-  const focal = focalEntry ? characterSpec(focalEntry, [spec.pose, spec.activity].filter(Boolean).join("; ")) : null;
+  // Trailing periods stripped before the join — "…teasing smile.; Leading…" read as two
+  // stitched sentences in the render prompt instead of one pose phrase.
+  const focalAction = [spec.pose, spec.activity]
+    .map((part) => part.trim().replace(/\.+$/, ""))
+    .filter(Boolean)
+    .join("; ");
+  const focal = focalEntry ? characterSpec(focalEntry, focalAction) : null;
   const seen = new Set(focalEntry ? [normalizeName(focalEntry.name)] : []);
   const others: SceneCharacterSpec[] = [];
   for (const other of spec.others) {
@@ -924,7 +954,9 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
   return {
     name: entry.name,
     ...(entry.species ? { species: entry.species } : {}),
-    action: action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; "),
+    // The player scrub covers the composer's text AND the posture/activity fallback
+    // (session state can carry player-referencing activity phrases too).
+    action: scrubPlayerFromAction(action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; ")),
     // Forced from occlusion-filtered state regardless of anything the model said; a free-text
     // override (character chat — no equippable wardrobe) wins when present.
     outfitSummary: entry.outfitDescription ?? wardrobeOutfitSummary(entry.wornVisible),

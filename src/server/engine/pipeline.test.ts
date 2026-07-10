@@ -175,7 +175,9 @@ describe("buildSceneComposerContext", () => {
     expect(mira?.wardrobeTracked).toBe(true);
     expect(mira?.exposure).toEqual({ torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" });
 
-    const plan = resolveScenePlan(sceneSpecSchema.parse({ focalCharacter: "Mira", pose: "facing the player" }), context);
+    // "facing the player" is a player-referencing pose — scrubPlayerFromAction (owner
+    // report 2026-07-10) rewrites it to the viewer, so the render stays paintable.
+    const plan = resolveScenePlan(sceneSpecSchema.parse({ focalCharacter: "Mira", pose: "facing the viewer" }), context);
     expect(plan.focal?.outfitSummary).toBe("");
     expect(plan.focal?.exposure).toBe("fully nude, no clothing");
 
@@ -186,8 +188,13 @@ describe("buildSceneComposerContext", () => {
     expect(prompt).not.toContain("wearing casual everyday clothing");
 
     const textToImagePrompt = buildSceneRenderPrompt(plan);
-    expect(textToImagePrompt).toContain("Subject: Mira — fully nude, no clothing; facing the player.");
+    expect(textToImagePrompt).toContain("Subject: Mira — fully nude, no clothing; facing the viewer.");
     expect(textToImagePrompt).not.toContain("wearing casual everyday clothing");
+
+    // The old fixture pose, straight through the scrub: "facing" is orientation, so it
+    // rewrites to the viewer instead of dropping.
+    const scrubbed = resolveScenePlan(sceneSpecSchema.parse({ focalCharacter: "Mira", pose: "facing the player" }), context);
+    expect(scrubbed.focal?.action).toBe("facing the viewer");
   });
 
   it("carries location, scene state, daylight-band lighting context, and the recent narration", () => {
