@@ -1,6 +1,6 @@
 import type { SceneReferenceMode, SceneVisualReference } from "@/contracts";
 import { describeImageGenError } from "./errors";
-import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage } from "./venice";
+import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage, veniceSceneImageModelId } from "./venice";
 
 /**
  * Provider-capability seam for scene rendering (scene-images.spec.md §4). The
@@ -219,7 +219,9 @@ async function renderVeniceMultiEdit(input: ImageRenderInput): Promise<ProviderR
 }
 
 async function renderVeniceGenerate(input: ImageRenderInput): Promise<ProviderRenderResult> {
-  const generated = await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4" });
+  // The scene t2i default (Chroma) — resolved through the shared key registry so this
+  // call and scene.ts's meta.model label can never disagree.
+  const generated = await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4", model: veniceSceneImageModelId() });
   return fromVenice(generated, "venice generate returned no image");
 }
 

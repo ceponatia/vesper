@@ -1,4 +1,4 @@
-import type { AvatarImageModel } from "@/contracts";
+import { DEFAULT_AVATAR_IMAGE_MODEL, type AvatarImageModel } from "@/contracts";
 
 const VENICE_BASE = "https://api.venice.ai/api/v1";
 
@@ -47,6 +47,17 @@ const VENICE_T2I_MODEL_IDS: Record<Exclude<AvatarImageModel, "qwen">, string> = 
 
 export function veniceT2IModelId(model: AvatarImageModel): string {
   return model === "qwen" ? veniceImageModelId() : VENICE_T2I_MODEL_IDS[model];
+}
+
+/**
+ * The scene render ladder's text-to-image model (the `venice_generate` rung — the
+ * no-usable-anchor fallback): resolves the shared default pick (Chroma, owner ruling
+ * 2026-07-10) through the same key registry as the portrait studio, so the two lanes'
+ * defaults can never drift. Centralized here so the API call (`renderVeniceGenerate`)
+ * and the `images.meta.model` label (`scene.ts`) agree by construction.
+ */
+export function veniceSceneImageModelId(): string {
+  return veniceT2IModelId(DEFAULT_AVATAR_IMAGE_MODEL);
 }
 
 export function hasVenice(): boolean {
