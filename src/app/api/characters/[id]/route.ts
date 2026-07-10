@@ -2,7 +2,8 @@ import type { NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { parseOr } from "@/lib/parse";
-import { characters, db, images } from "@/server/db";
+import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
+import { deleteChat } from "@/server/engine";
 import {
   characterPatchSchema,
   deleteEntityImages,
@@ -63,6 +64,22 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const existing = await findOwnedCharacter(id, user.id);
   if (!existing) return jsonError("not_found", "character not found", 404);
+  // The character's conversations go through `deleteChat` FIRST (deletion-leak audit,
+  // 2026-07-10): deleting the character row alone cascades `chat_participants` +
+  // `character_chat_state` away but leaves the chat row, its transcript, and the memory
+  // group's facts/episodes orphaned — invisible in the hub (it inner-joins participants)
+  // yet fully stored. `deleteChat` owns the purge order (prompt scrub → cascades →
+  // last-reference memory purge), so route every referencing chat through it while the
+  // participant rows still exist. Today every chat is 1:1; when multi-character chats
+  // land, this becomes "remove the participant, delete the chat only when it empties".
+  const chats = await db()
+    .select({ id: characterChats.id, ownerId: characterChats.ownerId })
+    .from(chatParticipants)
+    .innerJoin(characterChats, eq(characterChats.id, chatParticipants.chatId))
+    .where(eq(chatParticipants.characterId, id));
+  for (const chat of chats) {
+    await deleteChat(chat);
+  }
   // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
   // library delete never breaks them and never hits a FK — no in-use guard.
   await db().delete(characters).where(and(eq(characters.id, id), eq(characters.ownerId, user.id)));

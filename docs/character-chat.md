@@ -277,7 +277,14 @@ guarded state write:
   prompt scrub runs **per conversation** for chat-keyed rows (sibling chats keep
   theirs), plus the legacy character-wide scrub for pre-slice-9 null-`chatId` rows —
   assets survive either way (`images.chat_id` is SET NULL); the memory group is purged
-  only when no other conversation references it.
+  only when no other conversation references it. **Character deletion routes through
+  this too** (deletion-leak audit, 2026-07-10): `DELETE /api/characters/:id` runs every
+  chat the character participates in through `deleteChat` BEFORE deleting the character
+  row — deleting the character alone cascaded `chat_participants`/`character_chat_state`
+  away and stranded the chat row, transcript, and memory group (invisible in the hub,
+  which inner-joins participants, but fully stored). Ordering matters: the participant
+  rows are the only map from chat to memory group, so the purge must run while they
+  still exist.
 
 ## API surface
 
