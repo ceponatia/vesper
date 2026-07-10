@@ -20,6 +20,7 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // `response_format` — a candidate tool/agent model to test later (see
   // docs/getting-started.md §Environment "Tool-model candidate").
   { id: "aion-labs/aion-3.0", label: "Aion 3.0" },
+  { id: "aion-labs/aion-3.0-mini", label: "Aion 3.0 Mini" },
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
   { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
@@ -31,11 +32,11 @@ export const DEFAULT_NARRATIVE_MODEL_ID = "aion-labs/aion-2.0";
 /**
  * The narrator the **character-chat** tab defaults to (the Chat-tab model
  * dropdown's initial value). Kept separate from the session narrator default
- * above so the two surfaces can diverge: chat favours GLM 5.2's voice for the
- * quick 1-on-1, while sessions stay on Aion 2.0. Must be an id in
- * {@link NARRATIVE_MODELS} so the dropdown shows it selected.
+ * above so the two surfaces can diverge: chat runs Aion 3.0 (owner ruling
+ * 2026-07-10, replacing GLM 5.2), while sessions stay on Aion 2.0. Must be an
+ * id in {@link NARRATIVE_MODELS} so the dropdown shows it selected.
  */
-export const DEFAULT_CHARACTER_CHAT_MODEL_ID = "z-ai/glm-5.2";
+export const DEFAULT_CHARACTER_CHAT_MODEL_ID = "aion-labs/aion-3.0";
 
 /**
  * Resolve a persisted/over-the-wire character-chat model id to a curated one: a
