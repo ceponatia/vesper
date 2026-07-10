@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, MESSAGE_CONTENT_MAX, readBody, withUser } from "@/server/api";
 import { characterChatMessages, db } from "@/server/db";
 import { reconcileMessageMemory, reextractEditedReply } from "@/server/engine";
 import { resolvePlayerPersona } from "@/server/players";
@@ -23,7 +23,9 @@ type Params = { chatId: string; messageId: string };
  */
 
 const editBodySchema = z.object({
-  content: z.string().trim().min(1).max(4000),
+  // MESSAGE_CONTENT_MAX is an anti-abuse backstop, not a length policy — the
+  // edit must accept any reply the model legitimately produced.
+  content: z.string().trim().min(1).max(MESSAGE_CONTENT_MAX),
 });
 
 /** PATCH /api/chats/:chatId/messages/:messageId — overwrite one message's text. */

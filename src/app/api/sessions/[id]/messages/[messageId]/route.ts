@@ -1,12 +1,14 @@
 import { z } from "zod";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { jsonError, jsonOk, MESSAGE_CONTENT_MAX, readBody, withUser } from "@/server/api";
 import { deleteMessage, editMessage } from "@/server/engine";
 import { engineErrorStatus } from "../../../_shared/sse";
 
 type Params = { id: string; messageId: string };
 
 const editBodySchema = z.object({
-  content: z.string().trim().min(1).max(20_000),
+  // MESSAGE_CONTENT_MAX is an anti-abuse backstop, not a length policy — the
+  // edit must accept any narration the model legitimately produced.
+  content: z.string().trim().min(1).max(MESSAGE_CONTENT_MAX),
 });
 
 /** PATCH — edit a message; narration edits queue a reconcile job (docs/turn-engine.md §Edit / rerun). */

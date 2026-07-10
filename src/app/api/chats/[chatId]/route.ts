@@ -2,7 +2,16 @@ import type { NextRequest } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { resolveChatModelId } from "@/lib/narrative-models";
-import { CHAT_RATE_LIMIT, drainingStreamResponse, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
+import {
+  CHAT_RATE_LIMIT,
+  drainingStreamResponse,
+  jsonError,
+  jsonOk,
+  MESSAGE_CONTENT_MAX,
+  rateLimit,
+  readBody,
+  withUser,
+} from "@/server/api";
 import { characterChats, characterChatMessages, db } from "@/server/db";
 import { deleteChat, submitChatMessage } from "@/server/engine";
 import { loadOwnedChat } from "../owned";
@@ -30,7 +39,7 @@ const sendBodySchema = z
      * on the last reply, or an atomic "rerun" of a player line (data-loss-rerun fix).
      */
     kind: z.enum(["send", "open", "continue", "regenerate", "rerun"]).default("send"),
-    content: z.string().trim().max(4000).optional(),
+    content: z.string().trim().max(MESSAGE_CONTENT_MAX).optional(),
     /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
     model: z.string().trim().min(1).max(120).optional(),
     /** "Has something to say" opener cue (spec §8.4) — only read for kind "continue". */
