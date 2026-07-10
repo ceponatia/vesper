@@ -29,6 +29,12 @@ export const SCENE_DETAIL_MAX_CHARS = 140;
 export const SCENE_PLACE_NAME_MAX_CHARS = 60;
 /** Length cap on the time-of-day phrase. */
 export const SCENE_TIME_OF_DAY_MAX_CHARS = 40;
+/**
+ * Length cap on a place's visual sketch (chat-scene-fidelity.plan.md slice 2): the
+ * background sketch agent's 2–4 sentence description of the place, consumed by the
+ * scene image's `room` and the narrator's Scene block.
+ */
+export const SCENE_SKETCH_MAX_CHARS = 600;
 
 const detailString = z.string().trim().min(1).max(SCENE_DETAIL_MAX_CHARS);
 const placeNameString = z.string().trim().min(1).max(SCENE_PLACE_NAME_MAX_CHARS);
@@ -47,6 +53,13 @@ export const scenePlaceSchema = z.object({
     .catch([])
     .default([])
     .transform((c) => dedupeCap(c, SCENE_MEMORY_MAX_CONNECTIONS)),
+  /**
+   * The background sketch agent's visual description of the place (slice 2b) — generated
+   * once when the place is introduced, consumed by the scene image (`room`) and the
+   * narrator's Scene block. Absent until the agent runs; an invalid value parses away
+   * (the absent-sketch trigger simply re-fires).
+   */
+  sketch: z.string().trim().min(1).max(SCENE_SKETCH_MAX_CHARS).optional().catch(undefined),
 });
 export type ScenePlace = z.infer<typeof scenePlaceSchema>;
 
@@ -173,6 +186,8 @@ export function mergeSceneMemory(memory: ChatSceneMemory, proposal: ChatScenePro
     name: p.name,
     details: [...p.details],
     connections: [...p.connections],
+    // The sketch is agent-written, never proposed by the archivist — carry it through.
+    ...(p.sketch !== undefined ? { sketch: p.sketch } : {}),
   }));
 
   const upsert = (rawName: string): ScenePlace => {
@@ -208,4 +223,40 @@ export function currentScenePlace(memory: ChatSceneMemory): ScenePlace | null {
   if (!memory.current) return null;
   const key = normalizeName(memory.current);
   return memory.places.find((p) => normalizeName(p.name) === key) ?? null;
+}
+
+/**
+ * The sketch agent's structured output (chat-scene-fidelity.plan.md slice 2b). Lenient:
+ * a bad/empty result parses to "" and the handler simply writes nothing (the absent-sketch
+ * trigger re-fires on a later exchange).
+ */
+export const chatSceneSketchSchema = z.object({
+  sketch: z
+    .string()
+    .catch("")
+    .default("")
+    .transform((s) => s.trim().slice(0, SCENE_SKETCH_MAX_CHARS)),
+});
+export type ChatSceneSketch = z.infer<typeof chatSceneSketchSchema>;
+
+/** Degraded default: no sketch written. */
+export function degradedChatSceneSketch(): ChatSceneSketch {
+  return { sketch: "" };
+}
+
+/**
+ * Write a finished sketch onto its place (pure): set `place.sketch` when the place still
+ * exists AND has no sketch yet (first write wins — a racing regeneration never clobbers).
+ * Returns the original memory object when nothing changed, so callers can cheap-compare.
+ */
+export function withPlaceSketch(memory: ChatSceneMemory, placeName: string, sketch: string): ChatSceneMemory {
+  const text = sketch.trim().slice(0, SCENE_SKETCH_MAX_CHARS);
+  if (!text) return memory;
+  const key = normalizeName(placeName);
+  const index = memory.places.findIndex((p) => normalizeName(p.name) === key);
+  const place = index >= 0 ? memory.places[index] : undefined;
+  if (!place || place.sketch) return memory;
+  const places = [...memory.places];
+  places[index] = { ...place, sketch: text };
+  return { ...memory, places };
 }

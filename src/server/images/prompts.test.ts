@@ -21,6 +21,7 @@ import {
   emptySceneSpec,
   formatExposure,
   heuristicFocalName,
+  identityAnchorSummary,
   intimateSceneAppearance,
   PORTRAIT_IDENTITY_LOCK,
   RECENT_NARRATION_LATEST_CHARS,
@@ -752,6 +753,45 @@ describe("buildSceneRenderPrompt — subject body line (the waist-up portrait's 
   });
   it("omits the Body line when the subject is described textually (no reference image)", () => {
     expect(buildSceneRenderPrompt(plan)).not.toContain("Body (below the portrait's framing)");
+  });
+});
+
+describe("identityAnchorSummary + render emission (chat-scene-fidelity slice 3)", () => {
+  it("picks only whitelisted identity-critical attributes, and returns '' when none are authored", () => {
+    const summary = identityAnchorSummary([
+      { id: "skin.tone", value: "warm brown", source: "base" },
+      { id: "lips.fullness", value: "full", source: "base" },
+      { id: "eyes.color", value: "hazel", source: "base" },
+      { id: "build.height", value: 170, source: "base" }, // not identity-critical — excluded
+      { id: "presentation.grooming", value: "polished", source: "base" }, // not identity-critical — excluded
+    ]);
+    expect(summary).toContain("warm brown");
+    expect(summary).toContain("full");
+    expect(summary).toContain("hazel");
+    expect(summary).not.toContain("170");
+    expect(summary).not.toContain("polished");
+    expect(identityAnchorSummary([{ id: "build.height", value: 170, source: "base" }])).toBe("");
+    expect(identityAnchorSummary([])).toBe("");
+  });
+
+  it("emits the reinforcement line for the identity-locked reference only, worded reference-authoritative", () => {
+    const plan = {
+      ...emptySceneRenderPlan(),
+      focal: {
+        name: "Mira",
+        action: "standing by the bar",
+        outfitSummary: "red dress",
+        appearance: "Hair color: red",
+        identityAnchors: "skin tone: warm brown; lips fullness: full",
+      },
+    };
+    const anchored = buildSceneRenderPrompt(plan, { referenceName: "Mira" });
+    expect(anchored).toContain("Same person as the reference image");
+    expect(anchored).toContain("the reference is authoritative where they differ");
+    expect(anchored).toContain("skin tone: warm brown; lips fullness: full");
+    // No reference image ⇒ the subject is textual and already carries full appearance —
+    // the reinforcement line must not appear.
+    expect(buildSceneRenderPrompt(plan)).not.toContain("Same person as the reference image");
   });
 });
 

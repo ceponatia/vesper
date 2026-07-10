@@ -51,6 +51,22 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
     expect(chatArchivistSchema.parse({ openLoops: "not-a-list" }).openLoops).toEqual([]);
     expect(degradedChatArchivist().openLoops).toEqual([]);
   });
+
+  it("parses the outfit proposal (chat-scene-fidelity slice 1): full replacement, truncated never rejected", () => {
+    const changed = chatArchivistSchema.parse({
+      outfit: { description: "  a black wrap dress and heels ", exposed: false },
+    });
+    expect(changed.outfit).toEqual({ description: "a black wrap dress and heels", exposed: false });
+    // {} is the no-change no-op (the common case in the prompt's examples).
+    expect(chatArchivistSchema.parse({ outfit: {} }).outfit).toEqual({ description: "", exposed: false });
+    // An overlong description truncates — it must NOT degrade to "no change".
+    const long = chatArchivistSchema.parse({ outfit: { description: "x".repeat(1000), exposed: true } });
+    expect(long.outfit.description.length).toBeLessThan(1000);
+    expect(long.outfit.description.length).toBeGreaterThan(0);
+    expect(long.outfit.exposed).toBe(true);
+    // A malformed proposal degrades to the no-op without rejecting the object.
+    expect(chatArchivistSchema.parse({ outfit: "naked" }).outfit).toEqual({ description: "", exposed: false });
+  });
 });
 
 describe("chatMemoryTraceSchema", () => {

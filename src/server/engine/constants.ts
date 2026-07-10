@@ -99,6 +99,13 @@ export const CHAT_PULSE_TIMEOUT_MS = 4000;
 export const CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS = 700;
 export const CHAT_ARCHIVIST_TIMEOUT_MS = 6000;
 /**
+ * The background location-sketch agent (chat-scene-fidelity.plan.md slice 2b) runs as a
+ * DETACHED job — nothing waits on it — so it affords a roomier timeout than the post-flush
+ * legs. A miss just leaves the place unsketched; the absent-sketch trigger re-fires.
+ */
+export const CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS = 300;
+export const CHAT_SCENE_SKETCH_TIMEOUT_MS = 15000;
+/**
  * Arousal a pulse-classified **intimate** act adds (slice 4): full for an intimate
  * concept (e.g. a proposition), half for courtship / physical-affection. Skipped
  * when the act is disliked. Clamped to [0,1] like every meter.

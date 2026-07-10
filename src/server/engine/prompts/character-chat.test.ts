@@ -1013,6 +1013,30 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
     expect(parts.tail).toContain("- Nearby: kitchen through the doorway");
   });
 
+  it("renders the place's background sketch as a fixed-reference line (chat-scene-fidelity slice 2b)", () => {
+    const sketched = {
+      meters: {},
+      regard: 0,
+      conditions: [],
+      sceneMemory: {
+        current: "the living room",
+        places: [
+          {
+            name: "the living room",
+            details: ["blue sofa"],
+            connections: [],
+            sketch: "A narrow living room under tall windows, morning light on bare brick.",
+          },
+        ],
+      },
+    };
+    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sketched });
+    expect(parts.tail).toContain("- Setting (fixed reference): A narrow living room under tall windows");
+    // No sketch ⇒ no line (sceneState above has none).
+    const plain = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    expect(plain.tail).not.toContain("Setting (fixed reference)");
+  });
+
   it("directs restraint on an unchanged scene, and re-establishment when it just changed", () => {
     const unchanged = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
     expect(unchanged.tail).toContain("Do not re-establish the setting; at most one fresh accent");

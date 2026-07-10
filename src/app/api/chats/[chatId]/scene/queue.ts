@@ -1,5 +1,5 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
-import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import { characterProfileSchema, currentScenePlace, emptyCharacterProfile } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
 import { characterChatMessages, db, jobs } from "@/server/db";
@@ -78,6 +78,14 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // equippable wardrobe.
     const chatState = await loadChatState(args.chatId, args.character.id);
 
+    // The setting comes from chat scene memory (chat-scene-fidelity.plan.md slice 2):
+    // the current place's agent-written sketch when it exists, else its established
+    // name + details. Empty memory keeps the DEFAULT_CHAT_ROOM placeholder.
+    const place = chatState ? currentScenePlace(chatState.sceneMemory) : null;
+    const room = place
+      ? place.sketch?.trim() || [place.name, place.details.join("; ")].filter(Boolean).join(" — ")
+      : undefined;
+
     return await startJob({
       type: "chat_scene_image",
       payload: { chatId: args.chatId, characterId: args.character.id },
@@ -88,6 +96,8 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           name: args.character.name,
           profile,
           avatarImageId: args.character.avatarImageId,
+          room,
+          timeOfDay: chatState?.sceneMemory.timeOfDay,
           recentChat,
           outfit: chatState?.outfit ?? "",
           outfitExposed: chatState?.outfitExposed ?? false,

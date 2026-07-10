@@ -14,6 +14,7 @@ import { logEvent } from "../events";
 import { absoluteImagePath } from "./assets";
 import {
   characterAppearanceSummary,
+  identityAnchorSummary,
   sceneRevealAppearance,
   type SceneComposerContext,
   type ScenePresentCharacter,
@@ -44,6 +45,8 @@ export interface RenderCharacterSceneInput {
   avatarImageId: string | null;
   /** Default-room override; falls back to DEFAULT_CHAT_ROOM. */
   room?: string;
+  /** Scene-memory time of day (chat-scene-fidelity.plan.md slice 2a); falls back to "day". */
+  timeOfDay?: string;
   /** Recent assistant turns (oldest first) for the composer to center the shot on. */
   recentChat?: string[];
   /** Free-text starting outfit from the chat-state scenario modal; "" ⇒ composer-inferred. */
@@ -98,6 +101,7 @@ export function buildCharacterSceneContext(input: {
   name: string;
   profile: CharacterProfile;
   room: string;
+  timeOfDay?: string;
   recentChat: string[];
   outfit: string;
   outfitExposed: boolean;
@@ -125,6 +129,9 @@ export function buildCharacterSceneContext(input: {
     // reference avatar (same role exposedRegions played for the old default-outfit path).
     wardrobeTracked: true,
     appearance,
+    // Identity-critical features (lips, skin tone, eyes, hair) reinforcing the avatar
+    // reference — the render prompt keeps the reference authoritative over them.
+    identityAnchors: identityAnchorSummary(resolved, input.profile),
     // The chat subject is the identity-locked reference (a waist-up portrait), so supplement it
     // with the figure it can't show: the SFW lower-body shape line (always) and exposure-gated
     // intimate anatomy (uncensored route, only when the outfit is flagged exposed).
@@ -136,7 +143,7 @@ export function buildCharacterSceneContext(input: {
     present: [present],
     locationName: "the room",
     locationDescription: input.room,
-    timeOfDay: "day",
+    timeOfDay: input.timeOfDay?.trim() || "day",
     recentNarration: input.recentChat,
   };
 }
@@ -175,6 +182,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     name: input.name,
     profile: input.profile,
     room,
+    timeOfDay: input.timeOfDay,
     recentChat: (input.recentChat ?? []).filter((t) => t.trim()),
     outfit: input.outfit ?? "",
     outfitExposed: input.outfitExposed ?? false,

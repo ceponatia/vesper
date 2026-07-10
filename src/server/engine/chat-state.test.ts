@@ -44,6 +44,13 @@ describe("seedChatState", () => {
     expect(chatStateSnapshot(state).sceneMemory).toEqual({ places: [] });
   });
 
+  it("seeds the outfit from the character form's defaultOutfit; blank when none authored (chat-scene-fidelity slice 1)", () => {
+    expect(seedChatState(profile()).outfit).toBe("");
+    const dressed = seedChatState(profile({ defaultOutfit: ["a linen sundress", "leather sandals"] }));
+    expect(dressed.outfit).toBe("a linen sundress, leather sandals");
+    expect(dressed.outfitExposed).toBe(false);
+  });
+
   it("seeds both axes from the authored playerRelationship record at band midpoints", () => {
     const authored = seedChatState(
       profile({

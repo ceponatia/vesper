@@ -3,14 +3,18 @@ import { parseOr } from "@/lib/parse";
 import { DiagnosticCollector } from "../diagnostics";
 import {
   chatSceneMemorySchema,
+  chatSceneSketchSchema,
   currentScenePlace,
+  degradedChatSceneSketch,
   emptyChatSceneMemory,
   isEmptyChatSceneMemory,
   mergeSceneMemory,
   samePlaceName,
   SCENE_MEMORY_MAX_DETAILS,
   SCENE_MEMORY_MAX_PLACES,
+  SCENE_SKETCH_MAX_CHARS,
   switchScenePlace,
+  withPlaceSketch,
   type ChatSceneMemory,
 } from "./chat-scene-memory";
 
@@ -129,5 +133,51 @@ describe("chatSceneMemorySchema parse boundary", () => {
   it("emptyChatSceneMemory is recognized as empty", () => {
     expect(isEmptyChatSceneMemory(emptyChatSceneMemory())).toBe(true);
     expect(isEmptyChatSceneMemory({ current: "kitchen", places: [] })).toBe(false);
+  });
+});
+
+describe("withPlaceSketch (chat-scene-fidelity.plan.md slice 2b)", () => {
+  const base: ChatSceneMemory = {
+    current: "kitchen",
+    places: [{ name: "kitchen", details: ["blue tiles"], connections: [] }],
+  };
+
+  it("writes a sketch onto its place (case-insensitive) and preserves it through mergeSceneMemory", () => {
+    const sketched = withPlaceSketch(base, "Kitchen", "A narrow galley kitchen under a skylight.");
+    expect(currentScenePlace(sketched)?.sketch).toBe("A narrow galley kitchen under a skylight.");
+    // The archivist merge copies places field-by-field — the agent-written sketch must survive it.
+    const merged = mergeSceneMemory(sketched, {
+      places: [{ name: "kitchen", details: ["kettle on the stove"], connections: [] }],
+    });
+    expect(currentScenePlace(merged)?.sketch).toBe("A narrow galley kitchen under a skylight.");
+    expect(currentScenePlace(merged)?.details).toContain("kettle on the stove");
+  });
+
+  it("first write wins; unknown places and blank sketches are identity no-ops (cheap CAS compare)", () => {
+    const sketched = withPlaceSketch(base, "kitchen", "First.");
+    expect(withPlaceSketch(sketched, "kitchen", "Second.")).toBe(sketched);
+    expect(withPlaceSketch(base, "attic", "Anything.")).toBe(base);
+    expect(withPlaceSketch(base, "kitchen", "   ")).toBe(base);
+  });
+
+  it("round-trips through the schema; an invalid sketch parses away instead of failing the row", () => {
+    const sketched = withPlaceSketch(base, "kitchen", "A narrow galley kitchen.");
+    const parsed = chatSceneMemorySchema.parse(JSON.parse(JSON.stringify(sketched)));
+    expect(currentScenePlace(parsed)?.sketch).toBe("A narrow galley kitchen.");
+    const bad = chatSceneMemorySchema.parse({ current: "kitchen", places: [{ name: "kitchen", sketch: 42 }] });
+    expect(currentScenePlace(bad)).not.toBeNull();
+    expect(currentScenePlace(bad)?.sketch).toBeUndefined();
+  });
+});
+
+describe("chatSceneSketchSchema (the sketch agent's output boundary)", () => {
+  it("trims and caps the sketch; a bad/empty result degrades to the no-write default", () => {
+    expect(chatSceneSketchSchema.parse({ sketch: "  A room. " }).sketch).toBe("A room.");
+    expect(chatSceneSketchSchema.parse({ sketch: "x".repeat(SCENE_SKETCH_MAX_CHARS + 50) }).sketch).toHaveLength(
+      SCENE_SKETCH_MAX_CHARS,
+    );
+    expect(chatSceneSketchSchema.parse({}).sketch).toBe("");
+    expect(chatSceneSketchSchema.parse({ sketch: 42 }).sketch).toBe("");
+    expect(degradedChatSceneSketch()).toEqual({ sketch: "" });
   });
 });

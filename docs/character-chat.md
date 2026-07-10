@@ -188,6 +188,14 @@ then reconciled by the archivist:
    parse) is merged onto the pre-turn memory in `finalizeChatState` via `mergeSceneMemory` (dedupe
    + caps, oldest-out; the current place is never evicted). A degraded/empty proposal is a no-op —
    the memory only ever accretes what the fiction established.
+4. **Background sketch (chat-scene-fidelity slice 2b).** After the state write, a current place
+   without a `sketch` enqueues a detached `chat_scene_sketch` job (`chat-scene-sketch.ts`, deduped
+   per chat like the summary fold): a small agent (`prompts/chat-scene-sketch.ts`) expands the
+   place into a 2–4 sentence visual sketch — every established detail incorporated, only
+   compatible texture invented — written back onto `ScenePlace.sketch` via an optimistic CAS on
+   the raw `scene_memory` jsonb (deliberately NOT the exchange lock, so it can never 409 a send;
+   a lost race re-fires while the sketch stays absent). Consumed by the narrator's Scene block
+   (`- Setting (fixed reference): …`) and the scene image's `room` (below).
 
 **Reset.** Scene memory rides the ordinary chat resets: the row is on `character_chat_state`, whose
 `(chat_id)` FK cascades on `deleteChat` (the one destructive verb), so a hard delete clears it with
@@ -203,12 +211,17 @@ guarded state write:
 - **Pulse** (`runChatPulse`): classifies the exchange onto the §6 personality curve —
   regard/mood deltas, arousal bump for intimate concepts, mindNote refresh. Degrades to
   drift-only state. Skipped for `continue` beats (no player act to react to).
-- **Archivist-lite** (`runChatArchivist`): one call emitting six fields — the episode
+- **Archivist-lite** (`runChatArchivist`): one call emitting seven fields — the episode
   summary, `FactDraft[]`, next-turn `memoryQueries`, `attributeChanges` (applied through
   the `overlaySourceMayChange` inherent-trait guard), `openLoops` (the full ≤3 list
   each time, prior loops fed back through the prompt; a **degraded** archivist keeps the
-  prior loops rather than wiping them), and the optional `scene` proposal merged into
-  `scene_memory` (§Scene memory). Its memory write is additionally fenced
+  prior loops rather than wiping them), the optional `scene` proposal merged into
+  `scene_memory` (§Scene memory), and the optional `outfit` change (chat-scene-fidelity
+  slice 1): a full-replacement description + `exposed` flag when the exchange dressed,
+  changed, or undressed the character, folded into `state.outfit`/`outfitExposed` — which
+  the wearing-line and the scene image's authoritative outfit override both read (the
+  seed falls back to the character form's `defaultOutfit` when Starting Outfit is blank).
+  Its memory write is additionally fenced
   so an infra throw never costs the pulse's state. Every write is **provenance-stamped**
   (`source_message_id` on facts + episodes, spec §4.3): deleting or editing an assistant
   line retracts/re-extracts its memory (`reconcileMessageMemory` / `reextractEditedReply`),
@@ -247,6 +260,7 @@ guarded state write:
 | Type | Path | Recovery |
 | --- | --- | --- |
 | `chat_summary` | engine queue (`enqueueChatSummary`), detached (`session_id` NULL); folds the oldest verbatim exchanges into the rolling summary, serialized per chat via `withKeyedLock` | heartbeated while running; a dead row is failed by the detached-job sweep |
+| `chat_scene_sketch` | engine queue (`enqueueChatSceneSketch`), detached; expands a just-introduced place into a visual sketch on `scene_memory` (§Scene memory step 4) — write is an optimistic CAS, never the exchange lock; one live job per chat | same detached sweep; a lost CAS or failed run simply re-fires while the place's sketch stays absent |
 | `chat_scene_image` | api-side `startJob` via the shared `queueChatScene` (`chats/[chatId]/scene/queue.ts`) — manual POST **and** the auto big-moment hook; one live render per chat (check-then-insert dedupe); anchored at queue time (manual = newest assistant line, auto = the exchange's reply) | `sweepDetachedApiJobs` (`engine/recovery.ts`) fails any session-less running job whose heartbeat is older than `API_JOB_STALE_MS` |
 
 ## Persistence guards

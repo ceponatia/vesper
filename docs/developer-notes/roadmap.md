@@ -129,6 +129,12 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat scene fidelity — outfit tracking, location sketches, identity anchors** —
+  [chat-scene-fidelity.plan.md](chat-scene-fidelity.plan.md) — 2026-07-10 — the
+  archivist's 7th field tracks outfit changes into chat state (seeded from the character
+  form when Starting Outfit is blank); scene memory + a background `chat_scene_sketch`
+  agent replace the image's placeholder room; whitelisted identity anchors reinforce the
+  reference-avatar lock.
 - **Narrator prompt consolidation — external-review response, all six slices** —
   [narrator-prompt-consolidation.plan.md](narrator-prompt-consolidation.plan.md) —
   2026-07-10 — the accepted points of the external GPT prompt review, implemented
