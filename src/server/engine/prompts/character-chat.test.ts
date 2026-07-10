@@ -101,6 +101,20 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("bracketed tags belong to Mara alone");
   });
 
+  it("forbids advancing the player's story and follows the character when they're apart (owner ruling 2026-07-10)", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    // Rule 4's hard arm: the player's story moves only through their own messages.
+    expect(prompt).toContain("Theo's story advances ONLY through their own messages");
+    expect(prompt).toMatch(/NEVER narrate Theo doing things on your turn/);
+    expect(prompt).toContain("arriving home, checking a phone");
+    // Rule 16, the separation arm: the reply follows the character's side of the split.
+    expect(prompt).toContain("When Mara and Theo are not in the same place");
+    expect(prompt).toContain("your reply follows Mara and ONLY Mara");
+    expect(prompt).toMatch(/Never narrate Theo's side of the separation/);
+    // Apart, she reaches him only through comms — the texted-reply output grammar.
+    expect(prompt).toContain("a text on its own line as *Mara: her words here*");
+  });
+
   it("fixes a third-person viewpoint: character in third person, player as 'you', first person only in quotes", () => {
     const withPlayer = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
     // Narration is third person for the character…

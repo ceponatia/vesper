@@ -99,7 +99,9 @@ exchange:
    sigils parsed by the shared `@/lib/message-spans.ts`, with a per-turn comms/OOC tail note
    from `chatNotationNote`, plus the narrator's own-output emphasis rule: `_underscores_`,
    never asterisk-emphasis), and the **player-POV narrator camera** (involuntary perception +
-   light reflex writable, the player's agency not; attention-gated visual detail). See
+   light reflex writable, the player's agency not — and never the player's story advanced on
+   the narrator's turn; when the two are in different places, the reply follows the
+   character's side only, reaching the player solely through comms — rule 16). See
    [prompts.md](prompts.md) §§Character-chat sensory cues / player-input perception /
    player-POV narration / state as a narration system / long-term memory, plus the
    regex-only one-turn cue (`engine/chat-intent.ts`).
