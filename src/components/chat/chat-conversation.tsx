@@ -41,6 +41,7 @@ import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Input } from "@/components/ui/input";
 import { ModelSelect } from "@/components/ui/model-select";
 import { Sheet } from "@/components/ui/sheet";
@@ -64,9 +65,13 @@ const toLine = (m: ChatMessage): ChatLine => ({
  * route — the composer owns the bottom edge). Header row: back to the Chats hub,
  * portrait, name/title, and a menu (bottom Sheet on phones, popover at ≥md) holding
  * the narrator-model pick, Scenario setup, State tools, Rename, Archive/Restore and
- * Delete. The portrait + scene strip sit in a collapsible section under the header
- * (collapsed by default on small screens). Unlike the old editor tab there is no
- * lazy create: the conversation always exists — `chatId` is the address of record.
+ * Delete. The scene strip sits in a disclosure under the header (collapsed by
+ * default — the transcript keeps the room); the standing portrait is a fixed column
+ * left of the transcript at ≥lg (desktop real estate) and hidden below that. Every
+ * portrait affordance — header portrait, standing portrait, each reply's circular
+ * avatar — opens the same ImageLightbox; the reply avatars are the phone's path to
+ * a full-size portrait. Unlike the old editor tab there is no lazy create: the
+ * conversation always exists — `chatId` is the address of record.
  */
 export function ChatConversation({ chatId }: { chatId: string }) {
   const router = useRouter();
@@ -134,10 +139,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // reload doesn't re-offer it.
   const [wantsSay, setWantsSay] = useState(false);
   const isAdmin = useIsAdmin();
-  // The portrait/scene disclosure: null = breakpoint default (collapsed on phones,
-  // open at ≥md); a tap remembers the choice for this mount only (component state).
-  const [panelChoice, setPanelChoice] = useState<boolean | null>(null);
-  const panelOpen = panelChoice ?? !isMobile;
+  // The scene-image disclosure: collapsed by default at every width — the
+  // transcript keeps the room; a tap remembers the choice for this mount only.
+  const [scenesOpen, setScenesOpen] = useState(false);
+  // The character-portrait lightbox, openable from the header portrait, the desktop
+  // standing portrait, and each reply's avatar (the mobile path to a big portrait).
+  const [portraitOpen, setPortraitOpen] = useState(false);
 
   const stageRef = useRef<string | null>(null);
   const tempId = useRef(0);
@@ -250,7 +257,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       if (stickRef.current) el.scrollTop = el.scrollHeight;
     });
     // Both boxes matter: the content column grows as thumbnails/avatars land, and
-    // the container itself shrinks when the sections above it (portrait panel,
+    // the container itself shrinks when the sections above it (scene disclosure,
     // pickup strip) settle — either one un-bottoms a pinned reader.
     observer.observe(content);
     observer.observe(el);
@@ -717,7 +724,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         </Link>
         {character ? (
           <>
-            <EntityImage imageId={character.avatarImageId} name={name} className="size-8 shrink-0 rounded-full text-xs" />
+            <button
+              type="button"
+              onClick={() => setPortraitOpen(true)}
+              disabled={!character.avatarImageId}
+              aria-label={`View ${who}'s portrait`}
+              className="shrink-0 cursor-pointer rounded-full disabled:cursor-default"
+            >
+              <EntityImage imageId={character.avatarImageId} name={name} className="size-8 rounded-full text-xs" />
+            </button>
             <div className="min-w-0 flex-1">
               {/* Auto-title: an unnamed conversation is titled by its character. */}
               <p className="truncate text-sm text-paper-100">{title || name}</p>
@@ -766,91 +781,104 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         </div>
       ) : null}
 
-      {/* Portrait + scene strip: a disclosure so the transcript keeps the room on phones. */}
+      {/* Scene strip: a disclosure, collapsed by default so the transcript keeps the room. */}
       <section className="shrink-0 border-b border-ink-600">
         <button
           type="button"
-          aria-expanded={panelOpen}
-          onClick={() => setPanelChoice(!panelOpen)}
+          aria-expanded={scenesOpen}
+          onClick={() => setScenesOpen(!scenesOpen)}
           className="flex w-full cursor-pointer items-center justify-between px-4 py-1.5 text-xs font-medium tracking-wide text-paper-400 uppercase transition-colors hover:text-paper-200"
         >
-          <span>Portrait &amp; scenes</span>
+          <span>Scene images</span>
           <svg
             viewBox="0 0 16 16"
             fill="none"
             aria-hidden
-            className={cx("size-3.5 transition-transform", panelOpen && "rotate-180")}
+            className={cx("size-3.5 transition-transform", scenesOpen && "rotate-180")}
           >
             <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        {panelOpen && ready && character ? (
-          <div className="flex flex-col gap-4 px-4 pb-3 sm:flex-row sm:items-start">
-            <AvatarPanel
+        {scenesOpen && ready && character ? (
+          <div className="px-4 pb-3">
+            <SceneStrip
+              chatId={chatId}
               name={name}
-              avatarImageId={character.avatarImageId}
-              className="mx-auto w-32 shrink-0 sm:mx-0 sm:w-40"
+              hasChat={lines.length > 0}
+              scenes={sceneList}
+              rendering={sceneRendering}
+              onRefresh={() => scenes.reload({ silent: true })}
             />
-            <div className="min-w-0 flex-1">
-              <SceneStrip
-                chatId={chatId}
-                name={name}
-                hasChat={lines.length > 0}
-                scenes={sceneList}
-                rendering={sceneRendering}
-                onRefresh={() => scenes.reload({ silent: true })}
-              />
-            </div>
           </div>
         ) : null}
       </section>
 
-      <div
-        ref={scrollRef}
-        onScroll={(e) => {
-          // Stick while within a small slack of the bottom; scrolling up releases.
-          const el = e.currentTarget;
-          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-        }}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
-      >
-        <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3">
-          {bootstrap.loading ? (
-            <div className="flex flex-col gap-3">
-              <Skeleton className="h-10 w-2/3" />
-              <Skeleton className="h-10 w-1/2 self-end" />
-              <Skeleton className="h-10 w-3/5" />
-            </div>
-          ) : bootstrap.error ? (
-            <ErrorState error={bootstrap.error} onRetry={() => bootstrap.reload()} />
-          ) : lines.length === 0 ? (
-            <p className="m-auto max-w-sm py-10 text-center text-sm text-paper-500">
-              Say something to {who} to start the conversation — or let them open the scene with Prompt {who} below.
-            </p>
-          ) : (
-            lines.map((line) => {
-              const moments = sceneAnchors.get(line.id);
-              return (
-                <div key={line.id} className="flex flex-col gap-2">
-                  <MessageBubble
-                    line={line}
-                    name={name}
-                    avatarImageId={character?.avatarImageId ?? null}
-                    streaming={sending}
-                    takeTarget={!archived && line.id === lastAssistantId}
-                    onEdit={editLine}
-                    onDelete={deleteLine}
-                    onRerun={(id) => void rerun(id)}
-                    onAnotherTake={(id) => void anotherTake(id)}
-                    onSwitchTake={switchTake}
-                    onRemember={archived ? undefined : openRemember}
-                    onMarkMoment={archived ? undefined : (id) => void markMoment(id)}
-                  />
-                  {moments ? <SceneMomentRow images={moments} name={name} /> : null}
-                </div>
-              );
-            })
-          )}
+      <div className="flex min-h-0 flex-1">
+        {/* Standing portrait (≥lg only): the companion beside the story, using the
+            desktop side real estate. Hidden below lg — phones reach the full-size
+            portrait by tapping the header portrait or any reply's avatar instead. */}
+        {ready && character ? (
+          <aside className="hidden w-52 shrink-0 p-4 lg:block xl:w-64">
+            <button
+              type="button"
+              onClick={() => setPortraitOpen(true)}
+              disabled={!character.avatarImageId}
+              aria-label={`View ${who}'s portrait`}
+              title={character.avatarImageId ? "View full size" : undefined}
+              className="block w-full cursor-pointer rounded-card transition-opacity hover:opacity-90 disabled:cursor-default disabled:hover:opacity-100"
+            >
+              <AvatarPanel name={name} avatarImageId={character.avatarImageId} className="w-full" />
+            </button>
+          </aside>
+        ) : null}
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            // Stick while within a small slack of the bottom; scrolling up releases.
+            const el = e.currentTarget;
+            stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          }}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+        >
+          <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3">
+            {bootstrap.loading ? (
+              <div className="flex flex-col gap-3">
+                <Skeleton className="h-10 w-2/3" />
+                <Skeleton className="h-10 w-1/2 self-end" />
+                <Skeleton className="h-10 w-3/5" />
+              </div>
+            ) : bootstrap.error ? (
+              <ErrorState error={bootstrap.error} onRetry={() => bootstrap.reload()} />
+            ) : lines.length === 0 ? (
+              <p className="m-auto max-w-sm py-10 text-center text-sm text-paper-500">
+                Say something to {who} to start the conversation — or let them open the scene with Prompt {who} below.
+              </p>
+            ) : (
+              lines.map((line) => {
+                const moments = sceneAnchors.get(line.id);
+                return (
+                  <div key={line.id} className="flex flex-col gap-2">
+                    <MessageBubble
+                      line={line}
+                      name={name}
+                      avatarImageId={character?.avatarImageId ?? null}
+                      streaming={sending}
+                      takeTarget={!archived && line.id === lastAssistantId}
+                      onEdit={editLine}
+                      onDelete={deleteLine}
+                      onRerun={(id) => void rerun(id)}
+                      onAnotherTake={(id) => void anotherTake(id)}
+                      onSwitchTake={switchTake}
+                      onRemember={archived ? undefined : openRemember}
+                      onMarkMoment={archived ? undefined : (id) => void markMoment(id)}
+                      onEnlargeAvatar={character?.avatarImageId ? () => setPortraitOpen(true) : undefined}
+                    />
+                    {moments ? <SceneMomentRow images={moments} name={name} /> : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
 
@@ -1068,6 +1096,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       ) : null}
 
       <ChatRelationshipPanel chatId={chatId} who={who} open={relationshipOpen} onClose={() => setRelationshipOpen(false)} />
+
+      {/* One lightbox serves every portrait affordance (header / standing / reply avatars). */}
+      <ImageLightbox
+        imageId={portraitOpen ? (character?.avatarImageId ?? null) : null}
+        alt={name}
+        onClose={() => setPortraitOpen(false)}
+      />
     </div>
   );
 }
