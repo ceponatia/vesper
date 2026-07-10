@@ -38,6 +38,7 @@ vi.mock("@/server/auth", () => ({
 import { persistAssistantReply, replyTakesSchema, submitChatMessage, tryKeyedLock, type ReplyTakes } from "@/server/engine";
 import { log } from "@/server/log";
 import { POST as chatsCreate } from "./route";
+import { DELETE as characterDelete } from "../characters/[id]/route";
 import { DELETE as chatDelete, GET as chatGet, POST as chatSend } from "./[chatId]/route";
 import { DELETE as msgDelete, PATCH as msgPatch } from "./[chatId]/messages/[messageId]/route";
 import { PATCH as takePatch } from "./[chatId]/messages/[messageId]/take/route";
@@ -551,6 +552,38 @@ describe("memory-choice semantics (character-chat-standalone.spec.md §1.3, D7)"
     // …until the last referencing conversation goes.
     expect((await chatDelete(delReq(first.id), ctx(first.id))).status).toBe(200);
     expect(await factCount(first.memoryGroupId)).toBe(0);
+  });
+});
+
+describe("DELETE /api/characters/:id — conversations go through deleteChat (deletion-leak audit 2026-07-10)", () => {
+  it("hard-deletes the character's chats: transcript gone, memory group purged, no orphaned rows", async (t) => {
+    if (!ready) return t.skip();
+    const [vex] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Vex", profile: {} }).returning();
+    if (!vex) throw new Error("failed to seed character");
+    const chat = await createChat(vex.id, "shared");
+    await insertMessage(chat.id, "user", "hello");
+    await insertMessage(chat.id, "assistant", "hi there");
+    await db()
+      .insert(facts)
+      .values({ chatMemoryGroupId: chat.memoryGroupId, kind: "knowledge", subjectName: "vex", text: "vex likes rooftop rain" });
+    plantedGroups.push(chat.memoryGroupId); // afterAll safety net if this test fails mid-way
+
+    const res = await characterDelete(new NextRequest(`http://t/api/characters/${vex.id}`, { method: "DELETE" }), {
+      params: Promise.resolve({ id: vex.id }),
+    });
+    expect(res.status).toBe(200);
+
+    // Pre-fix, deleting the character cascaded participants/state away and stranded the
+    // chat row + transcript + memory group (the 2026-07-10 audit's leak) — invisible in
+    // the hub (it inner-joins participants) but fully stored.
+    const [chatRow] = await db()
+      .select({ id: characterChats.id })
+      .from(characterChats)
+      .where(eq(characterChats.id, chat.id))
+      .limit(1);
+    expect(chatRow).toBeUndefined();
+    expect(await messageCount(chat.id)).toBe(0);
+    expect(await factCount(chat.memoryGroupId)).toBe(0);
   });
 });
 
