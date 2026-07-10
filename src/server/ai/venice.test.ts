@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { avatarImageModels } from "@/contracts";
-import { veniceT2IModelId } from "./venice";
+import { avatarImageModels, DEFAULT_AVATAR_IMAGE_MODEL } from "@/contracts";
+import { veniceSceneImageModelId, veniceT2IModelId } from "./venice";
 
 describe("veniceT2IModelId", () => {
   it("resolves every avatar-model key to a non-empty Venice model id", () => {
@@ -13,8 +13,13 @@ describe("veniceT2IModelId", () => {
     }
   });
 
-  it("maps qwen to the default text-to-image model and the lustify key to its uncensored id", () => {
+  it("maps qwen to the env-overridable text-to-image model and the lustify key to its uncensored id", () => {
     expect(veniceT2IModelId("qwen")).toBe("qwen-image-2");
     expect(veniceT2IModelId("lustify")).toBe("lustify-v8");
+  });
+
+  it("the shared default pick is Chroma, and the scene t2i rung resolves through it (owner ruling 2026-07-10)", () => {
+    expect(DEFAULT_AVATAR_IMAGE_MODEL).toBe("chroma");
+    expect(veniceSceneImageModelId()).toBe("chroma");
   });
 });

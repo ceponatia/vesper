@@ -10,8 +10,8 @@ import {
   routeSceneProviders,
   toolModelId,
   veniceEditModelId,
-  veniceImageModelId,
   veniceMultiEditModelId,
+  veniceSceneImageModelId,
   type ImageProviderFailure,
   type ImageProviderId,
   type ProviderRenderResult,
@@ -253,7 +253,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         ? `venice/${veniceMultiEditModelId()}`
         : id === "venice_edit"
           ? `venice/${veniceEditModelId()}`
-          : `venice/${veniceImageModelId()}`;
+          : `venice/${veniceSceneImageModelId()}`;
 
   const primary = chain[0] ?? "venice_generate";
   const asset = await createImageAsset({
