@@ -28,6 +28,7 @@ import {
   RECENT_NARRATION_PRIOR_CHARS,
   resolveScenePlan,
   sceneRevealAppearance,
+  scrubPlayerFromAction,
   SCENE_COMPOSER_SYSTEM,
   SCENE_POV_RULE,
   sceneSpecSchema,
@@ -527,6 +528,17 @@ describe("buildSceneComposerPrompt", () => {
     expect(SCENE_COMPOSER_SYSTEM).toContain("characters who are not in the room must not appear");
   });
 
+  it("teaches the solo-pose translation and the pose/activity redundancy rule (owner report 2026-07-10)", () => {
+    // Player-anchored beats must be translated, not just the player left undescribed.
+    expect(SCENE_COMPOSER_SYSTEM).toContain("must describe that character ALONE");
+    expect(SCENE_COMPOSER_SYSTEM).toContain('become "toward the viewer"');
+    expect(SCENE_COMPOSER_SYSTEM).toContain("keep the expression and energy, lose the contact");
+    // The worked example (the reported gallery beat) shows the translation shape.
+    expect(SCENE_COMPOSER_SYSTEM).toContain('pose "glancing back toward the viewer, mid-laugh"');
+    // Pose and activity carry distinct beats — no smile in one and laugh in the other.
+    expect(SCENE_COMPOSER_SYSTEM).toContain("must not repeat each other's beats");
+  });
+
   it("includes the recent narration, newest excerpted larger, capped at two turns", () => {
     const prompt = buildSceneComposerPrompt({
       ...libraryContext,
@@ -933,6 +945,46 @@ describe("resolveScenePlan", () => {
     expect(empty.focal).toBeNull();
     expect(empty.others).toEqual([]);
     expect(empty.setting).toContain("Atrium");
+  });
+
+  it("joins pose + activity without stitched sentence punctuation and scrubs player clauses (owner report 2026-07-10)", () => {
+    const plan = resolveScenePlan(
+      sceneSpecSchema.parse({
+        focalCharacter: "Mira",
+        pose: "Walking beside the player, head turned slightly toward the player with a bright, teasing smile.",
+        activity: "Leading the player back toward the main gallery, heels clicking on the pale stone floor.",
+      }),
+      libraryContext,
+    );
+    // Trailing periods stripped before the "; " join — no "smile.; Leading" stitches.
+    expect(plan.focal?.action).not.toContain(".;");
+    // "beside the player" / "leading the player" clauses drop; the gaze rewrites to the viewer.
+    expect(plan.focal?.action).not.toMatch(/\bplayer\b/i);
+    expect(plan.focal?.action).toContain("head turned slightly toward the viewer with a bright");
+    expect(plan.focal?.action).toContain("heels clicking on the pale stone floor");
+    expect(plan.focal?.action).not.toContain("Walking beside");
+  });
+});
+
+describe("scrubPlayerFromAction (deterministic backstop)", () => {
+  it("returns clean text unchanged (identity — no rejoin churn on the common case)", () => {
+    const clean = "seated by the window, one leg crossed; flipping a page";
+    expect(scrubPlayerFromAction(clean)).toBe(clean);
+  });
+
+  it("rewrites gaze toward the player to the viewer, drops contact/proximity clauses", () => {
+    expect(scrubPlayerFromAction("glancing at the player, mid-laugh")).toBe("glancing at the viewer, mid-laugh");
+    expect(scrubPlayerFromAction("Walking beside the player, heels clicking on the stone floor")).toBe(
+      "heels clicking on the stone floor",
+    );
+    // A possessive is proximity, not gaze — the clause drops instead of rewriting.
+    expect(scrubPlayerFromAction("standing at the player's side, smiling")).toBe("smiling");
+  });
+
+  it("documents the pronoun limit: 'his arm' is not scrubbed (a pronoun may be another character)", () => {
+    expect(scrubPlayerFromAction("walking beside the player, one hand resting on his arm")).toBe(
+      "one hand resting on his arm",
+    );
   });
 });
 
