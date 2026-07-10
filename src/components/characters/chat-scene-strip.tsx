@@ -19,6 +19,8 @@ function sceneError(image: ImageRecord): string | null {
  * disabled until the first exchange — the scene is composed from the transcript.
  * The scene list is OWNED by the conversation page (slice 9 — one fetch/poll
  * shared with the inline transcript moments); this strip renders it and queues.
+ * The "Scene images" heading lives on the page's disclosure toggle, so the
+ * strip's own header row is just the Generate action.
  */
 export function SceneStrip({
   chatId,
@@ -73,19 +75,16 @@ export function SceneStrip({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Scene images</h3>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={generate}
-            busy={generating}
-            disabled={!hasChat}
-            title={hasChat ? undefined : "Say something first — the scene is composed from the conversation"}
-          >
-            Generate scene
-          </Button>
-        </div>
+      <div className="flex items-center justify-end">
+        <Button
+          size="sm"
+          onClick={generate}
+          busy={generating}
+          disabled={!hasChat}
+          title={hasChat ? undefined : "Say something first — the scene is composed from the conversation"}
+        >
+          Generate scene
+        </Button>
       </div>
       {sceneList.length === 0 && !showComposing ? (
         <p className="text-sm text-paper-500">

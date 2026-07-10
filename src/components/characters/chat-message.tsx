@@ -92,6 +92,7 @@ export function MessageBubble({
   onSwitchTake,
   onRemember,
   onMarkMoment,
+  onEnlargeAvatar,
 }: {
   line: ChatLine;
   name: string;
@@ -108,6 +109,8 @@ export function MessageBubble({
   onRemember?: (content: string) => void;
   /** "Mark this moment" (spec §7.2): pin a player milestone on this message. Absent ⇒ no action. */
   onMarkMoment?: (id: string) => void;
+  /** Tap/click the circular avatar to enlarge the portrait (the mobile path to a full-size view). Absent ⇒ plain image. */
+  onEnlargeAvatar?: () => void;
 }) {
   const isUser = line.role === "user";
   const pending = !isUser && line.content === "" && streaming;
@@ -150,7 +153,19 @@ export function MessageBubble({
   return (
     <div className={`group flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       {!isUser ? (
-        <EntityImage imageId={avatarImageId} name={name} className="mt-0.5 size-8 shrink-0 rounded-full text-xs" />
+        onEnlargeAvatar ? (
+          <button
+            type="button"
+            onClick={onEnlargeAvatar}
+            aria-label={`View ${name || "the character"}'s portrait`}
+            title="View portrait"
+            className="mt-0.5 shrink-0 cursor-pointer self-start rounded-full transition-opacity hover:opacity-80"
+          >
+            <EntityImage imageId={avatarImageId} name={name} className="size-8 rounded-full text-xs" />
+          </button>
+        ) : (
+          <EntityImage imageId={avatarImageId} name={name} className="mt-0.5 size-8 shrink-0 rounded-full text-xs" />
+        )
       ) : null}
       <div className={`flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
         {editing ? (
