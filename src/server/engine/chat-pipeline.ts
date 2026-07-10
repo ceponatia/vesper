@@ -540,6 +540,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
       // which flips the Scene block's directive from "don't re-establish" to "establish once".
       sceneChanged,
+      // First exchange (no assistant reply yet; regenerating the first reply popped it above):
+      // renders the one-turn establish-the-scene directive. Opening beats carry their own
+      // scene-opening instruction instead.
+      firstExchange: !opening && !recentReplies.length,
       // One-turn cue invitation, now the continue-cue only (§8.4): a "has something to say"
       // continue threads its tapped open loop here so the character opens about exactly the
       // right thing. The sensory arms were superseded by `sensoryAllowance` below

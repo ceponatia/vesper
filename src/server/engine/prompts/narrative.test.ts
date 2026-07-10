@@ -261,6 +261,9 @@ describe("buildStaticRulebook", () => {
     // The texted-reply output grammar is held distinct from the in-scene speech tag.
     expect(text).toContain("*Name: their words here*");
     expect(text).toContain('distinct from the [Name] "…" tag');
+    // The narrator's own-output emphasis convention: underscores, never asterisk-emphasis.
+    expect(text).toContain("write emphasis with _underscores_");
+    expect(text).toContain("never with single asterisks");
   });
 
   it("routes the response contract through the perception block, embodied only", () => {

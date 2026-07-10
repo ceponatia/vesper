@@ -135,6 +135,7 @@ const MESSAGE_NOTATION_LEGEND = [
   "- _A phrase in single underscores_ is only italic emphasis — styling with no meaning; read it as ordinary words.",
   "- ((Text in double parentheses)) is the player speaking to you as the storyteller, out of character — follow it as direction, but no character in the scene hears it or reacts to it. A single ( … ) is ordinary prose, not this.",
   '- When the player texts a character and that character answers by text, write the reply on its own line as *Name: their words here* — the same name-and-colon shape in asterisks — so it reads as a text, not as words spoken aloud in the room (distinct from the [Name] "…" tag, which is speech in the scene).',
+  "- In your own narration and dialogue, write emphasis with _underscores_ (they render as italics) — never with single asterisks: here an asterisk span means a thought or a text message, and asterisk-emphasis inside quoted dialogue displays as literal asterisks.",
 ].join("\n");
 
 // Rule 1 is the active narration shape profile (narrator-prompt-focus.plan.md §1.1)

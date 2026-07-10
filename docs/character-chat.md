@@ -97,7 +97,8 @@ exchange:
    perception partition** (quoted = heard, narration = seen, interiority = invisible), the
    optional **markup-notation legend** (`*…*` thought/comms, `((…))` OOC, `_…_` italics —
    sigils parsed by the shared `@/lib/message-spans.ts`, with a per-turn comms/OOC tail note
-   from `chatNotationNote`), and the **player-POV narrator camera** (involuntary perception +
+   from `chatNotationNote`, plus the narrator's own-output emphasis rule: `_underscores_`,
+   never asterisk-emphasis), and the **player-POV narrator camera** (involuntary perception +
    light reflex writable, the player's agency not; attention-gated visual detail). See
    [prompts.md](prompts.md) §§Character-chat sensory cues / player-input perception /
    player-POV narration / state as a narration system / long-term memory, plus the
@@ -121,8 +122,10 @@ exchange:
    ([resilience.md](resilience.md) §5) — the reply persists (§5) and the post-turn fan-out
    runs (§3). All of it is off the perceived-latency path.
 9. **Render (dialogue-attribution).** The transcript owns dialogue presentation, so chat rule 3
-   makes the `[Name]` tag **optional** (dialogue stays quoted; flavor NPCs speak in narration
-   prose, never with a bracketed tag). The reply renders as in-bubble per-speaker segments
+   makes the `[Name]` tag **conditionally optional** (dialogue stays quoted; flavor NPCs speak in
+   narration prose, never with a bracketed tag). The contract is mechanical (tightened
+   2026-07-10): a whole-line quote auto-attributes; a line mixing the character's speech with
+   narration/action beats must open with the tag or split into separate quote/prose lines. The reply renders as in-bubble per-speaker segments
    (`components/characters/chat-segments.ts` over the shared pure `lib/segmenter`, with
    standalone-quote attribution ON since chat is one-on-one): the tag is hidden behind a small
    speaker label and a bare whole-line quote attributes to the character. Segment content still
@@ -174,7 +177,12 @@ then reconciled by the archivist:
    current place this turn, or a pending time skip.
 2. **Injection.** The prompt builder renders the compact **Scene** block in the volatile tail
    (current place + details + time of day + connections + a directive that flips on "just changed"
-   — see [prompts.md](prompts.md) §Character-chat reply discipline & scene memory).
+   — see [prompts.md](prompts.md) §Character-chat reply discipline & scene memory). On the
+   conversation's **first exchange** (no assistant reply yet, not an opening beat) the memory is
+   empty and "just changed" can't fire, so the tail instead renders a one-turn **first-exchange
+   scene directive** (`firstExchange`, 2026-07-10): establish the scene once, narration-forward
+   (sight plus one other sense), drawn from the scenario and the player's message — the movement
+   path's own directive wins when a first-message move minted a place.
 3. **Post-turn (reconcile).** The archivist's optional `scene` field (current-place confirmation,
    time-of-day hint, new place details/connections — ONLY what the fiction established, lenient
    parse) is merged onto the pre-turn memory in `finalizeChatState` via `mergeSceneMemory` (dedupe
