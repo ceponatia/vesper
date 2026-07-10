@@ -71,6 +71,14 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   `pnpm eval:narration:compare --axis contrast`). Bar: ≥80% blind identification per
   axis, else the axis's prompt wording gets tuned and re-run — the craft rules and
   relationship-law block shipped in slices 6/8 are the levers.
+- **Narrator prompt consolidation — external-review response** —
+  [narrator-prompt-consolidation.plan.md](narrator-prompt-consolidation.plan.md)
+  (draft — point-by-point verdict on the 2026-07-10 external GPT prompt review:
+  accepted = chat length-story reconciliation (owner ruling A pending), sensory
+  allowance line (the exposure-mask pattern ported to chat), stable-system + final
+  turn-context message for chat (eval-gated cache win), multi-turn eval scenarios,
+  plus cheap wording fixes; trait-quota softening gated on the enactment measurement
+  run above; mature-content reframe and POV rewrite declined with reasons).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
