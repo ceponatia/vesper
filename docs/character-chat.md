@@ -90,7 +90,10 @@ exchange:
    attributes → sensory cues → rules; byte-identical across turns, re-rendering only on
    a band crossing on either relationship axis — asserted by a prefix-byte-stability test) and a **volatile tail**
    (recap, memory, state, skip note, disinhibition + transient-appearance overrides,
-   cue invite, notation note, beat instructions). The rules carry the **player-input
+   the per-turn **sensory allowance** line, continue-beat cue, notation note, beat
+   instructions). An experimental `CHAT_PROMPT_LAYOUT=turn_context` switch (default off)
+   moves the tail + fenced current input into a final user message instead — the session
+   lane's shape; see [prompts.md](prompts.md) §Character-chat prompt-cache split. The rules carry the **player-input
    perception partition** (quoted = heard, narration = seen, interiority = invisible), the
    optional **markup-notation legend** (`*…*` thought/comms, `((…))` OOC, `_…_` italics —
    sigils parsed by the shared `@/lib/message-spans.ts`, with a per-turn comms/OOC tail note

@@ -17,7 +17,9 @@ import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import {
   buildChatReplyGates,
-  chatCueInviteLine,
+  // chatCueInviteLine — retired by narrator-prompt-consolidation slice 4 (the sensory-allowance
+  // line supersedes its sensory arms); re-import to roll back.
+  deriveChatSensoryAllowance,
   detectChatCue,
   detectSceneMovement,
   detectSensoryFocus,
@@ -45,10 +47,11 @@ import { acquireKeyedLockWithin, tryKeyedLock } from "./keyed-lock";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
+  buildChatTurnMessage,
   chatNotationNote,
   type CharacterChatPromptInput,
 } from "./prompts/character-chat";
-import { narrationShapeId } from "./prompts/constants";
+import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
 
 /**
  * The character-chat exchange pipeline (docs/character-chat.md) — the chat lane's
@@ -522,7 +525,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const intimateBeat = (cueHint?.intimate ?? false) || (driftedState.meters.arousal ?? 0) >= INTIMATE_AROUSAL_FLOOR;
     const recentReplies = history.filter((m) => m.role === "assistant").map((m) => m.content);
 
-    const system = buildCharacterChatSystemPrompt({
+    // One-turn sense-targeted focus (scope guard): a smell/taste/touch/study beat aimed at
+    // a body region / garment ⇒ assemble the authored sensory values into a focus block.
+    const sensoryFocus = playerContent ? (detectSensoryFocus(playerContent) ?? undefined) : undefined;
+    const promptInput: CharacterChatPromptInput = {
       name: characterName,
       profile,
       priorSummary: summaryState?.summary,
@@ -534,17 +540,22 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
       // which flips the Scene block's directive from "don't re-establish" to "establish once".
       sceneChanged,
-      // One-turn cue invitation (§7): beats without player input have none to read —
-      // except a "has something to say" continue (§8.4), whose tapped open loop is
-      // threaded here so the character opens about exactly the right thing.
-      cueInvite: cueHint
-        ? chatCueInviteLine(cueHint, characterName)
-        : effectiveKind === "continue" && input.cue?.trim()
+      // One-turn cue invitation, now the continue-cue only (§8.4): a "has something to say"
+      // continue threads its tapped open loop here so the character opens about exactly the
+      // right thing. The sensory arms were superseded by `sensoryAllowance` below
+      // (narrator-prompt-consolidation slice 4). Pre-slice-4 arm (rollback):
+      //   cueInvite: cueHint ? chatCueInviteLine(cueHint, characterName) : <the continue arm below>
+      cueInvite:
+        effectiveKind === "continue" && input.cue?.trim()
           ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
           : undefined,
-      // One-turn sense-targeted focus (scope guard): a smell/taste/touch/study beat aimed at
-      // a body region / garment ⇒ assemble the authored sensory values into a focus block.
-      sensoryFocus: playerContent ? (detectSensoryFocus(playerContent) ?? undefined) : undefined,
+      // The deterministic per-turn sensory allowance (narrator-prompt-consolidation slice 4):
+      // one binding line derived from the detectors already running this turn. Only real
+      // player turns carry one — opening/continue beats fall to the rules' conservative default.
+      sensoryAllowance: playerContent
+        ? deriveChatSensoryAllowance({ cue: cueHint, sensoryFocus: sensoryFocus ?? null })
+        : undefined,
+      sensoryFocus,
       // Reply-discipline gates (deliverable D): hook-cadence + intimate check-in over the last
       // 1–2 assistant replies. Only for real player turns (a beat has no cadence to steer).
       gateNotes: playerContent
@@ -556,8 +567,29 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       notationNote: playerContent
         ? chatNotationNote(playerContent, { name: characterName, player: player.name, knownNames: [characterName] })
         : undefined,
-    });
-    const modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
+    };
+
+    // Prompt layout (narrator-prompt-consolidation slice 5, default `system_tail`): the
+    // experimental `turn_context` layout sends system = stable prefix only and moves the
+    // volatile tail + the fenced current input into a final user message (the session
+    // lane's shape), so system + history form an append-only cached prefix. Real player
+    // turns only — opening/continue beats have no current input to compose around.
+    let system: string;
+    let modelHistory: typeof history;
+    if (chatPromptLayout() === "turn_context" && playerContent) {
+      const parts = buildCharacterChatPromptParts(promptInput);
+      system = parts.prefix;
+      // The window's last entry is the current player message (inserted before the window
+      // loaded); it moves into the composed final message, so drop it from what we send.
+      const priorHistory = history.at(-1)?.role === "user" ? history.slice(0, -1) : history;
+      modelHistory = [
+        ...priorHistory,
+        { role: "user" as const, content: buildChatTurnMessage(parts.tail, playerContent, player.name) },
+      ];
+    } else {
+      system = buildCharacterChatSystemPrompt(promptInput);
+      modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
+    }
 
     const abortController = new AbortController();
     inflightReplyAborts.set(chatId, abortController);

@@ -173,9 +173,16 @@ export const intentBriefSchema = z.object({
    */
   focus: z
     .object({
-      /** The narrator's primary job this turn — finer than `actionType`. */
+      /**
+       * The narrator's primary job this turn — finer than `actionType`.
+       * `react_emotionally` was renamed `acknowledge_emotional_beat` (narrator-prompt-consolidation
+       * slice 1 — "react emotionally" read as an instruction to make emotion conspicuous; the
+       * authored reaction band owns magnitude). Old persisted briefs degrade to "converse" via
+       * the `.catch()` — harmless (the brief is consumed the turn it's made; storage is inspector data).
+       */
       primaryResponse: z
-        .enum(["converse", "answer_question", "resolve_action", "react_emotionally", "transition_scene", "ooc_answer"])
+        // Pre-2026-07-10 vocabulary (rollback): ["converse", "answer_question", "resolve_action", "react_emotionally", "transition_scene", "ooc_answer"]
+        .enum(["converse", "answer_question", "resolve_action", "acknowledge_emotional_beat", "transition_scene", "ooc_answer"])
         .catch("converse")
         .default("converse"),
       /** How large any in-world reaction to the player should be (the authored band overrides this). */

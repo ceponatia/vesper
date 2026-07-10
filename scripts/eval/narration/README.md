@@ -28,7 +28,7 @@ shape`, `## Reaction`).
 - `--models` (`aion`) — `aion` · `glm` · `deepseek` · `gemini`, or any OpenRouter id.
 - `--profiles` (`concise,aggressive`) — the two `NARRATION_SHAPE_PROFILES`.
 - `--reasoning` (`default`) — `default` · `off` (`reasoning.enabled:false`) · `low` (`effort:low`). This is probes P1–P3.
-- `--scenarios` (all) — substring match on scenario id (`hi`, `compliment`, `question`, `multi-party`, `intimate`, `chat`, `chat-contrast`).
+- `--scenarios` (all) — substring match on scenario id (`hi`, `compliment`, `question`, `multi-party`, `intimate`, `chat`, `chat-contrast`, `mt-chat`).
 - `--seeds` (`1`) — repeats per cell (temperature 0.8 ⇒ fresh samples); the replicate axis the contrast bar is scored over.
 - `--no-focus` — drop the Phase-3 `focus` planner from every prompt (`buildResponseShape` falls back to its deterministic Phase-2 derivation).
 - `--no-judge` — deterministic metrics only (cheaper).
@@ -108,6 +108,30 @@ After tuning, the pairs stay as the permanent regression harness.
   — e.g. `EVAL_JUDGE_MODEL=google/gemini-3.1-pro-preview` (there is no `gemini-3.5-pro` slug). A strong
   judge is usually a reasoning model, so the rank judge uses a 1500-token budget to avoid
   reasoning-tokens-eat-the-output empties.
+
+## Multi-turn transcript scenarios (`mt-chat-*`)
+
+Single-turn cells can't show the failures that emerge over a conversation — repetition creep,
+interview-mode question cadence, sensory frequency, paragraph inflation, warmth escalating on its
+own (narrator-prompt-consolidation.plan.md slice 6). A scenario with a `script` runs as a
+transcript: the runner feeds each scripted player input in order, the model sees its own prior
+replies as history, and — when the scenario defines `buildTurnSystem` — the system prompt is
+rebuilt **per turn** with the live route's per-turn derivations (the sensory-allowance line from
+that turn's input, the reply-discipline gates from the prior replies).
+
+```bash
+pnpm eval:narration --scenarios mt-chat --models glm --no-judge   # transcripts, deterministic metrics only
+pnpm eval:narration --scenarios mt-chat --dry-run                 # turn-1 system + the script, no spend
+```
+
+Longitudinal metrics (all deterministic; printed in their own table and saved per-row as
+`multiTurn`): **q-end%** (replies ending on a dialogue question — `replyEndsInQuestion`),
+**repeat%** (mean share of a reply's word 5-grams already seen in earlier replies — stock-phrase /
+re-description creep; nonzero noise floor, read comparatively across runs), **sens%** (replies with
+a person-level sensory reference — `mt-chat-smalltalk` is all-`none` turns so this should be ~0;
+`mt-chat-statements` has exactly one attention beat), and **paragraphs avg/max** (length inflation
+under the resting profile). The judge (when on) scores the whole formatted transcript against the
+scenario's longitudinal expectation.
 
 ## Scope guard
 

@@ -92,6 +92,20 @@ export function narrationShapeId(lane: NarrationLane): NarrationShapeId {
   return NARRATION_LANE_DEFAULTS[lane];
 }
 
+/**
+ * The chat prompt LAYOUT switch (narrator-prompt-consolidation.plan.md slice 5) —
+ * experimental, default-off. `system_tail` (today's layout): the volatile tail rides
+ * the system prompt, ahead of the history in token order, so each turn's tail change
+ * re-processes the whole history. `turn_context`: the session lane's shape — system =
+ * stable prefix only; the tail + fenced current input ride a final user message
+ * (`buildChatTurnMessage`), making system + history an append-only cached prefix.
+ * Env-only (no dev route yet); flip the default only after the eval A/B.
+ */
+export type ChatPromptLayout = "system_tail" | "turn_context";
+export function chatPromptLayout(): ChatPromptLayout {
+  return process.env.CHAT_PROMPT_LAYOUT === "turn_context" ? "turn_context" : "system_tail";
+}
+
 /** Max characters of player input echoed inside agent prompts. */
 export const AGENT_INPUT_CAP = 2000;
 /** Max characters of narration echoed inside agent prompts. */

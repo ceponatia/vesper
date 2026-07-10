@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildChatReplyGates,
   chatCueInviteLine,
+  deriveChatSensoryAllowance,
   detectChatCue,
   detectSceneMovement,
   detectSensoryFocus,
@@ -72,6 +73,32 @@ describe("chatCueInviteLine", () => {
 
   it("returns '' when nothing is invited", () => {
     expect(chatCueInviteLine(cue(), "Mara")).toBe("");
+  });
+});
+
+describe("deriveChatSensoryAllowance (narrator-prompt-consolidation slice 4)", () => {
+  it("a sense-targeted beat wins: focused_description", () => {
+    expect(
+      deriveChatSensoryAllowance({
+        cue: cue({ intimate: true }),
+        sensoryFocus: { sense: "smell", target: "hair", intimate: false },
+      }),
+    ).toBe("focused_description");
+  });
+
+  it("closeness (intimate/touch/proximity) grants a close-range hook", () => {
+    expect(deriveChatSensoryAllowance({ cue: cue({ intimate: true }), sensoryFocus: null })).toBe("close_range_hook");
+    expect(deriveChatSensoryAllowance({ cue: cue({ touch: true }), sensoryFocus: null })).toBe("close_range_hook");
+    expect(deriveChatSensoryAllowance({ cue: cue({ proximity: true }), sensoryFocus: null })).toBe("close_range_hook");
+  });
+
+  it("attention alone grants a visual accent (sight carries at any distance)", () => {
+    expect(deriveChatSensoryAllowance({ cue: cue({ attention: true }), sensoryFocus: null })).toBe("visual_accent");
+  });
+
+  it("an ordinary distant exchange earns none", () => {
+    expect(deriveChatSensoryAllowance({ cue: cue(), sensoryFocus: null })).toBe("none");
+    expect(deriveChatSensoryAllowance({ cue: null, sensoryFocus: null })).toBe("none");
   });
 });
 

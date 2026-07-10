@@ -1,7 +1,10 @@
 # Narrator prompt consolidation — response to the 2026-07-10 external review
 
-Status: draft (point-by-point assessment done 2026-07-10; slices need owner rulings —
-see Open questions — and two are gated on eval runs that are themselves owner-gated spend)
+Status: shipped — 2026-07-10 (all six slices implemented same day; see §Rulings &
+leftovers at the end — the layout switch ships default-OFF pending its eval A/B, the
+trait-quota softening awaits validation by the queued enactment measurement run, and
+every live eval run remains owner-gated spend. Replaced prompt lines are kept
+commented-out at their call sites for one-uncomment rollback.)
 
 An external GPT review (2026-07-10, delivered in conversation — not in `gpt-review/`,
 which reviews plan docs; this one reviewed shipped code) audited the narrator prompt
@@ -175,16 +178,40 @@ proves them. Live runs stay owner-gated spend, like every eval run so far.
   At most, reword `AUTHORITY_ORDER`'s lead-in to "when blocks state the same fact"
   as fold-in polish while touching narrative.ts in slice 1.
 
-## Open questions
+## Rulings & leftovers (implementation, 2026-07-10)
 
-- **A. Chat length story (slice 2)** — the ~three-paragraph baseline was a direct
-  owner instruction (2026-07-09), *after* the eval set chat to `aggressive_concise`
-  (2026-06-29). Was it a deliberate counterweight because `aggressive_concise` replies
-  read too skimpy in live play? If yes: chat's resting profile should flip to
-  `concise_immersive` (or a new middle profile) and the baseline moves into it. If
-  no: adopt the review's beat-scaled replacement inside `aggressive_concise`. Either
-  way the length story ends up in one place.
-- **B. Slice ordering** — slice 6 (multi-turn eval) is the instrument for 3–5;
-  build it first, or accept wording-only slices 1–2 shipping ahead of it?
-- **C. Priming probe** — is the mature-content-priming concern worth one eval
-  fixture, or drop it entirely?
+All six slices were built in one pass on the owner's "implement using your best
+recommendations" instruction. Every replaced prompt line is preserved as a comment at
+its call site (grep `Pre-2026-07-10 wording`) — rollback is an uncomment.
+
+- **A. Chat length story — ruled: per-shape, default unchanged.** The length sentence
+  moved into `chatLengthStory` (`prompts/character-chat.ts`), keyed to the active
+  shape: `concise_immersive` keeps the owner's three-paragraph baseline verbatim;
+  `aggressive_concise` (the chat resting default, unchanged) gets the beat-scaled
+  no-floor rule. This removes the contradiction without deleting the owner's 2026-07-09
+  instruction — if chat replies now read too skimpy in live play, the one-line fix is
+  flipping `NARRATION_LANE_DEFAULTS.chat` to `concise_immersive`, which brings the
+  baseline back.
+- **B. Slice ordering — ruled: everything in one pass.** The multi-turn harness
+  (slice 6) landed alongside the wording changes rather than before them; the first
+  live `mt-chat-*` run doubles as the post-change baseline. (`--dry-run` validated the
+  transcript mode with zero spend.)
+- **C. Priming probe — not built.** The mature-content framing and rule 14 are
+  untouched (as planned); no probe fixture until the owner says the priming concern is
+  worth spend.
+- **Slice 4 note:** `chatCueInviteLine` stays exported (with its tests) for rollback;
+  the pipeline's `cueInvite` input now carries only the continue-beat open-loop cue.
+  The allowance deliberately ignores arousal alone — a distant conversation stays
+  distant however keyed-up the character is.
+- **Slice 5 note:** `CHAT_PROMPT_LAYOUT=turn_context` is env-only and default-OFF.
+  Flip the default only after an eval A/B (both chat models) shows no behavioral
+  regression from moving the tail out of the system role; the cache win is the reward.
+
+**Leftovers (all owner-gated spend):**
+1. The enactment measurement run (roadmap §Next) now also validates the slice-3
+   trait-quota softening: if blind disposition identification drops below the 80% bar,
+   restore the commented quota wording and re-run.
+2. A live `mt-chat-*` baseline run (`pnpm eval:narration --scenarios mt-chat --models
+   glm,aion --no-judge`) to record the longitudinal numbers before further prompt work.
+3. The slice-5 layout A/B (generate with `CHAT_PROMPT_LAYOUT=turn_context` vs default,
+   compare via the pairwise judge) before flipping the default.

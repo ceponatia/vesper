@@ -2,6 +2,12 @@ import type { ModelMessage } from "ai";
 import { defaultExposureMask, emptyBrief, type ExposureMask } from "../../../src/contracts/state/brief";
 import type { NarrationFocus } from "../../../src/contracts/turns/intent-brief";
 import { characterProfileSchema, type CharacterProfile } from "../../../src/contracts/world/profile";
+import {
+  buildChatReplyGates,
+  deriveChatSensoryAllowance,
+  detectChatCue,
+  detectSensoryFocus,
+} from "../../../src/server/engine/chat-intent";
 import { buildCharacterChatSystemPrompt, chatNotationNote, type CharacterChatPromptInput } from "../../../src/server/engine/prompts/character-chat";
 import type { NarrationShapeId } from "../../../src/server/engine/prompts/constants";
 import { buildStaticRulebook, buildTurnContext } from "../../../src/server/engine/prompts/narrative";
@@ -135,6 +141,21 @@ export interface EvalScenario {
    * measured.
    */
   commsReplyRe?: RegExp;
+  /**
+   * Multi-turn transcript scenario (narrator-prompt-consolidation.plan.md slice 6): the
+   * scripted player inputs AFTER `playerInput`. The runner generates a reply per input,
+   * feeding the accumulated exchange back as history, and reports longitudinal metrics
+   * over the reply sequence (question-ending cadence, cross-reply repetition, sensory
+   * frequency, paragraph inflation) — the failure modes single turns can't show.
+   */
+  script?: string[];
+  /**
+   * Multi-turn only: build the system prompt for ONE turn of the script, deriving the
+   * per-turn volatile tail (sensory allowance, reply-discipline gates) from the current
+   * input + prior replies exactly as the live route does (`chat-pipeline.ts`). Absent ⇒
+   * the runner reuses `build(...)`'s system once, static across the transcript.
+   */
+  buildTurnSystem?: (shape: NarrationShapeId, input: string, priorReplies: readonly string[]) => string;
   build: (shape: NarrationShapeId, opts: { focus: boolean }) => { system: string; messages: ModelMessage[] };
 }
 
@@ -398,6 +419,35 @@ function chatBuild(o: {
   });
 }
 
+/**
+ * Multi-turn per-turn system builder (narrator-prompt-consolidation.plan.md slice 6):
+ * mirrors the live route's per-turn derivation — the sensory allowance from this turn's
+ * input (`deriveChatSensoryAllowance` over the detectors) and the reply-discipline gates
+ * from the prior replies — so a transcript run exercises the same volatile tail the
+ * shipped pipeline sends, turn by turn.
+ */
+function chatTurnSystemBuild(o: {
+  name: string;
+  profile: CharacterProfile;
+  state?: ChatState;
+  player?: { name: string; persona?: string };
+}): NonNullable<EvalScenario["buildTurnSystem"]> {
+  return (shape, input, priorReplies) => {
+    const cue = detectChatCue(input);
+    const sensoryFocus = detectSensoryFocus(input);
+    return buildCharacterChatSystemPrompt({
+      name: o.name,
+      profile: o.profile,
+      state: o.state,
+      player: o.player,
+      narrationShape: shape,
+      sensoryAllowance: deriveChatSensoryAllowance({ cue, sensoryFocus }),
+      sensoryFocus: sensoryFocus ?? undefined,
+      gateNotes: buildChatReplyGates({ recentReplies: priorReplies, intimate: cue.intimate, name: o.name }),
+    });
+  };
+}
+
 /** Contrast pairs all speak through the one shared contrast character (Wren). */
 function chatContrastBuild(o: {
   profile: CharacterProfile;
@@ -517,7 +567,7 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
           primaryReaction: complimentPrimary,
           openThreadCount: 0,
           directiveCount: 0,
-          focus: withFocus(focus, { primaryResponse: "react_emotionally", reactionScale: "small", allowedNewTopic: "none", suggestedShape: "concise_exchange" }),
+          focus: withFocus(focus, { primaryResponse: "acknowledge_emotional_beat", reactionScale: "small", allowedNewTopic: "none", suggestedShape: "concise_exchange" }),
         }),
         playerInput: "That jacket looks good on you, Maya.",
       }),
@@ -606,7 +656,7 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
           primaryReaction: null,
           openThreadCount: 0,
           directiveCount: 0,
-          focus: withFocus(focus, { primaryResponse: "react_emotionally", reactionScale: "moderate", allowedNewTopic: "none", suggestedShape: "concise_exchange" }),
+          focus: withFocus(focus, { primaryResponse: "acknowledge_emotional_beat", reactionScale: "moderate", allowedNewTopic: "none", suggestedShape: "concise_exchange" }),
         }),
         playerInput: "I rest my forehead against hers and just breathe.",
       }),
@@ -990,5 +1040,72 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
     playerInput: CONTRAST_MASK_INPUT,
     knownNames: [],
     build: chatContrastBuild({ profile: wrenProfile(), state: maskState(false), playerInput: CONTRAST_MASK_INPUT }),
+  },
+  // ── Multi-turn transcripts (narrator-prompt-consolidation.plan.md slice 6): the
+  // longitudinal failure modes — repetition creep, interview-mode cadence, sensory
+  // frequency, paragraph inflation, unearned warmth — that single turns can't show. ──
+  {
+    id: "mt-chat-smalltalk",
+    title: "Multi-turn — ordinary small talk holds its shape (9 exchanges)",
+    lane: "chat",
+    expectation:
+      "Across the whole transcript: replies stay lean and beat-scaled; her unchanged outfit, scent, and the room are never re-described; replies don't all end on a question; no person-level sensory detail lands in this ordinary distant conversation; no named bystanders are invented; warmth stays proportionate to a slow work afternoon and doesn't escalate on its own.",
+    playerInput: "hey. slow day?",
+    knownNames: ["Sabrina"],
+    script: [
+      "Same here, mostly paperwork on my end.",
+      "Did that package for room four ever show up?",
+      "Figures. The courier's useless out this far.",
+      "Anyway. Any plans once you're off?",
+      "A book sounds about right. Which one?",
+      "Never read it. Any good so far?",
+      "Maybe I'll borrow it when you're done with it.",
+      "Deal. Alright, I should let you get back to it.",
+    ],
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      player: { name: "Brian" },
+      playerInput: "hey. slow day?",
+    }),
+    buildTurnSystem: chatTurnSystemBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      player: { name: "Brian" },
+    }),
+  },
+  {
+    id: "mt-chat-statements",
+    title: "Multi-turn — plain statements, one attention beat (9 exchanges)",
+    lane: "chat",
+    expectation:
+      "The player mostly makes simple statements that owe no question back and invite no new topics: replies should acknowledge in character without manufacturing errands, sub-plots, or a question every turn. Exactly one turn puts attention on her appearance ('you look nice today') — a single visual detail is welcome THERE and only there; sensory or appearance description on the other turns is unearned. Warmth stays level; no doting.",
+    playerInput: "Long shift. My feet are killing me.",
+    knownNames: ["Sabrina"],
+    script: [
+      "The rain hasn't let up all day either.",
+      "I finally finished that report I'd been dreading.",
+      "My sister called — she's coming to visit next month.",
+      "You look nice today, by the way.",
+      "This coffee's gone cold and I can't be bothered to make more.",
+      "I keep meaning to fix the squeak in my office chair.",
+      "Saw a heron standing in the shallows on the walk over.",
+      "That's all my news, really.",
+    ],
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      player: { name: "Brian" },
+      playerInput: "Long shift. My feet are killing me.",
+    }),
+    buildTurnSystem: chatTurnSystemBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: FRONT_DESK_STATE,
+      player: { name: "Brian" },
+    }),
   },
 ];

@@ -61,11 +61,47 @@ export function detectChatCue(input: string): ChatCueHint {
 }
 
 /**
+ * The deterministic per-turn sensory allowance (narrator-prompt-consolidation.plan.md
+ * slice 4) — the chat-lane analogue of the session's exposure mask (`exposureRules`,
+ * prompts/narrative.ts): ONE binding per-turn statement of what person-level sensory /
+ * appearance detail may land, instead of four scattered "one cue, earned" teachings.
+ * - `focused_description` — a sense-targeted beat (`detectSensoryFocus` fired); the
+ *   Sensory-focus block carries the grant.
+ * - `close_range_hook` — the beat closes distance or turns intimate (cue arms that
+ *   used to trigger old rule 11 / the cue-invite line).
+ * - `visual_accent` — the player's attention is on the character's appearance (the
+ *   old rule 12 attention arm; sight carries at any distance).
+ * - `none` — an ordinary distant exchange: no person-level sensory detail is earned.
+ */
+export type ChatSensoryAllowance = "none" | "visual_accent" | "close_range_hook" | "focused_description";
+
+/**
+ * Map the turn's existing detector reads to the allowance — pure, no new signal:
+ * this only centralizes the decision the prompt used to restate as prose in four
+ * places. Arousal alone deliberately does NOT raise the allowance (a distant
+ * conversation stays distant however keyed-up the character is).
+ */
+export function deriveChatSensoryAllowance(args: {
+  cue: ChatCueHint | null;
+  sensoryFocus: SensoryFocusHint | null;
+}): ChatSensoryAllowance {
+  if (args.sensoryFocus) return "focused_description";
+  if (args.cue?.intimate || args.cue?.touch || args.cue?.proximity) return "close_range_hook";
+  if (args.cue?.attention) return "visual_accent";
+  return "none";
+}
+
+/**
  * Render the one-turn cue invitation line for the prompt (most-charged signal wins:
  * intimate > touch > proximity > attention), or "" when the input invites nothing. The
  * route passes the rendered string to the prompt builder, so the builder stays a pure
  * function over a plain string. Each arm is worded as sensation ARRIVING in the
  * player's senses, never as the character's property (chat-narrator-pov.plan.md).
+ *
+ * RETIRED from the live pipeline by narrator-prompt-consolidation slice 4 (2026-07-10):
+ * the deterministic `deriveChatSensoryAllowance` line supersedes these sensory arms.
+ * Kept (with its tests) for rollback — restoring the pipeline's old
+ * `chatCueInviteLine(cueHint, name)` arm re-enables it.
  */
 export function chatCueInviteLine(cue: ChatCueHint, name: string): string {
   if (cue.intimate) {
