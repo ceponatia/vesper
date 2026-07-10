@@ -82,13 +82,15 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toMatch(/never mention being an AI/i);
   });
 
-  it("relaxes the dialogue tag to optional (renderer-owned attribution) and keeps dialogue quoted", () => {
+  it("states the mechanical attribution contract: whole-line quotes auto-attribute, mixed lines tag or split", () => {
     const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
-    // Dialogue still goes in quotes, but the [Name] tag is now optional in the 1-on-1…
+    // Dialogue still goes in quotes, and the auto-attribution path is stated as mechanical…
     expect(prompt).toMatch(/spoken dialogue always goes in quotes/i);
-    expect(prompt).toMatch(/\[Mara\] tag is optional/i);
-    expect(prompt).toMatch(/attributes Mara's dialogue automatically/i);
-    // …and the old "start EVERY line with the tag" mandate is gone.
+    expect(prompt).toMatch(/attributes Mara's dialogue automatically ONLY when a line is nothing but the quote/i);
+    // …a line mixing speech with a beat must open with the tag (or split into separate lines)…
+    expect(prompt).toMatch(/open that line with the \[Mara\] tag/);
+    expect(prompt).toMatch(/the quote on its own line, the beat as its own prose line/);
+    // …and the old "start EVERY line with the tag" mandate is still gone.
     expect(prompt).not.toContain("Start every line of Mara's spoken dialogue with the tag");
   });
 
@@ -475,6 +477,11 @@ describe("buildCharacterChatSystemPrompt — message-notation legend (player-inp
 
   it("defines the comms output grammar the parser round-trips (*Name: her words*)", () => {
     expect(prompt).toMatch(/write Mara's sent message on its own line as \*Mara: her words here\*/);
+  });
+
+  it("teaches the narrator's own-output emphasis convention: underscores, never asterisk-emphasis", () => {
+    expect(prompt).toMatch(/In your own replies, write emphasis with _underscores_/);
+    expect(prompt).toMatch(/never with single asterisks/);
   });
 
   it("lives in the stable prefix and stays byte-identical across turns (cache-safe)", () => {
@@ -1027,6 +1034,47 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
     });
     expect(changedEmpty.tail).toContain("- Here: the porch");
     expect(changedEmpty.tail).toContain("establish the new setting");
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — first-exchange scene directive (Fly screenshot, 2026-07-10)", () => {
+  it("directs one-time, narration-forward scene establishment on the conversation's first exchange", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      firstExchange: true,
+    });
+    expect(parts.tail).toContain("First exchange of this conversation: establish the scene once");
+    expect(parts.tail).toContain("sight plus one other sense");
+    expect(parts.tail).toContain("what Theo's message sets up");
+    // Volatile by nature — it must never ride the cached prefix.
+    expect(parts.prefix).not.toContain("First exchange of this conversation");
+  });
+
+  it("is absent on ordinary turns and defers to the sceneChanged directive when a first-message move fired", () => {
+    const ordinary = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    expect(ordinary.tail).not.toContain("First exchange of this conversation");
+    // A movement in the first message minted a place ⇒ sceneChanged's own directive wins.
+    const moved = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: {
+        meters: {},
+        regard: 0,
+        conditions: [],
+        sceneMemory: { current: "the kitchen", places: [{ name: "the kitchen", details: [], connections: [] }] },
+      },
+      firstExchange: true,
+      sceneChanged: true,
+    });
+    expect(moved.tail).not.toContain("First exchange of this conversation");
+    expect(moved.tail).toContain("establish the new setting");
+  });
+
+  it("falls back to 'the player' in the faceless variant", () => {
+    const faceless = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), firstExchange: true });
+    expect(faceless.tail).toContain("what the player's message sets up");
   });
 });
 

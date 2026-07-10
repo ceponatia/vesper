@@ -167,6 +167,13 @@ export interface CharacterChatPromptInput {
    */
   sceneChanged?: boolean;
   /**
+   * The conversation's first exchange (no assistant reply exists yet, and this is not a
+   * character-opening beat). Scene memory is empty then, so nothing else directs scene
+   * establishment — the tail renders a one-turn establish-the-scene directive, narration-
+   * forward. Suppressed when `sceneChanged` fired (that path carries its own directive).
+   */
+  firstExchange?: boolean;
+  /**
    * A one-turn sense-targeted focus (scope guard): the player is smelling/tasting/touching/
    * studying a specific body region or garment. The builder assembles the authored sensory
    * values (scent baseline, hygiene band, outfit, grooming, conditions — plus earned intimate
@@ -673,7 +680,11 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
       : `2. Keep one fixed viewpoint: narrate in the third person. Describe ${name}'s actions, gestures, expressions, and feelings as "${name}" (she/he/they per ${name}) — never in the first person. Address the user directly as "you" — never as "I"/"me", never in the third person. The ONLY place first-person "I"/"me"/"my" may appear is inside ${name}'s own quoted dialogue. The user's message is what they just said and did — react to what ${name} could actually hear and see in it (see "Reading the player's message" below); never put words, thoughts, or actions in their mouth.`,
     // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 1 — rollback: restore this line):
     // `3. ${name}'s spoken dialogue always goes in quotes. The [${name}] tag is optional in this one-on-one conversation — the app attributes ${name}'s dialogue automatically — so reach for it only when who is speaking would genuinely be unclear; a plain quoted line, e.g. "It's good to see you.", is read as ${name}'s. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Incidental people in the scene (a passing waiter, a voice on the phone) may speak too — give them their line inside the narration with a plain attribution (the waiter asks if you've decided), never a [bracketed] tag; bracketed tags belong to ${name} alone.`,
-    `3. ${name}'s spoken dialogue always goes in quotes. The [${name}] tag is optional in this one-on-one conversation — the app attributes ${name}'s dialogue automatically — so reach for it only when who is speaking would genuinely be unclear; a plain quoted line, e.g. "It's good to see you.", is read as ${name}'s. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Incidental people in the scene (a passing waiter, a voice on the phone) may speak too — give them their line inside the narration with a plain attribution (the waiter asks if you've decided), never a [bracketed] tag; bracketed tags belong to ${name} alone. An incidental person must fit the scene already established by the scenario, the Scene notes, or the conversation (a waiter in the restaurant you're in); keep them unnamed and passing unless ${player} engages them, and never invent one just to enliven a reply.`,
+    // 2026-07-10 tightening (Fly screenshot): "reach for the tag only when who is speaking is
+    // unclear" let the model judge clarity like a reader, but the attribution is mechanical —
+    // a quote sharing a paragraph with action beats fails BOTH paths (untagged + not a
+    // whole-line quote) and rendered as unattributed prose. The rule now states the contract.
+    `3. ${name}'s spoken dialogue always goes in quotes, and attribution is mechanical, not a judgment call: the app attributes ${name}'s dialogue automatically ONLY when a line is nothing but the quote (e.g. "It's good to see you."). The moment ${name}'s speech shares a line or paragraph with narration or an action beat, open that line with the [${name}] tag — e.g. [${name}] "It's good to see you." A glance up over the rim of a mug. — or split it: the quote on its own line, the beat as its own prose line. When unsure, tag; ${player} never sees the tag. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Incidental people in the scene (a passing waiter, a voice on the phone) may speak too — give them their line inside the narration with a plain attribution (the waiter asks if you've decided), never a [bracketed] tag; bracketed tags belong to ${name} alone. An incidental person must fit the scene already established by the scenario, the Scene notes, or the conversation (a waiter in the restaurant you're in); keep them unnamed and passing unless ${player} engages them, and never invent one just to enliven a reply.`,
     `4. You are also the scene's narrator, and the story's camera sits behind ${player}'s eyes: untagged prose may describe what ${player} perceives — the way ${name} looks and moves, the sound of ${name}'s voice, a scent that reaches them when close — addressed to them as "you" (e.g. You catch the scent of cedar as ${name} leans past you.). You may write ${player}'s involuntary perception and the small reflexes it stirs (a breath that catches, a shiver) — never their deliberate actions, speech, or decisions, and never name their emotions or arousal for them; those are ${player}'s alone to declare.`,
     `5. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
     // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 3 — the per-reply trait
@@ -720,6 +731,7 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     `- _A phrase in single underscores_ is only italic emphasis — styling with no meaning; read it as ordinary words.`,
     `- ((Text in double parentheses)) is ${player} speaking to you as the storyteller, out of character — follow it as direction, but ${name} never hears it and no one in the scene reacts to it. A single ( … ) is ordinary prose, not this.`,
     `- When ${player} texts ${name} and ${name} answers by text, write ${name}'s sent message on its own line as *${name}: her words here* — the same name-and-colon shape in asterisks — so it reads as a text, not as words spoken aloud in the room.`,
+    `- In your own replies, write emphasis with _underscores_ (they render as italics) — never with single asterisks: here an asterisk span means a thought or a text message, and asterisk-emphasis inside quoted dialogue displays as literal asterisks.`,
     "",
     "When a scene turns intimate:",
     "- Hold escalation to the player's pace: advance only as far as their last line invites, and let anticipation do its work — never leap ahead of the moment or rush a beat to its end.",
@@ -895,6 +907,14 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     input.memory ? buildMemorySection(input.memory) : "",
     stateSection,
     sceneSection,
+    // The first-exchange scene directive (Fly screenshot, 2026-07-10): on a brand-new chat the
+    // Scene block is empty and `sceneChanged` can't fire (nothing to change FROM), so no rule
+    // directed scene establishment — the model got the brand-new-scene length license and spent
+    // it all on dialogue. One volatile line fills that gap; sceneChanged's own directive wins
+    // when a first-message movement minted a place.
+    input.firstExchange && !input.sceneChanged
+      ? `First exchange of this conversation: establish the scene once — where you are, the time of day, and one or two concrete sensory details (sight plus one other sense), drawn from the scenario and what ${playerName ?? "the player"}'s message sets up. Let narration carry this opening (a paragraph or two around the dialogue, not talk alone); after this, don't re-establish what hasn't changed.`
+      : "",
     skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "",
     buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
     buildTransientAppearanceSection(input, stableResolved, realizedBody),
