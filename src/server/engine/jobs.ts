@@ -17,6 +17,7 @@ export type JobType =
   | "reconcile"
   | "inner_note"
   | "chat_summary"
+  | "chat_scene_sketch"
   | "scene_image"
   | "avatar"
   | "portrait_variant"

@@ -15,6 +15,7 @@ import type { TurnProvider } from "@/contracts/turns/agent-results";
 import { db, facts, jobs, sessions, turnMessages, turns } from "../db";
 import {
   characterAppearanceSummary,
+  identityAnchorSummary,
   intimateSceneAppearance,
   composeSceneSpec,
   renderSceneImage,
@@ -1072,6 +1073,12 @@ export function buildSceneComposerContext(
           resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays),
           undefined,
           false,
+          p.snapshot,
+        ),
+        // Identity-critical features reinforcing this character's avatar reference when the
+        // render anchors on it (chat-scene-fidelity.plan.md slice 3).
+        identityAnchors: identityAnchorSummary(
+          resolveAttributes(p.snapshot.attributes, p.state.attributeOverlays),
           p.snapshot,
         ),
         intimateAppearance: intimateSceneAppearance(

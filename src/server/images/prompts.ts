@@ -462,6 +462,12 @@ export interface ScenePresentCharacter {
   /** Compact attribute phrase (characterAppearanceSummary) for textual render descriptions. */
   appearance?: string;
   /**
+   * Identity-anchor phrase (identityAnchorSummary) for the identity-locked reference subject:
+   * whitelisted identity-critical features (lips, skin tone, eyes, hair) that reinforce the
+   * reference image — the render prompt words the reference as authoritative over them.
+   */
+  identityAnchors?: string;
+  /**
    * SFW lower-body shape line (sceneRevealAppearance, `{intimate:false}`): the
    * figure below a waist-up reference portrait — waist/hips/legs/feet, with
    * skin-level detail gated by exposure. Emitted for the identity-locked subject.
@@ -621,6 +627,56 @@ export function characterAppearanceSummary(
   return excerpt(parts.join("; "), maxChars);
 }
 
+/**
+ * Identity-critical attributes for the reference-anchored render (chat-scene-fidelity.plan.md
+ * slice 3): the features an identity-locked edit drifts on ever so slightly — facial identity
+ * plus skin and hair. Deliberately a whitelist (a full appearance dump would fight the
+ * reference image and blow the Venice prompt budget).
+ */
+const IDENTITY_ANCHOR_ATTRIBUTE_IDS = [
+  "skin.tone",
+  "skin.undertone",
+  "lips.fullness",
+  "lips.shape",
+  "eyes.color",
+  "eyes.shape",
+  "hair.color",
+  "hair.length",
+  "hair.style",
+  "face.shape",
+  "face.freckles",
+] as const;
+
+/** Char cap on the identity-anchor phrase — it must never crowd the 1500-char Venice budget. */
+const IDENTITY_ANCHOR_CHARS = 180;
+
+/**
+ * A compact identity-anchor phrase for the character a reference image identity-locks:
+ * whitelist-filtered attribute values ("skin tone: warm brown; lips fullness: full; …")
+ * emitted to REINFORCE the reference, never to override it (the render prompt words the
+ * reference as authoritative). "" when nothing identity-critical is authored, so the
+ * prompt is unchanged for a sparsely-authored character.
+ */
+export function identityAnchorSummary(
+  attributes: ReadonlyArray<AttributeValue>,
+  profile?: CharacterProfile,
+): string {
+  const realizedBody = profile ? realizedBodyForProfile(profile) : undefined;
+  const byId = new Map(attributes.map((v) => [v.id, v]));
+  const parts: string[] = [];
+  for (const id of IDENTITY_ANCHOR_ATTRIBUTE_IDS) {
+    const value = byId.get(id);
+    if (!value) continue;
+    const def = attributeRegistry.byId(id);
+    if (!def) continue;
+    if (def.excludeFromPrompts) continue;
+    if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
+    const formatted = formatAttribute(def, value.value);
+    if (formatted) parts.push(formatted);
+  }
+  return excerpt(parts.join("; "), IDENTITY_ANCHOR_CHARS);
+}
+
 /** Which exposure region uncovers each intimate attribute category. */
 const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
   breasts: "torso",
@@ -760,6 +816,8 @@ export interface SceneCharacterSpec {
   outfitSummary: string;
   /** Compact appearance phrase for textual description. */
   appearance: string;
+  /** Identity-anchor phrase for the identity-locked subject — reinforces the reference image. */
+  identityAnchors?: string;
   /** SFW lower-body shape line for the identity-locked subject (the waist-up portrait's blind spot). */
   lowerBody?: string;
   /** Explicit bare-region phrase ("topless, bare chest; barefoot"), forced from coverage state; "" when fully covered or untracked. */
@@ -871,6 +929,7 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
     // override (character chat — no equippable wardrobe) wins when present.
     outfitSummary: entry.outfitDescription ?? wardrobeOutfitSummary(entry.wornVisible),
     appearance: entry.appearance ?? "",
+    ...(entry.identityAnchors ? { identityAnchors: entry.identityAnchors } : {}),
     ...(entry.lowerBody ? { lowerBody: entry.lowerBody } : {}),
     exposure: formatExposure(entry.exposure, entry.wardrobeTracked),
     intimateAppearance: entry.intimateAppearance ?? "",
@@ -952,6 +1011,13 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
     pieces.push(SCENE_POV_RULE);
     if (reference) {
+      // Identity anchors reinforce the lock; the reference image stays authoritative
+      // (owner constraint: these must never override the reference).
+      if (reference.identityAnchors) {
+        pieces.push(
+          `Same person as the reference image — these features confirm it (the reference is authoritative where they differ): ${reference.identityAnchors}.`,
+        );
+      }
       if (reference.action) pieces.push(`Pose: ${reference.action}.`);
       // The reference portrait is waist-up — supply the figure it can't show.
       if (reference.lowerBody) pieces.push(`Body (below the portrait's framing): ${reference.lowerBody}.`);
@@ -1053,6 +1119,8 @@ function assembleMulti(
       if (c.species) parts.push(excerpt(c.species, 160));
       if (c.appearance) parts.push(c.appearance);
     }
+    // Anchored characters get the identity-reinforcement phrase (reference stays authoritative).
+    if (isRef && c.identityAnchors) parts.push(`matching the reference: ${c.identityAnchors}`);
     if (isRef && c.lowerBody) parts.push(`figure: ${c.lowerBody}`);
     if (c.action) parts.push(c.action);
     if (c.outfitSummary) parts.push(`wearing ${fit(c.outfitSummary, outfitCap)}`);

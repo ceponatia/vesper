@@ -487,6 +487,9 @@ function buildSceneSection(memory: ChatSceneMemory, changed: boolean): string {
     const details = place && place.details.length ? ` — ${place.details.join("; ")}` : "";
     lines.push(`- Here: ${here}${details}`);
   }
+  // The background sketch (chat-scene-fidelity.plan.md slice 2b): fixed-feature reference
+  // for this place — authority for what's physically here, never prose to recite.
+  if (place?.sketch) lines.push(`- Setting (fixed reference): ${place.sketch}`);
   if (memory.timeOfDay) lines.push(`- Time of day: ${memory.timeOfDay}`);
   if (place && place.connections.length) lines.push(`- Nearby: ${place.connections.join("; ")}`);
   const directive = changed

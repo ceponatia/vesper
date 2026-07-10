@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { factDraftSchema } from "../facts/taxonomy";
 import { attributeChangeSchema } from "./agent-results";
+import { CHAT_OUTFIT_MAX_CHARS } from "./chat-pulse";
 import { chatSceneProposalSchema } from "./chat-scene-memory";
 
 /**
@@ -64,13 +65,43 @@ export const chatArchivistSchema = z.object({
    * merges as a no-op via `mergeSceneMemory`), so it never fails the turn.
    */
   scene: chatSceneProposalSchema,
+  /**
+   * Optional outfit change (chat-scene-fidelity.plan.md slice 1): what the character is
+   * WEARING when this exchange changed it — they dressed, changed clothes, or removed
+   * clothing (partly or fully). `description` is a FULL replacement of the tracked outfit
+   * (the complete current look, never a delta); `exposed` = intimate areas are bared. An
+   * empty description is the no-change no-op (the common case), so `{}` parses clean and
+   * a bad proposal never fails the turn. Consumed by `finalizeChatState` into
+   * `state.outfit`/`outfitExposed`, which drive the narrator's wearing-line and the scene
+   * image's authoritative outfit override.
+   */
+  outfit: z
+    .object({
+      // Truncate, never reject: an overlong description must not degrade to "no change".
+      description: z
+        .string()
+        .catch("")
+        .default("")
+        .transform((s) => s.trim().slice(0, CHAT_OUTFIT_MAX_CHARS)),
+      exposed: z.boolean().catch(false).default(false),
+    })
+    .catch({ description: "", exposed: false })
+    .default({ description: "", exposed: false }),
 });
 
 export type ChatArchivist = z.infer<typeof chatArchivistSchema>;
 
 /** Degraded default: nothing extracted — the turn keeps its reply and the summary+window memory. */
 export function degradedChatArchivist(): ChatArchivist {
-  return { episodeSummary: "", facts: [], memoryQueries: [], attributeChanges: [], openLoops: [], scene: { places: [] } };
+  return {
+    episodeSummary: "",
+    facts: [],
+    memoryQueries: [],
+    attributeChanges: [],
+    openLoops: [],
+    scene: { places: [] },
+    outfit: { description: "", exposed: false },
+  };
 }
 
 /**

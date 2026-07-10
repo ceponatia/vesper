@@ -2,13 +2,24 @@ import { describe, expect, it } from "vitest";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./chat-archivist";
 
 describe("CHAT_ARCHIVIST_SYSTEM", () => {
-  it("declares six fields and carries a worked example for each rare field", () => {
-    expect(CHAT_ARCHIVIST_SYSTEM).toContain("six fields");
+  it("declares seven fields and carries a worked example for each rare field", () => {
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("seven fields");
     // The attributeChanges micro-example (C6 — the haircut) so the proposer stops under-firing.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeId":"hair.length"');
     // Both examples carry every field, so the model sees the full shape.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"openLoops":[]');
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeChanges":[]');
+  });
+
+  it("declares the optional outfit field with a worked example (chat-scene-fidelity slice 1)", () => {
+    // Full-replacement semantics, change-gated, undressing included, player excluded.
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"outfit": what the character is WEARING, only when this exchange CHANGED it/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/a full replacement, never a delta/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/Undressing counts/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/Never record the player's clothing/);
+    // The dressed-for-dinner example shows the populated shape; the others show the {} no-op.
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"outfit":{"description":"a black wrap dress and low heels, hair pinned up","exposed":false}');
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"outfit":{}');
   });
 
   it("declares the optional scene field and carries a worked scene example (chat scene memory)", () => {

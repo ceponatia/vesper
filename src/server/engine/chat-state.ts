@@ -14,6 +14,7 @@ import {
   CHAT_PREMISE_MAX_CHARS,
   chatPulseTraceSchema,
   chatSceneMemorySchema,
+  currentScenePlace,
   clampFamiliarity,
   clampRegard,
   degradedChatPulse,
@@ -68,6 +69,7 @@ import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import { characterChatMessages, characterChatState, db } from "../db";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
+import { enqueueChatSceneSketch } from "./chat-scene-sketch";
 import {
   AFFINITY_DELTA_CLAMP,
   CHAT_ACTION_CONDITION_MINUTES,
@@ -245,7 +247,13 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     conditions: [],
     mindNote: "",
     premise: (premise ?? note).trim().slice(0, CHAT_PREMISE_MAX_CHARS),
-    outfit: "",
+    // Falls back to the character form's outfit (chat-scene-fidelity.plan.md slice 1) —
+    // the scenario modal's Starting Outfit stays authoritative once the author edits it
+    // (including deliberately clearing it, which chooses composer inference).
+    outfit: (profile.defaultOutfit ?? [])
+      .join(", ")
+      .trim()
+      .slice(0, CHAT_OUTFIT_MAX_CHARS),
     outfitExposed: false,
     // Seeded from the character's own cards, then author-editable + authoritative in the chat.
     activeSocialCards: [...(profile.socialCards ?? [])],
@@ -803,6 +811,15 @@ export async function finalizeChatState(input: {
     ? mergeSceneMemory(input.driftedState.sceneMemory, archivist.value.scene)
     : input.driftedState.sceneMemory;
 
+  // Outfit change (chat-scene-fidelity.plan.md slice 1): a non-empty archivist proposal is
+  // a FULL replacement of the tracked outfit + exposed flag — the fiction dressed, changed,
+  // or undressed the character this exchange. Empty proposal / degraded archivist keeps the
+  // prior values ("another take" rolls it back via the pre-exchange snapshot like the rest).
+  const outfitProposal = archivist.value?.outfit;
+  const outfitPatch = outfitProposal?.description
+    ? { outfit: outfitProposal.description, outfitExposed: outfitProposal.exposed }
+    : {};
+
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
   // exchange (bounded by the acquainted ceiling), plus a moment tick when the
   // archivist recorded durable facts — a real disclosure or shared experience.
@@ -885,6 +902,7 @@ export async function finalizeChatState(input: {
       relationshipHistory,
       milestones,
       sceneMemory,
+      ...outfitPatch,
       // The skip note is one-shot (spec §8.1): this exchange rendered it, so it clears.
       pendingSkipNote: "",
     },
@@ -894,6 +912,20 @@ export async function finalizeChatState(input: {
   // keep rolling back to the same pre-exchange point. Guarded on the same prompting
   // message as saveChatState (F5), so a mid-stream delete leaves neither half written.
   await savePreExchangeSnapshot(input.chatId, input.characterId, input.preExchangeState, input.promptMessageId);
+
+  // Location sketch (chat-scene-fidelity.plan.md slice 2b): a current place without a
+  // sketch gets one from the detached background agent. Enqueued AFTER the state write so
+  // the job reads the just-merged memory; fire-and-forget (a lost write re-fires here
+  // while the sketch stays absent).
+  const sketchPlace = currentScenePlace(sceneMemory);
+  if (sketchPlace && !sketchPlace.sketch) {
+    void enqueueChatSceneSketch({
+      chatId: input.chatId,
+      characterId: input.characterId,
+      characterName: input.characterName,
+      placeName: sketchPlace.name,
+    });
+  }
   return { bigMoment };
 }
 
