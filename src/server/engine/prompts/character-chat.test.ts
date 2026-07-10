@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import type { AttributeValue } from "@/contracts/attributes/value";
-import { buildCharacterChatPromptParts, buildCharacterChatSystemPrompt, chatNotationNote } from "./character-chat";
+import { buildCharacterChatPromptParts, buildCharacterChatSystemPrompt, buildChatTurnMessage, chatNotationNote } from "./character-chat";
 
 const attr = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue => ({ id, value, source: "creation" });
 
@@ -355,15 +355,17 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).not.toContain("exposure mask's scent range");
   });
 
-  it("states the restraint discipline: opportunistic, closeness-gated, never listed — and a CHAT rule reinforces it", () => {
+  it("states the restraint discipline: cues are reference data, spent only through the per-turn allowance", () => {
     const prompt = buildCharacterChatSystemPrompt({
       name: "Sabrina",
       profile: profile({ attributes: [attr("presentation.scent_baseline", "soft floral perfume")] }),
     });
     expect(prompt).toMatch(/use only when the beat earns them/i);
-    expect(prompt).toMatch(/proximity, touch, intimacy, a first impression/i);
-    expect(prompt).toMatch(/never recite a label/i);
-    expect(prompt).toMatch(/Do not force sensory detail into ordinary, distant conversation/i);
+    // The when-it's-earned teaching now defers to the deterministic Sensory-allowance line
+    // (narrator-prompt-consolidation slice 4) instead of restating the conditions in prose.
+    expect(prompt).toMatch(/only when the current-turn Sensory allowance grants a cue/i);
+    expect(prompt).toMatch(/never\s+recited as a label: value/i);
+    expect(prompt).toMatch(/never forced into ordinary, distant conversation/i);
     // Never a checklist / mandatory.
     expect(prompt).not.toMatch(/always (mention|include|describe|note)[^.]{0,24}(scent|smell)/i);
   });
@@ -558,11 +560,13 @@ describe("buildCharacterChatSystemPrompt — player-POV narration (chat-narrator
     expect(withPlayer).toContain("those are Theo's alone to declare");
   });
 
-  it("adds the attention/motion-gated visual rule (show, don't inventory)", () => {
+  it("adds the motion-gated visual rule (show, don't inventory) deferring to the allowance", () => {
     expect(withPlayer).toContain("Show, don't inventory");
-    expect(withPlayer).toMatch(/give one concrete visual detail from Theo's eye/);
-    expect(withPlayer).toContain("Sight carries at any distance.");
-    expect(withPlayer).toMatch(/never a head-to-toe description, never repeated for an unchanged look/);
+    expect(withPlayer).toMatch(/one concrete visual detail from Theo's eye/);
+    // Attention-driven visual detail moved behind the per-turn Sensory-allowance line
+    // (narrator-prompt-consolidation slice 4); the rule keeps only the self-motion arm.
+    expect(withPlayer).toMatch(/follows the Sensory allowance line/);
+    expect(withPlayer).toMatch(/Never a head-to-toe description, never a detail repeated for an unchanged look/);
   });
 
   it("reframes Attributes as shared identity + appearance data", () => {
@@ -571,7 +575,7 @@ describe("buildCharacterChatSystemPrompt — player-POV narration (chat-narrator
   });
 
   it("words the closeness sensory rule as sensation landing in the player's senses", () => {
-    expect(withPlayer).toMatch(/written as it lands in Theo's senses \(the scent that reaches them, the warmth they feel\)/);
+    expect(withPlayer).toMatch(/written as it arrives in Theo's senses \(the scent that reaches them, the warmth they feel\)/);
   });
 
   it("invites showing the outfit when movement or attention makes it noticeable", () => {
@@ -1079,5 +1083,95 @@ describe("buildCharacterChatSystemPrompt — reply-discipline gate notes (delive
     const without = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
     expect(without.prefix).toBe(parts.prefix); // gate notes are volatile
     expect(without.tail).not.toContain("ended in questions");
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrator-prompt-consolidation slice 4)", () => {
+  const base = { name: "Mara", profile: profile(), player: { name: "Theo" } };
+
+  it("renders the binding line per allowance, in the volatile tail", () => {
+    const none = buildCharacterChatPromptParts({ ...base, sensoryAllowance: "none" });
+    expect(none.tail).toContain("Sensory allowance this turn: none");
+    expect(none.tail).toContain("no scent, warmth, texture, or taste detail of Mara");
+    expect(none.prefix).not.toContain("Sensory allowance this turn"); // volatile
+
+    const visual = buildCharacterChatPromptParts({ ...base, sensoryAllowance: "visual_accent" });
+    expect(visual.tail).toContain("Sensory allowance this turn: one visual accent");
+    expect(visual.tail).toContain("Theo's eye is on Mara");
+
+    const close = buildCharacterChatPromptParts({ ...base, sensoryAllowance: "close_range_hook" });
+    expect(close.tail).toContain("Sensory allowance this turn: one close-range hook");
+    expect(close.tail).toContain("as it reaches Theo's senses");
+  });
+
+  it("renders no allowance line for focused_description (the Sensory-focus block is the grant) or when absent", () => {
+    const focused = buildCharacterChatPromptParts({
+      ...base,
+      sensoryAllowance: "focused_description",
+      sensoryFocus: { sense: "smell", target: "hair", intimate: false },
+      state: { meters: {}, regard: 0, conditions: [] },
+    });
+    expect(focused.tail).not.toContain("Sensory allowance this turn");
+    expect(focused.tail).toContain("Sensory focus — Theo is breathing in Mara's hair.");
+
+    const absent = buildCharacterChatPromptParts(base);
+    expect(absent.tail).not.toContain("Sensory allowance this turn");
+  });
+
+  it("the static rules defer to the allowance line rather than restating the conditions", () => {
+    const prompt = buildCharacterChatSystemPrompt(base);
+    expect(prompt).toMatch(/when a "Sensory allowance" line is present below, it states exactly what may land/i);
+    expect(prompt).toContain("When no allowance line is present, default to none.");
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — per-shape length story (narrator-prompt-consolidation slice 2)", () => {
+  it("aggressive_concise carries a beat-scaled length rule with no paragraph floor", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      narrationShape: "aggressive_concise",
+    });
+    expect(prompt).toContain("Length follows the beat");
+    expect(prompt).toContain("never add prose to reach a customary length");
+    expect(prompt).not.toContain("Baseline shape: about three paragraphs");
+  });
+
+  it("concise_immersive keeps the three-paragraph baseline", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      narrationShape: "concise_immersive",
+    });
+    expect(prompt).toContain("Baseline shape: about three paragraphs");
+    expect(prompt).not.toContain("Length follows the beat");
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — incidental people stay scene-consistent (slice 1)", () => {
+  it("licenses flavor NPCs only inside the established scene, unnamed and passing", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    expect(prompt).toContain("An incidental person must fit the scene already established");
+    expect(prompt).toContain("never invent one just to enliven a reply");
+  });
+});
+
+describe("buildChatTurnMessage — experimental turn-context layout (slice 5)", () => {
+  it("composes turn context + fenced player input as the final user message", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 10, conditions: [], mindNote: "the unpaid invoice" },
+    });
+    const message = buildChatTurnMessage(parts.tail, 'She grins. "Long day?"', "Theo");
+    expect(message).toContain("## Turn context");
+    expect(message).toContain("On your mind: the unpaid invoice");
+    expect(message).toContain("## Theo's message (respond to this)");
+    expect(message).toContain('She grins. "Long day?"');
+    // The player input is fenced (untrusted), like the session lane's.
+    expect(message).toMatch(/vsp-untrusted-[0-9a-f]+:player message/);
+    // The prefix (identity, rules) is NOT in the turn message — it stays the stable system prompt.
+    expect(message).not.toContain("How to respond:");
   });
 });

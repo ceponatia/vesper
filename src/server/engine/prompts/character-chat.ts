@@ -20,7 +20,7 @@ import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
-import type { SensoryFocusHint } from "../chat-intent";
+import type { ChatSensoryAllowance, SensoryFocusHint } from "../chat-intent";
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
@@ -135,12 +135,22 @@ export interface CharacterChatPromptInput {
    */
   narrationShape?: NarrationShapeId;
   /**
-   * A one-turn cue invitation (character-chat-state-narration.spec.md §7), pre-rendered by the
-   * route from the player's input (proximity / touch / intimacy via `chatCueInviteLine`). Present
-   * ⇒ a line telling the narrator an opportunistic sensory/state cue can land THIS turn; absent
-   * ⇒ no line (today's behavior). Pre-rendered so this builder stays pure over a plain string.
+   * A one-turn cue invitation. Since narrator-prompt-consolidation slice 4 this carries only the
+   * "has something to say" continue-cue (an open loop the character opens about); the sensory
+   * arms (proximity/touch/intimacy/attention via `chatCueInviteLine`) were superseded by the
+   * deterministic `sensoryAllowance` below. Pre-rendered so this builder stays pure over a string.
    */
   cueInvite?: string;
+  /**
+   * The deterministic per-turn sensory allowance (narrator-prompt-consolidation.plan.md slice 4):
+   * the ONE binding statement of what person-level sensory/appearance detail may land this turn,
+   * derived by the route from the existing detectors (`deriveChatSensoryAllowance` over
+   * `detectChatCue` / `detectSensoryFocus`). Replaces the four scattered "one cue, earned"
+   * teachings (old rules 11–12, the cue-invite sensory arms, the Sensory-cues closing bullet) with
+   * one authority the static rules defer to. Absent (opening/continue beats) ⇒ no line ⇒ rule 11's
+   * conservative default. `focused_description` renders no line — the Sensory-focus block IS the grant.
+   */
+  sensoryAllowance?: ChatSensoryAllowance;
   /**
    * Derived-fact notation note (player-input-perception.plan.md slice 4): a volatile
    * one-turn tail line rendered by `chatNotationNote` from the parsed markup of the CURRENT
@@ -440,11 +450,16 @@ function buildSensorySection(cues: SensoryCue[], name: string): string {
   return [
     "Sensory cues (use only when the beat earns them — never list them):",
     ...cues.map((c) => `- ${name}'s ${c.phrase}`),
-    "- Work a sensory detail into action only when proximity, touch, intimacy, a first impression, or " +
-      "the player's input makes it noticeable, and write it as it arrives in the player's senses — the " +
-      "scent that reaches them as you lean in, not a fact recited about yourself. One grounded hook woven " +
-      "into what you do is enough — never recite a label: value, and never force sensory detail into " +
-      "ordinary distant conversation.",
+    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 4 — the when-it's-earned
+    // teaching moved to the per-turn Sensory-allowance line; rollback: restore this bullet):
+    // "- Work a sensory detail into action only when proximity, touch, intimacy, a first impression, or " +
+    //   "the player's input makes it noticeable, and write it as it arrives in the player's senses — the " +
+    //   "scent that reaches them as you lean in, not a fact recited about yourself. One grounded hook woven " +
+    //   "into what you do is enough — never recite a label: value, and never force sensory detail into " +
+    //   "ordinary distant conversation.",
+    "- These are reference values, used only when the current-turn Sensory allowance grants a cue — then " +
+      "written as it arrives in the player's senses (the scent that reaches them as you lean in), never " +
+      "recited as a label: value about yourself.",
   ].join("\n");
 }
 
@@ -491,6 +506,25 @@ function buildResponseShapeLine(input: CharacterChatPromptInput): string {
   const mood = deriveMoodDescriptor(input.state?.meters ?? {});
   const moodClause = mood ? ` Mood: ${mood} — keep the reply's tone within it unless ${target}'s input moves it.` : "";
   return `Response shape: respond to what ${target} just said and did — no unrequested new topics. Keep the scale ordinary and proportionate unless your current state or the beat calls for more.${moodClause}`;
+}
+
+/**
+ * The binding per-turn sensory-allowance line (narrator-prompt-consolidation.plan.md slice 4) —
+ * the single authority rules 11–12 defer to. Worded as a ceiling, not an instruction: a grant is
+ * permission for at most one cue, never a demand that one appears. `focused_description` returns
+ * "" because the Sensory-focus block below carries that turn's (richer) grant.
+ */
+function chatSensoryAllowanceLine(allowance: ChatSensoryAllowance, name: string, player: string): string {
+  switch (allowance) {
+    case "none":
+      return `Sensory allowance this turn: none — no scent, warmth, texture, or taste detail of ${name}, and no appearance description beyond what ${name}'s own movement this turn makes newly visible.`;
+    case "visual_accent":
+      return `Sensory allowance this turn: one visual accent — ${player}'s eye is on ${name}. You may give one concrete visual detail drawn from ${name}'s Attributes and outfit, woven into the beat and seen from ${player}'s eye. Sight only — no scent, touch, or taste detail.`;
+    case "close_range_hook":
+      return `Sensory allowance this turn: one close-range hook — the beat brings ${player} close. One sensory cue (scent, warmth, texture, the sound of ${name}'s voice) may land, woven into action as it reaches ${player}'s senses. One at most; never listed.`;
+    case "focused_description":
+      return "";
+  }
 }
 
 /** Per-sense verb for the Sensory-focus heading. */
@@ -588,6 +622,25 @@ const CONTENT_FRAMING = [
 ].join(" ");
 
 /**
+ * The per-shape length story for the "Shaping each reply" block
+ * (narrator-prompt-consolidation.plan.md slice 2). The old unconditional
+ * "about three paragraphs" baseline (owner-instructed 2026-07-09) contradicted
+ * `aggressive_concise`'s "as few sentences as it honestly needs" in rule 5 —
+ * concrete beats vague, so the baseline quietly re-established a floor the
+ * profile was chosen to remove. Each shape now owns ONE coherent length story:
+ * the baseline survives under `concise_immersive`; `aggressive_concise` gets a
+ * beat-scaled rule with no customary floor.
+ */
+function chatLengthStory(shape: NarrationShapeId, name: string): string {
+  switch (shape) {
+    case "concise_immersive":
+      return `- Baseline shape: about three paragraphs — an opening beat, ${name}'s line or action, and a paragraph or two to land the turn. Run longer ONLY when it earns it: establishing a brand-new scene, or a genuinely major event. Ordinary small talk stays lean — ${name}'s line plus a beat can be the whole reply.`;
+    case "aggressive_concise":
+      return `- Length follows the beat: a simple exchange may be one line of ${name}'s dialogue and one action beat — that can be the whole reply. Add a paragraph only when new action, consequence, or sensory information genuinely occurs; never add prose to reach a customary length. Only a brand-new scene or a genuinely major event runs long.`;
+  }
+}
+
+/**
  * The chat rulebook. Beyond the character-embodiment rules it carries two perception
  * models, one per direction:
  * - **"Reading the player's message"** (player-input-perception.plan.md slice 1 — input
@@ -618,16 +671,27 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     playerName
       ? `2. Keep one fixed viewpoint: narrate in the third person. Describe ${name}'s actions, gestures, expressions, and feelings as "${name}" (she/he/they per ${name}) — never in the first person. You are talking with ${playerName}: always refer to and address them in the second person as "you" (and by name when it feels natural) — never as "I"/"me", never in the third person. The ONLY place first-person "I"/"me"/"my" may appear is inside ${name}'s own quoted dialogue. ${playerName}'s message is what they just said and did — react to what ${name} could actually hear and see in it (see "Reading the player's message" below); never put words, thoughts, or actions in their mouth.`
       : `2. Keep one fixed viewpoint: narrate in the third person. Describe ${name}'s actions, gestures, expressions, and feelings as "${name}" (she/he/they per ${name}) — never in the first person. Address the user directly as "you" — never as "I"/"me", never in the third person. The ONLY place first-person "I"/"me"/"my" may appear is inside ${name}'s own quoted dialogue. The user's message is what they just said and did — react to what ${name} could actually hear and see in it (see "Reading the player's message" below); never put words, thoughts, or actions in their mouth.`,
-    `3. ${name}'s spoken dialogue always goes in quotes. The [${name}] tag is optional in this one-on-one conversation — the app attributes ${name}'s dialogue automatically — so reach for it only when who is speaking would genuinely be unclear; a plain quoted line, e.g. "It's good to see you.", is read as ${name}'s. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Incidental people in the scene (a passing waiter, a voice on the phone) may speak too — give them their line inside the narration with a plain attribution (the waiter asks if you've decided), never a [bracketed] tag; bracketed tags belong to ${name} alone.`,
+    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 1 — rollback: restore this line):
+    // `3. ${name}'s spoken dialogue always goes in quotes. The [${name}] tag is optional in this one-on-one conversation — the app attributes ${name}'s dialogue automatically — so reach for it only when who is speaking would genuinely be unclear; a plain quoted line, e.g. "It's good to see you.", is read as ${name}'s. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Incidental people in the scene (a passing waiter, a voice on the phone) may speak too — give them their line inside the narration with a plain attribution (the waiter asks if you've decided), never a [bracketed] tag; bracketed tags belong to ${name} alone.`,
+    `3. ${name}'s spoken dialogue always goes in quotes. The [${name}] tag is optional in this one-on-one conversation — the app attributes ${name}'s dialogue automatically — so reach for it only when who is speaking would genuinely be unclear; a plain quoted line, e.g. "It's good to see you.", is read as ${name}'s. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Incidental people in the scene (a passing waiter, a voice on the phone) may speak too — give them their line inside the narration with a plain attribution (the waiter asks if you've decided), never a [bracketed] tag; bracketed tags belong to ${name} alone. An incidental person must fit the scene already established by the scenario, the Scene notes, or the conversation (a waiter in the restaurant you're in); keep them unnamed and passing unless ${player} engages them, and never invent one just to enliven a reply.`,
     `4. You are also the scene's narrator, and the story's camera sits behind ${player}'s eyes: untagged prose may describe what ${player} perceives — the way ${name} looks and moves, the sound of ${name}'s voice, a scent that reaches them when close — addressed to them as "you" (e.g. You catch the scent of cedar as ${name} leans past you.). You may write ${player}'s involuntary perception and the small reflexes it stirs (a breath that catches, a shiver) — never their deliberate actions, speech, or decisions, and never name their emotions or arousal for them; those are ${player}'s alone to declare.`,
     `5. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
-    "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the two or three strongest pulls visibly shape THIS reply — your word choice, rhythm, what you choose to do, and how much you give — and never name, list, or recite a trait.",
-    "7. Speak and act your age: let your age and life-stage shape your diction, references, patience, and energy — sound like someone of your years.",
+    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 3 — the per-reply trait
+    // quota; the queued enactment measurement run validates the softened form. Rollback: restore these):
+    // "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the two or three strongest pulls visibly shape THIS reply — your word choice, rhythm, what you choose to do, and how much you give — and never name, list, or recite a trait.",
+    // "7. Speak and act your age: let your age and life-stage shape your diction, references, patience, and energy — sound like someone of your years.",
+    "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the traits THIS beat makes relevant govern what you notice, withhold, say, and do — the strongest pulls should be felt in your word choice, rhythm, and how much you give — but a trait is something you possess, not something you perform: never demonstrate a set number of traits per reply, and never name, list, or recite one.",
+    "7. Speak and act your age: sound like someone of your years — let your age and life-stage color your diction and references where the beat touches them, without making a show of your age every turn.",
     `8. Respond directly to what ${name} just heard and saw before adding anything new.`,
     "9. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state, your disposition, and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
     "10. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
-    `11. When you move close, ${player} notices you closely, or the moment turns intimate, you may work in one relevant sensory cue if you have one — scent, warmth, texture, the sound of your voice — woven into a gesture or action and written as it lands in ${player}'s senses (the scent that reaches them, the warmth they feel). One is enough. Do not force sensory detail into ordinary, distant conversation, and never list it.`,
-    `12. Show, don't inventory: when ${player}'s attention lands on you — a look, a compliment, a mention of what you're wearing — or when you enter, move, or adjust your clothes, give one concrete visual detail from ${player}'s eye, drawn from your Attributes and outfit (e.g. the slit of a dress parting over a crossed leg, sleeves pushed up off flour-dusted forearms). Sight carries at any distance. One detail woven into the beat — never a head-to-toe description, never repeated for an unchanged look, and none at all when nothing draws the eye.`,
+    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 4 — the "one cue, earned"
+    // teaching now lives in the deterministic per-turn Sensory-allowance line; rollback: restore these
+    // two rules and the pipeline's chatCueInviteLine arm):
+    // `11. When you move close, ${player} notices you closely, or the moment turns intimate, you may work in one relevant sensory cue if you have one — scent, warmth, texture, the sound of your voice — woven into a gesture or action and written as it lands in ${player}'s senses (the scent that reaches them, the warmth they feel). One is enough. Do not force sensory detail into ordinary, distant conversation, and never list it.`,
+    // `12. Show, don't inventory: when ${player}'s attention lands on you — a look, a compliment, a mention of what you're wearing — or when you enter, move, or adjust your clothes, give one concrete visual detail from ${player}'s eye, drawn from your Attributes and outfit (e.g. the slit of a dress parting over a crossed leg, sleeves pushed up off flour-dusted forearms). Sight carries at any distance. One detail woven into the beat — never a head-to-toe description, never repeated for an unchanged look, and none at all when nothing draws the eye.`,
+    `11. Sensory and appearance detail is gated per turn: when a "Sensory allowance" line is present below, it states exactly what may land this turn — follow it. When it grants a cue, weave AT MOST ONE into a gesture or action, written as it arrives in ${player}'s senses (the scent that reaches them, the warmth they feel) — never listed, and never forced into ordinary, distant conversation. When no allowance line is present, default to none.`,
+    `12. Show, don't inventory: when your own movement this turn — entering, standing, adjusting your clothes — draws the eye, one concrete visual detail from ${player}'s eye is welcome (drawn from your Attributes and outfit, e.g. sleeves pushed up off flour-dusted forearms). Everything beyond that follows the Sensory allowance line. Never a head-to-toe description, never a detail repeated for an unchanged look.`,
     "13. Your physical state (below, when given) is behavioral law: act it out continuously — intoxication loosens and slurs you, low hygiene and dishevelment show at close range, exhaustion drags at you. But you have a long memory for it: a state you are already in is simply how you are right now, so let it colour your manner and word choice WITHOUT describing it afresh each turn. Only when a state visibly SHIFTS (you sober up, tip into drunk, grow tired) do you mark it once, in action, then let it ride.",
     `14. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
     `15. Dialogue is speech, not prose: let ${name} talk the way people actually talk — fragments, interruptions, trailing off, dodging a question instead of answering it, saying less than they mean. Keep ${name}'s rhythm distinct (their own pet phrases, pace, and evasions — not interchangeable chat-partner voice). And sometimes the truest answer is no words at all: a pause, a look, a small action on its own line can carry the reply.`,
@@ -635,7 +699,11 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     "Shaping each reply (how much to give, and how to land it):",
     `- Resolve, then one move. First answer what ${name} just heard and saw; then make AT MOST ONE forward move — an action or gesture ${player} can react to, an offer, a disclosure, a shift in the scene — or a question, but only when ${name} genuinely wants that answer right now. Never stack moves; never answer-then-ask-then-act in one reply; vary how replies end so they don't all close the same way.`,
     `- Worked example, two endings: ${player} mentions they quit their job today — here a question IS the move: ${name} looks up, "You actually did it. What did they say when you told them?" — ${name} genuinely wants the answer, so the question earns its place. But when ${player} finally kisses ${name} after weeks of circling it, ending on "Was that okay?" is filler that kills the beat — the move is an action hook instead: ${name} pulls them back in without a word. Match the ending to the moment; never default to a question.`,
-    `- Baseline shape: about three paragraphs — an opening beat, ${name}'s line or action, and a paragraph or two to land the turn. Run longer ONLY when it earns it: establishing a brand-new scene, or a genuinely major event. Ordinary small talk stays lean — ${name}'s line plus a beat can be the whole reply.`,
+    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 2 — the unconditional
+    // three-paragraph baseline contradicted the aggressive_concise profile in rule 5; the length
+    // story is now per-shape via chatLengthStory. Rollback: restore this line, drop the call):
+    // `- Baseline shape: about three paragraphs — an opening beat, ${name}'s line or action, and a paragraph or two to land the turn. Run longer ONLY when it earns it: establishing a brand-new scene, or a genuinely major event. Ordinary small talk stays lean — ${name}'s line plus a beat can be the whole reply.`,
+    chatLengthStory(shape, name),
     "- Freshness: every narrative paragraph must carry something NEW — a change, a reaction, a detail not yet on the page. Never re-describe an unchanged setting, outfit, or scent; if nothing about it has changed, don't restate it.",
     "",
     `Reading the player's message (what ${name} can actually perceive):`,
@@ -831,6 +899,9 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
     buildTransientAppearanceSection(input, stableResolved, realizedBody),
     sensoryFocus,
+    input.sensoryAllowance !== undefined
+      ? chatSensoryAllowanceLine(input.sensoryAllowance, displayName, playerName ?? "the player")
+      : "",
     input.cueInvite?.trim() ?? "",
     input.notationNote?.trim() ?? "",
     input.gateNotes?.trim() ?? "",
@@ -923,4 +994,26 @@ function buildTransientAppearanceSection(
 export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput): string {
   const { prefix, tail } = buildCharacterChatPromptParts(input);
   return [prefix, tail].filter(Boolean).join("\n\n");
+}
+
+/**
+ * The EXPERIMENTAL turn-context message (narrator-prompt-consolidation.plan.md slice 5,
+ * default-off — enabled by `CHAT_PROMPT_LAYOUT=turn_context`): the session lane's shape,
+ * ported to chat. Instead of system = prefix + volatile tail — where the tail sits BEFORE
+ * the history in token order, so every per-turn change invalidates the provider prefix
+ * cache for the whole history window — the tail rides a final user message together with
+ * the fenced current player input. System (prefix only) + history then form an append-only
+ * cached prefix, and the turn data sits adjacent to the input it governs. The caller drops
+ * the raw current player message from the history it sends and passes it here instead; the
+ * stored transcript is never touched. Flip the default only after the eval A/B.
+ */
+export function buildChatTurnMessage(tail: string, playerMessage: string, playerName?: string): string {
+  const who = playerName?.trim() || "the player";
+  return [
+    "## Turn context (current state for this exchange — reference, authoritative; respond to the message at the end)",
+    tail,
+    `## ${who}'s message (respond to this)\n${fenceUntrusted("player message", playerMessage)}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { streamText, type JSONValue, type ModelMessage } from "ai";
 import { isDemoMode, narrativeProviderOptions, openrouter, routedProvider } from "../../../src/server/ai";
+import { replyEndsInQuestion } from "../../../src/server/engine/chat-intent";
 import type { NarrationShapeId } from "../../../src/server/engine/prompts/constants";
 import { parseSegments } from "../../../src/lib/segmenter";
 import { CONTRAST_AXES, EVAL_SCENARIOS, type EvalScenario } from "./fixtures";
@@ -161,6 +162,69 @@ async function streamNarration(
   return { text, metrics: { paragraphs, segments: segments.length, distinctSpeakers, outputTokens, ttftMs, totalMs, provider: routedProvider(meta) } };
 }
 
+/**
+ * Longitudinal metrics over a multi-turn transcript's reply sequence
+ * (narrator-prompt-consolidation.plan.md slice 6) — the failure modes single turns
+ * can't show. All deterministic; indicators to read, never a build gate.
+ */
+interface MultiTurnMetrics {
+  turns: number;
+  /** Fraction of replies ending on a dialogue question — interview-mode cadence. */
+  questionEndRate: number;
+  /**
+   * Mean fraction of a reply's word 5-grams already seen in EARLIER replies —
+   * signature-phrase reuse and re-description creep. First reply seeds; measured
+   * from the second on. Noise floor is nonzero (natural connective tissue repeats);
+   * read it comparatively across runs, not as an absolute bar.
+   */
+  repeatedGramRate: number;
+  /** Fraction of replies with a person-level sensory reference (SENSORY_CUE_RE). */
+  sensoryTurnRate: number;
+  avgParagraphs: number;
+  maxParagraphs: number;
+}
+
+/** Normalized word 5-grams of a reply — the cross-reply repetition vocabulary. */
+function wordGrams(text: string, n = 5): Set<string> {
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9'\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const grams = new Set<string>();
+  for (let i = 0; i + n <= words.length; i += 1) grams.add(words.slice(i, i + n).join(" "));
+  return grams;
+}
+
+function longitudinalMetrics(replies: readonly string[]): MultiTurnMetrics {
+  const seen = new Set<string>();
+  let repeatedSum = 0;
+  let measuredTurns = 0;
+  let questionEnds = 0;
+  let sensoryTurns = 0;
+  const paragraphCounts: number[] = [];
+  for (const reply of replies) {
+    const grams = wordGrams(reply);
+    if (seen.size && grams.size) {
+      repeatedSum += [...grams].filter((g) => seen.has(g)).length / grams.size;
+      measuredTurns += 1;
+    }
+    for (const g of grams) seen.add(g);
+    if (replyEndsInQuestion(reply)) questionEnds += 1;
+    if (SENSORY_CUE_RE.test(reply)) sensoryTurns += 1;
+    paragraphCounts.push(reply.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean).length);
+  }
+  const turns = replies.length;
+  return {
+    turns,
+    questionEndRate: turns ? questionEnds / turns : 0,
+    repeatedGramRate: measuredTurns ? repeatedSum / measuredTurns : 0,
+    sensoryTurnRate: turns ? sensoryTurns / turns : 0,
+    avgParagraphs: paragraphCounts.length ? paragraphCounts.reduce((a, b) => a + b, 0) / paragraphCounts.length : 0,
+    maxParagraphs: paragraphCounts.length ? Math.max(...paragraphCounts) : 0,
+  };
+}
+
 interface ResultRow {
   scenario: string;
   lane: string;
@@ -194,11 +258,53 @@ interface ResultRow {
    * undefined ⇒ not a contrast scenario, or its axis has no cue list (not measured).
    */
   contrastCue?: boolean;
+  /** Longitudinal metrics for a multi-turn (`script`) scenario. undefined ⇒ single-turn. */
+  multiTurn?: MultiTurnMetrics;
   error?: string;
 }
 
 function pad(value: string | number, width: number): string {
   return String(value).padEnd(width);
+}
+
+/** Dedicated section for multi-turn rows — longitudinal columns the single-turn table lacks. */
+function printMultiTurnTable(rows: ResultRow[]): void {
+  const multi = rows.filter((r) => r.multiTurn);
+  if (!multi.length) return;
+  const header = [
+    pad("scenario (multi-turn)", 24),
+    pad("model", 9),
+    pad("prof", 10),
+    pad("turns", 6),
+    pad("q-end%", 7),
+    pad("repeat%", 8),
+    pad("sens%", 6),
+    pad("par avg/max", 12),
+    pad("tok", 6),
+    pad("total", 8),
+    "judge",
+  ].join(" ");
+  console.log(`\n${header}`);
+  console.log("-".repeat(header.length));
+  for (const r of multi) {
+    const mt = r.multiTurn;
+    if (!mt) continue;
+    console.log(
+      [
+        pad(r.scenario, 24),
+        pad(shortModel(r.model), 9),
+        pad(r.profile, 10),
+        pad(mt.turns, 6),
+        pad(`${(mt.questionEndRate * 100).toFixed(0)}%`, 7),
+        pad(`${(mt.repeatedGramRate * 100).toFixed(1)}%`, 8),
+        pad(`${(mt.sensoryTurnRate * 100).toFixed(0)}%`, 6),
+        pad(`${mt.avgParagraphs.toFixed(1)}/${mt.maxParagraphs}`, 12),
+        pad(r.metrics.outputTokens, 6),
+        pad(`${r.metrics.totalMs}ms`, 8),
+        r.judgement ? judgeAvg(r.judgement).toFixed(1) : "-",
+      ].join(" "),
+    );
+  }
 }
 
 function printTable(rows: ResultRow[]): void {
@@ -224,6 +330,7 @@ function printTable(rows: ResultRow[]): void {
   console.log(`\n${header}`);
   console.log("-".repeat(header.length));
   for (const r of rows) {
+    if (r.multiTurn) continue; // printed in the dedicated multi-turn section
     if (r.error) {
       console.log(`${pad(r.scenario, 22)} ${pad(shortModel(r.model), 9)} ${pad(r.profile, 10)} ${pad(r.reasoning, 8)} ERROR: ${r.error}`);
       continue;
@@ -272,8 +379,18 @@ async function main(): Promise<void> {
 
   if (args.dryRun) {
     for (const { scenario, profile } of args.scenarios.flatMap((s) => args.profiles.map((p) => ({ scenario: s, profile: p })))) {
-      const { system, messages } = scenario.build(profile, { focus: args.focus });
       console.log(`\n${"=".repeat(80)}\n### ${scenario.id} [${shortProfile(profile)}] (${scenario.lane})\n${"=".repeat(80)}`);
+      if (scenario.script?.length) {
+        // Multi-turn: show turn 1's system (per-turn volatiles derive from its input) + the script.
+        const system = scenario.buildTurnSystem
+          ? scenario.buildTurnSystem(profile, scenario.playerInput, [])
+          : scenario.build(profile, { focus: args.focus }).system;
+        console.log(`\n--- SYSTEM (turn 1${scenario.buildTurnSystem ? "; volatile tail re-derives per turn" : ""}) ---\n${system}`);
+        console.log(`\n--- SCRIPT (${1 + scenario.script.length} player turns) ---`);
+        for (const [i, input] of [scenario.playerInput, ...scenario.script].entries()) console.log(`${i + 1}. ${input}`);
+        continue;
+      }
+      const { system, messages } = scenario.build(profile, { focus: args.focus });
       console.log(`\n--- SYSTEM ---\n${system}`);
       console.log(`\n--- USER ---\n${messages.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))).join("\n")}`);
     }
@@ -291,6 +408,59 @@ async function main(): Promise<void> {
     const label = `${scenario.id}${args.seeds > 1 ? `#${seed}` : ""} ${shortModel(model)} ${shortProfile(profile)}/${reasoning}`;
     process.stdout.write(`running ${label} …`);
     try {
+      // Multi-turn transcript scenario (narrator-prompt-consolidation slice 6): generate a
+      // reply per scripted input, feeding the accumulated exchange back as history — the
+      // system prompt is rebuilt per turn when the scenario derives volatile tail lines
+      // (sensory allowance, reply gates) from the current input, mirroring the live route.
+      if (scenario.script?.length) {
+        const inputs = [scenario.playerInput, ...scenario.script];
+        const buildTurn = scenario.buildTurnSystem;
+        const staticSystem = buildTurn ? "" : scenario.build(profile, { focus: args.focus }).system;
+        const messages: ModelMessage[] = [];
+        const replies: string[] = [];
+        let outputTokens = 0;
+        let totalMs = 0;
+        let ttftMs = 0;
+        for (const input of inputs) {
+          const system = buildTurn ? buildTurn(profile, input, replies) : staticSystem;
+          messages.push({ role: "user", content: input });
+          const turn = await streamNarration(model, reasoning, { system, messages }, scenario.knownNames);
+          messages.push({ role: "assistant", content: turn.text });
+          replies.push(turn.text);
+          outputTokens += turn.metrics.outputTokens;
+          totalMs += turn.metrics.totalMs;
+          if (!ttftMs) ttftMs = turn.metrics.ttftMs;
+        }
+        const multiTurn = longitudinalMetrics(replies);
+        const transcript = inputs.map((input, i) => `Player: ${input}\n\n${replies[i] ?? ""}`).join("\n\n---\n\n");
+        const segments = parseSegments(transcript, scenario.knownNames);
+        const judgement = args.judge ? await judgeAbsolute(scenario, transcript) : null;
+        rows.push({
+          scenario: scenario.id,
+          lane: scenario.lane,
+          model,
+          profile: shortProfile(profile),
+          reasoning,
+          seed,
+          metrics: {
+            paragraphs: Math.round(multiTurn.avgParagraphs * 10) / 10,
+            segments: segments.length,
+            distinctSpeakers: new Set(segments.filter((s) => s.speaker).map((s) => s.speaker)).size,
+            outputTokens,
+            ttftMs,
+            totalMs,
+            provider: null,
+          },
+          judgement,
+          narration: transcript,
+          multiTurn,
+        });
+        process.stdout.write(
+          ` ${totalMs}ms over ${multiTurn.turns} turns — q-end ${(multiTurn.questionEndRate * 100).toFixed(0)}%, repeat ${(multiTurn.repeatedGramRate * 100).toFixed(1)}%, sensory ${(multiTurn.sensoryTurnRate * 100).toFixed(0)}%${judgement ? `, judge ${judgeAvg(judgement).toFixed(1)}` : ""}\n`,
+        );
+        continue;
+      }
+
       const prompt = scenario.build(profile, { focus: args.focus });
       const { text, metrics } = await streamNarration(model, reasoning, prompt, scenario.knownNames);
       const judgement = args.judge ? await judgeAbsolute(scenario, text) : null;
@@ -323,6 +493,7 @@ async function main(): Promise<void> {
   }
 
   printTable(rows);
+  printMultiTurnTable(rows);
 
   await fs.mkdir(OUT, { recursive: true });
   const outPath = path.join(OUT, "results.json");

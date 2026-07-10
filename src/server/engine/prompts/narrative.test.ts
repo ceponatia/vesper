@@ -194,15 +194,22 @@ describe("buildStaticRulebook", () => {
     expect(text).toContain("earned, not the default");
   });
 
-  it("keeps the self-motivated-NPC rule for living-world texture", () => {
-    expect(buildStaticRulebook(rulebookInput())).toContain("so the world feels alive");
+  it("licenses (never mandates) NPC initiative — a concrete reason earns one beat, quiet turns owe none", () => {
+    const text = buildStaticRulebook(rulebookInput());
+    expect(text).toContain("may contribute one self-motivated beat");
+    expect(text).toContain("never manufacture activity");
+    // The per-turn mandate is gone (narrator-prompt-consolidation slice 1).
+    expect(text).not.toContain("At least one present NPC");
   });
 
-  it("carries the characterization rule tying disposition and age to behavior", () => {
+  it("carries the characterization rule tying disposition and age to behavior, without a trait quota", () => {
     const text = buildStaticRulebook(rulebookInput());
     expect(text).toContain("Characterize from the blocks");
-    expect(text).toContain("age and life-stage shape diction");
+    expect(text).toContain("age and life-stage color diction");
     expect(text).toContain("open up or deflect, lead or defer");
+    // The two-or-three-traits-per-turn quota is gone (narrator-prompt-consolidation slice 3).
+    expect(text).toContain("never demonstrate a set number of traits");
+    expect(text).not.toContain("Two or three of their strongest traits");
   });
 
   it("introduces no hard length cap in either shape profile", () => {

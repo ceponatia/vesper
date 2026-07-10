@@ -59,7 +59,7 @@ type IntentBrief = {
   check?: { relevantAttributeIds: string[]; stakes: "low" | "med" | "high" };  // future attribute/skill-check resolution
   // PHASE-3 narration-focus planner — OPTIONAL (absent ⇒ buildResponseShape uses its deterministic derivation):
   focus?: { primaryResponse: "converse" | "answer_question" | "resolve_action"
-                           | "react_emotionally" | "transition_scene" | "ooc_answer";
+                           | "acknowledge_emotional_beat" | "transition_scene" | "ooc_answer";  // was react_emotionally (renamed 2026-07-10 — read as license to over-emote; old stored values degrade to "converse" via .catch)
             reactionScale: "none" | "small" | "moderate" | "strong";          // authored band overrides this
             allowedNewTopic: "none" | "one_open_thread" | "urgent_scene_event";
             suggestedShape: "concise_exchange" | "scene_establishing" | "multi_party" | "action_resolution" };

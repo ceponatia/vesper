@@ -70,15 +70,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   the first **live judged run is owner-gated spend** (`pnpm eval:narration`, then
   `pnpm eval:narration:compare --axis contrast`). Bar: ≥80% blind identification per
   axis, else the axis's prompt wording gets tuned and re-run — the craft rules and
-  relationship-law block shipped in slices 6/8 are the levers.
-- **Narrator prompt consolidation — external-review response** —
+  relationship-law block shipped in slices 6/8 are the levers. **This run now also
+  validates the 2026-07-10 trait-quota softening** (narrator-prompt-consolidation
+  slice 3): below the bar ⇒ restore the commented pre-softening wording and re-run.
+  Two sibling owner-gated runs live in
   [narrator-prompt-consolidation.plan.md](narrator-prompt-consolidation.plan.md)
-  (draft — point-by-point verdict on the 2026-07-10 external GPT prompt review:
-  accepted = chat length-story reconciliation (owner ruling A pending), sensory
-  allowance line (the exposure-mask pattern ported to chat), stable-system + final
-  turn-context message for chat (eval-gated cache win), multi-turn eval scenarios,
-  plus cheap wording fixes; trait-quota softening gated on the enactment measurement
-  run above; mature-content reframe and POV rewrite declined with reasons).
+  §Rulings & leftovers: the `mt-chat-*` longitudinal baseline and the
+  `CHAT_PROMPT_LAYOUT` A/B before its default flips.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -131,6 +129,21 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Narrator prompt consolidation — external-review response, all six slices** —
+  [narrator-prompt-consolidation.plan.md](narrator-prompt-consolidation.plan.md) —
+  2026-07-10 — the accepted points of the external GPT prompt review, implemented
+  with rollback comments at every replaced line: per-shape chat length story
+  (`chatLengthStory` — kills the aggressive_concise vs three-paragraph-baseline
+  contradiction), NPC initiative licensed-not-mandated + trait/age quota softened
+  (both lanes; validation rides the enactment measurement run in Next),
+  scene-consistent incidental people, the deterministic per-turn **chat sensory
+  allowance** (`deriveChatSensoryAllowance` + one binding tail line; rules 11–12 and
+  the cue-invite sensory arms collapsed into it), the intake `react_emotionally` →
+  `acknowledge_emotional_beat` rename, the experimental `CHAT_PROMPT_LAYOUT=
+  turn_context` layout (default OFF pending eval A/B), and multi-turn `mt-chat-*`
+  transcript eval scenarios with longitudinal metrics (q-end%, repeat 5-gram%,
+  sensory-turn%, paragraph inflation). Declined with reasons: mature-content
+  reframe, POV rewrite, reflex-license removal.
 - **Chat rerun data-loss fix** — no plan doc (incident fix; forensics in
   conversation) — 2026-07-09 — Rerun clicked while a reply streamed deleted the
   prompt server-side then 409'd off the exchange lock (the flow predated the

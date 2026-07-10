@@ -1271,7 +1271,8 @@ const PRIMARY_RESPONSE_BEAT: Record<NarrationFocus["primaryResponse"], string | 
   converse: "respond to the player's input",
   answer_question: "answer the player's question directly",
   resolve_action: "resolve the action the player took and show its outcome",
-  react_emotionally: "react to the emotional beat the player landed",
+  // Pre-2026-07-10 (rollback): react_emotionally: "react to the emotional beat the player landed",
+  acknowledge_emotional_beat: "acknowledge the emotional beat the player landed — at the scale the Reaction line sets",
   transition_scene: "carry the scene transition the player set in motion",
   ooc_answer: null,
 };
