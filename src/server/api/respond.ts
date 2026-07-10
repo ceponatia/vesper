@@ -77,6 +77,17 @@ export type BodyResult<T> = { ok: true; value: T } | { ok: false; response: Next
  */
 export const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
 
+/**
+ * Backstop cap for a stored message's content (chat send/edit, session message
+ * edit) — an anti-abuse bound only, NEVER a product limit. Model replies have no
+ * output-token cap in either lane, so a deliberately requested lengthy reply can
+ * run tens of thousands of characters and must still round-trip through edit
+ * (a 4000-char edit cap once rejected a legitimate Aion reply the DB had
+ * already stored). Sized far above any real reply while still bounding a
+ * hostile body field.
+ */
+export const MESSAGE_CONTENT_MAX = 100_000;
+
 export interface ReadBodyOptions {
   /** Reject bodies whose `Content-Length` exceeds this (default {@link DEFAULT_MAX_BODY_BYTES}). */
   maxBytes?: number;
