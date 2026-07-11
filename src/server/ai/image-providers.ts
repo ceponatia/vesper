@@ -1,6 +1,7 @@
 import type { SceneReferenceMode, SceneVisualReference } from "@/contracts";
 import { describeImageGenError } from "./errors";
-import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage, veniceSceneImageModelId } from "./venice";
+import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage, veniceSceneImageModelId, veniceT2IModelId } from "./venice";
+import type { AvatarImageModel } from "@/contracts/images/image-models";
 
 /**
  * Provider-capability seam for scene rendering (scene-images.spec.md §4). The
@@ -183,6 +184,8 @@ export interface ImageRenderInput {
   reference?: Buffer;
   /** Multi-reference edit (`venice_multi_edit`): 1–3 ordered references (first = base). */
   references?: Buffer[];
+  /** Text-to-image model override (`venice_generate`); absent ⇒ the shared scene default. */
+  t2iModel?: AvatarImageModel;
 }
 
 /**
@@ -220,8 +223,10 @@ async function renderVeniceMultiEdit(input: ImageRenderInput): Promise<ProviderR
 
 async function renderVeniceGenerate(input: ImageRenderInput): Promise<ProviderRenderResult> {
   // The scene t2i default (Chroma) — resolved through the shared key registry so this
-  // call and scene.ts's meta.model label can never disagree.
-  const generated = await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4", model: veniceSceneImageModelId() });
+  // call and scene.ts's meta.model label can never disagree. The chat scene strip's
+  // model pick rides in as t2iModel (scene.ts threads it and labels meta.model the same way).
+  const model = input.t2iModel ? veniceT2IModelId(input.t2iModel) : veniceSceneImageModelId();
+  const generated = await veniceGenerateImage({ prompt: input.prompt, aspectRatio: "3:4", model });
   return fromVenice(generated, "venice generate returned no image");
 }
 

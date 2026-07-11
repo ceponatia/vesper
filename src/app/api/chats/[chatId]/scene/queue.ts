@@ -3,7 +3,7 @@ import { characterProfileSchema, currentScenePlace, emptyCharacterProfile } from
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
 import { characterChatMessages, db, jobs } from "@/server/db";
-import { loadChatState } from "@/server/engine";
+import { loadChatState, resolveSeededOutfit } from "@/server/engine";
 import { renderCharacterSceneImage } from "@/server/images";
 import { log } from "@/server/log";
 
@@ -75,8 +75,10 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
 
     // The scene's outfit comes from the conversation's state (scenario modal free text +
     // exposed toggle), not the character's structured defaultOutfit — chat has no
-    // equippable wardrobe.
-    const chatState = await loadChatState(args.chatId, args.character.id);
+    // equippable wardrobe. The seeded outfit MARKER (raw item ids) is resolved to the
+    // garment phrase here like every other state consumer.
+    const stored = await loadChatState(args.chatId, args.character.id);
+    const chatState = stored ? await resolveSeededOutfit(stored, args.userId, profile) : null;
 
     // The setting comes from chat scene memory (chat-scene-fidelity.plan.md slice 2):
     // the current place's agent-written sketch when it exists, else its established
@@ -103,6 +105,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           outfitExposed: chatState?.outfitExposed ?? false,
           meters: chatState?.meters,
           conditions: chatState?.conditions,
+          sceneModel: chatState?.sceneModel,
           chatId: args.chatId,
           anchorMessageId,
         }),

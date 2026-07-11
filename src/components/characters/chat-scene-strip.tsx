@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { chatSceneModelLabels, chatSceneModels, parseChatSceneModel, type ChatSceneModel } from "@/contracts";
 import { chatsApi, type ImageRecord } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
@@ -29,6 +31,8 @@ export function SceneStrip({
   scenes: sceneList,
   rendering,
   onRefresh,
+  sceneModel,
+  onSceneModelChange,
 }: {
   chatId: string;
   name: string;
@@ -39,6 +43,10 @@ export function SceneStrip({
   rendering: boolean;
   /** Silent refetch of the shared list (after queueing). */
   onRefresh: () => void;
+  /** The chat's scene-model pick ("reference" = identity-locked avatar edit). */
+  sceneModel: ChatSceneModel;
+  /** Save-on-select (no save button) — the page persists via the state PATCH. */
+  onSceneModelChange: (model: ChatSceneModel) => void;
 }) {
   const toast = useToast();
   const [generating, setGenerating] = useState(false);
@@ -75,7 +83,23 @@ export function SceneStrip({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {/* Hot-swap model pick (owner request 2026-07-11): saves on select via the
+            state PATCH — no save button. "Avatar reference" is the identity-locked
+            Qwen edit; a t2i model renders without the avatar (a style swap). */}
+        <Select
+          aria-label="Scene image model"
+          value={sceneModel}
+          onChange={(e) => onSceneModelChange(parseChatSceneModel(e.target.value))}
+          title="Which image model paints the next scene. Avatar reference keeps her exact look; the others are style swaps rendered without the avatar."
+          className="h-8 w-52 text-xs"
+        >
+          {chatSceneModels.map((model) => (
+            <option key={model} value={model}>
+              {chatSceneModelLabels[model]}
+            </option>
+          ))}
+        </Select>
         <Button
           size="sm"
           onClick={generate}

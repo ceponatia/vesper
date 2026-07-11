@@ -19,6 +19,7 @@ import {
   type ChatSkipAmount,
   DEFAULT_AVATAR_IMAGE_MODEL,
   type AvatarImageModel,
+  type ChatSceneModel,
   characterProfileSchema,
   emptyCharacterProfile,
   emptyItemDefinition,
@@ -335,6 +336,8 @@ export const chatStateSnapshotSchema = z.object({
   memoryQueries: z.array(z.string()).catch([]),
   // Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle).
   sceneAuto: z.string().catch("off"),
+  // Scene-image model pick (the scene strip's save-on-select dropdown).
+  sceneModel: z.string().catch("reference"),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
 /**
@@ -357,6 +360,7 @@ export interface ChatStateEdit {
   surfacedCues?: Record<string, string>;
   attributeOverlays?: AttributeValue[];
   sceneAuto?: "off" | "milestones";
+  sceneModel?: ChatSceneModel;
 }
 
 export const locationSummarySchema = z.object({

@@ -12,6 +12,7 @@ import {
   veniceEditModelId,
   veniceMultiEditModelId,
   veniceSceneImageModelId,
+  veniceT2IModelId,
   type ImageProviderFailure,
   type ImageProviderId,
   type ProviderRenderResult,
@@ -20,6 +21,7 @@ import {
 import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, DiagnosticCollector, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { AvatarImageModel } from "@/contracts/images/image-models";
 import type { SceneReference, SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
 import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer, type ImageEntityKind, type ImageRow } from "./assets";
@@ -175,6 +177,11 @@ export interface RenderResolvedSceneInput {
    * Off (default) keeps the full degrade ladder for session scenes.
    */
   requireReferenceIdentity?: boolean;
+  /**
+   * Text-to-image model override for the `venice_generate` rung (the chat scene
+   * strip's model pick). Absent ⇒ the shared default (`veniceSceneImageModelId`).
+   */
+  t2iModel?: AvatarImageModel;
   /** Where to log the outcome (`logScene` for sessions, a character event otherwise). */
   logResult: (imageId: string, status: string, startedMs: number) => void;
   sink?: DiagnosticSink;
@@ -253,7 +260,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         ? `venice/${veniceMultiEditModelId()}`
         : id === "venice_edit"
           ? `venice/${veniceEditModelId()}`
-          : `venice/${veniceSceneImageModelId()}`;
+          : `venice/${input.t2iModel ? veniceT2IModelId(input.t2iModel) : veniceSceneImageModelId()}`;
 
   const primary = chain[0] ?? "venice_generate";
   const asset = await createImageAsset({
@@ -275,7 +282,13 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   });
   await recordImageReferences(asset.id, references, sink);
 
-  const ctx: SceneAttemptContext = { promptFor, primaryBuffer, multiBuffers, focalName: plan.focal?.name ?? "Scene" };
+  const ctx: SceneAttemptContext = {
+    promptFor,
+    primaryBuffer,
+    multiBuffers,
+    focalName: plan.focal?.name ?? "Scene",
+    t2iModel: input.t2iModel,
+  };
   const started = Date.now();
   try {
     const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
@@ -309,6 +322,8 @@ interface SceneAttemptContext {
   /** Ordered ≤3 reference buffers for the multi-edit rung. */
   multiBuffers: Buffer[];
   focalName: string;
+  /** Text-to-image model override (the chat scene strip's pick). */
+  t2iModel?: AvatarImageModel;
 }
 
 export interface SceneRenderOutcome {
@@ -389,6 +404,7 @@ async function runSceneProvider(id: ImageProviderId, ctx: SceneAttemptContext): 
     prompt: ctx.promptFor(id),
     reference: id === "venice_edit" ? (ctx.primaryBuffer ?? undefined) : undefined,
     references: id === "venice_multi_edit" ? ctx.multiBuffers : undefined,
+    t2iModel: ctx.t2iModel,
   });
 }
 

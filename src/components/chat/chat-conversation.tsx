@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import type { ChatActionId, ChatSkipAmount } from "@/contracts";
+import { parseChatSceneModel, type ChatActionId, type ChatSceneModel, type ChatSkipAmount } from "@/contracts";
 import {
   charactersApi,
   chatsApi,
@@ -162,6 +162,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   /** Bumped per chat-model pick so a superseded pick is skipped, plus the serializing chain. */
   const chatModelGenRef = useRef(0);
   const chatModelChainRef = useRef<Promise<void>>(Promise.resolve());
+  const sceneModelGenRef = useRef(0);
+  const sceneModelChainRef = useRef<Promise<void>>(Promise.resolve());
   /** Wraps the menu trigger + desktop popover, for the popover's outside-click test. */
   const menuWrapRef = useRef<HTMLDivElement>(null);
 
@@ -578,6 +580,24 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     });
   };
 
+  /**
+   * Persist the scene-model pick immediately (save-on-select, the owner's hot-swap
+   * dropdown on the scene strip) — same serialized-chain guarantees as the narrator
+   * pick above. The PATCH returns the fresh snapshot, which replaces the local state
+   * (a superseded pick never writes back).
+   */
+  const saveSceneModel = (model: ChatSceneModel) => {
+    setChatState((current) => (current ? { ...current, sceneModel: model } : current));
+    const gen = ++sceneModelGenRef.current;
+    sceneModelChainRef.current = sceneModelChainRef.current.then(async () => {
+      if (gen !== sceneModelGenRef.current) return; // a newer pick superseded this one
+      const result = await chatsApi.editState(chatId, { sceneModel: model });
+      if (gen !== sceneModelGenRef.current) return;
+      if (result.ok) setChatState(result.data);
+      else toast.push({ title: "Couldn't save the scene model", description: result.error.message, tone: "error" });
+    });
+  };
+
   /** Archive shelves (read-only, restorable); restore reopens — the everyday lifecycle pair. */
   const toggleArchived = async () => {
     const next = !archived;
@@ -808,6 +828,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               scenes={sceneList}
               rendering={sceneRendering}
               onRefresh={() => scenes.reload({ silent: true })}
+              sceneModel={parseChatSceneModel(chatState?.sceneModel)}
+              onSceneModelChange={saveSceneModel}
             />
           </div>
         ) : null}

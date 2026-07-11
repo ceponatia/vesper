@@ -430,6 +430,13 @@ export const characterChatState = pgTable(
      */
     sceneAuto: text("scene_auto").notNull().default("off"),
     /**
+     * Scene-image model pick (contracts/images chatSceneModels, owner request
+     * 2026-07-11): "reference" (default — identity-locked avatar edit) or a Venice
+     * t2i model key for a style hot-swap. Saved on select from the scene strip's
+     * dropdown; validated at the trust boundary (parseChatSceneModel), never here.
+     */
+    sceneModel: text("scene_model").notNull().default("reference"),
+    /**
      * Chat-local game clock (within-visit tick + condition expiry + player time skips).
      * The ONLY time model (D3/D8): real-world elapsed time never touches state — the
      * wall-clock anchor and its between-visit recovery were removed outright.

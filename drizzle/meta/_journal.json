@@ -218,6 +218,13 @@
       "when": 1783626159988,
       "tag": "0030_parched_kree",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1783810274648,
+      "tag": "0031_dazzling_franklin_richards",
+      "breakpoints": true
     }
   ]
 }

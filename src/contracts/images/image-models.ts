@@ -30,3 +30,28 @@ export const avatarImageModelLabels: Record<AvatarImageModel, string> = {
   illustrious: "WAI Illustrious (anime)",
   turbo: "Z-Image Turbo (fast)",
 };
+
+/**
+ * The chat scene strip's hot-swappable model picker (owner request 2026-07-11),
+ * persisted per conversation (`character_chat_state.scene_model`, saved on
+ * select). `"reference"` is the default identity-locked route — the avatar
+ * anchors a Qwen-edit render (the only Venice edit family; Chroma & co. have no
+ * edit variants). Picking a t2i model renders THAT scene text-to-image with it:
+ * a real style swap, at the cost of the avatar reference (identity rides the
+ * prompt text instead).
+ */
+export const chatSceneModels = ["reference", ...avatarImageModels] as const;
+export type ChatSceneModel = (typeof chatSceneModels)[number];
+
+export const DEFAULT_CHAT_SCENE_MODEL: ChatSceneModel = "reference";
+
+/** Picker labels: the reference route leads, then the t2i set. */
+export const chatSceneModelLabels: Record<ChatSceneModel, string> = {
+  reference: "Avatar reference (Qwen edit)",
+  ...avatarImageModelLabels,
+};
+
+/** Coerce a stored/string value to a known scene-model key (default "reference"). */
+export function parseChatSceneModel(value: string | null | undefined): ChatSceneModel {
+  return (chatSceneModels as readonly string[]).includes(value ?? "") ? (value as ChatSceneModel) : "reference";
+}
