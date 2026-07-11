@@ -28,7 +28,9 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   2026-07-08** (all seven slices, commit `4add351`): items facet bar + grouped
   closet view + density toggle, the new `wearer`/`color` clothing facets
   end-to-end (contracts → editor → forge → classify backfill), and the shared
-  `EntityPicker` replacing the flat outfit/location selects. **Awaiting owner
+  `EntityPicker` replacing the flat outfit/location selects. **2026-07-11 owner
+  UX pass shipped** (plan §Owner UX pass): bucket-aware New, editor `←` back
+  links, per-entity restored toolbar state. **Awaiting owner
   review**; the follow-up pass (other-library facets, tabbed gallery hub, Library
   nav consolidation, scope fast-follow, pagination) is ruled-in but waits on it.)
 - **Relationship model v2 — familiarity × regard** —
@@ -107,6 +109,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   narration authority, referenced-only pulse + tier-1 memory legs. Creation
   groundwork (multi-select dialog, `characterIds` API, sort-0 primary) shipped
   2026-07-07.
+- **At-rest encryption — user chat content unreadable on Neon** —
+  [at-rest-encryption.plan.md](at-rest-encryption.plan.md) (draft — planned
+  2026-07-11 from an owner question; position here is provisional). App-side
+  AES-256-GCM envelopes over both lanes' transcripts, memory rows, and derived
+  sinks so Neon holds only ciphertext (key in Fly secrets); the load-bearing
+  open ruling is D1 — encrypt fact/episode embeddings and move scoped
+  similarity ranking app-side, since plaintext embeddings are invertible.
 - **Codebase-review follow-on batches (2 & 4, session-side remainder)** — findings
   [codebase-review.md](codebase-review.md) §C–E; no plans yet (each needs its
   `<topic>.plan.md` when it becomes active): **prompt intelligence** (§C — session-lane
