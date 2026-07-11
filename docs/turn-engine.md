@@ -29,7 +29,12 @@ submitTurn(sessionId, input, author)
       which ignores OpenRouter's reasoning controls (2026-06-21 probe — effort and
       `reasoning.max_tokens` left usage unchanged; reasoning can't be disabled), so
       flooring effort bought nothing. Both narrator lanes share
-      `narrativeProviderOptions` — server/ai/provider.ts) → speaker segmenter → SSE chunks to client
+      `narrativeProviderOptions` — server/ai/provider.ts) → narrator-output scrub
+      (server/ai: `stripNarratorArtifactStream` removes leaked Aion wrapper tags, then
+      `collapseRepeatedBlocksStream` drops Aion tandem-repeat blocks — a verbatim re-emit
+      of the reply's own trailing paragraphs; both sit ahead of the segmenter AND the
+      `narration` accumulator, so the artifacts never reach the client, `turns.narration`,
+      or the history fed back next turn) → speaker segmenter → SSE chunks to client
  5. persist narration + turn_messages; turn status → processing; SSE done
  6. POST-TURN (parallel, via post_turn job): simulant · archivist · continuity · director
  7. merge reducer → ONE transaction → turn status ready; session status ready

@@ -1,5 +1,12 @@
 import { streamText, type ModelMessage } from "ai";
-import { isDemoMode, narrativeModelId, narrativeProviderOptions, openrouter, stripNarratorArtifactStream } from "../ai";
+import {
+  collapseRepeatedBlocksStream,
+  isDemoMode,
+  narrativeModelId,
+  narrativeProviderOptions,
+  openrouter,
+  stripNarratorArtifactStream,
+} from "../ai";
 import { CHARACTER_CHAT_HISTORY_TURNS } from "./constants";
 import { NARRATIVE_TEMPERATURE } from "./pipeline";
 
@@ -62,9 +69,11 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
     abortSignal: input.signal,
   });
   // Strip the Aion "uncensored response" wrapper tags that leak into the stream
-  // (server/ai/narrator-artifacts.ts) — this cleans the live feed AND, because
-  // the route persists the accumulated deltas, the stored reply + history.
-  yield* stripNarratorArtifactStream(result.textStream);
+  // (server/ai/narrator-artifacts.ts), then collapse Aion tandem-repeat blocks
+  // (server/ai/narrator-repeats.ts) — both clean the live feed AND, because the
+  // route persists the accumulated deltas, the stored reply + history. Tag
+  // stripping runs first so a leaked tag can't break the verbatim repeat match.
+  yield* collapseRepeatedBlocksStream(stripNarratorArtifactStream(result.textStream));
 }
 
 /** Deterministic placeholder for demo mode — tagged like a real narrator line. */

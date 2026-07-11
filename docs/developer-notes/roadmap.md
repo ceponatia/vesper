@@ -138,6 +138,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Narrator tandem-repeat collapse** — `src/server/ai/narrator-repeats.ts` (no plan —
+  small fix, owner report) — 2026-07-11 — Aion 3.0 sometimes re-emits its whole reply
+  (or its trailing paragraphs) verbatim after a blank-line gap; both narrator lanes now
+  compose `collapseRepeatedBlocksStream` after the wrapper-tag stripper, so the duplicate
+  never reaches the live feed, the persisted row, or the history context. Deliberately
+  narrow: paragraph-aligned, whitespace-insensitive verbatim suffix repeats only —
+  paraphrased near-repeats and short stylistic echoes pass through.
 - **Chat scene fidelity — outfit tracking, location sketches, identity anchors** —
   [chat-scene-fidelity.plan.md](chat-scene-fidelity.plan.md) — 2026-07-10 — the
   archivist's 7th field tracks outfit changes into chat state (seeded from the character

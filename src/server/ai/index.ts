@@ -1,5 +1,6 @@
 export * from "./provider";
 export * from "./narrator-artifacts";
+export * from "./narrator-repeats";
 export * from "./generate-checked";
 export * from "./generate-timeout";
 export * from "./embeddings";
