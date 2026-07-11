@@ -33,10 +33,12 @@ function isSolelyComms(content: string, characterName: string): boolean {
 }
 
 /**
- * Split a narrator/character reply into display segments. `[Name]` tags and standalone
- * whole-line quotes both attribute to `characterName` (the one-on-one sole speaker); the tag
- * itself never appears in the content. A speaker segment shows its label unless it is solely a
- * comms line (which carries its own attribution).
+ * Split a narrator/character reply into display segments. `[Name]` tags attribute to
+ * `characterName`, and in a reply with no tags at all a standalone whole-line quote does too
+ * (the one-on-one sole speaker); in a tagged reply an untagged quote is someone else — a side
+ * NPC's own quoted paragraph — and stays narrator prose (segmenter §hasKnownTag, owner report
+ * 2026-07-11). The tag itself never appears in the content. A speaker segment shows its label
+ * unless it is solely a comms line (which carries its own attribution).
  */
 export function chatReplySegments(content: string, characterName: string): ChatReplySegment[] {
   const known = characterName ? [characterName] : [];

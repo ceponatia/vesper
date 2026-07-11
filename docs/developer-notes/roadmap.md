@@ -138,6 +138,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat dialogue attribution — side-NPC quotes no longer wear the character's chip** —
+  `lib/segmenter.ts` + chat rule 3 (no plan — small fix, owner report + screenshot) —
+  2026-07-11 — a reply that uses a `[Name]` tag anywhere is tag-disciplined: its
+  untagged whole-line quotes stay narrator prose (a side NPC's own quoted paragraph,
+  the Amanda case) instead of auto-attributing to the sole character; tag-free replies
+  keep the one-on-one auto-attribution. Prompt rule 3 now requires tagging every
+  character line once any line is tagged, and in-prose attribution (never a bare
+  quoted paragraph) for anyone else. Render-time only — stored transcripts re-render
+  correctly. Docs: prompts.md §Dialogue tagging, character-chat.md §9.
 - **Face jewelry, accessory subtypes & the attribute-form accordion** —
   [face-jewelry-and-attribute-form.plan.md](face-jewelry-and-attribute-form.plan.md)
   — 2026-07-11 — lips/nose body locations; jewelry/headwear/eyewear subtype

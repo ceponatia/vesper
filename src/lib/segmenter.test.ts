@@ -120,11 +120,44 @@ describe("parseSegments — standalone-quote attribution (attributeStandaloneQuo
     expect(parseSegments(text, KNOWN, OPT)).toEqual([{ speaker: null, content: text }]);
   });
 
-  it("still honors explicit [Name] tags alongside standalone quotes", () => {
-    const text = '[Maya] "Tagged line."\n\n"Untagged quote."';
+  it("a reply that uses tags is tag-disciplined: untagged quotes are NOT the character", () => {
+    // Owner report 2026-07-11: the model tags every character line and writes a side
+    // NPC's dialogue as her own quoted paragraph — that quote must stay prose, not
+    // wear the character's chip (and not merge with the character's next tagged line).
+    const text = '[Maya] "Tagged line."\n\n"Untagged quote — someone else\'s."';
     expect(parseSegments(text, ["Maya"], OPT)).toEqual([
-      // Same-speaker tag + standalone quote merge with a paragraph break, like two tags.
-      { speaker: "Maya", content: '"Tagged line."\n\n"Untagged quote."' },
+      { speaker: "Maya", content: '"Tagged line."' },
+      { speaker: null, content: '"Untagged quote — someone else\'s."' },
+    ]);
+  });
+
+  it("side-NPC quotes between tagged character lines stay prose (the Amanda shape)", () => {
+    const text = [
+      "Melissa doubles over laughing.",
+      "",
+      '[Melissa] "The look on your face —"',
+      "",
+      "Amanda's mouth opens. Closes. Opens again.",
+      "",
+      '"That is not something to joke about!"',
+      "",
+      '[Melissa] "Both of those things," she corrects.',
+    ].join("\n");
+    expect(parseSegments(text, ["Melissa"], OPT)).toEqual([
+      { speaker: null, content: "Melissa doubles over laughing." },
+      { speaker: "Melissa", content: '"The look on your face —"' },
+      { speaker: null, content: "Amanda's mouth opens. Closes. Opens again.\n\n\"That is not something to joke about!\"" },
+      { speaker: "Melissa", content: '"Both of those things," she corrects.' },
+    ]);
+  });
+
+  it("a tag for a different (unknown) name does not disable quote attribution", () => {
+    // Unknown bracketed names fail closed to prose and say nothing about the
+    // character's own tag discipline.
+    const text = '[Stranger] "Who goes there?"\n\n"Just me."';
+    expect(parseSegments(text, ["Maya"], OPT)).toEqual([
+      { speaker: null, content: '[Stranger] "Who goes there?"' },
+      { speaker: "Maya", content: '"Just me."' },
     ]);
   });
 });

@@ -94,10 +94,13 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).not.toContain("Start every line of Mara's spoken dialogue with the tag");
   });
 
-  it("licenses flavor NPCs to speak in narration prose, reserving bracketed tags for the character", () => {
+  it("licenses other people to speak in narration prose, reserving bracketed tags for the character", () => {
     const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile() });
-    expect(prompt).toMatch(/Incidental people in the scene/i);
-    expect(prompt).toMatch(/never a \[bracketed\] tag/i);
+    expect(prompt).toMatch(/Other people in the scene/i);
+    // 2026-07-11 tightening (the Amanda report): their lines need in-prose attribution,
+    // never a bare quoted paragraph, and a tagged reply must tag every character line.
+    expect(prompt).toMatch(/never a bare quoted paragraph/i);
+    expect(prompt).toContain("tag every one of Mara's spoken lines");
     expect(prompt).toContain("bracketed tags belong to Mara alone");
   });
 
