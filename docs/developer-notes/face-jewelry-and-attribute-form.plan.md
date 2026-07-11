@@ -1,6 +1,6 @@
 # Face jewelry, accessory subtypes & the attribute-form accordion
 
-Status: active — started 2026-07-11 (owner request, planned in-session)
+Status: shipped — 2026-07-11 (commit `0a1f2d7`, deployed to Fly + verified live the same day: Type select with nose-ring coverage pre-fill, nose/lips coverage slots, subtype card chips, blank-character defaults + seeded body-config, single-open show-all-fields accordion. No leftovers.)
 
 Owner batch of refinements around clothing/jewelry fidelity and the character
 attributes tab. Rulings captured 2026-07-11 (Q&A in session):
