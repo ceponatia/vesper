@@ -99,7 +99,6 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
 }
 
 const outfitExtrasSchema = z.object({
-  description: z.string().catch(""),
   coverage: z.array(z.string()).catch([]),
   layer: z
     .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)])
@@ -127,7 +126,7 @@ export async function loadDefaultWardrobe(
   if (itemIds.length === 0) return [];
   try {
     const rows = await db()
-      .select({ id: items.id, name: items.name, definition: items.definition })
+      .select({ id: items.id, name: items.name, description: items.description, definition: items.definition })
       .from(items)
       .where(and(eq(items.ownerId, ownerId), inArray(items.id, [...itemIds])));
     const byId = new Map(rows.map((row) => [row.id, row]));
@@ -136,13 +135,17 @@ export async function loadDefaultWardrobe(
       if (!row) return [];
       const parsed = outfitExtrasSchema.safeParse(row.definition ?? {});
       const extras = parsed.success ? parsed.data : outfitExtrasSchema.parse({});
+      // The item description lives on the ROW column — the definition jsonb never
+      // carries one (itemExtrasSchema picks it out), so reading it there silently
+      // made every garment phrase name-only (found verifying the chat outfit seed).
+      const description = row.description?.trim() ?? "";
       return [
         {
           name: row.name,
           coverage: extras.coverage,
           layer: extras.layer,
           opacity: extras.opacity,
-          ...(extras.description ? { description: extras.description } : {}),
+          ...(description ? { description } : {}),
           ...(extras.sensory?.appearance ? { appearance: extras.sensory.appearance } : {}),
           ...(extras.subtype ? { subtype: extras.subtype } : {}),
         },
