@@ -219,6 +219,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
       await editChatState({
         chatId,
         characterId: primary.id,
+        ownerId: user.id,
         profile,
         patch: {
           premise: preset.premise,

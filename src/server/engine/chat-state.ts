@@ -68,6 +68,7 @@ import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } fro
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import { characterChatMessages, characterChatState, db } from "../db";
+import { defaultOutfitPhrase } from "../images";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
 import { enqueueChatSceneSketch } from "./chat-scene-sketch";
 import {
@@ -234,6 +235,38 @@ const clamp01 = (n: number): number => clamp(n, 0, 1);
  * caller's explicit premise, e.g. a PATCH-before-first-message). `mindNote`
  * starts empty — it is purely dynamic. Pure.
  */
+/**
+ * The raw form `seedChatState` writes into `outfit`: the default-outfit item ids,
+ * comma-joined (the pure seed has no DB access to resolve them). It is a MARKER,
+ * not display text — `resolveSeededOutfit` swaps it for the readable garment
+ * phrase wherever IO is available, and matching against this exact string is how
+ * stored pre-fix rows (which persisted the ids verbatim — owner report
+ * 2026-07-11: the narrator ignored an outfit of ids) self-heal on load.
+ */
+export function seededOutfitMarker(profile: CharacterProfile): string {
+  return (profile.defaultOutfit ?? []).join(", ").trim().slice(0, CHAT_OUTFIT_MAX_CHARS);
+}
+
+/**
+ * Resolve the seeded outfit marker into the readable garment phrase (name /
+ * description / sensory appearance, occlusion-filtered, subtype-led). No-op for
+ * any author-edited outfit text; a failed item lookup degrades to "" (composer
+ * inference), never ids reaching the narrator or the scenario modal.
+ */
+export async function resolveSeededOutfit(
+  state: ChatState,
+  ownerId: string,
+  profile: CharacterProfile,
+  sink?: DiagnosticSink,
+): Promise<ChatState> {
+  const marker = seededOutfitMarker(profile);
+  if (marker === "" || state.outfit !== marker) return state;
+  const phrase = (await defaultOutfitPhrase(ownerId, profile.defaultOutfit ?? [], sink))
+    .trim()
+    .slice(0, CHAT_OUTFIT_MAX_CHARS);
+  return { ...state, outfit: phrase };
+}
+
 export function seedChatState(profile: CharacterProfile, premise?: string): ChatState {
   const authored = profile.playerRelationship;
   const note = authored?.note ?? "";
@@ -249,11 +282,10 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     premise: (premise ?? note).trim().slice(0, CHAT_PREMISE_MAX_CHARS),
     // Falls back to the character form's outfit (chat-scene-fidelity.plan.md slice 1) —
     // the scenario modal's Starting Outfit stays authoritative once the author edits it
-    // (including deliberately clearing it, which chooses composer inference).
-    outfit: (profile.defaultOutfit ?? [])
-      .join(", ")
-      .trim()
-      .slice(0, CHAT_OUTFIT_MAX_CHARS),
+    // (including deliberately clearing it, which chooses composer inference). This pure
+    // seed can only write the item-id MARKER (see seededOutfitMarker); every IO-capable
+    // consumer resolves it to the readable phrase via resolveSeededOutfit.
+    outfit: seededOutfitMarker(profile),
     outfitExposed: false,
     // Seeded from the character's own cards, then author-editable + authoritative in the chat.
     activeSocialCards: [...(profile.socialCards ?? [])],
@@ -1057,11 +1089,17 @@ export interface ChatStateEdit {
 export async function editChatState(args: {
   chatId: string;
   characterId: string;
+  /** Chat owner — resolves the seeded outfit marker to its readable phrase. */
+  ownerId: string;
   profile: CharacterProfile;
   patch: ChatStateEdit;
 }): Promise<ChatState> {
-  const { chatId, characterId, profile, patch } = args;
-  const base = (await loadChatState(chatId, characterId)) ?? seedChatState(profile, patch.premise);
+  const { chatId, characterId, ownerId, profile, patch } = args;
+  const base = await resolveSeededOutfit(
+    (await loadChatState(chatId, characterId)) ?? seedChatState(profile, patch.premise),
+    ownerId,
+    profile,
+  );
   const next: ChatState = { ...base, meters: { ...base.meters } };
   if (patch.premise !== undefined) next.premise = patch.premise.trim().slice(0, CHAT_PREMISE_MAX_CHARS);
   if (patch.regard !== undefined) next.regard = clampRegard(patch.regard);

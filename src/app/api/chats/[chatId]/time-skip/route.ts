@@ -9,7 +9,14 @@ import {
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { applyTimeSkip, chatStateSnapshot, loadChatState, persistChatState, seedChatState } from "@/server/engine";
+import {
+  applyTimeSkip,
+  chatStateSnapshot,
+  loadChatState,
+  persistChatState,
+  resolveSeededOutfit,
+  seedChatState,
+} from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat } from "../../owned";
 
 type Params = { chatId: string };
@@ -41,7 +48,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const sink = new DiagnosticCollector();
   const profile = parseOr(characterProfileSchema, owned.character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
   const stored = await loadChatState(chatId, owned.participant.characterId, sink);
-  const next = applyTimeSkip(stored ?? seedChatState(profile), body.value.amount, new Date());
+  // This path persists a possibly-fresh seed — resolve the outfit marker first.
+  const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
+  const next = applyTimeSkip(base, body.value.amount, new Date());
   await persistChatState(chatId, owned.participant.characterId, next);
   return jsonOk(
     chatStateSnapshot(next, {

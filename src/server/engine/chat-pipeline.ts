@@ -32,6 +32,7 @@ import {
   loadPreExchangeState,
   persistChatState,
   savePreExchangeSnapshot,
+  resolveSeededOutfit,
   seedChatState,
   type ChatState,
 } from "./chat-state";
@@ -479,7 +480,15 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       "characters.profile",
     );
     const now = new Date();
-    const baseDrifted = driftChatState(storedState ?? seedChatState(profile), profile, { advance: true });
+    // Owner id hoisted above the state seed: resolveSeededOutfit swaps the seeded
+    // outfit marker (raw item ids — also persisted verbatim by pre-fix rows) for
+    // the readable garment phrase before the narrator or archivist see it.
+    const owner = await chatOwnerId(chatId);
+    const baseDrifted = driftChatState(
+      await resolveSeededOutfit(storedState ?? seedChatState(profile), owner, profile, sink),
+      profile,
+      { advance: true },
+    );
 
     // --- Scene memory: deterministic movement switch (pre-prompt) ------------
     // A movement/arrival in the player's input switches the current place BEFORE the prompt
@@ -508,7 +517,6 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // The user's default player character (player-character.plan.md), so the
     // character addresses someone by name instead of a faceless "the user".
-    const owner = await chatOwnerId(chatId);
     const player = await resolvePlayerPersona(owner);
 
     // --- RAG recall (spec §2): the participant's memory group ----------------
@@ -975,9 +983,14 @@ export async function previewChatPrompt(input: {
     "characters.profile",
   );
   const stored = await loadChatState(input.chatId, input.character.id, sink);
-  const state = driftChatState(stored ?? seedChatState(profile), profile, {});
+  const owner = await chatOwnerId(input.chatId);
+  const state = driftChatState(
+    await resolveSeededOutfit(stored ?? seedChatState(profile), owner, profile, sink),
+    profile,
+    {},
+  );
   const summaryState = await loadChatSummary(input.chatId);
-  const player = await resolvePlayerPersona(await chatOwnerId(input.chatId));
+  const player = await resolvePlayerPersona(owner);
   const memory = await retrieveChatMemory({
     groupId: input.memoryGroupId,
     queries: state.memoryQueries,

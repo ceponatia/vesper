@@ -229,8 +229,17 @@ guarded state write:
   `scene_memory` (§Scene memory), and the optional `outfit` change (chat-scene-fidelity
   slice 1): a full-replacement description + `exposed` flag when the exchange dressed,
   changed, or undressed the character, folded into `state.outfit`/`outfitExposed` — which
-  the wearing-line and the scene image's authoritative outfit override both read (the
-  seed falls back to the character form's `defaultOutfit` when Starting Outfit is blank).
+  the wearing-line and the scene image's authoritative outfit override both read. The
+  seed falls back to the character form's `defaultOutfit` when Starting Outfit is blank —
+  but `defaultOutfit` holds item **ids**, and the pure `seedChatState` can't resolve them,
+  so it writes them as a **marker** that every IO-capable consumer (exchange pipeline,
+  prompt preview, scenario GET/PATCH/action, time-skip) swaps for the readable garment
+  phrase via `resolveSeededOutfit` → `defaultOutfitPhrase` (occlusion-filtered,
+  description-primary, subtype-led, sensory appearance in parens — the same
+  `formatGarment` phrasing as image prompts). Stored rows from before the 2026-07-11 fix
+  persisted the raw ids; the same exact-marker match self-heals them on load. A failed
+  item lookup degrades to `""` (composer inference) — ids never reach the narrator or
+  the scenario modal.
   Its memory write is additionally fenced
   so an infra throw never costs the pulse's state. Every write is **provenance-stamped**
   (`source_message_id` on facts + episodes, spec §4.3): deleting or editing an assistant

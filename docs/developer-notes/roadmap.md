@@ -138,6 +138,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat starting-outfit seed — garment phrase, not item ids** —
+  `engine/chat-state.ts` + `images/avatar.ts`
+  ([chat-scene-fidelity.plan.md](chat-scene-fidelity.plan.md) §Seed fallback followup;
+  owner report) — 2026-07-11 — the blank-Starting-Outfit fallback joined
+  `profile.defaultOutfit` raw item ids into the scenario text, so the narrator ignored
+  the outfit and the modal showed ids. The pure seed now writes the id-join as a marker
+  and every IO-capable consumer resolves it to the readable phrase
+  (`resolveSeededOutfit` → `defaultOutfitPhrase`: occlusion-filtered, subtype-led,
+  description + sensory appearance); pre-fix stored rows self-heal on load, failed
+  lookups degrade to composer inference.
 - **Chat dialogue attribution — side-NPC quotes no longer wear the character's chip** —
   `lib/segmenter.ts` + chat rule 3 (no plan — small fix, owner report + screenshot) —
   2026-07-11 — a reply that uses a `[Name]` tag anywhere is tag-disciplined: its
