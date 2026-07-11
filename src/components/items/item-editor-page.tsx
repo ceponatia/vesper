@@ -18,6 +18,7 @@ import {
 import { itemsApi, type ItemDefinitionParts } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { LibraryBackLink } from "@/components/library/back-link";
 import { EntityImageStudio } from "@/components/library/entity-image-studio";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -133,6 +134,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   if (detail.loading && !form) {
     return (
       <PageContainer>
+        <LibraryBackLink href="/items" label="Items" />
         <Skeleton className="mb-6 h-8 w-64" />
         <SkeletonText lines={5} />
       </PageContainer>
@@ -142,6 +144,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   if (detail.error && !form) {
     return (
       <PageContainer>
+        <LibraryBackLink href="/items" label="Items" />
         <ErrorState error={detail.error} onRetry={() => detail.reload()} />
       </PageContainer>
     );
@@ -151,6 +154,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
 
   return (
     <PageContainer>
+      <LibraryBackLink href="/items" label="Items" />
       <div className="mb-6 flex items-center justify-between gap-4">
         <h1 className="prose-display text-2xl">{form.name || "Untitled item"}</h1>
         {detail.data ? <PublishToggle kind="item" id={itemId} visibility={detail.data.visibility} /> : null}

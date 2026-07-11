@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import { locationsApi, type Ambient, type ApiResult, type LocationConnection } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { LibraryBackLink } from "@/components/library/back-link";
 import { EntityPickerDialog, type EntityPickerEntry } from "@/components/library/entity-picker";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { EntityImageStudio } from "@/components/library/entity-image-studio";
@@ -135,6 +136,7 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   if (detail.loading && !form) {
     return (
       <PageContainer>
+        <LibraryBackLink href="/locations" label="Locations" />
         <Skeleton className="mb-6 h-8 w-64" />
         <SkeletonText lines={5} />
       </PageContainer>
@@ -144,6 +146,7 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   if (detail.error && !form) {
     return (
       <PageContainer>
+        <LibraryBackLink href="/locations" label="Locations" />
         <ErrorState error={detail.error} onRetry={() => detail.reload()} />
       </PageContainer>
     );
@@ -153,6 +156,7 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
 
   return (
     <PageContainer>
+      <LibraryBackLink href="/locations" label="Locations" />
       <div className="mb-6 flex items-center justify-between gap-4">
         <h1 className="prose-display text-2xl">{form.name || "Untitled location"}</h1>
         {detail.data ? <PublishToggle kind="location" id={locationId} visibility={detail.data.visibility} /> : null}

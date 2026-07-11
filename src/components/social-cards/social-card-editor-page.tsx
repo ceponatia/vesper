@@ -6,6 +6,7 @@ import { severityToTier, type SocialReactionCardExtras } from "@/contracts";
 import { socialCardsApi } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { LibraryBackLink } from "@/components/library/back-link";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { SocialCardFields } from "@/components/personality/social-card-fields";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -112,6 +113,7 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
   if (detail.loading && !form) {
     return (
       <PageContainer>
+        <LibraryBackLink href="/social-cards" label="Social cards" />
         <Skeleton className="mb-6 h-8 w-64" />
         <SkeletonText lines={5} />
       </PageContainer>
@@ -121,6 +123,7 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
   if (detail.error && !form) {
     return (
       <PageContainer>
+        <LibraryBackLink href="/social-cards" label="Social cards" />
         <ErrorState error={detail.error} onRetry={() => detail.reload()} />
       </PageContainer>
     );
@@ -134,6 +137,7 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
     const tier = severityToTier(form.definition.severity);
     return (
       <PageContainer>
+        <LibraryBackLink href="/social-cards" label="Social cards" />
         <div className="mb-6 flex items-center justify-between gap-4">
           <h1 className="prose-display text-2xl">{form.name || "Untitled card"}</h1>
           <Button busy={cloning} onClick={clone}>
@@ -160,6 +164,7 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
 
   return (
     <PageContainer>
+      <LibraryBackLink href="/social-cards" label="Social cards" />
       <div className="mb-6 flex items-center justify-between gap-4">
         <h1 className="prose-display text-2xl">{form.name || "Untitled card"}</h1>
         {detail.data ? <PublishToggle kind="social_card" id={cardId} visibility={detail.data.visibility} /> : null}

@@ -1,6 +1,8 @@
 # Creating items
 
-Items have a **kind** — clothing, object, or container — and kind-specific fields below the shared name/description/tags. Every kind can carry a **Color**: a family from the fixed palette (drives the library's filters, sorting, and swatch chips) plus a free-text **Shade** for the precise hue ("aqua", "olive") used in display and image prompts.
+Items have a **kind** — clothing, object, or container — and kind-specific fields below the shared name/description/tags. **New** on the `/items` library creates a blank item of the kind you're browsing (a clothing item from the Clothing tab, an object from Object, …), and the kind stays switchable in the editor. Every kind can carry a **Color**: a family from the fixed palette (drives the library's filters, sorting, and swatch chips) plus a free-text **Shade** for the precise hue ("aqua", "olive") used in display and image prompts.
+
+The editor's **← Items** link takes you back to the library exactly as you left it — same type tab, search, and filters (the library remembers its view for the browsing session).
 
 ## Clothing
 
