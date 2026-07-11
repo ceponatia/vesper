@@ -16,8 +16,10 @@ import {
   applyTimeSkip,
   chatStateSnapshot,
   driftChatState,
+  resolveSeededOutfit,
   runChatPulse,
   seedChatState,
+  seededOutfitMarker,
   type ChatState,
 } from "./chat-state";
 
@@ -44,11 +46,25 @@ describe("seedChatState", () => {
     expect(chatStateSnapshot(state).sceneMemory).toEqual({ places: [] });
   });
 
-  it("seeds the outfit from the character form's defaultOutfit; blank when none authored (chat-scene-fidelity slice 1)", () => {
+  it("seeds the outfit MARKER from the character form's defaultOutfit ids; blank when none authored", () => {
+    // defaultOutfit holds library item IDS — the pure seed writes them as the
+    // marker resolveSeededOutfit later swaps for the readable garment phrase
+    // (owner report 2026-07-11: the raw ids used to reach the narrator).
     expect(seedChatState(profile()).outfit).toBe("");
-    const dressed = seedChatState(profile({ defaultOutfit: ["a linen sundress", "leather sandals"] }));
-    expect(dressed.outfit).toBe("a linen sundress, leather sandals");
+    const dressed = seedChatState(profile({ defaultOutfit: ["itemid1abc", "itemid2def"] }));
+    expect(dressed.outfit).toBe(seededOutfitMarker(profile({ defaultOutfit: ["itemid1abc", "itemid2def"] })));
+    expect(dressed.outfit).toBe("itemid1abc, itemid2def");
     expect(dressed.outfitExposed).toBe(false);
+  });
+
+  it("resolveSeededOutfit is a no-op for author-edited outfit text and for empty outfits", async () => {
+    const dressed = profile({ defaultOutfit: ["itemid1abc"] });
+    const edited = { ...seedChatState(dressed), outfit: "a linen sundress, nothing else" };
+    // Author text ≠ the marker → untouched, and no item lookup happens (db is unmocked here;
+    // a lookup would throw, so resolution being reached at all would fail this test).
+    expect(await resolveSeededOutfit(edited, "u-1", dressed)).toBe(edited);
+    const bare = seedChatState(profile());
+    expect(await resolveSeededOutfit(bare, "u-1", profile())).toBe(bare);
   });
 
   it("seeds both axes from the authored playerRelationship record at band midpoints", () => {

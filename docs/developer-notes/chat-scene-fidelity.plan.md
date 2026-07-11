@@ -48,6 +48,14 @@ memory, the detached job queue, the scene composer/render pipeline) — no new l
   state write. The scenario modal shows the seeded text and stays authoritative when
   the author edits it (an explicit save of an emptied field is respected — the author
   chose composer-inference).
+  - **Followup fix (2026-07-11, owner report):** `defaultOutfit` holds item **ids**, so
+    the join put raw ids in front of the narrator (which ignored them) and the modal.
+    The pure seed now writes the id-join as a **marker** (`seededOutfitMarker`) and every
+    IO-capable consumer resolves it to the readable garment phrase
+    (`resolveSeededOutfit` → `defaultOutfitPhrase` in `server/images/avatar.ts` —
+    occlusion-filtered, subtype-led, description + sensory appearance). Pre-fix stored
+    rows self-heal on load via the same exact-marker match; a failed lookup degrades to
+    `""`, never ids.
 - **Image side**: nothing to change — `queueChatScene` already feeds `state.outfit` /
   `outfitExposed` into the render, marked authoritative over the reference avatar's
   clothing.

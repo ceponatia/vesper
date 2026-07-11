@@ -24,6 +24,7 @@ import {
   editChatState,
   loadChatState,
   persistChatState,
+  resolveSeededOutfit,
   seedChatState,
 } from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
@@ -89,7 +90,10 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const sink = new DiagnosticCollector();
   const profile = parseProfile(owned, sink);
   const stored = await loadChatState(chatId, owned.participant.characterId, sink);
-  const state = stored ? driftChatState(stored, profile, { advance: false }) : seedChatState(profile);
+  // resolveSeededOutfit: the seeded outfit is an item-id marker (and pre-fix rows
+  // persisted those ids) — the scenario modal must show the garment phrase.
+  const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
+  const state = stored ? driftChatState(base, profile, { advance: false }) : base;
   return jsonOk(chatStateSnapshot(state, { ...snapshotOpts(profile), persisted: stored !== null }));
 });
 
@@ -107,6 +111,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const state = await editChatState({
     chatId,
     characterId: owned.participant.characterId,
+    ownerId: user.id,
     profile,
     patch: body.value,
   });
@@ -126,8 +131,10 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const sink = new DiagnosticCollector();
   const profile = parseProfile(owned, sink);
   const stored = await loadChatState(chatId, owned.participant.characterId, sink);
-  // Apply the chip to the current state, then persist.
-  const current = stored ? driftChatState(stored, profile, { advance: false }) : seedChatState(profile);
+  // Apply the chip to the current state (seeded outfit marker resolved first —
+  // this path persists), then persist.
+  const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
+  const current = stored ? driftChatState(base, profile, { advance: false }) : base;
   const next = applyChatAction(current, body.value.action);
   await persistChatState(chatId, owned.participant.characterId, next);
   return jsonOk(chatStateSnapshot(next, snapshotOpts(profile)));

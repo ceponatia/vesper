@@ -7,9 +7,18 @@ import { parseOr } from "@/lib/parse";
 import { DEFAULT_AVATAR_IMAGE_MODEL, type AvatarImageModel } from "@/contracts";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { resolveWardrobeVisibility } from "@/contracts/items/visibility";
+import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { monogramSvg } from "./monogram";
-import { buildAvatarPrompt, type AvatarWardrobeItem, type AvatarStyle } from "./prompts";
+import {
+  buildAvatarPrompt,
+  toWornInputs,
+  wardrobeOutfitSummary,
+  type AvatarWardrobeItem,
+  type AvatarStyle,
+  type SceneWornItem,
+} from "./prompts";
 
 export interface GenerateAvatarInput {
   characterId: string;
@@ -149,6 +158,49 @@ export async function loadDefaultWardrobe(
     );
     return []; // degraded: attributes-only prompt
   }
+}
+
+/**
+ * One readable phrase for a default outfit (pure): occlusion-filtered like every
+ * other wardrobe surface — hidden layers omitted, sheer-covered pieces a vague
+ * hint — with each visible garment phrased description-primary, subtype-led,
+ * sensory appearance in parens (the shared `formatGarment` via
+ * `wardrobeOutfitSummary`). Exported for the chat scenario seed and its test.
+ */
+export function wardrobeOutfitText(wardrobe: ReadonlyArray<AvatarWardrobeItem>): string {
+  if (wardrobe.length === 0) return "";
+  const views = resolveWardrobeVisibility(toWornInputs(wardrobe));
+  const viewById = new Map(views.map((v) => [v.instanceId, v]));
+  const worn = wardrobe.flatMap((item, index): SceneWornItem[] => {
+    const view = viewById.get(String(index));
+    if (!view || view.visibility === "hidden") return [];
+    const subtypeLabel = clothingSubtypeLabel(item.subtype);
+    return [
+      {
+        name: item.name,
+        visibility: view.visibility === "hinted" ? "hinted" : "visible",
+        ...(item.description ? { description: item.description } : {}),
+        ...(item.appearance ? { appearance: item.appearance } : {}),
+        ...(subtypeLabel ? { subtypeLabel } : {}),
+      },
+    ];
+  });
+  return wardrobeOutfitSummary(worn);
+}
+
+/**
+ * The character-form default outfit (item ids) as the readable phrase the chat
+ * scenario seeds its Starting Outfit with (owner report 2026-07-11: the seed
+ * used to join the raw ids, which the narrator rightly ignored). A failed
+ * lookup degrades to "" — composer inference — never ids.
+ */
+export async function defaultOutfitPhrase(
+  ownerId: string,
+  itemIds: readonly string[],
+  sink?: DiagnosticSink,
+): Promise<string> {
+  if (itemIds.length === 0) return "";
+  return wardrobeOutfitText(await loadDefaultWardrobe(ownerId, itemIds, sink));
 }
 
 async function generateAvatarBuffer(prompt: string, model: AvatarImageModel): Promise<Buffer> {
