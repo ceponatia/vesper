@@ -127,13 +127,18 @@ exchange:
    ([resilience.md](resilience.md) §5) — the reply persists (§5) and the post-turn fan-out
    runs (§3). All of it is off the perceived-latency path.
 9. **Render (dialogue-attribution).** The transcript owns dialogue presentation, so chat rule 3
-   makes the `[Name]` tag **conditionally optional** (dialogue stays quoted; flavor NPCs speak in
-   narration prose, never with a bracketed tag). The contract is mechanical (tightened
-   2026-07-10): a whole-line quote auto-attributes; a line mixing the character's speech with
-   narration/action beats must open with the tag or split into separate quote/prose lines. The reply renders as in-bubble per-speaker segments
+   makes the `[Name]` tag **conditionally optional** (dialogue stays quoted; other people —
+   flavor NPCs and named side characters alike — speak in narration prose with plain
+   attribution, never with a bracketed tag and never as a bare quoted paragraph). The contract
+   is mechanical (tightened 2026-07-10, and 2026-07-11 for side NPCs): a whole-line quote
+   auto-attributes **only in a reply with no tags at all**; a line mixing the character's speech
+   with narration/action beats must open with the tag or split into separate quote/prose lines,
+   and a reply that tags anywhere must tag every character line — its untagged quotes render as
+   narrator prose (a side NPC's own quoted paragraph, the Amanda report). The reply renders as
+   in-bubble per-speaker segments
    (`components/characters/chat-segments.ts` over the shared pure `lib/segmenter`, with
    standalone-quote attribution ON since chat is one-on-one): the tag is hidden behind a small
-   speaker label and a bare whole-line quote attributes to the character. Segment content still
+   speaker label and, in a tag-free reply, a bare whole-line quote attributes to the character. Segment content still
    flows through the `MessageContent` span renderer, where each span body also passes through
    `parseEmphasisRuns` (`lib/message-spans`) so a `_…_` pair nested inside quoted speech
    ("it's _perfect_!") renders italic instead of literal underscores (outermost-sigil rule —

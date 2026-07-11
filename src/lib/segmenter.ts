@@ -15,6 +15,12 @@ import type { TurnChunkEvent } from "@/contracts/turns/stream";
  * whole-line quote attributes to the sole known name exactly as if tagged. The
  * session lane never sets it — a quote embedded in narration stays narrator prose
  * (flavor NPCs live in prose, by design).
+ *
+ * The relaxation is per-text: a reply that uses a known `[Name]` tag ANYWHERE has
+ * demonstrated the tag convention, so its untagged whole-line quotes belong to
+ * someone else — a side NPC written as her own quoted paragraph — and stay
+ * narrator prose (owner report 2026-07-11: Amanda's lines wore the character's
+ * chip). Only a reply with no tags at all gets the sole-speaker assumption.
  */
 
 export interface SpeakerSegment {
@@ -27,7 +33,9 @@ export interface SegmenterOptions {
   /**
    * Attribute an untagged whole-line quoted utterance to the sole known name — but
    * ONLY when `knownNames.length === 1` (a one-on-one, where attribution is
-   * unambiguous). A line that starts with an opening quote and whose first close
+   * unambiguous) AND the text carries no known `[Name]` tag anywhere (a tagged
+   * reply is tag-disciplined: its untagged quotes are other speakers, not the
+   * character). A line that starts with an opening quote and whose first close
    * quote is its final character is treated exactly like a `[Name]`-tagged line;
    * a quote with prose outside it (`her voice drifts: "…"`, `"…" she said`) stays
    * narrator prose. Default off — the session lane keeps required-tag behavior.
@@ -122,9 +130,18 @@ export function parseSegments(
   const known = buildKnownMap(knownNames);
   const lines = text.split("\n");
   // Standalone-quote attribution is a one-on-one affordance: only with exactly one
-  // known name is the sole speaker unambiguous.
+  // known name is the sole speaker unambiguous — and only in a reply with no known
+  // tag at all. A reply that tags even one line has demonstrated the convention,
+  // so its untagged whole-line quotes are OTHER speakers (a side NPC's own quoted
+  // paragraph) and must stay narrator prose instead of wearing the character's chip.
   const soleName = options.attributeStandaloneQuotes && knownNames.length === 1 ? (knownNames[0] ?? null) : null;
-  const quoteStarts = soleName !== null ? standaloneQuoteStarts(lines) : null;
+  const hasKnownTag =
+    soleName !== null &&
+    lines.some((line) => {
+      const tag = TAG_RE.exec(line)?.[1];
+      return tag !== undefined && known.has(tag.trim().toLowerCase());
+    });
+  const quoteStarts = soleName !== null && !hasKnownTag ? standaloneQuoteStarts(lines) : null;
 
   const segments: SpeakerSegment[] = [];
   let cur: { speaker: string | null; lines: string[] } | null = null;
