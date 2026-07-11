@@ -138,6 +138,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat scene-model picker — hot-swap dropdown on the scene strip** —
+  `contracts chatSceneModels` + `character_chat_state.scene_model` (migration 0031)
+  (no plan — owner request) — 2026-07-11 — a save-on-select dropdown left of
+  Generate scene, persisted per conversation: "Avatar reference" keeps the
+  identity-locked Qwen edit; picking a Venice t2i model (Chroma/Lustify/…)
+  renders that scene text-to-image without the avatar (the only real model swap
+  Venice offers — its edit family is Qwen-only). Docs: images.md §Scene images,
+  character-chat.md §API, ui.md §Scene images.
 - **Chat starting-outfit seed — garment phrase, not item ids** —
   `engine/chat-state.ts` + `images/avatar.ts`
   ([chat-scene-fidelity.plan.md](chat-scene-fidelity.plan.md) §Seed fallback followup;
