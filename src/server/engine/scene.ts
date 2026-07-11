@@ -3,6 +3,7 @@ import { resolveAttributes } from "@/contracts/attributes/value";
 import type { AttributeDefinition } from "@/contracts/attributes/types";
 import { isConditionExpired } from "@/contracts/conditions/condition";
 import type { ItemDefinition, ItemInstanceState } from "@/contracts/items/item";
+import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { resolveWardrobeVisibility, type WornItemInput } from "@/contracts/items/visibility";
 import {
   crossedThresholdHints,
@@ -676,9 +677,12 @@ export function buildWardrobeBlock(bundle: SceneBundleInput, opts?: { includeSen
     const byId = new Map(worn.map((i) => [i.id, i]));
 
     const describe = (instanceId: string, name: string): string => {
-      if (!opts?.includeSensory) return name;
-      const sensory = byId.get(instanceId)?.definition.sensory;
-      const details = [sensory?.appearance, sensory?.scent].filter(Boolean).join("; ");
+      const definition = byId.get(instanceId)?.definition;
+      // The accessory type always rides along — "Gold Hoop (nose ring)" tells
+      // the narrator where the piece sits, which the bare name doesn't.
+      const subtypeLabel = clothingSubtypeLabel(definition?.subtype);
+      const sensory = opts?.includeSensory ? definition?.sensory : undefined;
+      const details = [subtypeLabel, sensory?.appearance, sensory?.scent].filter(Boolean).join("; ");
       return details ? `${name} (${details})` : name;
     };
 

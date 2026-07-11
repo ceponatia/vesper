@@ -12,11 +12,11 @@ The body model describes *where* things are on a character — the anatomy that 
 { id, label, parentId?, side?, coverageRelevant?, intimateGroup?, featureGroup?, promptHints? }
 ```
 
-The **everyday humanoid tree** has five roots, at coverage-useful granularity (~27 nodes). The roots double as the coverage editor's column groups:
+The **everyday humanoid tree** has five roots, at coverage-useful granularity (~29 nodes). The roots double as the coverage editor's column groups:
 
 | Root | Children |
 | --- | --- |
-| head | hair, face (→ eyes), ears |
+| head | hair, face (→ eyes, nose, lips), ears |
 | torso | neck, shoulders, chest, back, waist |
 | arms | upper_arms, forearms, wrists, hands (→ fingers) |
 | pelvis | hips, groin, buttocks |
@@ -148,7 +148,7 @@ The character stores an optional `profile.heritageId`. `realizeBody`'s `heritage
 
 ## Colloquial body references
 
-`species/targets.ts` resolves a player's colloquial body reference to the *set* of attributes it covers — "look at her **face**" means `face` + `eyes` + `brows` + `lips` here, not just `face.*`.
+`species/targets.ts` resolves a player's colloquial body reference to the *set* of attributes it covers — "look at her **face**" means `face` + `eyes` + `nose` + `lips` (+ `brows`) here, not just `face.*`.
 
 It is **deterministic and pure** (not an attribute-fetch agent). A term resolves either:
 

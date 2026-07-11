@@ -98,6 +98,7 @@ const outfitExtrasSchema = z.object({
     .catch(undefined),
   opacity: z.enum(["opaque", "sheer"]).catch("opaque"),
   sensory: z.object({ appearance: z.string().optional() }).optional().catch(undefined),
+  subtype: z.string().optional().catch(undefined),
 });
 
 /**
@@ -134,6 +135,7 @@ export async function loadDefaultWardrobe(
           opacity: extras.opacity,
           ...(extras.description ? { description: extras.description } : {}),
           ...(extras.sensory?.appearance ? { appearance: extras.sensory.appearance } : {}),
+          ...(extras.subtype ? { subtype: extras.subtype } : {}),
         },
       ];
     });

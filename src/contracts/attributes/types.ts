@@ -66,6 +66,17 @@ export const attributeDefinitionSchema = z.object({
    */
   coreVisual: z.boolean().optional(),
   /**
+   * Curated registry default for this attribute (owner ruling 2026-07-11:
+   * female-leaning where the attribute is gendered, since most characters are
+   * women). Consumed by `seedRegistryDefaultValues` — blank character creation
+   * stores these as real values — and preferred by the editor's
+   * `defaultValueFor` seed. The forge does NOT use it for unconstrained fills
+   * (its concept-hashed variety is deliberate; a fixed default would converge
+   * every unspecified character on the same look). Enum defaults are validated
+   * against allowedValues at group definition time.
+   */
+  defaultValue: z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]).optional(),
+  /**
    * How this attribute surfaces in a **full-body** image prompt relative to
    * clothing (docs/images.md §Scene images). A waist-up avatar portrait conveys
    * the face and upper body but nothing of the figure below it, so a scene
@@ -151,6 +162,15 @@ export function defineAttributeGroup(category: AttributeCategory, definitions: r
   for (const def of definitions) {
     if (def.category !== category) {
       throw new Error(`Attribute ${def.id} declares category ${def.category} inside the ${category} group`);
+    }
+    // A registry default outside the vocabulary would seed unfixable values.
+    if (def.defaultValue !== undefined && def.allowedValues) {
+      const defaults = Array.isArray(def.defaultValue) ? def.defaultValue : [def.defaultValue];
+      for (const value of defaults) {
+        if (typeof value === "string" && !def.allowedValues.includes(value)) {
+          throw new Error(`Attribute ${def.id} defaultValue "${value}" is not in allowedValues`);
+        }
+      }
     }
   }
   return { category, definitions };

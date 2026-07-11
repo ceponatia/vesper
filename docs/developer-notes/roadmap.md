@@ -23,6 +23,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
+- **Face jewelry, accessory subtypes & the attribute-form accordion** —
+  [face-jewelry-and-attribute-form.plan.md](face-jewelry-and-attribute-form.plan.md)
+  (active — owner request 2026-07-11: lips/nose body locations,
+  jewelry/headwear/eyewear subtype vocabularies feeding image + narrator
+  prompts, nose/lip piercing attributes, registry defaults stored at blank
+  creation, and the attributes tab's single-open show-all-fields accordion.)
 - **Library UX — faceted browse, item facets, shared entity picker** —
   [library-ux.plan.md](library-ux.plan.md) (active — core pass **built + deployed
   2026-07-08** (all seven slices, commit `4add351`): items facet bar + grouped

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { attributeRegistry, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { exposedRegions, resolveWardrobeVisibility, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
+import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
 import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
@@ -64,6 +65,8 @@ export interface AvatarOutfitItem {
   description?: string;
   /** Optional sensory appearance note from the item definition. */
   appearance?: string;
+  /** Accessory-type label ("nose ring") — leads the garment phrase so the model places the piece. */
+  subtypeLabel?: string;
 }
 
 /** A default-outfit garment before occlusion / waist-up filtering. */
@@ -74,6 +77,8 @@ export interface AvatarWardrobeItem {
   opacity?: "opaque" | "sheer";
   description?: string;
   appearance?: string;
+  /** Clothing subtype id (contracts/items/subtypes) — resolved to its label for the prompt. */
+  subtype?: string | null;
 }
 
 /**
@@ -113,11 +118,13 @@ export function visibleAvatarOutfit(items: ReadonlyArray<AvatarWardrobeItem>): A
     if (view?.visibility === "hinted") {
       return [{ name: `${item.name} (only a vague hint beneath sheer layers)` }];
     }
+    const subtypeLabel = clothingSubtypeLabel(item.subtype);
     return [
       {
         name: item.name,
         ...(item.description ? { description: item.description } : {}),
         ...(item.appearance ? { appearance: item.appearance } : {}),
+        ...(subtypeLabel ? { subtypeLabel } : {}),
       },
     ];
   });
@@ -178,7 +185,8 @@ const AVATAR_OMIT_ATTRIBUTES: ReadonlySet<string> = new Set([
   "hands.nails",
   "brows.shape",
   "brows.thickness",
-  "ears.piercings",
+  // ears.piercings rejoined the prompt with the face-jewelry work: piercings
+  // are now first-class visual detail (nose/lip piercings render too).
   "teeth.shape",
   "teeth.condition",
   "lips.shape",
@@ -276,7 +284,7 @@ const APPEARANCE_CATEGORY_ORDER: readonly string[] = [
   "build", "shoulders", "neck", "chest", "breasts", "waist", "arms", "hands",
   "hair",
   "eyes", "brows",
-  "face", "lips", "ears", "teeth",
+  "face", "nose", "lips", "ears", "teeth",
   "movement",
   "presentation",
 ];
@@ -372,11 +380,17 @@ function excerpt(text: string, max: number): string {
  * more visual detail — with the bare name as the fallback when there is no
  * description, and the sensory appearance appended in parentheses. Untruncated:
  * clothing detail is authoritative for what the model should paint.
+ *
+ * Accessory subtypes LEAD the phrase ("nose ring: thin gold hoop") — a bare
+ * jewelry name gives the model nothing to place the piece with (face-jewelry
+ * plan). Skipped when the text already names the type ("Gold nose ring").
  */
-function formatGarment(item: { name: string; description?: string; appearance?: string }): string {
+function formatGarment(item: { name: string; description?: string; appearance?: string; subtypeLabel?: string }): string {
   const base = (item.description?.trim() || item.name).trim();
+  const type = item.subtypeLabel?.trim();
+  const lead = type && !base.toLowerCase().includes(type) ? `${type}: ${base}` : base;
   const detail = item.appearance?.trim();
-  return detail ? `${base} (${detail})` : base;
+  return detail ? `${lead} (${detail})` : lead;
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +452,8 @@ export interface SceneWornItem {
   description?: string;
   /** Sensory appearance note from the item definition. */
   appearance?: string;
+  /** Accessory-type label ("nose ring") — leads the garment phrase (formatGarment). */
+  subtypeLabel?: string;
 }
 
 /**

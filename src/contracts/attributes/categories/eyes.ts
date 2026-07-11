@@ -19,6 +19,7 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     bodyLocationId: "eyes",
     aliases: ["eye color", "eye colour"],
     coreVisual: true,
+    defaultValue: "brown",
   },
   {
     id: "eyes.pupil",

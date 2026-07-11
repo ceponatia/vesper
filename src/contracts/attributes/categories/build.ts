@@ -24,6 +24,7 @@ export const buildGroup = defineAttributeGroup("build", [
       'Convey height through comparison and blocking ("she has to look up at him"), never as a number.',
     ],
     coreVisual: true,
+    defaultValue: "average",
   },
   {
     id: "build.frame",
@@ -43,6 +44,7 @@ export const buildGroup = defineAttributeGroup("build", [
     ],
     aliases: ["frame", "build", "figure", "physique", "bone structure"],
     coreVisual: true,
+    defaultValue: "slight",
   },
   {
     id: "build.musculature",

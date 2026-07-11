@@ -25,6 +25,7 @@ export const skinGroup = defineAttributeGroup("skin", [
     ],
     aliases: ["skin tone", "skin color", "complexion"],
     coreVisual: true,
+    defaultValue: "light",
   },
   {
     id: "skin.undertone",

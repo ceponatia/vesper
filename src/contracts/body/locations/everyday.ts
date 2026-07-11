@@ -16,6 +16,10 @@ export const humanoidEverydayLocations: readonly BodyLocation[] = [
   { id: "hair", label: "hair", parentId: "head", coverageRelevant: true },
   { id: "face", label: "face", parentId: "head", coverageRelevant: true },
   { id: "eyes", label: "eyes", parentId: "face", coverageRelevant: true },
+  // Jewelry anchors (face-jewelry plan): nose rings/studs and lip rings cover
+  // these; a bare `face` coverage implies them via expand, so masks stay correct.
+  { id: "nose", label: "nose", parentId: "face", coverageRelevant: true },
+  { id: "lips", label: "lips", parentId: "face", coverageRelevant: true },
   { id: "ears", label: "ears", parentId: "head", coverageRelevant: true },
   { id: "torso", label: "torso", coverageRelevant: true },
   { id: "neck", label: "neck", parentId: "torso", coverageRelevant: true },

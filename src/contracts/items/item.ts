@@ -27,7 +27,13 @@ export const itemDefinitionSchema = z.object({
    * coverage, not the template name (docs/prompts.md).
    */
   category: z.string().optional().catch(undefined),
-  /** Object only: subtype id (contracts/items/object-subtypes.ts) — vocabulary now, behavior later. */
+  /**
+   * Subtype id. Objects: contracts/items/object-subtypes.ts (vocabulary now,
+   * behavior later). Clothing: contracts/items/subtypes/ — per-category
+   * accessory vocabularies (jewelry/headwear/eyewear) whose labels ARE
+   * prompt-bearing ("nose ring — thin gold hoop" reaches image + narrator
+   * prompts, unlike category ids).
+   */
   subtype: z.string().optional().catch(undefined),
   /**
    * Clothing only: wearer-target id (contracts/items/wearer.ts). Absent =

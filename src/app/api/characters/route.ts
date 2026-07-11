@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { inArray, eq, and } from "drizzle-orm";
+import { seedBodyConfigFromAttributes, seedRegistryDefaultValues } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characters, db } from "@/server/db";
 import {
@@ -42,8 +43,19 @@ export const POST = withUser(async (user, req: NextRequest) => {
   // row exists — a stray item is harmless, a dangling outfit id is not.
   const sink = new DiagnosticCollector();
   const suggestedIds = await materializeSuggestedItems(user.id, body.value.suggestedItems, sink);
+  // A truly blank profile (the library's New button) is born with the curated
+  // registry defaults + the body-config those imply (gender=female seeds
+  // vulva/breasts). Any profile arriving WITH attributes — forge drafts,
+  // clones, API callers — is authored data and passes through untouched.
+  const blank = body.value.profile.attributes.length === 0;
+  const attributes = blank ? seedRegistryDefaultValues(body.value.profile.attributes) : body.value.profile.attributes;
+  const seededConfig = blank ? seedBodyConfigFromAttributes(attributes) : null;
   const profile = {
     ...body.value.profile,
+    attributes,
+    ...(seededConfig
+      ? { intimateRegions: seededConfig.intimateRegions, bodyFeatures: seededConfig.bodyFeatures }
+      : {}),
     defaultOutfit: [...new Set([...body.value.profile.defaultOutfit, ...suggestedIds])],
   };
 

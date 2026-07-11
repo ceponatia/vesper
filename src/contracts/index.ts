@@ -25,6 +25,7 @@ export * from "./items/coverage";
 export * from "./items/clothing-categories";
 export * from "./items/colors";
 export * from "./items/object-subtypes";
+export * from "./items/subtypes";
 export * from "./items/wearer";
 export * from "./items/visibility";
 export * from "./facts/taxonomy";

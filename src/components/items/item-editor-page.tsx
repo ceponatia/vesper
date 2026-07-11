@@ -6,6 +6,8 @@ import {
   bodyLocationRegistry,
   clothingCategories,
   clothingCategoryById,
+  clothingSubtypeById,
+  clothingSubtypesForCategory,
   colorFamilies,
   expandCoverage,
   objectSubtypeById,
@@ -356,15 +358,30 @@ function ClothingFields({
 
   // Picking a category applies its template (coverage + layer); everything
   // stays editable after — the category is a starting point, not a constraint.
+  // Subtype vocabularies are per-category, so a category change clears it.
   const applyCategory = (id: string) => {
     if (!id) {
-      onPatch({ category: null });
+      onPatch({ category: null, subtype: null });
       return;
     }
     const category = clothingCategoryById(id);
     if (!category) return;
-    onPatch({ category: id, coverage: [...category.coverage], layer: category.layer });
+    onPatch({ category: id, subtype: null, coverage: [...category.coverage], layer: category.layer });
   };
+
+  // Picking a subtype applies its coverage template when it has one (a lip
+  // ring anchors to lips) — same pre-fill-then-edit semantics as categories.
+  const applySubtype = (id: string) => {
+    if (!id) {
+      onPatch({ subtype: null });
+      return;
+    }
+    const subtype = clothingSubtypeById(id);
+    if (!subtype) return;
+    onPatch({ subtype: id, ...(subtype.coverage ? { coverage: [...subtype.coverage] } : {}) });
+  };
+
+  const subtypeOptions = clothingSubtypesForCategory(definition.category);
 
   return (
     <div className="mt-6 flex flex-col gap-5">
@@ -381,6 +398,20 @@ function ClothingFields({
             </Select>
           )}
         </Field>
+        {subtypeOptions.length > 0 ? (
+          <Field label="Type" hint="Sharpens image and narrator prompts (“nose ring”, not just the name).">
+            {(id) => (
+              <Select id={id} value={definition.subtype ?? ""} onChange={(e) => applySubtype(e.target.value)}>
+                <option value="">—</option>
+                {subtypeOptions.map((subtype) => (
+                  <option key={subtype.id} value={subtype.id}>
+                    {subtype.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        ) : null}
         <Field label="Layer" hint="0 underwear · 3 outerwear; higher layers occlude lower.">
           {(id) => (
             <Select

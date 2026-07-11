@@ -29,6 +29,7 @@ type AttributeDefinition = {
   promptHints?: readonly string[];
   excludeFromPrompts?: boolean;
   coreVisual?: boolean;
+  defaultValue?: string | string[] | number | boolean;
   imageReveal?: "shape" | "skin";
   identityAnchor?: boolean;
   autoDefaultExcludes?: readonly string[];
@@ -58,6 +59,7 @@ type AttributeDefinition = {
 | `promptHints` | Phrasing guidance for the prompt builders. |
 | `excludeFromPrompts` | Stored, authored, and editable, but omitted from **every** generated prompt (image, narrator, chat) — a scaffold field not yet wired in (e.g. `identity.natal_sex`). Drop the flag when the render logic lands. |
 | `coreVisual` | Always filled at character creation — first by forge inference, then a seeded default from `allowedValues` (enum only). |
+| `defaultValue` | Curated registry default (female-leaning where gendered — owner ruling 2026-07-11). `seedRegistryDefaultValues` stores these on a **truly blank** character at create time (plus the body-config the seeded gender implies); the editor's `defaultValueFor` prefers it when materializing a row. The forge does NOT use it for unconstrained fills — its concept-hashed variety is deliberate. Enum defaults are validated against `allowedValues` at group-definition time. |
 | `imageReveal` | Whether/when this attribute appears in a full-body image (see **Image reveal tiers** below). |
 | `identityAnchor` | A defining physical trait inferred first at forge time; it conditions the plausible ranges for unset core visuals (`docs/authoring.md` §Character forge). **Physical attributes only** — never personality, voice, behavior, or role. New anchors are one-line registry edits. |
 | `autoDefaultExcludes` | Enum members that are valid to pick but never chosen as an *automatic* default (forge fallback fill / picker add). E.g. minor apparent ages exist for background characters, but no one defaults to one. |
@@ -133,7 +135,8 @@ The starter set is roughly 90 attributes across all categories (the table below 
 | hair | color, length, texture, quality, style |
 | eyes | color, shape, pupil, luminosity |
 | face | shape, freckles, expression_default |
-| brows, lips, teeth, ears | brows; lips; teeth (shape — even … sharp_canines / fanged / serrated — condition); ears |
+| nose | shape, size, piercings |
+| brows, lips, teeth, ears | brows; lips (fullness, shape, piercings); teeth (shape — even … sharp_canines / fanged / serrated — condition); ears |
 | horns | shape, length, count, texture, color |
 | neck, shoulders, chest | neck (length, throat_prominence); shoulders (width, slope); chest (size, hair) |
 | wings | type, shape, span, color, carriage |
@@ -150,6 +153,7 @@ A few notes on this vocabulary:
 - **`gender` encodes natal sex for ambiguous presentations.** The androgynous and nonbinary presentations are split by sex at birth — `androgynous_born_female` / `androgynous_born_male` / `nonbinary_born_female` / `nonbinary_born_male` (alongside plain `female` / `male`) — so image generation renders the right underlying build (an androgynous look reads very differently on a natal-female vs natal-male frame), and so each born-variant seeds the matching natal anatomy via `activatesGroups` (overridable in the editor). The value humanizes straight into the image subject phrase ("androgynous born female").
 - **`natal_sex` is a forward-looking scaffold** (`identity.natal_sex`, enum `female`/`male`): a structured sex-at-birth field, distinct from presented `gender`. It is flagged **`excludeFromPrompts`** — stored, authored, and editable, but **not yet surfaced in any generated prompt** (image, narrator, or chat); the gender born-variant carries natal sex into rendering for now. The editor surfaces it **only for an androgynous / nonbinary presentation** (it's redundant for plain `female` / `male`). The planned expansion — intersex/trans handling, a model-facing definition of what each gender means in-game, and possibly superseding the gender born-variants — lives in [deferred.plan.md](../developer-notes/deferred.plan.md) §Natal sex. When wiring it into prompts later, drop `excludeFromPrompts` and add the render logic to the attribute-iterating builders that currently skip it.
 - **Supernatural / non-human palettes are first-class.** `skin.tone`, `eyes.color`, and `hair.color` carry unnatural options (ashen / grey / blue skin, gold / red / solid-black / glowing eyes, fae hair), and `eyes.pupil` (vertical-slit, goat) reads non-human. All of these are flagged `autoDefaultExcludes`, so a human is never *auto*-assigned one — the forge or editor may still pick them, and a species rule can require them.
+- **Piercings are attributes; the jewelry is wardrobe.** `ears.piercings`, `nose.piercings`, and `lips.piercings` describe the piercing *holes* (permanent/presentation body detail); the removable pieces worn in them are clothing items with a jewelry subtype ([items.md](items.md) §Clothing subtypes). Prompts mention both when present.
 
 ## Values with provenance
 

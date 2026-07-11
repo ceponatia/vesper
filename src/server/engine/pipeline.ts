@@ -73,6 +73,7 @@ import { createSegmenter, parseSegments } from "@/lib/segmenter";
 import { exposedRegions, resolveWardrobeVisibility } from "@/contracts/items/visibility";
 import { resolveAttributes } from "@/contracts/attributes/value";
 import { NEUTRAL_MOOD_METER } from "@/contracts/meters/registry";
+import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { speciesLabelPhrase } from "@/contracts/species";
 
 /**
@@ -1069,11 +1070,13 @@ export function buildSceneComposerContext(
           .filter((v) => v.visibility !== "hidden")
           .map((v) => {
             const def = wornById.get(v.instanceId)?.definition;
+            const subtypeLabel = clothingSubtypeLabel(def?.subtype);
             return {
               name: v.name,
               visibility: v.visibility === "hinted" ? ("hinted" as const) : ("visible" as const),
               ...(def?.description ? { description: def.description } : {}),
               ...(def?.sensory.appearance ? { appearance: def.sensory.appearance } : {}),
+              ...(subtypeLabel ? { subtypeLabel } : {}),
             };
           }),
         exposure,

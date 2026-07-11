@@ -31,6 +31,7 @@ export const identityGroup = defineAttributeGroup("identity", [
     // body-config (activatesGroups below), and a missing gender used to leave a
     // character with no intimate anatomy at all (was audit E1).
     coreVisual: true,
+    defaultValue: "female",
     // Creation-time body-config seed (not a lock — the editor stays
     // authoritative). The born-sex variants seed the matching natal anatomy by
     // default (an androgynous-born-female still has natal female anatomy unless
@@ -97,6 +98,7 @@ export const identityGroup = defineAttributeGroup("identity", [
     aliases: ["age", "apparent age"],
     promptHints: ["State apparent age as an impression (\"somewhere in her late thirties\", \"barely school-age\"), never as a number from a file."],
     coreVisual: true,
+    defaultValue: "mid_twenties",
     identityAnchor: true,
   },
   {

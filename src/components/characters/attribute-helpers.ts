@@ -66,8 +66,10 @@ function firstAutoDefault(def: AttributeDefinition): string | undefined {
   return values[0];
 }
 
-/** Default value for a definition when first added, by value type. */
+/** Default value for a definition when first added: the curated registry
+ *  default when one exists, else a per-type generic. */
 export function defaultValueFor(def: AttributeDefinition): AttributeValue["value"] {
+  if (def.defaultValue !== undefined) return def.defaultValue;
   switch (def.valueType) {
     case "enum":
       return firstAutoDefault(def) ?? "";

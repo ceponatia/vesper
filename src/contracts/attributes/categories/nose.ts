@@ -1,0 +1,43 @@
+import { defineAttributeGroup } from "../types";
+
+export const noseGroup = defineAttributeGroup("nose", [
+  {
+    id: "nose.shape",
+    label: "Nose shape",
+    kind: "physical",
+    category: "nose",
+    valueType: "enum",
+    description: "Nose shape in profile and from the front.",
+    mutability: "inherent",
+    allowedValues: [
+      "button", "straight", "upturned", "snub", "aquiline",
+      "roman", "hooked", "broad", "narrow", "pointed",
+    ],
+    bodyLocationId: "nose",
+    aliases: ["nose", "nose shape"],
+  },
+  {
+    id: "nose.size",
+    label: "Nose size",
+    kind: "physical",
+    category: "nose",
+    valueType: "enum",
+    description: "How prominently the nose reads in the face.",
+    mutability: "inherent",
+    allowedValues: ["petite", "small", "medium", "prominent", "large"],
+    bodyLocationId: "nose",
+    aliases: ["nose size"],
+  },
+  {
+    id: "nose.piercings",
+    label: "Nose piercings",
+    kind: "presentation",
+    category: "nose",
+    valueType: "enum",
+    description: "Piercing arrangement; the jewelry itself is wardrobe (jewelry items with a nose ring/stud subtype).",
+    mutability: "mutable",
+    allowedValues: ["none", "nostril", "double_nostril", "high_nostril", "septum", "bridge"],
+    bodyLocationId: "nose",
+    aliases: ["nose piercing", "septum", "nose ring"],
+  },
+]);

@@ -4,10 +4,14 @@ import {
   clothingCategoryById,
   clothingCategoryIds,
   clothingLayerSchema,
+  clothingSubtypeById,
+  clothingSubtypesByCategory,
+  clothingSubtypesForCategory,
   colorFamilyById,
   colorFamilyIds,
   objectSubtypeById,
   objectSubtypeIds,
+  subtypedClothingCategoryIds,
   wearerTargetById,
   wearerTargetIds,
 } from "@/contracts";
@@ -28,11 +32,16 @@ import { itemExtrasSchema, type ItemExtras } from "./schemas";
 
 const CLASSIFY_CHUNK = 20;
 
+// The accessory categories carrying a subtype vocabulary — compile-time
+// registry constants, safe to inline into the SQL literal.
+const SUBTYPED_CATEGORY_LIST = sql.raw(subtypedClothingCategoryIds.map((id) => `'${id}'`).join(", "));
+
 /** An item is a classify candidate when any facet the library uses is absent. */
 const MISSING_FACETS_SQL = sql`(
   (kind = 'clothing' and (
     definition->>'category' is null or definition->>'wearer' is null
     or definition->>'layer' is null or definition->'color' is null
+    or (definition->>'category' in (${SUBTYPED_CATEGORY_LIST}) and definition->>'subtype' is null)
   ))
   or (kind = 'object' and (definition->>'subtype' is null or definition->'color' is null))
   or (kind = 'container' and definition->'color' is null)
@@ -83,6 +92,9 @@ function classifyPrompt(rows: readonly ClassifyRow[]): string {
     `- clothing category: ${clothingCategoryIds.join(", ")}`,
     "- clothing layer: 0 underwear · 1 base · 2 mid · 3 outerwear",
     `- wearer (clothing): ${wearerTargetIds.join(", ")} — who the garment is cut for; unisex when not gender-cut`,
+    ...[...clothingSubtypesByCategory.entries()].map(
+      ([category, list]) => `- ${category} type (clothing classified ${category}): ${list.map((s) => s.id).join(", ")}`,
+    ),
     `- object subtype: ${objectSubtypeIds.join(", ")}`,
     `- color family (any kind): ${colorFamilyIds.join(", ")}; also give "shade", the precise hue in a word or two (e.g. "aqua", "olive"), when the exact color is stated or obvious`,
     "",
@@ -92,7 +104,7 @@ function classifyPrompt(rows: readonly ClassifyRow[]): string {
       return `${i}. [${row.kind}] ${row.name}${description ? ` — ${description}` : ""}`;
     }),
     "",
-    "For each item return its index plus the facets that apply: clothing gets category, layer, wearer and color; objects get subtype and color; containers get color.",
+    "For each item return its index plus the facets that apply: clothing gets category, layer, wearer and color — and when the category is jewelry, headwear or eyewear, also a subtype from that category's type list; objects get subtype and color; containers get color.",
   ];
   return lines.join("\n");
 }
@@ -114,6 +126,17 @@ export function mergeClassifiedExtras(extras: ItemExtras, kind: ClassifyRow["kin
     }
     if (merged.layer === undefined && classified.layer !== undefined) {
       merged.layer = classified.layer;
+      changed = true;
+    }
+    // Accessory type — validated against the (possibly just-merged) category's
+    // own vocabulary, so a "nose_ring" can never land on a headwear item.
+    const subtype = classified.subtype ? clothingSubtypeById(classified.subtype) : undefined;
+    if (
+      merged.subtype === undefined &&
+      subtype &&
+      clothingSubtypesForCategory(merged.category).some((s) => s.id === subtype.id)
+    ) {
+      merged.subtype = subtype.id;
       changed = true;
     }
   }
