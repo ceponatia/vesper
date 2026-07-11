@@ -10,7 +10,15 @@ import { daylightBand, formatElapsed, formatGameClock, resolveGameTime } from "@
 import { log } from "@/server/log";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { fillPlayerToken } from "@/lib/player-token";
-import { isDemoMode, narrativeModelId, narrativeProviderOptions, openrouter, routedProvider, stripNarratorArtifactStream } from "../ai";
+import {
+  collapseRepeatedBlocksStream,
+  isDemoMode,
+  narrativeModelId,
+  narrativeProviderOptions,
+  openrouter,
+  routedProvider,
+  stripNarratorArtifactStream,
+} from "../ai";
 import type { TurnProvider } from "@/contracts/turns/agent-results";
 import { db, facts, jobs, sessions, turnMessages, turns } from "../db";
 import {
@@ -239,11 +247,15 @@ async function runNarrationTask(sessionId: string, body: SubmitTurnBody, channel
       ? null
       : liveNarrativeStream(narrativeModelId(bundle.world.narrativeModel), pre.system, pre.messages);
     // Strip the Aion "uncensored response" wrapper tags that leak into narration
-    // (server/ai/narrator-artifacts.ts) before the segmenter and `narration`
-    // accumulator see them — keeps the artifact out of both the live feed and the
-    // persisted `turns.narration` (which is fed back as history). Demo output has
-    // no tags, but wrapping it too keeps one path.
-    const stream = stripNarratorArtifactStream(live ? live.textStream : demoNarrative(body.input, pre.npcNames));
+    // (server/ai/narrator-artifacts.ts), then collapse Aion tandem-repeat blocks
+    // (server/ai/narrator-repeats.ts) — both run before the segmenter and the
+    // `narration` accumulator see the text, keeping the artifacts out of the live
+    // feed and the persisted `turns.narration` (which is fed back as history).
+    // Tag stripping runs first so a leaked tag can't break the verbatim repeat
+    // match. Demo output has neither, but wrapping it too keeps one path.
+    const stream = collapseRepeatedBlocksStream(
+      stripNarratorArtifactStream(live ? live.textStream : demoNarrative(body.input, pre.npcNames)),
+    );
 
     const segmenter = createSegmenter(pre.allNpcNames);
     let narration = "";

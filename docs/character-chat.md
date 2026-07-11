@@ -106,7 +106,10 @@ exchange:
    player-POV narration / state as a narration system / long-term memory, plus the
    regex-only one-turn cue (`engine/chat-intent.ts`).
 7. **Stream.** `streamCharacterChat` — the same `streamText` + `openrouter().chat()` shape
-   as the session narrator, through `stripNarratorArtifactStream`. The narrator model is
+   as the session narrator, through `stripNarratorArtifactStream` and then
+   `collapseRepeatedBlocksStream` (server/ai/narrator-repeats.ts — drops Aion
+   tandem-repeat blocks, a verbatim re-emit of the reply's own trailing paragraphs,
+   before they reach the live feed or the persisted accumulated reply). The narrator model is
    the per-character pick (`characters.chatModel`, resolved through the strict curated
    list) — a headless POST without a `model` defaults to it too
    (`resolveChatModelId`), so API and UI agree. The stream is wrapped by two watchdogs
