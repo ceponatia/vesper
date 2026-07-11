@@ -54,6 +54,48 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
+_The seven entries below are the 2026-07-11 **character-chat engagement batch**
+(planned from the character-chat & schema review), deliberately ordered by
+**effort, least → most** and queued ahead of the pre-existing items — owner
+instruction 2026-07-11._
+
+- **Memory callbacks — unprompted "remember when" beats** —
+  [memory-callbacks.plan.md](memory-callbacks.plan.md) (next — effort S). One
+  low-frequency, lull-gated tail cue resurfacing an old high-salience
+  episode/milestone deliberately unrelated to the current topic; used-ring
+  anti-repeat; one retrieval + one line.
+- **Emotional weather — persistent feeling, regard momentum, reply pacing** —
+  [emotional-weather.plan.md](emotional-weather.plan.md) (next — effort M). A
+  persistent `feeling` (EmotionLabel + intensity + cause, exchange-decayed,
+  pulse-proposed), streak/bruise momentum on regard, and state-driven typing
+  pacing (UI-only).
+- **Chat image input — player-sent photos the character sees** —
+  [chat-image-input.plan.md](chat-image-input.plan.md) (next — effort M).
+  Attach an image to a chat message; one vision pass injects it as seen-channel
+  content in the perception partition; the archivist files perceived facts;
+  hard-deleted with the message.
+- **Chat selfies — character-sent photo messages** —
+  [chat-selfies.plan.md](chat-selfies.plan.md) (next — effort M+). Inline
+  SMS-style photo messages: identity-locked edit from the avatar + live
+  outfit/state/place sketch, a selfie framing block (the player-POV rule
+  inverted); player-request + character-offer triggers.
+- **Chat scene references — current-look and place anchors** —
+  [chat-scene-references.plan.md](chat-scene-references.plan.md) (next —
+  effort M+). A cached outfit-true "current look" reference replacing the
+  always-dressed avatar anchor, plus lazily-minted place images from scene
+  sketches feeding the chat lane's unused multi-edit rung.
+- **Character drives — desires & secrets as gated inner life** —
+  [character-drives.plan.md](character-drives.plan.md) (next — effort L).
+  Authored wants with secrecy levels, archivist-tracked progress, a band-gated
+  withholding/reveal law (the first mechanical footing for character-side
+  lying), and a `secret_shared` milestone.
+- **Chat initiative — the character reaches out first** —
+  [chat-initiative.plan.md](chat-initiative.plan.md) (next — effort L). Grows
+  §8.4 "has something to say" into reopen-anchored initiative: cued openers in
+  the comms register, life-event beats, light `schedule` authoring (the
+  write-orphan), and a selfie-attach hook — D8-compatible, generation stays
+  player-triggered.
+
 - **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
   audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
   grows). Both live in `engine/merge/phases/threads.ts` and are documented in
