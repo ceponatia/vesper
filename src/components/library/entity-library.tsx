@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { itemKindSchema } from "@/contracts";
+import { clothingSubtypesForCategory, itemKindSchema } from "@/contracts";
 import {
   charactersApi,
   itemsApi,
@@ -197,7 +197,10 @@ const configs: Record<LibraryEntity, EntityConfig> = {
       isMissingFacets: (card) => {
         const d = card.definition;
         if (!d) return false;
-        if (card.kind === "clothing") return !d.category || !d.wearer || d.layer === null || !d.color;
+        if (card.kind === "clothing") {
+          const missingSubtype = clothingSubtypesForCategory(d.category).length > 0 && !d.subtype;
+          return !d.category || !d.wearer || d.layer === null || !d.color || missingSubtype;
+        }
         if (card.kind === "object") return !d.subtype || !d.color;
         return !d.color; // container
       },

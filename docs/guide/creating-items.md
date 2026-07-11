@@ -12,6 +12,10 @@ The editor's **← Items** link takes you back to the library exactly as you lef
 - Hidden layers stay hidden in images: an opaque outer layer that fully covers a lower layer keeps it out of avatar and scene prompts (a t-shirt under a closed abaya won't leak into the picture).
 - **Layer** stacks from the skin out — 0 (underwear) · 1 (base) · 2 (mid) · 3 (outerwear); higher layers occlude lower ones. **Opacity: sheer** reveals what's beneath.
 
+## Jewelry, headwear & eyewear
+
+Picking one of these categories reveals a **Type** select (nose ring, choker, tiara, blindfold, …). Set it — the type is what the portrait/scene image models and the narrator lead with ("nose ring: thin gold hoop"), which lands far more reliably than a bare item name. Picking a type also pre-fills coverage (a lip ring anchors to the new **lips** slot under Face, a nose stud to **nose**), and the **Organize** pass fills missing types on old accessories.
+
 ## Objects
 
 - **Subtype** (furniture, vehicle, weapon, tool, device, …) is vocabulary for future behavior. Holdable subtypes (tool, device, weapon…) can be carried in a hand — and still stored in containers.

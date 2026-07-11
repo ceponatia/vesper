@@ -65,6 +65,7 @@ export const hairGroup = defineAttributeGroup("hair", [
       "dyed hair",
     ],
     coreVisual: true,
+    defaultValue: "brown",
   },
   {
     id: "hair.length",

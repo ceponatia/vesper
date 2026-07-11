@@ -22,16 +22,17 @@ describe("toggleCoverage (select-all cascade with carve-outs)", () => {
     sameSet(toggleCoverage([], "pelvis"), ["pelvis", "hips", "groin", "buttocks"]);
   });
 
-  it("ski mask: minimal head coverage minus eyes keeps hair and ears", () => {
+  it("ski mask: minimal head coverage minus eyes keeps hair, ears, nose and lips", () => {
     // a minimal ["head"] (forge output / legacy data) explodes on first toggle
     const result = toggleCoverage(["head"], "eyes");
-    // face drops with eyes — the tree has no finer face parts to keep
-    sameSet(result, ["hair", "ears"]);
+    // face itself drops with eyes (an ancestor id would re-imply them), but its
+    // remaining parts — nose, lips — stay covered, as a real ski mask covers them
+    sameSet(result, ["hair", "ears", "nose", "lips"]);
   });
 
   it("re-checking a carved-out child restores just that subtree", () => {
     const skiMask = toggleCoverage(["head"], "eyes");
-    sameSet(toggleCoverage(skiMask, "eyes"), ["hair", "eyes", "ears"]);
+    sameSet(toggleCoverage(skiMask, "eyes"), ["hair", "eyes", "ears", "nose", "lips"]);
   });
 
   it("checking a child never drags its ancestors in (glasses cover eyes, not face)", () => {

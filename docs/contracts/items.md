@@ -28,7 +28,7 @@ type ItemDefinition = {
 | `name` / `description` | Display text. |
 | `coverage` | Body-location ids the garment covers (clothing only). |
 | `category` | Clothing only: the coverage-template id this item started from. **Editor display only** — never serialized into gameplay prompts (see [Clothing categories](#clothing-categories)). |
-| `subtype` | Object only: the object-subtype id — vocabulary for `kind: "object"` items (see [Object subtypes](#object-subtypes)). |
+| `subtype` | Objects: the object-subtype id (see [Object subtypes](#object-subtypes)). Clothing: the accessory-type id for subtyped categories (see [Clothing subtypes](#clothing-subtypes)) — **prompt-bearing**, unlike `category`. |
 | `wearer` | Clothing only: wearer-target id — `feminine`/`masculine`/`unisex` (see [Wearer](#wearer)). Absent = unspecified, matched as unisex. |
 | `color` | Primary color: `family`/`accent` are color-family ids, `shade` is free text (see [Color](#color)). Any kind may carry one; clothing is the primary surface. |
 | `layer` | `0` underwear → `3` outerwear. |
@@ -69,6 +69,21 @@ Templates deliberately avoid parent ids that over-imply:
 | headwear | `hair` | `head` |
 
 Expanding the set is a one-file data edit.
+
+## Clothing subtypes
+
+`items/subtypes/` holds per-category **accessory vocabularies** — one data file per category (`jewelry.ts`, `headwear.ts`, `eyewear.ts`), aggregated by `subtypes/index.ts` (`clothingSubtypesForCategory`, `clothingSubtypeById`, `clothingSubtypeLabel`). They reuse the `ItemDefinition.subtype` field objects already carry; the item editor shows a **Type** select whenever the picked category has a vocabulary, and the classify backfill fills absent ones.
+
+> jewelry: earring · nose ring · nose stud · septum ring · lip ring · lip stud · eyebrow ring · necklace · choker · bracelet · ring · anklet · belly ring · brooch
+> headwear: hat · cap · beanie · hood · headband · hairpin · ribbon · tiara · crown · veil · headscarf · helmet
+> eyewear: glasses · sunglasses · monocle · goggles · eyepatch · blindfold · masquerade mask
+
+Two deliberate differences from categories:
+
+- **Subtype labels ARE prompt-bearing.** Image prompts and the narrator's Visible-wardrobe block lead the garment phrase with the label ("nose ring: thin gold hoop") — a bare jewelry name gave the image model too little to place the piece (face-jewelry plan). The category HARD RULE (names never in prompts) is unchanged.
+- **Subtypes may carry a coverage template** (a lip ring → `["lips"]`, a choker → `["neck"]`; a brooch has none — it pins to clothing). Picking one pre-fills coverage like a category template; the `lips`/`nose` body locations under `face` exist for exactly these anchors.
+
+Extending a vocabulary is a one-line edit in that category's file; adding a vocabulary to another category is a new file + one map entry in `subtypes/index.ts`.
 
 ## Object subtypes
 

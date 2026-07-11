@@ -68,11 +68,15 @@ const NESTED_CATEGORIES = new Set<string>([...NESTED_UNDER_CHEST, ...PELVIS_CATE
 
 /**
  * Registry-driven attribute editor (docs/authoring.md): one section per
- * attribute group from @/contracts, controls keyed off valueType, sparse by
- * design — unset attributes live behind each group's "add" select. Attributes
- * are filtered through the realized body (species/realize.ts): intimate groups
- * appear only when the body-config switches their region on, and the explicit
- * anatomy nests under its anatomical area (Chest / Pelvis) rather than at the top.
+ * attribute group from @/contracts, controls keyed off valueType. Sections are
+ * a **single-open accordion** — everything starts collapsed, expanding one
+ * collapses the rest — and an open section shows EVERY applicable attribute as
+ * a row (face-jewelry plan §accordion): set values are editable, unset ones
+ * render blank controls that materialize on first interaction, so storage
+ * stays sparse without an "add attribute" select. Attributes are filtered
+ * through the realized body (species/realize.ts): intimate groups appear only
+ * when the body-config switches their region on, and the explicit anatomy
+ * nests under its anatomical area (Chest / Pelvis) rather than at the top.
  */
 export function AttributePicker({
   values,
@@ -92,6 +96,11 @@ export function AttributePicker({
     [speciesId, heritageId, bodyPlanId, intimateRegions, bodyFeatures],
   );
   const effectiveBodyFeatures = bodyFeatures ?? [...body.bodyFeatures];
+
+  // Single-open accordion: at most one section id expanded; opening another
+  // collapses the current one, clicking the open header collapses it.
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const sectionToggle = (id: string) => () => setOpenSection((current) => (current === id ? null : id));
 
   // `identity.natal_sex` is a scaffold surfaced only for an androgynous / nonbinary
   // presentation, where the gender label doesn't already imply sex at birth; for a
@@ -141,6 +150,8 @@ export function AttributePicker({
               onSet={onSet}
               onRemove={onRemove}
               body={body}
+              open={openSection === group.category}
+              onToggle={sectionToggle(group.category)}
             />
             {/* The Pelvis area sits next to its anatomical neighbour, Hips. */}
             {group.category === "hips" ? (
@@ -151,6 +162,8 @@ export function AttributePicker({
                 onSet={onSet}
                 onRemove={onRemove}
                 body={body}
+                open={openSection === "pelvis-area"}
+                onToggle={sectionToggle("pelvis-area")}
               />
             ) : null}
           </Fragment>
@@ -159,10 +172,20 @@ export function AttributePicker({
       {/* Overrides sit at the bottom of the body form: they reshape what anatomy
           exists rather than describe it, so they're kept out of the normal flow. */}
       {scope === "body" && onChangeIntimateRegions ? (
-        <BodyConfigSection intimateRegions={intimateRegions} onChange={onChangeIntimateRegions} />
+        <BodyConfigSection
+          intimateRegions={intimateRegions}
+          onChange={onChangeIntimateRegions}
+          open={openSection === "body-config"}
+          onToggle={sectionToggle("body-config")}
+        />
       ) : null}
       {scope === "body" && onChangeBodyFeatures ? (
-        <BodyFeaturesSection bodyFeatures={effectiveBodyFeatures} onChange={onChangeBodyFeatures} />
+        <BodyFeaturesSection
+          bodyFeatures={effectiveBodyFeatures}
+          onChange={onChangeBodyFeatures}
+          open={openSection === "body-features"}
+          onToggle={sectionToggle("body-features")}
+        />
       ) : null}
     </div>
   );
@@ -171,11 +194,14 @@ export function AttributePicker({
 function BodyFeaturesSection({
   bodyFeatures,
   onChange,
+  open,
+  onToggle,
 }: {
   bodyFeatures: readonly string[];
   onChange: (features: string[]) => void;
+  open: boolean;
+  onToggle: () => void;
 }) {
-  const [open, setOpen] = useState(bodyFeatures.length > 0);
   const present = new Set(bodyFeatures);
   const toggle = (group: string) => {
     const next = new Set(present);
@@ -188,7 +214,7 @@ function BodyFeaturesSection({
     <section className="rounded-card border border-ink-600 bg-ink-800">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         aria-expanded={open}
         className="flex w-full cursor-pointer items-center justify-between px-4 py-2.5 text-left"
       >
@@ -239,11 +265,14 @@ function BodyFeaturesSection({
 function BodyConfigSection({
   intimateRegions,
   onChange,
+  open,
+  onToggle,
 }: {
   intimateRegions: readonly string[];
   onChange: (regions: string[]) => void;
+  open: boolean;
+  onToggle: () => void;
 }) {
-  const [open, setOpen] = useState(intimateRegions.length > 0);
   const present = new Set(intimateRegions);
   const toggle = (group: string) => {
     const next = new Set(present);
@@ -256,7 +285,7 @@ function BodyConfigSection({
     <section className="rounded-card border border-ink-600 bg-ink-800">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         aria-expanded={open}
         className="flex w-full cursor-pointer items-center justify-between px-4 py-2.5 text-left"
       >
@@ -328,51 +357,31 @@ function SectionCount({ count, open }: { count: number; open: boolean }) {
 }
 
 /**
- * The attribute controls for one category — rows for set attributes plus the
- * "add attribute" select — with no card chrome of its own, so it can head a
- * top-level section *or* sit nested inside an anatomical area.
+ * The attribute controls for one category — EVERY applicable definition as a
+ * row, in registry order (face-jewelry plan §accordion). Set attributes edit
+ * in place; unset ones render blank controls that write a value on first
+ * interaction, so the stored list stays sparse without an "add" select. No
+ * card chrome of its own, so it can head a top-level section *or* sit nested
+ * inside an anatomical area.
  */
-function CategoryFields({ category, definitions, byId, onSet, onRemove, body }: GroupProps) {
-  const setDefs = definitions.filter((d) => byId.has(d.id));
-  const unsetDefs = definitions.filter((d) => !byId.has(d.id));
-  if (setDefs.length === 0 && unsetDefs.length === 0) {
+function CategoryFields({ definitions, byId, onSet, onRemove, body }: GroupProps) {
+  if (definitions.length === 0) {
     return <p className="text-xs text-paper-500">No attributes in this group.</p>;
   }
   return (
     <>
-      {setDefs.map((def) => {
-        const current = byId.get(def.id);
-        if (!current) return null;
-        return (
-          <AttributeRow
-            key={def.id}
-            def={def}
-            value={current}
-            note={body.attributeRuleFor(def.id)?.notes}
-            allowed={allowedOptionsFor(def, body)}
-            onSet={(v) => onSet(def.id, v)}
-            onRemove={() => onRemove(def.id)}
-          />
-        );
-      })}
-      {unsetDefs.length > 0 ? (
-        <Select
-          value=""
-          aria-label={`Add ${category} attribute`}
-          onChange={(e) => {
-            const def = unsetDefs.find((d) => d.id === e.target.value);
-            if (def) onSet(def.id, seedValueFor(def, body));
-          }}
-          className="h-8 max-w-60 text-xs text-paper-400"
-        >
-          <option value="">+ Add attribute…</option>
-          {unsetDefs.map((def) => (
-            <option key={def.id} value={def.id}>
-              {def.label}
-            </option>
-          ))}
-        </Select>
-      ) : null}
+      {definitions.map((def) => (
+        <AttributeRow
+          key={def.id}
+          def={def}
+          value={byId.get(def.id)}
+          note={body.attributeRuleFor(def.id)?.notes}
+          allowed={allowedOptionsFor(def, body)}
+          seed={seedValueFor(def, body)}
+          onSet={(v) => onSet(def.id, v)}
+          onRemove={() => onRemove(def.id)}
+        />
+      ))}
     </>
   );
 }
@@ -402,16 +411,17 @@ function AttributeGroupSection({
   onSet,
   onRemove,
   body,
-}: GroupProps & { nested?: readonly NestedGroup[] }) {
+  open,
+  onToggle,
+}: GroupProps & { nested?: readonly NestedGroup[]; open: boolean; onToggle: () => void }) {
   const nestedSet = nested.reduce((n, g) => n + setCountOf(g.definitions, byId), 0);
   const totalSet = setCountOf(definitions, byId) + nestedSet;
-  const [open, setOpen] = useState(totalSet > 0);
 
   return (
     <section className="rounded-card border border-ink-600 bg-ink-800">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         aria-expanded={open}
         className="flex w-full cursor-pointer items-center justify-between px-4 py-2.5 text-left"
       >
@@ -459,6 +469,8 @@ function PelvisArea({
   onSet,
   onRemove,
   body,
+  open,
+  onToggle,
 }: {
   members: readonly NestedGroup[];
   anusPresent: boolean;
@@ -466,15 +478,16 @@ function PelvisArea({
   onSet: (id: string, value: AttributeValue["value"]) => void;
   onRemove: (id: string) => void;
   body: RealizedBody;
+  open: boolean;
+  onToggle: () => void;
 }) {
   const totalSet = members.reduce((n, g) => n + setCountOf(g.definitions, byId), 0);
-  const [open, setOpen] = useState(totalSet > 0);
 
   return (
     <section className="rounded-card border border-ink-600 bg-ink-800">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         aria-expanded={open}
         className="flex w-full cursor-pointer items-center justify-between px-4 py-2.5 text-left"
       >
@@ -517,35 +530,44 @@ function AttributeRow({
   value,
   note,
   allowed,
+  seed,
   onSet,
   onRemove,
 }: {
   def: AttributeDefinition;
-  value: AttributeValue;
+  /** Stored value; undefined renders the blank (unset) control. */
+  value: AttributeValue | undefined;
   /** Species/heritage rule note for this attribute, shown as helper text. */
   note?: string;
   /** Species-narrowed option set for enum/enum_list controls (hard-restricted). */
   allowed: readonly string[];
+  /** Rule/registry default — the blank slider's resting position. */
+  seed: AttributeValue["value"];
   onSet: (v: AttributeValue["value"]) => void;
   onRemove: () => void;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-paper-300" title={def.description}>
+        <span
+          className={cx("text-xs font-medium", value ? "text-paper-300" : "text-paper-500")}
+          title={def.description}
+        >
           {def.label}
         </span>
-        {isAiSourced(value) ? <AiTag /> : null}
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Clear ${def.label}`}
-          className="ml-auto cursor-pointer text-xs text-paper-500 hover:text-danger-300"
-        >
-          clear
-        </button>
+        {value && isAiSourced(value) ? <AiTag /> : null}
+        {value ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`Clear ${def.label}`}
+            className="ml-auto cursor-pointer text-xs text-paper-500 hover:text-danger-300"
+          >
+            clear
+          </button>
+        ) : null}
       </div>
-      <AttributeControl def={def} value={value} allowed={allowed} onSet={onSet} />
+      <AttributeControl def={def} value={value} allowed={allowed} seed={seed} onSet={onSet} onRemove={onRemove} />
       {note ? <p className="text-xs italic text-paper-500">{note}</p> : null}
     </div>
   );
@@ -555,27 +577,35 @@ function AttributeControl({
   def,
   value,
   allowed,
+  seed,
   onSet,
+  onRemove,
 }: {
   def: AttributeDefinition;
-  value: AttributeValue;
+  /** Stored value; undefined renders the blank state (nothing written yet). */
+  value: AttributeValue | undefined;
   /** Hard-restricted option set (species-narrowed); see allowedOptionsFor. */
   allowed: readonly string[];
+  /** Default the blank slider rests at before the first drag sets a value. */
+  seed: AttributeValue["value"];
   onSet: (v: AttributeValue["value"]) => void;
+  onRemove: () => void;
 }) {
   switch (def.valueType) {
     case "enum": {
-      const current = typeof value.value === "string" ? value.value : "";
+      const current = value && typeof value.value === "string" ? value.value : "";
       // A stored value outside the species-narrowed set (e.g. after a species change)
       // is surfaced as a flagged option — visible and fixable, never silently rewritten.
       const outOfRule = isOutOfRuleValue(allowed, current);
       return (
         <Select
           value={current}
-          onChange={(e) => onSet(e.target.value)}
+          // Picking "—" on a set attribute clears it back to unset.
+          onChange={(e) => (e.target.value === "" ? onRemove() : onSet(e.target.value))}
           aria-label={def.label}
-          className="h-8 max-w-72 text-xs"
+          className={cx("h-8 max-w-72 text-xs", !value && "text-paper-500")}
         >
+          <option value="">—</option>
           {outOfRule ? <option value={current}>{`⚠ ${current.replaceAll("_", " ")} (not allowed)`}</option> : null}
           {allowed.map((option) => (
             <option key={option} value={option}>
@@ -586,7 +616,7 @@ function AttributeControl({
       );
     }
     case "enum_list": {
-      const selected = asList(value.value);
+      const selected = value ? asList(value.value) : [];
       // Out-of-rule selected values lead, flagged, so they can be deselected.
       const extraneous = selected.filter((s) => !allowed.includes(s));
       return (
@@ -602,7 +632,9 @@ function AttributeControl({
                 title={outOfRule ? "Not allowed for this species" : undefined}
                 onClick={() => {
                   const next = active ? selected.filter((s) => s !== option) : [...selected, option];
-                  if (next.length > 0) onSet(next); // enum_list values must stay non-empty
+                  // Deselecting the last chip clears the attribute back to unset.
+                  if (next.length > 0) onSet(next);
+                  else onRemove();
                 }}
                 className={cx(
                   "touch-target inline-flex cursor-pointer items-center justify-center rounded-full border px-2 py-0.5 text-[11px] transition-colors",
@@ -622,7 +654,10 @@ function AttributeControl({
     }
     case "number": {
       const bounds = sliderBounds(def);
-      const current = typeof value.value === "number" ? value.value : (bounds.min + bounds.max) / 2;
+      const fallback = typeof seed === "number" ? seed : (bounds.min + bounds.max) / 2;
+      const current = value && typeof value.value === "number" ? value.value : fallback;
+      // Unset: the slider rests dimmed at the seed position; the first drag
+      // writes a value (there is no "blank" a slider can render).
       return (
         <Slider
           value={current}
@@ -631,15 +666,16 @@ function AttributeControl({
           step={bounds.step}
           unit={def.unit}
           onChange={onSet}
-          className="max-w-96"
+          className={cx("max-w-96", !value && "opacity-50")}
         />
       );
     }
     case "text":
       return (
         <Input
-          value={typeof value.value === "string" ? value.value : ""}
-          onChange={(e) => onSet(e.target.value)}
+          value={value && typeof value.value === "string" ? value.value : ""}
+          // Emptying the field clears the attribute back to unset.
+          onChange={(e) => (e.target.value === "" ? onRemove() : onSet(e.target.value))}
           aria-label={def.label}
           placeholder={def.description}
           className="h-8 max-w-96 text-xs"
@@ -650,11 +686,13 @@ function AttributeControl({
         <label className="touch-target flex w-fit cursor-pointer items-center gap-2 text-xs text-paper-300">
           <input
             type="checkbox"
-            checked={value.value === true}
+            checked={value?.value === true}
             onChange={(e) => onSet(e.target.checked)}
             className="size-4 accent-accent-500"
           />
-          <Tag tone={value.value === true ? "accent" : "default"}>{value.value === true ? "yes" : "no"}</Tag>
+          <Tag tone={value?.value === true ? "accent" : "default"}>
+            {value ? (value.value === true ? "yes" : "no") : "—"}
+          </Tag>
         </label>
       );
   }

@@ -1,5 +1,6 @@
 import {
   clothingCategories,
+  clothingSubtypeById,
   colorFamilies,
   objectSubtypes,
   wearerMatchesFilter,
@@ -117,7 +118,11 @@ export function itemCardChips(card: ItemFacetCard): { label: string; swatch?: st
   const chips: { label: string; swatch?: string }[] = [];
   const category = card.definition?.category ? clothingCategories.find((c) => c.id === card.definition?.category) : undefined;
   const subtype = card.definition?.subtype ? objectSubtypes.find((s) => s.id === card.definition?.subtype) : undefined;
-  if (category) chips.push({ label: category.label });
+  // Accessory clothing shows its type instead of the broad category (a "nose
+  // ring" chip beats "Jewelry"); other clothing keeps the category chip.
+  const clothingSubtype = clothingSubtypeById(card.definition?.subtype);
+  if (category && clothingSubtype) chips.push({ label: clothingSubtype.label });
+  else if (category) chips.push({ label: category.label });
   else if (subtype) chips.push({ label: subtype.label });
   const family = card.definition?.color?.family ? colorFamilies.find((c) => c.id === card.definition?.color?.family) : undefined;
   if (family) chips.push({ label: card.definition?.color?.shade || family.label, swatch: family.swatch });
