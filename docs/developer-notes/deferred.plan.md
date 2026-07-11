@@ -7,6 +7,18 @@ leaves here (a one-line "graduated → …" tombstone is fine). This file is the
 anchor; supporting detail files named `<topic>.deferred.md` nest under it in the
 editor.
 
+## Example-dialogue voice anchors
+
+_Raised 2026-07-11, from the character-chat & schema engagement review (whose
+seven promoted plans sit at the top of [roadmap.md](roadmap.md) §Next)._ Add an
+authored example-dialogue field to `CharacterProfile` — 2–3 short sample
+exchanges rendered as few-shot voice anchors in the chat prompt's stable prefix
+(and later the session cast blocks). The cheapest known lever for voice
+consistency across the curated model list, and directly measurable: the
+enactment measurement run (roadmap §Next) provides the before/after. Deliberately
+**not** promoted with the batch — the enactment baseline should land first, so
+we know where voice actually drifts before adding prompt weight.
+
 ## Narration eval: self-consistency judge vote
 
 _Raised 2026-06-29 (the one leftover when [finished/narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md) shipped)._
