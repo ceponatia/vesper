@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
+import { itemKindSchema } from "@/contracts";
 import {
   charactersApi,
   itemsApi,
@@ -13,6 +15,7 @@ import {
   type CreatedRef,
   type ItemDefinitionParts,
 } from "@/lib/client/api";
+import { parseOr } from "@/lib/parse";
 import { visibleTags } from "@/lib/tags";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
@@ -75,7 +78,8 @@ interface EntityConfig {
   viewToggle?: boolean;
   /** `scope` drives the discovery gallery; kinds whose API ignores it stay owner-scoped (cards wired first). */
   list: (args: ListArgs) => Promise<ApiResult<LibraryCard[]>>;
-  create: () => Promise<ApiResult<CreatedRef>>;
+  /** `bucket` is the active type bucket ("all" when none), so New lands in the type being browsed. */
+  create: (args: { bucket: string }) => Promise<ApiResult<CreatedRef>>;
   /** Optional segmented type-buckets over a card field (items use `kind`). */
   buckets?: {
     field: (card: LibraryCard) => string | undefined;
@@ -173,7 +177,8 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     sortable: true,
     viewToggle: true,
     list: ({ q, tag, sort }) => itemsApi.list({ q, tag, sort }),
-    create: () => itemsApi.create({ name: "Untitled item", kind: "object" }),
+    // New creates in the bucket being browsed (the bucket ids ARE the item kinds).
+    create: ({ bucket }) => itemsApi.create({ name: "Untitled item", kind: parseOr(itemKindSchema, bucket, "clothing") }),
     buckets: {
       field: (card) => card.kind,
       options: [
@@ -224,7 +229,11 @@ const configs: Record<LibraryEntity, EntityConfig> = {
           }
         : result;
     },
-    create: () => socialCardsApi.create({ name: "Untitled card" }),
+    // New creates in the bucket being browsed ("All" falls back to the schema default).
+    create: ({ bucket }) =>
+      socialCardsApi.create(
+        bucket === "all" ? { name: "Untitled card" } : { name: "Untitled card", definition: { kind: bucket } },
+      ),
     buckets: {
       field: (card) => card.kind,
       options: [
@@ -320,25 +329,71 @@ function readStoredView(entity: LibraryEntity): ViewMode {
   return window.localStorage.getItem(VIEW_STORAGE_PREFIX + entity) === "list" ? "list" : "grid";
 }
 
+// --- stored toolbar state ----------------------------------------------------
+// The whole toolbar (bucket, scope, sort, search, tags, facets) persists per
+// entity in sessionStorage, so opening an editor and coming back — via its
+// back link, the nav, or browser back — restores the view the user left.
+
+const STATE_STORAGE_PREFIX = "vesper:library-state:";
+
+const storedLibraryStateSchema = z.object({
+  bucket: z.string().optional(),
+  scope: z.enum(["all", "public", "owned"]).optional(),
+  sort: z.enum(["updated", "name"]).optional(),
+  query: z.string().optional(),
+  tagSel: z.array(z.string()).optional(),
+  facetSel: z.record(z.string(), z.string()).optional(),
+});
+type StoredLibraryState = z.infer<typeof storedLibraryStateSchema>;
+
+/**
+ * Read during the lazy state initializers. Client-side navigations mount fresh
+ * (no hydration), so the restored view paints immediately; a hard refresh with
+ * stored non-default state re-renders client-side — the same accepted tradeoff
+ * as readStoredView above.
+ */
+function readStoredLibraryState(entity: LibraryEntity, config: EntityConfig): StoredLibraryState {
+  if (typeof window === "undefined") return {};
+  const state = parseOr(storedLibraryStateSchema, window.sessionStorage.getItem(STATE_STORAGE_PREFIX + entity), {});
+  // Drop values the current vocabulary can't render — a stale facet or bucket
+  // would silently filter the grid to empty with no visible chip to clear.
+  const bucketValid =
+    state.bucket === "all"
+      ? config.buckets !== undefined && !config.buckets.defaultId
+      : config.buckets?.options.some((o) => o.id === state.bucket);
+  if (state.bucket !== undefined && !bucketValid) delete state.bucket;
+  if (state.facetSel) {
+    const defs = config.facets ?? [];
+    state.facetSel = Object.fromEntries(
+      Object.entries(state.facetSel).filter(([defId, optionId]) =>
+        defs.some((def) => def.id === defId && def.options.some((o) => o.id === optionId)),
+      ),
+    );
+  }
+  return state;
+}
+
 /** Library grid with debounced search, type buckets, facet chips and tag filters (docs/ui.md). */
 export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const config = configs[entity];
   const router = useRouter();
   const toast = useToast();
-  const [query, setQuery] = useState("");
-  const [search, setSearch] = useState(""); // debounced
-  const [tagSel, setTagSel] = useState<string[]>([]);
+  // One-time snapshot of the stored toolbar state, feeding the initializers below.
+  const [stored] = useState(() => readStoredLibraryState(entity, config));
+  const [query, setQuery] = useState(stored.query ?? "");
+  const [search, setSearch] = useState(stored.query ?? ""); // debounced
+  const [tagSel, setTagSel] = useState<string[]>(stored.tagSel ?? []);
   const [tagPanel, setTagPanel] = useState(false);
   const [tagFilter, setTagFilter] = useState("");
-  const [facetSel, setFacetSel] = useState<Record<string, string>>({});
-  const [sort, setSort] = useState<SortOption>("updated");
+  const [facetSel, setFacetSel] = useState<Record<string, string>>(stored.facetSel ?? {});
+  const [sort, setSort] = useState<SortOption>(stored.sort ?? "updated");
   const [view, setView] = useState<ViewMode>(() => readStoredView(entity));
   const [creating, setCreating] = useState(false);
-  const [bucket, setBucketState] = useState(config.buckets?.defaultId ?? "all");
+  const [bucket, setBucketState] = useState(stored.bucket ?? config.buckets?.defaultId ?? "all");
   // Drives the discovery gallery via config.list (social-reaction-cards.plan.md
   // step 6). Wired for social cards; the other shareable kinds pass scope through
   // but their list API still ignores it (owner-scoped) until the fast-follow.
-  const [scope, setScope] = useState<Scope>("all");
+  const [scope, setScope] = useState<Scope>(stored.scope ?? "all");
   const [generatingBatch, setGeneratingBatch] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
   const [confirmGen, setConfirmGen] = useState(false);
@@ -381,6 +436,16 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
     window.localStorage.setItem(VIEW_STORAGE_PREFIX + entity, mode);
   };
 
+  // Persist the toolbar state as it changes (session-scoped, per entity).
+  useEffect(() => {
+    const state: StoredLibraryState = { bucket, scope, sort, query, tagSel, facetSel };
+    try {
+      window.sessionStorage.setItem(STATE_STORAGE_PREFIX + entity, JSON.stringify(state));
+    } catch {
+      // private mode / quota — this visit just doesn't restore.
+    }
+  }, [entity, bucket, scope, sort, query, tagSel, facetSel]);
+
   const allTags = useMemo(() => {
     const tags = new Set<string>();
     for (const card of list.data ?? []) for (const t of visibleTags(card.tags)) tags.add(t);
@@ -390,7 +455,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
 
   const createBlank = async () => {
     setCreating(true);
-    const result = await config.create();
+    const result = await config.create({ bucket });
     setCreating(false);
     if (result.ok) router.push(`${config.basePath}/${result.data.id}${entity === "worlds" ? "/edit" : ""}`);
     else toast.push({ title: "Couldn't create", description: result.error.message, tone: "error" });

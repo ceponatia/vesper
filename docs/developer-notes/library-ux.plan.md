@@ -128,6 +128,28 @@ strings, unknown values render as absent.
    `docs/guide/creating-items.md`; `pnpm verify` green; conventional commit
    per slice.
 
+## Owner UX pass (2026-07-11, shipped)
+
+Two owner requests against the deployed core pass, built directly:
+
+- **Bucket-aware New** — `EntityConfig.create` now receives the active type
+  bucket, so New creates a blank item of the kind being browsed (items:
+  bucket id = kind; social cards: `definition.kind`, "All" falls back to the
+  schema default). Previously every new item was born an `object` even from
+  the Clothing view.
+- **Editor back link + restored view** — every lean library editor (items,
+  locations, social cards; all branches incl. loading/error) opens with a
+  `← <Library>` breadcrumb (`components/library/back-link.tsx`,
+  `.touch-target`) — the mobile escape hatch that previously required the nav
+  menu — and the grid persists its whole toolbar state (bucket, scope, sort,
+  search, tags, facets) per entity in sessionStorage, restored via lazy state
+  initializers, so any way back lands on the view the user left. Stale
+  buckets/facet options are dropped at read time. (Chosen over the lightbox
+  editor idea: the editors are deep tabbed pages — image studio, coverage
+  tree, save bar — that fit modals poorly on mobile, and route-based editing
+  keeps URLs deep-linkable; state restoration covers the "return with my
+  settings" requirement for every path back, not just a modal close.)
+
 ## Follow-up pass (approved direction, builds after core review)
 
 - **Facets for the other libraries** on the slice-3 machinery: characters
