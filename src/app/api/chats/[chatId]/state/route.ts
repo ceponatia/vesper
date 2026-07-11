@@ -8,6 +8,7 @@ import {
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
+  chatSceneModels,
   DiagnosticCollector,
   effectiveTraitValue,
   emptyCharacterProfile,
@@ -65,6 +66,8 @@ const editBodySchema = z.object({
   attributeOverlays: z.array(attributeValueSchema).optional(),
   /** Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle). */
   sceneAuto: z.enum(["off", "milestones"]).optional(),
+  /** Scene-image model pick (the scene strip's save-on-select dropdown). */
+  sceneModel: z.enum(chatSceneModels).optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

@@ -1,0 +1,1 @@
+ALTER TABLE "character_chat_state" ADD COLUMN "scene_model" text DEFAULT 'reference' NOT NULL;

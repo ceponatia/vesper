@@ -7,6 +7,7 @@ import { exposedRegions, type RegionExposure } from "@/contracts/items/visibilit
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
+import { parseChatSceneModel } from "@/contracts/images/image-models";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { hasVenice, isDemoMode } from "../ai";
 import { db, images } from "../db";
@@ -61,6 +62,13 @@ export interface RenderCharacterSceneInput {
   chatId?: string;
   /** The assistant message the scene illustrates — the inline-transcript anchor. */
   anchorMessageId?: string;
+  /**
+   * The chat's scene-model pick (contracts chatSceneModels, unvalidated string from
+   * state): "reference"/absent ⇒ the default identity-locked avatar edit; a t2i model
+   * key ⇒ render text-to-image with THAT model (a style hot-swap — the avatar
+   * reference is deliberately dropped, since Venice's edit family is Qwen-only).
+   */
+  sceneModel?: string;
   sink?: DiagnosticSink;
 }
 
@@ -192,11 +200,17 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 
   // Character-chat is a single subject (one library character, no location image),
-  // so it always renders single-reference: the avatar anchors the uncensored edit.
-  // With an avatar present the render is fail-visible (requireReferenceIdentity) —
-  // a failed edit never degrades to a different-looking text-to-image person; only
-  // when there's NO usable avatar does Qwen text-to-image stand in.
-  const anchor = isDemoMode() || !hasVenice() ? null : await loadCharacterAvatar(input.userId, input.avatarImageId);
+  // so it renders single-reference by default: the avatar anchors the uncensored
+  // edit. With an avatar present the render is fail-visible
+  // (requireReferenceIdentity) — a failed edit never degrades to a
+  // different-looking text-to-image person; only when there's NO usable avatar
+  // does text-to-image stand in. The scene strip's model pick overrides the route:
+  // a t2i key deliberately drops the avatar anchor and renders text-to-image with
+  // that model (identity rides the prompt's appearance/anchor lines instead).
+  const pickedModel = parseChatSceneModel(input.sceneModel);
+  const t2iModel = pickedModel === "reference" ? undefined : pickedModel;
+  const anchor =
+    t2iModel || isDemoMode() || !hasVenice() ? null : await loadCharacterAvatar(input.userId, input.avatarImageId);
   const references: SceneVisualReference[] = [
     {
       kind: "character",
@@ -214,8 +228,10 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     plan,
     references,
     referenceBuffers,
+    t2iModel,
     // Fail-visible: with an avatar anchoring the shot, never silently degrade to a
-    // text-to-image render of a *different-looking* person — fail and let the tab retry.
+    // text-to-image render of a *different-looking* person — fail and let the tab
+    // retry. A deliberate t2i pick has no anchor, so the flag is a no-op there.
     requireReferenceIdentity: true,
     linkage: {
       ownerId: input.userId,

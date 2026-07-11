@@ -159,6 +159,8 @@ export interface ChatState {
   pendingSkipNote: string;
   /** Auto scene-generation mode (slice 9): "off" | "milestones" — text with headroom for future modes. */
   sceneAuto: string;
+  /** Scene-image model pick (chatSceneModels): "reference" (avatar-locked edit) or a t2i key. */
+  sceneModel: string;
   /**
    * Accumulating scene memory (chat-scene-memory.ts): the narrator-imagined setting kept
    * consistent across turns — current place, time of day, named places with details +
@@ -203,6 +205,8 @@ export interface ChatStateSnapshot {
   clockMinutes: number;
   /** Auto scene-generation mode (slice 9) — the scenario modal's toggle. */
   sceneAuto: string;
+  /** Scene-image model pick — the scene strip's save-on-select dropdown. */
+  sceneModel: string;
   /** Accumulating scene memory (current place / time of day / known places) — for the state-tools/inspector view. */
   sceneMemory: ChatSceneMemory;
   /**
@@ -301,6 +305,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     skipHistory: [],
     pendingSkipNote: "",
     sceneAuto: "off",
+    sceneModel: "reference",
     sceneMemory: emptyChatSceneMemory(),
   };
 }
@@ -336,6 +341,7 @@ export async function loadChatState(
       skipHistory: characterChatState.skipHistory,
       pendingSkipNote: characterChatState.pendingSkipNote,
       sceneAuto: characterChatState.sceneAuto,
+      sceneModel: characterChatState.sceneModel,
       sceneMemory: characterChatState.sceneMemory,
     })
     .from(characterChatState)
@@ -384,6 +390,7 @@ export async function loadChatState(
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
     pendingSkipNote: row.pendingSkipNote,
     sceneAuto: row.sceneAuto,
+    sceneModel: row.sceneModel,
     sceneMemory: parseOr(
       chatSceneMemorySchema,
       row.sceneMemory,
@@ -423,6 +430,7 @@ const storedChatStateSchema = z.object({
   skipHistory: skipHistorySchema.catch([]).default([]),
   pendingSkipNote: z.string().catch("").default(""),
   sceneAuto: z.string().catch("off").default("off"),
+  sceneModel: z.string().catch("reference").default("reference"),
   sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
 });
 
@@ -996,9 +1004,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, scene_auto, scene_memory, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${sceneMemory}::jsonb, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1024,6 +1032,7 @@ async function upsertChatState(
       skip_history = excluded.skip_history,
       pending_skip_note = excluded.pending_skip_note,
       scene_auto = excluded.scene_auto,
+      scene_model = excluded.scene_model,
       scene_memory = excluded.scene_memory,
       updated_at = now()
   `);
@@ -1075,6 +1084,8 @@ export interface ChatStateEdit {
   attributeOverlays?: AttributeValue[];
   /** Auto scene-generation mode (slice 9): "off" | "milestones". */
   sceneAuto?: string;
+  /** Scene-image model pick (the strip's save-on-select dropdown). */
+  sceneModel?: string;
   /** Accumulating scene memory (current place / time of day / known places). */
   sceneMemory?: ChatSceneMemory;
 }
@@ -1120,6 +1131,7 @@ export async function editChatState(args: {
   if (patch.surfacedCues !== undefined) next.surfacedCues = patch.surfacedCues;
   if (patch.attributeOverlays !== undefined) next.attributeOverlays = patch.attributeOverlays;
   if (patch.sceneAuto !== undefined) next.sceneAuto = patch.sceneAuto;
+  if (patch.sceneModel !== undefined) next.sceneModel = patch.sceneModel;
   if (patch.sceneMemory !== undefined) next.sceneMemory = patch.sceneMemory;
   await persistChatState(chatId, characterId, next);
   return next;
@@ -1232,6 +1244,7 @@ export function chatStateSnapshot(
     lastMemoryTrace: state.lastMemoryTrace,
     clockMinutes: state.clockMinutes,
     sceneAuto: state.sceneAuto,
+    sceneModel: state.sceneModel,
     sceneMemory: state.sceneMemory,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
