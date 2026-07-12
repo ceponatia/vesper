@@ -19,7 +19,10 @@ export interface ThreadSignalResult {
  * entry), develop appends an accumulated development on a major beat, propose
  * opens a new thread (deduped by exact title here as the innermost guard;
  * semantic dedup runs upstream in dedupeThreadProposals), resolve closes an
- * investigation. Unknown references degrade to diagnostics. Signals are
+ * investigation — never an ongoing thread (kind-guarded; the blocked signal
+ * logs merge.thread.resolve_blocked). Touch/develop/propose only ever match
+ * live (open/cooling) threads, so a closed thread can't be revived by id or
+ * title. Unknown references degrade to diagnostics. Signals are
  * partial-tolerant so callers (and tests) may omit empty channels.
  */
 export function applyThreadSignals(
@@ -49,9 +52,13 @@ export function applyThreadSignals(
     );
   };
 
-  const byTitle = (title: string) => next.find((t) => t.title.trim().toLowerCase() === title.trim().toLowerCase());
+  // Only live threads are signal targets: a resolved/archived thread must stay
+  // closed, whether referenced by id or by an exact-title match (a same-title
+  // propose opens a fresh thread instead of resurrecting the old one).
+  const isLive = (t: StoryThread) => t.status === "open" || t.status === "cooling";
+  const byTitle = (title: string) => next.find((t) => isLive(t) && t.title.trim().toLowerCase() === title.trim().toLowerCase());
   const find = (id?: string, title?: string) =>
-    (id ? next.find((t) => t.id === id) : undefined) ?? (title ? byTitle(title) : undefined);
+    (id ? next.find((t) => isLive(t) && t.id === id) : undefined) ?? (title ? byTitle(title) : undefined);
 
   for (const touch of signals.touch ?? []) {
     const thread = find(touch.id, touch.title);
@@ -107,6 +114,17 @@ export function applyThreadSignals(
     const thread = next.find((t) => t.id === id);
     if (!thread) {
       sink?.push(diag("info", "merge.thread.unmatched", `resolved thread "${id}" not found`));
+      continue;
+    }
+    // Only investigations resolve; an ongoing thread has no end state, so a
+    // resolve signal against one (the director prompt forbids it, but an LLM
+    // can slip) is skipped rather than applied.
+    if (thread.kind === "ongoing") {
+      sink?.push(
+        diag("info", "merge.thread.resolve_blocked", `resolve of ongoing thread "${thread.title}" blocked (ongoing threads never resolve)`, {
+          context: { id },
+        }),
+      );
       continue;
     }
     thread.status = "resolved";

@@ -9,10 +9,11 @@ type Params = { id: string; threadId: string };
 
 /**
  * DELETE /api/sessions/:id/threads/:threadId — dev-only manual thread close
- * (docs/story-threads.md §Manual close). Marks the story thread `resolved` in
- * `sessions.runtime`; resolved threads drop from the status payload, so the
- * World-tab card disappears. Admin-gated server-side (never trusts the client
- * flag). Resilience: runtime parsed with `parseOr`, unknown thread → 404.
+ * (docs/story-threads.md §Manual close). Investigations close as `resolved`;
+ * ongoing threads have no end state, so they close as `archived` instead —
+ * either way the thread drops from the status payload and the World-tab card
+ * disappears. Admin-gated server-side (never trusts the client flag).
+ * Resilience: runtime parsed with `parseOr`, unknown thread → 404.
  */
 export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   if (user.role !== "admin") return jsonError("forbidden", "closing threads is an admin action", 403);
@@ -22,12 +23,14 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   if (!session) return jsonError("not_found", "session not found", 404);
 
   const runtime = parseOr(sessionRuntimeSchema, session.runtime, emptySessionRuntime(), undefined, "sessions.runtime");
-  if (!runtime.storyThreads.some((t) => t.id === threadId)) {
+  const target = runtime.storyThreads.find((t) => t.id === threadId);
+  if (!target) {
     return jsonError("not_found", "thread not found in this session", 404);
   }
 
-  const storyThreads = runtime.storyThreads.map((t) => (t.id === threadId ? { ...t, status: "resolved" as const } : t));
+  const status = target.kind === "ongoing" ? ("archived" as const) : ("resolved" as const);
+  const storyThreads = runtime.storyThreads.map((t) => (t.id === threadId ? { ...t, status } : t));
   await db().update(sessions).set({ runtime: { ...runtime, storyThreads } }).where(eq(sessions.id, id));
 
-  return jsonOk({ id: threadId, status: "resolved" });
+  return jsonOk({ id: threadId, status });
 });

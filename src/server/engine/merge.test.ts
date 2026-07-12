@@ -1015,6 +1015,41 @@ describe("thread lifecycle", () => {
     expect(codes(sink).filter((c) => c === "merge.thread.unmatched")).toHaveLength(2);
   });
 
+  it("resolve never closes an ongoing thread (kind-guarded, with diagnostic)", () => {
+    const sink = new DiagnosticCollector();
+    const { threads, touchedIds } = applyThreadSignals(
+      [thread({ id: "th1", title: "Maya's social life", kind: "ongoing" })],
+      { resolve: ["th1"] },
+      4,
+      sink,
+    );
+    expect(threads[0]?.status).toBe("open");
+    expect(touchedIds).toEqual([]);
+    expect(codes(sink)).toContain("merge.thread.resolve_blocked");
+  });
+
+  it("never revives a closed thread: same-title propose opens a fresh one; touch/develop by id degrade to unmatched", () => {
+    const sink = new DiagnosticCollector();
+    const closed = thread({ id: "th1", title: "The letter", status: "resolved", summary: "Settled." });
+    const { threads } = applyThreadSignals(
+      [closed],
+      {
+        touch: [{ id: "th1", title: "The letter" }],
+        develop: [{ id: "th1", entry: "It stirs again." }],
+        propose: [{ title: "The letter", kind: "investigation", summary: "A second letter surfaces.", closeConditions: [] }],
+        resolve: [],
+      },
+      7,
+      sink,
+    );
+    expect(threads[0]).toEqual(closed); // the closed thread is byte-untouched
+    expect(threads).toHaveLength(2);
+    expect(threads[1]?.title).toBe("The letter");
+    expect(threads[1]?.status).toBe("open");
+    expect(threads[1]?.summary).toBe("A second letter surfaces.");
+    expect(codes(sink).filter((c) => c === "merge.thread.unmatched")).toHaveLength(2);
+  });
+
   it("open threads cool after THREAD_COOLING_TURNS untouched turns", () => {
     const cooled = coolThreads(
       [thread({ id: "th1", title: "Old", lastTouchedTurn: 1 }), thread({ id: "th2", title: "Fresh", lastTouchedTurn: 8 })],
