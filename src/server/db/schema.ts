@@ -1068,6 +1068,8 @@ export const images = pgTable(
     prompt: text("prompt").notNull().default(""),
     sourceImageId: text("source_image_id"),
     status: text("status", { enum: ["pending", "ready", "failed"] }).notNull().default("pending"),
+    /** Owner's Gallery favorite flag (library-ux.plan.md §Follow-up pass). */
+    favorite: boolean("favorite").notNull().default(false),
     meta: jsonb("meta").notNull().default({}),
     createdAt: createdAt(),
   },

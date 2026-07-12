@@ -632,27 +632,32 @@ export const sessionSummarySchema = z.object({
 });
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 
+/** The Gallery hub's tabs (library-ux.plan.md §Follow-up pass). */
+export type GalleryTab = "scenes" | "portraits" | "entity";
+
 /**
- * A generated scene image for the cross-session Gallery (docs/images.md). Most
- * carry a `sessionId`; sessionless character-chat scenes carry a `characterId`
- * instead and are grouped under "Character chats"
- * (docs/developer-notes/character-chat.plan.md).
+ * One image in the tabbed Gallery hub (docs/images.md). Scenes carry a
+ * `sessionId` (in-session) or `characterId` (sessionless character-chat,
+ * grouped under "Character chats"); portraits carry `characterId`; entity art
+ * carries `entityKind`/`entityName`.
  */
-export const sceneImageSchema = z.object({
+export const galleryImageSchema = z.object({
   id: idSchema,
   sessionId: optionalId,
-  sessionTitle: z.string().catch("Untitled session"),
+  sessionTitle: optionalText,
   worldId: optionalId,
   worldName: optionalText,
-  /** Set for character-chat scenes (the chat partner); null for session scenes. */
   characterId: optionalId,
   characterName: optionalText,
+  entityKind: optionalText,
+  entityName: optionalText,
   /** Characters + location the scene features; `kind: "character"` drives the filter. */
   references: arrayOf(sceneReferenceSchema),
   prompt: textOr(""),
+  favorite: z.boolean().catch(false),
   createdAt: optionalText,
 });
-export type SceneImage = z.infer<typeof sceneImageSchema>;
+export type GalleryImage = z.infer<typeof galleryImageSchema>;
 
 /** A relationship edge (stage label ids only — affinity values stay server-side). */
 export const relationshipEdgeSchema = z.object({
@@ -1247,12 +1252,21 @@ export const meApi = {
     ),
 };
 
+// Type alias (not interface) so it satisfies withQuery's index signature.
+type GalleryListParams = { tab?: GalleryTab; cursor?: string };
+
 export const galleryApi = {
-  /** All ready scene images across the user's still-existing sessions. */
-  list: () => apiGet(listOf(sceneImageSchema, "scenes"), "/api/gallery"),
-  /** Permanently delete one scene image (row + file; drops from every gallery). */
+  /** One keyset page of the given tab's ready images, newest first. */
+  list: (params: GalleryListParams = {}) =>
+    apiGet(
+      z.object({ images: arrayOf(galleryImageSchema), nextCursor: z.string().nullable().catch(null) }),
+      withQuery("/api/gallery", params),
+    ),
+  /** Toggle the owner's favorite flag on a gallery image. */
+  favorite: (id: string, favorite: boolean) => apiPatch(z.unknown(), `/api/gallery/${id}`, { favorite }),
+  /** Permanently delete one gallery image (row + file; drops from every view). */
   remove: (id: string) => apiDelete(`/api/gallery/${id}`),
-  /** Bulk-delete the given scene images (row + file each) — the "Delete all" action. */
+  /** Bulk-delete gallery images (row + file each) — "Delete all" and the multi-select delete. */
   removeMany: (ids: string[]) =>
     apiPost(z.object({ deleted: z.number().catch(0) }), "/api/gallery/delete", { ids }),
 };

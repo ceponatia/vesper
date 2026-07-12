@@ -253,6 +253,13 @@
       "when": 1783828237789,
       "tag": "0035_nifty_jazinda",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1783853931037,
+      "tag": "0036_futuristic_zarek",
+      "breakpoints": true
     }
   ]
 }

@@ -1,100 +1,156 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or, type SQL } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 import { jsonOk, withUser } from "@/server/api";
-import { characters, db, imageReferences, images, sessions, worlds } from "@/server/db";
+import { characters, db, imageReferences, images, items, locations, sessions, worlds } from "@/server/db";
 import type { SceneReference } from "@/contracts";
 
-/** Cap on scenes returned in one payload (client-side grouping/filtering). */
-const GALLERY_LIMIT = 500;
+/** Default page size; `limit` is clamped to [1, 500] (the old single-payload cap). */
+const GALLERY_PAGE = 100;
+const GALLERY_PAGE_MAX = 500;
+
+export type GalleryTab = "scenes" | "portraits" | "entity";
 
 /**
- * GET /api/gallery — every ready scene image the user owns (docs/images.md
- * §Gallery), from two sources: in-session scenes (inner-joined to sessions, so
- * a deleted session drops its scenes) and sessionless character-chat scenes
- * (`entityKind:"character"`, no session — docs/developer-notes/character-chat.plan.md).
- * Session scenes come first (newest-session-first, newest-scene-first within),
- * then character-chat scenes (newest first), which the client groups under
- * "Character chats". The `references` a scene features come from the
- * authoritative `image_references` join table; the client derives the
- * world/character filters from them.
+ * Keyset cursor `<createdAtMs>_<id>` over (created_at desc, id desc) — the
+ * "Load more" seam past the old 500 cap (library-ux.plan.md §Follow-up pass).
+ * An unparseable cursor degrades to the first page, never a failed request.
  */
-export const GET = withUser(async (user) => {
-  const sessionRows = await db()
+function parseCursor(raw: string | null): { at: Date; id: string } | null {
+  if (!raw) return null;
+  const split = raw.indexOf("_");
+  if (split <= 0) return null;
+  const ms = Number(raw.slice(0, split));
+  const id = raw.slice(split + 1);
+  if (!Number.isFinite(ms) || !id) return null;
+  return { at: new Date(ms), id };
+}
+
+function cursorFor(row: { createdAt: Date | null; id: string }): string | null {
+  return row.createdAt ? `${row.createdAt.getTime()}_${row.id}` : null;
+}
+
+function keysetCondition(cursor: { at: Date; id: string } | null): SQL | undefined {
+  if (!cursor) return undefined;
+  return or(lt(images.createdAt, cursor.at), and(eq(images.createdAt, cursor.at), lt(images.id, cursor.id)));
+}
+
+/**
+ * GET /api/gallery — the owner's generated art as a tabbed hub (docs/images.md
+ * §Gallery): `?tab=scenes` (default — in-session scenes join their session, so
+ * a deleted session drops them; sessionless chat scenes join their character),
+ * `?tab=portraits` (character portrait variants), `?tab=entity` (location /
+ * item / world art). All tabs page by the keyset `?cursor` + `?limit`, newest
+ * first, and carry the `favorite` flag. Scene rows also carry the
+ * `image_references` the client's filters/view modes are derived from.
+ */
+export const GET = withUser(async (user, req: NextRequest) => {
+  const params = req.nextUrl.searchParams;
+  const tabParam = params.get("tab");
+  const tab: GalleryTab = tabParam === "portraits" || tabParam === "entity" ? tabParam : "scenes";
+  const limitParam = Number(params.get("limit") ?? NaN);
+  const limit = Number.isFinite(limitParam) ? Math.min(Math.max(Math.trunc(limitParam), 1), GALLERY_PAGE_MAX) : GALLERY_PAGE;
+  const cursor = parseCursor(params.get("cursor"));
+
+  const base = [eq(images.ownerId, user.id), eq(images.status, "ready"), keysetCondition(cursor)];
+
+  if (tab === "portraits") {
+    const rows = await db()
+      .select({
+        id: images.id,
+        characterId: characters.id,
+        characterName: characters.name,
+        prompt: images.prompt,
+        favorite: images.favorite,
+        createdAt: images.createdAt,
+      })
+      .from(images)
+      // Owner-scope the joined character too (security Cluster I2 posture).
+      .innerJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
+      .where(and(...base, eq(images.kind, "portrait_variant")))
+      .orderBy(desc(images.createdAt), desc(images.id))
+      .limit(limit + 1);
+    const page = rows.slice(0, limit);
+    return jsonOk({
+      images: page.map((row) => ({ ...row, references: [] as SceneReference[] })),
+      nextCursor: rows.length > limit ? cursorFor(page[page.length - 1] ?? { createdAt: null, id: "" }) : null,
+    });
+  }
+
+  if (tab === "entity") {
+    const rows = await db()
+      .select({
+        id: images.id,
+        entityKind: images.entityKind,
+        entityName: locations.name,
+        itemName: items.name,
+        worldName: worlds.name,
+        prompt: images.prompt,
+        favorite: images.favorite,
+        createdAt: images.createdAt,
+      })
+      .from(images)
+      .leftJoin(locations, and(eq(images.entityKind, "location"), eq(images.entityId, locations.id)))
+      .leftJoin(items, and(eq(images.entityKind, "item"), eq(images.entityId, items.id)))
+      .leftJoin(worlds, and(eq(images.entityKind, "world"), eq(images.entityId, worlds.id)))
+      .where(and(...base, eq(images.kind, "entity")))
+      .orderBy(desc(images.createdAt), desc(images.id))
+      .limit(limit + 1);
+    const page = rows.slice(0, limit);
+    return jsonOk({
+      images: page.map((row) => ({
+        id: row.id,
+        entityKind: row.entityKind,
+        entityName: row.entityName ?? row.itemName ?? row.worldName ?? null,
+        prompt: row.prompt,
+        favorite: row.favorite,
+        createdAt: row.createdAt,
+        references: [] as SceneReference[],
+      })),
+      nextCursor: rows.length > limit ? cursorFor(page[page.length - 1] ?? { createdAt: null, id: "" }) : null,
+    });
+  }
+
+  // Scenes: one keyset-ordered query over both sources — in-session scenes
+  // (must still have their session) and sessionless character-chat scenes
+  // (must still have their character; owner-scoped join, security Cluster I2).
+  const rows = await db()
     .select({
       id: images.id,
       sessionId: sessions.id,
       sessionTitle: sessions.title,
       worldId: sessions.worldId,
       worldName: worlds.name,
-      prompt: images.prompt,
-      createdAt: images.createdAt,
-    })
-    .from(images)
-    .innerJoin(sessions, eq(images.sessionId, sessions.id))
-    .leftJoin(worlds, eq(sessions.worldId, worlds.id))
-    .where(and(eq(images.ownerId, user.id), eq(images.kind, "scene"), eq(images.status, "ready")))
-    .orderBy(desc(sessions.updatedAt), desc(images.createdAt))
-    .limit(GALLERY_LIMIT);
-
-  // Sessionless character-chat scenes. Inner-joined to characters so a deleted
-  // character drops its chat scenes, mirroring the session inner join above.
-  const chatRows = await db()
-    .select({
-      id: images.id,
       characterId: characters.id,
       characterName: characters.name,
       prompt: images.prompt,
+      favorite: images.favorite,
       createdAt: images.createdAt,
     })
     .from(images)
-    // Owner-scope the join on the characters side too (security Cluster I2): the
-    // image rows are already owner-filtered below, but constraining the joined
-    // character to the same owner makes it structurally impossible for the join
-    // to surface another owner's character row.
-    .innerJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
+    .leftJoin(sessions, eq(images.sessionId, sessions.id))
+    .leftJoin(worlds, eq(sessions.worldId, worlds.id))
+    .leftJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
     .where(
       and(
-        eq(images.ownerId, user.id),
+        ...base,
         eq(images.kind, "scene"),
-        eq(images.status, "ready"),
-        eq(images.entityKind, "character"),
-        isNull(images.sessionId),
+        or(isNotNull(sessions.id), and(isNull(images.sessionId), eq(images.entityKind, "character"), isNotNull(characters.id))),
       ),
     )
-    .orderBy(desc(images.createdAt))
-    .limit(GALLERY_LIMIT);
-
-  const referencesByScene = await loadSceneReferences([
-    ...sessionRows.map((r) => r.id),
-    ...chatRows.map((r) => r.id),
-  ]);
-
-  const sessionScenes = sessionRows.map((row) => ({
-    id: row.id,
-    sessionId: row.sessionId,
-    sessionTitle: row.sessionTitle,
-    worldId: row.worldId,
-    worldName: row.worldName,
-    characterId: null,
-    characterName: null,
-    references: referencesByScene.get(row.id) ?? [],
-    prompt: row.prompt,
-    createdAt: row.createdAt,
-  }));
-
-  const chatScenes = chatRows.map((row) => ({
-    id: row.id,
-    sessionId: null,
-    sessionTitle: null,
-    worldId: null,
-    worldName: null,
-    characterId: row.characterId,
-    characterName: row.characterName,
-    references: referencesByScene.get(row.id) ?? [],
-    prompt: row.prompt,
-    createdAt: row.createdAt,
-  }));
-
-  return jsonOk({ scenes: [...sessionScenes, ...chatScenes] });
+    .orderBy(desc(images.createdAt), desc(images.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const referencesByScene = await loadSceneReferences(page.map((r) => r.id));
+  return jsonOk({
+    images: page.map((row) => ({
+      ...row,
+      // A session scene's character join is incidental — chat scenes own it.
+      characterId: row.sessionId ? null : row.characterId,
+      characterName: row.sessionId ? null : row.characterName,
+      references: referencesByScene.get(row.id) ?? [],
+    })),
+    nextCursor: rows.length > limit ? cursorFor(page[page.length - 1] ?? { createdAt: null, id: "" }) : null,
+  });
 });
 
 /**
