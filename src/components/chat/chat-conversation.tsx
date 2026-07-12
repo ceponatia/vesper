@@ -31,6 +31,7 @@ import { AvatarPanel } from "@/components/avatar";
 import { fileToAttachmentDataUrl } from "@/components/chat/attachment-file";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
 import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
+import { ChatRelationshipsEditor } from "@/components/chat/chat-relationships-editor";
 import { ChatRosterPanel } from "@/components/chat/chat-roster-panel";
 import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
@@ -868,9 +869,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         </Sheet>
       ) : null}
 
-      {/* Roster sheet (multi-character-chat.plan.md): the menu path to the roster panel. */}
+      {/* Roster sheet (multi-character-chat.plan.md): the menu path to the roster
+          panel + the relationship matrix (roster > 1). */}
       <Sheet open={rosterOpen} onClose={() => setRosterOpen(false)} side="bottom" title="Roster">
-        <div className="p-3">
+        <div className="flex flex-col gap-4 p-3">
           {roster.length > 0 ? (
             <ChatRosterPanel
               chatId={chatId}
@@ -879,6 +881,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               onChanged={() => bootstrap.reload({ silent: true })}
             />
           ) : null}
+          {rosterOpen && roster.length > 1 ? <ChatRelationshipsEditor chatId={chatId} archived={archived} /> : null}
         </div>
       </Sheet>
 

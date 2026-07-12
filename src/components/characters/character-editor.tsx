@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { TagInput } from "@/components/ui/tag-input";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
+import { RelationshipsEditor } from "./relationships-editor";
 import { Textarea } from "@/components/ui/textarea";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { AttributePicker } from "./attribute-picker";
@@ -29,7 +30,15 @@ import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 import { PreferencesEditor } from "./preferences-editor";
 
-type EditorTab = "profile" | "attributes" | "personality" | "disposition" | "outfit" | "portrait" | "chat";
+type EditorTab =
+  | "profile"
+  | "attributes"
+  | "personality"
+  | "disposition"
+  | "outfit"
+  | "relationships"
+  | "portrait"
+  | "chat";
 
 /** The presented-gender attribute value, when set (drives the outfit picker's wearer default). */
 function genderValue(attributes: readonly { id: string; value: unknown }[]): string | undefined {
@@ -106,6 +115,8 @@ export function CharacterEditor({
       label: "Outfit",
       badge: draft.profile.defaultOutfit.length + draft.suggestedItems.length || undefined,
     },
+    // Default edges live server-side (character_relationships) — a saved character only.
+    ...(characterId ? [{ id: "relationships", label: "Relationships" } as TabDef<EditorTab>] : []),
     { id: "portrait", label: "Portrait studio" },
     { id: "chat", label: "Chat" },
   ];
@@ -343,6 +354,10 @@ export function CharacterEditor({
           onChangeSuggested={(suggestedItems) => onChange({ ...draft, suggestedItems })}
           wearerHint={wearerHintForGender(genderValue(draft.profile.attributes))}
         />
+      ) : null}
+
+      {tab === "relationships" && characterId ? (
+        <RelationshipsEditor characterId={characterId} name={draft.name} />
       ) : null}
 
       {tab === "portrait" ? (
