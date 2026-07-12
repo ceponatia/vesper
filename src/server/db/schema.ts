@@ -283,7 +283,14 @@ export const chatScenarioPresets = pgTable(
     outfitExposed: boolean("outfit_exposed").notNull().default(false),
     /** SocialReactionCard[] — same shape as `character_chat_state.active_social_cards`. */
     socialCards: jsonb("social_cards").notNull().default([]),
-    startingStage: text("starting_stage").notNull().default("stranger"),
+    /**
+     * AuthoredRelationshipRecord (contracts/relationships/record.ts) — the
+     * starting player-edge a NEW conversation seeds from this preset: both
+     * band picks + kind/history/mask/looming. Replaced the single-vocabulary
+     * `starting_stage` (followups ruling 4); applies at creation only, never
+     * to a running conversation.
+     */
+    startingRelationship: jsonb("starting_relationship").notNull().default({}),
     createdAt: createdAt(),
   },
   (t) => [index("chat_scenario_presets_owner_idx").on(t.ownerId)],

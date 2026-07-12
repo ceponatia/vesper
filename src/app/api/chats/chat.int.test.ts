@@ -1045,7 +1045,7 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
         name: "Group scene",
         premise: "A rain-soaked rooftop bar.",
         outfit: "a red slip dress",
-        startingStage: "warm",
+        startingRelationship: { familiarity: "acquainted", regard: "warm", kind: "old regulars", history: "", looming: false },
       })
       .returning({ id: chatScenarioPresets.id });
     if (!preset) throw new Error("failed to seed preset");

@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { stageMidpoint } from "@/contracts";
+import { regardBandMidpoint } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { characterChats, characterChatState, characters, chatScenarioPresets, db, users } from "@/server/db";
 
@@ -77,7 +77,7 @@ interface PresetRow {
   outfit: string;
   outfitExposed: boolean;
   socialCards: { id: string; label: string }[];
-  startingStage: string;
+  startingRelationship: { familiarity: string; regard: string; kind: string; history: string; looming: boolean };
 }
 
 async function listPresets(): Promise<PresetRow[]> {
@@ -127,7 +127,13 @@ describe("chat-presets CRUD (spec §1.5)", () => {
         outfit: "a soaked sundress",
         outfitExposed: true,
         socialCards: [{ id: "card-tea", label: "Tea ritual", kind: "social_rule", severity: 40 }],
-        startingStage: "friendly",
+        startingRelationship: {
+          familiarity: "familiar",
+          regard: "cool",
+          kind: "estranged childhood friends",
+          history: "he left town without a word",
+          looming: true,
+        },
       }),
       collectionCtx,
     );
@@ -141,7 +147,12 @@ describe("chat-presets CRUD (spec §1.5)", () => {
     expect(preset?.premise).toBe("Caught in the rain on the rooftop bar.");
     expect(preset?.outfit).toBe("a soaked sundress");
     expect(preset?.outfitExposed).toBe(true);
-    expect(preset?.startingStage).toBe("friendly");
+    expect(preset?.startingRelationship).toMatchObject({
+      familiarity: "familiar",
+      regard: "cool",
+      kind: "estranged childhood friends",
+      looming: true,
+    });
     expect(preset?.socialCards.map((c) => c.id)).toEqual(["card-tea"]);
 
     const del = await presetDelete(delReq(id), presetCtx(id));
@@ -149,7 +160,7 @@ describe("chat-presets CRUD (spec §1.5)", () => {
     expect((await listPresets()).some((p) => p.id === id)).toBe(false);
   });
 
-  it("applies the schema defaults on a minimal create (startingStage ⇒ stranger)", async (t) => {
+  it("applies the schema defaults on a minimal create (strangers/neutral record)", async (t) => {
     if (!ready) return t.skip();
     const res = await presetCreate(createReq({ name: "Bare minimum" }), collectionCtx);
     expect(res.status).toBe(201);
@@ -161,7 +172,7 @@ describe("chat-presets CRUD (spec §1.5)", () => {
       outfit: "",
       outfitExposed: false,
       socialCards: [],
-      startingStage: "stranger",
+      startingRelationship: { familiarity: "strangers", regard: "neutral" },
     });
   });
 
@@ -182,7 +193,7 @@ describe("chat-presets CRUD (spec §1.5)", () => {
 });
 
 describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () => {
-  it("seeds the new conversation's state row from the preset (regard via the stage bridge)", async (t) => {
+  it("seeds the new conversation's state row from the preset's full record (bands + texture)", async (t) => {
     if (!ready) return t.skip();
     const created = await presetCreate(
       createReq({
@@ -191,7 +202,13 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
         outfit: "an oversized flannel shirt",
         outfitExposed: false,
         socialCards: [{ id: "card-quiet", label: "Keep voices low", kind: "social_rule", severity: 30 }],
-        startingStage: "friendly",
+        startingRelationship: {
+          familiarity: "acquainted",
+          regard: "friendly",
+          kind: "ski-trip acquaintances",
+          history: "they shared a lift chair through a storm",
+          looming: false,
+        },
       }),
       collectionCtx,
     );
@@ -211,6 +228,7 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
         outfit: characterChatState.outfit,
         outfitExposed: characterChatState.outfitExposed,
         regard: characterChatState.regard,
+        relationshipRecord: characterChatState.relationshipRecord,
         activeSocialCards: characterChatState.activeSocialCards,
       })
       .from(characterChatState)
@@ -219,7 +237,9 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
     expect(state?.premise).toBe("Snowed in together at the cabin.");
     expect(state?.outfit).toBe("an oversized flannel shirt");
     expect(state?.outfitExposed).toBe(false);
-    expect(state?.regard).toBe(stageMidpoint("friendly")); // never the raw stage string
+    expect(state?.regard).toBe(regardBandMidpoint("friendly")); // never the raw band string
+    // The texture rides too (followups ruling 4).
+    expect(state?.relationshipRecord).toMatchObject({ kind: "ski-trip acquaintances" });
     const cards = state?.activeSocialCards as { id: string }[];
     expect(cards.map((c) => c.id)).toEqual(["card-quiet"]);
   });

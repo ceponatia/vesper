@@ -11,7 +11,8 @@ import {
   regardBandForValue,
   regardBandToStageId,
   socialReactionCardSchema,
-  stageToAxes,
+  authoredRecordToLive,
+  authoredRelationshipRecordSchema,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
@@ -200,16 +201,24 @@ export const POST = withUser(async (user, req: NextRequest) => {
         outfit: chatScenarioPresets.outfit,
         outfitExposed: chatScenarioPresets.outfitExposed,
         socialCards: chatScenarioPresets.socialCards,
-        startingStage: chatScenarioPresets.startingStage,
+        startingRelationship: chatScenarioPresets.startingRelationship,
       })
       .from(chatScenarioPresets)
       .where(and(eq(chatScenarioPresets.id, body.value.presetId), eq(chatScenarioPresets.ownerId, user.id)))
       .limit(1);
     if (preset) {
       const cards = parseOr(z.array(socialReactionCardSchema), preset.socialCards, [], undefined, "chat_scenario_presets.social_cards");
-      // Presets still author the old single-stage vocabulary; both axes seed
-      // through the bridge until the preset editor grows band pickers (slice 4).
-      const axes = stageToAxes(preset.startingStage);
+      // The preset's full authored record seeds the primary's player edge —
+      // both band scalars AND the kind/history/mask texture (followups ruling 4).
+      const live = authoredRecordToLive(
+        parseOr(
+          authoredRelationshipRecordSchema,
+          preset.startingRelationship,
+          authoredRelationshipRecordSchema.parse({}),
+          undefined,
+          "chat_scenario_presets.starting_relationship",
+        ),
+      );
       for (const member of roster) {
         const profile = parseOr(characterProfileSchema, member.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
         const isPrimary = member.id === primary.id;
@@ -225,8 +234,14 @@ export const POST = withUser(async (user, req: NextRequest) => {
               ? {
                   outfit: preset.outfit,
                   outfitExposed: preset.outfitExposed,
-                  regard: axes.regard,
-                  familiarity: axes.familiarity,
+                  regard: live.regard,
+                  familiarity: live.familiarity,
+                  relationship: {
+                    kind: live.kind,
+                    history: live.history,
+                    presented: live.presented,
+                    looming: live.looming,
+                  },
                 }
               : {}),
           },
