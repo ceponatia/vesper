@@ -1,0 +1,1 @@
+ALTER TABLE "chat_scenario_presets" DROP COLUMN "starting_stage";

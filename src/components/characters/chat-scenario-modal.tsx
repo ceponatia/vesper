@@ -102,12 +102,33 @@ function ScenarioForm({
     }
   };
 
-  /** Capture the current draft (startingStage stays the server default, "stranger"). */
+  /**
+   * Capture the current draft + the chat's CURRENT relationship as the preset's
+   * starting point (followups ruling 4): both band ids and the kind/history/mask
+   * texture ride along, applied only when a NEW conversation seeds from this
+   * preset — never to a running chat.
+   */
   const savePreset = async () => {
     const name = presetName.trim();
     if (!name || presetBusy) return;
     setPresetBusy(true);
-    const result = await chatPresetsApi.create({ name, premise, outfit, outfitExposed, socialCards: cards });
+    const result = await chatPresetsApi.create({
+      name,
+      premise,
+      outfit,
+      outfitExposed,
+      socialCards: cards,
+      startingRelationship: {
+        familiarity: snapshot.familiarityBand.id,
+        regard: snapshot.regardBand.id,
+        kind: snapshot.relationship.kind,
+        history: snapshot.relationship.history,
+        ...(snapshot.relationship.presented
+          ? { presented: { lean: snapshot.relationship.presented.lean, note: snapshot.relationship.presented.note ?? "" } }
+          : {}),
+        looming: snapshot.relationship.looming,
+      },
+    });
     setPresetBusy(false);
     if (result.ok) {
       setPresetNameOpen(false);

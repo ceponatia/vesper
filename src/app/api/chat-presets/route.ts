@@ -1,15 +1,21 @@
 import type { NextRequest } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { CHAT_OUTFIT_MAX_CHARS, CHAT_PREMISE_MAX_CHARS, socialReactionCardSchema } from "@/contracts";
+import {
+  authoredRelationshipRecordSchema,
+  CHAT_OUTFIT_MAX_CHARS,
+  CHAT_PREMISE_MAX_CHARS,
+  socialReactionCardSchema,
+} from "@/contracts";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { chatScenarioPresets, db } from "@/server/db";
 
 /**
  * Scenario presets (character-chat-standalone.spec.md §1.5): reusable
- * premise/outfit/cards/starting-stage bundles, seeded into a new conversation's
- * state at create time. Small owned CRUD — `LibraryKind` graduation
- * (sharing/cloning) stays a later idea.
+ * premise/outfit/cards/starting-relationship bundles, seeded into a new
+ * conversation's state at create time (followups ruling 4: the full authored
+ * record — both bands + texture — replaced the single legacy stage). Small
+ * owned CRUD — `LibraryKind` graduation (sharing/cloning) stays a later idea.
  */
 
 const createBodySchema = z.object({
@@ -18,7 +24,7 @@ const createBodySchema = z.object({
   outfit: z.string().max(CHAT_OUTFIT_MAX_CHARS).default(""),
   outfitExposed: z.boolean().default(false),
   socialCards: z.array(socialReactionCardSchema).default([]),
-  startingStage: z.string().trim().max(40).default("stranger"),
+  startingRelationship: authoredRelationshipRecordSchema.default(() => authoredRelationshipRecordSchema.parse({})),
 });
 
 /** GET /api/chat-presets — the user's presets, newest first. */
@@ -31,7 +37,7 @@ export const GET = withUser(async (user) => {
       outfit: chatScenarioPresets.outfit,
       outfitExposed: chatScenarioPresets.outfitExposed,
       socialCards: chatScenarioPresets.socialCards,
-      startingStage: chatScenarioPresets.startingStage,
+      startingRelationship: chatScenarioPresets.startingRelationship,
     })
     .from(chatScenarioPresets)
     .where(eq(chatScenarioPresets.ownerId, user.id))

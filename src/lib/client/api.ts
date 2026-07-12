@@ -1151,6 +1151,22 @@ export const chatsApi = {
     apiPatch(z.object({ content: z.string().catch("") }), `/api/chats/${chatId}/messages/${messageId}/take`, { takeId }),
 };
 
+/** The authored starting-relationship a preset stores (followups ruling 4). */
+export const presetRelationshipSchema = z
+  .object({
+    familiarity: z.string().catch("strangers"),
+    regard: z.string().catch("neutral"),
+    kind: textOr(""),
+    history: textOr(""),
+    presented: z
+      .object({ lean: z.enum(["masks_warmth", "masks_dislike"]), note: textOr("") })
+      .optional()
+      .catch(undefined),
+    looming: z.boolean().catch(false),
+  })
+  .catch({ familiarity: "strangers", regard: "neutral", kind: "", history: "", looming: false });
+export type PresetRelationship = z.infer<typeof presetRelationshipSchema>;
+
 /** A saved scenario preset (character-chat-standalone.spec.md §1.5). */
 export const chatPresetSchema = z.object({
   id: idSchema,
@@ -1159,7 +1175,8 @@ export const chatPresetSchema = z.object({
   outfit: textOr(""),
   outfitExposed: z.boolean().catch(false),
   socialCards: arrayOf(socialReactionCardSchema),
-  startingStage: textOr("stranger"),
+  /** Seeds the primary's player edge at creation only — never a running chat. */
+  startingRelationship: presetRelationshipSchema,
 });
 export type ChatPreset = z.infer<typeof chatPresetSchema>;
 
@@ -1171,7 +1188,7 @@ export const chatPresetsApi = {
     outfit?: string;
     outfitExposed?: boolean;
     socialCards?: SocialReactionCard[];
-    startingStage?: string;
+    startingRelationship?: PresetRelationship;
   }) => apiPost(createdRefSchema, "/api/chat-presets", body),
   remove: (presetId: string) => apiDelete(`/api/chat-presets/${presetId}`),
 };
