@@ -1,10 +1,20 @@
 # Multi-character chat — the substrate
 
-Status: active (promoted from next 2026-07-12 on owner go-ahead — build the
-substrate, then the relationship plan's matrix slice. Split out of
-[relationship-model.plan.md](relationship-model.plan.md) on 2026-07-07 per owner
-ruling; it slots after that plan's slices 1–3 and before its
-matrix slice. Creation groundwork already shipped 2026-07-07.)
+Status: **shipped — 2026-07-12** (all four slices, same-day as the promotion:
+roster routes + panel + per-character state/presence/recency (migration 0037),
+the one-block ensemble frame with byte-identical roster-of-1
+(`buildChatPromptPartsForRoster`), deterministic mention stamping + the
+archivist's roster-gated presence field, and the scoped dynamics —
+away-freeze, referenced-only pulse, tier-1 memory legs with tightened k,
+witness memory writes. The relationship matrix slice shipped with it (see
+relationship-model.plan.md). Docs: character-chat.md §Multi-character.
+**Recorded substrate simplifications** (mature in a later pass, on demand):
+archivist state folds (loops/scene/outfit/drives) + milestone machinery stay
+primary-scoped; selfies, memory callbacks, sensory focus, disinhibition, and
+the `turn_context` layout stay 1-on-1-only; member sheets are third-person
+band lines rather than the full composed pair law; per-member scenario
+seeding = premise+cards to all, outfit/bands primary-only. Multi-character
+eval fixtures ride the queued enactment measurement run.)
 
 ## Problem
 

@@ -1,17 +1,23 @@
 # Relationship model v2 — familiarity × regard
 
-Status: active (build started 2026-07-07 — slices 1–4 done: contracts; the
+Status: **shipped — 2026-07-12** (slices 1–4 done 2026-07-07: contracts; the
 state/schema growth + the `affinity`→`regard` rename and migration 0028; the
 composed prompt block + disposition contrast + axis-contrast eval fixtures; the
-player-edge UI — record editor with live law preview, state-tools texture, panel
-2D plot. Scenario presets still author the single legacy stage and seed through
-the bridge — band pickers fold into the matrix slice. **Unpaused 2026-07-12**
-(owner go-ahead): the substrate plan
-(multi-character-chat.plan.md) is now active, then slice 6 (the matrix); scoped,
-expanded, and **settled** 2026-07-07, every open question ruled and folded into
-its section below. The multi-character substrate this plan's matrix slice
-depends on is its own plan:
-[multi-character-chat.plan.md](multi-character-chat.plan.md).)
+player-edge UI. **Slice 6 — the matrix — shipped 2026-07-12** with the
+multi-character substrate ([multi-character-chat.plan.md](multi-character-chat.plan.md)):
+`character_chat_relationships` + `character_relationships` (migration 0038),
+creation/join seeding, the in-chat pair editor (shared-cell kind/history,
+mirrored stances behind an Asymmetric toggle), the character editor's
+Relationships tab, and the presence × salience tier injection (present-pair
+prefix lines; away-salient conditional blocks under the don't-teleport guard).
+**Leftovers, recorded:** scenario presets still author the legacy single stage
+through the `stageToAxes` bridge (band pickers pending); the player column of
+the matrix is edited via the existing Relationship panel / state tools, not the
+matrix menu; pair lines are compact third-person band+texture lines — the full
+composed second-person law block needs a third-person port before pairs can use
+it; the multi-character eval fixtures (§Eval tie-in) ride the queued enactment
+measurement run. Slice 7 stays an **earmark** for the session-chat refactor —
+the sessions lane changes nothing now.)
 
 ## Problem
 

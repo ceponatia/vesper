@@ -1,23 +1,21 @@
 # Character chat
 
-The sessionless 1-on-1 chat lane: talk to any saved library character directly — no world,
+The sessionless chat lane: talk to saved library characters directly — no world,
 no session, location conveyed only through narration. Since slice 3 of the standalone arc,
 the unit is a **conversation** (`character_chats`): one character can host many
 conversations (a main story beside a fresh alternate universe), each with its own
 transcript, rolling summary, and per-participant state, and a **memory group** deciding
 what carries across (see §Memory below). It began as a voice-tuning test-bed
 and is now a **primary feature** (shipped — see
-[developer-notes/finished/character-chat-standalone.plan.md](developer-notes/finished/character-chat-standalone.plan.md);
-current direction is the relationship-model v2 and multi-character chat work):
+[developer-notes/finished/character-chat-standalone.plan.md](developer-notes/finished/character-chat-standalone.plan.md)):
 it carries its own tracked state, long-term RAG memory, evolving attributes, scenario
-system, a stage-driven relationship arc, in-game time, and scene images. It is deliberately **not** a session: no locations, presence,
-exposure mask, wardrobe state, story threads, or multi-character cast. (One seam has
-opened toward that last point: a conversation can now be **created** with a roster of up
-to 4 characters — `POST /api/chats` takes `characterIds`, `chat_participants` holds one
-row per character, `sort 0` is the primary — but the exchange pipeline still runs 1-on-1
-against the primary; the extra participants are inert groundwork for the multi-character
-substrate in
-[developer-notes/multi-character-chat.plan.md](developer-notes/multi-character-chat.plan.md).)
+system, a stage-driven relationship arc, in-game time, and scene images. Since 2026-07-12
+a conversation can hold a **roster of up to 4 full characters**
+(§Multi-character below —
+[developer-notes/multi-character-chat.plan.md](developer-notes/multi-character-chat.plan.md)):
+narrative presence instead of locations, the one-block ensemble prompt frame, a
+per-conversation relationship matrix. It remains deliberately **not** a session: no
+locations, exposure mask, wardrobe state, or story threads.
 Where the two lanes
 share a mechanism (memory scope, the §6 reaction curve, disposition rendering, narration
 shape, artifact stripping, the generate-timeout race, the draining stream Response), they
@@ -431,6 +429,54 @@ semantics unchanged. Remaining slices live in the plan: the §8.4 marker
 upgrade (seen-cursor), `profile.schedule` authoring, and the selfie-attach
 hook (needs pulse-on-open).
 
+## Multi-character (the ensemble)
+
+A conversation holds up to **4 full characters**
+([developer-notes/multi-character-chat.plan.md](developer-notes/multi-character-chat.plan.md) +
+the matrix slice of
+[developer-notes/relationship-model.plan.md](developer-notes/relationship-model.plan.md),
+both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-1
+(asserted in `prompts/character-chat.test.ts`); everything below arms only at roster > 1.
+
+- **Roster** (`chat_participants`, sort 0 = primary): created multi-select or grown later —
+  `POST /api/chats/:id/participants` (cap 4, D7 memory choice per joiner),
+  `DELETE …/participants/:characterId` (never the last member; a removed primary's heir
+  promotes via sort renumber — state + memory stay), `PATCH …/participants/:characterId`
+  `{presence}`. The roster panel (`chat-roster-panel.tsx`, desktop aside + the menu's
+  Roster sheet) is the manual present/away override and add/remove surface.
+- **Presence, not location** (`character_chat_state.presence`): *present* shares the
+  player's scene, *away* is offstage living their life — meters **freeze** (presence gates
+  the drift tick; no catch-up), no memory legs, reachable by text/call, never teleported
+  in. The archivist's roster-gated 9th field confirms transitions the fiction actually
+  played; `quiet_exchanges` counts activity recency (deterministic stamping —
+  `mentionsCharacter`/`spokeInReply` in `chat-intent.ts` — reset by a name/alias mention
+  or a tagged spoken line), and for away members it doubles as the tier-3 salience window.
+- **Ensemble prompt** (`buildChatPromptPartsForRoster` → `buildEnsembleChatPromptParts`):
+  one continuous narrative, the narrator omniscient over the roster; THIRD-person member
+  sheets (full / quiet-compressed at `ENSEMBLE_QUIET_EXCHANGES` / away-dropped while
+  anyone is present, cutaway sheets when nobody is), `ENSEMBLE_CHAT_RULES` (universal
+  `[Name]` tag discipline — nothing auto-attributes in a group; characters alive to each
+  other; presence law), and the ruling-3 authority block: the player is never written, and
+  with no character present the reply is a **cutaway**. The §9 prefix/tail cache split
+  survives (sheets re-render on roster/presence/tier/band change).
+- **Scoped dynamics**: the reaction pulse runs **referenced-only** (members the player's
+  turn names; the primary as anchor fallback when nobody is); tier-1 **memory legs** run
+  per present + recently-active member against their OWN group with per-leg k tightened by
+  the active count; the ONE archivist extraction files to **every present witness's**
+  group. Substrate simplifications (recorded in the plan): archivist state folds
+  (loops/scene/outfit/drives), milestones, selfies, callbacks, sensory focus, and the
+  `turn_context` layout stay primary-scoped / 1-on-1-only.
+- **Relationship matrix** (`character_chat_relationships`, directed rows): per-conversation
+  NPC↔NPC records seeded at creation/join from the library defaults
+  (`character_relationships` — the character editor's **Relationships tab**), edited
+  per-pair in the Roster sheet (`chat-relationships-editor.tsx`: kind/history shared-cell,
+  stances mirrored behind an Asymmetric toggle). Injection follows the presence × salience
+  tiers: present×present pairs render prefix law lines; a **salient** away member
+  (mentioned in-window or edge-flagged *looming*) gets a volatile conditional block under
+  the don't-teleport guard; silent away members render nothing. NPC↔NPC records are static
+  authored texture in v2 — lived shifts reach the narrator through archivist relationship
+  facts.
+
 ## Post-turn fan-out
 
 `finalizeChatState` runs **pulse ‖ archivist-lite** in parallel (`Promise.all`), then one
@@ -535,6 +581,9 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `GET /api/chats?characterId=&archived=1` · `POST /api/chats` | list conversations · create one (`memory: "shared" \| "fresh"` — the D7 choice) |
 | `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (`kind: send \| open \| continue \| regenerate \| rerun`; `rerun` takes `messageId` = the target user line; `send` may carry `attachmentIds` ≤4 — §Player photos — and may be photo-only; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
 | `POST /api/chats/:chatId/attachments` | upload ONE player photo (data URL in, `chat_upload` asset id back — §Player photos); 409 on an archived chat, generation-rate-limited |
+| `POST /api/chats/:chatId/participants` · `PATCH/DELETE …/participants/:characterId` | roster add (cap 4, D7 memory choice; seeds matrix pairs) · presence flip (through `editChatState`, 409 mid-stream) · remove (never the last; primary's heir promotes — §Multi-character) |
+| `GET/PUT /api/chats/:chatId/relationships` | the conversation's directed NPC↔NPC matrix + roster · upsert authored edges (band picks → live scalars; roster-validated — §Multi-character) |
+| `GET/PUT /api/characters/:id/relationships` | the character's library-default edges (the editor's Relationships tab; replace-set save; seeds new conversations) |
 | `POST /api/chats/:chatId/stop` | cut the in-flight reply short (spec §4.2 — the prefix persists with `meta.stopped`) |
 | `PATCH/DELETE /api/chats/:chatId/messages/:messageId` | edit / snip one line — both reconcile the line's extracted memory (spec §4.3) |
 | `PATCH /api/chats/:chatId/messages/:messageId/take` | make a recorded take the displayed reply (display-only; spec §4.1) |
@@ -586,6 +635,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Scene reference anchors (look / place — §Scene reference anchors) | `server/images/chat-look.ts` (key + renders) + `server/engine/chat-reference-enqueue.ts` / `chat-reference-images.ts` (jobs) + consumption in `images/character-scene.ts` and `scene/queue.ts` |
 | Drives (schemas / gate / updates — §Drives) | `contracts/personality/drives.ts` (pure) + `buildDrivesSection` in `prompts/character-chat.ts` + the finalize fold in `chat-state.ts` |
 | Initiative (the reopen opener — §Initiative) | `server/engine/chat-initiative.ts` (pure cue) + the `initiative` flag through route/pipeline + the pickup-strip button |
+| Multi-character (roster / ensemble / matrix — §Multi-character) | `app/api/chats/[chatId]/participants/*` + `…/relationships/route.ts` + `app/api/characters/[id]/relationships/route.ts`; `server/engine/chat-relationships.ts` (seed/load/upsert); the ensemble builders + `ENSEMBLE_CHAT_RULES` in `prompts/character-chat.ts`; `mentionsCharacter`/`spokeInReply` in `chat-intent.ts`; UI in `components/chat/chat-roster-panel.tsx` + `chat-relationships-editor.tsx` + `components/characters/relationships-editor.tsx` |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |
