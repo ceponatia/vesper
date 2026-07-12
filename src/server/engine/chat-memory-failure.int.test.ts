@@ -19,7 +19,7 @@ vi.mock("./chat-memory", () => ({
   writeChatMemory: () => Promise.reject(new Error("memory infra down")),
 }));
 
-import { finalizeChatState, loadChatState, seedChatState } from "./chat-state";
+import { finalizeChatState, loadChatState, seedChatScenario, seedChatState } from "./chat-state";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -101,6 +101,8 @@ describe("finalizeChatState under a memory-write failure", () => {
       driftedState: seedChatState(emptyCharacterProfile()),
       now,
       exchange: { player: "Hi", assistant: "Hello." },
+      scenario: seedChatScenario(emptyCharacterProfile()),
+      preExchangeScenario: null,
       sink,
     });
 

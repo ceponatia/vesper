@@ -4,7 +4,7 @@ import { DiagnosticCollector, characterProfileSchema, emptyCharacterProfile } fr
 import { parseOr } from "@/lib/parse";
 import { jsonError, withUser } from "@/server/api";
 import { characterChatMessages, db } from "@/server/db";
-import { loadChatState, loadChatSummary, seedChatState } from "@/server/engine";
+import { loadChatScenario, loadChatSummary, seedChatScenario } from "@/server/engine";
 import { chatScope, listEpisodesForScope, listFactsForScope } from "@/server/memory";
 import { loadOwnedChat } from "../../owned";
 
@@ -31,7 +31,7 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
 
   const sink = new DiagnosticCollector();
   const profile = parseOr(characterProfileSchema, owned.character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
-  const state = (await loadChatState(chatId, owned.participant.characterId, sink)) ?? seedChatState(profile);
+  const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
   const summary = await loadChatSummary(chatId);
   const rows = await db()
     .select({
@@ -59,7 +59,7 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
     const payload = {
       title,
       character: owned.character.name,
-      premise: state.premise,
+      premise: scenario.premise,
       exportedAt: new Date().toISOString(),
       summary: summary?.summary ?? "",
       messages: rows.map((r) => ({ role: r.role, content: r.content, at: r.createdAt.toISOString() })),
@@ -75,7 +75,7 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
 
   const who = owned.character.name.trim() || "Character";
   const lines: string[] = [`# ${title}`, ""];
-  if (state.premise.trim()) lines.push(`> **Scenario:** ${state.premise.trim()}`, "");
+  if (scenario.premise.trim()) lines.push(`> **Scenario:** ${scenario.premise.trim()}`, "");
   if (summary?.summary.trim()) lines.push("## The story so far", "", summary.summary.trim(), "");
   lines.push("## Transcript", "");
   for (const row of rows) {

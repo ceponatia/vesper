@@ -11,7 +11,7 @@ import {
 } from "@/contracts";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
-import { characterChatMessages, characterChatState, db, jobs } from "../db";
+import { characterChatMessages, characterChats, db, jobs } from "../db";
 import { log } from "../log";
 import { CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS, CHAT_SCENE_SKETCH_TIMEOUT_MS } from "./constants";
 import { enqueueJob, registerJobHandler } from "./jobs";
@@ -80,14 +80,12 @@ const sketchJobPayloadSchema = z.object({
 export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadSchema>): Promise<void> {
   if (isDemoMode()) return;
 
-  const stateWhere = and(
-    eq(characterChatState.chatId, input.chatId),
-    eq(characterChatState.characterId, input.characterId),
-  );
+  // The scene memory + premise live on the CHAT row (the shared scenario,
+  // followups ruling 8) — one imagined setting for the whole roster.
   const [row] = await db()
-    .select({ sceneMemory: characterChatState.sceneMemory, premise: characterChatState.premise })
-    .from(characterChatState)
-    .where(stateWhere)
+    .select({ sceneMemory: characterChats.sceneMemory, premise: characterChats.premise })
+    .from(characterChats)
+    .where(eq(characterChats.id, input.chatId))
     .limit(1);
   if (!row) return;
   const memory = parseOr(
@@ -95,7 +93,7 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
     row.sceneMemory ?? {},
     emptyChatSceneMemory(),
     undefined,
-    "character_chat_state.scene_memory",
+    "character_chats.scene_memory",
   );
   const place = memory.places.find((p) => samePlaceName(p.name, input.placeName));
   if (!place || place.sketch) return; // place evicted, renamed, or already sketched
@@ -145,9 +143,9 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
   // order never matters): if an exchange rewrote scene_memory since our read, the update
   // matches zero rows and the absent-sketch trigger re-fires next exchange.
   const [fresh] = await db()
-    .select({ sceneMemory: characterChatState.sceneMemory })
-    .from(characterChatState)
-    .where(stateWhere)
+    .select({ sceneMemory: characterChats.sceneMemory })
+    .from(characterChats)
+    .where(eq(characterChats.id, input.chatId))
     .limit(1);
   if (!fresh) return;
   const before = parseOr(
@@ -155,16 +153,16 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
     fresh.sceneMemory ?? {},
     emptyChatSceneMemory(),
     undefined,
-    "character_chat_state.scene_memory",
+    "character_chats.scene_memory",
   );
   const after = withPlaceSketch(before, place.name, sketch);
   if (after === before) return; // place vanished or got a sketch meanwhile
   const beforeJson = JSON.stringify(fresh.sceneMemory ?? {});
   const afterJson = JSON.stringify(after);
   await db().execute(sql`
-    update ${characterChatState}
-    set scene_memory = ${afterJson}::jsonb, updated_at = now()
-    where chat_id = ${input.chatId} and character_id = ${input.characterId}
+    update ${characterChats}
+    set scene_memory = ${afterJson}::jsonb
+    where id = ${input.chatId}
       and scene_memory = ${beforeJson}::jsonb
   `);
 }

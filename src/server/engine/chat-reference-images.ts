@@ -11,7 +11,7 @@ import {
 } from "@/contracts";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { isDemoMode } from "../ai";
-import { characterChats, characterChatState, characters, db, images } from "../db";
+import { characterChats, characters, db, images } from "../db";
 import { absoluteImagePath, chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
 import { loadChatState, resolveSeededOutfit } from "./chat-state";
 import { registerJobHandler } from "./jobs";
@@ -92,10 +92,10 @@ export async function runChatPlaceImage(input: z.infer<typeof placePayloadSchema
   if (isDemoMode()) return;
   const ctx = await loadRenderContext(input.chatId, input.characterId);
   if (!ctx) return;
-  const stateWhere = and(eq(characterChatState.chatId, input.chatId), eq(characterChatState.characterId, input.characterId));
-  const [row] = await db().select({ sceneMemory: characterChatState.sceneMemory }).from(characterChatState).where(stateWhere).limit(1);
+  // Scene memory lives on the CHAT row (the shared scenario, followups ruling 8).
+  const [row] = await db().select({ sceneMemory: characterChats.sceneMemory }).from(characterChats).where(eq(characterChats.id, input.chatId)).limit(1);
   if (!row) return;
-  const memory = parseOr(chatSceneMemorySchema, row.sceneMemory ?? {}, emptyChatSceneMemory(), undefined, "character_chat_state.scene_memory");
+  const memory = parseOr(chatSceneMemorySchema, row.sceneMemory ?? {}, emptyChatSceneMemory(), undefined, "character_chats.scene_memory");
   const place = memory.places.find((p) => samePlaceName(p.name, input.placeName));
   if (!place?.sketch || place.imageId) return; // unsketchd, evicted, or already imaged
 
@@ -111,17 +111,17 @@ export async function runChatPlaceImage(input: z.infer<typeof placePayloadSchema
   // concurrent exchange rewrite makes this match zero rows, and the lazy trigger
   // simply re-fires on the next render there (the orphaned asset sweeps away with
   // the chat; a re-mint replaces the dangling pointer).
-  const [fresh] = await db().select({ sceneMemory: characterChatState.sceneMemory }).from(characterChatState).where(stateWhere).limit(1);
+  const [fresh] = await db().select({ sceneMemory: characterChats.sceneMemory }).from(characterChats).where(eq(characterChats.id, input.chatId)).limit(1);
   if (!fresh) return;
-  const before = parseOr(chatSceneMemorySchema, fresh.sceneMemory ?? {}, emptyChatSceneMemory(), undefined, "character_chat_state.scene_memory");
+  const before = parseOr(chatSceneMemorySchema, fresh.sceneMemory ?? {}, emptyChatSceneMemory(), undefined, "character_chats.scene_memory");
   const after = withPlaceImage(before, place.name, imageId);
   if (after === before) return;
   const beforeJson = JSON.stringify(fresh.sceneMemory ?? {});
   const afterJson = JSON.stringify(after);
   await db().execute(sql`
-    update ${characterChatState}
-    set scene_memory = ${afterJson}::jsonb, updated_at = now()
-    where chat_id = ${input.chatId} and character_id = ${input.characterId}
+    update ${characterChats}
+    set scene_memory = ${afterJson}::jsonb
+    where id = ${input.chatId}
       and scene_memory = ${beforeJson}::jsonb
   `);
 }

@@ -71,7 +71,7 @@ import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
-import { characterChatMessages, characterChatState, db } from "../db";
+import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { defaultOutfitPhrase } from "../images";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
 import {
@@ -116,7 +116,26 @@ import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
  * fails a reply.
  */
 
-/** The in-memory state for one chat, drifted/seeded/pulsed and persisted as a row. */
+/**
+ * The chat-wide SCENARIO (followups rulings 8-9): what belongs to the
+ * conversation rather than any one character — the premise, the SETTING-wide
+ * house rules (per-character divergence rides character tags, never
+ * per-character rule lists), the shared scene memory, ONE story clock, the
+ * one-shot skip note + skip history, and the scene render prefs. Lives on the
+ * `character_chats` row; every roster member reads the same scenario.
+ */
+export interface ChatScenario {
+  premise: string;
+  activeSocialCards: SocialReactionCard[];
+  sceneAuto: string;
+  sceneModel: string;
+  sceneMemory: ChatSceneMemory;
+  clockMinutes: number;
+  pendingSkipNote: string;
+  skipHistory: SkipRecord[];
+}
+
+/** The in-memory state for ONE roster character, drifted/seeded/pulsed and persisted as a row. */
 export interface ChatState {
   meters: Record<string, number>;
   /** The feeling axis (was `affinity`) — volatile, moved by the reaction pulse. −100..100. */
@@ -129,13 +148,10 @@ export interface ChatState {
   relationship: RelationshipTexture;
   conditions: ActiveCondition[];
   mindNote: string;
-  premise: string;
   /** Free-text starting outfit driving chat scene images (character-chat-scenario.plan.md). */
   outfit: string;
   /** Whether chat scene images reveal intimate anatomy (no structured wardrobe to derive it). */
   outfitExposed: boolean;
-  /** The social cards live in THIS chat — seeded from `profile.socialCards`, then authoritative. */
-  activeSocialCards: SocialReactionCard[];
   /**
    * Meter bands last surfaced to the narrator as a "just shifted" beat
    * (character-chat-state-narration.spec.md §5): `{ meterId: band }`. The anti-repetition gate
@@ -162,12 +178,6 @@ export interface ChatState {
   lastPulseTrace: ChatPulseTrace;
   /** Last-turn RAG debug trace for the dev inspector (character-chat-primary.spec.md §5). */
   lastMemoryTrace: ChatMemoryTrace;
-  /**
-   * The chat-local game clock — the ONLY time model (character-chat-standalone.spec.md
-   * §8, D3/D8): within-visit ticks, condition expiry, and player time skips all key on
-   * it; real-world elapsed time never touches state.
-   */
-  clockMinutes: number;
   /** Relationship arc samples (spec §7.2) — appended when affinity/stage moved; the sparkline. */
   relationshipHistory: RelationshipSample[];
   /** Recorded milestones (spec §7.2): first exchange, stage crossings, strong reactions, player-marked. */
@@ -194,20 +204,6 @@ export interface ChatState {
    * progress/revealed/resolved — the drive prompt law and archivist updates.
    */
   drives: ChatDrive[];
-  /** Player time skips (spec §8.1) — the future time-effects system's data, recorded now. */
-  skipHistory: SkipRecord[];
-  /** One-shot skip note (spec §8.1): rendered as a volatile prompt line next exchange, then cleared. */
-  pendingSkipNote: string;
-  /** Auto scene-generation mode (slice 9): "off" | "milestones" — text with headroom for future modes. */
-  sceneAuto: string;
-  /** Scene-image model pick (chatSceneModels): "reference" (avatar-locked edit) or a t2i key. */
-  sceneModel: string;
-  /**
-   * Accumulating scene memory (chat-scene-memory.ts): the narrator-imagined setting kept
-   * consistent across turns — current place, time of day, named places with details +
-   * connections. Switched deterministically pre-turn, reconciled from the archivist post-turn.
-   */
-  sceneMemory: ChatSceneMemory;
   /**
    * Narrative presence (multi-character-chat.plan.md): "present" shares the
    * player's scene; "away" is offstage — meters freeze, no memory legs, only
@@ -340,9 +336,8 @@ export async function resolveSeededOutfit(
   return { ...state, outfit: phrase };
 }
 
-export function seedChatState(profile: CharacterProfile, premise?: string): ChatState {
+export function seedChatState(profile: CharacterProfile): ChatState {
   const authored = profile.playerRelationship;
-  const note = authored?.note ?? "";
   const live = authoredRecordToLive(authored ?? { familiarity: "strangers", regard: "neutral", kind: "", history: "", presented: undefined, looming: false });
   return {
     meters: initialMeters(),
@@ -352,37 +347,133 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     relationship: { kind: live.kind, history: live.history, presented: live.presented, looming: live.looming },
     conditions: [],
     mindNote: "",
-    premise: (premise ?? note).trim().slice(0, CHAT_PREMISE_MAX_CHARS),
     // Falls back to the character form's outfit (chat-scene-fidelity.plan.md slice 1) —
-    // the scenario modal's Starting Outfit stays authoritative once the author edits it
-    // (including deliberately clearing it, which chooses composer inference). This pure
+    // the per-character sheet's Starting Outfit stays authoritative once the author edits
+    // it (including deliberately clearing it, which chooses composer inference). This pure
     // seed can only write the item-id MARKER (see seededOutfitMarker); every IO-capable
     // consumer resolves it to the readable phrase via resolveSeededOutfit.
     outfit: seededOutfitMarker(profile),
     outfitExposed: false,
-    // Seeded from the character's own cards, then author-editable + authoritative in the chat.
-    activeSocialCards: [...(profile.socialCards ?? [])],
     surfacedCues: {},
     memoryQueries: [],
     openLoops: [],
     attributeOverlays: [],
     lastPulseTrace: emptyChatPulseTrace(),
     lastMemoryTrace: emptyChatMemoryTrace(),
-    clockMinutes: 0,
     relationshipHistory: [],
     milestones: [],
     callbackHistory: [],
     feeling: emptyChatFeelingState(),
     selfieHistory: [],
     drives: seedChatDrives(profile.drives ?? []),
-    skipHistory: [],
-    pendingSkipNote: "",
-    sceneAuto: "off",
-    sceneModel: "reference",
-    sceneMemory: emptyChatSceneMemory(),
     presence: "present",
     quietExchanges: 0,
   };
+}
+
+/**
+ * Seed a fresh scenario at conversation creation (followups ruling 8): the
+ * premise pre-fills from the PRIMARY's authored `playerRelationship.note` (or
+ * an explicit premise), and the setting-wide house rules seed from the
+ * primary's own cards — then both are author-owned. Pure.
+ */
+export function seedChatScenario(profile: CharacterProfile, premise?: string): ChatScenario {
+  const note = profile.playerRelationship?.note ?? "";
+  return {
+    premise: (premise ?? note).trim().slice(0, CHAT_PREMISE_MAX_CHARS),
+    activeSocialCards: [...(profile.socialCards ?? [])],
+    sceneAuto: "off",
+    sceneModel: "reference",
+    sceneMemory: emptyChatSceneMemory(),
+    clockMinutes: 0,
+    pendingSkipNote: "",
+    skipHistory: [],
+  };
+}
+
+/** The stored-scenario boundary schema — every field heals (docs/resilience.md). */
+const chatScenarioSchema = z.object({
+  premise: z.string().catch("").default(""),
+  activeSocialCards: z.array(socialReactionCardSchema).catch([]).default([]),
+  sceneAuto: z.string().catch("off").default("off"),
+  sceneModel: z.string().catch("reference").default("reference"),
+  sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
+  clockMinutes: z.number().catch(0).default(0),
+  pendingSkipNote: z.string().catch("").default(""),
+  skipHistory: z.array(skipRecordSchema).catch([]).default([]),
+});
+
+/** Load the conversation's scenario off its chat row; null when the chat is gone. */
+export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): Promise<ChatScenario | null> {
+  const [row] = await db()
+    .select({
+      premise: characterChats.premise,
+      activeSocialCards: characterChats.activeSocialCards,
+      sceneAuto: characterChats.sceneAuto,
+      sceneModel: characterChats.sceneModel,
+      sceneMemory: characterChats.sceneMemory,
+      clockMinutes: characterChats.clockMinutes,
+      pendingSkipNote: characterChats.pendingSkipNote,
+      skipHistory: characterChats.skipHistory,
+    })
+    .from(characterChats)
+    .where(eq(characterChats.id, chatId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    premise: row.premise,
+    activeSocialCards: parseOr(activeSocialCardsSchema, row.activeSocialCards, [], sink, "character_chats.active_social_cards"),
+    sceneAuto: row.sceneAuto,
+    sceneModel: row.sceneModel,
+    sceneMemory: parseOr(chatSceneMemorySchema, row.sceneMemory, emptyChatSceneMemory(), sink, "character_chats.scene_memory"),
+    clockMinutes: row.clockMinutes,
+    pendingSkipNote: row.pendingSkipNote,
+    skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chats.skip_history"),
+  };
+}
+
+/**
+ * Persist the scenario onto the chat row. With `guardMessageId` the write only
+ * lands while that prompting message still exists — the same clear-mid-stream
+ * guard as the state save.
+ */
+export async function saveChatScenario(chatId: string, scenario: ChatScenario, guardMessageId?: string): Promise<void> {
+  const guard = guardMessageId
+    ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
+    : sql`true`;
+  await db().execute(sql`
+    update ${characterChats} set
+      premise = ${scenario.premise},
+      active_social_cards = ${JSON.stringify(scenario.activeSocialCards)}::jsonb,
+      scene_auto = ${scenario.sceneAuto},
+      scene_model = ${scenario.sceneModel},
+      scene_memory = ${JSON.stringify(scenario.sceneMemory)}::jsonb,
+      clock_minutes = ${scenario.clockMinutes},
+      pending_skip_note = ${scenario.pendingSkipNote},
+      skip_history = ${JSON.stringify(scenario.skipHistory)}::jsonb
+    where id = ${chatId} and ${guard}
+  `);
+}
+
+/** Persist the scenario rollback anchor ("another take"'s other half). `null` ⇒ `{}`. */
+export async function savePreExchangeScenario(chatId: string, scenario: ChatScenario | null, guardMessageId?: string): Promise<void> {
+  const guard = guardMessageId
+    ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
+    : sql`true`;
+  await db().execute(
+    sql`update ${characterChats} set pre_exchange_scenario = ${JSON.stringify(scenario ?? {})}::jsonb where id = ${chatId} and ${guard}`,
+  );
+}
+
+/** Load the scenario rollback anchor; `{}` (the sentinel) or a bad parse ⇒ null (keep live). */
+export async function loadPreExchangeScenario(chatId: string): Promise<ChatScenario | null> {
+  const [row] = await db()
+    .select({ preExchangeScenario: characterChats.preExchangeScenario })
+    .from(characterChats)
+    .where(eq(characterChats.id, chatId))
+    .limit(1);
+  if (!row || isEmptyJsonObject(row.preExchangeScenario)) return null;
+  return parseOrNull(chatScenarioSchema, row.preExchangeScenario);
 }
 
 /** Load the stored state for a chat, parsing every jsonb at the trust boundary, or null when no row exists. */
@@ -402,26 +493,18 @@ export async function loadChatState(
       mindNote: characterChatState.mindNote,
       lastPulseTrace: characterChatState.lastPulseTrace,
       lastMemoryTrace: characterChatState.lastMemoryTrace,
-      premise: characterChatState.premise,
       outfit: characterChatState.outfit,
       outfitExposed: characterChatState.outfitExposed,
-      activeSocialCards: characterChatState.activeSocialCards,
       surfacedCues: characterChatState.surfacedCues,
       memoryQueries: characterChatState.memoryQueries,
       openLoops: characterChatState.openLoops,
       attributeOverlays: characterChatState.attributeOverlays,
-      clockMinutes: characterChatState.clockMinutes,
       relationshipHistory: characterChatState.relationshipHistory,
       milestones: characterChatState.milestones,
       callbackHistory: characterChatState.callbackHistory,
       feeling: characterChatState.feeling,
       selfieHistory: characterChatState.selfieHistory,
       drives: characterChatState.drives,
-      skipHistory: characterChatState.skipHistory,
-      pendingSkipNote: characterChatState.pendingSkipNote,
-      sceneAuto: characterChatState.sceneAuto,
-      sceneModel: characterChatState.sceneModel,
-      sceneMemory: characterChatState.sceneMemory,
       presence: characterChatState.presence,
       quietExchanges: characterChatState.quietExchanges,
     })
@@ -437,10 +520,8 @@ export async function loadChatState(
     relationship: parseOr(relationshipTextureSchema, row.relationship, emptyRelationshipTexture(), sink, "character_chat_state.relationship_record"),
     conditions: parseOr(conditionsSchema, row.conditions, [], sink, "character_chat_state.conditions"),
     mindNote: row.mindNote,
-    premise: row.premise,
     outfit: row.outfit,
     outfitExposed: row.outfitExposed,
-    activeSocialCards: parseOr(activeSocialCardsSchema, row.activeSocialCards, [], sink, "character_chat_state.active_social_cards"),
     surfacedCues: parseOr(surfacedCuesSchema, row.surfacedCues, {}, sink, "character_chat_state.surfaced_cues"),
     memoryQueries: parseOr(memoryQueriesSchema, row.memoryQueries, [], sink, "character_chat_state.memory_queries"),
     openLoops: parseOr(memoryQueriesSchema, row.openLoops, [], sink, "character_chat_state.open_loops"),
@@ -459,7 +540,6 @@ export async function loadChatState(
       sink,
       "character_chat_state.last_memory_trace",
     ),
-    clockMinutes: row.clockMinutes,
     relationshipHistory: parseOr(
       relationshipHistorySchema,
       row.relationshipHistory,
@@ -472,17 +552,6 @@ export async function loadChatState(
     feeling: parseOr(chatFeelingStateSchema, row.feeling, emptyChatFeelingState(), sink, "character_chat_state.feeling"),
     selfieHistory: parseOr(selfieHistorySchema, row.selfieHistory, [], sink, "character_chat_state.selfie_history"),
     drives: parseOr(chatDrivesSchema, row.drives, [], sink, "character_chat_state.drives"),
-    skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
-    pendingSkipNote: row.pendingSkipNote,
-    sceneAuto: row.sceneAuto,
-    sceneModel: row.sceneModel,
-    sceneMemory: parseOr(
-      chatSceneMemorySchema,
-      row.sceneMemory,
-      emptyChatSceneMemory(),
-      sink,
-      "character_chat_state.scene_memory",
-    ),
     presence: row.presence,
     quietExchanges: Math.max(0, row.quietExchanges),
   };
@@ -501,28 +570,20 @@ const storedChatStateSchema = z.object({
   relationship: relationshipTextureSchema.catch(emptyRelationshipTexture()).default(emptyRelationshipTexture()),
   conditions: conditionsSchema,
   mindNote: z.string(),
-  premise: z.string(),
   outfit: z.string(),
   outfitExposed: z.boolean(),
-  activeSocialCards: activeSocialCardsSchema,
   surfacedCues: surfacedCuesSchema,
   memoryQueries: memoryQueriesSchema,
   openLoops: memoryQueriesSchema.catch([]).default([]),
   attributeOverlays: attributeOverlaysSchema,
   lastPulseTrace: chatPulseTraceSchema,
   lastMemoryTrace: chatMemoryTraceSchema,
-  clockMinutes: z.number(),
   relationshipHistory: relationshipHistorySchema.catch([]).default([]),
   milestones: milestonesSchema.catch([]).default([]),
   callbackHistory: callbackHistorySchema.catch([]).default([]),
   feeling: chatFeelingStateSchema.catch(emptyChatFeelingState()).default(emptyChatFeelingState()),
   selfieHistory: selfieHistorySchema.catch([]).default([]),
   drives: chatDrivesSchema.catch([]).default([]),
-  skipHistory: skipHistorySchema.catch([]).default([]),
-  pendingSkipNote: z.string().catch("").default(""),
-  sceneAuto: z.string().catch("off").default("off"),
-  sceneModel: z.string().catch("reference").default("reference"),
-  sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
   presence: z.enum(["present", "away"]).catch("present").default("present"),
   quietExchanges: z.number().catch(0).default(0),
 });
@@ -597,15 +658,16 @@ function isEmptyJsonObject(value: unknown): boolean {
 export function driftChatState(
   state: ChatState,
   profile: CharacterProfile,
-  options: { advance?: boolean } = {},
+  options: { advance?: boolean; clockMinutes: number },
 ): ChatState {
-  if (!options.advance) return state;
+  // Conditions expire against the SHARED story clock (followups ruling 8) even
+  // when this member's meters are frozen — one timeline for the roster.
+  const conditions = state.conditions.filter((c) => !isConditionExpired(c, options.clockMinutes));
+  if (!options.advance) return conditions.length === state.conditions.length ? state : { ...state, conditions };
   const meters = applyMeterDrift({ ...state.meters }, CHAT_TICK_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
-  const clockMinutes = state.clockMinutes + CHAT_TICK_MINUTES;
-  const conditions = state.conditions.filter((c) => !isConditionExpired(c, clockMinutes));
   // Emotional weather decays per EXCHANGE, not clock minutes (emotional-weather.plan.md):
   // one advance = one beat of the feeling fading and the bruise healing.
-  return { ...state, meters, conditions, clockMinutes, feeling: decayFeelingState(state.feeling) };
+  return { ...state, meters, conditions, feeling: decayFeelingState(state.feeling) };
 }
 
 /**
@@ -617,21 +679,34 @@ export function driftChatState(
  * mean recovery or deterioration is circumstance, and the time-effects system that
  * could know stays scaffolded, not wired.
  */
-export function applyTimeSkip(state: ChatState, amount: ChatSkipAmount, now: Date): ChatState {
-  const clockMinutes = state.clockMinutes + CHAT_SKIP_MINUTES[amount];
+export function applyTimeSkipToScenario(
+  scenario: ChatScenario,
+  amount: ChatSkipAmount,
+  primaryRegardBandId: string,
+  now: Date,
+): ChatScenario {
+  const clockMinutes = scenario.clockMinutes + CHAT_SKIP_MINUTES[amount];
   const record: SkipRecord = { at: now.toISOString(), clockMinutes, amount };
   return {
-    ...state,
+    ...scenario,
     clockMinutes,
+    // The one-shot note is worded by the PRIMARY's current band (the anchor voice).
+    pendingSkipNote: chatSkipNote(amount, primaryRegardBandId),
+    skipHistory: [...scenario.skipHistory, record].slice(-SKIP_HISTORY_CAP),
+  };
+}
+
+/** The per-character half of a time skip: expiry vs the advanced shared clock + scene-boundary resets. */
+export function applyTimeSkip(state: ChatState, amount: ChatSkipAmount, clockMinutes: number): ChatState {
+  return {
+    ...state,
     conditions: state.conditions.filter((c) => !isConditionExpired(c, clockMinutes)),
-    pendingSkipNote: chatSkipNote(amount, regardBandForValue(state.regard).id),
     // A skip is a scene boundary: the familiarity ratchet's per-scene budget resets.
     familiaritySceneGain: 0,
     // Emotional weather softens over skipped time — deliberately slower than the
     // beat-for-beat conversion (a "moments" skip barely dents a strong feeling; a
     // night softens it; days clear it). Bruises heal on the same steps.
     feeling: decayFeelingState(state.feeling, CHAT_FEELING_SKIP_STEPS[amount]),
-    skipHistory: [...state.skipHistory, record].slice(-SKIP_HISTORY_CAP),
   };
 }
 
@@ -649,6 +724,7 @@ export function applyChatPulse(
   pulse: ChatPulse,
   profile: CharacterProfile,
   characterName: string,
+  activeSocialCards: readonly SocialReactionCard[],
 ): { state: ChatState; trace: ChatPulseTrace } {
   const next: ChatState = { ...state, meters: { ...state.meters } };
   const concept = pulse.playerAct?.concept ?? null;
@@ -668,7 +744,7 @@ export function applyChatPulse(
     // `profile.socialCards`, then author-editable.
     const outcome = evaluateActReaction({
       act: { concept, target: characterName },
-      disposition: { tags: profile.tags, preferences: profile.preferences, cards: state.activeSocialCards },
+      disposition: { tags: profile.tags, preferences: profile.preferences, cards: [...activeSocialCards] },
       affinity: state.regard,
       moodMeter: state.meters.mood ?? NEUTRAL_MOOD_METER,
       traits: profile.traits,
@@ -816,6 +892,8 @@ export function applyChatAttributeOverlays(
 }
 
 export interface ChatPulseInput {
+  /** The SETTING-wide house rules (followups ruling 9) — one set for every member. */
+  activeSocialCards: readonly SocialReactionCard[];
   state: ChatState;
   profile: CharacterProfile;
   characterName: string;
@@ -870,7 +948,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     sink,
   );
   if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded"), degraded: true };
-  return { state: applyChatPulse(state, value, profile, characterName).state, degraded: false };
+  return { state: applyChatPulse(state, value, profile, characterName, input.activeSocialCards).state, degraded: false };
 }
 
 /** Drift-only fallback: keep the drifted state, stamp a degraded trace + the mandated diagnostic. */
@@ -957,6 +1035,14 @@ export async function finalizeChatState(input: {
    * present witness's own group. Deduped against the primary's group here.
    */
   extraMemoryWrites?: readonly { groupId: string; characterId: string }[];
+  /**
+   * The chat-wide scenario, ALREADY ticked/movement-switched for this exchange
+   * (followups ruling 8): finalize merges the archivist's scene proposal onto
+   * it, clears the one-shot skip note, and persists it beside the state.
+   */
+  scenario: ChatScenario;
+  /** The scenario as stored before this exchange — the rollback anchor's other half. */
+  preExchangeScenario: ChatScenario | null;
   sink?: DiagnosticSink;
 }): Promise<{
   /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
@@ -975,6 +1061,7 @@ export async function finalizeChatState(input: {
           characterName: input.characterName,
           playerName: input.playerName,
           exchange: input.exchange,
+          activeSocialCards: input.scenario.activeSocialCards,
           sink: input.sink,
         }),
     runChatArchivist({
@@ -1049,12 +1136,12 @@ export async function finalizeChatState(input: {
   const openLoops = archivist.degraded ? input.driftedState.openLoops : (archivist.value?.openLoops ?? input.driftedState.openLoops);
 
   // Scene memory: reconcile the archivist's `scene` proposal onto the pre-turn memory (the
-  // deterministic movement switch already applied to `driftedState.sceneMemory` before the
+  // deterministic movement switch already applied to `scenario.sceneMemory` before the
   // prompt built). A degraded / empty proposal is a no-op, so the memory only ever accretes
   // what the fiction established — never re-establishing an unchanged setting.
   const sceneMemory = archivist.value
-    ? mergeSceneMemory(input.driftedState.sceneMemory, archivist.value.scene)
-    : input.driftedState.sceneMemory;
+    ? mergeSceneMemory(input.scenario.sceneMemory, archivist.value.scene)
+    : input.scenario.sceneMemory;
 
   // Outfit change (chat-scene-fidelity.plan.md slice 1): a non-empty archivist proposal is
   // a FULL replacement of the tracked outfit + exposed flag — the fiction dressed, changed,
@@ -1099,7 +1186,7 @@ export async function finalizeChatState(input: {
     moved || firstExchange
       ? appendRelationshipSample(input.driftedState.relationshipHistory, {
           at,
-          clockMinutes: pulse.state.clockMinutes,
+          clockMinutes: input.scenario.clockMinutes,
           regard: postRegard,
           band: regardBandForValue(postRegard).id,
           familiarity,
@@ -1145,7 +1232,7 @@ export async function finalizeChatState(input: {
           : null
       : null;
   const selfieHistory = selfieKind
-    ? appendSelfieEntry(input.driftedState.selfieHistory, { kind: selfieKind, atClockMinutes: pulse.state.clockMinutes })
+    ? appendSelfieEntry(input.driftedState.selfieHistory, { kind: selfieKind, atClockMinutes: input.scenario.clockMinutes })
     : input.driftedState.selfieHistory;
   // "Big moment" (slice 9 auto scenes): a stage crossing or a strong card-driven
   // reaction — not the routine first exchange, which has barely a scene to render.
@@ -1185,17 +1272,23 @@ export async function finalizeChatState(input: {
       milestones,
       selfieHistory,
       drives: driveResult.drives,
-      sceneMemory,
       ...outfitPatch,
-      // The skip note is one-shot (spec §8.1): this exchange rendered it, so it clears.
-      pendingSkipNote: "",
     },
   });
-  // The rollback anchor rides a targeted follow-up UPDATE (never the shared upsert
-  // column list — an author edit must not clobber it): repeated "another take"s
+  // The scenario save (followups ruling 8): the merged scene memory, the ticked
+  // clock the pipeline already applied, and the one-shot skip note clearing —
+  // guarded like the state save.
+  await saveChatScenario(
+    input.chatId,
+    { ...input.scenario, sceneMemory, pendingSkipNote: "" },
+    input.promptMessageId,
+  );
+  // The rollback anchors ride targeted follow-up UPDATEs (never the shared upsert
+  // column list — an author edit must not clobber them): repeated "another take"s
   // keep rolling back to the same pre-exchange point. Guarded on the same prompting
   // message as saveChatState (F5), so a mid-stream delete leaves neither half written.
   await savePreExchangeSnapshot(input.chatId, input.characterId, input.preExchangeState, input.promptMessageId);
+  await savePreExchangeScenario(input.chatId, input.preExchangeScenario, input.promptMessageId);
 
   // Location sketch (chat-scene-fidelity.plan.md slice 2b): a current place without a
   // sketch gets one from the detached background agent. Enqueued AFTER the state write so
@@ -1245,23 +1338,20 @@ async function upsertChatState(
   const openLoops = JSON.stringify(state.openLoops);
   const attributeOverlays = JSON.stringify(state.attributeOverlays);
   const memoryTrace = JSON.stringify(state.lastMemoryTrace);
-  const activeSocialCards = JSON.stringify(state.activeSocialCards);
   const relationshipHistory = JSON.stringify(state.relationshipHistory);
   const milestones = JSON.stringify(state.milestones);
   const callbackHistory = JSON.stringify(state.callbackHistory);
   const feeling = JSON.stringify(state.feeling);
   const selfieHistory = JSON.stringify(state.selfieHistory);
   const drives = JSON.stringify(state.drives);
-  const skipHistory = JSON.stringify(state.skipHistory);
-  const sceneMemory = JSON.stringify(state.sceneMemory);
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, feeling, selfie_history, drives, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, presence, quiet_exchanges, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, presence, quiet_exchanges, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, ${state.presence}, ${state.quietExchanges}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${state.presence}, ${state.quietExchanges}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1277,22 +1367,14 @@ async function upsertChatState(
       open_loops = excluded.open_loops,
       attribute_overlays = excluded.attribute_overlays,
       last_memory_trace = excluded.last_memory_trace,
-      premise = excluded.premise,
       outfit = excluded.outfit,
       outfit_exposed = excluded.outfit_exposed,
-      active_social_cards = excluded.active_social_cards,
-      clock_minutes = excluded.clock_minutes,
       relationship_history = excluded.relationship_history,
       milestones = excluded.milestones,
       callback_history = excluded.callback_history,
       feeling = excluded.feeling,
       selfie_history = excluded.selfie_history,
       drives = excluded.drives,
-      skip_history = excluded.skip_history,
-      pending_skip_note = excluded.pending_skip_note,
-      scene_auto = excluded.scene_auto,
-      scene_model = excluded.scene_model,
-      scene_memory = excluded.scene_memory,
       presence = excluded.presence,
       quiet_exchanges = excluded.quiet_exchanges,
       updated_at = now()
@@ -1362,11 +1444,11 @@ export interface ChatStateEdit {
 }
 
 /**
- * Apply an author edit to a chat's state (spec §1.2 Save + slice 4 state-tools
- * modal). Loads the row (or seeds from the authored defaults — the premise
- * pre-fills before the first message), applies only the provided fields with the
- * same clamps the engine enforces, and persists. Returns the new state. Not guarded
- * on a message — there is no exchange in flight.
+ * Apply an author edit to a chat (spec §1.2 Save + slice 4 state-tools modal).
+ * ONE patch surface over the split stores (followups ruling 8): per-character
+ * fields load-or-seed and persist that character's state row; chat-wide fields
+ * (premise, house rules, scene prefs/memory) write the scenario. Returns both.
+ * Not guarded on a message — there is no exchange in flight.
  */
 export async function editChatState(args: {
   chatId: string;
@@ -1375,15 +1457,15 @@ export async function editChatState(args: {
   ownerId: string;
   profile: CharacterProfile;
   patch: ChatStateEdit;
-}): Promise<ChatState> {
+}): Promise<{ state: ChatState; scenario: ChatScenario }> {
   const { chatId, characterId, ownerId, profile, patch } = args;
   const base = await resolveSeededOutfit(
-    (await loadChatState(chatId, characterId)) ?? seedChatState(profile, patch.premise),
+    (await loadChatState(chatId, characterId)) ?? seedChatState(profile),
     ownerId,
     profile,
   );
+  const scenario = (await loadChatScenario(chatId)) ?? seedChatScenario(profile, patch.premise);
   const next: ChatState = { ...base, meters: { ...base.meters } };
-  if (patch.premise !== undefined) next.premise = patch.premise.trim().slice(0, CHAT_PREMISE_MAX_CHARS);
   if (patch.regard !== undefined) next.regard = clampRegard(patch.regard);
   if (patch.familiarity !== undefined) next.familiarity = clampFamiliarity(patch.familiarity);
   if (patch.relationship !== undefined) next.relationship = patch.relationship;
@@ -1392,7 +1474,6 @@ export async function editChatState(args: {
   if (patch.conditions !== undefined) next.conditions = patch.conditions.map(seedConditionEffects);
   if (patch.outfit !== undefined) next.outfit = patch.outfit.slice(0, CHAT_OUTFIT_MAX_CHARS);
   if (patch.outfitExposed !== undefined) next.outfitExposed = patch.outfitExposed;
-  if (patch.activeSocialCards !== undefined) next.activeSocialCards = patch.activeSocialCards;
   if (patch.openLoops !== undefined) {
     next.openLoops = patch.openLoops.map((l) => l.trim()).filter(Boolean).slice(0, CHAT_ARCHIVIST_MAX_OPEN_LOOPS);
   }
@@ -1401,20 +1482,26 @@ export async function editChatState(args: {
   }
   if (patch.surfacedCues !== undefined) next.surfacedCues = patch.surfacedCues;
   if (patch.attributeOverlays !== undefined) next.attributeOverlays = patch.attributeOverlays;
-  if (patch.sceneAuto !== undefined) next.sceneAuto = patch.sceneAuto;
-  if (patch.sceneModel !== undefined) next.sceneModel = patch.sceneModel;
-  if (patch.sceneMemory !== undefined) next.sceneMemory = patch.sceneMemory;
   if (patch.callbackHistory !== undefined) next.callbackHistory = patch.callbackHistory;
   if (patch.feeling !== undefined) next.feeling = patch.feeling;
   if (patch.selfieHistory !== undefined) next.selfieHistory = patch.selfieHistory;
   if (patch.drives !== undefined) next.drives = patch.drives.slice(0, 3);
   if (patch.presence !== undefined) next.presence = patch.presence;
+
+  const nextScenario: ChatScenario = { ...scenario };
+  if (patch.premise !== undefined) nextScenario.premise = patch.premise.trim().slice(0, CHAT_PREMISE_MAX_CHARS);
+  if (patch.activeSocialCards !== undefined) nextScenario.activeSocialCards = patch.activeSocialCards;
+  if (patch.sceneAuto !== undefined) nextScenario.sceneAuto = patch.sceneAuto;
+  if (patch.sceneModel !== undefined) nextScenario.sceneModel = patch.sceneModel;
+  if (patch.sceneMemory !== undefined) nextScenario.sceneMemory = patch.sceneMemory;
+
   await persistChatState(chatId, characterId, next);
-  return next;
+  await saveChatScenario(chatId, nextScenario);
+  return { state: next, scenario: nextScenario };
 }
 
 /** Apply a one-click test-bed action chip to the state (slice 4); returns the mutated state (PURE). */
-export function applyChatAction(state: ChatState, action: ChatActionId): ChatState {
+export function applyChatAction(state: ChatState, action: ChatActionId, clockMinutes: number): ChatState {
   const meters = { ...state.meters };
   let conditions = state.conditions;
   const bump = (id: string, delta: number) => {
@@ -1437,7 +1524,7 @@ export function applyChatAction(state: ChatState, action: ChatActionId): ChatSta
       conditions = upsertCondition(conditions, {
         id: "flushed",
         label: "Flushed",
-        startedAtMinutes: state.clockMinutes,
+        startedAtMinutes: clockMinutes,
         durationMinutes: CHAT_ACTION_CONDITION_MINUTES,
         promptHint: "Color high, breath a little quick.",
         attributeEffects: [],
@@ -1483,6 +1570,7 @@ function clampMeters(meters: Record<string, number>): Record<string, number> {
  */
 export function chatStateSnapshot(
   state: ChatState,
+  scenario: ChatScenario,
   opts: { dominance?: number; intimateContext?: boolean; persisted?: boolean } = {},
 ): ChatStateSnapshot {
   const band = regardBandForValue(state.regard);
@@ -1508,20 +1596,20 @@ export function chatStateSnapshot(
     emotion: { label: emotion.emotion, intensity: emotion.intensity },
     conditions: state.conditions,
     mindNote: state.mindNote,
-    premise: state.premise,
+    premise: scenario.premise,
     outfit: state.outfit,
     outfitExposed: state.outfitExposed,
-    activeSocialCards: state.activeSocialCards,
+    activeSocialCards: scenario.activeSocialCards,
     surfacedCues: state.surfacedCues,
     openLoops: state.openLoops,
     memoryQueries: state.memoryQueries,
     attributeOverlays: state.attributeOverlays,
     lastPulseTrace: state.lastPulseTrace,
     lastMemoryTrace: state.lastMemoryTrace,
-    clockMinutes: state.clockMinutes,
-    sceneAuto: state.sceneAuto,
-    sceneModel: state.sceneModel,
-    sceneMemory: state.sceneMemory,
+    clockMinutes: scenario.clockMinutes,
+    sceneAuto: scenario.sceneAuto,
+    sceneModel: scenario.sceneModel,
+    sceneMemory: scenario.sceneMemory,
     callbackHistory: state.callbackHistory,
     feeling: state.feeling,
     selfieHistory: state.selfieHistory,

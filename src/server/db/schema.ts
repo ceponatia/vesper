@@ -181,6 +181,27 @@ export const characterChats = pgTable(
     ownerId: text("owner_id").notNull().references(() => users.id),
     /** User-editable; "" renders as an auto-title (the character's name). */
     title: text("title").notNull().default(""),
+    // --- The chat-wide SCENARIO (followups rulings 8-9): what belongs to the
+    // conversation, not any one character. Moved off character_chat_state
+    // 2026-07-12 (backfilled from each chat's primary): the premise, the
+    // SETTING-wide house rules (per-character divergence rides character TAGS,
+    // never per-character rule lists), the shared scene memory, ONE story
+    // clock (away members skip meter decay, never fork the timeline), the
+    // one-shot skip note + skip history, and the scene render prefs.
+    premise: text("premise").notNull().default(""),
+    /** SocialReactionCard[] — the setting's active rules, applied to EVERY member. */
+    activeSocialCards: jsonb("active_social_cards").notNull().default([]),
+    sceneAuto: text("scene_auto").notNull().default("off"),
+    sceneModel: text("scene_model").notNull().default("reference"),
+    /** ChatSceneMemory — the shared imagined setting. */
+    sceneMemory: jsonb("scene_memory").notNull().default({}),
+    /** The chat-local game clock (the only time model) — one timeline for the roster. */
+    clockMinutes: integer("clock_minutes").notNull().default(0),
+    pendingSkipNote: text("pending_skip_note").notNull().default(""),
+    /** SkipRecord[] — player time skips. */
+    skipHistory: jsonb("skip_history").notNull().default([]),
+    /** The scenario as it stood BEFORE the last exchange — "another take"'s rollback half. */
+    preExchangeScenario: jsonb("pre_exchange_scenario").notNull().default({}),
     createdAt: createdAt(),
     /** Recency anchor for the Chats list; bumped on every exchange. */
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
@@ -361,16 +382,16 @@ export const characterChatSummaries = pgTable(
  * (multi-character-chat.plan.md): the character's tracked state beside the
  * message window, the rolling summary, and the chat-scoped facts/episodes —
  * the full meter registry, the two relationship axes, optional self-expiring
- * conditions, a dynamic "what's on their mind" note, a player-set per-chat
- * premise, scenario fields (outfit/cards), narrative presence + activity
- * recency, the RAG carry-overs (memory queries, attribute overlays, traces),
- * and the chat-local game clock. A pure CREATE (not an extension of
+ * conditions, a dynamic "what's on their mind" note, the starting outfit +
+ * exposure, narrative presence + activity recency, and the RAG carry-overs
+ * (memory queries, attribute overlays, traces). Chat-WIDE fields — premise,
+ * house rules, scene memory/prefs, the story clock — live on `character_chats`
+ * (the scenario; followups rulings 8-9). A pure CREATE (not an extension of
  * character_chat_summaries) so the migration never hits drizzle's rename
  * prompt and the pulse stays independent of the summary fold. No row ⇒ a fresh
- * stateless chat; the first POST lazily seeds one. Lifecycle: the single
- * **Clear Chat** (`clearCharacterChat`) deletes this row with the transcript +
- * summary + chat memory (character-chat-primary.spec.md §4, D4 — supersedes
- * the old three-scope reset).
+ * stateless chat; the first POST lazily seeds one. Lifecycle: `deleteChat`
+ * removes the chat row and everything hanging off it — state rows, transcript,
+ * summary, chat memory (character-chat-primary.spec.md §4, D4).
  */
 export const characterChatState = pgTable(
   "character_chat_state",
@@ -418,24 +439,12 @@ export const characterChatState = pgTable(
      */
     surfacedCues: jsonb("surfaced_cues").notNull().default({}),
     /**
-     * Player-set scenario framing for THIS chat ("it's the night before she moves
-     * away…"). Chat-only by construction — no session ever reads it (spec §1.2).
-     * Pre-filled from the authored `playerRelationship.note`, then player-owned.
-     */
-    premise: text("premise").notNull().default(""),
-    /**
      * Free-text starting outfit for THIS chat (character-chat-scenario.plan.md). Drives the
      * chat scene-image prompt instead of structured clothing items, which chat can't equip.
      */
     outfit: text("outfit").notNull().default(""),
     /** Gate for intimate-anatomy reveal in chat scene images (no structured wardrobe to derive it). */
     outfitExposed: boolean("outfit_exposed").notNull().default(false),
-    /**
-     * SocialReactionCard[] snapshot — the cards live in THIS chat (seeded from the character's
-     * own `profile.socialCards`, then author-editable in the Scenario modal). The pulse resolves
-     * reactions against this set so taboos/rules are testable without a world/session.
-     */
-    activeSocialCards: jsonb("active_social_cards").notNull().default([]),
     /**
      * string[] — the chat archivist's memory-retrieval queries for the NEXT turn
      * (character-chat-primary.spec.md §2), mirroring the session director's `memoryQueries`.
@@ -472,45 +481,6 @@ export const characterChatState = pgTable(
      * `{at, kind, label, messageId?}`.
      */
     milestones: jsonb("milestones").notNull().default([]),
-    /**
-     * SkipRecord[] ring (spec §8.1, cap ~50): `{at, clockMinutes, amount}` per player time
-     * skip — the future time-effects system's data, recorded now so it needs no migration.
-     */
-    skipHistory: jsonb("skip_history").notNull().default([]),
-    /**
-     * One-shot skip note (spec §8.1): stamped by a time skip, rendered as a volatile
-     * one-turn prompt line ("The next morning — acknowledge the gap naturally, once"),
-     * cleared when the exchange that rendered it persists. "" ⇒ none pending.
-     */
-    pendingSkipNote: text("pending_skip_note").notNull().default(""),
-    /**
-     * Auto scene-generation mode (plan area 8, slice 9): "off" (default — generation
-     * stays player-triggered) or "milestones" (queue a scene when an exchange lands a
-     * stage crossing / strong reaction). Text with headroom for future modes
-     * (e.g. an interval), never a boolean.
-     */
-    sceneAuto: text("scene_auto").notNull().default("off"),
-    /**
-     * Scene-image model pick (contracts/images chatSceneModels, owner request
-     * 2026-07-11): "reference" (default — identity-locked avatar edit) or a Venice
-     * t2i model key for a style hot-swap. Saved on select from the scene strip's
-     * dropdown; validated at the trust boundary (parseChatSceneModel), never here.
-     */
-    sceneModel: text("scene_model").notNull().default("reference"),
-    /**
-     * Chat-local game clock (within-visit tick + condition expiry + player time skips).
-     * The ONLY time model (D3/D8): real-world elapsed time never touches state — the
-     * wall-clock anchor and its between-visit recovery were removed outright.
-     */
-    clockMinutes: integer("clock_minutes").notNull().default(0),
-    /**
-     * ChatSceneMemory (contracts/turns/chat-scene-memory.ts) — the accumulating memory of
-     * the narrator-imagined setting: current place, time of day, and a bounded set of named
-     * places with durable details + connections. Maintained deterministic-first (movement
-     * switches `current`) then reconciled from the archivist's `scene` proposal. One jsonb
-     * blob so field additions are never migrations; parsed defensively at the boundary.
-     */
-    sceneMemory: jsonb("scene_memory").notNull().default({}),
     /**
      * Narrative presence (multi-character-chat.plan.md): "present" = sharing the
      * player's scene; "away" = offstage living their life (meters freeze, no

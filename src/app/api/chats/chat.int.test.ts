@@ -1036,7 +1036,7 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     expect(got.character.id).toBe(joinerId);
   });
 
-  it("seeds a preset's premise + cards to EVERY roster member; outfit/bands to the primary only", async (t) => {
+  it("seeds a preset's premise onto the shared scenario; outfit/bands to the primary only", async (t) => {
     if (!ready) return t.skip();
     const [preset] = await db()
       .insert(chatScenarioPresets)
@@ -1058,18 +1058,23 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     expect(res.status).toBe(201);
     const { id: chatId } = (await res.json()) as { id: string };
 
+    // The premise lives once on the chat row (followups ruling 8) — every
+    // roster member reads the same scenario.
+    const [scenario] = await db()
+      .select({ premise: characterChats.premise })
+      .from(characterChats)
+      .where(eq(characterChats.id, chatId));
+    expect(scenario?.premise).toBe("A rain-soaked rooftop bar.");
+
     const states = await db()
       .select({
         characterId: characterChatState.characterId,
-        premise: characterChatState.premise,
         outfit: characterChatState.outfit,
       })
       .from(characterChatState)
       .where(eq(characterChatState.chatId, chatId));
     const primary = states.find((s) => s.characterId === ids.character);
     const second = states.find((s) => s.characterId === secondId);
-    expect(primary?.premise).toBe("A rain-soaked rooftop bar.");
-    expect(second?.premise).toBe("A rain-soaked rooftop bar.");
     expect(primary?.outfit).toBe("a red slip dress");
     expect(second?.outfit).not.toBe("a red slip dress");
   });
