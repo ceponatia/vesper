@@ -56,4 +56,4 @@ narrate it away, so out-of-character puppeting must be refused.
 - A node in the pre-narrator before/during/after guardrail mesh
   ([pre-narrator-agents.spec.md](pre-narrator-agents.spec.md)).
 - The contradiction-judging enrichment folds into **personality Slices 3–4**
-  ([personality-and-state.plan.md](personality-and-state.plan.md)).
+  ([personality-and-state.plan.md](finished/personality-and-state.plan.md)).

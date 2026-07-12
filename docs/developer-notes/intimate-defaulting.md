@@ -1,7 +1,7 @@
 # Fragile intimate-anatomy defaulting
 
 Status: **analysis / proposal** (2026-06-15). Supplement to
-[character-schema-audit.md](character-schema-audit.md) finding **E1**. The
+[character-schema-audit.md](finished/character-schema-audit.md) finding **E1**. The
 per-character body-config (`intimateRegions`) is seeded from `identity.gender` at
 forge time — but gender is not force-filled, so a weak-signal prompt silently
 yields a character with **no intimate anatomy**, the empty default being

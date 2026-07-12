@@ -91,7 +91,7 @@ are the recorded remainders._
   validates the 2026-07-10 trait-quota softening** (narrator-prompt-consolidation
   slice 3): below the bar ⇒ restore the commented pre-softening wording and re-run.
   Two sibling owner-gated runs live in
-  [narrator-prompt-consolidation.plan.md](narrator-prompt-consolidation.plan.md)
+  [narrator-prompt-consolidation.plan.md](finished/narrator-prompt-consolidation.plan.md)
   §Rulings & leftovers: the `mt-chat-*` longitudinal baseline and the
   `CHAT_PROMPT_LAYOUT` A/B before its default flips.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
@@ -132,7 +132,7 @@ are the recorded remainders._
   open ruling is D1 — encrypt fact/episode embeddings and move scoped
   similarity ranking app-side, since plaintext embeddings are invertible.
 - **Codebase-review follow-on batches (2 & 4, session-side remainder)** — findings
-  [codebase-review.md](codebase-review.md) §C–E; no plans yet (each needs its
+  [codebase-review.md](finished/codebase-review.md) §C–E; no plans yet (each needs its
   `<topic>.plan.md` when it becomes active): **prompt intelligence** (§C — session-lane
   cast voices, content-framing/no-refusal port, intimate + dialogue craft rules for the
   session lane, forge upgrades), **dedup & cleanup sweep** (§E — non-chat items).
@@ -173,7 +173,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   the panel lists open wants + revealed secrets only (ruled). Remainder (the
   forge/editor authoring surface + eval fixtures) stays in Next.
 - **Chat scene references — current-look and place anchors** —
-  [chat-scene-references.plan.md](chat-scene-references.plan.md) — 2026-07-11 —
+  [chat-scene-references.plan.md](finished/chat-scene-references.plan.md) — 2026-07-11 —
   chat renders anchor on an outfit-true `chat_look` (identity-locked edit,
   keyed by outfit+exposed+overlays, keep-latest, minted on archivist changes in
   image-active chats — rulings) instead of the always-dressed avatar; scene-
@@ -190,7 +190,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   preferences — noted in `lib/character-scopes.ts`). Docs: authoring.md,
   guide/social-cards.md.
 - **Chat selfies — character-sent photo messages** —
-  [chat-selfies.plan.md](chat-selfies.plan.md) — 2026-07-11 — the character
+  [chat-selfies.plan.md](finished/chat-selfies.plan.md) — 2026-07-11 — the character
   sends photos back: `SELFIE_FRAMING` (the player-POV rule inverted), always
   the identity-locked reference route (ruled), player-request regex +
   apart-only unprompted offers (ruled — comms register = the texting signal;
@@ -200,7 +200,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   "Failed" transcript placeholder enlarging to the sent prompt). Docs:
   character-chat.md §Selfies, images.md, prompts.md.
 - **Chat image input — player-sent photos the character sees** —
-  [chat-image-input.plan.md](chat-image-input.plan.md) — 2026-07-11 — up to 4
+  [chat-image-input.plan.md](finished/chat-image-input.plan.md) — 2026-07-11 — up to 4
   photos per message (owner ruling: multi-image now): composer attach + canvas
   downscale → `chat_upload` assets (input-only, Gallery-hidden, hard-deleted
   with message/chat), ONE batched vision read persisted on message meta
@@ -209,7 +209,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   photo-only sends allowed. No migration. Docs: character-chat.md §Player
   photos, images.md, prompts.md.
 - **Emotional weather — persistent feeling, regard momentum, reply pacing** —
-  [emotional-weather.plan.md](emotional-weather.plan.md) — 2026-07-11 — a
+  [emotional-weather.plan.md](finished/emotional-weather.plan.md) — 2026-07-11 — a
   pulse-proposed persistent `feeling` (curve-derived intensity, exchange-decayed,
   composed with the meter mood line — owner rulings: compose; ~10-exchange bruise;
   new `apologize` concept halves it; damped ±10% curve feedback), warmth-streak +
@@ -218,7 +218,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   `mt-chat-feeling-hurt` run (owner-gated spend). Docs: character-chat.md
   §Emotional weather, prompts.md.
 - **Memory callbacks — unprompted "remember when" beats** —
-  [memory-callbacks.plan.md](memory-callbacks.plan.md) — 2026-07-11 — a
+  [memory-callbacks.plan.md](finished/memory-callbacks.plan.md) — 2026-07-11 — a
   lull-gated, once-per-~10-exchanges tail cue offering one old, milestone-boosted,
   topic-distant episode, worded by regard band (warm nostalgia / plain / pointed —
   owner ruling); `callback_history` anti-repeat ring (migration 0032), degrades to
@@ -234,7 +234,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   character-chat.md §API, ui.md §Scene images.
 - **Chat starting-outfit seed — garment phrase, not item ids** —
   `engine/chat-state.ts` + `images/avatar.ts`
-  ([chat-scene-fidelity.plan.md](chat-scene-fidelity.plan.md) §Seed fallback followup;
+  ([chat-scene-fidelity.plan.md](finished/chat-scene-fidelity.plan.md) §Seed fallback followup;
   owner report) — 2026-07-11 — the blank-Starting-Outfit fallback joined
   `profile.defaultOutfit` raw item ids into the scenario text, so the narrator ignored
   the outfit and the modal showed ids. The pure seed now writes the id-join as a marker
@@ -252,7 +252,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   quoted paragraph) for anyone else. Render-time only — stored transcripts re-render
   correctly. Docs: prompts.md §Dialogue tagging, character-chat.md §9.
 - **Face jewelry, accessory subtypes & the attribute-form accordion** —
-  [face-jewelry-and-attribute-form.plan.md](face-jewelry-and-attribute-form.plan.md)
+  [face-jewelry-and-attribute-form.plan.md](finished/face-jewelry-and-attribute-form.plan.md)
   — 2026-07-11 — lips/nose body locations; jewelry/headwear/eyewear subtype
   vocabularies (prompt-bearing, coverage templates) in the item form, classify
   pass and image/narrator prompts; nose + lip piercing attributes; registry
@@ -266,13 +266,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   narrow: paragraph-aligned, whitespace-insensitive verbatim suffix repeats only —
   paraphrased near-repeats and short stylistic echoes pass through.
 - **Chat scene fidelity — outfit tracking, location sketches, identity anchors** —
-  [chat-scene-fidelity.plan.md](chat-scene-fidelity.plan.md) — 2026-07-10 — the
+  [chat-scene-fidelity.plan.md](finished/chat-scene-fidelity.plan.md) — 2026-07-10 — the
   archivist's 7th field tracks outfit changes into chat state (seeded from the character
   form when Starting Outfit is blank); scene memory + a background `chat_scene_sketch`
   agent replace the image's placeholder room; whitelisted identity anchors reinforce the
   reference-avatar lock.
 - **Narrator prompt consolidation — external-review response, all six slices** —
-  [narrator-prompt-consolidation.plan.md](narrator-prompt-consolidation.plan.md) —
+  [narrator-prompt-consolidation.plan.md](finished/narrator-prompt-consolidation.plan.md) —
   2026-07-10 — the accepted points of the external GPT prompt review, implemented
   with rollback comments at every replaced line: per-shape chat length story
   (`chatLengthStory` — kills the aggressive_concise vs three-paragraph-baseline
@@ -331,7 +331,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   unchanged. Docs: `prompts.md` §Dialogue tagging, `ui.md`,
   `character-chat.md`.
 - **Player-input perception — markup lane, RAG fence, session port (slices 3–7)** —
-  [player-input-perception.plan.md](player-input-perception.plan.md) — 2026-07-09 —
+  [player-input-perception.plan.md](finished/player-input-perception.plan.md) — 2026-07-09 —
   the plan's whole remainder in one multi-agent run: exemption lines in the
   pulse/archivist/intake prompts; the pure `lib/message-spans` parser + "Message
   notation" legend + comms/OOC tail notes + the round-trippable `*Name: …*`
@@ -345,7 +345,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   the leak measurement; the live probe/eval runs are owner-gated spend; two small
   comms follow-ups recorded in the plan.
 - **Chat narrator POV — player-POV story narration** —
-  [chat-narrator-pov.plan.md](chat-narrator-pov.plan.md) — 2026-07-08 — the chat model
+  [chat-narrator-pov.plan.md](finished/chat-narrator-pov.plan.md) — 2026-07-08 — the chat model
   is now also the story's camera behind the player's eyes: the narrator-camera rule +
   player-body boundary (perception + light reflex writable; the player's actions,
   speech, and named emotions never), the attention/motion-gated visual rule (one
@@ -354,7 +354,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   `chat-pov-*` eval fixtures + `povCue` metric. Leftover: the live scored eval run
   (owner-gated spend).
 - **Player-input perception — the prompt-only partition (slices 1–2)** —
-  [player-input-perception.plan.md](player-input-perception.plan.md) — 2026-07-08 —
+  [player-input-perception.plan.md](finished/player-input-perception.plan.md) — 2026-07-08 —
   the chat narrator now reads the player's message in channels: quoted = heard,
   unquoted narration = seen if visible, interiority = invisible (no mind-reading,
   with a worked example and graceful no-quotes degradation); `chat-thought-leak`
@@ -383,8 +383,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   a plain larger-portrait box in chat + the Scene tab. Plan parked; a better system will be
   planned fresh.
 - **Review fixes — correctness & security (codebase-review batch 1)** —
-  [codebase-review.plan.md](codebase-review.plan.md) · findings
-  [codebase-review.md](codebase-review.md), 2026-07-02. All 17 items: the three
+  [codebase-review.plan.md](finished/codebase-review.plan.md) · findings
+  [codebase-review.md](finished/codebase-review.md), 2026-07-02. All 17 items: the three
   silently-dead gameplay systems revived (condition→mood keys on the normalized label via
   `conditionKey`; the chat first-exchange upsert carries the outfit/cards columns through
   one shared `upsertChatState`; the director prompt surfaces the `taste` exposure axis),
@@ -406,8 +406,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   archivist also carries the attribute proposer (D3) and next-turn queries; the three resets
   collapsed to one **Clear Chat** (D4). Migrations `0018`–`0020`.
 - **Character chat — state as a narration system** —
-  [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) · spec
-  [character-chat-state-narration.spec.md](character-chat-state-narration.spec.md), 2026-06-30.
+  [character-chat-state-narration.plan.md](finished/character-chat-state-narration.plan.md) · spec
+  [character-chat-state-narration.spec.md](finished/character-chat-state-narration.spec.md), 2026-06-30.
   The chat narrator now **enacts** the tracked `character_chat_state` instead of listing it:
   condition→attribute overlays (a designed-but-unbuilt seam, guarded so a condition can't rewrite
   an inherent attribute), graded meter cues with a **band-change anti-repetition gate** (new
@@ -441,7 +441,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   pose frames, touch reactions in the narrator line, a global detached-job recovery sweep. Decision-gated
   upgrade lanes remain (Rive rig, then R3F/VRM 3D; voice deferred).
 - **Character chat — opportunistic sensory cues** —
-  [character-chat-sensory.plan.md](character-chat-sensory.plan.md), 2026-06-29. Prompt-only: a
+  [character-chat-sensory.plan.md](finished/character-chat-sensory.plan.md), 2026-06-29. Prompt-only: a
   closeness-gated **"Sensory cues"** block surfaces `presentation.scent_baseline` (via `sensoryCues`
   in `prompts/character-chat.ts`) _only when the beat earns it_ — promoted out of the flat Attributes
   list, exposure-mask hint dropped, plus a `CHAT_RULES` rule (one cue on closeness/notice/intimacy,
@@ -466,14 +466,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   Owl Alpha `enabled:false`), applied to both lanes. Decision 1 re-ruled from "global-only"; tests + dev
   toggle ("Default (per-lane)" state) updated. No-spend (rulings already had the data).
 - **Personality enactment — sliders & age drive dialogue/action** —
-  [personality-enactment.plan.md](personality-enactment.plan.md), 2026-06-28. Made the authored
+  [personality-enactment.plan.md](finished/personality-enactment.plan.md), 2026-06-28. Made the authored
   trait **sliders** (and the new real age) actually steer how characters talk and act: character-chat
   now **surfaces the sliders at all** (it never did) as a binding Disposition block; the session
   disposition block + a new Prose rule shift from "stay consistent" to **enact**; the **director**
   agent gets present-character disposition so its next-turn steer fits temperament. Shared
   `dispositionBands` renderer; age/life-stage characterization rule (the `character-age-field` follow-up).
 - **Character real age vs apparent age** —
-  [character-age-field.plan.md](character-age-field.plan.md), 2026-06-28. New free-text
+  [character-age-field.plan.md](finished/character-age-field.plan.md), 2026-06-28. New free-text
   `profile.age` (basic info) split from the visual `identity.apparent_age` attribute: the
   **narrator** reads real age (`formatAge` — canonical facts + character-chat identity), the
   **portrait studio** keeps apparent age, and **scene image generators drop it**
@@ -576,8 +576,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   `social_cards` **library-reuse UI** (CRUD/page/import-picker/clone — table shipped, still
   in Next).
 - **Scene atmosphere — scene-tone producer** —
-  [scene-atmosphere.plan.md](scene-atmosphere.plan.md) · spec
-  [scene-atmosphere.spec.md](scene-atmosphere.spec.md), 2026-06-24. Built the producer the mood
+  [scene-atmosphere.plan.md](finished/scene-atmosphere.plan.md) · spec
+  [scene-atmosphere.spec.md](finished/scene-atmosphere.spec.md), 2026-06-24. Built the producer the mood
   core slice was missing: the **director** emits an optional `atmosphere` enum (one field, no
   new leg); `resolveAtmosphere` carries it onto the brief (sticky — director tone, else the
   prior, with an intimate-frame floor to `romantic`); the drift loop feeds it to the already-
@@ -612,7 +612,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   action chips, light conditions) and test-bed affordances (a **state-tools modal**
   with the last-turn debug trace, and the **Prompt Character** opening beat). Only the
   state-aware chat scene image was deferred → [deferred.plan.md](deferred.plan.md).
-- **Default player character** — [player-character.plan.md](player-character.plan.md),
+- **Default player character** — [player-character.plan.md](finished/player-character.plan.md),
   2026-06-23. A `/settings` page (reached from the nav account menu) where the user sets
   a light default player character — name + short persona on `users.playerPersona`,
   read through the single `resolvePlayerPersona` resolver and threaded into character
@@ -635,15 +635,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   [world-instances.plan.md](finished/world-instances.plan.md), 2026-06-23. Worlds hold
   snapshot copies of entities instead of live library FKs, so deletes never break copies.
 - **Character chat — rolling background summary** —
-  [character-chat-summary.plan.md](character-chat-summary.plan.md), 2026-06-21. A
+  [character-chat-summary.plan.md](finished/character-chat-summary.plan.md), 2026-06-21. A
   watermark-anchored running summary gives the 1-on-1 chat memory past its 40-turn window.
 - **Scene images — multi-reference & providers** —
   [scene-images.plan.md](finished/scene-images.plan.md) · spec
   [scene-images.spec.md](finished/scene-images.spec.md), 2026-06-19. Provider-capability
   layer + `image_references` table; Venice/Qwen multi-edit (Flux removed).
 - **Attribute mutability & change-path integrity** —
-  [attribute-mutability.plan.md](attribute-mutability.plan.md) · spec
-  [attribute-mutability.spec.md](attribute-mutability.spec.md), 2026-06-19. Enforced the
+  [attribute-mutability.plan.md](finished/attribute-mutability.plan.md) · spec
+  [attribute-mutability.spec.md](finished/attribute-mutability.spec.md), 2026-06-19. Enforced the
   `mutability` invariant at the merge boundary + a shared value-vocabulary module.
 - **Personality & evolving state** —
   [personality-and-state.plan.md](finished/personality-and-state.plan.md) · spec
@@ -654,7 +654,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   mood↔affinity coupling, and affinity trait-coupling + widened stages. Left as their own
   plans: the **event→mood table** (→ Mood), the **card layer** (→ Social-reaction cards),
   and the full NPC-puppeting system (deferred).
-- **UX-audit remediation** — [ux-audit.plan.md](ux-audit.plan.md), 2026-06-18. Triaged the
+- **UX-audit remediation** — [ux-audit.plan.md](finished/ux-audit.plan.md), 2026-06-18. Triaged the
   end-to-end audit: world-forge intake fields, forge-canon reconciler, artwork progress,
   contrast theme, session-lock window.
 - **Visual world map (Slice 1)** — [world-map.plan.md](world-map.plan.md), 2026-06-18.

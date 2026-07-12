@@ -60,8 +60,8 @@ about. Fix: **decouple identity from order.**
 
 **Adopted 2026-06-16.** Folded into `CLAUDE.md` (replacing the phase-N working-doc
 convention); [roadmap.md](roadmap.md) now holds the priority order. First
-instances: [scene-images.plan.md](scene-images.plan.md) +
-[scene-images.spec.md](scene-images.spec.md) and
+instances: [scene-images.plan.md](finished/scene-images.plan.md) +
+[scene-images.spec.md](finished/scene-images.spec.md) and
 [non-human-species.plan.md](finished/non-human-species.plan.md) +
 [non-human-species.spec.md](finished/non-human-species.spec.md); the world-moves specs were
 renamed off `*.phase5.md` to `movement-authority.spec.md` /
@@ -361,7 +361,7 @@ What "fleshing it out" should cover (none built yet):
 ## Relationship & meter timeline — _UX audit feature #4_
 
 _Raised 2026-06-17 (UX audit §6 #4). **Graduated at chat scale 2026-07-02** →
-[character-chat-standalone.plan.md](character-chat-standalone.plan.md) slice 8: the chat
+[character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md) slice 8: the chat
 Relationship panel ships an affinity sparkline (`relationship_history` ring) + milestones._
 What stays parked: the **session-scale** version — a sparkline/timeline in the Cast panel
 charting affinity + meters across a session (the per-turn deltas the post-turn agents
@@ -370,7 +370,7 @@ already emit). Promote it by porting the chat panel's shape onto session data.
 ## Session transcript export / share — _UX audit feature #8_
 
 _Raised 2026-06-17 (UX audit §6 #8). **Graduated at chat scale 2026-07-02** →
-[character-chat-standalone.plan.md](character-chat-standalone.plan.md) slice 8:
+[character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md) slice 8:
 `GET /api/chats/:id/export?format=md|json` (+ optional memory appendix) ships from the
 chat Relationship panel._ What stays parked: the **session** narrative-feed export
 (and/or a shareable read-only view) — port the chat exporter's shape onto the
@@ -378,17 +378,17 @@ episode/feed data when wanted.
 
 ## Scene image: pin / set as session cover — _UX audit feature #9_
 
-_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #9)._
+_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](finished/ux-audit.intake.md) §6 #9)._
 Let a player promote a favorite generated **scene image** to the session header as its
 cover. A small surface on top of the existing scene-image + gallery machinery. From
-[ux-audit.plan.md](ux-audit.plan.md).
+[ux-audit.plan.md](finished/ux-audit.plan.md).
 
 ## First-run guided tour — _UX audit feature #10_
 
-_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §6 #10)._
+_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](finished/ux-audit.intake.md) §6 #10)._
 The empty states are already strong (the audit praised them); a light **3-step coachmark**
 ("forge → begin → play") could shorten time-to-first-turn for a brand-new user. Lowest
-priority of the audit ideas. From [ux-audit.plan.md](ux-audit.plan.md).
+priority of the audit ideas. From [ux-audit.plan.md](finished/ux-audit.plan.md).
 
 ## NPC puppeting — the full handling system
 
@@ -404,15 +404,15 @@ contradiction judging once full traits + affinity + mood exist (personality Slic
 
 ## Production-build performance pass — _UX audit §5_
 
-_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](ux-audit.intake.md) §5)._
+_Raised 2026-06-17, from the UX audit ([ux-audit.intake.md](finished/ux-audit.intake.md) §5)._
 The audit **deliberately skipped** perf benchmarking because the dev Turbopack build
 (unminified, HMR) isn't representative. Run a **production-build Lighthouse-perf + trace
 pass** focused on the dashboard and the play screen (the heaviest route) for real numbers.
-Not blocking — do it when perf becomes a question. From [ux-audit.plan.md](ux-audit.plan.md).
+Not blocking — do it when perf becomes a question. From [ux-audit.plan.md](finished/ux-audit.plan.md).
 
-## State-aware chat scene image — _graduated 2026-06-30 → [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) (slice 7 / spec §8, D4)_
+## State-aware chat scene image — _graduated 2026-06-30 → [character-chat-state-narration.plan.md](finished/character-chat-state-narration.plan.md) (slice 7 / spec §8, D4)_
 
-_Raised 2026-06-24, the one piece of [character-chat-state.plan.md](character-chat-state.plan.md)
+_Raised 2026-06-24, the one piece of [character-chat-state.plan.md](finished/character-chat-state.plan.md)
 slice 4 not built. Graduated 2026-06-30 into the state-as-narration plan, which bundles the
 visual axis with the prose enactment so they reuse the same state derivations — fold the chat's
 light state (mood/meters: flushed, tipsy, tired; active conditions; the `mindNote`) into the

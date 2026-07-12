@@ -53,7 +53,7 @@ generation, no push; a notification lane is out of scope here).
    grid) so meanwhile-lines, openers, and life events can draw on it ("just got
    off shift"). Chat-side consumption only; the session movement engine already
    reads the field.
-5. **Selfie attach** (after [chat-selfies.plan.md](chat-selfies.plan.md)): a
+5. **Selfie attach** (after [chat-selfies.plan.md](finished/chat-selfies.plan.md)): a
    warm opener may attach one — the "thinking of you" photo, the strongest
    reopen hook.
 
@@ -79,6 +79,6 @@ generation, no push; a notification lane is out of scope here).
 
 - [character-drives.plan.md](character-drives.plan.md) — drives give openers
   and life events their material; sequence drives first if possible.
-- [chat-selfies.plan.md](chat-selfies.plan.md) — slice 5's attach hook.
+- [chat-selfies.plan.md](finished/chat-selfies.plan.md) — slice 5's attach hook.
 - [multi-character-chat.plan.md](multi-character-chat.plan.md) — openers stay
   primary-participant-only until the ensemble frame lands.

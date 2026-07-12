@@ -1,7 +1,7 @@
 # The schedule read/write asymmetry — authored routines with no author
 
 Status: **analysis / proposal** (2026-06-15). Supplement to
-[character-schema-audit.md](character-schema-audit.md) finding **C3**.
+[character-schema-audit.md](finished/character-schema-audit.md) finding **C3**.
 `CharacterProfile.schedule` is consumed by the off-screen NPC movement system and
 is the field two phase specs build on — yet **nothing writes it**. It can only
 ever be `[]`, which means the routine-driven movement it powers never fires for
