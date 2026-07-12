@@ -259,7 +259,7 @@ function PremiseTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: Worl
         <SocialCardsEditor
           cards={style.socialCards}
           onChange={(socialCards) => patchStyle({ socialCards })}
-          hint="The world's social fabric — taboos and rules every present character reacts to. A character's own cards (on their Disposition tab) take precedence."
+          hint="The world's social fabric — taboos and rules every present character reacts to. A character's own cards (on their Personality tab) take precedence."
           emptyText="No social cards yet. Add a taboo or social rule, or let the forge propose a starter set."
         />
       </div>

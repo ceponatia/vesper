@@ -10,7 +10,10 @@ import { isPlaceholderName, type FillableDraft } from "./character-fill";
  * mechanical guarantee: `manual`-provenance attribute/trait values survive,
  * and a re-draft that disagreed with one is reported, not applied.
  *
- * Scope ids intentionally match the editor's content-tab ids.
+ * Scope ids intentionally match the editor's content-tab ids. One deliberate
+ * mismatch: `disposition` still owns `preferences` (they ride the profile forge
+ * leg with tags + traits) even though the editor shows likes/dislikes on the
+ * Personality tab since 2026-07-11 — a Disposition re-draft re-derives them.
  */
 export const characterSheetScopes = ["profile", "attributes", "personality", "disposition", "outfit"] as const;
 export const characterSheetScopeSchema = z.enum(characterSheetScopes);

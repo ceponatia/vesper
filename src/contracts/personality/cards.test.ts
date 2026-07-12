@@ -70,6 +70,15 @@ describe("resolveCardForTags", () => {
     expect(resolveCardForTags(c, "proposition", [])?.valence).toBe("dislike");
   });
 
+  it("matches override tags through normalizeTag on both sides (free-form authoring)", () => {
+    const c = card({ reactionOverrides: [{ tag: "Foot Fetish Positive", toReaction: { kind: "enjoy", hint: "" } }] });
+    expect(resolveCardForTags(c, "proposition", ["foot_fetish_positive"])?.kind).toBe("enjoy");
+    expect(resolveCardForTags(c, "proposition", ["Foot-Fetish-Positive"])?.kind).toBe("enjoy");
+    // an override tag that normalizes to nothing never matches (not even an empty tag)
+    const blank = card({ reactionOverrides: [{ tag: "!!!", toReaction: { kind: "enjoy", hint: "" } }] });
+    expect(resolveCardForTags(blank, "proposition", ["!!!"])?.kind).toBe("revulsion");
+  });
+
   it("returns null for an indifferent verdict (a real, winning verdict)", () => {
     const c = card({ defaultReaction: { kind: "indifferent", hint: "" } });
     expect(resolveCardForTags(c, "proposition", [])).toBeNull();

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { interactionConceptById } from "./interactions";
 import type { PreferenceValence } from "./preference";
+import { normalizeTag } from "./tags";
 
 /**
  * Social-reaction cards (docs/developer-notes/social-reaction-cards.plan.md): importable
@@ -49,7 +50,8 @@ export type CardReaction = z.infer<typeof cardReactionSchema>;
 /**
  * A per-tag override (the foot-fetish flip): a character carrying `tag` reacts with
  * `toReaction` instead of the card default — e.g. a `foot-fetish` taboo defaults to
- * revulsion, but `foot-fetish-positive` flips it to `enjoy`.
+ * revulsion, but `foot-fetish-positive` flips it to `enjoy`. `tag` may be canonical
+ * or free-form; matching is `normalizeTag`-insensitive (case/spacing/underscores).
  */
 export const reactionOverrideSchema = z.object({
   tag: z.string().min(1),
@@ -98,7 +100,7 @@ export type SocialReactionCardExtras = z.infer<typeof socialReactionCardExtrasSc
  * Recompose a full inline {@link SocialReactionCard} from a `social_cards` library row's parts:
  * the row's `id`→a fresh inline id (passed in — contracts mints none), `name`→`label`,
  * `description`, and the `definition` extras. The copy-at-every-layer snapshot the world editor /
- * character disposition tab append when importing a library card (social-reaction-cards.plan.md).
+ * character Personality tab append when importing a library card (social-reaction-cards.plan.md).
  */
 export function cardFromLibraryParts(
   newCardId: string,
@@ -172,11 +174,16 @@ export interface ResolvedCardReaction {
 /**
  * Resolve a single card for a tag set: a tag override (first match) beats the card default,
  * which beats the tier-derived default. `indifferent` ⇒ null (the character genuinely doesn't
- * mind — a real, winning verdict, not a fall-through).
+ * mind — a real, winning verdict, not a fall-through). Override tags match through
+ * `normalizeTag` on both sides, so a free-form character tag ("Foot Fetish Positive") still
+ * hits an override keyed `foot-fetish-positive`.
  */
 export function resolveCardForTags(card: SocialReactionCard, conceptId: string, tags: readonly string[]): ResolvedCardReaction | null {
   const tier = severityToTier(card.severity);
-  const override = card.reactionOverrides.find((o) => tags.includes(o.tag));
+  const override = card.reactionOverrides.find((o) => {
+    const target = normalizeTag(o.tag);
+    return target !== "" && tags.some((t) => normalizeTag(t) === target);
+  });
   const reaction: CardReaction = override?.toReaction ?? card.defaultReaction ?? { kind: tierDefaultKind(tier), hint: "" };
   const valence = reactionKindToValence(reaction.kind);
   if (!valence) return null;
