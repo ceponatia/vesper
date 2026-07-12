@@ -47,9 +47,9 @@ function RerunIcon({ className }: { className?: string }) {
  * Re-parsing the growing reply on each streaming render is fine — the parser is pure and
  * cheap, and its line-oriented rules keep the unterminated tail stable.
  */
-function ReplyBody({ content, name }: { content: string; name: string }) {
-  const segments = chatReplySegments(content, name);
-  const context = { knownNames: name ? [name] : undefined };
+function ReplyBody({ content, knownNames }: { content: string; knownNames: readonly string[] }) {
+  const segments = chatReplySegments(content, knownNames);
+  const context = { knownNames: knownNames.length ? [...knownNames] : undefined };
   return (
     <>
       {segments.map((seg, i) => (
@@ -84,6 +84,7 @@ function ReplyBody({ content, name }: { content: string; name: string }) {
 export function MessageBubble({
   line,
   name,
+  knownNames,
   avatarImageId,
   streaming,
   takeTarget,
@@ -98,6 +99,11 @@ export function MessageBubble({
 }: {
   line: ChatLine;
   name: string;
+  /** The full roster's display names (primary first) — the dialogue-tag vocabulary. In a
+   *  1-on-1 this is just `[name]`; in a group every member, so non-primary `[Name]` tags
+   *  attribute instead of leaking as literal text. `name` stays the primary, for the avatar
+   *  and action labels. */
+  knownNames: readonly string[];
   avatarImageId: string | null;
   streaming: boolean;
   /** True on the last assistant reply when regeneration is available (parent gates archived). */
@@ -214,14 +220,17 @@ export function MessageBubble({
               ) : isUser ? (
                 // Span renderer (player-input-perception slice 5): italicize thoughts /
                 // `_italic_`, read `*Name:*` as a text, mark `((OOC))` — sigils hidden.
-                // (`name` seeds comms-recipient resolution.)
-                <MessageContent content={line.content} context={{ knownNames: name ? [name] : undefined }} />
+                // (the roster seeds comms-recipient resolution — the player may text any member.)
+                <MessageContent
+                  content={line.content}
+                  context={{ knownNames: knownNames.length ? [...knownNames] : undefined }}
+                />
               ) : (
                 // Narrator/character replies render per-speaker segments (dialogue-attribution):
                 // the `[Name]` tag is hidden behind a small speaker label, standalone whole-line
                 // quotes attribute to the character, and segment content still flows through the
                 // span renderer above. In-bubble segments — the chat lane stays "a story being told".
-                <ReplyBody content={line.content} name={name} />
+                <ReplyBody content={line.content} knownNames={knownNames} />
               )}
               {line.stopped ? (
                 <span className="ml-1.5 inline-block rounded-sm border border-ink-600 px-1 text-[10px] tracking-wide text-paper-500 uppercase">

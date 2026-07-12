@@ -99,8 +99,39 @@ function standaloneQuoteStarts(lines: string[]): Set<number> {
   return starts;
 }
 
+/**
+ * Case-insensitive tag-name → canonical-name map. Every known name is keyed by its
+ * full form; it ALSO gets a first-name (first whitespace token) alias so the
+ * narrator's natural shortening still attributes — the prompt models `[Sabrina
+ * Carpenter]` but the model writes `[Sabrina]` (owner report 2026-07-12: a two-word
+ * character's first-name tags rendered as literal `[Sabrina]`, because the vocabulary
+ * held only the full name). The alias is added only when unambiguous: it never
+ * overrides a full-name key, and a first token shared by two or more known names is
+ * dropped for all of them — a group with two "Sabrina"s fails closed to narrator
+ * prose rather than guessing which one spoke.
+ */
 function buildKnownMap(knownNames: string[]): Map<string, string> {
-  return new Map(knownNames.map((name) => [name.trim().toLowerCase(), name]));
+  const map = new Map<string, string>();
+  // Full names first — they always own their exact key.
+  for (const name of knownNames) {
+    const key = name.trim().toLowerCase();
+    if (key) map.set(key, name);
+  }
+  // First-name aliases, but only where the first token is unique across the set.
+  const firstTokenCounts = new Map<string, number>();
+  for (const name of knownNames) {
+    const first = name.trim().split(/\s+/)[0]?.toLowerCase();
+    if (first) firstTokenCounts.set(first, (firstTokenCounts.get(first) ?? 0) + 1);
+  }
+  for (const name of knownNames) {
+    const trimmed = name.trim();
+    const first = trimmed.split(/\s+/)[0]?.toLowerCase();
+    if (!first || first === trimmed.toLowerCase()) continue; // absent or single-token → nothing to alias
+    if (firstTokenCounts.get(first) !== 1) continue; // shared first name → ambiguous, fail closed
+    if (map.has(first)) continue; // an exact full name already owns this key → don't override
+    map.set(first, name);
+  }
+  return map;
 }
 
 function trimBlankEdges(lines: string[]): string[] {
