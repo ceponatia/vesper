@@ -23,7 +23,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing actively building — pick from **Next** below.)_
+- **Multi-character & forge wrap-up — the owner-rulings pass** —
+  [multi-character-chat.followups.md](multi-character-chat.followups.md)
+  (active — 2026-07-12. Closes every recorded leftover of the three same-day
+  ships: forge re-draft semantics + the portrait review dialog; preset
+  relationship records, the matrix player column, third-person pair law; the
+  chat-wide/per-character schema split (premise, setting-wide house rules,
+  shared scene + clock at the conversation level), per-character note-takers
+  + folds, group-scene selfies/callbacks/sensory-focus, and the per-character
+  sheet UI.)
 
 ## Next (queued)
 
