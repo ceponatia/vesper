@@ -328,3 +328,158 @@ export function composeRelationshipLaw(input: ComposeRelationshipLawInput): stri
   );
   return lines.join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Third-person pair law (followups ruling 6): the same band semantics rendered
+// for an ENSEMBLE narrator, where "you" belongs to the player alone. Name-based
+// phrasing (never pronouns), so no gender plumbing; one paragraph-bullet per
+// directed edge keeps 12 worst-case edges affordable.
+// ---------------------------------------------------------------------------
+
+type PairPhrase = (a: string, b: string) => string;
+
+const familiarityThird: ReadonlyMap<string, PairPhrase> = new Map<string, PairPhrase>([
+  [
+    "strangers",
+    (a, b) =>
+      `${a} has no name rights with ${b} beyond whatever an introduction gave, can assume nothing about ${b}, and reads only what anyone could see`,
+  ],
+  [
+    "introduced",
+    (a, b) =>
+      `${a} has ${b}'s name and uses it a little carefully, knows only the outline of ${b}, and catches only the loudest signals`,
+  ],
+  [
+    "acquainted",
+    (a, b) =>
+      `first names come naturally; ${a} can reference what ${b} has shared and the time together, and notices ${b}'s bigger tells`,
+  ],
+  [
+    "familiar",
+    (a, b) =>
+      `first names and nicknames are ${a}'s to use; shared history — habits, stories, sore spots — is ${a}'s to reference freely, and ${a} reads ${b}'s moods with practiced ease`,
+  ],
+  [
+    "deeply_known",
+    (a, b) =>
+      `${a} could finish ${b}'s sentences — history, habits, wounds, the whole map — and reads ${b} at a glance, even what ${b} tries to hide`,
+  ],
+]);
+
+const regardThird: ReadonlyMap<string, PairPhrase> = new Map<string, PairPhrase>([
+  [
+    "hostile",
+    (a, b) =>
+      `${a} wants ${b} gone, beaten, or proven wrong — initiates only to strike or end the encounter, and gives ${b} nothing: not answers, not comfort, not the benefit of the doubt`,
+  ],
+  [
+    "wary",
+    (a, b) =>
+      `${a} doesn't trust ${b} and expects the worst — never seeks ${b} out, watches, and volunteers nothing that could be used against ${a}`,
+  ],
+  [
+    "cool",
+    (a, b) =>
+      `${a} dislikes ${b} — politely; ${b}'s charm doesn't land, encounters are endured rather than sought, and courtesy is the whole offer`,
+  ],
+  [
+    "neutral",
+    (a, b) =>
+      `${a} has no real feelings about ${b} yet either way — safe, occasional overtures, engaging as the moment requires and disclosing little`,
+  ],
+  [
+    "friendly",
+    (a, b) =>
+      `${a} likes ${b} and enjoys the company — starts topics, proposes plans, teases first; opinions and stories flow freely while the tender spots stay covered`,
+  ],
+  [
+    "warm",
+    (a, b) =>
+      `${a} cares about ${b} and it shows at the edges — often the one to reach out, volunteering feelings and admitting to caring`,
+  ],
+  [
+    "close",
+    (a, b) =>
+      `${b} matters to ${a} — one of the people ${a}'s day bends around; plans, contact, and touch come naturally, and ${a} trusts ${b} with the unguarded version`,
+  ],
+  [
+    "cherished",
+    (a, b) => `${a} cherishes ${b} and protects ${b}'s presence in ${a}'s life — bold in reaching out, with few walls left`,
+  ],
+  [
+    "devoted",
+    (a, b) =>
+      `${a} is devoted to ${b} — where ${b} is feels halfway to home; ${b} is assumed into ${a}'s plans, and secrets feel like debts`,
+  ],
+  [
+    "smitten",
+    (a, b) =>
+      `${a} is smitten with ${b} and cannot play it cool — the first move escapes ${a} before deciding on it, feelings arriving unfiltered`,
+  ],
+]);
+
+const intimateEnemyThird: PairPhrase = (a, b) =>
+  `The intimate enemy: ${a} knows exactly where to cut ${b}, and knows it will land — using that knowledge costs ${a} something every time.`;
+const strangerDevotionThird: PairPhrase = (a, b) =>
+  `${a} barely knows ${b} and it doesn't matter — enormous feeling with almost nothing yet to hang it on.`;
+
+const comboThird: ReadonlyMap<string, PairPhrase> = new Map<string, PairPhrase>([
+  ["familiar|hostile", intimateEnemyThird],
+  ["deeply_known|hostile", intimateEnemyThird],
+  [
+    "familiar|cool",
+    (a, b) =>
+      `Familiarity is not warmth: ${a} could talk with ${b} all night and give away nothing — ease without a single opened door.`,
+  ],
+  [
+    "deeply_known|cool",
+    (a, b) => `Familiarity is not warmth: ${a} could finish ${b}'s sentences, but won't give ${b} anything that isn't required.`,
+  ],
+  ["strangers|devoted", strangerDevotionThird],
+  ["strangers|smitten", strangerDevotionThird],
+]);
+
+export interface ComposePairLawInput {
+  fromName: string;
+  toName: string;
+  familiarity: number;
+  regard: number;
+  kind?: string;
+  history?: string;
+  presented?: PresentedMask;
+}
+
+/**
+ * One directed edge of the pair law, third person (followups ruling 6): the
+ * full band semantics — knowledge ceiling, feeling/initiative/openness, mask,
+ * corner note, escalation floor — as a single paragraph-bullet. Used for the
+ * ensemble's present-pair section; the second-person block above stays the
+ * player edge's.
+ */
+export function composePairRelationshipLaw(input: ComposePairLawInput): string {
+  const a = input.fromName.trim() || "This character";
+  const b = input.toName.trim() || "the other";
+  const fam = familiarityBandForValue(input.familiarity);
+  const reg = regardBandForValue(input.regard);
+  const kind = input.kind?.trim();
+  const history = input.history?.trim();
+  const mask =
+    input.presented?.lean === "masks_warmth"
+      ? `Outwardly ${a} performs colder toward ${b} than ${a} feels — the warmth is real and hidden, surfacing only when caught off guard${input.presented.note.trim() ? ` (reads as: ${input.presented.note.trim()})` : ""}.`
+      : input.presented?.lean === "masks_dislike"
+        ? `Outwardly ${a} performs warmer toward ${b} than ${a} feels — the courtesy is a mask, and what ${a} actually feels shows in what ${a} doesn't say${input.presented.note.trim() ? ` (reads as: ${input.presented.note.trim()})` : ""}.`
+        : "";
+  const corner = comboThird.get(`${fam.id}|${reg.id}`);
+  const famPhrase = familiarityThird.get(fam.id) ?? familiarityThird.get("strangers");
+  const regPhrase = regardThird.get(reg.id) ?? regardThird.get("neutral");
+  const parts = [
+    `${a} → ${b}${kind ? ` (${kind})` : ""}:`,
+    history ? `${history}.` : "",
+    `Familiarity (${fam.label.toLowerCase()}): ${famPhrase?.(a, b) ?? ""}.`,
+    `Regard (${reg.label.toLowerCase()}): ${regPhrase?.(a, b) ?? ""}.`,
+    mask,
+    corner ? corner(a, b) : "",
+    `Between them, ${a} entertains at most ${ESCALATION_TIER_PHRASES[regardBandProfile(reg.id).escalationFloor]} with ${b}; past that ${a} deflects in ${a}'s own voice — unless the Scenario establishes them closer, which wins.`,
+  ].filter(Boolean);
+  return parts.join(" ");
+}
