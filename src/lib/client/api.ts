@@ -128,6 +128,10 @@ export function apiPatch<T>(schema: z.ZodType<T>, path: string, body: unknown): 
   return request(schema, path, { method: "PATCH", body: JSON.stringify(body) });
 }
 
+export function apiPut<T>(schema: z.ZodType<T>, path: string, body: unknown): Promise<ApiResult<T>> {
+  return request(schema, path, { method: "PUT", body: JSON.stringify(body) });
+}
+
 export function apiDelete(path: string): Promise<ApiResult<unknown>> {
   return request(z.unknown(), path, { method: "DELETE" });
 }
@@ -857,6 +861,11 @@ export const charactersApi = {
     scope?: CharacterSheetScope;
     draft?: CharacterDraft;
   }) => apiPost(forgeResponseSchema(characterDraftSchema), "/api/characters/forge", body),
+  /** Library-default relationship edges FROM this character (the Relationships tab). */
+  relationships: (id: string) => apiGet(libraryRelationshipsSchema, `/api/characters/${id}/relationships`),
+  /** Replace-set save of the character's outgoing default edges. */
+  saveRelationships: (id: string, edges: { toCharacterId: string; record: AuthoredEdgeRecord }[]) =>
+    apiPut(z.unknown(), `/api/characters/${id}/relationships`, { edges }),
   /** Vision pass over the canonical avatar → unset appearance attributes filled on the draft. */
   attributesFromPortrait: (id: string, draft: CharacterDraft) =>
     apiPost(forgeResponseSchema(characterDraftSchema), `/api/characters/${id}/attributes/from-portrait`, { draft }),
@@ -951,6 +960,61 @@ export const chatRelationshipSchema = z.object({
 });
 export type ChatRelationship = z.infer<typeof chatRelationshipSchema>;
 
+// --- Relationship matrix (relationship-model.plan.md slice 6) ---------------
+
+/** A live directed edge record (scalars; band labels derive client-side). */
+export const liveEdgeRecordSchema = z.object({
+  familiarity: z.number().catch(0),
+  regard: z.number().catch(0),
+  kind: textOr(""),
+  history: textOr(""),
+  presented: z
+    .object({ lean: z.enum(["masks_warmth", "masks_dislike"]), note: textOr("") })
+    .optional()
+    .catch(undefined),
+  looming: z.boolean().catch(false),
+});
+export type LiveEdgeRecord = z.infer<typeof liveEdgeRecordSchema>;
+
+/** The authored form surfaces write: band ids + texture. */
+export interface AuthoredEdgeRecord {
+  familiarity: string;
+  regard: string;
+  kind: string;
+  history: string;
+  presented?: { lean: "masks_warmth" | "masks_dislike"; note: string };
+  looming: boolean;
+}
+
+export const chatRelationshipsSchema = z.object({
+  edges: arrayOf(
+    z.object({ fromCharacterId: idSchema, toCharacterId: idSchema, record: liveEdgeRecordSchema }),
+  ),
+  roster: arrayOf(z.object({ characterId: idSchema, name: nameSchema, sort: z.number().catch(0) })),
+});
+export type ChatRelationships = z.infer<typeof chatRelationshipsSchema>;
+
+export const libraryRelationshipsSchema = z.object({
+  edges: arrayOf(
+    z.object({
+      toCharacterId: idSchema,
+      toName: nameSchema,
+      record: z.object({
+        familiarity: z.string().catch("strangers"),
+        regard: z.string().catch("neutral"),
+        kind: textOr(""),
+        history: textOr(""),
+        presented: z
+          .object({ lean: z.enum(["masks_warmth", "masks_dislike"]), note: textOr("") })
+          .optional()
+          .catch(undefined),
+        looming: z.boolean().catch(false),
+      }),
+    }),
+  ),
+});
+export type LibraryRelationships = z.infer<typeof libraryRelationshipsSchema>;
+
 export const chatsApi = {
   /** Active conversations, newest first; scoped to one character and/or the archived shelf. */
   list: (opts: { characterId?: string; archived?: boolean } = {}) =>
@@ -1026,6 +1090,14 @@ export const chatsApi = {
     apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/time-skip`, { amount }),
   /** The Relationship panel payload (spec §7.2–7.4 UI): stage, sparkline, milestones, story so far. */
   relationship: (chatId: string) => apiGet(chatRelationshipSchema, `/api/chats/${chatId}/relationship`),
+  // --- Relationship matrix (relationship-model.plan.md slice 6) ---
+  /** The conversation's directed NPC↔NPC edges + roster (the matrix editor's data). */
+  relationships: (chatId: string) => apiGet(chatRelationshipsSchema, `/api/chats/${chatId}/relationships`),
+  /** Upsert authored edges (band picks + texture → live scalars server-side). */
+  saveRelationships: (
+    chatId: string,
+    edges: { fromCharacterId: string; toCharacterId: string; record: AuthoredEdgeRecord }[],
+  ) => apiPut(chatRelationshipsSchema.pick({ edges: true }), `/api/chats/${chatId}/relationships`, { edges }),
   // --- Roster (multi-character-chat.plan.md slice 1) ---
   /** Add a character to the roster (cap 4); D7 memory choice defaults to shared. */
   addParticipant: (chatId: string, characterId: string, memory: "shared" | "fresh" = "shared") =>
