@@ -45,6 +45,17 @@ _(nothing — pull the next entry from Next)_
   same run, as do the **`chat-secret-hold`/`-reveal` fixtures** (built + dry-run
   validated 2026-07-12 — [character-drives.plan.md](character-drives.plan.md)
   slice 4, the `secretCue` planted-token metric).
+- **UX improvements — chat, item library, character form** —
+  [ux-improvements.plan.md](ux-improvements.plan.md) (next — planned 2026-07-12
+  from an owner-requested three-surface review; position here is provisional).
+  Nine slices, quick wins first: stale multi-character copy fix + wiring the
+  built-but-unwired clone endpoints, chat transcript pagination + jump-to-latest
+  (backported from the session feed), outfit visibility in the chat status
+  strip, admin-gating the character-sheet debug traces + explaining the action
+  chips, an item ✦ draft-from-description assist, item delete in-use warnings +
+  read-only public items, character-form dirty guard + validation + attribute-
+  accordion summaries, and the one gameplay feature: **named outfit presets**
+  (casual/work/date/sleep) with chat + daily-rhythm hooks.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
