@@ -54,18 +54,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
-_The three entries below are the remainder of the 2026-07-11 **character-chat
+_The two entries below are the remainder of the 2026-07-11 **character-chat
 engagement batch** (planned from the character-chat & schema review; the first
-four — memory callbacks, emotional weather, chat image input, chat selfies —
-shipped the same day, see Shipped), deliberately ordered by **effort, least →
-most** and queued ahead of the pre-existing items — owner instruction
+five shipped the same day, see Shipped), deliberately ordered by **effort,
+least → most** and queued ahead of the pre-existing items — owner instruction
 2026-07-11._
 
-- **Chat scene references — current-look and place anchors** —
-  [chat-scene-references.plan.md](chat-scene-references.plan.md) (next —
-  effort M+). A cached outfit-true "current look" reference replacing the
-  always-dressed avatar anchor, plus lazily-minted place images from scene
-  sketches feeding the chat lane's unused multi-edit rung.
 - **Character drives — desires & secrets as gated inner life** —
   [character-drives.plan.md](character-drives.plan.md) (next — effort L).
   Authored wants with secrecy levels, archivist-tracked progress, a band-gated
@@ -162,6 +156,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat scene references — current-look and place anchors** —
+  [chat-scene-references.plan.md](chat-scene-references.plan.md) — 2026-07-11 —
+  chat renders anchor on an outfit-true `chat_look` (identity-locked edit,
+  keyed by outfit+exposed+overlays, keep-latest, minted on archivist changes in
+  image-active chats — rulings) instead of the always-dressed avatar; scene-
+  memory places get lazily-minted `chat_place` establishing shots, and chat
+  scenes go multi-reference (look + place) through the previously-unused
+  multi-edit rung. Cache = the images table (`meta.lookKey`); no migrations.
+  Docs: character-chat.md §Scene reference anchors, images.md.
 - **Social-card tag-override editor + character editor re-tab** — no plan
   (owner one-off, 2026-07-11) — full override rows on `SocialCardFields`
   (free-form tag with canonical datalist, kind, optional intensity, hint) with

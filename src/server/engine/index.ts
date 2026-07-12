@@ -16,6 +16,8 @@ export * from "./pipeline";
 export * from "./inner-note";
 export * from "./character-chat";
 export * from "./chat-pipeline";
+export * from "./chat-reference-enqueue";
+export * from "./chat-reference-images";
 export * from "./chat-callback";
 export * from "./chat-feeling";
 export * from "./chat-intent";

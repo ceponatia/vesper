@@ -213,6 +213,21 @@ export async function deleteChatUploads(chatId: string, anchorMessageIds?: reado
 }
 
 /**
+ * Hard-delete a conversation's chat-private assets by kind (uploads, look/place
+ * references — everything that must NOT survive the chat the way scenes do).
+ * Files unlink best-effort; the sweep reconciles stragglers.
+ */
+export async function deleteChatAssets(chatId: string, kinds: readonly ImageKind[]): Promise<number> {
+  if (kinds.length === 0) return 0;
+  const where = and(eq(images.chatId, chatId), inArray(images.kind, [...kinds]));
+  const rows = await db().select({ path: images.path }).from(images).where(where);
+  if (rows.length === 0) return 0;
+  await db().delete(images).where(where);
+  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
+  return rows.length;
+}
+
+/**
  * Validate + claim a message's attachments at send time (chat-image-input.plan.md):
  * keep only ids that are THIS chat's ready `chat_upload` rows (order preserved,
  * unknown/foreign ids dropped), and stamp `anchor_message_id` so the message's

@@ -1,8 +1,17 @@
 # Chat scene references — current-look and place anchors
 
-Status: **next** (planned 2026-07-11, from the character-chat & schema engagement
-review — seven-plan batch at the top of [roadmap.md](roadmap.md) §Next; effort
-**M+**)
+Status: **shipped — 2026-07-11** (planned, ruled, and built the same day — the
+fifth of the seven-plan engagement batch. All three slices landed: the
+`chat_look`/`chat_place` kinds + `chatLookKey`/renders (`images/chat-look.ts`),
+the two detached jobs (enqueues split into `chat-reference-enqueue.ts` to keep
+the finalizer↔handler import acyclic; the finalizer fires the look mint on
+outfit/appearance changes, `queueChatScene` fires the place mint lazily), and
+consumption — scenes/selfies anchor on a fresh look over the avatar, and chat
+scenes go **multi-reference** (look + place) through the previously-unused
+`venice_multi_edit` rung. `ScenePlace.imageId` rides the scene-memory jsonb
+(no migration anywhere — both kinds and both job types are type-level enums).
+Rulings + the images-table-as-cache refinement recorded above; provenance rows
+(`image_references`) come free via `renderResolvedScene`.)
 
 Chat scenes anchor on the canonical avatar — always wearing the default outfit —
 so once the fiction has re-dressed or undressed the character, every render must
@@ -47,17 +56,23 @@ reference image to feed it.
 3. Multi-edit threading + provenance rows + a diagnostics assert
    (`provider_fallback` fires when the place image is absent).
 
-## Open questions
+## Rulings (owner, 2026-07-11)
 
-- Asset kind for looks: a new `chat_look` kind (per images.md "Adding a
-  pipeline") vs `scene` + `meta.flavor: "look"`. The look must be chat-keyed
-  and Gallery-hidden either way — pick at build.
-- Cost control: look images render unprompted on outfit change — cap per chat
-  (ring of N, delete the oldest) and/or only mint once the chat has rendered at
-  least one scene?
-- Should an `attributeOverlays` change alone (a haircut, no outfit change)
-  refresh the look? v1: yes for free, by folding the overlay hash into
-  `look_outfit_key`.
+- **New `chat_look` kind** (Gallery-hidden for free, never in the scene strip,
+  hard-deleted with the conversation). Place images get the sibling
+  `chat_place` kind for the same reasons.
+- **Mint on outfit change, image-active chats only**: the look job fires when
+  the archivist records an outfit/appearance change, but only once the chat has
+  ever rendered a scene/selfie — text-only chats never pay. Only the LATEST
+  look is kept; the prior deletes on replacement.
+- **Overlay refresh: yes** — the look key hashes outfit + exposed flag +
+  appearance-relevant `attributeOverlays`, so a haircut invalidates the cached
+  look like a change of clothes.
+
+Design refinement while building: the look cache lives on the **images table
+itself** (`meta.lookKey` on the latest ready `chat_look` row), not on chat-state
+columns — no migration, and regenerate rollback can't desync a cache pointer
+from the asset it names; a stale key simply falls back to the avatar.
 
 ## Cross-links
 

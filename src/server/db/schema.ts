@@ -1036,7 +1036,10 @@ export const images = pgTable(
     // (never an identity anchor or edit reference), Gallery-hidden, hard-deleted with its
     // message/conversation (unlike scenes, which SET NULL and survive). The drizzle enum is
     // type-level only, so adding a kind is never a migration.
-    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload"] }).notNull(),
+    // `chat_look` / `chat_place` (chat-scene-references.plan.md): a conversation's cached
+    // render anchors — the outfit-true identity variant and the current place's establishing
+    // shot. Chat-keyed, Gallery-hidden (kind-filtered queries), hard-deleted with the chat.
+    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
@@ -1107,7 +1110,7 @@ export const jobs = pgTable(
     id: id(),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
     type: text("type", {
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify"],
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify"],
     }).notNull(),
     status: text("status", { enum: ["queued", "running", "done", "failed"] }).notNull().default("queued"),
     runnerId: text("runner_id"),

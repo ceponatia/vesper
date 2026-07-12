@@ -60,6 +60,13 @@ export const scenePlaceSchema = z.object({
    * (the absent-sketch trigger simply re-fires).
    */
   sketch: z.string().trim().min(1).max(SCENE_SKETCH_MAX_CHARS).optional().catch(undefined),
+  /**
+   * The place's rendered reference image (chat-scene-references.plan.md): a
+   * `chat_place` asset minted lazily from the sketch on the first render there,
+   * fed to the multi-edit rung as the setting anchor. Absent until minted; a
+   * dangling id (deleted asset) just fails the anchor load and re-mints.
+   */
+  imageId: z.string().trim().min(1).optional().catch(undefined),
 });
 export type ScenePlace = z.infer<typeof scenePlaceSchema>;
 
@@ -186,8 +193,9 @@ export function mergeSceneMemory(memory: ChatSceneMemory, proposal: ChatScenePro
     name: p.name,
     details: [...p.details],
     connections: [...p.connections],
-    // The sketch is agent-written, never proposed by the archivist — carry it through.
+    // Sketch + place image are agent/render-written, never archivist-proposed — carry both.
     ...(p.sketch !== undefined ? { sketch: p.sketch } : {}),
+    ...(p.imageId !== undefined ? { imageId: p.imageId } : {}),
   }));
 
   const upsert = (rawName: string): ScenePlace => {
@@ -258,5 +266,23 @@ export function withPlaceSketch(memory: ChatSceneMemory, placeName: string, sket
   if (!place || place.sketch) return memory;
   const places = [...memory.places];
   places[index] = { ...place, sketch: text };
+  return { ...memory, places };
+}
+
+/**
+ * Attach a rendered place image to a named place (chat-scene-references.plan.md) —
+ * the CAS-write shape `withPlaceSketch` uses: returns the SAME memory reference
+ * when the place vanished or already carries an image, so callers can bail on
+ * identity. PURE.
+ */
+export function withPlaceImage(memory: ChatSceneMemory, placeName: string, imageId: string): ChatSceneMemory {
+  const id = imageId.trim();
+  if (!id) return memory;
+  const key = normalizeName(placeName);
+  const index = memory.places.findIndex((p) => normalizeName(p.name) === key);
+  const place = index >= 0 ? memory.places[index] : undefined;
+  if (!place || place.imageId) return memory;
+  const places = [...memory.places];
+  places[index] = { ...place, imageId: id };
   return { ...memory, places };
 }

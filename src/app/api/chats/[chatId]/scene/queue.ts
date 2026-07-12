@@ -3,8 +3,8 @@ import { characterProfileSchema, currentScenePlace, emptyCharacterProfile } from
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
 import { characterChatMessages, db, jobs } from "@/server/db";
-import { loadChatState, resolveSeededOutfit } from "@/server/engine";
-import { renderCharacterSceneImage } from "@/server/images";
+import { enqueueChatPlaceImage, loadChatState, resolveSeededOutfit } from "@/server/engine";
+import { chatLookKey, renderCharacterSceneImage } from "@/server/images";
 import { log } from "@/server/log";
 
 /** How many recent assistant lines the scene composer centres the shot on. */
@@ -94,6 +94,15 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
       ? place.sketch?.trim() || [place.name, place.details.join("; ")].filter(Boolean).join(" — ")
       : undefined;
 
+    // Chat reference anchors (chat-scene-references.plan.md): the outfit-true look
+    // key the render resolves against the cached `chat_look`, and the LAZY place
+    // mint — a sketched current place without an image gets one queued on the
+    // first render there (fire-and-forget; this render still ships without it).
+    const lookKey = chatState ? chatLookKey(chatState) : undefined;
+    if (place?.sketch && !place.imageId) {
+      void enqueueChatPlaceImage({ chatId: args.chatId, characterId: args.character.id, placeName: place.name });
+    }
+
     return await startJob({
       type: "chat_scene_image",
       payload: { chatId: args.chatId, characterId: args.character.id, ...(args.flavor ? { flavor: args.flavor } : {}) },
@@ -115,6 +124,8 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           chatId: args.chatId,
           anchorMessageId,
           flavor: args.flavor,
+          lookKey,
+          place: place?.imageId ? { name: place.name, imageId: place.imageId } : undefined,
         }),
       }),
     });

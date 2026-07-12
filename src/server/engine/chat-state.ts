@@ -83,6 +83,7 @@ import {
   type ChatFeelingState,
 } from "./chat-feeling";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
+import { enqueueChatLookImage } from "./chat-reference-enqueue";
 import { appendSelfieEntry, selfieHistorySchema, type SelfieEntry } from "./chat-selfie";
 import { enqueueChatSceneSketch } from "./chat-scene-sketch";
 import {
@@ -1101,6 +1102,13 @@ export async function finalizeChatState(input: {
       characterName: input.characterName,
       placeName: sketchPlace.name,
     });
+  }
+  // Current-look refresh (chat-scene-references.plan.md): the fiction re-dressed
+  // the character or landed a lasting appearance change — mint a fresh look anchor.
+  // The job itself gates on image-active chats + key match (ruled), so this enqueue
+  // is cheap and idempotent; fire-and-forget after the state write it reads.
+  if (outfitProposal?.description || (archivist.value?.attributeChanges.length ?? 0) > 0) {
+    void enqueueChatLookImage({ chatId: input.chatId, characterId: input.characterId });
   }
   return { bigMoment, selfieSend: selfieKind !== null };
 }
