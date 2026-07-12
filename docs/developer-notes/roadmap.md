@@ -27,18 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
-  audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
-  grows). Both live in `engine/merge/phases/threads.ts` and are documented in
-  [../story-threads.md](../story-threads.md):
-  1. **`resolve` isn't guarded by `kind`** — `applyThreadSignals` (and the admin
-     `DELETE /api/sessions/:id/threads/:threadId` close route) will resolve an
-     `ongoing` thread by id; only the director *prompt* forbids it. Gate `resolve` to
-     `investigation` kind in the reducer.
-  2. **Exact-title `propose` reopens a closed thread** — the `byTitle` fallback isn't
-     status-filtered, so a proposal whose title exactly matches a `resolved`/`archived`
-     thread `develop`s → `refresh`es it back to `open`. Exclude non-open/cooling threads
-     from `byTitle`'s candidate pool (the semantic dedup layer already does).
 - **Character chat — enactment measurement run** (the shipped plan's one leftover) —
   [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)
   §slice 2 / spec §5. The paired-contrast fixtures + blind pair judge are built and dry-run validated;
@@ -108,6 +96,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Story-thread lifecycle guards** — no plan (two small fixes from the 2026-07-08
+  docs-accuracy audit) — 2026-07-12 — the thread reducer now gates `resolve` to
+  `investigation` kind (`merge.thread.resolve_blocked` diagnostic; ruled: the admin
+  manual-close route archives ongoing threads instead) and touch/develop/propose
+  only match live (open/cooling) threads by id or title, so a closed thread can
+  never be revived (a same-title propose opens a fresh thread). See
+  [../story-threads.md](../story-threads.md).
 - **Chat initiative — the remainder slices (plan complete)** —
   [chat-initiative.plan.md](chat-initiative.plan.md) — 2026-07-12 — the §8.4 v2
   marker (unseen-milestone seen-cursor `milestones_seen_at`, migration 0043 —

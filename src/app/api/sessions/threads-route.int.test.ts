@@ -5,9 +5,10 @@ import { storyThreadSchema, type SessionRuntime } from "@/contracts";
 import { db, sessions, users, worlds } from "@/server/db";
 
 // DELETE /api/sessions/:id/threads/:threadId suite (docs/story-threads.md
-// §Manual close): the admin-gated route flips a thread to `resolved` in
-// sessions.runtime. Handler invoked directly with mocked auth; self-skips when
-// the database is unreachable.
+// §Manual close): the admin-gated route closes a thread in sessions.runtime —
+// investigations flip to `resolved`, ongoing threads (which never resolve) to
+// `archived`. Handler invoked directly with mocked auth; self-skips when the
+// database is unreachable.
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Brian", role: "admin" as "admin" | "user" },
@@ -116,6 +117,16 @@ describe.skipIf(!ready)("DELETE thread route (admin manual close)", () => {
     expect(res.status).toBe(200);
     expect(await json(res)).toMatchObject({ id: "t1", status: "resolved" });
     expect(await threadStatuses(sessionId)).toEqual({ t1: "resolved", t2: "open" });
+  });
+
+  it("archives an ongoing thread instead of resolving it (ongoing threads never resolve)", async () => {
+    authState.user.role = "admin";
+    const sessionId = await freshSession();
+
+    const res = await close(sessionId, "t2");
+    expect(res.status).toBe(200);
+    expect(await json(res)).toMatchObject({ id: "t2", status: "archived" });
+    expect(await threadStatuses(sessionId)).toEqual({ t1: "open", t2: "archived" });
   });
 
   it("404s an unknown thread id and mutates nothing", async () => {

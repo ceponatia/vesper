@@ -13,7 +13,7 @@ Every thread is one of two kinds — this is the single most important distincti
 | **investigation** | a question, problem, mystery, or goal with an end state | yes — tracks `closeConditions`, gets `resolve`d when met | "Investigating Captain Thorne", "Repairing Maya's trust", "Council Chamber Wi-Fi" |
 | **ongoing** | a standing topic that is only ever updated | no — never auto-resolved, only cools when quiet | "Maya's social life" |
 
-An investigation left open after its need is met is a bug (it re-enters context and gets re-raised as if unsettled — the original Council-Chamber-Wi-Fi report). An ongoing thread that gets "resolved" is the opposite bug. This split is expressed by the **director prompt** (a soft LLM instruction — "ongoing threads are never resolved"); note the deterministic lifecycle does **not** currently guard `resolve` by `kind`, so an LLM (or the admin manual-close route) that resolves an ongoing thread by id silently succeeds — the prompt is the only guardrail today.
+An investigation left open after its need is met is a bug (it re-enters context and gets re-raised as if unsettled — the original Council-Chamber-Wi-Fi report). An ongoing thread that gets "resolved" is the opposite bug. This split is enforced twice: the **director prompt** says "ongoing threads are never resolved" (the soft LLM instruction), and the deterministic reducer **guards `resolve` by `kind`** — a resolve signal against an `ongoing` thread is skipped with a `merge.thread.resolve_blocked` diagnostic. The admin manual-close route respects the same split by closing ongoing threads as `archived` instead of `resolved`.
 
 ## Data model
 
@@ -55,9 +55,9 @@ Every field is `.default()`ed, so threads written before this schema existed par
 ```
 
 - **Spawn** (`engine/spawn.ts`): plot anchors seed threads (`source: "anchor"`); priority `active` → `open`, else `cooling`.
-- **touch / develop / propose / resolve**: applied deterministically by `applyThreadSignals` (`engine/merge/phases/threads.ts`, pure & unit-tested). `develop` is the major-event path (appends a `{turn, text, kind}` entry, capped, and refreshes recency); `touch` is the cheap keep-warm path (refreshes recency, **no** log entry); `propose` seeds a new thread with kind/question/closeConditions and an opening development; `resolve` flips an investigation to `resolved`.
+- **touch / develop / propose / resolve**: applied deterministically by `applyThreadSignals` (`engine/merge/phases/threads.ts`, pure & unit-tested). `develop` is the major-event path (appends a `{turn, text, kind}` entry, capped, and refreshes recency); `touch` is the cheap keep-warm path (refreshes recency, **no** log entry); `propose` seeds a new thread with kind/question/closeConditions and an opening development; `resolve` flips an investigation to `resolved` (kind-guarded — a resolve against an `ongoing` thread is skipped with `merge.thread.resolve_blocked`). Touch/develop/propose only ever match **live** (open/cooling) threads, by id or title.
 - **cooling** (`coolThreads`): an `open` thread untouched for `THREAD_COOLING_TURNS` turns demotes to `cooling` — it leaves the narrator context but still shows in the UI and is still offered to the director. Applies to both kinds (a quiet ongoing thread cools out of the way and reactivates when developed).
-- **resolve / archive**: only investigations *should* resolve (the reducer does not enforce this by kind — see above). Resolved/archived threads drop from both the narrator context and the status payload, so they vanish from the UI. The **semantic** dedup layer never resurrects a closed thread (its candidate pool is open/cooling only) — but the **exact-title** fallback inside `applyThreadSignals` (`byTitle`) is **not** status-filtered, so a `propose` whose title exactly matches a resolved/archived thread reopens it (`develop` → `refresh` sets `status: "open"`). A code gap worth knowing, not intended behavior.
+- **resolve / archive**: only investigations resolve (enforced by kind in the reducer — see above; the manual-close route archives ongoing threads). Resolved/archived threads drop from both the narrator context and the status payload, so they vanish from the UI — and they stay closed: neither the **semantic** dedup layer (candidate pool is open/cooling only) nor the **exact-title** fallback inside `applyThreadSignals` (same live-only filter, on both the id and title lookups) will match one, so a `propose` whose title matches a closed thread opens a *fresh* thread and a stale `touch`/`develop` reference degrades to `merge.thread.unmatched`.
 
 ## Semantic dedup (the duplicate-threads backstop)
 
@@ -95,7 +95,7 @@ The embedder is injected via `GroundingDeps.embedThreadTexts` (same seam as `fuz
 
 ### Manual close (dev-only)
 
-Admins get a confirm-gated **"Close thread"** control in the modal footer (the dismiss affordance stays Esc / click-out, so the labels don't collide). It calls `DELETE /api/sessions/:id/threads/:threadId` (`sessionsApi.closeThread`), which is **admin-gated server-side** (`user.role === "admin"`, never the client flag) and owner-scoped via `findOwnedSession`; it flips the thread to `resolved` in `sessions.runtime`. The thread then drops from the next status payload and disappears from the World tab. Unknown thread → 404; non-admin → 403.
+Admins get a confirm-gated **"Close thread"** control in the modal footer (the dismiss affordance stays Esc / click-out, so the labels don't collide). It calls `DELETE /api/sessions/:id/threads/:threadId` (`sessionsApi.closeThread`), which is **admin-gated server-side** (`user.role === "admin"`, never the client flag) and owner-scoped via `findOwnedSession`; it closes the thread in `sessions.runtime` — an investigation flips to `resolved`, an `ongoing` thread (which never resolves) to `archived`. Either way the thread drops from the next status payload and disappears from the World tab. Unknown thread → 404; non-admin → 403.
 
 ## Constants (`engine/constants.ts`)
 
@@ -106,11 +106,11 @@ Admins get a confirm-gated **"Close thread"** control in the modal footer (the d
 
 ## Degradation
 
-Threads follow the resilience rules (`docs/resilience.md`): a missing director degrades to no thread changes; an unmatched `touch`/`develop`/`resolve` id logs `merge.thread.unmatched` and is skipped; dedup embedding failure logs `merge.thread.dedup_embed_failed` and falls back to exact-title dedup; the runtime is read through `parseOr` so a malformed thread can't fail a turn. None of these throw.
+Threads follow the resilience rules (`docs/resilience.md`): a missing director degrades to no thread changes; an unmatched `touch`/`develop`/`resolve` id logs `merge.thread.unmatched` and is skipped (a reference to a resolved/archived thread counts as unmatched — closed threads are not signal targets); a `resolve` against an `ongoing` thread logs `merge.thread.resolve_blocked` and is skipped; dedup embedding failure logs `merge.thread.dedup_embed_failed` and falls back to exact-title dedup; the runtime is read through `parseOr` so a malformed thread can't fail a turn. None of these throw.
 
 ## Tests
 
-- `engine/merge.test.ts` — `applyThreadSignals` (develop appends/caps/revises, touch logs nothing, propose seeds kind/question/conditions, resolve closes) and `dedupeThreadProposals` (folds near-dupes, skips distinct, never resurrects resolved, degrades on embed failure).
+- `engine/merge.test.ts` — `applyThreadSignals` (develop appends/caps/revises, touch logs nothing, propose seeds kind/question/conditions, resolve closes investigations only — the ongoing kind-guard and the closed-thread no-revival cases both assert their diagnostic codes) and `dedupeThreadProposals` (folds near-dupes, skips distinct, never resurrects resolved, degrades on embed failure).
 - `engine/prompts/agents.test.ts` — the four-signal contract, the consolidation rule, the resolve rule, and `buildDirectorPrompt`'s kind/development rendering, plus the director prompt budget.
 - `app/api/sessions/_shared/status-payload.test.ts` — ships open + cooling with full detail.
-- `app/api/sessions/threads-route.int.test.ts` — the admin close route (resolve, 404, 403).
+- `app/api/sessions/threads-route.int.test.ts` — the admin close route (resolve investigation, archive ongoing, 404, 403).
