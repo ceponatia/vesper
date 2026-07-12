@@ -142,6 +142,15 @@ export interface EvalScenario {
    */
   commsReplyRe?: RegExp;
   /**
+   * Memory-callback check (memory-callbacks.plan.md): the prompt plants a one-turn
+   * callback (an old episode with a distinctive token appearing nowhere else) and the
+   * player's input is about something UNRELATED. A reply matching this worked the memory
+   * in as the aside the cue invites. Flips on the deterministic `callbackCue` metric
+   * (`run.ts`); expected to match — the judge expectation guards it stays ≤1 aside, not
+   * a recap. Absent ⇒ not measured.
+   */
+  callbackRe?: RegExp;
+  /**
    * Multi-turn transcript scenario (narrator-prompt-consolidation.plan.md slice 6): the
    * scripted player inputs AFTER `playerInput`. The runner generates a reply per input,
    * feeding the accumulated exchange back as history, and reports longitudinal metrics
@@ -403,6 +412,8 @@ function chatBuild(o: {
   player?: { name: string; persona?: string };
   /** Pre-rendered derived-fact tail note (comms/OOC) — the real route feeds this too. */
   notationNote?: string;
+  /** A one-turn memory callback (memory-callbacks.plan.md) — the real route feeds this too. */
+  callback?: CharacterChatPromptInput["callback"];
   playerInput: string;
 }): EvalScenario["build"] {
   return (shape) => ({
@@ -413,6 +424,7 @@ function chatBuild(o: {
       memory: o.memory,
       player: o.player,
       notationNote: o.notationNote,
+      callback: o.callback,
       narrationShape: shape,
     }),
     messages: [{ role: "user", content: o.playerInput }],
@@ -693,6 +705,52 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
       profile: SABRINA_PROFILE,
       state: FRONT_DESK_STATE,
       playerInput: "I step into the room and Sabrina comes closer.",
+    }),
+  },
+  // ── Memory-callback fixtures (memory-callbacks.plan.md slice 2): the prompt plants a
+  // one-turn callback whose token ("lantern") appears nowhere else; the input is about
+  // something unrelated, so a match means the aside landed. Same memory, two bands —
+  // the wording contract (warm nostalgia vs pointed edge) is what the judge reads for.
+  {
+    id: "chat-callback-warm",
+    title: "Character-chat — planted memory callback lands as one warm aside",
+    lane: "chat",
+    expectation:
+      "The reply answers the drink/settling beat as itself. Because the prompt offers an old shared memory (the night-market lantern), a good reply works it in as AT MOST one warm, natural aside — a 'remember when' in Sabrina's voice — never a recap, never derailing the scene into the past. Skipping the memory is acceptable; recapping it at length or making it the whole reply fails.",
+    playerInput: "I refill our glasses and settle back into the corner booth.",
+    knownNames: ["Sabrina"],
+    callbackRe: /lantern/i,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: { ...FRONT_DESK_STATE, regard: 60, premise: "A quiet evening drink together in the inn's corner booth." },
+      callback: {
+        summary: "They wandered the night market together and Sabrina bought a paper lantern she refused to let him pay for.",
+      },
+      playerInput: "I refill our glasses and settle back into the corner booth.",
+    }),
+  },
+  {
+    id: "chat-callback-cold",
+    title: "Character-chat — the same memory carries an edge at cold regard",
+    lane: "chat",
+    expectation:
+      "Sabrina is cold toward the player now (regard well below neutral). If she references the offered lantern memory, it must carry an edge — a point being made, a wound, evidence of how things used to be — never warm nostalgia she doesn't feel. Warmly reminiscing as if nothing were wrong fails; ignoring the memory entirely is acceptable.",
+    playerInput: "I refill our glasses and settle back into the corner booth.",
+    knownNames: ["Sabrina"],
+    callbackRe: /lantern/i,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: {
+        ...FRONT_DESK_STATE,
+        regard: -40,
+        premise: "An awkward, obligatory drink in the inn's corner booth; things have soured between them.",
+      },
+      callback: {
+        summary: "They wandered the night market together and Sabrina bought a paper lantern she refused to let him pay for.",
+      },
+      playerInput: "I refill our glasses and settle back into the corner booth.",
     }),
   },
   // ── Perception-partition fixtures (player-input-perception.plan.md §2) ──

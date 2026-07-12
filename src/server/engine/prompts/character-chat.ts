@@ -187,6 +187,15 @@ export interface CharacterChatPromptInput {
    * an intimate check-in suppression. Joined lines; "" ⇒ no note. Rides the volatile tail.
    */
   gateNotes?: string;
+  /**
+   * A one-turn memory callback (memory-callbacks.plan.md): an old shared episode the
+   * cadence gate + selector offered this turn — rendered as an optional "you might find
+   * yourself remembering…" tail line, WORDED BY REGARD BAND (warm nostalgia / plain /
+   * pointed — owner ruling 2026-07-11). The lowest-priority tail block: the pipeline
+   * only supplies it when no skip note, first-exchange directive, sensory focus, or
+   * intimate beat competes. Absent ⇒ no line.
+   */
+  callback?: { summary: string };
 }
 
 /**
@@ -258,6 +267,30 @@ function skipToneForBand(bandId: string): string {
  */
 export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string): string {
   return `${SKIP_LEADS[amount]} ${skipToneForBand(regardBandId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
+}
+
+/** Regard bands where a callback reads as warm nostalgia (at/above `warm`). */
+const CALLBACK_WARM_BANDS = new Set(["warm", "close", "cherished", "devoted", "smitten"]);
+/** Regard bands where a callback carries an edge (at/below `cool`). */
+const CALLBACK_COLD_BANDS = new Set(["hostile", "wary", "cool"]);
+
+/**
+ * The one-turn memory-callback line (memory-callbacks.plan.md): offers ONE old shared
+ * episode as an optional aside, toned by the regard band (owner ruling 2026-07-11) —
+ * warm bands get nostalgia, the middle a plain remembering, cold bands a pointed edge
+ * (history as evidence or a wound, never warmth the character doesn't feel). Always
+ * optional and always droppable: the scene in motion outranks the memory.
+ */
+export function chatCallbackLine(summary: string, regard: number, name: string, player: string): string {
+  const band = regardBandForValue(regard).id;
+  const memory = `"${summary.trim()}"`;
+  if (CALLBACK_WARM_BANDS.has(band)) {
+    return `A shared memory drifts near this turn: ${memory} If the moment invites it, let it surface as one warm aside in your own voice — a "remember when" between you and ${player}, not a recap — then let it go. If the scene is moving, skip it entirely.`;
+  }
+  if (CALLBACK_COLD_BANDS.has(band)) {
+    return `A shared memory sits between you and ${player} this turn: ${memory} If it surfaces, it carries an edge — a point to make, a wound, evidence of how things used to be — never warmth ${name} doesn't feel. One pointed aside at most; if the scene is moving, let it pass unsaid.`;
+  }
+  return `You might find yourself remembering: ${memory} Mention it only if it fits the beat naturally — one brief aside at most, never a recap — otherwise let it pass.`;
 }
 
 /**
@@ -937,6 +970,9 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     input.cueInvite?.trim() ?? "",
     input.notationNote?.trim() ?? "",
     input.gateNotes?.trim() ?? "",
+    input.callback?.summary.trim()
+      ? chatCallbackLine(input.callback.summary, input.state?.regard ?? 0, displayName, playerName ?? "the player")
+      : "",
     input.opening
       ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
       : buildResponseShapeLine(input),

@@ -1,8 +1,14 @@
 # Memory callbacks — unprompted "remember when" beats
 
-Status: **next** (planned 2026-07-11, from the character-chat & schema engagement
-review — first of the seven-plan batch at the top of [roadmap.md](roadmap.md)
-§Next; effort **S**)
+Status: **shipped — 2026-07-11** (planned, ruled, and built the same day — the
+first of the seven-plan engagement batch. Both slices landed: the pure
+gate/selector/ring module (`engine/chat-callback.ts`, migration `0032`), the
+retrieval leg + tail line, and the `chat-callback-warm`/`-cold` eval fixtures
+with the deterministic `callbackCue` metric. Leftover: the **live judged eval
+run is owner-gated spend** (`pnpm eval:narration --scenarios chat-callback
+--judge`) — the fixtures are dry-run validated. Design refinement recorded
+below: milestones boost episodes via `source_message_id` rather than forming
+their own candidate pool — they carry no embedding or clock of their own.)
 
 Fused RAG recall (`retrieveChatMemory`) is strictly input-relevance-driven: the
 character only ever remembers what the current message is already about, so
@@ -23,15 +29,19 @@ allowance).
   computed for recall; reuse the vector). A callback should be a tangent, not an
   echo of what retrieval will surface anyway.
 - **Cadence gate** (sibling of the reply gates in `engine/chat-intent.ts`): at
-  most once per `CHAT_CALLBACK_MIN_GAP` exchanges (start 10), only on a **warm
-  lull** — no intimate beat in flight, no unanswered character question (reuse
-  the span-parser question detection), and suppressed whenever the tail already
-  carries a skip note, first-exchange directive, or sensory-focus block
-  (callbacks are the lowest-priority tail block; the tail budget wins).
+  most once per `CHAT_CALLBACK_MIN_GAP` exchanges (10, ruled), only on a
+  **lull** — no intimate beat in flight, no unanswered character question
+  (reuse the span-parser question detection), and suppressed whenever the tail
+  already carries a skip note, first-exchange directive, or sensory-focus block
+  (callbacks are the lowest-priority tail block; the tail budget wins). No
+  regard-band requirement (ruled) — the band picks the wording instead.
 - **Render**: one optional one-turn line in the volatile tail, same shape as the
-  sensory allowance: *"If the moment invites it, you might find yourself
+  sensory allowance, **worded by regard band** (ruled): warm bands get the
+  nostalgic aside (*"If the moment invites it, you might find yourself
   remembering <one-line summary> — one natural aside at most; let it go if the
-  scene is moving."*
+  scene is moving."*); neutral bands a plain remembering; low/hostile bands a
+  pointed edge (the memory may surface as evidence or a wound, never warmth the
+  character doesn't feel).
 - **Anti-repeat**: `callback_history` ring (≤20 `{ref, atExchange}`) — a new
   jsonb column on `character_chat_state`, included in `storedChatStateSchema`
   (so "another take" rolls a burned callback back), `ChatStateEdit`, and the
@@ -47,12 +57,14 @@ allowance).
    as ≤1 line, references the planted past episode, and is not about the
    current topic (anti-echo assert).
 
-## Open questions
+## Rulings (owner, 2026-07-11)
 
-- Cadence and band gating: is 10 exchanges right, and do low-regard bands get
-  bittersweet callbacks (history as a weapon in arguments) or none at all?
-- Session-lane port: same shape over session episodes once proven here — worth
-  a line in that lane's tail, or chat-only forever?
+- **Cadence:** minimum gap ~10 exchanges between callbacks, plus the lull gate.
+- **Band gating:** callbacks fire at **all** regard bands, with the cue line's
+  wording colored by band — warm nostalgia when close, neutral in the middle,
+  pointed/bittersweet when cold (history as a weapon in arguments is in scope).
+- **Session port:** chat-only for now; revisit as its own small slice once the
+  mechanic is proven here (episodes + milestones are richest in chat).
 
 ## Cross-links
 

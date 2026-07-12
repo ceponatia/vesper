@@ -258,6 +258,12 @@ interface ResultRow {
    * undefined ⇒ not a contrast scenario, or its axis has no cue list (not measured).
    */
   contrastCue?: boolean;
+  /**
+   * Did the reply reference the planted memory-callback token (the scenario's
+   * `callbackRe` — memory-callbacks.plan.md)? Expected Y as a natural aside; the
+   * judge expectation guards against a recap. undefined ⇒ no callback planted.
+   */
+  callbackCue?: boolean;
   /** Longitudinal metrics for a multi-turn (`script`) scenario. undefined ⇒ single-turn. */
   multiTurn?: MultiTurnMetrics;
   error?: string;
@@ -325,6 +331,7 @@ function printTable(rows: ResultRow[]): void {
     pad("leak", 5),
     pad("txt", 4),
     pad("cue", 4),
+    pad("cbk", 4),
     "provider",
   ].join(" ");
   console.log(`\n${header}`);
@@ -354,6 +361,7 @@ function printTable(rows: ResultRow[]): void {
         pad(r.thoughtLeak === undefined ? "-" : r.thoughtLeak ? "Y" : "N", 5),
         pad(r.commsReply === undefined ? "-" : r.commsReply ? "Y" : "N", 4),
         pad(r.contrastCue === undefined ? "-" : r.contrastCue ? "Y" : "N", 4),
+        pad(r.callbackCue === undefined ? "-" : r.callbackCue ? "Y" : "N", 4),
         m.provider ?? "?",
       ].join(" "),
     );
@@ -470,9 +478,10 @@ async function main(): Promise<void> {
       const commsReply = scenario.commsReplyRe ? scenario.commsReplyRe.test(text) : undefined;
       const cueRe = scenario.contrast ? CONTRAST_AXES[scenario.contrast.group].cueRe : undefined;
       const contrastCue = cueRe ? cueRe.test(text) : undefined;
-      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, seed, metrics, judgement, narration: text, sensoryCue, povCue, thoughtLeak, commsReply, contrastCue });
+      const callbackCue = scenario.callbackRe ? scenario.callbackRe.test(text) : undefined;
+      rows.push({ scenario: scenario.id, lane: scenario.lane, model, profile: shortProfile(profile), reasoning, seed, metrics, judgement, narration: text, sensoryCue, povCue, thoughtLeak, commsReply, contrastCue, callbackCue });
       process.stdout.write(
-        ` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}${povCue === undefined ? "" : ` pov ${povCue ? "Y" : "N"}`}${thoughtLeak === undefined ? "" : ` leak ${thoughtLeak ? "Y" : "N"}`}${commsReply === undefined ? "" : ` txt ${commsReply ? "Y" : "N"}`}${contrastCue === undefined ? "" : ` cue ${contrastCue ? "Y" : "N"}`}\n`,
+        ` ${metrics.totalMs}ms${judgement ? ` judge ${judgeAvg(judgement).toFixed(1)}` : ""}${sensoryCue === undefined ? "" : ` sensory ${sensoryCue ? "Y" : "N"}`}${povCue === undefined ? "" : ` pov ${povCue ? "Y" : "N"}`}${thoughtLeak === undefined ? "" : ` leak ${thoughtLeak ? "Y" : "N"}`}${commsReply === undefined ? "" : ` txt ${commsReply ? "Y" : "N"}`}${contrastCue === undefined ? "" : ` cue ${contrastCue ? "Y" : "N"}`}${callbackCue === undefined ? "" : ` cbk ${callbackCue ? "Y" : "N"}`}\n`,
       );
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);

@@ -68,6 +68,8 @@ const editBodySchema = z.object({
   sceneAuto: z.enum(["off", "milestones"]).optional(),
   /** Scene-image model pick (the scene strip's save-on-select dropdown). */
   sceneModel: z.enum(chatSceneModels).optional(),
+  /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit. */
+  callbackHistory: z.array(z.object({ ref: z.string().max(80), atClockMinutes: z.number() })).max(20).optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

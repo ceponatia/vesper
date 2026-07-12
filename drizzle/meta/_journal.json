@@ -225,6 +225,13 @@
       "when": 1783810274648,
       "tag": "0031_dazzling_franklin_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1783815328810,
+      "tag": "0032_demonic_paladin",
+      "breakpoints": true
     }
   ]
 }

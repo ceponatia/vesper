@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import type { AttributeValue } from "@/contracts/attributes/value";
-import { buildCharacterChatPromptParts, buildCharacterChatSystemPrompt, buildChatTurnMessage, chatNotationNote } from "./character-chat";
+import {
+  buildCharacterChatPromptParts,
+  buildCharacterChatSystemPrompt,
+  buildChatTurnMessage,
+  chatCallbackLine,
+  chatNotationNote,
+} from "./character-chat";
 
 const attr = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue => ({ id, value, source: "creation" });
 
@@ -1262,5 +1268,38 @@ describe("buildChatTurnMessage — experimental turn-context layout (slice 5)", 
     expect(message).toMatch(/vsp-untrusted-[0-9a-f]+:player message/);
     // The prefix (identity, rules) is NOT in the turn message — it stays the stable system prompt.
     expect(message).not.toContain("How to respond:");
+  });
+});
+
+describe("memory callback line (memory-callbacks.plan.md)", () => {
+  const state = { meters: {}, regard: 60, conditions: [] };
+
+  it("renders the offered memory in the tail, toned warm at high regard", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state,
+      callback: { summary: "They watched the storm roll in from the pier." },
+    });
+    expect(parts.tail).toContain('"They watched the storm roll in from the pier."');
+    expect(parts.tail).toContain("warm aside");
+    // Optional and droppable — the scene in motion outranks the memory.
+    expect(parts.tail).toContain("If the scene is moving");
+  });
+
+  it("tones plain in the middle bands and pointed when cold", () => {
+    const neutral = chatCallbackLine("The pier storm.", 0, "Mara", "Theo");
+    expect(neutral).toContain("Mention it only if it fits the beat naturally");
+    expect(neutral).not.toContain("warm");
+    const cold = chatCallbackLine("The pier storm.", -40, "Mara", "Theo");
+    expect(cold).toContain("carries an edge");
+    expect(cold).toContain("never warmth Mara doesn't feel");
+  });
+
+  it("renders no callback block when absent", () => {
+    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), player: { name: "Theo" }, state });
+    expect(parts.tail).not.toContain("A shared memory");
+    expect(parts.tail).not.toContain("You might find yourself remembering");
   });
 });

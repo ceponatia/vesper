@@ -15,6 +15,7 @@ import { characterChats, characterChatMessages, chatParticipants, db, images } f
 import { log } from "../log";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
+import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import {
   buildChatReplyGates,
   // chatCueInviteLine — retired by narrator-prompt-consolidation slice 4 (the sensory-allowance
@@ -23,8 +24,16 @@ import {
   detectChatCue,
   detectSceneMovement,
   detectSensoryFocus,
+  replyEndsInQuestion,
 } from "./chat-intent";
-import { deleteChatMemory, reconcileMessageMemory, retrieveChatMemory, runChatArchivist, writeChatMemory } from "./chat-memory";
+import {
+  deleteChatMemory,
+  reconcileMessageMemory,
+  retrieveChatCallback,
+  retrieveChatMemory,
+  runChatArchivist,
+  writeChatMemory,
+} from "./chat-memory";
 import {
   driftChatState,
   finalizeChatState,
@@ -501,7 +510,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const sceneChanged =
       (Boolean(nextSceneMemory.current) && !samePlaceName(preSceneCurrent, nextSceneMemory.current)) ||
       Boolean(baseDrifted.pendingSkipNote);
-    const driftedState =
+    let driftedState =
       nextSceneMemory === baseDrifted.sceneMemory ? baseDrifted : { ...baseDrifted, sceneMemory: nextSceneMemory };
 
     // --- Window + summary ----------------------------------------------------
@@ -536,6 +545,45 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // One-turn sense-targeted focus (scope guard): a smell/taste/touch/study beat aimed at
     // a body region / garment ⇒ assemble the authored sensory values into a focus block.
     const sensoryFocus = playerContent ? (detectSensoryFocus(playerContent) ?? undefined) : undefined;
+    const firstExchange = !opening && !recentReplies.length;
+
+    // --- Memory callback (memory-callbacks.plan.md): the unprompted "remember when" cue ---
+    // Gate first (pure, no cost), then pay one embedding + one query to pick an old,
+    // milestone-boosted, topic-DISTANT episode. An offered callback burns into the ring
+    // immediately — it rides this exchange's ordinary state write, so "another take"
+    // rolls the burn back with the snapshot and the retake gets the same opportunity.
+    let callback: { summary: string } | undefined;
+    if (
+      playerContent &&
+      chatCallbackEligible({
+        clockMinutes: driftedState.clockMinutes,
+        callbackHistory: driftedState.callbackHistory,
+        firstExchange,
+        pendingSkipNote: driftedState.pendingSkipNote,
+        sceneChanged,
+        intimateBeat,
+        hasSensoryFocus: Boolean(sensoryFocus),
+        lastReplyEndsInQuestion: replyEndsInQuestion(recentReplies.at(-1) ?? ""),
+      })
+    ) {
+      const chosen = await retrieveChatCallback({
+        groupId: memoryGroupId,
+        input: playerContent,
+        milestones: driftedState.milestones,
+        usedRefs: driftedState.callbackHistory.map((e) => e.ref),
+        sink,
+      });
+      if (chosen) {
+        callback = { summary: chosen.summary };
+        driftedState = {
+          ...driftedState,
+          callbackHistory: appendCallbackEntry(driftedState.callbackHistory, {
+            ref: chosen.ref,
+            atClockMinutes: driftedState.clockMinutes,
+          }),
+        };
+      }
+    }
     const promptInput: CharacterChatPromptInput = {
       name: characterName,
       profile,
@@ -551,7 +599,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // First exchange (no assistant reply yet; regenerating the first reply popped it above):
       // renders the one-turn establish-the-scene directive. Opening beats carry their own
       // scene-opening instruction instead.
-      firstExchange: !opening && !recentReplies.length,
+      firstExchange,
+      // The one-turn memory callback (memory-callbacks.plan.md), already ring-burned above.
+      callback,
       // One-turn cue invitation, now the continue-cue only (§8.4): a "has something to say"
       // continue threads its tapped open loop here so the character opens about exactly the
       // right thing. The sensory arms were superseded by `sensoryAllowance` below
