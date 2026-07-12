@@ -302,6 +302,8 @@ export const chatStateSnapshotSchema = z.object({
     moodDelta: 0,
     arousalDelta: 0,
     changed: [],
+    feeling: null,
+    regardScale: 1,
     degraded: false,
   })),
   clockMinutes: z.number().catch(0),
@@ -338,6 +340,14 @@ export const chatStateSnapshotSchema = z.object({
   sceneAuto: z.string().catch("off"),
   // Scene-image model pick (the scene strip's save-on-select dropdown).
   sceneModel: z.string().catch("reference"),
+  // Emotional weather (emotional-weather.plan.md): the persistent feeling + bruise —
+  // read by the reply-pacing hold and shown in the state tools. Degrades to empty.
+  feeling: z
+    .object({
+      current: z.object({ label: z.string(), intensity: z.number(), cause: z.string() }).nullable().catch(null),
+      bruise: z.object({ remaining: z.number() }).nullable().catch(null),
+    })
+    .catch({ current: null, bruise: null }),
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
 /**

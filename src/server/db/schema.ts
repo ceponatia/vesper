@@ -457,6 +457,13 @@ export const characterChatState = pgTable(
      * rolls back with the pre-exchange snapshot like the rest of the state.
      */
     callbackHistory: jsonb("callback_history").notNull().default([]),
+    /**
+     * ChatFeelingState (engine/chat-feeling.ts, emotional-weather.plan.md): the
+     * persistent feeling (label + derived intensity + cause, exchange-decayed) and
+     * the bruise (damped positive regard gains after a betrayal at high regard).
+     * One jsonb blob so shape growth is never a migration; parsed defensively.
+     */
+    feeling: jsonb("feeling").notNull().default({}),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],

@@ -232,6 +232,13 @@
       "when": 1783815328810,
       "tag": "0032_demonic_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1783817571651,
+      "tag": "0033_right_toad",
+      "breakpoints": true
     }
   ]
 }

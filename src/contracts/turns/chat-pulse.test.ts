@@ -29,6 +29,14 @@ describe("chatPulseSchema (parsed-empty IS the degraded fallback)", () => {
     const parsed = chatPulseSchema.parse({ mindNote: "x".repeat(CHAT_MIND_NOTE_MAX_CHARS + 50) });
     expect(parsed.mindNote).toBe("");
   });
+
+  it("keeps a valid feeling proposal and self-heals a malformed one to null (emotional-weather)", () => {
+    const parsed = chatPulseSchema.parse({ feeling: { label: "sad", cause: "the broken promise" } });
+    expect(parsed.feeling).toEqual({ label: "sad", cause: "the broken promise" });
+    expect(chatPulseSchema.parse({ feeling: { label: "melancholy", cause: "x" } }).feeling).toBeNull();
+    expect(chatPulseSchema.parse({ feeling: "sad" }).feeling).toBeNull();
+    expect(chatPulseSchema.parse({}).feeling).toBeNull();
+  });
 });
 
 describe("chatPulseTraceSchema", () => {
@@ -40,6 +48,8 @@ describe("chatPulseTraceSchema", () => {
       moodDelta: 0,
       arousalDelta: 0,
       changed: [],
+      feeling: null,
+      regardScale: 1,
       degraded: false,
     });
   });

@@ -1303,3 +1303,46 @@ describe("memory callback line (memory-callbacks.plan.md)", () => {
     expect(parts.tail).not.toContain("You might find yourself remembering");
   });
 });
+
+describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
+  const meters = { mood: 0.2, stress: 0.2, energy: 0.8 }; // "subdued and withdrawn"
+  const feeling = { current: { label: "sad" as const, intensity: 0.8, cause: "the broken promise" }, bruise: null };
+
+  it("composes the persistent feeling with the meter descriptor (ruled: compose, never replace)", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters, regard: 10, conditions: [], feeling },
+    });
+    expect(parts.tail).toContain("You are feeling subdued and withdrawn right now — and deeply sad about the broken promise.");
+    // The mood pin carries it too.
+    expect(parts.tail).toContain("beneath it, deeply sad about the broken promise");
+  });
+
+  it("a fading feeling reads as fading; no feeling leaves the line unchanged", () => {
+    const faint = { current: { label: "sad" as const, intensity: 0.25, cause: "the broken promise" }, bruise: null };
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters, regard: 10, conditions: [], feeling: faint },
+    });
+    expect(parts.tail).toContain("faintly — it's fading — sad");
+    const plain = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters, regard: 10, conditions: [] },
+    });
+    expect(plain.tail).toContain("You are feeling subdued and withdrawn right now.");
+    expect(plain.tail).not.toContain("beneath it");
+  });
+
+  it("a feeling with an even-keel meter read still surfaces on its own", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, regard: 10, conditions: [], feeling },
+    });
+    expect(parts.tail).toContain("Underneath everything, deeply sad about the broken promise.");
+  });
+});

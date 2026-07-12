@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { emotionLabelEnum } from "../mood/emotion-label";
 
 /**
  * The character-chat reaction pulse (character-chat-state.spec.md §4): one small
@@ -17,6 +18,8 @@ import { z } from "zod";
 
 /** Cap on the pulse-written mindNote (1–3 sentences of disposition). */
 export const CHAT_MIND_NOTE_MAX_CHARS = 320;
+/** Cap on the pulse-proposed feeling cause phrase (emotional-weather.plan.md). */
+export const CHAT_FEELING_CAUSE_MAX = 120;
 /** Cap on the player-set per-chat premise (a scenario, not a bio). */
 export const CHAT_PREMISE_MAX_CHARS = 600;
 /** Cap on the per-chat free-text starting outfit (character-chat-scenario.plan.md). */
@@ -45,6 +48,18 @@ export const chatPulseSchema = z.object({
   playerAct: z.object({ concept: z.string().min(1) }).nullable().catch(null).default(null),
   /** Refreshed 1–3 sentence "what's on their mind"; "" ⇒ keep the prior note. */
   mindNote: z.string().max(CHAT_MIND_NOTE_MAX_CHARS).catch("").default(""),
+  /**
+   * A PERSISTENT emotional beat this exchange landed (emotional-weather.plan.md):
+   * label + cause only — intensity derives deterministically from the §6 curve
+   * outcome (the model never proposes numbers, same contract as `playerAct`).
+   * null ⇒ no lasting weather (most turns); `"neutral"` ⇒ the exchange RESOLVED
+   * the standing feeling and it clears.
+   */
+  feeling: z
+    .object({ label: emotionLabelEnum, cause: z.string().max(CHAT_FEELING_CAUSE_MAX).catch("").default("") })
+    .nullable()
+    .catch(null)
+    .default(null),
 });
 
 export type ChatPulse = z.infer<typeof chatPulseSchema>;
@@ -55,7 +70,7 @@ export type ChatPulse = z.infer<typeof chatPulseSchema>;
  * conversation-reactive that exchange.
  */
 export function degradedChatPulse(): ChatPulse {
-  return { playerAct: null, mindNote: "" };
+  return { playerAct: null, mindNote: "", feeling: null };
 }
 
 /**
@@ -75,8 +90,12 @@ export const chatPulseTraceSchema = z.object({
   moodDelta: z.number().catch(0).default(0),
   /** Arousal-meter move from an intimate act this exchange (0–1 scale; slice 4). */
   arousalDelta: z.number().catch(0).default(0),
-  /** Which state fields the pulse changed (regard / mood / arousal / mindNote). */
+  /** Which state fields the pulse changed (regard / mood / arousal / mindNote / feeling). */
   changed: z.array(z.string()).catch([]).default([]),
+  /** The persistent feeling label applied this exchange (emotional-weather), null ⇒ none. */
+  feeling: z.string().nullable().catch(null).default(null),
+  /** Combined regard-delta multiplier applied (feeling bias × streak × bruise); 1 ⇒ unmodified. */
+  regardScale: z.number().catch(1).default(1),
   /** True when the pulse degraded to drift-only (timeout / parse failure / demo). */
   degraded: z.boolean().catch(false).default(false),
   /** Degradation diagnostic code, when degraded. */

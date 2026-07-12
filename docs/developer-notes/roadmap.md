@@ -54,17 +54,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
-_The six entries below are the remainder of the 2026-07-11 **character-chat
-engagement batch** (planned from the character-chat & schema review; the first —
-memory callbacks — shipped the same day, see Shipped), deliberately ordered by
-**effort, least → most** and queued ahead of the pre-existing items — owner
-instruction 2026-07-11._
+_The five entries below are the remainder of the 2026-07-11 **character-chat
+engagement batch** (planned from the character-chat & schema review; the first
+two — memory callbacks and emotional weather — shipped the same day, see
+Shipped), deliberately ordered by **effort, least → most** and queued ahead of
+the pre-existing items — owner instruction 2026-07-11._
 
-- **Emotional weather — persistent feeling, regard momentum, reply pacing** —
-  [emotional-weather.plan.md](emotional-weather.plan.md) (next — effort M). A
-  persistent `feeling` (EmotionLabel + intensity + cause, exchange-decayed,
-  pulse-proposed), streak/bruise momentum on regard, and state-driven typing
-  pacing (UI-only).
 - **Chat image input — player-sent photos the character sees** —
   [chat-image-input.plan.md](chat-image-input.plan.md) (next — effort M).
   Attach an image to a chat message; one vision pass injects it as seen-channel
@@ -176,6 +171,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Emotional weather — persistent feeling, regard momentum, reply pacing** —
+  [emotional-weather.plan.md](emotional-weather.plan.md) — 2026-07-11 — a
+  pulse-proposed persistent `feeling` (curve-derived intensity, exchange-decayed,
+  composed with the meter mood line — owner rulings: compose; ~10-exchange bruise;
+  new `apologize` concept halves it; damped ±10% curve feedback), warmth-streak +
+  bruise momentum on regard (`chat-feeling.ts`, migration 0033, trace `regardScale`),
+  and the UI reveal-hold pacing (`lib/chat-pacing.ts`). Leftover: the live judged
+  `mt-chat-feeling-hurt` run (owner-gated spend). Docs: character-chat.md
+  §Emotional weather, prompts.md.
 - **Memory callbacks — unprompted "remember when" beats** —
   [memory-callbacks.plan.md](memory-callbacks.plan.md) — 2026-07-11 — a
   lull-gated, once-per-~10-exchanges tail cue offering one old, milestone-boosted,

@@ -1135,6 +1135,39 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
     }),
   },
   {
+    // Emotional weather (emotional-weather.plan.md slice 4): a standing hurt in state
+    // must COLOR three neutral exchanges without being re-litigated every turn.
+    id: "mt-chat-feeling-hurt",
+    title: "Multi-turn — a standing hurt colors neutral exchanges (3 exchanges)",
+    lane: "chat",
+    expectation:
+      "Sabrina carries a standing hurt (the broken promise about the gallery opening) under an otherwise ordinary chat. Across all three replies she should read subdued or guarded — shorter warmth, something held back — WITHOUT re-litigating: no speeches about the promise, no accusatory recap every turn, no refusing the conversation. Alluding to it once, briefly and in character, is fine. Failure modes: bright unclouded cheer as if nothing happened, or the grievance dominating every reply.",
+    playerInput: "Evening. The rain finally let up, so I walked over.",
+    knownNames: ["Sabrina"],
+    script: ["Anything good happen at the desk today?", "I was thinking of getting dinner from the pier stand later."],
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: {
+        ...FRONT_DESK_STATE,
+        regard: 45,
+        feeling: { current: { label: "sad", intensity: 0.8, cause: "the promise he broke about the gallery opening" }, bruise: null },
+      },
+      player: { name: "Brian" },
+      playerInput: "Evening. The rain finally let up, so I walked over.",
+    }),
+    buildTurnSystem: chatTurnSystemBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: {
+        ...FRONT_DESK_STATE,
+        regard: 45,
+        feeling: { current: { label: "sad", intensity: 0.8, cause: "the promise he broke about the gallery opening" }, bruise: null },
+      },
+      player: { name: "Brian" },
+    }),
+  },
+  {
     id: "mt-chat-statements",
     title: "Multi-turn — plain statements, one attention beat (9 exchanges)",
     lane: "chat",

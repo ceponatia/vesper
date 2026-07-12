@@ -110,6 +110,20 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     intimate: false,
   },
   {
+    id: "apologize",
+    label: "Apology",
+    description: "Owning a wrong done to them and expressing genuine regret for it.",
+    family: "support",
+    verb: "apologized to",
+    polarity: "warm",
+    // Distinct from `reassure` (comfort after distress): an apology addresses a wrong
+    // the speaker committed. The chat bruise mechanic (emotional-weather.plan.md) keys
+    // early forgiveness on THIS concept — comfort is not repair.
+    triggers: ["I'm so sorry", "that was my fault", "I shouldn't have said that", "can you forgive me"],
+    defaultHint: "",
+    intimate: false,
+  },
+  {
     id: "confide",
     label: "Confiding",
     description: "Sharing something personal or vulnerable with them.",

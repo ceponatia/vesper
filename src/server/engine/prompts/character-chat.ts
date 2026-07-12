@@ -20,6 +20,7 @@ import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
+import type { ChatFeelingState } from "../chat-feeling";
 import type { ChatSensoryAllowance, SensoryFocusHint } from "../chat-intent";
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
@@ -121,6 +122,13 @@ export interface CharacterChatPromptInput {
      * connections. Rendered as a compact "Scene" volatile-tail block. Absent/empty ⇒ no block.
      */
     sceneMemory?: ChatSceneMemory;
+    /**
+     * Emotional weather (emotional-weather.plan.md): the persistent feeling COMPOSES with
+     * the meter-derived mood descriptor (owner ruling — the descriptor is the baseline
+     * weather, the feeling the front passing through), coloring the Current-state mood
+     * line and the response-shape mood pin. Absent/empty ⇒ both render as before.
+     */
+    feeling?: ChatFeelingState;
   };
   /**
    * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): the
@@ -336,6 +344,19 @@ export function chatNotationNote(
 const CARD_FRAMING_CAP = 4;
 
 /**
+ * The persistent feeling as a prose clause (emotional-weather.plan.md): strength
+ * adverb from intensity, label as the adjective it already is, cause attached.
+ * "" when there is no standing feeling — both consumers then render as before.
+ */
+function feelingPhrase(feeling: ChatFeelingState | undefined): string {
+  const current = feeling?.current;
+  if (!current) return "";
+  const strength = current.intensity >= 0.7 ? "deeply" : current.intensity >= 0.4 ? "still" : "faintly — it's fading —";
+  const cause = current.cause.trim();
+  return `${strength} ${current.label}${cause ? ` about ${cause}` : ""}`;
+}
+
+/**
  * The "Current state" block (character-chat-state-narration.spec.md §5): **standing
  * coloring** (mood phrase, unchanged meter bands, stage warmth, condition hints, mindNote,
  * outfit) the narrator should let bias its tone, plus at most ONE **foregrounded** "just
@@ -347,7 +368,12 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
   const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {});
   const lines: string[] = [];
   const mood = deriveMoodDescriptor(state.meters);
-  if (mood) lines.push(`- You are feeling ${mood} right now.`);
+  // The persistent feeling composes with the meter descriptor (emotional-weather.plan.md,
+  // ruled): baseline weather + the front passing through — never a replacement.
+  const feeling = feelingPhrase(state.feeling);
+  if (mood && feeling) lines.push(`- You are feeling ${mood} right now — and ${feeling}.`);
+  else if (mood) lines.push(`- You are feeling ${mood} right now.`);
+  else if (feeling) lines.push(`- Underneath everything, ${feeling}.`);
   for (const cue of standing) lines.push(`- ${cue.hint}`);
   // (The old per-stage warmth steer moved into the prefix's Relationship-law block, §7.1.)
   for (const condition of state.conditions) if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
@@ -547,7 +573,12 @@ function buildSceneSection(memory: ChatSceneMemory, changed: boolean): string {
 function buildResponseShapeLine(input: CharacterChatPromptInput): string {
   const target = input.player?.name.trim() || "the user";
   const mood = deriveMoodDescriptor(input.state?.meters ?? {});
-  const moodClause = mood ? ` Mood: ${mood} — keep the reply's tone within it unless ${target}'s input moves it.` : "";
+  // The mood pin composes the persistent feeling with the meter descriptor
+  // (emotional-weather.plan.md, ruled) — the feeling colors the pin, never replaces it.
+  const feeling = feelingPhrase(input.state?.feeling);
+  // "beneath it" needs the meter descriptor as its antecedent — a bare feeling stands alone.
+  const pin = mood ? [mood, feeling ? `beneath it, ${feeling}` : ""].filter(Boolean).join("; ") : feeling;
+  const moodClause = pin ? ` Mood: ${pin} — keep the reply's tone within it unless ${target}'s input moves it.` : "";
   return `Response shape: respond to what ${target} just said and did — no unrequested new topics. Keep the scale ordinary and proportionate unless your current state or the beat calls for more.${moodClause}`;
 }
 
