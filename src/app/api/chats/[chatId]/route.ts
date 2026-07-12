@@ -46,9 +46,17 @@ const sendBodySchema = z
     cue: z.string().trim().max(200).optional(),
     /** Target user-message id — required for kind "rerun" (the line to re-send from). */
     messageId: z.string().trim().min(1).max(120).optional(),
+    /**
+     * Player-attached photo ids for a send (chat-image-input.plan.md) — uploaded
+     * first via POST …/attachments; validated + claimed against this chat's ready
+     * `chat_upload` rows in the pipeline (foreign/unknown ids are dropped).
+     */
+    attachmentIds: z.array(z.string().trim().min(1).max(120)).max(4).optional(),
   })
-  .refine((b) => b.kind !== "send" || (b.content?.length ?? 0) >= 1, {
-    message: "content is required for a send",
+  // A photo-only send is legitimate (chat-image-input.plan.md) — showing something
+  // IS the message; text is required only when nothing is attached.
+  .refine((b) => b.kind !== "send" || (b.content?.length ?? 0) >= 1 || (b.attachmentIds?.length ?? 0) >= 1, {
+    message: "content or attachments are required for a send",
     path: ["content"],
   })
   .refine((b) => b.kind !== "rerun" || (b.messageId?.length ?? 0) >= 1, {
@@ -120,6 +128,8 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     // The rerun target (kind "rerun"): the player line to re-send from. The pipeline
     // snips only its successors and reuses the line itself — nothing is deleted here.
     targetMessageId: body.value.messageId,
+    // Player-attached photos (chat-image-input.plan.md) — send only.
+    attachmentIds: body.value.attachmentIds,
     // A headless POST without a model must agree with the UI (spec §9): default to
     // the character's own narrator pick, not MODEL_DEFAULTS.narrative.
     model: body.value.model ?? resolveChatModelId(owned.character.chatModel),

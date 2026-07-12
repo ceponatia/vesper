@@ -54,17 +54,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
-_The five entries below are the remainder of the 2026-07-11 **character-chat
+_The four entries below are the remainder of the 2026-07-11 **character-chat
 engagement batch** (planned from the character-chat & schema review; the first
-two — memory callbacks and emotional weather — shipped the same day, see
-Shipped), deliberately ordered by **effort, least → most** and queued ahead of
-the pre-existing items — owner instruction 2026-07-11._
+three — memory callbacks, emotional weather, chat image input — shipped the
+same day, see Shipped), deliberately ordered by **effort, least → most** and
+queued ahead of the pre-existing items — owner instruction 2026-07-11._
 
-- **Chat image input — player-sent photos the character sees** —
-  [chat-image-input.plan.md](chat-image-input.plan.md) (next — effort M).
-  Attach an image to a chat message; one vision pass injects it as seen-channel
-  content in the perception partition; the archivist files perceived facts;
-  hard-deleted with the message.
 - **Chat selfies — character-sent photo messages** —
   [chat-selfies.plan.md](chat-selfies.plan.md) (next — effort M+). Inline
   SMS-style photo messages: identity-locked edit from the avatar + live
@@ -171,6 +166,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat image input — player-sent photos the character sees** —
+  [chat-image-input.plan.md](chat-image-input.plan.md) — 2026-07-11 — up to 4
+  photos per message (owner ruling: multi-image now): composer attach + canvas
+  downscale → `chat_upload` assets (input-only, Gallery-hidden, hard-deleted
+  with message/chat), ONE batched vision read persisted on message meta
+  (regenerate never re-spends; degraded reads retry), a fenced seen-channel
+  tail block + static rule 17 (owner ruling), pulse/archivist see the reads,
+  photo-only sends allowed. No migration. Docs: character-chat.md §Player
+  photos, images.md, prompts.md.
 - **Emotional weather — persistent feeling, regard momentum, reply pacing** —
   [emotional-weather.plan.md](emotional-weather.plan.md) — 2026-07-11 — a
   pulse-proposed persistent `feeling` (curve-derived intensity, exchange-decayed,

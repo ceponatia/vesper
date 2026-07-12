@@ -101,6 +101,63 @@ export async function uploadAvatar(input: UploadAvatarInput): Promise<UploadAvat
   return { ok: true, avatarImageId: asset.id };
 }
 
+export interface UploadChatAttachmentInput {
+  chatId: string;
+  userId: string;
+  /** A `data:image/...;base64,...` URL from the composer's file pick. */
+  dataUrl: string;
+  sink?: DiagnosticSink;
+}
+
+export type UploadChatAttachmentResult = { ok: true; imageId: string } | { ok: false; error: string };
+
+/** Longest-side cap for stored chat attachments — plenty for a vision read + a transcript thumb. */
+const CHAT_ATTACHMENT_MAX_DIM = 1280;
+
+/**
+ * Player-attached chat photo (chat-image-input.plan.md): decode with the same
+ * bomb guards as the avatar upload, fit INSIDE a bounded box (aspect kept —
+ * this is a photo to look at, not a portrait crop), honor EXIF, and save
+ * through the normal row-before-file path as `kind: "chat_upload"`, chat-keyed.
+ * `anchor_message_id` is stamped later, when the message that carries it sends.
+ * No model runs here — the vision read happens at exchange time.
+ */
+export async function uploadChatAttachment(input: UploadChatAttachmentInput): Promise<UploadChatAttachmentResult> {
+  const decoded = decodeDataUrl(input.dataUrl);
+  if (!decoded) {
+    input.sink?.push(diag("warn", "images.upload.bad_data_url", "attached image was not a valid image data URL"));
+    return { ok: false, error: "attached file is not a valid image" };
+  }
+  if (decoded.buffer.byteLength > MAX_DECODED_BYTES) {
+    return { ok: false, error: "attached image is too large" };
+  }
+
+  const asset = await createImageAsset({
+    ownerId: input.userId,
+    kind: "chat_upload",
+    chatId: input.chatId,
+    prompt: "Player-attached chat photo",
+    meta: { source: "upload", mime: decoded.mime },
+  });
+
+  let buffer: Buffer;
+  try {
+    buffer = await sharp(decoded.buffer, SHARP_DECODE_LIMITS)
+      .rotate() // honor EXIF orientation
+      .resize(CHAT_ATTACHMENT_MAX_DIM, CHAT_ATTACHMENT_MAX_DIM, { fit: "inside", withoutEnlargement: true })
+      .toBuffer();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await failImage(asset.id, message);
+    input.sink?.push(diag("warn", "images.upload.decode_failed", message.slice(0, 300), { context: { imageId: asset.id } }));
+    return { ok: false, error: "could not read that image — try a different file" };
+  }
+
+  const saved = await saveImageBuffer(asset.id, buffer, input.sink);
+  if (saved?.status !== "ready") return { ok: false, error: "failed to save the attached image" };
+  return { ok: true, imageId: asset.id };
+}
+
 interface DecodedImage {
   buffer: Buffer;
   mime: string;

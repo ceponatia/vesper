@@ -16,6 +16,8 @@ export interface ChatLine {
   takes?: ReplyTakes;
   /** True when the player cut this reply short with Stop (spec §4.2). */
   stopped?: boolean;
+  /** Attached-photo asset ids on a user line (chat-image-input.plan.md) — rendered as thumbs. */
+  attachmentIds?: string[];
 }
 
 /** Circular-arrow "rerun" glyph (stroke-based, 24×24 box — matches the nav icons). */
@@ -193,6 +195,20 @@ export function MessageBubble({
                 isUser ? "bg-accent-500/15 text-paper-100" : "bg-ink-800 text-paper-200"
               }`}
             >
+              {line.attachmentIds?.length ? (
+                // Attached photos (chat-image-input.plan.md): thumbs above the text.
+                <div className={`flex flex-wrap gap-1.5 ${line.content.trim() ? "mb-1.5" : ""}`}>
+                  {line.attachmentIds.map((imageId) => (
+                    <EntityImage
+                      key={imageId}
+                      imageId={imageId}
+                      name="photo"
+                      alt="Attached photo"
+                      className="h-28 max-w-40 rounded-md object-cover"
+                    />
+                  ))}
+                </div>
+              ) : null}
               {pending ? (
                 <span className="text-paper-500">…</span>
               ) : isUser ? (

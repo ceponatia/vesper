@@ -37,6 +37,9 @@ Pipeline (a `scene_image` job):
 
 Failures mark the job + image row `failed` with the error; the session is never blocked by image work.
 
+### Chat photo attachments (player upload → vision input)
+`kind: "chat_upload"` ([developer-notes/chat-image-input.plan.md](developer-notes/chat-image-input.plan.md), docs/character-chat.md §Player photos): up to 4 player photos per chat message, uploaded via `POST /api/chats/:chatId/attachments` (`uploadChatAttachment` — same decode bomb guards as the avatar upload, fit inside 1280px, row-before-file, chat-keyed). **Input-only**: never an identity anchor or edit reference (the parked uploaded-avatar intimate guard remains the launch blocker for that), never in the Gallery, and — unlike scenes — **hard-deleted** with their message / conversation (`deleteChatUploads`; `deleteChat` removes them before the FK would SET-NULL them into limbo). At exchange time ONE batched vision call (`engine/chat-vision.ts`, `visionModelId()`) describes every photo on the message; the reads persist on the message meta (regenerate never re-spends) and reach the narrator as a fenced seen-channel tail block under chat rule 17.
+
 ### Entity images (items & locations)
 Library items and locations each carry one image (their `imageId` column), generated from the entity's own fields — no character-style variants, no upload, no gallery. `generateEntityImage({ entityKind, entityId, userId })` (`server/images/entity.ts`) builds the prompt, creates a `kind: "entity"` asset, generates (demo monogram fallback), and on success sets the row's `imageId` and **reclaims every other image for that entity** (a regenerate replaces the old one — single image per entity, no orphans). Prompt builders (`prompts.ts`): `buildItemImagePrompt` is a catalog product shot (clothing on a ghost mannequin, objects isolated on a seamless surface; aspect 1:1); `buildLocationImagePrompt` is an establishing shot whose type follows the location's **scale** — `open`/`expanse` → outdoor landscape, otherwise an architectural interior (aspect 3:2), always empty (no people). Triggered by `POST /api/{items,locations}/:id/image` as a background `entity_image` job (survives navigation); the editor's **Image** tab polls `GET /api/{items,locations}/:id/image` (latest row) until it leaves `pending`, shows the result with click-to-enlarge, and offers Regenerate. Entity deletion already drops these via `deleteEntityImages`. The library pages also carry a **Generate images** button: `POST /api/{items,locations}/images` takes the ids the client sends (those visible under the active type/search filter — so the Items library's All/Clothing/Object/Container buckets scope the batch), intersects them with the owner's still-missing entities (`missingEntityImageIds`), and runs `generateEntityImagesBatch` — parallel batches of `ENTITY_IMAGE_BATCH_SIZE` (5), one failure never aborting the rest — in a background job; the grid polls so images appear as they land. The button opens a confirm dialog naming how many images will be generated; entities that already have an image are skipped.
 
@@ -54,7 +57,10 @@ Venice** (Venice is generation/editing only here): `generateChecked` accepts an
 layer. First consumer: `server/authoring/portrait-attributes.ts`, which reads a
 character's ready avatar (bytes via `absoluteImagePath` + `fs.readFile`) and emits
 closed-vocabulary attribute readings. Demo mode degrades to schema defaults (an empty
-reading), never an invented one. Add a vision consumer the same way: closed output
+reading), never an invented one. Second consumer: the **chat photo read**
+(`server/engine/chat-vision.ts` — one batched call describing a message's attached
+photos, degrading to "a photo you can't quite make out"; §Chat photo attachments).
+Add a vision consumer the same way: closed output
 vocabulary, `generateChecked` + `images`, ground the output, degrade to a no-op.
 
 ## Demo mode

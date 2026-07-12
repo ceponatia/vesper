@@ -204,6 +204,13 @@ export interface CharacterChatPromptInput {
    * intimate beat competes. Absent ⇒ no line.
    */
   callback?: { summary: string };
+  /**
+   * Attached-photo vision reads (chat-image-input.plan.md): what the character SEES
+   * in each photo the player's current message attached, in order — seen-channel
+   * content under the perception partition, handled by rule 17. Fenced (the reads
+   * derive from player-supplied images). Absent/empty ⇒ no block.
+   */
+  attachments?: { descriptions: string[] };
 }
 
 /**
@@ -275,6 +282,18 @@ function skipToneForBand(bandId: string): string {
  */
 export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string): string {
   return `${SKIP_LEADS[amount]} ${skipToneForBand(regardBandId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
+}
+
+/**
+ * The attached-photos tail block (chat-image-input.plan.md): the vision reads as
+ * seen-channel content — rule 17 owns the handling; this is the data. Fenced:
+ * the descriptions derive from player-supplied images. "" ⇒ no block.
+ */
+function buildAttachmentsSection(attachments: CharacterChatPromptInput["attachments"], player: string): string {
+  const descriptions = (attachments?.descriptions ?? []).map((d) => d.trim()).filter(Boolean);
+  if (!descriptions.length) return "";
+  const lines = descriptions.map((d, i) => `${i + 1}. ${d}`).join("\n");
+  return `Attached photos (${player} shared ${descriptions.length === 1 ? "this photo" : "these photos"} with this message — what you see):\n${fenceUntrusted("attached photos", lines)}`;
 }
 
 /** Regard bands where a callback reads as warm nostalgia (at/above `warm`). */
@@ -782,6 +801,7 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     `14. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
     `15. Dialogue is speech, not prose: let ${name} talk the way people actually talk — fragments, interruptions, trailing off, dodging a question instead of answering it, saying less than they mean. Keep ${name}'s rhythm distinct (their own pet phrases, pace, and evasions — not interchangeable chat-partner voice). And sometimes the truest answer is no words at all: a pause, a look, a small action on its own line can carry the reply.`,
     `16. When ${name} and ${player} are not in the same place — they parted, someone left, the scene split — your reply follows ${name} and ONLY ${name}: narrate what ${name} does, where ${name} goes, what ${name} feels and sends, like a scene cut to ${name}'s side of the world. Never narrate ${player}'s side of the separation — not their trip home, their evening, or their phone lighting up; that is ${player}'s to write. ${name} reaches ${player} only through a channel that carries — a text on its own line as *${name}: her words here*, a call — and the reply ends on ${name}'s move, waiting for ${player}'s answer.`,
+    `17. When ${player}'s message carries attached photos, an "Attached photos" note below describes what ${name} sees in each. Treat them as real photos ${player} is showing or sending ${name} — react in character to what they show, weave what genuinely matters into the reply, and let ${name}'s disposition decide how much they land. Never inventory a photo back detail-by-detail, and never speak of an "image" or "attachment" — it is a photo ${name} is looking at.`,
     "",
     "Shaping each reply (how much to give, and how to land it):",
     `- Resolve, then one move. First answer what ${name} just heard and saw; then make AT MOST ONE forward move — an action or gesture ${player} can react to, an offer, a disclosure, a shift in the scene — or a question, but only when ${name} genuinely wants that answer right now. Never stack moves; never answer-then-ask-then-act in one reply; vary how replies end so they don't all close the same way.`,
@@ -1000,6 +1020,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
       : "",
     input.cueInvite?.trim() ?? "",
     input.notationNote?.trim() ?? "",
+    buildAttachmentsSection(input.attachments, playerName ?? "the player"),
     input.gateNotes?.trim() ?? "",
     input.callback?.summary.trim()
       ? chatCallbackLine(input.callback.summary, input.state?.regard ?? 0, displayName, playerName ?? "the player")

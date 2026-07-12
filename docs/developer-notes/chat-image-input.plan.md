@@ -1,8 +1,17 @@
 # Chat image input — player-sent photos the character sees
 
-Status: **next** (planned 2026-07-11, from the character-chat & schema engagement
-review — seven-plan batch at the top of [roadmap.md](roadmap.md) §Next; effort
-**M**)
+Status: **shipped — 2026-07-11** (planned, ruled, and built the same day — the
+third of the seven-plan engagement batch. All three slices landed: the upload
+route + composer attach/tray (client canvas downscale → `chat_upload` assets,
+no migration — the kind enum is type-level), the batched vision read
+(`engine/chat-vision.ts`, persisted on message meta, degraded reads never
+persisted so a retake retries) + the fenced tail block + static rule 17, and
+the full delete lifecycle (message snip / rerun successors / deleteChat).
+Photo-only sends are legitimate. Slice-3's "inspector shows the description"
+lands for free — the prompt preview renders the tail block. Deferred as
+planned: photos inside the `*Name: …*` comms grammar (the selfies work owns
+image-message presentation); paste-to-attach was dropped from v1 (file pick +
+the client downscale covers the flow — add on request).)
 
 Chat is text-only inbound while the vision seam already exists
 ([images.md](../images.md) §Image understanding: `generateChecked` takes an
@@ -49,13 +58,15 @@ vision call.
 3. Int test: fact extraction from a described photo; the inspector's prompt
    preview shows the injected description.
 
-## Open questions
+## Rulings (owner, 2026-07-11)
 
-- Does `CHAT_RULES` need one line on how to treat photos (react in character;
-  never inventory the image)? Lean yes — one rule, mirrored on the perception
-  partition's wording.
-- Multiple images per message, and photos inside the `*Name: …*` comms grammar
-  — defer to the selfies work, which owns image-message presentation?
+- **Add one `CHAT_RULES` rule** (static prefix): react in character to what the
+  photo shows — never inventory it back or call it an "image/attachment" — with
+  the per-turn injection carrying the matching wording.
+- **Multi-image from the start**: up to 4 attachments per message. Design
+  consequence: ONE batched vision call describes all of a message's photos
+  (ordered `descriptions[]`), not a call per image; the comms-grammar photo
+  phrasing still defers to the selfies work.
 
 ## Cross-links
 
