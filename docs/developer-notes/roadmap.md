@@ -23,15 +23,6 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Library UX — the follow-up pass** —
-  [library-ux.plan.md](library-ux.plan.md) (active — core pass built + deployed
-  2026-07-08 (all seven slices, commit `4add351`) and the 2026-07-11 owner UX
-  pass shipped; **core review passed 2026-07-12**, unblocking the ruled-in
-  follow-up pass now building: facets for the other libraries (characters /
-  locations / social cards), the tabbed Gallery image hub (favorites migration,
-  past-500 pagination), the Library nav hub (Chats · Worlds · Library ·
-  Gallery), and the `scope` fast-follow. List keyset pagination stays deferred
-  until real catalog scale, per the plan.)
 - **Multi-character chat — the substrate** —
   [multi-character-chat.plan.md](multi-character-chat.plan.md) (active —
   promoted from Next 2026-07-12 on owner go-ahead. Roster of 2–4 full
@@ -142,6 +133,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Library UX — the follow-up pass** —
+  [library-ux.plan.md](library-ux.plan.md) — 2026-07-12 — facets for the other
+  libraries (characters species/gender/world-usage, locations scale/world-usage,
+  social-card tier/trigger), the tabbed Gallery image hub (scenes/portraits/
+  entity art, view modes, avatar chip filters, favorites migration 0036,
+  multi-select delete, keyset paging past the 500 cap), the Library nav hub
+  (Chats · Worlds · Library · Gallery + shared collection tab strip), and the
+  scope+sort fast-follow (every shareable list API honors `?scope`/`?sort` —
+  both were silent no-ops). Leftover: list keyset pagination waits for real
+  catalog scale (recorded in the plan). Core pass shipped 2026-07-08.
 - **Character sheet forge — in-sheet completion, per-tab re-drafts,
   portrait-derived attributes** —
   [character-sheet-forge.plan.md](finished/character-sheet-forge.plan.md) —

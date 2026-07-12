@@ -1,10 +1,19 @@
 # Library UX — faceted browse, item facets, shared entity picker
 
-Status: active — core pass built 2026-07-08 (commit `4add351`, all seven slices
-below), deployed to Fly the same day; **core review passed 2026-07-12** and the
-§Follow-up pass is now building (list keyset pagination stays deferred until
-real catalog scale). Docs: `docs/ui.md` §library grid/pickers,
-`docs/contracts/items.md` §Wearer/§Color, `docs/guide/creating-items.md`.
+Status: **shipped — 2026-07-12** — core pass built 2026-07-08 (commit
+`4add351`, all seven slices below), deployed to Fly the same day; core review
+passed 2026-07-12 and the **§Follow-up pass was built + shipped the same day**:
+other-library facets (characters species/gender/world-usage, locations
+scale/world-usage, social-card tier/trigger — `library-facets.ts`), the tabbed
+Gallery image hub (scenes/portraits/entity art, view modes, avatar chip
+filters, favorites migration 0036, multi-select delete, keyset paging), the
+Library nav hub (Chats · Worlds · Library · Gallery + shared collection tab
+strip), and the scope+sort fast-follow (all shareable list APIs honor
+`?scope`/`?sort` end-to-end). Leftover: **list keyset pagination** stays
+deferred until real catalog scale (facet-scoped caps removed the worst
+truncation). Docs: `docs/ui.md` §library grid/pickers + §Pages/§Mobile,
+`docs/images.md` §Gallery, `docs/contracts/items.md` §Wearer/§Color,
+`docs/guide/creating-items.md`.
 
 The library list pages and every "pick an entity" form flow lean entirely on
 free-form tags and flat capped lists, while the data model already carries the
@@ -151,7 +160,7 @@ Two owner requests against the deployed core pass, built directly:
   keeps URLs deep-linkable; state restoration covers the "return with my
   settings" requirement for every path back, not just a modal close.)
 
-## Follow-up pass (approved direction, builds after core review)
+## Follow-up pass (approved direction; built + shipped 2026-07-12 — all but list pagination)
 
 - **Facets for the other libraries** on the slice-3 machinery: characters
   (species, gender, world-usage), locations (scale, world-usage), social cards
