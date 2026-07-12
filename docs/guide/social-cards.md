@@ -26,7 +26,12 @@ configure:
 - **Tag overrides** — a per-tag flip. A character carrying a given disposition
   tag reacts *differently* to this card. The canonical example: a `foot-fetish`
   taboo defaults to revulsion, but a character tagged `foot-fetish-positive`
-  flips to *enjoy*. Add as many as you like; the first matching tag wins.
+  flips to *enjoy*. Add as many as you like; the first matching tag wins. Each
+  override sets the **tag** (canonical tags are suggested, but any free-form tag
+  a character carries works — matching ignores case/spacing/underscores), the
+  **reaction kind**, an optional **intensity** (1–10; left on *tier base* it
+  inherits the tier's ramped intensity), and an optional **reaction hint** (a
+  short note of narrator flavour, e.g. "secretly thrilled").
 
 A live preview box shows how the card resolves before the curve: the tier, base
 intensity, default reaction, and each tag flip.
@@ -35,8 +40,8 @@ intensity, default reaction, and each tag flip.
 
 - **On a world** (world editor) — the world's **social fabric**: norms everyone
   in that world is held to.
-- **On a character** (the Disposition tab) — that character's **own** lines and
-  taboos.
+- **On a character** (the Personality tab, alongside likes & dislikes) — that
+  character's **own** lines and taboos.
 
 When a character reacts, their **own** cards are checked before the **world's**
 (a personal line beats society's), and the first card whose triggers match the

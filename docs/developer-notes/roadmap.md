@@ -162,6 +162,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Social-card tag-override editor + character editor re-tab** — no plan
+  (owner one-off, 2026-07-11) — full override rows on `SocialCardFields`
+  (free-form tag with canonical datalist, kind, optional intensity, hint) with
+  `normalizeTag`-insensitive matching in `resolveCardForTags`; likes/dislikes
+  (new `PreferencesEditor`) + the social-cards editor moved Disposition →
+  Personality tab for room (the `disposition` re-draft scope still owns
+  preferences — noted in `lib/character-scopes.ts`). Docs: authoring.md,
+  guide/social-cards.md.
 - **Chat selfies — character-sent photo messages** —
   [chat-selfies.plan.md](chat-selfies.plan.md) — 2026-07-11 — the character
   sends photos back: `SELFIE_FRAMING` (the player-POV rule inverted), always

@@ -20,12 +20,14 @@ import { Select } from "@/components/ui/select";
 import { TagInput } from "@/components/ui/tag-input";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { AttributePicker } from "./attribute-picker";
 import { seedRequiredAttributes } from "./attribute-helpers";
 import { CharacterChat } from "./character-chat";
 import { DispositionEditor } from "./disposition-editor";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
+import { PreferencesEditor } from "./preferences-editor";
 
 type EditorTab = "profile" | "attributes" | "personality" | "disposition" | "outfit" | "portrait" | "chat";
 
@@ -89,11 +91,15 @@ export function CharacterEditor({
       label: "Attributes",
       badge: draft.profile.attributes.length - personalityCount || undefined,
     },
-    { id: "personality", label: "Personality", badge: personalityCount || undefined },
+    {
+      id: "personality",
+      label: "Personality",
+      badge: personalityCount + draft.profile.preferences.length + draft.profile.socialCards.length || undefined,
+    },
     {
       id: "disposition",
       label: "Disposition",
-      badge: draft.profile.traits.length + draft.profile.tags.length + draft.profile.preferences.length || undefined,
+      badge: draft.profile.traits.length + draft.profile.tags.length || undefined,
     },
     {
       id: "outfit",
@@ -298,14 +304,26 @@ export function CharacterEditor({
       ) : null}
 
       {tab === "personality" ? (
-        <AttributePicker
-          scope="personality"
-          values={draft.profile.attributes}
-          onChange={(attributes) => patchProfile({ attributes })}
-          speciesId={draft.profile.speciesId}
-          heritageId={draft.profile.heritageId}
-          bodyPlanId={draft.profile.bodyPlanId}
-        />
+        <div className="flex flex-col gap-6">
+          <AttributePicker
+            scope="personality"
+            values={draft.profile.attributes}
+            onChange={(attributes) => patchProfile({ attributes })}
+            speciesId={draft.profile.speciesId}
+            heritageId={draft.profile.heritageId}
+            bodyPlanId={draft.profile.bodyPlanId}
+          />
+          <PreferencesEditor
+            preferences={draft.profile.preferences}
+            onChange={(preferences) => patchProfile({ preferences })}
+          />
+          <SocialCardsEditor
+            cards={draft.profile.socialCards}
+            onChange={(socialCards) => patchProfile({ socialCards })}
+            hint="This character's own taboos and rules — they apply in 1-on-1 chat and take precedence over a world's cards in a session."
+            emptyText="No personal cards. Add one to give this character lines that travel with them into any world."
+          />
+        </div>
       ) : null}
 
       {tab === "disposition" ? (
@@ -314,10 +332,6 @@ export function CharacterEditor({
           onChangeTraits={(traits) => patchProfile({ traits })}
           tags={draft.profile.tags}
           onChangeTags={(tags) => patchProfile({ tags })}
-          preferences={draft.profile.preferences}
-          onChangePreferences={(preferences) => patchProfile({ preferences })}
-          socialCards={draft.profile.socialCards}
-          onChangeSocialCards={(socialCards) => patchProfile({ socialCards })}
         />
       ) : null}
 

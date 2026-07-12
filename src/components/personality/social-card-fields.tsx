@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
   dispositionTags,
   interactionConceptIds,
@@ -8,18 +9,21 @@ import {
   severityToTier,
   tierDefaultKind,
   tierIntensity,
+  type CardReaction,
   type ReactionKind,
   type ReactionOverride,
   type SocialReactionCardExtras,
 } from "@/contracts";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { TagInput } from "@/components/ui/tag-input";
 
 const CONCEPT_IDS = interactionConceptIds();
 const TAG_IDS = dispositionTags.map((t) => t.id);
 const REACTION_KINDS = reactionKindSchema.options;
+const INTENSITIES = Array.from({ length: 10 }, (_, n) => n + 1);
 
 export interface SocialCardFieldsProps {
   value: SocialReactionCardExtras;
@@ -76,6 +80,7 @@ export function SocialCardFields({ value, onChange }: SocialCardFieldsProps) {
       </Field>
       <OverridesEditor
         overrides={value.reactionOverrides}
+        tierBase={tierIntensity(severityToTier(value.severity))}
         onChange={(reactionOverrides) => onChange({ reactionOverrides })}
       />
       <CardReactionPreview value={value} />
@@ -108,8 +113,9 @@ function CardReactionPreview({ value }: { value: SocialReactionCardExtras }) {
             const v = reactionKindToValence(o.toReaction.kind);
             return (
               <li key={i}>
-                tagged <span className="text-paper-200">{o.tag}</span> → {o.toReaction.kind.replace(/_/g, " ")} (
-                {v ?? "no reaction"})
+                tagged <span className="text-paper-200">{o.tag || "(no tag — never fires)"}</span> →{" "}
+                {o.toReaction.kind.replace(/_/g, " ")} ({v ?? "no reaction"}) · intensity{" "}
+                {o.toReaction.intensity ?? tierIntensity(tier)}
               </li>
             );
           })}
@@ -119,19 +125,29 @@ function CardReactionPreview({ value }: { value: SocialReactionCardExtras }) {
   );
 }
 
-/** Per-tag flips: a character carrying `tag` reacts with a different kind (the foot-fetish enjoy). */
+/**
+ * Per-tag flips: a character carrying `tag` reacts with a different kind (the foot-fetish
+ * enjoy). Tags are free-form with the canonical registry as datalist suggestions — matching
+ * is normalize-insensitive (`resolveCardForTags`), so any tag a character carries works.
+ * Intensity is optional (absent ⇒ the tier's ramped base); hint overrides narrator flavour.
+ */
 function OverridesEditor({
   overrides,
+  tierBase,
   onChange,
 }: {
   overrides: readonly ReactionOverride[];
+  /** The tier's ramped base intensity — what an override without its own intensity resolves to. */
+  tierBase: number;
   onChange: (overrides: ReactionOverride[]) => void;
 }) {
-  const setTag = (i: number, tag: string) => onChange(overrides.map((o, idx) => (idx === i ? { ...o, tag } : o)));
-  const setKind = (i: number, kind: ReactionKind) =>
-    onChange(overrides.map((o, idx) => (idx === i ? { ...o, toReaction: { ...o.toReaction, kind } } : o)));
+  const listId = useId();
+  const update = (i: number, patch: Partial<ReactionOverride>) =>
+    onChange(overrides.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
+  const updateReaction = (i: number, patch: Partial<CardReaction>) =>
+    onChange(overrides.map((o, idx) => (idx === i ? { ...o, toReaction: { ...o.toReaction, ...patch } } : o)));
   const remove = (i: number) => onChange(overrides.filter((_, idx) => idx !== i));
-  const add = () => onChange([...overrides, { tag: TAG_IDS[0] ?? "", toReaction: { kind: "enjoy", hint: "" } }]);
+  const add = () => onChange([...overrides, { tag: "", toReaction: { kind: "enjoy", hint: "" } }]);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -141,39 +157,89 @@ function OverridesEditor({
           + Override
         </Button>
       </div>
-      {overrides.length === 0 ? (
-        <p className="text-xs text-paper-500">None — a character carrying a tag here reacts differently (e.g. foot-fetish-positive → enjoy).</p>
-      ) : (
+      <p className="text-xs text-paper-500">
+        A character carrying a tag here reacts differently (e.g. foot-fetish-positive → enjoy). Canonical tags are
+        suggested; any free-form tag a character carries works too. First matching override wins.
+      </p>
+      {overrides.length > 0 ? (
         <ul className="flex flex-col gap-1.5">
           {overrides.map((o, i) => (
-            <li key={i} className="flex flex-wrap items-center gap-2">
-              <Select aria-label="Tag" value={o.tag} onChange={(e) => setTag(i, e.target.value)} className="w-48">
-                {TAG_IDS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </Select>
-              <span className="text-xs text-paper-500">reacts with</span>
-              <Select
-                aria-label="Reaction"
-                value={o.toReaction.kind}
-                onChange={(e) => setKind(i, e.target.value as ReactionKind)}
-                className="w-40"
+            <li
+              key={i}
+              className="grid grid-cols-1 items-end gap-2 rounded-card border border-ink-700 bg-ink-900 p-3 sm:grid-cols-[1fr_auto_auto_1.5fr_auto]"
+            >
+              <Field label="Tag">
+                {(id) => (
+                  <Input
+                    id={id}
+                    list={listId}
+                    value={o.tag}
+                    placeholder="foot-fetish-positive…"
+                    onChange={(e) => update(i, { tag: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field label="Reacts with">
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={o.toReaction.kind}
+                    onChange={(e) => updateReaction(i, { kind: e.target.value as ReactionKind })}
+                  >
+                    {REACTION_KINDS.map((k) => (
+                      <option key={k} value={k}>
+                        {k.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Intensity">
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={o.toReaction.intensity?.toString() ?? ""}
+                    onChange={(e) =>
+                      updateReaction(i, { intensity: e.target.value === "" ? undefined : Number(e.target.value) })
+                    }
+                  >
+                    <option value="">tier base ({tierBase})</option>
+                    {INTENSITIES.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Reaction hint (optional)">
+                {(id) => (
+                  <Input
+                    id={id}
+                    value={o.toReaction.hint}
+                    placeholder="secretly thrilled…"
+                    onChange={(e) => updateReaction(i, { hint: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => remove(i)}
+                aria-label="Remove override"
+                className="touch-target w-full sm:w-auto"
               >
-                {REACTION_KINDS.map((k) => (
-                  <option key={k} value={k}>
-                    {k.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </Select>
-              <Button size="sm" variant="quiet" onClick={() => remove(i)} aria-label="Remove override">
-                Remove
+                ✕
               </Button>
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
+      <datalist id={listId}>
+        {TAG_IDS.map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
     </div>
   );
 }
