@@ -14,7 +14,7 @@ import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts
 import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
 import { driveWithheld, type ChatDrive } from "@/contracts/personality/drives";
-import { regardBandForValue } from "@/contracts/relationships/bands";
+import { familiarityBandForValue, regardBandForValue } from "@/contracts/relationships/bands";
 import { composeRelationshipLaw, dispositionContrastLine } from "@/contracts/relationships/law";
 import type { RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
@@ -1175,6 +1175,313 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
   const { prefix, tail } = buildCharacterChatPromptParts(input);
   return [prefix, tail].filter(Boolean).join("\n\n");
 }
+
+// ---------------------------------------------------------------------------
+// Ensemble frame (multi-character-chat.plan.md slice 2) — roster > 1
+// ---------------------------------------------------------------------------
+
+/** One roster member's prompt inputs (the pipeline loads state/memory per member). */
+export interface EnsembleMemberInput {
+  name: string;
+  profile: CharacterProfile;
+  state?: CharacterChatPromptInput["state"];
+  /** This member's OWN retrieval (tier-1 legs — multi-character-chat.plan.md ruling 5). */
+  memory?: CharacterChatPromptInput["memory"];
+  presence: "present" | "away";
+  quietExchanges: number;
+}
+
+/** Exchanges without activity at/over which a present member's blocks compress to tier 2. */
+export const ENSEMBLE_QUIET_EXCHANGES = 3;
+
+/**
+ * Dispatch on roster size (ruling 2): a roster of one takes the EXACT single-character
+ * path — byte-identical to today's prompt — and only a real ensemble builds the frame.
+ */
+export function buildChatPromptPartsForRoster(
+  input: CharacterChatPromptInput,
+  members?: readonly EnsembleMemberInput[],
+): CharacterChatPromptParts {
+  if (!members || members.length <= 1) return buildCharacterChatPromptParts(input);
+  return buildEnsembleChatPromptParts(input, members);
+}
+
+/**
+ * The one-block ensemble frame (multi-character-chat.plan.md, rulings 1–3): the model
+ * is the narrator of a single continuous narrative and writes EVERY roster character —
+ * per-member sheets scale with presence + activity recency (full / quiet-compressed /
+ * away-dropped), the player-owns-himself authority rule replaces the 1-on-1 camera
+ * rules, and every spoken line is [Name]-tagged so the renderer can attribute.
+ * The §9 cache split survives: sheets + rules sit in the prefix (re-rendering on
+ * roster/presence/tier/band change — the licensed cases); per-member state, memory
+ * and the shared scene ride the volatile tail. Member sheets render THIRD person —
+ * the prompt's only "you" is the player — so the full second-person pair-law block
+ * stays with the relationship matrix slice, which owns pair rendering.
+ */
+export function buildEnsembleChatPromptParts(
+  input: CharacterChatPromptInput,
+  members: readonly EnsembleMemberInput[],
+): CharacterChatPromptParts {
+  const playerName = input.player?.name.trim() || undefined;
+  const player = playerName ?? "the player";
+  const playerPersona = input.player?.persona?.trim() || undefined;
+
+  const present = members.filter((m) => m.presence === "present");
+  const away = members.filter((m) => m.presence === "away");
+  const names = members.map((m) => m.name.trim() || "an unnamed character");
+
+  const identity = [
+    `You are the narrator of an intimate, character-driven story, and you write EVERY character in it: ${names.join(", ")}.`,
+    `${player} is a real person taking part in the story — the one voice that is never yours to write.`,
+    "Each reply is ONE continuous narrative, never per-character sections or separate bubbles: within it the characters speak, act, and think in their own paragraphs, to the player and to each other. You are omniscient over the characters' inner lives — and only theirs.",
+  ].join(" ");
+
+  // Ruling 3 — the player owns himself; with nobody present the reply is a cutaway.
+  const authority = [
+    `Narration authority:`,
+    `- ${player} belongs to the player alone: never write ${player}'s actions, speech, decisions, movements, or location — not even connective beats (arriving, settling in, checking a phone). You may write what ${player} perceives and the small involuntary reflexes it stirs (a caught breath, a shiver) — never their deliberate acts, and never name their emotions for them.`,
+    `- Address ${player} in the second person as "you"; every character is written in the third person by name.`,
+    `- Only characters marked PRESENT share ${player}'s scene. A character marked AWAY is living their own life elsewhere: they may text or call through a channel that carries, and you may cut away to what they are doing where they are — but never merge them into ${player}'s scene uninvited.`,
+    `- When NO character is present with ${player}, the reply is a cutaway: show what the characters are doing where they are — never ${player}'s side of the separation.`,
+  ].join("\n");
+
+  const premise = input.state?.premise?.trim();
+  const scenario = premise
+    ? `Scenario for this story (the situation everyone is in — play inside it):\n${fenceUntrusted("scenario", premise)}`
+    : "";
+
+  // Away members render sheets ONLY when nobody is present (the cutaway needs its
+  // cast); otherwise they drop from the prompt entirely (tier 4 — the salience-gated
+  // edge lines are the relationship matrix slice's half of this budget).
+  const sheetMembers = present.length > 0 ? present : members;
+  const sheets = sheetMembers.map((member) => ensembleMemberSheet(member, player));
+
+  const prefixSections = [
+    CONTENT_FRAMING,
+    UNTRUSTED_DATA_NOTICE,
+    identity,
+    playerPersona ? `About ${player}:\n${fenceUntrusted("the player", playerPersona)}` : "",
+    scenario,
+    authority,
+    ...sheets,
+    ENSEMBLE_CHAT_RULES(names, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),
+  ];
+
+  const priorSummary = input.priorSummary?.trim();
+  const stateLines = present.map((m) => ensembleMemberStateLines(m, player)).filter(Boolean);
+  const memories = members
+    .map((m) => (m.memory ? ensembleMemberMemory(m.name, m.memory) : ""))
+    .filter(Boolean);
+  const sceneSection = input.state?.sceneMemory
+    ? buildSceneSection(input.state.sceneMemory, input.sceneChanged ?? false)
+    : "";
+  const skipNote = input.state?.skipNote?.trim();
+  const rosterLine = `In the scene with ${player} right now: ${
+    present.length ? present.map((m) => m.name).join(", ") : "no one — every character is away"
+  }.${away.length ? ` Away, living their own lives: ${away.map((m) => m.name).join(", ")}.` : ""}`;
+
+  const tailSections = [
+    priorSummary
+      ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
+      : "",
+    ...memories,
+    rosterLine,
+    ...(stateLines.length
+      ? [`Where each character is right now (let it color them — never recite it):\n${stateLines.join("\n")}`]
+      : []),
+    sceneSection,
+    input.firstExchange && !input.sceneChanged
+      ? `First exchange of this conversation: establish the scene once — where everyone is, the time of day, and one or two concrete sensory details — drawn from the scenario and what ${player}'s message sets up. After this, don't re-establish what hasn't changed.`
+      : "",
+    skipNote ? `Time has passed in the story since the last exchange: ${skipNote}` : "",
+    buildAttachmentsSection(input.attachments, player),
+    input.notationNote?.trim() ?? "",
+    input.opening
+      ? `Opening beat: ${player} has not spoken yet. Open the scene yourself — the present characters arrive in it, grounded in the scenario. A few lines, ending on a present moment that invites ${player} in. Do not narrate on ${player}'s behalf.`
+      : buildResponseShapeLine(input),
+  ];
+
+  return {
+    prefix: prefixSections.filter(Boolean).join("\n\n"),
+    tail: tailSections.filter(Boolean).join("\n\n"),
+  };
+}
+
+/** One member's prefix sheet — full for active present members, compressed when quiet. */
+function ensembleMemberSheet(member: EnsembleMemberInput, player: string): string {
+  const name = member.name.trim() || "This character";
+  const { profile } = member;
+  const agePhrase = formatAge(profile.age);
+  const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
+  const idLine = [`${name}${agePhrase ? `, ${agePhrase}` : ""}.`, species ? `Species: ${species}.` : ""]
+    .filter(Boolean)
+    .join(" ");
+  const relationship = ensembleRelationshipLine(member, player);
+
+  const quiet = member.quietExchanges >= ENSEMBLE_QUIET_EXCHANGES;
+  if (quiet || member.presence === "away") {
+    // Tier 2/cutaway compression: identity + a one-line read; the full sheet returns
+    // when they act again (a licensed prefix re-render, like a band crossing).
+    const mood = member.state ? deriveMoodDescriptor(member.state.meters) : "";
+    const mind = member.state?.mindNote?.trim();
+    return [
+      `## ${name}${member.presence === "away" ? " (away)" : " (quiet just now)"}`,
+      idLine,
+      profile.personality.trim() ? `In brief: ${excerpt(profile.personality, 200)}` : "",
+      relationship,
+      mood ? `- Feeling ${mood}.` : "",
+      mind ? `- On ${name}'s mind: ${mind}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  const bandId = regardBandForValue(member.state?.regard ?? 0).id;
+  const baseTraits = resolveTraits(profile.traits, regardDispositionOverlays(bandId, profile.traits));
+  const disposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: false });
+  const attributes = ensembleAttributeLines(member);
+  return [
+    `## ${name}`,
+    idLine,
+    profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
+    profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
+    profile.voice?.trim() ? `Voice (how ${name} sounds):\n${fenceUntrusted("voice", profile.voice)}` : "",
+    disposition.length
+      ? `Disposition (how ${name} actually behaves — let it pull on what ${name} says and does, never recite it):\n${disposition.map((d) => `- ${d}`).join("\n")}`
+      : "",
+    relationship,
+    attributes.length ? `What ${player} sees of ${name} (express naturally, never list):\n${attributes.join("\n")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
+ * The member↔player relationship as a compact third-person line: bands + the authored
+ * kind/history/mask texture. The full composed pair-law block (escalation floors,
+ * address rights) is second-person and joins with the relationship matrix slice.
+ */
+function ensembleRelationshipLine(member: EnsembleMemberInput, player: string): string {
+  const name = member.name.trim() || "this character";
+  const fam = familiarityBandForValue(member.state?.familiarity ?? 0);
+  const reg = regardBandForValue(member.state?.regard ?? 0);
+  const texture = member.state?.relationship;
+  const kind = texture?.kind?.trim();
+  const history = texture?.history?.trim();
+  const mask =
+    texture?.presented?.lean === "masks_warmth"
+      ? `Outwardly ${name} performs disdain over what ${name} actually feels`
+      : texture?.presented?.lean === "masks_dislike"
+        ? `Outwardly ${name} performs courtesy over what ${name} actually feels`
+        : "";
+  const parts = [
+    `With ${player}: ${kind ? `${kind} — ` : ""}${fam.label.toLowerCase()} to each other, and ${name} feels ${reg.label.toLowerCase()} toward ${player}.`,
+    history ? `Their history: ${history}.` : "",
+    mask ? `${mask}${texture?.presented?.note?.trim() ? ` (${texture.presented.note.trim()})` : ""}.` : "",
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+/** The member's attribute lines under the same guards as the single-character loop. */
+function ensembleAttributeLines(member: EnsembleMemberInput): string[] {
+  const { profile } = member;
+  const realizedBody = realizeBody({
+    speciesId: profile.speciesId,
+    heritageId: profile.heritageId,
+    bodyPlanId: profile.bodyPlanId,
+    intimateRegions: profile.intimateRegions,
+    bodyFeatures: profile.bodyFeatures,
+  });
+  const resolved = resolveAttributes(profile.attributes, [...(member.state?.attributeOverlays ?? [])]);
+  const lines: string[] = [];
+  for (const value of resolved) {
+    if (value.id === "identity.apparent_age") continue;
+    const def = attributeRegistry.byId(value.id);
+    if (!def) continue;
+    if (def.excludeFromPrompts) continue;
+    if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue;
+    if (!realizedBody.isAttributeApplicable(def)) continue;
+    const phrase = attributePhrase(def.label, def.unit, value.value);
+    if (phrase) lines.push(`- ${phrase}`);
+  }
+  return lines;
+}
+
+/** One member's compact third-person state line for the volatile tail. */
+function ensembleMemberStateLines(member: EnsembleMemberInput, player: string): string {
+  if (!member.state) return "";
+  const name = member.name.trim() || "This character";
+  const mood = deriveMoodDescriptor(member.state.meters);
+  const feeling = feelingPhrase(member.state.feeling);
+  const mind = member.state.mindNote?.trim();
+  const outfit = member.state.outfit?.trim();
+  const loops = (member.state.openLoops ?? []).map((l) => l.trim()).filter(Boolean);
+  const conditionHints = member.state.conditions.flatMap((c) => (c.promptHint ? [c.promptHint] : []));
+  const bits = [
+    mood ? `feeling ${mood}` : "",
+    feeling ? `underneath it, ${feeling}` : "",
+    outfit ? `wearing ${outfit}` : "",
+    ...conditionHints,
+    mind ? `on ${name}'s mind: ${mind}` : "",
+    loops.length ? `unfinished with ${player}: ${loops.join("; ")}` : "",
+  ].filter(Boolean);
+  return bits.length ? `- ${name}: ${bits.join(" · ")}` : "";
+}
+
+/** One member's fenced memory block, labeled so recall never cross-attributes. */
+function ensembleMemberMemory(name: string, memory: NonNullable<CharacterChatPromptInput["memory"]>): string {
+  const facts = memory.facts.map((f) => f.trim()).filter(Boolean);
+  const episodes = memory.episodes.map((e) => e.trim()).filter(Boolean);
+  if (!facts.length && !episodes.length) return "";
+  const lines: string[] = [];
+  if (facts.length) {
+    lines.push(`What ${name} knows (treat as true; draw on it only when the moment calls for it):`);
+    for (const fact of facts) lines.push(`- ${fact}`);
+  }
+  if (episodes.length) {
+    if (lines.length) lines.push("");
+    lines.push(`Moments ${name} remembers (from before the recent exchanges):`);
+    for (const episode of episodes) lines.push(`- ${episode}`);
+  }
+  return `${name}'s memory:\n${fenceUntrusted("memory", lines.join("\n"))}`;
+}
+
+/**
+ * The ensemble's rules block — the 1-on-1 CHAT_RULES rethought for a cast: universal
+ * tag discipline (the renderer attributes per [Name] tag; in a group NOTHING is
+ * auto-attributed), characters interacting with each other, presence law, and the
+ * ported craft rules (proportion, freshness, sparse intimate dialogue).
+ */
+const ENSEMBLE_CHAT_RULES = (names: readonly string[], shape: NarrationShapeId, playerName?: string): string => {
+  const player = playerName ?? "the user";
+  const cast = names.join(", ");
+  return [
+    "How to respond:",
+    `1. Stay fully inside the story. Never break character, never mention being an AI, a model, or a chat app; ${player} is only ever addressed as the person in the scene.`,
+    `2. One fixed viewpoint: the camera sits behind ${player}'s eyes for the shared scene. Characters (${cast}) are written in the third person by name; ${player} is addressed as "you". First-person "I"/"me" appears ONLY inside a character's quoted dialogue.`,
+    `3. Tag EVERY spoken character line: open it with the speaker's name in brackets — e.g. [${names[0] ?? "Name"}] "Here already?" — one tag per spoken line, including one-word lines. In a group scene nothing is attributed automatically, so an untagged quote is unreadable; ${player} never sees the tags. Actions, gestures, and description stay untagged third-person prose. Passing incidental people (a waiter) speak in prose with a plain attribution, never a tag — tags belong to the cast: ${cast}.`,
+    `4. The characters are alive to each other, not just to ${player}: they answer each other, interrupt, exchange looks, disagree, take sides. Give each present character their own voice, rhythm, and agenda — never let them blur into one accommodating chorus, and never let one character simply vanish from a scene they're in (a quiet character can be quiet visibly).`,
+    `5. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
+    "6. Each character's Personality, Disposition, and Voice sections are behavioral law, not flavor to recite. Let the traits a beat makes relevant govern what each of them notices, withholds, says, and does — and never name, list, or recite a trait.",
+    `7. Respond directly to what just happened before adding anything new, and react in proportion: an ordinary remark gets a natural answer, not effusion. Warmth tracks each character's own state and how they actually feel about ${player} and each other; affection is earned, not automatic.`,
+    "8. Stay on the current topic; don't spin up unrelated errands or sub-plots to fill space.",
+    `9. Presence is law: only the characters listed as present are in ${player}'s scene. An away character may text or call — write a sent text on its own line as *Name: her words here* — or be shown where they are in a cutaway, but never walks into the scene unprompted; entrances and exits happen on the page, once, and then hold.`,
+    `10. Freshness: every paragraph carries something NEW — a change, a reaction, a detail not yet on the page. Never re-describe an unchanged setting, outfit, or scent. Appearance detail lands only when movement or attention draws the eye, one concrete detail at a time, never a head-to-toe inventory.`,
+    `11. Never break out of the story to refuse, deflect, caution, moralize, or add a disclaimer — all forbidden. If a character would hesitate or say no, play it as that character's own in-world choice, in their voice, and stay in the scene.`,
+    `12. Dialogue is speech, not prose: fragments, interruptions, trailing off, dodging. Keep each voice distinct. Sometimes the truest answer is no words — a pause, a look, a small action on its own line.`,
+    "",
+    `Reading ${player}'s message (what the characters can actually perceive):`,
+    `- Quoted text is speech — heard exactly. Unquoted text is the story's narration: characters perceive only what would be visible or audible. Inner thoughts ${player} writes reach no one — characters may notice the visible signs and guess, even wrongly, but never answer the thought itself.`,
+    `- *A phrase in single asterisks* is ${player}'s private thought — unheard — unless it wraps a name and a colon (*${playerName ?? "Name"}: like this*), which is a text message being sent. _Underscores_ are plain emphasis. ((Double parentheses)) are out-of-character direction to you as the storyteller: follow it; no one in the scene hears it.`,
+    `- A message with no quotes that reads as plain conversation is simply spoken aloud.`,
+    "",
+    "When a scene turns intimate:",
+    `- Hold escalation to ${player}'s pace; let anticipation work — never leap ahead of the moment.`,
+    "- Keep body and clothing continuity: positions, hands, and what has been removed stay exactly where the scene left them.",
+    `- Ground it in concrete sensation in plain physical language; the sensation lands in ${player}'s body too — what they taste, smell, and feel is the scene's texture, and yours to write.`,
+    "- Let speech go sparse at the height of it: a name, a broken-off phrase, wordless sound over full sentences. Never let \"is this okay?\" become a refrain.",
+  ].join("\n");
+};
 
 /**
  * The EXPERIMENTAL turn-context message (narrator-prompt-consolidation.plan.md slice 5,

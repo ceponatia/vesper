@@ -28,7 +28,9 @@ import {
   detectChatCue,
   detectSceneMovement,
   detectSensoryFocus,
+  mentionsCharacter,
   replyEndsInQuestion,
+  spokeInReply,
 } from "./chat-intent";
 import {
   deleteChatMemory,
@@ -44,6 +46,7 @@ import {
   loadChatState,
   loadPreExchangeState,
   persistChatState,
+  saveChatState,
   savePreExchangeSnapshot,
   resolveSeededOutfit,
   seedChatState,
@@ -61,9 +64,12 @@ import { acquireKeyedLockWithin, tryKeyedLock } from "./keyed-lock";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
+  buildChatPromptPartsForRoster,
   buildChatTurnMessage,
   chatNotationNote,
+  ENSEMBLE_QUIET_EXCHANGES,
   type CharacterChatPromptInput,
+  type EnsembleMemberInput,
 } from "./prompts/character-chat";
 import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
 
@@ -104,6 +110,14 @@ export interface SubmitChatMessageInput {
   memoryGroupId: string;
   /** The (v1 single) participant character row slice. */
   character: { id: string; name: string; profile: unknown };
+  /**
+   * The full sort-ordered roster (multi-character-chat.plan.md) — the first entry
+   * describes the same primary as `character`/`memoryGroupId`. Absent or length 1
+   * ⇒ the 1-on-1 path, byte-identical prompts. Length > 1 ⇒ the ensemble frame:
+   * per-member state (present members drift, away freeze — ruling 6), tier-1
+   * memory legs (ruling 5), and per-member activity-recency stamping post-turn.
+   */
+  roster?: readonly { characterId: string; memoryGroupId: string; name: string; profile: unknown }[];
   kind: ChatExchangeKind;
   /** The player's line — required for `send`, ignored for the other kinds. */
   content?: string;
@@ -602,13 +616,70 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       ? `${playerContent}\n\n[${player.name} attached ${attachmentDescriptions.length === 1 ? "a photo" : `${attachmentDescriptions.length} photos`} — as ${characterName} sees ${attachmentDescriptions.length === 1 ? "it" : "them"}: ${attachmentDescriptions.map((d, i) => `(${i + 1}) ${d}`).join(" ")}]`
       : playerContent;
 
-    // --- RAG recall (spec §2): the participant's memory group ----------------
+    // --- Ensemble roster (multi-character-chat.plan.md slices 2–4) -----------
+    // The members beyond the primary: load each one's state (seeding from their
+    // authored defaults like a fresh 1-on-1), and tick ONLY present members —
+    // presence gating the advance IS the away-freeze (ruling 6).
+    const ensembleActive = (input.roster?.length ?? 0) > 1;
+    const others = ensembleActive
+      ? await Promise.all(
+          (input.roster ?? [])
+            .filter((m) => m.characterId !== characterId)
+            .map(async (member) => {
+              const memberProfile = parseOr(
+                characterProfileSchema,
+                member.profile ?? {},
+                emptyCharacterProfile(),
+                undefined,
+                "characters.profile",
+              );
+              const storedMember = (await loadChatState(chatId, member.characterId, sink)) ?? seedChatState(memberProfile);
+              const resolved = await resolveSeededOutfit(storedMember, owner, memberProfile, sink);
+              const state = driftChatState(resolved, memberProfile, { advance: resolved.presence === "present" });
+              return {
+                characterId: member.characterId,
+                memoryGroupId: member.memoryGroupId,
+                name: member.name,
+                profile: memberProfile,
+                state,
+              };
+            }),
+        )
+      : [];
+
+    // --- RAG recall (spec §2): per-participant memory groups ------------------
+    // 1-on-1 keeps the default k. An ensemble runs tier-1 legs only (ruling 5):
+    // the primary always gets a leg; other members earn one while present and
+    // recently active, each against their OWN group, with per-leg k tightened as
+    // the active count grows — cost tracks the scene, not the roster.
+    const activeOthers = others.filter(
+      (o) => o.state.presence === "present" && o.state.quietExchanges < ENSEMBLE_QUIET_EXCHANGES,
+    );
+    const legLimit = ensembleActive ? Math.max(2, 5 - activeOthers.length) : undefined;
     const memory = await retrieveChatMemory({
       groupId: memoryGroupId,
       queries: driftedState.memoryQueries,
       input: playerContent,
+      ...(legLimit !== undefined ? { limit: legLimit } : {}),
       sink,
     });
+    const otherMemories = new Map(
+      await Promise.all(
+        activeOthers.map(
+          async (o) =>
+            [
+              o.characterId,
+              await retrieveChatMemory({
+                groupId: o.memoryGroupId,
+                queries: o.state.memoryQueries,
+                input: playerContent,
+                limit: legLimit ?? 3,
+                sink,
+              }),
+            ] as const,
+        ),
+      ),
+    );
 
     // Regex-first reads of the player's input, computed once and shared: the cue arm, the
     // sense-targeted focus, and the reply-discipline gates (over the window's last replies).
@@ -734,14 +805,43 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         : undefined,
     };
 
+    // The ensemble prompt inputs (roster > 1): the primary first, then the others,
+    // each with their own state slice + memory leg and the presence/recency the
+    // frame's tier compression keys on.
+    const ensemble: EnsembleMemberInput[] | undefined = ensembleActive
+      ? [
+          {
+            name: characterName,
+            profile,
+            state: promptStateSlice(driftedState),
+            memory,
+            presence: driftedState.presence,
+            quietExchanges: driftedState.quietExchanges,
+          },
+          ...others.map((o) => ({
+            name: o.name,
+            profile: o.profile,
+            state: promptStateSlice(o.state),
+            memory: otherMemories.get(o.characterId),
+            presence: o.state.presence,
+            quietExchanges: o.state.quietExchanges,
+          })),
+        ]
+      : undefined;
+
     // Prompt layout (narrator-prompt-consolidation slice 5, default `system_tail`): the
     // experimental `turn_context` layout sends system = stable prefix only and moves the
     // volatile tail + the fenced current input into a final user message (the session
     // lane's shape), so system + history form an append-only cached prefix. Real player
     // turns only — opening/continue beats have no current input to compose around.
+    // An ensemble always takes the classic layout (the A/B experiment is 1-on-1-scoped).
     let system: string;
     let modelHistory: typeof history;
-    if (chatPromptLayout() === "turn_context" && playerContent) {
+    if (ensemble) {
+      const parts = buildChatPromptPartsForRoster(promptInput, ensemble);
+      system = [parts.prefix, parts.tail].filter(Boolean).join("\n\n");
+      modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
+    } else if (chatPromptLayout() === "turn_context" && playerContent) {
       const parts = buildCharacterChatPromptParts(promptInput);
       system = parts.prefix;
       // The window's last entry is the current player message (inserted before the window
@@ -807,6 +907,18 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         return;
       }
 
+      // Activity-recency stamping (slice 3, deterministic half): a member is
+      // active this exchange when the player's turn named them (name/alias) or
+      // the reply gave them a tagged spoken line. Only present members count
+      // quiet exchanges — an away character isn't "quiet", just elsewhere.
+      const primaryQuiet = ensembleActive
+        ? driftedState.presence !== "present"
+          ? driftedState.quietExchanges
+          : mentionsCharacter(agentPlayerContent, characterName, profile.aliases) || spokeInReply(full, characterName)
+            ? 0
+            : driftedState.quietExchanges + 1
+        : driftedState.quietExchanges;
+
       try {
         const finalized = await finalizeChatState({
           chatId,
@@ -819,13 +931,38 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           profile,
           characterName,
           playerName: player.name,
-          driftedState,
+          driftedState: ensembleActive ? { ...driftedState, quietExchanges: primaryQuiet } : driftedState,
           now,
           exchange: { player: agentPlayerContent, assistant: full },
           retrieved: memory,
           selfie: { requested: selfieRequested, offerEligible: selfieOfferEligible },
           sink,
         });
+        // Ensemble members persist their own turn: the presence-gated tick they
+        // took at prompt time plus the recency stamp — guarded on the same
+        // prompting message as the primary's save, so a mid-stream clear can't
+        // resurrect their rows either. (Pulse/archivist folds stay primary-scoped
+        // until the scoped-dynamics slice.)
+        for (const member of others) {
+          try {
+            const active =
+              mentionsCharacter(agentPlayerContent, member.name, member.profile.aliases) ||
+              spokeInReply(full, member.name);
+            const quietExchanges =
+              member.state.presence !== "present" ? member.state.quietExchanges : active ? 0 : member.state.quietExchanges + 1;
+            await saveChatState({
+              chatId,
+              characterId: member.characterId,
+              promptMessageId: promptMessageId ?? assistantMessageId,
+              state: { ...member.state, quietExchanges },
+            });
+          } catch (error) {
+            log.error("engine.chat", "ensemble member state persist failed", {
+              characterId: member.characterId,
+              error: describeError(error),
+            });
+          }
+        }
         // Selfie first (more specific than a big-moment scene — the shared
         // one-live-render-per-chat dedupe keeps only whichever queues first).
         if (finalized.selfieSend) {

@@ -281,3 +281,26 @@ export function buildChatReplyGates(args: {
   }
   return lines.join("\n");
 }
+
+/**
+ * Deterministic mention/spoken-to stamping (multi-character-chat.plan.md slice 3):
+ * does this text name the character — display name or an authored alias — as a
+ * whole word, case-insensitively? The activity-recency signal's cheap half; the
+ * archivist's presence read is the confirming half.
+ */
+export function mentionsCharacter(text: string, name: string, aliases: readonly string[] = []): boolean {
+  const needles = [name, ...aliases].map((n) => n.trim()).filter((n) => n.length > 1);
+  if (!text || !needles.length) return false;
+  return needles.some((needle) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${escapeRegExp(needle)}(?:[^\\p{L}\\p{N}]|$)`, "iu").test(text));
+}
+
+/** Did the reply give this character a tagged spoken line (`[Name] "…"`)? */
+export function spokeInReply(reply: string, name: string): boolean {
+  const trimmed = name.trim();
+  if (!reply || !trimmed) return false;
+  return new RegExp(`\\[${escapeRegExp(trimmed)}\\]`, "i").test(reply);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
