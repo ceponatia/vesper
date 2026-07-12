@@ -14,6 +14,7 @@ import {
   SCENE_MEMORY_MAX_PLACES,
   SCENE_SKETCH_MAX_CHARS,
   switchScenePlace,
+  withPlaceImage,
   withPlaceSketch,
   type ChatSceneMemory,
 } from "./chat-scene-memory";
@@ -179,5 +180,29 @@ describe("chatSceneSketchSchema (the sketch agent's output boundary)", () => {
     expect(chatSceneSketchSchema.parse({}).sketch).toBe("");
     expect(chatSceneSketchSchema.parse({ sketch: 42 }).sketch).toBe("");
     expect(degradedChatSceneSketch()).toEqual({ sketch: "" });
+  });
+});
+
+describe("withPlaceImage (chat-scene-references.plan.md)", () => {
+  it("attaches an image to the named place once, by identity semantics", () => {
+    const memory = { current: "kitchen", places: [{ name: "Kitchen", details: [], connections: [] }] };
+    const parsed = chatSceneMemorySchema.parse(memory);
+    const withImage = withPlaceImage(parsed, "kitchen", "img-1");
+    expect(withImage.places[0]?.imageId).toBe("img-1");
+    // Already imaged / unknown place / blank id ⇒ the SAME reference (the CAS bails).
+    expect(withPlaceImage(withImage, "kitchen", "img-2")).toBe(withImage);
+    expect(withPlaceImage(parsed, "attic", "img-1")).toBe(parsed);
+    expect(withPlaceImage(parsed, "kitchen", "  ")).toBe(parsed);
+  });
+
+  it("the merge carries imageId through like the sketch", () => {
+    const before = chatSceneMemorySchema.parse({
+      current: "kitchen",
+      places: [{ name: "kitchen", details: ["tiles"], connections: [], sketch: "warm tiles", imageId: "img-1" }],
+    });
+    const merged = mergeSceneMemory(before, { places: [{ name: "kitchen", details: ["copper pans"], connections: [] }] });
+    expect(merged.places[0]?.imageId).toBe("img-1");
+    expect(merged.places[0]?.sketch).toBe("warm tiles");
+    expect(merged.places[0]?.details).toContain("copper pans");
   });
 });

@@ -12,7 +12,7 @@ import {
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characterChatMessages, chatParticipants, db, images } from "../db";
-import { chatAttachmentPaths, claimChatAttachments, deleteChatUploads } from "../images";
+import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
 import { log } from "../log";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
@@ -1210,10 +1210,11 @@ export async function deleteChat(chat: { id: string; ownerId: string }): Promise
     .from(chatParticipants)
     .where(eq(chatParticipants.chatId, chat.id));
 
-  // Player-attached photos are chat content, not Gallery assets: hard-delete them
-  // BEFORE the chat row goes (the FK would SET NULL their chat_id and strand them
-  // invisibly — scenes deliberately survive that way, uploads must not).
-  await deleteChatUploads(chat.id);
+  // Chat-private assets (player uploads + the look/place render anchors) are chat
+  // content, not Gallery assets: hard-delete them BEFORE the chat row goes (the FK
+  // would SET NULL their chat_id and strand them invisibly — scenes deliberately
+  // survive that way, these must not).
+  await deleteChatAssets(chat.id, ["chat_upload", "chat_look", "chat_place"]);
 
   await db().transaction(async (tx) => {
     await tx.update(images).set({ prompt: "" }).where(eq(images.chatId, chat.id));

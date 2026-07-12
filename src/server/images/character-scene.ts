@@ -14,6 +14,7 @@ import { classifyImageFailure, hasVenice, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
 import { absoluteImagePath, deleteOwnedImage } from "./assets";
+import { latestChatLook } from "./chat-look";
 import {
   characterAppearanceSummary,
   identityAnchorSummary,
@@ -78,6 +79,19 @@ export interface RenderCharacterSceneInput {
    * rejection retries sanitized; a second failure stays a debuggable failed row).
    */
   flavor?: "selfie";
+  /**
+   * The chat's current look key (chat-scene-references.plan.md): when a cached
+   * `chat_look` with this key exists, it anchors the render instead of the
+   * always-dressed avatar — the reference finally agrees with the fiction's
+   * outfit. Absent / stale key ⇒ the avatar (today's behavior).
+   */
+  lookKey?: string;
+  /**
+   * The current place's minted reference image: fed as the second reference on
+   * the multi-edit rung so settings stay consistent across a conversation's
+   * scenes. Selfies ignore it (the subject is the shot).
+   */
+  place?: { name: string; imageId: string };
   sink?: DiagnosticSink;
 }
 
@@ -165,6 +179,21 @@ export function buildCharacterSceneContext(input: {
   };
 }
 
+/** The minted place reference's bytes — owned + ready `chat_place`, else null (single-reference render). */
+async function loadChatPlaceImage(ownerId: string, imageId: string): Promise<{ imageId: string; buffer: Buffer } | null> {
+  const [row] = await db()
+    .select()
+    .from(images)
+    .where(and(eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.kind, "chat_place"), eq(images.status, "ready")))
+    .limit(1);
+  if (!row) return null;
+  try {
+    return { imageId: row.id, buffer: await fs.readFile(absoluteImagePath(row)) };
+  } catch {
+    return null; // file lost — render single-reference; the sweep reconciles
+  }
+}
+
 /** Read the character's canonical avatar for reference editing — owned + ready, else null (text-to-image). */
 async function loadCharacterAvatar(
   ownerId: string,
@@ -221,10 +250,24 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   // Selfies are ALWAYS the identity-locked reference route (owner ruling) — the
   // scene strip's t2i style swap never applies; identity is the point of a selfie.
   const t2iModel = selfie || pickedModel === "reference" ? undefined : pickedModel;
-  const anchor =
-    t2iModel || isDemoMode() || !hasVenice() ? null : await loadCharacterAvatar(input.userId, input.avatarImageId);
+  const referenceRoute = !t2iModel && !isDemoMode() && hasVenice();
+  // Anchor preference (chat-scene-references.plan.md): the cached outfit-true look
+  // when its key matches the chat's current outfit/appearance, else the avatar.
+  const look = referenceRoute && input.chatId && input.lookKey ? await latestChatLook(input.chatId, input.lookKey) : null;
+  const anchor = look
+    ? { imageId: look.imageId, buffer: look.buffer, source: "generated" as SceneReferenceSource }
+    : referenceRoute
+      ? await loadCharacterAvatar(input.userId, input.avatarImageId)
+      : null;
   const referenceBuffers = new Map<string, Buffer>();
   if (anchor) referenceBuffers.set(anchor.imageId, anchor.buffer);
+
+  // The place reference (second image → the multi-edit rung). Scenes only — a
+  // selfie is the subject alone, and without a character anchor there is nothing
+  // to compose the place against.
+  const placeRef =
+    !selfie && anchor && input.place && input.chatId ? await loadChatPlaceImage(input.userId, input.place.imageId) : null;
+  if (placeRef) referenceBuffers.set(placeRef.imageId, placeRef.buffer);
 
   const renderOnce = (attemptPlan: SceneRenderPlan, allowIntimate: boolean): Promise<string> =>
     renderResolvedScene({
@@ -238,8 +281,21 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
           allowForIntimate: allowIntimate,
           ...(anchor ? { imageId: anchor.imageId, source: anchor.source } : {}),
         },
+        ...(placeRef
+          ? [
+              {
+                kind: "location" as const,
+                name: input.place?.name ?? "the place",
+                role: "location",
+                allowForIntimate: true,
+                imageId: placeRef.imageId,
+                source: "generated" as SceneReferenceSource,
+              },
+            ]
+          : []),
       ],
       referenceBuffers,
+      mode: placeRef ? "multi" : "single",
       t2iModel,
       framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,

@@ -18,6 +18,8 @@ export type JobType =
   | "inner_note"
   | "chat_summary"
   | "chat_scene_sketch"
+  | "chat_look_image"
+  | "chat_place_image"
   | "scene_image"
   | "avatar"
   | "portrait_variant"

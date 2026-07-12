@@ -353,6 +353,34 @@ rulings 2026-07-11):
 - **Display**: an anchored image message with the SMS-adjacent treatment (rounded,
   accent-bordered) in the inline moments row; also in the scene strip and Gallery.
 
+## Scene reference anchors (current look + place images)
+
+Chat renders used to anchor on the canonical avatar — always in the default outfit —
+so every scene argued the edit model out of repainting the reference's clothes, and
+settings rode a text sketch alone
+([developer-notes/chat-scene-references.plan.md](developer-notes/chat-scene-references.plan.md),
+owner rulings 2026-07-11):
+
+- **Current look** (`kind: "chat_look"`): an outfit-true, identity-locked variant of
+  the avatar, minted by a detached `chat_look_image` job when the archivist records
+  an outfit **or appearance** change (ruled: `attributeOverlays` invalidate like a
+  change of clothes) — **image-active chats only** (ruled: a chat that never rendered
+  pays nothing), keep-latest-only (the prior look deletes on replacement). The cache
+  pointer is the images table itself (`meta.lookKey` on the newest ready row =
+  `chatLookKey(outfit, exposed, overlays)`), so a regenerate rollback can't desync
+  pointer from asset — a stale key just falls back to the avatar. Scenes AND selfies
+  anchor on it when fresh.
+- **Place images** (`kind: "chat_place"`): the current scene-memory place's
+  establishing shot, minted lazily by `chat_place_image` from its agent-written
+  sketch on the **first render there** (`queueChatScene` enqueues; that render still
+  ships without it), CAS-written onto `ScenePlace.imageId` exactly like the sketch.
+  Once present, chat scenes render **multi-reference** (look/avatar + place — the
+  rung sessions always had, now live in this lane); selfies stay single-reference
+  (the subject is the shot).
+- Both kinds are chat-keyed, Gallery-hidden, hard-deleted with the conversation
+  (`deleteChatAssets`), and self-healing: any lost race, failed render (row keeps
+  `meta.error`), or missing file simply re-fires on the next trigger.
+
 ## Post-turn fan-out
 
 `finalizeChatState` runs **pulse ‖ archivist-lite** in parallel (`Promise.all`), then one
@@ -422,6 +450,8 @@ guarded state write:
 | --- | --- | --- |
 | `chat_summary` | engine queue (`enqueueChatSummary`), detached (`session_id` NULL); folds the oldest verbatim exchanges into the rolling summary, serialized per chat via `withKeyedLock` | heartbeated while running; a dead row is failed by the detached-job sweep |
 | `chat_scene_sketch` | engine queue (`enqueueChatSceneSketch`), detached; expands a just-introduced place into a visual sketch on `scene_memory` (§Scene memory step 4) — write is an optimistic CAS, never the exchange lock; one live job per chat | same detached sweep; a lost CAS or failed run simply re-fires while the place's sketch stays absent |
+| `chat_look_image` | engine queue (`enqueueChatLookImage`, fired by the finalizer on an outfit/appearance change), detached; mints the outfit-true look anchor (§Scene reference anchors) — image-active chats only, keep-latest | same sweep; a failed mint leaves renders on the avatar and the next change re-fires |
+| `chat_place_image` | engine queue (`enqueueChatPlaceImage`, fired lazily by `queueChatScene` on the first render in a sketched place), detached; CAS-writes `ScenePlace.imageId` | same sweep; a lost CAS / failed render re-fires on the next render there |
 | `chat_scene_image` | api-side `startJob` via the shared `queueChatScene` (`chats/[chatId]/scene/queue.ts`) — manual POST **and** the auto big-moment hook; one live render per chat (check-then-insert dedupe); anchored at queue time (manual = newest assistant line, auto = the exchange's reply) | `sweepDetachedApiJobs` (`engine/recovery.ts`) fails any session-less running job whose heartbeat is older than `API_JOB_STALE_MS` |
 
 ## Persistence guards
@@ -503,6 +533,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Emotional weather (feeling / momentum / bruise — §Emotional weather) | `server/engine/chat-feeling.ts` (pure) + wiring in `chat-state.ts`; pacing in `lib/chat-pacing.ts` |
 | Player photos (upload / claim / vision — §Player photos) | `server/images/upload.ts` (`uploadChatAttachment`) + `assets.ts` (`claimChatAttachments`/`deleteChatUploads`) + `server/engine/chat-vision.ts`; composer prep in `components/chat/attachment-file.ts` |
 | Selfies (triggers / gates / retry — §Selfies) | `server/engine/chat-selfie.ts` (pure) + pulse `sentPhoto` + `chatSelfieLine` in `prompts/character-chat.ts` + the selfie branch in `images/character-scene.ts`; "Failed" placeholder in `components/chat/chat-scene-moments.tsx` |
+| Scene reference anchors (look / place — §Scene reference anchors) | `server/images/chat-look.ts` (key + renders) + `server/engine/chat-reference-enqueue.ts` / `chat-reference-images.ts` (jobs) + consumption in `images/character-scene.ts` and `scene/queue.ts` |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |
