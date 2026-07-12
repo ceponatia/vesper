@@ -50,6 +50,7 @@ describe("chatPulseTraceSchema", () => {
       changed: [],
       feeling: null,
       regardScale: 1,
+      sentPhoto: false,
       degraded: false,
     });
   });

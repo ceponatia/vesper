@@ -182,6 +182,13 @@ export interface RenderResolvedSceneInput {
    * strip's model pick). Absent ⇒ the shared default (`veniceSceneImageModelId`).
    */
   t2iModel?: AvatarImageModel;
+  /**
+   * Shot framing (chat-selfies.plan.md): "selfie" swaps the player-POV rule for
+   * the subject's-own-camera framing block on every route. Absent ⇒ player POV.
+   */
+  framing?: "pov" | "selfie";
+  /** Asset flavor stamped on `meta.flavor` (e.g. "selfie") — distinguishes render treatments downstream. */
+  flavor?: string;
   /** Where to log the outcome (`logScene` for sessions, a character event otherwise). */
   logResult: (imageId: string, status: string, startedMs: number) => void;
   sink?: DiagnosticSink;
@@ -240,15 +247,17 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   // character refs must clear the intimate gate, not just the primary.
   const multiAllowIntimate = imageRefs.filter((r) => r.kind === "character").every((r) => r.allowForIntimate);
 
-  const textPrompt = buildSceneRenderPrompt(plan, {});
+  const framing = input.framing;
+  const textPrompt = buildSceneRenderPrompt(plan, { framing });
   const editPrompt = anchorRef
-    ? buildSceneRenderPrompt(plan, { referenceName: anchorRef.name, allowIntimate })
+    ? buildSceneRenderPrompt(plan, { referenceName: anchorRef.name, allowIntimate, framing })
     : textPrompt;
   const multiPrompt =
     multiBuffers.length >= 2
       ? buildSceneRenderPrompt(plan, {
           allowIntimate: multiAllowIntimate,
           multiReferences: imageRefs.slice(0, 3).map((r) => ({ name: r.name ?? "", kind: r.kind })),
+          framing,
         })
       : editPrompt;
   const promptFor = (id: ImageProviderId): string =>
@@ -278,6 +287,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       focalName: plan.focal?.name ?? null,
       referenceName: anchorRef?.name ?? null,
       model: modelFor(primary),
+      ...(input.flavor ? { flavor: input.flavor } : {}),
     },
   });
   await recordImageReferences(asset.id, references, sink);

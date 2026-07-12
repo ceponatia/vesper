@@ -996,7 +996,21 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
 export const SCENE_POV_RULE =
   "First-person POV through the player's own eyes. The player must NEVER be visible — no body, no face, no hands or held objects in frame.";
 
+/**
+ * The selfie framing (chat-selfies.plan.md) — the exact INVERSE of the scene POV
+ * rule: the subject's own phone camera, subject aware of the lens and composing
+ * the shot. Positive phrasing only (a literal "no camera" would anchor the model
+ * on cameras); a mirror shot may legitimately show the phone.
+ */
+export const SELFIE_FRAMING =
+  "A casual phone selfie the subject is taking of herself: framed at arm's length or in a mirror, the subject aware of the camera and composing the shot — direct eye contact with the lens or a deliberate glance away, natural close-quarters phone perspective, candid everyday lighting. No one else in frame.";
+
 export interface SceneRenderOptions {
+  /**
+   * Shot framing: the default player-POV scene rule, or the selfie inversion
+   * (chat-selfies.plan.md — the subject's own camera). Applies on every route.
+   */
+  framing?: "pov" | "selfie";
   /** Name of the character the reference image identity-locks (Venice single edit); omit for text-to-image. */
   referenceName?: string;
   /** Uncensored route (Venice/Qwen): emit exposed intimate-anatomy detail (Decision 3). Off for the moderated text-to-image fallback. */
@@ -1057,7 +1071,7 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     const fit = makeFit(outfitCap);
     const pieces: string[] = [];
     if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
-    pieces.push(SCENE_POV_RULE);
+    pieces.push(opts.framing === "selfie" ? SELFIE_FRAMING : SCENE_POV_RULE);
     if (reference) {
       // Identity anchors reinforce the lock; the reference image stays authoritative
       // (owner constraint: these must never override the reference).
@@ -1156,7 +1170,7 @@ function assembleMulti(
   const multi = opts.multiReferences ?? [];
   const refCharNames = new Set(multi.filter((m) => m.kind === "character").map((m) => normalizeName(m.name)));
 
-  const pieces: string[] = [PORTRAIT_IDENTITY_LOCK, SCENE_POV_RULE];
+  const pieces: string[] = [PORTRAIT_IDENTITY_LOCK, opts.framing === "selfie" ? SELFIE_FRAMING : SCENE_POV_RULE];
   pieces.push(`${multi.length} reference images provided — ${describeMultiReferences(multi)}`);
   pieces.push("Compose all referenced people together into one shared scene, each keeping the exact face, hair and build of their reference image.");
 

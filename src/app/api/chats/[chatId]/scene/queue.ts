@@ -19,6 +19,12 @@ export interface QueueChatSceneArgs {
    * exchange's reply id; a manual render falls back to the newest assistant line.
    */
   anchorMessageId?: string;
+  /**
+   * "selfie" (chat-selfies.plan.md): render the subject's-own-camera framing on the
+   * always-reference route with the retry-once failure policy. Shares the same
+   * one-live-render-per-chat dedupe as scenes.
+   */
+  flavor?: "selfie";
 }
 
 /**
@@ -90,7 +96,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
 
     return await startJob({
       type: "chat_scene_image",
-      payload: { chatId: args.chatId, characterId: args.character.id },
+      payload: { chatId: args.chatId, characterId: args.character.id, ...(args.flavor ? { flavor: args.flavor } : {}) },
       run: async () => ({
         imageId: await renderCharacterSceneImage({
           characterId: args.character.id,
@@ -108,6 +114,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           sceneModel: chatState?.sceneModel,
           chatId: args.chatId,
           anchorMessageId,
+          flavor: args.flavor,
         }),
       }),
     });

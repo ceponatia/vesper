@@ -139,6 +139,17 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     onBigMoment: ({ assistantMessageId }) => {
       void queueChatScene({ userId: user.id, chatId, character: owned.character, anchorMessageId: assistantMessageId });
     },
+    // The reply sent a selfie (chat-selfies.plan.md): queue the subject's-own-camera
+    // render anchored to it — same dedupe, always the identity-locked route.
+    onSelfie: ({ assistantMessageId }) => {
+      void queueChatScene({
+        userId: user.id,
+        chatId,
+        character: owned.character,
+        anchorMessageId: assistantMessageId,
+        flavor: "selfie",
+      });
+    },
   });
   if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);
 

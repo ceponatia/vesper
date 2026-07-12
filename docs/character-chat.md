@@ -166,8 +166,9 @@ the time model (`clock_minutes` — the **only** clock, D3/D8; `skip_history` ri
 one-shot `pending_skip_note`), `scene_auto` (`"off" | "milestones"`, the slice-9
 auto-scene toggle — text with headroom, never a boolean), `scene_memory` (the
 accumulating narrator-imagined setting — see §Scene memory), `callback_history`
-(the memory-callback anti-repeat ring ≤20 — see §Memory callbacks), and `feeling`
-(the persistent feeling + bruise — see §Emotional weather). `upsertChatState` is the
+(the memory-callback anti-repeat ring ≤20 — see §Memory callbacks), `feeling`
+(the persistent feeling + bruise — see §Emotional weather), and `selfie_history`
+(the selfie-send ring ≤20 behind the offer cooldown — see §Selfies). `upsertChatState` is the
 **one** column-list source shared by the guarded (mid-exchange) and unguarded
 (author-edit) writers; `ChatStateEdit` covers every stored column (inspector-grade —
 open loops, memory queries, surfaced cues, attribute overlays, scene memory included). State is
@@ -318,6 +319,40 @@ multi-image from the start) and the character genuinely sees them
   orphans go with the conversation too). Scenes keep their SET-NULL Gallery survival;
   uploads never appear there (kind-filtered).
 
+## Selfies (character-sent photo messages)
+
+The character can send photos back
+([developer-notes/chat-selfies.plan.md](developer-notes/chat-selfies.plan.md), owner
+rulings 2026-07-11):
+
+- **Two triggers, one queue decision.** A player **request** (`detectSelfieRequest`,
+  regex — any register: handing a photo over face-to-face is the player's call) or an
+  unprompted **offer** — gated **apart-only** (ruled: a selfie simulates texting, so
+  the comms register — a `*Name: …*` span in the player's message or the last reply —
+  is the deterministic "not in the same place" signal), warm-or-better regard, and a
+  ~15-exchange cooldown (`selfie_history` ring, migration 0034, rollback-safe).
+  Either arms a one-turn tail **license** (`chatSelfieLine` — a request makes
+  declining first-class; an offer is "entirely optional, never forced"). The render
+  queues only when the **pulse** read the reply as actually sending one
+  (`sentPhoto`) AND a gate armed it — a hallucinated "sending you a pic" on an
+  unarmed turn stays fiction, and a decline stays a decline.
+- **Render** (`flavor: "selfie"` through `queueChatScene` →
+  `renderCharacterSceneImage`): ALWAYS the identity-locked reference route (ruled —
+  the scene strip's t2i pick is ignored), with `SELFIE_FRAMING` replacing the
+  player-POV rule (the exact inverse: her own phone camera, arm's-length or mirror,
+  subject aware of the lens). Same one-live-render-per-chat dedupe as scenes;
+  `meta.flavor: "selfie"` rides the asset so lifecycle is unchanged.
+- **Retry-once failure policy (ruled).** A failed first attempt classifies WHY
+  (`classifyImageFailure`) and retries once — a content rejection retries with a
+  **sanitized plan** (exposure + intimate phrasing stripped, intimate route off), a
+  transient failure retries as-is; the failed first row is dropped so one tile
+  shows. A second failure stays a `failed` row rendered in the transcript as a
+  **"Failed" placeholder** ("the photo never arrived"); enlarging it shows the sent
+  prompt (the admin lightbox panel) for debugging. `images.selfie.retry` (info)
+  records the retry in the drained scene diagnostics.
+- **Display**: an anchored image message with the SMS-adjacent treatment (rounded,
+  accent-bordered) in the inline moments row; also in the scene strip and Gallery.
+
 ## Post-turn fan-out
 
 `finalizeChatState` runs **pulse ‖ archivist-lite** in parallel (`Promise.all`), then one
@@ -467,6 +502,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Memory callbacks (gate / selection / ring — §Memory callbacks) | `server/engine/chat-callback.ts` (pure) + `retrieveChatCallback` in `chat-memory.ts` + `chatCallbackLine` in `prompts/character-chat.ts` |
 | Emotional weather (feeling / momentum / bruise — §Emotional weather) | `server/engine/chat-feeling.ts` (pure) + wiring in `chat-state.ts`; pacing in `lib/chat-pacing.ts` |
 | Player photos (upload / claim / vision — §Player photos) | `server/images/upload.ts` (`uploadChatAttachment`) + `assets.ts` (`claimChatAttachments`/`deleteChatUploads`) + `server/engine/chat-vision.ts`; composer prep in `components/chat/attachment-file.ts` |
+| Selfies (triggers / gates / retry — §Selfies) | `server/engine/chat-selfie.ts` (pure) + pulse `sentPhoto` + `chatSelfieLine` in `prompts/character-chat.ts` + the selfie branch in `images/character-scene.ts`; "Failed" placeholder in `components/chat/chat-scene-moments.tsx` |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |

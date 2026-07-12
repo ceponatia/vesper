@@ -315,6 +315,7 @@ export const chatStateSnapshotSchema = z.object({
     changed: [],
     feeling: null,
     regardScale: 1,
+    sentPhoto: false,
     degraded: false,
   })),
   clockMinutes: z.number().catch(0),
@@ -677,6 +678,8 @@ export const imageRecordSchema = z.object({
       source: z.string().optional().catch(undefined),
       model: z.string().optional().catch(undefined),
       error: z.string().optional().catch(undefined),
+      /** "selfie" marks a character-sent photo message (chat-selfies.plan.md). */
+      flavor: z.string().optional().catch(undefined),
       variantKind: z.string().optional().catch(undefined),
     })
     .catch({}),

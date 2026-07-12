@@ -464,6 +464,12 @@ export const characterChatState = pgTable(
      * One jsonb blob so shape growth is never a migration; parsed defensively.
      */
     feeling: jsonb("feeling").notNull().default({}),
+    /**
+     * SelfieEntry[] ring (chat-selfies.plan.md): recorded selfie sends (request/offer
+     * + chat-clock minute) — the unprompted-offer cooldown's memory. Capped; rolls
+     * back with the pre-exchange snapshot like the rest of the state.
+     */
+    selfieHistory: jsonb("selfie_history").notNull().default([]),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],

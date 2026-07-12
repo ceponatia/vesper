@@ -17,6 +17,7 @@ import { log } from "../log";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
+import { chatSelfieOfferEligible, detectSelfieRequest, hasCommsSpans } from "./chat-selfie";
 import { CHAT_ATTACHMENTS_MAX, describeChatPhotos } from "./chat-vision";
 import {
   buildChatReplyGates,
@@ -139,6 +140,12 @@ export interface SubmitChatMessageInput {
    * render anchored to this reply) — the engine only signals.
    */
   onBigMoment?: (info: { assistantMessageId: string }) => void;
+  /**
+   * Selfie hook (chat-selfies.plan.md): fired fire-and-forget after the finalizer
+   * when the reply actually sent a photo (pulse-read + gate-armed). The route
+   * queues the selfie render anchored to this reply.
+   */
+  onSelfie?: (info: { assistantMessageId: string }) => void;
 }
 
 export type SubmitChatMessageResult =
@@ -606,6 +613,22 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const sensoryFocus = playerContent ? (detectSensoryFocus(playerContent) ?? undefined) : undefined;
     const firstExchange = !opening && !recentReplies.length;
 
+    // --- Selfie arming (chat-selfies.plan.md) --------------------------------
+    // Request: the player asked for a photo (any register — their call). Offer:
+    // APART-ONLY (owner ruling — the comms register is the "not in the same place"
+    // signal) + warm regard + the cooldown ring. Either arms a one-turn license
+    // line; the post-turn pulse decides whether the reply actually sent one.
+    const selfieRequested = playerContent ? detectSelfieRequest(playerContent) : false;
+    const selfieOfferEligible =
+      !selfieRequested && Boolean(playerContent) &&
+      chatSelfieOfferEligible({
+        regard: driftedState.regard,
+        clockMinutes: driftedState.clockMinutes,
+        selfieHistory: driftedState.selfieHistory,
+        playerComms: hasCommsSpans(playerContent),
+        lastReplyComms: hasCommsSpans(recentReplies.at(-1) ?? ""),
+      });
+
     // --- Memory callback (memory-callbacks.plan.md): the unprompted "remember when" cue ---
     // Gate first (pure, no cost), then pay one embedding + one query to pick an old,
     // milestone-boosted, topic-DISTANT episode. An offered callback burns into the ring
@@ -664,6 +687,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // Attached photos (chat-image-input.plan.md): the vision read, injected as
       // seen-channel content the perception partition's rule 17 governs.
       attachments: attachmentDescriptions?.length ? { descriptions: attachmentDescriptions } : undefined,
+      // One-turn selfie license (chat-selfies.plan.md), armed above.
+      selfie: selfieRequested ? "request" : selfieOfferEligible ? "offer" : undefined,
       // One-turn cue invitation, now the continue-cue only (§8.4): a "has something to say"
       // continue threads its tapped open loop here so the character opens about exactly the
       // right thing. The sensory arms were superseded by `sensoryAllowance` below
@@ -782,8 +807,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           now,
           exchange: { player: agentPlayerContent, assistant: full },
           retrieved: memory,
+          selfie: { requested: selfieRequested, offerEligible: selfieOfferEligible },
           sink,
         });
+        // Selfie first (more specific than a big-moment scene — the shared
+        // one-live-render-per-chat dedupe keeps only whichever queues first).
+        if (finalized.selfieSend) {
+          input.onSelfie?.({ assistantMessageId });
+        }
         // "Auto at big moments" (slice 9): opt-in per chat, fire-and-forget — a failed
         // or skipped render never touches the settled reply.
         if (finalized.bigMoment && driftedState.sceneAuto === "milestones") {

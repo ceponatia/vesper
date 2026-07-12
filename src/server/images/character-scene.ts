@@ -6,19 +6,21 @@ import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import type { SceneReferenceSource, SceneVisualReference } from "@/contracts/images/scene-reference";
+import type { SceneReferenceSource } from "@/contracts/images/scene-reference";
 import { parseChatSceneModel } from "@/contracts/images/image-models";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
-import { hasVenice, isDemoMode } from "../ai";
+import { diag } from "@/contracts/diagnostics";
+import { classifyImageFailure, hasVenice, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
-import { absoluteImagePath } from "./assets";
+import { absoluteImagePath, deleteOwnedImage } from "./assets";
 import {
   characterAppearanceSummary,
   identityAnchorSummary,
   sceneRevealAppearance,
   type SceneComposerContext,
   type ScenePresentCharacter,
+  type SceneRenderPlan,
 } from "./prompts";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
 
@@ -69,6 +71,13 @@ export interface RenderCharacterSceneInput {
    * reference is deliberately dropped, since Venice's edit family is Qwen-only).
    */
   sceneModel?: string;
+  /**
+   * "selfie" (chat-selfies.plan.md): the subject's-own-camera framing, ALWAYS the
+   * identity-locked reference route (the scene-model pick is ignored — owner
+   * ruling), `meta.flavor: "selfie"`, and the retry-once failure policy (a content
+   * rejection retries sanitized; a second failure stays a debuggable failed row).
+   */
+  flavor?: "selfie";
   sink?: DiagnosticSink;
 }
 
@@ -185,6 +194,7 @@ async function loadCharacterAvatar(
  * the character (no session).
  */
 export async function renderCharacterSceneImage(input: RenderCharacterSceneInput): Promise<string> {
+  const selfie = input.flavor === "selfie";
   const room = input.room?.trim() || DEFAULT_CHAT_ROOM;
   const context = buildCharacterSceneContext({
     name: input.name,
@@ -208,45 +218,98 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   // a t2i key deliberately drops the avatar anchor and renders text-to-image with
   // that model (identity rides the prompt's appearance/anchor lines instead).
   const pickedModel = parseChatSceneModel(input.sceneModel);
-  const t2iModel = pickedModel === "reference" ? undefined : pickedModel;
+  // Selfies are ALWAYS the identity-locked reference route (owner ruling) — the
+  // scene strip's t2i style swap never applies; identity is the point of a selfie.
+  const t2iModel = selfie || pickedModel === "reference" ? undefined : pickedModel;
   const anchor =
     t2iModel || isDemoMode() || !hasVenice() ? null : await loadCharacterAvatar(input.userId, input.avatarImageId);
-  const references: SceneVisualReference[] = [
-    {
-      kind: "character",
-      entityId: input.characterId,
-      name: input.name,
-      role: "focal",
-      allowForIntimate: true,
-      ...(anchor ? { imageId: anchor.imageId, source: anchor.source } : {}),
-    },
-  ];
   const referenceBuffers = new Map<string, Buffer>();
   if (anchor) referenceBuffers.set(anchor.imageId, anchor.buffer);
 
-  return renderResolvedScene({
-    plan,
-    references,
-    referenceBuffers,
-    t2iModel,
-    // Fail-visible: with an avatar anchoring the shot, never silently degrade to a
-    // text-to-image render of a *different-looking* person — fail and let the tab
-    // retry. A deliberate t2i pick has no anchor, so the flag is a no-op there.
-    requireReferenceIdentity: true,
-    linkage: {
-      ownerId: input.userId,
-      entityKind: "character",
-      entityId: input.characterId,
-      chatId: input.chatId,
-      anchorMessageId: input.anchorMessageId,
-    },
-    logResult: (imageId, status, started) =>
-      void logEvent(null, "image.character_scene", {
-        imageId,
-        characterId: input.characterId,
-        status,
-        durationMs: Date.now() - started,
-      }),
-    sink: input.sink,
+  const renderOnce = (attemptPlan: SceneRenderPlan, allowIntimate: boolean): Promise<string> =>
+    renderResolvedScene({
+      plan: attemptPlan,
+      references: [
+        {
+          kind: "character",
+          entityId: input.characterId,
+          name: input.name,
+          role: "focal",
+          allowForIntimate: allowIntimate,
+          ...(anchor ? { imageId: anchor.imageId, source: anchor.source } : {}),
+        },
+      ],
+      referenceBuffers,
+      t2iModel,
+      framing: selfie ? "selfie" : undefined,
+      flavor: input.flavor,
+      // Fail-visible: with an avatar anchoring the shot, never silently degrade to a
+      // text-to-image render of a *different-looking* person — fail and let the tab
+      // retry. A deliberate t2i pick has no anchor, so the flag is a no-op there.
+      requireReferenceIdentity: true,
+      linkage: {
+        ownerId: input.userId,
+        entityKind: "character",
+        entityId: input.characterId,
+        chatId: input.chatId,
+        anchorMessageId: input.anchorMessageId,
+      },
+      logResult: (imageId, status, started) =>
+        void logEvent(null, "image.character_scene", {
+          imageId,
+          characterId: input.characterId,
+          status,
+          durationMs: Date.now() - started,
+        }),
+      sink: input.sink,
+    });
+
+  const first = await renderOnce(plan, true);
+  if (!selfie) return first;
+
+  // Selfie failure policy (owner ruling 2026-07-11): determine WHY the first
+  // attempt failed and try ONCE more — a content rejection retries with the
+  // sanitized plan (intimate/exposure phrasing stripped), anything else retries
+  // as-is (the transient case; the chain's own same-provider retry already ran).
+  // The failed first row is dropped so exactly ONE tile shows; a second failure
+  // stays a failed row whose prompt + error are the debug surface (the transcript
+  // "Failed" placeholder enlarges to them).
+  const firstError = await imageFailure(first);
+  if (firstError === null) return first;
+  const reason = classifyImageFailure(new Error(firstError || "render failed"));
+  input.sink?.push(
+    diag("info", "images.selfie.retry", `first selfie attempt failed (${reason}) — retrying${reason === "content_rejection" ? " sanitized" : ""}`),
+  );
+  const retryPlan = reason === "content_rejection" ? sanitizeScenePlan(plan) : plan;
+  const second = await renderOnce(retryPlan, reason !== "content_rejection");
+  await deleteOwnedImage(first, input.userId, { kind: "scene" });
+  return second;
+}
+
+/** The failed row's error message, or null when the render is not failed (pending/ready/missing). */
+async function imageFailure(imageId: string): Promise<string | null> {
+  const [row] = await db().select({ status: images.status, meta: images.meta }).from(images).where(eq(images.id, imageId)).limit(1);
+  if (!row || row.status !== "failed") return null;
+  const meta = row.meta && typeof row.meta === "object" && !Array.isArray(row.meta) ? (row.meta as Record<string, unknown>) : {};
+  return typeof meta.error === "string" ? meta.error : "";
+}
+
+/**
+ * Deterministic content-rejection sanitize (owner ruling — "determine via
+ * inference why it failed"): strip the exposure + intimate-anatomy phrasing that
+ * most plausibly tripped moderation, keep identity/pose/setting. The retry also
+ * runs with `allowForIntimate: false`, so the render prompt drops the intimate
+ * block even if a spec field survives.
+ */
+function sanitizeScenePlan(plan: SceneRenderPlan): SceneRenderPlan {
+  const scrub = <T extends { exposure?: string; intimateAppearance?: string }>(spec: T): T => ({
+    ...spec,
+    exposure: undefined,
+    intimateAppearance: undefined,
   });
+  return {
+    ...plan,
+    focal: plan.focal ? scrub(plan.focal) : null,
+    others: plan.others.map(scrub),
+  };
 }
