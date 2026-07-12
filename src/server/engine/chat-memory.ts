@@ -74,13 +74,18 @@ export async function retrieveChatMemory(input: {
   queries: readonly string[];
   /** This turn's player input. */
   input: string;
+  /**
+   * Per-leg k override (multi-character-chat.plan.md ruling 5): an ensemble
+   * tightens each member's leg as the active count grows. Absent ⇒ the defaults.
+   */
+  limit?: number;
   sink?: DiagnosticSink;
 }): Promise<ChatMemoryHits> {
   const queries = [...input.queries, input.input];
   const scope = chatScope(input.groupId);
   const [ep, fa] = await Promise.allSettled([
-    retrieveEpisodesFused(scope, queries, undefined, input.sink),
-    retrieveFactsFused(scope, queries, FACT_RETRIEVAL_LIMIT, input.sink),
+    retrieveEpisodesFused(scope, queries, input.limit, input.sink),
+    retrieveFactsFused(scope, queries, input.limit ?? FACT_RETRIEVAL_LIMIT, input.sink),
   ]);
 
   if (ep.status === "rejected") {

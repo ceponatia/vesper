@@ -141,6 +141,14 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     chatId,
     memoryGroupId: owned.participant.memoryGroupId,
     character: { id: owned.character.id, name: owned.character.name, profile: owned.character.profile },
+    // The full roster (multi-character-chat.plan.md): length 1 keeps the 1-on-1
+    // path byte-identical; more flips the pipeline to the ensemble frame.
+    roster: owned.roster.map((m) => ({
+      characterId: m.characterId,
+      memoryGroupId: m.memoryGroupId,
+      name: m.character.name,
+      profile: m.character.profile,
+    })),
     kind: body.value.kind,
     content: body.value.content,
     // The rerun target (kind "rerun"): the player line to re-send from. The pipeline

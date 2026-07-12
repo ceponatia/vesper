@@ -4,10 +4,12 @@ import type { AttributeValue } from "@/contracts/attributes/value";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
+  buildChatPromptPartsForRoster,
   buildChatTurnMessage,
   chatCallbackLine,
   chatNotationNote,
   chatSelfieLine,
+  type EnsembleMemberInput,
 } from "./character-chat";
 
 const attr = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue => ({ id, value, source: "creation" });
@@ -1453,5 +1455,86 @@ describe("drives block (character-drives.plan.md)", () => {
     expect(parts.tail).not.toContain("gone");
     const none = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: { meters: {}, regard: 0, conditions: [] } });
     expect(none.tail).not.toContain("What you want");
+  });
+});
+
+describe("ensemble frame (multi-character-chat.plan.md slice 2)", () => {
+  const member = (
+    name: string,
+    over: Partial<EnsembleMemberInput> = {},
+  ): EnsembleMemberInput => ({ name, profile: profile(), presence: "present", quietExchanges: 0, ...over });
+  const input = (): Parameters<typeof buildCharacterChatPromptParts>[0] => ({
+    name: "Mara",
+    profile: profile(),
+    player: { name: "Brian" },
+  });
+
+  it("a roster of one dispatches to the single-character path byte-identically", () => {
+    const single = buildCharacterChatPromptParts(input());
+    const dispatchNone = buildChatPromptPartsForRoster(input());
+    const dispatchOne = buildChatPromptPartsForRoster(input(), [member("Mara")]);
+    expect(dispatchNone.prefix).toBe(single.prefix);
+    expect(dispatchNone.tail).toBe(single.tail);
+    expect(dispatchOne.prefix).toBe(single.prefix);
+    expect(dispatchOne.tail).toBe(single.tail);
+  });
+
+  it("a real ensemble builds the one-block frame: narrator identity, a sheet per member, tag law, player authority", () => {
+    const parts = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Rhett")]);
+    const full = `${parts.prefix}\n\n${parts.tail}`;
+    expect(parts.prefix).toContain("You are the narrator");
+    expect(parts.prefix).toContain("Mara, Rhett");
+    expect(parts.prefix).toContain("## Mara");
+    expect(parts.prefix).toContain("## Rhett");
+    // Universal tag discipline — in a group nothing is auto-attributed.
+    expect(parts.prefix).toContain("Tag EVERY spoken character line");
+    expect(parts.prefix).toContain("[Mara]");
+    // Ruling 3: the player owns himself; the cutaway rule rides with it.
+    expect(parts.prefix).toContain("never write Brian's actions, speech, decisions");
+    expect(parts.prefix).toContain("the reply is a cutaway");
+    // The roster presence line rides the volatile tail.
+    expect(full).toContain("In the scene with Brian right now: Mara, Rhett.");
+    // No 1-on-1 identity leak.
+    expect(full).not.toContain("one-on-one conversation");
+  });
+
+  it("compresses a quiet member and drops an away member while someone is present", () => {
+    const parts = buildChatPromptPartsForRoster(input(), [
+      member("Mara"),
+      member("Quinn", { quietExchanges: 5 }),
+      member("Vera", { presence: "away" }),
+    ]);
+    expect(parts.prefix).toContain("## Quinn (quiet just now)");
+    // Quiet sheets keep identity but drop the full background fence.
+    expect(parts.prefix.split("## Quinn (quiet just now)")[1]).not.toContain("Background:");
+    // The away member has no sheet while someone is present (tier 4)…
+    expect(parts.prefix).not.toContain("## Vera");
+    // …but the tail's roster line still accounts for her.
+    expect(parts.tail).toContain("Away, living their own lives: Vera.");
+  });
+
+  it("renders cutaway sheets when every member is away", () => {
+    const parts = buildChatPromptPartsForRoster(input(), [
+      member("Mara", { presence: "away" }),
+      member("Vera", { presence: "away" }),
+    ]);
+    expect(parts.tail).toContain("no one — every character is away");
+    expect(parts.prefix).toContain("## Mara (away)");
+    expect(parts.prefix).toContain("## Vera (away)");
+  });
+
+  it("keeps the ensemble prefix byte-identical across tail-only volatile changes", () => {
+    const a = buildChatPromptPartsForRoster(input(), [
+      member("Mara", { memory: { facts: ["Brian owns a sailboat"], episodes: [] } }),
+      member("Rhett"),
+    ]);
+    const b = buildChatPromptPartsForRoster(input(), [
+      member("Mara", { memory: { facts: ["Brian hates oysters"], episodes: ["The night market"] } }),
+      member("Rhett"),
+    ]);
+    expect(a.prefix).toBe(b.prefix);
+    expect(a.tail).not.toBe(b.tail);
+    expect(a.tail).toContain("Mara's memory:");
+    expect(a.tail).toContain("Brian owns a sailboat");
   });
 });
