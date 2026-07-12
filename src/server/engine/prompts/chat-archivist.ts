@@ -11,7 +11,7 @@ import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
  * Pure and snapshot-testable; no IO.
  */
 
-export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private one-on-one in-character chat. After each exchange you read the player's latest message and the character's reply, then produce a single JSON object with eight fields:
+export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private in-character chat. After each exchange you read the player's latest message and the reply, then produce a single JSON object with nine fields:
 
 1. "episodeSummary": 1-3 sentences, past tense, third person, capturing WHAT HAPPENED this exchange (the beat, not a stat dump). Empty string if nothing memorable happened (idle small talk).
 2. "facts": durable declarative knowledge worth recalling much later — relationship shifts, revealed preferences, promises, disclosed history, named people/places. One sentence each; "subjectName" exactly as written (usually the character or the player); "subjectKind" one of character|player|location|item|world; "confidence" 0-1; "channel" one of perceived|private (see rule 6). Prefer a few strong facts to many weak ones; 0-3 per exchange is typical, [] is fine. Never record transient physical state (mood, arousal, tipsiness) as a fact — that is tracked elsewhere.
@@ -21,6 +21,7 @@ export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private on
 6. "scene": the setting the narration established or CHANGED this exchange — chat locations are imagined by the narrator, so this keeps them consistent. Omit it entirely (or {}) unless the fiction actually established something new. Shape: { "current": "<the place the scene is in now, if it was named/changed>", "timeOfDay": "<e.g. 'early evening', if stated or clearly shifted>", "places": [{ "name": "<place>", "details": ["<durable fact, e.g. 'blue sofa'>"], "connections": ["<e.g. 'kitchen through the doorway'>"] }] }. ONLY record what the text actually established — a concrete object, layout, light, or a stated time — never invent decor. Short noun phrases, a few at most. Physical STATE (weather changing, a door opening) is not a durable detail.
 7. "outfit": what the character is WEARING, only when this exchange CHANGED it — they got dressed, changed clothes, or removed clothing (partly or fully). Shape: { "description": "<the complete current look as visible now — a full replacement, never a delta>", "exposed": <true when intimate areas are bared> }. Emit {} when their clothing did not change (the common case). Undressing counts: describe what remains ("nothing but an unbuttoned shirt"), with "exposed": true when it bares them. Never record the player's clothing here.
 8. "driveUpdates": movement on the character's standing DRIVES (listed under "Current drives" below, when any exist) — as [{ "want": "<the drive's want, copied exactly>", "progress": "<a fresh one-line progress note, or ''>", "revealed": <true ONLY when the character spoke a previously-secret drive aloud to the player THIS exchange>, "resolved": <true when the fiction achieved or abandoned the drive> }]. Only drives from that list, matched by their exact want; [] when none moved (the common case).
+9. "presence": ONLY when a "Roster" line below lists this conversation's characters — the ones whose scene-presence the fiction actually CHANGED this exchange, as [{ "name": "<roster name, copied exactly>", "presence": "present" | "away" }]. "present" = they entered or are now sharing the player's scene; "away" = they left it / are elsewhere living their life. Only real transitions played on the page — never infer one from silence; [] is the common case, and always [] when there is no Roster line.
 
 Rules:
 1. Output ONLY the JSON object — no markdown, no commentary.
@@ -55,6 +56,12 @@ export interface ChatArchivistPromptInput {
   openLoops?: readonly string[];
   /** The standing drives (character-drives.plan.md) — field 8's match targets. */
   drives?: readonly { want: string; secrecy: string; revealed: boolean }[];
+  /**
+   * The conversation's roster with live presence (multi-character-chat.plan.md
+   * slice 3) — renders the "Roster" line that arms field 9. Absent/single ⇒ no
+   * line, and the 1-on-1 archivist prompt is unchanged.
+   */
+  roster?: readonly { name: string; presence: "present" | "away" }[];
 }
 
 export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): string {
@@ -74,9 +81,13 @@ export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): strin
     playerName: input.playerName.trim() || "the player",
     perceiverClause: `${input.characterName} did NOT perceive it`,
   });
+  const roster = input.roster ?? [];
   return [
     `Character: ${input.characterName}`,
     `Player: ${input.playerName.trim() || "the player"}`,
+    ...(roster.length > 1
+      ? [`Roster (for field 9 — match names exactly): ${roster.map((m) => `${m.name} (${m.presence})`).join(", ")}`]
+      : []),
     `Currently open loops:\n${loops.length ? fenceUntrusted("open loops", loops.map((l) => `- ${l}`).join("\n")) : "(none)"}`,
     `Current drives (for field 8 — match by exact want):\n${
       (input.drives ?? []).length

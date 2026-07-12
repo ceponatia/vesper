@@ -946,12 +946,25 @@ export async function finalizeChatState(input: {
    * turn stays fiction.
    */
   selfie?: { requested: boolean; offerEligible: boolean };
+  /**
+   * The roster with live presence (multi-character-chat.plan.md slice 3) — arms
+   * the archivist's presence-transition field. Absent/single ⇒ 1-on-1, unchanged.
+   */
+  roster?: readonly { name: string; presence: "present" | "away" }[];
+  /**
+   * Present ensemble members' memory scopes beyond the primary's (ruling 5 —
+   * "each character's memory their own"): the ONE extraction files to every
+   * present witness's own group. Deduped against the primary's group here.
+   */
+  extraMemoryWrites?: readonly { groupId: string; characterId: string }[];
   sink?: DiagnosticSink;
 }): Promise<{
   /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
   bigMoment: boolean;
   /** True when the reply sent a selfie (pulse-read + gate-armed) — the route queues the render. */
   selfieSend: boolean;
+  /** The archivist's confirmed presence transitions (ensemble only; [] otherwise). */
+  presenceChanges: readonly { name: string; presence: "present" | "away" }[];
 }> {
   const [pulse, archivist] = await Promise.all([
     input.skipPulse
@@ -970,6 +983,7 @@ export async function finalizeChatState(input: {
       exchange: input.exchange,
       openLoops: input.driftedState.openLoops,
       drives: input.driftedState.drives,
+      roster: input.roster,
       sink: input.sink,
     }),
   ]);
@@ -994,6 +1008,31 @@ export async function finalizeChatState(input: {
         `long-term memory write failed; state still persisted: ${error instanceof Error ? error.message : String(error)}`,
       ),
     );
+  }
+  // Every present ensemble witness files the same extraction under their OWN
+  // group (ruling 5) — separately fenced so one member's failed write never
+  // costs another's, nor the state save below.
+  const seenGroups = new Set([input.memoryGroupId]);
+  for (const extra of input.extraMemoryWrites ?? []) {
+    if (seenGroups.has(extra.groupId)) continue;
+    seenGroups.add(extra.groupId);
+    try {
+      await writeChatMemory({
+        groupId: extra.groupId,
+        characterId: extra.characterId,
+        assistantMessageId: input.assistantMessageId,
+        archivist: archivist.value,
+        sink: input.sink,
+      });
+    } catch (error) {
+      input.sink?.push(
+        diag(
+          "warn",
+          "chat_state.memory.write_failed",
+          `ensemble member memory write failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
   }
 
   // Record the meter bands the narrator saw THIS turn (from the drifted, pre-pulse meters)
@@ -1121,12 +1160,20 @@ export async function finalizeChatState(input: {
     retrievedDetail: input.retrieved?.detail ?? [],
     degraded: archivist.degraded,
   };
+  // Presence transitions (multi-character-chat.plan.md slice 3): the archivist's
+  // confirmed reads. The primary's own transition folds into THIS save; the
+  // caller applies the others' to their member states.
+  const presenceChanges = archivist.value?.presence ?? [];
+  const selfPresence = presenceChanges.find(
+    (p) => p.name.trim().toLowerCase() === input.characterName.trim().toLowerCase(),
+  )?.presence;
   await saveChatState({
     chatId: input.chatId,
     characterId: input.characterId,
     promptMessageId: input.promptMessageId,
     state: {
       ...pulse.state,
+      ...(selfPresence ? { presence: selfPresence } : {}),
       familiarity,
       familiaritySceneGain,
       surfacedCues,
@@ -1170,7 +1217,7 @@ export async function finalizeChatState(input: {
   if (outfitProposal?.description || (archivist.value?.attributeChanges.length ?? 0) > 0) {
     void enqueueChatLookImage({ chatId: input.chatId, characterId: input.characterId });
   }
-  return { bigMoment, selfieSend: selfieKind !== null };
+  return { bigMoment, selfieSend: selfieKind !== null, presenceChanges };
 }
 
 /**

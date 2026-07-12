@@ -163,6 +163,8 @@ export interface ChatArchivistInput {
   openLoops?: readonly string[];
   /** The standing drives (character-drives.plan.md) — the driveUpdates match targets. */
   drives?: readonly { want: string; secrecy: string; revealed: boolean }[];
+  /** The roster with live presence (multi-character-chat.plan.md) — arms the presence field. */
+  roster?: readonly { name: string; presence: "present" | "away" }[];
   sink?: DiagnosticSink;
 }
 
@@ -189,6 +191,7 @@ export async function runChatArchivist(
       exchange: input.exchange,
       openLoops: input.openLoops,
       drives: input.drives,
+      roster: input.roster,
     }),
     modelId: agentModelId(),
     temperature: 0,

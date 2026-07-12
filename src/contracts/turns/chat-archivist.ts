@@ -99,6 +99,25 @@ export const chatArchivistSchema = z.object({
     .catch([])
     .default([])
     .transform((u) => u.slice(0, DRIVES_MAX)),
+  /**
+   * Presence transitions the fiction actually played this exchange
+   * (multi-character-chat.plan.md slice 3 — the archivist's confirming half of
+   * activity tracking): a roster character who ENTERED the player's scene or
+   * LEFT it, by name. Only emitted for multi-character conversations (the
+   * prompt instruction renders only with a roster) and only for real
+   * transitions — [] is the common no-change case. Lenient; unmatched names
+   * drop at the fold.
+   */
+  presence: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1),
+        presence: z.enum(["present", "away"]).catch("present"),
+      }),
+    )
+    .catch([])
+    .default([])
+    .transform((entries) => entries.slice(0, 4)),
 });
 
 export type ChatArchivist = z.infer<typeof chatArchivistSchema>;
@@ -114,6 +133,7 @@ export function degradedChatArchivist(): ChatArchivist {
     scene: { places: [] },
     outfit: { description: "", exposed: false },
     driveUpdates: [],
+    presence: [],
   };
 }
 

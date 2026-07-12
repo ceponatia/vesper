@@ -46,6 +46,7 @@ import {
   loadChatState,
   loadPreExchangeState,
   persistChatState,
+  runChatPulse,
   saveChatState,
   savePreExchangeSnapshot,
   resolveSeededOutfit,
@@ -919,6 +920,18 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             : driftedState.quietExchanges + 1
         : driftedState.quietExchanges;
 
+      // Referenced-only pulse scoping (ruling 4): the pulse runs for the members
+      // the player's turn addressed by name; when it names NO ONE, the primary —
+      // the conversation's anchor — takes the one fallback pulse. Cost tracks the
+      // action, never the roster.
+      const primaryReferenced =
+        !ensembleActive || mentionsCharacter(agentPlayerContent, characterName, profile.aliases);
+      const referencedOthers = ensembleActive
+        ? others.filter(
+            (m) => m.state.presence === "present" && mentionsCharacter(agentPlayerContent, m.name, m.profile.aliases),
+          )
+        : [];
+
       try {
         const finalized = await finalizeChatState({
           chatId,
@@ -926,7 +939,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           memoryGroupId,
           assistantMessageId,
           preExchangeState: storedState,
-          skipPulse: effectiveKind === "continue",
+          skipPulse: effectiveKind === "continue" || (!primaryReferenced && referencedOthers.length > 0),
           promptMessageId: promptMessageId ?? assistantMessageId,
           profile,
           characterName,
@@ -936,25 +949,58 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           exchange: { player: agentPlayerContent, assistant: full },
           retrieved: memory,
           selfie: { requested: selfieRequested, offerEligible: selfieOfferEligible },
+          // The ensemble context (multi-character-chat.plan.md): the roster line
+          // arms the archivist's presence field; every present witness's group
+          // gets the same extraction filed as their own memory.
+          roster: ensembleActive
+            ? [
+                { name: characterName, presence: driftedState.presence },
+                ...others.map((o) => ({ name: o.name, presence: o.state.presence })),
+              ]
+            : undefined,
+          extraMemoryWrites: ensembleActive
+            ? others
+                .filter((o) => o.state.presence === "present")
+                .map((o) => ({ groupId: o.memoryGroupId, characterId: o.characterId }))
+            : undefined,
           sink,
         });
-        // Ensemble members persist their own turn: the presence-gated tick they
-        // took at prompt time plus the recency stamp — guarded on the same
-        // prompting message as the primary's save, so a mid-stream clear can't
-        // resurrect their rows either. (Pulse/archivist folds stay primary-scoped
-        // until the scoped-dynamics slice.)
+        // Ensemble members settle their own turn: the presence-gated tick from
+        // prompt time, a referenced-only pulse (regard/mood/mindNote — the fuller
+        // milestone machinery stays primary-scoped in the substrate), the
+        // archivist's confirmed presence transition, and the recency stamp —
+        // saved under the same prompt-row guard as the primary.
         for (const member of others) {
           try {
+            let memberState = member.state;
+            if (
+              effectiveKind !== "continue" &&
+              playerContent &&
+              referencedOthers.some((m) => m.characterId === member.characterId)
+            ) {
+              const pulsed = await runChatPulse({
+                state: memberState,
+                profile: member.profile,
+                characterName: member.name,
+                playerName: player.name,
+                exchange: { player: agentPlayerContent, assistant: full },
+                sink,
+              });
+              memberState = pulsed.state;
+            }
+            const confirmed = finalized.presenceChanges.find(
+              (p) => p.name.trim().toLowerCase() === member.name.trim().toLowerCase(),
+            )?.presence;
             const active =
               mentionsCharacter(agentPlayerContent, member.name, member.profile.aliases) ||
               spokeInReply(full, member.name);
             const quietExchanges =
-              member.state.presence !== "present" ? member.state.quietExchanges : active ? 0 : member.state.quietExchanges + 1;
+              memberState.presence !== "present" ? memberState.quietExchanges : active ? 0 : memberState.quietExchanges + 1;
             await saveChatState({
               chatId,
               characterId: member.characterId,
               promptMessageId: promptMessageId ?? assistantMessageId,
-              state: { ...member.state, quietExchanges },
+              state: { ...memberState, ...(confirmed ? { presence: confirmed } : {}), quietExchanges },
             });
           } catch (error) {
             log.error("engine.chat", "ensemble member state persist failed", {
