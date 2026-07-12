@@ -30,6 +30,15 @@ describe("toggleCoverage (select-all cascade with carve-outs)", () => {
     sameSet(result, ["hair", "ears", "nose", "lips"]);
   });
 
+  it("strapped sandal: feet minus toes and top-of-foot keeps sole and heel", () => {
+    // Footwear covers the whole foot; carving toes out first gives a peep-toe...
+    const peepToe = toggleCoverage(["feet"], "toes");
+    sameSet(peepToe, ["top_of_foot", "sole", "heel"]);
+    // ...then dropping the instep leaves the sole+heel a sandal strap holds.
+    const sandal = toggleCoverage(peepToe, "top_of_foot");
+    sameSet(sandal, ["sole", "heel"]);
+  });
+
   it("re-checking a carved-out child restores just that subtree", () => {
     const skiMask = toggleCoverage(["head"], "eyes");
     sameSet(toggleCoverage(skiMask, "eyes"), ["hair", "eyes", "ears", "nose", "lips"]);

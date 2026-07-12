@@ -12,7 +12,7 @@ The body model describes *where* things are on a character — the anatomy that 
 { id, label, parentId?, side?, coverageRelevant?, intimateGroup?, featureGroup?, promptHints? }
 ```
 
-The **everyday humanoid tree** has five roots, at coverage-useful granularity (~29 nodes). The roots double as the coverage editor's column groups:
+The **everyday humanoid tree** has five roots, at coverage-useful granularity (~32 nodes). The roots double as the coverage editor's column groups:
 
 | Root | Children |
 | --- | --- |
@@ -20,7 +20,7 @@ The **everyday humanoid tree** has five roots, at coverage-useful granularity (~
 | torso | neck, shoulders, chest, back, waist |
 | arms | upper_arms, forearms, wrists, hands (→ fingers) |
 | pelvis | hips, groin, buttocks |
-| legs | thighs, calves, ankles, feet (→ toes) |
+| legs | thighs, calves, ankles, feet (→ toes, top of foot, sole, heel) |
 
 **Additive feature locations** are default-absent and tagged with a `featureGroup`:
 

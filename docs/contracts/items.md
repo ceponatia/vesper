@@ -120,4 +120,4 @@ Coverage editing (`items/coverage.ts`) uses a **select-all cascade**:
 
 Edited sets are stored **exploded** (every covered id explicit) so carve-outs keep their siblings — `registry.expand` is per-id, so exploded and minimal sets evaluate identically. Carving out a child also drops its ancestors' own ids (otherwise an ancestor would re-imply the child).
 
-Carve-out precision is bounded by tree granularity: add child locations when a region needs finer holes. A ski mask is "head minus eyes"; "face minus eyes" needs face sub-parts to keep any face coverage at all.
+Carve-out precision is bounded by tree granularity: add child locations when a region needs finer holes. A ski mask is "head minus eyes"; "face minus eyes" needs face sub-parts to keep any face coverage at all. Footwear works the same way — `feet` splits into `toes` · `top of foot` · `sole` · `heel`, so a peep-toe shoe is "feet minus toes" and a strapped sandal is "feet minus toes and top of foot" (keeping sole+heel); a bare `feet` shoe still covers all four via expand.

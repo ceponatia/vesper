@@ -125,6 +125,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   additive fill up to the 3-cap + Disposition re-draft coverage, and the
   `chat-secret-hold`/`-reveal` fixtures (`secretCue` metric; live judged run
   rides the enactment measurement run in Next).
+- **Foot coverage sub-parts** — registry data edit (no plan; direct owner request) —
+  2026-07-12 — `feet` splits into `toes` · `top of foot` · `sole` · `heel` so
+  footwear can carve holes (peep-toe, strapped sandal, flip-flop). Footwear's
+  `["feet"]` template still auto-covers the whole foot via expand; the exposure
+  classifier (`items/visibility.ts`) now reads any covered foot part as shod, so
+  a sandal isn't mislabelled "barefoot". See `docs/contracts/body.md` +
+  `items.md` §Coverage editing.
 - **Multi-character & forge wrap-up — the owner-rulings pass (all 13 rulings)** —
   [multi-character-chat.followups.md](finished/multi-character-chat.followups.md) — 2026-07-12 —
   forge re-draft = full tab re-sync + the portrait review dialog; preset
