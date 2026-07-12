@@ -162,7 +162,52 @@ describe("parseSegments — standalone-quote attribution (attributeStandaloneQuo
   });
 });
 
+describe("parseSegments — first-name tag aliasing (buildKnownMap)", () => {
+  it("attributes a first-name tag to a full-name character (canonical casing returned)", () => {
+    // The narrator shortens "Sabrina Carpenter" to [Sabrina]; it resolves, brackets never leak.
+    expect(parseSegments('[Sabrina] "Hi."', ["Sabrina Carpenter"])).toEqual([
+      { speaker: "Sabrina Carpenter", content: '"Hi."' },
+    ]);
+  });
+
+  it("still matches the full name; a single-token name needs no alias", () => {
+    expect(parseSegments('[Sabrina Carpenter] "Hi."', ["Sabrina Carpenter"])).toEqual([
+      { speaker: "Sabrina Carpenter", content: '"Hi."' },
+    ]);
+    expect(parseSegments('[Mara] "Hi."', ["Mara"])).toEqual([{ speaker: "Mara", content: '"Hi."' }]);
+  });
+
+  it("fails closed when two known names share a first token (ambiguous → narrator prose)", () => {
+    const known = ["Sabrina Carpenter", "Sabrina Lopez"];
+    expect(parseSegments('[Sabrina] "Hi."', known)).toEqual([{ speaker: null, content: '[Sabrina] "Hi."' }]);
+    // …but each unambiguous full name still resolves.
+    expect(parseSegments('[Sabrina Lopez] "Hi."', known)).toEqual([{ speaker: "Sabrina Lopez", content: '"Hi."' }]);
+  });
+
+  it("an exact single-token name owns its key over another name's first-name alias", () => {
+    expect(parseSegments('[Sabrina] "Hi."', ["Sabrina", "Sabrina Carpenter"])).toEqual([
+      { speaker: "Sabrina", content: '"Hi."' },
+    ]);
+  });
+
+  it("a recognized first-name tag makes the reply tag-disciplined (a later bare quote is someone else)", () => {
+    const text = '[Sabrina] "Hi."\n\n"Someone else."';
+    expect(parseSegments(text, ["Sabrina Carpenter"], { attributeStandaloneQuotes: true })).toEqual([
+      { speaker: "Sabrina Carpenter", content: '"Hi."' },
+      { speaker: null, content: '"Someone else."' },
+    ]);
+  });
+});
+
 describe("createSegmenter (streaming deltas)", () => {
+  it("resolves a streamed first-name tag to the canonical full name", () => {
+    const seg = createSegmenter(["Sabrina Carpenter"]);
+    const events: TurnChunkEvent[] = [];
+    for (const ch of '[Sabrina] "Hi."') events.push(...seg.push(ch));
+    events.push(...seg.finish());
+    expect(assemble(events)).toEqual([{ speaker: "Sabrina Carpenter", content: '"Hi."' }]);
+  });
+
   it("emits append-only deltas equal to the full parse", () => {
     const text = 'Morning light.\n[Maya] "Coffee?"\n\nShe was already pouring.';
     const seg = createSegmenter(KNOWN);

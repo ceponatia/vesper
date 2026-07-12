@@ -814,6 +814,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     />
   );
   const roster = bootstrap.data?.roster ?? [];
+  // The dialogue-tag vocabulary for rendering replies: every roster member's name (primary
+  // first), so a group reply's non-primary `[Name]` tags attribute instead of leaking as
+  // literal text. Falls back to the primary name on legacy/empty-roster payloads.
+  const rosterNames = roster.length ? roster.map((m) => m.name) : name ? [name] : [];
 
   const premise = chatState?.premise.trim() ?? "";
   // Another take targets the last assistant reply (spec §4.1) — only there, only idle.
@@ -1008,6 +1012,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                     <MessageBubble
                       line={line}
                       name={name}
+                      knownNames={rosterNames}
                       avatarImageId={character?.avatarImageId ?? null}
                       streaming={sending}
                       takeTarget={!archived && line.id === lastAssistantId}

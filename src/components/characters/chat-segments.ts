@@ -27,25 +27,28 @@ export interface ChatReplySegment {
  * Name-labeled italic (texted) treatment from `message-markup`; a speaker label above it
  * would double-label the attribution, so we suppress it and let the comms styling carry it.
  */
-function isSolelyComms(content: string, characterName: string): boolean {
-  const spans = parseMessageSpans(content, { knownNames: characterName ? [characterName] : undefined });
+function isSolelyComms(content: string, knownNames: readonly string[]): boolean {
+  const spans = parseMessageSpans(content, { knownNames: knownNames.length ? [...knownNames] : undefined });
   return spans.length === 1 && spans[0]?.kind === "comms";
 }
 
 /**
- * Split a narrator/character reply into display segments. `[Name]` tags attribute to
- * `characterName`, and in a reply with no tags at all a standalone whole-line quote does too
- * (the one-on-one sole speaker); in a tagged reply an untagged quote is someone else — a side
+ * Split a narrator/character reply into display segments. `[Name]` tags attribute to any
+ * roster member in `knownNames` (matched by full name or an unambiguous first name — segmenter
+ * §buildKnownMap), and in a one-on-one reply with no tags at all a standalone whole-line quote
+ * attributes to the sole member too; in a tagged reply an untagged quote is someone else — a side
  * NPC's own quoted paragraph — and stays narrator prose (segmenter §hasKnownTag, owner report
- * 2026-07-11). The tag itself never appears in the content. A speaker segment shows its label
- * unless it is solely a comms line (which carries its own attribution).
+ * 2026-07-11). Pass the WHOLE roster, not just the primary: a group reply tags every member, so a
+ * non-primary speaker's tag would otherwise leak as literal `[Name]` (owner report 2026-07-12).
+ * The tag itself never appears in the content. A speaker segment shows its label unless it is
+ * solely a comms line (which carries its own attribution).
  */
-export function chatReplySegments(content: string, characterName: string): ChatReplySegment[] {
-  const known = characterName ? [characterName] : [];
+export function chatReplySegments(content: string, knownNames: readonly string[]): ChatReplySegment[] {
+  const known = knownNames.filter((n) => n.trim().length > 0);
   const segments = parseSegments(content, known, { attributeStandaloneQuotes: true });
   return segments.map((seg) => ({
     speaker: seg.speaker,
     content: seg.content,
-    showLabel: seg.speaker !== null && !isSolelyComms(seg.content, characterName),
+    showLabel: seg.speaker !== null && !isSolelyComms(seg.content, known),
   }));
 }
