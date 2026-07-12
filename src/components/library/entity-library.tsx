@@ -280,6 +280,19 @@ const SCOPE_OPTIONS: { id: Scope; label: string }[] = [
   { id: "owned", label: "Owned" },
 ];
 
+/**
+ * The Library hub's collection tabs (library-ux.plan.md §Follow-up pass): the
+ * four collection routes keep their URLs; this shared strip is what makes them
+ * one surface under the header's single "Library" entry. Worlds stays its own
+ * top-level destination, so it renders no strip.
+ */
+const LIBRARY_TABS: { entity: LibraryEntity; href: string; label: string }[] = [
+  { entity: "characters", href: "/characters", label: "Characters" },
+  { entity: "locations", href: "/locations", label: "Locations" },
+  { entity: "items", href: "/items", label: "Items" },
+  { entity: "social-cards", href: "/social-cards", label: "Social cards" },
+];
+
 /** A segmented tab group (the library's toolbar control). Counts are optional. */
 function Segmented<T extends string>({
   label,
@@ -638,6 +651,26 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
 
   return (
     <PageContainer wide>
+      {entity !== "worlds" ? (
+        <nav aria-label="Library sections" className="mb-5 flex gap-1 overflow-x-auto border-b border-ink-600">
+          {LIBRARY_TABS.map((tab) => {
+            const active = tab.entity === entity;
+            return (
+              <Link
+                key={tab.entity}
+                href={tab.href}
+                aria-current={active ? "page" : undefined}
+                className={cx(
+                  "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm transition-colors",
+                  active ? "border-accent-500 text-paper-50" : "border-transparent text-paper-400 hover:text-paper-200",
+                )}
+              >
+                {tab.label}
+              </Link>
+            );
+          })}
+        </nav>
+      ) : null}
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="prose-display text-2xl">{config.title}</h1>

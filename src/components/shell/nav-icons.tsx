@@ -4,6 +4,7 @@ export type NavIconName =
   | "home"
   | "chats"
   | "worlds"
+  | "library"
   | "characters"
   | "locations"
   | "items"
@@ -31,6 +32,12 @@ const PATHS: Record<NavIconName, ReactNode> = {
       <circle cx="12" cy="12" r="9" />
       <path d="M3 12h18" />
       <path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z" />
+    </>
+  ),
+  library: (
+    <>
+      <path d="M12 6.5C10.5 5 8.5 4.5 4 4.5v14c4.5 0 6.5.5 8 2 1.5-1.5 3.5-2 8-2v-14c-4.5 0-6.5-.5-8 2z" />
+      <path d="M12 6.5v14" />
     </>
   ),
   characters: (

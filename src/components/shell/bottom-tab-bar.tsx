@@ -44,7 +44,7 @@ export function BottomTabBar({
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
-  const overflowActive = OVERFLOW_NAV.some((d) => isNavActive(pathname, d.href));
+  const overflowActive = OVERFLOW_NAV.some((d) => isNavActive(pathname, d));
 
   return (
     <>
@@ -53,7 +53,7 @@ export function BottomTabBar({
         className="fixed inset-x-0 bottom-0 z-40 flex h-14 border-t border-ink-600 bg-ink-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
       >
         {PRIMARY_NAV.map((dest) => (
-          <TabLink key={dest.href} dest={dest} active={isNavActive(pathname, dest.href)} />
+          <TabLink key={dest.href} dest={dest} active={isNavActive(pathname, dest)} />
         ))}
         <button
           type="button"
@@ -76,7 +76,7 @@ export function BottomTabBar({
             <NavSheetLink
               key={dest.href}
               dest={dest}
-              active={isNavActive(pathname, dest.href)}
+              active={isNavActive(pathname, dest)}
               onNavigate={() => setMoreOpen(false)}
             />
           ))}

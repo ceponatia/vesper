@@ -45,7 +45,7 @@ export function NavDrawer({
             <NavSheetLink
               key={dest.href}
               dest={dest}
-              active={isNavActive(pathname, dest.href)}
+              active={isNavActive(pathname, dest)}
               onNavigate={() => setOpen(false)}
             />
           ))}

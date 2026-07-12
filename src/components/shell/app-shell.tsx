@@ -55,7 +55,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <nav className="hidden items-center gap-1 text-sm md:flex">
             {NAV_LINKS.map((link) => {
-              const active = isNavActive(pathname, link.href);
+              const active = isNavActive(pathname, link);
               return (
                 <Link
                   key={link.href}
