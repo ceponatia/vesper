@@ -1,5 +1,6 @@
 import type { ModelMessage } from "ai";
 import { defaultExposureMask, emptyBrief, type ExposureMask } from "../../../src/contracts/state/brief";
+import type { ChatDrive } from "../../../src/contracts/personality/drives";
 import type { NarrationFocus } from "../../../src/contracts/turns/intent-brief";
 import { characterProfileSchema, type CharacterProfile } from "../../../src/contracts/world/profile";
 import {
@@ -150,6 +151,16 @@ export interface EvalScenario {
    * a recap. Absent ⇒ not measured.
    */
   callbackRe?: RegExp;
+  /**
+   * Secret-drive check (character-drives.plan.md slice 4): the prompt plants a `secret`
+   * drive whose distinctive token appears nowhere else, and the player probes (or
+   * invites) its territory. Direction is per fixture — `chat-secret-hold` sits BELOW
+   * the reveal gate, so a match means the withheld secret leaked (expected NOT to
+   * match); `chat-secret-reveal` sits AT the gate with a direct invitation, so a match
+   * means the invited reveal landed (expected to match). Flips on the deterministic
+   * `secretCue` metric (`run.ts`). Absent ⇒ no secret planted (not measured).
+   */
+  secretRe?: RegExp;
   /**
    * Multi-turn transcript scenario (narrator-prompt-consolidation.plan.md slice 6): the
    * scripted player inputs AFTER `playerInput`. The runner generates a reply per input,
@@ -489,6 +500,19 @@ const FRONT_DESK_STATE: ChatState = {
   premise: "A slow afternoon at the inn's front desk; no one else is around.",
 };
 
+// The planted secret drive for the chat-secret pair (character-drives.plan.md slice 4):
+// the token ("Kestrel") appears nowhere else in either prompt, so a reply matching
+// /kestrel/i spoke the secret. Same drive, two familiarity values — 30 sits below the
+// default reveal gate (familiarity ≥ familiar, 55), 60 clears it.
+const KESTREL_DRIVE: ChatDrive = {
+  want: "to buy back the family boat, the Kestrel, before the boatyard scraps it",
+  why: "her father built it, and losing it to the debt was her doing",
+  secrecy: "secret",
+  progress: "",
+  revealed: false,
+  resolved: false,
+};
+
 // The player's message for the thought-leak pair: a quoted greeting, a visible stammer
 // and flush, and an unspoken thought carrying the planted token ("klutz") that appears
 // nowhere else in the prompt — the deterministic leak tripwire (plan §2).
@@ -751,6 +775,54 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
         summary: "They wandered the night market together and Sabrina bought a paper lantern she refused to let him pay for.",
       },
       playerInput: "I refill our glasses and settle back into the corner booth.",
+    }),
+  },
+  // ── Secret-drive fixtures (character-drives.plan.md slice 4): same planted secret,
+  // two familiarity values. Below the gate the prompt law is a withhold (deflect, and
+  // under direct pressure lie — scoped to this one secret); at the gate, with a direct
+  // invitation, letting it out is the earned beat. The archivist half of a reveal (the
+  // `secret_shared` milestone + fact) is pure code covered by drives.test.ts — these
+  // fixtures measure the narration behavior only.
+  {
+    id: "chat-secret-hold",
+    title: "Character-chat — a withheld secret survives direct probing, in character",
+    lane: "chat",
+    expectation:
+      "Sabrina's secret (the Kestrel buy-back) sits below its reveal gate: the player must not learn it. A good reply deflects in her gentle, flustered voice — minimizing, redirecting, or under this direct pressure an outright plausible cover story (the lie license is scoped to this one secret; she stays honest about everything else). Visible discomfort or a bad poker face is human and fine. Naming the boat, admitting what she's saving for, or announcing outright that she has a secret she can't share fails; so does an out-of-character stonewall.",
+    playerInput:
+      "The harbormaster says you've been at the boatyard office three mornings running, asking about the winter auction. What's that about?",
+    knownNames: ["Sabrina"],
+    secretRe: /kestrel/i,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: { ...FRONT_DESK_STATE, familiarity: 30, drives: [KESTREL_DRIVE] },
+      playerInput:
+        "The harbormaster says you've been at the boatyard office three mornings running, asking about the winter auction. What's that about?",
+    }),
+  },
+  {
+    id: "chat-secret-reveal",
+    title: "Character-chat — the gate-cleared secret comes out when invited",
+    lane: "chat",
+    expectation:
+      "The reveal gate is cleared (familiarity 60) and the player is directly, gently inviting it: letting the secret out is the earned big beat. A good reply has Sabrina finally tell him — the Kestrel, what the boat means, why she kept it quiet — as a felt, in-character confession; hesitation or a false start on the way in is natural and good. Continuing to lie, or deflecting the invitation away entirely, fails; a reveal delivered as a flat information dump is weak.",
+    playerInput:
+      "You go somewhere else every time the boatyard comes up lately. Whatever it is — you can tell me, you know.",
+    knownNames: ["Sabrina"],
+    secretRe: /kestrel/i,
+    build: chatBuild({
+      name: "Sabrina",
+      profile: SABRINA_PROFILE,
+      state: {
+        ...FRONT_DESK_STATE,
+        regard: 50,
+        familiarity: 60,
+        drives: [KESTREL_DRIVE],
+        premise: "A quiet evening on the inn's back porch after close; the two of them and no one else.",
+      },
+      playerInput:
+        "You go somewhere else every time the boatyard comes up lately. Whatever it is — you can tell me, you know.",
     }),
   },
   // ── Perception-partition fixtures (player-input-perception.plan.md §2) ──

@@ -116,6 +116,25 @@ describe("mergeFillDraft — text lists and preferences", () => {
       { target: "confide", valence: "like", intensity: 5 },
     ]);
   });
+
+  it("fills drives additively up to the 3-drive cap, never touching authored ones (2026-07-12 ruling)", () => {
+    const authored = { want: "to sail north", why: "", secrecy: "open" as const };
+    const base = draftOf({}, { drives: [authored] });
+    const incoming = draftOf({}, {
+      drives: [
+        { want: "To Sail North", why: "generated duplicate", secrecy: "guarded" },
+        { want: "to keep the inn solvent", why: "", secrecy: "open" },
+        { want: "a hidden debt", why: "", secrecy: "secret" },
+        { want: "one over the cap", why: "", secrecy: "open" },
+      ],
+    });
+    const merged = mergeFillDraft(base, incoming);
+    expect(merged.profile.drives).toEqual([
+      authored,
+      { want: "to keep the inn solvent", why: "", secrecy: "open" },
+      { want: "a hidden debt", why: "", secrecy: "secret" },
+    ]);
+  });
 });
 
 describe("mergeFillDraft — clusters", () => {

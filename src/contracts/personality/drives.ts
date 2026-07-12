@@ -39,11 +39,13 @@ export const driveSchema = z.object({
 });
 export type Drive = z.infer<typeof driveSchema>;
 
+// Element-wise catch: one bad entry (an editor row saved with an empty want)
+// drops alone instead of wiping the whole authored list (docs/resilience.md §1).
 export const drivesSchema = z
-  .array(driveSchema)
+  .array(driveSchema.nullable().catch(null))
   .catch([])
   .default([])
-  .transform((d) => d.slice(0, DRIVES_MAX));
+  .transform((d) => d.filter((x): x is Drive => x !== null).slice(0, DRIVES_MAX));
 
 /** The runtime drive on chat state: the authored shape + what play has done to it. */
 export const chatDriveSchema = driveSchema.extend({
@@ -57,10 +59,10 @@ export const chatDriveSchema = driveSchema.extend({
 export type ChatDrive = z.infer<typeof chatDriveSchema>;
 
 export const chatDrivesSchema = z
-  .array(chatDriveSchema)
+  .array(chatDriveSchema.nullable().catch(null))
   .catch([])
   .default([])
-  .transform((d) => d.slice(0, DRIVES_MAX));
+  .transform((d) => d.filter((x): x is ChatDrive => x !== null).slice(0, DRIVES_MAX));
 
 /** Seed the runtime drives from the authored profile. PURE. */
 export function seedChatDrives(authored: readonly Drive[]): ChatDrive[] {

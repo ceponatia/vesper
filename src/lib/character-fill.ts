@@ -1,8 +1,10 @@
 import {
   DEFAULT_BODY_PLAN_ID,
   DEFAULT_SPECIES_ID,
+  DRIVES_MAX,
   type AttributeValue,
   type CharacterProfile,
+  type Drive,
   type ItemDefinition,
   type Preference,
   type TraitValue,
@@ -26,6 +28,9 @@ import {
  *   (manual OR creation); only missing ids fill in.
  * - preferences: target-exclusive — a target the sheet already has an opinion
  *   on is never contradicted or duplicated.
+ * - drives: additive up to the 3-drive cap (owner ruling 2026-07-12) —
+ *   authored drives never change; generated ones (deduped by want) fill the
+ *   remaining slots.
  * - species cluster (speciesId/heritageId/bodyPlanId/bodyFeatures): adopted
  *   from the generated draft only while still at the blank-create default —
  *   filling the species IS the feature on an untouched sheet, but any authored
@@ -100,6 +105,20 @@ function unionPreferences(base: readonly Preference[], incoming: readonly Prefer
   return [...base, ...incoming.filter((p) => !present.has(p.target.trim().toLowerCase()))];
 }
 
+/** Additive drive union up to the cap: authored drives lead untouched; generated ones (deduped by want) fill the rest. */
+function unionDrives(base: readonly Drive[], incoming: readonly Drive[]): Drive[] {
+  const present = new Set(base.map((d) => d.want.trim().toLowerCase()));
+  const out = [...base];
+  for (const drive of incoming) {
+    if (out.length >= DRIVES_MAX) break;
+    const key = drive.want.trim().toLowerCase();
+    if (key === "" || present.has(key)) continue;
+    present.add(key);
+    out.push(drive);
+  }
+  return out;
+}
+
 /**
  * Fill-merge a generated draft into the authored base. `incoming` is a fully
  * generated draft (typically the base plus the forge legs' contributions);
@@ -130,6 +149,7 @@ export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: Filla
       attributes,
       tags: unionText(base.profile.tags, incoming.profile.tags),
       preferences: unionPreferences(base.profile.preferences, incoming.profile.preferences),
+      drives: unionDrives(base.profile.drives, incoming.profile.drives),
       traits,
       aliases: unionText(base.profile.aliases, incoming.profile.aliases),
       defaultOutfit: outfitAuthored ? base.profile.defaultOutfit : incoming.profile.defaultOutfit,

@@ -60,6 +60,19 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
   if (p.preferences.length > 0) {
     lines.push(`Preferences: ${p.preferences.map((pref) => `${pref.valence}s ${pref.target} (${pref.intensity}/10)`).join("; ")}`);
   }
+  if (p.drives.length > 0) {
+    lines.push(
+      `Drives: ${p.drives
+        .map((d) => {
+          const gate =
+            d.secrecy === "secret"
+              ? ` — reveal at ${d.revealBand ? `${d.revealBand.axis} "${d.revealBand.band}"` : 'familiarity "familiar"'}`
+              : "";
+          return `[${d.secrecy}${gate}] wants ${d.want}${d.why.trim() ? ` (${d.why.trim()})` : ""}`;
+        })
+        .join("; ")}`,
+    );
+  }
   if (p.traits.length > 0) lines.push(`Traits: ${p.traits.map((t) => `${t.id}=${t.value}`).join(", ")}`);
   if (p.attributes.length > 0) {
     lines.push(`Attributes: ${p.attributes.map((a) => `${a.id}=${formatSheetValue(a.value)}`).join(", ")}`);

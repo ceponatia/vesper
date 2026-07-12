@@ -426,9 +426,14 @@ an optional `revealBand`), seeded into `character_chat_state.drives` (migration
 - **Panel** (ruled): the Relationship panel's "What they want" lists open wants +
   revealed secrets only; guarded/unrevealed drives stay invisible until play
   surfaces them. State tools/`ChatStateEdit` expose the full set (inspector-grade).
-- **Authoring**: the plan's remaining slice — a forge section + a "Desires &
-  secrets" editor card; until it lands, drives are authored via the profile JSON /
-  state PATCH.
+- **Authoring** (shipped 2026-07-12): the character forge's profile leg drafts
+  drives (concept-led, **≤1 secret** — ruled; `groundDrives` validates reveal
+  bands against the band vocabulary and demotes extra secrets to `guarded`); the
+  editor's Disposition tab carries the **"Desires & secrets" card**
+  (`components/characters/drives-editor.tsx` — want/why/secrecy + a reveal-gate
+  picker on secrets). Forge-the-rest fills drives **additively up to the 3-cap**
+  (ruled — authored drives never change); a Disposition re-draft re-derives them
+  wholesale ([authoring.md](authoring.md) §Character sheet forge).
 
 ## Initiative (the character reaches out first)
 

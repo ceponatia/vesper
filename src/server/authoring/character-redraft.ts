@@ -39,9 +39,9 @@ const REDRAFT_DIRECTIVES: Record<CharacterSheetScope, string> = {
     "do not invent major new facts.",
   ].join(" "),
   disposition: [
-    "You are RE-DRAFTING this character's social disposition — dispositionTags, preferences, and trait scalars — by reading",
-    "them off the authored personality, bio, and the rest of the sheet above. Emit the complete disposition as it should now",
-    "stand; it replaces the current one.",
+    "You are RE-DRAFTING this character's social disposition — dispositionTags, preferences, trait scalars, and drives",
+    "(the desires & secrets they pursue) — by reading them off the authored personality, bio, and the rest of the sheet",
+    "above. Emit the complete disposition as it should now stand; it replaces the current one.",
   ].join(" "),
   attributes: [
     "You are RE-DRAFTING this character's physical appearance attributes from the whole sheet above (bio, personality,",

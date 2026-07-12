@@ -118,7 +118,7 @@ describe("mergeRedraftScope — personality", () => {
 });
 
 describe("mergeRedraftScope — disposition and outfit", () => {
-  it("replaces tags, preferences, and traits wholesale", () => {
+  it("replaces tags, preferences, traits, and drives wholesale", () => {
     const base = draftOf({}, {
       tags: ["stoic"],
       preferences: [{ target: "compliment", valence: "dislike", intensity: 6 }],
@@ -126,6 +126,7 @@ describe("mergeRedraftScope — disposition and outfit", () => {
         { id: "temperament.warmth", value: 80, source: "manual" },
         { id: "social.dominance", value: 10, source: "creation" },
       ],
+      drives: [{ want: "to sail north", why: "", secrecy: "open" }],
     });
     const incoming = draftOf({}, {
       tags: ["gentle", "proud"],
@@ -134,11 +135,13 @@ describe("mergeRedraftScope — disposition and outfit", () => {
         { id: "temperament.warmth", value: -20, source: "creation" },
         { id: "social.guardedness", value: 45, source: "creation" },
       ],
+      drives: [{ want: "to keep the inn solvent", why: "the ledger is hers", secrecy: "guarded" }],
     });
     const merged = mergeRedraftScope(base, incoming, "disposition");
     expect(merged.profile.tags).toEqual(["gentle", "proud"]);
     expect(merged.profile.preferences).toEqual([{ target: "confide", valence: "like", intensity: 5 }]);
     expect(merged.profile.traits).toEqual(incoming.profile.traits);
+    expect(merged.profile.drives).toEqual(incoming.profile.drives);
   });
 
   it("outfit re-draft replaces the whole outfit cluster — that is the tab's purpose", () => {

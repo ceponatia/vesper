@@ -33,6 +33,13 @@ describe("drive schemas", () => {
     const seeded = seedChatDrives([{ want: "a", why: "b", secrecy: "secret", revealBand: undefined }]);
     expect(seeded[0]).toEqual({ want: "a", why: "b", secrecy: "secret", revealBand: undefined, progress: "", revealed: false, resolved: false });
   });
+
+  it("drops a bad entry alone — one empty want never wipes the authored list", () => {
+    const parsed = drivesSchema.parse([{ want: "a real want" }, { want: "" }]);
+    expect(parsed).toEqual([{ want: "a real want", why: "", secrecy: "open" }]);
+    const chat = chatDrivesSchema.parse([secret(), { want: "" }]);
+    expect(chat).toEqual([secret()]);
+  });
 });
 
 describe("driveWithheld (the reveal gate)", () => {

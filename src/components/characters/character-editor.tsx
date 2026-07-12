@@ -26,6 +26,7 @@ import { AttributePicker } from "./attribute-picker";
 import { seedRequiredAttributes } from "./attribute-helpers";
 import { CharacterChat } from "./character-chat";
 import { DispositionEditor } from "./disposition-editor";
+import { DrivesEditor } from "./drives-editor";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 import { PreferencesEditor } from "./preferences-editor";
@@ -108,7 +109,7 @@ export function CharacterEditor({
     {
       id: "disposition",
       label: "Disposition",
-      badge: draft.profile.traits.length + draft.profile.tags.length || undefined,
+      badge: draft.profile.traits.length + draft.profile.tags.length + draft.profile.drives.length || undefined,
     },
     {
       id: "outfit",
@@ -338,12 +339,15 @@ export function CharacterEditor({
       ) : null}
 
       {tab === "disposition" ? (
-        <DispositionEditor
-          traits={draft.profile.traits}
-          onChangeTraits={(traits) => patchProfile({ traits })}
-          tags={draft.profile.tags}
-          onChangeTags={(tags) => patchProfile({ tags })}
-        />
+        <div className="flex flex-col gap-6">
+          <DrivesEditor drives={draft.profile.drives} onChange={(drives) => patchProfile({ drives })} />
+          <DispositionEditor
+            traits={draft.profile.traits}
+            onChangeTraits={(traits) => patchProfile({ traits })}
+            tags={draft.profile.tags}
+            onChangeTags={(tags) => patchProfile({ tags })}
+          />
+        </div>
       ) : null}
 
       {tab === "outfit" ? (
