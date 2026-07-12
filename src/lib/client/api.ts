@@ -1067,11 +1067,14 @@ export const chatsApi = {
    * summary, light state, and RAG memory all go with it; scene images survive in the Gallery.
    */
   remove: (chatId: string) => apiDelete(`/api/chats/${chatId}`),
-  // --- Light chat state (character-chat-state.spec.md), keyed per conversation ---
-  state: (chatId: string) => apiGet(chatStateSnapshotSchema, `/api/chats/${chatId}/state`),
-  /** Edit chat state fields from the state-tools / scenario-setup modals; returns the refreshed snapshot. */
-  editState: (chatId: string, patch: ChatStateEdit) =>
-    apiPatch(chatStateSnapshotSchema, `/api/chats/${chatId}/state`, patch),
+  // --- Light chat state (character-chat-state.spec.md), keyed per participant ---
+  // `characterId` targets any roster member's state (followups ruling 13 — the
+  // per-character sheet); absent ⇒ the primary.
+  state: (chatId: string, characterId?: string) =>
+    apiGet(chatStateSnapshotSchema, `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`),
+  /** Edit chat state fields from the character sheet / scenario modal; returns the refreshed snapshot. */
+  editState: (chatId: string, patch: ChatStateEdit, characterId?: string) =>
+    apiPatch(chatStateSnapshotSchema, `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`, patch),
   /** Apply a one-click action chip (offer a drink → intoxication↑, etc.); returns the refreshed snapshot. */
   applyAction: (chatId: string, action: ChatActionId) =>
     apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/state`, { action }),

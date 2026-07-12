@@ -16,6 +16,7 @@ import {
   chatsApi,
   sendChatMessage,
   type ChatMessage,
+  type ChatRosterMember,
   type ChatStateSnapshot,
   type ChatStreamOutcome,
   type ChatTranscript,
@@ -129,6 +130,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // Roster sheet (multi-character-chat.plan.md slice 1) — the phone-width path to
   // the roster panel; desktop also gets it inline in the aside.
   const [rosterOpen, setRosterOpen] = useState(false);
+  // Per-character sheet (followups ruling 13): tapping a roster member opens THEIR
+  // sheet — their state fetched fresh on open, edited via characterId targeting.
+  const [sheetMember, setSheetMember] = useState<ChatRosterMember | null>(null);
+  const [sheetSnapshot, setSheetSnapshot] = useState<ChatStateSnapshot | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -250,6 +255,20 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       cancelled = true;
     };
   }, [chatId, chatState]);
+
+  // Per-character sheet (followups ruling 13): fetch the tapped member's own
+  // snapshot on open — never the primary's cached one.
+  useEffect(() => {
+    if (!sheetMember) return;
+    let cancelled = false;
+    void chatsApi.state(chatId, sheetMember.characterId).then((r) => {
+      if (cancelled || !r.ok) return;
+      setSheetSnapshot(r.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, sheetMember]);
 
   // Auto-scroll the transcript (not the page) to the newest line as the
   // conversation grows / streams. Setting scrollTop directly keeps the scroll
@@ -879,6 +898,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               roster={roster}
               archived={archived}
               onChanged={() => bootstrap.reload({ silent: true })}
+              onOpenSheet={(member) => {
+                setRosterOpen(false);
+                setSheetMember(member);
+              }}
             />
           ) : null}
           {rosterOpen && roster.length > 1 ? <ChatRelationshipsEditor chatId={chatId} archived={archived} /> : null}
@@ -950,6 +973,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 roster={roster}
                 archived={archived}
                 onChanged={() => bootstrap.reload({ silent: true })}
+                onOpenSheet={(member) => setSheetMember(member)}
               />
             ) : null}
           </aside>
@@ -1257,10 +1281,40 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           onClose={() => setToolsOpen(false)}
           chatId={chatId}
           who={who}
+          characterId={roster[0]?.characterId}
+          presence={roster.length > 1 ? roster[0]?.presence : undefined}
+          onPresenceChanged={() => bootstrap.reload({ silent: true })}
           snapshot={chatState}
           onSaved={(next) => {
             setChatState(next);
             stageRef.current = next.regardBand.label;
+          }}
+        />
+      ) : null}
+
+      {/* Per-character sheet (followups ruling 13): a roster member's own state,
+          fetched fresh on open and edited via characterId targeting. */}
+      {sheetMember && sheetSnapshot ? (
+        <ChatStateToolsModal
+          open
+          onClose={() => {
+            setSheetMember(null);
+            setSheetSnapshot(null);
+          }}
+          chatId={chatId}
+          who={sheetMember.name}
+          characterId={sheetMember.characterId}
+          presence={roster.length > 1 ? sheetMember.presence : undefined}
+          onPresenceChanged={() => bootstrap.reload({ silent: true })}
+          snapshot={sheetSnapshot}
+          onSaved={(next) => {
+            // Editing the PRIMARY through their sheet also refreshes the strip.
+            if (sheetMember.characterId === roster[0]?.characterId) {
+              setChatState(next);
+              stageRef.current = next.regardBand.label;
+            }
+            setSheetMember(null);
+            setSheetSnapshot(null);
           }}
         />
       ) : null}
@@ -1352,7 +1406,7 @@ function ConversationMenu({
         Relationship
       </MenuItem>
       <MenuItem onClick={onStateTools} disabled={!hasState}>
-        State tools
+        Character sheet
       </MenuItem>
       <MenuItem onClick={onRoster}>Roster</MenuItem>
       {onInspector ? <MenuItem onClick={onInspector}>Inspector</MenuItem> : null}
