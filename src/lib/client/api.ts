@@ -1016,6 +1016,8 @@ export const chatRelationshipsSchema = z.object({
   edges: arrayOf(
     z.object({ fromCharacterId: idSchema, toCharacterId: idSchema, record: liveEdgeRecordSchema }),
   ),
+  /** "Them → you" rows (followups ruling 5): each member's live player edge. */
+  playerEdges: arrayOf(z.object({ characterId: idSchema, record: liveEdgeRecordSchema })),
   roster: arrayOf(z.object({ characterId: idSchema, name: nameSchema, sort: z.number().catch(0) })),
 });
 export type ChatRelationships = z.infer<typeof chatRelationshipsSchema>;
@@ -1119,11 +1121,14 @@ export const chatsApi = {
   // --- Relationship matrix (relationship-model.plan.md slice 6) ---
   /** The conversation's directed NPC↔NPC edges + roster (the matrix editor's data). */
   relationships: (chatId: string) => apiGet(chatRelationshipsSchema, `/api/chats/${chatId}/relationships`),
-  /** Upsert authored edges (band picks + texture → live scalars server-side). */
+  /** Upsert authored NPC↔NPC edges and/or player edges (band picks + texture → live scalars server-side). */
   saveRelationships: (
     chatId: string,
-    edges: { fromCharacterId: string; toCharacterId: string; record: AuthoredEdgeRecord }[],
-  ) => apiPut(chatRelationshipsSchema.pick({ edges: true }), `/api/chats/${chatId}/relationships`, { edges }),
+    body: {
+      edges?: { fromCharacterId: string; toCharacterId: string; record: AuthoredEdgeRecord }[];
+      playerEdges?: { characterId: string; record: AuthoredEdgeRecord }[];
+    },
+  ) => apiPut(chatRelationshipsSchema.omit({ roster: true }), `/api/chats/${chatId}/relationships`, body),
   // --- Roster (multi-character-chat.plan.md slice 1) ---
   /** Add a character to the roster (cap 4); D7 memory choice defaults to shared. */
   addParticipant: (chatId: string, characterId: string, memory: "shared" | "fresh" = "shared") =>
