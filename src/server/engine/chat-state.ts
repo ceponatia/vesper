@@ -1343,6 +1343,11 @@ export function settleEnsembleMember(args: {
   now: Date;
   /** The shared story clock (already ticked for this exchange). */
   clockMinutes: number;
+  /**
+   * True when a player selfie request addressed THIS member (ruling 12): if their
+   * pulse read the reply as actually sending one, the send burns THEIR cooldown ring.
+   */
+  selfieRequestTarget?: boolean;
   sink?: DiagnosticSink;
 }): ChatState {
   let next = args.state;
@@ -1405,6 +1410,15 @@ export function settleEnsembleMember(args: {
       attributeOverlays: applyChatAttributeOverlays(next.attributeOverlays, args.personal.attributeChanges, args.sink),
       drives: driveResult.drives,
       ...outfitPatch,
+    };
+  }
+
+  // The addressed member sent the requested photo (ruling 12): burn THEIR ring —
+  // same guard as the primary's fold (a degraded pulse never reads a send).
+  if (args.selfieRequestTarget && !next.lastPulseTrace.degraded && next.lastPulseTrace.sentPhoto) {
+    next = {
+      ...next,
+      selfieHistory: appendSelfieEntry(next.selfieHistory, { kind: "request", atClockMinutes: args.clockMinutes }),
     };
   }
 

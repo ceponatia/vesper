@@ -167,12 +167,15 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       void queueChatScene({ userId: user.id, chatId, character: owned.character, anchorMessageId: assistantMessageId });
     },
     // The reply sent a selfie (chat-selfies.plan.md): queue the subject's-own-camera
-    // render anchored to it — same dedupe, always the identity-locked route.
-    onSelfie: ({ assistantMessageId }) => {
+    // render anchored to it — same dedupe, always the identity-locked route. The
+    // engine names the SENDER (followups ruling 12): in a group the addressed
+    // member sends it, so the render uses their identity, not always the primary's.
+    onSelfie: ({ assistantMessageId, characterId: senderId }) => {
+      const sender = owned.roster.find((m) => m.characterId === senderId)?.character ?? owned.character;
       void queueChatScene({
         userId: user.id,
         chatId,
-        character: owned.character,
+        character: sender,
         anchorMessageId: assistantMessageId,
         flavor: "selfie",
       });

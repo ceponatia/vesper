@@ -178,9 +178,11 @@ export interface SubmitChatMessageInput {
   /**
    * Selfie hook (chat-selfies.plan.md): fired fire-and-forget after the finalizer
    * when the reply actually sent a photo (pulse-read + gate-armed). The route
-   * queues the selfie render anchored to this reply.
+   * queues the selfie render anchored to this reply. `characterId` names the
+   * SENDER (followups ruling 12): in a group the addressed member sends it, so
+   * the render must use that character, not always the primary.
    */
-  onSelfie?: (info: { assistantMessageId: string }) => void;
+  onSelfie?: (info: { assistantMessageId: string; characterId: string }) => void;
 }
 
 export type SubmitChatMessageResult =
@@ -717,12 +719,24 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const sensoryFocus = playerContent ? (detectSensoryFocus(playerContent) ?? undefined) : undefined;
     const firstExchange = !opening && !recentReplies.length;
 
+    // --- Perk targeting (followups ruling 12) --------------------------------
+    // The "addressed" member: a group perk aims at whoever the player's message
+    // names. The primary wins when named; otherwise the first PRESENT other
+    // member named; nobody named ⇒ undefined (the perk falls to the lead).
+    const addressedOther =
+      ensembleActive && playerContent && !mentionsCharacter(playerContent, characterName, profile.aliases)
+        ? others.find((o) => o.state.presence === "present" && mentionsCharacter(playerContent, o.name, o.profile.aliases))
+        : undefined;
+
     // --- Selfie arming (chat-selfies.plan.md) --------------------------------
     // Request: the player asked for a photo (any register — their call). Offer:
     // APART-ONLY (owner ruling — the comms register is the "not in the same place"
     // signal) + warm regard + the cooldown ring. Either arms a one-turn license
     // line; the post-turn pulse decides whether the reply actually sent one.
+    // Group scenes (ruling 12): a request routes to the addressed member —
+    // unaddressed falls to the lead; offers stay lead-gated.
     const selfieRequested = playerContent ? detectSelfieRequest(playerContent) : false;
+    const selfieTargetOther = selfieRequested ? addressedOther : undefined;
     const selfieOfferEligible =
       !selfieRequested && Boolean(playerContent) &&
       chatSelfieOfferEligible({
@@ -738,12 +752,26 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // milestone-boosted, topic-DISTANT episode. An offered callback burns into the ring
     // immediately — it rides this exchange's ordinary state write, so "another take"
     // rolls the burn back with the snapshot and the retake gets the same opportunity.
+    // Group scenes (ruling 12): the memory belongs to ONE member — the addressed one,
+    // else the most-recently-active present member — drawn from THEIR group and gated
+    // on THEIR ring. (A member burn rides their ordinary save; member rings aren't
+    // rollback-managed, so a retake simply skips the already-burned episode.)
     let callback: { summary: string } | undefined;
+    let ensembleCallback: { summary: string; memberName: string; regard: number } | undefined;
+    const callbackSourceOther = ensembleActive
+      ? (addressedOther ??
+        others.reduce<(typeof others)[number] | undefined>((best, o) => {
+          if (o.state.presence !== "present") return best;
+          if (o.state.quietExchanges >= driftedState.quietExchanges) return best; // ties → the primary
+          return !best || o.state.quietExchanges < best.state.quietExchanges ? o : best;
+        }, undefined))
+      : undefined;
+    const callbackState = callbackSourceOther?.state ?? driftedState;
     if (
       playerContent &&
       chatCallbackEligible({
         clockMinutes: scenario.clockMinutes,
-        callbackHistory: driftedState.callbackHistory,
+        callbackHistory: callbackState.callbackHistory,
         firstExchange,
         pendingSkipNote: scenario.pendingSkipNote,
         sceneChanged,
@@ -753,21 +781,31 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       })
     ) {
       const chosen = await retrieveChatCallback({
-        groupId: memoryGroupId,
+        groupId: callbackSourceOther?.memoryGroupId ?? memoryGroupId,
         input: playerContent,
-        milestones: driftedState.milestones,
-        usedRefs: driftedState.callbackHistory.map((e) => e.ref),
+        milestones: callbackState.milestones,
+        usedRefs: callbackState.callbackHistory.map((e) => e.ref),
         sink,
       });
       if (chosen) {
-        callback = { summary: chosen.summary };
-        driftedState = {
-          ...driftedState,
-          callbackHistory: appendCallbackEntry(driftedState.callbackHistory, {
-            ref: chosen.ref,
-            atClockMinutes: scenario.clockMinutes,
-          }),
-        };
+        if (ensembleActive) {
+          ensembleCallback = {
+            summary: chosen.summary,
+            memberName: callbackSourceOther?.name ?? characterName,
+            regard: callbackState.regard,
+          };
+        } else {
+          callback = { summary: chosen.summary };
+        }
+        const burned = appendCallbackEntry(callbackState.callbackHistory, {
+          ref: chosen.ref,
+          atClockMinutes: scenario.clockMinutes,
+        });
+        if (callbackSourceOther) {
+          callbackSourceOther.state = { ...callbackSourceOther.state, callbackHistory: burned };
+        } else {
+          driftedState = { ...driftedState, callbackHistory: burned };
+        }
       }
     }
     const promptInput: CharacterChatPromptInput = {
@@ -857,7 +895,21 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           if (salient) awayPairs.push({ fromName: from.name, toName: to.name, record: edge.record });
         }
       }
-      ensembleExtras = { pairs, awayPairs };
+      // The solo perks' group arms (followups ruling 12): each names the ONE
+      // member it aims at, so the frame renders the license in third person.
+      ensembleExtras = {
+        pairs,
+        awayPairs,
+        ...(selfieRequested
+          ? { selfie: { kind: "request" as const, memberName: selfieTargetOther?.name ?? characterName } }
+          : selfieOfferEligible
+            ? { selfie: { kind: "offer" as const, memberName: characterName } }
+            : {}),
+        ...(ensembleCallback ? { callback: ensembleCallback } : {}),
+        ...(sensoryFocus
+          ? { sensoryFocus: { hint: sensoryFocus, memberName: addressedOther?.name ?? characterName } }
+          : {}),
+      };
     }
 
     // The ensemble prompt inputs (roster > 1): the primary first, then the others,
@@ -1002,7 +1054,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           now,
           exchange: { player: agentPlayerContent, assistant: full },
           retrieved: memory,
-          selfie: { requested: selfieRequested, offerEligible: selfieOfferEligible },
+          // A member-addressed selfie request (ruling 12) never burns the
+          // PRIMARY's ring — the member's own settle handles it below.
+          selfie: selfieTargetOther
+            ? { requested: false, offerEligible: false }
+            : { requested: selfieRequested, offerEligible: selfieOfferEligible },
           scenario,
           preExchangeScenario,
           // The ensemble context (multi-character-chat.plan.md): the roster line
@@ -1058,6 +1114,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                   })
                 : Promise.resolve(null),
             ]);
+            const isSelfieTarget = selfieTargetOther?.characterId === member.characterId;
             const memberState = settleEnsembleMember({
               state: pulsed ? pulsed.state : member.state,
               preRegard,
@@ -1067,6 +1124,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               assistantMessageId,
               now,
               clockMinutes: scenario.clockMinutes,
+              selfieRequestTarget: isSelfieTarget,
               sink,
             });
             const confirmed = finalized.presenceChanges.find(
@@ -1082,6 +1140,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               promptMessageId: promptMessageId ?? assistantMessageId,
               state: { ...memberState, ...(confirmed ? { presence: confirmed } : {}), quietExchanges },
             });
+            // The addressed member actually sent the photo (their pulse read it) —
+            // queue the render with THEIR identity (ruling 12).
+            if (isSelfieTarget && pulsed && !pulsed.state.lastPulseTrace.degraded && pulsed.state.lastPulseTrace.sentPhoto) {
+              input.onSelfie?.({ assistantMessageId, characterId: member.characterId });
+            }
           } catch (error) {
             log.error("engine.chat", "ensemble member state persist failed", {
               characterId: member.characterId,
@@ -1092,7 +1155,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // Selfie first (more specific than a big-moment scene — the shared
         // one-live-render-per-chat dedupe keeps only whichever queues first).
         if (finalized.selfieSend) {
-          input.onSelfie?.({ assistantMessageId });
+          input.onSelfie?.({ assistantMessageId, characterId });
         }
         // "Auto at big moments" (slice 9): opt-in per chat, fire-and-forget — a failed
         // or skipped render never touches the settled reply.

@@ -1540,6 +1540,92 @@ describe("ensemble frame (multi-character-chat.plan.md slice 2)", () => {
   });
 });
 
+describe("ensemble group perks (followups ruling 12)", () => {
+  const member = (
+    name: string,
+    over: Partial<EnsembleMemberInput> = {},
+  ): EnsembleMemberInput => ({ name, profile: profile(), presence: "present", quietExchanges: 0, ...over });
+  const input = (): Parameters<typeof buildCharacterChatPromptParts>[0] => ({
+    name: "Mara",
+    profile: profile(),
+    player: { name: "Brian" },
+  });
+
+  it("renders the selfie request license naming the addressed member", () => {
+    const parts = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Vera")], {
+      selfie: { kind: "request", memberName: "Vera" },
+    });
+    expect(parts.tail).toContain("Brian asked Vera for a photo this turn");
+    expect(parts.prefix).not.toContain("asked Vera for a photo"); // one-turn arm — volatile tail only
+  });
+
+  it("renders the callback as a third-person aside toned by the member's own regard", () => {
+    const warm = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Vera")], {
+      callback: { summary: "The night market in the rain.", memberName: "Vera", regard: 60 },
+    });
+    expect(warm.tail).toContain("A shared memory drifts near Vera this turn");
+    expect(warm.tail).toContain("The night market in the rain.");
+    expect(warm.tail).toContain("in Vera's own voice");
+    const cold = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Vera")], {
+      callback: { summary: "The night market in the rain.", memberName: "Vera", regard: -60 },
+    });
+    expect(cold.tail).toContain("carries an edge");
+    expect(cold.tail).toContain("never warmth Vera doesn't feel");
+  });
+
+  it("aims the sensory focus block at the studied member's own values", () => {
+    const parts = buildChatPromptPartsForRoster(
+      input(),
+      [
+        member("Mara"),
+        member("Vera", {
+          state: { meters: {}, regard: 0, conditions: [], outfit: "a paint-streaked tank top" },
+        }),
+      ],
+      { sensoryFocus: { hint: { sense: "study", target: "hands", intimate: false }, memberName: "Vera" } },
+    );
+    expect(parts.tail).toContain("Brian is taking in Vera's hands");
+    expect(parts.tail).toContain("a paint-streaked tank top");
+  });
+
+  it("drops the focus block when the named member is not present", () => {
+    const parts = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Vera", { presence: "away" })], {
+      sensoryFocus: { hint: { sense: "study", target: "hands", intimate: false }, memberName: "Vera" },
+    });
+    expect(parts.tail).not.toContain("taking in Vera's hands");
+  });
+
+  it("renders per-member transient enactment: a drunk member's loosened bands in the third person", () => {
+    const traits = [{ id: "social.guardedness", value: 60, source: "creation" as const }];
+    const parts = buildChatPromptPartsForRoster(input(), [
+      member("Mara"),
+      member("Vera", {
+        profile: profile({ traits }),
+        state: { meters: { intoxication: 0.9 }, regard: 0, conditions: [] },
+      }),
+    ]);
+    expect(parts.tail).toContain("Vera's state is loosening Vera");
+    expect(parts.tail).toContain("Guardedness: private");
+    // Sober members add nothing.
+    expect(parts.tail).not.toContain("Mara's state is loosening");
+  });
+
+  it("renders a member's condition attribute effects as their transient override", () => {
+    const condition = {
+      id: "c1",
+      label: "disheveled",
+      startedAtMinutes: 0,
+      attributeEffects: [{ attributeId: "presentation.grooming" as const, value: "unkempt" }],
+    };
+    const parts = buildChatPromptPartsForRoster(input(), [
+      member("Mara"),
+      member("Vera", { state: { meters: {}, regard: 0, conditions: [condition] } }),
+    ]);
+    expect(parts.tail).toContain("While Vera's current condition lasts");
+    expect(parts.tail).toContain("unkempt");
+  });
+});
+
 describe("ensemble relationship matrix injection (relationship-model.plan.md slice 6)", () => {
   const member = (
     name: string,

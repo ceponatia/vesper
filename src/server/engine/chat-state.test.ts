@@ -418,6 +418,16 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     expect(next.outfit).toBe("a sundress");
   });
 
+  it("burns the addressed member's selfie ring when their pulse read a send (ruling 12)", () => {
+    const sent = base({
+      lastPulseTrace: { ...seedChatState(profile()).lastPulseTrace, sentPhoto: true },
+    });
+    const next = settle({ state: sent, pulsed: true, selfieRequestTarget: true });
+    expect(next.selfieHistory).toEqual([{ kind: "request", atClockMinutes: 30 }]);
+    // Not the target ⇒ no burn even when the trace read a send.
+    expect(settle({ state: sent, pulsed: true }).selfieHistory).toEqual([]);
+  });
+
   it("a revealed secret drive mints the secret_shared milestone", () => {
     const withDrive = base({
       drives: [{ want: "leave this town", why: "", secrecy: "secret", revealed: false, resolved: false, progress: "" }],
