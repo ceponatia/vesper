@@ -11,13 +11,13 @@ import type { CharacterDraft } from "./drafts";
 import type { ClothingCandidateLookup, LibraryLookup } from "./library";
 
 /**
- * Per-tab Re-draft (character-sheet-forge.plan.md): rewrite ONE tab's fields
- * from the whole sheet, formatted for the narrator — personality prose moves
- * out of the bio, attributes derive from what the other tabs say. Reuses the
- * forge legs with a scope-specific directive; the scope merge
- * (lib/character-scopes.ts) is the guarantee that only the target tab changes
- * and that player-set (`manual`) attribute/trait values survive, conflicts
- * reported rather than applied.
+ * Per-tab Re-draft (character-sheet-forge.plan.md; re-ruled 2026-07-12 —
+ * multi-character-chat.followups.md ruling 1): a FULL re-sync of ONE tab from
+ * the whole sheet, formatted for the narrator — personality prose moves out of
+ * the bio, attributes derive from what the other tabs say. Player-set values
+ * are revisable too (the unsaved-draft review is the safety net); the scope
+ * merge (lib/character-scopes.ts) guarantees only the target tab changes, the
+ * Profile scope touching only its prose fields.
  */
 
 /** The LLM leg that produces each scope's fields. */
@@ -31,11 +31,12 @@ const SCOPE_LEG: Record<CharacterSheetScope, CharacterForgeSection> = {
 
 const REDRAFT_DIRECTIVES: Record<CharacterSheetScope, string> = {
   profile: [
-    "You are RE-DRAFTING this character's basic profile — bio, personality sketch, voice notes, real age, aliases, library tags —",
-    "from the whole sheet above. Rewrite those fields cleanly for the game's narrator: the bio holds background and situation",
-    "(no personality analysis, no physical description), the personality sketch holds temperament, quirks, humor, and flaws",
-    "(no backstory), voice notes describe how they sound and speak. Move misplaced material into its correct field.",
-    "Preserve every authored fact and the core concept; do not invent major new facts.",
+    "You are RE-DRAFTING this character's profile prose — the bio, the personality sketch, and the voice notes ONLY —",
+    "from the whole sheet above (name, age, aliases, and tags are not yours to change). Rewrite those three fields cleanly",
+    "for the game's narrator: the bio holds background and situation (no personality analysis, no physical description),",
+    "the personality sketch holds temperament, quirks, humor, and flaws (no backstory), voice notes describe how they",
+    "sound and speak. Move misplaced material into its correct field. Preserve every authored fact and the core concept;",
+    "do not invent major new facts.",
   ].join(" "),
   disposition: [
     "You are RE-DRAFTING this character's social disposition — dispositionTags, preferences, and trait scalars — by reading",
@@ -57,20 +58,6 @@ const REDRAFT_DIRECTIVES: Record<CharacterSheetScope, string> = {
   ].join(" "),
 };
 
-/** Scopes whose target fields carry provenance — their manual values get a FIXED line. */
-function manualFixedLine(draft: CharacterDraft, scope: CharacterSheetScope): string | undefined {
-  const values =
-    scope === "disposition"
-      ? draft.profile.traits.filter((t) => t.source === "manual").map((t) => `${t.id}=${t.value}`)
-      : scope === "attributes" || scope === "personality"
-        ? draft.profile.attributes
-            .filter((a) => a.source === "manual")
-            .map((a) => `${a.id}=${Array.isArray(a.value) ? a.value.join("+") : String(a.value)}`)
-        : [];
-  if (values.length === 0) return undefined;
-  return `Player-set values (FIXED — keep or omit them, never change them): ${values.join(", ")}`;
-}
-
 export interface RedraftCharacterInput {
   draft: CharacterDraft;
   scope: CharacterSheetScope;
@@ -84,8 +71,7 @@ export interface RedraftCharacterInput {
 /** Re-draft one scope of the sheet; returns the full draft with only that scope rewritten. */
 export async function redraftCharacterScope(input: RedraftCharacterInput): Promise<CharacterDraft> {
   const { draft, scope } = input;
-  const fixed = manualFixedLine(draft, scope);
-  const prompt = [...renderSheetLines(draft), "", REDRAFT_DIRECTIVES[scope], ...(fixed ? [fixed] : [])].join("\n");
+  const prompt = [...renderSheetLines(draft), "", REDRAFT_DIRECTIVES[scope]].join("\n");
   const context: CharacterForgeContext = {
     prompt,
     userId: input.userId,
@@ -97,5 +83,5 @@ export async function redraftCharacterScope(input: RedraftCharacterInput): Promi
   };
   const patch = await forgeCharacterSection(SCOPE_LEG[scope], context);
   const incoming = applyCharacterSectionPatch(draft, patch);
-  return mergeRedraftScope(draft, incoming, scope, input.sink);
+  return mergeRedraftScope(draft, incoming, scope);
 }

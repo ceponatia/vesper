@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DiagnosticCollector,
   emptyCharacterProfile,
   emptyItemDefinition,
   type AttributeValue,
@@ -23,13 +22,15 @@ const draftOf = (over: Partial<FillableDraft> = {}, profile: Partial<CharacterPr
   profile: { ...emptyCharacterProfile(), ...profile },
 });
 
-describe("mergeRedraftScope — profile", () => {
-  it("rewrites the profile text fields and leaves every other tab untouched", () => {
+describe("mergeRedraftScope — profile (ruling 1: prose fields only)", () => {
+  it("rewrites bio/personality/voice and nothing else — not name, age, aliases, or tags", () => {
     const base = draftOf(
       { name: "Mira", tags: ["old-tag"] },
       {
         bio: "Old bio with personality mixed in.",
         personality: "",
+        age: "29",
+        aliases: ["the glassblower"],
         attributes: [attr("hair.color", "black", "manual")],
         traits: [{ id: "temperament.warmth", value: 80, source: "manual" }],
         defaultOutfit: ["item_mine"],
@@ -51,29 +52,24 @@ describe("mergeRedraftScope — profile", () => {
       },
     );
     const merged = mergeRedraftScope(base, incoming, "profile");
-    expect(merged.name).toBe("Mira");
-    expect(merged.tags).toEqual(["new-tag"]);
     expect(merged.profile.bio).toBe("Clean background bio.");
     expect(merged.profile.personality).toBe("Wry, patient, allergic to flattery.");
     expect(merged.profile.voice).toBe("Low and dry.");
-    expect(merged.profile.age).toBe("34");
-    expect(merged.profile.aliases).toEqual(["the keeper"]);
+    // Not this tab's re-sync surface: identity facts + library bookkeeping.
+    expect(merged.name).toBe("Mira");
+    expect(merged.tags).toEqual(["old-tag"]);
+    expect(merged.profile.age).toBe("29");
+    expect(merged.profile.aliases).toEqual(["the glassblower"]);
     // Off-scope fields untouched — attributes, traits, outfit, species.
     expect(merged.profile.attributes).toEqual(base.profile.attributes);
     expect(merged.profile.traits).toEqual(base.profile.traits);
     expect(merged.profile.defaultOutfit).toEqual(["item_mine"]);
     expect(merged.profile.speciesId).toBe("elf");
   });
-
-  it("replaces a placeholder name only", () => {
-    const incoming = draftOf({ name: "Maren Voss" });
-    expect(mergeRedraftScope(draftOf({ name: "Untitled character" }), incoming, "profile").name).toBe("Maren Voss");
-  });
 });
 
-describe("mergeRedraftScope — attributes", () => {
-  it("rewrites body attributes, keeps manual values with a diagnostic, and never touches personality attributes", () => {
-    const sink = new DiagnosticCollector();
+describe("mergeRedraftScope — attributes (full re-sync)", () => {
+  it("replaces body attributes wholesale — manual values included — and never touches personality attributes", () => {
     const base = draftOf({}, {
       attributes: [
         attr("hair.color", "black", "manual"),
@@ -88,29 +84,25 @@ describe("mergeRedraftScope — attributes", () => {
         attr("voice.pitch", "high", "creation"),
       ],
     });
-    const merged = mergeRedraftScope(base, incoming, "attributes", sink);
-    // Manual conflict → player's value kept, reported not applied.
-    expect(merged.profile.attributes).toContainEqual(attr("hair.color", "black", "manual"));
-    expect(sink.items.some((d) => d.code === "forge.character.redraft.attributes.kept_manual")).toBe(true);
-    // The re-draft owns AI values: dropped eyes.color stays dropped, new id lands.
+    const merged = mergeRedraftScope(base, incoming, "attributes");
+    // Ruling 1: the re-draft is a full re-sync — the player-set value is revisable
+    // (the unsaved-draft review is the safety net).
+    expect(merged.profile.attributes).toContainEqual(attr("hair.color", "auburn", "creation"));
     expect(merged.profile.attributes.find((a) => a.id === "eyes.color")).toBeUndefined();
     expect(merged.profile.attributes).toContainEqual(attr("build.height", "tall", "creation"));
     // Personality-category attributes are the other tab's — untouched.
     expect(merged.profile.attributes).toContainEqual(attr("voice.pitch", "low", "creation"));
   });
 
-  it("reinstates a manual value the re-draft omitted, silently", () => {
-    const sink = new DiagnosticCollector();
-    const base = draftOf({}, { attributes: [attr("hair.color", "black", "manual")] });
-    const incoming = draftOf({}, { attributes: [attr("build.height", "tall", "creation")] });
-    const merged = mergeRedraftScope(base, incoming, "attributes", sink);
-    expect(merged.profile.attributes).toContainEqual(attr("hair.color", "black", "manual"));
-    expect(sink.items).toEqual([]);
+  it("keeps established intimate regions over an incoming suggestion", () => {
+    const base = draftOf({}, { intimateRegions: ["vulva", "breasts"] });
+    const incoming = draftOf({}, { intimateRegions: ["penis"] });
+    expect(mergeRedraftScope(base, incoming, "attributes").profile.intimateRegions).toEqual(["vulva", "breasts"]);
   });
 });
 
 describe("mergeRedraftScope — personality", () => {
-  it("rewrites only the personality-category attributes", () => {
+  it("replaces only the personality-category attributes, wholesale", () => {
     const base = draftOf({}, {
       attributes: [attr("hair.color", "black", "manual"), attr("voice.pitch", "low", "manual"), attr("movement.gait", "gliding", "creation")],
     });
@@ -119,15 +111,14 @@ describe("mergeRedraftScope — personality", () => {
     });
     const merged = mergeRedraftScope(base, incoming, "personality");
     expect(merged.profile.attributes).toContainEqual(attr("hair.color", "black", "manual"));
-    expect(merged.profile.attributes).toContainEqual(attr("voice.pitch", "low", "manual"));
+    expect(merged.profile.attributes).toContainEqual(attr("voice.pitch", "high", "creation"));
     expect(merged.profile.attributes).toContainEqual(attr("presentation.scent_baseline", "cedar", "creation"));
     expect(merged.profile.attributes.find((a) => a.id === "movement.gait")).toBeUndefined();
   });
 });
 
 describe("mergeRedraftScope — disposition and outfit", () => {
-  it("replaces tags/preferences and keeps manual trait values", () => {
-    const sink = new DiagnosticCollector();
+  it("replaces tags, preferences, and traits wholesale", () => {
     const base = draftOf({}, {
       tags: ["stoic"],
       preferences: [{ target: "compliment", valence: "dislike", intensity: 6 }],
@@ -144,13 +135,10 @@ describe("mergeRedraftScope — disposition and outfit", () => {
         { id: "social.guardedness", value: 45, source: "creation" },
       ],
     });
-    const merged = mergeRedraftScope(base, incoming, "disposition", sink);
+    const merged = mergeRedraftScope(base, incoming, "disposition");
     expect(merged.profile.tags).toEqual(["gentle", "proud"]);
     expect(merged.profile.preferences).toEqual([{ target: "confide", valence: "like", intensity: 5 }]);
-    expect(merged.profile.traits).toContainEqual({ id: "temperament.warmth", value: 80, source: "manual" });
-    expect(merged.profile.traits).toContainEqual({ id: "social.guardedness", value: 45, source: "creation" });
-    expect(merged.profile.traits.find((t) => t.id === "social.dominance")).toBeUndefined();
-    expect(sink.items.some((d) => d.code === "forge.character.redraft.disposition.kept_manual")).toBe(true);
+    expect(merged.profile.traits).toEqual(incoming.profile.traits);
   });
 
   it("outfit re-draft replaces the whole outfit cluster — that is the tab's purpose", () => {

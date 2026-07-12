@@ -43,10 +43,16 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   }
 
   const sink = new DiagnosticCollector();
-  const draft = await derivePortraitAttributes({
+  const result = await derivePortraitAttributes({
     draft: body.value.draft,
     image: { data, mediaType: "image/webp" },
     sink,
   });
-  return jsonOk({ draft, diagnostics: sink.items });
+  // `portrait` is the review dialog's data (followups ruling 2): every
+  // disagreement as current → proposed, plus what the reading auto-filled.
+  return jsonOk({
+    draft: result.draft,
+    diagnostics: sink.items,
+    portrait: { conflicts: result.conflicts, filled: result.filled },
+  });
 });
