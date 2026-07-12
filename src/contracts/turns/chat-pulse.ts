@@ -60,6 +60,13 @@ export const chatPulseSchema = z.object({
     .nullable()
     .catch(null)
     .default(null),
+  /**
+   * True ONLY when the character's reply states she is sending/taking/attaching a
+   * photo of herself for the player THIS exchange (chat-selfies.plan.md). The
+   * deterministic gates (player request / apart+warm+cooldown offer eligibility)
+   * decide whether it actually queues a render — the pulse only reads the fiction.
+   */
+  sentPhoto: z.boolean().catch(false).default(false),
 });
 
 export type ChatPulse = z.infer<typeof chatPulseSchema>;
@@ -70,7 +77,7 @@ export type ChatPulse = z.infer<typeof chatPulseSchema>;
  * conversation-reactive that exchange.
  */
 export function degradedChatPulse(): ChatPulse {
-  return { playerAct: null, mindNote: "", feeling: null };
+  return { playerAct: null, mindNote: "", feeling: null, sentPhoto: false };
 }
 
 /**
@@ -96,6 +103,8 @@ export const chatPulseTraceSchema = z.object({
   feeling: z.string().nullable().catch(null).default(null),
   /** Combined regard-delta multiplier applied (feeling bias × streak × bruise); 1 ⇒ unmodified. */
   regardScale: z.number().catch(1).default(1),
+  /** The pulse read the reply as sending a photo this exchange (chat-selfies.plan.md). */
+  sentPhoto: z.boolean().catch(false).default(false),
   /** True when the pulse degraded to drift-only (timeout / parse failure / demo). */
   degraded: z.boolean().catch(false).default(false),
   /** Degradation diagnostic code, when degraded. */

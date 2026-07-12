@@ -22,6 +22,7 @@ import {
   applyChatAction,
   chatFeelingStateSchema,
   chatStateSnapshot,
+  selfieHistorySchema,
   driftChatState,
   editChatState,
   loadChatState,
@@ -73,6 +74,8 @@ const editBodySchema = z.object({
   callbackHistory: z.array(z.object({ ref: z.string().max(80), atClockMinutes: z.number() })).max(20).optional(),
   /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear. */
   feeling: chatFeelingStateSchema.optional(),
+  /** Selfie-send ring (chat-selfies.plan.md) — inspector-grade reset/edit. */
+  selfieHistory: selfieHistorySchema.optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

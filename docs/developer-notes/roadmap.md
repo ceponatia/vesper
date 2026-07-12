@@ -54,17 +54,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
-_The four entries below are the remainder of the 2026-07-11 **character-chat
+_The three entries below are the remainder of the 2026-07-11 **character-chat
 engagement batch** (planned from the character-chat & schema review; the first
-three — memory callbacks, emotional weather, chat image input — shipped the
-same day, see Shipped), deliberately ordered by **effort, least → most** and
-queued ahead of the pre-existing items — owner instruction 2026-07-11._
+four — memory callbacks, emotional weather, chat image input, chat selfies —
+shipped the same day, see Shipped), deliberately ordered by **effort, least →
+most** and queued ahead of the pre-existing items — owner instruction
+2026-07-11._
 
-- **Chat selfies — character-sent photo messages** —
-  [chat-selfies.plan.md](chat-selfies.plan.md) (next — effort M+). Inline
-  SMS-style photo messages: identity-locked edit from the avatar + live
-  outfit/state/place sketch, a selfie framing block (the player-POV rule
-  inverted); player-request + character-offer triggers.
 - **Chat scene references — current-look and place anchors** —
   [chat-scene-references.plan.md](chat-scene-references.plan.md) (next —
   effort M+). A cached outfit-true "current look" reference replacing the
@@ -166,6 +162,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat selfies — character-sent photo messages** —
+  [chat-selfies.plan.md](chat-selfies.plan.md) — 2026-07-11 — the character
+  sends photos back: `SELFIE_FRAMING` (the player-POV rule inverted), always
+  the identity-locked reference route (ruled), player-request regex +
+  apart-only unprompted offers (ruled — comms register = the texting signal;
+  `selfie_history` cooldown ring, migration 0034), queue decided post-turn by
+  the pulse's `sentPhoto` read so declines stay declines, and the ruled
+  retry-once policy (content rejection retries sanitized; second failure = a
+  "Failed" transcript placeholder enlarging to the sent prompt). Docs:
+  character-chat.md §Selfies, images.md, prompts.md.
 - **Chat image input — player-sent photos the character sees** —
   [chat-image-input.plan.md](chat-image-input.plan.md) — 2026-07-11 — up to 4
   photos per message (owner ruling: multi-image now): composer attach + canvas

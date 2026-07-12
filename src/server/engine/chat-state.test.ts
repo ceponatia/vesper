@@ -197,6 +197,7 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
     playerAct: concept ? { concept } : null,
     mindNote,
     feeling: null,
+    sentPhoto: false,
   });
 
   it("a liked act raises affinity (clamped) and lifts mood, and records the trace", () => {
@@ -416,6 +417,7 @@ describe("emotional weather wiring (emotional-weather.plan.md)", () => {
     playerAct: null,
     mindNote: "",
     feeling: null,
+    sentPhoto: false,
     ...overrides,
   });
 

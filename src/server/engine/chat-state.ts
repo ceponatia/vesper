@@ -83,6 +83,7 @@ import {
   type ChatFeelingState,
 } from "./chat-feeling";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
+import { appendSelfieEntry, selfieHistorySchema, type SelfieEntry } from "./chat-selfie";
 import { enqueueChatSceneSketch } from "./chat-scene-sketch";
 import {
   AFFINITY_DELTA_CLAMP,
@@ -178,6 +179,11 @@ export interface ChatState {
    * regard gains after a betrayal at high regard). Pulse-proposed, curve-derived.
    */
   feeling: ChatFeelingState;
+  /**
+   * Selfie-send ring (chat-selfies.plan.md): recorded request/offer sends + the
+   * chat-clock minute each queued — the unprompted-offer cooldown's memory.
+   */
+  selfieHistory: SelfieEntry[];
   /** Player time skips (spec §8.1) — the future time-effects system's data, recorded now. */
   skipHistory: SkipRecord[];
   /** One-shot skip note (spec §8.1): rendered as a volatile prompt line next exchange, then cleared. */
@@ -238,6 +244,8 @@ export interface ChatStateSnapshot {
   callbackHistory: CallbackEntry[];
   /** Emotional weather (emotional-weather.plan.md) — the persistent feeling + bruise, for the strip/state tools. */
   feeling: ChatFeelingState;
+  /** Selfie-send ring (chat-selfies.plan.md) — for the state-tools/inspector view. */
+  selfieHistory: SelfieEntry[];
   /**
    * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
    * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
@@ -333,6 +341,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     milestones: [],
     callbackHistory: [],
     feeling: emptyChatFeelingState(),
+    selfieHistory: [],
     skipHistory: [],
     pendingSkipNote: "",
     sceneAuto: "off",
@@ -371,6 +380,7 @@ export async function loadChatState(
       milestones: characterChatState.milestones,
       callbackHistory: characterChatState.callbackHistory,
       feeling: characterChatState.feeling,
+      selfieHistory: characterChatState.selfieHistory,
       skipHistory: characterChatState.skipHistory,
       pendingSkipNote: characterChatState.pendingSkipNote,
       sceneAuto: characterChatState.sceneAuto,
@@ -422,6 +432,7 @@ export async function loadChatState(
     milestones: parseOr(milestonesSchema, row.milestones, [], sink, "character_chat_state.milestones"),
     callbackHistory: parseOr(callbackHistorySchema, row.callbackHistory, [], sink, "character_chat_state.callback_history"),
     feeling: parseOr(chatFeelingStateSchema, row.feeling, emptyChatFeelingState(), sink, "character_chat_state.feeling"),
+    selfieHistory: parseOr(selfieHistorySchema, row.selfieHistory, [], sink, "character_chat_state.selfie_history"),
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
     pendingSkipNote: row.pendingSkipNote,
     sceneAuto: row.sceneAuto,
@@ -464,6 +475,7 @@ const storedChatStateSchema = z.object({
   milestones: milestonesSchema.catch([]).default([]),
   callbackHistory: callbackHistorySchema.catch([]).default([]),
   feeling: chatFeelingStateSchema.catch(emptyChatFeelingState()).default(emptyChatFeelingState()),
+  selfieHistory: selfieHistorySchema.catch([]).default([]),
   skipHistory: skipHistorySchema.catch([]).default([]),
   pendingSkipNote: z.string().catch("").default(""),
   sceneAuto: z.string().catch("off").default("off"),
@@ -704,6 +716,7 @@ export function applyChatPulse(
     changed,
     feeling: feeling.current?.label ?? null,
     regardScale,
+    sentPhoto: pulse.sentPhoto,
     degraded: false,
   };
   next.lastPulseTrace = trace;
@@ -830,6 +843,7 @@ function degradeState(state: ChatState, sink: DiagnosticSink | undefined, reason
       changed: [],
       feeling: state.feeling.current?.label ?? null,
       regardScale: 1,
+      sentPhoto: false,
       degraded: true,
       diagnostic: "chat_state.pulse.degraded",
     },
@@ -881,10 +895,19 @@ export async function finalizeChatState(input: {
   exchange: { player: string; assistant: string };
   /** What RAG retrieved for THIS turn (from the route's pre-turn recall), for the debug trace. */
   retrieved?: { facts: string[]; episodes: string[]; detail?: RetrievedMemoryDetail[] };
+  /**
+   * This turn's selfie arming (chat-selfies.plan.md): the player asked, and/or the
+   * unprompted-offer gates held. The pulse's `sentPhoto` read only queues a render
+   * when one of these armed it — a hallucinated "sending you a pic" on an unarmed
+   * turn stays fiction.
+   */
+  selfie?: { requested: boolean; offerEligible: boolean };
   sink?: DiagnosticSink;
 }): Promise<{
   /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
   bigMoment: boolean;
+  /** True when the reply sent a selfie (pulse-read + gate-armed) — the route queues the render. */
+  selfieSend: boolean;
 }> {
   const [pulse, archivist] = await Promise.all([
     input.skipPulse
@@ -1011,6 +1034,20 @@ export async function finalizeChatState(input: {
     concept: pulseTrace?.concept ?? null,
   });
   const milestones = appendMilestones(input.driftedState.milestones, exchangeMilestones);
+  // Selfie send (chat-selfies.plan.md): the pulse read the reply as actually sending
+  // a photo AND a deterministic gate armed it. Recording the send here (the cooldown
+  // ring) rides the same guarded state write; "another take" rolls it back.
+  const selfieKind =
+    pulseTrace?.sentPhoto && input.selfie
+      ? input.selfie.requested
+        ? ("request" as const)
+        : input.selfie.offerEligible
+          ? ("offer" as const)
+          : null
+      : null;
+  const selfieHistory = selfieKind
+    ? appendSelfieEntry(input.driftedState.selfieHistory, { kind: selfieKind, atClockMinutes: pulse.state.clockMinutes })
+    : input.driftedState.selfieHistory;
   // "Big moment" (slice 9 auto scenes): a stage crossing or a strong card-driven
   // reaction — not the routine first exchange, which has barely a scene to render.
   const bigMoment = exchangeMilestones.some((m) => m.kind === "stage_up" || m.kind === "stage_down" || m.kind === "strong_reaction");
@@ -1039,6 +1076,7 @@ export async function finalizeChatState(input: {
       lastMemoryTrace,
       relationshipHistory,
       milestones,
+      selfieHistory,
       sceneMemory,
       ...outfitPatch,
       // The skip note is one-shot (spec §8.1): this exchange rendered it, so it clears.
@@ -1064,7 +1102,7 @@ export async function finalizeChatState(input: {
       placeName: sketchPlace.name,
     });
   }
-  return { bigMoment };
+  return { bigMoment, selfieSend: selfieKind !== null };
 }
 
 /**
@@ -1097,6 +1135,7 @@ async function upsertChatState(
   const milestones = JSON.stringify(state.milestones);
   const callbackHistory = JSON.stringify(state.callbackHistory);
   const feeling = JSON.stringify(state.feeling);
+  const selfieHistory = JSON.stringify(state.selfieHistory);
   const skipHistory = JSON.stringify(state.skipHistory);
   const sceneMemory = JSON.stringify(state.sceneMemory);
   const guard = guardMessageId
@@ -1104,9 +1143,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, feeling, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, feeling, selfie_history, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1131,6 +1170,7 @@ async function upsertChatState(
       milestones = excluded.milestones,
       callback_history = excluded.callback_history,
       feeling = excluded.feeling,
+      selfie_history = excluded.selfie_history,
       skip_history = excluded.skip_history,
       pending_skip_note = excluded.pending_skip_note,
       scene_auto = excluded.scene_auto,
@@ -1194,6 +1234,8 @@ export interface ChatStateEdit {
   callbackHistory?: CallbackEntry[];
   /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear surface. */
   feeling?: ChatFeelingState;
+  /** Selfie-send ring (chat-selfies.plan.md) — inspector-grade reset/edit surface. */
+  selfieHistory?: SelfieEntry[];
 }
 
 /**
@@ -1241,6 +1283,7 @@ export async function editChatState(args: {
   if (patch.sceneMemory !== undefined) next.sceneMemory = patch.sceneMemory;
   if (patch.callbackHistory !== undefined) next.callbackHistory = patch.callbackHistory;
   if (patch.feeling !== undefined) next.feeling = patch.feeling;
+  if (patch.selfieHistory !== undefined) next.selfieHistory = patch.selfieHistory;
   await persistChatState(chatId, characterId, next);
   return next;
 }
@@ -1356,6 +1399,7 @@ export function chatStateSnapshot(
     sceneMemory: state.sceneMemory,
     callbackHistory: state.callbackHistory,
     feeling: state.feeling,
+    selfieHistory: state.selfieHistory,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
   };

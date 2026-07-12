@@ -1,8 +1,18 @@
 # Chat selfies — character-sent photo messages
 
-Status: **next** (planned 2026-07-11, from the character-chat & schema engagement
-review — seven-plan batch at the top of [roadmap.md](roadmap.md) §Next; effort
-**M+**)
+Status: **shipped — 2026-07-11** (planned, ruled, and built the same day — the
+fourth of the seven-plan engagement batch. Shipped: the `SELFIE_FRAMING` swap +
+`framing`/`flavor` threading through the scene render, the always-reference
+selfie branch with the retry-once/sanitize/fail-debuggable policy (ruled), both
+triggers (request regex + apart-only offer gates over the new `selfie_history`
+ring, migration `0034`) with the pulse `sentPhoto` read as the queue decision,
+the one-turn license lines, the route hook, and the transcript treatment
+(accent-rounded selfie tiles + the "Failed" placeholder enlarging to the sent
+prompt). Design deviation from the draft, recorded: the queue decision moved
+from a plan-time pulse flag to POST-turn (`sentPhoto` + deterministic arming) so
+a declined request or unfired offer never renders a contradicting photo. Slice-3
+caption polish and the initiative-opener attach hook remain with
+[chat-initiative.plan.md](chat-initiative.plan.md).)
 
 The character can't send a picture. A "selfie" — an inline photo message in the
 comms register — is the highest-leverage image feature for engagement, and it is
@@ -51,15 +61,23 @@ lens), the player nowhere in frame.
 2. Character-offer trigger (pulse flag + cooldown state) + tests.
 3. Polish: caption line woven into the reply, lightbox, a Gallery flavor chip.
 
-## Open questions
+## Rulings (owner, 2026-07-11)
 
-- Model pick: always reference-edit, or honor the per-chat `scene_model` t2i
-  hot-swap? Lean **always reference** — identity is the whole point of a
-  selfie; a t2i selfie loses the face.
-- Failed render: an in-fiction excuse line, or silently no image? Lean
-  **silent** — the reply already stands alone; the strip shows the failure.
-- Do offers need a scenario-modal opt-out (like `scene_auto`)? Lean no — offers
-  are rare and player-visible; add the toggle only if they annoy.
+- **Always reference-edit**: selfies ignore the per-chat `scene_model` pick —
+  identity is the point; no t2i, and (per the retry ruling below) no silent
+  ladder fallback either.
+- **Retry once, then a debuggable failure**: a failed render classifies WHY
+  (`classifyImageFailure`) and retries ONCE — a content rejection retries with
+  a sanitized prompt (intimate/exposure phrasing stripped), a transient failure
+  retries as-is. A second failure marks the row `failed` and the transcript
+  shows a **"Failed" placeholder** in the selfie's spot; clicking it enlarges
+  to a panel showing the prompt that was sent, for debugging.
+- **No offer toggle, but offers are APART-ONLY**: an unprompted selfie
+  simulates texting, so the character only offers one when she and the player
+  are not in the same scene — gated deterministically on the comms register
+  (the player's message or the last reply carried `*Name: …*` texted lines).
+  Player-asked selfies are not apart-gated (handing over a photo face-to-face
+  is the player's call).
 
 ## Cross-links
 

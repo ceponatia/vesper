@@ -7,6 +7,7 @@ import {
   buildChatTurnMessage,
   chatCallbackLine,
   chatNotationNote,
+  chatSelfieLine,
 } from "./character-chat";
 
 const attr = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue => ({ id, value, source: "creation" });
@@ -1370,5 +1371,29 @@ describe("attached photos (chat-image-input.plan.md)", () => {
     expect(
       buildCharacterChatPromptParts({ name: "Mara", profile: profile(), attachments: { descriptions: ["  "] } }).tail,
     ).not.toContain("Attached photos");
+  });
+});
+
+describe("selfie license line (chat-selfies.plan.md)", () => {
+  it("a request line makes declining first-class; an offer stays optional and apart-framed", () => {
+    const request = chatSelfieLine("request", "Mara", "Theo");
+    expect(request).toContain("Theo asked Mara for a photo this turn");
+    expect(request).toContain("declining is a real answer");
+    const offer = chatSelfieLine("offer", "Mara", "Theo");
+    expect(offer).toContain("You are apart and texting");
+    expect(offer).toContain("Entirely optional");
+    expect(chatSelfieLine(undefined, "Mara", "Theo")).toBe("");
+  });
+
+  it("rides the tail only when armed", () => {
+    const armed = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      selfie: "request",
+    });
+    expect(armed.tail).toContain("asked Mara for a photo");
+    const plain = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    expect(plain.tail).not.toContain("for a photo");
   });
 });

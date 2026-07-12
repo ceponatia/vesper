@@ -211,6 +211,13 @@ export interface CharacterChatPromptInput {
    * derive from player-supplied images). Absent/empty ⇒ no block.
    */
   attachments?: { descriptions: string[] };
+  /**
+   * One-turn selfie license (chat-selfies.plan.md): "request" = the player asked
+   * for a photo this turn; "offer" = the unprompted-offer gates hold (apart-only
+   * comms register + warm regard + cooldown — owner ruling). Renders as an
+   * optional tail line; the post-turn pulse decides whether one actually sent.
+   */
+  selfie?: "request" | "offer";
 }
 
 /**
@@ -294,6 +301,22 @@ function buildAttachmentsSection(attachments: CharacterChatPromptInput["attachme
   if (!descriptions.length) return "";
   const lines = descriptions.map((d, i) => `${i + 1}. ${d}`).join("\n");
   return `Attached photos (${player} shared ${descriptions.length === 1 ? "this photo" : "these photos"} with this message — what you see):\n${fenceUntrusted("attached photos", lines)}`;
+}
+
+/**
+ * The one-turn selfie license (chat-selfies.plan.md): a request must be answerable
+ * either way (declining in character is a real answer); an offer is entirely
+ * optional and never forced. Neither describes the photo's contents at length —
+ * SENDING it is the beat; the render paints the picture.
+ */
+export function chatSelfieLine(selfie: "request" | "offer" | undefined, name: string, player: string): string {
+  if (selfie === "request") {
+    return `${player} asked ${name} for a photo this turn. If ${name} chooses to send one, say so naturally in the reply — snapping it, sending it (as a text like *${name}: …* when you are apart) — or decline in character; declining is a real answer, and teasing or bargaining is fair play. Don't narrate the photo's contents in detail: sending it is the beat.`;
+  }
+  if (selfie === "offer") {
+    return `You are apart and texting, and things are warm between you. If this beat genuinely invites it, ${name} may decide to send ${player} a photo of ${name}'s own accord — mention it naturally in a text. Entirely optional: most turns should NOT include one; never force it, and don't narrate the photo's contents in detail.`;
+  }
+  return "";
 }
 
 /** Regard bands where a callback reads as warm nostalgia (at/above `warm`). */
@@ -1025,6 +1048,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     input.callback?.summary.trim()
       ? chatCallbackLine(input.callback.summary, input.state?.regard ?? 0, displayName, playerName ?? "the player")
       : "",
+    chatSelfieLine(input.selfie, displayName, playerName ?? "the player"),
     input.opening
       ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
       : buildResponseShapeLine(input),
