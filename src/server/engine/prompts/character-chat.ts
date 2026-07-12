@@ -16,7 +16,7 @@ import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/v
 import { driveWithheld, type ChatDrive } from "@/contracts/personality/drives";
 import { familiarityBandForValue, regardBandForValue } from "@/contracts/relationships/bands";
 import { composeRelationshipLaw, dispositionContrastLine } from "@/contracts/relationships/law";
-import type { RelationshipTexture } from "@/contracts/relationships/record";
+import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
@@ -1195,15 +1195,36 @@ export interface EnsembleMemberInput {
 export const ENSEMBLE_QUIET_EXCHANGES = 3;
 
 /**
+ * One directed member↔member edge for the ensemble prompt (the relationship
+ * matrix, relationship-model.plan.md §What the narrator sees when): tier 1 =
+ * both endpoints present (a prefix law line); tier 3 = a present `fromName`'s
+ * edge toward a salient away member (a volatile conditional line under the
+ * don't-teleport guard).
+ */
+export interface EnsemblePairInput {
+  fromName: string;
+  toName: string;
+  record: RelationshipRecord;
+}
+
+export interface EnsemblePromptExtras {
+  /** Present×present directed edges — the prefix's pair-law lines. */
+  pairs?: readonly EnsemblePairInput[];
+  /** Present→away edges for SALIENT away members (mentioned in-window or looming). */
+  awayPairs?: readonly EnsemblePairInput[];
+}
+
+/**
  * Dispatch on roster size (ruling 2): a roster of one takes the EXACT single-character
  * path — byte-identical to today's prompt — and only a real ensemble builds the frame.
  */
 export function buildChatPromptPartsForRoster(
   input: CharacterChatPromptInput,
   members?: readonly EnsembleMemberInput[],
+  extras?: EnsemblePromptExtras,
 ): CharacterChatPromptParts {
   if (!members || members.length <= 1) return buildCharacterChatPromptParts(input);
-  return buildEnsembleChatPromptParts(input, members);
+  return buildEnsembleChatPromptParts(input, members, extras);
 }
 
 /**
@@ -1221,6 +1242,7 @@ export function buildChatPromptPartsForRoster(
 export function buildEnsembleChatPromptParts(
   input: CharacterChatPromptInput,
   members: readonly EnsembleMemberInput[],
+  extras: EnsemblePromptExtras = {},
 ): CharacterChatPromptParts {
   const playerName = input.player?.name.trim() || undefined;
   const player = playerName ?? "the player";
@@ -1256,6 +1278,16 @@ export function buildEnsembleChatPromptParts(
   const sheetMembers = present.length > 0 ? present : members;
   const sheets = sheetMembers.map((member) => ensembleMemberSheet(member, player));
 
+  // Tier-1 pair law (relationship matrix): both endpoints present. Lives in the
+  // prefix — re-rendering on a matrix edit / roster / presence change is the
+  // licensed cache bust, like a band crossing.
+  const pairLines = (extras.pairs ?? []).map(
+    (pair) => `- ${relationshipLineBetween(pair.fromName, pair.toName, pair.record)}`,
+  );
+  const pairsSection = pairLines.length
+    ? `How they stand with each other (cold-start law — the story may move it; never recite it):\n${pairLines.join("\n")}`
+    : "";
+
   const prefixSections = [
     CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
@@ -1264,6 +1296,7 @@ export function buildEnsembleChatPromptParts(
     scenario,
     authority,
     ...sheets,
+    pairsSection,
     ENSEMBLE_CHAT_RULES(names, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),
   ];
 
@@ -1280,12 +1313,30 @@ export function buildEnsembleChatPromptParts(
     present.length ? present.map((m) => m.name).join(", ") : "no one — every character is away"
   }.${away.length ? ` Away, living their own lives: ${away.map((m) => m.name).join(", ")}.` : ""}`;
 
+  // Tier-3 salience (volatile — the mention window moves): one conditional block
+  // per salient away member, under the don't-teleport guard. Reactive, never
+  // anticipatory — by the time this renders, the fiction already surfaced them
+  // (or the edge is flagged looming).
+  const awayByName = new Map<string, EnsemblePairInput[]>();
+  for (const pair of extras.awayPairs ?? []) {
+    awayByName.set(pair.toName, [...(awayByName.get(pair.toName) ?? []), pair]);
+  }
+  const awaySections = [...awayByName.entries()].map(([awayName, edges]) => {
+    const lines = edges.map((edge) => `- ${relationshipLineBetween(edge.fromName, edge.toName, edge.record)}`);
+    return [
+      `If ${awayName} comes up (they are NOT here):`,
+      ...lines,
+      `- ${awayName} is elsewhere, living their own life. You may show what ${awayName} is doing where they are, or let them text or call — but never merge ${awayName} into ${player}'s scene uninvited.`,
+    ].join("\n");
+  });
+
   const tailSections = [
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
     ...memories,
     rosterLine,
+    ...awaySections,
     ...(stateLines.length
       ? [`Where each character is right now (let it color them — never recite it):\n${stateLines.join("\n")}`]
       : []),
@@ -1359,25 +1410,42 @@ function ensembleMemberSheet(member: EnsembleMemberInput, player: string): strin
 /**
  * The member↔player relationship as a compact third-person line: bands + the authored
  * kind/history/mask texture. The full composed pair-law block (escalation floors,
- * address rights) is second-person and joins with the relationship matrix slice.
+ * address rights) is second-person and stays with the player edge.
  */
 function ensembleRelationshipLine(member: EnsembleMemberInput, player: string): string {
   const name = member.name.trim() || "this character";
-  const fam = familiarityBandForValue(member.state?.familiarity ?? 0);
-  const reg = regardBandForValue(member.state?.regard ?? 0);
-  const texture = member.state?.relationship;
-  const kind = texture?.kind?.trim();
-  const history = texture?.history?.trim();
+  return `With ${player}: ${relationshipLineParts(name, player, {
+    familiarity: member.state?.familiarity ?? 0,
+    regard: member.state?.regard ?? 0,
+    ...(member.state?.relationship ?? {}),
+  })}`;
+}
+
+/** A directed matrix edge as one third-person line ("Mara → Rhett: …"). */
+function relationshipLineBetween(fromName: string, toName: string, record: RelationshipRecord): string {
+  return `${fromName} → ${toName}: ${relationshipLineParts(fromName, toName, record)}`;
+}
+
+/** The shared body: bands + kind/history/mask, third person, subject `name` toward `target`. */
+function relationshipLineParts(
+  name: string,
+  target: string,
+  record: { familiarity: number; regard: number } & Partial<RelationshipTexture>,
+): string {
+  const fam = familiarityBandForValue(record.familiarity);
+  const reg = regardBandForValue(record.regard);
+  const kind = record.kind?.trim();
+  const history = record.history?.trim();
   const mask =
-    texture?.presented?.lean === "masks_warmth"
+    record.presented?.lean === "masks_warmth"
       ? `Outwardly ${name} performs disdain over what ${name} actually feels`
-      : texture?.presented?.lean === "masks_dislike"
+      : record.presented?.lean === "masks_dislike"
         ? `Outwardly ${name} performs courtesy over what ${name} actually feels`
         : "";
   const parts = [
-    `With ${player}: ${kind ? `${kind} — ` : ""}${fam.label.toLowerCase()} to each other, and ${name} feels ${reg.label.toLowerCase()} toward ${player}.`,
+    `${kind ? `${kind} — ` : ""}${fam.label.toLowerCase()} to each other, and ${name} feels ${reg.label.toLowerCase()} toward ${target}.`,
     history ? `Their history: ${history}.` : "",
-    mask ? `${mask}${texture?.presented?.note?.trim() ? ` (${texture.presented.note.trim()})` : ""}.` : "",
+    mask ? `${mask}${record.presented?.note?.trim() ? ` (${record.presented.note.trim()})` : ""}.` : "",
   ].filter(Boolean);
   return parts.join(" ");
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import type { AttributeValue } from "@/contracts/attributes/value";
+import type { RelationshipRecord } from "@/contracts/relationships/record";
 import {
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
@@ -1536,5 +1537,63 @@ describe("ensemble frame (multi-character-chat.plan.md slice 2)", () => {
     expect(a.tail).not.toBe(b.tail);
     expect(a.tail).toContain("Mara's memory:");
     expect(a.tail).toContain("Brian owns a sailboat");
+  });
+});
+
+describe("ensemble relationship matrix injection (relationship-model.plan.md slice 6)", () => {
+  const member = (
+    name: string,
+    over: Partial<EnsembleMemberInput> = {},
+  ): EnsembleMemberInput => ({ name, profile: profile(), presence: "present", quietExchanges: 0, ...over });
+  const input = (): Parameters<typeof buildCharacterChatPromptParts>[0] => ({
+    name: "Mara",
+    profile: profile(),
+    player: { name: "Brian" },
+  });
+  const record = (over: Partial<RelationshipRecord> = {}): RelationshipRecord => ({
+    familiarity: 80,
+    regard: -25,
+    kind: "estranged childhood friends",
+    history: "he left town without a word; she rebuilt alone",
+    presented: undefined,
+    looming: false,
+    ...over,
+  });
+
+  it("renders present-pair law lines in the prefix", () => {
+    const parts = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Rhett")], {
+      pairs: [{ fromName: "Mara", toName: "Rhett", record: record() }],
+    });
+    expect(parts.prefix).toContain("How they stand with each other");
+    expect(parts.prefix).toContain("Mara → Rhett: estranged childhood friends —");
+    expect(parts.prefix).toContain("he left town without a word");
+    // The line is third person and band-labeled, never raw scalars.
+    expect(parts.prefix).not.toContain("-25");
+  });
+
+  it("renders tier-3 away lines in the tail under the don't-teleport guard", () => {
+    const parts = buildChatPromptPartsForRoster(
+      input(),
+      [member("Mara"), member("Vera", { presence: "away" })],
+      { awayPairs: [{ fromName: "Mara", toName: "Vera", record: record({ kind: "her estranged sister" }) }] },
+    );
+    expect(parts.tail).toContain("If Vera comes up (they are NOT here):");
+    expect(parts.tail).toContain("Mara → Vera: her estranged sister —");
+    expect(parts.tail).toContain("never merge Vera into Brian's scene uninvited");
+    // Pair law belongs to the prefix; the away line must not leak there.
+    expect(parts.prefix).not.toContain("If Vera comes up");
+  });
+
+  it("renders the mask lean as performed-vs-felt texture", () => {
+    const parts = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Rhett")], {
+      pairs: [
+        {
+          fromName: "Mara",
+          toName: "Rhett",
+          record: record({ presented: { lean: "masks_dislike", note: "icily civil" } }),
+        },
+      ],
+    });
+    expect(parts.prefix).toContain("Outwardly Mara performs courtesy over what Mara actually feels (icily civil).");
   });
 });

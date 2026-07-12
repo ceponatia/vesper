@@ -17,7 +17,7 @@ import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { characterChats, characterChatState, characters, chatParticipants, chatScenarioPresets, db } from "@/server/db";
-import { editChatState } from "@/server/engine";
+import { editChatState, seedChatRelationships } from "@/server/engine";
 import { resolveChatMemoryGroupId } from "./owned";
 
 /**
@@ -183,6 +183,9 @@ export const POST = withUser(async (user, req: NextRequest) => {
     await tx.insert(characterChats).values({ id: chatId, ownerId: user.id, title });
     await tx.insert(chatParticipants).values(participantRows.map((row) => ({ chatId, ...row })));
   });
+  // Matrix seeding (relationship-model.plan.md §The matrix): the roster's pairs
+  // inherit the library-default edges; the in-chat matrix menu overrides on top.
+  await seedChatRelationships(chatId, characterIds);
 
   // Preset seeding (spec §1.5): write the scenario fields exactly the way the
   // scenario modal does — through the author-edit state path, on top of the

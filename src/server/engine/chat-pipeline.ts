@@ -18,6 +18,7 @@ import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import { buildInitiativeCue } from "./chat-initiative";
+import { loadChatRelationships } from "./chat-relationships";
 import { chatSelfieOfferEligible, detectSelfieRequest, hasCommsSpans } from "./chat-selfie";
 import { CHAT_ATTACHMENTS_MAX, describeChatPhotos } from "./chat-vision";
 import {
@@ -71,6 +72,8 @@ import {
   ENSEMBLE_QUIET_EXCHANGES,
   type CharacterChatPromptInput,
   type EnsembleMemberInput,
+  type EnsemblePairInput,
+  type EnsemblePromptExtras,
 } from "./prompts/character-chat";
 import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
 
@@ -806,6 +809,36 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         : undefined,
     };
 
+    // The relationship matrix (relationship-model.plan.md): tier-1 pair lines for
+    // present×present edges; tier-3 conditional lines for present→away edges
+    // whose away endpoint is SALIENT — mentioned within the window (the recency
+    // stamp keeps counting for away members) or flagged looming on the edge.
+    let ensembleExtras: EnsemblePromptExtras | undefined;
+    if (ensembleActive) {
+      const matrix = await loadChatRelationships(chatId, sink);
+      const membersById = new Map<string, { name: string; presence: ChatState["presence"]; quiet: number }>([
+        [characterId, { name: characterName, presence: driftedState.presence, quiet: driftedState.quietExchanges }],
+        ...others.map(
+          (o) =>
+            [o.characterId, { name: o.name, presence: o.state.presence, quiet: o.state.quietExchanges }] as const,
+        ),
+      ]);
+      const pairs: EnsemblePairInput[] = [];
+      const awayPairs: EnsemblePairInput[] = [];
+      for (const edge of matrix) {
+        const from = membersById.get(edge.fromCharacterId);
+        const to = membersById.get(edge.toCharacterId);
+        if (!from || !to) continue; // an endpoint left the roster — the row is inert
+        if (from.presence === "present" && to.presence === "present") {
+          pairs.push({ fromName: from.name, toName: to.name, record: edge.record });
+        } else if (from.presence === "present" && to.presence === "away") {
+          const salient = to.quiet < ENSEMBLE_QUIET_EXCHANGES || edge.record.looming;
+          if (salient) awayPairs.push({ fromName: from.name, toName: to.name, record: edge.record });
+        }
+      }
+      ensembleExtras = { pairs, awayPairs };
+    }
+
     // The ensemble prompt inputs (roster > 1): the primary first, then the others,
     // each with their own state slice + memory leg and the presence/recency the
     // frame's tier compression keys on.
@@ -839,7 +872,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     let system: string;
     let modelHistory: typeof history;
     if (ensemble) {
-      const parts = buildChatPromptPartsForRoster(promptInput, ensemble);
+      const parts = buildChatPromptPartsForRoster(promptInput, ensemble, ensembleExtras);
       system = [parts.prefix, parts.tail].filter(Boolean).join("\n\n");
       modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
     } else if (chatPromptLayout() === "turn_context" && playerContent) {
@@ -910,14 +943,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
       // Activity-recency stamping (slice 3, deterministic half): a member is
       // active this exchange when the player's turn named them (name/alias) or
-      // the reply gave them a tagged spoken line. Only present members count
-      // quiet exchanges — an away character isn't "quiet", just elsewhere.
+      // the reply gave them a tagged spoken line. Counted for away members too —
+      // there it is the tier-3 salience window ("mentioned within K exchanges").
       const primaryQuiet = ensembleActive
-        ? driftedState.presence !== "present"
-          ? driftedState.quietExchanges
-          : mentionsCharacter(agentPlayerContent, characterName, profile.aliases) || spokeInReply(full, characterName)
-            ? 0
-            : driftedState.quietExchanges + 1
+        ? mentionsCharacter(agentPlayerContent, characterName, profile.aliases) || spokeInReply(full, characterName)
+          ? 0
+          : driftedState.quietExchanges + 1
         : driftedState.quietExchanges;
 
       // Referenced-only pulse scoping (ruling 4): the pulse runs for the members
@@ -994,8 +1025,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             const active =
               mentionsCharacter(agentPlayerContent, member.name, member.profile.aliases) ||
               spokeInReply(full, member.name);
-            const quietExchanges =
-              memberState.presence !== "present" ? memberState.quietExchanges : active ? 0 : memberState.quietExchanges + 1;
+            const quietExchanges = active ? 0 : memberState.quietExchanges + 1;
             await saveChatState({
               chatId,
               characterId: member.characterId,
