@@ -12,7 +12,7 @@ it carries its own tracked state, long-term RAG memory, evolving attributes, sce
 system, a stage-driven relationship arc, in-game time, and scene images. Since 2026-07-12
 a conversation can hold a **roster of up to 4 full characters**
 (§Multi-character below —
-[developer-notes/multi-character-chat.plan.md](developer-notes/multi-character-chat.plan.md)):
+[developer-notes/multi-character-chat.plan.md](developer-notes/finished/multi-character-chat.plan.md)):
 narrative presence instead of locations, the one-block ensemble prompt frame, a
 per-conversation relationship matrix. It remains deliberately **not** a session: no
 locations, exposure mask, wardrobe state, or story threads.
@@ -455,9 +455,9 @@ hook (needs pulse-on-open).
 ## Multi-character (the ensemble)
 
 A conversation holds up to **4 full characters**
-([developer-notes/multi-character-chat.plan.md](developer-notes/multi-character-chat.plan.md) +
+([developer-notes/multi-character-chat.plan.md](developer-notes/finished/multi-character-chat.plan.md) +
 the matrix slice of
-[developer-notes/relationship-model.plan.md](developer-notes/relationship-model.plan.md),
+[developer-notes/relationship-model.plan.md](developer-notes/finished/relationship-model.plan.md),
 both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-1
 (asserted in `prompts/character-chat.test.ts`); everything below arms only at roster > 1.
 
