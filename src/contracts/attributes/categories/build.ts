@@ -54,6 +54,7 @@ export const buildGroup = defineAttributeGroup("build", [
     valueType: "enum",
     description: "Visible muscle development.",
     mutability: "mutable",
+    renderVisual: true,
     allowedValues: [
       "untoned",
       "lightly_toned",
@@ -73,6 +74,7 @@ export const buildGroup = defineAttributeGroup("build", [
     valueType: "enum",
     description: "How body weight visibly presents.",
     mutability: "mutable",
+    renderVisual: true,
     allowedValues: [
       "underweight",
       "slim",

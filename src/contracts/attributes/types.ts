@@ -66,6 +66,17 @@ export const attributeDefinitionSchema = z.object({
    */
   coreVisual: z.boolean().optional(),
   /**
+   * Render-consistency visuals (forge-gaps.plan.md): the second always-filled
+   * tier after `coreVisual`. Silhouette and face-structure attributes that a
+   * scene render RE-INVENTS on every image when left unset (face shape, nose,
+   * lips, hair length, waist, leg build …) — cross-scene drift, not sparseness.
+   * The forge asks for a plausible range like a core visual and anything still
+   * unset gets the seeded fill (`fillVisualDefaults`). Mark sparingly and only
+   * on enum attributes: every flag removes a "sparse is correct" attribute, and
+   * non-enum values can't be seeded from a closed list.
+   */
+  renderVisual: z.boolean().optional(),
+  /**
    * Curated registry default for this attribute (owner ruling 2026-07-11:
    * female-leaning where the attribute is gendered, since most characters are
    * women). Consumed by `seedRegistryDefaultValues` — blank character creation
@@ -113,7 +124,7 @@ export const attributeDefinitionSchema = z.object({
   /**
    * Enum members that are valid vocabulary but must never be chosen as an
    * *automatic* default — neither the forge's tier-3 unconstrained fallback
-   * fill (character-forge.ts §fillCoreVisualDefaults) nor the picker's initial
+   * fill (character-forge.ts §fillVisualDefaults) nor the picker's initial
    * value when a human adds the attribute (attribute-helpers.ts
    * §defaultValueFor). The model or a human may still select them explicitly.
    * Used so minor apparent ages exist for background characters while an

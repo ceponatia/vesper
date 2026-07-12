@@ -55,6 +55,7 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     valueType: "enum",
     description: "Eye shape and set.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: [
       "almond", "round", "hooded", "monolid", "upturned",
       "downturned", "deep_set", "wide_set", "close_set", "narrow",

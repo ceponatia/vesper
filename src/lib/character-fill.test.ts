@@ -7,7 +7,7 @@ import {
   type CharacterProfile,
   type TraitValue,
 } from "@/contracts";
-import { isPlaceholderName, isSpeciesUnset, mergeFillDraft, type FillableDraft } from "./character-fill";
+import { isPlaceholderName, isPlayerRelationshipUnset, isSpeciesUnset, mergeFillDraft, type FillableDraft } from "./character-fill";
 
 const attr = (id: string, value: AttributeValue["value"], source: AttributeValue["source"]): AttributeValue => ({
   id: id as AttributeValue["id"],
@@ -184,15 +184,59 @@ describe("mergeFillDraft — clusters", () => {
   });
 });
 
-describe("mergeFillDraft — never-filled fields", () => {
-  it("always keeps the base playerRelationship and socialCards", () => {
+describe("mergeFillDraft — starting relationship and cards (forge-gaps)", () => {
+  it("keeps an authored playerRelationship over a generated one", () => {
     const base = draftOf();
     base.profile.playerRelationship = { ...base.profile.playerRelationship, note: "Owes me a favor." };
     const incoming = draftOf();
     incoming.profile.playerRelationship = { ...incoming.profile.playerRelationship, note: "Generated note." };
     const merged = mergeFillDraft(base, incoming);
     expect(merged.profile.playerRelationship.note).toBe("Owes me a favor.");
-    expect(merged.profile.socialCards).toEqual([]);
+  });
+
+  it("adopts a generated playerRelationship while the base is the untouched default", () => {
+    const base = draftOf();
+    const incoming = draftOf();
+    incoming.profile.playerRelationship = {
+      ...incoming.profile.playerRelationship,
+      familiarity: "familiar",
+      regard: "friendly",
+      kind: "ex-fianc\u00e9s",
+      presented: { lean: "masks_warmth", note: "" },
+    };
+    const merged = mergeFillDraft(base, incoming);
+    expect(merged.profile.playerRelationship.familiarity).toBe("familiar");
+    expect(merged.profile.playerRelationship.presented?.lean).toBe("masks_warmth");
+    expect(isPlayerRelationshipUnset(merged.profile)).toBe(false);
+  });
+
+  it("any authored field freezes the whole relationship record", () => {
+    const base = draftOf();
+    base.profile.playerRelationship = { ...base.profile.playerRelationship, regard: "cool" };
+    const incoming = draftOf();
+    incoming.profile.playerRelationship = { ...incoming.profile.playerRelationship, familiarity: "familiar", kind: "old rivals" };
+    const merged = mergeFillDraft(base, incoming);
+    expect(merged.profile.playerRelationship.regard).toBe("cool");
+    expect(merged.profile.playerRelationship.familiarity).toBe("strangers");
+    expect(merged.profile.playerRelationship.kind).toBe("");
+  });
+
+  it("appends generated cards after authored ones, deduped by label", () => {
+    const card = (id: string, label: string) => ({
+      id,
+      label,
+      description: "",
+      kind: "taboo" as const,
+      triggers: ["criticize"],
+      severity: 40,
+      reactionOverrides: [],
+    });
+    const base = draftOf();
+    base.profile.socialCards = [card("c1", "Her art is not negotiable")];
+    const incoming = draftOf();
+    incoming.profile.socialCards = [card("c2", "her art is NOT negotiable"), card("c3", "The ears are off-limits")];
+    const merged = mergeFillDraft(base, incoming);
+    expect(merged.profile.socialCards.map((c) => c.id)).toEqual(["c1", "c3"]);
   });
 });
 

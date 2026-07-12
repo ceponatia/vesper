@@ -9,6 +9,7 @@ export const lipsGroup = defineAttributeGroup("lips", [
     valueType: "enum",
     description: "Lip fullness.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: ["thin", "slight", "medium", "full", "very_full", "plush"],
     bodyLocationId: "lips",
     aliases: ["lips", "lip fullness"],
@@ -21,6 +22,7 @@ export const lipsGroup = defineAttributeGroup("lips", [
     valueType: "enum",
     description: "Lip shape.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: [
       "cupids_bow", "bow_shaped", "wide", "narrow",
       "round", "heavy_bottom", "downturned", "upturned",

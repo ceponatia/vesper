@@ -40,6 +40,20 @@ describe("drive schemas", () => {
     const chat = chatDrivesSchema.parse([secret(), { want: "" }]);
     expect(chat).toEqual([secret()]);
   });
+
+  it("truncates over-length text at the caps instead of dropping or wiping (forge-gaps gap 5)", () => {
+    const parsed = drivesSchema.parse([{ want: "w".repeat(500), why: "y".repeat(500) }]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.want).toBe("w".repeat(120));
+    expect(parsed[0]?.why).toBe("y".repeat(200));
+    const chat = chatDrivesSchema.parse([{ ...secret(), progress: "p".repeat(500) }]);
+    expect(chat[0]?.progress).toBe("p".repeat(200));
+  });
+
+  it("still heals a non-string why to empty without failing the row", () => {
+    const parsed = drivesSchema.parse([{ want: "a want", why: 42 }]);
+    expect(parsed).toEqual([{ want: "a want", why: "", secrecy: "open" }]);
+  });
 });
 
 describe("driveWithheld (the reveal gate)", () => {

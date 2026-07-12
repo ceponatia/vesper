@@ -10,6 +10,7 @@ export const armsGroup = defineAttributeGroup("arms", [
     valueType: "enum",
     description: "Arm build and definition.",
     mutability: "mutable",
+    renderVisual: true,
     allowedValues: ["slender", "wiry", "soft", "toned", "sinewy", "muscular", "heavy"],
     bodyLocationId: "arms",
     aliases: ["arms", "arm build"],

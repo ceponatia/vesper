@@ -9,6 +9,7 @@ export const chestGroup = defineAttributeGroup("chest", [
     valueType: "enum",
     description: "Chest or bust as it visibly reads, any gender.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: ["flat", "slight", "modest", "average", "full", "very_full", "broad", "barrel"],
     bodyLocationId: "chest",
     aliases: ["chest", "bust"],

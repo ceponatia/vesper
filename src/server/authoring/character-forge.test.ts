@@ -5,14 +5,16 @@ import {
   buildAttributeSectionSchema,
   demoCharacterAttributeSection,
   demoCharacterOutfitSection,
-  fillCoreVisualDefaults,
+  fillVisualDefaults,
   fillSpeciesRequiredDefaults,
   forgeCharacter,
   forgeCharacterSection,
   groundAttributeRanges,
   groundAttributeValues,
   groundDrives,
+  groundPlayerRelationship,
   groundSchedule,
+  groundSocialCards,
   groundOutfitItems,
   matchOutfitAgainstLibrary,
   partitionOutfitReuse,
@@ -185,6 +187,31 @@ describe("groundDrives", () => {
     expect(drives[0]?.revealBand).toBeUndefined();
   });
 
+  it("demotes an extreme reveal band to the ruled default (forge-gaps gap 4)", () => {
+    const sink = new DiagnosticCollector();
+    const drives = groundDrives(
+      [{ want: "an over-gated secret", why: "", secrecy: "secret", revealBand: { axis: "familiarity", band: "deeply_known" } }],
+      sink,
+    );
+    expect(drives[0]?.revealBand).toBeUndefined();
+    expect(sink.items.some((d) => d.code === "forge.character.profile.extreme_reveal_band")).toBe(true);
+    const regard = groundDrives([
+      { want: "a devotion-gated secret", why: "", secrecy: "secret", revealBand: { axis: "regard", band: "smitten" } },
+    ]);
+    expect(regard[0]?.revealBand).toBeUndefined();
+  });
+
+  it("keeps bands at the forge ceiling (familiar; close) intact", () => {
+    const drives = groundDrives([
+      { want: "secret one", why: "", secrecy: "secret", revealBand: { axis: "familiarity", band: "familiar" } },
+    ]);
+    expect(drives[0]?.revealBand).toEqual({ axis: "familiarity", band: "familiar" });
+    const close = groundDrives([
+      { want: "secret two", why: "", secrecy: "secret", revealBand: { axis: "regard", band: "close" } },
+    ]);
+    expect(close[0]?.revealBand).toEqual({ axis: "regard", band: "close" });
+  });
+
   it("caps at three drives with a diagnostic and truncates over-length text", () => {
     const sink = new DiagnosticCollector();
     const drives = groundDrives(
@@ -200,6 +227,113 @@ describe("groundDrives", () => {
     expect(drives[0]?.want).toHaveLength(120);
     expect(drives[0]?.why).toHaveLength(200);
     expect(sink.items.some((d) => d.code === "forge.character.profile.drives_capped")).toBe(true);
+  });
+});
+
+describe("groundPlayerRelationship (forge-gaps gap 1)", () => {
+  it("grounds bands, maps the mask onto the presented lean, and truncates text at the caps", () => {
+    const record = groundPlayerRelationship({
+      familiarity: " Familiar ",
+      regard: "FRIENDLY",
+      kind: "ex-fiancés",
+      history: "h".repeat(400),
+      mask: "colder_than_felt",
+      note: "n".repeat(400),
+    });
+    expect(record?.familiarity).toBe("familiar");
+    expect(record?.regard).toBe("friendly");
+    expect(record?.kind).toBe("ex-fiancés");
+    expect(record?.history).toHaveLength(280);
+    expect(record?.note).toHaveLength(280);
+    expect(record?.presented).toEqual({ lean: "masks_warmth", note: "" });
+    expect(record?.looming).toBe(false);
+  });
+
+  it("maps warmer_than_felt onto masks_dislike and none onto no mask", () => {
+    const warm = groundPlayerRelationship({ familiarity: "acquainted", regard: "cool", kind: "", history: "", mask: "warmer_than_felt", note: "" });
+    expect(warm?.presented).toEqual({ lean: "masks_dislike", note: "" });
+    const honest = groundPlayerRelationship({ familiarity: "acquainted", regard: "warm", kind: "", history: "", mask: "none", note: "" });
+    expect(honest?.presented).toBeUndefined();
+  });
+
+  it("self-heals an unknown band to the axis default with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const record = groundPlayerRelationship(
+      { familiarity: "soulmates", regard: "adoring", kind: "old friends", history: "", mask: "none", note: "" },
+      sink,
+    );
+    expect(record?.familiarity).toBe("strangers");
+    expect(record?.regard).toBe("neutral");
+    expect(sink.items.filter((d) => d.code === "forge.character.profile.unknown_relationship_band")).toHaveLength(2);
+  });
+
+  it("returns undefined for an absent or all-default draft (nothing established)", () => {
+    expect(groundPlayerRelationship(undefined)).toBeUndefined();
+    expect(
+      groundPlayerRelationship({ familiarity: "strangers", regard: "neutral", kind: "", history: "", mask: "none", note: "" }),
+    ).toBeUndefined();
+    expect(groundPlayerRelationship({ familiarity: "", regard: "", kind: "", history: "", mask: "none", note: "" })).toBeUndefined();
+  });
+});
+
+describe("groundSocialCards (forge-gaps gap 2)", () => {
+  it("keeps a valid card, normalizing triggers and clamping severity", () => {
+    const sink = new DiagnosticCollector();
+    const cards = groundSocialCards(
+      [{ label: " Her art is not negotiable ", description: " haggling stops the needle ", kind: "taboo", severity: 140, triggers: ["Criticize"] }],
+      [],
+      sink,
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      label: "Her art is not negotiable",
+      description: "haggling stops the needle",
+      kind: "taboo",
+      severity: 100,
+      triggers: ["criticize"],
+      reactionOverrides: [],
+    });
+    expect(cards[0]?.id).toBeTruthy();
+    expect(sink.items).toEqual([]);
+  });
+
+  it("drops unknown triggers and a card left with none", () => {
+    const sink = new DiagnosticCollector();
+    const cards = groundSocialCards(
+      [{ label: "No haggling", description: "", kind: "taboo", severity: 40, triggers: ["bartering"] }],
+      [],
+      sink,
+    );
+    expect(cards).toEqual([]);
+    expect(sink.items.some((d) => d.code === "forge.character.profile.unknown_card_trigger")).toBe(true);
+    expect(sink.items.some((d) => d.code === "forge.character.profile.card_without_triggers")).toBe(true);
+  });
+
+  it("drops a trigger a drafted preference already covers (preferences resolve first)", () => {
+    const sink = new DiagnosticCollector();
+    const cards = groundSocialCards(
+      [{ label: "Boundaries", description: "", kind: "taboo", severity: 60, triggers: ["boundary_push", "public_display"] }],
+      [{ target: "boundary_push", valence: "dislike", intensity: 9 }],
+      sink,
+    );
+    expect(cards[0]?.triggers).toEqual(["public_display"]);
+    expect(sink.items.some((d) => d.code === "forge.character.profile.card_trigger_shadowed")).toBe(true);
+  });
+
+  it("caps at two cards and dedupes by normalized label", () => {
+    const sink = new DiagnosticCollector();
+    const cards = groundSocialCards(
+      [
+        { label: "Rule A", description: "", kind: "social_rule", severity: 30, triggers: ["flirt"] },
+        { label: "rule a", description: "", kind: "social_rule", severity: 30, triggers: ["tease"] },
+        { label: "Rule B", description: "", kind: "taboo", severity: 50, triggers: ["insult"] },
+        { label: "Rule C", description: "", kind: "taboo", severity: 50, triggers: ["criticize"] },
+      ],
+      [],
+      sink,
+    );
+    expect(cards.map((c) => c.label)).toEqual(["Rule A", "Rule B"]);
+    expect(sink.items.some((d) => d.code === "forge.character.profile.cards_capped")).toBe(true);
   });
 });
 
@@ -301,7 +435,7 @@ describe("groundAttributeRanges", () => {
   });
 });
 
-describe("fillCoreVisualDefaults", () => {
+describe("fillVisualDefaults", () => {
   const coreIds = attributeRegistry.definitions.filter((d) => d.coreVisual).map((d) => d.id);
 
   it("flags a stable core set in the registry", () => {
@@ -313,37 +447,56 @@ describe("fillCoreVisualDefaults", () => {
     expect(coreIds).toContain("identity.apparent_age");
   });
 
+  it("flags a render-consistency tier in the registry (forge-gaps gap 3) — enum-only", () => {
+    const renderIds = attributeRegistry.definitions.filter((d) => d.renderVisual).map((d) => d.id);
+    for (const id of ["face.shape", "nose.shape", "lips.fullness", "hair.length", "waist.definition", "hips.width", "legs.build"]) {
+      expect(renderIds).toContain(id);
+    }
+    for (const def of attributeRegistry.definitions.filter((d) => d.renderVisual)) {
+      expect(def.valueType).toBe("enum");
+      expect(def.allowedValues?.length ?? 0).toBeGreaterThan(0);
+    }
+  });
+
+  it("fills every unset render-visual attribute alongside the core set", () => {
+    const filled = fillVisualDefaults([], "a night-market tattoo artist");
+    const ids = filled.map((v) => v.id);
+    for (const def of attributeRegistry.definitions.filter((d) => d.renderVisual)) {
+      expect(ids).toContain(def.id);
+    }
+  });
+
   it("fills every unset core attribute with a registry-valid value, deterministically", () => {
     const sink = new DiagnosticCollector();
-    const a = fillCoreVisualDefaults([], "a quiet librarian with a secret", sink);
-    const b = fillCoreVisualDefaults([], "a quiet librarian with a secret");
+    const a = fillVisualDefaults([], "a quiet librarian with a secret", sink);
+    const b = fillVisualDefaults([], "a quiet librarian with a secret");
     expect(a).toEqual(b);
     for (const id of coreIds) expect(a.map((v) => v.id)).toContain(id);
     for (const value of a) {
       expect(attributeRegistry.parseValue(value.id, value.value).ok).toBe(true);
       expect(value.source).toBe("creation");
     }
-    expect(sink.items.some((d) => d.code === "forge.character.attributes.core_defaults" && d.severity === "info")).toBe(true);
+    expect(sink.items.some((d) => d.code === "forge.character.attributes.visual_defaults" && d.severity === "info")).toBe(true);
   });
 
   it("never overrides a model-provided value", () => {
     const grounded = groundAttributeValues([{ id: "hair.color", value: "black" }]);
-    const filled = fillCoreVisualDefaults(grounded, "seed text");
+    const filled = fillVisualDefaults(grounded, "seed text");
     expect(filled.filter((v) => v.id === "hair.color")).toEqual(grounded);
   });
 
   it("varies defaults across different concepts", () => {
     const seeds = Array.from({ length: 12 }, (_, i) => `concept ${i}: a different person entirely`);
     const hairColors = new Set(
-      seeds.map((s) => fillCoreVisualDefaults([], s).find((v) => v.id === "hair.color")?.value),
+      seeds.map((s) => fillVisualDefaults([], s).find((v) => v.id === "hair.color")?.value),
     );
     expect(hairColors.size).toBeGreaterThan(1);
   });
 
   it("does nothing when all core attributes are present", () => {
     const sink = new DiagnosticCollector();
-    const full = fillCoreVisualDefaults([], "seed");
-    const again = fillCoreVisualDefaults(full, "other seed", sink);
+    const full = fillVisualDefaults([], "seed");
+    const again = fillVisualDefaults(full, "other seed", sink);
     expect(again).toEqual(full);
     expect(sink.items).toEqual([]);
   });
@@ -355,29 +508,29 @@ describe("fillCoreVisualDefaults", () => {
     // concepts it must never land on a minor band.
     const seeds = Array.from({ length: 50 }, (_, i) => `concept ${i}: a stranger in the crowd`);
     for (const seed of seeds) {
-      const age = fillCoreVisualDefaults([], seed).find((v) => v.id === "identity.apparent_age");
+      const age = fillVisualDefaults([], seed).find((v) => v.id === "identity.apparent_age");
       expect(minors).not.toContain(age?.value);
     }
   });
 
   it("draws the seeded pick from the attribute's surviving range", () => {
     const range = ["brown", "dark_brown", "black"];
-    const filled = fillCoreVisualDefaults([], "a Latina engineer", undefined, new Map([["hair.color", range]]));
+    const filled = fillVisualDefaults([], "a Latina engineer", undefined, new Map([["hair.color", range]]));
     const hair = filled.find((v) => v.id === "hair.color");
     expect(range).toContain(hair?.value);
   });
 
   it("same seed text yields the same pick within a range", () => {
     const ranges = new Map([["hair.color", ["brown", "dark_brown", "black"]]]);
-    const a = fillCoreVisualDefaults([], "a Latina engineer", undefined, ranges);
-    const b = fillCoreVisualDefaults([], "a Latina engineer", undefined, ranges);
+    const a = fillVisualDefaults([], "a Latina engineer", undefined, ranges);
+    const b = fillVisualDefaults([], "a Latina engineer", undefined, ranges);
     expect(a).toEqual(b);
   });
 
   it("a missing range falls through to the full vocabulary with a diagnostic", () => {
     const sink = new DiagnosticCollector();
     const ranges = new Map([["hair.color", ["brown", "dark_brown", "black"]]]);
-    const filled = fillCoreVisualDefaults([], "an unremarkable stranger", sink, ranges);
+    const filled = fillVisualDefaults([], "an unremarkable stranger", sink, ranges);
     const eyes = filled.find((v) => v.id === "eyes.color");
     expect(eyes).toBeDefined();
     expect(attributeRegistry.parseValue("eyes.color", eyes?.value).ok).toBe(true);
@@ -391,7 +544,7 @@ describe("fillCoreVisualDefaults", () => {
   it("a definite value beats a range for the same id", () => {
     const grounded = groundAttributeValues([{ id: "hair.color", value: "black" }]);
     const ranges = new Map([["hair.color", ["auburn", "red"]]]);
-    const filled = fillCoreVisualDefaults(grounded, "seed text", undefined, ranges);
+    const filled = fillVisualDefaults(grounded, "seed text", undefined, ranges);
     expect(filled.filter((v) => v.id === "hair.color")).toEqual([
       { id: "hair.color", value: "black", source: "creation" },
     ]);
@@ -400,7 +553,7 @@ describe("fillCoreVisualDefaults", () => {
   it("a core-visual default is picked from the species-narrowed set (orc height)", () => {
     const orc = realizeBody({ speciesId: "orc" });
     // build.height is coreVisual + optional with an orc-narrowed band.
-    const filled = fillCoreVisualDefaults([], "an orc dockworker", undefined, undefined, orc);
+    const filled = fillVisualDefaults([], "an orc dockworker", undefined, undefined, orc);
     const height = filled.find((v) => v.id === "build.height")?.value;
     expect(["above_average", "tall", "very_tall", "towering"]).toContain(height);
   });
@@ -627,6 +780,17 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     }
     expect(draft.suggestedItems.length).toBeGreaterThan(0);
     expect(draft.suggestedItems.every((i) => i.tags.includes("suggested"))).toBe(true);
+  });
+
+  it("seeds a starting relationship and a personal card from the demo profile (forge-gaps)", async () => {
+    const draft = await forgeCharacter({ prompt: "a weary harbor-master", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(draft.profile.playerRelationship?.familiarity).toBe("acquainted");
+    expect(draft.profile.playerRelationship?.regard).toBe("friendly");
+    expect(draft.profile.playerRelationship?.presented?.lean).toBe("masks_warmth");
+    expect(draft.profile.playerRelationship?.note.length).toBeGreaterThan(0);
+    expect(draft.profile.socialCards).toHaveLength(1);
+    expect(draft.profile.socialCards?.[0]?.triggers).toEqual(["public_display"]);
+    expect(draft.profile.socialCards?.[0]?.id).toBeTruthy();
   });
 
   it("infers registry-valid creation traits from the sketch", async () => {

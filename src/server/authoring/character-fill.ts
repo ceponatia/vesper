@@ -9,7 +9,7 @@ import {
   type AttributeValue,
   type DiagnosticSink,
 } from "@/contracts";
-import { isPlaceholderName, isSpeciesUnset, mergeFillDraft } from "@/lib/character-fill";
+import { isPlaceholderName, isPlayerRelationshipUnset, isSpeciesUnset, mergeFillDraft } from "@/lib/character-fill";
 import {
   applyCharacterSectionPatch,
   forgeCharacterSection,
@@ -76,6 +76,17 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
   }
   if (p.traits.length > 0) lines.push(`Traits: ${p.traits.map((t) => `${t.id}=${t.value}`).join(", ")}`);
   if (p.schedule.length > 0) lines.push(`Daily rhythm: ${formatScheduleRhythm(p.schedule)}`);
+  if (!isPlayerRelationshipUnset(p)) {
+    const r = p.playerRelationship;
+    const mask =
+      r.presented?.lean === "masks_warmth" ? "; acts colder than she feels" : r.presented?.lean === "masks_dislike" ? "; acts warmer than she feels" : "";
+    lines.push(
+      `Starting relationship with the player: familiarity ${r.familiarity}, regard ${r.regard}${r.kind.trim() ? `, ${r.kind.trim()}` : ""}${r.history.trim() ? ` — ${r.history.trim()}` : ""}${mask}`,
+    );
+  }
+  if (p.socialCards.length > 0) {
+    lines.push(`Personal social cards: ${p.socialCards.map((c) => c.label).join("; ")}`);
+  }
   if (p.attributes.length > 0) {
     lines.push(`Attributes: ${p.attributes.map((a) => `${a.id}=${formatSheetValue(a.value)}`).join(", ")}`);
   }

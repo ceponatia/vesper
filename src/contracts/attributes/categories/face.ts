@@ -9,6 +9,7 @@ export const faceGroup = defineAttributeGroup("face", [
     valueType: "enum",
     description: "Overall face shape.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: [
       "oval", "round", "square", "heart", "diamond",
       "oblong", "triangular", "angular", "soft_rounded", "chiseled",
