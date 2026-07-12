@@ -4,7 +4,7 @@ Status: **draft** — the design detail behind [avatar-3d.plan.md](avatar-3d.pla
 Owns the **`AvatarCue`** contract and the avatar-only enums (`PoseLabel`,
 `ReactionLabel`, `AtmosphereLabel`, `TransitionLabel`) + the **asset manifest** and
 the **state→cue derivation**. `EmotionLabel` is imported from
-[mood.spec.md](mood.spec.md) (mood owns it). Read the plan first.
+[mood.spec.md](finished/mood.spec.md) (mood owns it). Read the plan first.
 
 Slug `avatar-3d`. The cue is **renderer-neutral** — sprites today, Rive/VRM later
 read the same contract.
@@ -74,7 +74,7 @@ Each field comes from state the engine already computes — **no new LLM leg**:
 
 | Cue field | Source |
 | --- | --- |
-| `character.emotion` + `intensity` | `deriveEmotionLabel(...)` ([mood.spec.md](mood.spec.md) §4) |
+| `character.emotion` + `intensity` | `deriveEmotionLabel(...)` ([mood.spec.md](finished/mood.spec.md) §4) |
 | `character.reaction` | the latest social-reaction band → `ReactionLabel` (liked→`nod`/`laugh`; disliked→`flinch`/`sigh`; surprise/boundary→`gasp`; flirt-low-affinity→`blush`) |
 | `character.pose` | `activityUpdates.posture` (free text) → `PoseLabel` via keyword map; default `idle` (a `poseId` registry is the later, cleaner source) |
 | `environment.atmosphere` | location ambient + director scene tone → `AtmosphereLabel`; default `calm` |
@@ -178,6 +178,6 @@ native and this question dissolves). Record the choice when made.
 - [avatar-3d.plan.md](avatar-3d.plan.md) — scope, renderer options, build order.
 - [avatar-3d.notes.md](avatar-3d.notes.md) — GPT's `AvatarCue`/`AvatarDirector`
   source design (Motion/Rive/VRM specifics).
-- [mood.spec.md](mood.spec.md) — `EmotionLabel` + `deriveEmotionLabel` (consumed
+- [mood.spec.md](finished/mood.spec.md) — `EmotionLabel` + `deriveEmotionLabel` (consumed
   here); `AtmosphereLabel` is defined here and imported there as a mood input.
 - `docs/images.md` — the identity-locked pipeline that generates the frames.

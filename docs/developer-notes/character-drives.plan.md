@@ -82,5 +82,5 @@ deflects, confesses.
 
 - [chat-initiative.plan.md](chat-initiative.plan.md) — life-event beats draw on
   drives for offscreen texture.
-- [memory-callbacks.plan.md](memory-callbacks.plan.md) — a reveal is a prime
+- [memory-callbacks.plan.md](finished/memory-callbacks.plan.md) — a reveal is a prime
   callback candidate.

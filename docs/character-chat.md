@@ -222,7 +222,7 @@ the transcript/summary/memory; **archive** leaves it intact by design; and "anot
 
 Fused recall is input-relevance-only, so shared history never resurfaced on its own —
 the character could never say "remember when…" unprompted. The memory-callback cue
-([developer-notes/memory-callbacks.plan.md](developer-notes/memory-callbacks.plan.md))
+([developer-notes/memory-callbacks.plan.md](developer-notes/finished/memory-callbacks.plan.md))
 fixes that with one low-frequency, one-turn tail line:
 
 - **Gate first, cost second** (`chat-callback.ts` `chatCallbackEligible`, pure): real
@@ -252,7 +252,7 @@ fixes that with one low-frequency, one-turn tail line:
 
 Emotions used to be meter-derived and reactive-only — a strong beat's deltas started
 decaying on the next tick, and regard moved on a flat ±5/turn clamp with no history.
-Emotional weather ([developer-notes/emotional-weather.plan.md](developer-notes/emotional-weather.plan.md),
+Emotional weather ([developer-notes/emotional-weather.plan.md](developer-notes/finished/emotional-weather.plan.md),
 owner rulings 2026-07-11) adds three layers, all in the pure `engine/chat-feeling.ts`:
 
 - **Persistent `feeling`** (`character_chat_state.feeling` jsonb): the pulse proposes a
@@ -290,7 +290,7 @@ Rollback-safe like everything else: `feeling` rides `storedChatStateSchema`, so
 
 The player can attach up to **4 photos per message** (owner ruling 2026-07-11 —
 multi-image from the start) and the character genuinely sees them
-([developer-notes/chat-image-input.plan.md](developer-notes/chat-image-input.plan.md)):
+([developer-notes/chat-image-input.plan.md](developer-notes/finished/chat-image-input.plan.md)):
 
 - **Upload** (`POST /api/chats/:chatId/attachments`, one photo per call): the composer
   downscales client-side (canvas, ≤1600px → JPEG), the server re-decodes with the
@@ -323,7 +323,7 @@ multi-image from the start) and the character genuinely sees them
 ## Selfies (character-sent photo messages)
 
 The character can send photos back
-([developer-notes/chat-selfies.plan.md](developer-notes/chat-selfies.plan.md), owner
+([developer-notes/chat-selfies.plan.md](developer-notes/finished/chat-selfies.plan.md), owner
 rulings 2026-07-11):
 
 - **Two triggers, one queue decision.** A player **request** (`detectSelfieRequest`,
@@ -359,7 +359,7 @@ rulings 2026-07-11):
 Chat renders used to anchor on the canonical avatar — always in the default outfit —
 so every scene argued the edit model out of repainting the reference's clothes, and
 settings rode a text sketch alone
-([developer-notes/chat-scene-references.plan.md](developer-notes/chat-scene-references.plan.md),
+([developer-notes/chat-scene-references.plan.md](developer-notes/finished/chat-scene-references.plan.md),
 owner rulings 2026-07-11):
 
 - **Current look** (`kind: "chat_look"`): an outfit-true, identity-locked variant of

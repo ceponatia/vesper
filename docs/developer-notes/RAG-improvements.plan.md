@@ -1,7 +1,7 @@
 # RAG improvements — plan
 
 Status: **draft** — but **items #1, #2, #4, and #6 shipped 2026-07-02** via
-[character-chat-standalone.plan.md](character-chat-standalone.plan.md) slice 7 (spec
+[character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md) slice 7 (spec
 §6.3), implemented in shared `src/server/memory/` so both lanes inherit: **#1** the
 relevance floor (measured via the new harness — `FACT_MIN_SCORE 0.25`,
 `EPISODE_MIN_SCORE 0.3`), **#2** per-query embedding + RRF fusion with per-source

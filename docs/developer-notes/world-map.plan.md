@@ -35,7 +35,7 @@ would have made **M2** obvious at a glance — a hot-spring world forged with **
 bath**, three location links pointing at a non-existent "The Grand Onsen Bath" that
 went unnoticed in the flat card list. The audit recommends bumping this plan's
 priority alongside the forge-canon reconciler
-([ux-audit.plan.md](ux-audit.plan.md) §2, which fixes the *cause*; this view
+([ux-audit.plan.md](finished/ux-audit.plan.md) §2, which fixes the *cause*; this view
 surfaces the *symptom*).
 
 ## Current state

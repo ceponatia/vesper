@@ -1,7 +1,7 @@
 # Conditions can't change appearance — `attributeEffects` is inert
 
 Status: **analysis / proposal** (2026-06-15). Supplement to
-[character-schema-audit.md](character-schema-audit.md) findings **B2** and **B3**.
+[character-schema-audit.md](finished/character-schema-audit.md) findings **B2** and **B3**.
 `ConditionEffect.attributeEffects` is defined, documented as *"overlaid while
 active,"* and never materialized. The attribute-overlay precedence tier built to
 carry exactly these effects (`condition`/`item`/`magic`/`injury`/`environment`)
@@ -83,7 +83,7 @@ change. The entire missing piece is the *writer*.
 
 Recommended: **A** (materialize, idempotently) + **B-ii** (a deterministic label
 map) + the **mutability gate** from
-[attribute-mutability.md](attribute-mutability.md). This closes B2 and revives the
+[attribute-mutability.md](finished/attribute-mutability.md). This closes B2 and revives the
 `condition` source for a real use case (part of B3).
 
 ### A. Materialize `attributeEffects` into overlays, rebuilt each turn
