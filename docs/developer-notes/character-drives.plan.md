@@ -1,8 +1,16 @@
 # Character drives — desires & secrets as gated inner life
 
-Status: **next** (planned 2026-07-11, from the character-chat & schema engagement
-review — seven-plan batch at the top of [roadmap.md](roadmap.md) §Next; effort
-**L**)
+Status: **active** (planned + ruled 2026-07-11; the **engine core shipped
+2026-07-11** — slices 1, 3 and 4: contracts (`personality/drives.ts`), the
+`character_chat_state.drives` column (migration `0035`), the archivist's 8th
+field + finalize fold (degraded keeps prior drives), the tail prompt law
+(withheld secrets carry the ruled full-but-scoped lie license; the default gate
+is familiarity ≥ familiar), the `secret_shared` milestone kind (panel glyph ❖ +
+a memory-callback boost), and the panel's ruled "What they want" list (open +
+revealed only). **Remaining: slice 2 — the authoring surface** (a forge
+profile-section for drives + a "Desires & secrets" editor card + redraft
+coverage); until it lands drives are authored via profile JSON / the state
+PATCH. The eval fixtures (`chat-secret-hold`/`-reveal`) also remain with it.)
 
 The character's interiority is one free-text `mindNote` (pulse-written, 1–3
 sentences) plus `openLoops` (conversational leftovers). There is no want she
@@ -51,18 +59,24 @@ deflects, confesses.
    band, in character) and `chat-secret-reveal` (reveal lands at band, files
    the milestone + fact).
 
-## Open questions
+## Rulings (owner, 2026-07-11)
 
-- Lying license: outright false statements below the band (models may
-  over-lie) or deflection-first with lies only under direct pressure? Lean
-  **deflection-first**, lie license reserved for `secrecy: "secret"`.
-- Does a reveal that contradicts an earlier in-fiction lie need special fact
-  supersedence, or does ordinary extraction supersedence already cover it?
-  (Likely free — verify in slice 3 tests.)
-- Multi-character substrate: drives are already keyed per (chat, participant) —
-  confirm the ensemble prompt frame
-  ([multi-character-chat.plan.md](multi-character-chat.plan.md)) budgets a
-  per-character want line.
+- **Full lie license** for `secret` drives below their band: she may lie freely
+  and proactively to protect the secret — the prompt scopes it hard ("the lie
+  protects THIS secret only; you are not otherwise dishonest") to contain the
+  over-lying failure mode. `guarded` drives never lie — withhold-until-asked
+  only.
+- **Default reveal gate: familiarity ≥ `familiar`** (the knowledge axis) when a
+  `secret` drive carries no authored `revealBand`.
+- **Relationship panel shows open drives only** ("what she wants"); guarded and
+  unrevealed secrets stay invisible until the reveal lands (which is already a
+  `secret_shared` milestone).
+- Reveal facts: ordinary archivist extraction covers a spoken reveal (it IS a
+  disclosure in the exchange) — no special reveal-fact wiring; the milestone is
+  the mechanical record. (Resolves the supersedence open question.)
+- Multi-character note: drives stay keyed per (chat, participant); the ensemble
+  frame's per-character want line is [multi-character-chat.plan.md](multi-character-chat.plan.md)'s
+  to budget.
 
 ## Cross-links
 

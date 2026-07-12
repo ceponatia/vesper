@@ -106,6 +106,22 @@ function PanelBody({ chatId }: { chatId: string }) {
         </section>
       ) : null}
 
+      {/* Drives (character-drives.plan.md, ruled): open wants + revealed secrets only —
+          guarded/unrevealed drives stay hidden until play surfaces them. */}
+      {data.wants.length > 0 ? (
+        <section>
+          <SectionHeading>What they want</SectionHeading>
+          <ul className="flex flex-col gap-1 text-sm text-paper-300">
+            {data.wants.map((w, i) => (
+              <li key={`${i}:${w.want}`}>
+                {w.want}
+                {w.why ? <span className="text-paper-500"> — {w.why}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <StorySoFar chatId={chatId} storySoFar={data.storySoFar} onRebuilt={() => rel.reload({ silent: true })} />
 
       <ExportSection chatId={chatId} />
@@ -214,6 +230,7 @@ const MILESTONE_GLYPHS: Record<MilestoneKind, { glyph: string; className: string
   stage_down: { glyph: "↓", className: "text-paper-500" },
   familiarity_up: { glyph: "◆", className: "text-accent-300" },
   strong_reaction: { glyph: "!", className: "text-paper-300" },
+  secret_shared: { glyph: "❖", className: "text-accent-300" },
   player_marked: { glyph: "★", className: "text-accent-300" },
 };
 

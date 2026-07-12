@@ -167,8 +167,9 @@ one-shot `pending_skip_note`), `scene_auto` (`"off" | "milestones"`, the slice-9
 auto-scene toggle — text with headroom, never a boolean), `scene_memory` (the
 accumulating narrator-imagined setting — see §Scene memory), `callback_history`
 (the memory-callback anti-repeat ring ≤20 — see §Memory callbacks), `feeling`
-(the persistent feeling + bruise — see §Emotional weather), and `selfie_history`
-(the selfie-send ring ≤20 behind the offer cooldown — see §Selfies). `upsertChatState` is the
+(the persistent feeling + bruise — see §Emotional weather), `selfie_history`
+(the selfie-send ring ≤20 behind the offer cooldown — see §Selfies), and `drives`
+(the runtime desires & secrets — see §Drives). `upsertChatState` is the
 **one** column-list source shared by the guarded (mid-exchange) and unguarded
 (author-edit) writers; `ChatStateEdit` covers every stored column (inspector-grade —
 open loops, memory queries, surfaced cues, attribute overlays, scene memory included). State is
@@ -381,6 +382,33 @@ owner rulings 2026-07-11):
   (`deleteChatAssets`), and self-healing: any lost race, failed render (row keeps
   `meta.error`), or missing file simply re-fires on the next trigger.
 
+## Drives (desires & secrets)
+
+The character's motive force
+([developer-notes/character-drives.plan.md](developer-notes/character-drives.plan.md),
+owner rulings 2026-07-11): ≤3 authored wants on `profile.drives`
+(`contracts/personality/drives.ts` — `want`/`why`/`secrecy: open|guarded|secret` +
+an optional `revealBand`), seeded into `character_chat_state.drives` (migration
+0035) with runtime `progress`/`revealed`/`resolved`.
+
+- **Prompt law** (`buildDrivesSection`, volatile tail): open drives steer; `guarded`
+  never volunteers (comes out only if asked/earned); a `secret` below its reveal
+  band is **protected with a full lie license** (ruled) — scoped hard: "the lying is
+  for THIS secret only; in everything else you are as honest as you ever are". The
+  default gate for an unbanded secret is **familiarity ≥ familiar** (ruled); at/above
+  the gate the block flips to an invited reveal ("a big beat — don't force it").
+- **Archivist 8th field** `driveUpdates`: progress/reveal/resolve on existing drives,
+  matched by exact `want` (the prompt lists them, secrets marked); a degraded
+  archivist keeps prior drives. A newly-revealed secret lands a **`secret_shared`
+  milestone** (new kind — panel glyph ❖, and a prime memory-callback boost); the
+  spoken reveal files as an ordinary extracted fact (ruled — no special wiring).
+- **Panel** (ruled): the Relationship panel's "What they want" lists open wants +
+  revealed secrets only; guarded/unrevealed drives stay invisible until play
+  surfaces them. State tools/`ChatStateEdit` expose the full set (inspector-grade).
+- **Authoring**: the plan's remaining slice — a forge section + a "Desires &
+  secrets" editor card; until it lands, drives are authored via the profile JSON /
+  state PATCH.
+
 ## Post-turn fan-out
 
 `finalizeChatState` runs **pulse ‖ archivist-lite** in parallel (`Promise.all`), then one
@@ -391,7 +419,7 @@ guarded state write:
   optional **feeling proposal** (§Emotional weather: label + cause only; intensity
   derives from the curve's move). Degrades to drift-only state. Skipped for
   `continue` beats (no player act to react to).
-- **Archivist-lite** (`runChatArchivist`): one call emitting seven fields — the episode
+- **Archivist-lite** (`runChatArchivist`): one call emitting eight fields — the episode
   summary, `FactDraft[]`, next-turn `memoryQueries`, `attributeChanges` (applied through
   the `overlaySourceMayChange` inherent-trait guard), `openLoops` (the full ≤3 list
   each time, prior loops fed back through the prompt; a **degraded** archivist keeps the
@@ -534,6 +562,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Player photos (upload / claim / vision — §Player photos) | `server/images/upload.ts` (`uploadChatAttachment`) + `assets.ts` (`claimChatAttachments`/`deleteChatUploads`) + `server/engine/chat-vision.ts`; composer prep in `components/chat/attachment-file.ts` |
 | Selfies (triggers / gates / retry — §Selfies) | `server/engine/chat-selfie.ts` (pure) + pulse `sentPhoto` + `chatSelfieLine` in `prompts/character-chat.ts` + the selfie branch in `images/character-scene.ts`; "Failed" placeholder in `components/chat/chat-scene-moments.tsx` |
 | Scene reference anchors (look / place — §Scene reference anchors) | `server/images/chat-look.ts` (key + renders) + `server/engine/chat-reference-enqueue.ts` / `chat-reference-images.ts` (jobs) + consumption in `images/character-scene.ts` and `scene/queue.ts` |
+| Drives (schemas / gate / updates — §Drives) | `contracts/personality/drives.ts` (pure) + `buildDrivesSection` in `prompts/character-chat.ts` + the finalize fold in `chat-state.ts` |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |

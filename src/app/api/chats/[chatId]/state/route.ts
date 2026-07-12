@@ -8,6 +8,7 @@ import {
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
+  chatDrivesSchema,
   chatSceneModels,
   DiagnosticCollector,
   effectiveTraitValue,
@@ -76,6 +77,8 @@ const editBodySchema = z.object({
   feeling: chatFeelingStateSchema.optional(),
   /** Selfie-send ring (chat-selfies.plan.md) — inspector-grade reset/edit. */
   selfieHistory: selfieHistorySchema.optional(),
+  /** Runtime drives (character-drives.plan.md) — scenario/state-tools edit surface. */
+  drives: chatDrivesSchema.optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

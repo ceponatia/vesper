@@ -4,6 +4,9 @@ import {
   activeConditionSchema,
   appendMilestones,
   appendRelationshipSample,
+  applyDriveUpdates,
+  chatDrivesSchema,
+  seedChatDrives,
   applyMeterDrift,
   authoredRecordToLive,
   chatMemoryTraceSchema,
@@ -51,6 +54,7 @@ import {
   type ChatPulse,
   type ChatPulseTrace,
   type ChatSceneMemory,
+  type ChatDrive,
   type ChatSkipAmount,
   type DiagnosticSink,
   type EmotionLabel,
@@ -185,6 +189,11 @@ export interface ChatState {
    * chat-clock minute each queued — the unprompted-offer cooldown's memory.
    */
   selfieHistory: SelfieEntry[];
+  /**
+   * Runtime drives (character-drives.plan.md): the authored wants + play's
+   * progress/revealed/resolved — the drive prompt law and archivist updates.
+   */
+  drives: ChatDrive[];
   /** Player time skips (spec §8.1) — the future time-effects system's data, recorded now. */
   skipHistory: SkipRecord[];
   /** One-shot skip note (spec §8.1): rendered as a volatile prompt line next exchange, then cleared. */
@@ -247,6 +256,8 @@ export interface ChatStateSnapshot {
   feeling: ChatFeelingState;
   /** Selfie-send ring (chat-selfies.plan.md) — for the state-tools/inspector view. */
   selfieHistory: SelfieEntry[];
+  /** Runtime drives (character-drives.plan.md) — panel shows open ones; tools show all. */
+  drives: ChatDrive[];
   /**
    * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
    * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
@@ -343,6 +354,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     callbackHistory: [],
     feeling: emptyChatFeelingState(),
     selfieHistory: [],
+    drives: seedChatDrives(profile.drives ?? []),
     skipHistory: [],
     pendingSkipNote: "",
     sceneAuto: "off",
@@ -382,6 +394,7 @@ export async function loadChatState(
       callbackHistory: characterChatState.callbackHistory,
       feeling: characterChatState.feeling,
       selfieHistory: characterChatState.selfieHistory,
+      drives: characterChatState.drives,
       skipHistory: characterChatState.skipHistory,
       pendingSkipNote: characterChatState.pendingSkipNote,
       sceneAuto: characterChatState.sceneAuto,
@@ -434,6 +447,7 @@ export async function loadChatState(
     callbackHistory: parseOr(callbackHistorySchema, row.callbackHistory, [], sink, "character_chat_state.callback_history"),
     feeling: parseOr(chatFeelingStateSchema, row.feeling, emptyChatFeelingState(), sink, "character_chat_state.feeling"),
     selfieHistory: parseOr(selfieHistorySchema, row.selfieHistory, [], sink, "character_chat_state.selfie_history"),
+    drives: parseOr(chatDrivesSchema, row.drives, [], sink, "character_chat_state.drives"),
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
     pendingSkipNote: row.pendingSkipNote,
     sceneAuto: row.sceneAuto,
@@ -477,6 +491,7 @@ const storedChatStateSchema = z.object({
   callbackHistory: callbackHistorySchema.catch([]).default([]),
   feeling: chatFeelingStateSchema.catch(emptyChatFeelingState()).default(emptyChatFeelingState()),
   selfieHistory: selfieHistorySchema.catch([]).default([]),
+  drives: chatDrivesSchema.catch([]).default([]),
   skipHistory: skipHistorySchema.catch([]).default([]),
   pendingSkipNote: z.string().catch("").default(""),
   sceneAuto: z.string().catch("off").default("off"),
@@ -926,6 +941,7 @@ export async function finalizeChatState(input: {
       playerName: input.playerName,
       exchange: input.exchange,
       openLoops: input.driftedState.openLoops,
+      drives: input.driftedState.drives,
       sink: input.sink,
     }),
   ]);
@@ -1034,6 +1050,21 @@ export async function finalizeChatState(input: {
     regardDelta: pulseTrace?.regardDelta ?? 0,
     concept: pulseTrace?.concept ?? null,
   });
+  // Drive movement (character-drives.plan.md): fold the archivist's driveUpdates
+  // into the runtime set; a degraded archivist keeps the prior drives (the loops
+  // rule). Newly-revealed secrets land as `secret_shared` milestones — the spoken
+  // reveal itself files as an ordinary extracted fact (ruled: no special wiring).
+  const driveResult = archivist.value
+    ? applyDriveUpdates(input.driftedState.drives, archivist.value.driveUpdates)
+    : { drives: input.driftedState.drives, revealed: [] };
+  for (const revealedDrive of driveResult.revealed) {
+    exchangeMilestones.push({
+      at,
+      kind: "secret_shared",
+      label: `${input.characterName} shared a secret — ${revealedDrive.want}`,
+      messageId: input.assistantMessageId,
+    });
+  }
   const milestones = appendMilestones(input.driftedState.milestones, exchangeMilestones);
   // Selfie send (chat-selfies.plan.md): the pulse read the reply as actually sending
   // a photo AND a deterministic gate armed it. Recording the send here (the cooldown
@@ -1078,6 +1109,7 @@ export async function finalizeChatState(input: {
       relationshipHistory,
       milestones,
       selfieHistory,
+      drives: driveResult.drives,
       sceneMemory,
       ...outfitPatch,
       // The skip note is one-shot (spec §8.1): this exchange rendered it, so it clears.
@@ -1144,6 +1176,7 @@ async function upsertChatState(
   const callbackHistory = JSON.stringify(state.callbackHistory);
   const feeling = JSON.stringify(state.feeling);
   const selfieHistory = JSON.stringify(state.selfieHistory);
+  const drives = JSON.stringify(state.drives);
   const skipHistory = JSON.stringify(state.skipHistory);
   const sceneMemory = JSON.stringify(state.sceneMemory);
   const guard = guardMessageId
@@ -1151,9 +1184,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, feeling, selfie_history, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, feeling, selfie_history, drives, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1179,6 +1212,7 @@ async function upsertChatState(
       callback_history = excluded.callback_history,
       feeling = excluded.feeling,
       selfie_history = excluded.selfie_history,
+      drives = excluded.drives,
       skip_history = excluded.skip_history,
       pending_skip_note = excluded.pending_skip_note,
       scene_auto = excluded.scene_auto,
@@ -1244,6 +1278,8 @@ export interface ChatStateEdit {
   feeling?: ChatFeelingState;
   /** Selfie-send ring (chat-selfies.plan.md) — inspector-grade reset/edit surface. */
   selfieHistory?: SelfieEntry[];
+  /** Runtime drives (character-drives.plan.md) — scenario/state-tools edit surface. */
+  drives?: ChatDrive[];
 }
 
 /**
@@ -1292,6 +1328,7 @@ export async function editChatState(args: {
   if (patch.callbackHistory !== undefined) next.callbackHistory = patch.callbackHistory;
   if (patch.feeling !== undefined) next.feeling = patch.feeling;
   if (patch.selfieHistory !== undefined) next.selfieHistory = patch.selfieHistory;
+  if (patch.drives !== undefined) next.drives = patch.drives.slice(0, 3);
   await persistChatState(chatId, characterId, next);
   return next;
 }
@@ -1408,6 +1445,7 @@ export function chatStateSnapshot(
     callbackHistory: state.callbackHistory,
     feeling: state.feeling,
     selfieHistory: state.selfieHistory,
+    drives: state.drives,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
   };

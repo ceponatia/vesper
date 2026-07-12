@@ -13,6 +13,7 @@ import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
+import { driveWithheld, type ChatDrive } from "@/contracts/personality/drives";
 import { regardBandForValue } from "@/contracts/relationships/bands";
 import { composeRelationshipLaw, dispositionContrastLine } from "@/contracts/relationships/law";
 import type { RelationshipTexture } from "@/contracts/relationships/record";
@@ -129,6 +130,13 @@ export interface CharacterChatPromptInput {
      * line and the response-shape mood pin. Absent/empty ⇒ both render as before.
      */
     feeling?: ChatFeelingState;
+    /**
+     * Runtime drives (character-drives.plan.md): rendered as the "What you want"
+     * tail block — open drives steer, guarded ones withhold-until-asked, secret
+     * ones are protected below their reveal band (full-but-scoped lie license,
+     * owner ruling 2026-07-11). Absent/empty ⇒ no block.
+     */
+    drives?: ChatDrive[];
   };
   /**
    * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): the
@@ -317,6 +325,33 @@ export function chatSelfieLine(selfie: "request" | "offer" | undefined, name: st
     return `You are apart and texting, and things are warm between you. If this beat genuinely invites it, ${name} may decide to send ${player} a photo of ${name}'s own accord — mention it naturally in a text. Entirely optional: most turns should NOT include one; never force it, and don't narrate the photo's contents in detail.`;
   }
   return "";
+}
+
+/**
+ * The drives block (character-drives.plan.md): the character's motive force as
+ * prompt LAW. Wording per secrecy tier + gate (owner rulings): a withheld secret
+ * carries the full-but-SCOPED lie license; a gate-cleared secret invites the
+ * reveal as a big beat; guarded never volunteers. Resolved drives drop out.
+ */
+function buildDrivesSection(state: NonNullable<CharacterChatPromptInput["state"]>, player: string): string {
+  const drives = (state.drives ?? []).filter((d) => !d.resolved);
+  if (!drives.length) return "";
+  const axes = { regard: state.regard, familiarity: state.familiarity ?? 0 };
+  const lines = drives.map((d) => {
+    const why = d.why.trim() ? ` — ${d.why.trim()}` : "";
+    const progress = d.progress.trim() ? ` Lately: ${d.progress.trim()}.` : "";
+    if (d.secrecy === "secret" && !d.revealed && driveWithheld(d, axes)) {
+      return `- A SECRET: you want ${d.want}${why}.${progress} ${player} must not learn this yet — steer around it, deflect, change the subject, and when cornered you may lie outright, inventing whatever cover story protects it. The lying is for THIS secret only; in everything else you are as honest as you ever are.`;
+    }
+    if (d.secrecy === "secret" && !d.revealed) {
+      return `- A secret you could finally share: you want ${d.want}${why}.${progress} Telling ${player} has started to feel possible — when a moment genuinely invites it, letting this out is a big beat. Don't force it; let it land.`;
+    }
+    if (d.secrecy === "guarded") {
+      return `- You want ${d.want}${why}.${progress} You don't volunteer this — it comes out only if ${player} genuinely asks or earns it.`;
+    }
+    return `- You want ${d.want}${why}.${progress}${d.secrecy === "secret" ? " (now in the open between you.)" : ""}`;
+  });
+  return `What you want (your own motive force — let it steer what you pursue, offer, and withhold; never recite this list):\n${lines.join("\n")}`;
 }
 
 /** Regard bands where a callback reads as warm nostalgia (at/above `warm`). */
@@ -1025,6 +1060,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
       : "",
     input.memory ? buildMemorySection(input.memory) : "",
     stateSection,
+    input.state ? buildDrivesSection(input.state, playerName ?? "the player") : "",
     sceneSection,
     // The first-exchange scene directive (Fly screenshot, 2026-07-10): on a brand-new chat the
     // Scene block is empty and `sceneChanged` can't fire (nothing to change FROM), so no rule

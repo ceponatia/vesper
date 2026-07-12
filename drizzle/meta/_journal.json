@@ -246,6 +246,13 @@
       "when": 1783825135647,
       "tag": "0034_skinny_dazzler",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783828237789,
+      "tag": "0035_nifty_jazinda",
+      "breakpoints": true
     }
   ]
 }

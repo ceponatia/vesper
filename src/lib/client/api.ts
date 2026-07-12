@@ -920,6 +920,8 @@ export const chatRelationshipSchema = z.object({
   /** The rolling summary, read-only — "the story so far" (§7.3). */
   storySoFar: textOr(""),
   openLoops: z.array(z.string()).catch([]),
+  /** Open wants + revealed secrets (character-drives.plan.md, ruled) — never unrevealed ones. */
+  wants: z.array(z.object({ want: z.string(), why: z.string().catch("") })).catch([]),
   clockMinutes: z.number().catch(0),
 });
 export type ChatRelationship = z.infer<typeof chatRelationshipSchema>;

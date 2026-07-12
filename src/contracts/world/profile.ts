@@ -3,6 +3,7 @@ import { attributeValueSchema } from "../attributes/value";
 import { calendarStartSchema, DEFAULT_CALENDAR_START } from "@/lib/clock";
 import { meterDefinitionSchema } from "../meters/registry";
 import { socialReactionCardSchema } from "../personality/cards";
+import { drivesSchema } from "../personality/drives";
 import { preferenceSchema } from "../personality/preference";
 import { traitValueSchema } from "../personality/traits/value";
 import { stageToBandIds } from "../relationships/bands";
@@ -78,6 +79,11 @@ export const characterProfileSchema = z.object({
    * cards (the personal line beats society's). Default `[]` ⇒ no character cards.
    */
   socialCards: z.array(socialReactionCardSchema).default([]),
+  /**
+   * Character drives (character-drives.plan.md): ≤3 authored wants with secrecy
+   * levels — the inner life chat state seeds from and the drive prompt law reads.
+   */
+  drives: drivesSchema,
   /**
    * Atomic personality traits (personality-and-state.spec.md §3): numeric scalars
    * with registry-defined bands, carrying the `AttributeValue` provenance shape

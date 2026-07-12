@@ -470,6 +470,12 @@ export const characterChatState = pgTable(
      * back with the pre-exchange snapshot like the rest of the state.
      */
     selfieHistory: jsonb("selfie_history").notNull().default([]),
+    /**
+     * ChatDrive[] (character-drives.plan.md): the character's runtime drives —
+     * authored wants seeded from `profile.drives` plus play's `progress`/`revealed`/
+     * `resolved`. The drive prompt law and the archivist's driveUpdates read/write it.
+     */
+    drives: jsonb("drives").notNull().default([]),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],

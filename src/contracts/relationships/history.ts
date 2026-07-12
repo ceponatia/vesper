@@ -39,6 +39,7 @@ export const milestoneKindSchema = z.enum([
   "stage_down",
   "familiarity_up",
   "strong_reaction",
+  "secret_shared",
   "player_marked",
 ]);
 export type MilestoneKind = z.infer<typeof milestoneKindSchema>;

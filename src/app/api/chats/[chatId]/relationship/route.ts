@@ -42,6 +42,11 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
     milestones: state.milestones,
     storySoFar: summary?.summary ?? "",
     openLoops: state.openLoops,
+    // Drives (character-drives.plan.md, ruled): OPEN wants + revealed secrets only —
+    // guarded/unrevealed drives stay invisible until play surfaces them.
+    wants: state.drives
+      .filter((d) => !d.resolved && (d.secrecy === "open" || d.revealed))
+      .map((d) => ({ want: d.want, why: d.why })),
     clockMinutes: state.clockMinutes,
   });
 });
