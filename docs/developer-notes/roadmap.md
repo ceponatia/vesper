@@ -66,7 +66,10 @@ are the recorded remainders._
   Two sibling owner-gated runs live in
   [narrator-prompt-consolidation.plan.md](finished/narrator-prompt-consolidation.plan.md)
   §Rulings & leftovers: the `mt-chat-*` longitudinal baseline and the
-  `CHAT_PROMPT_LAYOUT` A/B before its default flips.
+  `CHAT_PROMPT_LAYOUT` A/B before its default flips. The **multi-character
+  eval fixtures** (followups ruling 7 — the wrap-up pass's one deferred item;
+  asymmetric-mask pair, away-mention gossip, alone-player cutaway) ride this
+  same run.
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -119,7 +122,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **Multi-character & forge wrap-up — the owner-rulings pass (all 13 rulings)** —
-  [multi-character-chat.followups.md](multi-character-chat.followups.md) — 2026-07-12 —
+  [multi-character-chat.followups.md](finished/multi-character-chat.followups.md) — 2026-07-12 —
   forge re-draft = full tab re-sync + the portrait review dialog; preset
   relationship records, the matrix player column, third-person pair law; the
   chat-wide/per-character schema split (scenario on the chat row — migrations
@@ -127,7 +130,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   selfies/callbacks/sensory-focus/enactment, per-character sheets +
   `?characterId=` state targeting.
 - **Multi-character chat — the substrate (all four slices)** —
-  [multi-character-chat.plan.md](multi-character-chat.plan.md) — 2026-07-12 —
+  [multi-character-chat.plan.md](finished/multi-character-chat.plan.md) — 2026-07-12 —
   a conversation holds up to 4 full characters: roster routes + panel,
   per-character state with presence + activity recency (migration 0037), the
   one-block ensemble prompt frame (roster-of-1 byte-identical, asserted),
@@ -135,7 +138,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   tier-1 per-member memory legs, witness memory writes, archivist presence
   confirmation. Substrate simplifications recorded in the plan.
 - **Relationship model v2 — familiarity × regard (complete; slice 6 matrix)** —
-  [relationship-model.plan.md](relationship-model.plan.md) — 2026-07-12 —
+  [relationship-model.plan.md](finished/relationship-model.plan.md) — 2026-07-12 —
   the matrix: `character_chat_relationships` + library-default
   `character_relationships` (migration 0038), creation/join seeding, the
   in-chat pair editor (shared-cell, mirrored stances, asymmetric toggle), the
@@ -144,7 +147,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   (preset band pickers, third-person pair-law port, multi-char eval fixtures)
   + the slice-7 sessions earmark are recorded in the plan.
 - **Library UX — the follow-up pass** —
-  [library-ux.plan.md](library-ux.plan.md) — 2026-07-12 — facets for the other
+  [library-ux.plan.md](finished/library-ux.plan.md) — 2026-07-12 — facets for the other
   libraries (characters species/gender/world-usage, locations scale/world-usage,
   social-card tier/trigger), the tabbed Gallery image hub (scenes/portraits/
   entity art, view modes, avatar chip filters, favorites migration 0036,
