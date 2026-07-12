@@ -6,7 +6,6 @@ import {
   characterProfileSchema,
   chatActionIdSchema,
   CHAT_MIND_NOTE_MAX_CHARS,
-  CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   chatDrivesSchema,
   chatSceneModels,
@@ -60,7 +59,7 @@ const editBodySchema = z.object({
   mindNote: z.string().trim().max(CHAT_MIND_NOTE_MAX_CHARS).optional(),
   meters: z.record(z.string(), z.number()).optional(),
   conditions: z.array(activeConditionSchema).optional(),
-  outfit: z.string().max(CHAT_OUTFIT_MAX_CHARS).optional(),
+  outfit: z.string().optional(),
   outfitExposed: z.boolean().optional(),
   activeSocialCards: z.array(socialReactionCardSchema).optional(),
   // Inspector-grade fields (character-chat-standalone.spec.md §6.1): the dev/state-tools

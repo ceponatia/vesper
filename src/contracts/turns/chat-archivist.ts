@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { factDraftSchema } from "../facts/taxonomy";
 import { attributeChangeSchema } from "./agent-results";
-import { CHAT_OUTFIT_MAX_CHARS } from "./chat-pulse";
 import { DRIVES_MAX, driveUpdateSchema } from "../personality/drives";
 import { chatSceneProposalSchema } from "./chat-scene-memory";
 
@@ -78,12 +77,13 @@ export const chatArchivistSchema = z.object({
    */
   outfit: z
     .object({
-      // Truncate, never reject: an overlong description must not degrade to "no change".
+      // Uncapped by owner preference (2026-07-12): outfits list many garments and
+      // truncation cut items off; `.catch("")` still keeps a bad value from failing the turn.
       description: z
         .string()
         .catch("")
         .default("")
-        .transform((s) => s.trim().slice(0, CHAT_OUTFIT_MAX_CHARS)),
+        .transform((s) => s.trim()),
       exposed: z.boolean().catch(false).default(false),
     })
     .catch({ description: "", exposed: false })
@@ -158,7 +158,7 @@ export const chatPersonalNotesSchema = z.object({
         .string()
         .catch("")
         .default("")
-        .transform((s) => s.trim().slice(0, CHAT_OUTFIT_MAX_CHARS)),
+        .transform((s) => s.trim()),
       exposed: z.boolean().catch(false).default(false),
     })
     .catch({ description: "", exposed: false })

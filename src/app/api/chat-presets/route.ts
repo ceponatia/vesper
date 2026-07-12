@@ -3,7 +3,6 @@ import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   authoredRelationshipRecordSchema,
-  CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   socialReactionCardSchema,
 } from "@/contracts";
@@ -21,7 +20,7 @@ import { chatScenarioPresets, db } from "@/server/db";
 const createBodySchema = z.object({
   name: z.string().trim().min(1).max(80),
   premise: z.string().trim().max(CHAT_PREMISE_MAX_CHARS).default(""),
-  outfit: z.string().max(CHAT_OUTFIT_MAX_CHARS).default(""),
+  outfit: z.string().default(""),
   outfitExposed: z.boolean().default(false),
   socialCards: z.array(socialReactionCardSchema).default([]),
   startingRelationship: authoredRelationshipRecordSchema.default(() => authoredRelationshipRecordSchema.parse({})),
