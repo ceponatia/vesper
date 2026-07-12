@@ -75,6 +75,7 @@ export const hairGroup = defineAttributeGroup("hair", [
     valueType: "enum",
     description: "Overall hair length.",
     mutability: "mutable",
+    renderVisual: true,
     allowedValues: [
       "shaved",
       "buzzed",
@@ -96,6 +97,7 @@ export const hairGroup = defineAttributeGroup("hair", [
     valueType: "enum",
     description: "Natural curl pattern.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: ["straight", "wavy", "curly", "coily", "kinky"],
     bodyLocationId: "hair",
     aliases: ["hair texture"],

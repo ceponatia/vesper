@@ -7,6 +7,7 @@ import {
   type Drive,
   type ItemDefinition,
   type Preference,
+  type SocialReactionCard,
   type TraitValue,
 } from "@/contracts";
 
@@ -41,8 +42,11 @@ import {
  * - schedule: all-or-nothing like the outfit (chat-initiative.plan.md slice 4)
  *   — a daily rhythm is one coherent day, and an additive union could stack
  *   overlapping windows; any authored row keeps the whole set.
- * - playerRelationship, socialCards: never filled (the forge does not generate
- *   them); always the base's.
+ * - playerRelationship (forge-gaps.plan.md gap 1): adopted from the generated
+ *   draft only while the base's is still the untouched default — any authored
+ *   band, text, or mask freezes the whole record (mirrors the species cluster).
+ * - socialCards (gap 2): additive, deduped by normalized label — authored
+ *   cards never change; generated ones append.
  */
 
 /** The draft shape both the server and client drafts satisfy structurally. */
@@ -78,6 +82,24 @@ export function isSpeciesUnset(profile: CharacterProfile): boolean {
   );
 }
 
+/**
+ * True while the starting relationship is still exactly the blank-create
+ * default — the only state in which the fill may adopt a generated one. Any
+ * authored band, text, mask, or looming flag freezes the whole record.
+ */
+export function isPlayerRelationshipUnset(profile: CharacterProfile): boolean {
+  const r = profile.playerRelationship;
+  return (
+    r.familiarity === "strangers" &&
+    r.regard === "neutral" &&
+    r.kind.trim() === "" &&
+    r.history.trim() === "" &&
+    r.presented === undefined &&
+    r.looming === false &&
+    r.note.trim() === ""
+  );
+}
+
 const keepText = (base: string, incoming: string): string => (base.trim() !== "" ? base : incoming);
 
 const keepOptionalText = (base: string | undefined, incoming: string | undefined): string | undefined =>
@@ -106,6 +128,12 @@ function unionById<T extends { id: string }>(base: readonly T[], incoming: reado
 function unionPreferences(base: readonly Preference[], incoming: readonly Preference[]): Preference[] {
   const present = new Set(base.map((p) => p.target.trim().toLowerCase()));
   return [...base, ...incoming.filter((p) => !present.has(p.target.trim().toLowerCase()))];
+}
+
+/** Additive card union: authored cards lead untouched; generated ones append, deduped by normalized label. */
+function unionCards(base: readonly SocialReactionCard[], incoming: readonly SocialReactionCard[]): SocialReactionCard[] {
+  const present = new Set(base.map((c) => c.label.trim().toLowerCase()));
+  return [...base, ...incoming.filter((c) => c.label.trim() !== "" && !present.has(c.label.trim().toLowerCase()))];
 }
 
 /** Additive drive union up to the cap: authored drives lead untouched; generated ones (deduped by want) fill the rest. */
@@ -157,6 +185,10 @@ export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: Filla
       aliases: unionText(base.profile.aliases, incoming.profile.aliases),
       defaultOutfit: outfitAuthored ? base.profile.defaultOutfit : incoming.profile.defaultOutfit,
       schedule: base.profile.schedule.length > 0 ? base.profile.schedule : incoming.profile.schedule,
+      playerRelationship: isPlayerRelationshipUnset(base.profile)
+        ? incoming.profile.playerRelationship
+        : base.profile.playerRelationship,
+      socialCards: unionCards(base.profile.socialCards, incoming.profile.socialCards),
     },
   };
 }

@@ -27,12 +27,24 @@ export const driveRevealBandSchema = z.object({
 });
 export type DriveRevealBand = z.infer<typeof driveRevealBandSchema>;
 
+// Over-length text TRUNCATES at the cap rather than failing the field (forge-gaps
+// ruling 2026-07-12): the old `.max()` shapes made an over-cap `want` drop the whole
+// row and an over-cap `why` catch-wipe to "" — losing authored content wholesale
+// where cutting it at the cap loses only the overflow. The editor's maxLength +
+// live counters keep humans inside the caps; this is the trust-boundary backstop.
+const cappedText = (max: number) =>
+  z
+    .string()
+    .catch("")
+    .default("")
+    .transform((s) => s.trim().slice(0, max));
+
 /** The authored drive (CharacterProfile.drives). */
 export const driveSchema = z.object({
-  /** What she wants — a short phrase ("to reopen the gallery under her own name"). */
-  want: z.string().trim().min(1).max(DRIVE_WANT_MAX_CHARS),
+  /** What she wants — a short phrase ("to reopen the gallery under her own name"). An empty want still drops the row. */
+  want: cappedText(DRIVE_WANT_MAX_CHARS).pipe(z.string().min(1)),
   /** Why it matters — one line of motive; "" is fine. */
-  why: z.string().trim().max(DRIVE_WHY_MAX_CHARS).catch("").default(""),
+  why: cappedText(DRIVE_WHY_MAX_CHARS),
   secrecy: driveSecrecySchema.default("open"),
   /** Secret-only: the gate that unlocks the reveal. Absent ⇒ the ruled default (familiarity ≥ familiar). */
   revealBand: driveRevealBandSchema.optional().catch(undefined),
@@ -50,7 +62,7 @@ export const drivesSchema = z
 /** The runtime drive on chat state: the authored shape + what play has done to it. */
 export const chatDriveSchema = driveSchema.extend({
   /** The archivist's latest progress note ("she told her landlord; the lease falls through Friday"). */
-  progress: z.string().trim().max(DRIVE_PROGRESS_MAX_CHARS).catch("").default(""),
+  progress: cappedText(DRIVE_PROGRESS_MAX_CHARS),
   /** A `secret` that has been spoken aloud to the player (a `secret_shared` milestone marked it). */
   revealed: z.boolean().catch(false).default(false),
   /** The fiction resolved it (achieved or abandoned) — kept for texture, no longer pursued. */
@@ -90,9 +102,9 @@ export function driveWithheld(drive: ChatDrive, axes: { regard: number; familiar
 
 /** One archivist drive update, matched to an existing drive by its `want` text. */
 export const driveUpdateSchema = z.object({
-  want: z.string().trim().min(1).max(DRIVE_WANT_MAX_CHARS),
+  want: cappedText(DRIVE_WANT_MAX_CHARS).pipe(z.string().min(1)),
   /** Fresh progress note; "" keeps the prior one. */
-  progress: z.string().trim().max(DRIVE_PROGRESS_MAX_CHARS).catch("").default(""),
+  progress: cappedText(DRIVE_PROGRESS_MAX_CHARS),
   /** The character spoke this (previously secret) drive aloud to the player this exchange. */
   revealed: z.boolean().catch(false).default(false),
   /** The fiction resolved it (achieved / abandoned). */

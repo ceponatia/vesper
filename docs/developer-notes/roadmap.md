@@ -107,6 +107,11 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Forge gaps** — [forge-gaps.plan.md](forge-gaps.plan.md) — 2026-07-12 — the forge now
+  drafts the starting relationship + personal social cards from the concept; a
+  `renderVisual` attribute tier keeps scene renders consistent; secret reveal gates
+  ceiling mid-arc; drive caps truncate (with editor counters) instead of clipping
+  silently; the narrator stripper cuts trailing "Note for the parser" blocks.
 - **Story-thread lifecycle guards** — no plan (two small fixes from the 2026-07-08
   docs-accuracy audit) — 2026-07-12 — the thread reducer now gates `resolve` to
   `investigation` kind (`merge.thread.resolve_blocked` diagnostic; ruled: the admin

@@ -9,6 +9,7 @@ export const noseGroup = defineAttributeGroup("nose", [
     valueType: "enum",
     description: "Nose shape in profile and from the front.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: [
       "button", "straight", "upturned", "snub", "aquiline",
       "roman", "hooked", "broad", "narrow", "pointed",
@@ -24,6 +25,7 @@ export const noseGroup = defineAttributeGroup("nose", [
     valueType: "enum",
     description: "How prominently the nose reads in the face.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: ["petite", "small", "medium", "prominent", "large"],
     bodyLocationId: "nose",
     aliases: ["nose size"],

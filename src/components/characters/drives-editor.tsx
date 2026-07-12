@@ -32,6 +32,23 @@ function parseGate(value: string): Drive["revealBand"] {
 const DEFAULT_GATE_LABEL = `Default — familiarity reaches ${familiarityBandById("familiar")?.label ?? "Familiar"}`;
 
 /**
+ * Live cap counter (forge-gaps.plan.md gap 5): the inputs hard-stop at
+ * maxLength, which used to clip silently mid-word. Quiet until the text nears
+ * the cap (80%), accent-toned once it hits it.
+ */
+function CapCounter({ value, max }: { value: string; max: number }) {
+  if (value.length < max * 0.8) return null;
+  return (
+    <span
+      aria-live="polite"
+      className={`self-end text-[11px] tabular-nums ${value.length >= max ? "text-accent-300" : "text-paper-500"}`}
+    >
+      {value.length}/{max}
+    </span>
+  );
+}
+
+/**
  * The "Desires & secrets" card (character-drives.plan.md slice 2): ≤3 authored
  * drives — the wants the character pursues across a chat. `open` steers scenes,
  * `guarded` withholds until asked, `secret` is protected below its reveal gate
@@ -76,24 +93,30 @@ export function DrivesEditor({ drives, onChange }: DrivesEditorProps) {
             >
               <Field label="Want">
                 {(id) => (
-                  <Input
-                    id={id}
-                    value={drive.want}
-                    maxLength={DRIVE_WANT_MAX_CHARS}
-                    placeholder="to reopen the gallery under her own name…"
-                    onChange={(e) => update(index, { want: e.target.value })}
-                  />
+                  <div className="flex flex-col gap-0.5">
+                    <Input
+                      id={id}
+                      value={drive.want}
+                      maxLength={DRIVE_WANT_MAX_CHARS}
+                      placeholder="to reopen the gallery under her own name…"
+                      onChange={(e) => update(index, { want: e.target.value })}
+                    />
+                    <CapCounter value={drive.want} max={DRIVE_WANT_MAX_CHARS} />
+                  </div>
                 )}
               </Field>
               <Field label="Why (optional)">
                 {(id) => (
-                  <Input
-                    id={id}
-                    value={drive.why}
-                    maxLength={DRIVE_WHY_MAX_CHARS}
-                    placeholder="one line of motive…"
-                    onChange={(e) => update(index, { why: e.target.value })}
-                  />
+                  <div className="flex flex-col gap-0.5">
+                    <Input
+                      id={id}
+                      value={drive.why}
+                      maxLength={DRIVE_WHY_MAX_CHARS}
+                      placeholder="one line of motive…"
+                      onChange={(e) => update(index, { why: e.target.value })}
+                    />
+                    <CapCounter value={drive.why} max={DRIVE_WHY_MAX_CHARS} />
+                  </div>
                 )}
               </Field>
               <Field label="Secrecy">

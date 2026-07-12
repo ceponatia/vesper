@@ -9,6 +9,7 @@ export const shouldersGroup = defineAttributeGroup("shoulders", [
     valueType: "enum",
     description: "Shoulder breadth relative to frame.",
     mutability: "inherent",
+    renderVisual: true,
     allowedValues: ["narrow", "slight", "average", "broad", "very_broad"],
     bodyLocationId: "shoulders",
     aliases: ["shoulder width", "broad shoulders"],

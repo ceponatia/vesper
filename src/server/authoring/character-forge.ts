@@ -29,6 +29,9 @@ import {
   interactionFamilies,
   normalizeTag,
   axisRange,
+  PLAYER_RELATIONSHIP_NOTE_MAX,
+  RELATIONSHIP_HISTORY_TEXT_MAX,
+  RELATIONSHIP_KIND_MAX,
   regardBandById,
   regardBands,
   scheduleDayPartById,
@@ -45,6 +48,7 @@ import {
   type Preference,
   type RealizedBody,
   type ScheduleEntry,
+  type SocialReactionCard,
   type SpeciesDefinition,
   type TraitValue,
 } from "@/contracts";
@@ -248,6 +252,35 @@ const profileSectionSchema = z.object({
       }),
     )
     .default([]),
+  /**
+   * Starting relationship toward the player (forge-gaps.plan.md gap 1) —
+   * emitted only when the concept places the player in it; grounded against
+   * the band vocabulary. `mask` speaks the human phrasing; grounding maps it
+   * onto the stored presented lean (colder_than_felt → masks_warmth).
+   */
+  playerRelationship: z
+    .object({
+      familiarity: z.string().default(""),
+      regard: z.string().default(""),
+      kind: z.string().default(""),
+      history: z.string().default(""),
+      mask: z.enum(["none", "colder_than_felt", "warmer_than_felt"]).catch("none"),
+      note: z.string().default(""),
+    })
+    .optional()
+    .catch(undefined),
+  /** Personal social cards (forge-gaps.plan.md gap 2) — the character's own hard lines; grounded against the concept vocabulary. */
+  cards: z
+    .array(
+      z.object({
+        label: z.string().default(""),
+        description: z.string().default(""),
+        kind: z.enum(["social_rule", "taboo"]).catch("taboo"),
+        severity: z.number().catch(40),
+        triggers: z.array(z.string()).default([]),
+      }),
+    )
+    .default([]),
 });
 
 type ProfileSection = z.infer<typeof profileSectionSchema>;
@@ -292,13 +325,31 @@ function groundTraitValues(raw: ProfileSection["traits"], sink?: DiagnosticSink)
 }
 
 /**
+ * The highest reveal gate the FORGE may author per axis (forge-gaps.plan.md
+ * gap 4): familiarity `familiar`, regard `close`. Left to its own devices the
+ * model gates secrets at the top band ("deeply_known"), which a normal chat
+ * arc never reaches — the payoff the secret exists for never fires. A band
+ * past the ceiling demotes to the ruled default (familiarity ≥ familiar) with
+ * a diagnostic. Humans can still pick any band in the editor.
+ */
+const FORGE_REVEAL_CEILING: Record<"familiarity" | "regard", string> = { familiarity: "familiar", regard: "close" };
+
+function isExtremeRevealBand(axis: "familiarity" | "regard", band: string): boolean {
+  const bands = axis === "regard" ? regardBands : familiarityBands;
+  const idx = bands.findIndex((b) => b.id === band);
+  const ceiling = bands.findIndex((b) => b.id === FORGE_REVEAL_CEILING[axis]);
+  return idx > ceiling;
+}
+
+/**
  * Ground forge drives (character-drives.plan.md, owner rulings 2026-07-12):
  * empty wants drop, duplicates (by normalized want) drop, over-length text
  * truncates, and the concept-led secret budget is enforced — a second `secret`
  * demotes to `guarded` with a diagnostic rather than shipping two lie licenses.
  * A revealBand is secret-only; an unknown band id drops the gate (the ruled
  * default — familiarity ≥ familiar — then applies) instead of locking the
- * secret behind a band that doesn't exist.
+ * secret behind a band that doesn't exist, and a band past the forge ceiling
+ * (deeply_known; cherished+) demotes the same way.
  */
 export function groundDrives(raw: ProfileSection["drives"], sink?: DiagnosticSink): Drive[] {
   const out: Drive[] = [];
@@ -324,7 +375,15 @@ export function groundDrives(raw: ProfileSection["drives"], sink?: DiagnosticSin
     if (secrecy === "secret" && d.revealBand) {
       const band = d.revealBand.band.trim().toLowerCase();
       const known = d.revealBand.axis === "regard" ? regardBandById(band) : familiarityBandById(band);
-      if (known) {
+      if (known && isExtremeRevealBand(d.revealBand.axis, band)) {
+        sink?.push(
+          diag(
+            "info",
+            "forge.character.profile.extreme_reveal_band",
+            `demoted reveal band "${band}" on "${want}" to the default gate: a normal arc never reaches it`,
+          ),
+        );
+      } else if (known) {
         revealBand = { axis: d.revealBand.axis, band };
       } else if (band) {
         sink?.push(diag("info", "forge.character.profile.unknown_reveal_band", `dropped reveal band "${d.revealBand.band}" on "${want}": not a ${d.revealBand.axis} band`));
@@ -366,6 +425,113 @@ export function groundSchedule(raw: ProfileSection["schedule"], sink?: Diagnosti
       activity,
       locationName,
       ...(days ? { days } : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * Ground the forge's starting-relationship draft (forge-gaps.plan.md gap 1)
+ * into the profile's authored record. Band ids ground against the vocabulary
+ * (an unknown band self-heals to the axis default with a diagnostic), text
+ * truncates at the storage caps, and the human-phrased `mask` maps onto the
+ * stored presented lean. A draft that grounds to the all-default record —
+ * nothing the concept actually established — returns undefined so the profile
+ * keeps its blank default and the editor shows an untouched Chat tab.
+ */
+export function groundPlayerRelationship(
+  raw: ProfileSection["playerRelationship"],
+  sink?: DiagnosticSink,
+): CharacterProfile["playerRelationship"] | undefined {
+  if (!raw) return undefined;
+  const groundBand = (axis: "familiarity" | "regard", value: string, fallback: string): string => {
+    const band = value.trim().toLowerCase();
+    if (!band) return fallback;
+    const known = axis === "regard" ? regardBandById(band) : familiarityBandById(band);
+    if (known) return band;
+    sink?.push(
+      diag("info", "forge.character.profile.unknown_relationship_band", `dropped ${axis} band "${value}" on the starting relationship: not a known band`),
+    );
+    return fallback;
+  };
+  const familiarity = groundBand("familiarity", raw.familiarity, "strangers");
+  const regard = groundBand("regard", raw.regard, "neutral");
+  const kind = raw.kind.trim().slice(0, RELATIONSHIP_KIND_MAX);
+  const history = raw.history.trim().slice(0, RELATIONSHIP_HISTORY_TEXT_MAX);
+  const note = raw.note.trim().slice(0, PLAYER_RELATIONSHIP_NOTE_MAX);
+  const presented =
+    raw.mask === "colder_than_felt"
+      ? ({ lean: "masks_warmth", note: "" } as const)
+      : raw.mask === "warmer_than_felt"
+        ? ({ lean: "masks_dislike", note: "" } as const)
+        : undefined;
+  const untouched =
+    familiarity === "strangers" && regard === "neutral" && !kind && !history && !note && presented === undefined;
+  if (untouched) return undefined;
+  return { familiarity, regard, kind, history, presented, looming: false, note } as CharacterProfile["playerRelationship"];
+}
+
+/** Cap on forge-drafted personal cards — hard lines, not a rulebook. */
+const CARDS_FORGE_MAX = 2;
+
+/**
+ * Ground the forge's personal social cards (forge-gaps.plan.md gap 2):
+ * triggers ground against the interaction-concept vocabulary (unknowns drop);
+ * a trigger the drafted PREFERENCES already opine on drops too — a bespoke
+ * preference resolves ahead of any card (contracts/personality/cards.ts), so
+ * such a card would be dead weight (`card_trigger_shadowed`). A card left
+ * with no label or no triggers drops whole; the set caps at CARDS_FORGE_MAX.
+ * Severity clamps to 0–100. Ids derive from the normalized label (contracts
+ * mint none; the label-hash keeps demo-mode forges deterministic — resilience
+ * §6 — and label-dedup below guarantees uniqueness within the set).
+ */
+export function groundSocialCards(
+  raw: ProfileSection["cards"],
+  preferences: readonly Preference[],
+  sink?: DiagnosticSink,
+): SocialReactionCard[] {
+  const conceptIds = new Set(interactionConceptIds());
+  const opined = new Set(preferences.map((p) => p.target.trim().toLowerCase()));
+  const out: SocialReactionCard[] = [];
+  const seen = new Set<string>();
+  for (const card of raw) {
+    if (out.length >= CARDS_FORGE_MAX) {
+      sink?.push(diag("info", "forge.character.profile.cards_capped", `dropped card "${card.label}": over the ${CARDS_FORGE_MAX}-card cap`));
+      break;
+    }
+    const label = card.label.trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    const triggers: string[] = [];
+    for (const rawTrigger of card.triggers) {
+      const trigger = normalizeEnumToken(rawTrigger);
+      if (!conceptIds.has(trigger)) {
+        sink?.push(diag("info", "forge.character.profile.unknown_card_trigger", `dropped trigger "${rawTrigger}" on card "${label}": not an interaction concept`));
+        continue;
+      }
+      if (opined.has(trigger)) {
+        sink?.push(
+          diag("info", "forge.character.profile.card_trigger_shadowed", `dropped trigger "${trigger}" on card "${label}": a drafted preference already covers it and resolves first`),
+        );
+        continue;
+      }
+      if (!triggers.includes(trigger)) triggers.push(trigger);
+    }
+    if (triggers.length === 0) {
+      sink?.push(diag("info", "forge.character.profile.card_without_triggers", `dropped card "${label}": no valid triggers survived grounding`));
+      continue;
+    }
+    seen.add(key);
+    const severity = Math.min(100, Math.max(0, Math.round(card.severity)));
+    out.push({
+      id: `card_${hashSeed(key).toString(36)}`,
+      label,
+      description: card.description.trim(),
+      kind: card.kind,
+      triggers,
+      severity,
+      reactionOverrides: [],
     });
   }
   return out;
@@ -423,12 +589,27 @@ function profilePrompt(context: CharacterForgeContext): string {
     `- drives: 0-${DRIVES_MAX} entries, each {want (a short concrete phrase), why (one line of motive), secrecy, revealBand?}.`,
     "  secrecy: \"open\" (talks about it freely — it steers what they bring up), \"guarded\" (never volunteers it; comes out only if genuinely asked), or \"secret\" (actively protected — they deflect and will lie to keep it hidden until the relationship earns the reveal).",
     "  Emit at most ONE secret, and only when the concept genuinely supports a hidden past or concealed motive; most characters carry open/guarded drives only.",
-    `  A secret MAY set revealBand {axis: "familiarity" | "regard", band} — the relationship band at which revealing becomes possible (familiarity bands: ${familiarityBands.map((b) => b.id).join(", ")}; regard bands: ${regardBands.map((b) => b.id).join(", ")}). Omit revealBand for the default (familiarity reaches "familiar").`,
+    `  A secret MAY set revealBand {axis: "familiarity" | "regard", band} — the relationship band at which revealing becomes possible (familiarity bands: ${familiarityBands.map((b) => b.id).join(", ")}; regard bands: ${regardBands.map((b) => b.id).join(", ")}). Pick a MID-ARC gate the story can actually reach — familiarity "familiar" or regard "warm"/"close"; higher gates are demoted to the default. Omit revealBand for the default (familiarity reaches "familiar").`,
+    "  When you write a secret, put its actual substance in the why — the concrete truth being hidden, not just that a truth exists — so the eventual reveal has something coherent to land on.",
     "  Wants should be pursuable in conversation and specific to this character (\"to reopen the gallery under her own name\", not \"to be happy\"). Omit drives the concept gives no basis for — sparse is correct.",
     "",
     "Then sketch the character's DAILY RHYTHM (where their ordinary days go — the game grounds \"what I've been up to\" beats and off-screen movement in it):",
     `- schedule: 0-${SCHEDULE_FORGE_MAX} rows, each {dayPart: "morning" | "afternoon" | "evening" | "night", activity (short concrete phrase), locationName (a plain place name), days?}.`,
     "  days (optional): weekday indices 0=Sunday…6=Saturday, only when the routine isn't daily (e.g. [1,2,3,4,5] for a weekday shift). Cover the parts of the day the concept actually speaks to — a work shift and one leisure anchor beat a filled grid. Omit rows the concept gives no basis for.",
+    "",
+    "ONLY IF the concept describes a relationship between this character and the player (the person they will talk to — often written as \"the player\" or \"you\"), set the STARTING RELATIONSHIP:",
+    "- playerRelationship: {familiarity, regard, kind, history, mask, note}.",
+    `  familiarity — how well they know each other (knowledge, not feeling), one of: ${familiarityBands.map((b) => b.id).join(", ")}.`,
+    `  regard — how the character genuinely FEELS about the player underneath (the mask below is what they show), one of: ${regardBands.map((b) => b.id).join(", ")}.`,
+    `  kind — the label both would use ("ex-fiancés, nine years estranged", "her favorite client"), ≤${RELATIONSHIP_KIND_MAX} chars. history — ONE line of shared past the narrator can lean on, ≤${RELATIONSHIP_HISTORY_TEXT_MAX} chars.`,
+    "  mask — \"none\" (honest, the overwhelming default), \"colder_than_felt\" (performs less warmth than they feel), or \"warmer_than_felt\" (performs more warmth than they feel).",
+    `  note — one line that pre-fills a new conversation's opening scene (the moment, not the relationship), ≤${PLAYER_RELATIONSHIP_NOTE_MAX} chars.`,
+    "  Omit playerRelationship entirely when the concept doesn't place the player in it — strangers/neutral is the default and never needs writing.",
+    "",
+    "ONLY IF the concept names a hard social line — a taboo or a rule the character enforces (\"hates being haggled over her art\", \"never affection where the town can see\"):",
+    `- cards: 0-${CARDS_FORGE_MAX} entries, each {label (short name), description (what the rule forbids and how breaching it lands), kind: "social_rule" | "taboo", severity: 0-100 (25 a quirk they note, 40 real disapproval, 60 they shut it down hard, 80+ relationship-threatening), triggers}.`,
+    `  triggers MUST be interaction-concept ids from: ${interactionConceptIds().join(", ")}. A card governs those classified acts outright.`,
+    "  Do NOT duplicate a preference: if a like/dislike above already covers the concept, skip the card — preferences win over cards anyway. Most characters need NO cards; sparse is correct.",
   ];
   if (species && species.id !== DEFAULT_SPECIES_ID) {
     const { label, look } = speciesForgeDescriptor(species, heritageForForgeContext(context));
@@ -451,16 +632,21 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
     fallback: context.useFallbacks === false ? undefined : demoCharacterProfileSection,
   });
   const section = value ?? profileSectionSchema.parse({});
+  const preferences = groundPreferences(section.preferences, context.sink);
   const profile: Partial<CharacterProfile> = {
     bio: section.bio.trim(),
     personality: section.personality.trim(),
     aliases: section.aliases.map((a) => a.trim()).filter((a) => a.length > 0),
     tags: groundDispositionTags(section.dispositionTags),
-    preferences: groundPreferences(section.preferences, context.sink),
+    preferences,
     traits: groundTraitValues(section.traits, context.sink),
     drives: groundDrives(section.drives, context.sink),
     schedule: groundSchedule(section.schedule, context.sink),
   };
+  const playerRelationship = groundPlayerRelationship(section.playerRelationship, context.sink);
+  if (playerRelationship) profile.playerRelationship = playerRelationship;
+  const socialCards = groundSocialCards(section.cards, preferences, context.sink);
+  if (socialCards.length > 0) profile.socialCards = socialCards;
   const voice = section.voice.trim();
   if (voice) profile.voice = voice;
   const age = section.age.trim();
@@ -544,7 +730,7 @@ export function buildAttributeSectionSchema(context?: CharacterForgeContext): z.
         }),
       )
       .default([])
-      .describe("For [CORE] enum attributes you could not pin to a definite value: a plausible subset of allowed values."),
+      .describe("For [CORE]/[RENDER] enum attributes you could not pin to a definite value: a plausible subset of allowed values."),
   });
 }
 
@@ -612,7 +798,7 @@ export function groundAttributeValues(
  * Ground model-emitted plausible ranges against the registry: a range on an
  * unknown id or a non-enum attribute drops whole, out-of-vocabulary members
  * drop individually (both `forge.character.attributes.invalid_range_member`),
- * and a range emptied by grounding drops entirely — fillCoreVisualDefaults
+ * and a range emptied by grounding drops entirely — fillVisualDefaults
  * then treats that attribute as unconstrained. Survivors map id → subset of
  * the attribute's allowedValues.
  */
@@ -661,8 +847,9 @@ const ATTRIBUTES_SYSTEM = [
   "You translate a character concept into a fixed attribute vocabulary. Use only the listed attribute ids and allowed values.",
   "First infer the identity anchors (marked [ANCHOR]) — heritage, apparent age, gender — from any cue the text offers, and emit the ones it supports as attributes.",
   "Where the text states or strongly implies a value for any attribute, emit it as a definite attribute value.",
-  "For each [CORE] enum attribute you cannot pin to a definite value, emit a ranges entry instead: a plausible subset of its allowed values, conditioned on the identity anchors you inferred.",
+  "For each [CORE] or [RENDER] enum attribute you cannot pin to a definite value, emit a ranges entry instead: a plausible subset of its allowed values, conditioned on the identity anchors you inferred.",
   "Guardrails: identity anchors may constrain physical attributes only — coloring, features, build. Heritage must never feed personality, voice, behavior, or role suggestions. Ranges are soft priors that explicit text always overrides — when the text pins a value, emit the definite value and no range for that attribute. When the identity signal is weak, emit wide ranges or none.",
+  "Attributes describe THIS PERSON'S body, not the setting's mood: never map scene or life-circumstance adjectives (a weathered town, a hard year, a gloomy harbor) onto skin, hair, or build unless the text says it of the body itself.",
   'Worked example — text overrides the prior: "a Latina engineer with dyed silver hair" gives identity.heritage = "Latina" and hair.color = "gray" as definite values (the dye job in the text beats the heritage prior — no hair.color range), while eyes.color, unstated, gets a range like ["brown", "dark_brown", "hazel"].',
   "For everything else, omit any attribute the concept gives no basis for — sparse is correct.",
 ].join("\n");
@@ -696,7 +883,7 @@ function attributesPrompt(context: CharacterForgeContext): string {
       const speciesDefault = realizedBody?.defaultValueFor(def);
       const defaultHint =
         required && typeof speciesDefault === "string" ? ` (species default: ${speciesDefault})` : "";
-      const tags = `${def.coreVisual ? " [CORE]" : ""}${def.identityAnchor ? " [ANCHOR]" : ""}${required ? " [SPECIES]" : ""}`;
+      const tags = `${def.coreVisual ? " [CORE]" : ""}${def.renderVisual ? " [RENDER]" : ""}${def.identityAnchor ? " [ANCHOR]" : ""}${required ? " [SPECIES]" : ""}`;
       return `- ${def.id}${tags} (${describeConstraint(def, allowed)})${defaultHint}: ${def.description}`;
     })
     .join("\n");
@@ -725,7 +912,7 @@ function attributesPrompt(context: CharacterForgeContext): string {
     "Attribute vocabulary:",
     vocabulary,
     "",
-    "Infer the [ANCHOR] attributes first. Emit definite values where the concept supports them; for each [CORE] enum attribute left without a definite value, emit a ranges entry with the plausible subset of its allowed values given the anchors. Fill the others only where the concept supports them; omit the rest.",
+    "Infer the [ANCHOR] attributes first. Emit definite values where the concept supports them; for each [CORE] or [RENDER] enum attribute left without a definite value, emit a ranges entry with the plausible subset of its allowed values given the anchors. Fill the others only where the concept supports them; omit the rest.",
   );
   return lines.join("\n");
 }
@@ -746,7 +933,7 @@ async function forgeAttributesSection(context: CharacterForgeContext): Promise<C
   // Species-required defaults first (e.g. elf ears.shape = "pointed") so the
   // core-visual pass treats them as already present, then the core-visual fill.
   const seeded = fillSpeciesRequiredDefaults(grounded, realizedBody, context.sink);
-  const attributes = fillCoreVisualDefaults(seeded, context.prompt, context.sink, ranges, realizedBody);
+  const attributes = fillVisualDefaults(seeded, context.prompt, context.sink, ranges, realizedBody);
   // Seed the body-config declaratively from the attribute values' activatesGroups
   // (e.g. identity.gender) — a SEED, overridable in the editor. gender is now
   // coreVisual, so it is always present and the seed is reliable. Intimate
@@ -767,7 +954,7 @@ function hashSeed(text: string): number {
 
 /**
  * Seed species-required attribute defaults the model left unset. Unlike
- * fillCoreVisualDefaults this is NOT limited to coreVisual attributes: a
+ * fillVisualDefaults this is NOT limited to visual-flagged attributes: a
  * species `required` rule with a `defaultValue` (elf `ears.shape` = "pointed")
  * guarantees the trait is present on every member of that species. A value the
  * model already emitted for the id wins — present ids are never overwritten;
@@ -810,17 +997,19 @@ export function fillSpeciesRequiredDefaults(
 
 /**
  * Tier-3 fill (docs/authoring.md §Character forge): every registry attribute
- * flagged coreVisual that the model left unset gets a default picked from its
- * surviving plausible range when one exists — falling through to the full
- * allowedValues when none does — seeded by (concept, attribute id). Seeded
- * rather than random on purpose — different concepts get varied defaults (an
- * LLM asked to "pick randomly" converges on brown/brown), while the same
- * input still forges the same draft (demo-mode determinism,
+ * flagged coreVisual OR renderVisual (forge-gaps.plan.md gap 3 — the
+ * render-consistency tier: silhouette + face structure a scene render would
+ * otherwise re-invent per image) that the model left unset gets a default
+ * picked from its surviving plausible range when one exists — falling through
+ * to the full allowedValues when none does — seeded by (concept, attribute
+ * id). Seeded rather than random on purpose — different concepts get varied
+ * defaults (an LLM asked to "pick randomly" converges on brown/brown), while
+ * the same input still forges the same draft (demo-mode determinism,
  * docs/resilience.md §6). A definite value always beats a range for the same
  * id — present ids are never filled. Enum-only: a default we can't pick from
  * a closed list isn't a default worth inventing.
  */
-export function fillCoreVisualDefaults(
+export function fillVisualDefaults(
   values: readonly AttributeValue[],
   seedText: string,
   sink?: DiagnosticSink,
@@ -832,7 +1021,7 @@ export function fillCoreVisualDefaults(
   const added: string[] = [];
   const unconstrained: string[] = [];
   for (const def of characterAttributeDefinitions()) {
-    if (!def.coreVisual || present.has(def.id)) continue;
+    if ((!def.coreVisual && !def.renderVisual) || present.has(def.id)) continue;
     if (def.valueType !== "enum" || !def.allowedValues || def.allowedValues.length === 0) continue;
     // Pick within the resolved species' narrowed set when one applies, so a
     // core-visual default (e.g. orc build.height) can't fall outside the
@@ -864,7 +1053,7 @@ export function fillCoreVisualDefaults(
   }
   if (added.length > 0) {
     sink?.push(
-      diag("info", "forge.character.attributes.core_defaults", `filled core visual defaults: ${added.join(", ")}`),
+      diag("info", "forge.character.attributes.visual_defaults", `filled visual defaults: ${added.join(", ")}`),
     );
   }
   if (unconstrained.length > 0) {
@@ -1189,6 +1378,23 @@ export function demoCharacterProfileSection(): ProfileSection {
       { dayPart: "morning", activity: "walking the quay and checking moorings", locationName: "Greywater Harbor" },
       { dayPart: "afternoon", activity: "working the ledgers and berth disputes", locationName: "the harbor office" },
       { dayPart: "evening", activity: "one slow pint at a corner table", locationName: "the Rusted Anchor", days: [5, 6] },
+    ],
+    playerRelationship: {
+      familiarity: "acquainted",
+      regard: "friendly",
+      kind: "the green deckhand she's taken under her wing",
+      history: "You crewed a season under her eye; she signed off your papers and never said she was glad you stayed.",
+      mask: "colder_than_felt",
+      note: "Early fog on the quay; Maren is checking moorings and pretends not to notice you falling into step beside her.",
+    },
+    cards: [
+      {
+        label: "Not on her quay",
+        description: "The working dock is no place for a show — affection where the crews can see gets one flat look and a job handed to whoever's idle.",
+        kind: "social_rule",
+        severity: 35,
+        triggers: ["public_display"],
+      },
     ],
   };
 }
