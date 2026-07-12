@@ -450,6 +450,13 @@ export const characterChatState = pgTable(
      * blob so field additions are never migrations; parsed defensively at the boundary.
      */
     sceneMemory: jsonb("scene_memory").notNull().default({}),
+    /**
+     * CallbackEntry[] ring (memory-callbacks.plan.md): episode refs already offered as
+     * an unprompted "remember when" cue, plus the chat-clock minute each fired — the
+     * anti-repeat memory behind the cadence gate. Capped (CHAT_CALLBACK_HISTORY_CAP);
+     * rolls back with the pre-exchange snapshot like the rest of the state.
+     */
+    callbackHistory: jsonb("callback_history").notNull().default([]),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.chatId, t.characterId] })],

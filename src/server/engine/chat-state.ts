@@ -69,6 +69,7 @@ import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import { characterChatMessages, characterChatState, db } from "../db";
 import { defaultOutfitPhrase } from "../images";
+import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
 import { enqueueChatSceneSketch } from "./chat-scene-sketch";
 import {
@@ -153,6 +154,12 @@ export interface ChatState {
   relationshipHistory: RelationshipSample[];
   /** Recorded milestones (spec §7.2): first exchange, stage crossings, strong reactions, player-marked. */
   milestones: Milestone[];
+  /**
+   * Memory-callback ring (memory-callbacks.plan.md): episode refs already offered as an
+   * unprompted "remember when" cue + the chat-clock minute each fired. The anti-repeat
+   * memory behind the cadence gate; rolls back with the pre-exchange snapshot.
+   */
+  callbackHistory: CallbackEntry[];
   /** Player time skips (spec §8.1) — the future time-effects system's data, recorded now. */
   skipHistory: SkipRecord[];
   /** One-shot skip note (spec §8.1): rendered as a volatile prompt line next exchange, then cleared. */
@@ -209,6 +216,8 @@ export interface ChatStateSnapshot {
   sceneModel: string;
   /** Accumulating scene memory (current place / time of day / known places) — for the state-tools/inspector view. */
   sceneMemory: ChatSceneMemory;
+  /** Memory-callback ring (memory-callbacks.plan.md) — for the state-tools/inspector view. */
+  callbackHistory: CallbackEntry[];
   /**
    * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
    * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
@@ -302,6 +311,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     clockMinutes: 0,
     relationshipHistory: [],
     milestones: [],
+    callbackHistory: [],
     skipHistory: [],
     pendingSkipNote: "",
     sceneAuto: "off",
@@ -338,6 +348,7 @@ export async function loadChatState(
       clockMinutes: characterChatState.clockMinutes,
       relationshipHistory: characterChatState.relationshipHistory,
       milestones: characterChatState.milestones,
+      callbackHistory: characterChatState.callbackHistory,
       skipHistory: characterChatState.skipHistory,
       pendingSkipNote: characterChatState.pendingSkipNote,
       sceneAuto: characterChatState.sceneAuto,
@@ -387,6 +398,7 @@ export async function loadChatState(
       "character_chat_state.relationship_history",
     ),
     milestones: parseOr(milestonesSchema, row.milestones, [], sink, "character_chat_state.milestones"),
+    callbackHistory: parseOr(callbackHistorySchema, row.callbackHistory, [], sink, "character_chat_state.callback_history"),
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
     pendingSkipNote: row.pendingSkipNote,
     sceneAuto: row.sceneAuto,
@@ -427,6 +439,7 @@ const storedChatStateSchema = z.object({
   clockMinutes: z.number(),
   relationshipHistory: relationshipHistorySchema.catch([]).default([]),
   milestones: milestonesSchema.catch([]).default([]),
+  callbackHistory: callbackHistorySchema.catch([]).default([]),
   skipHistory: skipHistorySchema.catch([]).default([]),
   pendingSkipNote: z.string().catch("").default(""),
   sceneAuto: z.string().catch("off").default("off"),
@@ -997,6 +1010,7 @@ async function upsertChatState(
   const activeSocialCards = JSON.stringify(state.activeSocialCards);
   const relationshipHistory = JSON.stringify(state.relationshipHistory);
   const milestones = JSON.stringify(state.milestones);
+  const callbackHistory = JSON.stringify(state.callbackHistory);
   const skipHistory = JSON.stringify(state.skipHistory);
   const sceneMemory = JSON.stringify(state.sceneMemory);
   const guard = guardMessageId
@@ -1004,9 +1018,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1029,6 +1043,7 @@ async function upsertChatState(
       clock_minutes = excluded.clock_minutes,
       relationship_history = excluded.relationship_history,
       milestones = excluded.milestones,
+      callback_history = excluded.callback_history,
       skip_history = excluded.skip_history,
       pending_skip_note = excluded.pending_skip_note,
       scene_auto = excluded.scene_auto,
@@ -1088,6 +1103,8 @@ export interface ChatStateEdit {
   sceneModel?: string;
   /** Accumulating scene memory (current place / time of day / known places). */
   sceneMemory?: ChatSceneMemory;
+  /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit surface. */
+  callbackHistory?: CallbackEntry[];
 }
 
 /**
@@ -1133,6 +1150,7 @@ export async function editChatState(args: {
   if (patch.sceneAuto !== undefined) next.sceneAuto = patch.sceneAuto;
   if (patch.sceneModel !== undefined) next.sceneModel = patch.sceneModel;
   if (patch.sceneMemory !== undefined) next.sceneMemory = patch.sceneMemory;
+  if (patch.callbackHistory !== undefined) next.callbackHistory = patch.callbackHistory;
   await persistChatState(chatId, characterId, next);
   return next;
 }
@@ -1246,6 +1264,7 @@ export function chatStateSnapshot(
     sceneAuto: state.sceneAuto,
     sceneModel: state.sceneModel,
     sceneMemory: state.sceneMemory,
+    callbackHistory: state.callbackHistory,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
   };

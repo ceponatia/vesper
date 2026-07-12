@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, lte, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
@@ -190,6 +190,50 @@ export async function retrieveEpisodes(
     hitIds: hits.map((h) => h.id),
   });
   return hits;
+}
+
+/** An old-episode candidate for the memory-callback selection (memory-callbacks.plan.md). */
+export interface CallbackEpisodeCandidate {
+  id: string;
+  turnNumber: number;
+  summary: string;
+  sourceMessageId: string | null;
+  /** Cosine similarity to the CURRENT player input — high = an echo recall would surface anyway. */
+  similarity: number;
+}
+
+/**
+ * Old episodes as callback candidates (memory-callbacks.plan.md): everything at/under
+ * `maxTurn` (the caller's age cutoff — deliberately far past EPISODE_WINDOW), oldest
+ * first, each carrying its similarity to the CURRENT input so the pure selector can
+ * prefer topic DISTANCE (a callback is a tangent, not an echo). Same embedder-isolation
+ * rules as retrieval; already-offered ids are excluded in SQL.
+ */
+export async function callbackEpisodeCandidates(
+  scope: MemoryScope,
+  vec: string,
+  opts: { maxTurn: number; excludeIds: readonly string[]; limit: number },
+): Promise<CallbackEpisodeCandidate[]> {
+  if (opts.limit <= 0) return [];
+  const where = [
+    memoryScopeWhere(episodes, scope),
+    eq(episodes.embedder, currentEmbedder()),
+    isNotNull(episodes.embedding),
+    lte(episodes.turnNumber, opts.maxTurn),
+  ];
+  if (opts.excludeIds.length) where.push(notInArray(episodes.id, [...opts.excludeIds]));
+  return db()
+    .select({
+      id: episodes.id,
+      turnNumber: episodes.turnNumber,
+      summary: episodes.summary,
+      sourceMessageId: episodes.sourceMessageId,
+      similarity: sql<number>`1 - (${episodes.embedding} <=> ${vec}::vector)`,
+    })
+    .from(episodes)
+    .where(and(...where))
+    .orderBy(asc(episodes.turnNumber))
+    .limit(opts.limit);
 }
 
 /**

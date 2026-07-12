@@ -90,7 +90,8 @@ exchange:
    attributes → sensory cues → rules; byte-identical across turns, re-rendering only on
    a band crossing on either relationship axis — asserted by a prefix-byte-stability test) and a **volatile tail**
    (recap, memory, state, skip note, disinhibition + transient-appearance overrides,
-   the per-turn **sensory allowance** line, continue-beat cue, notation note, beat
+   the per-turn **sensory allowance** line, continue-beat cue, notation note, the
+   optional one-turn **memory-callback** line (§Memory callbacks), beat
    instructions). An experimental `CHAT_PROMPT_LAYOUT=turn_context` switch (default off)
    moves the tail + fenced current input into a final user message instead — the session
    lane's shape; see [prompts.md](prompts.md) §Character-chat prompt-cache split. The rules carry the **player-input
@@ -163,8 +164,9 @@ appended when either axis moved; `milestones` — ≤100 of
 `first_exchange` / `stage_up` / `stage_down` / `familiarity_up` / `strong_reaction` / `player_marked`),
 the time model (`clock_minutes` — the **only** clock, D3/D8; `skip_history` ring ≤50;
 one-shot `pending_skip_note`), `scene_auto` (`"off" | "milestones"`, the slice-9
-auto-scene toggle — text with headroom, never a boolean), and `scene_memory` (the
-accumulating narrator-imagined setting — see §Scene memory). `upsertChatState` is the
+auto-scene toggle — text with headroom, never a boolean), `scene_memory` (the
+accumulating narrator-imagined setting — see §Scene memory), and `callback_history`
+(the memory-callback anti-repeat ring ≤20 — see §Memory callbacks). `upsertChatState` is the
 **one** column-list source shared by the guarded (mid-exchange) and unguarded
 (author-edit) writers; `ChatStateEdit` covers every stored column (inspector-grade —
 open loops, memory queries, surfaced cues, attribute overlays, scene memory included). State is
@@ -212,6 +214,36 @@ then reconciled by the archivist:
 the transcript/summary/memory; **archive** leaves it intact by design; and "another take"
 (regenerate) rolls it back with the rest of the state via the `pre_exchange_state` snapshot
 (`scene_memory` is in `storedChatStateSchema`), so a regenerated exchange never double-accretes.
+
+## Memory callbacks
+
+Fused recall is input-relevance-only, so shared history never resurfaced on its own —
+the character could never say "remember when…" unprompted. The memory-callback cue
+([developer-notes/memory-callbacks.plan.md](developer-notes/memory-callbacks.plan.md))
+fixes that with one low-frequency, one-turn tail line:
+
+- **Gate first, cost second** (`chat-callback.ts` `chatCallbackEligible`, pure): real
+  player turns only, at most once per `CHAT_CALLBACK_MIN_GAP_MINUTES` of chat clock
+  (10 exchanges of ticks — a time skip naturally re-opens eligibility), and only on a
+  **lull**: suppressed by a first exchange, a pending skip note, a scene change, an
+  intimate beat (cue or arousal floor), a sensory-focus block, or a character question
+  the player is mid-answering. No regard-band gate (owner ruling 2026-07-11) — the
+  band picks the wording, not the eligibility.
+- **Selection** (`chat-memory.ts` `retrieveChatCallback` → pure `selectChatCallback`):
+  one embedding of the input + one query over episodes ≥8 exchanges old
+  (`callbackEpisodeCandidates`, each carrying its similarity to the input). Scoring
+  prefers **old**, **milestone-marked** (joined by `source_message_id` — an exchange
+  that minted a `player_marked`/`strong_reaction`/band-crossing milestone is a
+  *moment*), and **topic-distant** — candidates at/above the echo ceiling are dropped
+  outright (recall would surface them anyway; a callback is a tangent). Used refs
+  never repeat (`callback_history`, burned at offer time so "another take" rolls the
+  burn back with the snapshot and the retake gets the same opportunity).
+- **Render** (`chatCallbackLine`, volatile tail, lowest priority): one optional aside
+  worded by regard band — warm bands get nostalgia, the middle a plain remembering,
+  cold bands a pointed edge ("a point to make, a wound … never warmth you don't
+  feel"). Always droppable: the scene in motion outranks the memory.
+- **Degradation**: any retrieval/embedding failure ⇒ no line +
+  `chat_memory.callback.failed` (warn) — an ordinary turn, never a failed reply.
 
 ## Post-turn fan-out
 
@@ -332,6 +364,8 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 `.timeout` · `chat_memory.episodes_failed` / `.facts_failed` ·
 `memory.facts.embed_failed` / `memory.episodes.embed_failed` (a fused-retrieval
 query-embedding failure — facts degrade to pinned-only, episodes to `[]`) ·
+`chat_memory.callback.failed` (a degraded memory-callback retrieval — the turn just
+carries no callback line) ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
 `.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` · `chat_state.snapshot.missing` ·
 `chat_state.rerun.no_rollback` (a rerun target that is not the last exchange's prompt —
@@ -352,6 +386,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | RAG client (recall/archivist/write) | `server/engine/chat-memory.ts` |
 | Rolling summary + fold job + rebuild | `server/engine/chat-summary.ts` |
 | One-turn player-input reads (cue / scene movement / sensory focus / reply gates) | `server/engine/chat-intent.ts` |
+| Memory callbacks (gate / selection / ring — §Memory callbacks) | `server/engine/chat-callback.ts` (pure) + `retrieveChatCallback` in `chat-memory.ts` + `chatCallbackLine` in `prompts/character-chat.ts` |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |

@@ -54,16 +54,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
-_The seven entries below are the 2026-07-11 **character-chat engagement batch**
-(planned from the character-chat & schema review), deliberately ordered by
+_The six entries below are the remainder of the 2026-07-11 **character-chat
+engagement batch** (planned from the character-chat & schema review; the first —
+memory callbacks — shipped the same day, see Shipped), deliberately ordered by
 **effort, least → most** and queued ahead of the pre-existing items — owner
 instruction 2026-07-11._
 
-- **Memory callbacks — unprompted "remember when" beats** —
-  [memory-callbacks.plan.md](memory-callbacks.plan.md) (next — effort S). One
-  low-frequency, lull-gated tail cue resurfacing an old high-salience
-  episode/milestone deliberately unrelated to the current topic; used-ring
-  anti-repeat; one retrieval + one line.
 - **Emotional weather — persistent feeling, regard momentum, reply pacing** —
   [emotional-weather.plan.md](emotional-weather.plan.md) (next — effort M). A
   persistent `feeling` (EmotionLabel + intensity + cause, exchange-decayed,
@@ -180,6 +176,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Memory callbacks — unprompted "remember when" beats** —
+  [memory-callbacks.plan.md](memory-callbacks.plan.md) — 2026-07-11 — a
+  lull-gated, once-per-~10-exchanges tail cue offering one old, milestone-boosted,
+  topic-distant episode, worded by regard band (warm nostalgia / plain / pointed —
+  owner ruling); `callback_history` anti-repeat ring (migration 0032), degrades to
+  a plain turn with `chat_memory.callback.failed`. Leftover: the live judged eval
+  run (owner-gated spend). Docs: character-chat.md §Memory callbacks, prompts.md.
 - **Chat scene-model picker — hot-swap dropdown on the scene strip** —
   `contracts chatSceneModels` + `character_chat_state.scene_model` (migration 0031)
   (no plan — owner request) — 2026-07-11 — a save-on-select dropdown left of

@@ -7,11 +7,13 @@ import {
   type FactDraft,
   type RetrievedMemoryDetail,
 } from "@/contracts";
-import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
+import type { Milestone } from "@/contracts/relationships/history";
+import { agentModelId, embedText, generateChecked, isDemoMode, toVectorLiteral, withGenerateTimeout } from "../ai";
 import type { DbWriter } from "../db";
 import {
   addFacts,
   appendEpisode,
+  callbackEpisodeCandidates,
   chatScope,
   deleteEpisodeForMessage,
   deleteEpisodesForScope,
@@ -23,6 +25,12 @@ import {
   retrieveFactsFused,
   type FactDraftInput,
 } from "../memory";
+import {
+  CHAT_CALLBACK_CANDIDATE_LIMIT,
+  CHAT_CALLBACK_MIN_AGE_TURNS,
+  selectChatCallback,
+  type ChatCallback,
+} from "./chat-callback";
 import { CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS, CHAT_ARCHIVIST_TIMEOUT_MS } from "./constants";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./prompts/chat-archivist";
 
@@ -105,6 +113,41 @@ export async function retrieveChatMemory(input: {
       })),
     ],
   };
+}
+
+/**
+ * Pick this turn's memory callback (memory-callbacks.plan.md), if any: embed the
+ * player's input once, fetch old episodes with their similarity to it, and run the
+ * pure selector (old + milestone-boosted + topic-distant + never repeated). The
+ * eligibility gate already passed (pipeline-side, pure) before this cost is paid.
+ * Any failure degrades to null with `chat_memory.callback.failed` — a missing
+ * callback is just an ordinary turn, never a failed reply.
+ */
+export async function retrieveChatCallback(input: {
+  groupId: string;
+  /** This turn's player input — the anti-echo anchor. */
+  input: string;
+  milestones: readonly Milestone[];
+  /** Refs already offered (the state's callback ring) — never repeated. */
+  usedRefs: readonly string[];
+  sink?: DiagnosticSink;
+}): Promise<ChatCallback | null> {
+  try {
+    const scope = chatScope(input.groupId);
+    const latestTurn = await latestEpisodeNumber(scope);
+    const maxTurn = latestTurn - CHAT_CALLBACK_MIN_AGE_TURNS;
+    if (maxTurn < 1) return null;
+    const embedded = await embedText(input.input);
+    const candidates = await callbackEpisodeCandidates(scope, toVectorLiteral(embedded.vector), {
+      maxTurn,
+      excludeIds: input.usedRefs.filter((r) => r.startsWith("e:")).map((r) => r.slice(2)),
+      limit: CHAT_CALLBACK_CANDIDATE_LIMIT,
+    });
+    return selectChatCallback({ candidates, milestones: input.milestones, usedRefs: input.usedRefs, latestTurn });
+  } catch (err) {
+    input.sink?.push(diag("warn", "chat_memory.callback.failed", `callback retrieval failed: ${errText(err)}`));
+    return null;
+  }
 }
 
 export interface ChatArchivistInput {
