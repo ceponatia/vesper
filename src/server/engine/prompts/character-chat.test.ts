@@ -1560,14 +1560,20 @@ describe("ensemble relationship matrix injection (relationship-model.plan.md sli
     ...over,
   });
 
-  it("renders present-pair law lines in the prefix", () => {
+  it("renders present-pair FULL third-person law blocks in the prefix (followups ruling 6)", () => {
     const parts = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Rhett")], {
       pairs: [{ fromName: "Mara", toName: "Rhett", record: record() }],
     });
     expect(parts.prefix).toContain("How they stand with each other");
-    expect(parts.prefix).toContain("Mara → Rhett: estranged childhood friends —");
+    expect(parts.prefix).toContain("Mara → Rhett (estranged childhood friends):");
     expect(parts.prefix).toContain("he left town without a word");
-    // The line is third person and band-labeled, never raw scalars.
+    // The full band semantics ride: knowledge ceiling, feeling, the corner note,
+    // and the escalation floor — all third person, never raw scalars.
+    expect(parts.prefix).toContain("Familiarity (deeply known):");
+    expect(parts.prefix).toContain("reads Rhett at a glance");
+    expect(parts.prefix).toContain("Regard (cool): Mara dislikes Rhett");
+    expect(parts.prefix).toContain("Familiarity is not warmth");
+    expect(parts.prefix).toContain("Mara entertains at most light flirtation, nothing physical with Rhett");
     expect(parts.prefix).not.toContain("-25");
   });
 
@@ -1594,6 +1600,7 @@ describe("ensemble relationship matrix injection (relationship-model.plan.md sli
         },
       ],
     });
-    expect(parts.prefix).toContain("Outwardly Mara performs courtesy over what Mara actually feels (icily civil).");
+    expect(parts.prefix).toContain("Outwardly Mara performs warmer toward Rhett than Mara feels");
+    expect(parts.prefix).toContain("(reads as: icily civil)");
   });
 });

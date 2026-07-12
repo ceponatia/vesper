@@ -15,7 +15,7 @@ import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contract
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
 import { driveWithheld, type ChatDrive } from "@/contracts/personality/drives";
 import { familiarityBandForValue, regardBandForValue } from "@/contracts/relationships/bands";
-import { composeRelationshipLaw, dispositionContrastLine } from "@/contracts/relationships/law";
+import { composePairRelationshipLaw, composeRelationshipLaw, dispositionContrastLine } from "@/contracts/relationships/law";
 import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
@@ -1278,11 +1278,21 @@ export function buildEnsembleChatPromptParts(
   const sheetMembers = present.length > 0 ? present : members;
   const sheets = sheetMembers.map((member) => ensembleMemberSheet(member, player));
 
-  // Tier-1 pair law (relationship matrix): both endpoints present. Lives in the
-  // prefix — re-rendering on a matrix edit / roster / presence change is the
-  // licensed cache bust, like a band crossing.
+  // Tier-1 pair law (relationship matrix; full third-person blocks since
+  // followups ruling 6): both endpoints present. Lives in the prefix —
+  // re-rendering on a matrix edit / roster / presence change is the licensed
+  // cache bust, like a band crossing.
   const pairLines = (extras.pairs ?? []).map(
-    (pair) => `- ${relationshipLineBetween(pair.fromName, pair.toName, pair.record)}`,
+    (pair) =>
+      `- ${composePairRelationshipLaw({
+        fromName: pair.fromName,
+        toName: pair.toName,
+        familiarity: pair.record.familiarity,
+        regard: pair.record.regard,
+        kind: pair.record.kind,
+        history: pair.record.history,
+        presented: pair.record.presented,
+      })}`,
   );
   const pairsSection = pairLines.length
     ? `How they stand with each other (cold-start law — the story may move it; never recite it):\n${pairLines.join("\n")}`
