@@ -1,0 +1,1 @@
+ALTER TABLE "images" ADD COLUMN "favorite" boolean DEFAULT false NOT NULL;

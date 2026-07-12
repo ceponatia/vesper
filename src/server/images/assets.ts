@@ -3,7 +3,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, images } from "../db";
+import { characters, db, images, items, locations, worlds } from "../db";
 import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
@@ -154,16 +154,40 @@ export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: Di
 export async function deleteOwnedImage(
   imageId: string,
   ownerId: string,
-  opts: { kind?: ImageKind } = {},
+  opts: { kind?: ImageKind; kinds?: readonly ImageKind[] } = {},
 ): Promise<boolean> {
-  const where = opts.kind
-    ? and(eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.kind, opts.kind))
-    : and(eq(images.id, imageId), eq(images.ownerId, ownerId));
+  const where = and(eq(images.id, imageId), eq(images.ownerId, ownerId), kindGuard(opts));
   const [row] = await db().select({ path: images.path }).from(images).where(where).limit(1);
   if (!row) return false;
   await db().delete(images).where(eq(images.id, imageId));
   await fs.unlink(absoluteImagePath(row)).catch(() => undefined); // sweep reconciles stragglers
   return true;
+}
+
+/** The optional single/multi kind guard shared by the owned-delete helpers. */
+function kindGuard(opts: { kind?: ImageKind; kinds?: readonly ImageKind[] }) {
+  if (opts.kinds) return inArray(images.kind, [...opts.kinds]);
+  return opts.kind ? eq(images.kind, opts.kind) : undefined;
+}
+
+/** The asset classes the Gallery hub may act on (list / favorite / delete). */
+export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as const satisfies readonly ImageKind[];
+
+/**
+ * Null out the soft pointers entity rows keep at deleted image ids — a
+ * gallery-deleted portrait leaves its character avatar-less (the portrait
+ * studio's own rule), a deleted entity render leaves its location/item/world
+ * imageless — never dangling. No-op for scene ids (nothing points at scenes).
+ */
+export async function clearEntityImagePointers(imageIds: readonly string[]): Promise<void> {
+  if (imageIds.length === 0) return;
+  const ids = [...imageIds];
+  await Promise.all([
+    db().update(characters).set({ avatarImageId: null }).where(inArray(characters.avatarImageId, ids)),
+    db().update(locations).set({ imageId: null }).where(inArray(locations.imageId, ids)),
+    db().update(items).set({ imageId: null }).where(inArray(items.imageId, ids)),
+    db().update(worlds).set({ imageId: null }).where(inArray(worlds.imageId, ids)),
+  ]);
 }
 
 /**
@@ -178,12 +202,10 @@ export async function deleteOwnedImage(
 export async function deleteOwnedImages(
   imageIds: string[],
   ownerId: string,
-  opts: { kind?: ImageKind } = {},
+  opts: { kind?: ImageKind; kinds?: readonly ImageKind[] } = {},
 ): Promise<number> {
   if (imageIds.length === 0) return 0;
-  const where = opts.kind
-    ? and(inArray(images.id, imageIds), eq(images.ownerId, ownerId), eq(images.kind, opts.kind))
-    : and(inArray(images.id, imageIds), eq(images.ownerId, ownerId));
+  const where = and(inArray(images.id, imageIds), eq(images.ownerId, ownerId), kindGuard(opts));
   const rows = await db().select({ path: images.path }).from(images).where(where);
   if (rows.length === 0) return 0;
   await db().delete(images).where(where);

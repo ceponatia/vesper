@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characters, db, imageReferences, images, sessionParticipants, sessions, users, worlds } from "@/server/db";
+import { characters, db, imageReferences, images, locations, sessionParticipants, sessions, users, worlds } from "@/server/db";
 
 // Gallery route + scene-reference resolution integration suite (docs/testing.md
 // §api): the GET handler invoked directly with mocked auth against DATABASE_URL.
@@ -19,7 +19,7 @@ vi.mock("@/server/auth", () => ({
 }));
 
 import { GET as galleryRoute } from "./gallery/route";
-import { DELETE as galleryDelete } from "./gallery/[id]/route";
+import { DELETE as galleryDelete, PATCH as galleryPatch } from "./gallery/[id]/route";
 import { POST as galleryDeleteAll } from "./gallery/delete/route";
 import { resolveSceneCharacterRefs } from "@/server/images";
 
@@ -54,11 +54,19 @@ async function json(res: Response): Promise<Record<string, unknown>> {
 interface SceneOut {
   id: string;
   sessionId: string | null;
-  sessionTitle: string;
+  sessionTitle: string | null;
   worldName: string | null;
   characterId: string | null;
   characterName: string | null;
+  entityKind: string | null;
+  entityName: string | null;
+  favorite: boolean;
   references: Array<{ kind: string; id: string; name: string }>;
+}
+
+interface GalleryOut {
+  images: SceneOut[];
+  nextCursor: string | null;
 }
 
 const ids = {
@@ -68,10 +76,13 @@ const ids = {
   sessionOld: "",
   sessionNew: "",
   character: "",
+  location: "",
   sceneNew1: "",
   sceneNew2: "",
   sceneOld: "",
   sceneChat: "",
+  portrait: "",
+  entityArt: "",
 };
 
 beforeAll(async () => {
@@ -86,10 +97,12 @@ beforeAll(async () => {
   const [wOld] = await db().insert(worlds).values({ ownerId: user.id, name: "Old World" }).returning();
   const [wNew] = await db().insert(worlds).values({ ownerId: user.id, name: "New World" }).returning();
   const [character] = await db().insert(characters).values({ ownerId: user.id, name: "Alice Char" }).returning();
-  if (!wOld || !wNew || !character) throw new Error("failed to seed worlds/character");
+  const [location] = await db().insert(locations).values({ ownerId: user.id, name: "Quay House" }).returning();
+  if (!wOld || !wNew || !character || !location) throw new Error("failed to seed worlds/character/location");
   ids.worldOld = wOld.id;
   ids.worldNew = wNew.id;
   ids.character = character.id;
+  ids.location = location.id;
 
   // sessionNew is more recently updated than sessionOld → it sorts first.
   const [sOld] = await db()
@@ -148,6 +161,20 @@ beforeAll(async () => {
   await db().insert(images).values(scene({ sessionId: null }));
   await db().insert(images).values(scene({ ownerId: other.id, sessionId: sNew.id }));
 
+  // The other tabs' rows: a portrait variant and a location render — neither
+  // may leak into the scenes tab, and each surfaces under its own tab.
+  const [portrait] = await db()
+    .insert(images)
+    .values(scene({ kind: "portrait_variant", sessionId: null, entityKind: "character", entityId: character.id, createdAt: new Date(stamp + 4000) }))
+    .returning();
+  const [entityArt] = await db()
+    .insert(images)
+    .values(scene({ kind: "entity", sessionId: null, entityKind: "location", entityId: location.id, createdAt: new Date(stamp + 5000) }))
+    .returning();
+  if (!portrait || !entityArt) throw new Error("failed to seed portrait/entity art");
+  ids.portrait = portrait.id;
+  ids.entityArt = entityArt.id;
+
   // Participants for the resolveSceneCharacterRefs test.
   await db().insert(sessionParticipants).values([
     { sessionId: sNew.id, displayName: "Alice", characterId: character.id },
@@ -162,30 +189,35 @@ afterAll(async () => {
   await db().delete(sessions).where(eq(sessions.ownerId, authState.user.id));
   await db().delete(worlds).where(eq(worlds.ownerId, authState.user.id));
   await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
+  await db().delete(locations).where(eq(locations.ownerId, authState.user.id));
   await db().delete(users).where(eq(users.id, authState.user.id));
   await db().delete(users).where(eq(users.id, ids.otherUser));
   await globalThis.__vesperPool?.end();
 });
 
 describe("GET /api/gallery", () => {
-  it("returns the owner's ready scenes, grouped-orderable by session recency, with references", async (t) => {
+  it("scenes tab: the owner's ready scenes newest-first, with joins + references", async (t) => {
     if (!ready) return t.skip();
-    const body = await json(await galleryRoute(req("http://t/api/gallery"), noCtx));
-    const scenes = body.scenes as SceneOut[];
-    const sessionScenes = scenes.filter((s) => s.sessionId);
+    const body = (await json(await galleryRoute(req("http://t/api/gallery"), noCtx))) as unknown as GalleryOut;
+    const scenes = body.images;
 
-    // Only the three ready, still-existing-session, owned scenes — not pending,
-    // failed, the true orphan, or another owner's.
-    expect(sessionScenes.map((s) => s.id).sort()).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneOld].sort());
-
-    // Newest session first; newest scene first within a session.
-    expect(sessionScenes.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneOld]);
+    // Only the four ready owned scenes — not pending, failed, the true orphan,
+    // another owner's, or the portrait/entity rows — newest first (keyset order).
+    expect(scenes.map((s) => s.id)).toEqual([ids.sceneChat, ids.sceneNew1, ids.sceneNew2, ids.sceneOld]);
+    expect(body.nextCursor).toBeNull();
 
     // Joined session/world fields.
     const first = scenes.find((s) => s.id === ids.sceneNew1)!;
     expect(first.sessionTitle).toBe("New Session");
     expect(first.worldName).toBe("New World");
     expect(scenes.find((s) => s.id === ids.sceneOld)!.worldName).toBe("Old World");
+
+    // The sessionless chat scene is tagged with its character; session scenes are not.
+    const chat = scenes.find((s) => s.id === ids.sceneChat)!;
+    expect(chat.sessionId).toBeNull();
+    expect(chat.characterId).toBe(ids.character);
+    expect(chat.characterName).toBe("Alice Char");
+    expect(first.characterId).toBeNull();
 
     // References come from the join table (order within a scene is not contractual).
     expect(first.references).toHaveLength(2);
@@ -198,22 +230,73 @@ describe("GET /api/gallery", () => {
     expect(scenes.find((s) => s.id === ids.sceneOld)!.references).toEqual([]);
   });
 
-  it("surfaces sessionless character-chat scenes after sessions, tagged with the character", async (t) => {
+  it("pages by keyset cursor without overlap or gaps", async (t) => {
     if (!ready) return t.skip();
-    const body = await json(await galleryRoute(req("http://t/api/gallery"), noCtx));
-    const scenes = body.scenes as SceneOut[];
+    const page1 = (await json(await galleryRoute(req("http://t/api/gallery?limit=2"), noCtx))) as unknown as GalleryOut;
+    expect(page1.images.map((s) => s.id)).toEqual([ids.sceneChat, ids.sceneNew1]);
+    expect(page1.nextCursor).toBeTruthy();
 
-    const chat = scenes.find((s) => s.id === ids.sceneChat);
-    expect(chat).toBeDefined();
-    expect(chat!.sessionId).toBeNull();
-    expect(chat!.characterId).toBe(ids.character);
-    expect(chat!.characterName).toBe("Alice Char");
+    const page2 = (await json(
+      await galleryRoute(req(`http://t/api/gallery?limit=2&cursor=${encodeURIComponent(page1.nextCursor ?? "")}`), noCtx),
+    )) as unknown as GalleryOut;
+    expect(page2.images.map((s) => s.id)).toEqual([ids.sceneNew2, ids.sceneOld]);
 
-    // Chat scenes are appended after every session scene, so the client groups
-    // them under a trailing "Character chats" section.
-    const lastSessionIdx = scenes.map((s) => Boolean(s.sessionId)).lastIndexOf(true);
-    const chatIdx = scenes.findIndex((s) => s.id === ids.sceneChat);
-    expect(chatIdx).toBeGreaterThan(lastSessionIdx);
+    // A garbage cursor degrades to the first page, never a failed request.
+    const garbage = (await json(await galleryRoute(req("http://t/api/gallery?limit=2&cursor=nonsense"), noCtx))) as unknown as GalleryOut;
+    expect(garbage.images.map((s) => s.id)).toEqual([ids.sceneChat, ids.sceneNew1]);
+  });
+
+  it("portraits tab: portrait variants joined to their character", async (t) => {
+    if (!ready) return t.skip();
+    const body = (await json(await galleryRoute(req("http://t/api/gallery?tab=portraits"), noCtx))) as unknown as GalleryOut;
+    expect(body.images.map((p) => p.id)).toEqual([ids.portrait]);
+    expect(body.images[0]!.characterName).toBe("Alice Char");
+  });
+
+  it("entity tab: entity art with the source entity's name resolved", async (t) => {
+    if (!ready) return t.skip();
+    const body = (await json(await galleryRoute(req("http://t/api/gallery?tab=entity"), noCtx))) as unknown as GalleryOut;
+    expect(body.images.map((e) => e.id)).toEqual([ids.entityArt]);
+    expect(body.images[0]!.entityKind).toBe("location");
+    expect(body.images[0]!.entityName).toBe("Quay House");
+  });
+});
+
+describe("PATCH /api/gallery/:id (favorite)", () => {
+  const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+  const patchReq = (id: string, favorite: boolean) =>
+    new NextRequest(`http://t/api/gallery/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorite }),
+    });
+
+  it("toggles the favorite flag and serves it on the list payload", async (t) => {
+    if (!ready) return t.skip();
+    const res = await galleryPatch(patchReq(ids.sceneNew1, true), ctx(ids.sceneNew1));
+    expect(res.status).toBe(200);
+    const body = (await json(await galleryRoute(req("http://t/api/gallery"), noCtx))) as unknown as GalleryOut;
+    expect(body.images.find((s) => s.id === ids.sceneNew1)?.favorite).toBe(true);
+    await galleryPatch(patchReq(ids.sceneNew1, false), ctx(ids.sceneNew1));
+  });
+
+  it("404s another owner's image and non-gallery kinds", async (t) => {
+    if (!ready) return t.skip();
+    const [foreign] = await db()
+      .insert(images)
+      .values({
+        ownerId: ids.otherUser,
+        kind: "scene",
+        status: "ready",
+        sessionId: ids.sessionNew,
+        path: `images/${ids.otherUser}/fav.webp`,
+        prompt: "",
+        meta: {},
+      })
+      .returning();
+    if (!foreign) throw new Error("failed to seed foreign scene");
+    expect((await galleryPatch(patchReq(foreign.id, true), ctx(foreign.id))).status).toBe(404);
+    await db().delete(images).where(eq(images.id, foreign.id));
   });
 });
 
@@ -277,7 +360,7 @@ describe("DELETE /api/gallery/:id", () => {
     expect(await exists(row.id)).toBe(true);
   });
 
-  it("404s and preserves a non-scene asset (kind guard)", async (t) => {
+  it("404s and preserves a non-gallery asset (kind guard)", async (t) => {
     if (!ready) return t.skip();
     const [row] = await db()
       .insert(images)
@@ -297,6 +380,32 @@ describe("DELETE /api/gallery/:id", () => {
     const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
     expect(res.status).toBe(404);
     expect(await exists(row.id)).toBe(true);
+  });
+
+  it("deletes a portrait variant and clears a character avatar pointer at it", async (t) => {
+    if (!ready) return t.skip();
+    const [row] = await db()
+      .insert(images)
+      .values({
+        ownerId: authState.user.id,
+        kind: "portrait_variant",
+        status: "ready",
+        entityKind: "character",
+        entityId: ids.character,
+        path: `images/${authState.user.id}/portrait-del.webp`,
+        prompt: "",
+        meta: {},
+      })
+      .returning();
+    if (!row) throw new Error("failed to seed portrait");
+    await db().update(characters).set({ avatarImageId: row.id }).where(eq(characters.id, ids.character));
+
+    const res = await galleryDelete(req(`http://t/api/gallery/${row.id}`), ctx(row.id));
+    expect(res.status).toBe(200);
+    expect(await exists(row.id)).toBe(false);
+    // The soft pointer is nulled, never left dangling (the portrait studio's own rule).
+    const [char] = await db().select({ avatarImageId: characters.avatarImageId }).from(characters).where(eq(characters.id, ids.character));
+    expect(char?.avatarImageId).toBeNull();
   });
 });
 
