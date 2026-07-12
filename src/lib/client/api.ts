@@ -813,6 +813,20 @@ export function emptyWorldDraft(): WorldDraft {
   return worldDraftSchema.parse({});
 }
 
+/** An attribute value as the portrait review renders it (contracts' value union). */
+const portraitValueSchema = z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]);
+
+/** The portrait review-dialog payload (followups ruling 2). */
+export const portraitReviewSchema = z
+  .object({
+    conflicts: z
+      .array(z.object({ id: z.string(), current: portraitValueSchema, proposed: portraitValueSchema }))
+      .catch([]),
+    filled: z.array(z.object({ id: z.string(), value: portraitValueSchema })).catch([]),
+  })
+  .catch({ conflicts: [], filled: [] });
+export type PortraitReview = z.infer<typeof portraitReviewSchema>;
+
 /** Forge endpoints may return the draft bare or wrapped with diagnostics. */
 function forgeResponseSchema<T>(draft: z.ZodType<T>) {
   return z.preprocess(
@@ -866,9 +880,21 @@ export const charactersApi = {
   /** Replace-set save of the character's outgoing default edges. */
   saveRelationships: (id: string, edges: { toCharacterId: string; record: AuthoredEdgeRecord }[]) =>
     apiPut(z.unknown(), `/api/characters/${id}/relationships`, { edges }),
-  /** Vision pass over the canonical avatar → unset appearance attributes filled on the draft. */
+  /**
+   * Vision pass over the canonical avatar → unset appearance attributes filled
+   * on the draft, plus the review-dialog data: disagreements as current →
+   * proposed and the list of auto-filled blanks (followups ruling 2).
+   */
   attributesFromPortrait: (id: string, draft: CharacterDraft) =>
-    apiPost(forgeResponseSchema(characterDraftSchema), `/api/characters/${id}/attributes/from-portrait`, { draft }),
+    apiPost(
+      z.object({
+        draft: characterDraftSchema,
+        diagnostics: arrayOf(diagnosticSchema),
+        portrait: portraitReviewSchema,
+      }),
+      `/api/characters/${id}/attributes/from-portrait`,
+      { draft },
+    ),
   generateAvatar: (id: string, body: { model?: AvatarImageModel } = {}) =>
     apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>

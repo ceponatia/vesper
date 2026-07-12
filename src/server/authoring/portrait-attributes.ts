@@ -95,15 +95,32 @@ export interface PortraitAttributesInput {
   sink?: DiagnosticSink;
 }
 
+/** One portrait-vs-sheet disagreement — the review dialog's row (followups ruling 2). */
+export interface PortraitConflict {
+  id: string;
+  current: AttributeValue["value"];
+  proposed: AttributeValue["value"];
+}
+
+export interface PortraitAttributesResult {
+  draft: CharacterDraft;
+  /** Disagreements with existing values — NOT applied; the review dialog offers them. */
+  conflicts: PortraitConflict[];
+  /** The unset ids the reading filled (source "creation"). */
+  filled: AttributeValue[];
+}
+
 /**
  * Read the portrait and fill in unset appearance attributes. Existing values
- * (any provenance) are never changed; a portrait reading that disagrees with
- * one lands as a `portrait_conflict` diagnostic for the player to act on.
- * Degrades to a no-op draft (with the generateChecked diagnostic) — never a
- * failed request, and never invented demo content: a fabricated "reading" of
- * an image nobody looked at would be worse than nothing.
+ * (any provenance) are never changed by the run itself; a disagreement comes
+ * back as a STRUCTURED conflict (plus a `portrait_conflict` diagnostic) so the
+ * client's "Review portrait changes" dialog can offer each as current →
+ * proposed with per-row accept (followups ruling 2). Degrades to a no-op
+ * result — never a failed request, and never invented demo content: a
+ * fabricated "reading" of an image nobody looked at would be worse than
+ * nothing.
  */
-export async function derivePortraitAttributes(input: PortraitAttributesInput): Promise<CharacterDraft> {
+export async function derivePortraitAttributes(input: PortraitAttributesInput): Promise<PortraitAttributesResult> {
   const { draft, sink } = input;
   const realizedBody = realizedBodyFor(draft);
   const definitions = portraitAttributeDefinitions(draft, realizedBody);
@@ -125,16 +142,18 @@ export async function derivePortraitAttributes(input: PortraitAttributesInput): 
 
 /**
  * Pure fill-blanks merge for grounded portrait readings: a reading for an
- * unset id lands; a reading that disagrees with ANY existing value (manual or
- * creation) becomes a `portrait_conflict` diagnostic and is not applied.
+ * unset id lands (`filled`); a reading that disagrees with ANY existing value
+ * (manual or creation) is returned as a structured conflict — and reported —
+ * never applied here.
  */
 export function mergePortraitReadings(
   draft: CharacterDraft,
   readings: readonly AttributeValue[],
   sink?: DiagnosticSink,
-): CharacterDraft {
+): PortraitAttributesResult {
   const existing = new Map(draft.profile.attributes.map((a) => [a.id, a]));
   const additions: AttributeValue[] = [];
+  const conflicts: PortraitConflict[] = [];
   for (const read of readings) {
     const current = existing.get(read.id);
     if (!current) {
@@ -142,6 +161,7 @@ export function mergePortraitReadings(
       continue;
     }
     if (JSON.stringify(current.value) !== JSON.stringify(read.value)) {
+      conflicts.push({ id: read.id, current: current.value, proposed: read.value });
       sink?.push(
         diag(
           "info",
@@ -152,8 +172,11 @@ export function mergePortraitReadings(
       );
     }
   }
-  if (additions.length === 0) return draft;
-  return { ...draft, profile: { ...draft.profile, attributes: [...draft.profile.attributes, ...additions] } };
+  const next =
+    additions.length === 0
+      ? draft
+      : { ...draft, profile: { ...draft.profile, attributes: [...draft.profile.attributes, ...additions] } };
+  return { draft: next, conflicts, filled: additions };
 }
 
 function formatValue(value: AttributeValue["value"]): string {

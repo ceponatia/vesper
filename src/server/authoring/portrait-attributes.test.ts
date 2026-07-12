@@ -30,13 +30,16 @@ describe("portraitAttributeDefinitions", () => {
 });
 
 describe("mergePortraitReadings", () => {
-  it("fills unset ids and reports (never applies) disagreements", () => {
+  it("fills unset ids and returns disagreements as structured conflicts (never applied)", () => {
     const sink = new DiagnosticCollector();
     const draft = draftWith((d) => {
       d.profile.attributes = [attr("hair.color", "black", "manual")];
     });
-    const merged = mergePortraitReadings(draft, [attr("hair.color", "auburn"), attr("eyes.color", "green")], sink);
-    expect(merged.profile.attributes).toEqual([attr("hair.color", "black", "manual"), attr("eyes.color", "green")]);
+    const result = mergePortraitReadings(draft, [attr("hair.color", "auburn"), attr("eyes.color", "green")], sink);
+    expect(result.draft.profile.attributes).toEqual([attr("hair.color", "black", "manual"), attr("eyes.color", "green")]);
+    // The review dialog's data: the disagreement as current → proposed, the fill listed.
+    expect(result.conflicts).toEqual([{ id: "hair.color", current: "black", proposed: "auburn" }]);
+    expect(result.filled).toEqual([attr("eyes.color", "green")]);
     const conflict = sink.items.find((d) => d.code === "forge.character.portrait.portrait_conflict");
     expect(conflict?.message).toContain("hair.color");
   });
@@ -46,8 +49,10 @@ describe("mergePortraitReadings", () => {
     const draft = draftWith((d) => {
       d.profile.attributes = [attr("hair.color", "black", "manual")];
     });
-    const merged = mergePortraitReadings(draft, [attr("hair.color", "black")], sink);
-    expect(merged.profile.attributes).toEqual(draft.profile.attributes);
+    const result = mergePortraitReadings(draft, [attr("hair.color", "black")], sink);
+    expect(result.draft.profile.attributes).toEqual(draft.profile.attributes);
+    expect(result.conflicts).toEqual([]);
+    expect(result.filled).toEqual([]);
     expect(sink.items).toEqual([]);
   });
 });
@@ -63,7 +68,8 @@ describe("derivePortraitAttributes (keyless demo mode)", () => {
       image: { data: new Uint8Array([1, 2, 3]), mediaType: "image/webp" },
       sink,
     });
-    expect(result.profile.attributes).toEqual(draft.profile.attributes);
+    expect(result.draft.profile.attributes).toEqual(draft.profile.attributes);
+    expect(result.conflicts).toEqual([]);
     expect(sink.items.some((d) => d.code === "forge.character.portrait.degraded")).toBe(true);
   });
 });

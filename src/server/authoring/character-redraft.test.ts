@@ -45,26 +45,24 @@ describe("redraftCharacterScope (keyless demo path)", () => {
     expect(redrafted.profile.defaultOutfit).toEqual(["item_mine"]);
   });
 
-  it("attributes re-draft keeps a conflicting manual value and reports it", async () => {
+  it("attributes re-draft is a full re-sync — a manual value is revisable (ruling 1)", async () => {
     const sink = new DiagnosticCollector();
     const draft = draftWith((d) => {
-      // The demo attribute section suggests hair.color=auburn — a conflict.
+      // The demo attribute section suggests hair.color=auburn — the re-sync applies it.
       d.profile.attributes = [manualAttr("hair.color", "black")];
     });
     const redrafted = await redraftCharacterScope(input(draft, "attributes", sink));
-    expect(redrafted.profile.attributes).toContainEqual(manualAttr("hair.color", "black"));
+    expect(redrafted.profile.attributes.find((a) => a.id === "hair.color")?.value).not.toBe("black");
     expect(redrafted.profile.attributes.some((a) => a.source === "creation")).toBe(true);
-    expect(sink.items.some((d) => d.code === "forge.character.redraft.attributes.kept_manual")).toBe(true);
   });
 
-  it("disposition re-draft keeps manual trait values and rewrites tags", async () => {
+  it("disposition re-draft owns the tab — traits and tags replaced wholesale", async () => {
     const draft = draftWith((d) => {
       d.profile.traits = [{ id: "temperament.warmth", value: 80, source: "manual" }];
       d.profile.tags = ["old-tag"];
     });
     const redrafted = await redraftCharacterScope(input(draft, "disposition"));
-    expect(redrafted.profile.traits.find((t) => t.id === "temperament.warmth")?.value).toBe(80);
-    // Demo disposition tags replace the authored list (re-draft owns the tab).
+    expect(redrafted.profile.traits.length).toBeGreaterThan(0);
     expect(redrafted.profile.tags).not.toEqual(["old-tag"]);
     expect(redrafted.profile.tags.length).toBeGreaterThan(0);
   });

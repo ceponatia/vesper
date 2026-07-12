@@ -2,13 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import type { Diagnostic } from "@/contracts";
+import { attributeRegistry, type Diagnostic } from "@/contracts";
 import { mergeFillDraft } from "@/lib/character-fill";
 import { mergeRedraftScope, type CharacterSheetScope } from "@/lib/character-scopes";
 import {
   characterDraftSchema,
   charactersApi,
   type CharacterDraft,
+  type PortraitReview,
 } from "@/lib/client/api";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
@@ -22,6 +23,11 @@ import { SaveBar } from "@/components/ui/save-bar";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
+
+/** Render an attribute value for the portrait review rows. */
+function formatPortraitValue(value: string | readonly string[] | number | boolean): string {
+  return Array.isArray(value) ? value.join(", ") : String(value);
+}
 
 export function CharacterEditPage({ characterId }: { characterId: string }) {
   const router = useRouter();
@@ -38,6 +44,11 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const [forging, setForging] = useState(false);
   const [redrafting, setRedrafting] = useState<CharacterSheetScope | null>(null);
   const [derivingPortrait, setDerivingPortrait] = useState(false);
+  // The portrait review dialog (followups ruling 2): what the vision pass read —
+  // disagreements offered as current → proposed, auto-fills listed for testing
+  // visibility. Opens after every read that saw anything.
+  const [portraitReview, setPortraitReview] = useState<PortraitReview | null>(null);
+  const [acceptedIds, setAcceptedIds] = useState<ReadonlySet<string>>(new Set());
   const [forgeDiagnostics, setForgeDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -158,13 +169,49 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
       toast.push({ title: "Portrait read failed", description: result.error.message, tone: "error" });
       return;
     }
-    const { draft: derived, diagnostics } = result.data;
+    const { draft: derived, diagnostics, portrait } = result.data;
     setForgeDiagnostics(diagnostics);
     editGenRef.current += 1;
     // Same fill-merge as the Forge: additions only, current draft wins.
     setDraft((current) => (current ? mergeFillDraft(current, derived) : derived));
     setDirty(true);
-    toast.push({ title: "Portrait read", description: "Visible attributes filled in — review and save.", tone: "success" });
+    if (portrait.conflicts.length || portrait.filled.length) {
+      // Conflicts pre-checked: the button's purpose is "accept what the picture shows".
+      setAcceptedIds(new Set(portrait.conflicts.map((c) => c.id)));
+      setPortraitReview(portrait);
+    } else {
+      toast.push({ title: "Portrait read", description: "Nothing new was visible — the sheet already matches.", tone: "success" });
+    }
+  };
+
+  /** Apply the checked portrait values over the sheet's (source stays AI-owned). */
+  const applyPortraitReview = () => {
+    const review = portraitReview;
+    setPortraitReview(null);
+    if (!review) return;
+    const accepted = review.conflicts.filter((c) => acceptedIds.has(c.id));
+    if (accepted.length === 0) return;
+    const byId = new Map(accepted.map((c) => [c.id, c.proposed]));
+    editGenRef.current += 1;
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            profile: {
+              ...current.profile,
+              attributes: current.profile.attributes.map((a) =>
+                byId.has(a.id) ? { ...a, value: byId.get(a.id) as typeof a.value, source: "creation" as const } : a,
+              ),
+            },
+          }
+        : current,
+    );
+    setDirty(true);
+    toast.push({
+      title: `Applied ${accepted.length} portrait value${accepted.length === 1 ? "" : "s"}`,
+      description: "Review the sheet, then save.",
+      tone: "success",
+    });
   };
 
   /**
@@ -263,6 +310,65 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
           </Button>
         }
       />
+      <Dialog
+        open={portraitReview !== null}
+        onClose={() => setPortraitReview(null)}
+        title="Review portrait changes"
+        footer={
+          <>
+            <Button onClick={() => setPortraitReview(null)}>Keep sheet values</Button>
+            <Button variant="primary" onClick={applyPortraitReview} disabled={acceptedIds.size === 0 && (portraitReview?.conflicts.length ?? 0) > 0}>
+              {portraitReview?.conflicts.length ? `Apply checked (${acceptedIds.size})` : "Done"}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4 text-sm">
+          {portraitReview?.conflicts.length ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-paper-300">The portrait disagrees with the sheet — check what the picture should win:</p>
+              {portraitReview.conflicts.map((conflict) => {
+                const label = attributeRegistry.byId(conflict.id as never)?.label ?? conflict.id;
+                return (
+                  <label key={conflict.id} className="flex items-start gap-2 rounded-md border border-ink-600 bg-ink-850 px-2.5 py-2">
+                    <input
+                      type="checkbox"
+                      checked={acceptedIds.has(conflict.id)}
+                      onChange={(e) =>
+                        setAcceptedIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(conflict.id);
+                          else next.delete(conflict.id);
+                          return next;
+                        })
+                      }
+                      className="mt-0.5"
+                    />
+                    <span className="min-w-0">
+                      <span className="text-paper-200">{label}:</span>{" "}
+                      <span className="text-paper-500 line-through">{formatPortraitValue(conflict.current)}</span>
+                      {" → "}
+                      <span className="text-accent-300">{formatPortraitValue(conflict.proposed)}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
+          {portraitReview?.filled.length ? (
+            <div className="flex flex-col gap-1">
+              <p className="text-paper-300">Filled in from the portrait (was empty):</p>
+              <ul className="flex flex-col gap-0.5 text-xs text-paper-400">
+                {portraitReview.filled.map((entry) => (
+                  <li key={entry.id}>
+                    {attributeRegistry.byId(entry.id as never)?.label ?? entry.id}: {formatPortraitValue(entry.value)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      </Dialog>
       <Dialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
