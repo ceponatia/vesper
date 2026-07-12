@@ -1076,6 +1076,8 @@ export async function sendChatMessage(
     messageId?: string;
     /** Attached-photo ids (uploaded first via chatsApi.uploadAttachment) — send only. */
     attachmentIds?: string[];
+    /** Reopen-opener initiative (chat-initiative.plan.md) — continue only. */
+    initiative?: boolean;
   },
   onChunk: (delta: string) => void,
   signal?: AbortSignal,

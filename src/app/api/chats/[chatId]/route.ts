@@ -44,6 +44,8 @@ const sendBodySchema = z
     model: z.string().trim().min(1).max(120).optional(),
     /** "Has something to say" opener cue (spec §8.4) — only read for kind "continue". */
     cue: z.string().trim().max(200).optional(),
+    /** Reopen-opener initiative (chat-initiative.plan.md) — only read for kind "continue". */
+    initiative: z.boolean().optional(),
     /** Target user-message id — required for kind "rerun" (the line to re-send from). */
     messageId: z.string().trim().min(1).max(120).optional(),
     /**
@@ -134,6 +136,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     // the character's own narrator pick, not MODEL_DEFAULTS.narrative.
     model: body.value.model ?? resolveChatModelId(owned.character.chatModel),
     cue: body.value.cue,
+    initiative: body.value.initiative,
     // "Auto at big moments" (slice 9): the engine signals, this route queues — a scene
     // render anchored to the exchange's reply, deduped against live renders.
     onBigMoment: ({ assistantMessageId }) => {
