@@ -5,8 +5,9 @@ state/schema growth + the `affinity`→`regard` rename and migration 0028; the
 composed prompt block + disposition contrast + axis-contrast eval fixtures; the
 player-edge UI — record editor with live law preview, state-tools texture, panel
 2D plot. Scenario presets still author the single legacy stage and seed through
-the bridge — band pickers fold into the matrix slice. Next: the substrate plan
-(multi-character-chat.plan.md), then slice 6 (the matrix); scoped,
+the bridge — band pickers fold into the matrix slice. **Unpaused 2026-07-12**
+(owner go-ahead): the substrate plan
+(multi-character-chat.plan.md) is now active, then slice 6 (the matrix); scoped,
 expanded, and **settled** 2026-07-07, every open question ruled and folded into
 its section below. The multi-character substrate this plan's matrix slice
 depends on is its own plan:

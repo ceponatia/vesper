@@ -1,8 +1,9 @@
 # Multi-character chat — the substrate
 
-Status: next (split out of
+Status: active (promoted from next 2026-07-12 on owner go-ahead — build the
+substrate, then the relationship plan's matrix slice. Split out of
 [relationship-model.plan.md](relationship-model.plan.md) on 2026-07-07 per owner
-ruling; unsequenced — it slots after that plan's slices 1–3 and before its
+ruling; it slots after that plan's slices 1–3 and before its
 matrix slice. Creation groundwork already shipped 2026-07-07.)
 
 ## Problem
