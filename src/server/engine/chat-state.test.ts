@@ -22,6 +22,7 @@ import {
   seedChatScenario,
   seedChatState,
   seededOutfitMarker,
+  settleEnsembleMember,
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
@@ -351,6 +352,87 @@ describe("applyChatAction (test-bed chips)", () => {
     const once = applyChatAction(state(), "fluster", 0);
     const twice = applyChatAction(once, "fluster", 0);
     expect(twice.conditions.filter((c) => c.id === "flushed")).toHaveLength(1);
+  });
+});
+
+describe("settleEnsembleMember (followups rulings 10-11)", () => {
+  const now = new Date("2026-07-12T12:00:00Z");
+  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(profile()), ...overrides });
+  const settle = (args: Partial<Parameters<typeof settleEnsembleMember>[0]> & { state: ChatState }) =>
+    settleEnsembleMember({
+      preRegard: args.state.regard,
+      pulsed: false,
+      personal: null,
+      characterName: "Vera",
+      assistantMessageId: "msg-1",
+      now,
+      clockMinutes: 30,
+      ...args,
+    });
+
+  it("a pulsed member records the arc baseline sample + first_exchange milestone (ruling 11)", () => {
+    const next = settle({ state: base(), pulsed: true });
+    expect(next.relationshipHistory).toHaveLength(1);
+    expect(next.relationshipHistory[0]).toMatchObject({ clockMinutes: 30, regard: 0 });
+    expect(next.milestones.map((m) => m.kind)).toEqual(["first_exchange"]);
+  });
+
+  it("a regard move samples the arc and a big delta mints a strong_reaction milestone", () => {
+    const moved = settle({
+      state: base({
+        regard: 5,
+        relationshipHistory: [{ at: "x", clockMinutes: 0, regard: 0, band: "neutral", familiarity: 0 }],
+        lastPulseTrace: { ...seedChatState(profile()).lastPulseTrace, regardDelta: 5, concept: "compliment" },
+      }),
+      preRegard: 0,
+      pulsed: true,
+    });
+    expect(moved.relationshipHistory).toHaveLength(2);
+    expect(moved.milestones.map((m) => m.kind)).toContain("strong_reaction");
+  });
+
+  it("an unpulsed member gets no sample and no milestones", () => {
+    const next = settle({ state: base(), pulsed: false });
+    expect(next.relationshipHistory).toEqual([]);
+    expect(next.milestones).toEqual([]);
+  });
+
+  it("folds the personal pass: loops replace in full, an outfit proposal replaces the tracked look (ruling 10)", () => {
+    const next = settle({
+      state: base({ openLoops: ["old promise"], outfit: "a sundress", outfitExposed: false }),
+      personal: {
+        openLoops: ["show the player her studio"],
+        attributeChanges: [],
+        outfit: { description: "a paint-streaked tank top", exposed: false },
+        driveUpdates: [],
+      },
+    });
+    expect(next.openLoops).toEqual(["show the player her studio"]);
+    expect(next.outfit).toBe("a paint-streaked tank top");
+  });
+
+  it("a null personal pass (absent/degraded) keeps the member's prior personal fields", () => {
+    const prior = base({ openLoops: ["old promise"], outfit: "a sundress" });
+    const next = settle({ state: prior, personal: null });
+    expect(next.openLoops).toEqual(["old promise"]);
+    expect(next.outfit).toBe("a sundress");
+  });
+
+  it("a revealed secret drive mints the secret_shared milestone", () => {
+    const withDrive = base({
+      drives: [{ want: "leave this town", why: "", secrecy: "secret", revealed: false, resolved: false, progress: "" }],
+    });
+    const next = settle({
+      state: withDrive,
+      personal: {
+        openLoops: [],
+        attributeChanges: [],
+        outfit: { description: "", exposed: false },
+        driveUpdates: [{ want: "leave this town", progress: "", revealed: true, resolved: false }],
+      },
+    });
+    expect(next.milestones.map((m) => m.kind)).toContain("secret_shared");
+    expect(next.drives[0]?.revealed).toBe(true);
   });
 });
 
