@@ -2,13 +2,36 @@ import { describe, expect, it } from "vitest";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./chat-archivist";
 
 describe("CHAT_ARCHIVIST_SYSTEM", () => {
-  it("declares eight fields and carries a worked example for each rare field", () => {
-    expect(CHAT_ARCHIVIST_SYSTEM).toContain("eight fields");
+  it("declares nine fields and carries a worked example for each rare field", () => {
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("nine fields");
     // The attributeChanges micro-example (C6 — the haircut) so the proposer stops under-firing.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeId":"hair.length"');
     // Both examples carry every field, so the model sees the full shape.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"openLoops":[]');
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeChanges":[]');
+  });
+
+  it("declares the roster-gated presence field (multi-character-chat.plan.md slice 3)", () => {
+    // Only armed by a Roster line; only real transitions, never inferred from silence.
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"presence": ONLY when a "Roster" line/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/never infer one from silence/);
+    // The 1-on-1 prompt renders no Roster line; a real roster does, with live presence.
+    const solo = buildChatArchivistPrompt({
+      characterName: "Mara",
+      playerName: "Brian",
+      exchange: { player: "hi", assistant: "hello" },
+    });
+    expect(solo).not.toContain("Roster");
+    const group = buildChatArchivistPrompt({
+      characterName: "Mara",
+      playerName: "Brian",
+      exchange: { player: "hi", assistant: "hello" },
+      roster: [
+        { name: "Mara", presence: "present" },
+        { name: "Vera", presence: "away" },
+      ],
+    });
+    expect(group).toContain("Roster (for field 9 — match names exactly): Mara (present), Vera (away)");
   });
 
   it("declares the optional outfit field with a worked example (chat-scene-fidelity slice 1)", () => {
