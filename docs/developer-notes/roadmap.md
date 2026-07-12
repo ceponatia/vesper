@@ -23,22 +23,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Multi-character chat — the substrate** —
-  [multi-character-chat.plan.md](multi-character-chat.plan.md) (active —
-  promoted from Next 2026-07-12 on owner go-ahead. Roster of 2–4 full
-  characters per conversation, per-character state rows, narrative presence +
-  activity recency, the one-block ensemble prompt frame, player-owns-himself
-  narration authority, referenced-only pulse + tier-1 memory legs, away-freeze.
-  Creation groundwork (multi-select dialog, `characterIds` API, sort-0 primary)
-  shipped 2026-07-07. Slots between relationship v2's slice 4 and its matrix
-  slice.)
-- **Relationship model v2 — familiarity × regard** —
-  [relationship-model.plan.md](relationship-model.plan.md) (active — slices 1–4
-  done 2026-07-07: contracts; two-axis state + the `affinity`→`regard` rename,
-  migration 0028; the composed prompt block + axis-contrast eval fixtures; the
-  player-edge authoring UI. **Unpaused 2026-07-12**: the substrate plan above
-  is building now; slice 6 (the matrix — per-conversation grid, library-defaults
-  Relationships tab, reactive + looming injection) follows it.)
+_(Nothing actively building — pick from **Next** below.)_
 
 ## Next (queued)
 
@@ -133,6 +118,23 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Multi-character chat — the substrate (all four slices)** —
+  [multi-character-chat.plan.md](multi-character-chat.plan.md) — 2026-07-12 —
+  a conversation holds up to 4 full characters: roster routes + panel,
+  per-character state with presence + activity recency (migration 0037), the
+  one-block ensemble prompt frame (roster-of-1 byte-identical, asserted),
+  player-owns-himself authority + cutaways, away-freeze, referenced-only pulse,
+  tier-1 per-member memory legs, witness memory writes, archivist presence
+  confirmation. Substrate simplifications recorded in the plan.
+- **Relationship model v2 — familiarity × regard (complete; slice 6 matrix)** —
+  [relationship-model.plan.md](relationship-model.plan.md) — 2026-07-12 —
+  the matrix: `character_chat_relationships` + library-default
+  `character_relationships` (migration 0038), creation/join seeding, the
+  in-chat pair editor (shared-cell, mirrored stances, asymmetric toggle), the
+  character editor's Relationships tab, presence × salience tier injection
+  with the don't-teleport guard. Slices 1–4 shipped 2026-07-07. Leftovers
+  (preset band pickers, third-person pair-law port, multi-char eval fixtures)
+  + the slice-7 sessions earmark are recorded in the plan.
 - **Library UX — the follow-up pass** —
   [library-ux.plan.md](library-ux.plan.md) — 2026-07-12 — facets for the other
   libraries (characters species/gender/world-usage, locations scale/world-usage,
