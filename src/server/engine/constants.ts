@@ -99,6 +99,13 @@ export const CHAT_PULSE_TIMEOUT_MS = 4000;
 export const CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS = 700;
 export const CHAT_ARCHIVIST_TIMEOUT_MS = 6000;
 /**
+ * The per-member personal pass (multi-character-chat.followups.md ruling 10): one small
+ * focused call per PRESENT ensemble member after the shared archivist. Four fields only
+ * (loops/outfit/attributes/drives), so a tighter cap; same off-reply-path latency budget.
+ */
+export const CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS = 400;
+export const CHAT_PERSONAL_NOTES_TIMEOUT_MS = 6000;
+/**
  * The background location-sketch agent (chat-scene-fidelity.plan.md slice 2b) runs as a
  * DETACHED job — nothing waits on it — so it affords a roomier timeout than the post-flush
  * legs. A miss just leaves the place unsketched; the absent-sketch trigger re-fires.

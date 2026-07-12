@@ -51,6 +51,7 @@ import {
   type ChatActionId,
   type CharacterProfile,
   type ChatMemoryTrace,
+  type ChatPersonalNotes,
   type ChatPulse,
   type ChatPulseTrace,
   type ChatSceneMemory,
@@ -1311,6 +1312,103 @@ export async function finalizeChatState(input: {
     void enqueueChatLookImage({ chatId: input.chatId, characterId: input.characterId });
   }
   return { bigMoment, selfieSend: selfieKind !== null, presenceChanges };
+}
+
+/**
+ * Fold one ensemble member's exchange results into their state (followups rulings
+ * 10-11). PURE. Two halves:
+ *
+ * - **Deterministic folds for everyone who PULSED** (ruling 11): a relationship-history
+ *   sample when regard moved (or their arc baseline), and the derived exchange
+ *   milestones — emotional weather already landed inside the member's pulse.
+ * - **The personal pass for every present member** (ruling 10): the four per-character
+ *   fields (open loops, outfit, attribute overlays, drive movement) folded exactly the
+ *   way `finalizeChatState` folds the shared archivist's for the primary; a revealed
+ *   secret drive mints its `secret_shared` milestone. `null` (absent/degraded) keeps
+ *   the prior fields.
+ *
+ * The primary never comes through here — `finalizeChatState` owns its richer fold.
+ */
+export function settleEnsembleMember(args: {
+  /** The member's state AFTER their referenced-only pulse (untouched when not pulsed). */
+  state: ChatState;
+  /** Regard before the pulse — the sample/milestone trigger. */
+  preRegard: number;
+  /** Whether the referenced-only pulse ran for this member this exchange. */
+  pulsed: boolean;
+  /** The personal pass result; null keeps the member's prior personal fields. */
+  personal: ChatPersonalNotes | null;
+  characterName: string;
+  assistantMessageId: string;
+  now: Date;
+  /** The shared story clock (already ticked for this exchange). */
+  clockMinutes: number;
+  sink?: DiagnosticSink;
+}): ChatState {
+  let next = args.state;
+  const at = args.now.toISOString();
+  const exchangeMilestones: Milestone[] = [];
+
+  if (args.pulsed) {
+    // Same triggers as the primary's fold: their arc baseline on the first-ever
+    // sample, then a sample whenever the pulse moved regard (members' familiarity
+    // holds — the ratchet's fact ticks stay primary-scoped).
+    const firstExchange = next.relationshipHistory.length === 0;
+    const moved = next.regard !== args.preRegard;
+    if (moved || firstExchange) {
+      next = {
+        ...next,
+        relationshipHistory: appendRelationshipSample(next.relationshipHistory, {
+          at,
+          clockMinutes: args.clockMinutes,
+          regard: next.regard,
+          band: regardBandForValue(next.regard).id,
+          familiarity: next.familiarity,
+        }),
+      };
+    }
+    const trace = next.lastPulseTrace.degraded ? null : next.lastPulseTrace;
+    exchangeMilestones.push(
+      ...deriveExchangeMilestones({
+        at,
+        messageId: args.assistantMessageId,
+        characterName: args.characterName,
+        firstExchange,
+        preRegard: args.preRegard,
+        postRegard: next.regard,
+        preFamiliarity: next.familiarity,
+        postFamiliarity: next.familiarity,
+        regardDelta: trace?.regardDelta ?? 0,
+        concept: trace?.concept ?? null,
+      }),
+    );
+  }
+
+  if (args.personal) {
+    const outfitPatch = args.personal.outfit.description
+      ? { outfit: args.personal.outfit.description, outfitExposed: args.personal.outfit.exposed }
+      : {};
+    const driveResult = applyDriveUpdates(next.drives, args.personal.driveUpdates);
+    for (const revealedDrive of driveResult.revealed) {
+      exchangeMilestones.push({
+        at,
+        kind: "secret_shared",
+        label: `${args.characterName} shared a secret — ${revealedDrive.want}`,
+        messageId: args.assistantMessageId,
+      });
+    }
+    next = {
+      ...next,
+      // Full-list-each-time (spec §6.2); a degraded pass never reaches here, so
+      // an emitted [] is a real "everything resolved".
+      openLoops: args.personal.openLoops,
+      attributeOverlays: applyChatAttributeOverlays(next.attributeOverlays, args.personal.attributeChanges, args.sink),
+      drives: driveResult.drives,
+      ...outfitPatch,
+    };
+  }
+
+  return exchangeMilestones.length ? { ...next, milestones: appendMilestones(next.milestones, exchangeMilestones) } : next;
 }
 
 /**

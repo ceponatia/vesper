@@ -39,6 +39,7 @@ import {
   retrieveChatCallback,
   retrieveChatMemory,
   runChatArchivist,
+  runChatPersonalNotes,
   writeChatMemory,
 } from "./chat-memory";
 import {
@@ -57,6 +58,7 @@ import {
   resolveSeededOutfit,
   seedChatScenario,
   seedChatState,
+  settleEnsembleMember,
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
@@ -1020,29 +1022,53 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           sink,
         });
         // Ensemble members settle their own turn: the presence-gated tick from
-        // prompt time, a referenced-only pulse (regard/mood/mindNote — the fuller
-        // milestone machinery stays primary-scoped in the substrate), the
-        // archivist's confirmed presence transition, and the recency stamp —
-        // saved under the same prompt-row guard as the primary.
+        // prompt time, a referenced-only pulse (regard/mood/mindNote/weather), a
+        // personal note-taker pass for every PRESENT member (followups ruling 10 —
+        // loops/outfit/attributes/drives folded into their own row), the
+        // deterministic per-member folds (ruling 11 — milestones + arc samples for
+        // everyone who pulsed), the archivist's confirmed presence transition, and
+        // the recency stamp — saved under the same prompt-row guard as the primary.
         for (const member of others) {
           try {
-            let memberState = member.state;
-            if (
+            const preRegard = member.state.regard;
+            const shouldPulse =
               effectiveKind !== "continue" &&
-              playerContent &&
-              referencedOthers.some((m) => m.characterId === member.characterId)
-            ) {
-              const pulsed = await runChatPulse({
-                state: memberState,
-                profile: member.profile,
-                characterName: member.name,
-                playerName: player.name,
-                exchange: { player: agentPlayerContent, assistant: full },
-                activeSocialCards: scenario.activeSocialCards,
-                sink,
-              });
-              memberState = pulsed.state;
-            }
+              Boolean(playerContent) &&
+              referencedOthers.some((m) => m.characterId === member.characterId);
+            const [pulsed, personal] = await Promise.all([
+              shouldPulse
+                ? runChatPulse({
+                    state: member.state,
+                    profile: member.profile,
+                    characterName: member.name,
+                    playerName: player.name,
+                    exchange: { player: agentPlayerContent, assistant: full },
+                    activeSocialCards: scenario.activeSocialCards,
+                    sink,
+                  })
+                : Promise.resolve(null),
+              member.state.presence === "present"
+                ? runChatPersonalNotes({
+                    characterName: member.name,
+                    playerName: player.name,
+                    exchange: { player: agentPlayerContent, assistant: full },
+                    openLoops: member.state.openLoops,
+                    drives: member.state.drives,
+                    sink,
+                  })
+                : Promise.resolve(null),
+            ]);
+            const memberState = settleEnsembleMember({
+              state: pulsed ? pulsed.state : member.state,
+              preRegard,
+              pulsed: shouldPulse,
+              personal: personal?.value ?? null,
+              characterName: member.name,
+              assistantMessageId,
+              now,
+              clockMinutes: scenario.clockMinutes,
+              sink,
+            });
             const confirmed = finalized.presenceChanges.find(
               (p) => p.name.trim().toLowerCase() === member.name.trim().toLowerCase(),
             )?.presence;

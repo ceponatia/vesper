@@ -138,6 +138,51 @@ export function degradedChatArchivist(): ChatArchivist {
 }
 
 /**
+ * The per-member personal pass (multi-character-chat.followups.md ruling 10): in an
+ * ensemble, the shared archivist keeps the scene-level reads (episode, facts, queries,
+ * scene, presence) while each present member gets this small focused extraction — the
+ * four PERSONAL fields folded into their own state row. Field shapes are the archivist's
+ * exactly, so the folds are shared. The classic 1-on-1 never runs it (the combined call
+ * already covers the primary).
+ */
+export const chatPersonalNotesSchema = z.object({
+  openLoops: z
+    .array(z.string().trim().min(1))
+    .catch([])
+    .default([])
+    .transform((loops) => loops.slice(0, CHAT_ARCHIVIST_MAX_OPEN_LOOPS)),
+  attributeChanges: z.array(attributeChangeSchema).catch([]).default([]),
+  outfit: z
+    .object({
+      description: z
+        .string()
+        .catch("")
+        .default("")
+        .transform((s) => s.trim().slice(0, CHAT_OUTFIT_MAX_CHARS)),
+      exposed: z.boolean().catch(false).default(false),
+    })
+    .catch({ description: "", exposed: false })
+    .default({ description: "", exposed: false }),
+  driveUpdates: z
+    .array(driveUpdateSchema)
+    .catch([])
+    .default([])
+    .transform((u) => u.slice(0, DRIVES_MAX)),
+});
+
+export type ChatPersonalNotes = z.infer<typeof chatPersonalNotesSchema>;
+
+/** Degraded default: nothing personal extracted — the member keeps their prior fields. */
+export function degradedChatPersonalNotes(): ChatPersonalNotes {
+  return {
+    openLoops: [],
+    attributeChanges: [],
+    outfit: { description: "", exposed: false },
+    driveUpdates: [],
+  };
+}
+
+/**
  * Last-turn memory debug trace persisted beside the chat state for the dev inspector
  * (character-chat-primary.spec.md §5): what RAG retrieved this turn (facts + episodes) and
  * what the archivist extracted (episode summary, fact count, queries, attribute changes).

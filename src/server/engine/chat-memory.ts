@@ -1,8 +1,11 @@
 import {
   chatArchivistSchema,
+  chatPersonalNotesSchema,
   degradedChatArchivist,
+  degradedChatPersonalNotes,
   diag,
   type ChatArchivist,
+  type ChatPersonalNotes,
   type DiagnosticSink,
   type FactDraft,
   type RetrievedMemoryDetail,
@@ -31,8 +34,14 @@ import {
   selectChatCallback,
   type ChatCallback,
 } from "./chat-callback";
-import { CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS, CHAT_ARCHIVIST_TIMEOUT_MS } from "./constants";
+import {
+  CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS,
+  CHAT_ARCHIVIST_TIMEOUT_MS,
+  CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS,
+  CHAT_PERSONAL_NOTES_TIMEOUT_MS,
+} from "./constants";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./prompts/chat-archivist";
+import { buildChatPersonalNotesPrompt, CHAT_PERSONAL_NOTES_SYSTEM } from "./prompts/chat-personal-notes";
 
 /**
  * Character-chat long-term memory (character-chat-primary.spec.md §2), the RAG half the
@@ -211,6 +220,65 @@ export async function runChatArchivist(
     controller,
     CHAT_ARCHIVIST_TIMEOUT_MS,
     "chat_archivist.timeout",
+    input.sink,
+  );
+  return { value: degraded ? null : value, degraded };
+}
+
+export interface ChatPersonalNotesInput {
+  characterName: string;
+  playerName: string;
+  exchange: { player: string; assistant: string };
+  /** This member's standing open-loops list — re-emitted in full so resolved loops fall off. */
+  openLoops?: readonly string[];
+  /** This member's standing drives — the driveUpdates match targets. */
+  drives?: readonly { want: string; secrecy: string; revealed: boolean }[];
+  sink?: DiagnosticSink;
+}
+
+/**
+ * Run one ensemble member's personal pass (multi-character-chat.followups.md ruling 10):
+ * the four per-character fields the shared archivist covers only for the primary. Same
+ * resilience recipe as `runChatArchivist`; `null` on demo / timeout / parse failure so
+ * the member keeps their prior loops/outfit/drives. Cheap AGENT model.
+ */
+export async function runChatPersonalNotes(
+  input: ChatPersonalNotesInput,
+): Promise<{ value: ChatPersonalNotes | null; degraded: boolean }> {
+  if (isDemoMode()) {
+    input.sink?.push(diag("info", "chat_personal_notes.degraded", "demo mode; skipping member personal pass"));
+    return { value: null, degraded: true };
+  }
+
+  const controller = new AbortController();
+  const work = generateChecked<ChatPersonalNotes>({
+    schema: chatPersonalNotesSchema,
+    system: CHAT_PERSONAL_NOTES_SYSTEM,
+    prompt: buildChatPersonalNotesPrompt({
+      characterName: input.characterName,
+      playerName: input.playerName,
+      exchange: input.exchange,
+      openLoops: input.openLoops,
+      drives: input.drives,
+    }),
+    modelId: agentModelId(),
+    temperature: 0,
+    maxOutputTokens: CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS,
+    code: "chat_personal_notes.extract",
+    sink: input.sink,
+    fallback: degradedChatPersonalNotes,
+    signal: controller.signal,
+    disableReasoning: true,
+    lowLatencyRouting: true,
+    repair: false,
+    degradeSeverity: "warn",
+  });
+
+  const { value, degraded } = await withGenerateTimeout(
+    work,
+    controller,
+    CHAT_PERSONAL_NOTES_TIMEOUT_MS,
+    "chat_personal_notes.timeout",
     input.sink,
   );
   return { value: degraded ? null : value, degraded };
