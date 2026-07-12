@@ -20,6 +20,7 @@ import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
   applyChatAction,
+  chatFeelingStateSchema,
   chatStateSnapshot,
   driftChatState,
   editChatState,
@@ -70,6 +71,8 @@ const editBodySchema = z.object({
   sceneModel: z.enum(chatSceneModels).optional(),
   /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit. */
   callbackHistory: z.array(z.object({ ref: z.string().max(80), atClockMinutes: z.number() })).max(20).optional(),
+  /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear. */
+  feeling: chatFeelingStateSchema.optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

@@ -17,6 +17,7 @@ export * from "./inner-note";
 export * from "./character-chat";
 export * from "./chat-pipeline";
 export * from "./chat-callback";
+export * from "./chat-feeling";
 export * from "./chat-intent";
 export * from "./chat-summary";
 export * from "./chat-state";

@@ -1,8 +1,17 @@
 # Emotional weather — persistent feeling, regard momentum, reply pacing
 
-Status: **next** (planned 2026-07-11, from the character-chat & schema engagement
-review — seven-plan batch at the top of [roadmap.md](roadmap.md) §Next; effort
-**M**)
+Status: **shipped — 2026-07-11** (planned, ruled, and built the same day — the
+second of the seven-plan engagement batch. All four slices landed: the pure
+`engine/chat-feeling.ts` module (feeling schema, decay, streak/bruise/bias
+math) + `character_chat_state.feeling` (migration `0033`); the pulse `feeling`
+proposal + the new `apologize` interaction concept + the momentum wiring in
+`applyChatPulse` (the trace gains `feeling` + `regardScale`); the composed
+Current-state / mood-pin rendering; and the pacing UI (`lib/chat-pacing.ts` +
+the reveal-hold in `chat-conversation.tsx`). Eval: the `mt-chat-feeling-hurt`
+multi-turn fixture, dry-run validated (the **live judged run is owner-gated
+spend**). One deliberate scope note: the state-tools modal can edit `feeling`
+via the API (`ChatStateEdit`) but has no dedicated form control yet — add one
+if hand-tuning weather becomes routine.)
 
 Emotions in chat are meter-derived and reactive-only: `mood` is one scalar, a
 strong beat's deltas start decaying on the next tick, and `deriveMoodDescriptor`
@@ -51,16 +60,18 @@ expression-frame avatars ([avatar-3d.plan.md](avatar-3d.plan.md) §Rollback).
 4. Eval: `chat-feeling-*` fixture — a planted hurt persists across three
    exchanges of neutral input (the narrator colors, without re-litigating).
 
-## Open questions
+## Rulings (owner, 2026-07-11)
 
-- Compose or supersede `deriveMoodDescriptor`? Lean **compose** — the
-  descriptor stays the baseline weather, the feeling is the front passing
-  through.
-- Bruise tuning: K exchanges? Does a sincere `reassure` act lift it early
-  (there is no `apologize` interaction concept today — add one, or let
-  `reassure` carry it)?
-- Should the feeling feed back into the §6 curve (a hurt character reads
-  neutral acts worse)? v1: **no** — avoid runaway loops; revisit with eval data.
+- **Compose**: the meter descriptor stays the baseline weather; the feeling
+  renders on top ("subdued — still stung from …"). Both signals survive.
+- **Bruise ≈ 10 exchanges** of damped positive regard gains.
+- **Add an `apologize` interaction concept** (registry data edit): a classified
+  apology that isn't disliked halves the bruise's remaining life. `reassure`
+  stays comfort, not repair.
+- **Curve feedback: yes, damped** — feeling valence × intensity adds at most a
+  ±10% multiplier to reaction magnitude (amplifies deltas that agree with the
+  feeling, damps those that fight it), hard-capped so it can't spiral. This
+  went past the plan's lean; the eval fixture watches for runaway.
 
 ## Cross-links
 

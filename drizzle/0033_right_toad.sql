@@ -1,0 +1,1 @@
+ALTER TABLE "character_chat_state" ADD COLUMN "feeling" jsonb DEFAULT '{}'::jsonb NOT NULL;

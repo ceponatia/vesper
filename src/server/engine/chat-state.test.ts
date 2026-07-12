@@ -196,6 +196,7 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
   const pulse = (concept: string | null, mindNote = "thinking"): ChatPulse => ({
     playerAct: concept ? { concept } : null,
     mindNote,
+    feeling: null,
   });
 
   it("a liked act raises affinity (clamped) and lifts mood, and records the trace", () => {
@@ -406,5 +407,73 @@ describe("applyChatAttributeOverlays (mutable-attribute evolution — spec §3)"
     const second = applyChatAttributeOverlays(first, [{ participantName: "Mara", attributeId: "hair.color", value: "silver" }]);
     expect(second.filter((o) => o.id === "hair.color")).toHaveLength(1);
     expect(second.find((o) => o.id === "hair.color")?.value).toBe("silver");
+  });
+});
+
+describe("emotional weather wiring (emotional-weather.plan.md)", () => {
+  const likeProfile = profile({ preferences: [{ target: "compliment", valence: "like", intensity: 5 }] });
+  const pulseWith = (overrides: Partial<ChatPulse>): ChatPulse => ({
+    playerAct: null,
+    mindNote: "",
+    feeling: null,
+    ...overrides,
+  });
+
+  it("applies a pulse feeling proposal with curve-derived intensity and records the trace", () => {
+    const { state: next, trace } = applyChatPulse(
+      seedChatState(profile()),
+      pulseWith({ feeling: { label: "sad", cause: "the broken promise" } }),
+      profile(),
+      "Mara",
+    );
+    expect(next.feeling.current?.label).toBe("sad");
+    expect(next.feeling.current?.cause).toBe("the broken promise");
+    expect(next.feeling.current?.intensity).toBeCloseTo(0.35); // no mechanical move ⇒ moderate
+    expect(trace.feeling).toBe("sad");
+    expect(trace.changed).toContain("feeling");
+  });
+
+  it("a 'neutral' proposal clears the standing feeling", () => {
+    const standing = { ...seedChatState(profile()), feeling: { current: { label: "sad" as const, intensity: 0.8, cause: "x" }, bruise: null } };
+    const { state: next } = applyChatPulse(standing, pulseWith({ feeling: { label: "neutral", cause: "" } }), profile(), "Mara");
+    expect(next.feeling.current).toBeNull();
+  });
+
+  it("an accepted apologize halves a live bruise", () => {
+    const bruised = { ...seedChatState(profile()), feeling: { current: null, bruise: { remaining: 10 } } };
+    const { state: next, trace } = applyChatPulse(bruised, pulseWith({ playerAct: { concept: "apologize" } }), profile(), "Mara");
+    expect(next.feeling.bruise?.remaining).toBe(5);
+    expect(trace.changed).toContain("bruise");
+  });
+
+  it("a bruise halves positive gains and the trace records the scale", () => {
+    const bruised = { ...seedChatState(profile()), feeling: { current: null, bruise: { remaining: 10 } } };
+    const clean = applyChatPulse(seedChatState(profile()), pulseWith({ playerAct: { concept: "compliment" } }), likeProfile, "Mara");
+    const damped = applyChatPulse(bruised, pulseWith({ playerAct: { concept: "compliment" } }), likeProfile, "Mara");
+    expect(clean.trace.regardDelta).toBeGreaterThan(0);
+    expect(damped.trace.regardDelta).toBeLessThanOrEqual(Math.ceil(clean.trace.regardDelta / 2));
+    expect(damped.trace.regardScale).toBeLessThan(1);
+  });
+
+  it("drift decays the feeling per exchange; a days skip clears it", () => {
+    const felt = {
+      ...seedChatState(profile()),
+      feeling: { current: { label: "angry" as const, intensity: 0.9, cause: "the lie" }, bruise: { remaining: 4 } },
+    };
+    const drifted = driftChatState(felt, profile(), { advance: true });
+    expect(drifted.feeling.current?.intensity).toBeCloseTo(0.75);
+    expect(drifted.feeling.bruise?.remaining).toBe(3);
+    const skipped = applyTimeSkip(felt, "days", new Date("2026-07-11T12:00:00Z"));
+    expect(skipped.feeling.current).toBeNull();
+    expect(skipped.feeling.bruise).toBeNull();
+    // A "moments" skip barely dents it — emotional time is slower than beat time.
+    const moments = applyTimeSkip(felt, "moments", new Date("2026-07-11T12:00:00Z"));
+    expect(moments.feeling.current?.intensity).toBeCloseTo(0.75);
+  });
+
+  it("seeds empty weather and rides the snapshot", () => {
+    const state = seedChatState(profile());
+    expect(state.feeling).toEqual({ current: null, bruise: null });
+    expect(chatStateSnapshot(state).feeling).toEqual({ current: null, bruise: null });
   });
 });

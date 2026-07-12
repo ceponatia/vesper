@@ -20,6 +20,7 @@ import {
   type ChatStreamOutcome,
   type ChatTranscript,
 } from "@/lib/client/api";
+import { replyRevealHoldMs } from "@/lib/chat-pacing";
 import { NARRATIVE_MODELS, resolveChatModelId } from "@/lib/narrative-models";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -325,15 +326,43 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // server's first-token watchdog tripping on a stalled provider) persists no reply
     // row, so without an explicit signal the pending bubble would just vanish.
     let received = false;
+    // Reply pacing (emotional-weather.plan.md slice 3, UI-only): hold the "…" bubble
+    // briefly before revealing tokens — a cold or hurt character lets the message sit,
+    // a warm one answers at once. Tokens buffer during the hold; nothing is lost.
+    const holdUntil = Date.now() + replyRevealHoldMs(chatState ? { regard: chatState.regard, feeling: chatState.feeling.current } : null);
+    let held = "";
+    let holdTimer: ReturnType<typeof setTimeout> | null = null;
+    const append = (text: string) =>
+      setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + text } : l)));
+    const flushHeld = () => {
+      if (holdTimer !== null) {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      if (held) {
+        const text = held;
+        held = "";
+        append(text);
+      }
+    };
     const outcome = await sendChatMessage(
       chatId,
       body,
       (delta) => {
         received = true;
-        setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + delta } : l)));
+        if (Date.now() < holdUntil) {
+          held += delta;
+          holdTimer ??= setTimeout(flushHeld, holdUntil - Date.now());
+          return;
+        }
+        flushHeld();
+        append(delta);
       },
       controller.signal,
     );
+    // Stream settled (success, stop, or failure): reveal anything still held so the
+    // cleanup below sees the real content (a partial held mid-hold must survive).
+    flushHeld();
     // Only release the busy state if we're still the active stream — a rerun may
     // have aborted us and installed its own controller, which now owns `sending`.
     const superseded = abortRef.current !== controller;

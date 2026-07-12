@@ -1000,6 +1000,7 @@ function promptStateSlice(state: ChatState): NonNullable<CharacterChatPromptInpu
     openLoops: state.openLoops,
     skipNote: state.pendingSkipNote,
     sceneMemory: state.sceneMemory,
+    feeling: state.feeling,
   };
 }
 

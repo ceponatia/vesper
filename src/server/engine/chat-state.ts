@@ -70,6 +70,18 @@ import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "
 import { characterChatMessages, characterChatState, db } from "../db";
 import { defaultOutfitPhrase } from "../images";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
+import {
+  applyFeelingProposal,
+  chatFeelingStateSchema,
+  CHAT_FEELING_SKIP_STEPS,
+  decayFeelingState,
+  emptyChatFeelingState,
+  halveBruise,
+  maybeBruise,
+  proposalIntensity,
+  scaleRegardDelta,
+  type ChatFeelingState,
+} from "./chat-feeling";
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
 import { enqueueChatSceneSketch } from "./chat-scene-sketch";
 import {
@@ -160,6 +172,12 @@ export interface ChatState {
    * memory behind the cadence gate; rolls back with the pre-exchange snapshot.
    */
   callbackHistory: CallbackEntry[];
+  /**
+   * Emotional weather (emotional-weather.plan.md): the persistent feeling (label +
+   * derived intensity + cause, exchange-decayed) and the bruise (damped positive
+   * regard gains after a betrayal at high regard). Pulse-proposed, curve-derived.
+   */
+  feeling: ChatFeelingState;
   /** Player time skips (spec §8.1) — the future time-effects system's data, recorded now. */
   skipHistory: SkipRecord[];
   /** One-shot skip note (spec §8.1): rendered as a volatile prompt line next exchange, then cleared. */
@@ -218,6 +236,8 @@ export interface ChatStateSnapshot {
   sceneMemory: ChatSceneMemory;
   /** Memory-callback ring (memory-callbacks.plan.md) — for the state-tools/inspector view. */
   callbackHistory: CallbackEntry[];
+  /** Emotional weather (emotional-weather.plan.md) — the persistent feeling + bruise, for the strip/state tools. */
+  feeling: ChatFeelingState;
   /**
    * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
    * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
@@ -312,6 +332,7 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     relationshipHistory: [],
     milestones: [],
     callbackHistory: [],
+    feeling: emptyChatFeelingState(),
     skipHistory: [],
     pendingSkipNote: "",
     sceneAuto: "off",
@@ -349,6 +370,7 @@ export async function loadChatState(
       relationshipHistory: characterChatState.relationshipHistory,
       milestones: characterChatState.milestones,
       callbackHistory: characterChatState.callbackHistory,
+      feeling: characterChatState.feeling,
       skipHistory: characterChatState.skipHistory,
       pendingSkipNote: characterChatState.pendingSkipNote,
       sceneAuto: characterChatState.sceneAuto,
@@ -399,6 +421,7 @@ export async function loadChatState(
     ),
     milestones: parseOr(milestonesSchema, row.milestones, [], sink, "character_chat_state.milestones"),
     callbackHistory: parseOr(callbackHistorySchema, row.callbackHistory, [], sink, "character_chat_state.callback_history"),
+    feeling: parseOr(chatFeelingStateSchema, row.feeling, emptyChatFeelingState(), sink, "character_chat_state.feeling"),
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chat_state.skip_history"),
     pendingSkipNote: row.pendingSkipNote,
     sceneAuto: row.sceneAuto,
@@ -440,6 +463,7 @@ const storedChatStateSchema = z.object({
   relationshipHistory: relationshipHistorySchema.catch([]).default([]),
   milestones: milestonesSchema.catch([]).default([]),
   callbackHistory: callbackHistorySchema.catch([]).default([]),
+  feeling: chatFeelingStateSchema.catch(emptyChatFeelingState()).default(emptyChatFeelingState()),
   skipHistory: skipHistorySchema.catch([]).default([]),
   pendingSkipNote: z.string().catch("").default(""),
   sceneAuto: z.string().catch("off").default("off"),
@@ -523,7 +547,9 @@ export function driftChatState(
   const meters = applyMeterDrift({ ...state.meters }, CHAT_TICK_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
   const clockMinutes = state.clockMinutes + CHAT_TICK_MINUTES;
   const conditions = state.conditions.filter((c) => !isConditionExpired(c, clockMinutes));
-  return { ...state, meters, conditions, clockMinutes };
+  // Emotional weather decays per EXCHANGE, not clock minutes (emotional-weather.plan.md):
+  // one advance = one beat of the feeling fading and the bruise healing.
+  return { ...state, meters, conditions, clockMinutes, feeling: decayFeelingState(state.feeling) };
 }
 
 /**
@@ -545,6 +571,10 @@ export function applyTimeSkip(state: ChatState, amount: ChatSkipAmount, now: Dat
     pendingSkipNote: chatSkipNote(amount, regardBandForValue(state.regard).id),
     // A skip is a scene boundary: the familiarity ratchet's per-scene budget resets.
     familiaritySceneGain: 0,
+    // Emotional weather softens over skipped time — deliberately slower than the
+    // beat-for-beat conversion (a "moments" skip barely dents a strong feeling; a
+    // night softens it; days clear it). Bruises heal on the same steps.
+    feeling: decayFeelingState(state.feeling, CHAT_FEELING_SKIP_STEPS[amount]),
     skipHistory: [...state.skipHistory, record].slice(-SKIP_HISTORY_CAP),
   };
 }
@@ -570,6 +600,8 @@ export function applyChatPulse(
   let regardDelta = 0;
   let moodDelta = 0;
   let stressDelta = 0;
+  let regardScale = 1;
+  let feeling = state.feeling;
   const changed: string[] = [];
 
   if (concept) {
@@ -598,12 +630,40 @@ export function applyChatPulse(
     }
   }
 
+  // Emotional weather (emotional-weather.plan.md): the standing feeling biases the
+  // curve's move (damped, ±10% max — owner ruling), a warmth streak compounds gains
+  // (cap ×1.5), and a live bruise halves them.
+  if (regardDelta !== 0) {
+    const scaled = scaleRegardDelta({
+      delta: regardDelta,
+      feeling,
+      history: state.relationshipHistory,
+      deltaClamp: AFFINITY_DELTA_CLAMP,
+    });
+    regardDelta = scaled.delta;
+    regardScale = scaled.scale;
+  }
+
+  // An accepted apology halves the bruise's remaining life (owner ruling — the
+  // `apologize` concept specifically; `reassure` is comfort, not repair).
+  if (concept === "apologize" && valence !== "dislike" && feeling.bruise) {
+    feeling = halveBruise(feeling);
+    changed.push("bruise");
+  }
+
   // Arousal-from-intimate-acts (slice 4): an intimate concept raises arousal — full
   // for a flagged-intimate act (a proposition), half for courtship/physical
   // affection — unless the character disliked it.
   const arousalDelta = concept && valence !== "dislike" ? arousalBumpForConcept(concept) : 0;
 
   if (regardDelta !== 0) {
+    // A strong drop landing while regard is high opens (or refreshes) a bruise —
+    // read against the PRE-move regard.
+    const bruised = maybeBruise(state.regard, regardDelta, feeling);
+    if (bruised !== feeling) {
+      feeling = bruised;
+      changed.push("bruise");
+    }
     next.regard = clampRegard(state.regard + regardDelta);
     changed.push("regard");
   }
@@ -625,7 +685,27 @@ export function applyChatPulse(
     changed.push("mindNote");
   }
 
-  const trace: ChatPulseTrace = { concept, valence, regardDelta, moodDelta, arousalDelta, changed, degraded: false };
+  // Persistent feeling proposal (emotional-weather.plan.md): the pulse names the
+  // label + cause; intensity derives from the curve's applied move (the beat's
+  // measured charge). "neutral" clears; a weaker different label never displaces.
+  const proposed = applyFeelingProposal(feeling, pulse.feeling, proposalIntensity(regardDelta, AFFINITY_DELTA_CLAMP));
+  if (proposed !== feeling) {
+    feeling = proposed;
+    changed.push("feeling");
+  }
+  next.feeling = feeling;
+
+  const trace: ChatPulseTrace = {
+    concept,
+    valence,
+    regardDelta,
+    moodDelta,
+    arousalDelta,
+    changed,
+    feeling: feeling.current?.label ?? null,
+    regardScale,
+    degraded: false,
+  };
   next.lastPulseTrace = trace;
   return { state: next, trace };
 }
@@ -707,6 +787,9 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
       characterName,
       playerName: input.playerName,
       mindNote: state.mindNote,
+      // The standing feeling, so the model can judge resolution ("neutral" clears)
+      // instead of proposing blind (emotional-weather.plan.md).
+      feeling: state.feeling.current,
       exchange: input.exchange,
     }),
     modelId: agentModelId(),
@@ -745,6 +828,8 @@ function degradeState(state: ChatState, sink: DiagnosticSink | undefined, reason
       moodDelta: 0,
       arousalDelta: 0,
       changed: [],
+      feeling: state.feeling.current?.label ?? null,
+      regardScale: 1,
       degraded: true,
       diagnostic: "chat_state.pulse.degraded",
     },
@@ -1011,6 +1096,7 @@ async function upsertChatState(
   const relationshipHistory = JSON.stringify(state.relationshipHistory);
   const milestones = JSON.stringify(state.milestones);
   const callbackHistory = JSON.stringify(state.callbackHistory);
+  const feeling = JSON.stringify(state.feeling);
   const skipHistory = JSON.stringify(state.skipHistory);
   const sceneMemory = JSON.stringify(state.sceneMemory);
   const guard = guardMessageId
@@ -1018,9 +1104,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, feeling, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1044,6 +1130,7 @@ async function upsertChatState(
       relationship_history = excluded.relationship_history,
       milestones = excluded.milestones,
       callback_history = excluded.callback_history,
+      feeling = excluded.feeling,
       skip_history = excluded.skip_history,
       pending_skip_note = excluded.pending_skip_note,
       scene_auto = excluded.scene_auto,
@@ -1105,6 +1192,8 @@ export interface ChatStateEdit {
   sceneMemory?: ChatSceneMemory;
   /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit surface. */
   callbackHistory?: CallbackEntry[];
+  /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear surface. */
+  feeling?: ChatFeelingState;
 }
 
 /**
@@ -1151,6 +1240,7 @@ export async function editChatState(args: {
   if (patch.sceneModel !== undefined) next.sceneModel = patch.sceneModel;
   if (patch.sceneMemory !== undefined) next.sceneMemory = patch.sceneMemory;
   if (patch.callbackHistory !== undefined) next.callbackHistory = patch.callbackHistory;
+  if (patch.feeling !== undefined) next.feeling = patch.feeling;
   await persistChatState(chatId, characterId, next);
   return next;
 }
@@ -1265,6 +1355,7 @@ export function chatStateSnapshot(
     sceneModel: state.sceneModel,
     sceneMemory: state.sceneMemory,
     callbackHistory: state.callbackHistory,
+    feeling: state.feeling,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
   };

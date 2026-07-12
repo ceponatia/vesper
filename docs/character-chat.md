@@ -165,8 +165,9 @@ appended when either axis moved; `milestones` — ≤100 of
 the time model (`clock_minutes` — the **only** clock, D3/D8; `skip_history` ring ≤50;
 one-shot `pending_skip_note`), `scene_auto` (`"off" | "milestones"`, the slice-9
 auto-scene toggle — text with headroom, never a boolean), `scene_memory` (the
-accumulating narrator-imagined setting — see §Scene memory), and `callback_history`
-(the memory-callback anti-repeat ring ≤20 — see §Memory callbacks). `upsertChatState` is the
+accumulating narrator-imagined setting — see §Scene memory), `callback_history`
+(the memory-callback anti-repeat ring ≤20 — see §Memory callbacks), and `feeling`
+(the persistent feeling + bruise — see §Emotional weather). `upsertChatState` is the
 **one** column-list source shared by the guarded (mid-exchange) and unguarded
 (author-edit) writers; `ChatStateEdit` covers every stored column (inspector-grade —
 open loops, memory queries, surfaced cues, attribute overlays, scene memory included). State is
@@ -245,14 +246,54 @@ fixes that with one low-frequency, one-turn tail line:
 - **Degradation**: any retrieval/embedding failure ⇒ no line +
   `chat_memory.callback.failed` (warn) — an ordinary turn, never a failed reply.
 
+## Emotional weather
+
+Emotions used to be meter-derived and reactive-only — a strong beat's deltas started
+decaying on the next tick, and regard moved on a flat ±5/turn clamp with no history.
+Emotional weather ([developer-notes/emotional-weather.plan.md](developer-notes/emotional-weather.plan.md),
+owner rulings 2026-07-11) adds three layers, all in the pure `engine/chat-feeling.ts`:
+
+- **Persistent `feeling`** (`character_chat_state.feeling` jsonb): the pulse proposes a
+  label (the locked 11-label `EmotionLabel`) + cause when an exchange lands a beat that
+  should persist; intensity derives deterministically from the curve's move (the model
+  never numbers, same contract as `playerAct`). It decays **per exchange** (≈6–7
+  exchanges from full), softens more slowly over time skips (`CHAT_FEELING_SKIP_STEPS` —
+  moments barely dent it, days clear it), and a `"neutral"` proposal explicitly clears
+  it (the pulse sees the standing feeling in its prompt, so resolution is informed). In
+  the prompt it **composes** with the meter mood descriptor (ruled: baseline weather +
+  the front passing through — "subdued and withdrawn right now — and deeply sad about
+  the broken promise") on the Current-state line and the response-shape mood pin.
+- **Regard momentum**: `scaleRegardDelta` modifies the curve's move — the standing
+  feeling biases magnitude (ruled: damped, valence × intensity × ±10% max, amplifying
+  deltas that agree with the feeling and damping those that fight it — hard-capped so
+  hurt→worse-reads→more-hurt can't spiral); a **warmth streak** (consecutive rising
+  samples in `relationship_history`) compounds gains up to ×1.5; a **bruise** — a
+  strong drop landing at warm-or-better regard — halves gains for ~10 exchanges
+  (ruled). A classified **`apologize`** act (new interaction concept, a registry data
+  edit — distinct from `reassure`: comfort is not repair) that isn't disliked halves
+  the bruise's remaining life. A scaled nonzero delta never rounds to zero, the ±5
+  clamp is re-applied last, and the trace records `regardScale` + the applied feeling
+  for the state tools.
+- **Reply pacing** (UI-only, `lib/chat-pacing.ts` + `chat-conversation.tsx`): the
+  client holds the "…" bubble before revealing streamed tokens — cold regard ≈700ms,
+  the middle ≈250ms, warm none; a standing dark feeling adds ≈500ms, a bright one
+  trims; capped at 1.2s and purely presentational (tokens buffer, nothing is lost;
+  any held text flushes on settle/stop/failure). The snapshot carries `feeling` to
+  the client for this.
+
+Rollback-safe like everything else: `feeling` rides `storedChatStateSchema`, so
+"another take" restores the pre-exchange weather exactly.
+
 ## Post-turn fan-out
 
 `finalizeChatState` runs **pulse ‖ archivist-lite** in parallel (`Promise.all`), then one
 guarded state write:
 
 - **Pulse** (`runChatPulse`): classifies the exchange onto the §6 personality curve —
-  regard/mood deltas, arousal bump for intimate concepts, mindNote refresh. Degrades to
-  drift-only state. Skipped for `continue` beats (no player act to react to).
+  regard/mood deltas, arousal bump for intimate concepts, mindNote refresh, and the
+  optional **feeling proposal** (§Emotional weather: label + cause only; intensity
+  derives from the curve's move). Degrades to drift-only state. Skipped for
+  `continue` beats (no player act to react to).
 - **Archivist-lite** (`runChatArchivist`): one call emitting seven fields — the episode
   summary, `FactDraft[]`, next-turn `memoryQueries`, `attributeChanges` (applied through
   the `overlaySourceMayChange` inherent-trait guard), `openLoops` (the full ≤3 list
@@ -387,6 +428,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Rolling summary + fold job + rebuild | `server/engine/chat-summary.ts` |
 | One-turn player-input reads (cue / scene movement / sensory focus / reply gates) | `server/engine/chat-intent.ts` |
 | Memory callbacks (gate / selection / ring — §Memory callbacks) | `server/engine/chat-callback.ts` (pure) + `retrieveChatCallback` in `chat-memory.ts` + `chatCallbackLine` in `prompts/character-chat.ts` |
+| Emotional weather (feeling / momentum / bruise — §Emotional weather) | `server/engine/chat-feeling.ts` (pure) + wiring in `chat-state.ts`; pacing in `lib/chat-pacing.ts` |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |
