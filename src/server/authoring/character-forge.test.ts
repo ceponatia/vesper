@@ -12,6 +12,7 @@ import {
   groundAttributeRanges,
   groundAttributeValues,
   groundDrives,
+  groundSchedule,
   groundOutfitItems,
   matchOutfitAgainstLibrary,
   partitionOutfitReuse,
@@ -199,6 +200,45 @@ describe("groundDrives", () => {
     expect(drives[0]?.want).toHaveLength(120);
     expect(drives[0]?.why).toHaveLength(200);
     expect(sink.items.some((d) => d.code === "forge.character.profile.drives_capped")).toBe(true);
+  });
+});
+
+describe("groundSchedule (chat-initiative slice 4)", () => {
+  it("maps day parts to their minute windows, trimming and keeping a normalized day mask", () => {
+    const rows = groundSchedule([
+      { dayPart: "morning", activity: " waiting tables ", locationName: " the Dockside Café " },
+      { dayPart: "night", activity: "closing up", locationName: "the bar", days: [5, 5, 1] },
+    ]);
+    expect(rows).toEqual([
+      { startMinute: 360, endMinute: 720, activity: "waiting tables", locationName: "the Dockside Café" },
+      { startMinute: 1380, endMinute: 360, activity: "closing up", locationName: "the bar", days: [1, 5] },
+    ]);
+  });
+
+  it("drops rows missing an activity or place, dedupes by day part + mask, and treats a full week as daily", () => {
+    const rows = groundSchedule([
+      { dayPart: "morning", activity: "", locationName: "somewhere" },
+      { dayPart: "morning", activity: "something", locationName: "" },
+      { dayPart: "evening", activity: "first", locationName: "here", days: [0, 1, 2, 3, 4, 5, 6] },
+      { dayPart: "evening", activity: "duplicate window", locationName: "there" },
+    ]);
+    expect(rows).toEqual([{ startMinute: 1080, endMinute: 1380, activity: "first", locationName: "here" }]);
+  });
+
+  it("caps the set with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const rows = groundSchedule(
+      [
+        { dayPart: "morning", activity: "a", locationName: "x" },
+        { dayPart: "afternoon", activity: "b", locationName: "x" },
+        { dayPart: "evening", activity: "c", locationName: "x" },
+        { dayPart: "night", activity: "d", locationName: "x" },
+        { dayPart: "morning", activity: "e", locationName: "x", days: [1] },
+      ],
+      sink,
+    );
+    expect(rows).toHaveLength(4);
+    expect(sink.items.some((d) => d.code === "forge.character.profile.schedule_capped")).toBe(true);
   });
 });
 

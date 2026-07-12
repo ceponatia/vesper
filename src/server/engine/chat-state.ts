@@ -453,6 +453,20 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
   `);
 }
 
+/**
+ * The §8.4 v2 seen-cursor (chat-initiative.plan.md slice 2): when the player
+ * last OPENED this conversation. Read at initiative-opener time so the cue can
+ * name what shifted since; null when the chat row is gone.
+ */
+export async function loadMilestonesSeenAt(chatId: string): Promise<Date | null> {
+  const [row] = await db()
+    .select({ milestonesSeenAt: characterChats.milestonesSeenAt })
+    .from(characterChats)
+    .where(eq(characterChats.id, chatId))
+    .limit(1);
+  return row?.milestonesSeenAt ?? null;
+}
+
 /** Persist the scenario rollback anchor ("another take"'s other half). `null` ⇒ `{}`. */
 export async function savePreExchangeScenario(chatId: string, scenario: ChatScenario | null, guardMessageId?: string): Promise<void> {
   const guard = guardMessageId
@@ -841,6 +855,39 @@ export function applyChatPulse(
   return { state: next, trace };
 }
 
+/**
+ * The OPENER-scoped pulse fold (chat-initiative.plan.md slice 5): a reopen
+ * opener has no player act to react to, so the classifier runs only for its
+ * reads — `sentPhoto` (did the opener actually attach the photo the license
+ * armed?) and the mindNote refresh (her mind is on what she just raised).
+ * Everything the curve owns stays untouched: no regard/mood/stress/arousal
+ * moves, no feeling proposal (a no-player-act beat must not clear a standing
+ * bruise), no concept. PURE.
+ */
+export function applyOpenerPulse(state: ChatState, pulse: ChatPulse): { state: ChatState; trace: ChatPulseTrace } {
+  const changed: string[] = [];
+  const next: ChatState = { ...state };
+  const note = pulse.mindNote.trim();
+  if (note) {
+    next.mindNote = note.slice(0, CHAT_MIND_NOTE_MAX_CHARS);
+    changed.push("mindNote");
+  }
+  const trace: ChatPulseTrace = {
+    concept: null,
+    valence: null,
+    regardDelta: 0,
+    moodDelta: 0,
+    arousalDelta: 0,
+    changed,
+    feeling: state.feeling.current?.label ?? null,
+    regardScale: 1,
+    sentPhoto: pulse.sentPhoto,
+    degraded: false,
+  };
+  next.lastPulseTrace = trace;
+  return { state: next, trace };
+}
+
 /** Cap on attribute overlays applied per exchange — a rare event; bounded like the merge's. */
 const MAX_CHAT_ATTRIBUTE_CHANGES = 4;
 
@@ -897,6 +944,13 @@ export interface ChatPulseInput {
   characterName: string;
   playerName: string;
   exchange: { player: string; assistant: string };
+  /**
+   * "opener" folds only the classifier's READS — sentPhoto + mindNote — into
+   * state (`applyOpenerPulse`); a reopen opener has no player act, so the curve
+   * must not move regard/meters/feeling off the character's own words. Absent ⇒
+   * the full fold.
+   */
+  scope?: "full" | "opener";
   sink?: DiagnosticSink;
 }
 
@@ -946,6 +1000,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     sink,
   );
   if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded"), degraded: true };
+  if (input.scope === "opener") return { state: applyOpenerPulse(state, value).state, degraded: false };
   return { state: applyChatPulse(state, value, profile, characterName, input.activeSocialCards).state, degraded: false };
 }
 
@@ -1006,6 +1061,13 @@ export async function finalizeChatState(input: {
    * to); the archivist still runs — continued narrative is worth remembering.
    */
   skipPulse?: boolean;
+  /**
+   * Run the pulse OPENER-scoped (chat-initiative.plan.md slice 5): an initiative
+   * opener with the selfie license armed needs the pulse's `sentPhoto` read (and
+   * takes the mindNote refresh), but none of the curve's moves. Only meaningful
+   * when `skipPulse` is false.
+   */
+  pulseScope?: "full" | "opener";
   promptMessageId: string;
   profile: CharacterProfile;
   characterName: string;
@@ -1060,6 +1122,7 @@ export async function finalizeChatState(input: {
           playerName: input.playerName,
           exchange: input.exchange,
           activeSocialCards: input.scenario.activeSocialCards,
+          scope: input.pulseScope,
           sink: input.sink,
         }),
     runChatArchivist({

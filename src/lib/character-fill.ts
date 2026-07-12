@@ -38,8 +38,11 @@ import {
  * - outfit cluster (defaultOutfit + suggestedItems): all-or-nothing — an
  *   outfit is a coherent set, so any authored garment keeps the whole cluster
  *   (no generated extras that double up coverage).
- * - playerRelationship, socialCards, schedule: never filled (the forge does
- *   not generate them); always the base's.
+ * - schedule: all-or-nothing like the outfit (chat-initiative.plan.md slice 4)
+ *   — a daily rhythm is one coherent day, and an additive union could stack
+ *   overlapping windows; any authored row keeps the whole set.
+ * - playerRelationship, socialCards: never filled (the forge does not generate
+ *   them); always the base's.
  */
 
 /** The draft shape both the server and client drafts satisfy structurally. */
@@ -153,6 +156,7 @@ export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: Filla
       traits,
       aliases: unionText(base.profile.aliases, incoming.profile.aliases),
       defaultOutfit: outfitAuthored ? base.profile.defaultOutfit : incoming.profile.defaultOutfit,
+      schedule: base.profile.schedule.length > 0 ? base.profile.schedule : incoming.profile.schedule,
     },
   };
 }

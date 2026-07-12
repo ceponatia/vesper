@@ -1,6 +1,7 @@
 import {
   DEFAULT_SPECIES_ID,
   diag,
+  formatScheduleRhythm,
   heritageFor,
   inferHeritageFromText,
   inferSpeciesFromText,
@@ -74,6 +75,7 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
     );
   }
   if (p.traits.length > 0) lines.push(`Traits: ${p.traits.map((t) => `${t.id}=${t.value}`).join(", ")}`);
+  if (p.schedule.length > 0) lines.push(`Daily rhythm: ${formatScheduleRhythm(p.schedule)}`);
   if (p.attributes.length > 0) {
     lines.push(`Attributes: ${p.attributes.map((a) => `${a.id}=${formatSheetValue(a.value)}`).join(", ")}`);
   }

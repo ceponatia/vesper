@@ -5,9 +5,11 @@ import {
   DiagnosticCollector,
   diag,
   emptyCharacterProfile,
+  formatScheduleRhythm,
   samePlaceName,
   splitStateCues,
   switchScenePlace,
+  unseenMilestoneReason,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
@@ -19,7 +21,7 @@ import { streamCharacterChat } from "./character-chat";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import { buildInitiativeCue } from "./chat-initiative";
 import { loadChatRelationships } from "./chat-relationships";
-import { chatSelfieOfferEligible, detectSelfieRequest, hasCommsSpans } from "./chat-selfie";
+import { chatSelfieOfferEligible, chatSelfieOpenerEligible, detectSelfieRequest, hasCommsSpans } from "./chat-selfie";
 import { CHAT_ATTACHMENTS_MAX, describeChatPhotos } from "./chat-vision";
 import {
   buildChatReplyGates,
@@ -47,6 +49,7 @@ import {
   finalizeChatState,
   loadChatScenario,
   loadChatState,
+  loadMilestonesSeenAt,
   loadPreExchangeScenario,
   loadPreExchangeState,
   persistChatState,
@@ -746,6 +749,19 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         playerComms: hasCommsSpans(playerContent),
         lastReplyComms: hasCommsSpans(recentReplies.at(-1) ?? ""),
       });
+    // Opener selfie (chat-initiative.plan.md slice 5): a warm reopen opener may
+    // attach the "thinking of you" photo — warm + cooldown here; the apart
+    // condition lives in the license line ("if you open as a text"), and the
+    // opener-scoped pulse's `sentPhoto` read decides post-turn whether one
+    // actually sent (an in-scene opener never "sends", so nothing queues).
+    const initiativeOpener = effectiveKind === "continue" && Boolean(input.initiative);
+    const openerSelfieEligible =
+      initiativeOpener &&
+      chatSelfieOpenerEligible({
+        regard: driftedState.regard,
+        clockMinutes: scenario.clockMinutes,
+        selfieHistory: driftedState.selfieHistory,
+      });
 
     // --- Memory callback (memory-callbacks.plan.md): the unprompted "remember when" cue ---
     // Gate first (pure, no cost), then pay one embedding + one query to pick an old,
@@ -808,6 +824,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         }
       }
     }
+    // §8.4 v2 (chat-initiative.plan.md slice 2): an initiative opener may
+    // acknowledge what shifted since the player last OPENED the chat — the
+    // seen-cursor names which milestones are still fresh for her. One indexed
+    // read, initiative beats only.
+    const recentShift = initiativeOpener
+      ? unseenMilestoneReason(driftedState.milestones, (await loadMilestonesSeenAt(chatId)) ?? new Date())
+      : null;
+
     const promptInput: CharacterChatPromptInput = {
       name: characterName,
       profile,
@@ -829,25 +853,28 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // Attached photos (chat-image-input.plan.md): the vision read, injected as
       // seen-channel content the perception partition's rule 17 governs.
       attachments: attachmentDescriptions?.length ? { descriptions: attachmentDescriptions } : undefined,
-      // One-turn selfie license (chat-selfies.plan.md), armed above.
-      selfie: selfieRequested ? "request" : selfieOfferEligible ? "offer" : undefined,
+      // One-turn selfie license (chat-selfies.plan.md), armed above; "opener" is
+      // the initiative beat's register-conditional arm (chat-initiative slice 5).
+      selfie: selfieRequested ? "request" : selfieOfferEligible ? "offer" : openerSelfieEligible ? "opener" : undefined,
       // One-turn cue invitation, now the continue-cue only (§8.4): a "has something to say"
       // continue threads its tapped open loop here so the character opens about exactly the
       // right thing. The sensory arms were superseded by `sensoryAllowance` below
       // (narrator-prompt-consolidation slice 4). Pre-slice-4 arm (rollback):
       //   cueInvite: cueHint ? chatCueInviteLine(cueHint, characterName) : <the continue arm below>
-      cueInvite:
-        effectiveKind === "continue" && input.initiative
-          ? buildInitiativeCue({
-              characterName,
-              playerName: player.name,
-              openLoops: driftedState.openLoops,
-              drives: driftedState.drives,
-              skipPending: Boolean(scenario.pendingSkipNote.trim()),
-            })
-          : effectiveKind === "continue" && input.cue?.trim()
-            ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
-            : undefined,
+      cueInvite: initiativeOpener
+        ? buildInitiativeCue({
+            characterName,
+            playerName: player.name,
+            openLoops: driftedState.openLoops,
+            drives: driftedState.drives,
+            skipPending: Boolean(scenario.pendingSkipNote.trim()),
+            // Slice-2/4 material: the unseen shift + the authored daily rhythm.
+            recentShift,
+            rhythm: formatScheduleRhythm(profile.schedule),
+          })
+        : effectiveKind === "continue" && input.cue?.trim()
+          ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
+          : undefined,
       // The deterministic per-turn sensory allowance (narrator-prompt-consolidation slice 4):
       // one binding line derived from the detectors already running this turn. Only real
       // player turns carry one — opening/continue beats fall to the rules' conservative default.
@@ -1045,7 +1072,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           memoryGroupId,
           assistantMessageId,
           preExchangeState: storedState,
-          skipPulse: effectiveKind === "continue" || (!primaryReferenced && referencedOthers.length > 0),
+          // A selfie-armed initiative opener runs the pulse OPENER-scoped for its
+          // sentPhoto read (chat-initiative slice 5); every other continue beat
+          // still skips it (no player act to react to).
+          skipPulse:
+            (effectiveKind === "continue" && !openerSelfieEligible) ||
+            (!primaryReferenced && referencedOthers.length > 0),
+          pulseScope: openerSelfieEligible ? "opener" : "full",
           promptMessageId: promptMessageId ?? assistantMessageId,
           profile,
           characterName,
@@ -1055,10 +1088,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           exchange: { player: agentPlayerContent, assistant: full },
           retrieved: memory,
           // A member-addressed selfie request (ruling 12) never burns the
-          // PRIMARY's ring — the member's own settle handles it below.
+          // PRIMARY's ring — the member's own settle handles it below. The
+          // opener arm counts as an offer (same ring kind, same cooldown).
           selfie: selfieTargetOther
             ? { requested: false, offerEligible: false }
-            : { requested: selfieRequested, offerEligible: selfieOfferEligible },
+            : { requested: selfieRequested, offerEligible: selfieOfferEligible || openerSelfieEligible },
           scenario,
           preExchangeScenario,
           // The ensemble context (multi-character-chat.plan.md): the roster line

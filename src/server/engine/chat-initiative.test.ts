@@ -43,4 +43,18 @@ describe("buildInitiativeCue (chat-initiative.plan.md)", () => {
     expect(cue).toContain('something you want: "to leave town"');
     expect(buildInitiativeCue(base)).toContain("open with what YOU are doing");
   });
+
+  it("an unseen shift (§8.4 v2) joins her material; absent ⇒ the pre-slice-2 cue byte-identical", () => {
+    const shifted = buildInitiativeCue({ ...base, recentShift: "Warm → close" });
+    expect(shifted).toContain('what just shifted between you: "Warm → close"');
+    expect(buildInitiativeCue({ ...base, recentShift: null })).toBe(buildInitiativeCue(base));
+    expect(buildInitiativeCue({ ...base, recentShift: "  " })).toBe(buildInitiativeCue(base));
+  });
+
+  it("the authored rhythm grounds the life-meanwhile license; empty rhythm adds nothing", () => {
+    const cue = buildInitiativeCue({ ...base, rhythm: "mornings: waiting tables at the Dockside Café" });
+    expect(cue).toContain("Your usual rhythm");
+    expect(cue).toContain("mornings: waiting tables at the Dockside Café");
+    expect(buildInitiativeCue({ ...base, rhythm: "" })).toBe(buildInitiativeCue(base));
+  });
 });

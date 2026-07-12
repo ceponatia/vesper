@@ -1,0 +1,1 @@
+ALTER TABLE "character_chats" ADD COLUMN "milestones_seen_at" timestamp with time zone DEFAULT now() NOT NULL;

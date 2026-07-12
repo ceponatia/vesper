@@ -7,12 +7,14 @@ import {
   deriveEmotionLabel,
   effectiveTraitValue,
   emptyCharacterProfile,
+  milestoneSchema,
   NEUTRAL_MOOD_METER,
   regardBandForValue,
   regardBandToStageId,
   socialReactionCardSchema,
   authoredRecordToLive,
   authoredRelationshipRecordSchema,
+  unseenMilestoneReason,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
@@ -56,6 +58,7 @@ const createBodySchema = z.object({
 const listMetersSchema = z.record(z.string(), z.number());
 const listConditionsSchema = z.array(activeConditionSchema);
 const listLoopsSchema = z.array(z.string());
+const listMilestonesSchema = z.array(milestoneSchema);
 
 /**
  * GET /api/chats?characterId=…&archived=1 — the user's conversations, newest first.
@@ -82,6 +85,8 @@ export const GET = withUser(async (user, req: NextRequest) => {
       meters: characterChatState.meters,
       conditions: characterChatState.conditions,
       openLoops: characterChatState.openLoops,
+      milestones: characterChatState.milestones,
+      milestonesSeenAt: characterChats.milestonesSeenAt,
       lastLine: sql<string | null>`(
         select left(m.content, 160) from character_chat_messages m
         where m.chat_id = ${characterChats.id}
@@ -115,11 +120,14 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .orderBy(desc(characterChats.lastMessageAt))
     .limit(LIST_LIMIT);
 
-  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, ...rest }) => {
-    // "Has something to say" (spec §8.4, D4): a pure read-time derivation off the open
-    // loops — no jobs, no push, never the wall clock. The top loop is the reason.
+  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, milestones, milestonesSeenAt, ...rest }) => {
+    // "Has something to say" (spec §8.4, D4; v2 chat-initiative.plan.md slice 2): a pure
+    // read-time derivation — never a job, never the wall clock. The top open loop leads;
+    // with no loops, a milestone unseen since the player last OPENED the chat (the
+    // seen-cursor, stamped by the conversation mount) is the reason.
     const loops = parseOr(listLoopsSchema, openLoops ?? [], [], undefined, "character_chat_state.open_loops");
-    const say = loops[0]?.trim() ?? "";
+    const parsedMilestones = parseOr(listMilestonesSchema, milestones ?? [], [], undefined, "character_chat_state.milestones");
+    const say = loops[0]?.trim() || (unseenMilestoneReason(parsedMilestones, milestonesSeenAt ?? new Date()) ?? "");
     if (regard === null) return { ...rest, regardBand: null, emotion: null, say };
     const parsedMeters = parseOr(listMetersSchema, meters ?? {}, {}, undefined, "character_chat_state.meters");
     const parsedConditions = parseOr(listConditionsSchema, conditions ?? [], [], undefined, "character_chat_state.conditions");

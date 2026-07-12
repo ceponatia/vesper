@@ -27,16 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-_The entry below is the remainder of the 2026-07-11 **character-chat
-engagement batch**: every plan's core shipped (see Shipped); what stays queued
-are the recorded remainders._
-
-- **Chat initiative — the remainder slices** —
-  [chat-initiative.plan.md](chat-initiative.plan.md) (active — the core opener
-  shipped 2026-07-12, see Shipped). Remaining: the §8.4 marker upgrade
-  (seen-cursor), light `profile.schedule` authoring, and the selfie-attach
-  hook (needs pulse-on-open).
-
 - **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
   audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
   grows). Both live in `engine/merge/phases/threads.ts` and are documented in
@@ -118,6 +108,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat initiative — the remainder slices (plan complete)** —
+  [chat-initiative.plan.md](chat-initiative.plan.md) — 2026-07-12 — the §8.4 v2
+  marker (unseen-milestone seen-cursor `milestones_seen_at`, migration 0043 —
+  ruled: loops + milestones only, never real time), light `profile.schedule`
+  authoring (day-part vocabulary, the Profile tab's Daily-rhythm card, the
+  forge section, the opener's rhythm line), and the opener selfie (the
+  "thinking of you" photo — register-conditional license + the opener-scoped
+  pulse's `sentPhoto` read).
 - **Character drives — the authoring surface (plan complete)** —
   [character-drives.plan.md](character-drives.plan.md) — 2026-07-12 — the forge
   profile leg drafts drives (concept-led ≤1 secret, band-validated reveal gates
@@ -184,8 +182,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   (`chat-initiative.ts`): her own material (loops + non-secret wants), the "a
   life meanwhile" license folded in (no separate life-event agent — build
   decision, D8-safe), the comms-when-apart register, one-beat restraint. D3
-  held: player-tapped only, marker stays loops-keyed. Remainder (marker
-  seen-cursor, schedule authoring, selfie-attach) stays in Next.
+  held: player-tapped only, marker stays loops-keyed. Remainder shipped later
+  the same day — see the entry above.
 
 - **Character drives — engine core (desires & secrets as gated inner life)** —
   [character-drives.plan.md](character-drives.plan.md) — 2026-07-11 — ≤3

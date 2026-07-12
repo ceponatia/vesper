@@ -222,10 +222,12 @@ export interface CharacterChatPromptInput {
   /**
    * One-turn selfie license (chat-selfies.plan.md): "request" = the player asked
    * for a photo this turn; "offer" = the unprompted-offer gates hold (apart-only
-   * comms register + warm regard + cooldown — owner ruling). Renders as an
-   * optional tail line; the post-turn pulse decides whether one actually sent.
+   * comms register + warm regard + cooldown — owner ruling); "opener" = a warm
+   * reopen opener may attach the "thinking of you" photo (chat-initiative.plan.md
+   * slice 5 — register-conditional: only if the opener lands as a text). Renders
+   * as an optional tail line; the post-turn pulse decides whether one actually sent.
    */
-  selfie?: "request" | "offer";
+  selfie?: "request" | "offer" | "opener";
 }
 
 /**
@@ -317,12 +319,15 @@ function buildAttachmentsSection(attachments: CharacterChatPromptInput["attachme
  * optional and never forced. Neither describes the photo's contents at length —
  * SENDING it is the beat; the render paints the picture.
  */
-export function chatSelfieLine(selfie: "request" | "offer" | undefined, name: string, player: string): string {
+export function chatSelfieLine(selfie: "request" | "offer" | "opener" | undefined, name: string, player: string): string {
   if (selfie === "request") {
     return `${player} asked ${name} for a photo this turn. If ${name} chooses to send one, say so naturally in the reply — snapping it, sending it (as a text like *${name}: …* when you are apart) — or decline in character; declining is a real answer, and teasing or bargaining is fair play. Don't narrate the photo's contents in detail: sending it is the beat.`;
   }
   if (selfie === "offer") {
     return `You are apart and texting, and things are warm between you. If this beat genuinely invites it, ${name} may decide to send ${player} a photo of ${name}'s own accord — mention it naturally in a text. Entirely optional: most turns should NOT include one; never force it, and don't narrate the photo's contents in detail.`;
+  }
+  if (selfie === "opener") {
+    return `Things are warm between you. IF your opening lands as a text (you are apart), ${name} may attach a photo with it — the "thinking of you" shot, sent because reaching out felt like not enough. Entirely optional and only in the texted register: opening in a shared scene means no photo; never force it, and don't narrate the photo's contents in detail.`;
   }
   return "";
 }

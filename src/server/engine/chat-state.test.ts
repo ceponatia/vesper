@@ -13,6 +13,7 @@ import {
   applyChatAction,
   applyChatAttributeOverlays,
   applyChatPulse,
+  applyOpenerPulse,
   applyTimeSkip,
   applyTimeSkipToScenario,
   chatStateSnapshot,
@@ -276,6 +277,38 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
   it("an empty mindNote keeps the prior note", () => {
     const prior: ChatState = { ...state(), mindNote: "kept" };
     expect(applyChatPulse(prior, pulse(null, ""), profile(), "Mara", []).state.mindNote).toBe("kept");
+  });
+
+  it("applyOpenerPulse folds only the reads: sentPhoto + mindNote, never the curve (chat-initiative slice 5)", () => {
+    const standing: ChatState = {
+      ...state(),
+      regard: 60,
+      mindNote: "prior",
+      feeling: {
+        current: { label: "sad", cause: "the broken promise", intensity: 0.6 },
+        bruise: null,
+      },
+    };
+    const { state: next, trace } = applyOpenerPulse(standing, {
+      // Even a (mis)classified act and a "neutral" feeling proposal must not move
+      // anything — a reopen opener has no player act.
+      playerAct: { concept: "compliment" },
+      mindNote: "she's glad she reached out first",
+      feeling: { label: "neutral", cause: "" },
+      sentPhoto: true,
+    });
+    expect(trace.sentPhoto).toBe(true);
+    expect(trace.concept).toBeNull();
+    expect(trace.regardDelta).toBe(0);
+    expect(next.regard).toBe(60);
+    expect(next.meters).toEqual(standing.meters);
+    expect(next.feeling).toEqual(standing.feeling);
+    expect(next.mindNote).toBe("she's glad she reached out first");
+    expect(trace.changed).toEqual(["mindNote"]);
+    // An empty note keeps the prior one and reports no change.
+    const quiet = applyOpenerPulse(standing, { playerAct: null, mindNote: "", feeling: null, sentPhoto: false });
+    expect(quiet.state.mindNote).toBe("prior");
+    expect(quiet.trace.changed).toEqual([]);
   });
 
   it("raises arousal on an intimate act (proposition), full amount", () => {

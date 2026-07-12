@@ -25,6 +25,19 @@ export interface InitiativeCueInput {
   drives: readonly ChatDrive[];
   /** True when a time skip is pending (its note already rides the tail) — the gap is real in-fiction. */
   skipPending: boolean;
+  /**
+   * The newest milestone the player hasn't seen (§8.4 v2 seen-cursor) — what
+   * shifted between them since the chat was last opened. Extra material only;
+   * absent ⇒ the pre-slice-2 cue byte-identical.
+   */
+  recentShift?: string | null;
+  /**
+   * The authored daily rhythm (profile.schedule — chat-initiative.plan.md
+   * slice 4), pre-rendered as a compact line ("mornings: waiting tables at the
+   * Dockside Café; evenings: sketching at the pier"). Grounds the "a life
+   * meanwhile" license; empty ⇒ no rhythm line.
+   */
+  rhythm?: string;
 }
 
 /**
@@ -40,10 +53,13 @@ export function buildInitiativeCue(input: InitiativeCueInput): string {
     .map((d) => d.want.trim())
     .filter(Boolean)
     .slice(0, 2);
+  const shift = input.recentShift?.trim() ?? "";
   const material = [
     ...loops.map((l) => `unfinished business: "${l}"`),
     ...wants.map((w) => `something you want: "${w}"`),
+    ...(shift ? [`what just shifted between you: "${shift}" — still fresh for you`] : []),
   ];
+  const rhythm = input.rhythm?.trim() ?? "";
   const lines = [
     `${input.playerName} has come back to you — reach out FIRST, in character: you have the opening move, and you have your own reasons to take it.`,
     material.length
@@ -52,6 +68,7 @@ export function buildInitiativeCue(input: InitiativeCueInput): string {
     input.skipPending
       ? `Time has passed (the note below says how it feels): you may weave in ONE small, concrete thing from your life meanwhile — something that happened, changed, or nagged at you — consistent with the scenario, your personality, and what you want. One thing, lightly; never a report.`
       : `You may weave in ONE small, concrete thing from your own day — consistent with the scenario and your personality — if it gives the opening life.`,
+    ...(rhythm ? [`Your usual rhythm, to ground what your life meanwhile actually looks like: ${rhythm}.`] : []),
     `Register: if you and ${input.playerName} are apart in the fiction, open as a text on its own line — *${input.characterName}: your words* — the way you'd actually reach out; if you are together in a scene, open in the scene.`,
     `One opening beat: land it and end on something ${input.playerName} can answer. Do not narrate ${input.playerName}, and do not resolve what you raise.`,
   ];
