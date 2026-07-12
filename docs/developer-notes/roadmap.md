@@ -23,15 +23,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Multi-character & forge wrap-up — the owner-rulings pass** —
-  [multi-character-chat.followups.md](multi-character-chat.followups.md)
-  (active — 2026-07-12. Closes every recorded leftover of the three same-day
-  ships: forge re-draft semantics + the portrait review dialog; preset
-  relationship records, the matrix player column, third-person pair law; the
-  chat-wide/per-character schema split (premise, setting-wide house rules,
-  shared scene + clock at the conversation level), per-character note-takers
-  + folds, group-scene selfies/callbacks/sensory-focus, and the per-character
-  sheet UI.)
+_(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
@@ -126,6 +118,14 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Multi-character & forge wrap-up — the owner-rulings pass (all 13 rulings)** —
+  [multi-character-chat.followups.md](multi-character-chat.followups.md) — 2026-07-12 —
+  forge re-draft = full tab re-sync + the portrait review dialog; preset
+  relationship records, the matrix player column, third-person pair law; the
+  chat-wide/per-character schema split (scenario on the chat row — migrations
+  0041/0042), per-member note-takers + deterministic folds, group-scene
+  selfies/callbacks/sensory-focus/enactment, per-character sheets +
+  `?characterId=` state targeting.
 - **Multi-character chat — the substrate (all four slices)** —
   [multi-character-chat.plan.md](multi-character-chat.plan.md) — 2026-07-12 —
   a conversation holds up to 4 full characters: roster routes + panel,

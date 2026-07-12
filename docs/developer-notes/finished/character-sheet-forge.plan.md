@@ -6,9 +6,8 @@ the live prompt-quality pass — **passed 2026-07-12**, closing the last gate.
 Owner ruling 2026-07-09: **the `/characters/forge` page stays** — it creates
 whole characters from a prompt; the in-sheet tools build parts of an existing
 sheet, so the in-sheet Forge is **sheet-only, no guidance text box**.
-Leftovers: the two conflict-handling flips in §Open questions — Re-draft vs
-`manual` values and one-click portrait-conflict accept — stay recorded there;
-both built report-only, flip on owner request.)
+Leftovers: the two conflict-handling flips in §Open questions were RULED and
+built 2026-07-12 — see that section.)
 
 Builds directly on the shipped character forge
 (`server/authoring/character-forge.ts`, docs/authoring.md §Character forge) and
@@ -209,13 +208,17 @@ necessarily five separate LLM calls.
 
 ## Open questions
 
-- **Re-draft vs `manual` conflicts** — built as *report, don't change*. May
-  Re-draft correct `manual` values instead? (Flip = drop the reinstatement in
-  `lib/character-scopes.ts`.)
-- **Vision conflict handling** — built report-only, strictly fill-unset.
-  Wanted: a one-click "accept portrait value" on the conflict diagnostic? May
-  a portrait reading overwrite a `creation`-sourced (never player-touched)
-  value?
+None — both conflict flips were ruled and built 2026-07-12
+(../multi-character-chat.followups.md rulings 1–2, commit `d19c467`):
+
+- **Re-draft vs `manual` conflicts** — RULED: re-draft is a full re-sync;
+  `manual` values are revisable (the reinstatement in
+  `lib/character-scopes.ts` was dropped; the unsaved-draft review is the net).
+  The Profile scope narrowed to bio/personality/voice at the same time.
+- **Vision conflict handling** — RULED: structured conflicts
+  (`{attributeId, label, current, proposed}`) + the "Review portrait changes"
+  dialog — pre-checked `current → proposed` rows, auto-fills listed read-only;
+  Apply overwrites the checked values on the draft.
 ## Not in scope (this plan)
 
 The world forge and its cast generation (same module — it inherits the merge

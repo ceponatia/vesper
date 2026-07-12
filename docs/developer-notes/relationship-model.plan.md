@@ -10,14 +10,16 @@ creation/join seeding, the in-chat pair editor (shared-cell kind/history,
 mirrored stances behind an Asymmetric toggle), the character editor's
 Relationships tab, and the presence × salience tier injection (present-pair
 prefix lines; away-salient conditional blocks under the don't-teleport guard).
-**Leftovers, recorded:** scenario presets still author the legacy single stage
-through the `stageToAxes` bridge (band pickers pending); the player column of
-the matrix is edited via the existing Relationship panel / state tools, not the
-matrix menu; pair lines are compact third-person band+texture lines — the full
-composed second-person law block needs a third-person port before pairs can use
-it; the multi-character eval fixtures (§Eval tie-in) ride the queued enactment
-measurement run. Slice 7 stays an **earmark** for the session-chat refactor —
-the sessions lane changes nothing now.)
+**Leftovers — CLOSED 2026-07-12** by the owner-rulings wrap-up
+([multi-character-chat.followups.md](multi-character-chat.followups.md)):
+scenario presets store the full starting-relationship record (ruling 4,
+migrations 0039/0040 — `stageToBandIds` backfill, `starting_stage` dropped);
+the matrix menu gained the player column — one "them → you" row per member
+(ruling 5); present pairs render the full third-person composed law
+(`composePairRelationshipLaw`, ruling 6). Still open: the multi-character eval
+fixtures (§Eval tie-in) ride the queued enactment measurement run (ruling 7 —
+deferred). Slice 7 stays an **earmark** for the session-chat refactor — the
+sessions lane changes nothing now.)
 
 ## Problem
 
