@@ -22,12 +22,15 @@ export function ChatRosterPanel({
   roster,
   archived,
   onChanged,
+  onOpenSheet,
 }: {
   chatId: string;
   roster: ChatRosterMember[];
   archived: boolean;
   /** Refetch the conversation envelope after a roster mutation. */
   onChanged: () => void;
+  /** Open THIS member's character sheet (followups ruling 13). */
+  onOpenSheet?: (member: ChatRosterMember) => void;
 }) {
   const toast = useToast();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -86,8 +89,16 @@ export function ChatRosterPanel({
       <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">In this story</span>
       {roster.map((member) => (
         <div key={member.characterId} className="group flex items-center gap-2 rounded-md border border-ink-600 bg-ink-850 px-2 py-1.5">
-          <EntityImage imageId={member.avatarImageId} name={member.name} className="size-7 shrink-0 rounded-full text-[9px]" />
-          <span className="min-w-0 flex-1 truncate text-sm text-paper-200">{member.name}</span>
+          <button
+            type="button"
+            onClick={() => onOpenSheet?.(member)}
+            disabled={!onOpenSheet}
+            title={onOpenSheet ? `Open ${member.name}'s sheet` : undefined}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left disabled:cursor-default"
+          >
+            <EntityImage imageId={member.avatarImageId} name={member.name} className="size-7 shrink-0 rounded-full text-[9px]" />
+            <span className="min-w-0 flex-1 truncate text-sm text-paper-200 group-hover:text-paper-50">{member.name}</span>
+          </button>
           <button
             type="button"
             disabled={archived || busyId !== null}

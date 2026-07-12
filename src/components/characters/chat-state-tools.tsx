@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   CHAT_MIND_NOTE_MAX_CHARS,
-  CHAT_PREMISE_MAX_CHARS,
+  CHAT_OUTFIT_MAX_CHARS,
   conditionAttributeOverlays,
   familiarityBandForValue,
   meterDefinitions,
@@ -20,18 +20,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The state-tools modal (character-chat-state.spec.md slice 4): inspect + edit a
- * chat's light state — affinity/stage, meters, conditions, mindNote, premise — plus
- * a read-only last-turn debug readout (the deterministic pulse trace). Available to
- * the character owner. The form mounts fresh each open (the Dialog unmounts its
- * children when closed), so `useState` initializers re-seed from the snapshot
- * without an effect.
+ * The per-character sheet (character-chat-state.spec.md slice 4; scoped per roster
+ * member since followups ruling 13): inspect + edit ONE character's state — the
+ * two axes + relationship texture toward the player, meters, conditions, mindNote,
+ * outfit + exposure, presence — plus a read-only last-turn debug readout (the
+ * deterministic pulse trace). Chat-WIDE fields (premise, house rules, scene prefs)
+ * live in the Scenario modal instead. Available to the character owner. The form
+ * mounts fresh each open (the Dialog unmounts its children when closed), so
+ * `useState` initializers re-seed from the snapshot without an effect.
  */
 export function ChatStateToolsModal({
   open,
   onClose,
   chatId,
   who,
+  characterId,
+  presence,
+  onPresenceChanged,
   snapshot,
   onSaved,
 }: {
@@ -39,23 +44,44 @@ export function ChatStateToolsModal({
   onClose: () => void;
   chatId: string;
   who: string;
+  /** The roster member this sheet targets; absent ⇒ the primary. */
+  characterId?: string;
+  /** Rendered as a toggle when provided (roster > 1 — presence is a group concept). */
+  presence?: "present" | "away";
+  onPresenceChanged?: () => void;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
 }) {
   return (
-    <Dialog open={open} onClose={onClose} title={`State tools — ${who}`} className="max-w-lg">
-      {open ? <StateToolsForm chatId={chatId} snapshot={snapshot} onSaved={onSaved} onClose={onClose} /> : null}
+    <Dialog open={open} onClose={onClose} title={`Character sheet — ${who}`} className="max-w-lg">
+      {open ? (
+        <StateToolsForm
+          chatId={chatId}
+          characterId={characterId}
+          presence={presence}
+          onPresenceChanged={onPresenceChanged}
+          snapshot={snapshot}
+          onSaved={onSaved}
+          onClose={onClose}
+        />
+      ) : null}
     </Dialog>
   );
 }
 
 function StateToolsForm({
   chatId,
+  characterId,
+  presence,
+  onPresenceChanged,
   snapshot,
   onSaved,
   onClose,
 }: {
   chatId: string;
+  characterId?: string;
+  presence?: "present" | "away";
+  onPresenceChanged?: () => void;
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
   onClose: () => void;
@@ -67,7 +93,10 @@ function StateToolsForm({
   const [meters, setMeters] = useState<Record<string, number>>({ ...snapshot.meters });
   const [conditions, setConditions] = useState<ActiveCondition[]>(snapshot.conditions);
   const [mindNote, setMindNote] = useState(snapshot.mindNote);
-  const [premise, setPremise] = useState(snapshot.premise);
+  const [outfit, setOutfit] = useState(snapshot.outfit);
+  const [outfitExposed, setOutfitExposed] = useState(snapshot.outfitExposed);
+  const [livePresence, setLivePresence] = useState(presence);
+  const [presenceBusy, setPresenceBusy] = useState(false);
   const [newCondition, setNewCondition] = useState("");
   // Inspector-grade fields (character-chat-standalone.spec.md §6.1): open loops +
   // next-turn memory queries, edited as one-per-line text.
@@ -104,17 +133,22 @@ function StateToolsForm({
 
   const save = async () => {
     setSaving(true);
-    const result = await chatsApi.editState(chatId, {
-      regard,
-      familiarity,
-      relationship,
-      meters,
-      conditions,
-      mindNote,
-      premise,
-      openLoops: toLines(openLoops),
-      memoryQueries: toLines(memoryQueries),
-    });
+    const result = await chatsApi.editState(
+      chatId,
+      {
+        regard,
+        familiarity,
+        relationship,
+        meters,
+        conditions,
+        mindNote,
+        outfit,
+        outfitExposed,
+        openLoops: toLines(openLoops),
+        memoryQueries: toLines(memoryQueries),
+      },
+      characterId,
+    );
     setSaving(false);
     if (result.ok) {
       onSaved(result.data);
@@ -125,8 +159,41 @@ function StateToolsForm({
     }
   };
 
+  const flipPresence = async () => {
+    if (!characterId || !livePresence || presenceBusy) return;
+    const next = livePresence === "present" ? "away" : "present";
+    setPresenceBusy(true);
+    const result = await chatsApi.setPresence(chatId, characterId, next);
+    setPresenceBusy(false);
+    if (result.ok) {
+      setLivePresence(next);
+      onPresenceChanged?.();
+    } else {
+      toast.push({ title: "Couldn't change presence", description: result.error.message, tone: "error" });
+    }
+  };
+
   return (
     <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
+      {livePresence ? (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Presence</span>
+          <button
+            type="button"
+            disabled={presenceBusy}
+            onClick={() => void flipPresence()}
+            aria-pressed={livePresence === "present"}
+            className={
+              livePresence === "present"
+                ? "cursor-pointer rounded-full border border-accent-500/60 bg-accent-500/10 px-3 py-1 text-xs text-accent-300"
+                : "cursor-pointer rounded-full border border-ink-500 px-3 py-1 text-xs text-paper-500 hover:text-paper-300"
+            }
+          >
+            {livePresence === "present" ? "Present — sharing the scene" : "Away — living their life"}
+          </button>
+        </div>
+      ) : null}
+
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Regard</span>
         <div className="flex items-center gap-2">
@@ -275,14 +342,23 @@ function StateToolsForm({
       </label>
 
       <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Premise</span>
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Outfit</span>
         <Textarea
           rows={2}
-          value={premise}
-          maxLength={CHAT_PREMISE_MAX_CHARS}
-          onChange={(e) => setPremise(e.target.value)}
-          placeholder="The scenario this chat plays inside…"
+          value={outfit}
+          maxLength={CHAT_OUTFIT_MAX_CHARS}
+          onChange={(e) => setOutfit(e.target.value)}
+          placeholder="What they're wearing right now — drives scene images…"
         />
+        <label className="flex items-center gap-2 text-xs text-paper-400">
+          <input
+            type="checkbox"
+            checked={outfitExposed}
+            onChange={(e) => setOutfitExposed(e.target.checked)}
+            className="size-4 accent-accent-500"
+          />
+          Reveal intimate anatomy in scene images
+        </label>
       </label>
 
       <label className="flex flex-col gap-1">

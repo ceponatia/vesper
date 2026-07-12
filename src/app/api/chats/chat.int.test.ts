@@ -45,7 +45,7 @@ import { DELETE as chatDelete, GET as chatGet, POST as chatSend } from "./[chatI
 import { DELETE as msgDelete, PATCH as msgPatch } from "./[chatId]/messages/[messageId]/route";
 import { PATCH as takePatch } from "./[chatId]/messages/[messageId]/take/route";
 import { GET as sceneList } from "./[chatId]/scene/route";
-import { PATCH as statePatch } from "./[chatId]/state/route";
+import { GET as stateGet, PATCH as statePatch } from "./[chatId]/state/route";
 import { POST as participantAdd } from "./[chatId]/participants/route";
 import { GET as matrixGet, PUT as matrixPut } from "./[chatId]/relationships/route";
 import { GET as libGet, PUT as libPut } from "../characters/[id]/relationships/route";
@@ -1002,6 +1002,37 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
       .from(characterChatState)
       .where(and(eq(characterChatState.chatId, chat.id), eq(characterChatState.characterId, joinerId)));
     expect(stateRow?.presence).toBe("away");
+  });
+
+  it("state GET/PATCH target any roster member via ?characterId= (followups ruling 13)", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    const joinerId = await mkCharacter("Sheet Target");
+    await participantAdd(addReq(chat.id, { characterId: joinerId }), ctx(chat.id));
+
+    const targetPatch = new NextRequest(`http://t/api/chats/${chat.id}/state?characterId=${joinerId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ regard: 33, outfit: "a borrowed jacket" }),
+    });
+    expect((await statePatch(targetPatch, ctx(chat.id))).status).toBe(200);
+    const [row] = await db()
+      .select({ regard: characterChatState.regard, outfit: characterChatState.outfit })
+      .from(characterChatState)
+      .where(and(eq(characterChatState.chatId, chat.id), eq(characterChatState.characterId, joinerId)));
+    expect(row?.regard).toBe(33);
+    expect(row?.outfit).toBe("a borrowed jacket");
+
+    // GET returns the member's own snapshot…
+    const get = await stateGet(new NextRequest(`http://t/api/chats/${chat.id}/state?characterId=${joinerId}`), ctx(chat.id));
+    expect(get.status).toBe(200);
+    expect(((await get.json()) as { regard: number }).regard).toBe(33);
+    // …and an out-of-roster id 404s.
+    const bad = await stateGet(
+      new NextRequest(`http://t/api/chats/${chat.id}/state?characterId=${ids.otherCharacter}`),
+      ctx(chat.id),
+    );
+    expect(bad.status).toBe(404);
   });
 
   it("caps the roster at 4 and refuses foreign characters", async (t) => {

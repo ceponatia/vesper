@@ -98,16 +98,30 @@ const snapshotOpts = (profile: CharacterProfile) => ({
 const parseProfile = (owned: OwnedChat, sink?: DiagnosticCollector) =>
   parseOr(characterProfileSchema, owned.character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
 
-export const GET = withUser<Params>(async (user, _req, ctx) => {
+/**
+ * Resolve the TARGET participant (followups ruling 13 — per-character sheets):
+ * `?characterId=` picks any roster member's state; absent ⇒ the primary (the
+ * pre-roster shape every 1-on-1 caller keeps using). Null ⇒ not in this roster.
+ */
+function targetMember(owned: OwnedChat, req: NextRequest): { characterId: string; profile: unknown } | null {
+  const characterId = new URL(req.url).searchParams.get("characterId");
+  if (!characterId) return { characterId: owned.participant.characterId, profile: owned.character.profile };
+  const member = owned.roster.find((m) => m.characterId === characterId);
+  return member ? { characterId: member.characterId, profile: member.character.profile } : null;
+}
+
+export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
+  const target = targetMember(owned, req);
+  if (!target) return jsonError("not_found", "that character is not in this conversation", 404);
 
   const sink = new DiagnosticCollector();
-  const profile = parseProfile(owned, sink);
-  const stored = await loadChatState(chatId, owned.participant.characterId, sink);
+  const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
+  const stored = await loadChatState(chatId, target.characterId, sink);
   // resolveSeededOutfit: the seeded outfit is an item-id marker (and pre-fix rows
-  // persisted those ids) — the scenario modal must show the garment phrase.
+  // persisted those ids) — the character sheet must show the garment phrase.
   const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
   const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
   const state = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
@@ -118,16 +132,18 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
+  const target = targetMember(owned, req);
+  if (!target) return jsonError("not_found", "that character is not in this conversation", 404);
   const busy = chatBusyResponse(chatId);
   if (busy) return busy;
 
   const body = await readBody(req, editBodySchema);
   if (!body.ok) return body.response;
 
-  const profile = parseProfile(owned);
+  const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
   const { state, scenario } = await editChatState({
     chatId,
-    characterId: owned.participant.characterId,
+    characterId: target.characterId,
     ownerId: user.id,
     profile,
     patch: body.value,

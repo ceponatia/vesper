@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import {
-  CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
+  chatSceneModelLabels,
+  chatSceneModels,
+  parseChatSceneModel,
   type SocialReactionCard,
 } from "@/contracts";
 import { chatPresetsApi, chatsApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
@@ -17,15 +19,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The Scenario setup modal (character-chat-scenario.plan.md): configure the
- * **chat-only** framing — scenario premise, free-text starting outfit + the
- * intimate-reveal toggle, and the social cards live in this chat. The authored
- * Starting Relationship moved to the editor's Chat-defaults card (it's a profile
- * field, not chat state). Scenario presets (character-chat-standalone.spec.md
- * §1.5) ride on top: "Apply preset" fills the draft fields (Save still persists),
- * and "Save as preset" captures the current draft as a reusable bundle. The form
- * mounts fresh each open (Dialog unmounts its children when closed), so the
- * `useState` initializers re-seed from the snapshot without an effect.
+ * The Scenario setup modal (character-chat-scenario.plan.md; slimmed to the
+ * genuinely CHAT-WIDE fields by followups ruling 13): the premise, the
+ * setting-wide house rules (the active social cards — one set for the whole
+ * roster, ruling 9), auto-scene mode, and the scene-image model. Per-character
+ * fields (outfit + exposure, axes, texture) live on each member's Character
+ * sheet instead. Scenario presets (character-chat-standalone.spec.md §1.5) ride
+ * on top: "Apply preset" fills the chat-wide draft fields (a preset's outfit /
+ * starting relationship only seed NEW conversations), and "Save as preset"
+ * captures the draft + the primary's current outfit/relationship as a reusable
+ * bundle. The form mounts fresh each open (Dialog unmounts its children when
+ * closed), so the `useState` initializers re-seed from the snapshot without an
+ * effect.
  */
 export function ChatScenarioModal({
   open,
@@ -64,9 +69,8 @@ function ScenarioForm({
 }) {
   const toast = useToast();
   const [premise, setPremise] = useState(snapshot.premise);
-  const [outfit, setOutfit] = useState(snapshot.outfit);
-  const [outfitExposed, setOutfitExposed] = useState(snapshot.outfitExposed);
   const [sceneAuto, setSceneAuto] = useState(snapshot.sceneAuto === "milestones");
+  const [sceneModel, setSceneModel] = useState(parseChatSceneModel(snapshot.sceneModel));
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
   const [saving, setSaving] = useState(false);
 
@@ -77,14 +81,16 @@ function ScenarioForm({
   const [presetName, setPresetName] = useState("");
   const [presetBusy, setPresetBusy] = useState(false);
 
-  /** Fill the draft fields from a preset — the user still hits Save to persist. */
+  /**
+   * Fill the CHAT-WIDE draft fields from a preset — the user still hits Save to
+   * persist. The preset's outfit / starting relationship are per-character seeds
+   * and only apply when a NEW conversation is created from it.
+   */
   const applyPreset = (presetId: string) => {
     setAppliedPresetId(presetId);
     const preset = (presets.data ?? []).find((p) => p.id === presetId);
     if (!preset) return;
     setPremise(preset.premise);
-    setOutfit(preset.outfit);
-    setOutfitExposed(preset.outfitExposed);
     if (preset.socialCards.length) setCards([...preset.socialCards]);
   };
 
@@ -115,8 +121,10 @@ function ScenarioForm({
     const result = await chatPresetsApi.create({
       name,
       premise,
-      outfit,
-      outfitExposed,
+      // Per-character seeds (applied to a NEW conversation's primary): captured
+      // from the primary's CURRENT sheet, since this modal no longer edits them.
+      outfit: snapshot.outfit,
+      outfitExposed: snapshot.outfitExposed,
       socialCards: cards,
       startingRelationship: {
         familiarity: snapshot.familiarityBand.id,
@@ -147,10 +155,9 @@ function ScenarioForm({
   const save = async () => {
     const patch: ChatStateEdit = {};
     if (premise !== snapshot.premise) patch.premise = premise;
-    if (outfit !== snapshot.outfit) patch.outfit = outfit;
-    if (outfitExposed !== snapshot.outfitExposed) patch.outfitExposed = outfitExposed;
     const sceneAutoMode = sceneAuto ? "milestones" : "off";
     if (sceneAutoMode !== snapshot.sceneAuto) patch.sceneAuto = sceneAutoMode;
+    if (sceneModel !== parseChatSceneModel(snapshot.sceneModel)) patch.sceneModel = sceneModel;
     if (JSON.stringify(cards) !== JSON.stringify(snapshot.activeSocialCards)) patch.activeSocialCards = cards;
     setSaving(true);
     const result = await chatsApi.editState(chatId, patch);
@@ -205,27 +212,8 @@ function ScenarioForm({
         <span className="text-[11px] text-paper-600">This chat only — it never touches {who}&rsquo;s saved bio or personality.</span>
       </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Starting outfit</span>
-        <Textarea
-          rows={2}
-          value={outfit}
-          maxLength={CHAT_OUTFIT_MAX_CHARS}
-          onChange={(e) => setOutfit(e.target.value)}
-          placeholder="What they're wearing in scene images — e.g. 'a loose silk robe and bare feet'…"
-        />
-        <label className="flex items-center gap-2 text-xs text-paper-400">
-          <input
-            type="checkbox"
-            checked={outfitExposed}
-            onChange={(e) => setOutfitExposed(e.target.checked)}
-            className="size-4 accent-accent-500"
-          />
-          Reveal intimate anatomy in scene images
-        </label>
-        <span className="text-[11px] text-paper-600">
-          Drives chat scene images only — the chat has no equippable wardrobe, so this stands in for it.
-        </span>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Scene images</span>
         <label className="flex items-center gap-2 text-xs text-paper-400">
           <input
             type="checkbox"
@@ -239,7 +227,17 @@ function ScenarioForm({
           A relationship-stage change or a strong reaction paints the moment into the transcript on its own.
           Generation otherwise stays yours to trigger.
         </span>
-      </label>
+        <Select value={sceneModel} onChange={(e) => setSceneModel(parseChatSceneModel(e.target.value))} aria-label="Scene image model">
+          {chatSceneModels.map((model) => (
+            <option key={model} value={model}>
+              {chatSceneModelLabels[model]}
+            </option>
+          ))}
+        </Select>
+        <span className="text-[11px] text-paper-600">
+          Outfits and exposure moved to each character&rsquo;s sheet — tap a name in the roster.
+        </span>
+      </div>
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Active social cards</span>
