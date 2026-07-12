@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { clothingLayerSchema, itemKindSchema } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
@@ -52,6 +52,9 @@ export const GET = withUser(async (user, req: NextRequest) => {
   const kind = parseOrNull(itemKindSchema, params.get("kind"));
   const layer = parseOrNull(clothingLayerSchema, Number(params.get("layer") ?? NaN));
   const sort = parseOrNull(z.enum(["updated", "name"]), params.get("sort"));
+  // Discovery scope (auth.plan.md fast-follow): all|public|owned; default owner-only.
+  const scopeParam = params.get("scope");
+  const scope = scopeParam === "all" || scopeParam === "public" ? scopeParam : "owned";
   // Pass kind + facets INTO the search so the result cap is applied per-facet.
   // Otherwise a facet-scoped list is silently truncated by other rows ranking
   // higher by updated_at (the defaultOutfit lesson — see searchLibraryIds).
@@ -67,12 +70,14 @@ export const GET = withUser(async (user, req: NextRequest) => {
       colorFamily: params.get("color") ?? undefined,
     },
     sort: sort ?? undefined,
+    scope,
   });
   if (ids.length === 0) return jsonOk({ items: [] });
   const rows = await db()
     .select(LIST_COLUMNS)
     .from(items)
-    .where(and(eq(items.ownerId, user.id), inArray(items.id, ids)));
+    // Non-owned rows are reachable only when the scoped search returned them.
+    .where(and(inArray(items.id, ids), or(eq(items.ownerId, user.id), eq(items.visibility, "public"))));
   const byId = new Map(rows.map((r) => [r.id, r]));
   return jsonOk({ items: ids.flatMap((id) => byId.get(id) ?? []) });
 });

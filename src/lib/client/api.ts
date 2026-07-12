@@ -249,6 +249,10 @@ export const characterSummarySchema = z.object({
   tags: tagsSchema,
   avatarImageId: optionalId,
   updatedAt: optionalText,
+  /** Facet columns for the library browse (library-ux.plan.md §Follow-up pass). */
+  speciesId: optionalText,
+  gender: optionalText,
+  worldCount: z.number().catch(0),
 });
 export type CharacterSummary = z.infer<typeof characterSummarySchema>;
 
@@ -391,6 +395,9 @@ export const locationSummarySchema = z.object({
   description: textOr(""),
   tags: tagsSchema,
   imageId: optionalId,
+  /** Facet columns for the library browse (library-ux.plan.md §Follow-up pass). */
+  scale: z.enum(["intimate", "room", "hall", "open", "expanse"]).catch("room"),
+  worldCount: z.number().catch(0),
 });
 export type LocationSummary = z.infer<typeof locationSummarySchema>;
 
@@ -399,7 +406,6 @@ export type LocationConnection = z.infer<typeof locationConnectionSchema>;
 
 export const locationDetailSchema = locationSummarySchema.extend({
   ambient: ambientSchema,
-  scale: z.enum(["intimate", "room", "hall", "open", "expanse"]).catch("room"),
   area: optionalText,
   links: arrayOf(locationConnectionSchema),
   visibility: visibilitySchema,
@@ -826,6 +832,8 @@ export type ListParams = {
   wearer?: string;
   color?: string;
   sort?: "updated" | "name";
+  /** Cross-account visibility scope: all | public | owned (auth.md). */
+  scope?: string;
 };
 
 export const charactersApi = {
@@ -1168,7 +1176,7 @@ export const itemsApi = {
 
 export const socialCardsApi = {
   /** `scope` (all|public|owned) drives the discovery gallery; owner-scoped until step 6 wires it. */
-  list: (params: ListParams & { scope?: string } = {}) =>
+  list: (params: ListParams = {}) =>
     apiGet(listOf(socialCardSummarySchema, "socialCards"), withQuery("/api/social-cards", params)),
   get: (id: string) => apiGet(detailOf(socialCardDetailSchema, "socialCard"), `/api/social-cards/${id}`),
   create: (body: unknown) => apiPost(createdRefSchema, "/api/social-cards", body),
