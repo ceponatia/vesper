@@ -6,6 +6,7 @@ import {
   MILESTONES_CAP,
   RELATIONSHIP_HISTORY_CAP,
   STRONG_REACTION_DELTA,
+  unseenMilestoneReason,
   type Milestone,
   type RelationshipSample,
 } from "./history";
@@ -35,6 +36,27 @@ describe("appendRelationshipSample / appendMilestones (capped rings, spec §7.2)
     const next = appendMilestones(full, [m(999)]);
     expect(next).toHaveLength(MILESTONES_CAP);
     expect(next.at(-1)?.label).toBe("m999");
+  });
+});
+
+describe("unseenMilestoneReason (§8.4 v2 seen-cursor)", () => {
+  const seenAt = new Date("2026-07-12T12:00:00Z");
+  const m = (at: string, kind: Milestone["kind"], label: string): Milestone => ({ at, kind, label });
+
+  it("returns the NEWEST milestone landed after the cursor; seen ones stay quiet", () => {
+    const ring = [
+      m("2026-07-12T11:00:00Z", "stage_up", "Neutral → Warm"),
+      m("2026-07-12T13:00:00Z", "familiarity_up", "She let you in"),
+      m("2026-07-12T14:00:00Z", "secret_shared", "Mara shared a secret"),
+    ];
+    expect(unseenMilestoneReason(ring, seenAt)).toBe("Mara shared a secret");
+    expect(unseenMilestoneReason(ring, new Date("2026-07-12T15:00:00Z"))).toBeNull();
+  });
+
+  it("first_exchange never fires the marker, and bad timestamps are treated as seen", () => {
+    expect(unseenMilestoneReason([m("2026-07-12T13:00:00Z", "first_exchange", "First words")], seenAt)).toBeNull();
+    expect(unseenMilestoneReason([m("", "stage_up", "Neutral → Warm")], seenAt)).toBeNull();
+    expect(unseenMilestoneReason([], seenAt)).toBeNull();
   });
 });
 

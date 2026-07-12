@@ -205,6 +205,14 @@ export const characterChats = pgTable(
     createdAt: createdAt(),
     /** Recency anchor for the Chats list; bumped on every exchange. */
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The "has something to say" seen-cursor (chat-initiative.plan.md slice 2 /
+     * character-chat-standalone.spec.md §8.4 v2): stamped when the player OPENS
+     * the conversation (PATCH {seen}), never by the post-exchange transcript
+     * refetch — so a milestone landing mid-visit reads as unseen on the next
+     * hub visit and clears on the next open (the unread-badge pattern).
+     */
+    milestonesSeenAt: timestamp("milestones_seen_at", { withTimezone: true }).notNull().defaultNow(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => [index("character_chats_owner_recency_idx").on(t.ownerId, t.lastMessageAt)],

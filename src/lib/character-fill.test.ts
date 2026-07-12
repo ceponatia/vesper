@@ -174,21 +174,24 @@ describe("mergeFillDraft — clusters", () => {
     expect(mergeFillDraft(draftOf(), incoming).profile.intimateRegions).toEqual(["vulva", "breasts"]);
     expect(mergeFillDraft(draftOf({}, { intimateRegions: ["breasts"] }), incoming).profile.intimateRegions).toEqual(["breasts"]);
   });
+
+  it("schedule fills all-or-nothing like the outfit (chat-initiative slice 4)", () => {
+    const authoredRow = { startMinute: 0, endMinute: 60, locationName: "the quay", activity: "inspection" };
+    const generatedRow = { startMinute: 360, endMinute: 720, locationName: "the café", activity: "waiting tables" };
+    const incoming = draftOf({}, { schedule: [generatedRow] });
+    expect(mergeFillDraft(draftOf({}, { schedule: [authoredRow] }), incoming).profile.schedule).toEqual([authoredRow]);
+    expect(mergeFillDraft(draftOf(), incoming).profile.schedule).toEqual([generatedRow]);
+  });
 });
 
 describe("mergeFillDraft — never-filled fields", () => {
-  it("always keeps the base playerRelationship, socialCards, and schedule", () => {
-    const base = draftOf({}, {
-      schedule: [{ startMinute: 0, endMinute: 60, locationName: "the quay", activity: "inspection" }],
-    });
+  it("always keeps the base playerRelationship and socialCards", () => {
+    const base = draftOf();
     base.profile.playerRelationship = { ...base.profile.playerRelationship, note: "Owes me a favor." };
-    const incoming = draftOf({}, {
-      schedule: [{ startMinute: 100, endMinute: 200, locationName: "elsewhere", activity: "other" }],
-    });
+    const incoming = draftOf();
     incoming.profile.playerRelationship = { ...incoming.profile.playerRelationship, note: "Generated note." };
     const merged = mergeFillDraft(base, incoming);
     expect(merged.profile.playerRelationship.note).toBe("Owes me a favor.");
-    expect(merged.profile.schedule).toEqual(base.profile.schedule);
     expect(merged.profile.socialCards).toEqual([]);
   });
 });

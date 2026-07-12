@@ -70,6 +70,20 @@ export interface SelfieOfferGateInput {
  */
 export function chatSelfieOfferEligible(input: SelfieOfferGateInput): boolean {
   if (!input.playerComms && !input.lastReplyComms) return false;
+  return chatSelfieOpenerEligible(input);
+}
+
+/**
+ * May a reopen OPENER attach a selfie (chat-initiative.plan.md slice 5 — the
+ * "thinking of you" photo)? Warm-or-better regard + the same cooldown ring; no
+ * comms-span requirement — a reopen has no fresh exchange to read the register
+ * from, so the license line is register-CONDITIONAL instead ("if you open as a
+ * text…") and the fiction enforces apartness: an in-scene opener never "sends"
+ * a photo, so the pulse's `sentPhoto` read stays false and nothing queues. PURE.
+ */
+export function chatSelfieOpenerEligible(
+  input: Pick<SelfieOfferGateInput, "regard" | "clockMinutes" | "selfieHistory">,
+): boolean {
   if (input.regard < OFFER_REGARD_MIN) return false;
   const last = input.selfieHistory.at(-1);
   if (last && input.clockMinutes - last.atClockMinutes < CHAT_SELFIE_OFFER_GAP_MINUTES) return false;

@@ -70,8 +70,17 @@ const patchBodySchema = z
   .object({
     title: z.string().trim().max(120).optional(),
     archived: z.boolean().optional(),
+    /**
+     * "Has something to say" seen-cursor (§8.4 v2): true stamps milestones_seen_at
+     * = now. Sent once per conversation OPEN (mount) — deliberately not folded into
+     * the transcript GET, which refetches after every exchange and would mark each
+     * milestone seen the instant it lands.
+     */
+    seen: z.boolean().optional(),
   })
-  .refine((b) => b.title !== undefined || b.archived !== undefined, { message: "nothing to update" });
+  .refine((b) => b.title !== undefined || b.archived !== undefined || b.seen !== undefined, {
+    message: "nothing to update",
+  });
 
 /** GET /api/chats/:chatId — the transcript, oldest first. */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
@@ -208,6 +217,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
     .set({
       ...(body.value.title !== undefined ? { title: body.value.title } : {}),
       ...(body.value.archived !== undefined ? { archivedAt: body.value.archived ? new Date() : null } : {}),
+      ...(body.value.seen ? { milestonesSeenAt: new Date() } : {}),
     })
     .where(eq(characterChats.id, chatId));
   return jsonOk({ id: chatId });

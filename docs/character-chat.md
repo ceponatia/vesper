@@ -185,7 +185,10 @@ never a boolean), `scene_model`, `scene_memory` (the accumulating narrator-imagi
 setting — see §Scene memory), the time model (`clock_minutes` — **one** story timeline
 for the whole roster, D3/D8; away members skip meter decay, never fork the clock;
 `skip_history` ring ≤50; one-shot `pending_skip_note`), and `pre_exchange_scenario`
-(the rollback anchor's chat-wide half).
+(the rollback anchor's chat-wide half). Beside the scenario the chat row also
+carries `milestones_seen_at` (migration 0043) — the §Initiative marker-v2
+seen-cursor, stamped on conversation open, deliberately outside `ChatScenario`
+(it is a UI cursor, not fiction state — never snapshot/rolled back).
 
 `upsertChatState` is the **one** state-row column-list source shared by the guarded
 (mid-exchange) and unguarded (author-edit) writers; `editChatState` is ONE patch surface
@@ -347,17 +350,27 @@ The character can send photos back
 ([developer-notes/chat-selfies.plan.md](developer-notes/finished/chat-selfies.plan.md), owner
 rulings 2026-07-11):
 
-- **Two triggers, one queue decision.** A player **request** (`detectSelfieRequest`,
-  regex — any register: handing a photo over face-to-face is the player's call) or an
+- **Three triggers, one queue decision.** A player **request** (`detectSelfieRequest`,
+  regex — any register: handing a photo over face-to-face is the player's call), an
   unprompted **offer** — gated **apart-only** (ruled: a selfie simulates texting, so
   the comms register — a `*Name: …*` span in the player's message or the last reply —
   is the deterministic "not in the same place" signal), warm-or-better regard, and a
-  ~15-exchange cooldown (`selfie_history` ring, migration 0034, rollback-safe).
-  Either arms a one-turn tail **license** (`chatSelfieLine` — a request makes
-  declining first-class; an offer is "entirely optional, never forced"). The render
-  queues only when the **pulse** read the reply as actually sending one
-  (`sentPhoto`) AND a gate armed it — a hallucinated "sending you a pic" on an
-  unarmed turn stays fiction, and a decline stays a decline.
+  ~15-exchange cooldown (`selfie_history` ring, migration 0034, rollback-safe) —
+  or the **opener** arm (chat-initiative slice 5): a warm initiative opener may
+  attach the "thinking of you" photo (`chatSelfieOpenerEligible` — warm +
+  cooldown; no comms-span requirement since a reopen has no fresh exchange to
+  read, so the license line is register-CONDITIONAL — "if your opening lands as
+  a text" — and the fiction enforces apartness: an in-scene opener never
+  "sends", so nothing queues). Each arms a one-turn tail **license**
+  (`chatSelfieLine` — a request makes declining first-class; an offer is
+  "entirely optional, never forced"). The render queues only when the **pulse**
+  read the reply as actually sending one (`sentPhoto`) AND a gate armed it — a
+  hallucinated "sending you a pic" on an unarmed turn stays fiction, and a
+  decline stays a decline. On an armed opener the normally-skipped pulse runs
+  **opener-scoped** (`applyOpenerPulse` — folds ONLY `sentPhoto` + the mindNote
+  refresh; no regard/meter/feeling moves, since there is no player act to react
+  to — a "neutral" proposal must not clear a standing bruise). An opener send
+  records an `offer` ring entry (same cooldown).
 - **Render** (`flavor: "selfie"` through `queueChatScene` →
   `renderCharacterSceneImage`): ALWAYS the identity-locked reference route (ruled —
   the scene strip's t2i pick is ignored), with `SELFIE_FRAMING` replacing the
@@ -442,20 +455,46 @@ the pickup strip gains **"Let {who} start ✦"**, which runs a `continue`-kind
 exchange with `initiative: true` — the server builds the cue
 (`buildInitiativeCue`, `engine/chat-initiative.ts`): reach out FIRST, with her
 own material (top open loops + unresolved non-secret wants — withheld secrets
-never leak into the cue; the drives tail law owns them), the **"a life
-meanwhile" license** folded in (build decision: instead of a separate
+never leak into the cue; the drives tail law owns them — plus, since the
+remainder pass, the **unseen shift** and the **daily rhythm** below), the **"a
+life meanwhile" license** folded in (build decision: instead of a separate
 life-event agent, the cue invites ONE small concrete thing from her life since,
 skip-aware — zero extra model calls, exactly as grounded as the narrator
 already is), the **comms-when-apart register** (`*Name: …*` texted opener when
 the fiction has them apart), and a restraint clause (one beat, end on something
 answerable, never narrate the player). Standing rulings hold: **D3** —
-generation stays player-tapped, never background, and the hub marker stays
-loops-keyed (no wall-clock nudge); **D8** — what the gap meant comes from the
-pending skip note, never real time. The opener is an ordinary continue
-exchange: clock ticks, pulse skipped, archivist off (opening path), lock/guard
-semantics unchanged. Remaining slices live in the plan: the §8.4 marker
-upgrade (seen-cursor), `profile.schedule` authoring, and the selfie-attach
-hook (needs pulse-on-open).
+generation stays player-tapped, never background, and the marker never reads
+the wall clock (re-ruled 2026-07-12: loops + milestones only); **D8** — what
+the gap meant comes from the pending skip note, never real time. The opener is
+an ordinary continue exchange: clock ticks, archivist off (opening path),
+lock/guard semantics unchanged; the pulse is skipped **except** when the
+opener-selfie license armed, where it runs **opener-scoped** (below).
+
+The remainder slices (shipped 2026-07-12):
+
+- **Marker v2 — the unseen-milestone seen-cursor** (spec §8.4 v2). The hub's
+  "has something to say" derivation (`GET /api/chats`) stays read-time-pure:
+  the top open loop leads, and with no loops the reason is the **newest
+  milestone unseen since the player last opened the conversation**
+  (`unseenMilestoneReason`, `contracts/relationships/history.ts` —
+  `first_exchange` never fires it). "Seen" is the `character_chats.
+  milestones_seen_at` cursor (migration 0043), stamped **only on conversation
+  open** (`PATCH …/:chatId {seen: true}`, fired by the page's mount effect) —
+  deliberately not by the transcript GET, which refetches after every exchange
+  and would mark each milestone seen the instant it lands. So a milestone
+  landing mid-visit lights the hub marker on the next visit and clears on the
+  next open (the unread-badge pattern). The `?say=1` banner no longer requires
+  open loops: a loop-less tap runs the full initiative opener, and the opener
+  cue itself names the unseen shift as material ("what just shifted between
+  you") via a one-column `loadMilestonesSeenAt` read on initiative beats.
+- **Daily rhythm** (`profile.schedule` authoring — see
+  [authoring.md](authoring.md) §Daily rhythm). The cue renders the schedule as
+  one compact line (`formatScheduleRhythm` — "mornings: waiting tables at the
+  Dockside Café; evenings: sketching at the pier") grounding the life-meanwhile
+  license, so "just got off shift" beats draw on authored routine instead of
+  invention. Chat-side consumption only; the session movement engine already
+  walks the same rows.
+- **Opener selfie** — see §Selfies (the opener arm).
 
 ## Multi-character (the ensemble)
 

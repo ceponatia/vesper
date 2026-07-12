@@ -25,6 +25,68 @@ export const scheduleEntrySchema = z.object({
   days: z.array(z.number().int().min(0).max(6)).optional(),
 });
 
+export type ScheduleEntry = z.infer<typeof scheduleEntrySchema>;
+
+/**
+ * The day-part vocabulary the schedule authoring surfaces speak
+ * (chat-initiative.plan.md slice 4 — "rows, not a timetable grid"): the editor
+ * offers these as row presets and the forge drafts in them; the stored shape
+ * stays raw minutes, so hand-authored windows and the session movement engine
+ * (`scheduleEntryAt` — wrap-past-midnight supported) are untouched.
+ */
+export const SCHEDULE_DAY_PARTS = [
+  { id: "morning", label: "Morning", startMinute: 360, endMinute: 720 }, // 6:00am–12:00pm
+  { id: "afternoon", label: "Afternoon", startMinute: 720, endMinute: 1080 }, // 12:00pm–6:00pm
+  { id: "evening", label: "Evening", startMinute: 1080, endMinute: 1380 }, // 6:00pm–11:00pm
+  { id: "night", label: "Night", startMinute: 1380, endMinute: 360 }, // 11:00pm–6:00am (wraps)
+] as const;
+export type ScheduleDayPartId = (typeof SCHEDULE_DAY_PARTS)[number]["id"];
+
+export function scheduleDayPartById(id: string): (typeof SCHEDULE_DAY_PARTS)[number] | undefined {
+  return SCHEDULE_DAY_PARTS.find((p) => p.id === id);
+}
+
+/** The day part whose window exactly matches this entry's minutes, if any (the editor's select state). */
+export function matchScheduleDayPart(entry: Pick<ScheduleEntry, "startMinute" | "endMinute">): ScheduleDayPartId | null {
+  const match = SCHEDULE_DAY_PARTS.find((p) => p.startMinute === entry.startMinute && p.endMinute === entry.endMinute);
+  return match?.id ?? null;
+}
+
+/** "6:00am" / "2:30pm" — minute-of-day for the custom-window editor rows and window descriptions. */
+export function formatScheduleMinute(minute: number): string {
+  const bounded = ((Math.round(minute) % 1440) + 1440) % 1440;
+  const hour24 = Math.floor(bounded / 60);
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const mins = bounded % 60;
+  return `${hour12}${mins ? `:${String(mins).padStart(2, "0")}` : ""}${hour24 < 12 ? "am" : "pm"}`;
+}
+
+const WEEKDAY_ABBREV = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+/** "mornings" for a preset window, else "6:00am–2:30pm"; a day mask appends "(Mon/Wed/Fri)". */
+export function describeScheduleWindow(entry: ScheduleEntry): string {
+  const part = matchScheduleDayPart(entry);
+  const window = part ? `${part}s` : `${formatScheduleMinute(entry.startMinute)}–${formatScheduleMinute(entry.endMinute)}`;
+  const days = entry.days?.length ? ` (${entry.days.map((d) => WEEKDAY_ABBREV[d] ?? "?").join("/")})` : "";
+  return `${window}${days}`;
+}
+
+/**
+ * One compact rhythm line for prompts (the initiative opener's "a life
+ * meanwhile" grounding): "mornings: waiting tables at the Dockside Café;
+ * evenings: sketching at the pier". Empty for an empty schedule. PURE.
+ */
+export function formatScheduleRhythm(schedule: readonly ScheduleEntry[], max = 4): string {
+  return schedule
+    .slice(0, max)
+    .map((entry) => {
+      const place = entry.locationName.trim();
+      const activity = entry.activity.trim();
+      return `${describeScheduleWindow(entry)}: ${activity}${place ? ` at ${place}` : ""}`;
+    })
+    .join("; ");
+}
+
 export const characterProfileSchema = z.object({
   bio: z.string().default(""),
   personality: z.string().default(""),
@@ -120,7 +182,13 @@ export const characterProfileSchema = z.object({
   aliases: z.array(z.string()).default([]),
   /** Item definition ids from the owner's library. */
   defaultOutfit: z.array(z.string()).default([]),
-  schedule: z.array(scheduleEntrySchema).default([]),
+  // Element-wise catch (docs/resilience.md §1): one bad row — an editor row saved
+  // with a blank activity/place — drops alone instead of failing the whole profile.
+  schedule: z
+    .array(scheduleEntrySchema.nullable().catch(null))
+    .catch([])
+    .default([])
+    .transform((entries) => entries.filter((e): e is ScheduleEntry => e !== null)),
 });
 
 export type CharacterProfile = z.infer<typeof characterProfileSchema>;

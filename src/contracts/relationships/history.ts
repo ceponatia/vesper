@@ -70,6 +70,24 @@ export function appendMilestones(current: readonly Milestone[], added: readonly 
 export const STRONG_REACTION_DELTA = 4;
 
 /**
+ * The newest milestone the player hasn't been shown yet (chat-initiative.plan.md
+ * slice 2 — the §8.4 v2 marker key): landed after the per-chat seen-cursor and
+ * worth reaching out about. `first_exchange` never counts — "we spoke once" is
+ * not a reason to reopen. Returns the milestone's label, or null. PURE.
+ * (Ruled 2026-07-12: the marker keys on loops + milestones only — real time
+ * since the last exchange is deliberately NOT a signal, per D3.)
+ */
+export function unseenMilestoneReason(milestones: readonly Milestone[], seenAt: Date): string | null {
+  for (let i = milestones.length - 1; i >= 0; i--) {
+    const m = milestones[i];
+    if (!m || m.kind === "first_exchange") continue;
+    const at = new Date(m.at).getTime();
+    if (Number.isFinite(at) && at > seenAt.getTime()) return m.label || null;
+  }
+  return null;
+}
+
+/**
  * Derive the milestones one settled exchange produced (spec §7.2). PURE:
  * - `first_exchange` when there was no stored state before it;
  * - `stage_up` / `stage_down` when the REGARD band crossed (both directions);

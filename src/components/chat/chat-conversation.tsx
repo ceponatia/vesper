@@ -234,6 +234,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         setWantsSay(true);
       }
     })();
+    // Stamp the §8.4 seen-cursor once per conversation OPEN (fire-and-forget):
+    // milestones landing later in this visit stay "unseen", so the hub marker can
+    // light on the next visit and clears the next time the chat is opened.
+    void chatsApi.update(chatId, { seen: true });
     return () => {
       cancelled = true;
     };
@@ -779,10 +783,17 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     }
   };
 
-  /** The §8.4 opener: let the character speak about their top open loop. */
+  /**
+   * The §8.4 opener: let the character speak about their top open loop. With no
+   * loops standing (a milestone-keyed marker tap — §8.4 v2), fall through to the
+   * full initiative opener: the server builds her material (loops/wants/the
+   * unseen shift) itself.
+   */
   const letThemSpeak = async () => {
     const cue = chatState?.openLoops[0];
-    const outcome = await runStream({ kind: "continue", model: chatModel, cue });
+    const outcome = await runStream(
+      cue ? { kind: "continue", model: chatModel, cue } : { kind: "continue", model: chatModel, initiative: true },
+    );
     if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
   };
 
@@ -1056,8 +1067,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               }}
             />
           ) : null}
-          {/* "Has something to say" opener (spec §8.4): the tapped marker's one-tap beat. */}
-          {wantsSay && !archived && !sending && (chatState?.openLoops.length ?? 0) > 0 ? (
+          {/* "Has something to say" opener (spec §8.4): the tapped marker's one-tap beat.
+              v2: the marker also fires on unseen milestones, so the banner no longer
+              requires open loops — a loop-less tap runs the full initiative opener. */}
+          {wantsSay && !archived && !sending ? (
             <div className="flex items-center justify-between gap-2 rounded-card border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-xs text-paper-300">
               <span className="truncate" title={chatState?.openLoops[0]}>
                 {who} has something on their mind.

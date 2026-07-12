@@ -30,6 +30,7 @@ import { DrivesEditor } from "./drives-editor";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 import { PreferencesEditor } from "./preferences-editor";
+import { ScheduleEditor } from "./schedule-editor";
 
 type EditorTab =
   | "profile"
@@ -297,6 +298,9 @@ export function CharacterEditor({
           <Field label="Aliases" hint="Other names the narrative may use.">
             {(id) => <TagInput id={id} value={draft.profile.aliases} onChange={(aliases) => patchProfile({ aliases })} />}
           </Field>
+          <div className="sm:col-span-2">
+            <ScheduleEditor schedule={draft.profile.schedule} onChange={(schedule) => patchProfile({ schedule })} />
+          </div>
         </div>
       ) : null}
 

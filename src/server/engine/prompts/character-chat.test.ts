@@ -1388,6 +1388,13 @@ describe("selfie license line (chat-selfies.plan.md)", () => {
     expect(chatSelfieLine(undefined, "Mara", "Theo")).toBe("");
   });
 
+  it("the opener arm is register-conditional — a photo only if the opening lands as a text (chat-initiative slice 5)", () => {
+    const opener = chatSelfieLine("opener", "Mara", "Theo");
+    expect(opener).toContain("IF your opening lands as a text");
+    expect(opener).toContain('"thinking of you"');
+    expect(opener).toContain("opening in a shared scene means no photo");
+  });
+
   it("rides the tail only when armed", () => {
     const armed = buildCharacterChatPromptParts({
       name: "Mara",

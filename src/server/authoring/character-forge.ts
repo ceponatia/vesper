@@ -31,6 +31,7 @@ import {
   axisRange,
   regardBandById,
   regardBands,
+  scheduleDayPartById,
   traitRegistry,
   wearerTargetById,
   wearerTargets,
@@ -43,6 +44,7 @@ import {
   type ItemDefinition,
   type Preference,
   type RealizedBody,
+  type ScheduleEntry,
   type SpeciesDefinition,
   type TraitValue,
 } from "@/contracts";
@@ -234,6 +236,18 @@ const profileSectionSchema = z.object({
       }),
     )
     .default([]),
+  /** Daily rhythm (chat-initiative.plan.md slice 4) — day-part rows, grounded to minute windows. */
+  schedule: z
+    .array(
+      z.object({
+        dayPart: z.enum(["morning", "afternoon", "evening", "night"]).catch("morning"),
+        activity: z.string().default(""),
+        locationName: z.string().default(""),
+        /** Weekday indices 0=Sunday…6=Saturday; absent ⇒ daily. */
+        days: z.array(z.number().int().min(0).max(6)).optional().catch(undefined),
+      }),
+    )
+    .default([]),
 });
 
 type ProfileSection = z.infer<typeof profileSectionSchema>;
@@ -321,6 +335,42 @@ export function groundDrives(raw: ProfileSection["drives"], sink?: DiagnosticSin
   return out;
 }
 
+/** Cap on forge-drafted schedule entries — a rhythm sketch, not a timetable. */
+const SCHEDULE_FORGE_MAX = 4;
+
+/**
+ * Ground forge day-part schedule rows (chat-initiative.plan.md slice 4) into
+ * stored minute windows: the day-part vocabulary maps to its minutes, rows
+ * missing an activity or place drop, duplicates (same day part + day mask)
+ * drop, and the set caps at SCHEDULE_FORGE_MAX.
+ */
+export function groundSchedule(raw: ProfileSection["schedule"], sink?: DiagnosticSink): ScheduleEntry[] {
+  const out: ScheduleEntry[] = [];
+  const seen = new Set<string>();
+  for (const row of raw) {
+    if (out.length >= SCHEDULE_FORGE_MAX) {
+      sink?.push(diag("info", "forge.character.profile.schedule_capped", `dropped schedule row "${row.activity}": over the ${SCHEDULE_FORGE_MAX}-row cap`));
+      break;
+    }
+    const part = scheduleDayPartById(row.dayPart);
+    const activity = row.activity.trim();
+    const locationName = row.locationName.trim();
+    if (!part || !activity || !locationName) continue;
+    const days = row.days?.length && row.days.length < 7 ? [...new Set(row.days)].sort((a, b) => a - b) : undefined;
+    const key = `${part.id}::${days?.join(",") ?? "all"}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      startMinute: part.startMinute,
+      endMinute: part.endMinute,
+      activity,
+      locationName,
+      ...(days ? { days } : {}),
+    });
+  }
+  return out;
+}
+
 /** Normalize forge disposition tags, preferring a canonical id, free-form tolerated. */
 function groundDispositionTags(raw: readonly string[]): string[] {
   const out: string[] = [];
@@ -375,6 +425,10 @@ function profilePrompt(context: CharacterForgeContext): string {
     "  Emit at most ONE secret, and only when the concept genuinely supports a hidden past or concealed motive; most characters carry open/guarded drives only.",
     `  A secret MAY set revealBand {axis: "familiarity" | "regard", band} — the relationship band at which revealing becomes possible (familiarity bands: ${familiarityBands.map((b) => b.id).join(", ")}; regard bands: ${regardBands.map((b) => b.id).join(", ")}). Omit revealBand for the default (familiarity reaches "familiar").`,
     "  Wants should be pursuable in conversation and specific to this character (\"to reopen the gallery under her own name\", not \"to be happy\"). Omit drives the concept gives no basis for — sparse is correct.",
+    "",
+    "Then sketch the character's DAILY RHYTHM (where their ordinary days go — the game grounds \"what I've been up to\" beats and off-screen movement in it):",
+    `- schedule: 0-${SCHEDULE_FORGE_MAX} rows, each {dayPart: "morning" | "afternoon" | "evening" | "night", activity (short concrete phrase), locationName (a plain place name), days?}.`,
+    "  days (optional): weekday indices 0=Sunday…6=Saturday, only when the routine isn't daily (e.g. [1,2,3,4,5] for a weekday shift). Cover the parts of the day the concept actually speaks to — a work shift and one leisure anchor beat a filled grid. Omit rows the concept gives no basis for.",
   ];
   if (species && species.id !== DEFAULT_SPECIES_ID) {
     const { label, look } = speciesForgeDescriptor(species, heritageForForgeContext(context));
@@ -405,6 +459,7 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
     preferences: groundPreferences(section.preferences, context.sink),
     traits: groundTraitValues(section.traits, context.sink),
     drives: groundDrives(section.drives, context.sink),
+    schedule: groundSchedule(section.schedule, context.sink),
   };
   const voice = section.voice.trim();
   if (voice) profile.voice = voice;
@@ -1129,6 +1184,11 @@ export function demoCharacterProfileSection(): ProfileSection {
         secrecy: "secret",
         revealBand: { axis: "familiarity", band: "familiar" },
       },
+    ],
+    schedule: [
+      { dayPart: "morning", activity: "walking the quay and checking moorings", locationName: "Greywater Harbor" },
+      { dayPart: "afternoon", activity: "working the ledgers and berth disputes", locationName: "the harbor office" },
+      { dayPart: "evening", activity: "one slow pint at a corner table", locationName: "the Rusted Anchor", days: [5, 6] },
     ],
   };
 }

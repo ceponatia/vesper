@@ -5,6 +5,7 @@ import {
   type SelfieEntry,
   CHAT_SELFIE_OFFER_GAP_MINUTES,
   chatSelfieOfferEligible,
+  chatSelfieOpenerEligible,
   detectSelfieRequest,
   hasCommsSpans,
   type SelfieOfferGateInput,
@@ -64,6 +65,20 @@ describe("chatSelfieOfferEligible (apart-only, ruled)", () => {
       selfieHistory: [{ kind: "offer", atClockMinutes: 500 - CHAT_SELFIE_OFFER_GAP_MINUTES }],
     });
     expect(chatSelfieOfferEligible(cooled)).toBe(true);
+  });
+});
+
+describe("chatSelfieOpenerEligible (chat-initiative slice 5)", () => {
+  it("needs no comms span — the license line is register-conditional; warm + cooldown still gate", () => {
+    expect(chatSelfieOpenerEligible({ regard: 60, clockMinutes: 500, selfieHistory: [] })).toBe(true);
+    expect(chatSelfieOpenerEligible({ regard: 30, clockMinutes: 500, selfieHistory: [] })).toBe(false);
+    expect(
+      chatSelfieOpenerEligible({
+        regard: 60,
+        clockMinutes: 500,
+        selfieHistory: [{ kind: "offer", atClockMinutes: 500 - CHAT_SELFIE_OFFER_GAP_MINUTES + 1 }],
+      }),
+    ).toBe(false);
   });
 });
 

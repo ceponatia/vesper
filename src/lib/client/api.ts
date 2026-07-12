@@ -1050,8 +1050,8 @@ export const chatsApi = {
       listOf(chatSummarySchema, "chats"),
       withQuery("/api/chats", { characterId: opts.characterId, archived: opts.archived ? "1" : undefined }),
     ),
-  /** Rename, archive, or restore a conversation. */
-  update: (chatId: string, patch: { title?: string; archived?: boolean }) =>
+  /** Rename, archive, or restore a conversation — or stamp the §8.4 seen-cursor (`seen: true` on open). */
+  update: (chatId: string, patch: { title?: string; archived?: boolean; seen?: boolean }) =>
     apiPatch(z.unknown(), `/api/chats/${chatId}`, patch),
   /**
    * Create a conversation — D7 memory choice: `"shared"` continues the history, `"fresh"`
