@@ -91,14 +91,17 @@ export interface RegionExposure {
  * Representative body-location ids per exposure region. A region is `covered`
  * when an opaque garment covers any of these, `sheer` when only a sheer one
  * does, else `bare`. Bottoms cover `pelvis` (→ groin/hips via expand), tops
- * cover `chest`, footwear covers `feet` — and pants stop at `ankles`, so a
- * subject with no modelled footwear reads barefoot (clothing-categories.ts).
+ * cover `chest` — and pants stop at `ankles`, so a subject with no modelled
+ * footwear reads barefoot (clothing-categories.ts). Footwear counts if it
+ * covers ANY foot part: a strapped sandal stores only `sole`+`heel` (the `feet`
+ * ancestor id is dropped by the carve-out), so listing the sub-parts keeps it
+ * from reading barefoot.
  */
 const EXPOSURE_REGION_LOCATIONS: Record<keyof RegionExposure, readonly string[]> = {
   torso: ["chest"],
   pelvis: ["groin", "hips"],
   legs: ["thighs"],
-  feet: ["feet"],
+  feet: ["feet", "top_of_foot", "sole", "heel", "toes"],
 };
 
 /**

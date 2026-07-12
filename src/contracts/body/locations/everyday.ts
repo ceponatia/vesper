@@ -42,5 +42,13 @@ export const humanoidEverydayLocations: readonly BodyLocation[] = [
   { id: "calves", label: "calves", parentId: "legs", coverageRelevant: true },
   { id: "ankles", label: "ankles", parentId: "legs", coverageRelevant: true },
   { id: "feet", label: "feet", parentId: "legs", coverageRelevant: true },
+  // Foot sub-parts let footwear carve holes: a full shoe covers `feet` (→ all
+  // four via expand), a strapped sandal drops `toes`+`top_of_foot` (keeping
+  // sole+heel), a flip-flop keeps only `sole`. Without siblings under `feet`,
+  // unchecking `toes` would collapse the whole foot (the coverage.ts carve-out
+  // drops the ancestor id) — the same reason `face` is split into parts.
   { id: "toes", label: "toes", parentId: "feet", coverageRelevant: true },
+  { id: "top_of_foot", label: "top of foot", parentId: "feet", coverageRelevant: true },
+  { id: "sole", label: "sole", parentId: "feet", coverageRelevant: true },
+  { id: "heel", label: "heel", parentId: "feet", coverageRelevant: true },
 ];

@@ -130,6 +130,11 @@ describe("exposedRegions", () => {
     expect(exposedRegions([top(), jeans])).toMatchObject({ legs: "covered", feet: "bare" });
   });
 
+  it("a strapped sandal (sole+heel, no `feet` id) is shod, not barefoot", () => {
+    const sandal = worn({ instanceId: "sandal", coverage: ["sole", "heel"], layer: 1 });
+    expect(exposedRegions([sandal]).feet).toBe("covered");
+  });
+
   it("a sheer-only top reports the torso as sheer, not covered", () => {
     expect(exposedRegions([top({ opacity: "sheer" })]).torso).toBe("sheer");
   });
