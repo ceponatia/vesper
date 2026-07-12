@@ -1,25 +1,34 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { characterChats, characters, chatParticipants, db } from "@/server/db";
 import { keyedLockBusy } from "@/server/engine";
 import { jsonError } from "@/server/api";
 
 /**
- * Resolve a conversation the user owns, with its PRIMARY participant (sort 0) and
- * that participant's character row slice — the one indexed lookup every
- * /api/chats/[chatId] route runs before doing anything (ownership lives on the chat
- * row; character-chat-standalone.spec.md §1.2). A conversation can now hold a
- * multi-character roster (multi-character-chat.plan.md — creation groundwork), but
- * the whole exchange pipeline is still 1-on-1 with the primary until the
- * multi-character substrate ships; extra participants are inert.
+ * Resolve a conversation the user owns, with its full sort-ordered ROSTER
+ * (multi-character-chat.plan.md) and, for the routes that still run 1-on-1, the
+ * primary participant's (sort 0) slices under the pre-roster field names — the
+ * one indexed lookup every /api/chats/[chatId] route runs before doing anything
+ * (ownership lives on the chat row; character-chat-standalone.spec.md §1.2).
  */
-export interface OwnedChat {
-  chat: { id: string; ownerId: string; title: string; archivedAt: Date | null; lastMessageAt: Date };
-  participant: { characterId: string; memoryGroupId: string };
+export interface OwnedChatMember {
+  characterId: string;
+  memoryGroupId: string;
+  sort: number;
   character: { id: string; name: string; profile: unknown; avatarImageId: string | null; chatModel: string };
 }
 
+export interface OwnedChat {
+  chat: { id: string; ownerId: string; title: string; archivedAt: Date | null; lastMessageAt: Date };
+  /** The primary participant (sort 0) — the pre-roster shape 1-on-1 call sites keep using. */
+  participant: { characterId: string; memoryGroupId: string };
+  /** The primary participant's character slice (pre-roster shape). */
+  character: { id: string; name: string; profile: unknown; avatarImageId: string | null; chatModel: string };
+  /** The whole roster, sort-ordered (first = primary). Length 1 for a classic 1-on-1. */
+  roster: OwnedChatMember[];
+}
+
 export async function loadOwnedChat(chatId: string, userId: string): Promise<OwnedChat | null> {
-  const [row] = await db()
+  const rows = await db()
     .select({
       chatId: characterChats.id,
       ownerId: characterChats.ownerId,
@@ -27,6 +36,7 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
       archivedAt: characterChats.archivedAt,
       lastMessageAt: characterChats.lastMessageAt,
       memoryGroupId: chatParticipants.memoryGroupId,
+      sort: chatParticipants.sort,
       characterId: characters.id,
       characterName: characters.name,
       profile: characters.profile,
@@ -37,18 +47,13 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
     .innerJoin(chatParticipants, eq(chatParticipants.chatId, characterChats.id))
     .innerJoin(characters, eq(characters.id, chatParticipants.characterId))
     .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, userId)))
-    .orderBy(asc(chatParticipants.sort))
-    .limit(1);
-  if (!row) return null;
-  return {
-    chat: {
-      id: row.chatId,
-      ownerId: row.ownerId,
-      title: row.title,
-      archivedAt: row.archivedAt,
-      lastMessageAt: row.lastMessageAt,
-    },
-    participant: { characterId: row.characterId, memoryGroupId: row.memoryGroupId },
+    .orderBy(asc(chatParticipants.sort));
+  const [primary] = rows;
+  if (!primary) return null;
+  const roster: OwnedChatMember[] = rows.map((row) => ({
+    characterId: row.characterId,
+    memoryGroupId: row.memoryGroupId,
+    sort: row.sort,
     character: {
       id: row.characterId,
       name: row.characterName,
@@ -56,7 +61,49 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
       avatarImageId: row.avatarImageId,
       chatModel: row.chatModel,
     },
+  }));
+  return {
+    chat: {
+      id: primary.chatId,
+      ownerId: primary.ownerId,
+      title: primary.title,
+      archivedAt: primary.archivedAt,
+      lastMessageAt: primary.lastMessageAt,
+    },
+    participant: { characterId: primary.characterId, memoryGroupId: primary.memoryGroupId },
+    character: {
+      id: primary.characterId,
+      name: primary.characterName,
+      profile: primary.profile,
+      avatarImageId: primary.avatarImageId,
+      chatModel: primary.chatModel,
+    },
+    roster,
   };
+}
+
+/**
+ * The D7 memory choice for one character joining a conversation: "shared" reuses
+ * the character's most-recent existing memory group (the relationship remembers
+ * across conversations), "fresh" — or no prior chat — mints a new island.
+ * `newGroupId` is passed in so callers control id minting. Shared by the
+ * create-conversation route and the roster add-participant route.
+ */
+export async function resolveChatMemoryGroupId(
+  userId: string,
+  characterId: string,
+  memory: "shared" | "fresh",
+  newGroupId: string,
+): Promise<string> {
+  if (memory !== "shared") return newGroupId;
+  const [existing] = await db()
+    .select({ memoryGroupId: chatParticipants.memoryGroupId })
+    .from(chatParticipants)
+    .innerJoin(characterChats, eq(characterChats.id, chatParticipants.chatId))
+    .where(and(eq(characterChats.ownerId, userId), eq(chatParticipants.characterId, characterId)))
+    .orderBy(desc(characterChats.createdAt))
+    .limit(1);
+  return existing?.memoryGroupId ?? newGroupId;
 }
 
 /**

@@ -18,6 +18,7 @@ import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { characterChats, characterChatState, characters, chatParticipants, chatScenarioPresets, db } from "@/server/db";
 import { editChatState } from "@/server/engine";
+import { resolveChatMemoryGroupId } from "./owned";
 
 /**
  * The conversations collection (docs/character-chat.md; character-chat-standalone.spec.md
@@ -168,17 +169,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
   const participantRows: Array<{ characterId: string; memoryGroupId: string; sort: number }> = [];
   let primaryMemoryGroupId = "";
   for (const [sort, member] of roster.entries()) {
-    let memoryGroupId = newId();
-    if (memory === "shared") {
-      const [existing] = await db()
-        .select({ memoryGroupId: chatParticipants.memoryGroupId })
-        .from(chatParticipants)
-        .innerJoin(characterChats, eq(characterChats.id, chatParticipants.chatId))
-        .where(and(eq(characterChats.ownerId, user.id), eq(chatParticipants.characterId, member.id)))
-        .orderBy(desc(characterChats.createdAt))
-        .limit(1);
-      if (existing) memoryGroupId = existing.memoryGroupId;
-    }
+    const memoryGroupId = await resolveChatMemoryGroupId(user.id, member.id, memory, newId());
     participantRows.push({ characterId: member.id, memoryGroupId, sort });
     if (sort === 0) primaryMemoryGroupId = memoryGroupId;
   }
@@ -196,8 +187,9 @@ export const POST = withUser(async (user, req: NextRequest) => {
   // Preset seeding (spec §1.5): write the scenario fields exactly the way the
   // scenario modal does — through the author-edit state path, on top of the
   // authored seed (so the character's own cards apply when the preset has none).
-  // Seeds the PRIMARY participant only — per-participant scenario seeding is a
-  // multi-character-substrate concern (multi-character-chat.plan.md).
+  // Roster semantics (multi-character-chat.plan.md slice 1): the shared scene —
+  // premise + cards — seeds EVERY member; the character-specific fields (outfit,
+  // exposure, the player-edge starting bands) seed the primary only.
   if (body.value.presetId) {
     const [preset] = await db()
       .select({
@@ -211,25 +203,32 @@ export const POST = withUser(async (user, req: NextRequest) => {
       .where(and(eq(chatScenarioPresets.id, body.value.presetId), eq(chatScenarioPresets.ownerId, user.id)))
       .limit(1);
     if (preset) {
-      const profile = parseOr(characterProfileSchema, primary.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
       const cards = parseOr(z.array(socialReactionCardSchema), preset.socialCards, [], undefined, "chat_scenario_presets.social_cards");
       // Presets still author the old single-stage vocabulary; both axes seed
       // through the bridge until the preset editor grows band pickers (slice 4).
       const axes = stageToAxes(preset.startingStage);
-      await editChatState({
-        chatId,
-        characterId: primary.id,
-        ownerId: user.id,
-        profile,
-        patch: {
-          premise: preset.premise,
-          outfit: preset.outfit,
-          outfitExposed: preset.outfitExposed,
-          regard: axes.regard,
-          familiarity: axes.familiarity,
-          ...(cards.length ? { activeSocialCards: cards } : {}),
-        },
-      });
+      for (const member of roster) {
+        const profile = parseOr(characterProfileSchema, member.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+        const isPrimary = member.id === primary.id;
+        await editChatState({
+          chatId,
+          characterId: member.id,
+          ownerId: user.id,
+          profile,
+          patch: {
+            premise: preset.premise,
+            ...(cards.length ? { activeSocialCards: cards } : {}),
+            ...(isPrimary
+              ? {
+                  outfit: preset.outfit,
+                  outfitExposed: preset.outfitExposed,
+                  regard: axes.regard,
+                  familiarity: axes.familiarity,
+                }
+              : {}),
+          },
+        });
+      }
     }
   }
 

@@ -12,7 +12,7 @@ import {
   readBody,
   withUser,
 } from "@/server/api";
-import { characterChats, characterChatMessages, db } from "@/server/db";
+import { characterChats, characterChatMessages, characterChatState, db } from "@/server/db";
 import { deleteChat, submitChatMessage } from "@/server/engine";
 import { loadOwnedChat } from "../owned";
 import { queueChatScene } from "./scene/queue";
@@ -94,6 +94,14 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
     .orderBy(desc(characterChatMessages.createdAt))
     .limit(TRANSCRIPT_LIMIT);
 
+  // Roster presence (multi-character-chat.plan.md): one read over the chat's
+  // state rows; a member with no row yet is simply present (the seed default).
+  const presenceRows = await db()
+    .select({ characterId: characterChatState.characterId, presence: characterChatState.presence })
+    .from(characterChatState)
+    .where(eq(characterChatState.chatId, chatId));
+  const presenceBy = new Map(presenceRows.map((r) => [r.characterId, r.presence]));
+
   return jsonOk({
     messages: rows.reverse(),
     chat: { id: owned.chat.id, title: owned.chat.title, archivedAt: owned.chat.archivedAt },
@@ -105,6 +113,14 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
       avatarImageId: owned.character.avatarImageId,
       chatModel: owned.character.chatModel,
     },
+    // The full roster, sort-ordered (first = primary) — the roster panel's data.
+    roster: owned.roster.map((m) => ({
+      characterId: m.characterId,
+      name: m.character.name,
+      avatarImageId: m.character.avatarImageId,
+      sort: m.sort,
+      presence: presenceBy.get(m.characterId) ?? "present",
+    })),
   });
 });
 

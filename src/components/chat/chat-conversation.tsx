@@ -31,6 +31,7 @@ import { AvatarPanel } from "@/components/avatar";
 import { fileToAttachmentDataUrl } from "@/components/chat/attachment-file";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
 import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
+import { ChatRosterPanel } from "@/components/chat/chat-roster-panel";
 import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
 import { ChatScenarioModal } from "@/components/characters/chat-scenario-modal";
@@ -124,6 +125,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scenarioOpen, setScenarioOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  // Roster sheet (multi-character-chat.plan.md slice 1) — the phone-width path to
+  // the roster panel; desktop also gets it inline in the aside.
+  const [rosterOpen, setRosterOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -786,8 +790,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       onArchiveToggle={() => void toggleArchived()}
       onDelete={menuAction(() => setDeleteOpen(true))}
       onInspector={isAdmin ? menuAction(() => router.push(`/chat/${chatId}/inspector`)) : undefined}
+      onRoster={menuAction(() => setRosterOpen(true))}
     />
   );
+  const roster = bootstrap.data?.roster ?? [];
 
   const premise = chatState?.premise.trim() ?? "";
   // Another take targets the last assistant reply (spec §4.1) — only there, only idle.
@@ -862,6 +868,20 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         </Sheet>
       ) : null}
 
+      {/* Roster sheet (multi-character-chat.plan.md): the menu path to the roster panel. */}
+      <Sheet open={rosterOpen} onClose={() => setRosterOpen(false)} side="bottom" title="Roster">
+        <div className="p-3">
+          {roster.length > 0 ? (
+            <ChatRosterPanel
+              chatId={chatId}
+              roster={roster}
+              archived={archived}
+              onChanged={() => bootstrap.reload({ silent: true })}
+            />
+          ) : null}
+        </div>
+      </Sheet>
+
       {archived ? (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-ink-600 bg-ink-800/80 px-4 py-1 text-xs text-paper-400">
           <span>Archived — restore to continue.</span>
@@ -910,7 +930,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             desktop side real estate. Hidden below lg — phones reach the full-size
             portrait by tapping the header portrait or any reply's avatar instead. */}
         {ready && character ? (
-          <aside className="hidden w-52 shrink-0 p-4 lg:block xl:w-64">
+          <aside className="hidden w-52 shrink-0 flex-col gap-4 p-4 lg:flex xl:w-64">
             <button
               type="button"
               onClick={() => setPortraitOpen(true)}
@@ -921,6 +941,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             >
               <AvatarPanel name={name} avatarImageId={character.avatarImageId} className="w-full" />
             </button>
+            {roster.length > 0 ? (
+              <ChatRosterPanel
+                chatId={chatId}
+                roster={roster}
+                archived={archived}
+                onChanged={() => bootstrap.reload({ silent: true })}
+              />
+            ) : null}
           </aside>
         ) : null}
         <div
@@ -1279,6 +1307,7 @@ function ConversationMenu({
   onArchiveToggle,
   onDelete,
   onInspector,
+  onRoster,
 }: {
   chatModel: string;
   onChatModelChange: (modelId: string) => void;
@@ -1297,6 +1326,8 @@ function ConversationMenu({
   onDelete: () => void;
   /** Admin-only (spec §6.1): navigate to the dev memory inspector. Absent ⇒ item hidden. */
   onInspector?: () => void;
+  /** The roster panel (multi-character-chat.plan.md): add/remove members, presence toggles. */
+  onRoster: () => void;
 }) {
   return (
     <div className="flex flex-col p-2">
@@ -1320,6 +1351,7 @@ function ConversationMenu({
       <MenuItem onClick={onStateTools} disabled={!hasState}>
         State tools
       </MenuItem>
+      <MenuItem onClick={onRoster}>Roster</MenuItem>
       {onInspector ? <MenuItem onClick={onInspector}>Inspector</MenuItem> : null}
       {!archived ? (
         <div className="flex flex-col gap-1 px-2 py-1.5">
