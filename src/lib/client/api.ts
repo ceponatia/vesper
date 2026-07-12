@@ -275,8 +275,19 @@ export const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]).catch("assistant"),
   content: textOr(""),
   takes: replyTakesSchema,
-  /** `{ stopped: true }` when the player cut the reply short (spec §4.2). */
-  meta: z.object({ stopped: z.boolean().catch(false) }).catch({ stopped: false }),
+  /**
+   * `{ stopped: true }` when the player cut the reply short (spec §4.2);
+   * `attachments.ids` on a user line = the photos it carried (chat-image-input.plan.md).
+   */
+  meta: z
+    .object({
+      stopped: z.boolean().catch(false),
+      attachments: z
+        .object({ ids: z.array(z.string()).catch([]) })
+        .nullish()
+        .catch(null),
+    })
+    .catch({ stopped: false, attachments: null }),
   createdAt: optionalText,
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
@@ -942,6 +953,13 @@ export const chatsApi = {
   /** Apply a one-click action chip (offer a drink → intoxication↑, etc.); returns the refreshed snapshot. */
   applyAction: (chatId: string, action: ChatActionId) =>
     apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/state`, { action }),
+  /**
+   * Upload ONE player photo for this conversation (chat-image-input.plan.md): a
+   * data-URL in, the `chat_upload` asset id back — sent with the next message as
+   * `attachmentIds`. Input-only content: Gallery-hidden, deleted with its message.
+   */
+  uploadAttachment: (chatId: string, image: string) =>
+    apiPost(z.object({ id: z.string() }), `/api/chats/${chatId}/attachments`, { image }),
   /** Overwrite one chat message's text in place (recovery lever for a poisoned transcript). */
   editMessage: (chatId: string, messageId: string, content: string) =>
     apiPatch(z.unknown(), `/api/chats/${chatId}/messages/${messageId}`, { content }),
@@ -1051,6 +1069,8 @@ export async function sendChatMessage(
     cue?: string;
     /** Target user-message id — required for kind "rerun" (the line to re-send from). */
     messageId?: string;
+    /** Attached-photo ids (uploaded first via chatsApi.uploadAttachment) — send only. */
+    attachmentIds?: string[];
   },
   onChunk: (delta: string) => void,
   signal?: AbortSignal,

@@ -1346,3 +1346,29 @@ describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
     expect(parts.tail).toContain("Underneath everything, deeply sad about the broken promise.");
   });
 });
+
+describe("attached photos (chat-image-input.plan.md)", () => {
+  it("renders the fenced attachments block and the static rule 17", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      attachments: { descriptions: ["A golden retriever asleep on a porch swing.", "A harbor at dusk."] },
+    });
+    expect(parts.tail).toContain("Attached photos (Theo shared these photos with this message — what you see):");
+    expect(parts.tail).toContain("1. A golden retriever asleep on a porch swing.");
+    expect(parts.tail).toContain("2. A harbor at dusk.");
+    // The block is fenced — the descriptions derive from a player-supplied image.
+    expect(parts.tail).toMatch(/vsp-untrusted-[0-9a-f]+:attached photos/);
+    // The handling rule is static prefix law (owner ruling).
+    expect(parts.prefix).toContain("17. When Theo's message carries attached photos");
+    expect(parts.prefix).toContain("never speak of an \"image\" or \"attachment\"");
+  });
+
+  it("no attachments (or blank reads) ⇒ no block", () => {
+    expect(buildCharacterChatPromptParts({ name: "Mara", profile: profile() }).tail).not.toContain("Attached photos");
+    expect(
+      buildCharacterChatPromptParts({ name: "Mara", profile: profile(), attachments: { descriptions: ["  "] } }).tail,
+    ).not.toContain("Attached photos");
+  });
+});

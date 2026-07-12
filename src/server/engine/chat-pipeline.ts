@@ -12,10 +12,12 @@ import {
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characterChatMessages, chatParticipants, db, images } from "../db";
+import { chatAttachmentPaths, claimChatAttachments, deleteChatUploads } from "../images";
 import { log } from "../log";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
+import { CHAT_ATTACHMENTS_MAX, describeChatPhotos } from "./chat-vision";
 import {
   buildChatReplyGates,
   // chatCueInviteLine — retired by narrator-prompt-consolidation slice 4 (the sensory-allowance
@@ -124,6 +126,12 @@ export interface SubmitChatMessageInput {
    * that. Only read for `kind: "continue"`.
    */
   cue?: string;
+  /**
+   * Player-attached photo ids (chat-image-input.plan.md) — `send` only. Validated +
+   * claimed against this chat's ready `chat_upload` rows (foreign ids dropped), then
+   * described by ONE batched vision call whose output rides the user line's meta.
+   */
+  attachmentIds?: readonly string[];
   /**
    * "Auto at big moments" hook (slice 9): fired fire-and-forget after the finalizer
    * when the exchange landed a stage crossing / strong reaction AND the chat's
@@ -372,14 +380,31 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     let rerunDeletedAssistantIds: string[] = [];
     /** For rerun: whether the pre-exchange snapshot still applies (target was the last exchange's prompt). */
     let rerunSnapshotApplies = false;
+    /** Attached photos on this exchange's prompting line (chat-image-input.plan.md). */
+    let attachmentFiles: { id: string; path: string }[] = [];
+    let attachmentDescriptions: string[] | null = null;
 
     switch (kind) {
       case "send": {
         promptMessageId = newId();
         playerContent = input.content ?? "";
+        // Claim attachments against this chat's ready uploads BEFORE the insert
+        // (anchor_message_id carries no FK, so order is free) — foreign/unknown ids
+        // drop silently, and the surviving ids ride the line's meta for the client.
+        attachmentFiles = await claimChatAttachments(
+          chatId,
+          promptMessageId,
+          (input.attachmentIds ?? []).slice(0, CHAT_ATTACHMENTS_MAX),
+        );
         await db()
           .insert(characterChatMessages)
-          .values({ id: promptMessageId, chatId, role: "user", content: playerContent });
+          .values({
+            id: promptMessageId,
+            chatId,
+            role: "user",
+            content: playerContent,
+            ...(attachmentFiles.length ? { meta: { attachments: { ids: attachmentFiles.map((f) => f.id) } } } : {}),
+          });
         break;
       }
       case "open": {
@@ -426,7 +451,33 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         playerContent = resolved.target.content;
         rerunDeletedAssistantIds = resolved.deletedAssistantIds;
         rerunSnapshotApplies = resolved.snapshotApplies;
+        // Snipped user lines take their attached photos with them — player content,
+        // never Gallery survivors. Fire-and-forget: the transcript rows are already gone.
+        if (resolved.deletedIds.length) void deleteChatUploads(chatId, resolved.deletedIds);
         break;
+      }
+    }
+
+    // --- Attached photos (chat-image-input.plan.md) --------------------------
+    // Regenerate/rerun reuse the prompting line's stored attachments (+ any stored
+    // vision read); a fresh send described them here. ONE batched vision call per
+    // message, persisted onto the line's meta so a retake never re-spends — but a
+    // DEGRADED read is deliberately not persisted, so a later retake retries it.
+    if (promptMessageId && kind !== "send") {
+      const stored = await loadMessageAttachments(chatId, promptMessageId);
+      attachmentFiles = await chatAttachmentPaths(chatId, stored.ids);
+      // A stored read only holds if every attachment still resolves — else re-describe.
+      attachmentDescriptions =
+        stored.descriptions && attachmentFiles.length === stored.ids.length ? stored.descriptions : null;
+    }
+    if (attachmentFiles.length && !attachmentDescriptions) {
+      const read = await describeChatPhotos({ files: attachmentFiles, sink });
+      attachmentDescriptions = read.descriptions;
+      if (!read.degraded && promptMessageId) {
+        await db()
+          .update(characterChatMessages)
+          .set({ meta: { attachments: { ids: attachmentFiles.map((f) => f.id), descriptions: read.descriptions } } })
+          .where(and(eq(characterChatMessages.id, promptMessageId), eq(characterChatMessages.chatId, chatId)));
       }
     }
 
@@ -528,6 +579,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // character addresses someone by name instead of a faceless "the user".
     const player = await resolvePlayerPersona(owner);
 
+    // What the post-turn agents read as the player's turn: the message plus a
+    // clearly-labeled note of what the attached photos showed — so a shown photo
+    // can be classified (a gift, a confidence) and filed as ordinary perceived
+    // facts. Prompt-side the photos ride their own tail block; never persisted.
+    const agentPlayerContent = attachmentDescriptions?.length
+      ? `${playerContent}\n\n[${player.name} attached ${attachmentDescriptions.length === 1 ? "a photo" : `${attachmentDescriptions.length} photos`} — as ${characterName} sees ${attachmentDescriptions.length === 1 ? "it" : "them"}: ${attachmentDescriptions.map((d, i) => `(${i + 1}) ${d}`).join(" ")}]`
+      : playerContent;
+
     // --- RAG recall (spec §2): the participant's memory group ----------------
     const memory = await retrieveChatMemory({
       groupId: memoryGroupId,
@@ -602,6 +661,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       firstExchange,
       // The one-turn memory callback (memory-callbacks.plan.md), already ring-burned above.
       callback,
+      // Attached photos (chat-image-input.plan.md): the vision read, injected as
+      // seen-channel content the perception partition's rule 17 governs.
+      attachments: attachmentDescriptions?.length ? { descriptions: attachmentDescriptions } : undefined,
       // One-turn cue invitation, now the continue-cue only (§8.4): a "has something to say"
       // continue threads its tapped open loop here so the character opens about exactly the
       // right thing. The sensory arms were superseded by `sensoryAllowance` below
@@ -718,7 +780,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           playerName: player.name,
           driftedState,
           now,
-          exchange: { player: playerContent, assistant: full },
+          exchange: { player: agentPlayerContent, assistant: full },
           retrieved: memory,
           sink,
         });
@@ -791,6 +853,32 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 }
 
 /** The newest message when it is an assistant reply — the only regenerable target. */
+/** Defensive parse of a user line's `meta.attachments` (chat-image-input.plan.md). */
+const messageAttachmentsMetaSchema = z.object({
+  attachments: z
+    .object({
+      ids: z.array(z.string()).catch([]).default([]),
+      descriptions: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
+
+/** The prompting line's stored attachment ids + any persisted vision read. */
+async function loadMessageAttachments(
+  chatId: string,
+  messageId: string,
+): Promise<{ ids: string[]; descriptions: string[] | null }> {
+  const [row] = await db()
+    .select({ meta: characterChatMessages.meta })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
+    .limit(1);
+  const parsed = parseOr(messageAttachmentsMetaSchema, row?.meta ?? {}, {}, undefined, "character_chat_messages.meta");
+  const ids = parsed.attachments?.ids ?? [];
+  const descriptions = parsed.attachments?.descriptions;
+  return { ids, descriptions: descriptions && descriptions.length === ids.length ? descriptions : null };
+}
+
 async function lastAssistantMessage(
   chatId: string,
 ): Promise<{ id: string; content: string; createdAt: Date } | null> {
@@ -834,7 +922,14 @@ async function messageBefore(
 
 type RerunResolution =
   | { ok: false; message: string }
-  | { ok: true; target: { id: string; content: string }; deletedAssistantIds: string[]; snapshotApplies: boolean };
+  | {
+      ok: true;
+      target: { id: string; content: string };
+      deletedAssistantIds: string[];
+      /** EVERY deleted successor id (both roles) — user lines' attachments clean up on these. */
+      deletedIds: string[];
+      snapshotApplies: boolean;
+    };
 
 /**
  * Resolve + snip a rerun target atomically (data-loss-rerun fix). In one transaction:
@@ -882,6 +977,7 @@ async function resolveRerunTarget(chatId: string, targetMessageId: string | unde
       ok: true as const,
       target: { id: target.id, content: target.content },
       deletedAssistantIds,
+      deletedIds: successorIds,
       snapshotApplies,
     };
   });
@@ -1082,6 +1178,11 @@ export async function deleteChat(chat: { id: string; ownerId: string }): Promise
     .select({ characterId: chatParticipants.characterId, memoryGroupId: chatParticipants.memoryGroupId })
     .from(chatParticipants)
     .where(eq(chatParticipants.chatId, chat.id));
+
+  // Player-attached photos are chat content, not Gallery assets: hard-delete them
+  // BEFORE the chat row goes (the FK would SET NULL their chat_id and strand them
+  // invisibly — scenes deliberately survive that way, uploads must not).
+  await deleteChatUploads(chat.id);
 
   await db().transaction(async (tx) => {
     await tx.update(images).set({ prompt: "" }).where(eq(images.chatId, chat.id));

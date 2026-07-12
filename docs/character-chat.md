@@ -284,6 +284,40 @@ owner rulings 2026-07-11) adds three layers, all in the pure `engine/chat-feelin
 Rollback-safe like everything else: `feeling` rides `storedChatStateSchema`, so
 "another take" restores the pre-exchange weather exactly.
 
+## Player photos (image input)
+
+The player can attach up to **4 photos per message** (owner ruling 2026-07-11 —
+multi-image from the start) and the character genuinely sees them
+([developer-notes/chat-image-input.plan.md](developer-notes/chat-image-input.plan.md)):
+
+- **Upload** (`POST /api/chats/:chatId/attachments`, one photo per call): the composer
+  downscales client-side (canvas, ≤1600px → JPEG), the server re-decodes with the
+  avatar-upload bomb guards and fits inside 1280px as a `kind: "chat_upload"` asset —
+  chat-keyed, Gallery-hidden, **input-only** (never an identity anchor or edit
+  reference; the parked uploaded-avatar guard stays the launch blocker for that).
+- **Send**: the exchange body carries `attachmentIds`; `claimChatAttachments` keeps
+  only this chat's ready uploads (foreign ids drop), stamps `anchor_message_id`, and
+  the ids ride the user line's `meta.attachments`. A **photo-only send** (no text) is
+  legitimate — showing something IS the message.
+- **Vision** (`engine/chat-vision.ts`): ONE batched call (`visionModelId()`) describes
+  all of a message's photos in order — 2–4 factual sentences each — persisted onto the
+  message meta so regenerate/rerun never re-spend (a **degraded** read is deliberately
+  NOT persisted, so a retake retries it). Failure/demo degrades every photo to *"a
+  photo you can't quite make out"* + `chat_vision.describe_failed`, never a failed
+  exchange. The read runs pre-reply (tight 20s cap).
+- **Prompt**: the descriptions render as a fenced "Attached photos (what you see)"
+  tail block — seen-channel content under the perception partition — governed by the
+  static **rule 17** (owner ruling): react in character to what the photo shows, never
+  inventory it back, never call it an "image"/"attachment". The pulse + archivist read
+  the same descriptions appended to the player's turn (clearly labeled, never
+  persisted), so a shown photo can be classified and remembered as ordinary
+  `perceived` facts.
+- **Lifecycle**: attachments are player content and hard-delete with their message —
+  the message DELETE route, rerun's successor snip, and `deleteChat` (which removes
+  every `chat_upload` BEFORE the FK would SET-NULL them into limbo; never-sent
+  orphans go with the conversation too). Scenes keep their SET-NULL Gallery survival;
+  uploads never appear there (kind-filtered).
+
 ## Post-turn fan-out
 
 `finalizeChatState` runs **pulse ‖ archivist-lite** in parallel (`Promise.all`), then one
@@ -384,7 +418,8 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | Route | What |
 | --- | --- |
 | `GET /api/chats?characterId=&archived=1` · `POST /api/chats` | list conversations · create one (`memory: "shared" \| "fresh"` — the D7 choice) |
-| `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (`kind: send \| open \| continue \| regenerate \| rerun`; `rerun` takes `messageId` = the target user line; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
+| `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (`kind: send \| open \| continue \| regenerate \| rerun`; `rerun` takes `messageId` = the target user line; `send` may carry `attachmentIds` ≤4 — §Player photos — and may be photo-only; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
+| `POST /api/chats/:chatId/attachments` | upload ONE player photo (data URL in, `chat_upload` asset id back — §Player photos); 409 on an archived chat, generation-rate-limited |
 | `POST /api/chats/:chatId/stop` | cut the in-flight reply short (spec §4.2 — the prefix persists with `meta.stopped`) |
 | `PATCH/DELETE /api/chats/:chatId/messages/:messageId` | edit / snip one line — both reconcile the line's extracted memory (spec §4.3) |
 | `PATCH /api/chats/:chatId/messages/:messageId/take` | make a recorded take the displayed reply (display-only; spec §4.1) |
@@ -407,6 +442,8 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 query-embedding failure — facts degrade to pinned-only, episodes to `[]`) ·
 `chat_memory.callback.failed` (a degraded memory-callback retrieval — the turn just
 carries no callback line) ·
+`chat_vision.describe_failed` (a degraded photo read — the character sees "a photo
+you can't quite make out"; a non-degraded later retake retries) ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
 `.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` · `chat_state.snapshot.missing` ·
 `chat_state.rerun.no_rollback` (a rerun target that is not the last exchange's prompt —
@@ -429,6 +466,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | One-turn player-input reads (cue / scene movement / sensory focus / reply gates) | `server/engine/chat-intent.ts` |
 | Memory callbacks (gate / selection / ring — §Memory callbacks) | `server/engine/chat-callback.ts` (pure) + `retrieveChatCallback` in `chat-memory.ts` + `chatCallbackLine` in `prompts/character-chat.ts` |
 | Emotional weather (feeling / momentum / bruise — §Emotional weather) | `server/engine/chat-feeling.ts` (pure) + wiring in `chat-state.ts`; pacing in `lib/chat-pacing.ts` |
+| Player photos (upload / claim / vision — §Player photos) | `server/images/upload.ts` (`uploadChatAttachment`) + `assets.ts` (`claimChatAttachments`/`deleteChatUploads`) + `server/engine/chat-vision.ts`; composer prep in `components/chat/attachment-file.ts` |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |

@@ -1026,7 +1026,11 @@ export const images = pgTable(
   {
     id: id(),
     ownerId: text("owner_id").notNull().references(() => users.id),
-    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity"] }).notNull(),
+    // `chat_upload` (chat-image-input.plan.md): a player-attached chat photo — input-only
+    // (never an identity anchor or edit reference), Gallery-hidden, hard-deleted with its
+    // message/conversation (unlike scenes, which SET NULL and survive). The drizzle enum is
+    // type-level only, so adding a kind is never a migration.
+    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),

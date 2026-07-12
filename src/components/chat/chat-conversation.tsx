@@ -28,6 +28,7 @@ import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { useIsMobile } from "@/components/hooks/use-is-mobile";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarPanel } from "@/components/avatar";
+import { fileToAttachmentDataUrl } from "@/components/chat/attachment-file";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
 import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
 import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
@@ -50,13 +51,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
-/** Project an API transcript row onto the renderable line shape (takes + stopped ride along). */
+/** Project an API transcript row onto the renderable line shape (takes + stopped + attachments ride along). */
 const toLine = (m: ChatMessage): ChatLine => ({
   id: m.id,
   role: m.role,
   content: m.content,
   takes: m.takes,
   stopped: m.meta.stopped,
+  attachmentIds: m.meta.attachments?.ids.length ? m.meta.attachments.ids : undefined,
 });
 
 /**
@@ -126,6 +128,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  // Attached photos staged for the next send (chat-image-input.plan.md): uploaded
+  // eagerly on pick (the ids preview via the immutable file route), sent as ids.
+  // Removing a staged photo only unstages it — the orphaned upload row is cleaned
+  // up with the conversation, never surfaced anywhere.
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [attachBusy, setAttachBusy] = useState(false);
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
   // "Remember this" (spec §6.4): the pinned-note dialog, openable from the composer
   // affordance (blank) or a message hover action (prefilled with that line).
   const [rememberOpen, setRememberOpen] = useState(false);
@@ -295,8 +304,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       model?: string;
       cue?: string;
       messageId?: string;
+      attachmentIds?: string[];
     },
-    opts: { userLine?: string; replaceId?: string } = {},
+    opts: { userLine?: string; replaceId?: string; attachmentIds?: string[] } = {},
   ): Promise<ChatStreamOutcome> => {
     const { userLine, replaceId } = opts;
     // Any exchange consumes the reopen affordances (spec §8.1/§8.4) for this visit.
@@ -313,7 +323,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     } else {
       setLines((prev) => [
         ...prev,
-        ...(userLine !== undefined ? [{ id: mkId(), role: "user" as const, content: userLine }] : []),
+        ...(userLine !== undefined
+          ? [{ id: mkId(), role: "user" as const, content: userLine, attachmentIds: opts.attachmentIds }]
+          : []),
         { id: assistantId, role: "assistant" as const, content: "" },
       ]);
     }
@@ -411,12 +423,40 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     return outcome;
   };
 
+  /** Downscale + upload picked files, staging the returned ids (cap 4 total). */
+  const pickAttachments = async (files: FileList | null) => {
+    if (!files?.length || archived) return;
+    const picked = Array.from(files).slice(0, Math.max(0, 4 - attachments.length));
+    if (!picked.length) return;
+    setAttachBusy(true);
+    try {
+      for (const file of picked) {
+        const dataUrl = await fileToAttachmentDataUrl(file);
+        if (!dataUrl) {
+          toast.push({ title: "Couldn't read that image", description: file.name, tone: "error" });
+          continue;
+        }
+        const result = await chatsApi.uploadAttachment(chatId, dataUrl);
+        if (result.ok) setAttachments((prev) => (prev.length < 4 ? [...prev, result.data.id] : prev));
+        else toast.push({ title: "Upload failed", description: result.error.message, tone: "error" });
+      }
+    } finally {
+      setAttachBusy(false);
+    }
+  };
+
   const send = async () => {
     const content = input.trim();
-    if (!content || sendingRef.current || !ready || archived) return;
+    // A photo-only send is legitimate — showing something IS the message.
+    if ((!content && !attachments.length) || sendingRef.current || !ready || archived || attachBusy) return;
+    const attachmentIds = attachments.length ? [...attachments] : undefined;
     setInput("");
+    setAttachments([]);
     setOocActive(false);
-    const outcome = await runStream({ content, model: chatModel }, { userLine: content });
+    const outcome = await runStream(
+      { content: content || undefined, model: chatModel, attachmentIds },
+      { userLine: content, attachmentIds },
+    );
     if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
   };
 
@@ -1005,6 +1045,27 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               <span className="text-paper-500">To the storyteller — no one in the scene hears this.</span>
             </div>
           ) : null}
+          {attachments.length ? (
+            // Staged photos for the next send (chat-image-input.plan.md).
+            <div className="flex flex-wrap items-center gap-1.5">
+              {attachments.map((imageId) => (
+                <div key={imageId} className="relative">
+                  <EntityImage imageId={imageId} name="photo" alt="Photo to send" className="h-14 w-14 rounded-md object-cover" />
+                  <button
+                    type="button"
+                    aria-label="Remove photo"
+                    onClick={() => setAttachments((prev) => prev.filter((a) => a !== imageId))}
+                    className="absolute -top-1.5 -right-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full bg-ink-700 text-xs text-paper-300 hover:bg-ink-600 hover:text-paper-100"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {attachBusy ? <span className="text-xs text-paper-500">Uploading…</span> : null}
+            </div>
+          ) : attachBusy ? (
+            <span className="text-xs text-paper-500">Uploading…</span>
+          ) : null}
           <div className="flex items-end gap-2">
             <Textarea
               rows={2}
@@ -1021,6 +1082,33 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               }
               className={cx("flex-1", oocActive && "border-accent-500 ring-1 ring-accent-500/40")}
             />
+            {!archived ? (
+              <>
+                <input
+                  ref={attachInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/avif"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    void pickAttachments(e.currentTarget.files);
+                    e.currentTarget.value = ""; // re-picking the same file must re-fire
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => attachInputRef.current?.click()}
+                  disabled={!ready || attachBusy || attachments.length >= 4}
+                  aria-label="Attach a photo"
+                  title={`Show ${who} a photo (up to 4 per message)`}
+                  className="touch-target inline-flex cursor-pointer items-center justify-center rounded-md px-2 py-2 text-paper-500 transition-colors hover:text-accent-300 disabled:cursor-not-allowed disabled:text-paper-600"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="size-4.5">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                </button>
+              </>
+            ) : null}
             {!archived ? (
               <button
                 type="button"
@@ -1042,7 +1130,11 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 Stop
               </Button>
             ) : (
-              <Button variant="primary" onClick={() => void send()} disabled={archived || !ready || !input.trim()}>
+              <Button
+                variant="primary"
+                onClick={() => void send()}
+                disabled={archived || !ready || attachBusy || (!input.trim() && !attachments.length)}
+              >
                 Send
               </Button>
             )}

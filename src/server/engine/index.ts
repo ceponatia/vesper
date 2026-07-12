@@ -19,6 +19,7 @@ export * from "./chat-pipeline";
 export * from "./chat-callback";
 export * from "./chat-feeling";
 export * from "./chat-intent";
+export * from "./chat-vision";
 export * from "./chat-summary";
 export * from "./chat-state";
 export * from "./chat-memory";

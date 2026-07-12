@@ -4,6 +4,7 @@ import { z } from "zod";
 import { jsonError, jsonOk, MESSAGE_CONTENT_MAX, readBody, withUser } from "@/server/api";
 import { characterChatMessages, db } from "@/server/db";
 import { reconcileMessageMemory, reextractEditedReply } from "@/server/engine";
+import { deleteChatUploads } from "@/server/images";
 import { resolvePlayerPersona } from "@/server/players";
 import { loadOwnedChat } from "../../../owned";
 
@@ -73,5 +74,7 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   // A snipped assistant line takes its extracted memory with it (spec §4.3) —
   // fire-and-forget; a failure leaves stale memory, never a failed delete.
   if (deleted.role === "assistant") void reconcileMessageMemory(messageId);
+  // A snipped user line takes its attached photos with it (chat-image-input.plan.md).
+  if (deleted.role === "user") void deleteChatUploads(chatId, [messageId]);
   return jsonOk({ deleted: true });
 });

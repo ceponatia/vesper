@@ -192,6 +192,73 @@ export async function deleteOwnedImages(
 }
 
 /**
+ * Hard-delete a chat's player-attached photos (chat-image-input.plan.md):
+ * `kind: "chat_upload"` rows are player content, deleted WITH their message /
+ * conversation — never Gallery survivors like scenes. With `anchorMessageIds`
+ * only the attachments of those messages go (a snip / rerun successor sweep);
+ * without, every upload in the chat goes — including never-sent orphans whose
+ * `anchor_message_id` was never stamped (Clear Chat, deleteChat). Files unlink
+ * best-effort (image_sweep reconciles stragglers). Returns the count removed.
+ */
+export async function deleteChatUploads(chatId: string, anchorMessageIds?: readonly string[]): Promise<number> {
+  if (anchorMessageIds !== undefined && anchorMessageIds.length === 0) return 0;
+  const where = anchorMessageIds
+    ? and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"), inArray(images.anchorMessageId, [...anchorMessageIds]))
+    : and(eq(images.chatId, chatId), eq(images.kind, "chat_upload"));
+  const rows = await db().select({ path: images.path }).from(images).where(where);
+  if (rows.length === 0) return 0;
+  await db().delete(images).where(where);
+  await Promise.all(rows.map((row) => fs.unlink(absoluteImagePath(row)).catch(() => undefined)));
+  return rows.length;
+}
+
+/**
+ * Validate + claim a message's attachments at send time (chat-image-input.plan.md):
+ * keep only ids that are THIS chat's ready `chat_upload` rows (order preserved,
+ * unknown/foreign ids dropped), and stamp `anchor_message_id` so the message's
+ * delete paths can find them. Returns the surviving ids with their file paths
+ * (the vision read wants both).
+ */
+export async function claimChatAttachments(
+  chatId: string,
+  messageId: string,
+  imageIds: readonly string[],
+): Promise<{ id: string; path: string }[]> {
+  if (imageIds.length === 0) return [];
+  const rows = await db()
+    .select({ id: images.id, path: images.path })
+    .from(images)
+    .where(
+      and(
+        inArray(images.id, [...imageIds]),
+        eq(images.chatId, chatId),
+        eq(images.kind, "chat_upload"),
+        eq(images.status, "ready"),
+      ),
+    );
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const kept = imageIds.map((id) => byId.get(id)).filter((r): r is { id: string; path: string } => r !== undefined);
+  if (kept.length) {
+    await db()
+      .update(images)
+      .set({ anchorMessageId: messageId })
+      .where(inArray(images.id, kept.map((r) => r.id)));
+  }
+  return kept;
+}
+
+/** The file paths for a message's already-claimed attachments (regenerate/rerun re-reads). */
+export async function chatAttachmentPaths(chatId: string, imageIds: readonly string[]): Promise<{ id: string; path: string }[]> {
+  if (imageIds.length === 0) return [];
+  const rows = await db()
+    .select({ id: images.id, path: images.path })
+    .from(images)
+    .where(and(inArray(images.id, [...imageIds]), eq(images.chatId, chatId), eq(images.kind, "chat_upload"), eq(images.status, "ready")));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return imageIds.map((id) => byId.get(id)).filter((r): r is { id: string; path: string } => r !== undefined);
+}
+
+/**
  * Duplicate a shareable entity's ready images into a new owner's storage for a
  * clone (auth.plan.md / world-instances image policy). Each source image gets a
  * fresh row owned by `dstOwnerId`, pointed at `dstEntityId`, with the file
