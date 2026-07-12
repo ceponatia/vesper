@@ -19,6 +19,7 @@ import {
   sessions,
   users,
   worldCast,
+  worldLocations,
   worlds,
 } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
@@ -52,7 +53,7 @@ import {
   GET as getPortraitRoute,
 } from "./characters/[id]/portraits/[imageId]/route";
 import { POST as promotePortraitRoute } from "./characters/[id]/portraits/[imageId]/promote/route";
-import { POST as createLocationRoute } from "./locations/route";
+import { GET as listLocationsRoute, POST as createLocationRoute } from "./locations/route";
 import { PATCH as patchLocationRoute } from "./locations/[id]/route";
 import { GET as listItemsRoute, POST as createItemRoute } from "./items/route";
 import { PATCH as patchItemRoute } from "./items/[id]/route";
@@ -345,6 +346,99 @@ describe("entity visibility (auth.plan.md)", () => {
       authState.user = owner;
       await db().delete(users).where(eq(users.id, other.id));
     }
+  });
+});
+
+describe("library list facets, sort & scope (library-ux.plan.md §Follow-up pass)", () => {
+  it("character list carries speciesId/gender/worldCount and honors ?sort=name", async (t) => {
+    if (!ready) return t.skip();
+    const mk = async (name: string) =>
+      ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name, tags: ["facet-sort"] }), noParams)))
+        .character as { id: string }).id;
+    // Created in reverse-alphabetical order so updated-recency and name order disagree.
+    const aaId = await mk("Aa Facet Muse");
+    const zzId = await mk("Zz Facet Muse");
+
+    const [world] = await db().insert(worlds).values({ ownerId: authState.user.id, name: "Facet World" }).returning();
+    if (!world) throw new Error("failed to create world");
+    // Two cast rows pointing at the same source must still count ONE world (distinct world_id).
+    await db().insert(worldCast).values([
+      { worldId: world.id, name: "Aa Copy", sourceCharacterId: aaId },
+      { worldId: world.id, name: "Aa Copy 2", sourceCharacterId: aaId },
+    ]);
+
+    const byRecency = (await json(await listCharactersRoute(get("http://t/api/characters?tag=facet-sort"), noParams)))
+      .characters as Array<{ id: string; speciesId: string | null; gender: string | null; worldCount: number }>;
+    expect(byRecency.map((c) => c.id)).toEqual([zzId, aaId]);
+    const aa = byRecency.find((c) => c.id === aaId);
+    // A blank-created character carries the registry defaults (human, female).
+    expect(aa?.speciesId).toBe("human");
+    expect(aa?.gender).toBe("female");
+    expect(aa?.worldCount).toBe(1);
+    expect(byRecency.find((c) => c.id === zzId)?.worldCount).toBe(0);
+
+    const byName = (await json(await listCharactersRoute(get("http://t/api/characters?tag=facet-sort&sort=name"), noParams)))
+      .characters as Array<{ id: string }>;
+    expect(byName.map((c) => c.id)).toEqual([aaId, zzId]);
+
+    await db().delete(worlds).where(eq(worlds.id, world.id));
+    for (const id of [aaId, zzId]) await deleteCharacterRoute(get(`http://t/api/characters/${id}`), ctx({ id }));
+  });
+
+  it("location list carries scale + worldCount", async (t) => {
+    if (!ready) return t.skip();
+    const created = await createLocationRoute(
+      send("http://t/api/locations", "POST", { name: "Facet Harbor", tags: ["facet-scale"] }),
+      noParams,
+    );
+    const locId = ((await json(created)).location as { id: string }).id;
+    const [world] = await db().insert(worlds).values({ ownerId: authState.user.id, name: "Facet Loc World" }).returning();
+    if (!world) throw new Error("failed to create world");
+    await db().insert(worldLocations).values({ worldId: world.id, sourceLocationId: locId });
+
+    const listed = (await json(await listLocationsRoute(get("http://t/api/locations?tag=facet-scale"), noParams)))
+      .locations as Array<{ id: string; scale: string; worldCount: number }>;
+    const row = listed.find((l) => l.id === locId);
+    expect(row?.scale).toBe("room"); // the column default rides the list payload
+    expect(row?.worldCount).toBe(1);
+
+    await db().delete(worlds).where(eq(worlds.id, world.id));
+    await db().delete(locations).where(eq(locations.id, locId));
+  });
+
+  it("?scope=public surfaces another owner's published rows; owned stays private", async (t) => {
+    if (!ready) return t.skip();
+    const owner = authState.user;
+    const charId = ((await json(await createCharacterRoute(send("http://t/api/characters", "POST", { name: "Scope Muse", tags: ["scope-test"] }), noParams))).character as { id: string }).id;
+    await patchCharacterRoute(send(`http://t/api/characters/${charId}`, "PATCH", { visibility: "public" }), ctx({ id: charId }));
+    const itemId = ((await json(await createItemRoute(send("http://t/api/items", "POST", { name: "Scope Cloak", kind: "clothing", tags: ["scope-test"] }), noParams))).item as { id: string }).id;
+    await patchItemRoute(send(`http://t/api/items/${itemId}`, "PATCH", { visibility: "public" }), ctx({ id: itemId }));
+
+    const [other] = await db()
+      .insert(users)
+      .values({ email: `routes-int-scope-${Date.now()}@test.local`, name: "Scoper" })
+      .returning();
+    if (!other) throw new Error("failed to create second user");
+    try {
+      authState.user = { ...owner, id: other.id, email: other.email };
+      const pubChars = (await json(await listCharactersRoute(get("http://t/api/characters?tag=scope-test&scope=public"), noParams)))
+        .characters as Array<{ id: string }>;
+      expect(pubChars.map((c) => c.id)).toContain(charId);
+      const ownChars = (await json(await listCharactersRoute(get("http://t/api/characters?tag=scope-test"), noParams)))
+        .characters as Array<{ id: string }>;
+      expect(ownChars).toEqual([]);
+      const pubItems = (await json(await listItemsRoute(get("http://t/api/items?tag=scope-test&scope=all"), noParams)))
+        .items as Array<{ id: string }>;
+      expect(pubItems.map((i) => i.id)).toContain(itemId);
+      const ownItems = (await json(await listItemsRoute(get("http://t/api/items?tag=scope-test"), noParams)))
+        .items as Array<{ id: string }>;
+      expect(ownItems).toEqual([]);
+    } finally {
+      authState.user = owner;
+      await db().delete(users).where(eq(users.id, other.id));
+    }
+    await deleteCharacterRoute(get(`http://t/api/characters/${charId}`), ctx({ id: charId }));
+    await db().delete(items).where(eq(items.id, itemId));
   });
 });
 

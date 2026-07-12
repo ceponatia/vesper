@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq, inArray, or } from "drizzle-orm";
+import { z } from "zod";
+import { parseOrNull } from "@/lib/parse";
 import { db, socialCards } from "@/server/db";
 import {
   jsonError,
@@ -15,10 +17,11 @@ import {
 export const GET = withUser(async (user, req: NextRequest) => {
   const q = req.nextUrl.searchParams.get("q") ?? undefined;
   const tags = parseTagsParam(req.nextUrl.searchParams.get("tag"));
+  const sort = parseOrNull(z.enum(["updated", "name"]), req.nextUrl.searchParams.get("sort"));
   // Discovery scope (auth.plan.md): all|public|owned; default owner-only.
   const scopeParam = req.nextUrl.searchParams.get("scope");
   const scope = scopeParam === "all" || scopeParam === "public" ? scopeParam : "owned";
-  const ids = await searchLibraryIds("social_card", user.id, { q, tags, scope });
+  const ids = await searchLibraryIds("social_card", user.id, { q, tags, sort: sort ?? undefined, scope });
   if (ids.length === 0) return jsonOk({ socialCards: [] });
   // Fetch the scoped ids as viewable rows (owner-or-public) — public scope returns
   // other owners' published cards, so this can't filter to user.id alone.

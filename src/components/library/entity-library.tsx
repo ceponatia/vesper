@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { clothingSubtypesForCategory, itemKindSchema } from "@/contracts";
+import { clothingSubtypesForCategory, itemKindSchema, type SocialReactionCardExtras } from "@/contracts";
 import {
   charactersApi,
   itemsApi,
@@ -33,6 +33,14 @@ import { SkeletonCards } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { itemCardChips, itemCardGroup, itemFacetDefs, type CardGroup, type FacetDef } from "./item-facets";
+import {
+  characterCardChips,
+  characterFacetDefs,
+  locationCardChips,
+  locationFacetDefs,
+  socialCardChips,
+  socialCardFacetDefs,
+} from "./library-facets";
 
 export type LibraryEntity = "worlds" | "characters" | "locations" | "items" | "social-cards";
 
@@ -45,6 +53,15 @@ interface LibraryCard {
   kind?: string;
   /** Items only: the definition facet slice driving chips/facets/grouping. */
   definition?: ItemDefinitionParts;
+  /** Characters only (library-facets.ts). */
+  speciesId?: string | null;
+  gender?: string | null;
+  /** Characters + locations: worlds holding a snapshot copy of this entity. */
+  worldCount?: number;
+  /** Locations only. */
+  scale?: string | null;
+  /** Social cards only: the definition slice driving tier/trigger facets + chips. */
+  card?: SocialReactionCardExtras;
 }
 
 /** Cross-account visibility scope (auth.md): `all` = owner ∪ public, `public` = discovery, `owned` = yours. */
@@ -74,9 +91,9 @@ interface EntityConfig {
   shareable?: boolean;
   /** Sort control (Recent/Name) — kinds whose list API routes through searchLibraryIds. */
   sortable?: boolean;
-  /** Grid ⇄ list density toggle (items first; the list row renders cardChips). */
+  /** Grid ⇄ list density toggle (the list row renders cardChips). */
   viewToggle?: boolean;
-  /** `scope` drives the discovery gallery; kinds whose API ignores it stay owner-scoped (cards wired first). */
+  /** `scope` drives the discovery gallery (all shareable kinds honor it — the auth.plan.md fast-follow). */
   list: (args: ListArgs) => Promise<ApiResult<LibraryCard[]>>;
   /** `bucket` is the active type bucket ("all" when none), so New lands in the type being browsed. */
   create: (args: { bucket: string }) => Promise<ApiResult<CreatedRef>>;
@@ -136,13 +153,16 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     square: true,
     shareable: true,
     sortable: true,
-    list: async ({ q, tag, sort }) => {
-      const result = await charactersApi.list({ q, tag, sort });
+    viewToggle: true,
+    list: async ({ q, tag, scope, sort }) => {
+      const result = await charactersApi.list({ q, tag, scope, sort });
       return result.ok
         ? { ok: true, data: result.data.map((c) => ({ ...c, imageId: c.avatarImageId })) }
         : result;
     },
     create: () => charactersApi.create({ name: "Untitled character" }),
+    facets: characterFacetDefs<LibraryCard>(),
+    cardChips: characterCardChips,
     // The Chats-hub entry point (character-chat-standalone.spec.md §2.2):
     // ?new= opens the new-conversation dialog pre-picked with this character.
     cardAction: {
@@ -161,8 +181,11 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     square: false,
     shareable: true,
     sortable: true,
-    list: ({ q, tag, sort }) => locationsApi.list({ q, tag, sort }),
+    viewToggle: true,
+    list: ({ q, tag, scope, sort }) => locationsApi.list({ q, tag, scope, sort }),
     create: () => locationsApi.create({ name: "Untitled location" }),
+    facets: locationFacetDefs<LibraryCard>(),
+    cardChips: locationCardChips,
     generateImages: (ids) => locationsApi.generateMissingImages(ids),
   },
   items: {
@@ -176,7 +199,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     shareable: true,
     sortable: true,
     viewToggle: true,
-    list: ({ q, tag, sort }) => itemsApi.list({ q, tag, sort }),
+    list: ({ q, tag, scope, sort }) => itemsApi.list({ q, tag, scope, sort }),
     // New creates in the bucket being browsed (the bucket ids ARE the item kinds).
     create: ({ bucket }) => itemsApi.create({ name: "Untitled item", kind: parseOr(itemKindSchema, bucket, "clothing") }),
     buckets: {
@@ -216,6 +239,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     square: true,
     shareable: true,
     sortable: true,
+    viewToggle: true,
     list: async ({ q, tag, scope, sort }) => {
       const result = await socialCardsApi.list({ q, tag, scope, sort });
       return result.ok
@@ -228,6 +252,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
               tags: c.tags,
               imageId: null,
               kind: c.definition.kind,
+              card: c.definition,
             })),
           }
         : result;
@@ -244,6 +269,8 @@ const configs: Record<LibraryEntity, EntityConfig> = {
         { id: "taboo", label: "Taboo" },
       ],
     },
+    facets: socialCardFacetDefs<LibraryCard>(),
+    cardChips: socialCardChips,
   },
 };
 
@@ -394,8 +421,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const [creating, setCreating] = useState(false);
   const [bucket, setBucketState] = useState(stored.bucket ?? config.buckets?.defaultId ?? "all");
   // Drives the discovery gallery via config.list (social-reaction-cards.plan.md
-  // step 6). Wired for social cards; the other shareable kinds pass scope through
-  // but their list API still ignores it (owner-scoped) until the fast-follow.
+  // step 6; every shareable kind honors it since the library-ux follow-up pass).
   const [scope, setScope] = useState<Scope>(stored.scope ?? "all");
   const [generatingBatch, setGeneratingBatch] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
@@ -473,7 +499,11 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   // Facets active under this bucket, in config order.
   const activeFacetDefs = (config.facets ?? []).filter((f) => !f.forBucket || f.forBucket === bucket);
   const facetMatch = (card: LibraryCard, def: FacetDef<LibraryCard>, optionId: string) =>
-    def.matches ? def.matches(def.value(card), optionId) : def.value(card) === optionId;
+    def.matches
+      ? def.matches(def.value?.(card), optionId)
+      : def.values
+        ? def.values(card).includes(optionId)
+        : def.value?.(card) === optionId;
   const cards = bucketCards.filter((card) =>
     activeFacetDefs.every((def) => {
       const sel = facetSel[def.id];

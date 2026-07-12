@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
-import { and, eq, inArray } from "drizzle-orm";
-import { db, locations } from "@/server/db";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { z } from "zod";
+import { parseOrNull } from "@/lib/parse";
+import { db, locations, worldLocations } from "@/server/db";
 import {
   jsonError,
   jsonOk,
@@ -13,11 +15,18 @@ import {
 } from "@/server/api";
 
 export const GET = withUser(async (user, req: NextRequest) => {
-  const q = req.nextUrl.searchParams.get("q") ?? undefined;
-  const tags = parseTagsParam(req.nextUrl.searchParams.get("tag"));
-  const ids = await searchLibraryIds("location", user.id, { q, tags });
+  const params = req.nextUrl.searchParams;
+  const q = params.get("q") ?? undefined;
+  const tags = parseTagsParam(params.get("tag"));
+  const sort = parseOrNull(z.enum(["updated", "name"]), params.get("sort"));
+  // Discovery scope (auth.plan.md fast-follow): all|public|owned; default owner-only.
+  const scopeParam = params.get("scope");
+  const scope = scopeParam === "all" || scopeParam === "public" ? scopeParam : "owned";
+  const ids = await searchLibraryIds("location", user.id, { q, tags, sort: sort ?? undefined, scope });
   if (ids.length === 0) return jsonOk({ locations: [] });
   // Summary columns only — the bare row carries the 1536-dim search embedding.
+  // `scale` + world usage are the library facet columns (library-ux.plan.md
+  // §Follow-up pass); usage counts the worlds holding a snapshot copy.
   const rows = await db()
     .select({
       id: locations.id,
@@ -25,9 +34,13 @@ export const GET = withUser(async (user, req: NextRequest) => {
       description: locations.description,
       tags: locations.tags,
       imageId: locations.imageId,
+      scale: locations.scale,
+      // Aliased inner table + hand-qualified outer id — see characters/route.ts.
+      worldCount: sql<number>`(select count(distinct wl.world_id)::int from ${worldLocations} wl where wl.source_location_id = ${locations}.id)`,
     })
     .from(locations)
-    .where(and(eq(locations.ownerId, user.id), inArray(locations.id, ids)));
+    // Non-owned rows are reachable only when the scoped search returned them.
+    .where(and(inArray(locations.id, ids), or(eq(locations.ownerId, user.id), eq(locations.visibility, "public"))));
   const byId = new Map(rows.map((r) => [r.id, r]));
   return jsonOk({ locations: ids.flatMap((id) => byId.get(id) ?? []) });
 });

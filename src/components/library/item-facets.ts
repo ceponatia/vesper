@@ -28,7 +28,10 @@ export interface FacetDef<TCard> {
   /** Offered only while this type bucket is active (undefined = every bucket). */
   forBucket?: string;
   options: readonly FacetOption[];
-  value: (card: TCard) => string | undefined;
+  /** The card's single facet value (default matcher: equality). */
+  value?: (card: TCard) => string | undefined;
+  /** Multi-value facet (social-card triggers): the card matches any listed option. */
+  values?: (card: TCard) => readonly string[];
   /** Match override (wearer's absent/unisex semantics); default is equality. */
   matches?: (cardValue: string | undefined, optionId: string) => boolean;
 }
