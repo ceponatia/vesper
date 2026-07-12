@@ -8,6 +8,7 @@ import {
   characterChatState,
   characters,
   chatParticipants,
+  chatScenarioPresets,
   db,
   episodes,
   facts,
@@ -44,6 +45,8 @@ import { DELETE as msgDelete, PATCH as msgPatch } from "./[chatId]/messages/[mes
 import { PATCH as takePatch } from "./[chatId]/messages/[messageId]/take/route";
 import { GET as sceneList } from "./[chatId]/scene/route";
 import { PATCH as statePatch } from "./[chatId]/state/route";
+import { POST as participantAdd } from "./[chatId]/participants/route";
+import { DELETE as participantRemove, PATCH as participantPatch } from "./[chatId]/participants/[characterId]/route";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -178,6 +181,7 @@ afterAll(async () => {
   await db().delete(characterChats).where(eq(characterChats.ownerId, ids.otherUser));
   await db().delete(characters).where(eq(characters.ownerId, authState.user.id));
   await db().delete(characters).where(eq(characters.ownerId, ids.otherUser));
+  await db().delete(chatScenarioPresets).where(eq(chatScenarioPresets.ownerId, authState.user.id));
   await db().delete(users).where(eq(users.id, authState.user.id));
   await db().delete(users).where(eq(users.id, ids.otherUser));
   await globalThis.__vesperPool?.end();
@@ -939,5 +943,131 @@ describe("stopped replies (spec §4.2)", () => {
     const reply = got.messages.find((m) => m.id === replyId);
     expect(reply).toBeDefined();
     expect(reply?.meta).toEqual({ stopped: true });
+  });
+});
+
+describe("roster — participants add/remove/presence (multi-character-chat.plan.md slice 1)", () => {
+  const pCtx = (chatId: string, characterId: string) => ({ params: Promise.resolve({ chatId, characterId }) });
+  const addReq = (chatId: string, body: unknown) =>
+    new NextRequest(`http://t/api/chats/${chatId}/participants`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const presenceReq = (chatId: string, characterId: string, presence: string) =>
+    new NextRequest(`http://t/api/chats/${chatId}/participants/${characterId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ presence }),
+    });
+  const removeReq = (chatId: string, characterId: string) =>
+    new NextRequest(`http://t/api/chats/${chatId}/participants/${characterId}`, { method: "DELETE" });
+
+  const mkCharacter = async (name: string): Promise<string> => {
+    const [row] = await db().insert(characters).values({ ownerId: authState.user.id, name, profile: {} }).returning();
+    if (!row) throw new Error("failed to seed character");
+    return row.id;
+  };
+
+  it("adds a member, reflects it in the GET roster, and flips presence through the state row", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    const joinerId = await mkCharacter("Rhett");
+
+    const added = await participantAdd(addReq(chat.id, { characterId: joinerId }), ctx(chat.id));
+    expect(added.status).toBe(201);
+
+    const got = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
+      roster: Array<{ characterId: string; sort: number; presence: string }>;
+    };
+    expect(got.roster.map((m) => m.characterId)).toEqual([ids.character, joinerId]);
+    expect(got.roster.map((m) => m.sort)).toEqual([0, 1]);
+    expect(got.roster.every((m) => m.presence === "present")).toBe(true);
+
+    // A duplicate add is refused.
+    expect((await participantAdd(addReq(chat.id, { characterId: joinerId }), ctx(chat.id))).status).toBe(409);
+
+    // Presence flip persists on the (lazily seeded) state row and rides the GET.
+    const flipped = await participantPatch(presenceReq(chat.id, joinerId, "away"), pCtx(chat.id, joinerId));
+    expect(flipped.status).toBe(200);
+    const after = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
+      roster: Array<{ characterId: string; presence: string }>;
+    };
+    expect(after.roster.find((m) => m.characterId === joinerId)?.presence).toBe("away");
+    const [stateRow] = await db()
+      .select({ presence: characterChatState.presence })
+      .from(characterChatState)
+      .where(and(eq(characterChatState.chatId, chat.id), eq(characterChatState.characterId, joinerId)));
+    expect(stateRow?.presence).toBe("away");
+  });
+
+  it("caps the roster at 4 and refuses foreign characters", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    for (const name of ["Cap B", "Cap C", "Cap D"]) {
+      const memberId = await mkCharacter(name);
+      expect((await participantAdd(addReq(chat.id, { characterId: memberId }), ctx(chat.id))).status).toBe(201);
+    }
+    const overflowId = await mkCharacter("Cap E");
+    expect((await participantAdd(addReq(chat.id, { characterId: overflowId }), ctx(chat.id))).status).toBe(409);
+    // Another owner's character is unreachable regardless of the cap.
+    const fresh = await createChat(ids.character);
+    expect((await participantAdd(addReq(fresh.id, { characterId: ids.otherCharacter }), ctx(fresh.id))).status).toBe(404);
+  });
+
+  it("never removes the last member; removing the primary promotes the next (sort renumbers)", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    expect((await participantRemove(removeReq(chat.id, ids.character), pCtx(chat.id, ids.character))).status).toBe(409);
+
+    const joinerId = await mkCharacter("Heir");
+    await participantAdd(addReq(chat.id, { characterId: joinerId }), ctx(chat.id));
+    const removed = await participantRemove(removeReq(chat.id, ids.character), pCtx(chat.id, ids.character));
+    expect(removed.status).toBe(200);
+    const got = (await (await chatGet(getReq(chat.id), ctx(chat.id))).json()) as {
+      roster: Array<{ characterId: string; sort: number }>;
+      character: { id: string };
+    };
+    expect(got.roster).toEqual([expect.objectContaining({ characterId: joinerId, sort: 0 })]);
+    // The promoted member is now the envelope's primary character card.
+    expect(got.character.id).toBe(joinerId);
+  });
+
+  it("seeds a preset's premise + cards to EVERY roster member; outfit/bands to the primary only", async (t) => {
+    if (!ready) return t.skip();
+    const [preset] = await db()
+      .insert(chatScenarioPresets)
+      .values({
+        ownerId: authState.user.id,
+        name: "Group scene",
+        premise: "A rain-soaked rooftop bar.",
+        outfit: "a red slip dress",
+        startingStage: "warm",
+      })
+      .returning({ id: chatScenarioPresets.id });
+    if (!preset) throw new Error("failed to seed preset");
+    const secondId = await mkCharacter("Second Seat");
+
+    const res = await chatsCreate(
+      createReq({ characterIds: [ids.character, secondId], memory: "fresh", presetId: preset.id }),
+      collectionCtx,
+    );
+    expect(res.status).toBe(201);
+    const { id: chatId } = (await res.json()) as { id: string };
+
+    const states = await db()
+      .select({
+        characterId: characterChatState.characterId,
+        premise: characterChatState.premise,
+        outfit: characterChatState.outfit,
+      })
+      .from(characterChatState)
+      .where(eq(characterChatState.chatId, chatId));
+    const primary = states.find((s) => s.characterId === ids.character);
+    const second = states.find((s) => s.characterId === secondId);
+    expect(primary?.premise).toBe("A rain-soaked rooftop bar.");
+    expect(second?.premise).toBe("A rain-soaked rooftop bar.");
+    expect(primary?.outfit).toBe("a red slip dress");
+    expect(second?.outfit).not.toBe("a red slip dress");
   });
 });

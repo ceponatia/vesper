@@ -208,7 +208,23 @@ export interface ChatState {
    * connections. Switched deterministically pre-turn, reconciled from the archivist post-turn.
    */
   sceneMemory: ChatSceneMemory;
+  /**
+   * Narrative presence (multi-character-chat.plan.md): "present" shares the
+   * player's scene; "away" is offstage — meters freeze, no memory legs, only
+   * salience-gated relationship lines reach the prompt. Roster panel = manual
+   * override; the archivist confirms transitions (slice 3).
+   */
+  presence: ChatPresence;
+  /**
+   * Consecutive exchanges without this character being mentioned, acting, or
+   * being spoken to (activity recency): 0 = active this exchange; at/over the
+   * quiet threshold their prompt blocks compress to tier 2.
+   */
+  quietExchanges: number;
 }
+
+/** Narrative presence — the only location-like state the chat lane tracks. */
+export type ChatPresence = "present" | "away";
 
 /** The strip / state-tools / premise-bar projection returned by GET …/chat/state. */
 export interface ChatStateSnapshot {
@@ -258,6 +274,10 @@ export interface ChatStateSnapshot {
   selfieHistory: SelfieEntry[];
   /** Runtime drives (character-drives.plan.md) — panel shows open ones; tools show all. */
   drives: ChatDrive[];
+  /** Narrative presence (multi-character-chat.plan.md) — the roster panel's toggle state. */
+  presence: ChatPresence;
+  /** Exchanges since this character was last active (recency; for the roster/tools view). */
+  quietExchanges: number;
   /**
    * False when this snapshot is a seed-on-read (no DB row yet) rather than a stored,
    * possibly-diverged chat. The UI uses it to preview the authored Starting Relationship
@@ -360,6 +380,8 @@ export function seedChatState(profile: CharacterProfile, premise?: string): Chat
     sceneAuto: "off",
     sceneModel: "reference",
     sceneMemory: emptyChatSceneMemory(),
+    presence: "present",
+    quietExchanges: 0,
   };
 }
 
@@ -400,6 +422,8 @@ export async function loadChatState(
       sceneAuto: characterChatState.sceneAuto,
       sceneModel: characterChatState.sceneModel,
       sceneMemory: characterChatState.sceneMemory,
+      presence: characterChatState.presence,
+      quietExchanges: characterChatState.quietExchanges,
     })
     .from(characterChatState)
     .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId)))
@@ -459,6 +483,8 @@ export async function loadChatState(
       sink,
       "character_chat_state.scene_memory",
     ),
+    presence: row.presence,
+    quietExchanges: Math.max(0, row.quietExchanges),
   };
 }
 
@@ -497,6 +523,8 @@ const storedChatStateSchema = z.object({
   sceneAuto: z.string().catch("off").default("off"),
   sceneModel: z.string().catch("reference").default("reference"),
   sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
+  presence: z.enum(["present", "away"]).catch("present").default("present"),
+  quietExchanges: z.number().catch(0).default(0),
 });
 
 /**
@@ -1184,9 +1212,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, feeling, selfie_history, drives, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, premise, outfit, outfit_exposed, active_social_cards, clock_minutes, relationship_history, milestones, callback_history, feeling, selfie_history, drives, skip_history, pending_skip_note, scene_auto, scene_model, scene_memory, presence, quiet_exchanges, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.premise}, ${state.outfit}, ${state.outfitExposed}, ${activeSocialCards}::jsonb, ${state.clockMinutes}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${skipHistory}::jsonb, ${state.pendingSkipNote}, ${state.sceneAuto}, ${state.sceneModel}, ${sceneMemory}::jsonb, ${state.presence}, ${state.quietExchanges}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1218,6 +1246,8 @@ async function upsertChatState(
       scene_auto = excluded.scene_auto,
       scene_model = excluded.scene_model,
       scene_memory = excluded.scene_memory,
+      presence = excluded.presence,
+      quiet_exchanges = excluded.quiet_exchanges,
       updated_at = now()
   `);
 }
@@ -1280,6 +1310,8 @@ export interface ChatStateEdit {
   selfieHistory?: SelfieEntry[];
   /** Runtime drives (character-drives.plan.md) — scenario/state-tools edit surface. */
   drives?: ChatDrive[];
+  /** Narrative presence (multi-character-chat.plan.md) — the roster panel's manual toggle. */
+  presence?: ChatPresence;
 }
 
 /**
@@ -1329,6 +1361,7 @@ export async function editChatState(args: {
   if (patch.feeling !== undefined) next.feeling = patch.feeling;
   if (patch.selfieHistory !== undefined) next.selfieHistory = patch.selfieHistory;
   if (patch.drives !== undefined) next.drives = patch.drives.slice(0, 3);
+  if (patch.presence !== undefined) next.presence = patch.presence;
   await persistChatState(chatId, characterId, next);
   return next;
 }
@@ -1446,6 +1479,8 @@ export function chatStateSnapshot(
     feeling: state.feeling,
     selfieHistory: state.selfieHistory,
     drives: state.drives,
+    presence: state.presence,
+    quietExchanges: state.quietExchanges,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,
   };

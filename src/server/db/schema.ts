@@ -298,18 +298,20 @@ export const characterChatSummaries = pgTable(
 /**
  * Character-chat state (docs/character-chat.md; origin:
  * docs/developer-notes/finished/character-chat-state.spec.md). One row per
- * (ownerId, characterId): the chat's tracked state beside the message window,
- * the rolling summary, and the chat-scoped facts/episodes — the full meter
- * registry, an affinity scalar, optional self-expiring conditions, a dynamic
- * "what's on their mind" note, a player-set per-chat premise, scenario fields
- * (outfit/cards), the RAG carry-overs (memory queries, attribute overlays,
- * traces), the chat-local game clock, and a wall-clock anchor for between-visit
- * recovery. A pure CREATE (not an extension of character_chat_summaries) so the
- * migration never hits drizzle's rename prompt and the pulse stays independent
- * of the summary fold. No row ⇒ a fresh stateless chat; the first POST lazily
- * seeds one. Lifecycle: the single **Clear Chat** (`clearCharacterChat`) deletes
- * this row with the transcript + summary + chat memory
- * (character-chat-primary.spec.md §4, D4 — supersedes the old three-scope reset).
+ * (chatId, characterId) — a multi-character roster holds one row per member
+ * (multi-character-chat.plan.md): the character's tracked state beside the
+ * message window, the rolling summary, and the chat-scoped facts/episodes —
+ * the full meter registry, the two relationship axes, optional self-expiring
+ * conditions, a dynamic "what's on their mind" note, a player-set per-chat
+ * premise, scenario fields (outfit/cards), narrative presence + activity
+ * recency, the RAG carry-overs (memory queries, attribute overlays, traces),
+ * and the chat-local game clock. A pure CREATE (not an extension of
+ * character_chat_summaries) so the migration never hits drizzle's rename
+ * prompt and the pulse stays independent of the summary fold. No row ⇒ a fresh
+ * stateless chat; the first POST lazily seeds one. Lifecycle: the single
+ * **Clear Chat** (`clearCharacterChat`) deletes this row with the transcript +
+ * summary + chat memory (character-chat-primary.spec.md §4, D4 — supersedes
+ * the old three-scope reset).
  */
 export const characterChatState = pgTable(
   "character_chat_state",
@@ -450,6 +452,19 @@ export const characterChatState = pgTable(
      * blob so field additions are never migrations; parsed defensively at the boundary.
      */
     sceneMemory: jsonb("scene_memory").notNull().default({}),
+    /**
+     * Narrative presence (multi-character-chat.plan.md): "present" = sharing the
+     * player's scene; "away" = offstage living their life (meters freeze, no
+     * memory legs). The ONLY location-like state chat tracks; the roster panel
+     * is the manual override, the archivist confirms transitions.
+     */
+    presence: text("presence", { enum: ["present", "away"] }).notNull().default("present"),
+    /**
+     * Consecutive exchanges without this character being mentioned, acting, or
+     * being spoken to (activity recency): 0 = active this exchange; ≥ the quiet
+     * threshold compresses their prompt blocks to tier 2.
+     */
+    quietExchanges: integer("quiet_exchanges").notNull().default(0),
     /**
      * CallbackEntry[] ring (memory-callbacks.plan.md): episode refs already offered as
      * an unprompted "remember when" cue, plus the chat-clock minute each fired — the

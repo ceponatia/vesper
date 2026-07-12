@@ -906,6 +906,16 @@ export type ChatSummary = z.infer<typeof chatSummarySchema>;
  * (title/archived) and the character card (name, portrait, saved narrator pick) —
  * everything the full-screen conversation page needs in one call.
  */
+export const chatRosterMemberSchema = z.object({
+  characterId: idSchema,
+  name: nameSchema,
+  avatarImageId: optionalId,
+  sort: z.number().catch(0),
+  /** Narrative presence (multi-character-chat.plan.md): sharing the scene or away. */
+  presence: z.enum(["present", "away"]).catch("present"),
+});
+export type ChatRosterMember = z.infer<typeof chatRosterMemberSchema>;
+
 export const chatTranscriptSchema = z.object({
   messages: listOf(chatMessageSchema, "messages"),
   chat: z.object({ id: idSchema, title: textOr(""), archivedAt: optionalText }),
@@ -916,6 +926,8 @@ export const chatTranscriptSchema = z.object({
     /** The owner's last narrator pick (`characters.chatModel`); "" ⇒ the chat default. */
     chatModel: textOr(""),
   }),
+  /** The full roster, sort-ordered (first = primary); [] on legacy payloads. */
+  roster: z.array(chatRosterMemberSchema).catch([]),
 });
 export type ChatTranscript = z.infer<typeof chatTranscriptSchema>;
 
@@ -1014,6 +1026,16 @@ export const chatsApi = {
     apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/time-skip`, { amount }),
   /** The Relationship panel payload (spec §7.2–7.4 UI): stage, sparkline, milestones, story so far. */
   relationship: (chatId: string) => apiGet(chatRelationshipSchema, `/api/chats/${chatId}/relationship`),
+  // --- Roster (multi-character-chat.plan.md slice 1) ---
+  /** Add a character to the roster (cap 4); D7 memory choice defaults to shared. */
+  addParticipant: (chatId: string, characterId: string, memory: "shared" | "fresh" = "shared") =>
+    apiPost(z.unknown(), `/api/chats/${chatId}/participants`, { characterId, memory }),
+  /** Remove a roster member (never the last; removing the primary promotes the next). */
+  removeParticipant: (chatId: string, characterId: string) =>
+    apiDelete(`/api/chats/${chatId}/participants/${characterId}`),
+  /** Flip a member's narrative presence — the roster panel's manual override. */
+  setPresence: (chatId: string, characterId: string, presence: "present" | "away") =>
+    apiPatch(z.unknown(), `/api/chats/${chatId}/participants/${characterId}`, { presence }),
   /** "Mark this moment" (spec §7.2): pin a milestone on any message. */
   markMoment: (chatId: string, messageId: string, label?: string) =>
     apiPost(z.object({ milestones: z.array(milestoneSchema).catch([]) }), `/api/chats/${chatId}/milestones`, {

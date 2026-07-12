@@ -1,0 +1,2 @@
+ALTER TABLE "character_chat_state" ADD COLUMN "presence" text DEFAULT 'present' NOT NULL;--> statement-breakpoint
+ALTER TABLE "character_chat_state" ADD COLUMN "quiet_exchanges" integer DEFAULT 0 NOT NULL;

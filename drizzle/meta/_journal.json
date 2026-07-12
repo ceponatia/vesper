@@ -260,6 +260,13 @@
       "when": 1783853931037,
       "tag": "0036_futuristic_zarek",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1783855393861,
+      "tag": "0037_tearful_skullbuster",
+      "breakpoints": true
     }
   ]
 }
