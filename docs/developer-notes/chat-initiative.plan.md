@@ -1,8 +1,19 @@
 # Chat initiative — the character reaches out first
 
-Status: **next** (planned 2026-07-11, from the character-chat & schema engagement
-review — seven-plan batch at the top of [roadmap.md](roadmap.md) §Next; effort
-**L**)
+Status: **active** (planned 2026-07-11; the **core opener shipped 2026-07-12**
+— slice 1 with slice 3 folded into it: the pickup strip's "Let {who} start ✦"
+runs a continue-kind exchange with a server-built initiative cue
+(`engine/chat-initiative.ts` — loops + non-secret wants as her material, the
+"a life meanwhile" license replacing a separate life-event agent [build
+decision: zero extra calls, D8-safe], comms-when-apart register, restraint
+clause). Open questions resolved at build: the opener advances the clock like
+any beat (it rides the ordinary continue path); the hub marker stays
+loops-keyed — the real-time UI nudge was NOT added (it cuts against D3 without
+an owner ruling; revisit on request); life events are inline-by-license.
+**Remaining:** slice 2 (the §8.4 marker upgrade — unseen-milestone seen-cursor),
+slice 4 (light `profile.schedule` authoring: forge section + day-part editor
+card), and slice 5 (the selfie-attach hook — needs the pulse to run on opener
+beats, which it currently skips).)
 
 The character only ever responds — the biggest engagement gap in the lane.
 Every piece already exists in fragments: the `open` exchange kind (synthetic

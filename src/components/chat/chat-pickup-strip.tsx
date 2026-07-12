@@ -25,10 +25,13 @@ export function ChatPickupStrip({
   who,
   busy,
   onPick,
+  onInitiative,
 }: {
   who: string;
   busy: boolean;
   onPick: (amount: ChatSkipAmount | null) => void;
+  /** Reopen-opener initiative (chat-initiative.plan.md): the character reaches out first. */
+  onInitiative?: () => void;
 }) {
   return (
     <div role="group" aria-label={`Pick up with ${who}`} className="flex flex-wrap items-center gap-1.5">
@@ -38,6 +41,18 @@ export function ChatPickupStrip({
           {opt.label}
         </Button>
       ))}
+      {onInitiative ? (
+        <Button
+          size="sm"
+          variant="quiet"
+          disabled={busy}
+          onClick={onInitiative}
+          title={`${who} reaches out first — with their own reasons`}
+          className="text-accent-300"
+        >
+          Let {who} start <span aria-hidden>✦</span>
+        </Button>
+      ) : null}
     </div>
   );
 }

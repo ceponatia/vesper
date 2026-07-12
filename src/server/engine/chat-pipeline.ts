@@ -17,6 +17,7 @@ import { log } from "../log";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
+import { buildInitiativeCue } from "./chat-initiative";
 import { chatSelfieOfferEligible, detectSelfieRequest, hasCommsSpans } from "./chat-selfie";
 import { CHAT_ATTACHMENTS_MAX, describeChatPhotos } from "./chat-vision";
 import {
@@ -127,6 +128,13 @@ export interface SubmitChatMessageInput {
    * that. Only read for `kind: "continue"`.
    */
   cue?: string;
+  /**
+   * Reopen-opener initiative (chat-initiative.plan.md) — `continue` only: the
+   * character reaches out first with a server-built cue (open loops + wants +
+   * the "a life meanwhile" license, comms register when apart). Player-tapped;
+   * generation is never background (D3).
+   */
+  initiative?: boolean;
   /**
    * Player-attached photo ids (chat-image-input.plan.md) — `send` only. Validated +
    * claimed against this chat's ready `chat_upload` rows (foreign ids dropped), then
@@ -695,9 +703,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // (narrator-prompt-consolidation slice 4). Pre-slice-4 arm (rollback):
       //   cueInvite: cueHint ? chatCueInviteLine(cueHint, characterName) : <the continue arm below>
       cueInvite:
-        effectiveKind === "continue" && input.cue?.trim()
-          ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
-          : undefined,
+        effectiveKind === "continue" && input.initiative
+          ? buildInitiativeCue({
+              characterName,
+              playerName: player.name,
+              openLoops: driftedState.openLoops,
+              drives: driftedState.drives,
+              skipPending: Boolean(driftedState.pendingSkipNote.trim()),
+            })
+          : effectiveKind === "continue" && input.cue?.trim()
+            ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
+            : undefined,
       // The deterministic per-turn sensory allowance (narrator-prompt-consolidation slice 4):
       // one binding line derived from the detectors already running this turn. Only real
       // player turns carry one — opening/continue beats fall to the rules' conservative default.

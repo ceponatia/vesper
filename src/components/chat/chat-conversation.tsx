@@ -305,6 +305,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       cue?: string;
       messageId?: string;
       attachmentIds?: string[];
+      initiative?: boolean;
     },
     opts: { userLine?: string; replaceId?: string; attachmentIds?: string[] } = {},
   ): Promise<ChatStreamOutcome> => {
@@ -983,6 +984,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               onPick={(amount) => {
                 if (amount === null) setPickupDismissed(true);
                 else void skipTime(amount);
+              }}
+              onInitiative={() => {
+                // Reopen-opener initiative (chat-initiative.plan.md): a continue-kind
+                // exchange whose cue the server builds from her loops/wants + the
+                // "a life meanwhile" license. Player-tapped, never background (D3).
+                void (async () => {
+                  const outcome = await runStream({ kind: "continue", initiative: true, model: chatModel });
+                  if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
+                })();
               }}
             />
           ) : null}

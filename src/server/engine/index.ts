@@ -20,6 +20,7 @@ export * from "./chat-reference-enqueue";
 export * from "./chat-reference-images";
 export * from "./chat-callback";
 export * from "./chat-feeling";
+export * from "./chat-initiative";
 export * from "./chat-intent";
 export * from "./chat-selfie";
 export * from "./chat-vision";

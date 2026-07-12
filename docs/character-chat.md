@@ -409,6 +409,28 @@ an optional `revealBand`), seeded into `character_chat_state.drives` (migration
   secrets" editor card; until it lands, drives are authored via the profile JSON /
   state PATCH.
 
+## Initiative (the character reaches out first)
+
+The reopen opener ([developer-notes/chat-initiative.plan.md](developer-notes/chat-initiative.plan.md)):
+the pickup strip gains **"Let {who} start ✦"**, which runs a `continue`-kind
+exchange with `initiative: true` — the server builds the cue
+(`buildInitiativeCue`, `engine/chat-initiative.ts`): reach out FIRST, with her
+own material (top open loops + unresolved non-secret wants — withheld secrets
+never leak into the cue; the drives tail law owns them), the **"a life
+meanwhile" license** folded in (build decision: instead of a separate
+life-event agent, the cue invites ONE small concrete thing from her life since,
+skip-aware — zero extra model calls, exactly as grounded as the narrator
+already is), the **comms-when-apart register** (`*Name: …*` texted opener when
+the fiction has them apart), and a restraint clause (one beat, end on something
+answerable, never narrate the player). Standing rulings hold: **D3** —
+generation stays player-tapped, never background, and the hub marker stays
+loops-keyed (no wall-clock nudge); **D8** — what the gap meant comes from the
+pending skip note, never real time. The opener is an ordinary continue
+exchange: clock ticks, pulse skipped, archivist off (opening path), lock/guard
+semantics unchanged. Remaining slices live in the plan: the §8.4 marker
+upgrade (seen-cursor), `profile.schedule` authoring, and the selfie-attach
+hook (needs pulse-on-open).
+
 ## Post-turn fan-out
 
 `finalizeChatState` runs **pulse ‖ archivist-lite** in parallel (`Promise.all`), then one
@@ -563,6 +585,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Selfies (triggers / gates / retry — §Selfies) | `server/engine/chat-selfie.ts` (pure) + pulse `sentPhoto` + `chatSelfieLine` in `prompts/character-chat.ts` + the selfie branch in `images/character-scene.ts`; "Failed" placeholder in `components/chat/chat-scene-moments.tsx` |
 | Scene reference anchors (look / place — §Scene reference anchors) | `server/images/chat-look.ts` (key + renders) + `server/engine/chat-reference-enqueue.ts` / `chat-reference-images.ts` (jobs) + consumption in `images/character-scene.ts` and `scene/queue.ts` |
 | Drives (schemas / gate / updates — §Drives) | `contracts/personality/drives.ts` (pure) + `buildDrivesSection` in `prompts/character-chat.ts` + the finalize fold in `chat-state.ts` |
+| Initiative (the reopen opener — §Initiative) | `server/engine/chat-initiative.ts` (pure cue) + the `initiative` flag through route/pipeline + the pickup-strip button |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |

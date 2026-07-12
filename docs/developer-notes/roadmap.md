@@ -55,22 +55,19 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 ## Next (queued)
 
 _The two entries below are the remainder of the 2026-07-11 **character-chat
-engagement batch** (planned from the character-chat & schema review; the first
-five shipped in full and the sixth's engine core shipped the same day, see
-Shipped), deliberately ordered by **effort, least → most** and queued ahead of
-the pre-existing items — owner instruction 2026-07-11._
+engagement batch**: every plan's core shipped (see Shipped); what stays queued
+are the recorded remainders._
 
 - **Character drives — the authoring surface (remainder)** —
   [character-drives.plan.md](character-drives.plan.md) (active — the engine
   core shipped 2026-07-11, see Shipped). Remaining: the forge drives section +
   the "Desires & secrets" editor card + redraft coverage, and the
   `chat-secret-hold`/`-reveal` eval fixtures.
-- **Chat initiative — the character reaches out first** —
-  [chat-initiative.plan.md](chat-initiative.plan.md) (next — effort L). Grows
-  §8.4 "has something to say" into reopen-anchored initiative: cued openers in
-  the comms register, life-event beats, light `schedule` authoring (the
-  write-orphan), and a selfie-attach hook — D8-compatible, generation stays
-  player-triggered.
+- **Chat initiative — the remainder slices** —
+  [chat-initiative.plan.md](chat-initiative.plan.md) (active — the core opener
+  shipped 2026-07-12, see Shipped). Remaining: the §8.4 marker upgrade
+  (seen-cursor), light `profile.schedule` authoring, and the selfie-attach
+  hook (needs pulse-on-open).
 
 - **Story-thread lifecycle guards** — two gaps found in the 2026-07-08 docs-accuracy
   audit (small, well-scoped fixes; no plan yet — needs a `<topic>.plan.md` only if it
@@ -155,6 +152,15 @@ production-build perf pass §5), observer / god-mode POV, monorepo split (perman
 deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
+
+- **Chat initiative — the reopen opener (core)** —
+  [chat-initiative.plan.md](chat-initiative.plan.md) — 2026-07-12 — the pickup
+  strip's "Let {who} start ✦" runs a continue exchange with a server-built cue
+  (`chat-initiative.ts`): her own material (loops + non-secret wants), the "a
+  life meanwhile" license folded in (no separate life-event agent — build
+  decision, D8-safe), the comms-when-apart register, one-beat restraint. D3
+  held: player-tapped only, marker stays loops-keyed. Remainder (marker
+  seen-cursor, schedule authoring, selfie-attach) stays in Next.
 
 - **Character drives — engine core (desires & secrets as gated inner life)** —
   [character-drives.plan.md](character-drives.plan.md) — 2026-07-11 — ≤3
