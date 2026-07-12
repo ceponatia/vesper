@@ -4,7 +4,21 @@ export interface NavDest {
   href: string;
   label: string;
   icon: NavIconName;
+  /** Extra section prefixes that light this destination (the Library hub spans four routes). */
+  match?: readonly string[];
 }
+
+/**
+ * The Library hub — one nav entry over the four collection routes, which keep
+ * their URLs and share a tab strip inside the library shell (library-ux.plan.md
+ * §Follow-up pass: header becomes Chats · Worlds · Library · Gallery).
+ */
+const LIBRARY_DEST: NavDest = {
+  href: "/characters",
+  label: "Library",
+  icon: "library",
+  match: ["/locations", "/items", "/social-cards"],
+};
 
 /**
  * Full destination list for the desktop top-nav and the hamburger drawer (the
@@ -15,38 +29,33 @@ export interface NavDest {
 export const NAV_LINKS: readonly NavDest[] = [
   { href: "/chat", label: "Chats", icon: "chats" },
   { href: "/worlds", label: "Worlds", icon: "worlds" },
-  { href: "/characters", label: "Characters", icon: "characters" },
-  { href: "/locations", label: "Locations", icon: "locations" },
-  { href: "/items", label: "Items", icon: "items" },
-  { href: "/social-cards", label: "Social cards", icon: "social-cards" },
+  LIBRARY_DEST,
   { href: "/gallery", label: "Gallery", icon: "gallery" },
 ];
 
 /**
  * Bottom-tab-bar primary slots (4) — Home included; rest go to the More sheet.
  * Chats takes a primary slot (the companion experience is the front door —
- * character-chat-standalone.plan.md area 1 / D12); Gallery moves to overflow.
+ * character-chat-standalone.plan.md area 1 / D12); the Library hub covers the
+ * four collections, so only Gallery overflows.
  */
 export const PRIMARY_NAV: readonly NavDest[] = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/chat", label: "Chats", icon: "chats" },
-  { href: "/characters", label: "Characters", icon: "characters" },
+  LIBRARY_DEST,
   { href: "/worlds", label: "Worlds", icon: "worlds" },
 ];
 
 /** Bottom-tab-bar overflow, surfaced via the "More" sheet. */
-export const OVERFLOW_NAV: readonly NavDest[] = [
-  { href: "/gallery", label: "Gallery", icon: "gallery" },
-  { href: "/locations", label: "Locations", icon: "locations" },
-  { href: "/items", label: "Items", icon: "items" },
-  { href: "/social-cards", label: "Social cards", icon: "social-cards" },
-];
+export const OVERFLOW_NAV: readonly NavDest[] = [{ href: "/gallery", label: "Gallery", icon: "gallery" }];
 
 /**
  * Whether a destination is the current page. Home ("/") matches exactly;
- * everything else matches the section prefix (so /worlds/forge lights Worlds).
+ * everything else matches the section prefix (so /worlds/forge lights Worlds,
+ * and any of the Library hub's collection routes light Library via `match`).
  */
-export function isNavActive(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
+export function isNavActive(pathname: string, dest: NavDest): boolean {
+  if (dest.href === "/") return pathname === "/";
+  const prefixes = [dest.href, ...(dest.match ?? [])];
+  return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
