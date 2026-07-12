@@ -18,7 +18,7 @@ import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { characterChats, characterChatState, characters, chatParticipants, chatScenarioPresets, db } from "@/server/db";
-import { editChatState, seedChatRelationships } from "@/server/engine";
+import { editChatState, saveChatScenario, seedChatRelationships, seedChatScenario } from "@/server/engine";
 import { resolveChatMemoryGroupId } from "./owned";
 
 /**
@@ -184,6 +184,12 @@ export const POST = withUser(async (user, req: NextRequest) => {
     await tx.insert(characterChats).values({ id: chatId, ownerId: user.id, title });
     await tx.insert(chatParticipants).values(participantRows.map((row) => ({ chatId, ...row })));
   });
+  // Scenario seed (followups rulings 8-9): the chat row was just created with
+  // blank scenario defaults, so seed it from the PRIMARY's authored profile —
+  // the premise pre-fill from their `playerRelationship.note` and the
+  // setting-wide house rules from their own cards. A preset below overlays.
+  const primaryProfile = parseOr(characterProfileSchema, primary.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+  await saveChatScenario(chatId, seedChatScenario(primaryProfile));
   // Matrix seeding (relationship-model.plan.md §The matrix): the roster's pairs
   // inherit the library-default edges; the in-chat matrix menu overrides on top.
   await seedChatRelationships(chatId, characterIds);

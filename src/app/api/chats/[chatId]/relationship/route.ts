@@ -8,7 +8,7 @@ import {
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, withUser } from "@/server/api";
-import { loadChatState, loadChatSummary, seedChatState } from "@/server/engine";
+import { loadChatScenario, loadChatState, loadChatSummary, seedChatState } from "@/server/engine";
 import { loadOwnedChat } from "../../owned";
 
 type Params = { chatId: string };
@@ -47,6 +47,6 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
     wants: state.drives
       .filter((d) => !d.resolved && (d.secrecy === "open" || d.revealed))
       .map((d) => ({ want: d.want, why: d.why })),
-    clockMinutes: state.clockMinutes,
+    clockMinutes: (await loadChatScenario(chatId, sink))?.clockMinutes ?? 0,
   });
 });

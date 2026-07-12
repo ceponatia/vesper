@@ -99,6 +99,23 @@ async function stateRow(f: Fixture) {
   return row ?? null;
 }
 
+/** The chat-wide scenario columns off the chat row (followups rulings 8-9). */
+async function scenarioRow(chatId: string) {
+  const [row] = await db()
+    .select({
+      premise: characterChats.premise,
+      activeSocialCards: characterChats.activeSocialCards,
+      clockMinutes: characterChats.clockMinutes,
+      pendingSkipNote: characterChats.pendingSkipNote,
+      skipHistory: characterChats.skipHistory,
+      sceneAuto: characterChats.sceneAuto,
+    })
+    .from(characterChats)
+    .where(eq(characterChats.id, chatId))
+    .limit(1);
+  return row ?? null;
+}
+
 async function messageCount(chatId: string): Promise<number> {
   const [row] = await db()
     .select({ n: sql<number>`count(*)::int` })
@@ -186,8 +203,8 @@ describe("POST seeds a state row from the authored stage", () => {
     expect(row).not.toBeNull();
     expect(row?.regard).toBe(stageMidpoint("warm")); // seeded from "warm"
     expect((row?.lastPulseTrace as { degraded?: boolean })?.degraded).toBe(true); // pulse degraded in demo
-    // The premise pre-filled from the authored note.
-    expect(row?.premise).toBe("childhood friend");
+    // The premise pre-filled from the authored note — onto the chat-wide scenario.
+    expect((await scenarioRow(ids.warm.chatId))?.premise).toBe("childhood friend");
   });
 
   it("no time passes between visits — meters and regard hold however long the gap (D3/D8)", async (t) => {
@@ -226,9 +243,10 @@ describe("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
     const snapshot = (await res.json()) as { clockMinutes: number };
     expect(snapshot.clockMinutes).toBe(180);
     const row = await stateRow(ids.skipper);
-    expect(row).not.toBeNull();
-    expect(row?.clockMinutes).toBe(180);
-    expect(row?.pendingSkipNote).not.toBe("");
+    expect(row).not.toBeNull(); // the per-character half persisted the seed
+    const scenario = await scenarioRow(ids.skipper.chatId);
+    expect(scenario?.clockMinutes).toBe(180); // the clock lives on the shared scenario
+    expect(scenario?.pendingSkipNote).not.toBe("");
   });
 
   it("expires timed conditions, leaves meters untouched, records the ring, and the next exchange clears the note", async (t) => {
@@ -245,17 +263,17 @@ describe("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
     const res = await timeSkip(skipReq(ids.skipper.chatId, "overnight"), ctx(ids.skipper.chatId));
     expect(res.status).toBe(200);
     const row = await stateRow(ids.skipper);
-    expect(row?.clockMinutes).toBe(180 + 540);
+    const scenario = await scenarioRow(ids.skipper.chatId);
+    expect(scenario?.clockMinutes).toBe(180 + 540);
     expect(row?.conditions).toEqual([]); // 180+90 < 720 ⇒ expired through the clock filter
     expect(row?.meters).toEqual({ hygiene: 0.33, energy: 0.44 }); // D14: meters untouched
-    const ring = row?.skipHistory as { amount: string }[];
+    const ring = scenario?.skipHistory as { amount: string }[];
     expect(ring.map((r) => r.amount)).toEqual(["hours", "overnight"]);
 
     // The next exchange renders the note once, then clears it (one-shot).
     const send = await chatSend(postReq(ids.skipper.chatId, { content: "Morning." }), ctx(ids.skipper.chatId));
     await send.text();
-    const after = await stateRow(ids.skipper);
-    expect(after?.pendingSkipNote).toBe("");
+    expect((await scenarioRow(ids.skipper.chatId))?.pendingSkipNote).toBe("");
   });
 
   it("409s a skip into an archived conversation", async (t) => {
@@ -278,19 +296,20 @@ describe("sceneAuto toggle (slice 9)", () => {
   });
 });
 
-describe("first exchange preserves the seeded state (codebase-review A2)", () => {
-  it("keeps profile-seeded social cards on the row the first exchange creates", async (t) => {
+describe("creation seeds the scenario's setting-wide cards (followups ruling 9)", () => {
+  it("seeds the primary's profile cards onto the chat row and the first exchange preserves them", async (t) => {
     if (!ready) return t.skip();
-    expect(await stateRow(ids.carded)).toBeNull(); // fresh chat — the exchange itself creates the row
-    const res = await chatSend(postReq(ids.carded.chatId, { content: "Hey there" }), ctx(ids.carded.chatId));
-    await res.text(); // drains the stream ⇒ the finalizer (pulse + save) has run
+    // The scenario seeds at CREATION from the primary's own cards (ruling 9).
+    const seeded = (await scenarioRow(ids.carded.chatId))?.activeSocialCards as { id: string }[];
+    expect(seeded.map((c) => c.id)).toContain("card_feet");
 
-    const row = await stateRow(ids.carded);
-    expect(row).not.toBeNull();
-    // Regression: the guarded insert once omitted active_social_cards (+ outfit columns),
-    // so the row landed with the DB default [] and the authored taboos died after turn 1.
-    const cards = row?.activeSocialCards as { id: string }[];
-    expect(cards.map((c) => c.id)).toContain("card_feet");
+    const res = await chatSend(postReq(ids.carded.chatId, { content: "Hey there" }), ctx(ids.carded.chatId));
+    await res.text(); // drains the stream ⇒ the finalizer (pulse + scenario save) has run
+
+    // Regression (codebase-review A2 lineage): the finalize save must not clobber
+    // the authored taboos back to the DB default [].
+    const after = (await scenarioRow(ids.carded.chatId))?.activeSocialCards as { id: string }[];
+    expect(after.map((c) => c.id)).toContain("card_feet");
   });
 });
 
@@ -306,7 +325,7 @@ describe("PATCH …/chats/:chatId/state { premise }", () => {
     // A subsequent exchange must not touch the player-owned premise.
     const post = await chatSend(postReq(ids.fresh.chatId, { content: "Hi" }), ctx(ids.fresh.chatId));
     await post.text();
-    expect((await stateRow(ids.fresh))?.premise).toBe("it's the night before she moves away");
+    expect((await scenarioRow(ids.fresh.chatId))?.premise).toBe("it's the night before she moves away");
   });
 });
 
@@ -319,18 +338,18 @@ describe("regenerating the FIRST exchange rolls back cleanly (followups F3)", ()
     await send.text();
     const first = await stateRow(ids.regen);
     expect(first).not.toBeNull();
-    const tick = first?.clockMinutes ?? 0;
+    const tick = (await scenarioRow(ids.regen.chatId))?.clockMinutes ?? 0;
     expect(tick).toBeGreaterThan(0);
     expect(first?.preExchangeState).toEqual({});
     expect((first?.milestones as { kind: string }[]).filter((m) => m.kind === "first_exchange")).toHaveLength(1);
 
     // Regenerate the reply. Pre-fix, the `{}` anchor failed to parse and the rollback silently
-    // fell back to the POST-exchange state — so drift ticked the clock a SECOND time. Now `{}`
-    // rolls back to a re-seed, so the clock lands on exactly one tick again.
+    // fell back to the POST-exchange state — so drift ticked the clock a SECOND time. Now the
+    // scenario rolls back through its own pre-exchange anchor, so the clock lands on one tick.
     const regen = await chatSend(postReq(ids.regen.chatId, { kind: "regenerate" }), ctx(ids.regen.chatId));
     await regen.text();
     const after = await stateRow(ids.regen);
-    expect(after?.clockMinutes).toBe(tick); // NOT 2×tick (the double-apply bug)
+    expect((await scenarioRow(ids.regen.chatId))?.clockMinutes).toBe(tick); // NOT 2×tick (the double-apply bug)
     expect((after?.milestones as { kind: string }[]).filter((m) => m.kind === "first_exchange")).toHaveLength(1);
     expect((after?.relationshipHistory as unknown[]).length).toBe(1);
   });

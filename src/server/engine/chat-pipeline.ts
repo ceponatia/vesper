@@ -44,19 +44,26 @@ import {
 import {
   driftChatState,
   finalizeChatState,
+  loadChatScenario,
   loadChatState,
+  loadPreExchangeScenario,
   loadPreExchangeState,
   persistChatState,
   runChatPulse,
+  saveChatScenario,
   saveChatState,
+  savePreExchangeScenario,
   savePreExchangeSnapshot,
   resolveSeededOutfit,
+  seedChatScenario,
   seedChatState,
+  type ChatScenario,
   type ChatState,
 } from "./chat-state";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
 import {
   CHARACTER_CHAT_SUMMARIZE_AT,
+  CHAT_TICK_MINUTES,
   CHAT_REPLY_TAKES_CAP,
   CHAT_RERUN_LOCK_WAIT_MS,
   CHAT_STREAM_FIRST_TOKEN_MS,
@@ -577,10 +584,23 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // outfit marker (raw item ids — also persisted verbatim by pre-fix rows) for
     // the readable garment phrase before the narrator or archivist see it.
     const owner = await chatOwnerId(chatId);
-    const baseDrifted = driftChatState(
+
+    // --- The chat-wide scenario (followups ruling 8) --------------------------
+    // Loaded once per exchange; regenerate/rerun roll it back with the state
+    // (the clock tick, skip-note clear, scene merge and callback burn all undo).
+    let storedScenario = await loadChatScenario(chatId, sink);
+    if (regenerateTarget || (kind === "rerun" && rerunSnapshotApplies)) {
+      storedScenario = (await loadPreExchangeScenario(chatId)) ?? storedScenario;
+    }
+    const preExchangeScenario = storedScenario;
+    const baseScenario = storedScenario ?? seedChatScenario(profile);
+    // ONE story clock, ticked once per exchange (never per member).
+    const tickedClock = baseScenario.clockMinutes + CHAT_TICK_MINUTES;
+
+    let driftedState = driftChatState(
       await resolveSeededOutfit(storedState ?? seedChatState(profile), owner, profile, sink),
       profile,
-      { advance: true },
+      { advance: true, clockMinutes: tickedClock },
     );
 
     // --- Scene memory: deterministic movement switch (pre-prompt) ------------
@@ -589,13 +609,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // mention); the archivist reconciles the rest post-turn. "Just changed" = a new current
     // place this turn, or a pending time skip (both call for re-establishing the setting once).
     const movedTo = playerContent ? detectSceneMovement(playerContent) : null;
-    const preSceneCurrent = baseDrifted.sceneMemory.current;
-    const nextSceneMemory = movedTo ? switchScenePlace(baseDrifted.sceneMemory, movedTo) : baseDrifted.sceneMemory;
+    const preSceneCurrent = baseScenario.sceneMemory.current;
+    const nextSceneMemory = movedTo ? switchScenePlace(baseScenario.sceneMemory, movedTo) : baseScenario.sceneMemory;
     const sceneChanged =
       (Boolean(nextSceneMemory.current) && !samePlaceName(preSceneCurrent, nextSceneMemory.current)) ||
-      Boolean(baseDrifted.pendingSkipNote);
-    let driftedState =
-      nextSceneMemory === baseDrifted.sceneMemory ? baseDrifted : { ...baseDrifted, sceneMemory: nextSceneMemory };
+      Boolean(baseScenario.pendingSkipNote);
+    let scenario: ChatScenario = { ...baseScenario, clockMinutes: tickedClock, sceneMemory: nextSceneMemory };
 
     // --- Window + summary ----------------------------------------------------
     const summaryState = await loadChatSummary(chatId);
@@ -639,7 +658,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               );
               const storedMember = (await loadChatState(chatId, member.characterId, sink)) ?? seedChatState(memberProfile);
               const resolved = await resolveSeededOutfit(storedMember, owner, memberProfile, sink);
-              const state = driftChatState(resolved, memberProfile, { advance: resolved.presence === "present" });
+              const state = driftChatState(resolved, memberProfile, { advance: resolved.presence === "present", clockMinutes: tickedClock });
               return {
                 characterId: member.characterId,
                 memoryGroupId: member.memoryGroupId,
@@ -706,7 +725,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       !selfieRequested && Boolean(playerContent) &&
       chatSelfieOfferEligible({
         regard: driftedState.regard,
-        clockMinutes: driftedState.clockMinutes,
+        clockMinutes: scenario.clockMinutes,
         selfieHistory: driftedState.selfieHistory,
         playerComms: hasCommsSpans(playerContent),
         lastReplyComms: hasCommsSpans(recentReplies.at(-1) ?? ""),
@@ -721,10 +740,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     if (
       playerContent &&
       chatCallbackEligible({
-        clockMinutes: driftedState.clockMinutes,
+        clockMinutes: scenario.clockMinutes,
         callbackHistory: driftedState.callbackHistory,
         firstExchange,
-        pendingSkipNote: driftedState.pendingSkipNote,
+        pendingSkipNote: scenario.pendingSkipNote,
         sceneChanged,
         intimateBeat,
         hasSensoryFocus: Boolean(sensoryFocus),
@@ -744,7 +763,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           ...driftedState,
           callbackHistory: appendCallbackEntry(driftedState.callbackHistory, {
             ref: chosen.ref,
-            atClockMinutes: driftedState.clockMinutes,
+            atClockMinutes: scenario.clockMinutes,
           }),
         };
       }
@@ -755,7 +774,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       priorSummary: summaryState?.summary,
       memory,
       player: { name: player.name, persona: player.persona },
-      state: promptStateSlice(driftedState),
+      state: promptStateSlice(driftedState, scenario),
       opening,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
@@ -784,7 +803,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               playerName: player.name,
               openLoops: driftedState.openLoops,
               drives: driftedState.drives,
-              skipPending: Boolean(driftedState.pendingSkipNote.trim()),
+              skipPending: Boolean(scenario.pendingSkipNote.trim()),
             })
           : effectiveKind === "continue" && input.cue?.trim()
             ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
@@ -847,7 +866,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           {
             name: characterName,
             profile,
-            state: promptStateSlice(driftedState),
+            state: promptStateSlice(driftedState, scenario),
             memory,
             presence: driftedState.presence,
             quietExchanges: driftedState.quietExchanges,
@@ -855,7 +874,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           ...others.map((o) => ({
             name: o.name,
             profile: o.profile,
-            state: promptStateSlice(o.state),
+            state: promptStateSlice(o.state, scenario),
             memory: otherMemories.get(o.characterId),
             presence: o.state.presence,
             quietExchanges: o.state.quietExchanges,
@@ -933,8 +952,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // rollback anchor so even an opening beat can be regenerated.
         try {
           const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
-          await persistChatState(chatId, characterId, { ...driftedState, surfacedCues, pendingSkipNote: "" });
+          await persistChatState(chatId, characterId, { ...driftedState, surfacedCues });
+          await saveChatScenario(chatId, { ...scenario, pendingSkipNote: "" });
           await savePreExchangeSnapshot(chatId, characterId, storedState);
+          await savePreExchangeScenario(chatId, preExchangeScenario);
         } catch (error) {
           log.error("engine.chat", "chat-state opening persist failed", { error: describeError(error) });
         }
@@ -980,6 +1001,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           exchange: { player: agentPlayerContent, assistant: full },
           retrieved: memory,
           selfie: { requested: selfieRequested, offerEligible: selfieOfferEligible },
+          scenario,
+          preExchangeScenario,
           // The ensemble context (multi-character-chat.plan.md): the roster line
           // arms the archivist's presence field; every present witness's group
           // gets the same extraction filed as their own memory.
@@ -1015,6 +1038,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 characterName: member.name,
                 playerName: player.name,
                 exchange: { player: agentPlayerContent, assistant: full },
+                activeSocialCards: scenario.activeSocialCards,
                 sink,
               });
               memberState = pulsed.state;
@@ -1046,7 +1070,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         }
         // "Auto at big moments" (slice 9): opt-in per chat, fire-and-forget — a failed
         // or skipped render never touches the settled reply.
-        if (finalized.bigMoment && driftedState.sceneAuto === "milestones") {
+        if (finalized.bigMoment && scenario.sceneAuto === "milestones") {
           input.onBigMoment?.({ assistantMessageId });
         }
       } catch (error) {
@@ -1338,8 +1362,8 @@ export async function reextractEditedReply(args: {
   }
 }
 
-/** The prompt builder's per-turn state slice from a drifted ChatState — shared by the live exchange and the inspector preview. */
-function promptStateSlice(state: ChatState): NonNullable<CharacterChatPromptInput["state"]> {
+/** The prompt builder's per-turn state slice from a drifted ChatState + the chat-wide scenario. */
+function promptStateSlice(state: ChatState, scenario: ChatScenario): NonNullable<CharacterChatPromptInput["state"]> {
   return {
     meters: state.meters,
     regard: state.regard,
@@ -1347,15 +1371,15 @@ function promptStateSlice(state: ChatState): NonNullable<CharacterChatPromptInpu
     relationship: state.relationship,
     conditions: state.conditions,
     mindNote: state.mindNote,
-    premise: state.premise,
+    premise: scenario.premise,
     surfacedCues: state.surfacedCues,
     outfit: state.outfit,
     outfitExposed: state.outfitExposed,
-    activeSocialCards: state.activeSocialCards,
+    activeSocialCards: scenario.activeSocialCards,
     attributeOverlays: state.attributeOverlays,
     openLoops: state.openLoops,
-    skipNote: state.pendingSkipNote,
-    sceneMemory: state.sceneMemory,
+    skipNote: scenario.pendingSkipNote,
+    sceneMemory: scenario.sceneMemory,
     feeling: state.feeling,
     drives: state.drives,
   };
@@ -1392,10 +1416,11 @@ export async function previewChatPrompt(input: {
   );
   const stored = await loadChatState(input.chatId, input.character.id, sink);
   const owner = await chatOwnerId(input.chatId);
+  const scenario = (await loadChatScenario(input.chatId, sink)) ?? seedChatScenario(profile);
   const state = driftChatState(
     await resolveSeededOutfit(stored ?? seedChatState(profile), owner, profile, sink),
     profile,
-    {},
+    { clockMinutes: scenario.clockMinutes },
   );
   const summaryState = await loadChatSummary(input.chatId);
   const player = await resolvePlayerPersona(owner);
@@ -1411,7 +1436,7 @@ export async function previewChatPrompt(input: {
     priorSummary: summaryState?.summary,
     memory,
     player: { name: player.name, persona: player.persona },
-    state: promptStateSlice(state),
+    state: promptStateSlice(state, scenario),
     narrationShape: narrationShapeId("chat"),
   });
   return {

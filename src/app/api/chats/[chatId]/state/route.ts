@@ -26,9 +26,11 @@ import {
   selfieHistorySchema,
   driftChatState,
   editChatState,
+  loadChatScenario,
   loadChatState,
   persistChatState,
   resolveSeededOutfit,
+  seedChatScenario,
   seedChatState,
 } from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
@@ -107,8 +109,9 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   // resolveSeededOutfit: the seeded outfit is an item-id marker (and pre-fix rows
   // persisted those ids) — the scenario modal must show the garment phrase.
   const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
-  const state = stored ? driftChatState(base, profile, { advance: false }) : base;
-  return jsonOk(chatStateSnapshot(state, { ...snapshotOpts(profile), persisted: stored !== null }));
+  const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
+  const state = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
+  return jsonOk(chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }));
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
@@ -122,14 +125,14 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (!body.ok) return body.response;
 
   const profile = parseProfile(owned);
-  const state = await editChatState({
+  const { state, scenario } = await editChatState({
     chatId,
     characterId: owned.participant.characterId,
     ownerId: user.id,
     profile,
     patch: body.value,
   });
-  return jsonOk(chatStateSnapshot(state, snapshotOpts(profile)));
+  return jsonOk(chatStateSnapshot(state, scenario, snapshotOpts(profile)));
 });
 
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
@@ -148,8 +151,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // Apply the chip to the current state (seeded outfit marker resolved first —
   // this path persists), then persist.
   const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
-  const current = stored ? driftChatState(base, profile, { advance: false }) : base;
-  const next = applyChatAction(current, body.value.action);
+  const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
+  const current = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
+  const next = applyChatAction(current, body.value.action, scenario.clockMinutes);
   await persistChatState(chatId, owned.participant.characterId, next);
-  return jsonOk(chatStateSnapshot(next, snapshotOpts(profile)));
+  return jsonOk(chatStateSnapshot(next, scenario, snapshotOpts(profile)));
 });

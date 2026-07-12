@@ -222,26 +222,31 @@ describe("POST /api/chats with presetId — scenario seeding (spec §1.5)", () =
     expect(chatRes.status).toBe(201);
     const { id: chatId } = (await chatRes.json()) as { id: string };
 
+    // The chat-wide half seeds the SCENARIO on the chat row (followups ruling 8)…
+    const [scenario] = await db()
+      .select({ premise: characterChats.premise, activeSocialCards: characterChats.activeSocialCards })
+      .from(characterChats)
+      .where(eq(characterChats.id, chatId));
+    expect(scenario).toBeDefined();
+    expect(scenario?.premise).toBe("Snowed in together at the cabin.");
+    const cards = scenario?.activeSocialCards as { id: string }[];
+    expect(cards.map((c) => c.id)).toEqual(["card-quiet"]);
+    // …and the character-specific half seeds the primary's state row.
     const [state] = await db()
       .select({
-        premise: characterChatState.premise,
         outfit: characterChatState.outfit,
         outfitExposed: characterChatState.outfitExposed,
         regard: characterChatState.regard,
         relationshipRecord: characterChatState.relationshipRecord,
-        activeSocialCards: characterChatState.activeSocialCards,
       })
       .from(characterChatState)
       .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, ids.character)));
     expect(state).toBeDefined();
-    expect(state?.premise).toBe("Snowed in together at the cabin.");
     expect(state?.outfit).toBe("an oversized flannel shirt");
     expect(state?.outfitExposed).toBe(false);
     expect(state?.regard).toBe(regardBandMidpoint("friendly")); // never the raw band string
     // The texture rides too (followups ruling 4).
     expect(state?.relationshipRecord).toMatchObject({ kind: "ski-trip acquaintances" });
-    const cards = state?.activeSocialCards as { id: string }[];
-    expect(cards.map((c) => c.id)).toEqual(["card-quiet"]);
   });
 
   it("ignores a presetId the user does not own — the chat is created unseeded", async (t) => {

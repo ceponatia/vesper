@@ -3,7 +3,7 @@ import { characterProfileSchema, currentScenePlace, emptyCharacterProfile } from
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
 import { characterChatMessages, db, jobs } from "@/server/db";
-import { enqueueChatPlaceImage, loadChatState, resolveSeededOutfit } from "@/server/engine";
+import { enqueueChatPlaceImage, loadChatScenario, loadChatState, resolveSeededOutfit } from "@/server/engine";
 import { chatLookKey, renderCharacterSceneImage } from "@/server/images";
 import { log } from "@/server/log";
 
@@ -85,11 +85,12 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // garment phrase here like every other state consumer.
     const stored = await loadChatState(args.chatId, args.character.id);
     const chatState = stored ? await resolveSeededOutfit(stored, args.userId, profile) : null;
+    const scenario = await loadChatScenario(args.chatId);
 
     // The setting comes from chat scene memory (chat-scene-fidelity.plan.md slice 2):
     // the current place's agent-written sketch when it exists, else its established
     // name + details. Empty memory keeps the DEFAULT_CHAT_ROOM placeholder.
-    const place = chatState ? currentScenePlace(chatState.sceneMemory) : null;
+    const place = scenario ? currentScenePlace(scenario.sceneMemory) : null;
     const room = place
       ? place.sketch?.trim() || [place.name, place.details.join("; ")].filter(Boolean).join(" — ")
       : undefined;
@@ -114,13 +115,13 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           profile,
           avatarImageId: args.character.avatarImageId,
           room,
-          timeOfDay: chatState?.sceneMemory.timeOfDay,
+          timeOfDay: scenario?.sceneMemory.timeOfDay,
           recentChat,
           outfit: chatState?.outfit ?? "",
           outfitExposed: chatState?.outfitExposed ?? false,
           meters: chatState?.meters,
           conditions: chatState?.conditions,
-          sceneModel: chatState?.sceneModel,
+          sceneModel: scenario?.sceneModel,
           chatId: args.chatId,
           anchorMessageId,
           flavor: args.flavor,

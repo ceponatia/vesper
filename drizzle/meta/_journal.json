@@ -288,6 +288,20 @@
       "when": 1783860941048,
       "tag": "0040_sturdy_nightmare",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783861766712,
+      "tag": "0041_fair_turbo",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1783861837158,
+      "tag": "0042_big_mongu",
+      "breakpoints": true
     }
   ]
 }

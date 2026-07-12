@@ -41,7 +41,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
     undefined,
     "characters.profile",
   );
-  const state = await editChatState({
+  const { state } = await editChatState({
     chatId,
     characterId,
     ownerId: user.id,
