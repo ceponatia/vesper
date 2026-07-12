@@ -267,6 +267,13 @@
       "when": 1783855393861,
       "tag": "0037_tearful_skullbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1783857229210,
+      "tag": "0038_strong_shiver_man",
+      "breakpoints": true
     }
   ]
 }

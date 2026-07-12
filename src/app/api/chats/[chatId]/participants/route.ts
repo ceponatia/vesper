@@ -4,6 +4,7 @@ import { z } from "zod";
 import { newId } from "@/lib/ids";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { characters, chatParticipants, db } from "@/server/db";
+import { seedChatRelationships } from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat, resolveChatMemoryGroupId } from "../../owned";
 
 type Params = { chatId: string };
@@ -52,5 +53,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const memoryGroupId = await resolveChatMemoryGroupId(user.id, character.id, body.value.memory, newId());
   const sort = Math.max(...owned.roster.map((m) => m.sort)) + 1;
   await db().insert(chatParticipants).values({ chatId, characterId: character.id, memoryGroupId, sort });
+  // The joiner's pairs inherit library-default edges (existing rows kept).
+  await seedChatRelationships(chatId, [...owned.roster.map((m) => m.characterId), character.id]);
   return jsonOk({ characterId: character.id, memoryGroupId, sort }, 201);
 });

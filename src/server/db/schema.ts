@@ -220,6 +220,58 @@ export const chatParticipants = pgTable(
  * state exactly the way the scenario modal writes those fields. A small owned
  * table now; `LibraryKind` graduation (sharing/cloning) later if wanted.
  */
+/**
+ * Per-conversation directed relationship matrix (relationship-model.plan.md
+ * §The matrix): one row per (chat, from, to) roster pair — the chat analogue of
+ * participant_relationships, record-shaped from day one ("A loves B, B secretly
+ * resents A" is a data state). NPC↔NPC records are static authored texture in
+ * v2 (no pulse, no ratchet — lived shifts reach the narrator via archivist
+ * relationship facts); the character→player edge stays on character_chat_state.
+ * Authoring is shared-cell (kind/history mirrored across both rows); storage is
+ * fully directed. Seeded at creation from character_relationships defaults.
+ */
+export const characterChatRelationships = pgTable(
+  "character_chat_relationships",
+  {
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => characterChats.id, { onDelete: "cascade" }),
+    fromCharacterId: text("from_character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    toCharacterId: text("to_character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    /** RelationshipRecord (contracts/relationships/record.ts) — live scalars + texture. */
+    record: jsonb("record").notNull().default({}),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.chatId, t.fromCharacterId, t.toCharacterId] })],
+);
+
+/**
+ * Library-level default relationship edges (owner ruling 2026-07-07): the
+ * character editor's Relationships tab — how A stands toward B by default;
+ * conversation creation seeds its matrix from these for every roster pair. A
+ * real table (never a profile field) exactly so deleting a character cascades
+ * its edges instead of leaving dangling names.
+ */
+export const characterRelationships = pgTable(
+  "character_relationships",
+  {
+    fromCharacterId: text("from_character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    toCharacterId: text("to_character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    /** AuthoredRelationshipRecord (contracts/relationships/record.ts) — band picks + texture. */
+    record: jsonb("record").notNull().default({}),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.fromCharacterId, t.toCharacterId] })],
+);
+
 export const chatScenarioPresets = pgTable(
   "chat_scenario_presets",
   {

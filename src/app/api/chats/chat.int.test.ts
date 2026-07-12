@@ -8,6 +8,7 @@ import {
   characterChatState,
   characters,
   chatParticipants,
+  characterRelationships,
   chatScenarioPresets,
   db,
   episodes,
@@ -46,6 +47,8 @@ import { PATCH as takePatch } from "./[chatId]/messages/[messageId]/take/route";
 import { GET as sceneList } from "./[chatId]/scene/route";
 import { PATCH as statePatch } from "./[chatId]/state/route";
 import { POST as participantAdd } from "./[chatId]/participants/route";
+import { GET as matrixGet, PUT as matrixPut } from "./[chatId]/relationships/route";
+import { GET as libGet, PUT as libPut } from "../characters/[id]/relationships/route";
 import { DELETE as participantRemove, PATCH as participantPatch } from "./[chatId]/participants/[characterId]/route";
 
 async function probe(): Promise<boolean> {
@@ -1069,5 +1072,111 @@ describe("roster — participants add/remove/presence (multi-character-chat.plan
     expect(second?.premise).toBe("A rain-soaked rooftop bar.");
     expect(primary?.outfit).toBe("a red slip dress");
     expect(second?.outfit).not.toBe("a red slip dress");
+  });
+});
+
+describe("relationship matrix — seeding + routes (relationship-model.plan.md slice 6)", () => {
+  const mkCharacter = async (name: string): Promise<string> => {
+    const [row] = await db().insert(characters).values({ ownerId: authState.user.id, name, profile: {} }).returning();
+    if (!row) throw new Error("failed to seed character");
+    return row.id;
+  };
+  const matrixReq = (chatId: string, body: unknown) =>
+    new NextRequest(`http://t/api/chats/${chatId}/relationships`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const libReq = (id: string, body: unknown) =>
+    new NextRequest(`http://t/api/characters/${id}/relationships`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const idCtx = (id: string) => ({ params: Promise.resolve({ id }) });
+
+  it("creation seeds the matrix from library defaults at band midpoints", async (t) => {
+    if (!ready) return t.skip();
+    const aId = await mkCharacter("Edge A");
+    const bId = await mkCharacter("Edge B");
+    await db().insert(characterRelationships).values({
+      fromCharacterId: aId,
+      toCharacterId: bId,
+      record: { familiarity: "deeply_known", regard: "cool", kind: "estranged friends", history: "", looming: false },
+    });
+
+    const res = await chatsCreate(createReq({ characterIds: [aId, bId], memory: "fresh" }), collectionCtx);
+    expect(res.status).toBe(201);
+    const { id: chatId } = (await res.json()) as { id: string };
+
+    const got = await matrixGet(new NextRequest(`http://t/api/chats/${chatId}/relationships`), ctx(chatId));
+    const body = (await got.json()) as { edges: Array<{ fromCharacterId: string; toCharacterId: string; record: { familiarity: number; regard: number; kind: string } }> };
+    const edge = body.edges.find((e) => e.fromCharacterId === aId && e.toCharacterId === bId);
+    expect(edge).toBeDefined();
+    expect(edge!.record.kind).toBe("estranged friends");
+    expect(edge!.record.familiarity).toBeGreaterThan(50); // deeply_known midpoint
+    expect(edge!.record.regard).toBeLessThan(0); // cool midpoint
+  });
+
+  it("PUT upserts roster edges and refuses foreign characters", async (t) => {
+    if (!ready) return t.skip();
+    const aId = await mkCharacter("Put A");
+    const bId = await mkCharacter("Put B");
+    const res = await chatsCreate(createReq({ characterIds: [aId, bId], memory: "fresh" }), collectionCtx);
+    const { id: chatId } = (await res.json()) as { id: string };
+
+    const put = await matrixPut(
+      matrixReq(chatId, {
+        edges: [
+          { fromCharacterId: aId, toCharacterId: bId, record: { familiarity: "familiar", regard: "warm", kind: "old flames", history: "", looming: true } },
+        ],
+      }),
+      ctx(chatId),
+    );
+    expect(put.status).toBe(200);
+    const body = (await put.json()) as { edges: Array<{ record: { kind: string; looming: boolean } }> };
+    expect(body.edges[0]?.record.kind).toBe("old flames");
+    expect(body.edges[0]?.record.looming).toBe(true);
+
+    const bad = await matrixPut(
+      matrixReq(chatId, {
+        edges: [{ fromCharacterId: aId, toCharacterId: ids.otherCharacter, record: { familiarity: "strangers", regard: "neutral", kind: "", history: "", looming: false } }],
+      }),
+      ctx(chatId),
+    );
+    expect(bad.status).toBe(404);
+  });
+
+  it("library defaults PUT/GET roundtrip with replace-set semantics", async (t) => {
+    if (!ready) return t.skip();
+    const aId = await mkCharacter("Lib A");
+    const bId = await mkCharacter("Lib B");
+    const cId = await mkCharacter("Lib C");
+
+    const put1 = await libPut(
+      libReq(aId, {
+        edges: [
+          { toCharacterId: bId, record: { familiarity: "acquainted", regard: "friendly", kind: "coworkers", history: "", looming: false } },
+          { toCharacterId: cId, record: { familiarity: "strangers", regard: "neutral", kind: "", history: "", looming: false } },
+        ],
+      }),
+      idCtx(aId),
+    );
+    expect(put1.status).toBe(200);
+
+    // Replace-set: dropping C keeps only B.
+    await libPut(
+      libReq(aId, {
+        edges: [{ toCharacterId: bId, record: { familiarity: "familiar", regard: "warm", kind: "coworkers", history: "", looming: false } }],
+      }),
+      idCtx(aId),
+    );
+    const got = (await (await libGet(new NextRequest(`http://t/api/characters/${aId}/relationships`), idCtx(aId))).json()) as {
+      edges: Array<{ toCharacterId: string; toName: string; record: { familiarity: string } }>;
+    };
+    expect(got.edges).toHaveLength(1);
+    expect(got.edges[0]?.toCharacterId).toBe(bId);
+    expect(got.edges[0]?.toName).toBe("Lib B");
+    expect(got.edges[0]?.record.familiarity).toBe("familiar");
   });
 });
