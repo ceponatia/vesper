@@ -65,15 +65,18 @@ exchange:
    verbatim window (`CHARACTER_CHAT_HISTORY_TURNS` = 40 exchanges) is everything after it.
    When the unsummarized tail reaches the fold trigger, a detached `chat_summary` job is
    enqueued fire-and-forget (§4).
-4. **State drift.** `driftChatState` (pure): this exchange's within-visit tick on the
-   chat-local clock (`CHAT_TICK_MINUTES`) — meters decay toward personalized baselines,
-   clock-expired conditions drop. **No time passes between visits** (spec §8, D8 — the
-   wall-clock model was removed outright): the only between-scene lever is a player
-   **time skip** (`POST …/time-skip`), which advances the clock, expires conditions
-   through the same filter, stamps a one-shot `pending_skip_note` (worded by regard band,
-   `chatSkipNote`, with a "a life meanwhile" license), and records itself into the
-   `skip_history` ring — **meters untouched** (D14, flavor-only v1). Lazily seeds from
-   the authored defaults when no row exists.
+4. **State drift.** The pipeline loads the shared **scenario** once, ticks its clock
+   once for the whole exchange (`CHAT_TICK_MINUTES` — ONE story timeline, never per
+   member), then `driftChatState` (pure) drifts each member against it — meters decay
+   toward personalized baselines (present members only; the away-freeze), conditions
+   expire against the shared clock for everyone. **No time passes between visits**
+   (spec §8, D8 — the wall-clock model was removed outright): the only between-scene
+   lever is a player **time skip** (`POST …/time-skip`), which advances the scenario
+   clock, stamps its one-shot `pending_skip_note` (worded by the primary's regard band,
+   `chatSkipNote`, with a "a life meanwhile" license) and `skip_history` ring, then
+   gives each PRESENT member the per-character half (condition expiry, scene-budget
+   reset, feeling decay) — **meters untouched** (D14, flavor-only v1). Lazily seeds
+   from the authored defaults when no row exists.
 5. **RAG recall.** `retrieveChatMemory` — fused retrieval over the participant's
    **memory group** (`MemoryScope` `{kind:"chat", groupId}`, [memory.md](memory.md)
    §Memory keying): each of last turn's persisted `memoryQueries` + this input is
@@ -146,38 +149,58 @@ exchange:
 
 ## Tracked state
 
-One `character_chat_state` row per **(chat, participant)** — PK `(chat_id, character_id)`: the full meter registry, the two
-relationship axes (relationship-model v2: `regard` −100..100, the volatile feeling axis
-that was `affinity`; `familiarity` 0..100, the moments+time ratchet with its
+Tracked state is **split in two** (followups rulings 8–9, 2026-07-12): what belongs to
+ONE character lives on their state row; what belongs to the CONVERSATION lives on the
+chat row as the shared **scenario**.
+
+**Per character** — one `character_chat_state` row per **(chat, participant)**, PK
+`(chat_id, character_id)`: the full meter registry, the two relationship axes
+(relationship-model v2: `regard` −100..100, the volatile feeling axis that was
+`affinity`; `familiarity` 0..100, the moments+time ratchet with its
 `familiarity_scene_gain` budget — trickle capped at `acquainted`, archivist facts push
 past it, reset on a time skip) plus the authored `relationship_record` texture
 (kind/history/`presented` mask/looming — `contracts/relationships/record.ts`),
-self-expiring conditions, the `mindNote`, the per-chat scenario (premise, free-text outfit
-+ exposed flag, active social cards), the anti-repetition `surfacedCues` bands, the RAG
-carry-overs (`memoryQueries`, `open_loops` — the archivist's ≤3 "unfinished business"
-phrases, re-emitted in full each exchange so resolved loops fall off; persisted narrative
-`attributeOverlays`; `lastPulseTrace` / `lastMemoryTrace`), the relationship arc
-(`relationship_history` — a ≤200 sample ring `{at, clockMinutes, regard, band, familiarity}`
-appended when either axis moved; `milestones` — ≤100 of
+self-expiring conditions, the `mindNote`, the free-text outfit + exposed flag, the
+anti-repetition `surfacedCues` bands, the RAG carry-overs (`memoryQueries`,
+`open_loops` — the archivist's ≤3 "unfinished business" phrases, re-emitted in full each
+exchange so resolved loops fall off; persisted narrative `attributeOverlays`;
+`lastPulseTrace` / `lastMemoryTrace`), the relationship arc (`relationship_history` — a
+≤200 sample ring `{at, clockMinutes, regard, band, familiarity}` appended when either
+axis moved; `milestones` — ≤100 of
 `first_exchange` / `stage_up` / `stage_down` / `familiarity_up` / `strong_reaction` / `player_marked`),
-the time model (`clock_minutes` — the **only** clock, D3/D8; `skip_history` ring ≤50;
-one-shot `pending_skip_note`), `scene_auto` (`"off" | "milestones"`, the slice-9
-auto-scene toggle — text with headroom, never a boolean), `scene_memory` (the
-accumulating narrator-imagined setting — see §Scene memory), `callback_history`
-(the memory-callback anti-repeat ring ≤20 — see §Memory callbacks), `feeling`
-(the persistent feeling + bruise — see §Emotional weather), `selfie_history`
-(the selfie-send ring ≤20 behind the offer cooldown — see §Selfies), and `drives`
-(the runtime desires & secrets — see §Drives). `upsertChatState` is the
-**one** column-list source shared by the guarded (mid-exchange) and unguarded
-(author-edit) writers; `ChatStateEdit` covers every stored column (inspector-grade —
-open loops, memory queries, surfaced cues, attribute overlays, scene memory included). State is
-inspected/edited through the State-tools modal ([ui.md](ui.md) §The conversation page).
+`callback_history` (the memory-callback anti-repeat ring ≤20 — see §Memory callbacks),
+`feeling` (the persistent feeling + bruise — see §Emotional weather), `selfie_history`
+(the selfie-send ring ≤20 behind the offer cooldown — see §Selfies), `drives` (the
+runtime desires & secrets — see §Drives), and `presence`/`quiet_exchanges`
+(§Multi-character).
+
+**Chat-wide** — the **scenario** on `character_chats` (`ChatScenario`;
+`loadChatScenario`/`saveChatScenario`/`seedChatScenario` in `engine/chat-state.ts`,
+seeded at creation from the PRIMARY's profile — premise from `playerRelationship.note`,
+house rules from their own cards — then preset-overlaid and author-owned): the
+`premise`, the SETTING-wide `active_social_cards` (one rule set for every member —
+per-character divergence rides character **tags** flipping the reaction, never
+per-character rule lists), `scene_auto` (`"off" | "milestones"` — text with headroom,
+never a boolean), `scene_model`, `scene_memory` (the accumulating narrator-imagined
+setting — see §Scene memory), the time model (`clock_minutes` — **one** story timeline
+for the whole roster, D3/D8; away members skip meter decay, never fork the clock;
+`skip_history` ring ≤50; one-shot `pending_skip_note`), and `pre_exchange_scenario`
+(the rollback anchor's chat-wide half).
+
+`upsertChatState` is the **one** state-row column-list source shared by the guarded
+(mid-exchange) and unguarded (author-edit) writers; `editChatState` is ONE patch surface
+over both stores (`ChatStateEdit` — per-character fields write the target's row,
+chat-wide fields write the scenario) and `chatStateSnapshot(state, scenario)` merges
+them back into the client's back-compat snapshot shape. State is inspected/edited
+through the per-character **Character sheet** and the chat-wide **Scenario** modal
+([ui.md](ui.md) §The conversation page).
 
 ## Scene memory
 
 Chat locations are **narrator-imagined** (not world entities — the lane has no locations,
 presence, or wardrobe state), so nothing kept an established setting consistent. `scene_memory`
-(one jsonb column, `contracts/turns/chat-scene-memory.ts` `ChatSceneMemory`) is an accumulating,
+(one jsonb column on the CHAT row — the shared scenario, one imagined setting for the whole
+roster; `contracts/turns/chat-scene-memory.ts` `ChatSceneMemory`) is an accumulating,
 forward-compatible memory: `{ current?, timeOfDay?, places: [{ name, details[], connections[] }] }`
 with hard caps (≤12 places, ≤8 details/place, ≤6 connections, length caps) and a `parseOr`
 degraded default (empty memory) at the load boundary. It is maintained **deterministic-first**,
@@ -460,12 +483,30 @@ both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-
   with no character present the reply is a **cutaway**. The §9 prefix/tail cache split
   survives (sheets re-render on roster/presence/tier/band change).
 - **Scoped dynamics**: the reaction pulse runs **referenced-only** (members the player's
-  turn names; the primary as anchor fallback when nobody is); tier-1 **memory legs** run
-  per present + recently-active member against their OWN group with per-leg k tightened by
+  turn names; the primary as anchor fallback when nobody is), resolving reactions against
+  the SCENARIO's setting-wide card set (ruling 9); tier-1 **memory legs** run per
+  present + recently-active member against their OWN group with per-leg k tightened by
   the active count; the ONE archivist extraction files to **every present witness's**
-  group. Substrate simplifications (recorded in the plan): archivist state folds
-  (loops/scene/outfit/drives), milestones, selfies, callbacks, sensory focus, and the
-  `turn_context` layout stay primary-scoped / 1-on-1-only.
+  group.
+- **Per-member note-takers + folds** (rulings 10–11): the shared archivist keeps the
+  scene-level reads (episode, facts, queries, scene, presence); every PRESENT member gets
+  a small **personal pass** (`runChatPersonalNotes`, `prompts/chat-personal-notes.ts` —
+  openLoops / outfit / attributeChanges / driveUpdates) folded into their own row, and
+  everyone who **pulsed** gets the deterministic folds (relationship-arc samples,
+  milestones, weather via the pulse) through the pure `settleEnsembleMember`. The classic
+  1-on-1 keeps the single combined archivist call — no cost regression.
+- **Group perks** (ruling 12): a selfie request routes to the member the message
+  **addresses by name** (unaddressed falls to the lead; offers stay lead-gated) — their
+  ring burns, their identity renders; the remember-when **callback** draws from ONE
+  member's own group (addressed else most-recently-active present), gated on their ring
+  and toned by their regard; **sensory focus** aims at the member the message studies;
+  disinhibition + condition-driven transient appearance render **per present member** in
+  the ensemble tail. The `turn_context` layout stays 1-on-1-only.
+- **Per-character sheets** (ruling 13): tapping a roster member opens THEIR Character
+  sheet (axes/texture toward the player, meters, conditions, mind note, loops, outfit +
+  exposure, presence toggle); the state routes take `?characterId=` targeting. The
+  Scenario modal holds only the chat-wide fields (premise, presets, house rules,
+  auto-scene + scene model).
 - **Relationship matrix** (`character_chat_relationships`, directed rows): per-conversation
   NPC↔NPC records seeded at creation/join from the library defaults
   (`character_relationships` — the character editor's **Relationships tab**), edited
@@ -512,23 +553,27 @@ guarded state write:
   line retracts/re-extracts its memory (`reconcileMessageMemory` / `reextractEditedReply`),
   and "another take" rolls it back exactly.
 - The finalizer also appends the **relationship arc** (`appendRelationshipSample` /
-  `deriveExchangeMilestones`, `contracts/relationships/history.ts`), clears the one-shot
-  skip note, and returns `{bigMoment}` — true on a regard-band crossing or strong reaction —
+  `deriveExchangeMilestones`, `contracts/relationships/history.ts`), persists the
+  **scenario** beside the state (the merged scene memory, the clock the pipeline ticked
+  once for the whole exchange, the one-shot skip-note clear — same prompting-message
+  guard), and returns `{bigMoment}` — true on a regard-band crossing or strong reaction —
   which the route uses to queue an **auto scene** anchored to the reply when the chat's
   `scene_auto` is `"milestones"` (`queueChatScene`, deduped against live renders,
   fire-and-forget; a failed queue log-warns and never touches the settled reply). Caveat:
   a scene stays anchored to the message id it was queued for, so if "another take" later
   replaces that reply, the inline moment illustrates the superseded beat — acceptable.
-- The finalizer also persists the **pre-exchange snapshot**
-  (`character_chat_state.pre_exchange_state`) — the rollback anchor "another take"
+- The finalizer also persists the **pre-exchange snapshots** — the state half
+  (`character_chat_state.pre_exchange_state`) and the scenario half
+  (`character_chats.pre_exchange_scenario`) — the rollback anchors "another take"
   restores so a regenerated exchange never double-applies drift/pulse effects (the
-  relationship samples/milestones it recorded roll back with it). `loadPreExchangeState`
-  is three-valued: a recorded `{}` is the **first-exchange sentinel** (no prior state →
-  the regenerate re-seeds from the authored defaults, exactly as the live first exchange
-  did), a real state rolls back to it, and a **missing** row degrades to no-rollback with
-  `chat_state.snapshot.missing` (followups F3). It is written under the **same
-  prompting-message guard** as the paired state save, so a mid-stream delete can't split
-  the two (F5). "First exchange" (the arc baseline + `first_exchange` milestone) keys on an
+  relationship samples/milestones AND the clock tick / scene merge / callback burn roll
+  back with them). `loadPreExchangeState` is three-valued: a recorded `{}` is the
+  **first-exchange sentinel** (no prior state → the regenerate re-seeds from the
+  authored defaults, exactly as the live first exchange did), a real state rolls back to
+  it, and a **missing** row degrades to no-rollback with `chat_state.snapshot.missing`
+  (followups F3); `loadPreExchangeScenario` treats `{}` the same way (keep the live
+  scenario). Both are written under the **same prompting-message guard** as the paired
+  state save, so a mid-stream delete can't split the halves (F5). "First exchange" (the arc baseline + `first_exchange` milestone) keys on an
   empty relationship history, not a null snapshot, so a state row that pre-exists the first
   send — a premise Save, an opening beat, a pickup skip — still records it (F4).
 - **State mutations 409 while a reply streams** (followups F1): the exchange holds the
@@ -588,10 +633,10 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | `PATCH/DELETE /api/chats/:chatId/messages/:messageId` | edit / snip one line — both reconcile the line's extracted memory (spec §4.3) |
 | `PATCH /api/chats/:chatId/messages/:messageId/take` | make a recorded take the displayed reply (display-only; spec §4.1) |
 | `GET/POST /api/chat-presets` · `DELETE /api/chat-presets/:id` | scenario presets (spec §1.5); `POST /api/chats {presetId}` seeds a new conversation from one. UI: Apply/Save-as/Delete preset in `chat-scenario-modal.tsx`, "Start from preset" in `new-chat-dialog.tsx` |
-| `GET/PATCH/POST /api/chats/:chatId/state` | state snapshot (drift-on-read) · author edit (`ChatStateEdit`, every stored column) · action chip |
-| `GET/POST /api/chats/:chatId/scene` | list **this chat's** scenes only (sibling chats / un-chat-keyed rows stay Gallery-only) plus `rendering` — true while a `chat_scene_image` job is live (`hasLiveChatSceneJob`), which is what keeps the client polling through the composer step *before* the pending image row exists · queue a render via `queueChatScene` (409 `scene_busy` while one is live). The render honors the chat's `sceneModel` pick (`character_chat_state.scene_model`, saved on select from the strip's dropdown via the state PATCH): `"reference"` = the identity-locked avatar edit; a t2i key = a style hot-swap rendered without the avatar ([images.md](images.md) §Scene images) |
+| `GET/PATCH/POST /api/chats/:chatId/state` | state snapshot (drift-on-read; `?characterId=` targets any roster member — the per-character sheet, ruling 13) · author edit (`ChatStateEdit`, ONE patch surface — per-character fields to the target's row, chat-wide fields to the scenario; `?characterId=` too) · action chip (primary) |
+| `GET/POST /api/chats/:chatId/scene` | list **this chat's** scenes only (sibling chats / un-chat-keyed rows stay Gallery-only) plus `rendering` — true while a `chat_scene_image` job is live (`hasLiveChatSceneJob`), which is what keeps the client polling through the composer step *before* the pending image row exists · queue a render via `queueChatScene` (409 `scene_busy` while one is live). The render honors the chat's `sceneModel` pick (`character_chats.scene_model` — the shared scenario; saved on select from the strip's dropdown via the state PATCH, or the Scenario modal's select): `"reference"` = the identity-locked avatar edit; a t2i key = a style hot-swap rendered without the avatar ([images.md](images.md) §Scene images) |
 | `POST /api/chats/:chatId/remember` | "remember this" (spec §6.4, D15): pin an `origin:"player"` fact — confidence 1, no message anchor, force-retrieved, never superseded by extraction ([memory.md](memory.md)) |
-| `POST /api/chats/:chatId/time-skip` | `{amount: moments\|hours\|overnight\|days}` → `CHAT_SKIP_MINUTES`; clock + condition expiry + one-shot skip note + `skip_history`; meters untouched (D14) |
+| `POST /api/chats/:chatId/time-skip` | `{amount: moments\|hours\|overnight\|days}` → `CHAT_SKIP_MINUTES`; the SHARED scenario clock + skip note (worded by the primary's band) + `skip_history`, then each PRESENT member's condition expiry / scene-budget reset / feeling decay; meters untouched (D14) |
 | `GET /api/chats/:chatId/relationship` | Relationship-panel payload: both axis bands + scalars, region label, texture, history samples, milestones, story-so-far, open loops |
 | `POST /api/chats/:chatId/milestones` | "mark this moment": append a `player_marked` milestone on a message (label defaults to a line excerpt) |
 | `POST /api/chats/:chatId/summary/rebuild` | `rebuildChatSummary` — reset + re-fold the rolling summary from the full transcript under the summary lock (heavy-write rate limited) |
@@ -635,7 +680,7 @@ assert the fallback **and** the code ([testing.md](testing.md)).
 | Scene reference anchors (look / place — §Scene reference anchors) | `server/images/chat-look.ts` (key + renders) + `server/engine/chat-reference-enqueue.ts` / `chat-reference-images.ts` (jobs) + consumption in `images/character-scene.ts` and `scene/queue.ts` |
 | Drives (schemas / gate / updates — §Drives) | `contracts/personality/drives.ts` (pure) + `buildDrivesSection` in `prompts/character-chat.ts` + the finalize fold in `chat-state.ts` |
 | Initiative (the reopen opener — §Initiative) | `server/engine/chat-initiative.ts` (pure cue) + the `initiative` flag through route/pipeline + the pickup-strip button |
-| Multi-character (roster / ensemble / matrix — §Multi-character) | `app/api/chats/[chatId]/participants/*` + `…/relationships/route.ts` + `app/api/characters/[id]/relationships/route.ts`; `server/engine/chat-relationships.ts` (seed/load/upsert); the ensemble builders + `ENSEMBLE_CHAT_RULES` in `prompts/character-chat.ts`; `mentionsCharacter`/`spokeInReply` in `chat-intent.ts`; UI in `components/chat/chat-roster-panel.tsx` + `chat-relationships-editor.tsx` + `components/characters/relationships-editor.tsx` |
+| Multi-character (roster / ensemble / matrix — §Multi-character) | `app/api/chats/[chatId]/participants/*` + `…/relationships/route.ts` + `app/api/characters/[id]/relationships/route.ts`; `server/engine/chat-relationships.ts` (seed/load/upsert); the ensemble builders + `ENSEMBLE_CHAT_RULES` in `prompts/character-chat.ts`; `mentionsCharacter`/`spokeInReply` in `chat-intent.ts`; the per-member personal pass (`runChatPersonalNotes` in `chat-memory.ts` + `prompts/chat-personal-notes.ts`) + `settleEnsembleMember` in `chat-state.ts`; UI in `components/chat/chat-roster-panel.tsx` + `chat-relationships-editor.tsx` + `components/characters/relationships-editor.tsx` |
 | Scene memory (schema + merge + movement switch) | `contracts/turns/chat-scene-memory.ts` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |

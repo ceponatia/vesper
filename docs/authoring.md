@@ -40,31 +40,36 @@ it creates whole characters from a prompt; these build parts of an existing shee
   still at the blank-create default — a bio that says "a succubus barmaid" adopts the
   species on an otherwise untouched sheet, via the same inference as create mode). The
   outfit leg is skipped entirely (no spend) when any garment is authored.
-- **Per-tab Re-draft** ("↻ Re-draft tab", `mode: "redraft"` + a `scope`): rewrites ONE
-  tab from the whole sheet, narrator-formatted — misplaced personality prose moves out
-  of the bio, disposition re-reads off the authored text. Five scopes
+- **Per-tab Re-draft** ("↻ Re-draft tab", `mode: "redraft"` + a `scope`): a **full
+  re-sync** of ONE tab from the rest of the sheet (multi-character-chat.followups.md
+  ruling 1, 2026-07-12), narrator-formatted — misplaced personality prose moves out of
+  the bio, disposition re-reads off the authored text. Five scopes
   (`lib/character-scopes.ts`: `profile | attributes | personality | disposition |
-  outfit`) map onto the three legs (`server/authoring/character-redraft.ts`); the scope
-  merge takes only the target tab's fields, and `manual`-provenance attribute/trait
-  values mechanically survive — a re-draft that disagreed with one is reported as a
-  `forge.character.redraft.<scope>.kept_manual` diagnostic, never applied. Text fields
-  and non-provenance lists (disposition tags, preferences) ARE rewritten — that is the
-  tab's purpose; the unsaved draft is the review step. A re-draft never changes the
-  species cluster. One deliberate scope/tab mismatch: the `disposition` scope still
-  owns `preferences` (they ride the profile forge leg with tags + traits) even though
-  the editor shows likes/dislikes on the Personality tab since 2026-07-11, so a
-  Disposition re-draft re-derives them; social cards are never re-drafted.
+  outfit`) map onto the three legs (`server/authoring/character-redraft.ts`); the
+  scope merge takes only the target tab's fields, and player-set (`manual`-provenance)
+  attribute/trait values ARE revisable — the unsaved-draft review is the safety net
+  ("Forge the rest" remains the fill-only tool). Scope limits that stay: the `profile`
+  scope rewrites ONLY bio / personality / voice (never name, age, aliases, or library
+  tags), and a re-draft never changes the species cluster — that cascade is too
+  destructive for a formatting pass. One deliberate scope/tab mismatch: the
+  `disposition` scope still owns `preferences` (they ride the profile forge leg with
+  tags + traits) even though the editor shows likes/dislikes on the Personality tab
+  since 2026-07-11, so a Disposition re-draft re-derives them; social cards are never
+  re-drafted.
 - **Portrait → attributes** ("◉ From portrait",
   `POST /api/characters/:id/attributes/from-portrait`): the codebase's first
   image-understanding capability (`server/authoring/portrait-attributes.ts`; vision
   model via `visionModelId()`, image parts through `generateChecked`'s `images`
   option). Reads the character's **ready canonical avatar** (id taken from the owned
-  row, never the client) and fills **unset appearance attributes only** — the
-  vocabulary excludes personality-tab and intimate categories, output grounds against
-  the registry + realized body like every forge leg. A reading that disagrees with an
-  existing value (any provenance) lands as a `forge.character.portrait.portrait_conflict`
-  diagnostic. Keyless demo mode degrades to a no-op — it never invents a "reading" of
-  an image nobody looked at.
+  row, never the client), fills **unset appearance attributes only** — the vocabulary
+  excludes personality-tab and intimate categories, output grounds against the
+  registry + realized body like every forge leg — and returns **structured results**
+  (followups ruling 2): the auto-filled list plus every disagreement with an existing
+  value as `{attributeId, label, current, proposed}`. The editor auto-opens a **"Review
+  portrait changes"** dialog: each conflict a pre-checked `current → proposed` row, the
+  auto-fills listed read-only (the debugging window into what the vision pass read);
+  Apply overwrites the checked values on the draft. Keyless demo mode degrades to a
+  no-op — it never invents a "reading" of an image nobody looked at.
 
 ## World forge
 
