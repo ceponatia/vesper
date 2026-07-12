@@ -48,6 +48,20 @@ describe("renderSheetConcept", () => {
     });
     expect(renderSheetConcept(draft)).not.toContain("Untitled");
   });
+
+  it("renders authored drives with their secrecy and reveal gate", () => {
+    const draft = draftWith((d) => {
+      d.profile.drives = [
+        { want: "to sail north", why: "the ice is melting", secrecy: "open" },
+        { want: "a hidden debt", why: "", secrecy: "secret", revealBand: { axis: "regard", band: "close" } },
+        { want: "an ungated secret", why: "", secrecy: "secret" },
+      ];
+    });
+    const concept = renderSheetConcept(draft);
+    expect(concept).toContain('[open] wants to sail north (the ice is melting)');
+    expect(concept).toContain('[secret — reveal at regard "close"] wants a hidden debt');
+    expect(concept).toContain('[secret — reveal at familiarity "familiar"] wants an ungated secret');
+  });
 });
 
 describe("adoptInferredSpecies", () => {

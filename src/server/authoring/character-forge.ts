@@ -20,10 +20,17 @@ import {
   itemDefinitionSchema,
   canonicalTagId,
   dispositionTags,
+  DRIVES_MAX,
+  DRIVE_WANT_MAX_CHARS,
+  DRIVE_WHY_MAX_CHARS,
+  familiarityBandById,
+  familiarityBands,
   interactionConceptIds,
   interactionFamilies,
   normalizeTag,
   axisRange,
+  regardBandById,
+  regardBands,
   traitRegistry,
   wearerTargetById,
   wearerTargets,
@@ -31,6 +38,7 @@ import {
   type AttributeValue,
   type CharacterProfile,
   type DiagnosticSink,
+  type Drive,
   type HeritageDefinition,
   type ItemDefinition,
   type Preference,
@@ -209,6 +217,23 @@ const profileSectionSchema = z.object({
       }),
     )
     .default([]),
+  /** Character drives (character-drives.plan.md) — desires & secrets; grounded against the band vocabulary. */
+  drives: z
+    .array(
+      z.object({
+        want: z.string().default(""),
+        why: z.string().default(""),
+        secrecy: z.enum(["open", "guarded", "secret"]).catch("open"),
+        revealBand: z
+          .object({
+            axis: z.enum(["familiarity", "regard"]).catch("familiarity"),
+            band: z.string().default(""),
+          })
+          .optional()
+          .catch(undefined),
+      }),
+    )
+    .default([]),
 });
 
 type ProfileSection = z.infer<typeof profileSectionSchema>;
@@ -248,6 +273,50 @@ function groundTraitValues(raw: ProfileSection["traits"], sink?: DiagnosticSink)
     seen.add(id);
     const { min, max } = axisRange(def.axis);
     out.push({ id, value: Math.min(max, Math.max(min, Math.round(t.value))), source: "creation" });
+  }
+  return out;
+}
+
+/**
+ * Ground forge drives (character-drives.plan.md, owner rulings 2026-07-12):
+ * empty wants drop, duplicates (by normalized want) drop, over-length text
+ * truncates, and the concept-led secret budget is enforced — a second `secret`
+ * demotes to `guarded` with a diagnostic rather than shipping two lie licenses.
+ * A revealBand is secret-only; an unknown band id drops the gate (the ruled
+ * default — familiarity ≥ familiar — then applies) instead of locking the
+ * secret behind a band that doesn't exist.
+ */
+export function groundDrives(raw: ProfileSection["drives"], sink?: DiagnosticSink): Drive[] {
+  const out: Drive[] = [];
+  const seen = new Set<string>();
+  let hasSecret = false;
+  for (const d of raw) {
+    if (out.length >= DRIVES_MAX) {
+      sink?.push(diag("info", "forge.character.profile.drives_capped", `dropped drive "${d.want}": over the ${DRIVES_MAX}-drive cap`));
+      break;
+    }
+    const want = d.want.trim().slice(0, DRIVE_WANT_MAX_CHARS);
+    if (!want) continue;
+    const key = want.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let secrecy = d.secrecy;
+    if (secrecy === "secret" && hasSecret) {
+      sink?.push(diag("info", "forge.character.profile.extra_secret", `demoted drive "${want}" to guarded: one secret per character`));
+      secrecy = "guarded";
+    }
+    if (secrecy === "secret") hasSecret = true;
+    let revealBand: Drive["revealBand"];
+    if (secrecy === "secret" && d.revealBand) {
+      const band = d.revealBand.band.trim().toLowerCase();
+      const known = d.revealBand.axis === "regard" ? regardBandById(band) : familiarityBandById(band);
+      if (known) {
+        revealBand = { axis: d.revealBand.axis, band };
+      } else if (band) {
+        sink?.push(diag("info", "forge.character.profile.unknown_reveal_band", `dropped reveal band "${d.revealBand.band}" on "${want}": not a ${d.revealBand.axis} band`));
+      }
+    }
+    out.push({ want, why: d.why.trim().slice(0, DRIVE_WHY_MAX_CHARS), secrecy, ...(revealBand ? { revealBand } : {}) });
   }
   return out;
 }
@@ -299,6 +368,13 @@ function profilePrompt(context: CharacterForgeContext): string {
     `- preferences: 1-4 clear likes/dislikes that follow from the personality, each {target, valence: like|dislike, intensity: 1-10, hint}. target MUST be one of these interaction concepts/families: ${conceptVocab}. hint is a short note on how they react. Omit weak or generic preferences — sparse and characterful is correct.`,
     "- traits: scalar readings of the character's temperament, each {id, value}. Map any personality words you used onto the closest trait (negative value = the first/low pole, positive = the second/high pole), then infer the rest from role, species, and vibe. Emit a value for every trait you have a read on; a 0 means genuinely middling. Trait vocabulary (the example words show where the poles sit):",
     traitVocabulary(),
+    "",
+    "Then give the character DRIVES — the desires & secrets they actively pursue (the game steers scenes with these):",
+    `- drives: 0-${DRIVES_MAX} entries, each {want (a short concrete phrase), why (one line of motive), secrecy, revealBand?}.`,
+    "  secrecy: \"open\" (talks about it freely — it steers what they bring up), \"guarded\" (never volunteers it; comes out only if genuinely asked), or \"secret\" (actively protected — they deflect and will lie to keep it hidden until the relationship earns the reveal).",
+    "  Emit at most ONE secret, and only when the concept genuinely supports a hidden past or concealed motive; most characters carry open/guarded drives only.",
+    `  A secret MAY set revealBand {axis: "familiarity" | "regard", band} — the relationship band at which revealing becomes possible (familiarity bands: ${familiarityBands.map((b) => b.id).join(", ")}; regard bands: ${regardBands.map((b) => b.id).join(", ")}). Omit revealBand for the default (familiarity reaches "familiar").`,
+    "  Wants should be pursuable in conversation and specific to this character (\"to reopen the gallery under her own name\", not \"to be happy\"). Omit drives the concept gives no basis for — sparse is correct.",
   ];
   if (species && species.id !== DEFAULT_SPECIES_ID) {
     const { label, look } = speciesForgeDescriptor(species, heritageForForgeContext(context));
@@ -328,6 +404,7 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
     tags: groundDispositionTags(section.dispositionTags),
     preferences: groundPreferences(section.preferences, context.sink),
     traits: groundTraitValues(section.traits, context.sink),
+    drives: groundDrives(section.drives, context.sink),
   };
   const voice = section.voice.trim();
   if (voice) profile.voice = voice;
@@ -1039,6 +1116,19 @@ export function demoCharacterProfileSection(): ProfileSection {
       { id: "social.agreeableness", value: -25 },
       { id: "social.guardedness", value: 45 },
       { id: "social.dominance", value: 40 },
+    ],
+    drives: [
+      {
+        want: "to keep her dock crews employed through the slow season",
+        why: "the harbor keeps people fed or it keeps nothing",
+        secrecy: "open",
+      },
+      {
+        want: "to learn what really happened the night her predecessor sailed out",
+        why: "she countersigned the log that called the weather clear",
+        secrecy: "secret",
+        revealBand: { axis: "familiarity", band: "familiar" },
+      },
     ],
   };
 }

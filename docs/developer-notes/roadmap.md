@@ -27,15 +27,10 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-_The two entries below are the remainder of the 2026-07-11 **character-chat
+_The entry below is the remainder of the 2026-07-11 **character-chat
 engagement batch**: every plan's core shipped (see Shipped); what stays queued
 are the recorded remainders._
 
-- **Character drives — the authoring surface (remainder)** —
-  [character-drives.plan.md](character-drives.plan.md) (active — the engine
-  core shipped 2026-07-11, see Shipped). Remaining: the forge drives section +
-  the "Desires & secrets" editor card + redraft coverage, and the
-  `chat-secret-hold`/`-reveal` eval fixtures.
 - **Chat initiative — the remainder slices** —
   [chat-initiative.plan.md](chat-initiative.plan.md) (active — the core opener
   shipped 2026-07-12, see Shipped). Remaining: the §8.4 marker upgrade
@@ -69,7 +64,9 @@ are the recorded remainders._
   `CHAT_PROMPT_LAYOUT` A/B before its default flips. The **multi-character
   eval fixtures** (followups ruling 7 — the wrap-up pass's one deferred item;
   asymmetric-mask pair, away-mention gossip, alone-player cutaway) ride this
-  same run.
+  same run, as do the **`chat-secret-hold`/`-reveal` fixtures** (built + dry-run
+  validated 2026-07-12 — [character-drives.plan.md](character-drives.plan.md)
+  slice 4, the `secretCue` planted-token metric).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
@@ -121,6 +118,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character drives — the authoring surface (plan complete)** —
+  [character-drives.plan.md](character-drives.plan.md) — 2026-07-12 — the forge
+  profile leg drafts drives (concept-led ≤1 secret, band-validated reveal gates
+  — rulings), the Disposition tab's "Desires & secrets" card, Forge-the-rest
+  additive fill up to the 3-cap + Disposition re-draft coverage, and the
+  `chat-secret-hold`/`-reveal` fixtures (`secretCue` metric; live judged run
+  rides the enactment measurement run in Next).
 - **Multi-character & forge wrap-up — the owner-rulings pass (all 13 rulings)** —
   [multi-character-chat.followups.md](finished/multi-character-chat.followups.md) — 2026-07-12 —
   forge re-draft = full tab re-sync + the portrait review dialog; preset
@@ -184,8 +188,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   full-but-scoped lie license and flips to an invited reveal at the gate;
   archivist `driveUpdates` (8th field) tracks progress/reveal/resolve, a
   reveal lands the new `secret_shared` milestone (❖, callback-boosted), and
-  the panel lists open wants + revealed secrets only (ruled). Remainder (the
-  forge/editor authoring surface + eval fixtures) stays in Next.
+  the panel lists open wants + revealed secrets only (ruled). The remainder
+  (authoring surface + eval fixtures) shipped 2026-07-12 — see the entry above.
 - **Chat scene references — current-look and place anchors** —
   [chat-scene-references.plan.md](finished/chat-scene-references.plan.md) — 2026-07-11 —
   chat renders anchor on an outfit-true `chat_look` (identity-locked edit,

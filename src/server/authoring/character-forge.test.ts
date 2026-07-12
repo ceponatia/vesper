@@ -11,6 +11,7 @@ import {
   forgeCharacterSection,
   groundAttributeRanges,
   groundAttributeValues,
+  groundDrives,
   groundOutfitItems,
   matchOutfitAgainstLibrary,
   partitionOutfitReuse,
@@ -122,6 +123,82 @@ describe("groundAttributeValues", () => {
     );
     expect(values).toEqual([{ id: "hair.color", value: "auburn", source: "creation" }]);
     expect(sink.items.some((d) => d.code === "forge.character.attributes.duplicate_id")).toBe(true);
+  });
+});
+
+describe("groundDrives", () => {
+  it("keeps valid drives, trimming text", () => {
+    const sink = new DiagnosticCollector();
+    const drives = groundDrives(
+      [{ want: "  to reopen the gallery  ", why: " it was her mother's ", secrecy: "open" }],
+      sink,
+    );
+    expect(drives).toEqual([{ want: "to reopen the gallery", why: "it was her mother's", secrecy: "open" }]);
+    expect(sink.items).toEqual([]);
+  });
+
+  it("drops empty wants and dedupes by normalized want", () => {
+    const drives = groundDrives([
+      { want: "", why: "", secrecy: "open" },
+      { want: "To Sail North", why: "", secrecy: "open" },
+      { want: "to sail north", why: "duplicate", secrecy: "guarded" },
+    ]);
+    expect(drives).toEqual([{ want: "To Sail North", why: "", secrecy: "open" }]);
+  });
+
+  it("demotes a second secret to guarded with a diagnostic (concept-led ≤1 secret ruling)", () => {
+    const sink = new DiagnosticCollector();
+    const drives = groundDrives(
+      [
+        { want: "first secret", why: "", secrecy: "secret" },
+        { want: "second secret", why: "", secrecy: "secret" },
+      ],
+      sink,
+    );
+    expect(drives.map((d) => d.secrecy)).toEqual(["secret", "guarded"]);
+    expect(sink.items.some((d) => d.code === "forge.character.profile.extra_secret")).toBe(true);
+  });
+
+  it("keeps a valid reveal band (normalized) and drops an unknown one to the ruled default", () => {
+    const sink = new DiagnosticCollector();
+    const drives = groundDrives(
+      [
+        { want: "a gated secret", why: "", secrecy: "secret", revealBand: { axis: "regard", band: " Close " } },
+        { want: "a mis-gated one", why: "", secrecy: "guarded" },
+      ],
+      sink,
+    );
+    expect(drives[0]?.revealBand).toEqual({ axis: "regard", band: "close" });
+    const dropped = groundDrives(
+      [{ want: "a mis-gated secret", why: "", secrecy: "secret", revealBand: { axis: "familiarity", band: "soulmates" } }],
+      sink,
+    );
+    expect(dropped[0]?.revealBand).toBeUndefined();
+    expect(sink.items.some((d) => d.code === "forge.character.profile.unknown_reveal_band")).toBe(true);
+  });
+
+  it("strips a reveal band from non-secret drives", () => {
+    const drives = groundDrives([
+      { want: "an open want", why: "", secrecy: "open", revealBand: { axis: "familiarity", band: "familiar" } },
+    ]);
+    expect(drives[0]?.revealBand).toBeUndefined();
+  });
+
+  it("caps at three drives with a diagnostic and truncates over-length text", () => {
+    const sink = new DiagnosticCollector();
+    const drives = groundDrives(
+      [
+        { want: "x".repeat(300), why: "y".repeat(300), secrecy: "open" },
+        { want: "two", why: "", secrecy: "open" },
+        { want: "three", why: "", secrecy: "open" },
+        { want: "four", why: "", secrecy: "open" },
+      ],
+      sink,
+    );
+    expect(drives).toHaveLength(3);
+    expect(drives[0]?.want).toHaveLength(120);
+    expect(drives[0]?.why).toHaveLength(200);
+    expect(sink.items.some((d) => d.code === "forge.character.profile.drives_capped")).toBe(true);
   });
 });
 

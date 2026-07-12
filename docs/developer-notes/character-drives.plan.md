@@ -1,16 +1,20 @@
 # Character drives — desires & secrets as gated inner life
 
-Status: **active** (planned + ruled 2026-07-11; the **engine core shipped
-2026-07-11** — slices 1, 3 and 4: contracts (`personality/drives.ts`), the
-`character_chat_state.drives` column (migration `0035`), the archivist's 8th
-field + finalize fold (degraded keeps prior drives), the tail prompt law
-(withheld secrets carry the ruled full-but-scoped lie license; the default gate
-is familiarity ≥ familiar), the `secret_shared` milestone kind (panel glyph ❖ +
-a memory-callback boost), and the panel's ruled "What they want" list (open +
-revealed only). **Remaining: slice 2 — the authoring surface** (a forge
-profile-section for drives + a "Desires & secrets" editor card + redraft
-coverage); until it lands drives are authored via profile JSON / the state
-PATCH. The eval fixtures (`chat-secret-hold`/`-reveal`) also remain with it.)
+Status: **shipped — 2026-07-12** (engine core 2026-07-11 — slices 1 and 3:
+contracts (`personality/drives.ts`), the `character_chat_state.drives` column
+(migration `0035`), the archivist's 8th field + finalize fold (degraded keeps
+prior drives), the tail prompt law (withheld secrets carry the ruled
+full-but-scoped lie license; the default gate is familiarity ≥ familiar), the
+`secret_shared` milestone kind (panel glyph ❖ + a memory-callback boost), and
+the panel's ruled "What they want" list (open + revealed only). **Authoring
+surface + eval fixtures 2026-07-12** — slices 2 and 4: the forge profile leg
+drafts drives (`groundDrives` — concept-led ≤1 secret, band-validated reveal
+gates), the editor's Disposition tab "Desires & secrets" card
+(`drives-editor.tsx`), Forge-the-rest additive fill up to the 3-cap +
+Disposition re-draft coverage + `renderSheetLines`, and the
+`chat-secret-hold`/`-reveal` fixtures with the deterministic `secretCue`
+planted-token metric. Leftover: the **live judged fixture run is owner-gated
+spend** — it rides the pending enactment measurement run (roadmap, Next).)
 
 The character's interiority is one free-text `mindNote` (pulse-written, 1–3
 sentences) plus `openLoops` (conversational leftovers). There is no want she
@@ -77,6 +81,20 @@ deflects, confesses.
 - Multi-character note: drives stay keyed per (chat, participant); the ensemble
   frame's per-character want line is [multi-character-chat.plan.md](multi-character-chat.plan.md)'s
   to budget.
+
+## Rulings (owner, 2026-07-12 — the authoring surface)
+
+- **Forge-the-rest fills drives additively up to the 3-cap**: authored drives
+  are never touched; generated ones (deduped by normalized want) fill the
+  remaining slots — the house fill convention, not the outfit-style
+  all-or-nothing cluster. (A Disposition re-draft, by contrast, re-derives the
+  whole set — ruling-1 full re-sync semantics.)
+- **The forge is concept-led on secrets, ≤1 per character**: it may emit at
+  most one `secret` drive, and only when the concept genuinely supports a
+  hidden past or concealed motive — a secret ships the lie license, so freshly
+  forged characters don't lie out of the box by default. `groundDrives`
+  enforces the budget mechanically (a second secret demotes to `guarded` with a
+  diagnostic).
 
 ## Cross-links
 

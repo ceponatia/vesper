@@ -18,6 +18,8 @@ import type { FillableDraft } from "./character-fill";
  * mismatch: `disposition` still owns `preferences` (they ride the profile forge
  * leg with tags + traits) even though the editor shows likes/dislikes on the
  * Personality tab since 2026-07-11 — a Disposition re-draft re-derives them.
+ * `disposition` also owns `drives` (desires & secrets, character-drives.plan.md)
+ * — the editor card and the forge output both live on that tab's scope.
  */
 export const characterSheetScopes = ["profile", "attributes", "personality", "disposition", "outfit"] as const;
 export const characterSheetScopeSchema = z.enum(characterSheetScopes);
@@ -54,6 +56,7 @@ export function mergeRedraftScope<T extends FillableDraft>(
           tags: incoming.profile.tags,
           preferences: incoming.profile.preferences,
           traits: incoming.profile.traits,
+          drives: incoming.profile.drives,
         },
       };
     case "attributes": {
