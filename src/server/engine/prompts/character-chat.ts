@@ -379,6 +379,23 @@ export function chatCallbackLine(summary: string, regard: number, name: string, 
 }
 
 /**
+ * The ensemble's third-person callback line (followups ruling 12): the memory belongs to
+ * ONE member — drawn from their own group, toned by THEIR regard — and the group frame's
+ * "you" is the player, so the 1-on-1 second-person wording can't be reused.
+ */
+export function ensembleCallbackLine(summary: string, regard: number, name: string, player: string): string {
+  const band = regardBandForValue(regard).id;
+  const memory = `"${summary.trim()}"`;
+  if (CALLBACK_WARM_BANDS.has(band)) {
+    return `A shared memory drifts near ${name} this turn: ${memory} If the moment invites it, let it surface as one warm aside in ${name}'s own voice — a "remember when" between ${name} and ${player}, not a recap — then let it go. If the scene is moving, skip it entirely.`;
+  }
+  if (CALLBACK_COLD_BANDS.has(band)) {
+    return `A shared memory sits between ${name} and ${player} this turn: ${memory} If it surfaces, it carries an edge — a point to make, a wound, evidence of how things used to be — never warmth ${name} doesn't feel. One pointed aside at most; if the scene is moving, let it pass unsaid.`;
+  }
+  return `${name} might find themselves remembering: ${memory} Let ${name} mention it only if it fits the beat naturally — one brief aside at most, never a recap — otherwise let it pass.`;
+}
+
+/**
  * The derived-fact notation note (player-input-perception.plan.md slice 4): parses the
  * CURRENT player message through the shared `@/lib/message-spans` parser and renders the
  * volatile one-turn tail line for any comms/OOC spans — the facts the sigils alone don't
@@ -696,14 +713,14 @@ const SENSE_FOCUS_VERB: Record<SensoryFocusHint["sense"], string> = {
  * authored theme. "" when there's nothing authored to ground it. Volatile tail, per-turn.
  */
 function buildSensoryFocusSection(
-  input: CharacterChatPromptInput,
+  player: string,
+  state: CharacterChatPromptInput["state"] | undefined,
   hint: SensoryFocusHint,
   resolved: readonly AttributeValue[],
   realizedBody: RealizedBody,
   name: string,
 ): string {
-  const player = input.player?.name.trim() || "the player";
-  const meters = input.state?.meters ?? {};
+  const meters = state?.meters ?? {};
   const byId = (id: string): AttributeValue | undefined => resolved.find((v) => v.id === id);
   const lines: string[] = [];
   const hygieneCue = meters.hygiene !== undefined ? meterStateCue("hygiene", meters.hygiene) : null;
@@ -717,8 +734,8 @@ function buildSensoryFocusSection(
   }
 
   if (hint.sense === "touch" || hint.sense === "study") {
-    const outfit = input.state?.outfit?.trim();
-    if (outfit) lines.push(`- Wearing: ${outfit}${input.state?.outfitExposed ? " — and more exposed than usual" : ""}`);
+    const outfit = state?.outfit?.trim();
+    if (outfit) lines.push(`- Wearing: ${outfit}${state?.outfitExposed ? " — and more exposed than usual" : ""}`);
     const grooming = byId("presentation.grooming");
     if (grooming && typeof grooming.value === "string" && grooming.value.trim()) {
       lines.push(`- Grooming: ${humanize(String(grooming.value))}`);
@@ -726,7 +743,7 @@ function buildSensoryFocusSection(
     if (hygieneCue) lines.push(`- Close detail: ${hygieneCue.hint}`);
   }
 
-  for (const condition of input.state?.conditions ?? []) {
+  for (const condition of state?.conditions ?? []) {
     if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
   }
 
@@ -1052,7 +1069,14 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     : "";
   // The one-turn sense-targeted focus block (scope guard) — earned by the player's beat.
   const sensoryFocus = input.sensoryFocus
-    ? buildSensoryFocusSection(input, input.sensoryFocus, stableResolved, realizedBody, displayName)
+    ? buildSensoryFocusSection(
+        input.player?.name.trim() || "the player",
+        input.state,
+        input.sensoryFocus,
+        stableResolved,
+        realizedBody,
+        displayName,
+      )
     : "";
   const tailSections = [
     priorSummary
@@ -1212,6 +1236,16 @@ export interface EnsemblePromptExtras {
   pairs?: readonly EnsemblePairInput[];
   /** Present→away edges for SALIENT away members (mentioned in-window or looming). */
   awayPairs?: readonly EnsemblePairInput[];
+  /**
+   * One-turn selfie license (followups ruling 12): the member the message
+   * addressed by name sends (or declines) it; unaddressed requests fall to the
+   * lead. Offers stay lead-gated.
+   */
+  selfie?: { kind: "request" | "offer"; memberName: string };
+  /** One-turn memory callback drawn from ONE member's own memory, toned by THEIR regard (ruling 12). */
+  callback?: { summary: string; memberName: string; regard: number };
+  /** One-turn sense-targeted focus aimed at the member the message studies (ruling 12). */
+  sensoryFocus?: { hint: SensoryFocusHint; memberName: string };
 }
 
 /**
@@ -1340,6 +1374,31 @@ export function buildEnsembleChatPromptParts(
     ].join("\n");
   });
 
+  // The solo perks, per member (followups ruling 12): transient state enactment
+  // for every present member, and the one-turn focus/callback/selfie arms aimed
+  // at the specific member the pipeline chose.
+  const enactments = present.map((m) => ensembleMemberEnactment(m)).filter(Boolean);
+  const focusTarget = extras.sensoryFocus
+    ? present.find((m) => m.name.trim().toLowerCase() === extras.sensoryFocus?.memberName.trim().toLowerCase())
+    : undefined;
+  const sensoryFocusSection =
+    extras.sensoryFocus && focusTarget
+      ? buildSensoryFocusSection(
+          player,
+          focusTarget.state,
+          extras.sensoryFocus.hint,
+          resolveAttributes(focusTarget.profile.attributes, [...(focusTarget.state?.attributeOverlays ?? [])]),
+          realizeBody({
+            speciesId: focusTarget.profile.speciesId,
+            heritageId: focusTarget.profile.heritageId,
+            bodyPlanId: focusTarget.profile.bodyPlanId,
+            intimateRegions: focusTarget.profile.intimateRegions,
+            bodyFeatures: focusTarget.profile.bodyFeatures,
+          }),
+          focusTarget.name.trim() || "the character",
+        )
+      : "";
+
   const tailSections = [
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
@@ -1350,6 +1409,7 @@ export function buildEnsembleChatPromptParts(
     ...(stateLines.length
       ? [`Where each character is right now (let it color them — never recite it):\n${stateLines.join("\n")}`]
       : []),
+    ...enactments,
     sceneSection,
     input.firstExchange && !input.sceneChanged
       ? `First exchange of this conversation: establish the scene once — where everyone is, the time of day, and one or two concrete sensory details — drawn from the scenario and what ${player}'s message sets up. After this, don't re-establish what hasn't changed.`
@@ -1357,6 +1417,11 @@ export function buildEnsembleChatPromptParts(
     skipNote ? `Time has passed in the story since the last exchange: ${skipNote}` : "",
     buildAttachmentsSection(input.attachments, player),
     input.notationNote?.trim() ?? "",
+    sensoryFocusSection,
+    extras.callback?.summary.trim()
+      ? ensembleCallbackLine(extras.callback.summary, extras.callback.regard, extras.callback.memberName, player)
+      : "",
+    extras.selfie ? chatSelfieLine(extras.selfie.kind, extras.selfie.memberName, player) : "",
     input.opening
       ? `Opening beat: ${player} has not spoken yet. Open the scene yourself — the present characters arrive in it, grounded in the scenario. A few lines, ending on a present moment that invites ${player} in. Do not narrate on ${player}'s behalf.`
       : buildResponseShapeLine(input),
@@ -1483,6 +1548,83 @@ function ensembleAttributeLines(member: EnsembleMemberInput): string[] {
     if (phrase) lines.push(`- ${phrase}`);
   }
   return lines;
+}
+
+/**
+ * One present member's transient enactment blocks for the volatile tail (followups
+ * ruling 12): the 1-on-1's disinhibition + transient-appearance sections rendered per
+ * member in the third person. High intoxication/arousal loosens THAT member's
+ * disposition bands; active conditions' attribute effects override THAT member's sheet
+ * lines. Sober + condition-free ⇒ "" — the common case adds nothing to the tail.
+ */
+function ensembleMemberEnactment(member: EnsembleMemberInput): string {
+  if (!member.state) return "";
+  const name = member.name.trim() || "This character";
+  const { profile } = member;
+  const bandId = regardBandForValue(member.state.regard ?? 0).id;
+  const baseTraits = resolveTraits(profile.traits, regardDispositionOverlays(bandId, profile.traits));
+  const blocks: string[] = [];
+
+  const overlays = stateDispositionOverlays(baseTraits, member.state.meters ?? {});
+  if (overlays.length) {
+    const shifted = resolveTraits(baseTraits, overlays);
+    const baseLines = new Set([
+      ...dispositionBands(traitRegistry, baseTraits, { intimateOnly: false }),
+      ...dispositionBands(traitRegistry, baseTraits, { intimateOnly: true }),
+    ]);
+    const changed = [
+      ...dispositionBands(traitRegistry, shifted, { intimateOnly: false }),
+      ...dispositionBands(traitRegistry, shifted, { intimateOnly: true }),
+    ].filter((line) => !baseLines.has(line));
+    if (changed.length) {
+      blocks.push(
+        [
+          `Right now ${name}'s state is loosening ${name} (transient — while it lasts, these REPLACE ${name}'s matching Disposition lines above; it recedes as ${name} sobers and settles):`,
+          ...changed.map((line) => `- ${line}`),
+        ].join("\n"),
+      );
+    }
+  }
+
+  const conditionOverlays = conditionAttributeOverlays(member.state.conditions ?? []);
+  if (conditionOverlays.length) {
+    const realizedBody = realizeBody({
+      speciesId: profile.speciesId,
+      heritageId: profile.heritageId,
+      bodyPlanId: profile.bodyPlanId,
+      intimateRegions: profile.intimateRegions,
+      bodyFeatures: profile.bodyFeatures,
+    });
+    const stableResolved = resolveAttributes(profile.attributes, [...(member.state.attributeOverlays ?? [])]);
+    const fullResolved = resolveAttributes(profile.attributes, [
+      ...(member.state.attributeOverlays ?? []),
+      ...conditionOverlays,
+    ]);
+    const stableById = new Map(stableResolved.map((v) => [v.id, v]));
+    const lines: string[] = [];
+    for (const value of fullResolved) {
+      if (value.id === "identity.apparent_age") continue;
+      const def = attributeRegistry.byId(value.id);
+      if (!def) continue;
+      if (def.excludeFromPrompts) continue;
+      if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue;
+      if (!realizedBody.isAttributeApplicable(def)) continue;
+      const stable = stableById.get(value.id);
+      if (stable && stable.value === value.value) continue;
+      const phrase = attributePhrase(def.label, def.unit, value.value);
+      if (!phrase) continue;
+      lines.push(`- ${phrase}`);
+    }
+    if (lines.length) {
+      blocks.push(
+        [`While ${name}'s current condition lasts (transient — these override ${name}'s matching attribute lines above):`, ...lines].join(
+          "\n",
+        ),
+      );
+    }
+  }
+
+  return blocks.join("\n\n");
 }
 
 /** One member's compact third-person state line for the volatile tail. */
