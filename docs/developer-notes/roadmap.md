@@ -56,15 +56,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 _The two entries below are the remainder of the 2026-07-11 **character-chat
 engagement batch** (planned from the character-chat & schema review; the first
-five shipped the same day, see Shipped), deliberately ordered by **effort,
-least → most** and queued ahead of the pre-existing items — owner instruction
-2026-07-11._
+five shipped in full and the sixth's engine core shipped the same day, see
+Shipped), deliberately ordered by **effort, least → most** and queued ahead of
+the pre-existing items — owner instruction 2026-07-11._
 
-- **Character drives — desires & secrets as gated inner life** —
-  [character-drives.plan.md](character-drives.plan.md) (next — effort L).
-  Authored wants with secrecy levels, archivist-tracked progress, a band-gated
-  withholding/reveal law (the first mechanical footing for character-side
-  lying), and a `secret_shared` milestone.
+- **Character drives — the authoring surface (remainder)** —
+  [character-drives.plan.md](character-drives.plan.md) (active — the engine
+  core shipped 2026-07-11, see Shipped). Remaining: the forge drives section +
+  the "Desires & secrets" editor card + redraft coverage, and the
+  `chat-secret-hold`/`-reveal` eval fixtures.
 - **Chat initiative — the character reaches out first** —
   [chat-initiative.plan.md](chat-initiative.plan.md) (next — effort L). Grows
   §8.4 "has something to say" into reopen-anchored initiative: cued openers in
@@ -156,6 +156,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character drives — engine core (desires & secrets as gated inner life)** —
+  [character-drives.plan.md](character-drives.plan.md) — 2026-07-11 — ≤3
+  authored wants (`profile.drives` + runtime state, migration 0035) rendered
+  as tail LAW: open steers, guarded withholds-until-asked, a secret below its
+  gate (default familiarity ≥ familiar, ruled) is protected with the ruled
+  full-but-scoped lie license and flips to an invited reveal at the gate;
+  archivist `driveUpdates` (8th field) tracks progress/reveal/resolve, a
+  reveal lands the new `secret_shared` milestone (❖, callback-boosted), and
+  the panel lists open wants + revealed secrets only (ruled). Remainder (the
+  forge/editor authoring surface + eval fixtures) stays in Next.
 - **Chat scene references — current-look and place anchors** —
   [chat-scene-references.plan.md](chat-scene-references.plan.md) — 2026-07-11 —
   chat renders anchor on an outfit-true `chat_look` (identity-locked edit,

@@ -1397,3 +1397,61 @@ describe("selfie license line (chat-selfies.plan.md)", () => {
     expect(plain.tail).not.toContain("for a photo");
   });
 });
+
+describe("drives block (character-drives.plan.md)", () => {
+  const drive = (over: Record<string, unknown> = {}) => ({
+    want: "to reopen the gallery under her own name",
+    why: "it was her mother's",
+    secrecy: "secret" as const,
+    progress: "",
+    revealed: false,
+    resolved: false,
+    ...over,
+  });
+  const stateWith = (drives: unknown[], familiarity = 0) => ({
+    meters: {},
+    regard: 0,
+    familiarity,
+    conditions: [],
+    drives: drives as never,
+  });
+
+  it("a withheld secret carries the scoped lie license; a cleared gate invites the reveal", () => {
+    const withheld = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: stateWith([drive()], 10),
+    });
+    expect(withheld.tail).toContain("A SECRET: you want to reopen the gallery");
+    expect(withheld.tail).toContain("you may lie outright");
+    expect(withheld.tail).toContain("The lying is for THIS secret only");
+    const cleared = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: stateWith([drive()], 80),
+    });
+    expect(cleared.tail).toContain("A secret you could finally share");
+    expect(cleared.tail).not.toContain("lie outright");
+  });
+
+  it("open steers, guarded withholds-until-asked, resolved drops, empty renders nothing", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: stateWith([
+        drive({ secrecy: "open", want: "to learn the violin" }),
+        drive({ secrecy: "guarded", want: "to be taken seriously" }),
+        drive({ secrecy: "open", want: "gone", resolved: true }),
+      ]),
+    });
+    expect(parts.tail).toContain("What you want");
+    expect(parts.tail).toContain("You want to learn the violin");
+    expect(parts.tail).toContain("You don't volunteer this");
+    expect(parts.tail).not.toContain("gone");
+    const none = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: { meters: {}, regard: 0, conditions: [] } });
+    expect(none.tail).not.toContain("What you want");
+  });
+});

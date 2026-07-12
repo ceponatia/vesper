@@ -156,6 +156,8 @@ export interface ChatArchivistInput {
   exchange: { player: string; assistant: string };
   /** The standing open-loops list (spec §6.2) — re-emitted in full so resolved loops fall off. */
   openLoops?: readonly string[];
+  /** The standing drives (character-drives.plan.md) — the driveUpdates match targets. */
+  drives?: readonly { want: string; secrecy: string; revealed: boolean }[];
   sink?: DiagnosticSink;
 }
 
@@ -181,6 +183,7 @@ export async function runChatArchivist(
       playerName: input.playerName,
       exchange: input.exchange,
       openLoops: input.openLoops,
+      drives: input.drives,
     }),
     modelId: agentModelId(),
     temperature: 0,

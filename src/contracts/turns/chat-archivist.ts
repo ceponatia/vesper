@@ -2,6 +2,7 @@ import { z } from "zod";
 import { factDraftSchema } from "../facts/taxonomy";
 import { attributeChangeSchema } from "./agent-results";
 import { CHAT_OUTFIT_MAX_CHARS } from "./chat-pulse";
+import { DRIVES_MAX, driveUpdateSchema } from "../personality/drives";
 import { chatSceneProposalSchema } from "./chat-scene-memory";
 
 /**
@@ -87,6 +88,17 @@ export const chatArchivistSchema = z.object({
     })
     .catch({ description: "", exposed: false })
     .default({ description: "", exposed: false }),
+  /**
+   * Drive updates (character-drives.plan.md): progress/reveal/resolution on the
+   * character's EXISTING drives (matched by `want` text — unmatched entries drop).
+   * `revealed` = the character spoke a secret drive aloud to the player THIS
+   * exchange (the `secret_shared` milestone source). Lenient; [] = no movement.
+   */
+  driveUpdates: z
+    .array(driveUpdateSchema)
+    .catch([])
+    .default([])
+    .transform((u) => u.slice(0, DRIVES_MAX)),
 });
 
 export type ChatArchivist = z.infer<typeof chatArchivistSchema>;
@@ -101,6 +113,7 @@ export function degradedChatArchivist(): ChatArchivist {
     openLoops: [],
     scene: { places: [] },
     outfit: { description: "", exposed: false },
+    driveUpdates: [],
   };
 }
 

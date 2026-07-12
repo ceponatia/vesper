@@ -107,6 +107,7 @@ export interface ChatCallback {
  */
 const MILESTONE_BOOST: Record<MilestoneKind, number> = {
   player_marked: 0.5,
+  secret_shared: 0.5,
   strong_reaction: 0.45,
   stage_up: 0.4,
   stage_down: 0.4,

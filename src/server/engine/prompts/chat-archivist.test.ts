@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./chat-archivist";
 
 describe("CHAT_ARCHIVIST_SYSTEM", () => {
-  it("declares seven fields and carries a worked example for each rare field", () => {
-    expect(CHAT_ARCHIVIST_SYSTEM).toContain("seven fields");
+  it("declares eight fields and carries a worked example for each rare field", () => {
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("eight fields");
     // The attributeChanges micro-example (C6 — the haircut) so the proposer stops under-firing.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeId":"hair.length"');
     // Both examples carry every field, so the model sees the full shape.
