@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   CHAT_MIND_NOTE_MAX_CHARS,
-  CHAT_OUTFIT_MAX_CHARS,
   conditionAttributeOverlays,
   familiarityBandForValue,
   meterDefinitions,
@@ -346,7 +345,6 @@ function StateToolsForm({
         <Textarea
           rows={2}
           value={outfit}
-          maxLength={CHAT_OUTFIT_MAX_CHARS}
           onChange={(e) => setOutfit(e.target.value)}
           placeholder="What they're wearing right now — drives scene images…"
         />

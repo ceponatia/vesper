@@ -13,7 +13,6 @@ import {
   chatPulseSchema,
   CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
   CHAT_MIND_NOTE_MAX_CHARS,
-  CHAT_OUTFIT_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   chatPulseTraceSchema,
   chatSceneMemorySchema,
@@ -314,7 +313,7 @@ const clamp01 = (n: number): number => clamp(n, 0, 1);
  * 2026-07-11: the narrator ignored an outfit of ids) self-heal on load.
  */
 export function seededOutfitMarker(profile: CharacterProfile): string {
-  return (profile.defaultOutfit ?? []).join(", ").trim().slice(0, CHAT_OUTFIT_MAX_CHARS);
+  return (profile.defaultOutfit ?? []).join(", ").trim();
 }
 
 /**
@@ -331,9 +330,7 @@ export async function resolveSeededOutfit(
 ): Promise<ChatState> {
   const marker = seededOutfitMarker(profile);
   if (marker === "" || state.outfit !== marker) return state;
-  const phrase = (await defaultOutfitPhrase(ownerId, profile.defaultOutfit ?? [], sink))
-    .trim()
-    .slice(0, CHAT_OUTFIT_MAX_CHARS);
+  const phrase = (await defaultOutfitPhrase(ownerId, profile.defaultOutfit ?? [], sink)).trim();
   return { ...state, outfit: phrase };
 }
 
@@ -1584,7 +1581,7 @@ export async function editChatState(args: {
   if (patch.mindNote !== undefined) next.mindNote = patch.mindNote.trim().slice(0, CHAT_MIND_NOTE_MAX_CHARS);
   if (patch.meters !== undefined) next.meters = clampMeters(patch.meters);
   if (patch.conditions !== undefined) next.conditions = patch.conditions.map(seedConditionEffects);
-  if (patch.outfit !== undefined) next.outfit = patch.outfit.slice(0, CHAT_OUTFIT_MAX_CHARS);
+  if (patch.outfit !== undefined) next.outfit = patch.outfit;
   if (patch.outfitExposed !== undefined) next.outfitExposed = patch.outfitExposed;
   if (patch.openLoops !== undefined) {
     next.openLoops = patch.openLoops.map((l) => l.trim()).filter(Boolean).slice(0, CHAT_ARCHIVIST_MAX_OPEN_LOOPS);
