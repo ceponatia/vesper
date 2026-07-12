@@ -23,34 +23,31 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Library UX — faceted browse, item facets, shared entity picker** —
-  [library-ux.plan.md](library-ux.plan.md) (active — core pass **built + deployed
-  2026-07-08** (all seven slices, commit `4add351`): items facet bar + grouped
-  closet view + density toggle, the new `wearer`/`color` clothing facets
-  end-to-end (contracts → editor → forge → classify backfill), and the shared
-  `EntityPicker` replacing the flat outfit/location selects. **2026-07-11 owner
-  UX pass shipped** (plan §Owner UX pass): bucket-aware New, editor `←` back
-  links, per-entity restored toolbar state. **Awaiting owner
-  review**; the follow-up pass (other-library facets, tabbed gallery hub, Library
-  nav consolidation, scope fast-follow, pagination) is ruled-in but waits on it.)
+- **Library UX — the follow-up pass** —
+  [library-ux.plan.md](library-ux.plan.md) (active — core pass built + deployed
+  2026-07-08 (all seven slices, commit `4add351`) and the 2026-07-11 owner UX
+  pass shipped; **core review passed 2026-07-12**, unblocking the ruled-in
+  follow-up pass now building: facets for the other libraries (characters /
+  locations / social cards), the tabbed Gallery image hub (favorites migration,
+  past-500 pagination), the Library nav hub (Chats · Worlds · Library ·
+  Gallery), and the `scope` fast-follow. List keyset pagination stays deferred
+  until real catalog scale, per the plan.)
+- **Multi-character chat — the substrate** —
+  [multi-character-chat.plan.md](multi-character-chat.plan.md) (active —
+  promoted from Next 2026-07-12 on owner go-ahead. Roster of 2–4 full
+  characters per conversation, per-character state rows, narrative presence +
+  activity recency, the one-block ensemble prompt frame, player-owns-himself
+  narration authority, referenced-only pulse + tier-1 memory legs, away-freeze.
+  Creation groundwork (multi-select dialog, `characterIds` API, sort-0 primary)
+  shipped 2026-07-07. Slots between relationship v2's slice 4 and its matrix
+  slice.)
 - **Relationship model v2 — familiarity × regard** —
   [relationship-model.plan.md](relationship-model.plan.md) (active — slices 1–4
   done 2026-07-07: contracts; two-axis state + the `affinity`→`regard` rename,
   migration 0028; the composed prompt block + axis-contrast eval fixtures; the
-  player-edge authoring UI. **Paused pending the substrate plan**
-  ([multi-character-chat.plan.md](multi-character-chat.plan.md)), which slots
-  between its slice 4 and the matrix slice.)
-- **Character sheet forge — in-sheet completion, per-tab re-drafts,
-  portrait-derived attributes** —
-  [character-sheet-forge.plan.md](character-sheet-forge.plan.md) (active —
-  slices 1–3 **built + merged + deployed 2026-07-09**, awaiting owner live
-  review): the editor's ✦ Forge-the-rest fills
-  every empty field without touching player-authored content (save-first,
-  result lands unsaved for review); per-tab ↻ Re-draft rewrites one tab
-  narrator-formatted from the whole sheet (manual attribute/trait values kept,
-  conflicts reported); ◉ From-portrait derives appearance attributes from the
-  avatar via the codebase's first vision capability (`generateChecked` image
-  parts + `visionModelId()`).
+  player-edge authoring UI. **Unpaused 2026-07-12**: the substrate plan above
+  is building now; slice 6 (the matrix — per-conversation grid, library-defaults
+  Relationships tab, reactive + looming injection) follows it.)
 
 ## Next (queued)
 
@@ -116,14 +113,6 @@ are the recorded remainders._
   needs a `world-simulation.plan.md` when it becomes active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
-- **Multi-character chat — the substrate** —
-  [multi-character-chat.plan.md](multi-character-chat.plan.md) (next — split out of
-  the relationship plan 2026-07-07; slots after that plan's slices 1–3, before its
-  matrix slice). Roster of 2–4 full characters per conversation, narrative presence
-  + activity recency, the one-block ensemble prompt frame, player-owns-himself
-  narration authority, referenced-only pulse + tier-1 memory legs. Creation
-  groundwork (multi-select dialog, `characterIds` API, sort-0 primary) shipped
-  2026-07-07.
 - **At-rest encryption — user chat content unreadable on Neon** —
   [at-rest-encryption.plan.md](at-rest-encryption.plan.md) (draft — planned
   2026-07-11 from an owner question; position here is provisional). App-side
@@ -153,6 +142,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character sheet forge — in-sheet completion, per-tab re-drafts,
+  portrait-derived attributes** —
+  [character-sheet-forge.plan.md](finished/character-sheet-forge.plan.md) —
+  2026-07-12 — the editor's ✦ Forge-the-rest fills every empty field without
+  touching player-authored content (save-first, result lands unsaved for
+  review); per-tab ↻ Re-draft rewrites one tab narrator-formatted from the
+  whole sheet (`manual` values kept, conflicts reported); ◉ From-portrait
+  derives appearance attributes from the avatar via the codebase's first
+  vision capability. Built + deployed 2026-07-09; owner live review passed
+  2026-07-12. Leftovers: the two report-only conflict flips stay in the plan's
+  §Open questions, flip on request.
 - **Chat initiative — the reopen opener (core)** —
   [chat-initiative.plan.md](chat-initiative.plan.md) — 2026-07-12 — the pickup
   strip's "Let {who} start ✦" runs a continue exchange with a server-built cue

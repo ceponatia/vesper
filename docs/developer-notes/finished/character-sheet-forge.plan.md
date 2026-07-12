@@ -1,11 +1,14 @@
 # Character sheet forge — in-sheet completion, per-tab re-drafts, portrait-derived attributes — plan
 
-Status: **active** (slices 1–3 built, merged to main, and **deployed to Fly
-2026-07-09**; awaiting the owner's live review — the on-Fly UI drive and the
-live prompt-quality pass are the remaining gate before `shipped`. Owner ruling
-2026-07-09: **the `/characters/forge` page stays** — it creates whole
-characters from a prompt; the in-sheet tools build parts of an existing sheet,
-so the in-sheet Forge is **sheet-only, no guidance text box**.)
+Status: **shipped — 2026-07-12** (slices 1–3 built, merged to main, and
+deployed to Fly 2026-07-09; the owner's live review — the on-Fly UI drive and
+the live prompt-quality pass — **passed 2026-07-12**, closing the last gate.
+Owner ruling 2026-07-09: **the `/characters/forge` page stays** — it creates
+whole characters from a prompt; the in-sheet tools build parts of an existing
+sheet, so the in-sheet Forge is **sheet-only, no guidance text box**.
+Leftovers: the two conflict-handling flips in §Open questions — Re-draft vs
+`manual` values and one-click portrait-conflict accept — stay recorded there;
+both built report-only, flip on owner request.)
 
 Builds directly on the shipped character forge
 (`server/authoring/character-forge.ts`, docs/authoring.md §Character forge) and
@@ -201,8 +204,8 @@ necessarily five separate LLM calls.
   (`character-fill.test.ts` runs `forgeCharacterFill` end-to-end on the
   keyless demo ladder); the route glue is three lines on the create path's
   existing `withUser`/rate-limit plumbing, so no separate route int test.
-- Not yet done: live UI verification on Fly (deploy is manual) and a live
-  (spend) quality pass of the three new prompt shapes against real models.
+- Live UI verification on Fly and the live (spend) quality pass of the three
+  new prompt shapes: **owner review passed 2026-07-12** — nothing remains.
 
 ## Open questions
 
@@ -213,8 +216,6 @@ necessarily five separate LLM calls.
   Wanted: a one-click "accept portrait value" on the conflict diagnostic? May
   a portrait reading overwrite a `creation`-sourced (never player-touched)
   value?
-- **Roadmap slot** — placed provisionally (owner to reorder; a one-line move).
-
 ## Not in scope (this plan)
 
 The world forge and its cast generation (same module — it inherits the merge
