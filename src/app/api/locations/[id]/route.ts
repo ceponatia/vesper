@@ -32,7 +32,8 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   if (!row) return jsonError("not_found", "location not found", 404);
   // Links scope to the entity owner so a public preview shows the author's map.
   const links = await loadLocationLinks(row.ownerId, id);
-  return jsonOk({ location: { ...row, links } });
+  // `mine` — read-only preview + clone CTA for foreign public rows (slice 6 audit).
+  return jsonOk({ location: { ...row, links }, mine: row.ownerId === user.id });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {

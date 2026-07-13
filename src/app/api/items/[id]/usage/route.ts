@@ -1,0 +1,39 @@
+import { and, eq, sql } from "drizzle-orm";
+import { characters, db, items, worldItems, worlds } from "@/server/db";
+import { jsonError, jsonOk, withUser } from "@/server/api";
+
+type Params = { id: string };
+
+/**
+ * GET /api/items/:id/usage — where this item is referenced, for the delete
+ * dialog's in-use warning (ux-improvements.plan.md slice 6). Owner-scoped:
+ * only the caller's own characters/worlds are named (references from other
+ * accounts to a public item are invisible by the visibility model). Warn,
+ * never block — the dialog explains what breaks:
+ * - a character `profile.defaultOutfit` referencing the id shows the red
+ *   "not in library" tag after the delete;
+ * - world placements keep playing (they hold full snapshot copies) but lose
+ *   their provenance pointer.
+ */
+export const GET = withUser<Params>(async (user, _req, ctx) => {
+  const { id } = await ctx.params;
+  const [row] = await db()
+    .select({ id: items.id })
+    .from(items)
+    .where(and(eq(items.id, id), eq(items.ownerId, user.id)))
+    .limit(1);
+  if (!row) return jsonError("not_found", "item not found", 404);
+
+  const wornBy = await db()
+    .select({ id: characters.id, name: characters.name })
+    .from(characters)
+    .where(and(eq(characters.ownerId, user.id), sql`${characters.profile}->'defaultOutfit' @> ${JSON.stringify(id)}::jsonb`));
+
+  const placements = await db()
+    .selectDistinct({ worldId: worlds.id, worldName: worlds.name })
+    .from(worldItems)
+    .innerJoin(worlds, eq(worldItems.worldId, worlds.id))
+    .where(and(eq(worlds.ownerId, user.id), eq(worldItems.sourceItemId, id)));
+
+  return jsonOk({ wornBy, placements });
+});

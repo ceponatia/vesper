@@ -66,6 +66,11 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   const [deleting, setDeleting] = useState(false);
   const [cloning, setCloning] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  /** Where the item is referenced — fetched when the delete dialog opens (slice 6). */
+  const [usage, setUsage] = useState<{
+    wornBy: { id: string; name: string }[];
+    placements: { worldId: string; worldName: string }[];
+  } | null>(null);
   const [tab, setTab] = useState<"details" | "image">("details");
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
   const editGenRef = useRef(0);
@@ -194,6 +199,17 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
     }
   };
 
+  /** Open the delete confirm and look up references — warn, never block. */
+  const openDeleteConfirm = () => {
+    setUsage(null);
+    setConfirmDelete(true);
+    void itemsApi.usage(itemId).then((result) => {
+      if (result.ok) setUsage(result.data);
+      // A failed lookup degrades to the plain confirm — deleting stays possible.
+      else setUsage({ wornBy: [], placements: [] });
+    });
+  };
+
   const remove = async () => {
     setDeleting(true);
     const result = await itemsApi.remove(itemId);
@@ -225,6 +241,43 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   }
 
   if (!form) return null;
+
+  // A public item owned by someone else: read-only preview + a clone-to-library
+  // CTA (the discovery gallery's copy-on-use path — the social-card pattern;
+  // edits would 404 server-side anyway). Slice 6.
+  if (detail.data && !detail.data.mine) {
+    return (
+      <PageContainer>
+        <LibraryBackLink href="/items" label="Items" />
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h1 className="prose-display text-2xl">{form.name || "Untitled item"}</h1>
+          <Button busy={cloning} onClick={() => void clone()}>
+            Clone to my library
+          </Button>
+        </div>
+        <div className="flex flex-col gap-3 rounded-card border border-ink-700 bg-ink-850 p-4 text-sm text-paper-300">
+          <p className="text-paper-400">Someone else&apos;s public item — clone it to edit your own copy.</p>
+          {form.description ? <p>{form.description}</p> : null}
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+            <dt className="text-paper-500">Kind</dt>
+            <dd>{form.kind}</dd>
+            {form.definition.category ? (
+              <>
+                <dt className="text-paper-500">Category</dt>
+                <dd>{form.definition.category.replace(/_/g, " ")}</dd>
+              </>
+            ) : null}
+            {form.definition.color ? (
+              <>
+                <dt className="text-paper-500">Color</dt>
+                <dd>{form.definition.color.shade ?? form.definition.color.family}</dd>
+              </>
+            ) : null}
+          </dl>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>
@@ -406,7 +459,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
             >
               Duplicate
             </Button>
-            <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
+            <Button variant="danger" size="sm" onClick={openDeleteConfirm}>
               Delete
             </Button>
           </>
@@ -425,7 +478,30 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
           </>
         }
       >
-        Sessions keep their own item snapshots.
+        <div className="flex flex-col gap-2 text-sm">
+          <p>Sessions keep their own item snapshots.</p>
+          {usage === null ? (
+            <p className="text-xs text-paper-500">Checking where it&apos;s used…</p>
+          ) : (
+            <>
+              {usage.wornBy.length > 0 ? (
+                <p className="text-xs text-danger-300">
+                  Worn in the default outfit of {usage.wornBy.map((c) => c.name).join(", ")} — that outfit slot
+                  will show &ldquo;not in library&rdquo; after deleting.
+                </p>
+              ) : null}
+              {usage.placements.length > 0 ? (
+                <p className="text-xs text-paper-400">
+                  Placed in {usage.placements.map((p) => p.worldName).join(", ")} — world copies keep playing
+                  (they hold their own snapshot).
+                </p>
+              ) : null}
+              {usage.wornBy.length === 0 && usage.placements.length === 0 ? (
+                <p className="text-xs text-paper-500">Not referenced by any character outfit or world.</p>
+              ) : null}
+            </>
+          )}
+        </div>
       </Dialog>
     </PageContainer>
   );
