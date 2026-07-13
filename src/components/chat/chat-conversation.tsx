@@ -37,6 +37,7 @@ import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel
 import { ChatRelationshipsEditor } from "@/components/chat/chat-relationships-editor";
 import { ChatRosterPanel } from "@/components/chat/chat-roster-panel";
 import { ChatSupportingCastPanel } from "@/components/chat/chat-supporting-cast-panel";
+import { replyFailureToast } from "@/components/chat/reply-failure";
 import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
 import { ChatScenarioModal } from "@/components/characters/chat-scenario-modal";
@@ -511,13 +512,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // and the scene list, since a big moment may have auto-queued a render (slice 9).
     await refreshState();
     scenes.reload({ silent: true });
-    // Zero tokens on an otherwise-clean settle: the narrator produced nothing (the
-    // server logged a first-token timeout and persisted no reply), so say so — the
-    // transcript reload above already dropped the empty bubble.
+    // Zero tokens on an otherwise-clean settle: the narrator produced nothing and
+    // persisted no reply. The exchange recorded WHY on the chat row before the
+    // stream closed (`last_reply_failure`), and the transcript refetch above just
+    // read it back — so the popup names the actual cause (timeout, out of credits,
+    // moderation block, …) instead of guessing. The reload already dropped the
+    // empty bubble.
     if (!received) {
       toast.push({
-        title: `${who} didn't reply`,
-        description: "The narrator model returned nothing — usually a timeout. Try again, or pick a different narrator model from the menu.",
+        ...replyFailureToast(who, fresh.ok ? fresh.data.chat.lastReplyFailure : null),
         tone: "error",
       });
     }

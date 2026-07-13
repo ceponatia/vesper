@@ -204,6 +204,13 @@ export const characterChats = pgTable(
     skipHistory: jsonb("skip_history").notNull().default([]),
     /** The scenario as it stood BEFORE the last exchange — "another take"'s rollback half. */
     preExchangeScenario: jsonb("pre_exchange_scenario").notNull().default({}),
+    /**
+     * ChatReplyFailure | null — why the LAST exchange produced no reply
+     * (contracts/turns/chat-reply-failure.ts). Written when an exchange settles
+     * with zero streamed text, nulled by any exchange that settles at all; the
+     * client's post-exchange transcript refetch reads it for the failure popup.
+     */
+    lastReplyFailure: jsonb("last_reply_failure"),
     createdAt: createdAt(),
     /** Recency anchor for the Chats list; bumped on every exchange. */
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),

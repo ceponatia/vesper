@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { db, imageReferences, images, locations, sessionParticipants } from "../db";
 import {
-  describeImageGenError,
+  describeProviderError,
   executeImageProvider,
   generateChecked,
   hasVenice,
@@ -316,7 +316,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     const saved = await saveImageBuffer(asset.id, outcome.image, sink);
     input.logResult(asset.id, saved?.status ?? "failed", started);
   } catch (err) {
-    const message = describeImageGenError(err);
+    const message = describeProviderError(err);
     await failImage(asset.id, message);
     input.logResult(asset.id, "failed", started);
   } finally {

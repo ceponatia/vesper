@@ -1,0 +1,1 @@
+ALTER TABLE "character_chats" ADD COLUMN "last_reply_failure" jsonb;

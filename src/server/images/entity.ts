@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
-import { describeImageGenError, isDemoMode, veniceGenerateImage, veniceImageModelId } from "../ai";
+import { describeProviderError, isDemoMode, veniceGenerateImage, veniceImageModelId } from "../ai";
 import { logEvent } from "../events";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
@@ -66,7 +66,7 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
       durationMs: Date.now() - started,
     });
   } catch (err) {
-    const message = describeImageGenError(err);
+    const message = describeProviderError(err);
     await failImage(asset.id, message);
     input.sink?.push(
       diag("warn", "images.entity.generate_failed", message.slice(0, 300), {

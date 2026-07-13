@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CHAT_REPLY_TAKES_CAP } from "./constants";
-import { emptyReplyTakes, pushReplyTake, replyTakesSchema, withStreamTimeouts, type ReplyTakes } from "./chat-pipeline";
+import {
+  emptyReplyTakes,
+  pushReplyTake,
+  replyTakesSchema,
+  resolveReplyFailure,
+  withStreamTimeouts,
+  type ReplyTakes,
+} from "./chat-pipeline";
 
 // pushReplyTake (character-chat-standalone.spec.md §4.1) — the PURE takes-list
 // core behind "another take": lazy seeding of the pre-regenerate reply, newest
@@ -159,5 +166,44 @@ describe("withStreamTimeouts", () => {
     expect(out.length).toBeGreaterThanOrEqual(1); // some tokens landed before the cap
     expect(out.length).toBeLessThan(100); // …but it was cut short
     expect(reasons).toEqual(["overall"]);
+  });
+});
+
+// resolveReplyFailure (reply-failure surfacing) — the PURE verdict behind the
+// client's "didn't reply" popup: only a zero-text exchange records a failure,
+// the watchdog outranks the stop flag it shares an AbortController with, and a
+// clean empty stream is its own class. The persistence half (saveReplyFailure)
+// rides the exchange path covered by chat.int.test.ts.
+
+describe("resolveReplyFailure", () => {
+  const none = { hasText: false, stopped: false, streamError: null, timedOut: null } as const;
+
+  it("clears the record whenever the exchange produced text — even a stopped or errored partial", () => {
+    expect(resolveReplyFailure({ ...none, hasText: true })).toBeNull();
+    expect(resolveReplyFailure({ ...none, hasText: true, stopped: true })).toBeNull();
+    expect(
+      resolveReplyFailure({ ...none, hasText: true, streamError: { code: "provider_error", detail: "boom" } }),
+    ).toBeNull();
+  });
+
+  it("keeps the classified stream error verbatim", () => {
+    expect(resolveReplyFailure({ ...none, streamError: { code: "no_credits", detail: "Payment required" } })).toEqual({
+      code: "no_credits",
+      detail: "Payment required",
+    });
+  });
+
+  it("records a watchdog trip as timeout even though the abort also raised the stop flag", () => {
+    const result = resolveReplyFailure({ ...none, stopped: true, timedOut: "first_token" });
+    expect(result?.code).toBe("timeout");
+    expect(result?.detail).toContain("no output within");
+  });
+
+  it("treats a genuine player Stop before the first token as no failure", () => {
+    expect(resolveReplyFailure({ ...none, stopped: true })).toBeNull();
+  });
+
+  it("classifies a clean zero-token stream as empty_reply", () => {
+    expect(resolveReplyFailure(none)).toEqual({ code: "empty_reply", detail: "" });
   });
 });

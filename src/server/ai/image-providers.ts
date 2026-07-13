@@ -1,5 +1,5 @@
 import type { SceneReferenceMode, SceneVisualReference } from "@/contracts";
-import { describeImageGenError } from "./errors";
+import { describeProviderError } from "./errors";
 import { veniceEditImage, veniceGenerateImage, veniceMultiEditImage, veniceSceneImageModelId, veniceT2IModelId } from "./venice";
 import type { AvatarImageModel } from "@/contracts/images/image-models";
 
@@ -169,10 +169,10 @@ const TRANSIENT =
 /**
  * Map a failure to a retry class (spec §8.3): a content rejection must NOT retry
  * (it only fails again — fall down the ladder); a transient error may retry.
- * Reuses `describeImageGenError` to recover any real upstream message.
+ * Reuses `describeProviderError` to recover any real upstream message.
  */
 export function classifyImageFailure(err: unknown): ImageFailureReason {
-  const message = describeImageGenError(err).toLowerCase();
+  const message = describeProviderError(err).toLowerCase();
   if (CONTENT_REJECTION.test(message)) return "content_rejection";
   if (TRANSIENT.test(message)) return "transient";
   return "other";

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { AttributeValue } from "@/contracts/attributes/value";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { describeImageGenError, hasVenice, isDemoMode, veniceEditImage, veniceGenerateImage, veniceSceneImageModelId } from "../ai";
+import { describeProviderError, hasVenice, isDemoMode, veniceEditImage, veniceGenerateImage, veniceSceneImageModelId } from "../ai";
 import { db, images } from "../db";
 import { absoluteImagePath, createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
@@ -148,7 +148,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     }
     return asset.id;
   } catch (err) {
-    const message = describeImageGenError(err);
+    const message = describeProviderError(err);
     await failImage(asset.id, message);
     input.sink?.push(diag("warn", "images.chat_look.failed", message.slice(0, 300)));
     return null;
@@ -191,7 +191,7 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
     const saved = await saveImageBuffer(asset.id, generated.image, input.sink);
     return saved?.status === "ready" ? asset.id : null;
   } catch (err) {
-    const message = describeImageGenError(err);
+    const message = describeProviderError(err);
     await failImage(asset.id, message);
     input.sink?.push(diag("warn", "images.chat_place.failed", message.slice(0, 300)));
     return null;
