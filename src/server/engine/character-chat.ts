@@ -24,6 +24,13 @@ import { NARRATIVE_TEMPERATURE } from "./pipeline";
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+  /**
+   * The line was authored in NARRATOR mode (chat-supporting-cast.plan.md §Narrator
+   * input, user lines only): story narration from the player as storyteller. The
+   * pipeline wraps such lines with `wrapNarratorInput` at the model boundary — the
+   * stored transcript stays byte-verbatim.
+   */
+  narrator?: boolean;
 }
 
 export interface StreamCharacterChatInput {

@@ -96,6 +96,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat supporting cast + narrator input** —
+  [chat-supporting-cast.plan.md](chat-supporting-cast.plan.md) — 2026-07-13 —
+  recurring named side characters as a lightweight scenario tier (scene-memory
+  pattern applied to people: `supporting_cast` on the chat scenario, archivist
+  field 10 with roster/player exclusion, the volatile-tail cast block + rule
+  3/16 carve-outs, the Supporting Cast panel + lightbox editor), plus the
+  composer **You ↔ Narrator** toggle (`inputMode: "narrator"` — story
+  narration that never reads as the player's POV; pulse skipped,
+  storyteller-labeled extraction). Deferred: cast images, promote-to-character.
 - **UX improvements — chat, item library, character form** —
   [ux-improvements.plan.md](ux-improvements.plan.md) — 2026-07-13 — all nine
   slices in one day: clone wiring + stale-copy fix, chat transcript keyset

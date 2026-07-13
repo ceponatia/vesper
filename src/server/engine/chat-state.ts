@@ -23,6 +23,9 @@ import {
   deriveExchangeMilestones,
   emptyChatMemoryTrace,
   emptyChatSceneMemory,
+  emptySupportingCast,
+  mergeSupportingCast,
+  supportingCastSchema,
   emptyRelationshipTexture,
   deriveEmotionLabel,
   diag,
@@ -68,6 +71,8 @@ import {
   type RetrievedMemoryDetail,
   type SkipRecord,
   type SocialReactionCard,
+  type SupportingCast,
+  type SupportingCastMember,
 } from "@/contracts";
 import { catalogConditionForLabel } from "@/contracts/conditions/catalog";
 import { evaluateActReaction } from "@/contracts/personality/act-reaction";
@@ -135,6 +140,8 @@ export interface ChatScenario {
   sceneAuto: string;
   sceneModel: string;
   sceneMemory: ChatSceneMemory;
+  /** Recurring named side characters (chat-supporting-cast.plan.md) — one cast for the roster. */
+  supportingCast: SupportingCast;
   clockMinutes: number;
   pendingSkipNote: string;
   skipHistory: SkipRecord[];
@@ -267,6 +274,8 @@ export interface ChatStateSnapshot {
   sceneModel: string;
   /** Accumulating scene memory (current place / time of day / known places) — for the state-tools/inspector view. */
   sceneMemory: ChatSceneMemory;
+  /** Recurring named side characters (chat-supporting-cast.plan.md) — the Supporting Cast panel's data. */
+  supportingCast: SupportingCast;
   /** Memory-callback ring (memory-callbacks.plan.md) — for the state-tools/inspector view. */
   callbackHistory: CallbackEntry[];
   /** Emotional weather (emotional-weather.plan.md) — the persistent feeling + bruise, for the strip/state tools. */
@@ -420,6 +429,7 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     sceneAuto: "off",
     sceneModel: "reference",
     sceneMemory: emptyChatSceneMemory(),
+    supportingCast: emptySupportingCast(),
     clockMinutes: 0,
     pendingSkipNote: "",
     skipHistory: [],
@@ -433,6 +443,7 @@ const chatScenarioSchema = z.object({
   sceneAuto: z.string().catch("off").default("off"),
   sceneModel: z.string().catch("reference").default("reference"),
   sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
+  supportingCast: supportingCastSchema.catch([]).default([]),
   clockMinutes: z.number().catch(0).default(0),
   pendingSkipNote: z.string().catch("").default(""),
   skipHistory: z.array(skipRecordSchema).catch([]).default([]),
@@ -447,6 +458,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       sceneAuto: characterChats.sceneAuto,
       sceneModel: characterChats.sceneModel,
       sceneMemory: characterChats.sceneMemory,
+      supportingCast: characterChats.supportingCast,
       clockMinutes: characterChats.clockMinutes,
       pendingSkipNote: characterChats.pendingSkipNote,
       skipHistory: characterChats.skipHistory,
@@ -461,6 +473,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     sceneAuto: row.sceneAuto,
     sceneModel: row.sceneModel,
     sceneMemory: parseOr(chatSceneMemorySchema, row.sceneMemory, emptyChatSceneMemory(), sink, "character_chats.scene_memory"),
+    supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
     clockMinutes: row.clockMinutes,
     pendingSkipNote: row.pendingSkipNote,
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chats.skip_history"),
@@ -483,6 +496,7 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       scene_auto = ${scenario.sceneAuto},
       scene_model = ${scenario.sceneModel},
       scene_memory = ${JSON.stringify(scenario.sceneMemory)}::jsonb,
+      supporting_cast = ${JSON.stringify(scenario.supportingCast)}::jsonb,
       clock_minutes = ${scenario.clockMinutes},
       pending_skip_note = ${scenario.pendingSkipNote},
       skip_history = ${JSON.stringify(scenario.skipHistory)}::jsonb
@@ -1193,6 +1207,7 @@ export async function finalizeChatState(input: {
       openLoops: input.driftedState.openLoops,
       drives: input.driftedState.drives,
       roster: input.roster,
+      supportingCast: input.scenario.supportingCast.map((m) => ({ name: m.name, relation: m.relation })),
       sink: input.sink,
     }),
   ]);
@@ -1264,6 +1279,17 @@ export async function finalizeChatState(input: {
   const sceneMemory = archivist.value
     ? mergeSceneMemory(input.scenario.sceneMemory, archivist.value.scene)
     : input.scenario.sceneMemory;
+
+  // Supporting cast (chat-supporting-cast.plan.md): same accrete-only shape as the
+  // scene merge — a degraded/empty proposal is a no-op, and roster members + the
+  // player can never be minted as cast entries (full characters stay full characters).
+  const supportingCast = archivist.value
+    ? mergeSupportingCast(input.scenario.supportingCast, archivist.value.cast, [
+        input.playerName,
+        input.characterName,
+        ...(input.roster?.map((m) => m.name) ?? []),
+      ])
+    : input.scenario.supportingCast;
 
   // Outfit change (chat-scene-fidelity.plan.md slice 1): a non-empty archivist proposal is
   // a FULL replacement of the tracked outfit + exposed flag — the fiction dressed, changed,
@@ -1412,7 +1438,7 @@ export async function finalizeChatState(input: {
   // guarded like the state save.
   await saveChatScenario(
     input.chatId,
-    { ...input.scenario, sceneMemory, pendingSkipNote: "" },
+    { ...input.scenario, sceneMemory, supportingCast, pendingSkipNote: "" },
     input.promptMessageId,
   );
   // The rollback anchors ride targeted follow-up UPDATEs (never the shared upsert
@@ -1674,6 +1700,8 @@ export interface ChatStateEdit {
   sceneModel?: string;
   /** Accumulating scene memory (current place / time of day / known places). */
   sceneMemory?: ChatSceneMemory;
+  /** Recurring named side characters (chat-wide) — the Supporting Cast panel's whole-list save. */
+  supportingCast?: SupportingCastMember[];
   /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit surface. */
   callbackHistory?: CallbackEntry[];
   /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear surface. */
@@ -1737,6 +1765,10 @@ export async function editChatState(args: {
   if (patch.sceneAuto !== undefined) nextScenario.sceneAuto = patch.sceneAuto;
   if (patch.sceneModel !== undefined) nextScenario.sceneModel = patch.sceneModel;
   if (patch.sceneMemory !== undefined) nextScenario.sceneMemory = patch.sceneMemory;
+  if (patch.supportingCast !== undefined) {
+    // Whole-list replacement through the boundary schema (caps + dedupe + healing).
+    nextScenario.supportingCast = supportingCastSchema.parse(patch.supportingCast);
+  }
 
   await persistChatState(chatId, characterId, next);
   await saveChatScenario(chatId, nextScenario);
@@ -1853,6 +1885,7 @@ export function chatStateSnapshot(
     sceneAuto: scenario.sceneAuto,
     sceneModel: scenario.sceneModel,
     sceneMemory: scenario.sceneMemory,
+    supportingCast: scenario.supportingCast,
     callbackHistory: state.callbackHistory,
     feeling: state.feeling,
     selfieHistory: state.selfieHistory,

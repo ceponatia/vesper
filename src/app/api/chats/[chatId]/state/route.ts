@@ -14,6 +14,7 @@ import {
   emptyCharacterProfile,
   relationshipTextureSchema,
   socialReactionCardSchema,
+  supportingCastSchema,
   type CharacterProfile,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
@@ -80,6 +81,8 @@ const editBodySchema = z.object({
   selfieHistory: selfieHistorySchema.optional(),
   /** Runtime drives (character-drives.plan.md) — scenario/state-tools edit surface. */
   drives: chatDrivesSchema.optional(),
+  /** Recurring named side characters (chat-supporting-cast.plan.md) — the panel's whole-list save. */
+  supportingCast: supportingCastSchema.optional(),
 });
 
 const actionBodySchema = z.object({ action: chatActionIdSchema });

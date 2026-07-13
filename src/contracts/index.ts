@@ -46,5 +46,6 @@ export * from "./turns/chat-summary";
 export * from "./turns/chat-pulse";
 export * from "./turns/chat-archivist";
 export * from "./turns/chat-scene-memory";
+export * from "./turns/chat-supporting-cast";
 export * from "./turns/chat-skip";
 export * from "./turns/stream";

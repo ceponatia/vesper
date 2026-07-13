@@ -1,0 +1,1 @@
+ALTER TABLE "character_chats" ADD COLUMN "supporting_cast" jsonb DEFAULT '[]'::jsonb NOT NULL;

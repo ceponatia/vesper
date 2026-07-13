@@ -10,6 +10,7 @@ import {
   chatCallbackLine,
   chatNotationNote,
   chatSelfieLine,
+  wrapNarratorInput,
   type EnsembleMemberInput,
 } from "./character-chat";
 
@@ -1342,8 +1343,93 @@ describe("buildCharacterChatSystemPrompt — per-shape length story (narrator-pr
 describe("buildCharacterChatSystemPrompt — incidental people stay scene-consistent (slice 1)", () => {
   it("licenses flavor NPCs only inside the established scene, unnamed and passing", () => {
     const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
-    expect(prompt).toContain("An incidental person must fit the scene already established");
+    expect(prompt).toContain("An INCIDENTAL person must fit the scene already established");
     expect(prompt).toContain("never invent one just to enliven a reply");
+    // The supporting-cast carve-out (chat-supporting-cast.plan.md): recurring named
+    // people are the licensed exception to the unnamed-and-passing discipline.
+    expect(prompt).toContain('Recurring named people listed under "Supporting cast"');
+  });
+});
+
+describe("buildCharacterChatSystemPrompt — supporting cast (chat-supporting-cast.plan.md)", () => {
+  const cast = [
+    {
+      name: "Abby",
+      relation: "Theo's coworker and close friend",
+      details: ["covered a shift last week"],
+      voice: "dry one-liners",
+      whereabouts: "the clinic front desk",
+    },
+  ];
+
+  it("renders the cast block in the volatile tail with the play license", () => {
+    const { prefix, tail } = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [], supportingCast: cast },
+    });
+    expect(tail).toContain("Supporting cast (recurring side characters in this story");
+    expect(tail).toContain("- Abby — Theo's coworker and close friend · covered a shift last week · voice: dry one-liners · usually: the clinic front desk");
+    expect(tail).toContain("you may write their dialogue and small actions");
+    expect(tail).toContain("never use one to speak or act FOR Theo");
+    // Never a bracketed tag — the render contract is unchanged.
+    expect(tail).toContain("never a [bracketed] tag");
+    expect(prefix).not.toContain("Supporting cast (recurring side characters");
+  });
+
+  it("renders no block when the cast is empty (byte-identical tail)", () => {
+    const withEmpty = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [], supportingCast: [] },
+    });
+    const without = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+    });
+    expect(withEmpty.tail).toBe(without.tail);
+  });
+
+  it("rule 16 lets cast populate the character's side of a scene cut", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    expect(prompt).toContain("Supporting-cast members who would plausibly be with Mara may appear there");
+    // The original guard holds: the player's side stays theirs.
+    expect(prompt).toContain("Never narrate Theo's side of the separation");
+  });
+});
+
+describe("narrator-mode input (chat-supporting-cast.plan.md §Narrator input)", () => {
+  it("teaches the story-narration marker in the static notation legend", () => {
+    const prompt = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile(), player: { name: "Theo" } });
+    expect(prompt).toContain('A message opening with a bracketed "[Story narration from Theo …]" line');
+    expect(prompt).toContain("never answer it as though Theo said or did it");
+  });
+
+  it("wrapNarratorInput prefixes the marker the legend describes", () => {
+    const wrapped = wrapNarratorInput("Abby waves from the doorway.", "Theo");
+    expect(wrapped).toBe(
+      "[Story narration from Theo — written as the storyteller, not as Theo speaking or acting]\nAbby waves from the doorway.",
+    );
+  });
+
+  it("renders the one-turn tail note only when this turn's input is narrator-mode", () => {
+    const base = {
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+    };
+    const off = buildCharacterChatPromptParts(base);
+    const on = buildCharacterChatPromptParts({ ...base, narratorInput: true });
+    expect(off.tail).not.toContain("STORY NARRATION");
+    expect(on.tail).toContain("This turn's message is STORY NARRATION from Theo");
+    expect(on.tail).toContain("Do not reply as if Theo said or did any of it");
+    // The prefix is untouched — the note is volatile-tail only.
+    expect(on.prefix).toBe(off.prefix);
   });
 });
 

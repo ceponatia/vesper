@@ -36,6 +36,7 @@ import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
 import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
 import { ChatRelationshipsEditor } from "@/components/chat/chat-relationships-editor";
 import { ChatRosterPanel } from "@/components/chat/chat-roster-panel";
+import { ChatSupportingCastPanel } from "@/components/chat/chat-supporting-cast-panel";
 import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
 import { ChatScenarioModal } from "@/components/characters/chat-scenario-modal";
@@ -67,6 +68,7 @@ const toLine = (m: ChatMessage): ChatLine => ({
   takes: m.takes,
   stopped: m.meta.stopped,
   attachmentIds: m.meta.attachments?.ids.length ? m.meta.attachments.ids : undefined,
+  narrator: m.meta.inputMode === "narrator" || undefined,
 });
 
 /**
@@ -126,6 +128,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // amber affordance (player-input-perception slice 5). A plain flag, not caret
   // state: recomputed from the live textarea on every edit / selection change.
   const [oocActive, setOocActive] = useState(false);
+  // Composer register (chat-supporting-cast.plan.md §Narrator input): narrator mode
+  // sends the line as story narration authored as the storyteller, not the player's POV.
+  const [narratorMode, setNarratorMode] = useState(false);
   const [sending, setSending] = useState(false);
   // True from a Stop click until the truncated stream settles (disables the button).
   const [stopping, setStopping] = useState(false);
@@ -395,8 +400,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       messageId?: string;
       attachmentIds?: string[];
       initiative?: boolean;
+      inputMode?: "player" | "narrator";
     },
-    opts: { userLine?: string; replaceId?: string; attachmentIds?: string[] } = {},
+    opts: { userLine?: string; replaceId?: string; attachmentIds?: string[]; narrator?: boolean } = {},
   ): Promise<ChatStreamOutcome> => {
     const { userLine, replaceId } = opts;
     // Any exchange consumes the reopen affordances (spec §8.1/§8.4) for this visit.
@@ -415,7 +421,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       setLines((prev) => [
         ...prev,
         ...(userLine !== undefined
-          ? [{ id: mkId(), role: "user" as const, content: userLine, attachmentIds: opts.attachmentIds }]
+          ? [{ id: mkId(), role: "user" as const, content: userLine, attachmentIds: opts.attachmentIds, narrator: opts.narrator }]
           : []),
         { id: assistantId, role: "assistant" as const, content: "" },
       ]);
@@ -542,15 +548,23 @@ export function ChatConversation({ chatId }: { chatId: string }) {
 
   const send = async () => {
     const content = input.trim();
-    // A photo-only send is legitimate — showing something IS the message.
+    // A photo-only send is legitimate — showing something IS the message. Narrator
+    // mode needs text (narration is words) and never carries photos (a player-POV act).
+    const narrator = narratorMode && !attachments.length;
+    if (narratorMode && !content) return;
     if ((!content && !attachments.length) || sendingRef.current || !ready || archived || attachBusy) return;
     const attachmentIds = attachments.length ? [...attachments] : undefined;
     setInput("");
     setAttachments([]);
     setOocActive(false);
     const outcome = await runStream(
-      { content: content || undefined, model: chatModel, attachmentIds },
-      { userLine: content, attachmentIds },
+      {
+        content: content || undefined,
+        model: chatModel,
+        attachmentIds,
+        ...(narrator ? { inputMode: "narrator" as const } : {}),
+      },
+      { userLine: content, attachmentIds, narrator },
     );
     if (!outcome.ok) toast.push({ title: "Reply failed", description: outcome.error?.message, tone: "error" });
   };
@@ -985,6 +999,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               }}
             />
           ) : null}
+          <ChatSupportingCastPanel
+            chatId={chatId}
+            cast={chatState?.supportingCast ?? []}
+            archived={archived}
+            onSaved={(snapshot) => setChatState(snapshot)}
+          />
           {rosterOpen && roster.length > 1 ? <ChatRelationshipsEditor chatId={chatId} archived={archived} /> : null}
         </div>
       </Sheet>
@@ -1057,6 +1077,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 onOpenSheet={(member) => setSheetMember(member)}
               />
             ) : null}
+            {/* Supporting cast (chat-supporting-cast.plan.md): recurring side characters,
+                below "In this story" — the dev-visible add/edit/remove surface. */}
+            <ChatSupportingCastPanel
+              chatId={chatId}
+              cast={chatState?.supportingCast ?? []}
+              archived={archived}
+              onSaved={(snapshot) => setChatState(snapshot)}
+            />
           </aside>
         ) : null}
         <div className="relative min-h-0 flex-1">
@@ -1213,6 +1241,17 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               <span className="text-paper-500">To the storyteller — no one in the scene hears this.</span>
             </div>
           ) : null}
+          {narratorMode && !archived ? (
+            // Narrator-register affordance (chat-supporting-cast.plan.md §Narrator input).
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="rounded-sm border border-ink-500 bg-ink-750 px-1.5 py-0.5 font-medium tracking-wide text-paper-300 uppercase">
+                Narrator
+              </span>
+              <span className="text-paper-500">
+                Writing the story, not as you — narrate events, side characters, the world.
+              </span>
+            </div>
+          ) : null}
           {attachments.length ? (
             // Staged photos for the next send (chat-image-input.plan.md).
             <div className="flex flex-wrap items-center gap-1.5">
@@ -1235,6 +1274,31 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             <span className="text-xs text-paper-500">Uploading…</span>
           ) : null}
           <div className="flex items-end gap-2">
+            {!archived ? (
+              // Player ↔ narrator register toggle (chat-supporting-cast.plan.md §Narrator
+              // input): narrator sends the line as story narration, not the player's POV.
+              <button
+                type="button"
+                onClick={() => setNarratorMode((v) => !v)}
+                disabled={!ready || attachments.length > 0}
+                aria-pressed={narratorMode}
+                title={
+                  attachments.length > 0
+                    ? "Photos send as you — remove them to write narration"
+                    : narratorMode
+                      ? "Narrator: writing the story itself — tap to speak as yourself"
+                      : "You: speaking and acting as yourself — tap to write as the narrator"
+                }
+                className={cx(
+                  "touch-target inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border px-2 py-2 text-[11px] font-medium tracking-wide uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  narratorMode
+                    ? "border-ink-500 bg-ink-750 text-paper-200"
+                    : "border-transparent text-paper-500 hover:text-paper-300",
+                )}
+              >
+                {narratorMode ? "Narrator" : "You"}
+              </button>
+            ) : null}
             <Textarea
               rows={2}
               value={input}
@@ -1246,9 +1310,17 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               onSelect={(e) => refreshOoc(e.currentTarget)}
               disabled={archived}
               placeholder={
-                archived ? "This conversation is archived." : `Message ${who}…  (Enter to send, Shift+Enter for a new line)`
+                archived
+                  ? "This conversation is archived."
+                  : narratorMode
+                    ? "Narrate the story — events, side characters' words and actions, the world…  (Enter to send)"
+                    : `Message ${who}…  (Enter to send, Shift+Enter for a new line)`
               }
-              className={cx("flex-1", oocActive && "border-accent-500 ring-1 ring-accent-500/40")}
+              className={cx(
+                "flex-1",
+                oocActive && "border-accent-500 ring-1 ring-accent-500/40",
+                narratorMode && !oocActive && "border-ink-500 ring-1 ring-ink-500/60",
+              )}
             />
             {!archived ? (
               <>
@@ -1266,9 +1338,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 <button
                   type="button"
                   onClick={() => attachInputRef.current?.click()}
-                  disabled={!ready || attachBusy || attachments.length >= 4}
+                  disabled={!ready || attachBusy || attachments.length >= 4 || narratorMode}
                   aria-label="Attach a photo"
-                  title={`Show ${who} a photo (up to 4 per message)`}
+                  title={narratorMode ? "Photos send as you — switch back to You to attach one" : `Show ${who} a photo (up to 4 per message)`}
                   className="touch-target inline-flex cursor-pointer items-center justify-center rounded-md px-2 py-2 text-paper-500 transition-colors hover:text-accent-300 disabled:cursor-not-allowed disabled:text-paper-600"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="size-4.5">
@@ -1301,7 +1373,9 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               <Button
                 variant="primary"
                 onClick={() => void send()}
-                disabled={archived || !ready || attachBusy || (!input.trim() && !attachments.length)}
+                disabled={
+                  archived || !ready || attachBusy || (!input.trim() && (narratorMode || !attachments.length))
+                }
               >
                 Send
               </Button>
