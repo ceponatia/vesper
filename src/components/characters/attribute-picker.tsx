@@ -346,12 +346,44 @@ interface NestedGroup {
 const setCountOf = (definitions: readonly AttributeDefinition[], byId: Map<string, AttributeValue>): number =>
   definitions.filter((d) => byId.has(d.id)).length;
 
-/** Header label "N set" / "—" for a collapsible body section. */
-function SectionCount({ count, open }: { count: number; open: boolean }) {
+/** Set values of a section as short human words, in registry order. */
+function setValueWords(definitions: readonly AttributeDefinition[], byId: Map<string, AttributeValue>): string[] {
+  const words: string[] = [];
+  for (const def of definitions) {
+    const held = byId.get(def.id);
+    if (held === undefined) continue;
+    const v = held.value;
+    if (typeof v === "string") words.push(v.replace(/_/g, " "));
+    else if (typeof v === "number") words.push(def.unit ? `${v} ${def.unit}` : String(v));
+    else if (typeof v === "boolean") words.push(v ? def.label.toLowerCase() : `no ${def.label.toLowerCase()}`);
+    else if (v.length > 0) words.push(v.map((x) => x.replace(/_/g, " ")).join(" · "));
+  }
+  return words;
+}
+
+/** Preview length past which the header falls back to "N set". */
+const SECTION_PREVIEW_MAX = 64;
+
+/**
+ * Collapsed-header summary (ux-improvements slice 7): the section's set values
+ * as a scannable phrase — "auburn, shoulder-length, wavy" — falling back to
+ * "N set" when it gets long, with a distinct italic "empty" when nothing is
+ * authored. What makes a fully-authored section distinguishable at a glance
+ * (and Forge-the-rest / From-portrait output reviewable without expanding).
+ */
+function SectionCount({ count, open, preview }: { count: number; open: boolean; preview?: string }) {
+  const label =
+    count === 0 ? undefined : preview && preview.length <= SECTION_PREVIEW_MAX ? preview : `${count} set`;
   return (
-    <span className="text-xs text-paper-500">
-      {count > 0 ? `${count} set` : "—"}
-      <span className={cx("ml-2 inline-block transition-transform", open && "rotate-90")}>›</span>
+    <span className="flex min-w-0 items-center text-xs text-paper-500">
+      {label !== undefined ? (
+        <span className="max-w-44 truncate sm:max-w-80" title={preview}>
+          {label}
+        </span>
+      ) : (
+        <span className="text-paper-600 italic">empty</span>
+      )}
+      <span className={cx("ml-2 inline-block shrink-0 transition-transform", open && "rotate-90")}>›</span>
     </span>
   );
 }
@@ -416,6 +448,10 @@ function AttributeGroupSection({
 }: GroupProps & { nested?: readonly NestedGroup[]; open: boolean; onToggle: () => void }) {
   const nestedSet = nested.reduce((n, g) => n + setCountOf(g.definitions, byId), 0);
   const totalSet = setCountOf(definitions, byId) + nestedSet;
+  const preview = [
+    ...setValueWords(definitions, byId),
+    ...nested.flatMap((g) => setValueWords(g.definitions, byId)),
+  ].join(", ");
 
   return (
     <section className="rounded-card border border-ink-600 bg-ink-800">
@@ -423,10 +459,10 @@ function AttributeGroupSection({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center justify-between px-4 py-2.5 text-left"
+        className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-left"
       >
-        <span className="text-sm font-medium text-paper-100 capitalize">{category}</span>
-        <SectionCount count={totalSet} open={open} />
+        <span className="shrink-0 text-sm font-medium text-paper-100 capitalize">{category}</span>
+        <SectionCount count={totalSet} open={open} preview={preview} />
       </button>
       {open ? (
         <div className="flex flex-col gap-3 border-t border-ink-600 px-4 py-3">

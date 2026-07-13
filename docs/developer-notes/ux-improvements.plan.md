@@ -136,6 +136,11 @@ from name+description — extend that seam into the editor:
    - Scope: character edit page, item editor, world editor. What remains of
      the guard idea: warn on navigation only while a write is in flight or has
      failed.
+   - **Build note (2026-07-13): the world editor is autosave-exempt.** Its
+     from-draft save *forges new cast suggestions* server-side (paid,
+     minute-long, non-idempotent) — a silent background save would forge
+     half-typed suggestions. It keeps explicit Save + the beforeunload guard;
+     revisit if the save path ever gains a draft-only lane.
    - **Forge-draft discipline is preserved:** ✦ output (Forge-the-rest,
      per-tab re-drafts, slice 5's item assist) still lands as *staged, unsaved*
      proposals for explicit accept/discard — autosave never commits staged

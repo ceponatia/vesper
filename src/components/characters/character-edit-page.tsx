@@ -14,6 +14,7 @@ import {
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { useAutosave } from "@/components/hooks/use-autosave";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,8 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [cloning, setCloning] = useState(false);
+  /** A ✦/↻/◉ result landed and awaits review — autosave pauses (forge-draft discipline). */
+  const [stagedForge, setStagedForge] = useState(false);
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
   const editGenRef = useRef(0);
   /** Bumped on every chat-model pick so a superseded pick is skipped, plus the serializing chain. */
@@ -83,7 +86,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     setChatModel(resolveChatModelId(null));
   }
 
-  const save = async (): Promise<boolean> => {
+  const save = async (opts: { silent?: boolean } = {}): Promise<boolean> => {
     if (!draft) return false;
     const gen = editGenRef.current;
     setSaving(true);
@@ -96,7 +99,8 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     if (result.ok) {
       // Edits made while the save was in flight stay marked unsaved.
       if (editGenRef.current === gen) setDirty(false);
-      toast.push({ title: "Character saved", tone: "success" });
+      setStagedForge(false); // a save IS the review acceptance
+      if (!opts.silent) toast.push({ title: "Character saved", tone: "success" });
       detail.reload({ silent: true });
       return true;
     }
@@ -128,6 +132,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     editGenRef.current += 1;
     setDraft((current) => (current ? mergeFillDraft(current, filled) : filled));
     setDirty(true);
+    setStagedForge(true); // pause autosave — the SaveBar is the review step
     toast.push({ title: "Sheet forged", description: "Review the additions, then save.", tone: "success" });
   };
 
@@ -152,6 +157,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     editGenRef.current += 1;
     setDraft((current) => (current ? mergeRedraftScope(current, redrafted, scope) : redrafted));
     setDirty(true);
+    setStagedForge(true); // pause autosave — the SaveBar is the review step
     toast.push({ title: "Tab re-drafted", description: "Review the rewrite, then save.", tone: "success" });
   };
 
@@ -176,6 +182,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     // Same fill-merge as the Forge: additions only, current draft wins.
     setDraft((current) => (current ? mergeFillDraft(current, derived) : derived));
     setDirty(true);
+    setStagedForge(true); // pause autosave — the SaveBar is the review step
     if (portrait.conflicts.length || portrait.filled.length) {
       // Conflicts pre-checked: the button's purpose is "accept what the picture shows".
       setAcceptedIds(new Set(portrait.conflicts.map((c) => c.id)));
@@ -250,6 +257,16 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     }
   };
 
+  // Autosave (ux-improvements slice 7): silent saves on change/blur; paused
+  // while a forge/re-draft/portrait result awaits review. Save stays manual flush.
+  const autosave = useAutosave({
+    enabled: !stagedForge,
+    dirty,
+    saving: saving || forging || redrafting !== null || derivingPortrait,
+    save: () => save({ silent: true }),
+    signal: draft,
+  });
+
   const remove = async () => {
     setDeleting(true);
     const result = await charactersApi.remove(characterId);
@@ -306,6 +323,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
           {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
         </div>
       </div>
+      <div onBlur={autosave.onBlur}>
       <CharacterEditor
         draft={draft}
         onChange={(next) => {
@@ -324,10 +342,11 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         derivingPortrait={derivingPortrait}
         diagnostics={forgeDiagnostics}
       />
+      </div>
       <SaveBar
         dirty={dirty}
         saving={saving}
-        onSave={save}
+        onSave={() => void save()}
         secondary={
           <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
             Delete

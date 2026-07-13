@@ -95,8 +95,9 @@ interface EntityConfig {
   viewToggle?: boolean;
   /** `scope` drives the discovery gallery (all shareable kinds honor it — the auth.plan.md fast-follow). */
   list: (args: ListArgs) => Promise<ApiResult<LibraryCard[]>>;
-  /** `bucket` is the active type bucket ("all" when none), so New lands in the type being browsed. */
-  create: (args: { bucket: string }) => Promise<ApiResult<CreatedRef>>;
+  /** `bucket` is the active type bucket ("all" when none), so New lands in the type
+   *  being browsed; `name` is the randomized placeholder (slice 7 create-on-new). */
+  create: (args: { bucket: string; name: string }) => Promise<ApiResult<CreatedRef>>;
   /** Optional segmented type-buckets over a card field (items use `kind`). */
   buckets?: {
     field: (card: LibraryCard) => string | undefined;
@@ -143,7 +144,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
         ? { ok: true, data: result.data.map((w) => ({ ...w, tags: [] as string[] })) }
         : result;
     },
-    create: () => worldsApi.create({ name: "Untitled world" }),
+    create: ({ name }) => worldsApi.create({ name }),
   },
   characters: {
     title: "Characters",
@@ -163,7 +164,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
         ? { ok: true, data: result.data.map((c) => ({ ...c, imageId: c.avatarImageId })) }
         : result;
     },
-    create: () => charactersApi.create({ name: "Untitled character" }),
+    create: ({ name }) => charactersApi.create({ name }),
     facets: characterFacetDefs<LibraryCard>(),
     cardChips: characterCardChips,
     // The Chats-hub entry point (character-chat-standalone.spec.md §2.2):
@@ -187,7 +188,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     sortable: true,
     viewToggle: true,
     list: ({ q, tag, scope, sort }) => locationsApi.list({ q, tag, scope, sort }),
-    create: () => locationsApi.create({ name: "Untitled location" }),
+    create: ({ name }) => locationsApi.create({ name }),
     facets: locationFacetDefs<LibraryCard>(),
     cardChips: locationCardChips,
     generateImages: (ids) => locationsApi.generateMissingImages(ids),
@@ -205,7 +206,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     viewToggle: true,
     list: ({ q, tag, scope, sort }) => itemsApi.list({ q, tag, scope, sort }),
     // New creates in the bucket being browsed (the bucket ids ARE the item kinds).
-    create: ({ bucket }) => itemsApi.create({ name: "Untitled item", kind: parseOr(itemKindSchema, bucket, "clothing") }),
+    create: ({ bucket, name }) => itemsApi.create({ name, kind: parseOr(itemKindSchema, bucket, "clothing") }),
     buckets: {
       field: (card) => card.kind,
       options: [
@@ -263,10 +264,8 @@ const configs: Record<LibraryEntity, EntityConfig> = {
         : result;
     },
     // New creates in the bucket being browsed ("All" falls back to the schema default).
-    create: ({ bucket }) =>
-      socialCardsApi.create(
-        bucket === "all" ? { name: "Untitled card" } : { name: "Untitled card", definition: { kind: bucket } },
-      ),
+    create: ({ bucket, name }) =>
+      socialCardsApi.create(bucket === "all" ? { name } : { name, definition: { kind: bucket } }),
     buckets: {
       field: (card) => card.kind,
       options: [
@@ -502,7 +501,10 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
 
   const createBlank = async () => {
     setCreating(true);
-    const result = await config.create({ bucket });
+    // Randomized placeholder (ux-improvements slice 7 create-on-new): several
+    // fresh drafts never share a name, so nothing dupes or shadows in pickers.
+    const name = `${config.newName} ${Math.random().toString(36).slice(2, 6)}`;
+    const result = await config.create({ bucket, name });
     setCreating(false);
     if (result.ok) router.push(`${config.basePath}/${result.data.id}${entity === "worlds" ? "/edit" : ""}`);
     else toast.push({ title: "Couldn't create", description: result.error.message, tone: "error" });
