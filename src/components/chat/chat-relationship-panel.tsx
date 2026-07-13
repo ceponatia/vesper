@@ -145,28 +145,45 @@ function PositionPlot({ history, familiarity, regard }: { history: RelationshipS
   const y = (reg: number) => (100 - Math.max(-100, Math.min(100, reg))) / 2;
   const trail = history.map((s) => `${x(s.familiarity)},${y(s.regard)}`).join(" ");
   return (
-    <svg viewBox="0 0 100 100" role="img" aria-label={`Familiarity ${familiarity} of 100, regard ${regard} of ±100`} className="h-28 w-full text-accent-300">
-      <rect x={0} y={0} width={100} height={100} className="fill-ink-900/60 stroke-ink-600" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-      <line x1={0} y1={50} x2={100} y2={50} className="stroke-ink-600" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-      {history.length >= 2 ? (
-        <polyline
-          points={trail}
-          fill="none"
-          className="stroke-paper-600/60"
-          strokeWidth={1}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      ) : null}
-      <circle cx={x(familiarity)} cy={y(regard)} r={2.5} fill="currentColor" />
-      <text x={2} y={97} className="fill-paper-600" fontSize={5}>
-        strangers → deeply known
-      </text>
-      <text x={2} y={7} className="fill-paper-600" fontSize={5}>
-        warm ↑
-      </text>
-    </svg>
+    // Labeled axes as HTML around a stretched plot (ux-improvements slice 9):
+    // the old in-SVG 5-unit text rendered ~6px, and the square viewBox
+    // letterboxed inside the wide box — the whole chart read as a stamp.
+    <div className="grid grid-cols-[auto_1fr] gap-x-1.5 text-[10px] leading-none text-paper-500">
+      <div className="flex flex-col items-end justify-between py-0.5">
+        <span>warm</span>
+        <span className="text-paper-600">neutral</span>
+        <span>hostile</span>
+      </div>
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Familiarity ${familiarity} of 100, regard ${regard} of ±100`}
+        className="h-40 w-full text-accent-300 sm:h-48"
+      >
+        <rect x={0} y={0} width={100} height={100} className="fill-ink-900/60 stroke-ink-600" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        <line x1={0} y1={50} x2={100} y2={50} className="stroke-ink-600" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+        <line x1={50} y1={0} x2={50} y2={100} className="stroke-ink-700" strokeWidth={1} strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
+        {history.length >= 2 ? (
+          <polyline
+            points={trail}
+            fill="none"
+            className="stroke-paper-600/60"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null}
+        <circle cx={x(familiarity)} cy={y(regard)} r={2.5} fill="currentColor" />
+      </svg>
+      <span aria-hidden />
+      <div className="mt-1 flex justify-between">
+        <span>strangers</span>
+        <span className="text-paper-600">familiarity →</span>
+        <span>deeply known</span>
+      </div>
+    </div>
   );
 }
 

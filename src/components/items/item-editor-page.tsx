@@ -569,7 +569,14 @@ function ClothingFields({
   return (
     <div className="mt-6 flex flex-col gap-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Category" hint="Template: pre-fills coverage and layer.">
+        <Field
+          label="Category"
+          hint={
+            definition.category === "footwear"
+              ? "Covers the whole foot by default — open sandal? Uncheck toes / top of foot below (a flip-flop keeps only the sole)."
+              : "Template: pre-fills coverage and layer."
+          }
+        >
           {(id) => (
             <Select id={id} value={definition.category ?? ""} onChange={(e) => applyCategory(e.target.value)}>
               <option value="">—</option>

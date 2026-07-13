@@ -216,7 +216,18 @@ export function MessageBubble({
                 </div>
               ) : null}
               {pending ? (
-                <span className="text-paper-500">…</span>
+                // Animated typing indicator (ux-improvements slice 9): the pending
+                // bubble breathes during the reveal-hold, so "thinking" reads alive.
+                <span aria-label="typing" className="inline-flex items-center gap-1 text-paper-500">
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      aria-hidden
+                      className="inline-block size-1.5 animate-pulse rounded-full bg-current"
+                      style={{ animationDelay: `${i * 220}ms` }}
+                    />
+                  ))}
+                </span>
               ) : isUser ? (
                 // Span renderer (player-input-perception slice 5): italicize thoughts /
                 // `_italic_`, read `*Name:*` as a text, mark `((OOC))` — sigils hidden.
