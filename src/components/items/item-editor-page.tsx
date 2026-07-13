@@ -335,7 +335,15 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
                 key={kind}
                 type="button"
                 aria-pressed={form.kind === kind}
-                onClick={() => patch({ kind })}
+                // Clothing is never layerless — switching kind backfills the
+                // 1 · base default (same rule as create, server-side).
+                onClick={() =>
+                  patch(
+                    kind === "clothing" && form.definition.layer === null
+                      ? { kind, definition: { ...form.definition, layer: 1 } }
+                      : { kind },
+                  )
+                }
                 className={cx(
                   "flex-1 cursor-pointer rounded text-xs transition-colors",
                   form.kind === kind ? "bg-ink-700 text-paper-50" : "text-paper-400 hover:text-paper-200",
