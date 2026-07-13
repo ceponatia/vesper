@@ -1140,13 +1140,63 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
       profile: scented,
       player: { name: "Theo" },
       state: { meters: { hygiene: 0.2 }, regard: 0, conditions: [] },
-      sensoryFocus: { sense: "smell", target: "hair", intimate: false },
+      sensoryFocus: { sense: "smell", target: "hair", intimate: false, region: "hair" },
     });
     expect(parts.tail).toContain("Sensory focus — Theo is breathing in Mara's hair.");
     expect(parts.tail).toContain("cedar and warm skin");
     expect(parts.tail).toMatch(/unwashed/i); // the low-hygiene band layered over the scent
-    expect(parts.tail).toContain("never contradict their theme");
+    expect(parts.tail).toContain("never repeat them verbatim");
     expect(parts.prefix).not.toContain("Sensory focus"); // volatile
+  });
+
+  it("opens the reply with the sensation itself (sensory-grounding directive)", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: scented,
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "taste", target: "foot", intimate: false, region: "foot" },
+    });
+    expect(parts.tail).toContain("OPEN your reply with the experience itself");
+    expect(parts.tail).toContain("before Mara reacts or the scene moves on");
+    expect(parts.tail).toContain("guide-rails, not vocabulary");
+  });
+
+  it("surfaces the TARGET REGION's own authored values — a foot beat carries feet.smell, sense-ranked first", () => {
+    const footed = profile({
+      attributes: [
+        attr("identity.gender", "female"),
+        attr("presentation.scent_baseline", "cedar and warm skin"),
+        attr("feet.smell", "thick_musk"),
+        attr("feet.arch", "high"),
+      ],
+    });
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: footed,
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "taste", target: "foot", intimate: false, region: "foot" },
+    });
+    expect(parts.tail).toContain("Mara's foot scent: thick musk");
+    expect(parts.tail).toContain("Mara's foot arch: high");
+    // The region's own scent leads the generic perfume line.
+    expect(parts.tail.indexOf("foot scent")).toBeLessThan(parts.tail.indexOf("cedar and warm skin"));
+  });
+
+  it("drops off-sense region values (a study beat never surfaces scent)", () => {
+    const footed = profile({
+      attributes: [attr("identity.gender", "female"), attr("feet.smell", "thick_musk"), attr("feet.arch", "high")],
+    });
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: footed,
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [], outfit: "a linen sundress" },
+      sensoryFocus: { sense: "study", target: "foot", intimate: false, region: "foot" },
+    });
+    expect(parts.tail).toContain("Mara's foot arch: high");
+    expect(parts.tail).not.toContain("thick musk");
   });
 
   it("surfaces an intimate attribute only when the beat targets intimate anatomy the character has", () => {
@@ -1159,9 +1209,10 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
       profile: intimateProfile,
       player: { name: "Theo" },
       state: { meters: {}, regard: 0, conditions: [] },
-      sensoryFocus: { sense: "touch", target: "breasts", intimate: true },
+      sensoryFocus: { sense: "touch", target: "breasts", intimate: true, region: "breasts" },
     });
     expect(earned.tail).toContain("Sensory focus — Theo is touching Mara's breasts.");
+    expect(earned.tail).toMatch(/breast size: full/i);
     // A non-intimate focus never surfaces the intimate attribute.
     const notEarned = buildCharacterChatPromptParts({
       name: "Mara",
@@ -1170,7 +1221,35 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
       state: { meters: {}, regard: 0, conditions: [] },
       sensoryFocus: { sense: "study", target: "dress", intimate: false },
     });
-    expect(notEarned.tail).not.toMatch(/breasts.*full/i);
+    expect(notEarned.tail).not.toMatch(/breast size: full/i);
+  });
+
+  it("keeps the intimate join target-matched — a breasts beat never surfaces another region's values", () => {
+    const intimateProfile = profile({
+      intimateRegions: ["breasts", "vulva"],
+      attributes: [attr("identity.gender", "female"), attr("breasts.size", "full"), attr("vulva.scent", "musky")],
+    });
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: intimateProfile,
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "touch", target: "breasts", intimate: true, region: "breasts" },
+    });
+    expect(parts.tail).toMatch(/breast size: full/i);
+    expect(parts.tail).not.toContain("vulva scent");
+  });
+
+  it("a garment target (no region) still grounds on outfit + generic lines", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: scented,
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [], outfit: "a linen sundress" },
+      sensoryFocus: { sense: "study", target: "dress", intimate: false },
+    });
+    expect(parts.tail).toContain("Sensory focus — Theo is taking in Mara's dress.");
+    expect(parts.tail).toContain("Wearing: a linen sundress");
   });
 });
 
@@ -1207,7 +1286,7 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
     const focused = buildCharacterChatPromptParts({
       ...base,
       sensoryAllowance: "focused_description",
-      sensoryFocus: { sense: "smell", target: "hair", intimate: false },
+      sensoryFocus: { sense: "smell", target: "hair", intimate: false, region: "hair" },
       state: { meters: {}, regard: 0, conditions: [] },
     });
     expect(focused.tail).not.toContain("Sensory allowance this turn");
@@ -1215,6 +1294,19 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
 
     const absent = buildCharacterChatPromptParts(base);
     expect(absent.tail).not.toContain("Sensory allowance this turn");
+  });
+
+  it("degrades focused_description to the close-range grant when nothing authored grounds the focus block", () => {
+    // A touch beat on a region with no authored values, no outfit/grooming/hygiene/conditions:
+    // the focus block renders "" — the allowance must not silently fall to rule 11's default none.
+    const parts = buildCharacterChatPromptParts({
+      ...base,
+      sensoryAllowance: "focused_description",
+      sensoryFocus: { sense: "touch", target: "wrist", intimate: false, region: "wrist" },
+      state: { meters: {}, regard: 0, conditions: [] },
+    });
+    expect(parts.tail).not.toContain("Sensory focus —");
+    expect(parts.tail).toContain("Sensory allowance this turn: one close-range hook");
   });
 
   it("the static rules defer to the allowance line rather than restating the conditions", () => {
