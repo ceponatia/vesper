@@ -99,7 +99,10 @@ export function ScheduleEditor({ schedule, onChange }: ScheduleEditorProps) {
                       </Select>
                     )}
                   </Field>
-                  <Field label="Doing">
+                  <Field
+                    label="Doing"
+                    error={!entry.activity.trim() ? "Blank — this row is dropped on save." : undefined}
+                  >
                     {(id) => (
                       <Input
                         id={id}

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { worldsApi, type WorldDraft } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { useAutosave } from "@/components/hooks/use-autosave";
 import { PageContainer } from "@/components/shell/app-shell";
 import { ErrorState } from "@/components/ui/error-state";
 import { SaveBar } from "@/components/ui/save-bar";
@@ -62,6 +63,13 @@ export function WorldEditPage({ worldId }: { worldId: string }) {
       toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
     }
   };
+
+  // Autosave is deliberately OFF here (enabled: false — the slice-7 exception):
+  // the from-draft save FORGES new cast suggestions server-side (a minute-long,
+  // paid, non-idempotent side effect), so a silent background save would forge
+  // half-typed suggestions. The hook still installs the ruled beforeunload
+  // guard for the unsaved/in-flight window; Save stays explicit.
+  useAutosave({ enabled: false, dirty, saving, save: async () => save(), signal: draft });
 
   if (world.loading && !draft) {
     return (

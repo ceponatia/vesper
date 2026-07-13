@@ -225,7 +225,11 @@ export function CharacterEditor({
 
       {tab === "profile" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Name" className="sm:col-span-1">
+          <Field
+            label="Name"
+            className="sm:col-span-1"
+            error={!draft.name.trim() ? "No name yet — the character saves unnamed." : undefined}
+          >
             {(id) => (
               <Input id={id} value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} />
             )}

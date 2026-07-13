@@ -91,7 +91,10 @@ export function DrivesEditor({ drives, onChange }: DrivesEditorProps) {
               key={index}
               className="grid grid-cols-1 items-end gap-2 rounded-card border border-ink-700 bg-ink-850 p-3 sm:grid-cols-[2fr_2fr_auto_auto_auto]"
             >
-              <Field label="Want">
+              <Field
+                label="Want"
+                error={!drive.want.trim() ? "Blank — this row is dropped on save." : undefined}
+              >
                 {(id) => (
                   <div className="flex flex-col gap-0.5">
                     <Input
