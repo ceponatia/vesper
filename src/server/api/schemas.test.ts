@@ -28,15 +28,32 @@ describe("character body schemas", () => {
 
 describe("item body schemas", () => {
   it("create fills definition extras defaults", () => {
-    const parsed = itemCreateSchema.parse({ name: "Coat", kind: "clothing" });
+    const parsed = itemCreateSchema.parse({ name: "Lantern", kind: "object" });
     expect(parsed.definition).toEqual(emptyItemExtras());
     expect(parsed.definition.opacity).toBe("opaque");
+    expect(parsed.definition.layer).toBeUndefined();
+  });
+
+  it("create defaults new clothing to layer 1 · base", () => {
+    const parsed = itemCreateSchema.parse({ name: "Coat", kind: "clothing" });
+    expect(parsed.definition.layer).toBe(1);
+    // An explicit layer wins over the default.
+    const bra = itemCreateSchema.parse({ name: "Bra", kind: "clothing", definition: { layer: 0 } });
+    expect(bra.definition.layer).toBe(0);
   });
 
   it("patch definition is partial", () => {
     const parsed = itemPatchSchema.parse({ definition: { layer: 3 } });
     expect(parsed.definition).toEqual({ layer: 3 });
     expect(itemPatchSchema.safeParse({ definition: { layer: 7 } }).success).toBe(false);
+  });
+
+  it("patch accepts layer null as an explicit clear, not a 400", () => {
+    // The client definition shape represents "unset" as null (autosave sends
+    // the full definition); the key survives so the merge unsets the layer.
+    const parsed = itemPatchSchema.parse({ definition: { layer: null } });
+    expect(parsed.definition !== undefined && "layer" in parsed.definition).toBe(true);
+    expect(parsed.definition?.layer).toBeUndefined();
   });
 
   it("invalidCoverageIds flags unknown body locations only", () => {

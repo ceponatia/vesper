@@ -4,6 +4,7 @@ import {
   bodyLocationRegistry,
   characterProfileObjectSchema,
   characterProfileSchema,
+  clothingLayerSchema,
   itemDefinitionSchema,
   itemKindSchema,
   socialReactionCardExtrasSchema,
@@ -131,13 +132,21 @@ export function emptyItemExtras(): ItemExtras {
   return itemExtrasSchema.parse({});
 }
 
-export const itemCreateSchema = z.object({
-  name: nameSchema,
-  kind: itemKindSchema,
-  description: z.string().default(""),
-  tags: tagsSchema.default([]),
-  definition: itemExtrasSchema.default(() => emptyItemExtras()),
-});
+export const itemCreateSchema = z
+  .object({
+    name: nameSchema,
+    kind: itemKindSchema,
+    description: z.string().default(""),
+    tags: tagsSchema.default([]),
+    definition: itemExtrasSchema.default(() => emptyItemExtras()),
+  })
+  // Clothing is never layerless: default new pieces to 1 · base so the editor
+  // opens with a valid layer (a category template or the player adjusts it).
+  .transform((body) =>
+    body.kind === "clothing" && body.definition.layer === undefined
+      ? { ...body, definition: { ...body.definition, layer: 1 as const } }
+      : body,
+  );
 export type ItemCreateBody = z.infer<typeof itemCreateSchema>;
 
 export const itemPatchSchema = z.object({
@@ -145,7 +154,13 @@ export const itemPatchSchema = z.object({
   kind: itemKindSchema.optional(),
   description: z.string().optional(),
   tags: tagsSchema.optional(),
-  definition: partialWithoutDefaults(itemExtrasSchema).optional(),
+  definition: partialWithoutDefaults(
+    itemExtrasSchema.extend({
+      // The client definition shape carries "no layer" as null; accept it as
+      // an explicit clear (key present ⇒ merge unsets) instead of a 400.
+      layer: clothingLayerSchema.nullable().transform((v) => v ?? undefined),
+    }),
+  ).optional(),
   /** Publish/un-publish toggle (auth.plan.md). */
   visibility: visibilitySchema.optional(),
 });
