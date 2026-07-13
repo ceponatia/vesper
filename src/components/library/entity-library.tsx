@@ -112,6 +112,9 @@ interface EntityConfig {
   cardChips?: (card: LibraryCard) => { label: string; swatch?: string }[];
   /** Optional per-card quick action (hover-revealed; characters use it for "Chat"). */
   cardAction?: { label: string; ariaLabel: (card: LibraryCard) => string; href: (card: LibraryCard) => string };
+  /** Optional per-card Duplicate (hover-revealed): snapshot-copy via the kind's
+   *  clone endpoint, then open the copy. Works on public cards too (copy-on-use). */
+  clone?: (id: string) => Promise<ApiResult<CreatedRef>>;
   /** Optional batch image generation for the given entity ids (those visible
    *  under the active filter) that are still missing an image. */
   generateImages?: (ids: readonly string[]) => Promise<ApiResult<{ queued: number }>>;
@@ -170,6 +173,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
       ariaLabel: (card) => `Chat with ${card.name}`,
       href: (card) => `/chat?new=${card.id}`,
     },
+    clone: (id) => charactersApi.clone(id),
   },
   locations: {
     title: "Locations",
@@ -214,6 +218,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     facets: itemFacetDefs<LibraryCard>(),
     groupCards: itemCardGroup,
     cardChips: itemCardChips,
+    clone: (id) => itemsApi.clone(id),
     generateImages: (ids) => itemsApi.generateMissingImages(ids),
     organize: {
       run: (ids) => itemsApi.classifyMissing(ids),
@@ -928,6 +933,41 @@ function LibraryCards({
   cardAction: EntityConfig["cardAction"];
   router: ReturnType<typeof useRouter>;
 }) {
+  const toast = useToast();
+  const [cloningId, setCloningId] = useState<string | null>(null);
+  const cloneFn = config.clone;
+  const cloneCard = async (card: LibraryCard) => {
+    if (!cloneFn || cloningId !== null) return;
+    setCloningId(card.id);
+    const result = await cloneFn(card.id);
+    setCloningId(null);
+    if (result.ok) {
+      toast.push({ title: `${card.name || "Untitled"} duplicated`, description: "Opening the copy.", tone: "success" });
+      router.push(`${config.basePath}/${result.data.id}`);
+    } else {
+      toast.push({ title: "Duplicate failed", description: result.error.message, tone: "error" });
+    }
+  };
+  // A button (not a nested anchor — the card is already a Link);
+  // `.hover-reveal` keeps it quiet on pointer devices, always visible on touch.
+  const actionButtonClass =
+    "hover-reveal shrink-0 cursor-pointer rounded-md border border-ink-600 bg-ink-850/90 px-2 py-1 text-xs text-paper-300 hover:border-accent-500/60 hover:text-accent-300";
+  const cloneButton = (card: LibraryCard) =>
+    cloneFn ? (
+      <button
+        type="button"
+        aria-label={`Duplicate ${card.name || "this entry"}`}
+        disabled={cloningId !== null}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void cloneCard(card);
+        }}
+        className={actionButtonClass}
+      >
+        {cloningId === card.id ? "Duplicating…" : "Duplicate"}
+      </button>
+    ) : null;
   if (view === "list") {
     return (
       <div className="flex flex-col gap-1.5">
@@ -958,6 +998,7 @@ function LibraryCards({
                   ))}
               </span>
               <span className="ml-auto hidden max-w-72 truncate text-xs text-paper-500 lg:inline">{card.description}</span>
+              {cloneButton(card)}
             </Card>
           </Link>
         ))}
@@ -996,21 +1037,24 @@ function LibraryCards({
                   ))}
               </div>
             </div>
-            {cardAction ? (
-              // A button (not a nested anchor — the card is already a Link);
-              // `.hover-reveal` keeps it quiet on pointer devices, always visible on touch.
-              <button
-                type="button"
-                aria-label={cardAction.ariaLabel(card)}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  router.push(cardAction.href(card));
-                }}
-                className="hover-reveal ml-auto shrink-0 cursor-pointer self-start rounded-md border border-ink-600 bg-ink-850/90 px-2 py-1 text-xs text-paper-300 hover:border-accent-500/60 hover:text-accent-300"
-              >
-                {cardAction.label}
-              </button>
+            {cardAction || cloneFn ? (
+              <div className="ml-auto flex shrink-0 flex-col items-end gap-1 self-start">
+                {cardAction ? (
+                  <button
+                    type="button"
+                    aria-label={cardAction.ariaLabel(card)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      router.push(cardAction.href(card));
+                    }}
+                    className={actionButtonClass}
+                  >
+                    {cardAction.label}
+                  </button>
+                ) : null}
+                {cloneButton(card)}
+              </div>
             ) : null}
           </Card>
         </Link>

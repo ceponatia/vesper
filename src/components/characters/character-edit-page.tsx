@@ -52,6 +52,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const [forgeDiagnostics, setForgeDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cloning, setCloning] = useState(false);
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
   const editGenRef = useRef(0);
   /** Bumped on every chat-model pick so a superseded pick is skipped, plus the serializing chain. */
@@ -234,6 +235,21 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     });
   };
 
+  /** Same save-first discipline as the Forge — the clone copies the saved row. */
+  const clone = async () => {
+    if (cloning || forging || redrafting || saving) return;
+    if (dirty && !(await save())) return;
+    setCloning(true);
+    const result = await charactersApi.clone(characterId);
+    setCloning(false);
+    if (result.ok) {
+      toast.push({ title: "Character duplicated", description: "You're now editing the copy.", tone: "success" });
+      router.push(`/characters/${result.data.id}`);
+    } else {
+      toast.push({ title: "Duplicate failed", description: result.error.message, tone: "error" });
+    }
+  };
+
   const remove = async () => {
     setDeleting(true);
     const result = await charactersApi.remove(characterId);
@@ -278,6 +294,14 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
             title="Complete every empty part of the sheet from what you've entered — never changes what you wrote. Saves your edits first."
           >
             ✦ Forge the rest
+          </Button>
+          <Button
+            onClick={() => void clone()}
+            busy={cloning}
+            disabled={saving || forging || redrafting !== null}
+            title="Copy this character into a new library entry and open it — an archetype starting point."
+          >
+            Duplicate
           </Button>
           {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
         </div>

@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { MessageSpanContext } from "@/lib/message-spans";
+import { isPinnedToBottom, prependRestoreTop, type PrependAnchor } from "@/lib/scroll-pin";
 import type { FeedMessage, StatusParticipant, UseSession } from "@/lib/client/use-session";
 import { MessageContent } from "@/components/characters/message-content";
 import { Button, Spinner } from "@/components/ui/button";
@@ -268,7 +269,7 @@ export function Feed({ session }: { session: UseSession }) {
   const [pinned, setPinned] = useState(true);
   // Set before loadOlder so the layout effect can restore the viewport after
   // the prepend renders (the reader is never yanked, docs/ui.md).
-  const prependAnchorRef = useRef<{ height: number; top: number } | null>(null);
+  const prependAnchorRef = useRef<PrependAnchor | null>(null);
   const [confirming, setConfirming] = useState<FeedMessage | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -278,7 +279,7 @@ export function Feed({ session }: { session: UseSession }) {
   const measurePinned = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= PIN_THRESHOLD_PX;
+    const nearBottom = isPinnedToBottom(el, PIN_THRESHOLD_PX);
     pinnedRef.current = nearBottom;
     setPinned(nearBottom);
   }, []);
@@ -302,7 +303,7 @@ export function Feed({ session }: { session: UseSession }) {
     const anchor = prependAnchorRef.current;
     if (anchor) {
       prependAnchorRef.current = null;
-      el.scrollTop = el.scrollHeight - anchor.height + anchor.top;
+      el.scrollTop = prependRestoreTop(anchor, el.scrollHeight);
       return;
     }
     if (pinnedRef.current) el.scrollTop = el.scrollHeight;

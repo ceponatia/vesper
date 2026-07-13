@@ -675,7 +675,7 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | Route | What |
 | --- | --- |
 | `GET /api/chats?characterId=&archived=1` · `POST /api/chats` | list conversations · create one (`memory: "shared" \| "fresh"` — the D7 choice) |
-| `GET/POST/PATCH/DELETE /api/chats/:chatId` | transcript · one exchange (`kind: send \| open \| continue \| regenerate \| rerun`; `rerun` takes `messageId` = the target user line; `send` may carry `attachmentIds` ≤4 — §Player photos — and may be photo-only; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
+| `GET/POST/PATCH/DELETE /api/chats/:chatId` | newest transcript page (100 rows; `?before=<messageId>` keysets older pages, `hasMore`/`nextBefore` in the envelope — the UI's "Load earlier") · one exchange (`kind: send \| open \| continue \| regenerate \| rerun`; `rerun` takes `messageId` = the target user line; `send` may carry `attachmentIds` ≤4 — §Player photos — and may be photo-only; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
 | `POST /api/chats/:chatId/attachments` | upload ONE player photo (data URL in, `chat_upload` asset id back — §Player photos); 409 on an archived chat, generation-rate-limited |
 | `POST /api/chats/:chatId/participants` · `PATCH/DELETE …/participants/:characterId` | roster add (cap 4, D7 memory choice; seeds matrix pairs) · presence flip (through `editChatState`, 409 mid-stream) · remove (never the last; primary's heir promotes — §Multi-character) |
 | `GET/PUT /api/chats/:chatId/relationships` | the conversation's directed NPC↔NPC matrix + roster · upsert authored edges (band picks → live scalars; roster-validated — §Multi-character) |
