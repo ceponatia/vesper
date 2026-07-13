@@ -528,6 +528,19 @@ export async function savePreExchangeScenario(chatId: string, scenario: ChatScen
   );
 }
 
+/**
+ * Roll the scenario back to the pre-exchange anchor for "another take"
+ * (regenerate / an applicable rerun) — PURE. The discarded take's clock tick,
+ * skip-note clear and scene merge all undo, but the supporting cast NEVER
+ * rolls back: it is accrete-only and author-curated between takes (owner
+ * report: a member added after the discarded reply vanished when that reply
+ * was redone), so the live list always wins. Cast entries only ever leave via
+ * the panel's Remove or the SUPPORTING_CAST_MAX oldest-out eviction.
+ */
+export function rollbackScenario(anchor: ChatScenario, live: ChatScenario | null): ChatScenario {
+  return { ...anchor, supportingCast: live?.supportingCast ?? anchor.supportingCast };
+}
+
 /** Load the scenario rollback anchor; `{}` (the sentinel) or a bad parse ⇒ null (keep live). */
 export async function loadPreExchangeScenario(chatId: string): Promise<ChatScenario | null> {
   const [row] = await db()
