@@ -53,6 +53,7 @@ import {
   loadPreExchangeScenario,
   loadPreExchangeState,
   persistChatState,
+  rollbackScenario,
   runChatPulse,
   saveChatScenario,
   saveChatState,
@@ -610,10 +611,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- The chat-wide scenario (followups ruling 8) --------------------------
     // Loaded once per exchange; regenerate/rerun roll it back with the state
-    // (the clock tick, skip-note clear, scene merge and callback burn all undo).
+    // (the clock tick, skip-note clear, scene merge and callback burn all undo —
+    // but never the supporting cast; see rollbackScenario).
     let storedScenario = await loadChatScenario(chatId, sink);
     if (regenerateTarget || (kind === "rerun" && rerunSnapshotApplies)) {
-      storedScenario = (await loadPreExchangeScenario(chatId)) ?? storedScenario;
+      const anchor = await loadPreExchangeScenario(chatId);
+      if (anchor) storedScenario = rollbackScenario(anchor, storedScenario);
     }
     const preExchangeScenario = storedScenario;
     const baseScenario = storedScenario ?? seedChatScenario(profile);

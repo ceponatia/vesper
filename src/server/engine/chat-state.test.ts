@@ -21,6 +21,7 @@ import {
   matchOutfitPresetInText,
   resolveSeededOutfit,
   rhythmOutfitPatch,
+  rollbackScenario,
   runChatPulse,
   seedChatScenario,
   seedChatState,
@@ -206,6 +207,32 @@ describe("seedChatScenario (the chat-wide half — followups rulings 8-9)", () =
     };
     expect(seedChatScenario(profile()).activeSocialCards).toEqual([]);
     expect(seedChatScenario(profile({ socialCards: [card] })).activeSocialCards).toEqual([card]);
+  });
+});
+
+describe("rollbackScenario ('another take' — the supporting cast never rolls back)", () => {
+  const abby = { name: "Abby", relation: "the player's coworker", details: [] };
+
+  it("restores the anchor's fields but keeps the LIVE cast — a member added between takes survives the redo", () => {
+    // Owner report 2026-07-13: Abby, added via the panel after a reply, vanished
+    // when that reply was rerun — the whole-scenario rollback restored a pre-Abby anchor.
+    const anchor: ChatScenario = { ...seedChatScenario(profile()), clockMinutes: 96, pendingSkipNote: "dawn" };
+    const live: ChatScenario = { ...seedChatScenario(profile()), clockMinutes: 108, supportingCast: [abby] };
+    const rolled = rollbackScenario(anchor, live);
+    expect(rolled.clockMinutes).toBe(96);
+    expect(rolled.pendingSkipNote).toBe("dawn");
+    expect(rolled.supportingCast).toEqual([abby]);
+  });
+
+  it("live wins even when smaller — an author Remove between takes doesn't resurrect the anchor's entry", () => {
+    const anchor: ChatScenario = { ...seedChatScenario(profile()), supportingCast: [abby] };
+    const live: ChatScenario = { ...seedChatScenario(profile()), supportingCast: [] };
+    expect(rollbackScenario(anchor, live).supportingCast).toEqual([]);
+  });
+
+  it("a missing live scenario degrades to the anchor's own cast", () => {
+    const anchor: ChatScenario = { ...seedChatScenario(profile()), supportingCast: [abby] };
+    expect(rollbackScenario(anchor, null).supportingCast).toEqual([abby]);
   });
 });
 

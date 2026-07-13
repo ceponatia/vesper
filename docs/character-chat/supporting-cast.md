@@ -16,8 +16,12 @@ The scene-memory pattern applied to people:
 - **Storage**: `supporting_cast` jsonb on the CHAT row (the shared scenario; one cast for the
   roster) — `SupportingCastMember { name, relation, details[], voice?, whereabouts? }`
   (`contracts/turns/chat-supporting-cast.ts`), hard caps (≤8 members, ≤6 details, length
-  caps), `parseOr` degraded-empty at the load boundary. Rides the `pre_exchange_scenario`
-  rollback anchor, so "another take" restores it.
+  caps), `parseOr` degraded-empty at the load boundary. It rides the `pre_exchange_scenario`
+  rollback anchor but is **exempt from the rollback itself** (`rollbackScenario`,
+  `chat-state.ts`): regenerate/rerun restore the anchor's clock/scene/skip fields while the
+  LIVE cast list wins — the cast is accrete-only and author-curated between takes, so
+  redoing a reply never deletes a member added after it (owner report, 2026-07-13). Entries
+  only leave via the panel's Remove or the cap's oldest-out eviction.
 - **Reconcile**: the archivist's 10th field `cast` proposes new people / new details —
   merged accrete-only by `mergeSupportingCast` (upsert by normalized name, details dedupe +
   cap, `relation` fills only when empty — author edits are canonical), with roster member +

@@ -191,7 +191,9 @@ guarded state write:
   (`character_chats.pre_exchange_scenario`) — the rollback anchors "another take"
   restores so a regenerated exchange never double-applies drift/pulse effects (the
   relationship samples/milestones AND the clock tick / scene merge / callback burn roll
-  back with them). `loadPreExchangeState` is three-valued: a recorded `{}` is the
+  back with them). One carve-out: the **supporting cast never rolls back**
+  (`rollbackScenario` keeps the live list — accrete-only + author-curated between takes;
+  see [supporting-cast.md](supporting-cast.md)). `loadPreExchangeState` is three-valued: a recorded `{}` is the
   **first-exchange sentinel** (no prior state → the regenerate re-seeds from the
   authored defaults, exactly as the live first exchange did), a real state rolls back to
   it, and a **missing** row degrades to no-rollback with `chat_state.snapshot.missing`

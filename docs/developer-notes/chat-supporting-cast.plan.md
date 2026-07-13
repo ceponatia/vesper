@@ -48,8 +48,15 @@ cast images (long-run desirable — parked), and any session-lane analogue.
 
 - New jsonb column `supporting_cast` on `character_chats` (default `[]`) —
   chat-wide like the rest of the scenario; rides `ChatScenario`,
-  `chatScenarioSchema` (heals), seed/load/save, and therefore the
-  `pre_exchange_scenario` rollback anchor for free ("another take" restores it).
+  `chatScenarioSchema` (heals), seed/load/save, and the `pre_exchange_scenario`
+  rollback anchor. **Post-ship fix (2026-07-13):** the cast is EXEMPT from the
+  rollback itself (`rollbackScenario`, `chat-state.ts`) — the day-one owner
+  test hit it: Abby, added via the panel after a reply landed, vanished when
+  that reply was rerun, because the whole-scenario rollback restored a
+  pre-Abby anchor. Regenerate/rerun now restore the anchor's clock/scene/skip
+  fields while the LIVE cast wins (accrete-only + author-curated ⇒ nothing
+  worth undoing); members only leave via the panel's Remove or the cap-of-8
+  oldest-out eviction.
 - `ChatStateEdit.supportingCast` (chat-wide half) — whole-array replacement,
   the UI's save surface; surfaced on `ChatStateSnapshot`.
 
