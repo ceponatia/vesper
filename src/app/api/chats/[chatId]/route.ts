@@ -133,13 +133,18 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const hasMore = rows.length > CHAT_PAGE_SIZE;
   const page = rows.slice(0, CHAT_PAGE_SIZE);
 
-  // Roster presence (multi-character-chat.plan.md): one read over the chat's
-  // state rows; a member with no row yet is simply present (the seed default).
-  const presenceRows = await db()
-    .select({ characterId: characterChatState.characterId, presence: characterChatState.presence })
+  // Roster presence + current outfit (multi-character-chat.plan.md; outfit chip —
+  // ux-improvements slice 3): one read over the chat's state rows; a member with
+  // no row yet is simply present (the seed default) in whatever they wear.
+  const stateRows = await db()
+    .select({
+      characterId: characterChatState.characterId,
+      presence: characterChatState.presence,
+      outfit: characterChatState.outfit,
+    })
     .from(characterChatState)
     .where(eq(characterChatState.chatId, chatId));
-  const presenceBy = new Map(presenceRows.map((r) => [r.characterId, r.presence]));
+  const stateBy = new Map(stateRows.map((r) => [r.characterId, r]));
 
   return jsonOk({
     messages: page.reverse(),
@@ -161,7 +166,8 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
       name: m.character.name,
       avatarImageId: m.character.avatarImageId,
       sort: m.sort,
-      presence: presenceBy.get(m.characterId) ?? "present",
+      presence: stateBy.get(m.characterId)?.presence ?? "present",
+      outfit: stateBy.get(m.characterId)?.outfit ?? "",
     })),
   });
 });
