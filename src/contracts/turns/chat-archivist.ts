@@ -3,6 +3,7 @@ import { factDraftSchema } from "../facts/taxonomy";
 import { attributeChangeSchema } from "./agent-results";
 import { DRIVES_MAX, driveUpdateSchema } from "../personality/drives";
 import { chatSceneProposalSchema } from "./chat-scene-memory";
+import { chatCastProposalSchema } from "./chat-supporting-cast";
 
 /**
  * The character-chat archivist-lite (character-chat-primary.spec.md §2): one small
@@ -118,6 +119,14 @@ export const chatArchivistSchema = z.object({
     .catch([])
     .default([])
     .transform((entries) => entries.slice(0, 4)),
+  /**
+   * Supporting-cast proposals (chat-supporting-cast.plan.md): recurring NAMED side
+   * characters — not roster members, not the player — the exchange introduced or
+   * established durable texture about. Merged via `mergeSupportingCast` (upsert by
+   * name, details accrete, relation fills only when empty, roster/player names
+   * excluded). Lenient; [] is the common no-new-people case.
+   */
+  cast: chatCastProposalSchema,
 });
 
 export type ChatArchivist = z.infer<typeof chatArchivistSchema>;
@@ -134,6 +143,7 @@ export function degradedChatArchivist(): ChatArchivist {
     outfit: { description: "", exposed: false },
     driveUpdates: [],
     presence: [],
+    cast: [],
   };
 }
 

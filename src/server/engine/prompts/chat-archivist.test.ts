@@ -2,13 +2,41 @@ import { describe, expect, it } from "vitest";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./chat-archivist";
 
 describe("CHAT_ARCHIVIST_SYSTEM", () => {
-  it("declares nine fields and carries a worked example for each rare field", () => {
-    expect(CHAT_ARCHIVIST_SYSTEM).toContain("nine fields");
+  it("declares ten fields and carries a worked example for each rare field", () => {
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("ten fields");
     // The attributeChanges micro-example (C6 — the haircut) so the proposer stops under-firing.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeId":"hair.length"');
     // Both examples carry every field, so the model sees the full shape.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"openLoops":[]');
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeChanges":[]');
+  });
+
+  it("declares the supporting-cast field with its exclusions (chat-supporting-cast.plan.md)", () => {
+    // Named recurring people only — never walk-ons, the main characters, or the player.
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"cast": recurring NAMED side characters/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("never one-scene walk-ons");
+    // The worked example (Abby) shows the full shape.
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"cast":[{"name":"Abby"');
+    // The known-cast list renders only once someone exists, fenced.
+    const bare = buildChatArchivistPrompt({
+      characterName: "Mara",
+      playerName: "Brian",
+      exchange: { player: "hi", assistant: "hello" },
+    });
+    expect(bare).not.toContain("Supporting cast so far");
+    const known = buildChatArchivistPrompt({
+      characterName: "Mara",
+      playerName: "Brian",
+      exchange: { player: "hi", assistant: "hello" },
+      supportingCast: [{ name: "Abby", relation: "the player's coworker" }],
+    });
+    expect(known).toContain("Supporting cast so far");
+    expect(known).toContain("- Abby — the player's coworker");
+  });
+
+  it("teaches the storyteller-narration label (narrator-mode input)", () => {
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("STORYTELLER NARRATION");
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("never record the player as having said or done what it merely narrates");
   });
 
   it("declares the roster-gated presence field (multi-character-chat.plan.md slice 3)", () => {

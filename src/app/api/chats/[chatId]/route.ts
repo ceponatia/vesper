@@ -46,6 +46,14 @@ const sendBodySchema = z
      */
     kind: z.enum(["send", "open", "continue", "regenerate", "rerun"]).default("send"),
     content: z.string().trim().max(MESSAGE_CONTENT_MAX).optional(),
+    /**
+     * Composer register (chat-supporting-cast.plan.md §Narrator input) — send only:
+     * "narrator" marks the line as story narration authored by the player as
+     * storyteller (supporting-cast dialogue, offscreen developments), never their
+     * own POV. Persisted on the line's meta; the prompt suspends the perception
+     * partition for it and the reaction pulse skips (no player act).
+     */
+    inputMode: z.enum(["player", "narrator"]).default("player"),
     /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
     model: z.string().trim().min(1).max(120).optional(),
     /** "Has something to say" opener cue (spec §8.4) — only read for kind "continue". */
@@ -199,6 +207,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     })),
     kind: body.value.kind,
     content: body.value.content,
+    inputMode: body.value.inputMode,
     // The rerun target (kind "rerun"): the player line to re-send from. The pipeline
     // snips only its successors and reuses the line itself — nothing is deleted here.
     targetMessageId: body.value.messageId,

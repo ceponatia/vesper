@@ -37,6 +37,8 @@ import {
   socialReactionCardExtrasSchema,
   socialReactionCardSchema,
   type SocialReactionCard,
+  supportingCastSchema,
+  type SupportingCastMember,
   worldLoreSchema,
   worldStyleSchema,
 } from "@/contracts";
@@ -294,8 +296,10 @@ export const chatMessageSchema = z.object({
         .object({ ids: z.array(z.string()).catch([]) })
         .nullish()
         .catch(null),
+      /** "narrator" on a user line = story narration authored as the storyteller (chat-supporting-cast.plan.md). */
+      inputMode: z.enum(["player", "narrator"]).nullish().catch(null),
     })
-    .catch({ stopped: false, attachments: null }),
+    .catch({ stopped: false, attachments: null, inputMode: null }),
   createdAt: optionalText,
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
@@ -360,6 +364,8 @@ export const chatStateSnapshotSchema = z.object({
   sceneAuto: z.string().catch("off"),
   // Scene-image model pick (the scene strip's save-on-select dropdown).
   sceneModel: z.string().catch("reference"),
+  // Recurring named side characters (chat-supporting-cast.plan.md) — the Supporting Cast panel's data.
+  supportingCast: supportingCastSchema.catch([]),
   // Emotional weather (emotional-weather.plan.md): the persistent feeling + bruise —
   // read by the reply-pacing hold and shown in the state tools. Degrades to empty.
   feeling: z
@@ -391,6 +397,8 @@ export interface ChatStateEdit {
   attributeOverlays?: AttributeValue[];
   sceneAuto?: "off" | "milestones";
   sceneModel?: ChatSceneModel;
+  /** Recurring named side characters (chat-supporting-cast.plan.md) — whole-list replacement. */
+  supportingCast?: SupportingCastMember[];
 }
 
 export const locationSummarySchema = z.object({
@@ -1250,6 +1258,8 @@ export async function sendChatMessage(
     attachmentIds?: string[];
     /** Reopen-opener initiative (chat-initiative.plan.md) — continue only. */
     initiative?: boolean;
+    /** Composer register (chat-supporting-cast.plan.md §Narrator input) — send only. */
+    inputMode?: "player" | "narrator";
   },
   onChunk: (delta: string) => void,
   signal?: AbortSignal,

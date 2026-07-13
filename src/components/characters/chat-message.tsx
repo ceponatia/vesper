@@ -18,6 +18,8 @@ export interface ChatLine {
   stopped?: boolean;
   /** Attached-photo asset ids on a user line (chat-image-input.plan.md) — rendered as thumbs. */
   attachmentIds?: string[];
+  /** User line written in NARRATOR mode (chat-supporting-cast.plan.md): story narration, not the player's POV. */
+  narrator?: boolean;
 }
 
 /** Circular-arrow "rerun" glyph (stroke-based, 24×24 box — matches the nav icons). */
@@ -198,9 +200,18 @@ export function MessageBubble({
           <>
             <div
               className={`rounded-card px-3 py-2 text-sm whitespace-pre-wrap ${
-                isUser ? "bg-accent-500/15 text-paper-100" : "bg-ink-800 text-paper-200"
+                isUser
+                  ? line.narrator
+                    ? "border border-ink-500 bg-ink-750 text-paper-200"
+                    : "bg-accent-500/15 text-paper-100"
+                  : "bg-ink-800 text-paper-200"
               }`}
             >
+              {isUser && line.narrator ? (
+                // Narrator-mode marker (chat-supporting-cast.plan.md): this line is story
+                // narration the player authored as storyteller, not their own POV.
+                <p className="mb-0.5 text-[10px] font-medium tracking-wide text-paper-400 uppercase">Narration</p>
+              ) : null}
               {line.attachmentIds?.length ? (
                 // Attached photos (chat-image-input.plan.md): thumbs above the text.
                 <div className={`flex flex-wrap gap-1.5 ${line.content.trim() ? "mb-1.5" : ""}`}>

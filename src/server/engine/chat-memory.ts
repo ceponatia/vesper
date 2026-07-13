@@ -174,6 +174,8 @@ export interface ChatArchivistInput {
   drives?: readonly { want: string; secrecy: string; revealed: boolean }[];
   /** The roster with live presence (multi-character-chat.plan.md) — arms the presence field. */
   roster?: readonly { name: string; presence: "present" | "away" }[];
+  /** The established supporting cast (chat-supporting-cast.plan.md) — field 10's known-people list. */
+  supportingCast?: readonly { name: string; relation: string }[];
   sink?: DiagnosticSink;
 }
 
@@ -201,6 +203,7 @@ export async function runChatArchivist(
       openLoops: input.openLoops,
       drives: input.drives,
       roster: input.roster,
+      supportingCast: input.supportingCast,
     }),
     modelId: agentModelId(),
     temperature: 0,

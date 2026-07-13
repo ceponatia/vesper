@@ -9,6 +9,7 @@ import {
   isEmptyChatSceneMemory,
   type ChatSceneMemory,
 } from "@/contracts/turns/chat-scene-memory";
+import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contracts/personality/traits";
@@ -124,6 +125,13 @@ export interface CharacterChatPromptInput {
      */
     sceneMemory?: ChatSceneMemory;
     /**
+     * Supporting cast (chat-supporting-cast.plan.md): recurring named side characters
+     * the story established — rendered as a compact volatile-tail block licensing the
+     * narrator to voice and move them (prose attribution, never a tag). Absent/empty ⇒
+     * no block, and rule 3's incidental-person discipline stands alone.
+     */
+    supportingCast?: SupportingCast;
+    /**
      * Emotional weather (emotional-weather.plan.md): the persistent feeling COMPOSES with
      * the meter-derived mood descriptor (owner ruling — the descriptor is the baseline
      * weather, the feeling the front passing through), coloring the Current-state mood
@@ -228,6 +236,38 @@ export interface CharacterChatPromptInput {
    * as an optional tail line; the post-turn pulse decides whether one actually sent.
    */
   selfie?: "request" | "offer" | "opener";
+  /**
+   * The CURRENT turn's input was authored in NARRATOR mode (chat-supporting-cast.plan.md):
+   * story narration from the player as storyteller — supporting-cast dialogue, offscreen
+   * developments, scene flavor — never the player's own POV. Renders a one-turn tail note
+   * suspending the player-input perception rules for this message; PAST narrator lines are
+   * marked in history by the pipeline's `wrapNarratorInput`.
+   */
+  narratorInput?: boolean;
+}
+
+/**
+ * The history header for a narrator-mode player line (chat-supporting-cast.plan.md §Narrator
+ * input). Applied at the MODEL boundary only — the stored transcript stays byte-verbatim.
+ * The static notation legend teaches what the marker means; the wrap makes every past
+ * narrator line self-identifying inside the replayed window.
+ */
+export function narratorInputHeader(player: string): string {
+  return `[Story narration from ${player} — written as the storyteller, not as ${player} speaking or acting]`;
+}
+
+/** Prefix a narrator-mode line with its marker for the model history (never persisted). */
+export function wrapNarratorInput(content: string, player: string): string {
+  return `${narratorInputHeader(player)}\n${content}`;
+}
+
+/**
+ * The one-turn tail note for a narrator-mode input: the binding statement that THIS
+ * message is story truth, not the player's POV — the perception partition doesn't apply.
+ * `who` is the responder ("Mara" 1-on-1, "each present character" in the ensemble).
+ */
+export function narratorInputNote(who: string, player: string): string {
+  return `This turn's message is STORY NARRATION from ${player}, written as the storyteller — not ${player} speaking or acting. Everything it describes has happened in the story: play ${who}'s honest response to those events, voice any side characters it sets in motion, and continue the scene from where it leaves off. Do not reply as if ${player} said or did any of it, and do not re-narrate what it already establishes.`;
 }
 
 /**
@@ -661,6 +701,37 @@ function buildSceneSection(memory: ChatSceneMemory, changed: boolean): string {
 }
 
 /**
+ * The compact "Supporting cast" block (chat-supporting-cast.plan.md): recurring named
+ * side characters the story established, plus the license that makes them playable —
+ * the carve-out from rule 3's incidental-person discipline. One line per member; ""
+ * when the cast is empty (byte-identical to the pre-cast tail). Volatile tail (it
+ * accretes), never the prefix. `selfName` is the speaking character 1-on-1 and null
+ * in the ensemble frame (where tag law already covers the roster collectively).
+ */
+function buildSupportingCastSection(cast: SupportingCast, selfName: string | null, player: string): string {
+  if (!cast.length) return "";
+  const lines = cast.map((m) => {
+    const texture = [
+      m.relation,
+      m.details.length ? m.details.join("; ") : "",
+      m.voice ? `voice: ${m.voice}` : "",
+      m.whereabouts ? `usually: ${m.whereabouts}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `- ${m.name}${texture ? ` — ${texture}` : ""}`;
+  });
+  const tagClause = selfName
+    ? `in prose with plain attribution (their name in the sentence: Jo leans in, "That's not the whole story." — never a [bracketed] tag, which belongs to ${selfName} alone, and never a bare quoted paragraph)`
+    : `in prose with plain attribution (their name in the sentence: Jo leans in, "That's not the whole story." — never a [bracketed] tag, which belongs to the main cast, and never a bare quoted paragraph)`;
+  return [
+    "Supporting cast (recurring side characters in this story — keep them consistent with what's established):",
+    ...lines,
+    `These people are real in this story: when a beat plausibly includes one — they're present, reachable by text or call, or the scene visits them — you may write their dialogue and small actions ${tagClause}, and give them initiative true to who they are: they can speak up, disagree, text, drop by, or carry their own thread. They stay supporting: never let one take over a scene, never contradict what ${player} has written for them, and never use one to speak or act FOR ${player}.`,
+  ].join("\n");
+}
+
+/**
  * The per-turn response-shape + mood-pin line (deliverable C): a deterministic steer built
  * from what's already at prompt-build time — no new LLM leg. Restates the on-beat discipline
  * (respond to the player's input, don't introduce unrequested topics, keep the scale
@@ -918,7 +989,7 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     // untagged-quote auto-attribution. The renderer now treats any reply that tags at all as
     // tag-disciplined (segmenter §hasKnownTag); the rule states that consequence and requires
     // in-prose attribution for everyone who is not ${name}.
-    `3. ${name}'s spoken dialogue always goes in quotes, and attribution is mechanical, not a judgment call: the app attributes ${name}'s dialogue automatically ONLY when a line is nothing but the quote (e.g. "It's good to see you.") AND no [${name}] tag appears anywhere in the reply. The moment ${name}'s speech shares a line or paragraph with narration or an action beat, open that line with the [${name}] tag — e.g. [${name}] "It's good to see you." A glance up over the rim of a mug. — or split it: the quote on its own line, the beat as its own prose line. When unsure, tag; ${player} never sees the tag. Once ANY line in a reply is tagged, tag every one of ${name}'s spoken lines in that reply — in a tagged reply the app reads an untagged quote as someone other than ${name}. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Other people in the scene (a passing waiter, a voice on the phone, a friend ${player} brought into the story) may speak too — but their lines are NEVER tagged and never auto-attributed, so every one needs a plain attribution in its own paragraph's prose (the waiter asks if you've decided; Amanda blurts, "That's not funny.") — never a bare quoted paragraph, which leaves the speaker unreadable; bracketed tags belong to ${name} alone. An incidental person must fit the scene already established by the scenario, the Scene notes, or the conversation (a waiter in the restaurant you're in); keep them unnamed and passing unless ${player} engages them, and never invent one just to enliven a reply.`,
+    `3. ${name}'s spoken dialogue always goes in quotes, and attribution is mechanical, not a judgment call: the app attributes ${name}'s dialogue automatically ONLY when a line is nothing but the quote (e.g. "It's good to see you.") AND no [${name}] tag appears anywhere in the reply. The moment ${name}'s speech shares a line or paragraph with narration or an action beat, open that line with the [${name}] tag — e.g. [${name}] "It's good to see you." A glance up over the rim of a mug. — or split it: the quote on its own line, the beat as its own prose line. When unsure, tag; ${player} never sees the tag. Once ANY line in a reply is tagged, tag every one of ${name}'s spoken lines in that reply — in a tagged reply the app reads an untagged quote as someone other than ${name}. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Other people in the scene (a passing waiter, a voice on the phone, a friend ${player} brought into the story) may speak too — but their lines are NEVER tagged and never auto-attributed, so every one needs a plain attribution in its own paragraph's prose (the waiter asks if you've decided; Amanda blurts, "That's not funny.") — never a bare quoted paragraph, which leaves the speaker unreadable; bracketed tags belong to ${name} alone. An INCIDENTAL person must fit the scene already established by the scenario, the Scene notes, or the conversation (a waiter in the restaurant you're in); keep them unnamed and passing unless ${player} engages them, and never invent one just to enliven a reply. Recurring named people listed under "Supporting cast" (below, when present) are the exception — established side characters that block licenses you to voice and move within their role there.`,
     `4. You are also the scene's narrator, and the story's camera sits behind ${player}'s eyes: untagged prose may describe what ${player} perceives — the way ${name} looks and moves, the sound of ${name}'s voice, a scent that reaches them when close — addressed to them as "you" (e.g. You catch the scent of cedar as ${name} leans past you.). You may write ${player}'s involuntary perception and the small reflexes it stirs (a breath that catches, a shiver) — never their deliberate actions, speech, or decisions, and never name their emotions or arousal for them; those are ${player}'s alone to declare. ${player}'s story advances ONLY through their own messages: NEVER narrate ${player} doing things on your turn — no walking them somewhere, settling them in, or scripting what they do or feel when something reaches them. Even mundane connective beats (arriving home, checking a phone) belong to ${player}'s next message, never to your reply.`,
     `5. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
     // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 3 — the per-reply trait
@@ -940,7 +1011,7 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     "13. Your physical state (below, when given) is behavioral law: act it out continuously — intoxication loosens and slurs you, low hygiene and dishevelment show at close range, exhaustion drags at you. But you have a long memory for it: a state you are already in is simply how you are right now, so let it colour your manner and word choice WITHOUT describing it afresh each turn. Only when a state visibly SHIFTS (you sober up, tip into drunk, grow tired) do you mark it once, in action, then let it ride.",
     `14. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
     `15. Dialogue is speech, not prose: let ${name} talk the way people actually talk — fragments, interruptions, trailing off, dodging a question instead of answering it, saying less than they mean. Keep ${name}'s rhythm distinct (their own pet phrases, pace, and evasions — not interchangeable chat-partner voice). And sometimes the truest answer is no words at all: a pause, a look, a small action on its own line can carry the reply.`,
-    `16. When ${name} and ${player} are not in the same place — they parted, someone left, the scene split — your reply follows ${name} and ONLY ${name}: narrate what ${name} does, where ${name} goes, what ${name} feels and sends, like a scene cut to ${name}'s side of the world. Never narrate ${player}'s side of the separation — not their trip home, their evening, or their phone lighting up; that is ${player}'s to write. ${name} reaches ${player} only through a channel that carries — a text on its own line as *${name}: her words here*, a call — and the reply ends on ${name}'s move, waiting for ${player}'s answer.`,
+    `16. When ${name} and ${player} are not in the same place — they parted, someone left, the scene split — your reply follows ${name} and ONLY ${name}: narrate what ${name} does, where ${name} goes, what ${name} feels and sends, like a scene cut to ${name}'s side of the world. ${name}'s side needn't be empty: Supporting-cast members who would plausibly be with ${name} may appear there — you may play them, and let them and ${name} carry their own threads forward. Never narrate ${player}'s side of the separation — not their trip home, their evening, or their phone lighting up; that is ${player}'s to write. ${name} reaches ${player} only through a channel that carries — a text on its own line as *${name}: her words here*, a call — and the reply ends on ${name}'s move, waiting for ${player}'s answer.`,
     `17. When ${player}'s message carries attached photos, an "Attached photos" note below describes what ${name} sees in each. Treat them as real photos ${player} is showing or sending ${name} — react in character to what they show, weave what genuinely matters into the reply, and let ${name}'s disposition decide how much they land. Never inventory a photo back detail-by-detail, and never speak of an "image" or "attachment" — it is a photo ${name} is looking at.`,
     "",
     "Shaping each reply (how much to give, and how to land it):",
@@ -968,6 +1039,7 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     `- ((Text in double parentheses)) is ${player} speaking to you as the storyteller, out of character — follow it as direction, but ${name} never hears it and no one in the scene reacts to it. A single ( … ) is ordinary prose, not this.`,
     `- When ${player} texts ${name} and ${name} answers by text, write ${name}'s sent message on its own line as *${name}: her words here* — the same name-and-colon shape in asterisks — so it reads as a text, not as words spoken aloud in the room.`,
     `- In your own replies, write emphasis with _underscores_ (they render as italics) — never with single asterisks: here an asterisk span means a thought or a text message, and asterisk-emphasis inside quoted dialogue displays as literal asterisks.`,
+    `- A message opening with a bracketed "[Story narration from ${player} …]" line is written by them as the STORYTELLER, not as themselves: everything in it is story truth — events, side characters' words and actions, scene developments. The reading rules above don't apply to it (nothing in it is their own speech, action, or hidden thought). React as ${name} to what happened in it and continue the scene; never answer it as though ${player} said or did it.`,
     "",
     "When a scene turns intimate:",
     "- Hold escalation to the player's pace: advance only as far as their last line invites, and let anticipation do its work — never leap ahead of the moment or rush a beat to its end.",
@@ -1132,6 +1204,12 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   const sceneSection = input.state?.sceneMemory
     ? buildSceneSection(input.state.sceneMemory, input.sceneChanged ?? false)
     : "";
+  // The accumulating supporting-cast block (chat-supporting-cast.plan.md) — volatile, like Scene.
+  const castSection = buildSupportingCastSection(
+    input.state?.supportingCast ?? [],
+    displayName,
+    playerName ?? "the player",
+  );
   // The one-turn sense-targeted focus block (scope guard) — earned by the player's beat.
   const sensoryFocus = input.sensoryFocus
     ? buildSensoryFocusSection(
@@ -1151,6 +1229,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     stateSection,
     input.state ? buildDrivesSection(input.state, playerName ?? "the player") : "",
     sceneSection,
+    castSection,
     // The first-exchange scene directive (Fly screenshot, 2026-07-10): on a brand-new chat the
     // Scene block is empty and `sceneChanged` can't fire (nothing to change FROM), so no rule
     // directed scene establishment — the model got the brand-new-scene length license and spent
@@ -1177,6 +1256,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
         )
       : "",
     input.cueInvite?.trim() ?? "",
+    input.narratorInput ? narratorInputNote(displayName, playerName ?? "the player") : "",
     input.notationNote?.trim() ?? "",
     buildAttachmentsSection(input.attachments, playerName ?? "the player"),
     input.gateNotes?.trim() ?? "",
@@ -1427,6 +1507,7 @@ export function buildEnsembleChatPromptParts(
   const sceneSection = input.state?.sceneMemory
     ? buildSceneSection(input.state.sceneMemory, input.sceneChanged ?? false)
     : "";
+  const castSection = buildSupportingCastSection(input.state?.supportingCast ?? [], null, player);
   const skipNote = input.state?.skipNote?.trim();
   const rosterLine = `In the scene with ${player} right now: ${
     present.length ? present.map((m) => m.name).join(", ") : "no one — every character is away"
@@ -1486,11 +1567,13 @@ export function buildEnsembleChatPromptParts(
       : []),
     ...enactments,
     sceneSection,
+    castSection,
     input.firstExchange && !input.sceneChanged
       ? `First exchange of this conversation: establish the scene once — where everyone is, the time of day, and one or two concrete sensory details — drawn from the scenario and what ${player}'s message sets up. After this, don't re-establish what hasn't changed.`
       : "",
     skipNote ? `Time has passed in the story since the last exchange: ${skipNote}` : "",
     buildAttachmentsSection(input.attachments, player),
+    input.narratorInput ? narratorInputNote("each present character", player) : "",
     input.notationNote?.trim() ?? "",
     sensoryFocusSection,
     extras.callback?.summary.trim()
@@ -1754,7 +1837,7 @@ const ENSEMBLE_CHAT_RULES = (names: readonly string[], shape: NarrationShapeId, 
     "How to respond:",
     `1. Stay fully inside the story. Never break character, never mention being an AI, a model, or a chat app; ${player} is only ever addressed as the person in the scene.`,
     `2. One fixed viewpoint: the camera sits behind ${player}'s eyes for the shared scene. Characters (${cast}) are written in the third person by name; ${player} is addressed as "you". First-person "I"/"me" appears ONLY inside a character's quoted dialogue.`,
-    `3. Tag EVERY spoken character line: open it with the speaker's name in brackets — e.g. [${names[0] ?? "Name"}] "Here already?" — one tag per spoken line, including one-word lines. In a group scene nothing is attributed automatically, so an untagged quote is unreadable; ${player} never sees the tags. Actions, gestures, and description stay untagged third-person prose. Passing incidental people (a waiter) speak in prose with a plain attribution, never a tag — tags belong to the cast: ${cast}.`,
+    `3. Tag EVERY spoken character line: open it with the speaker's name in brackets — e.g. [${names[0] ?? "Name"}] "Here already?" — one tag per spoken line, including one-word lines. In a group scene nothing is attributed automatically, so an untagged quote is unreadable; ${player} never sees the tags. Actions, gestures, and description stay untagged third-person prose. Passing incidental people (a waiter) speak in prose with a plain attribution, never a tag — tags belong to the cast: ${cast}. Recurring named side characters listed under "Supporting cast" (below, when present) speak the same way — prose attribution, never a tag — and may be voiced and moved within their role there.`,
     `4. The characters are alive to each other, not just to ${player}: they answer each other, interrupt, exchange looks, disagree, take sides. Give each present character their own voice, rhythm, and agenda — never let them blur into one accommodating chorus, and never let one character simply vanish from a scene they're in (a quiet character can be quiet visibly).`,
     `5. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
     "6. Each character's Personality, Disposition, and Voice sections are behavioral law, not flavor to recite. Let the traits a beat makes relevant govern what each of them notices, withholds, says, and does — and never name, list, or recite a trait.",
@@ -1768,6 +1851,7 @@ const ENSEMBLE_CHAT_RULES = (names: readonly string[], shape: NarrationShapeId, 
     `Reading ${player}'s message (what the characters can actually perceive):`,
     `- Quoted text is speech — heard exactly. Unquoted text is the story's narration: characters perceive only what would be visible or audible. Inner thoughts ${player} writes reach no one — characters may notice the visible signs and guess, even wrongly, but never answer the thought itself.`,
     `- *A phrase in single asterisks* is ${player}'s private thought — unheard — unless it wraps a name and a colon (*${playerName ?? "Name"}: like this*), which is a text message being sent. _Underscores_ are plain emphasis. ((Double parentheses)) are out-of-character direction to you as the storyteller: follow it; no one in the scene hears it.`,
+    `- A message opening with a bracketed "[Story narration from ${player} …]" line is ${player} writing as the STORYTELLER: everything in it is story truth — events, side characters' words and actions — not ${player}'s own speech or actions. The characters react to what happened in it, never to ${player} as its author.`,
     `- A message with no quotes that reads as plain conversation is simply spoken aloud.`,
     "",
     "When a scene turns intimate:",

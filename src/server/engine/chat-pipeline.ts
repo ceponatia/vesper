@@ -81,6 +81,7 @@ import {
   buildChatPromptPartsForRoster,
   buildChatTurnMessage,
   chatNotationNote,
+  wrapNarratorInput,
   ENSEMBLE_QUIET_EXCHANGES,
   type CharacterChatPromptInput,
   type EnsembleMemberInput,
@@ -137,6 +138,13 @@ export interface SubmitChatMessageInput {
   kind: ChatExchangeKind;
   /** The player's line — required for `send`, ignored for the other kinds. */
   content?: string;
+  /**
+   * Composer register (chat-supporting-cast.plan.md §Narrator input) — `send` only:
+   * "narrator" marks `content` as story narration authored by the player as
+   * storyteller, never their own POV. Persisted on the user line's meta (the stored
+   * text stays byte-verbatim); regenerate/rerun recover it from the stored line.
+   */
+  inputMode?: "player" | "narrator";
   /**
    * The target user-message id — required for `kind: "rerun"`, ignored otherwise. The
    * rerun snips this line's successors and re-runs from it (the line itself is reused,
@@ -430,6 +438,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     /** Attached photos on this exchange's prompting line (chat-image-input.plan.md). */
     let attachmentFiles: { id: string; path: string }[] = [];
     let attachmentDescriptions: string[] | null = null;
+    /** Narrator-mode input (chat-supporting-cast.plan.md): the line is story narration, not the player's POV. */
+    let narratorInput = kind === "send" && input.inputMode === "narrator";
 
     switch (kind) {
       case "send": {
@@ -443,6 +453,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           promptMessageId,
           (input.attachmentIds ?? []).slice(0, CHAT_ATTACHMENTS_MAX),
         );
+        const sendMeta = {
+          ...(attachmentFiles.length ? { attachments: { ids: attachmentFiles.map((f) => f.id) } } : {}),
+          ...(narratorInput ? { inputMode: "narrator" } : {}),
+        };
         await db()
           .insert(characterChatMessages)
           .values({
@@ -450,7 +464,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             chatId,
             role: "user",
             content: playerContent,
-            ...(attachmentFiles.length ? { meta: { attachments: { ids: attachmentFiles.map((f) => f.id) } } } : {}),
+            ...(Object.keys(sendMeta).length ? { meta: sendMeta } : {}),
           });
         break;
       }
@@ -516,6 +530,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // A stored read only holds if every attachment still resolves — else re-describe.
       attachmentDescriptions =
         stored.descriptions && attachmentFiles.length === stored.ids.length ? stored.descriptions : null;
+      // A regenerate/rerun of a narrator-mode line keeps its register (the stored meta).
+      narratorInput = stored.narrator;
     }
     if (attachmentFiles.length && !attachmentDescriptions) {
       const read = await describeChatPhotos({ files: attachmentFiles, sink });
@@ -642,9 +658,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // clearly-labeled note of what the attached photos showed — so a shown photo
     // can be classified (a gift, a confidence) and filed as ordinary perceived
     // facts. Prompt-side the photos ride their own tail block; never persisted.
-    const agentPlayerContent = attachmentDescriptions?.length
+    const describedPlayerContent = attachmentDescriptions?.length
       ? `${playerContent}\n\n[${player.name} attached ${attachmentDescriptions.length === 1 ? "a photo" : `${attachmentDescriptions.length} photos`} — as ${characterName} sees ${attachmentDescriptions.length === 1 ? "it" : "them"}: ${attachmentDescriptions.map((d, i) => `(${i + 1}) ${d}`).join(" ")}]`
       : playerContent;
+    // Narrator-mode input (chat-supporting-cast.plan.md): label the player half so the
+    // post-turn agents read it as authored story events, never the player's own
+    // speech/act. Prompt-side the wrap is `wrapNarratorInput` on the history line.
+    const agentPlayerContent =
+      narratorInput && playerContent
+        ? `[${player.name} wrote this as STORYTELLER NARRATION — story events, not ${player.name}'s own words or actions]\n${describedPlayerContent}`
+        : describedPlayerContent;
 
     // --- Ensemble roster (multi-character-chat.plan.md slices 2–4) -----------
     // The members beyond the primary: load each one's state (seeding from their
@@ -738,10 +761,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // line; the post-turn pulse decides whether the reply actually sent one.
     // Group scenes (ruling 12): a request routes to the addressed member —
     // unaddressed falls to the lead; offers stay lead-gated.
-    const selfieRequested = playerContent ? detectSelfieRequest(playerContent) : false;
+    // Narrator-mode input arms no selfie: "she asks for a photo" in authored narration
+    // is story fabric, not the player requesting one (and the skipped pulse could never
+    // confirm a send anyway).
+    const selfieRequested = playerContent && !narratorInput ? detectSelfieRequest(playerContent) : false;
     const selfieTargetOther = selfieRequested ? addressedOther : undefined;
     const selfieOfferEligible =
-      !selfieRequested && Boolean(playerContent) &&
+      !selfieRequested && !narratorInput && Boolean(playerContent) &&
       chatSelfieOfferEligible({
         regard: driftedState.regard,
         clockMinutes: scenario.clockMinutes,
@@ -893,6 +919,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       notationNote: playerContent
         ? chatNotationNote(playerContent, { name: characterName, player: player.name, knownNames: [characterName] })
         : undefined,
+      // Narrator-mode input (chat-supporting-cast.plan.md): the one-turn tail note that
+      // suspends the player-input perception rules for THIS message.
+      narratorInput,
     };
 
     // The relationship matrix (relationship-model.plan.md): tier-1 pair lines for
@@ -969,25 +998,38 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // lane's shape), so system + history form an append-only cached prefix. Real player
     // turns only — opening/continue beats have no current input to compose around.
     // An ensemble always takes the classic layout (the A/B experiment is 1-on-1-scoped).
+    // Narrator-mode lines carry their marker into the MODEL history only (the stored
+    // rows stay byte-verbatim) — so past authored narration never re-reads as the
+    // player's own words on later turns.
+    const markedHistory = history.map((m) =>
+      m.role === "user" && m.narrator ? { ...m, content: wrapNarratorInput(m.content, player.name) } : m,
+    );
     let system: string;
     let modelHistory: typeof history;
     if (ensemble) {
       const parts = buildChatPromptPartsForRoster(promptInput, ensemble, ensembleExtras);
       system = [parts.prefix, parts.tail].filter(Boolean).join("\n\n");
-      modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
+      modelHistory = syntheticCue ? [...markedHistory, { role: "user" as const, content: syntheticCue }] : markedHistory;
     } else if (chatPromptLayout() === "turn_context" && playerContent) {
       const parts = buildCharacterChatPromptParts(promptInput);
       system = parts.prefix;
       // The window's last entry is the current player message (inserted before the window
       // loaded); it moves into the composed final message, so drop it from what we send.
-      const priorHistory = history.at(-1)?.role === "user" ? history.slice(0, -1) : history;
+      const priorHistory = markedHistory.at(-1)?.role === "user" ? markedHistory.slice(0, -1) : markedHistory;
       modelHistory = [
         ...priorHistory,
-        { role: "user" as const, content: buildChatTurnMessage(parts.tail, playerContent, player.name) },
+        {
+          role: "user" as const,
+          content: buildChatTurnMessage(
+            parts.tail,
+            narratorInput ? wrapNarratorInput(playerContent, player.name) : playerContent,
+            player.name,
+          ),
+        },
       ];
     } else {
       system = buildCharacterChatSystemPrompt(promptInput);
-      modelHistory = syntheticCue ? [...history, { role: "user" as const, content: syntheticCue }] : history;
+      modelHistory = syntheticCue ? [...markedHistory, { role: "user" as const, content: syntheticCue }] : markedHistory;
     }
 
     const abortController = new AbortController();
@@ -1074,9 +1116,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           preExchangeState: storedState,
           // A selfie-armed initiative opener runs the pulse OPENER-scoped for its
           // sentPhoto read (chat-initiative slice 5); every other continue beat
-          // still skips it (no player act to react to).
+          // still skips it (no player act to react to) — and so does a narrator-mode
+          // input (authored story events are not a player act to classify).
           skipPulse:
             (effectiveKind === "continue" && !openerSelfieEligible) ||
+            narratorInput ||
             (!primaryReferenced && referencedOthers.length > 0),
           pulseScope: openerSelfieEligible ? "opener" : "full",
           promptMessageId: promptMessageId ?? assistantMessageId,
@@ -1123,6 +1167,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             const preRegard = member.state.regard;
             const shouldPulse =
               effectiveKind !== "continue" &&
+              !narratorInput &&
               Boolean(playerContent) &&
               referencedOthers.some((m) => m.characterId === member.characterId);
             const [pulsed, personal] = await Promise.all([
@@ -1260,7 +1305,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 }
 
 /** The newest message when it is an assistant reply — the only regenerable target. */
-/** Defensive parse of a user line's `meta.attachments` (chat-image-input.plan.md). */
+/** Defensive parse of a user line's meta: attachments (chat-image-input.plan.md) + input mode. */
 const messageAttachmentsMetaSchema = z.object({
   attachments: z
     .object({
@@ -1268,13 +1313,15 @@ const messageAttachmentsMetaSchema = z.object({
       descriptions: z.array(z.string()).optional(),
     })
     .optional(),
+  /** Narrator-mode marker (chat-supporting-cast.plan.md §Narrator input). */
+  inputMode: z.enum(["player", "narrator"]).optional().catch(undefined),
 });
 
-/** The prompting line's stored attachment ids + any persisted vision read. */
+/** The prompting line's stored attachment ids + any persisted vision read + its input mode. */
 async function loadMessageAttachments(
   chatId: string,
   messageId: string,
-): Promise<{ ids: string[]; descriptions: string[] | null }> {
+): Promise<{ ids: string[]; descriptions: string[] | null; narrator: boolean }> {
   const [row] = await db()
     .select({ meta: characterChatMessages.meta })
     .from(characterChatMessages)
@@ -1283,7 +1330,11 @@ async function loadMessageAttachments(
   const parsed = parseOr(messageAttachmentsMetaSchema, row?.meta ?? {}, {}, undefined, "character_chat_messages.meta");
   const ids = parsed.attachments?.ids ?? [];
   const descriptions = parsed.attachments?.descriptions;
-  return { ids, descriptions: descriptions && descriptions.length === ids.length ? descriptions : null };
+  return {
+    ids,
+    descriptions: descriptions && descriptions.length === ids.length ? descriptions : null,
+    narrator: parsed.inputMode === "narrator",
+  };
 }
 
 async function lastAssistantMessage(
@@ -1503,6 +1554,7 @@ function promptStateSlice(state: ChatState, scenario: ChatScenario): NonNullable
     openLoops: state.openLoops,
     skipNote: scenario.pendingSkipNote,
     sceneMemory: scenario.sceneMemory,
+    supportingCast: scenario.supportingCast,
     feeling: state.feeling,
     drives: state.drives,
   };

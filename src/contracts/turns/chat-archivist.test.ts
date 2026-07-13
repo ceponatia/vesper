@@ -66,6 +66,17 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
     // A malformed proposal degrades to the no-op without rejecting the object.
     expect(chatArchivistSchema.parse({ outfit: "naked" }).outfit).toEqual({ description: "", exposed: false });
   });
+
+  it("parses the supporting-cast proposal (chat-supporting-cast.plan.md): lenient, [] on garbage", () => {
+    const parsed = chatArchivistSchema.parse({
+      cast: [{ name: "Abby", relation: "the player's coworker", details: ["covered a shift"] }],
+    });
+    expect(parsed.cast).toEqual([{ name: "Abby", relation: "the player's coworker", details: ["covered a shift"] }]);
+    // Absent / malformed ⇒ [] — the merge no-op, never a rejected object.
+    expect(chatArchivistSchema.parse({}).cast).toEqual([]);
+    expect(chatArchivistSchema.parse({ cast: "Abby" }).cast).toEqual([]);
+    expect(degradedChatArchivist().cast).toEqual([]);
+  });
 });
 
 describe("chatMemoryTraceSchema", () => {

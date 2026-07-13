@@ -90,12 +90,21 @@ export async function loadVerbatimWindow(
 ): Promise<ChatTurn[]> {
   const wmCond = afterWatermark(watermark);
   const rows = await db()
-    .select({ role: characterChatMessages.role, content: characterChatMessages.content })
+    .select({ role: characterChatMessages.role, content: characterChatMessages.content, meta: characterChatMessages.meta })
     .from(characterChatMessages)
     .where(and(eq(characterChatMessages.chatId, chatId), ...(wmCond ? [wmCond] : [])))
     .orderBy(desc(characterChatMessages.createdAt))
     .limit(CHARACTER_CHAT_HISTORY_TURNS * 2);
-  return rows.reverse();
+  return rows.reverse().map((r) => {
+    // Narrator-mode flag (chat-supporting-cast.plan.md §Narrator input): read leniently off
+    // the meta jsonb — the pipeline wraps flagged lines at the model boundary.
+    const narrator =
+      r.role === "user" &&
+      typeof r.meta === "object" &&
+      r.meta !== null &&
+      (r.meta as Record<string, unknown>).inputMode === "narrator";
+    return { role: r.role, content: r.content, ...(narrator ? { narrator: true } : {}) };
+  });
 }
 
 /**
@@ -223,7 +232,7 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
 
   // The oldest `foldCount` messages are the chunk; the newest stay verbatim.
   const chunkRows = await db()
-    .select({ id: characterChatMessages.id, role: characterChatMessages.role, content: characterChatMessages.content, createdAt: characterChatMessages.createdAt })
+    .select({ id: characterChatMessages.id, role: characterChatMessages.role, content: characterChatMessages.content, createdAt: characterChatMessages.createdAt, meta: characterChatMessages.meta })
     .from(characterChatMessages)
     .where(tailWhere)
     .orderBy(asc(characterChatMessages.createdAt), asc(characterChatMessages.id))
@@ -231,7 +240,19 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
   const last = chunkRows.at(-1);
   if (!last) return; // raced to empty; nothing to fold
 
-  const chunk: ChatTurn[] = chunkRows.map((r) => ({ role: r.role, content: r.content }));
+  // Narrator-mode player lines fold as labeled story narration so the summary never
+  // attributes authored events to the player (chat-supporting-cast.plan.md).
+  const chunk: ChatTurn[] = chunkRows.map((r) => {
+    const narrator =
+      r.role === "user" &&
+      typeof r.meta === "object" &&
+      r.meta !== null &&
+      (r.meta as Record<string, unknown>).inputMode === "narrator";
+    return {
+      role: r.role,
+      content: narrator ? `[story narration, written by the player as storyteller]\n${r.content}` : r.content,
+    };
+  });
   const { value, degraded } = await generateChecked<ChatSummaryFold>({
     schema: chatSummaryFoldSchema,
     system: CHAT_SUMMARY_SYSTEM,
