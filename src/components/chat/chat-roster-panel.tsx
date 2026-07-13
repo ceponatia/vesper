@@ -97,7 +97,15 @@ export function ChatRosterPanel({
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left disabled:cursor-default"
           >
             <EntityImage imageId={member.avatarImageId} name={member.name} className="size-7 shrink-0 rounded-full text-[9px]" />
-            <span className="min-w-0 flex-1 truncate text-sm text-paper-200 group-hover:text-paper-50">{member.name}</span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm text-paper-200 group-hover:text-paper-50">{member.name}</span>
+              {member.outfit.trim() ? (
+                // Read-only outfit line (ux-improvements slice 3) — per-member state.
+                <span className="truncate text-[10px] text-paper-500" title={member.outfit}>
+                  {member.outfit}
+                </span>
+              ) : null}
+            </span>
           </button>
           <button
             type="button"

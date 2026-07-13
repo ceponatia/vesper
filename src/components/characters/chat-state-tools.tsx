@@ -11,6 +11,7 @@ import {
   type ActiveCondition,
 } from "@/contracts";
 import { chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -22,11 +23,14 @@ import { useToast } from "@/components/ui/toast";
  * The per-character sheet (character-chat-state.spec.md slice 4; scoped per roster
  * member since followups ruling 13): inspect + edit ONE character's state — the
  * two axes + relationship texture toward the player, meters, conditions, mindNote,
- * outfit + exposure, presence — plus a read-only last-turn debug readout (the
- * deterministic pulse trace). Chat-WIDE fields (premise, house rules, scene prefs)
- * live in the Scenario modal instead. Available to the character owner. The form
- * mounts fresh each open (the Dialog unmounts its children when closed), so
- * `useState` initializers re-seed from the snapshot without an effect.
+ * outfit + exposure, presence. The engine-surface readouts — the pulse trace,
+ * cue-split, memory trace, chat clock, and the next-turn memory-queries editor —
+ * are **admin-only** (ux-improvements slice 4, ruled: hidden entirely from
+ * players; same role check as the /chat/:chatId/inspector page). Chat-WIDE
+ * fields (premise, house rules, scene prefs) live in the Scenario modal
+ * instead. Available to the character owner. The form mounts fresh each open
+ * (the Dialog unmounts its children when closed), so `useState` initializers
+ * re-seed from the snapshot without an effect.
  */
 export function ChatStateToolsModal({
   open,
@@ -86,6 +90,7 @@ function StateToolsForm({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const isAdmin = useIsAdmin();
   const [regard, setRegard] = useState(snapshot.regard);
   const [familiarity, setFamiliarity] = useState(snapshot.familiarity);
   const [relationship, setRelationship] = useState(snapshot.relationship);
@@ -369,6 +374,10 @@ function StateToolsForm({
         />
       </label>
 
+      {/* Engine surface below — admin-only (ux-improvements slice 4). Players get
+          the editable fields above; the traces mirror /chat/:chatId/inspector. */}
+      {isAdmin ? (
+        <>
       <label className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Next-turn memory queries (one per line)</span>
         <Textarea
@@ -476,6 +485,8 @@ function StateToolsForm({
           </ul>
         )}
       </div>
+        </>
+      ) : null}
 
       <div className="flex justify-end gap-2 border-t border-ink-600 pt-3">
         <Button onClick={onClose} disabled={saving}>

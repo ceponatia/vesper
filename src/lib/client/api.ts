@@ -948,6 +948,8 @@ export const chatRosterMemberSchema = z.object({
   sort: z.number().catch(0),
   /** Narrative presence (multi-character-chat.plan.md): sharing the scene or away. */
   presence: z.enum(["present", "away"]).catch("present"),
+  /** The member's current free-text outfit (state row; "" pre-seed) — roster outfit line, ux-improvements slice 3. */
+  outfit: textOr(""),
 });
 export type ChatRosterMember = z.infer<typeof chatRosterMemberSchema>;
 
