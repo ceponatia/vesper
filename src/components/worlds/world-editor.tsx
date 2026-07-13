@@ -1160,6 +1160,22 @@ function ItemsTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: WorldD
               </Select>
             )}
           </Field>
+          <Field label="Qty" className="w-16">
+            {(id) => (
+              // The schema always supported 1–20; the form hardcoded 1 (slice 9).
+              <Input
+                id={id}
+                type="number"
+                min={1}
+                max={20}
+                value={placement.quantity}
+                onChange={(e) => {
+                  const parsed = Number.parseInt(e.target.value, 10);
+                  patchPlacement(index, { quantity: Number.isFinite(parsed) ? Math.max(1, Math.min(20, parsed)) : 1 });
+                }}
+              />
+            )}
+          </Field>
           <label className="flex h-9 items-center gap-2 text-xs text-paper-300">
             <input
               type="checkbox"
