@@ -15,7 +15,14 @@ a conversation can hold a **roster of up to 4 full characters**
 [developer-notes/multi-character-chat.plan.md](developer-notes/finished/multi-character-chat.plan.md)):
 narrative presence instead of locations, the one-block ensemble prompt frame, a
 per-conversation relationship matrix. It remains deliberately **not** a session: no
-locations, exposure mask, wardrobe state, or story threads.
+locations, exposure mask, wardrobe state, or story threads — though wardrobe is
+the first planned parity step
+([developer-notes/chat-wardrobe-parity.plan.md](developer-notes/chat-wardrobe-parity.plan.md)).
+**Direction (owner, 2026-07-13):** chat is the **test bed for what the
+world/session model will eventually look like** — the lanes stay separate for
+now, but the likely end-state deprecates the current world/session model in
+favor of a successor grown from what chat proves out, with chat migrating onto
+it (see `CLAUDE.md`).
 Where the two lanes
 share a mechanism (memory scope, the §6 reaction curve, disposition rendering, narration
 shape, artifact stripping, the generate-timeout race, the draining stream Response), they

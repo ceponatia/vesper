@@ -14,7 +14,8 @@ gates), the editor's Disposition tab "Desires & secrets" card
 Disposition re-draft coverage + `renderSheetLines`, and the
 `chat-secret-hold`/`-reveal` fixtures with the deterministic `secretCue`
 planted-token metric. Leftover: the **live judged fixture run is owner-gated
-spend** — it rides the pending enactment measurement run (roadmap, Next).)
+spend** — it rides the enactment measurement run
+([deferred.plan.md §Owner-gated live eval runs](deferred.plan.md)).)
 
 The character's interiority is one free-text `mindNote` (pulse-written, 1–3
 sentences) plus `openLoops` (conversational leftovers). There is no want she
