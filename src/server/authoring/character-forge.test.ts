@@ -854,7 +854,8 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
 
     const outfit = await forgeCharacterSection("outfit", context);
     expect(outfit.suggestedItems?.length).toBeGreaterThan(0);
-    expect(outfit.profile?.defaultOutfit).toEqual([]);
+    // No library matches ⇒ nothing lands in the default preset (all suggested).
+    expect(outfit.profile?.outfits ?? []).toEqual([]);
   });
 
   it("records the degraded diagnostic from generateChecked", async () => {

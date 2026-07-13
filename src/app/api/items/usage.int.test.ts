@@ -79,9 +79,18 @@ beforeAll(async () => {
   ids.itemUnused = unused.id;
   ids.otherItem = foreign.id;
 
+  // One character on the new preset shape, one still on the legacy id list
+  // (unmigrated row) — the usage SQL must find both (ux-improvements slice 8).
   await db()
     .insert(characters)
-    .values({ ownerId: user.id, name: "Sabrina Vale", profile: { defaultOutfit: [worn.id] } });
+    .values({
+      ownerId: user.id,
+      name: "Sabrina Vale",
+      profile: { outfits: [{ id: "everyday", name: "Everyday", items: [worn.id] }] },
+    });
+  await db()
+    .insert(characters)
+    .values({ ownerId: user.id, name: "Legacy Lane", profile: { defaultOutfit: [worn.id] } });
   const [world] = await db().insert(worlds).values({ ownerId: user.id, name: "Corner Café" }).returning();
   if (!world) throw new Error("failed to seed world");
   await db().insert(worldItems).values({ worldId: world.id, sourceItemId: worn.id, name: "Silk wrap dress" });
@@ -109,7 +118,7 @@ describe.skipIf(!ready)("GET /api/items/:id/usage", () => {
       wornBy: { id: string; name: string }[];
       placements: { worldId: string; worldName: string }[];
     };
-    expect(got.wornBy.map((c) => c.name)).toEqual(["Sabrina Vale"]);
+    expect(got.wornBy.map((c) => c.name).sort()).toEqual(["Legacy Lane", "Sabrina Vale"]);
     expect(got.placements.map((p) => p.worldName)).toEqual(["Corner Café"]);
   });
 

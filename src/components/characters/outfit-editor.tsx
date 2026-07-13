@@ -1,26 +1,32 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { clothingCategories, wearerTargets, type ItemDefinition } from "@/contracts";
+import { clothingCategories, wearerTargets, type ItemDefinition, type OutfitPreset } from "@/contracts";
 import { itemsApi, type ApiResult, type ItemSummary } from "@/lib/client/api";
 import { clothingSlots, slotCategoryOptions, type ClothingSlot } from "@/lib/clothing-slots";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { itemCardChips, itemCardGroup } from "@/components/library/item-facets";
 import { EntityPickerDialog, type EntityPickerEntry, type EntityPickerFacet } from "@/components/library/entity-picker";
+import { Button } from "@/components/ui/button";
+import { cx } from "@/components/ui/cx";
 import { ErrorState } from "@/components/ui/error-state";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 
 export interface OutfitEditorProps {
-  /** Item ids from the owner's library (CharacterProfile.defaultOutfit). */
-  outfit: readonly string[];
-  onChange: (outfit: string[]) => void;
+  /** Named outfit presets (CharacterProfile.outfits) — the FIRST is the default. */
+  outfits: readonly OutfitPreset[];
+  onChange: (outfits: OutfitPreset[]) => void;
   /** Forge-suggested item drafts not yet in the library (saved alongside). */
   suggestedItems: readonly ItemDefinition[];
   onChangeSuggested: (items: ItemDefinition[]) => void;
   /** Default wearer facet for the add-picker (from `identity.gender`); always overridable in the picker. */
   wearerHint?: "feminine" | "masculine";
 }
+
+/** Client-minted preset id — unique within one profile is all it needs. */
+const mintPresetId = () => `p-${Math.random().toString(36).slice(2, 8)}`;
 
 const layerLabels = ["underwear", "base", "mid", "outer"] as const;
 
@@ -41,13 +47,45 @@ function itemEntry(item: ItemSummary): EntityPickerEntry {
 }
 
 /**
- * Default-outfit builder (library-ux.plan.md §6): the outfit reads as wardrobe
- * slots (tops / bottoms / underwear / footwear / accessories), each slot adding
- * from the shared EntityPicker pre-filtered to its categories and the
- * character's wearer target — so a long clothing library arrives as "the tops
- * that fit her", never the whole list.
+ * Outfit-preset builder (ux-improvements slice 8, on the library-ux §6 slot
+ * design): a **preset switcher** (casual / work / date night / sleep — the
+ * FIRST preset is the default the forge targets and the avatar/sessions/chat
+ * wear) over the slot-based item editor (tops / bottoms / underwear / footwear
+ * / accessories), each slot adding from the shared EntityPicker pre-filtered
+ * to its categories and the character's wearer target.
  */
-export function OutfitEditor({ outfit, onChange, suggestedItems, onChangeSuggested, wearerHint }: OutfitEditorProps) {
+export function OutfitEditor({ outfits, onChange, suggestedItems, onChangeSuggested, wearerHint }: OutfitEditorProps) {
+  // A characterless blank profile has no presets yet — the editor shows one
+  // implicit "Everyday" preset that materializes into the profile on first edit.
+  const presets: readonly OutfitPreset[] =
+    outfits.length > 0 ? outfits : [{ id: "everyday", name: "Everyday", items: [] }];
+  const [selectedId, setSelectedId] = useState(presets[0]?.id ?? "everyday");
+  const selected = presets.find((p) => p.id === selectedId) ?? presets[0] ?? { id: "everyday", name: "Everyday", items: [] };
+  const updateSelected = (patch: Partial<OutfitPreset>) => {
+    onChange(presets.map((p) => (p.id === selected.id ? { ...p, ...patch } : p)));
+  };
+  const outfit = selected.items;
+  const setItems = (items: string[]) => updateSelected({ items });
+
+  const addPreset = () => {
+    const preset: OutfitPreset = { id: mintPresetId(), name: `Preset ${presets.length + 1}`, items: [] };
+    onChange([...presets, preset]);
+    setSelectedId(preset.id);
+  };
+  const duplicatePreset = () => {
+    const copy: OutfitPreset = { id: mintPresetId(), name: `${selected.name || "Preset"} copy`, items: [...selected.items] };
+    onChange([...presets, copy]);
+    setSelectedId(copy.id);
+  };
+  const deletePreset = () => {
+    const remaining = presets.filter((p) => p.id !== selected.id);
+    onChange([...remaining]);
+    setSelectedId(remaining[0]?.id ?? "everyday");
+  };
+  const makeDefault = () => {
+    onChange([selected, ...presets.filter((p) => p.id !== selected.id)]);
+  };
+
   // Resolve the referenced outfit ids directly — bypassing the browse cap — so a
   // stored reference always renders its real item even after the library grows past
   // the cap. (The items aren't deleted; they just rank past the most-recent window.)
@@ -148,7 +186,7 @@ export function OutfitEditor({ outfit, onChange, suggestedItems, onChangeSuggest
         )}
         <button
           type="button"
-          onClick={() => onChange(outfit.filter((id) => id !== itemId))}
+          onClick={() => setItems(outfit.filter((id) => id !== itemId))}
           className="ml-auto cursor-pointer text-xs text-paper-500 hover:text-danger-300"
         >
           remove
@@ -160,6 +198,59 @@ export function OutfitEditor({ outfit, onChange, suggestedItems, onChangeSuggest
   return (
     <div className="flex flex-col gap-5">
       {referenced.error ? <ErrorState error={referenced.error} onRetry={() => referenced.reload()} /> : null}
+
+      {/* Preset switcher (slice 8): pickup skips and schedule day-parts dress by
+          preset name; the FIRST preset is the default everywhere. */}
+      <div className="flex flex-col gap-2 rounded-card border border-ink-600 bg-ink-850 p-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {presets.map((preset, index) => (
+            <button
+              key={preset.id}
+              type="button"
+              aria-pressed={preset.id === selected.id}
+              onClick={() => setSelectedId(preset.id)}
+              className={cx(
+                "cursor-pointer rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                preset.id === selected.id
+                  ? "border-accent-500/60 bg-accent-500/10 text-accent-300"
+                  : "border-ink-500 text-paper-400 hover:text-paper-200",
+              )}
+            >
+              {preset.name || "Unnamed"}
+              {index === 0 ? <span className="ml-1 text-paper-500">· default</span> : null}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={addPreset}
+            className="cursor-pointer rounded-full border border-dashed border-ink-500 px-2.5 py-0.5 text-xs text-paper-400 transition-colors hover:border-accent-500/50 hover:text-paper-200"
+          >
+            + New preset
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            aria-label="Preset name"
+            value={selected.name}
+            placeholder="casual, work, date night, sleep…"
+            onChange={(e) => updateSelected({ name: e.target.value })}
+            className="h-8 w-44 text-xs"
+          />
+          <Button size="sm" variant="quiet" onClick={duplicatePreset}>
+            Duplicate
+          </Button>
+          {presets[0]?.id !== selected.id ? (
+            <Button size="sm" variant="quiet" onClick={makeDefault} title="The default preset is what the avatar, sessions, and a fresh chat wear.">
+              Make default
+            </Button>
+          ) : null}
+          {presets.length > 1 ? (
+            <Button size="sm" variant="quiet" onClick={deletePreset} className="text-danger-300">
+              Delete preset
+            </Button>
+          ) : null}
+        </div>
+      </div>
 
       {clothingSlots.map((slot) => {
         const rows = slotRows.get(slot.id) ?? [];
@@ -207,7 +298,7 @@ export function OutfitEditor({ outfit, onChange, suggestedItems, onChangeSuggest
         title={pickerSlot ? `Add — ${pickerSlot.label}` : "Add clothing"}
         search={searchClothing}
         multi={{
-          confirm: (entries) => onChange([...outfit, ...entries.map((e) => e.id).filter((id) => !outfit.includes(id))]),
+          confirm: (entries) => setItems([...outfit, ...entries.map((e) => e.id).filter((id) => !outfit.includes(id))]),
           confirmLabel: "Add to outfit",
         }}
         facets={pickerFacets}

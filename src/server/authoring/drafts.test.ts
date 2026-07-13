@@ -22,7 +22,7 @@ describe("draft schemas accept {} (all-default partial drafts)", () => {
     expect(draft.suggestedItems).toEqual([]);
     expect(draft.profile.bodyPlanId).toBe("humanoid");
     expect(draft.profile.attributes).toEqual([]);
-    expect(draft.profile.defaultOutfit).toEqual([]);
+    expect(draft.profile.outfits).toEqual([]);
   });
 
   it("worldDraftSchema parses {} into a complete draft", () => {

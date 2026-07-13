@@ -20,7 +20,8 @@ describe("mergeCharacterSection", () => {
     expect(merged.profile.bio).toBe("New bio");
     expect(merged.name).toBe("Maya Quayle");
     expect(merged.profile.attributes).toHaveLength(1);
-    expect(merged.profile.defaultOutfit).toEqual(["coat"]);
+    // The legacy `defaultOutfit` input lifted into the default preset at parse.
+    expect(merged.profile.outfits).toEqual([{ id: "everyday", name: "Everyday", items: ["coat"] }]);
     expect(merged.suggestedItems).toHaveLength(1);
   });
 
@@ -41,11 +42,11 @@ describe("mergeCharacterSection", () => {
 
   it("outfit section replaces outfit and suggestions only", () => {
     const incoming = characterDraftSchema.parse({
-      profile: { defaultOutfit: ["boots"] },
+      profile: { outfits: [{ id: "everyday", name: "Everyday", items: ["boots"] }] },
       suggestedItems: [],
     });
     const merged = mergeCharacterSection(base, incoming, "outfit");
-    expect(merged.profile.defaultOutfit).toEqual(["boots"]);
+    expect(merged.profile.outfits[0]?.items).toEqual(["boots"]);
     expect(merged.suggestedItems).toEqual([]);
     expect(merged.profile.attributes).toHaveLength(1);
   });

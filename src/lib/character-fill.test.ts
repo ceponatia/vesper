@@ -159,13 +159,14 @@ describe("mergeFillDraft — clusters", () => {
 
   it("keeps the whole outfit cluster once any garment is authored", () => {
     const suggested = { ...emptyItemDefinition(), name: "Generated coat" };
-    const incoming = draftOf({ suggestedItems: [suggested] }, { defaultOutfit: ["item_gen"] });
-    const authored = mergeFillDraft(draftOf({}, { defaultOutfit: ["item_mine"] }), incoming);
-    expect(authored.profile.defaultOutfit).toEqual(["item_mine"]);
+    const preset = (items: string[]) => [{ id: "everyday", name: "Everyday", items }];
+    const incoming = draftOf({ suggestedItems: [suggested] }, { outfits: preset(["item_gen"]) });
+    const authored = mergeFillDraft(draftOf({}, { outfits: preset(["item_mine"]) }), incoming);
+    expect(authored.profile.outfits).toEqual(preset(["item_mine"]));
     expect(authored.suggestedItems).toEqual([]);
 
     const blank = mergeFillDraft(draftOf(), incoming);
-    expect(blank.profile.defaultOutfit).toEqual(["item_gen"]);
+    expect(blank.profile.outfits).toEqual(preset(["item_gen"]));
     expect(blank.suggestedItems).toEqual([suggested]);
   });
 

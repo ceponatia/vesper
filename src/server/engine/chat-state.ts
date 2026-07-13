@@ -41,6 +41,9 @@ import {
   relationshipSampleSchema,
   relationshipTextureSchema,
   SKIP_HISTORY_CAP,
+  outfitItems,
+  outfitPresetByName,
+  resolveOutfitPreset,
   skipRecordSchema,
   socialReactionCardSchema,
   splitStateCues,
@@ -59,6 +62,7 @@ import {
   type DiagnosticSink,
   type EmotionLabel,
   type Milestone,
+  type OutfitPreset,
   type RelationshipSample,
   type RelationshipTexture,
   type RetrievedMemoryDetail,
@@ -99,6 +103,7 @@ import {
   CHAT_SKIP_MINUTES,
   CHAT_TICK_MINUTES,
 } from "./constants";
+import { scheduleEntryAt } from "./merge/phases/schedule";
 import { chatSkipNote } from "./prompts/character-chat";
 import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
 
@@ -312,8 +317,8 @@ const clamp01 = (n: number): number => clamp(n, 0, 1);
  * stored pre-fix rows (which persisted the ids verbatim — owner report
  * 2026-07-11: the narrator ignored an outfit of ids) self-heal on load.
  */
-export function seededOutfitMarker(profile: CharacterProfile): string {
-  return (profile.defaultOutfit ?? []).join(", ").trim();
+export function seededOutfitMarker(profile: CharacterProfile, presetId?: string | null): string {
+  return outfitItems(profile, presetId).join(", ").trim();
 }
 
 /**
@@ -328,10 +333,42 @@ export async function resolveSeededOutfit(
   profile: CharacterProfile,
   sink?: DiagnosticSink,
 ): Promise<ChatState> {
-  const marker = seededOutfitMarker(profile);
-  if (marker === "" || state.outfit !== marker) return state;
-  const phrase = (await defaultOutfitPhrase(ownerId, profile.defaultOutfit ?? [], sink)).trim();
+  // Any preset's id-join marker resolves — a rhythm-dressed seed (slice 8.4)
+  // may have written a non-default preset's ids.
+  const preset =
+    profile.outfits.find((candidate) => seededOutfitMarker(profile, candidate.id) === state.outfit) ??
+    (seededOutfitMarker(profile) === state.outfit ? resolveOutfitPreset(profile) : undefined);
+  if (!preset || state.outfit === "") return state;
+  const phrase = (await defaultOutfitPhrase(ownerId, preset.items, sink)).trim();
   return { ...state, outfit: phrase };
+}
+
+/**
+ * Match an archivist outfit description against the authored preset names
+ * (ux-improvements slice 8.3). Conservative on purpose: a preset matches only
+ * when the text IS its name ("work") or names it with an outfit word ("changes
+ * into her work clothes", "her date night outfit") — a bare name inside prose
+ * ("work boots" naming no outfit word... does match "work clothes"-style
+ * phrasing only) can't hijack an unrelated garment description. Longest name
+ * wins; empty presets never match.
+ */
+export function matchOutfitPresetInText(
+  profile: Pick<CharacterProfile, "outfits">,
+  text: string,
+): OutfitPreset | undefined {
+  const haystack = text.trim().toLowerCase();
+  if (!haystack) return undefined;
+  const exact = outfitPresetByName(profile, text);
+  if (exact && exact.items.length > 0) return exact;
+  const candidates = profile.outfits
+    .filter((p) => p.name.trim().length >= 3 && p.items.length > 0)
+    .sort((a, b) => b.name.trim().length - a.name.trim().length);
+  for (const preset of candidates) {
+    const name = preset.name.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`(?:^|[^a-z0-9])${name}\\s+(?:clothes|outfit|look|attire|uniform|wear|set)(?:$|[^a-z0-9])`);
+    if (pattern.test(haystack)) return preset;
+  }
+  return undefined;
 }
 
 export function seedChatState(profile: CharacterProfile): ChatState {
@@ -708,8 +745,31 @@ export function applyTimeSkipToScenario(
   };
 }
 
-/** The per-character half of a time skip: expiry vs the advanced shared clock + scene-boundary resets. */
-export function applyTimeSkip(state: ChatState, amount: ChatSkipAmount, clockMinutes: number): ChatState {
+/**
+ * Rhythm auto-dress (ux-improvements slice 8.4, ruled: built with the slice):
+ * a schedule row covering the skipped-to clock that names an outfit preset
+ * re-dresses the character for that window — in MARKER form, so
+ * `resolveSeededOutfit` swaps it for the real garment phrase on the next load.
+ * A skip is a scene boundary, so the rhythm wins over the tracked outfit
+ * (undressed overnight → dressed for the morning shift). Chat has no calendar,
+ * so the weekday is a stable pseudo-index off the accumulated clock.
+ */
+export function rhythmOutfitPatch(profile: CharacterProfile, clockMinutes: number): Partial<ChatState> {
+  const minuteOfDay = ((clockMinutes % 1440) + 1440) % 1440;
+  const weekday = Math.floor(clockMinutes / 1440) % 7;
+  const entry = scheduleEntryAt(profile.schedule, minuteOfDay, weekday);
+  if (!entry?.outfitPresetId) return {};
+  const marker = seededOutfitMarker(profile, entry.outfitPresetId);
+  return marker ? { outfit: marker, outfitExposed: false } : {};
+}
+
+/** The per-character half of a time skip: expiry vs the advanced shared clock + scene-boundary resets (+ rhythm dress when `profile` given). */
+export function applyTimeSkip(
+  state: ChatState,
+  amount: ChatSkipAmount,
+  clockMinutes: number,
+  profile?: CharacterProfile,
+): ChatState {
   return {
     ...state,
     conditions: state.conditions.filter((c) => !isConditionExpired(c, clockMinutes)),
@@ -719,6 +779,7 @@ export function applyTimeSkip(state: ChatState, amount: ChatSkipAmount, clockMin
     // beat-for-beat conversion (a "moments" skip barely dents a strong feeling; a
     // night softens it; days clear it). Bruises heal on the same steps.
     feeling: decayFeelingState(state.feeling, CHAT_FEELING_SKIP_STEPS[amount]),
+    ...(profile ? rhythmOutfitPatch(profile, clockMinutes) : {}),
   };
 }
 
@@ -1208,9 +1269,19 @@ export async function finalizeChatState(input: {
   // a FULL replacement of the tracked outfit + exposed flag — the fiction dressed, changed,
   // or undressed the character this exchange. Empty proposal / degraded archivist keeps the
   // prior values ("another take" rolls it back via the pre-exchange snapshot like the rest).
+  // Preset matching (ux-improvements slice 8.3): a proposal that names an authored outfit
+  // preset ("work clothes" → the "Work" preset) writes that preset's id-join MARKER instead
+  // of the paraphrase — resolveSeededOutfit swaps it for the real garment phrase on the
+  // next load, so "changes into her work clothes" dresses her in the actual work outfit.
   const outfitProposal = archivist.value?.outfit;
+  const namedPreset = outfitProposal?.description
+    ? matchOutfitPresetInText(input.profile, outfitProposal.description)
+    : undefined;
   const outfitPatch = outfitProposal?.description
-    ? { outfit: outfitProposal.description, outfitExposed: outfitProposal.exposed }
+    ? {
+        outfit: namedPreset ? seededOutfitMarker(input.profile, namedPreset.id) : outfitProposal.description,
+        outfitExposed: outfitProposal.exposed,
+      }
     : {};
 
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per

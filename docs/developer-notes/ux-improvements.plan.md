@@ -1,7 +1,14 @@
 # UX improvements — chat, item library, character form
 
-Status: **active** (build started 2026-07-13; planned 2026-07-12 from an
-owner-requested review; open questions ruled 2026-07-13).
+Status: **shipped — 2026-07-13** (all nine slices, built + gated in one day;
+planned 2026-07-12 from an owner-requested review; open questions ruled
+2026-07-13). Leftovers: the world editor is deliberately **autosave-exempt**
+(build note in slice 7 — its save forges cast members); the spawned plans
+[chat-action-beats.plan.md](chat-action-beats.plan.md) and
+[chat-wardrobe-parity.plan.md](chat-wardrobe-parity.plan.md) carry the
+action-chip and wardrobe-parity arcs. Slice 8's legacy `defaultOutfit` rows
+migrate lazily at parse (no sweep needed); the items `/usage` SQL checks both
+shapes until rows re-save.
 
 Source: a three-surface review (character chat, clothing/item library, character
 form) run 2026-07-12 against the code and the live Fly build. Every finding below

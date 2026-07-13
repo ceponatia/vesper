@@ -90,8 +90,9 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
   if (p.attributes.length > 0) {
     lines.push(`Attributes: ${p.attributes.map((a) => `${a.id}=${formatSheetValue(a.value)}`).join(", ")}`);
   }
-  if (p.defaultOutfit.length > 0) {
-    lines.push(`Default outfit: already authored (${p.defaultOutfit.length} garments) — fixed.`);
+  if (p.outfits.some((o) => o.items.length > 0)) {
+    const garments = p.outfits.reduce((n, o) => n + o.items.length, 0);
+    lines.push(`Outfits: already authored (${p.outfits.length} preset${p.outfits.length === 1 ? "" : "s"}, ${garments} garments) — fixed.`);
   }
   return lines;
 }
@@ -146,7 +147,7 @@ export function adoptInferredSpecies(draft: CharacterDraft, sink?: DiagnosticSin
  * would discard the result anyway (no spend on a leg we won't use).
  */
 export function fillSectionsToRun(draft: CharacterDraft): CharacterForgeSection[] {
-  const outfitAuthored = draft.profile.defaultOutfit.length > 0 || draft.suggestedItems.length > 0;
+  const outfitAuthored = draft.profile.outfits.some((o) => o.items.length > 0) || draft.suggestedItems.length > 0;
   return outfitAuthored ? ["profile", "attributes"] : ["profile", "attributes", "outfit"];
 }
 

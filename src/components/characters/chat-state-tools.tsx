@@ -10,7 +10,8 @@ import {
   splitStateCues,
   type ActiveCondition,
 } from "@/contracts";
-import { chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { charactersApi, chatsApi, itemsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -107,6 +108,36 @@ function StateToolsForm({
   const [openLoops, setOpenLoops] = useState(snapshot.openLoops.join("\n"));
   const [memoryQueries, setMemoryQueries] = useState(snapshot.memoryQueries.join("\n"));
   const [saving, setSaving] = useState(false);
+
+  // The character's authored outfit presets (slice 8.3 quick-picks) — fetched
+  // once per sheet open; absent characterId or a failed fetch just hides the row.
+  const presetSource = useAsyncData(
+    () =>
+      characterId
+        ? charactersApi.get(characterId)
+        : Promise.resolve({ ok: false as const, error: { code: "no_character", message: "", status: 0 } }),
+    [characterId],
+  );
+  const outfitPresets = (presetSource.data?.profile.outfits ?? []).filter((p) => p.items.length > 0);
+  const [applyingPresetId, setApplyingPresetId] = useState<string | null>(null);
+  const applyPreset = async (preset: { id: string; name: string; items: string[] }) => {
+    setApplyingPresetId(preset.id);
+    const result = await itemsApi.listByIds(preset.items);
+    setApplyingPresetId(null);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't load the preset's items", description: result.error.message, tone: "error" });
+      return;
+    }
+    const names = preset.items
+      .map((id) => result.data.find((item) => item.id === id)?.name)
+      .filter((name): name is string => Boolean(name));
+    if (names.length === 0) {
+      toast.push({ title: "Preset items missing", description: "None of its items are in the library anymore.", tone: "error" });
+      return;
+    }
+    setOutfit(names.join(", "));
+    setOutfitExposed(false);
+  };
 
   const regardBand = regardBandForValue(regard);
   const familiarityBand = familiarityBandForValue(familiarity);
@@ -347,6 +378,23 @@ function StateToolsForm({
 
       <label className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Outfit</span>
+        {outfitPresets.length > 0 ? (
+          // Preset quick-picks (ux-improvements slice 8.3): fill the free text
+          // with a named preset's garments; the text stays freely editable.
+          <div className="flex flex-wrap gap-1.5">
+            {outfitPresets.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                disabled={applyingPresetId !== null}
+                onClick={() => void applyPreset(preset)}
+                className="cursor-pointer rounded-full border border-ink-500 px-2.5 py-0.5 text-xs text-paper-400 transition-colors hover:border-accent-500/50 hover:text-paper-200"
+              >
+                {applyingPresetId === preset.id ? "…" : preset.name || "Unnamed"}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <Textarea
           rows={2}
           value={outfit}

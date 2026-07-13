@@ -94,7 +94,7 @@ describe("fillSectionsToRun", () => {
   it("skips the outfit leg once any garment is authored", () => {
     expect(fillSectionsToRun(emptyCharacterDraft())).toEqual(["profile", "attributes", "outfit"]);
     const outfitted = draftWith((d) => {
-      d.profile.defaultOutfit = ["item_1"];
+      d.profile.outfits = [{ id: "everyday", name: "Everyday", items: ["item_1"] }];
     });
     expect(fillSectionsToRun(outfitted)).toEqual(["profile", "attributes"]);
   });
@@ -138,10 +138,10 @@ describe("forgeCharacterFill (keyless demo path)", () => {
 
   it("keeps an authored outfit cluster and skips generated garments entirely", async () => {
     const draft = draftWith((d) => {
-      d.profile.defaultOutfit = ["item_mine"];
+      d.profile.outfits = [{ id: "everyday", name: "Everyday", items: ["item_mine"] }];
     });
     const filled = await forgeCharacterFill(input(draft));
-    expect(filled.profile.defaultOutfit).toEqual(["item_mine"]);
+    expect(filled.profile.outfits).toEqual([{ id: "everyday", name: "Everyday", items: ["item_mine"] }]);
     expect(filled.suggestedItems).toEqual([]);
   });
 
