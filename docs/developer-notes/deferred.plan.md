@@ -7,6 +7,30 @@ leaves here (a one-line "graduated → …" tombstone is fine). This file is the
 anchor; supporting detail files named `<topic>.deferred.md` nest under it in the
 editor.
 
+## Owner-gated live eval runs — run on request, not roadmap items
+
+_Removed from the roadmap 2026-07-13 (owner ruling: manual OpenRouter-spend
+runs aren't tracked as roadmap items for now). Each is built and dry-run
+validated; run when the owner asks, then record results in the owning plan._
+
+- **Enactment measurement run** —
+  [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)
+  §slice 2 / spec §5: `pnpm eval:narration` then
+  `pnpm eval:narration:compare --axis contrast`; bar ≥80% blind identification
+  per axis. Also validates the 2026-07-10 trait-quota softening
+  (narrator-prompt-consolidation slice 3 — below the bar ⇒ restore the
+  commented pre-softening wording), and carries the multi-character fixtures
+  (multi-character-chat followups ruling 7) + the `chat-secret-hold`/`-reveal`
+  fixtures ([character-drives.plan.md](character-drives.plan.md) slice 4,
+  `secretCue` metric).
+- **`mt-chat-*` longitudinal baseline** and the **`CHAT_PROMPT_LAYOUT` A/B**
+  (before its default flips) —
+  [narrator-prompt-consolidation.plan.md](finished/narrator-prompt-consolidation.plan.md)
+  §Rulings & leftovers.
+- Older single-run leftovers recorded in their plans: `mt-chat-feeling-hurt`
+  (emotional weather), the memory-callbacks judged run, the `chat-pov-*`
+  scored run.
+
 ## Example-dialogue voice anchors
 
 _Raised 2026-07-11, from the character-chat & schema engagement review (whose
@@ -15,7 +39,8 @@ authored example-dialogue field to `CharacterProfile` — 2–3 short sample
 exchanges rendered as few-shot voice anchors in the chat prompt's stable prefix
 (and later the session cast blocks). The cheapest known lever for voice
 consistency across the curated model list, and directly measurable: the
-enactment measurement run (roadmap §Next) provides the before/after. Deliberately
+enactment measurement run (§"Owner-gated live eval runs" above) provides the
+before/after. Deliberately
 **not** promoted with the batch — the enactment baseline should land first, so
 we know where voice actually drifts before adding prompt weight.
 
@@ -166,8 +191,8 @@ back here:
   base + InstantID/InfiniteYou identity + OpenPose ControlNet + regional masks on a
   cloud GPU). It slots in behind the existing provider seam as one more provider,
   and is the GPU background worker that is the most plausible **second deployable**
-  — decide it together with the [monorepo-evaluation.md](monorepo-evaluation.md)
-  split (itself parked above). Stack + hosting recommendation in
+  — decide it together with the monorepo split (§"Monorepo split" below; its
+  standalone evaluation doc was retired 2026-07-13). Stack + hosting recommendation in
   [scene-images.spec.md](finished/scene-images.spec.md) §7. A cheaper interim lever
   for the 3+-character case (a multi-pass hosted composite) is sketched in the
   shipped plan before reaching for this.
@@ -239,8 +264,9 @@ arrival worker**. When it fires, do a small **4-package, consumer-driven** split
 action available now: an ESLint boundary rule + gating the one `process.env` read
 in `lib/log.ts`.
 
-See [monorepo-evaluation.md](monorepo-evaluation.md) for the full analysis,
-package outline, and the architectural + `CLAUDE.md` boundary-enforcement design.
+The full analysis doc (`monorepo-evaluation.md`, with the package outline and
+boundary-enforcement design) was retired 2026-07-13 — permanently deferred; the
+verdict and trigger recorded here are what survives.
 
 ## Visual world map — _graduated 2026-06-16_
 

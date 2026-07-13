@@ -54,8 +54,8 @@ type IntentBrief = {
   narratedNpcBehaviors: { npc: string; concept?: string; summary?: string }[];  // puppet-guardrail seam; empty on regex fallback
   // PERSISTED SEAMS — written in v1, not yet enforced:
   movement: { kind: "none" | "self" | "narrated_npc" | "co_travel_request" | "implied_subspace";
-              destination?: string; coTravelTargets: string[] };   // movement-authority-spec consumes later
-  appointment?: { withNpc?: string; location?: string; timePhrase?: string; reason: string };  // scheduled-arrivals-spec
+              destination?: string; coTravelTargets: string[] };   // future world-simulation (movement authority) consumes later
+  appointment?: { withNpc?: string; location?: string; timePhrase?: string; reason: string };  // future world-simulation (scheduled arrivals)
   check?: { relevantAttributeIds: string[]; stakes: "low" | "med" | "high" };  // future attribute/skill-check resolution
   // PHASE-3 narration-focus planner — OPTIONAL (absent ⇒ buildResponseShape uses its deterministic derivation):
   focus?: { primaryResponse: "converse" | "answer_question" | "resolve_action"

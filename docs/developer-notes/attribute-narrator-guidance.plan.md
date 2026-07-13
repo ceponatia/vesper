@@ -9,7 +9,7 @@ render it). No separate spec — decisions are recorded inline here.
 ## Goal
 
 Enum attribute values reach the LLMs bare today — `frame: willowy` — so the
-narrator has no idea what *this game* means by the word or where it sits
+narrator has no idea what _this game_ means by the word or where it sits
 relative to its neighbors. Give every prompt-facing enum value an optional,
 authored **`narratorGuidance`** gloss rendered inline, the way disposition
 bands already do it (`Warmth: warm (openly affectionate and caring)` —
@@ -20,15 +20,15 @@ catalog already carry per-value hints).
 ## Design (decided)
 
 - **Readers get meaning, writers get the menu.** The narrator/chat prompts only
-  *interpret* a chosen value → they get the inline gloss. Agents that *choose*
+  _interpret_ a chosen value → they get the inline gloss. Agents that _choose_
   values (forge, overlay writers) already receive the full `allowedValues` via
   `describeConstraint` (`authoring/character-forge.ts`) → that stays; we never
   ship whole enum lists to read-side prompts (token multiplication, and a menu
   invites scale-talk in prose and value drift in agents).
 - **Field shape:** `narratorGuidance?: Record<string, string>` on
   `AttributeDefinition` (`contracts/attributes/types.ts`) — a **partial** map
-  from enum member → short gloss. Enum/enum_list attributes only. Distinct from
-  the existing per-*definition* `promptHints` (phrasing rules like "never state
+  from enum member → short gloss. Enum/enum*list attributes only. Distinct from
+  the existing per-\_definition* `promptHints` (phrasing rules like "never state
   height as a number"), which keep their current pooled rendering.
 - **Sparse by design.** Only ambiguous or game-calibrated members get an entry
   (`willowy`, `soft` vs `plump`, `toned` vs `defined` vs `athletic`…).
@@ -38,7 +38,7 @@ catalog already carry per-value hints).
 - **The orthogonality rule (authoring invariant).** A gloss describes **only
   its own attribute's dimension**. `build.frame` guidance may talk silhouette
   and bone structure — never height (that's `build.height`'s job), never
-  weight (that's `build.weight_presentation`'s). A gloss that *needs* another
+  weight (that's `build.weight_presentation`'s). A gloss that _needs_ another
   attribute's dimension to explain its member reveals an **entangled
   vocabulary word**, which is a bug in `allowedValues`, not a job for
   guidance — fix the word (see the audit slice), don't launder the
@@ -50,6 +50,9 @@ catalog already carry per-value hints).
   definitions — match the trait-band hint voice. Short (roughly ≤ 12 words).
 - **Image prompts stay excluded**, same as `promptHints` today
   (`server/images/prompts.ts` — renders lean on the avatar reference).
+- **Chat lane renders glosses unconditionally** (ruled 2026-07-13). The chat
+  attribute lines live in the prompt-cache-stable segment, so glosses cost one
+  cached render — keep them in that stable segment (no per-turn churn).
 
 ## Build order
 
@@ -68,7 +71,7 @@ catalog already carry per-value hints).
      call sites (attribute lines, sensory cues, chat-state overlays).
      Snapshot/degradation tests: no gloss ⇒ byte-identical output.
 3. **Vocabulary audit (entangled members).** Sweep every enum's
-   `allowedValues` for members that encode a *different* attribute's dimension.
+   `allowedValues` for members that encode a _different_ attribute's dimension.
    For each rename: update `allowedValues` (+ keep the old word in
    `aliases` so freeform authoring still maps), and run a one-off value-sweep
    script over every storage site of attribute values (library character
@@ -105,26 +108,24 @@ catalog already carry per-value hints).
    weight/musculature, intimate categories, voice, movement, skin), applying
    the orthogonality rule; owner reviews the batch. Data-only edit per the
    registry philosophy — no migration.
-5. **Write-side + UI reuse (optional slice, may ship later).**
-   `describeConstraint` appends the gloss to each listed choice so the forge
-   picks better; the attribute-picker UI surfaces it as option tooltip/help
-   text. One authored string, three consumers.
+5. **Write-side + UI reuse (ruled 2026-07-13: ships with the core, not
+   deferred).** `describeConstraint` appends the gloss to each listed choice so
+   the forge picks better; the attribute-picker UI surfaces it as option
+   tooltip/help text. One authored string, three consumers.
 6. **Docs.** `contracts/attributes.md` (new field + orthogonality rule),
    `prompts.md` (where glosses render), `authoring.md` (authoring guidance +
    the sparse-by-design rule).
 
 ## Open questions
 
-- **Chat lane always-on?** Session lane only renders full impressions
-  first-encounter; chat renders attribute lines every build (prompt-cache
-  stable segment). Glosses there are cheap and cached — proposed: include
-  unconditionally. Confirm cache-segment placement doesn't churn.
-- **Does slice 5 ship with the core** or wait for a forge-quality signal?
+None — both ruled by the owner 2026-07-13 and folded into §Design (chat lane
+includes glosses unconditionally) and the build order (slice 5 ships with the
+core).
 
 ## Not in scope (this plan)
 
 Shipping enum lists to read-side prompts (rejected above); glossing
 non-attribute vocabularies that already have per-value hints (trait bands,
 conditions catalog); any change to `promptHints` semantics; item/location
-attribute *vocabulary* expansion (they inherit the mechanism for free via the
+attribute _vocabulary_ expansion (they inherit the mechanism for free via the
 shared `AttributeDefinition`, but new vocab is separate work).

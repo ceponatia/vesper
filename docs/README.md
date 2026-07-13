@@ -4,6 +4,13 @@ Vesper is an LLM-powered romance roleplaying game: a web app where you forge wor
 
 It is a fork of reverie — itself a ground-up rewrite of the original companion-app — and shares reverie's full engine: dynamic state management, RAG memory, and multi-agent parallel orchestration feeding facts to the narrative model. The difference is focus. Reverie is a broadly-scoped roleplaying engine — it *can* host romantic and adult play, but as one mode among many. Vesper forks that engine to develop in a single direction: intimate, character-driven romance, optimized for mature, adult scenarios. Freed from staying general-purpose, the systems behind those scenarios — relationship and affinity progression, per-sense exposure gating, intimacy staging, and uncensored imagery — are first-class here and free to evolve as the product's core rather than incidental features.
 
+**Direction (owner, 2026-07-13):** the character-chat lane is the **test bed for
+what the world/session model will eventually look like**. The two lanes stay
+separate for now, but if all goes to plan the current world/session model will
+eventually be deprecated in favor of a successor grown from the chat lane's
+proven patterns, with character chat migrating onto that successor. New
+interaction/state/narration patterns get proven in chat first.
+
 ## Reading order
 
 | Doc | What it covers |

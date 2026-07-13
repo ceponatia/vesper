@@ -1,6 +1,7 @@
 # Intimacy notes — species/heritage + per-character disposition for intimate scenes — spec
 
-Status: **draft / brainstorm, not implemented**. Graduated from a `TBD:` comment
+Status: **settled — 2026-07-13, not implemented** (all seven open questions
+ruled by the owner; see §Rulings). Graduated from a `TBD:` comment
 in `src/contracts/species/catalog/faerie.ts` (the sprite record) on 2026-06-16.
 Plan/build order: [intimacy-notes.plan.md](intimacy-notes.plan.md) — this doc is
 the design truth it references. Plain-language first, with an _"under the hood"_
@@ -28,11 +29,11 @@ reaches the intimate tier** — invisible (and zero-token) in every ordinary sce
 This completes a clean trio of species notes, each with one audience and one
 surfacing rule:
 
-| Note | Audience | When surfaced |
-|---|---|---|
-| `appearance` | image models + forge | always (visual) |
-| `lore` | narrator (canonical facts) | always (identity/culture) |
-| **`intimacy`** | narrator | **only at the intimate exposure tier** |
+| Note           | Audience                   | When surfaced                          |
+| -------------- | -------------------------- | -------------------------------------- |
+| `appearance`   | image models + forge       | always (visual)                        |
+| `lore`         | narrator (canonical facts) | always (identity/culture)              |
+| **`intimacy`** | narrator                   | **only at the intimate exposure tier** |
 
 > **Under the hood:** `intimacy` reuses the exact pattern the note split already
 > established — an optional string on the species/heritage record + a resolver in
@@ -48,7 +49,7 @@ surfacing rule:
   a tavern negotiation and would bias every ordinary turn. Gating demands its own
   field.
 - **`lore`** is identity/culture for the canonical-facts block — also always-on,
-  and a different register (who they *are*, not how they *make love*).
+  and a different register (who they _are_, not how they _make love_).
 - Keeping `intimacy` distinct lets the **content gate** live in one place: it is
   the only character/species text that is exposure-tier-gated, so a single block
   owns the rule.
@@ -62,9 +63,9 @@ how members of that kind tend to read as partners. Examples:
 
 - **succubus** — feeds intimately on her chosen mate; instinctively dominant and
   attuned to a partner's arousal.
-- **sprite** (heritage) — *"mischievous and devious by nature; those who enjoy
+- **sprite** (heritage) — _"mischievous and devious by nature; those who enjoy
   sass and very animated, playful intercourse find this makes them exciting
-  lovers."* (the originating example)
+  lovers."_ (the originating example)
 - **human** — empty (the unmarked baseline; no archetype to assert).
 
 > **Under the hood:** add `intimacy: z.string().default("")` to
@@ -91,14 +92,15 @@ The turn's effective `ExposureMask` (`brief.exposure`, possibly intent-raised by
 `raiseExposureForIntent`) already drives every sensory permission in the narrator
 prompt (`exposureRules`). The intimacy note rides the **same** signal.
 
-- **Proposed trigger:** surface when **any axis reaches `intimate`** —
+- **Trigger (ruled 2026-07-13):** surface when **any axis reaches `intimate`** —
   `appearance === "intimate" || touch === "intimate" || taste === "intimate"`.
-  Rationale: intimate *behavior* becomes relevant the moment the scene is
+  Rationale: intimate _behavior_ becomes relevant the moment the scene is
   physically intimate, even if line-of-sight detail (`appearance`) is still
-  `close`. (See [Open questions](#open-questions) — the alternative is the
-  narrower `appearance === "intimate"`, matching exactly where intimate *anatomy*
-  detail unlocks.)
+  `close`.
 - Below the gate the block emits `""` — no tokens, no leakage.
+- **The exposure tier is the only gate (ruled 2026-07-13):** a world-level
+  content-rating switch never suppresses the block independently — the mask
+  already encodes what the scene has earned.
 
 > **Under the hood:** a new `buildIntimateDispositionBlock(bundle, exposure)` in
 > `engine/scene.ts`, parallel to `buildCanonicalFactsBlock` /
@@ -112,36 +114,37 @@ prompt (`exposureRules`). The intimacy note rides the **same** signal.
 
 - **species ↔ heritage:** heritage **replaces** species (fallback to species when
   empty) — identical to `lore`.
-- **archetype ↔ character:** **append** — species/heritage note first, then the
-  character's. Both contribute (innate tendency + individual). _Open question: vs
-  character-overrides-archetype._
+- **archetype ↔ character:** **append** (ruled 2026-07-13) — species/heritage
+  note first, then the character's. Both contribute (innate tendency +
+  individual).
 
 ## Forge & editor
 
 - **Forge:** the profile section (which already writes personality/voice) gains an
-  optional `intimacy` line — short, tasteful, gated by the world's content
-  setting. _Open question: always generate vs concept/rating-gated._
+  optional `intimacy` line — short, tasteful, **always generated** (ruled
+  2026-07-13: the gate lives at surfacing, not authoring — an authored note
+  costs nothing until a scene earns it).
 - **Editor:** an "Intimate disposition" textarea on the profile tab, beside
-  Personality, hinted *"surfaces only when a scene turns intimate."*
+  Personality, hinted _"surfaces only when a scene turns intimate."_
 
 ## Out of scope
 
-- **Per-relationship** intimacy ("how she is *with this partner specifically*") —
+- **Per-relationship** intimacy ("how she is _with this partner specifically_") —
   a later layer; v1 is one note per character.
 - Any **mechanic / meter** — this is narrative flavor only, never a stat.
-- **Player** intimate disposition surfaced to the narrator — see open questions;
-  v1 is NPC-only (the narrator's job is NPC portrayal).
+- **Player** intimate disposition surfaced to the narrator — ruled 2026-07-13:
+  NPC-only, because the player narrates their own disposition (the narrator's
+  job is NPC portrayal).
 
-## Open questions
+## Rulings (owner, 2026-07-13)
 
-- **Gate trigger** — any-axis-intimate (proposed) vs `appearance === "intimate"`
-  only (matches intimate-anatomy unlock exactly)?
-- **Archetype ↔ character merge** — append (proposed) vs character overrides?
-- **Forge generation** — always (gated at surface) vs only when the concept/world
-  rating calls for it?
-- **Player note** — NPC-only (proposed) or also surface the player's own
-  disposition to shape NPC reactions?
-- **Field name** — `intimacy` (proposed) vs `intimateDisposition` / `boudoir`?
-- **Helper shape** — bare text (proposed) vs labeled like the other two phrases?
-- **Content rating** — does a world-level rating switch ever suppress the block
-  entirely, independent of the exposure tier?
+All seven open questions ruled; folded into the sections above:
+
+- **Gate trigger** — any-axis-intimate (not `appearance === "intimate"` only).
+- **Archetype ↔ character merge** — append (both contribute).
+- **Forge generation** — always generate; the gate lives at surfacing.
+- **Player note** — NPC-only; the player narrates their own disposition.
+- **Field name** — `intimacy`.
+- **Helper shape** — bare text, no label prefix.
+- **Content rating** — never suppresses the block independent of the exposure
+  tier; the mask is the single gate.

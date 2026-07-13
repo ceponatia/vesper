@@ -1,5 +1,14 @@
 # Pre-narrator intent & guardrail agents — findings + recommendations
 
+> **Sibling specs retired 2026-07-13:** `movement-authority.spec.md` and
+> `scheduled-arrivals.spec.md` were deleted — character chat is now the test
+> bed for what the world/session model will eventually look like (see
+> `CLAUDE.md`), so world-sim design against the current session model was
+> retired rather than kept current. References to those specs in this doc are
+> **historical**; the brief's `movement`/`appointment`/`check` fields remain
+> persisted-not-enforced seams until the direction settles. This doc survives
+> because its intake half shipped.
+
 > **Resequenced 2026-06-14:** this work is now **phase 5**. A standalone **phase 4**
 > (the body-model build) was inserted ahead of it — see
 > [intimate-anatomy-sensory-and-species-spec.phase4.md](finished/intimate-anatomy-sensory-and-species-spec.phase4.md).

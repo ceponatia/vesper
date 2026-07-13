@@ -1,6 +1,7 @@
 # Intimacy notes — plan
 
-Status: **draft** (not settled — design under review; no code yet).
+Status: **next** (design settled — all open questions ruled 2026-07-13; no code
+yet).
 
 Design/decisions: [intimacy-notes.spec.md](intimacy-notes.spec.md) — read it
 first; it is the truth. This plan is the task list and build order. Builds on the
@@ -23,11 +24,12 @@ exposure mask reaches the intimate tier**. Completes the `appearance` (image) /
    Add `speciesIntimacyNote(speciesId, heritageId)` to `species/registry.ts`
    (heritage **replaces** species; bare text; "" for human/unknown/unauthored).
 2. **Gate + narrator block.** `buildIntimateDispositionBlock(bundle, exposure)` in
-   `engine/scene.ts` (sight-present NPCs; archetype note + character note merged;
-   "" below the gate). Thread through `engine/pipeline.ts` (effective mask) into
+   `engine/scene.ts` (sight-present NPCs; archetype note + character note
+   appended; "" below the gate — the gate is **any axis `intimate`**, ruled). Thread through `engine/pipeline.ts` (effective mask) into
    `buildTurnContext` (`engine/prompts/narrative.ts`).
-3. **Forge.** Optional `intimacy` line in the profile section
-   (`authoring/character-forge.ts`) — short, tasteful, content-aware.
+3. **Forge.** `intimacy` line in the profile section
+   (`authoring/character-forge.ts`) — short, tasteful, always generated
+   (ruled — the gate lives at surfacing).
 4. **Editor.** "Intimate disposition" textarea on the profile tab
    (`components/characters/character-editor.tsx`), with a "surfaces only in
    intimate scenes" hint.
@@ -41,17 +43,10 @@ exposure mask reaches the intimate tier**. Completes the `appearance` (image) /
 
 ## Open questions
 
-Each is detailed in the spec — see
-[intimacy-notes.spec.md §Open questions](intimacy-notes.spec.md#open-questions).
-
-- **Gate trigger** — any-axis-`intimate` (proposed) vs `appearance === "intimate"`
-  only?
-- **Archetype ↔ character merge** — append (proposed) vs character overrides?
-- **Forge generation** — always vs concept/rating-gated?
-- **Player note** — NPC-only (proposed) or also surface the player's disposition?
-- **Field name** — `intimacy` vs `intimateDisposition`.
-- **Helper shape** — bare text vs labeled.
-- **World content rating** — can it suppress the block independent of the tier?
+None — all seven ruled by the owner 2026-07-13; see
+[intimacy-notes.spec.md §Rulings](intimacy-notes.spec.md#rulings-owner-2026-07-13)
+(any-axis gate, append merge, always-forge, NPC-only, `intimacy`, bare text,
+no independent content-rating suppression).
 
 ## Not in scope (this plan)
 

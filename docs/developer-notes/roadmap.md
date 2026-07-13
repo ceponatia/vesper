@@ -27,37 +27,34 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Character chat — enactment measurement run** (the shipped plan's one leftover) —
-  [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)
-  §slice 2 / spec §5. The paired-contrast fixtures + blind pair judge are built and dry-run validated;
-  the first **live judged run is owner-gated spend** (`pnpm eval:narration`, then
-  `pnpm eval:narration:compare --axis contrast`). Bar: ≥80% blind identification per
-  axis, else the axis's prompt wording gets tuned and re-run — the craft rules and
-  relationship-law block shipped in slices 6/8 are the levers. **This run now also
-  validates the 2026-07-10 trait-quota softening** (narrator-prompt-consolidation
-  slice 3): below the bar ⇒ restore the commented pre-softening wording and re-run.
-  Two sibling owner-gated runs live in
-  [narrator-prompt-consolidation.plan.md](finished/narrator-prompt-consolidation.plan.md)
-  §Rulings & leftovers: the `mt-chat-*` longitudinal baseline and the
-  `CHAT_PROMPT_LAYOUT` A/B before its default flips. The **multi-character
-  eval fixtures** (followups ruling 7 — the wrap-up pass's one deferred item;
-  asymmetric-mask pair, away-mention gossip, alone-player cutaway) ride this
-  same run, as do the **`chat-secret-hold`/`-reveal` fixtures** (built + dry-run
-  validated 2026-07-12 — [character-drives.plan.md](character-drives.plan.md)
-  slice 4, the `secretCue` planted-token metric).
 - **UX improvements — chat, item library, character form** —
   [ux-improvements.plan.md](ux-improvements.plan.md) (next — planned 2026-07-12
-  from an owner-requested three-surface review; position here is provisional).
-  Nine slices, quick wins first: stale multi-character copy fix + wiring the
-  built-but-unwired clone endpoints, chat transcript pagination + jump-to-latest
-  (backported from the session feed), outfit visibility in the chat status
-  strip, admin-gating the character-sheet debug traces + explaining the action
-  chips, an item ✦ draft-from-description assist, item delete in-use warnings +
-  read-only public items, character-form dirty guard + validation + attribute-
-  accordion summaries, and the one gameplay feature: **named outfit presets**
-  (casual/work/date/sleep) with chat + daily-rhythm hooks.
+  from an owner-requested three-surface review; open questions ruled
+  2026-07-13). Nine slices, quick wins first: stale multi-character copy fix +
+  wiring the built-but-unwired clone endpoints, chat transcript pagination +
+  jump-to-latest (backported from the session feed), outfit visibility in the
+  chat status strip, admin-gating the character-sheet debug traces, an item ✦
+  draft-from-description assist, item delete in-use warnings + read-only
+  public items, the **editor autosave refactor** (create-on-new with
+  placeholder values, save-on-change, blur-save — ruled over a dirty guard) +
+  attribute-accordion summaries, and the one gameplay feature: **named outfit
+  presets** (casual/work/date/sleep, replacing `defaultOutfit`) with chat +
+  daily-rhythm hooks.
+- **Chat action beats** — [chat-action-beats.plan.md](chat-action-beats.plan.md)
+  (next — spawned 2026-07-13 from the UX batch's slice-4 ruling). The four chat
+  action chips stop being silent deterministic state nudges: a chip tap becomes
+  a server-cued exchange the narrator plays as a real beat, deterministic
+  effect kept.
+- **Chat wardrobe parity** —
+  [chat-wardrobe-parity.plan.md](chat-wardrobe-parity.plan.md) (next — ruled
+  2026-07-13; depends on the UX batch's outfit presets). Chat wardrobe reaches
+  full session parity in three rungs: preset-as-state, item-level worn list
+  with computed exposure (the session classifier reused), equip/unequip UI in
+  the chat character sheet. First concrete step of the **chat-as-test-bed
+  direction** (see `CLAUDE.md`).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
-  [intimacy-notes.spec.md](intimacy-notes.spec.md) (draft). Third species/heritage
+  [intimacy-notes.spec.md](intimacy-notes.spec.md) (design settled — all seven
+  questions ruled 2026-07-13). Third species/heritage
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
   the intimate exposure tier. Standalone — builds on the shipped species note split +
   the phase-4 exposure mask; feeds mood's intimacy-beat inputs but doesn't gate them.
@@ -71,11 +68,16 @@ _(nothing — pull the next entry from Next)_
 - **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
   minimap) remain — optional polish on a feature already delivering its core value.
-- **World simulation ("the world moves")** — the former "phase 5" cluster, not yet
-  started; specs drafted: [movement-authority.spec.md](movement-authority.spec.md),
-  [scheduled-arrivals.spec.md](scheduled-arrivals.spec.md),
-  [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md). A major future pillar —
-  needs a `world-simulation.plan.md` when it becomes active.
+- **World simulation ("the world moves")** — the former "phase 5" cluster, not
+  yet started, and now **direction-dependent**: character chat is the test bed
+  for what the world/session model will eventually look like (owner direction
+  2026-07-13 — see `CLAUDE.md`), so the movement-authority and
+  scheduled-arrivals specs were retired (deleted) 2026-07-13 rather than built
+  against the possibly-deprecated session model.
+  [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) remains as
+  findings (its intake half shipped). A future `world-simulation.plan.md` — or
+  the chat-successor equivalent — re-derives what it needs when this becomes
+  active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
@@ -140,7 +142,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   — rulings), the Disposition tab's "Desires & secrets" card, Forge-the-rest
   additive fill up to the 3-cap + Disposition re-draft coverage, and the
   `chat-secret-hold`/`-reveal` fixtures (`secretCue` metric; live judged run
-  rides the enactment measurement run in Next).
+  rides the owner-gated enactment measurement run —
+  [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs).
 - **Foot coverage sub-parts** — registry data edit (no plan; direct owner request) —
   2026-07-12 — `feet` splits into `toes` · `top of foot` · `sole` · `heel` so
   footwear can carve holes (peep-toe, strapped sandal, flip-flop). Footwear's
@@ -318,7 +321,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   with rollback comments at every replaced line: per-shape chat length story
   (`chatLengthStory` — kills the aggressive_concise vs three-paragraph-baseline
   contradiction), NPC initiative licensed-not-mandated + trait/age quota softened
-  (both lanes; validation rides the enactment measurement run in Next),
+  (both lanes; validation rides the owner-gated enactment measurement run —
+  [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs),
   scene-consistent incidental people, the deterministic per-turn **chat sensory
   allowance** (`deriveChatSensoryAllowance` + one binding tail line; rules 11–12 and
   the cue-invite sensory arms collapsed into it), the intake `react_emotionally` →
@@ -413,7 +417,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   skips, and inline anchored scene moments with opt-in auto-at-big-moments. Post-ship
   review (2026-07-06) fixed four rollback/lock correctness bugs —
   [finished/character-chat-standalone.followups.md](finished/character-chat-standalone.followups.md).
-  Leftover: the live enactment measurement run (top of **Next**).
+  Leftover: the live enactment measurement run (owner-gated —
+  [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs).
 - **Mood-reactive avatars — rollback** —
   [avatar-3d.plan.md](avatar-3d.plan.md) §Rollback, 2026-07-02. The emotion-image layer
   (slices 1–3 below) removed at the owner's request — the generated frames didn't work well.
