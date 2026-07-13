@@ -48,7 +48,7 @@ export function ChatScenarioModal({
   onSaved: (next: ChatStateSnapshot) => void;
 }) {
   return (
-    <Dialog open={open} onClose={onClose} title={`Scenario setup — ${who}`} className="max-w-lg">
+    <Dialog open={open} onClose={onClose} title={`Scenario setup — ${who}`} size="xl">
       {open ? <ScenarioForm chatId={chatId} who={who} snapshot={snapshot} onSaved={onSaved} onClose={onClose} /> : null}
     </Dialog>
   );

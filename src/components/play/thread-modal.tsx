@@ -76,7 +76,7 @@ export function ThreadModal({ thread, sessionId, isAdmin, onClose, onClosed }: T
     <Dialog
       open={true}
       onClose={onClose}
-      className="max-w-lg"
+      size="lg"
       title={
         <span className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>

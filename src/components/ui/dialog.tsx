@@ -4,17 +4,31 @@ import { useRef, type ReactNode } from "react";
 import { cx } from "./cx";
 import { useFocusTrap } from "./use-focus-trap";
 
+/**
+ * Panel width caps: md for confirmations and one-field forms, lg for pickers and
+ * reading surfaces, xl for field-heavy sheets that deserve desktop room (the
+ * viewport-padded `w-full` keeps every tier phone-safe). Width is a prop, not a
+ * `className` override: `cx` is a plain join, so a caller's `max-w-*` and the
+ * base's both land on the element and stylesheet order picks the winner — the
+ * old `className="max-w-lg"` overrides silently lost to `max-w-md`.
+ */
+const sizeClasses = {
+  md: "max-w-md",
+  lg: "max-w-lg",
+  xl: "max-w-4xl",
+} as const;
+
 export interface DialogProps {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
-  className?: string;
+  size?: keyof typeof sizeClasses;
 }
 
 /** Minimal modal: overlay click + Escape close, focus moves in on open and Tab cycles inside. */
-export function Dialog({ open, onClose, title, children, footer, className }: DialogProps) {
+export function Dialog({ open, onClose, title, children, footer, size = "md" }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(open, onClose, panelRef);
 
@@ -33,8 +47,8 @@ export function Dialog({ open, onClose, title, children, footer, className }: Di
         aria-modal="true"
         tabIndex={-1}
         className={cx(
-          "w-full max-w-md rounded-card border border-ink-600 bg-ink-800 shadow-lift outline-none",
-          className,
+          "w-full rounded-card border border-ink-600 bg-ink-800 shadow-lift outline-none",
+          sizeClasses[size],
         )}
       >
         <div className="border-b border-ink-600 px-5 py-3">

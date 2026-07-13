@@ -57,7 +57,7 @@ export function ChatStateToolsModal({
   onSaved: (next: ChatStateSnapshot) => void;
 }) {
   return (
-    <Dialog open={open} onClose={onClose} title={`Character sheet — ${who}`} className="max-w-lg">
+    <Dialog open={open} onClose={onClose} title={`Character sheet — ${who}`} size="xl">
       {open ? (
         <StateToolsForm
           chatId={chatId}

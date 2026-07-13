@@ -191,7 +191,7 @@ export function EntityPickerDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={title} className="max-w-lg">
+    <Dialog open={open} onClose={onClose} title={title} size="lg">
       <div className="flex flex-col gap-3">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or tag…" autoFocus />
         {facets?.map((facet) => (
