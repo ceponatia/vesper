@@ -65,6 +65,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [cloning, setCloning] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [tab, setTab] = useState<"details" | "image">("details");
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
   const editGenRef = useRef(0);
@@ -124,6 +125,60 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
     return false;
   };
 
+  /**
+   * ✦ Draft from description (ux-improvements.plan.md slice 5): the classify
+   * seam extended into the editor — propose category/layer/wearer/color/
+   * opacity, explicit coverage (carve-outs included) and the three sensory
+   * lines from name + description. Fill-EMPTY-only merge into the unsaved
+   * form; the SaveBar stays the review/undo step (Forge-the-rest discipline).
+   */
+  const draftFromDescription = async () => {
+    if (!form || drafting) return;
+    const name = form.name.trim();
+    const description = form.description.trim();
+    if (!name && !description) {
+      toast.push({ title: "Nothing to draft from", description: "Give the item a name or a description first.", tone: "error" });
+      return;
+    }
+    setDrafting(true);
+    const result = await itemsApi.draft({ kind: form.kind, name, description });
+    setDrafting(false);
+    if (!result.ok) {
+      toast.push({ title: "Draft failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    const drafted = result.data.draft;
+    editGenRef.current += 1;
+    setForm((current) => {
+      if (!current) return current;
+      const def = current.definition;
+      return {
+        ...current,
+        definition: {
+          ...def,
+          category: def.category ?? drafted.category ?? null,
+          subtype: def.subtype ?? drafted.subtype ?? null,
+          wearer: def.wearer ?? drafted.wearer ?? null,
+          layer: def.layer ?? drafted.layer ?? null,
+          color:
+            def.color ??
+            (drafted.color ? { family: drafted.color.family, shade: drafted.color.shade ?? null, accent: null } : null),
+          // Opacity has no empty state (default "opaque") — a proposed value
+          // applies only over the default; the SaveBar review still guards it.
+          opacity: def.opacity === "opaque" && drafted.opacity ? drafted.opacity : def.opacity,
+          coverage: def.coverage.length > 0 ? def.coverage : (drafted.coverage ?? def.coverage),
+          sensory: {
+            appearance: def.sensory.appearance?.trim() ? def.sensory.appearance : drafted.sensory?.appearance,
+            scent: def.sensory.scent?.trim() ? def.sensory.scent : drafted.sensory?.scent,
+            tactile: def.sensory.tactile?.trim() ? def.sensory.tactile : drafted.sensory?.tactile,
+          },
+        },
+      };
+    });
+    setDirty(true);
+    toast.push({ title: "Item drafted", description: "Review the filled fields, then save.", tone: "success" });
+  };
+
   /** Save-first — the clone copies the saved row. Wardrobe variants ("same top in three colors") start here. */
   const clone = async () => {
     if (cloning || saving) return;
@@ -176,7 +231,17 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
       <LibraryBackLink href="/items" label="Items" />
       <div className="mb-6 flex items-center justify-between gap-4">
         <h1 className="prose-display text-2xl">{form.name || "Untitled item"}</h1>
-        {detail.data ? <PublishToggle kind="item" id={itemId} visibility={detail.data.visibility} /> : null}
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => void draftFromDescription()}
+            busy={drafting}
+            disabled={saving || (!form.name.trim() && !form.description.trim())}
+            title="Propose category, fit, coverage and sensory lines from the name + description — fills empty fields only; review, then save."
+          >
+            ✦ Draft from description
+          </Button>
+          {detail.data ? <PublishToggle kind="item" id={itemId} visibility={detail.data.visibility} /> : null}
+        </div>
       </div>
 
       <Tabs tabs={editorTabs} value={tab} onChange={setTab} className="mb-6" />

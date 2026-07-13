@@ -4,6 +4,10 @@ Items have a **kind** — clothing, object, or container — and kind-specific f
 
 The editor's **← Items** link takes you back to the library exactly as you left it — same type tab, search, and filters (the library remembers its view for the browsing session).
 
+## ✦ Draft from description
+
+Write a name and/or description, press **✦ Draft from description** (editor header), and the model proposes the rest of the structured record: category, layer, wearer, color + shade, opacity, **coverage including carve-outs** (a peep-toe sandal comes back as the foot minus toes), and the three sensory lines (appearance / scent / tactile). It fills **empty fields only** — anything you set stays — and the result lands **unsaved** in the form, so the Save bar is the review step (same discipline as the character Forge). Proposals are grounded server-side against the registries: an unknown category or a bogus body location is dropped, never written. A **Duplicate** button next to Delete copies the item for near-variants ("same top in three colors").
+
 ## Clothing
 
 - **Category** is a template: picking "top" or "pants" pre-fills coverage and layer, then you adjust. The category name never reaches the story — the narrator only sees name, description, and the final coverage, so a "top" with arm coverage removed plays as a tank top.
