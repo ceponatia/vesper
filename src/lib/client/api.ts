@@ -413,6 +413,8 @@ export const locationDetailSchema = locationSummarySchema.extend({
   area: optionalText,
   links: arrayOf(locationConnectionSchema),
   visibility: visibilitySchema,
+  /** Viewer owns it — false ⇒ the editor shows a read-only preview + clone CTA. */
+  mine: z.boolean().catch(true),
 });
 export type LocationDetail = z.infer<typeof locationDetailSchema>;
 
@@ -491,6 +493,8 @@ export const itemSummarySchema = z.object({
 export type ItemSummary = z.infer<typeof itemSummarySchema>;
 
 export const itemDetailSchema = itemSummarySchema.extend({
+  /** Viewer owns it — false ⇒ the editor shows a read-only preview + clone CTA. */
+  mine: z.boolean().catch(true),
   visibility: visibilitySchema,
 });
 export type ItemDetail = z.infer<typeof itemDetailSchema>;
@@ -1361,6 +1365,15 @@ export const itemsApi = {
   /** ✦ Draft the structured record from name+description (stateless; fill-merged client-side). */
   draft: (body: { kind: "clothing" | "object" | "container"; name: string; description: string }) =>
     apiPost(z.object({ draft: itemDraftProposalSchema }), "/api/items/draft", body),
+  /** Where the item is referenced (delete-dialog in-use warning — slice 6). */
+  usage: (id: string) =>
+    apiGet(
+      z.object({
+        wornBy: z.array(z.object({ id: idSchema, name: nameSchema })).catch([]),
+        placements: z.array(z.object({ worldId: idSchema, worldName: nameSchema })).catch([]),
+      }),
+      `/api/items/${id}/usage`,
+    ),
 };
 
 export const socialCardsApi = {

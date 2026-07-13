@@ -60,6 +60,7 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [tab, setTab] = useState<"details" | "image">("details");
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
   const editGenRef = useRef(0);
@@ -122,6 +123,19 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
     }
   };
 
+  const clone = async () => {
+    if (cloning) return;
+    setCloning(true);
+    const result = await locationsApi.clone(locationId);
+    setCloning(false);
+    if (result.ok) {
+      toast.push({ title: "Location cloned", description: "You're now editing your copy.", tone: "success" });
+      router.push(`/locations/${result.data.id}`);
+    } else {
+      toast.push({ title: "Clone failed", description: result.error.message, tone: "error" });
+    }
+  };
+
   const remove = async () => {
     setDeleting(true);
     const result = await locationsApi.remove(locationId);
@@ -153,6 +167,36 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
   }
 
   if (!form) return null;
+
+  // A public location owned by someone else: read-only preview + clone CTA
+  // (edits would 404 server-side anyway — the slice-6 audit's location fix).
+  if (detail.data && !detail.data.mine) {
+    return (
+      <PageContainer>
+        <LibraryBackLink href="/locations" label="Locations" />
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h1 className="prose-display text-2xl">{form.name || "Untitled location"}</h1>
+          <Button busy={cloning} onClick={() => void clone()}>
+            Clone to my library
+          </Button>
+        </div>
+        <div className="flex flex-col gap-3 rounded-card border border-ink-700 bg-ink-850 p-4 text-sm text-paper-300">
+          <p className="text-paper-400">Someone else&apos;s public location — clone it to edit your own copy.</p>
+          {form.description ? <p>{form.description}</p> : null}
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+            <dt className="text-paper-500">Scale</dt>
+            <dd>{form.scale}</dd>
+            {form.area ? (
+              <>
+                <dt className="text-paper-500">Area</dt>
+                <dd>{form.area}</dd>
+              </>
+            ) : null}
+          </dl>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>

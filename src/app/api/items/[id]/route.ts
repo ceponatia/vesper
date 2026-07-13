@@ -32,7 +32,9 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   // Owner-or-public read (the browse/preview/copy path); private non-owned ⇒ 404.
   const row = await findViewable("item", id, user.id);
   if (!row) return jsonError("not_found", "item not found", 404);
-  return jsonOk({ item: row });
+  // `mine` tells the editor whether to offer the form or a read-only preview +
+  // clone CTA (ux-improvements slice 6 — a foreign Save would 404 anyway).
+  return jsonOk({ item: row, mine: row.ownerId === user.id });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
