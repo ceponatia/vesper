@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  bodyLocationRegistry,
   clothingCategoryById,
   clothingCategoryIds,
   clothingLayerSchema,
@@ -9,11 +10,13 @@ import {
   clothingSubtypesForCategory,
   colorFamilyById,
   colorFamilyIds,
+  expandCoverage,
   objectSubtypeById,
   objectSubtypeIds,
   subtypedClothingCategoryIds,
   wearerTargetById,
   wearerTargetIds,
+  type ItemKind,
 } from "@/contracts";
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
@@ -86,8 +89,9 @@ interface ClassifyRow {
   definition: unknown;
 }
 
-function classifyPrompt(rows: readonly ClassifyRow[]): string {
-  const lines = [
+/** The shared facet-vocabulary block (classify backfill + the editor's draft assist). */
+function facetVocabularyLines(): string[] {
+  return [
     "Facet vocabulary:",
     `- clothing category: ${clothingCategoryIds.join(", ")}`,
     "- clothing layer: 0 underwear · 1 base · 2 mid · 3 outerwear",
@@ -97,6 +101,12 @@ function classifyPrompt(rows: readonly ClassifyRow[]): string {
     ),
     `- object subtype: ${objectSubtypeIds.join(", ")}`,
     `- color family (any kind): ${colorFamilyIds.join(", ")}; also give "shade", the precise hue in a word or two (e.g. "aqua", "olive"), when the exact color is stated or obvious`,
+  ];
+}
+
+function classifyPrompt(rows: readonly ClassifyRow[]): string {
+  const lines = [
+    ...facetVocabularyLines(),
     "",
     "Items:",
     ...rows.map((row, i) => {
@@ -153,6 +163,132 @@ export function mergeClassifiedExtras(extras: ItemExtras, kind: ClassifyRow["kin
     changed = true;
   }
   return { merged, changed };
+}
+
+// --- ✦ Draft from description (ux-improvements.plan.md slice 5) --------------
+
+/** What the draft model may propose — every field optional, degrading per-field. */
+const draftedItemSchema = z.object({
+  category: z.string().optional().catch(undefined),
+  subtype: z.string().optional().catch(undefined),
+  layer: clothingLayerSchema.optional().catch(undefined),
+  wearer: z.string().optional().catch(undefined),
+  color: z
+    .object({ family: z.string().min(1), shade: z.string().optional().catch(undefined) })
+    .optional()
+    .catch(undefined),
+  opacity: z.enum(["opaque", "sheer"]).optional().catch(undefined),
+  /** Explicit covered body-location ids (carve-outs = omitted ids). */
+  coverage: z.array(z.string()).optional().catch(undefined),
+  sensory: z
+    .object({
+      appearance: z.string().trim().max(300).optional().catch(undefined),
+      scent: z.string().trim().max(300).optional().catch(undefined),
+      tactile: z.string().trim().max(300).optional().catch(undefined),
+    })
+    .optional()
+    .catch(undefined),
+});
+export type DraftedItem = z.infer<typeof draftedItemSchema>;
+
+export interface ItemDraftProposal {
+  category?: string;
+  subtype?: string;
+  layer?: 0 | 1 | 2 | 3;
+  wearer?: string;
+  color?: { family: string; shade?: string };
+  opacity?: "opaque" | "sheer";
+  coverage?: string[];
+  sensory?: { appearance?: string; scent?: string; tactile?: string };
+}
+
+/**
+ * Ground a raw model draft against the registries (pure — unit-tested):
+ * unknown ids drop per-field, clothing-only facets drop for other kinds, and
+ * coverage is exploded to the explicit-id convention (items/coverage.ts) with
+ * non-coverage-relevant locations filtered — so "feet minus toes" survives as
+ * `top_of_foot, sole, heel` and a bogus location can never reach the form.
+ */
+export function groundItemDraft(kind: ItemKind, drafted: DraftedItem): ItemDraftProposal {
+  const proposal: ItemDraftProposal = {};
+  if (kind === "clothing") {
+    const category = drafted.category ? clothingCategoryById(drafted.category) : undefined;
+    if (category) proposal.category = category.id;
+    const subtype = drafted.subtype ? clothingSubtypeById(drafted.subtype) : undefined;
+    if (subtype && clothingSubtypesForCategory(proposal.category).some((s) => s.id === subtype.id)) {
+      proposal.subtype = subtype.id;
+    }
+    if (drafted.layer !== undefined) proposal.layer = drafted.layer;
+    const wearer = drafted.wearer ? wearerTargetById(drafted.wearer) : undefined;
+    if (wearer) proposal.wearer = wearer.id;
+    if (drafted.opacity) proposal.opacity = drafted.opacity;
+    const known = (drafted.coverage ?? []).flatMap((id) => {
+      const normalized = id.trim().toLowerCase();
+      return bodyLocationRegistry.byId(normalized) ? [normalized] : [];
+    });
+    if (known.length > 0) {
+      const effective = expandCoverage(known);
+      const coverage = bodyLocationRegistry.all
+        .filter((loc) => (loc.coverageRelevant ?? true) && effective.has(loc.id))
+        .map((loc) => loc.id);
+      // Only propose when something survives grounding — an all-intimate (non
+      // coverage-relevant) proposal must not read as "covers nothing".
+      if (coverage.length > 0) proposal.coverage = coverage;
+    }
+  }
+  if (kind === "object") {
+    const subtype = drafted.subtype ? objectSubtypeById(drafted.subtype) : undefined;
+    if (subtype) proposal.subtype = subtype.id;
+  }
+  const family = drafted.color ? colorFamilyById(drafted.color.family) : undefined;
+  if (family) proposal.color = { family: family.id, shade: drafted.color?.shade };
+  const sensory = {
+    appearance: drafted.sensory?.appearance?.trim() || undefined,
+    scent: drafted.sensory?.scent?.trim() || undefined,
+    tactile: drafted.sensory?.tactile?.trim() || undefined,
+  };
+  if (sensory.appearance || sensory.scent || sensory.tactile) proposal.sensory = sensory;
+  return proposal;
+}
+
+const DRAFT_SYSTEM =
+  "You are a meticulous inventory librarian for a roleplaying engine. You draft an item's structured record from its name and description, using ONLY the exact vocabulary ids provided for facets. Skip any facet you cannot infer confidently — a missing facet is better than a wrong one. Sensory lines are short, concrete, present-tense prose.";
+
+function draftPrompt(kind: ItemKind, name: string, description: string): string {
+  const coverageIds = bodyLocationRegistry.all
+    .filter((loc) => loc.coverageRelevant ?? true)
+    .map((loc) => loc.id);
+  return [
+    ...facetVocabularyLines(),
+    '- opacity (clothing): "opaque" or "sheer" — sheer only when the fabric reads see-through',
+    `- coverage (clothing): body-location ids — ${coverageIds.join(", ")}`,
+    "",
+    `Item: [${kind}] ${name || "(unnamed)"}${description ? ` — ${description}` : ""}`,
+    "",
+    "Draft the item's record. Clothing gets category, layer, wearer, color, opacity, coverage — and when the category is jewelry, headwear or eyewear, a subtype from that category's type list. Objects get subtype and color; containers get color.",
+    "Coverage lists EVERY covered location id explicitly; a cutout is expressed by omission — a peep-toe sandal covers sole, heel and top_of_foot but NOT toes; a flip-flop covers only sole. A parent id implies all its children, so use explicit children whenever part of a region is bare.",
+    "Also write the three sensory lines — appearance (how it reads on the body/in the room), scent, tactile (how it feels) — from the item's nature: concrete and restrained, one short sentence each.",
+  ].join("\n");
+}
+
+/**
+ * The editor's ✦ Draft-from-description (stateless — nothing is written; the
+ * client fill-merges into the unsaved form for SaveBar review). Returns null
+ * when the model produced nothing usable (the route degrades to an error toast).
+ */
+export async function draftItemProposal(input: {
+  kind: ItemKind;
+  name: string;
+  description: string;
+}): Promise<ItemDraftProposal | null> {
+  const { value } = await generateChecked({
+    schema: draftedItemSchema,
+    system: DRAFT_SYSTEM,
+    prompt: draftPrompt(input.kind, input.name, input.description),
+    code: "api.items.draft",
+  });
+  if (!value) return null;
+  return groundItemDraft(input.kind, value);
 }
 
 /**

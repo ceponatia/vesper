@@ -1299,6 +1299,32 @@ const entityImageSchema = z.object({ image: imageRecordSchema.nullable().catch(n
 /** Batch background-job response (image generation, item classify): how many entities were queued. */
 const batchQueuedSchema = z.object({ queued: z.number().catch(0) }).catch({ queued: 0 });
 
+/** ✦ Draft-from-description proposal (ux-improvements slice 5) — registry-grounded server-side. */
+export const itemDraftProposalSchema = z.object({
+  category: z.string().optional().catch(undefined),
+  subtype: z.string().optional().catch(undefined),
+  layer: z
+    .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)])
+    .optional()
+    .catch(undefined),
+  wearer: z.string().optional().catch(undefined),
+  color: z
+    .object({ family: z.string(), shade: z.string().optional().catch(undefined) })
+    .optional()
+    .catch(undefined),
+  opacity: z.enum(["opaque", "sheer"]).optional().catch(undefined),
+  coverage: z.array(z.string()).optional().catch(undefined),
+  sensory: z
+    .object({
+      appearance: z.string().optional().catch(undefined),
+      scent: z.string().optional().catch(undefined),
+      tactile: z.string().optional().catch(undefined),
+    })
+    .optional()
+    .catch(undefined),
+});
+export type ItemDraftProposal = z.infer<typeof itemDraftProposalSchema>;
+
 export const locationsApi = {
   list: (params: ListParams = {}) =>
     apiGet(listOf(locationSummarySchema, "locations"), withQuery("/api/locations", params)),
@@ -1332,6 +1358,9 @@ export const itemsApi = {
   /** Backfill missing facet fields (category/wearer/color/…) on the given items. */
   classifyMissing: (ids?: readonly string[]) =>
     apiPost(batchQueuedSchema, "/api/items/classify", ids ? { ids } : {}),
+  /** ✦ Draft the structured record from name+description (stateless; fill-merged client-side). */
+  draft: (body: { kind: "clothing" | "object" | "container"; name: string; description: string }) =>
+    apiPost(z.object({ draft: itemDraftProposalSchema }), "/api/items/draft", body),
 };
 
 export const socialCardsApi = {

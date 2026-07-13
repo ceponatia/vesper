@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeClassifiedExtras } from "./item-classify";
+import { groundItemDraft, mergeClassifiedExtras } from "./item-classify";
 import { itemExtrasSchema } from "./schemas";
 
 const empty = () => itemExtrasSchema.parse({});
@@ -78,5 +78,66 @@ describe("mergeClassifiedExtras", () => {
     expect(changed).toBe(true);
     expect(merged.color).toEqual({ family: "brown" });
     expect(merged.subtype).toBeUndefined();
+  });
+});
+
+describe("groundItemDraft (✦ draft-from-description, ux-improvements slice 5)", () => {
+  it("keeps a carve-out coverage exactly — the peep-toe sandal covers a foot minus toes", () => {
+    const proposal = groundItemDraft("clothing", {
+      category: "footwear",
+      layer: 1,
+      coverage: ["top_of_foot", "sole", "heel"],
+      opacity: "opaque",
+    });
+    expect(proposal.category).toBe("footwear");
+    expect(proposal.coverage).toEqual(["top_of_foot", "sole", "heel"]);
+    expect(proposal.coverage).not.toContain("toes");
+    expect(proposal.coverage).not.toContain("feet");
+  });
+
+  it("explodes a parent id to the explicit-id convention", () => {
+    const proposal = groundItemDraft("clothing", { coverage: ["feet"] });
+    expect(proposal.coverage).toEqual(expect.arrayContaining(["feet", "toes", "top_of_foot", "sole", "heel"]));
+  });
+
+  it("drops unknown and non-coverage-relevant location ids", () => {
+    expect(groundItemDraft("clothing", { coverage: ["nonsense_zone"] }).coverage).toBeUndefined();
+    // Intimate locations are not garment slots — an all-intimate proposal must
+    // not survive as "covers nothing".
+    expect(groundItemDraft("clothing", { coverage: ["vulva"] }).coverage).toBeUndefined();
+  });
+
+  it("grounds facets and drops unknown vocabulary per-field", () => {
+    const proposal = groundItemDraft("clothing", {
+      category: "tuxedo", // unknown → dropped
+      wearer: "feminine",
+      color: { family: "chartreuse" }, // unknown family → dropped
+      opacity: "sheer",
+      sensory: { appearance: " sits low on the hips ", scent: "", tactile: undefined },
+    });
+    expect(proposal.category).toBeUndefined();
+    expect(proposal.wearer).toBe("feminine");
+    expect(proposal.color).toBeUndefined();
+    expect(proposal.opacity).toBe("sheer");
+    expect(proposal.sensory).toEqual({ appearance: "sits low on the hips", scent: undefined, tactile: undefined });
+  });
+
+  it("drops clothing-only facets for objects; object subtype grounds", () => {
+    const proposal = groundItemDraft("object", {
+      category: "top",
+      coverage: ["feet"],
+      opacity: "sheer",
+      subtype: "tool",
+      color: { family: "red", shade: "rust" },
+    });
+    expect(proposal.category).toBeUndefined();
+    expect(proposal.coverage).toBeUndefined();
+    expect(proposal.opacity).toBeUndefined();
+    expect(proposal.subtype).toBe("tool");
+    expect(proposal.color).toEqual({ family: "red", shade: "rust" });
+  });
+
+  it("returns an empty proposal when nothing survives grounding", () => {
+    expect(groundItemDraft("container", { category: "top", coverage: ["feet"] })).toEqual({});
   });
 });
