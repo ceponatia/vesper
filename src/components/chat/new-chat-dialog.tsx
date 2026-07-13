@@ -21,9 +21,8 @@ const MAX_PICKS = 4;
  * preset (spec §1.5 — the server seeds the new conversation's state from it),
  * optionally title it, then create + navigate to the full-screen conversation.
  * Selection order matters: the first pick is the conversation's primary
- * participant — until the multi-character substrate ships
- * (multi-character-chat.plan.md), the exchange itself is still 1-on-1 with
- * the primary and extra picks are inert roster groundwork. The memory choice is
+ * participant; every pick joins as a full roster member of the ensemble
+ * exchange (multi-character chat — finished/multi-character-chat.plan.md). The memory choice is
  * always shown with "shared" as the default: for a first-ever chat the two are
  * equivalent (a fresh group is minted either way), so the copy speaks in "if any"
  * terms rather than probing for priors.
@@ -179,8 +178,8 @@ export function NewChatDialog({
             </div>
             {picked.length > 1 ? (
               <p className="mt-1.5 text-[11px] text-paper-600">
-                Group chat groundwork: the first pick leads the conversation for now — the others join fully when
-                multi-character chat lands.
+                Everyone you pick joins the conversation — the first pick is the primary, who anchors the scene and
+                leads when others are away.
               </p>
             ) : null}
           </div>

@@ -1,7 +1,7 @@
 # UX improvements — chat, item library, character form
 
-Status: **next** (planned 2026-07-12 from an owner-requested review; open
-questions ruled 2026-07-13; no code yet).
+Status: **active** (build started 2026-07-13; planned 2026-07-12 from an
+owner-requested review; open questions ruled 2026-07-13).
 
 Source: a three-surface review (character chat, clothing/item library, character
 form) run 2026-07-12 against the code and the live Fly build. Every finding below

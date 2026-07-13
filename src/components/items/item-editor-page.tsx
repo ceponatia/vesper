@@ -64,6 +64,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [tab, setTab] = useState<"details" | "image">("details");
   /** Bumped on every edit so a completing save can't clear newer dirtiness. */
   const editGenRef = useRef(0);
@@ -106,8 +107,8 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
     setDirty(true);
   };
 
-  const save = async () => {
-    if (!form) return;
+  const save = async (): Promise<boolean> => {
+    if (!form) return false;
     const gen = editGenRef.current;
     setSaving(true);
     const result = await itemsApi.update(itemId, form);
@@ -117,8 +118,24 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
       if (editGenRef.current === gen) setDirty(false);
       toast.push({ title: "Item saved", tone: "success" });
       detail.reload({ silent: true });
+      return true;
+    }
+    toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+    return false;
+  };
+
+  /** Save-first — the clone copies the saved row. Wardrobe variants ("same top in three colors") start here. */
+  const clone = async () => {
+    if (cloning || saving) return;
+    if (dirty && !(await save())) return;
+    setCloning(true);
+    const result = await itemsApi.clone(itemId);
+    setCloning(false);
+    if (result.ok) {
+      toast.push({ title: "Item duplicated", description: "You're now editing the copy.", tone: "success" });
+      router.push(`/items/${result.data.id}`);
     } else {
-      toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+      toast.push({ title: "Duplicate failed", description: result.error.message, tone: "error" });
     }
   };
 
@@ -315,9 +332,19 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
         saving={saving}
         onSave={save}
         secondary={
-          <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
-            Delete
-          </Button>
+          <>
+            <Button
+              size="sm"
+              busy={cloning}
+              onClick={() => void clone()}
+              title="Copy this item into a new library entry and open it — the fast path for near-variants."
+            >
+              Duplicate
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
+              Delete
+            </Button>
+          </>
         }
       />
       <Dialog

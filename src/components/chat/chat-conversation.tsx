@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -23,6 +24,7 @@ import {
 } from "@/lib/client/api";
 import { replyRevealHoldMs } from "@/lib/chat-pacing";
 import { NARRATIVE_MODELS, resolveChatModelId } from "@/lib/narrative-models";
+import { isPinnedToBottom, prependRestoreTop, type PrependAnchor } from "@/lib/scroll-pin";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
@@ -53,6 +55,9 @@ import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+
+/** Stick-to-bottom slack (px): within this of the bottom counts as pinned. */
+const CHAT_PIN_SLACK_PX = 40;
 
 /** Project an API transcript row onto the renderable line shape (takes + stopped + attachments ride along). */
 const toLine = (m: ChatMessage): ChatLine => ({
@@ -107,6 +112,11 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const who = name.trim() || "this character";
 
   const [lines, setLines] = useState<ChatLine[]>([]);
+  // Transcript pagination (ux-improvements.plan.md slice 2): the GET returns the
+  // newest page; "Load earlier" keysets older pages via `nextBefore`.
+  const [hasEarlier, setHasEarlier] = useState(false);
+  const [earlierCursor, setEarlierCursor] = useState<string | null>(null);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   // Mutable chat header (rename / archive write through these mirrors).
   const [title, setTitle] = useState("");
   const [archived, setArchived] = useState(false);
@@ -203,6 +213,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   if (seedAction === "seed" && bootstrap.data) {
     setSeededFor(chatId);
     setLines(bootstrap.data.messages.map(toLine));
+    setHasEarlier(bootstrap.data.hasMore);
+    setEarlierCursor(bootstrap.data.nextBefore);
     setTitle(bootstrap.data.chat.title);
     setArchived(bootstrap.data.chat.archivedAt !== null);
     setChatModel(resolveChatModelId(bootstrap.data.character.chatModel));
@@ -213,6 +225,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   } else if (seedAction === "clear") {
     setSeededFor(null);
     setLines([]);
+    setHasEarlier(false);
+    setEarlierCursor(null);
     setTitle("");
     setArchived(false);
     setChatModel(resolveChatModelId(null));
@@ -285,16 +299,33 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
-  useEffect(() => {
+  // Mirrors stickRef for rendering (the jump-to-latest pill) — the ref stays the
+  // synchronous truth the effects read.
+  const [pinned, setPinned] = useState(true);
+  // Set before a "Load earlier" prepend renders; the layout effect restores the
+  // viewport from it so the reader is never yanked (lib/scroll-pin.ts).
+  const prependAnchorRef = useRef<PrependAnchor | null>(null);
+  // One layout effect owns scroll correction (the session feed's pattern):
+  // restore after a prepend, otherwise stick to the bottom while pinned.
+  // Unpinned appends fall through to "do nothing".
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const anchor = prependAnchorRef.current;
+    if (anchor) {
+      prependAnchorRef.current = null;
+      el.scrollTop = prependRestoreTop(anchor, el.scrollHeight);
+      return;
+    }
+    if (stickRef.current) el.scrollTop = el.scrollHeight;
   }, [lines]);
   useEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;
     if (!el || !content) return;
     const observer = new ResizeObserver(() => {
-      if (stickRef.current) el.scrollTop = el.scrollHeight;
+      // Never during a pending prepend — the anchor restore owns that frame.
+      if (stickRef.current && !prependAnchorRef.current) el.scrollTop = el.scrollHeight;
     });
     // Both boxes matter: the content column grows as thumbnails/avatars land, and
     // the container itself shrinks when the sections above it (scene disclosure,
@@ -303,6 +334,36 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  /** "Load earlier" (slice 2): fetch the next older page and prepend it, viewport held. */
+  const loadEarlier = async () => {
+    if (!earlierCursor || loadingEarlier) return;
+    setLoadingEarlier(true);
+    const result = await chatsApi.transcript(chatId, { before: earlierCursor });
+    setLoadingEarlier(false);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't load earlier messages", description: result.error.message, tone: "error" });
+      return;
+    }
+    // Snapshot right before the prepend renders; release the pin so neither the
+    // layout effect nor the ResizeObserver yanks to the bottom on this growth.
+    const el = scrollRef.current;
+    if (el) prependAnchorRef.current = { height: el.scrollHeight, top: el.scrollTop };
+    stickRef.current = false;
+    setPinned(false);
+    setHasEarlier(result.data.hasMore);
+    setEarlierCursor(result.data.nextBefore);
+    const older = result.data.messages.map(toLine);
+    setLines((prev) => [...older, ...prev]);
+  };
+
+  const jumpToLatest = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    stickRef.current = true;
+    setPinned(true);
+  };
 
   /** Refetch the state strip; toast when the regard band changed (the romance arc made visible). */
   const refreshState = async () => {
@@ -344,6 +405,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // An exchange the player initiates re-pins the transcript (even from a scrolled-up
     // read) — the reply they asked for should stream into view.
     stickRef.current = true;
+    setPinned(true);
     const assistantId = replaceId ?? mkId();
     // The take being replaced, kept so a failed regenerate can put it back.
     const priorLine = replaceId !== undefined ? lines.find((l) => l.id === replaceId) : undefined;
@@ -429,10 +491,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     }
     // Swap the optimistic temp-ids for the persisted ids so the exchange just sent
     // is immediately editable/deletable (and pick up recorded takes + stop marks).
-    // Skip if another send already started.
+    // Skip if another send already started. This resets to the newest page —
+    // history the reader paged in collapses (they're at the bottom after their
+    // own exchange; Load earlier brings it back), and the cursor re-syncs.
     const fresh = await chatsApi.transcript(chatId);
     if (fresh.ok && !sendingRef.current) {
       setLines(fresh.data.messages.map(toLine));
+      setHasEarlier(fresh.data.hasMore);
+      setEarlierCursor(fresh.data.nextBefore);
     }
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange —
@@ -993,16 +1059,25 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             ) : null}
           </aside>
         ) : null}
+        <div className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}
           onScroll={(e) => {
             // Stick while within a small slack of the bottom; scrolling up releases.
-            const el = e.currentTarget;
-            stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+            const nearBottom = isPinnedToBottom(e.currentTarget, CHAT_PIN_SLACK_PX);
+            stickRef.current = nearBottom;
+            setPinned(nearBottom);
           }}
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+          className="h-full overflow-y-auto px-4 py-4"
         >
           <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3">
+            {hasEarlier && ready ? (
+              <div className="flex justify-center">
+                <Button size="sm" variant="quiet" busy={loadingEarlier} onClick={() => void loadEarlier()}>
+                  Load earlier
+                </Button>
+              </div>
+            ) : null}
             {bootstrap.loading ? (
               <div className="flex flex-col gap-3">
                 <Skeleton className="h-10 w-2/3" />
@@ -1042,6 +1117,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               })
             )}
           </div>
+        </div>
+        {!pinned && lines.length > 0 ? (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 cursor-pointer rounded-full border border-ink-500 bg-ink-800 px-4 py-1.5 text-xs text-paper-200 shadow-lift transition-colors hover:border-accent-500 hover:text-paper-50"
+          >
+            ↓ Jump to latest
+          </button>
+        ) : null}
         </div>
       </div>
 

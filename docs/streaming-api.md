@@ -132,4 +132,4 @@ Real accounts via [Better Auth](https://better-auth.com) ([auth.md](auth.md)), s
 
 ## Pagination & limits
 
-`/feed` returns the latest 80 messages with a `before` cursor (the play screen virtualizes long sessions). List endpoints cap at 100 with `?q` search hitting name + tags + (when available) `search_embedding` similarity.
+`/feed` returns the latest 80 messages with a `before` cursor (the play screen virtualizes long sessions). The chat transcript GET (`/api/chats/:chatId`) works the same way: the newest 100 rows plus `hasMore`/`nextBefore`, where `?before=<messageId>` keysets the next older page in `(createdAt, id)` order (a total order, so paging is stable across same-ms inserts; an unknown cursor 400s). List endpoints cap at 100 with `?q` search hitting name + tags + (when available) `search_embedding` similarity.

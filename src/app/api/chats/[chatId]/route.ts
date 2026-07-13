@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import {
@@ -28,8 +28,14 @@ type Params = { chatId: string };
  * character-chat-standalone.spec.md §1.4).
  */
 
-/** Cap on transcript rows returned (oldest-first after slice). */
-const TRANSCRIPT_LIMIT = 500;
+/**
+ * Transcript page size (ux-improvements.plan.md slice 2). The GET returns the
+ * newest page by default; `?before=<messageId>` keysets older pages so a
+ * long-running chat never loses its own beginning. Ordering is the composite
+ * `(createdAt, id)` — a total order, so paging is stable even across same-ms
+ * inserts.
+ */
+const CHAT_PAGE_SIZE = 100;
 
 const sendBodySchema = z
   .object({
@@ -82,13 +88,34 @@ const patchBodySchema = z
     message: "nothing to update",
   });
 
-/** GET /api/chats/:chatId — the transcript, oldest first. */
-export const GET = withUser<Params>(async (user, _req, ctx) => {
+/**
+ * GET /api/chats/:chatId — the newest transcript page, oldest first, plus
+ * `hasMore`/`nextBefore` for the "Load earlier" affordance
+ * (docs/streaming-api.md §Pagination).
+ */
+export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { chatId } = await ctx.params;
   const owned = await loadOwnedChat(chatId, user.id);
   if (!owned) return jsonError("not_found", "chat not found", 404);
 
-  // Newest-first slice (so the cap keeps the most recent), reversed to display order.
+  // Keyset cursor: the id of the oldest already-loaded message; pages are the
+  // rows strictly before it in (createdAt, id) order.
+  const beforeId = req.nextUrl.searchParams.get("before");
+  let beforeFilter: SQL | undefined;
+  if (beforeId !== null) {
+    const [cursor] = await db()
+      .select({ id: characterChatMessages.id, createdAt: characterChatMessages.createdAt })
+      .from(characterChatMessages)
+      .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.id, beforeId)));
+    if (!cursor) return jsonError("invalid_query", "before must be a message id in this chat", 400);
+    beforeFilter = or(
+      lt(characterChatMessages.createdAt, cursor.createdAt),
+      and(eq(characterChatMessages.createdAt, cursor.createdAt), lt(characterChatMessages.id, cursor.id)),
+    );
+  }
+
+  // Newest-first slice (so the cap keeps the page nearest the cursor), reversed
+  // to display order. One extra row probes hasMore without a count query.
   const rows = await db()
     .select({
       id: characterChatMessages.id,
@@ -99,9 +126,12 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
       createdAt: characterChatMessages.createdAt,
     })
     .from(characterChatMessages)
-    .where(eq(characterChatMessages.chatId, chatId))
-    .orderBy(desc(characterChatMessages.createdAt))
-    .limit(TRANSCRIPT_LIMIT);
+    .where(and(eq(characterChatMessages.chatId, chatId), beforeFilter))
+    .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
+    .limit(CHAT_PAGE_SIZE + 1);
+
+  const hasMore = rows.length > CHAT_PAGE_SIZE;
+  const page = rows.slice(0, CHAT_PAGE_SIZE);
 
   // Roster presence (multi-character-chat.plan.md): one read over the chat's
   // state rows; a member with no row yet is simply present (the seed default).
@@ -112,7 +142,10 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const presenceBy = new Map(presenceRows.map((r) => [r.characterId, r.presence]));
 
   return jsonOk({
-    messages: rows.reverse(),
+    messages: page.reverse(),
+    hasMore,
+    // The cursor for the NEXT older page: the oldest message returned here.
+    nextBefore: hasMore ? (page[0]?.id ?? null) : null,
     chat: { id: owned.chat.id, title: owned.chat.title, archivedAt: owned.chat.archivedAt },
     character: {
       id: owned.character.id,

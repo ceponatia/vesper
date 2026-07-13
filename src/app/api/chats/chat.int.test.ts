@@ -305,6 +305,68 @@ describe("POST /api/chats/:chatId — send", () => {
   });
 });
 
+describe("GET /api/chats/:chatId — transcript pagination (ux-improvements slice 2)", () => {
+  interface Page {
+    messages: { id: string; content: string }[];
+    hasMore: boolean;
+    nextBefore: string | null;
+  }
+  const getPage = async (chatId: string, before?: string): Promise<Page> => {
+    const url = `http://t/api/chats/${chatId}${before ? `?before=${before}` : ""}`;
+    const res = await chatGet(new NextRequest(url), ctx(chatId));
+    expect(res.status).toBe(200);
+    return (await res.json()) as Page;
+  };
+
+  it("pages the whole history via ?before with no gaps or duplicates, ties included", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    // 250 rows, mostly 1s apart — except a same-millisecond cluster (rows
+    // 100–104) so the (createdAt, id) tiebreak is exercised across a boundary.
+    const base = Date.now() - 400_000;
+    const values = Array.from({ length: 250 }, (_, i) => ({
+      chatId: chat.id,
+      role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+      content: `line-${i}`,
+      createdAt: new Date(base + (i >= 100 && i < 105 ? 100_000 : i * 1000)),
+    }));
+    await db().insert(characterChatMessages).values(values);
+
+    const first = await getPage(chat.id);
+    expect(first.messages).toHaveLength(100); // CHAT_PAGE_SIZE
+    expect(first.hasMore).toBe(true);
+    expect(first.nextBefore).toBe(first.messages[0]?.id); // cursor = oldest returned row
+
+    const second = await getPage(chat.id, first.nextBefore ?? undefined);
+    expect(second.messages).toHaveLength(100);
+    expect(second.hasMore).toBe(true);
+
+    const third = await getPage(chat.id, second.nextBefore ?? undefined);
+    expect(third.messages).toHaveLength(50);
+    expect(third.hasMore).toBe(false);
+    expect(third.nextBefore).toBeNull();
+
+    // Reassembled pages are exactly the transcript in its own (createdAt, id) order.
+    const reassembled = [...third.messages, ...second.messages, ...first.messages];
+    const persisted = await fullRows(chat.id);
+    expect(reassembled.map((m) => m.id)).toEqual(persisted.map((m) => m.id));
+    expect(new Set(reassembled.map((m) => m.id)).size).toBe(250);
+
+    await chatDelete(delReq(chat.id), ctx(chat.id));
+  });
+
+  it("400s on a cursor that is not a message of this chat", async (t) => {
+    if (!ready) return t.skip();
+    const chat = await createChat(ids.character);
+    const foreign = await insertMessage(ids.chat, "user", "someone else's line");
+    const bad = await chatGet(new NextRequest(`http://t/api/chats/${chat.id}?before=${foreign}`), ctx(chat.id));
+    expect(bad.status).toBe(400);
+    const nonsense = await chatGet(new NextRequest(`http://t/api/chats/${chat.id}?before=nope`), ctx(chat.id));
+    expect(nonsense.status).toBe(400);
+    await chatDelete(delReq(chat.id), ctx(chat.id));
+  });
+});
+
 describe("GET + DELETE /api/chats/:chatId", () => {
   it("returns the transcript oldest-first with the chat + character envelope, then hard-deletes", async (t) => {
     if (!ready) return t.skip();

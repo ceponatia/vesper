@@ -953,6 +953,10 @@ export type ChatRosterMember = z.infer<typeof chatRosterMemberSchema>;
 
 export const chatTranscriptSchema = z.object({
   messages: listOf(chatMessageSchema, "messages"),
+  /** Older rows exist beyond this page (ux-improvements.plan.md slice 2). */
+  hasMore: z.boolean().catch(false),
+  /** Keyset cursor for the next older page (`?before=`); null on the last page. */
+  nextBefore: z.string().nullable().catch(null),
   chat: z.object({ id: idSchema, title: textOr(""), archivedAt: optionalText }),
   character: z.object({
     id: idSchema,
@@ -1055,13 +1059,17 @@ export const chatsApi = {
     apiPatch(z.unknown(), `/api/chats/${chatId}`, patch),
   /**
    * Create a conversation — D7 memory choice: `"shared"` continues the history, `"fresh"`
-   * is a clean island. `characterIds` order matters: the first is the primary participant
-   * (roster groundwork — the conversation is still 1-on-1 with the primary for now).
+   * is a clean island. `characterIds` order matters: the first is the primary participant;
+   * every pick joins as a full roster member (multi-character-chat.plan.md).
    */
   create: (body: { characterIds: string[]; title?: string; memory: "shared" | "fresh"; presetId?: string }) =>
     apiPost(createdRefSchema, "/api/chats", body),
-  /** The full conversation envelope: transcript (oldest first) + chat header + character card. */
-  transcript: (chatId: string) => apiGet(chatTranscriptSchema, `/api/chats/${chatId}`),
+  /**
+   * The full conversation envelope: the newest transcript page (oldest first) +
+   * chat header + character card. `before` keysets older pages ("Load earlier").
+   */
+  transcript: (chatId: string, opts: { before?: string } = {}) =>
+    apiGet(chatTranscriptSchema, withQuery(`/api/chats/${chatId}`, { before: opts.before })),
   /**
    * Hard-delete the conversation (character-chat-standalone.spec.md §1.4): transcript,
    * summary, light state, and RAG memory all go with it; scene images survive in the Gallery.
