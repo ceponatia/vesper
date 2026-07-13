@@ -10,8 +10,9 @@ type Params = { id: string };
  * only the caller's own characters/worlds are named (references from other
  * accounts to a public item are invisible by the visibility model). Warn,
  * never block — the dialog explains what breaks:
- * - a character `profile.defaultOutfit` referencing the id shows the red
- *   "not in library" tag after the delete;
+ * - a character outfit preset (`profile.outfits[].items`; legacy rows still
+ *   carry `defaultOutfit` until their next save) referencing the id shows the
+ *   red "not in library" tag after the delete;
  * - world placements keep playing (they hold full snapshot copies) but lose
  *   their provenance pointer.
  */
@@ -27,7 +28,14 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const wornBy = await db()
     .select({ id: characters.id, name: characters.name })
     .from(characters)
-    .where(and(eq(characters.ownerId, user.id), sql`${characters.profile}->'defaultOutfit' @> ${JSON.stringify(id)}::jsonb`));
+    .where(
+      and(
+        eq(characters.ownerId, user.id),
+        // New preset shape OR the legacy id list (rows not re-saved since slice 8).
+        sql`(${characters.profile}->'outfits' @> ${JSON.stringify([{ items: [id] }])}::jsonb
+             or ${characters.profile}->'defaultOutfit' @> ${JSON.stringify(id)}::jsonb)`,
+      ),
+    );
 
   const placements = await db()
     .selectDistinct({ worldId: worlds.id, worldName: worlds.name })

@@ -1290,7 +1290,12 @@ async function forgeOutfitSection(context: CharacterForgeContext): Promise<Chara
     context.sink,
   );
   // Explicit reuses lead; library name-matches on fresh garments follow (deduped).
-  return { profile: { defaultOutfit: [...new Set([...reuseIds, ...defaultOutfit])] }, suggestedItems: suggested };
+  // The forge drafts the DEFAULT preset (outfits[0], ux-improvements slice 8).
+  const presetItems = [...new Set([...reuseIds, ...defaultOutfit])];
+  return {
+    profile: { outfits: presetItems.length > 0 ? [{ id: "everyday", name: "Everyday", items: presetItems }] : [] },
+    suggestedItems: suggested,
+  };
 }
 
 /**

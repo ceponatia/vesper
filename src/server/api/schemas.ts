@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   ambientSchema,
   bodyLocationRegistry,
+  characterProfileObjectSchema,
   characterProfileSchema,
   itemDefinitionSchema,
   itemKindSchema,
@@ -59,7 +60,7 @@ export const characterCreateSchema = z
     /**
      * Forge outfit suggestions (docs/authoring.md): materialized as library
      * items on save — reused by name when one already exists — and appended to
-     * profile.defaultOutfit.
+     * the default outfit preset (`profile.outfits[0]`, ux-improvements slice 8).
      */
     suggestedItems: z.array(itemDefinitionSchema).max(50).default([]),
   })
@@ -68,7 +69,9 @@ export type CharacterCreateBody = z.infer<typeof characterCreateSchema>;
 
 export const characterPatchSchema = z.object({
   name: nameSchema.optional(),
-  profile: partialWithoutDefaults(characterProfileSchema).optional(),
+  // The raw object shape — partial() needs a ZodObject; the legacy-outfit lift
+  // only matters when READING stored rows, and a PATCH merges over a lifted read.
+  profile: partialWithoutDefaults(characterProfileObjectSchema).optional(),
   tags: tagsSchema.optional(),
   /** Publish/un-publish toggle (auth.plan.md). */
   visibility: visibilitySchema.optional(),

@@ -27,19 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **UX improvements — chat, item library, character form** —
-  [ux-improvements.plan.md](ux-improvements.plan.md) (next — planned 2026-07-12
-  from an owner-requested three-surface review; open questions ruled
-  2026-07-13). Nine slices, quick wins first: stale multi-character copy fix +
-  wiring the built-but-unwired clone endpoints, chat transcript pagination +
-  jump-to-latest (backported from the session feed), outfit visibility in the
-  chat status strip, admin-gating the character-sheet debug traces, an item ✦
-  draft-from-description assist, item delete in-use warnings + read-only
-  public items, the **editor autosave refactor** (create-on-new with
-  placeholder values, save-on-change, blur-save — ruled over a dirty guard) +
-  attribute-accordion summaries, and the one gameplay feature: **named outfit
-  presets** (casual/work/date/sleep, replacing `defaultOutfit`) with chat +
-  daily-rhythm hooks.
 - **Chat action beats** — [chat-action-beats.plan.md](chat-action-beats.plan.md)
   (next — spawned 2026-07-13 from the UX batch's slice-4 ruling). The four chat
   action chips stop being silent deterministic state nudges: a chip tap becomes
@@ -109,6 +96,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **UX improvements — chat, item library, character form** —
+  [ux-improvements.plan.md](ux-improvements.plan.md) — 2026-07-13 — all nine
+  slices in one day: clone wiring + stale-copy fix, chat transcript keyset
+  pagination + jump-to-latest, the status-strip outfit chip + roster outfit
+  lines, admin-gated sheet debug traces, the item ✦ draft-from-description
+  assist (registry-grounded, carve-outs included), item delete in-use warnings
+  + read-only public items/locations, the editor **autosave** refactor
+  (create-on-new placeholders, save-on-change/blur, forge-draft review
+  preserved; world editor exempt — its save forges) + attribute-accordion
+  value summaries, **named outfit presets** replacing `defaultOutfit` (lazy
+  lift, preset switcher, archivist preset matching, rhythm auto-dress on time
+  skips), and the polish batch. Spawned: chat-action-beats +
+  chat-wardrobe-parity (Next).
 - **Sensory grounding** — [sensory-grounding.plan.md](sensory-grounding.plan.md) —
   2026-07-12 — the chat Sensory-focus block now joins the player's targeted body
   region to that region's own authored attributes (sense-ranked — "I lick her foot"

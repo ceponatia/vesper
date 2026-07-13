@@ -43,7 +43,7 @@ export function mergeCharacterSection(
     case "outfit":
       return {
         ...current,
-        profile: { ...current.profile, defaultOutfit: incoming.profile.defaultOutfit },
+        profile: { ...current.profile, outfits: incoming.profile.outfits },
         suggestedItems: incoming.suggestedItems,
       };
   }

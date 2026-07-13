@@ -205,7 +205,9 @@ describe("characters CRUD + search", () => {
     );
     expect(created.status).toBe(201);
     const body = await json(created);
-    const outfit = (body.character as { profile: { defaultOutfit: string[] } }).profile.defaultOutfit;
+    // Materialized ids land in the DEFAULT preset (outfits[0] — ux-improvements slice 8).
+    type PresetProfile = { profile: { outfits: { id: string; items: string[] }[] } };
+    const outfit = (body.character as PresetProfile).profile.outfits[0]?.items ?? [];
     expect(outfit.length).toBe(2);
 
     const [slicker] = await db().select().from(items).where(eq(items.id, outfit[0]!)).limit(1);
@@ -224,7 +226,7 @@ describe("characters CRUD + search", () => {
       noParams,
     );
     expect(again.status).toBe(201);
-    const againOutfit = ((await json(again)).character as { profile: { defaultOutfit: string[] } }).profile.defaultOutfit;
+    const againOutfit = ((await json(again)).character as PresetProfile).profile.outfits[0]?.items;
     expect(againOutfit).toEqual([outfit[0]]);
   });
 

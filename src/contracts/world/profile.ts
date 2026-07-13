@@ -23,6 +23,13 @@ export const scheduleEntrySchema = z.object({
   activity: z.string().min(1),
   /** Weekday mask, 0 = Sunday … 6 = Saturday. Absent ⇒ every day (old entries parse unchanged). */
   days: z.array(z.number().int().min(0).max(6)).optional(),
+  /**
+   * Rhythm auto-dress (ux-improvements slice 8.4, ruled: built with the slice):
+   * an optional `profile.outfits` preset id — openers/pickup skips dress the
+   * character for this window. Absent ⇒ the default preset; unknown ids
+   * degrade to it too (`resolveOutfitPreset`).
+   */
+  outfitPresetId: z.string().optional(),
 });
 
 export type ScheduleEntry = z.infer<typeof scheduleEntrySchema>;
@@ -87,7 +94,32 @@ export function formatScheduleRhythm(schedule: readonly ScheduleEntry[], max = 4
     .join("; ");
 }
 
-export const characterProfileSchema = z.object({
+/** One named look: a list of item definition ids from the owner's library. */
+export const outfitPresetSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().catch("").default(""),
+  items: z.array(z.string()).catch([]).default([]),
+});
+export type OutfitPreset = z.infer<typeof outfitPresetSchema>;
+
+/**
+ * Lift a legacy `defaultOutfit` id list into the first outfit preset (the lazy
+ * migration for the slice-8 replace ruling): rows that already carry presets —
+ * or carry nothing — pass through untouched, and zod's key-stripping drops the
+ * dead `defaultOutfit` key on the next save.
+ */
+const liftLegacyDefaultOutfit = (value: unknown): unknown => {
+  if (typeof value !== "object" || value === null) return value;
+  const raw = value as Record<string, unknown>;
+  const legacy = raw.defaultOutfit;
+  const hasPresets = Array.isArray(raw.outfits) && raw.outfits.length > 0;
+  if (hasPresets || !Array.isArray(legacy) || legacy.length === 0) return value;
+  return { ...raw, outfits: [{ id: "everyday", name: "Everyday", items: legacy }] };
+};
+
+/** The raw object shape — for structural uses (`.partial()` etc.); reads go
+ *  through `characterProfileSchema`, whose preprocess lifts legacy rows. */
+export const characterProfileObjectSchema = z.object({
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().optional(),
@@ -180,8 +212,20 @@ export const characterProfileSchema = z.object({
       .default({ familiarity: "strangers", regard: "neutral", kind: "", history: "", presented: undefined, looming: false, note: "" }),
   ),
   aliases: z.array(z.string()).default([]),
-  /** Item definition ids from the owner's library. */
-  defaultOutfit: z.array(z.string()).default([]),
+  /**
+   * Named outfit presets (ux-improvements.plan.md slice 8 — ruled: REPLACES the
+   * old `defaultOutfit` id list): casual/work/date-night/sleep looks, each a
+   * list of item definition ids from the owner's library. The FIRST preset is
+   * the default — what the forge targets, the avatar wears, sessions seed, and
+   * a chat starts in when Starting Outfit is blank. Legacy `defaultOutfit`
+   * rows lift into a single "Everyday" preset at parse time (the schema
+   * preprocess below) — lazy migration, no sweep; writers only write `outfits`.
+   */
+  outfits: z
+    .array(outfitPresetSchema.nullable().catch(null))
+    .catch([])
+    .default([])
+    .transform((presets) => presets.filter((p): p is OutfitPreset => p !== null)),
   // Element-wise catch (docs/resilience.md §1): one bad row — an editor row saved
   // with a blank activity/place — drops alone instead of failing the whole profile.
   schedule: z
@@ -191,10 +235,58 @@ export const characterProfileSchema = z.object({
     .transform((entries) => entries.filter((e): e is ScheduleEntry => e !== null)),
 });
 
+export const characterProfileSchema = z.preprocess(liftLegacyDefaultOutfit, characterProfileObjectSchema);
+
 export type CharacterProfile = z.infer<typeof characterProfileSchema>;
 
 export function emptyCharacterProfile(): CharacterProfile {
   return characterProfileSchema.parse({});
+}
+
+/**
+ * Resolve an outfit preset: the named one when it exists, else the FIRST (the
+ * default). Unknown/absent ids degrade to the default — never a hard failure.
+ */
+export function resolveOutfitPreset(
+  profile: Pick<CharacterProfile, "outfits">,
+  presetId?: string | null,
+): OutfitPreset | undefined {
+  if (presetId) {
+    const named = profile.outfits.find((preset) => preset.id === presetId);
+    if (named) return named;
+  }
+  return profile.outfits[0];
+}
+
+/** Item ids of the default (or named) preset — the `defaultOutfit` successor. */
+export function outfitItems(profile: Pick<CharacterProfile, "outfits">, presetId?: string | null): string[] {
+  return resolveOutfitPreset(profile, presetId)?.items ?? [];
+}
+
+/**
+ * Append item ids into the default (first) preset, minting an "Everyday"
+ * preset when none exists — the forge-suggestion / outfit-materialize path.
+ */
+export function withItemsInDefaultOutfit(profile: CharacterProfile, itemIds: readonly string[]): CharacterProfile {
+  if (itemIds.length === 0) return profile;
+  const first = profile.outfits[0];
+  const outfits = first
+    ? [{ ...first, items: [...new Set([...first.items, ...itemIds])] }, ...profile.outfits.slice(1)]
+    : [{ id: "everyday", name: "Everyday", items: [...new Set(itemIds)] }];
+  return { ...profile, outfits };
+}
+
+/**
+ * Find a preset by its human name (the archivist's "changes into her work
+ * clothes" matching): trimmed, case-insensitive; undefined when nothing fits.
+ */
+export function outfitPresetByName(
+  profile: Pick<CharacterProfile, "outfits">,
+  name: string,
+): OutfitPreset | undefined {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return undefined;
+  return profile.outfits.find((preset) => preset.name.trim().toLowerCase() === needle);
 }
 
 /**

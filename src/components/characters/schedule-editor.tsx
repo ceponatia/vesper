@@ -15,6 +15,8 @@ import { Select } from "@/components/ui/select";
 export interface ScheduleEditorProps {
   schedule: readonly ScheduleEntry[];
   onChange: (schedule: ScheduleEntry[]) => void;
+  /** Outfit presets for the rhythm auto-dress pick (ux-improvements slice 8.4). */
+  outfitPresets?: readonly { id: string; name: string }[];
 }
 
 const WEEKDAY_CHIPS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -36,7 +38,7 @@ const fromTimeValue = (value: string, fallback: number): number => {
  * movement engine walks the same rows. Rows saved with a blank activity/place
  * drop at the trust boundary (element-wise catch) rather than failing the save.
  */
-export function ScheduleEditor({ schedule, onChange }: ScheduleEditorProps) {
+export function ScheduleEditor({ schedule, onChange, outfitPresets = [] }: ScheduleEditorProps) {
   const update = (index: number, patch: Partial<ScheduleEntry>) =>
     onChange(schedule.map((e, i) => (i === index ? { ...e, ...patch } : e)));
   const remove = (index: number) => onChange(schedule.filter((_, i) => i !== index));
@@ -122,6 +124,26 @@ export function ScheduleEditor({ schedule, onChange }: ScheduleEditorProps) {
                       />
                     )}
                   </Field>
+                  {outfitPresets.length > 0 ? (
+                    // Rhythm auto-dress (slice 8.4): pickup skips landing in this
+                    // window dress the character in the picked preset.
+                    <Field label="Wearing">
+                      {(id) => (
+                        <Select
+                          id={id}
+                          value={entry.outfitPresetId ?? ""}
+                          onChange={(e) => update(index, { outfitPresetId: e.target.value || undefined })}
+                        >
+                          <option value="">— (keep current)</option>
+                          {outfitPresets.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.name || "Unnamed preset"}
+                            </option>
+                          ))}
+                        </Select>
+                      )}
+                    </Field>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"

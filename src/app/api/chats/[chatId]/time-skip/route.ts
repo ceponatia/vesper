@@ -97,7 +97,14 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
           sink,
         );
     if (base.presence !== "present") continue;
-    const next = applyTimeSkip(base, body.value.amount, nextScenario.clockMinutes);
+    // Profile in ⇒ rhythm auto-dress: a schedule row at the new clock naming a
+    // preset re-dresses this member for the window (slice 8.4).
+    const next = await resolveSeededOutfit(
+      applyTimeSkip(base, body.value.amount, nextScenario.clockMinutes, profile),
+      user.id,
+      profile,
+      sink,
+    );
     await persistChatState(chatId, member.characterId, next);
     if (isPrimary) primaryNext = next;
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useState, type DragEvent } from "react";
-import { relationshipStages, type Diagnostic } from "@/contracts";
+import { outfitItems, relationshipStages, type Diagnostic } from "@/contracts";
 import { countSpawnMajors, MAJOR_TIER_SOFT_CAP } from "@/lib/cast-tiers";
 import { from12Hour, to12Hour } from "@/lib/clock";
 import { moveItem } from "@/lib/reorder";
@@ -822,7 +822,8 @@ function CastTab({ draft, onChange }: { draft: WorldDraft; onChange: (d: WorldDr
       const entries = await Promise.all(
         ids.map(async (id) => {
           const result = await charactersApi.get(id);
-          const outfitIds = result.ok ? result.data.profile.defaultOutfit : [];
+          // The default preset's items (outfits[0] — ux-improvements slice 8).
+          const outfitIds: string[] = result.ok ? outfitItems(result.data.profile) : [];
           return [id, outfitIds.map((itemId) => itemNameById.get(itemId) ?? "unnamed item")] as const;
         }),
       );

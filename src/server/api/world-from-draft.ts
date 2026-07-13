@@ -1,4 +1,4 @@
-import { diag, emptyCharacterProfile, type AuthoredRelationship, type DiagnosticSink } from "@/contracts";
+import { diag, emptyCharacterProfile, withItemsInDefaultOutfit, type AuthoredRelationship, type DiagnosticSink } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { log } from "@/server/log";
 import {
@@ -258,7 +258,7 @@ async function generateCastCharacter(
   }
   if (forged && forged.suggestedItems.length > 0) {
     const itemIds = await materializeSuggestedItems(ownerId, forged.suggestedItems, sink);
-    profile.defaultOutfit = [...new Set([...profile.defaultOutfit, ...itemIds])];
+    profile.outfits = withItemsInDefaultOutfit(profile, itemIds).outfits;
   }
 
   const tags = forged?.tags ?? [];

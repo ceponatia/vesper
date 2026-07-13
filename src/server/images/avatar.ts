@@ -4,7 +4,7 @@ import { characters, db, items } from "../db";
 import { describeImageGenError, isDemoMode, veniceGenerateImage, veniceT2IModelId } from "../ai";
 import { logEvent } from "../events";
 import { parseOr } from "@/lib/parse";
-import { DEFAULT_AVATAR_IMAGE_MODEL, type AvatarImageModel } from "@/contracts";
+import { DEFAULT_AVATAR_IMAGE_MODEL, outfitItems, type AvatarImageModel } from "@/contracts";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveWardrobeVisibility } from "@/contracts/items/visibility";
@@ -51,7 +51,8 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     input.sink,
     "characters.profile",
   );
-  const wardrobe = character ? await loadDefaultWardrobe(input.userId, profile.defaultOutfit, input.sink) : [];
+  // The avatar wears the DEFAULT preset (outfits[0] — ux-improvements slice 8).
+  const wardrobe = character ? await loadDefaultWardrobe(input.userId, outfitItems(profile), input.sink) : [];
   // The portrait studio never renders intimate anatomy: buildAvatarPrompt drops
   // intimate categories unconditionally (plus all below-waist attributes via the
   // waist-up framing cut) — intimate detail is scene-render-only.

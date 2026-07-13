@@ -81,7 +81,7 @@ export function mergeRedraftScope<T extends FillableDraft>(
       return {
         ...base,
         suggestedItems: incoming.suggestedItems,
-        profile: { ...base.profile, defaultOutfit: incoming.profile.defaultOutfit },
+        profile: { ...base.profile, outfits: incoming.profile.outfits },
       };
   }
 }

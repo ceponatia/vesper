@@ -18,7 +18,9 @@ import {
   applyTimeSkipToScenario,
   chatStateSnapshot,
   driftChatState,
+  matchOutfitPresetInText,
   resolveSeededOutfit,
+  rhythmOutfitPatch,
   runChatPulse,
   seedChatScenario,
   seedChatState,
@@ -46,25 +48,95 @@ describe("seedChatState", () => {
     expect(state.presence).toBe("present");
   });
 
-  it("seeds the outfit MARKER from the character form's defaultOutfit ids; blank when none authored", () => {
-    // defaultOutfit holds library item IDS — the pure seed writes them as the
-    // marker resolveSeededOutfit later swaps for the readable garment phrase
-    // (owner report 2026-07-11: the raw ids used to reach the narrator).
+  it("seeds the outfit MARKER from the default preset's item ids; blank when none authored", () => {
+    // The default preset (outfits[0]) holds library item IDS — the pure seed
+    // writes them as the marker resolveSeededOutfit later swaps for the
+    // readable garment phrase (owner report 2026-07-11: the raw ids used to
+    // reach the narrator).
+    const dressedProfile = () =>
+      profile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc", "itemid2def"] }] });
     expect(seedChatState(profile()).outfit).toBe("");
-    const dressed = seedChatState(profile({ defaultOutfit: ["itemid1abc", "itemid2def"] }));
-    expect(dressed.outfit).toBe(seededOutfitMarker(profile({ defaultOutfit: ["itemid1abc", "itemid2def"] })));
+    const dressed = seedChatState(dressedProfile());
+    expect(dressed.outfit).toBe(seededOutfitMarker(dressedProfile()));
     expect(dressed.outfit).toBe("itemid1abc, itemid2def");
     expect(dressed.outfitExposed).toBe(false);
   });
 
+  it("seededOutfitMarker resolves a NAMED preset; unknown ids degrade to the default", () => {
+    const wardrobe = profile({
+      outfits: [
+        { id: "everyday", name: "Everyday", items: ["itemid1abc"] },
+        { id: "work", name: "Work", items: ["itemid9xyz"] },
+      ],
+    });
+    expect(seededOutfitMarker(wardrobe, "work")).toBe("itemid9xyz");
+    expect(seededOutfitMarker(wardrobe, "nope")).toBe("itemid1abc");
+    expect(seededOutfitMarker(wardrobe)).toBe("itemid1abc");
+  });
+
   it("resolveSeededOutfit is a no-op for author-edited outfit text and for empty outfits", async () => {
-    const dressed = profile({ defaultOutfit: ["itemid1abc"] });
+    const dressed = profile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc"] }] });
     const edited = { ...seedChatState(dressed), outfit: "a linen sundress, nothing else" };
     // Author text ≠ the marker → untouched, and no item lookup happens (db is unmocked here;
     // a lookup would throw, so resolution being reached at all would fail this test).
     expect(await resolveSeededOutfit(edited, "u-1", dressed)).toBe(edited);
     const bare = seedChatState(profile());
     expect(await resolveSeededOutfit(bare, "u-1", profile())).toBe(bare);
+  });
+
+  it("matchOutfitPresetInText: exact name or name + outfit word; prose garments never hijack (slice 8.3)", () => {
+    const wardrobe = profile({
+      outfits: [
+        { id: "everyday", name: "Everyday", items: ["itemid1abc"] },
+        { id: "work", name: "Work", items: ["itemid9xyz"] },
+        { id: "empty", name: "Gala", items: [] },
+      ],
+    });
+    expect(matchOutfitPresetInText(wardrobe, "work")?.id).toBe("work");
+    expect(matchOutfitPresetInText(wardrobe, "changes into her work clothes")?.id).toBe("work");
+    expect(matchOutfitPresetInText(wardrobe, "her everyday outfit, hair still damp")?.id).toBe("everyday");
+    // A garment description that merely CONTAINS a preset word stays free text…
+    expect(matchOutfitPresetInText(wardrobe, "heavy work boots and a red sundress")).toBeUndefined();
+    // …an empty preset never matches, and neither does unrelated text.
+    expect(matchOutfitPresetInText(wardrobe, "gala outfit")).toBeUndefined();
+    expect(matchOutfitPresetInText(wardrobe, "a black slip, nothing else")).toBeUndefined();
+  });
+
+  it("rhythmOutfitPatch dresses by the schedule row's preset at the skipped-to clock (slice 8.4)", () => {
+    const rhythm = profile({
+      outfits: [
+        { id: "everyday", name: "Everyday", items: ["itemid1abc"] },
+        { id: "sleep", name: "Sleep", items: ["itemid9xyz"] },
+      ],
+      schedule: [
+        // 11pm–6am, wraps past midnight, dresses for bed.
+        { startMinute: 1380, endMinute: 360, locationName: "home", activity: "sleeping", outfitPresetId: "sleep" },
+        // Morning row with NO preset — keeps the current outfit.
+        { startMinute: 360, endMinute: 720, locationName: "the café", activity: "waiting tables" },
+      ],
+    });
+    // 23:30 → the sleep window → the sleep preset's marker.
+    expect(rhythmOutfitPatch(rhythm, 1410)).toEqual({ outfit: "itemid9xyz", outfitExposed: false });
+    // 08:00 → the morning row names no preset → no patch.
+    expect(rhythmOutfitPatch(rhythm, 480)).toEqual({});
+    // A skip past midnight lands in the same wrap window on the next pseudo-day.
+    expect(rhythmOutfitPatch(rhythm, 1440 + 60)).toEqual({ outfit: "itemid9xyz", outfitExposed: false });
+    // Unknown preset id on a row degrades to the DEFAULT preset's marker.
+    const dangling = profile({
+      outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc"] }],
+      schedule: [{ startMinute: 0, endMinute: 1439, locationName: "x", activity: "y", outfitPresetId: "gone" }],
+    });
+    expect(rhythmOutfitPatch(dangling, 100)).toEqual({ outfit: "itemid1abc", outfitExposed: false });
+  });
+
+  it("applyTimeSkip re-dresses only when given a profile with a rhythm row", () => {
+    const rhythm = profile({
+      outfits: [{ id: "sleep", name: "Sleep", items: ["itemid9xyz"] }],
+      schedule: [{ startMinute: 0, endMinute: 1439, locationName: "home", activity: "resting", outfitPresetId: "sleep" }],
+    });
+    const state = { ...seedChatState(rhythm), outfit: "a cocktail dress" };
+    expect(applyTimeSkip(state, "hours", 200).outfit).toBe("a cocktail dress"); // no profile ⇒ no re-dress
+    expect(applyTimeSkip(state, "hours", 200, rhythm).outfit).toBe("itemid9xyz");
   });
 
   it("seeds both axes from the authored playerRelationship record at band midpoints", () => {

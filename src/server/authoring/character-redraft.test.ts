@@ -34,7 +34,7 @@ describe("redraftCharacterScope (keyless demo path)", () => {
       d.name = "Mira";
       d.profile.bio = "Old bio, full of personality analysis.";
       d.profile.attributes = [manualAttr("hair.color", "black")];
-      d.profile.defaultOutfit = ["item_mine"];
+      d.profile.outfits = [{ id: "everyday", name: "Everyday", items: ["item_mine"] }];
     });
     const redrafted = await redraftCharacterScope(input(draft, "profile"));
     // The rewrite is the point: the bio changes (unlike the fill).
@@ -42,7 +42,7 @@ describe("redraftCharacterScope (keyless demo path)", () => {
     expect(redrafted.profile.bio.length).toBeGreaterThan(0);
     expect(redrafted.name).toBe("Mira");
     expect(redrafted.profile.attributes).toEqual([manualAttr("hair.color", "black")]);
-    expect(redrafted.profile.defaultOutfit).toEqual(["item_mine"]);
+    expect(redrafted.profile.outfits).toEqual([{ id: "everyday", name: "Everyday", items: ["item_mine"] }]);
   });
 
   it("attributes re-draft is a full re-sync — a manual value is revisable (ruling 1)", async () => {
@@ -69,10 +69,10 @@ describe("redraftCharacterScope (keyless demo path)", () => {
 
   it("outfit re-draft replaces an authored outfit", async () => {
     const draft = draftWith((d) => {
-      d.profile.defaultOutfit = ["item_mine"];
+      d.profile.outfits = [{ id: "everyday", name: "Everyday", items: ["item_mine"] }];
     });
     const redrafted = await redraftCharacterScope(input(draft, "outfit"));
-    expect(redrafted.profile.defaultOutfit).not.toContain("item_mine");
+    expect(redrafted.profile.outfits.flatMap((o) => o.items)).not.toContain("item_mine");
     expect(redrafted.suggestedItems.length).toBeGreaterThan(0);
   });
 

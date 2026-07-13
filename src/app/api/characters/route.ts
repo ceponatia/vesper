@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { inArray, eq, and, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { seedBodyConfigFromAttributes, seedRegistryDefaultValues } from "@/contracts";
+import { seedBodyConfigFromAttributes, seedRegistryDefaultValues, withItemsInDefaultOutfit } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
 import { characters, db, worldCast } from "@/server/db";
@@ -68,14 +68,16 @@ export const POST = withUser(async (user, req: NextRequest) => {
   const blank = body.value.profile.attributes.length === 0;
   const attributes = blank ? seedRegistryDefaultValues(body.value.profile.attributes) : body.value.profile.attributes;
   const seededConfig = blank ? seedBodyConfigFromAttributes(attributes) : null;
-  const profile = {
-    ...body.value.profile,
-    attributes,
-    ...(seededConfig
-      ? { intimateRegions: seededConfig.intimateRegions, bodyFeatures: seededConfig.bodyFeatures }
-      : {}),
-    defaultOutfit: [...new Set([...body.value.profile.defaultOutfit, ...suggestedIds])],
-  };
+  const profile = withItemsInDefaultOutfit(
+    {
+      ...body.value.profile,
+      attributes,
+      ...(seededConfig
+        ? { intimateRegions: seededConfig.intimateRegions, bodyFeatures: seededConfig.bodyFeatures }
+        : {}),
+    },
+    suggestedIds,
+  );
 
   const [row] = await db()
     .insert(characters)

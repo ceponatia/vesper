@@ -13,6 +13,7 @@ import {
   emptyCharacterProfile,
   emptyWorldLore,
   emptyWorldStyle,
+  outfitItems as defaultOutfitIds,
   worldLoreSchema,
   worldStyleSchema,
   type CharacterProfile,
@@ -201,8 +202,8 @@ async function loadWorldMaterial(
 
   // Player default-outfit items are still resolved from the library at spawn (the
   // player picks a currently-owned character); cast outfits come from each cast
-  // snapshot's defaultOutfit, also resolved against the library here.
-  const outfitIds = [...new Set([...cast.flatMap((c) => c.profile.defaultOutfit), ...playerOutfitIds])];
+  // snapshot's default preset (outfits[0]), also resolved against the library here.
+  const outfitIds = [...new Set([...cast.flatMap((c) => defaultOutfitIds(c.profile)), ...playerOutfitIds])];
   const outfitItems = new Map<string, ItemDefinition>();
   if (outfitIds.length > 0) {
     const rows = await db().select().from(items).where(inArray(items.id, outfitIds));
@@ -461,7 +462,7 @@ async function materializeSession(
   }
   for (const wearer of wearers) {
     if (!wearer.participantId) continue;
-    for (const itemId of wearer.profile.defaultOutfit) {
+    for (const itemId of defaultOutfitIds(wearer.profile)) {
       const definition = material.outfitItems.get(itemId);
       if (!definition) {
         sink?.push(diag("warn", "spawn.outfit.missing", `default outfit item ${itemId} not found in the library`, { context: { itemId } }));
@@ -497,7 +498,7 @@ export async function createSessionFromWorld(input: CreateSessionInput): Promise
   // Player first: the material load needs the player's defaultOutfit ids so a
   // non-cast player character still spawns wearing their outfit.
   const player = embodied ? await loadPlayerSeed(input.userId, input.playerCharacterId ?? null, input.sink) : null;
-  const material = await loadWorldMaterial(input.worldId, player?.profile.defaultOutfit ?? [], input.sink);
+  const material = await loadWorldMaterial(input.worldId, player ? defaultOutfitIds(player.profile) : [], input.sink);
   if (!material || material.world.ownerId !== input.userId) return null;
   // A world may be authored with zero locations (UX-audit §1b: import-your-own), but a
   // session needs somewhere to stand — refuse until at least one location exists.
@@ -570,7 +571,7 @@ export async function restartSession(sessionId: string, sink?: DiagnosticSink): 
     .where(and(eq(sessionParticipants.sessionId, sessionId), eq(sessionParticipants.isUser, true)))
     .limit(1);
   const player = session.embodied ? await loadPlayerSeed(session.ownerId, playerRow?.characterId ?? null, sink) : null;
-  const material = await loadWorldMaterial(session.worldId, player?.profile.defaultOutfit ?? [], sink);
+  const material = await loadWorldMaterial(session.worldId, player ? defaultOutfitIds(player.profile) : [], sink);
   if (!material) return false;
 
   // Keep the user's scene-generation settings; clear progress/status.

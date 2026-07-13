@@ -33,7 +33,7 @@ describe("mergeRedraftScope — profile (ruling 1: prose fields only)", () => {
         aliases: ["the glassblower"],
         attributes: [attr("hair.color", "black", "manual")],
         traits: [{ id: "temperament.warmth", value: 80, source: "manual" }],
-        defaultOutfit: ["item_mine"],
+        outfits: [{ id: "everyday", name: "Everyday", items: ["item_mine"] }],
         speciesId: "elf",
       },
     );
@@ -47,7 +47,7 @@ describe("mergeRedraftScope — profile (ruling 1: prose fields only)", () => {
         aliases: ["the keeper"],
         attributes: [attr("hair.color", "auburn", "creation")],
         traits: [],
-        defaultOutfit: [],
+        outfits: [],
         speciesId: "human",
       },
     );
@@ -63,7 +63,7 @@ describe("mergeRedraftScope — profile (ruling 1: prose fields only)", () => {
     // Off-scope fields untouched — attributes, traits, outfit, species.
     expect(merged.profile.attributes).toEqual(base.profile.attributes);
     expect(merged.profile.traits).toEqual(base.profile.traits);
-    expect(merged.profile.defaultOutfit).toEqual(["item_mine"]);
+    expect(merged.profile.outfits).toEqual([{ id: "everyday", name: "Everyday", items: ["item_mine"] }]);
     expect(merged.profile.speciesId).toBe("elf");
   });
 });
@@ -146,10 +146,11 @@ describe("mergeRedraftScope — disposition and outfit", () => {
 
   it("outfit re-draft replaces the whole outfit cluster — that is the tab's purpose", () => {
     const suggested = { ...emptyItemDefinition(), name: "Generated coat" };
-    const base = draftOf({ suggestedItems: [] }, { defaultOutfit: ["item_mine"], bio: "Authored." });
-    const incoming = draftOf({ suggestedItems: [suggested] }, { defaultOutfit: ["item_gen"], bio: "Generated." });
+    const preset = (items: string[]) => [{ id: "everyday", name: "Everyday", items }];
+    const base = draftOf({ suggestedItems: [] }, { outfits: preset(["item_mine"]), bio: "Authored." });
+    const incoming = draftOf({ suggestedItems: [suggested] }, { outfits: preset(["item_gen"]), bio: "Generated." });
     const merged = mergeRedraftScope(base, incoming, "outfit");
-    expect(merged.profile.defaultOutfit).toEqual(["item_gen"]);
+    expect(merged.profile.outfits).toEqual(preset(["item_gen"]));
     expect(merged.suggestedItems).toEqual([suggested]);
     expect(merged.profile.bio).toBe("Authored.");
   });

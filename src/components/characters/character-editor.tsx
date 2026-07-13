@@ -115,7 +115,8 @@ export function CharacterEditor({
     {
       id: "outfit",
       label: "Outfit",
-      badge: draft.profile.defaultOutfit.length + draft.suggestedItems.length || undefined,
+      badge:
+        draft.profile.outfits.reduce((n, o) => n + o.items.length, 0) + draft.suggestedItems.length || undefined,
     },
     // Default edges live server-side (character_relationships) — a saved character only.
     ...(characterId ? [{ id: "relationships", label: "Relationships" } as TabDef<EditorTab>] : []),
@@ -303,7 +304,11 @@ export function CharacterEditor({
             {(id) => <TagInput id={id} value={draft.profile.aliases} onChange={(aliases) => patchProfile({ aliases })} />}
           </Field>
           <div className="sm:col-span-2">
-            <ScheduleEditor schedule={draft.profile.schedule} onChange={(schedule) => patchProfile({ schedule })} />
+            <ScheduleEditor
+              schedule={draft.profile.schedule}
+              onChange={(schedule) => patchProfile({ schedule })}
+              outfitPresets={draft.profile.outfits.map((o) => ({ id: o.id, name: o.name }))}
+            />
           </div>
         </div>
       ) : null}
@@ -360,8 +365,8 @@ export function CharacterEditor({
 
       {tab === "outfit" ? (
         <OutfitEditor
-          outfit={draft.profile.defaultOutfit}
-          onChange={(defaultOutfit) => patchProfile({ defaultOutfit })}
+          outfits={draft.profile.outfits}
+          onChange={(outfits) => patchProfile({ outfits })}
           suggestedItems={draft.suggestedItems}
           onChangeSuggested={(suggestedItems) => onChange({ ...draft, suggestedItems })}
           wearerHint={wearerHintForGender(genderValue(draft.profile.attributes))}

@@ -157,7 +157,7 @@ function unionDrives(base: readonly Drive[], incoming: readonly Drive[]): Drive[
  */
 export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: FillableDraft): T {
   const speciesUnset = isSpeciesUnset(base.profile);
-  const outfitAuthored = base.profile.defaultOutfit.length > 0 || base.suggestedItems.length > 0;
+  const outfitAuthored = base.profile.outfits.some((o) => o.items.length > 0) || base.suggestedItems.length > 0;
   const attributes: AttributeValue[] = unionById(base.profile.attributes, incoming.profile.attributes);
   const traits: TraitValue[] = unionById(base.profile.traits, incoming.profile.traits);
   return {
@@ -183,7 +183,7 @@ export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: Filla
       drives: unionDrives(base.profile.drives, incoming.profile.drives),
       traits,
       aliases: unionText(base.profile.aliases, incoming.profile.aliases),
-      defaultOutfit: outfitAuthored ? base.profile.defaultOutfit : incoming.profile.defaultOutfit,
+      outfits: outfitAuthored ? base.profile.outfits : incoming.profile.outfits,
       schedule: base.profile.schedule.length > 0 ? base.profile.schedule : incoming.profile.schedule,
       playerRelationship: isPlayerRelationshipUnset(base.profile)
         ? incoming.profile.playerRelationship
