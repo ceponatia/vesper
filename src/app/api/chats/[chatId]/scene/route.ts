@@ -9,7 +9,7 @@ import { hasLiveChatSceneJob, queueChatScene } from "./queue";
 type Params = { chatId: string };
 
 /**
- * Scene images for a conversation (docs/character-chat.md; slice 9 — inline scene
+ * Scene images for a conversation (docs/character-chat/images.md; slice 9 — inline scene
  * moments). POST queues a sessionless scene render (a `chat_scene_image` job — the
  * api-side path, recovered by the detached-job sweep) centred on the recent chat and
  * anchored to the newest assistant line; GET lists this CHAT's scenes only —

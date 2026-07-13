@@ -91,7 +91,7 @@ import {
 import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
 
 /**
- * The character-chat exchange pipeline (docs/character-chat.md) — the chat lane's
+ * The character-chat exchange pipeline (docs/character-chat/pipeline.md) — the chat lane's
  * `submitTurn` analogue (character-chat-standalone.spec.md §3, codebase-review D1).
  * Owns everything between "a validated send arrived" and "the reply stream settled":
  * the per-chat exchange lock, the user-line insert, summary + verbatim-window

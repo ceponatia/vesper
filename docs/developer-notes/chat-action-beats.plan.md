@@ -43,7 +43,7 @@ Follow the established server-built-cue exchange pattern (the reopen opener in
 4. Transcript + UI: the beat renders as a normal reply; chip affordance copy.
 5. Tests: cue snapshot per chip, state-effect + rollback int test, busy-chat
    409.
-6. Docs: `character-chat.md` (exchange kinds), `ui.md` (chips), `prompts.md`
+6. Docs: `character-chat/pipeline.md` (exchange kinds), `ui.md` (chips), `prompts.md`
    (the cue).
 
 ## Open questions

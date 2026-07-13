@@ -28,7 +28,7 @@ import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeI
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * The character-chat system prompt (docs/character-chat.md).
+ * The character-chat system prompt (docs/character-chat/).
  *
  * A focused, single-character system prompt for the chat lane. It deliberately
  * reuses the SAME representation the in-game narrator gets — resolved attribute
