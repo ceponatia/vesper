@@ -1,4 +1,5 @@
-import { APICallError } from "ai";
+import { APICallError, RetryError } from "ai";
+import type { ChatReplyFailureCode } from "@/contracts";
 
 /**
  * A human-meaningful message for an image/text generation failure.
@@ -11,14 +12,58 @@ import { APICallError } from "ai";
  * `choices`/`model`, so the success-schema parse fails and the real reason is
  * lost behind "Invalid JSON response". The actual cause (e.g. a BFL Flux
  * "Sexual Content" moderation block) lives in `responseBody`; this digs it out
- * so a failed image row records WHY. Falls back to the plain error message for
- * anything that isn't a provider APICallError.
+ * so a failed image row — or a failed narrator reply — records WHY. Falls back
+ * to the plain error message for anything that isn't a provider APICallError.
  */
-export function describeImageGenError(err: unknown): string {
+export function describeProviderError(err: unknown): string {
   if (!APICallError.isInstance(err)) {
     return err instanceof Error ? err.message : String(err);
   }
   return providerErrorMessage(err.responseBody) ?? err.message;
+}
+
+/**
+ * Classify a generation failure into the closed ChatReplyFailureCode vocabulary
+ * (contracts/turns/chat-reply-failure.ts), keeping the provider's own words as
+ * `detail`. Reads `APICallError.statusCode` + `responseBody` (the OpenRouter
+ * error envelope) — the fidelity a bare `error.message` log line drops — and
+ * unwraps the AI SDK's RetryError to the last real attempt first. Moderation
+ * and context-length are text-matched before the status fallbacks because
+ * OpenRouter reports both under generic 4xx codes.
+ */
+export function classifyProviderError(err: unknown): {
+  code: ChatReplyFailureCode;
+  detail: string;
+  status?: number;
+} {
+  const cause = RetryError.isInstance(err) ? err.lastError : err;
+  const detail = describeProviderError(cause);
+  if (APICallError.isInstance(cause)) {
+    const status = cause.statusCode ?? 0;
+    const text = `${detail} ${cause.responseBody ?? ""}`;
+    if (MODERATION_TEXT.test(text)) return { code: "moderation_blocked", detail, status };
+    if (status === 402) return { code: "no_credits", detail, status };
+    if (status === 401 || status === 403) return { code: "auth_failed", detail, status };
+    if (status === 408) return { code: "timeout", detail, status };
+    if (status === 429) return { code: "rate_limited", detail, status };
+    if (CONTEXT_TEXT.test(text)) return { code: "context_too_long", detail, status };
+    if (status >= 400) return { code: "provider_error", detail, status };
+    return { code: "unknown", detail, status };
+  }
+  if (isNetworkError(cause)) return { code: "network", detail };
+  return { code: "unknown", detail };
+}
+
+/** OpenRouter/upstream moderation verdicts — reported as 403 (input flagged) or a 4xx with metadata. */
+const MODERATION_TEXT = /moderat|flagged|content.?policy/i;
+/** Context-window overflow phrasings across providers ("maximum context length", "token limit", …). */
+const CONTEXT_TEXT = /context.{0,10}(length|window)|maximum context|token limit|too many tokens/i;
+
+/** A transport-level failure (fetch/socket/DNS) — the request never got a provider verdict. */
+function isNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const text = `${err.name} ${err.message} ${err.cause instanceof Error ? `${err.cause.name} ${err.cause.message}` : ""}`;
+  return /fetch failed|network|socket|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|UND_ERR/i.test(text);
 }
 
 function providerErrorMessage(responseBody: string | undefined): string | null {

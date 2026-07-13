@@ -1,7 +1,9 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { chatReplyFailureSchema } from "@/contracts";
 import { resolveChatModelId } from "@/lib/narrative-models";
+import { parseOr } from "@/lib/parse";
 import {
   CHAT_RATE_LIMIT,
   drainingStreamResponse,
@@ -159,7 +161,20 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
     hasMore,
     // The cursor for the NEXT older page: the oldest message returned here.
     nextBefore: hasMore ? (page[0]?.id ?? null) : null,
-    chat: { id: owned.chat.id, title: owned.chat.title, archivedAt: owned.chat.archivedAt },
+    chat: {
+      id: owned.chat.id,
+      title: owned.chat.title,
+      archivedAt: owned.chat.archivedAt,
+      // Why the last exchange produced no reply (null when it replied) — the client's
+      // post-exchange refetch turns this into the cause-specific failure popup.
+      lastReplyFailure: parseOr(
+        chatReplyFailureSchema.nullable(),
+        owned.chat.lastReplyFailure ?? null,
+        null,
+        undefined,
+        "character_chats.last_reply_failure",
+      ),
+    },
     character: {
       id: owned.character.id,
       name: owned.character.name,

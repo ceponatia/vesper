@@ -1,7 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { describeImageGenError, isDemoMode, veniceGenerateImage, veniceT2IModelId } from "../ai";
+import { describeProviderError, isDemoMode, veniceGenerateImage, veniceT2IModelId } from "../ai";
 import { logEvent } from "../events";
 import { parseOr } from "@/lib/parse";
 import { DEFAULT_AVATAR_IMAGE_MODEL, outfitItems, type AvatarImageModel } from "@/contracts";
@@ -87,7 +87,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       durationMs: Date.now() - started,
     });
   } catch (err) {
-    const message = describeImageGenError(err);
+    const message = describeProviderError(err);
     await failImage(asset.id, message);
     void logEvent(null, "image.avatar", {
       imageId: asset.id,

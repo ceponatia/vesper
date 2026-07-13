@@ -10,9 +10,12 @@ import {
   splitStateCues,
   switchScenePlace,
   unseenMilestoneReason,
+  type ChatReplyFailure,
+  type ChatReplyFailureCode,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
+import { classifyProviderError } from "../ai";
 import { characterChats, characterChatMessages, chatParticipants, db, images } from "../db";
 import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
 import { log } from "../log";
@@ -1255,14 +1258,19 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // Guard the model stream with the first-token + overall watchdogs (data-loss-rerun
     // fix): a wedged provider trips a timeout, which aborts the upstream call and lets
     // the exchange settle through the same stop path as a player Stop — so the chat lock
-    // can never be held indefinitely by a hung generation.
+    // can never be held indefinitely by a hung generation. The trip reason is kept so
+    // the settle can record a `timeout` reply failure instead of a silent pseudo-stop.
+    let timedOut: "first_token" | "overall" | null = null;
     const guarded = withStreamTimeouts(gen, {
       firstTokenMs: CHAT_STREAM_FIRST_TOKEN_MS,
       overallMs: CHAT_STREAM_OVERALL_MS,
       onAbort: () => abortController.abort(),
-      onTimeout: (reason) => log.warn("engine.chat", "chat reply stream timed out", { chatId, reason }),
+      onTimeout: (reason) => {
+        timedOut = reason;
+        log.warn("engine.chat", "chat reply stream timed out", { chatId, reason });
+      },
     });
-    return { ok: true, stream: streamExchange(guarded, settle, abortController) };
+    return { ok: true, stream: streamExchange(guarded, settle, abortController, () => timedOut) };
   }
 
   /**
@@ -1270,15 +1278,19 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
    * generator's own completion: the route (or any consumer) just drains it. A
    * model-stream failure keeps whatever accumulated (persisted if non-empty); a
    * player Stop (spec §4.2) is not a failure — the truncated prefix persists with
-   * `meta.stopped`. An empty reply skips settle; the lock releases on every path.
+   * `meta.stopped`. An empty reply skips settle but records WHY it was empty
+   * (`last_reply_failure` — the client's post-exchange refetch reads it for the
+   * failure popup); the lock releases on every path.
    */
   async function* streamExchange(
     gen: AsyncGenerator<string>,
     settle: (full: string, stopped: boolean) => Promise<void>,
     abortController: AbortController,
+    timedOut: () => "first_token" | "overall" | null,
   ): AsyncGenerator<string, void, unknown> {
     let full = "";
     let stopped = false;
+    let streamError: { code: ChatReplyFailureCode; detail: string } | null = null;
     try {
       try {
         for await (const delta of gen) {
@@ -1289,7 +1301,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         if (abortController.signal.aborted) {
           stopped = true;
         } else {
-          log.warn("engine.chat", "reply stream failed", { error: describeError(error) });
+          const classified = classifyProviderError(error);
+          streamError = { code: classified.code, detail: classified.detail };
+          log.warn("engine.chat", "reply stream failed", {
+            chatId,
+            code: classified.code,
+            status: classified.status,
+            error: classified.detail,
+          });
         }
       }
       if (abortController.signal.aborted) stopped = true;
@@ -1300,10 +1319,66 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           log.error("engine.chat", "failed to persist assistant reply", { error: describeError(error) });
         }
       }
+      // Record (or clear) the exchange's reply-failure verdict BEFORE the generator
+      // returns — the route's drain, and so the client's refetch, wait on this.
+      await saveReplyFailure(
+        chatId,
+        resolveReplyFailure({ hasText: Boolean(full.trim()), stopped, streamError, timedOut: timedOut() }),
+        input.model ?? "",
+      );
     } finally {
       inflightReplyAborts.delete(chatId);
       releaseChatLock();
     }
+  }
+}
+
+/**
+ * Resolve what a settled exchange records as its reply failure (PURE). Only an
+ * exchange that produced NO text records one — a partial that persisted is a
+ * visible reply. A watchdog trip aborts the same controller as a player Stop, so
+ * the timeout reason outranks the stop flag; a genuine player Stop is not a
+ * failure. A clean zero-token stream is its own class (`empty_reply`: the model
+ * succeeded and said nothing). Null ⇒ clear any prior record.
+ */
+export function resolveReplyFailure(input: {
+  hasText: boolean;
+  stopped: boolean;
+  streamError: { code: ChatReplyFailureCode; detail: string } | null;
+  timedOut: "first_token" | "overall" | null;
+}): { code: ChatReplyFailureCode; detail: string } | null {
+  if (input.hasText) return null;
+  if (input.streamError) return input.streamError;
+  if (input.timedOut) {
+    return {
+      code: "timeout",
+      detail:
+        input.timedOut === "first_token"
+          ? `no output within ${Math.round(CHAT_STREAM_FIRST_TOKEN_MS / 1000)}s`
+          : `the reply ran past ${Math.round(CHAT_STREAM_OVERALL_MS / 1000)}s and was cut off`,
+    };
+  }
+  if (input.stopped) return null;
+  return { code: "empty_reply", detail: "" };
+}
+
+/**
+ * Write — or with null, clear — `character_chats.last_reply_failure`. Never
+ * throws: losing the record must not break the exchange settle or lock release
+ * (docs/resilience.md — degraded defaults over failed turns).
+ */
+async function saveReplyFailure(
+  chatId: string,
+  failure: { code: ChatReplyFailureCode; detail: string } | null,
+  model: string,
+): Promise<void> {
+  const record: ChatReplyFailure | null = failure
+    ? { code: failure.code, detail: failure.detail.slice(0, 500), model, at: new Date().toISOString() }
+    : null;
+  try {
+    await db().update(characterChats).set({ lastReplyFailure: record }).where(eq(characterChats.id, chatId));
+  } catch (error) {
+    log.error("engine.chat", "failed to record reply failure", { chatId, error: describeError(error) });
   }
 }
 

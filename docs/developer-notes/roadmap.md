@@ -96,6 +96,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat reply-failure surfacing** —
+  [chat-reply-failures.plan.md](chat-reply-failures.plan.md) — 2026-07-13 —
+  the "didn't reply" popup names the real cause instead of guessing "usually a
+  timeout": a closed failure vocabulary
+  (`contracts/turns/chat-reply-failure.ts`), `classifyProviderError` reading
+  OpenRouter status + body, a `character_chats.last_reply_failure` record read
+  back by the post-exchange refetch, cause-specific toast copy, and the
+  first-token watchdog dropped to 50s to beat Fly's ~60s proxy idle kill.
+  Follow-ups (session-lane parity, `generateChecked` mislabeling, durable chat
+  diagnostics) listed in the plan.
 - **Chat supporting cast + narrator input** —
   [chat-supporting-cast.plan.md](chat-supporting-cast.plan.md) — 2026-07-13 —
   recurring named side characters as a lightweight scenario tier (scene-memory

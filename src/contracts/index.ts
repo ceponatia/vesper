@@ -48,4 +48,5 @@ export * from "./turns/chat-archivist";
 export * from "./turns/chat-scene-memory";
 export * from "./turns/chat-supporting-cast";
 export * from "./turns/chat-skip";
+export * from "./turns/chat-reply-failure";
 export * from "./turns/stream";

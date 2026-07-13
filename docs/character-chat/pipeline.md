@@ -101,14 +101,14 @@ exchange:
    list) — a headless POST without a `model` defaults to it too
    (`resolveChatModelId`), so API and UI agree. The stream is wrapped by two watchdogs
    (`withStreamTimeouts`, data-loss-rerun): a **first-token timeout**
-   (`CHAT_STREAM_FIRST_TOKEN_MS` = 60s) and an **overall cap** (`CHAT_STREAM_OVERALL_MS` =
-   300s). On a trip it aborts the upstream call and settles through the same stop path as a
-   player Stop (any partial persists with `meta.stopped`, the lock releases, a `log.warn`
-   records it) — so a wedged provider can never hold the per-chat lock indefinitely (the
-   incident that motivated the fix). A first-token trip has **zero tokens**, so nothing
-   persists — the client detects the clean-but-empty settle (no delta ever arrived) and
-   surfaces a "didn't reply" error toast instead of letting the pending bubble silently
-   vanish ([ui.md](../ui.md) §Transcript).
+   (`CHAT_STREAM_FIRST_TOKEN_MS` = 50s — deliberately under Fly's ~60s proxy idle
+   timeout, which would otherwise kill the zero-bytes-so-far response first and turn an
+   attributable timeout into a silent connection drop) and an **overall cap**
+   (`CHAT_STREAM_OVERALL_MS` = 300s). On a trip it aborts the upstream call and settles
+   through the same stop path as a player Stop (any partial persists with `meta.stopped`,
+   the lock releases) — so a wedged provider can never hold the per-chat lock indefinitely
+   (the incident that motivated the fix). See §Reply failures below for how a zero-token
+   settle is classified and surfaced.
 8. **Settle (post-flush).** When the stream finishes — the route's shared
    `drainingStreamResponse` keeps consuming after a client disconnect
    ([resilience.md](../resilience.md) §5) — the reply persists (§5) and the post-turn fan-out
@@ -211,6 +211,38 @@ guarded state write:
   agent model. Every degradation is a diagnostic, never a failed reply — the reply already
   streamed.
 
+
+## Reply failures
+
+A reply that never arrives is **classified and persisted, never guessed at**. The
+plain-text token stream has no error frame — once the route commits its 200, the
+only in-band signal the client can see is "zero bytes, clean close" — so the cause
+travels out-of-band instead:
+
+1. `streamExchange`'s catch classifies the thrown provider error
+   (`classifyProviderError`, `server/ai/errors.ts`): it unwraps the AI SDK's
+   `RetryError`, reads `APICallError.statusCode` + the OpenRouter error envelope in
+   `responseBody`, and maps them onto the closed `ChatReplyFailureCode` vocabulary
+   (`contracts/turns/chat-reply-failure.ts`) — timeout, rate_limited, no_credits,
+   auth_failed, moderation_blocked, context_too_long, provider_error, network,
+   empty_reply, unknown. The same call feeds the `log.warn`, so `fly logs` shows the
+   class, status, and the provider's own words (previously only `error.message`).
+2. `resolveReplyFailure` (pure) decides what the exchange records: only a
+   **zero-text** settle records a failure (a partial that persisted is a visible
+   reply); a watchdog trip outranks the stop flag it shares an AbortController with
+   (`timeout`); a genuine player Stop records nothing; a clean zero-token stream is
+   `empty_reply`.
+3. The verdict is written to `character_chats.last_reply_failure` (cleared by any
+   exchange that settles) **before the generator returns**, so the route's drain —
+   and therefore the client's post-exchange refetch — strictly follows it.
+4. The transcript GET returns it on the `chat` envelope; the client's
+   zero-tokens-received path hands it to `replyFailureToast`
+   (`components/chat/reply-failure.ts`), which maps each class to its own copy
+   (quoting the provider's words where they add signal) with a 10-minute staleness
+   guard. No record ⇒ honest "no cause recorded" copy.
+
+Adding a failure class = a literal in the contract + a copy entry in the client map
+(registry pattern — never a migration; unknown stored codes parse to `unknown`).
 
 ## Jobs
 

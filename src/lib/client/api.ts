@@ -12,6 +12,7 @@ import {
   type ChatActionId,
   chatMemoryTraceSchema,
   chatPulseTraceSchema,
+  chatReplyFailureSchema,
   milestoneSchema,
   relationshipSampleSchema,
   relationshipTextureSchema,
@@ -971,7 +972,13 @@ export const chatTranscriptSchema = z.object({
   hasMore: z.boolean().catch(false),
   /** Keyset cursor for the next older page (`?before=`); null on the last page. */
   nextBefore: z.string().nullable().catch(null),
-  chat: z.object({ id: idSchema, title: textOr(""), archivedAt: optionalText }),
+  chat: z.object({
+    id: idSchema,
+    title: textOr(""),
+    archivedAt: optionalText,
+    /** Why the last exchange produced no reply (reply-failure surfacing); null when it replied. */
+    lastReplyFailure: chatReplyFailureSchema.nullish().catch(null),
+  }),
   character: z.object({
     id: idSchema,
     name: nameSchema,

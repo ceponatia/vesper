@@ -18,7 +18,15 @@ export interface OwnedChatMember {
 }
 
 export interface OwnedChat {
-  chat: { id: string; ownerId: string; title: string; archivedAt: Date | null; lastMessageAt: Date };
+  chat: {
+    id: string;
+    ownerId: string;
+    title: string;
+    archivedAt: Date | null;
+    lastMessageAt: Date;
+    /** ChatReplyFailure | null (raw column) — why the last exchange produced no reply. */
+    lastReplyFailure: unknown;
+  };
   /** The primary participant (sort 0) — the pre-roster shape 1-on-1 call sites keep using. */
   participant: { characterId: string; memoryGroupId: string };
   /** The primary participant's character slice (pre-roster shape). */
@@ -35,6 +43,7 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
       title: characterChats.title,
       archivedAt: characterChats.archivedAt,
       lastMessageAt: characterChats.lastMessageAt,
+      lastReplyFailure: characterChats.lastReplyFailure,
       memoryGroupId: chatParticipants.memoryGroupId,
       sort: chatParticipants.sort,
       characterId: characters.id,
@@ -69,6 +78,7 @@ export async function loadOwnedChat(chatId: string, userId: string): Promise<Own
       title: primary.title,
       archivedAt: primary.archivedAt,
       lastMessageAt: primary.lastMessageAt,
+      lastReplyFailure: primary.lastReplyFailure,
     },
     participant: { characterId: primary.characterId, memoryGroupId: primary.memoryGroupId },
     character: {

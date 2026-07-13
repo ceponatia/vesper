@@ -156,11 +156,17 @@ export const CHAT_REPLY_TAKES_CAP = 4;
  * never hold the per-chat exchange lock indefinitely (the Aion 3.0 incident, 2026-07-09).
  * If no first token arrives within CHAT_STREAM_FIRST_TOKEN_MS, or the whole stream runs
  * past CHAT_STREAM_OVERALL_MS, the upstream call is aborted and the exchange settles
- * through the stop path — any partial persists (`meta.stopped`), the lock releases, and a
- * diagnostic is recorded. Generous by design: these guard against a wedged provider, not
- * a merely-slow one (a real narration can take tens of seconds).
+ * through the stop path — any partial persists (`meta.stopped`), the lock releases, and
+ * the exchange records a `timeout` reply failure. Generous by design: these guard against
+ * a wedged provider, not a merely-slow one (a real narration can take tens of seconds).
+ *
+ * The first-token budget MUST stay comfortably below Fly's ~60s proxy idle timeout:
+ * until the first token, zero bytes have flowed on the response, so at ~60s the proxy
+ * kills the connection. The watchdog has to win that race — a watchdog trip records an
+ * accurate `timeout` failure for the popup, while a proxy kill is a silent client-side
+ * connection drop that looks identical to a clean empty stream.
  */
-export const CHAT_STREAM_FIRST_TOKEN_MS = 60_000;
+export const CHAT_STREAM_FIRST_TOKEN_MS = 50_000;
 export const CHAT_STREAM_OVERALL_MS = 300_000;
 
 /**
