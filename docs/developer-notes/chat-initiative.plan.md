@@ -37,7 +37,7 @@ inline-by-license.
   (`applyOpenerPulse` — folds only `sentPhoto` + mindNote; no
   regard/meter/feeling moves). The send records an `offer` ring entry.
 
-Docs: [character-chat.md](../character-chat.md) §Initiative + §Selfies,
+Docs: [character-chat/initiative.md](../character-chat/initiative.md) §Initiative + [character-chat/images.md](../character-chat/images.md) §Selfies,
 [authoring.md](../authoring.md) §Character forge + §Manual editing,
 [prompts.md](../prompts.md), [ui.md](../ui.md).
 

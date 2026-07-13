@@ -11,7 +11,7 @@ import { CHARACTER_CHAT_HISTORY_TURNS } from "./constants";
 import { NARRATIVE_TEMPERATURE } from "./pipeline";
 
 /**
- * The character-chat model stream (docs/character-chat.md): the narrator leg of
+ * The character-chat model stream (docs/character-chat/pipeline.md): the narrator leg of
  * the chat lane. Mirrors pipeline.liveNarrativeStream — the same `streamText` +
  * `openrouter().chat()` shape (the `@openrouter`-only boundary is satisfied via
  * the `../ai` barrel exactly as the pipeline does). This file only streams: the

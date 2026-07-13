@@ -162,7 +162,7 @@ export const characters = pgTable(
 );
 
 /**
- * A conversation (docs/character-chat.md; character-chat-standalone.spec.md §1):
+ * A conversation (docs/character-chat/; character-chat-standalone.spec.md §1):
  * the chat lane's first-class record — the transcript, rolling summary, and
  * per-participant state hang off `chat_id`, so one character can host many
  * stories (a long-running main thread beside a fresh alternate-universe
@@ -328,7 +328,7 @@ export const chatScenarioPresets = pgTable(
 );
 
 /**
- * The character-chat transcript (docs/character-chat.md). A flat message log per
+ * The character-chat transcript (docs/character-chat/). A flat message log per
  * conversation — deliberately isolated from sessions (no turns). Clearing (hard
  * delete) removes the chat row and these cascade; the generated scene images
  * (kind="scene") survive, but their chat-derived prompt text is scrubbed.
@@ -386,7 +386,7 @@ export const characterChatSummaries = pgTable(
 );
 
 /**
- * Character-chat state (docs/character-chat.md; origin:
+ * Character-chat state (docs/character-chat/state.md; origin:
  * docs/developer-notes/finished/character-chat-state.spec.md). One row per
  * (chatId, characterId) — a multi-character roster holds one row per member
  * (multi-character-chat.plan.md): the character's tracked state beside the

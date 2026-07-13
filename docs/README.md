@@ -21,7 +21,7 @@ interaction/state/narration patterns get proven in chat first.
 | [contracts/](contracts/README.md) | Attribute registry, body model, meters, conditions — and how to extend them |
 | [database.md](database.md) | Drizzle schema, pgvector, migration workflow |
 | [turn-engine.md](turn-engine.md) | The turn lifecycle: pre-turn assembly, narrative streaming, post-turn agent fan-out |
-| [character-chat.md](character-chat.md) | The sessionless chat lane: exchange pipeline, tracked state, relationship & in-game time, chat memory, jobs, API |
+| [character-chat/](character-chat/README.md) | The sessionless chat lane: exchange pipeline, tracked state, supporting cast & narrator input, initiative, the ensemble, images, API |
 | [prompts.md](prompts.md) | Prompt architecture: static rulebook, turn context, caching, speaker tags |
 | [memory.md](memory.md) | Episodes, semantic facts + supersedence, lore tiers, retrieval |
 | [story-threads.md](story-threads.md) | Thread kinds, lifecycle, semantic dedup, accumulated developments, the detail modal |

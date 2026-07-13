@@ -11,7 +11,7 @@ import { loadOwnedChat } from "../../../owned";
 type Params = { chatId: string; messageId: string };
 
 /**
- * Per-message edits on a conversation transcript (docs/character-chat.md). PATCH
+ * Per-message edits on a conversation transcript (docs/character-chat/api.md). PATCH
  * overwrites one message's text in place; DELETE removes a single message. Both are
  * the recovery levers for a "poisoned" transcript: a single refusal persisted into
  * the window primes more refusals on every later turn — snipping or rewriting the

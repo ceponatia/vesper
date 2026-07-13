@@ -24,7 +24,7 @@ import { editChatState, saveChatScenario, seedChatRelationships, seedChatScenari
 import { resolveChatMemoryGroupId } from "./owned";
 
 /**
- * The conversations collection (docs/character-chat.md; character-chat-standalone.spec.md
+ * The conversations collection (docs/character-chat/; character-chat-standalone.spec.md
  * §2.1). GET lists the user's conversations (the Chats page / the editor tab's picker);
  * POST creates one — with the D7 memory choice: "shared" reuses each character's existing
  * memory group (the relationship remembers), "fresh" mints a clean island (an alternate

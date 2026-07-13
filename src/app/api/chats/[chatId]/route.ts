@@ -20,7 +20,7 @@ import { queueChatScene } from "./scene/queue";
 type Params = { chatId: string };
 
 /**
- * One conversation (docs/character-chat.md): GET reads the transcript; POST runs
+ * One conversation (docs/character-chat/pipeline.md): GET reads the transcript; POST runs
  * one exchange through the engine pipeline (`submitChatMessage`) and streams the
  * reply as plain text (the reply persists server-side when the stream settles,
  * even after a client disconnect); PATCH renames / archives / restores; DELETE is
