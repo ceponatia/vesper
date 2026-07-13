@@ -43,6 +43,15 @@ describe("resolveBodyTarget", () => {
     const list = ids("face");
     expect(list.length).toBe(new Set(list).size);
   });
+
+  it("resolves singular forms of plural locations (sensory-grounding)", () => {
+    expect(resolveBodyTarget("foot")?.locationIds).toContain("feet");
+    expect(ids("foot")).toContain("feet.smell");
+    expect(resolveBodyTarget("hand")?.locationIds).toContain("hands");
+    expect(resolveBodyTarget("thigh")?.locationIds).toContain("thighs");
+    expect(resolveBodyTarget("breast")?.locationIds).toContain("breasts");
+    expect(resolveBodyTarget("calf")?.locationIds).toContain("calves");
+  });
 });
 
 describe("expandBodyTarget — realized-body filtering", () => {
@@ -86,5 +95,10 @@ describe("detectBodyTargets", () => {
 
   it("returns nothing when no body reference is present", () => {
     expect(detectBodyTargets("the weather turned cold")).toEqual([]);
+  });
+
+  it("finds singular forms of plural locations (sensory-grounding)", () => {
+    const terms = detectBodyTargets("I lift her foot to my lips").map((f) => f.term);
+    expect(terms).toContain("feet");
   });
 });

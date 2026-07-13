@@ -171,6 +171,13 @@ export interface SensoryFocusHint {
   target: string;
   /** Whether the target is intimate anatomy (gates the intimate-attribute surfacing). */
   intimate: boolean;
+  /**
+   * The body-registry term the target resolves to — the prompt builder joins it to the
+   * region's own authored attributes via `expandBodyTarget` (sensory-grounding.plan.md),
+   * so "foot" surfaces `feet.smell`, not just the generic scent baseline. Absent for
+   * garment targets (a dress has no anatomy to expand) and unmapped colloquialisms.
+   */
+  region?: string;
 }
 
 const SMELL_RE =
@@ -188,21 +195,120 @@ const STUDY_RE =
 const NOT_ACTOR = "(?<!\\bmy )(?<!\\bour )";
 /** Intimate anatomy nouns — a match sets `intimate`, gating the intimate-attribute surfacing. */
 const INTIMATE_TARGET_RE = new RegExp(
-  `${NOT_ACTOR}\\b(breasts?|nipples?|cleavage|vulva|pussy|cunt|clit(?:oris)?|labia|folds|penis|cock|dick|shaft|balls|testicles?|groin|crotch|ass|arse|buttocks?|butt|rear|panties|thong|lingerie)\\b`,
+  `${NOT_ACTOR}\\b(breasts?|nipples?|cleavage|vulva|pussy|cunt|clit(?:oris)?|labia|folds|penis|cock|dick|shaft|balls|testicles?|groin|crotch|anus|ass|arse|buttocks?|butt|rear|panties|thong|lingerie)\\b`,
   "i",
 );
 /** Everyday body-region + garment nouns the sense can land on. */
 const BODY_TARGET_RE = new RegExp(
-  `${NOT_ACTOR}\\b(hair|neck|throat|collarbones?|shoulders?|skin|cheeks?|jaw|ears?|lips?|mouth|wrists?|hands?|fingers?|knuckles?|forearms?|arms?|waist|hips?|thighs?|legs?|knees?|calves|calf|ankles?|feet|foot|back|spine|stomach|belly|navel|face|dress|skirt|blouse|shirt|sweater|collar|neckline|sleeves?|stockings?|lace|hem|bodice|corset|bra|heels|scarf|coat|jacket)\\b`,
+  `${NOT_ACTOR}\\b(hair|neck|throat|nape|collarbones?|shoulders?|skin|cheeks?|jaw|chin|forehead|temples?|ears?|eyes?|nose|lips?|mouth|wrists?|hands?|palms?|fingers?|knuckles?|forearms?|arms?|chest|waist|midriff|tummy|abdomen|hips?|thighs?|legs?|knees?|calves|calf|ankles?|feet|foot|soles?|heels?|toes?|back|spine|tail|wings?|horns?|stomach|belly|navel|face|dress|skirt|blouse|shirt|sweater|collar|neckline|sleeves?|stockings?|lace|hem|bodice|corset|bra|scarf|coat|jacket)\\b`,
   "i",
 );
 
 /**
+ * Colloquial intimate noun → the body-registry region it names, for the hint's `region`.
+ * Intimate garments (panties, thong) map to the region they cover — a sense brought to
+ * them is colloquially about that region's senses; `lingerie` stays garment-only.
+ */
+const INTIMATE_REGION_BY_NOUN: Readonly<Record<string, string>> = {
+  breast: "breasts",
+  breasts: "breasts",
+  nipple: "nipples",
+  nipples: "nipples",
+  cleavage: "breasts",
+  vulva: "vulva",
+  pussy: "vulva",
+  cunt: "vulva",
+  folds: "vulva",
+  labia: "vulva",
+  clit: "clitoris",
+  clitoris: "clitoris",
+  penis: "penis",
+  cock: "penis",
+  dick: "penis",
+  shaft: "penis",
+  balls: "testicles",
+  testicle: "testicles",
+  testicles: "testicles",
+  groin: "groin",
+  crotch: "groin",
+  anus: "anus",
+  ass: "buttocks",
+  arse: "buttocks",
+  butt: "buttocks",
+  buttock: "buttocks",
+  buttocks: "buttocks",
+  rear: "buttocks",
+  panties: "groin",
+  thong: "groin",
+};
+
+/**
+ * Everyday nouns that are NOT registry terms themselves → the registry term whose
+ * attributes they colloquially read from ("throat" → neck, "sole" → feet). Nouns
+ * absent here pass through as-is — `expandBodyTarget` resolves registry ids, labels,
+ * singulars, and its own colloquial map ("mouth", "figure").
+ */
+const EVERYDAY_REGION_BY_NOUN: Readonly<Record<string, string>> = {
+  throat: "neck",
+  nape: "neck",
+  collarbone: "shoulders",
+  collarbones: "shoulders",
+  cheek: "face",
+  cheeks: "face",
+  jaw: "face",
+  chin: "face",
+  forehead: "face",
+  temple: "face",
+  temples: "face",
+  knuckle: "fingers",
+  knuckles: "fingers",
+  palm: "hands",
+  palms: "hands",
+  spine: "back",
+  stomach: "waist",
+  belly: "waist",
+  navel: "waist",
+  tummy: "waist",
+  midriff: "waist",
+  abdomen: "waist",
+  sole: "feet",
+  soles: "feet",
+  heel: "feet",
+  heels: "feet",
+  knee: "legs",
+  knees: "legs",
+};
+
+/** Garment nouns — no anatomy to expand, so the hint carries no `region`. */
+const GARMENT_NOUNS: ReadonlySet<string> = new Set([
+  "dress",
+  "skirt",
+  "blouse",
+  "shirt",
+  "sweater",
+  "collar",
+  "neckline",
+  "sleeve",
+  "sleeves",
+  "stocking",
+  "stockings",
+  "lace",
+  "hem",
+  "bodice",
+  "corset",
+  "bra",
+  "scarf",
+  "coat",
+  "jacket",
+  "lingerie",
+]);
+
+/**
  * Detect a sense-targeted beat in the player's input (scope guard): a smell/taste/touch/study
  * verb aimed at a specific body region or garment. Returns the sense + the matched target
- * (intimate-flagged) or null when there is no verb-and-target pair — the block is deliberately
- * sense×TARGET, so a bare "I feel nervous" never fires. Regex-first and pure; the builder
- * assembles the authored sensory values (scent baseline, hygiene band, outfit, conditions).
+ * (intimate-flagged, region-resolved) or null when there is no verb-and-target pair — the
+ * block is deliberately sense×TARGET, so a bare "I feel nervous" never fires. Regex-first and
+ * pure; the builder joins `region` to the character's authored per-location sensory values.
  */
 export function detectSensoryFocus(input: string): SensoryFocusHint | null {
   const text = input ?? "";
@@ -217,9 +323,17 @@ export function detectSensoryFocus(input: string): SensoryFocusHint | null {
           : null;
   if (!sense) return null;
   const intimateMatch = INTIMATE_TARGET_RE.exec(text)?.[1];
-  if (intimateMatch) return { sense, target: intimateMatch.toLowerCase(), intimate: true };
+  if (intimateMatch) {
+    const target = intimateMatch.toLowerCase();
+    const region = INTIMATE_REGION_BY_NOUN[target];
+    return { sense, target, intimate: true, ...(region ? { region } : {}) };
+  }
   const bodyMatch = BODY_TARGET_RE.exec(text)?.[1];
-  if (bodyMatch) return { sense, target: bodyMatch.toLowerCase(), intimate: false };
+  if (bodyMatch) {
+    const target = bodyMatch.toLowerCase();
+    const region = GARMENT_NOUNS.has(target) ? undefined : (EVERYDAY_REGION_BY_NOUN[target] ?? target);
+    return { sense, target, intimate: false, ...(region ? { region } : {}) };
+  }
   return null;
 }
 

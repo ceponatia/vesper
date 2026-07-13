@@ -107,6 +107,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Sensory grounding** — [sensory-grounding.plan.md](sensory-grounding.plan.md) —
+  2026-07-12 — the chat Sensory-focus block now joins the player's targeted body
+  region to that region's own authored attributes (sense-ranked — "I lick her foot"
+  finally surfaces `feet.smell`), directs the narrator to OPEN the reply with the
+  sensation itself, forbids verbatim value echoes, degrades an ungrounded focus to
+  the close-range allowance, and sense-gates `.scent`/`.smell`/`.taste` id suffixes
+  in the session lane whatever their category.
 - **Forge gaps** — [forge-gaps.plan.md](forge-gaps.plan.md) — 2026-07-12 — the forge now
   drafts the starting relationship + personal social cards from the concept; a
   `renderVisual` attribute tier keeps scene renders consistent; secret reveal gates

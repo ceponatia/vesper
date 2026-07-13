@@ -1,4 +1,4 @@
-import { attributeRegistry } from "@/contracts/attributes";
+import { attributeRegistry, type AttributeDefinition } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
@@ -18,7 +18,7 @@ import { familiarityBandForValue, regardBandForValue } from "@/contracts/relatio
 import { composePairRelationshipLaw, composeRelationshipLaw, dispositionContrastLine } from "@/contracts/relationships/law";
 import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
-import { realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
+import { expandBodyTarget, realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import type { ChatFeelingState } from "../chat-feeling";
@@ -708,14 +708,65 @@ const SENSE_FOCUS_VERB: Record<SensoryFocusHint["sense"], string> = {
   study: "taking in",
 };
 
+/** How many of the target region's own attribute values the focus block may carry. */
+const FOCUS_REGION_LINE_CAP = 6;
+
 /**
- * The one-turn "Sensory focus" block (scope guard): when the player's beat brings a sense to
- * bear on a specific body region / garment (`detectSensoryFocus`), assemble the character's
- * AUTHORED sensory values for it — baseline scent + hygiene band for smell/taste, outfit +
- * grooming + close-range hygiene for touch/study, active conditions always — and (only when
- * the target is intimate and the character has that anatomy) the earned intimate attributes.
- * The bounded-imagination clause licenses vivid extrapolation that never contradicts the
- * authored theme. "" when there's nothing authored to ground it. Volatile tail, per-turn.
+ * Sense-relevance rank for one of the target region's attributes (lower renders first;
+ * null drops it — a scent value is not studied, a taste value is not felt). The sense
+ * the beat brings to bear leads; supporting texture and shape follow, because what sits
+ * under lips or fingers is felt even when the beat is a taste.
+ */
+function focusSenseRank(sense: SensoryFocusHint["sense"], def: AttributeDefinition): number | null {
+  const scent = def.id.endsWith(".scent") || def.id.endsWith(".smell");
+  const taste = def.id.endsWith(".taste");
+  const texture = def.id.endsWith(".texture");
+  switch (sense) {
+    case "smell":
+      if (scent) return 0;
+      if (taste) return null;
+      return def.kind === "sensory" ? 1 : 2;
+    case "taste":
+      if (taste) return 0;
+      if (scent) return 1; // this close, scent carries into taste
+      if (texture) return 2;
+      return def.kind === "sensory" ? 2 : 3;
+    case "touch":
+      if (texture) return 0;
+      if (scent || taste) return null;
+      return def.kind === "sensory" ? 1 : 2; // shape and size under the hand are felt
+    case "study":
+      if (scent || taste) return null;
+      return 1;
+  }
+}
+
+/** The per-sense "what the player directly experiences" clause for the focus header. */
+function focusExperienceClause(sense: SensoryFocusHint["sense"], player: string): string {
+  switch (sense) {
+    case "smell":
+      return `the scent itself — its character and strength, how it deepens as ${player} breathes in — and the warmth of skin this close`;
+    case "taste":
+      return `taste and texture together — skin under the tongue, its warmth and salt, the scent that carries into taste this close`;
+    case "touch":
+      return `texture, temperature, the give and firmness under ${player}'s hand`;
+    case "study":
+      return `what ${player} actually sees this close — detail, texture, the way light and small movements play over it`;
+  }
+}
+
+/**
+ * The one-turn "Sensory focus" block (scope guard, reshaped by sensory-grounding.plan.md):
+ * when the player's beat brings a sense to bear on a specific body region / garment
+ * (`detectSensoryFocus`), assemble the character's AUTHORED sensory values for it — the
+ * TARGET REGION's own attributes first (`expandBodyTarget` over the hint's `region`,
+ * sense-ranked: a taste beat on a foot surfaces `feet.smell`, not just the perfume line),
+ * then the generic grounding (baseline scent + hygiene for smell/taste, outfit + grooming +
+ * close hygiene for touch/study, active conditions always). Intimate-region attributes ride
+ * the same join, gated by the hint's `intimate` flag and the realized body. The directive
+ * OPENS the reply with the sensation itself and forbids echoing values verbatim — they are
+ * guide-rails for prose, never vocabulary. "" when nothing authored grounds it (the builder
+ * then degrades the allowance line instead of leaving the turn grantless). Volatile tail.
  */
 function buildSensoryFocusSection(
   player: string,
@@ -730,12 +781,35 @@ function buildSensoryFocusSection(
   const lines: string[] = [];
   const hygieneCue = meters.hygiene !== undefined ? meterStateCue("hygiene", meters.hygiene) : null;
 
+  // The target region's own authored values (the core join): every attribute bound to the
+  // region's body-location subtree, realized-body filtered, sense-ranked, capped. Intimate
+  // categories surface ONLY when the beat targeted intimate anatomy (the hint's flag).
+  const expansion = hint.region
+    ? expandBodyTarget(hint.region, (def) => realizedBody.isAttributeApplicable(def))
+    : undefined;
+  if (expansion) {
+    const ranked = expansion.definitions
+      .filter((def) => !def.excludeFromPrompts)
+      .filter((def) => hint.intimate || !isIntimateAttributeCategory(def.category))
+      .map((def) => ({ def, rank: focusSenseRank(hint.sense, def) }))
+      .filter((entry): entry is { def: AttributeDefinition; rank: number } => entry.rank !== null)
+      .sort((a, b) => a.rank - b.rank);
+    for (const { def } of ranked) {
+      if (lines.length >= FOCUS_REGION_LINE_CAP) break;
+      const value = byId(def.id);
+      if (!value) continue;
+      const phrase = attributePhrase(def.label, def.unit, value.value);
+      if (!phrase) continue;
+      lines.push(`- ${name}'s ${phrase}`);
+    }
+  }
+
   if (hint.sense === "smell" || hint.sense === "taste") {
     const scent = byId("presentation.scent_baseline");
     if (scent && typeof scent.value === "string" && scent.value.trim()) {
-      lines.push(`- Baseline scent (when clean): ${humanize(String(scent.value))}`);
+      lines.push(`- ${name}'s overall scent when clean (perfume, skin): ${humanize(String(scent.value))}`);
     }
-    lines.push(`- Up close right now: ${hygieneCue ? hygieneCue.hint : "clean skin, nothing strong"}`);
+    lines.push(`- Right now: ${hygieneCue ? hygieneCue.hint : "clean skin, nothing strong"}`);
   }
 
   if (hint.sense === "touch" || hint.sense === "study") {
@@ -752,27 +826,13 @@ function buildSensoryFocusSection(
     if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
   }
 
-  // Intimate-gated attributes surface ONLY when the beat earns it (an intimate target) and
-  // the character actually has that anatomy (realized-body applicability). Capped so a
-  // richly-authored intimate character can't flood the tail.
-  if (hint.intimate) {
-    let count = 0;
-    for (const value of resolved) {
-      if (count >= 4) break;
-      const def = attributeRegistry.byId(value.id);
-      if (!def || !isIntimateAttributeCategory(def.category)) continue;
-      if (def.excludeFromPrompts) continue;
-      if (!realizedBody.isAttributeApplicable(def)) continue;
-      const phrase = attributePhrase(def.label, def.unit, value.value);
-      if (!phrase) continue;
-      lines.push(`- ${name}'s ${phrase}`);
-      count++;
-    }
-  }
-
   if (!lines.length) return "";
   return [
-    `Sensory focus — ${player} is ${SENSE_FOCUS_VERB[hint.sense]} ${name}'s ${hint.target}. Write ONE short, vivid paragraph grounded in these values (extrapolate freely, but never contradict their theme), landing as sensation in ${player}'s senses — never a list:`,
+    `Sensory focus — ${player} is ${SENSE_FOCUS_VERB[hint.sense]} ${name}'s ${hint.target}. ` +
+      `OPEN your reply with the experience itself: two to four sentences of what ${player} directly perceives — ` +
+      `${focusExperienceClause(hint.sense, player)} — written as sensation landing in ${player}'s senses, before ${name} reacts or the scene moves on. ` +
+      `Ground it in the values below: they are guide-rails, not vocabulary — never repeat them verbatim and never contradict them; ` +
+      `translate them into rich, specific, felt prose, composing the authored baseline with ${name}'s current state (freshly washed mutes a scent; a long day deepens it):`,
     ...lines,
   ].join("\n");
 }
@@ -1104,7 +1164,17 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     buildTransientAppearanceSection(input, stableResolved, realizedBody),
     sensoryFocus,
     input.sensoryAllowance !== undefined
-      ? chatSensoryAllowanceLine(input.sensoryAllowance, displayName, playerName ?? "the player")
+      ? chatSensoryAllowanceLine(
+          // A focused_description grant with an EMPTY focus block (nothing authored grounds
+          // the beat) would otherwise render no line at all — and rule 11's default-none
+          // then forbids sensory detail on the one turn that most earned it. Degrade to the
+          // close-range grant instead.
+          input.sensoryAllowance === "focused_description" && !sensoryFocus
+            ? "close_range_hook"
+            : input.sensoryAllowance,
+          displayName,
+          playerName ?? "the player",
+        )
       : "",
     input.cueInvite?.trim() ?? "",
     input.notationNote?.trim() ?? "",

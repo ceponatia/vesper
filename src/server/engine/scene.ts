@@ -795,17 +795,19 @@ export function buildIntimateDispositionLine(
 }
 
 /**
- * Whether an intimate-anatomy attribute may surface this turn, gated by the
- * exposure mask (body-model spec Decision 3/§B). Non-intimate attributes are
- * always allowed (unchanged behavior). Intimate descriptive detail needs the
- * intimate visual tier; per-region scent/taste needs the matching sense earned.
+ * Whether an attribute may surface this turn, gated by the exposure mask
+ * (body-model spec Decision 3/§B). Per-region scent/taste (the `.scent`/`.smell`/
+ * `.taste` id suffixes) needs the matching sense earned whatever the category —
+ * `feet.smell` is not intimate anatomy, but it is still a proximity sense, not a
+ * look. Other non-intimate attributes are always allowed (unchanged behavior);
+ * intimate descriptive detail needs the intimate visual tier.
  */
 function intimateAttrAllowed(def: AttributeDefinition, exposure: ExposureMask): boolean {
-  if (!(INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category)) return true;
-  if (def.kind === "sensory") {
-    if (def.id.endsWith(".scent")) return exposure.scent === "close" || exposure.scent === "intimate";
-    if (def.id.endsWith(".taste")) return exposure.taste === "close" || exposure.taste === "intimate";
+  if (def.id.endsWith(".scent") || def.id.endsWith(".smell")) {
+    return exposure.scent === "close" || exposure.scent === "intimate";
   }
+  if (def.id.endsWith(".taste")) return exposure.taste === "close" || exposure.taste === "intimate";
+  if (!(INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category)) return true;
   return exposure.appearance === "intimate";
 }
 

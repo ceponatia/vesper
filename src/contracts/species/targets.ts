@@ -43,12 +43,36 @@ const COLLOQUIAL_TARGETS: Readonly<
   looks: { categories: ["build", "skin", "presentation"] },
 };
 
+/**
+ * Locations are stored in the plural ("feet", "hands") but players reference
+ * them in the singular ("her foot"). Irregular plurals first, then the naive
+ * trailing-s form; "" when the word has no distinct singular.
+ */
+const IRREGULAR_SINGULARS: Readonly<Record<string, string>> = {
+  feet: "foot",
+  calves: "calf",
+};
+
+function singularForm(word: string): string {
+  const irregular = IRREGULAR_SINGULARS[word];
+  if (irregular) return irregular;
+  if (word.endsWith("s") && !word.endsWith("ss") && word.length > 3) return word.slice(0, -1);
+  return "";
+}
+
 // Term → location id, indexed by both the id and the human label so "upper
-// arms" and "upper_arms" both resolve.
+// arms" and "upper_arms" both resolve. Singular forms index in a second pass
+// (has-guarded) so a direct id/label always wins over a derived singular.
 const locationByTerm = new Map<string, string>();
 for (const loc of bodyLocationRegistry.all) {
   locationByTerm.set(normalize(loc.id), loc.id);
   locationByTerm.set(normalize(loc.label), loc.id);
+}
+for (const loc of bodyLocationRegistry.all) {
+  for (const term of [normalize(loc.id), normalize(loc.label)]) {
+    const singular = singularForm(term);
+    if (singular && !locationByTerm.has(singular)) locationByTerm.set(singular, loc.id);
+  }
 }
 
 const categoryIds = new Set<string>(attributeCategories);
@@ -130,8 +154,11 @@ const targetPhrases: readonly TargetPhrase[] = (() => {
   const out: TargetPhrase[] = [];
   for (const key of Object.keys(COLLOQUIAL_TARGETS)) out.push({ phrase: key, term: key });
   for (const loc of bodyLocationRegistry.all) {
-    out.push({ phrase: loc.id.replace(/_/g, " "), term: loc.id });
-    out.push({ phrase: loc.label.toLowerCase(), term: loc.id });
+    for (const phrase of [loc.id.replace(/_/g, " "), loc.label.toLowerCase()]) {
+      out.push({ phrase, term: loc.id });
+      const singular = singularForm(normalize(phrase));
+      if (singular) out.push({ phrase: singular.replace(/_/g, " "), term: loc.id });
+    }
   }
   for (const category of attributeCategories) out.push({ phrase: category, term: category });
   return out.sort((a, b) => b.phrase.length - a.phrase.length);

@@ -123,16 +123,58 @@ describe("detectSceneMovement (chat scene memory)", () => {
 });
 
 describe("detectSensoryFocus (scope guard)", () => {
-  it("detects a sense verb aimed at a body region / garment", () => {
-    expect(detectSensoryFocus("I breathe in the scent of her hair.")).toEqual({ sense: "smell", target: "hair", intimate: false });
-    expect(detectSensoryFocus("I run my fingers along your collarbone.")).toEqual({ sense: "touch", target: "collarbone", intimate: false });
-    expect(detectSensoryFocus("I take in the lines of her dress.")).toEqual({ sense: "study", target: "dress", intimate: false });
-    expect(detectSensoryFocus("I taste the salt on your neck.")).toEqual({ sense: "taste", target: "neck", intimate: false });
+  it("detects a sense verb aimed at a body region, carrying the resolved registry region", () => {
+    expect(detectSensoryFocus("I breathe in the scent of her hair.")).toEqual({
+      sense: "smell",
+      target: "hair",
+      intimate: false,
+      region: "hair",
+    });
+    expect(detectSensoryFocus("I run my fingers along your collarbone.")).toEqual({
+      sense: "touch",
+      target: "collarbone",
+      intimate: false,
+      region: "shoulders",
+    });
+    expect(detectSensoryFocus("I taste the salt on your neck.")).toEqual({
+      sense: "taste",
+      target: "neck",
+      intimate: false,
+      region: "neck",
+    });
   });
 
-  it("flags an intimate target", () => {
-    const hit = detectSensoryFocus("I cup her breasts.");
-    expect(hit).toEqual({ sense: "touch", target: "breasts", intimate: true });
+  it("carries no region for a garment target (nothing anatomical to expand)", () => {
+    expect(detectSensoryFocus("I take in the lines of her dress.")).toEqual({ sense: "study", target: "dress", intimate: false });
+  });
+
+  it("resolves singular and colloquial nouns to their registry region (sensory-grounding)", () => {
+    expect(detectSensoryFocus("I lick her foot.")).toEqual({ sense: "taste", target: "foot", intimate: false, region: "foot" });
+    expect(detectSensoryFocus("I lick the sole of her foot.")).toEqual({ sense: "taste", target: "sole", intimate: false, region: "feet" });
+    expect(detectSensoryFocus("I press my nose against her heels and inhale.")).toEqual({
+      sense: "smell",
+      target: "heels",
+      intimate: false,
+      region: "feet",
+    });
+    expect(detectSensoryFocus("I kiss her throat, tasting her.")).toEqual({
+      sense: "taste",
+      target: "throat",
+      intimate: false,
+      region: "neck",
+    });
+    expect(detectSensoryFocus("I stroke her chest.")).toEqual({ sense: "touch", target: "chest", intimate: false, region: "chest" });
+  });
+
+  it("flags an intimate target and resolves its colloquial region", () => {
+    expect(detectSensoryFocus("I cup her breasts.")).toEqual({ sense: "touch", target: "breasts", intimate: true, region: "breasts" });
+    expect(detectSensoryFocus("I taste her pussy.")).toEqual({ sense: "taste", target: "pussy", intimate: true, region: "vulva" });
+    expect(detectSensoryFocus("I breathe in the scent of her panties.")).toEqual({
+      sense: "smell",
+      target: "panties",
+      intimate: true,
+      region: "groin",
+    });
   });
 
   it("returns null without a target noun (sense×TARGET only — 'I feel nervous' never fires)", () => {
