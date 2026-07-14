@@ -85,3 +85,17 @@ With no `OPENROUTER_API_KEY`, the app runs end-to-end: deterministic template na
 ## 8. What is *not* tolerated
 
 Degradation hides bugs if nobody looks. Hence: diagnostics are persisted, the Turn Inspector shows them, and tests assert on diagnostic codes — a test that triggers degradation asserts both the fallback behavior **and** the emitted diagnostic.
+
+### Agent-failure telemetry (the counter-measure to §4)
+
+§4's independence is correct and it is also a **blindfold**: a leg that fails on *every* exchange looks exactly like a leg that had nothing to say — the state row simply keeps its old values. The chat lane's diagnostics were only `log.info`'d, so the failure lived and died in `fly logs`. (The 13-field archivist was timing out repeatedly in production for days; it surfaced by accident, via a stray `fly logs` grep.)
+
+So a failed agent leg now leaves a **durable, tallied record with a suspected cause**:
+
+- **Contract + classifier** — `contracts/turns/agent-failure.ts` (pure): the `kind` (`timeout` / `api_error` / `parse_failed`), a closed `cause` vocabulary, and `classifyAgentFailure`. A provider error is not a guess (the provider's own class passes through, via `classifyProviderError`); a parse failure is diagnosed by whether the JSON *stopped mid-object* (⇒ `output_cap_too_low`, a real and fixable bug) or was wrong from the start; a timeout blames the prompt only when the prompt is actually large.
+- **Recording** — `server/ai/agent-failures.ts`, called from `generateChecked` (api/parse failures) and `withGenerateTimeout` (watchdog trips — the important one, since an aborted `generateChecked` returns silently by design and nothing downstream would ever hear about the miss). Fire-and-forget into the existing `events` table (`type = "agent_failure"`); **no migration** — this is append-only observability, which is what that table is for.
+- **Reading** — `memory/agent-failure-log.ts` → `GET /api/admin/chat-inspector/[chatId]/agent-failures` → the **Agent health** panel at the top of the chat inspector: this conversation's failures, plus the all-conversations tally (a timing-out leg is usually an infrastructure story, not a per-chat one).
+
+A related wart fixed on the way (recorded in chat-reply-failures.plan.md §Follow-ups): `generateChecked` used to label *every* failure `${code}.parse_failed`, so a 429 / 402 / network drop read as "the model can't produce JSON". Transport failures now emit `${code}.api_error` with the provider's class, and the diagnostic, the log line, and the recorded failure all tell the same true story.
+
+Telemetry is **optional at the call site**: a leg that passes no `telemetry` is still counted (the leg id falls back to the diagnostic `code`), just with less to say about why. Wired today: the chat lane's pulse, the three extraction legs, and the per-member personal pass. Unwired (counted, not diagnosable): the session-lane agents and the detached chat jobs — pass `telemetry` when one of them next needs diagnosing.

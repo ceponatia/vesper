@@ -1,3 +1,4 @@
+export * from "./agent-failure-log";
 export * from "./constants";
 export * from "./episodes";
 export * from "./facts";

@@ -1294,6 +1294,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                     playerName: player.name,
                     exchange: { player: agentPlayerContent, assistant: full },
                     activeSocialCards: scenario.activeSocialCards,
+                    trace: { chatId, messageId: assistantMessageId },
                     sink,
                   })
                 : Promise.resolve(null),
@@ -1304,6 +1305,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                     exchange: { player: agentPlayerContent, assistant: full },
                     openLoops: member.state.openLoops,
                     drives: member.state.drives,
+                    trace: { chatId, messageId: assistantMessageId },
                     sink,
                   })
                 : Promise.resolve(null),

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ChatInspectorAgentHealth } from "@/components/chat/chat-inspector-agent-health";
 import { ChatInspectorEpisodes } from "@/components/chat/chat-inspector-episodes";
 import { ChatInspectorFacts } from "@/components/chat/chat-inspector-facts";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -66,6 +67,9 @@ function InspectorBody({ chatId }: { chatId: string }) {
         <ErrorState error={overview.error} onRetry={() => overview.reload()} />
       ) : data ? (
         <div className="flex flex-col gap-8 pb-10">
+          {/* Agent health leads: a leg failing silently is the thing you most want to know
+              BEFORE you start reading the memory it was supposed to have written. */}
+          <ChatInspectorAgentHealth chatId={chatId} />
           <ChatInspectorFacts
             chatId={chatId}
             characterName={data.character.name}

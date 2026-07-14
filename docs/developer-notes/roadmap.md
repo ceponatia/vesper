@@ -95,6 +95,18 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Agent health — failed legs are visible instead of silent** —
+  [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md) §Agent health —
+  2026-07-14 — the counter-measure to best-effort agents: a failed leg (timeout /
+  provider error / bad output) now leaves a durable `events` record with a **suspected
+  cause** (a provider class passes through; a JSON that stopped mid-object diagnoses an
+  output cap that's too low; a timeout blames the prompt only when the prompt is big),
+  tallied in the chat inspector's new **Agent health** panel — per-chat and across all
+  chats. No migration (the `events` table is exactly this). Also fixes `generateChecked`
+  mislabeling every transport failure (429/402/network) as `.parse_failed` — a recorded
+  follow-up from [chat-reply-failures.plan.md](chat-reply-failures.plan.md). Prompted by
+  finding that the pre-split archivist had been timing out in production for days,
+  visible only in `fly logs`.
 - **Chat agent improvements — the extraction field library + three parallel legs** —
   [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md) — 2026-07-14 — all
   five slices: extraction fields became **data** (`prompts/chat-extractors.ts` — one module

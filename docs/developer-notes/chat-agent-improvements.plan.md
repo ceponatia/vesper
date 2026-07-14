@@ -372,6 +372,47 @@ is unchanged by the split (parallel, post-reply) and slightly better from slices
 are tighter than the old single 700, so total extraction tokens rise well under
 3×.
 
+## Agent health — the debug surface (added 2026-07-14, owner request)
+
+The live verification above turned up the fact that yesterday's archivist had been timing
+out **repeatedly in production for days**, and the only reason anyone knew was a stray `fly
+logs` grep. That is a hole in the design, not bad luck: the helper legs are best-effort by
+construction (§4 of `resilience.md` — they degrade and the reply still ships), which means a
+leg failing on *every* exchange is **indistinguishable from a leg that had nothing to say**.
+The state row just keeps its old values.
+
+So a failed leg now leaves a durable record with a **suspected cause**, tallied in the admin
+chat inspector:
+
+- **`contracts/turns/agent-failure.ts`** (pure) — the `kind` (`timeout` / `api_error` /
+  `parse_failed`), a closed `cause` vocabulary, `classifyAgentFailure`, and
+  `tallyAgentFailures`. The classifier is deliberately honest about what it knows: a
+  **provider error** is not a guess (the provider's class passes straight through), a
+  **parse failure** is diagnosed by whether the JSON *stopped mid-object* (⇒
+  `output_cap_too_low` — a real, fixable bug that otherwise reads as "the model is bad at
+  JSON") or was wrong from the start, and a **timeout** — the weakest signal — blames the
+  prompt only when the prompt is actually large.
+- **`server/ai/agent-failures.ts`** — records from `generateChecked` (api/parse) and
+  `withGenerateTimeout` (the watchdog trip — the important one, since an aborted
+  `generateChecked` returns silently by design). Fire-and-forget into the existing `events`
+  table; **no migration** for a debug surface.
+- **`GET /api/admin/chat-inspector/[chatId]/agent-failures`** → the **Agent health** panel,
+  first thing on the inspector page (you want to know a leg failed *before* you start
+  reading the memory it was supposed to write). Shows this conversation's failures with the
+  numbers that make each suspected cause checkable (budget, latency, prompt size, token
+  cap, provider), plus the all-conversations tally — a timing-out leg is usually an
+  infrastructure story, not a per-chat one.
+
+**Fixed on the way** (a recorded follow-up in
+[chat-reply-failures.plan.md](chat-reply-failures.plan.md)): `generateChecked` used to label
+*every* failure `${code}.parse_failed`, so a 429 / 402 / network drop read as a schema
+failure. Transport failures now emit `${code}.api_error` with the provider's class.
+
+Telemetry is optional at the call site — an unwired leg is still **counted**, just not
+diagnosable. Wired: the pulse, the three extraction legs, the per-member personal pass.
+Unwired: the session-lane agents and the detached chat jobs (summary fold, scene sketch,
+photo read).
+
 **Left / follow-ups**
 
 - **The quality claim is unmeasured.** The split's premise — that 4–5 assignments
@@ -382,6 +423,13 @@ are tighter than the old single 700, so total extraction tokens rise well under
 - **Session-lane agents are untouched.** They remain hand-written
   (`prompts/agents.ts`). The field library is the pattern to reach for when one of
   them next grows a field — noted in `prompts.md` §Agent prompts, not scheduled.
+- **Agent-health telemetry is chat-lane-wired only.** The session agents and the
+  detached chat jobs are counted but not diagnosable (no `telemetry` passed).
+  One-line fix each, when one of them needs diagnosing.
+- **The tally has no alerting.** It answers "is a leg failing?" when you look. A
+  standing threshold (e.g. warn when a leg's failure rate crosses X% over a day)
+  is the obvious next step and deliberately not built — nobody is watching a
+  dashboard on a dev deploy.
 
 ## Where things live (as built)
 

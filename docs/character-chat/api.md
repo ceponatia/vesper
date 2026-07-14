@@ -32,9 +32,15 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 
 ## Diagnostics
 
+Every leg failure below is ALSO recorded durably and tallied with a suspected cause — see
+[../resilience.md](../resilience.md) §Agent-failure telemetry and the inspector's **Agent
+health** panel (`GET /api/admin/chat-inspector/[chatId]/agent-failures`, admin-only). A
+transport failure now emits `${leg}.api_error` (with the provider's class) instead of
+mislabeling itself `${leg}.parse_failed`.
+
 `chat_state.pulse` / `.degraded` / `.timeout` · the three extraction legs
 (chat-agent-improvements slice 1b), each with its own `.extract` / `.timeout` /
-`.parse_failed`: `chat_memory_scribe.*` · `chat_continuity.*` · `chat_character_notes.*`
+`.api_error` / `.parse_failed`: `chat_memory_scribe.*` · `chat_continuity.*` · `chat_character_notes.*`
 (one degraded leg costs only its own fields — see [pipeline.md](pipeline.md) §Post-turn
 fan-out; `chat_archivist.degraded` still marks the demo-mode skip of all three) ·
 `chat_personal_notes.*` (the ensemble's per-member pass) ·

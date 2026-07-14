@@ -1,6 +1,8 @@
-import { generateText } from "ai";
+import { APICallError, generateText, RetryError } from "ai";
 import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { recordAgentFailure, type AgentTelemetry } from "./agent-failures";
+import { classifyProviderError } from "./errors";
 import { isDemoMode, openrouter, providerRouting, routedProvider, stateModelId, type OpenRouterRouting } from "./provider";
 
 /** An image handed to a vision-capable model alongside the prompt text. */
@@ -69,6 +71,14 @@ export interface GenerateCheckedOptions<T> {
    * "warn": a fallback is not a turn failure.
    */
   degradeSeverity?: "warn" | "error";
+  /**
+   * Where this call lives (chat / session, which conversation, which exchange), so a
+   * failure can be RECORDED and tallied rather than only logged
+   * (`./agent-failures.ts`). Optional: without it the failure is still recorded, just
+   * without the chat/session anchor — `legId` falls back to `code`, which every caller
+   * already passes.
+   */
+  telemetry?: Partial<AgentTelemetry>;
 }
 
 export interface GenerateCheckedResult<T> {
@@ -151,14 +161,18 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
 
   // The caller aborted (e.g. its timeout fired and it already degraded): return
   // silently so the orphaned tail adds no diagnostics to a turn it no longer owns.
+  // (It records nothing either — the caller's watchdog owns that failure and records
+  // the `timeout` itself; a second `api_error` row for the same miss would double-count.)
   const abandoned = () => opts.signal?.aborted ?? false;
 
   let firstError = "";
+  let lastErr: unknown = null;
   try {
     return { value: await attempt(opts.prompt), degraded: false, provider, latencyMs };
   } catch (err) {
     if (abandoned()) return { value: null, degraded: true, provider, latencyMs };
     firstError = errorText(err);
+    lastErr = err;
   }
 
   const repair = opts.repair ?? true;
@@ -179,16 +193,44 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
     } catch (err) {
       if (abandoned()) return { value: null, degraded: true, provider, latencyMs };
       firstError = errorText(err);
+      lastErr = err;
     }
   }
+
+  // A TRANSPORT failure is not a schema failure. Everything used to land as
+  // `${code}.parse_failed` — actively mislabeling a 429 / 402 / network drop as "the model
+  // can't produce JSON" (chat-reply-failures.plan.md §Follow-ups). Classify once and let the
+  // diagnostic, the log, and the recorded failure all tell the same true story.
+  const isTransport = APICallError.isInstance(lastErr) || RetryError.isInstance(lastErr);
+  const providerClassification = isTransport ? classifyProviderError(lastErr) : null;
+  const failureCode = isTransport ? `${opts.code}.api_error` : `${opts.code}.parse_failed`;
 
   opts.sink?.push(
     diag(
       opts.degradeSeverity ?? "error",
-      `${opts.code}.parse_failed`,
-      `structured output failed${repair ? " after repair" : ""}: ${firstError.slice(0, 500)}`,
+      failureCode,
+      isTransport
+        ? `provider call failed (${providerClassification?.code}): ${(providerClassification?.detail ?? firstError).slice(0, 500)}`
+        : `structured output failed${repair ? " after repair" : ""}: ${firstError.slice(0, 500)}`,
     ),
   );
+  // Durable, tallied, with a suspected cause — a failing leg must not be invisible outside
+  // a `fly logs` grep (contracts/turns/agent-failure.ts). Fire-and-forget.
+  recordAgentFailure({
+    legId: opts.telemetry?.legId ?? opts.code,
+    chatId: opts.telemetry?.chatId,
+    sessionId: opts.telemetry?.sessionId,
+    messageId: opts.telemetry?.messageId,
+    kind: isTransport ? "api_error" : "parse_failed",
+    providerCode: providerClassification?.code,
+    httpStatus: providerClassification?.status,
+    modelId: opts.modelId ?? stateModelId(),
+    provider,
+    latencyMs,
+    promptChars: opts.system.length + opts.prompt.length,
+    maxOutputTokens: opts.maxOutputTokens ?? 4096,
+    detail: providerClassification?.detail ?? firstError,
+  });
   return { ...degrade(opts, repair ? "validation failed twice" : "validation failed"), provider, latencyMs };
 }
 
