@@ -59,6 +59,18 @@ export const attributeDefinitionSchema = z.object({
   aliases: z.array(z.string().min(1)).readonly().optional(),
   promptHints: z.array(z.string().min(1)).readonly().optional(),
   /**
+   * Per-VALUE narrator gloss (attribute-narrator-guidance.plan.md): a PARTIAL map from
+   * enum member → short authored meaning ("cheesy" → what that reads like *in this game*),
+   * rendered inline as a parenthetical wherever a read-side prompt states the resolved
+   * value — the same mechanism disposition bands use. Sparse by design: only ambiguous or
+   * game-calibrated members get an entry; self-evident ones stay bare. The orthogonality
+   * rule is an authoring invariant: a gloss describes ONLY its own attribute's dimension
+   * (ordinal context within the dimension is fine; another attribute's dimension is not).
+   * Enum/enum_list only; keys must be members of `allowedValues` (enforced at group
+   * definition time). Image prompts never render these, same as `promptHints`.
+   */
+  narratorGuidance: z.record(z.string(), z.string().min(1)).optional(),
+  /**
    * Core visual attributes are always filled at character creation: the forge
    * asks the model for a best-guess inference, and anything still unset gets a
    * seeded default from allowedValues (enum only). Mark sparingly — every flag
@@ -180,6 +192,18 @@ export function defineAttributeGroup(category: AttributeCategory, definitions: r
       for (const value of defaults) {
         if (typeof value === "string" && !def.allowedValues.includes(value)) {
           throw new Error(`Attribute ${def.id} defaultValue "${value}" is not in allowedValues`);
+        }
+      }
+    }
+    // Narrator glosses key off enum members — a stray key would never render (or worse,
+    // mask a vocabulary rename), so it fails loudly at definition time.
+    if (def.narratorGuidance) {
+      if (def.valueType !== "enum" && def.valueType !== "enum_list") {
+        throw new Error(`Attribute ${def.id} has narratorGuidance but is not an enum/enum_list`);
+      }
+      for (const key of Object.keys(def.narratorGuidance)) {
+        if (!def.allowedValues?.includes(key)) {
+          throw new Error(`Attribute ${def.id} narratorGuidance key "${key}" is not in allowedValues`);
         }
       }
     }

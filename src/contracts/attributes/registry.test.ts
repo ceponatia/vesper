@@ -60,6 +60,61 @@ describe("attribute registry invariants", () => {
     expect(atHair.every((d) => d.bodyLocationId === "hair")).toBe(true);
   });
 
+  it("narratorGuidance lives only on enum/enum_list attributes and keys only real members", () => {
+    for (const def of registry.definitions) {
+      if (!def.narratorGuidance) continue;
+      expect(["enum", "enum_list"], def.id).toContain(def.valueType);
+      for (const key of Object.keys(def.narratorGuidance)) {
+        expect(def.allowedValues ?? [], `${def.id} → ${key}`).toContain(key);
+      }
+    }
+  });
+
+  // The orthogonality rule's cheap tripwire (attribute-narrator-guidance.plan.md): a gloss
+  // describes only its own attribute's dimension — height vocabulary outside the height
+  // attributes reveals an entangled gloss. Extend the blocklist as authoring reveals leaks.
+  it("orthogonality tripwire: no gloss outside height/apparent_age talks height", () => {
+    for (const def of registry.definitions) {
+      if (!def.narratorGuidance) continue;
+      if (def.id === "build.height" || def.id === "identity.apparent_age") continue;
+      for (const [key, gloss] of Object.entries(def.narratorGuidance)) {
+        expect(/\b(tall|short|towering|height)\b/i.test(gloss), `${def.id}.${key}: "${gloss}"`).toBe(false);
+      }
+    }
+  });
+
+  it("defineAttributeGroup rejects narratorGuidance on non-enums and stray keys", () => {
+    expect(() =>
+      defineAttributeGroup("build", [
+        {
+          id: "build.bogus",
+          label: "Bogus",
+          kind: "physical",
+          category: "build",
+          valueType: "text",
+          description: "Guidance on a non-enum.",
+          mutability: "inherent",
+          narratorGuidance: { anything: "a gloss" },
+        },
+      ]),
+    ).toThrow(/not an enum/);
+    expect(() =>
+      defineAttributeGroup("build", [
+        {
+          id: "build.bogus",
+          label: "Bogus",
+          kind: "physical",
+          category: "build",
+          valueType: "enum",
+          description: "Guidance key outside the vocabulary.",
+          mutability: "inherent",
+          allowedValues: ["a", "b"],
+          narratorGuidance: { c: "a gloss" },
+        },
+      ]),
+    ).toThrow(/not in allowedValues/);
+  });
+
   it("buildRegistry rejects duplicate ids", () => {
     const dup = registry.definitions[0];
     expect(dup).toBeDefined();

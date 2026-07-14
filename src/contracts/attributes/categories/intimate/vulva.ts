@@ -1,5 +1,10 @@
 import { defineAttributeGroup } from "../../types";
-import { INTIMATE_SCENT_BASE, INTIMATE_TASTE_BASE } from "../../shared-values";
+import {
+  INTIMATE_SCENT_BASE,
+  INTIMATE_SCENT_GUIDANCE,
+  INTIMATE_TASTE_BASE,
+  INTIMATE_TASTE_GUIDANCE,
+} from "../../shared-values";
 
 /**
  * Vulva — intimate region, gated by the body-config group "vulva" (which also
@@ -248,6 +253,7 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     promptHints: [
       "Surfaces only at close/intimate range when scent is earned.",
     ],
+    narratorGuidance: { ...INTIMATE_SCENT_GUIDANCE, sweet: "an unexpectedly sweet, honeyed note" },
   },
   {
     id: "vulva.taste",
@@ -260,5 +266,6 @@ export const vulvaGroup = defineAttributeGroup("vulva", [
     allowedValues: [...INTIMATE_TASTE_BASE, "sweet"],
     bodyLocationId: "vulva",
     promptHints: ["Only surfaces at the intimate taste tier (oral contact)."],
+    narratorGuidance: { ...INTIMATE_TASTE_GUIDANCE, sweet: "distinctly sweet — a honeyed taste" },
   },
 ]);

@@ -27,6 +27,7 @@ type AttributeDefinition = {
   appliesToEntityKinds?: readonly ("character" | "item" | "location")[];
   aliases?: readonly string[];
   promptHints?: readonly string[];
+  narratorGuidance?: Record<string, string>;               // enum member → gloss
   excludeFromPrompts?: boolean;
   coreVisual?: boolean;
   defaultValue?: string | string[] | number | boolean;
@@ -57,6 +58,7 @@ type AttributeDefinition = {
 | `appliesToEntityKinds` | `character`, `item`, or `location` (default: character only). |
 | `aliases` | Words that resolve to this attribute when mentioned in text — e.g. "ginger" → `hair.color`. |
 | `promptHints` | Phrasing guidance for the prompt builders. |
+| `narratorGuidance` | **Per-value** gloss: a partial map from enum member to a short authored meaning ("cheesy" → "dense fermented funk, like aged cheese …"), rendered inline as a parenthetical wherever a read-side prompt states the resolved value (chat + session `attributePhrase`) and on each listed choice write-side (`describeConstraint`, picker tooltips). Image prompts never render it. **Sparse by design** — gloss only ambiguous or game-calibrated members. **Orthogonality rule:** a gloss describes only its own attribute's dimension (in-dimension ordinal context is fine; another attribute's dimension — e.g. height words in a `frame` gloss — is an entangled-vocabulary bug to fix in `allowedValues`, not to launder through the gloss). Keys must be `allowedValues` members, enum/enum_list only — enforced at group-definition time + registry tests. See `attribute-narrator-guidance.plan.md`. |
 | `excludeFromPrompts` | Stored, authored, and editable, but omitted from **every** generated prompt (image, narrator, chat) — a scaffold field not yet wired in (e.g. `identity.natal_sex`). Drop the flag when the render logic lands. |
 | `coreVisual` | Always filled at character creation — first by forge inference, then a seeded default from `allowedValues` (enum only). |
 | `renderVisual` | The second always-filled tier (forge-gaps.plan.md): silhouette/face-structure enums a scene render re-invents per image when unset (face/nose/brow/lip shape, hair length/texture, chest/waist/hips, limb builds …). Same forge range-emission + seeded fill as `coreVisual` (`fillVisualDefaults`). Enum-only; mark sparingly. |

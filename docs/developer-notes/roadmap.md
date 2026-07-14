@@ -45,13 +45,14 @@ _(nothing — pull the next entry from Next)_
   note (`intimacy`) + per-character disposition, surfaced to the narrator only at
   the intimate exposure tier. Standalone — builds on the shipped species note split +
   the phase-4 exposure mask; feeds mood's intimacy-beat inputs but doesn't gate them.
-- **Attribute narrator guidance — per-value glosses + vocabulary audit** —
-  [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) (next —
-  design settled 2026-07-08). Optional `narratorGuidance` map on enum attribute
-  definitions, rendered inline like disposition bands so the narrator knows what
-  `willowy` means *here*; strict orthogonality rule (a gloss never describes another
-  attribute's dimension) + an entangled-vocabulary audit (rename members like
-  `willowy` that bake in height) with a stored-value sweep.
+- **Attribute narrator guidance — remainder: vocabulary audit + broader authoring pass** —
+  [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) (core
+  mechanism + sensory glosses shipped 2026-07-13 — see Shipped). Remaining: the
+  entangled-vocabulary audit (rename members that bake in another attribute's
+  dimension) with the stored-value sweep over every attribute-value storage site
+  (must also map old `build.frame` / `vulva.labia` / `feet.scent` values already
+  renamed in the registry), and the broader gloss authoring pass (build,
+  weight/musculature, voice, movement, skin) for owner review.
 - **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
   minimap) remain — optional polish on a feature already delivering its core value.
@@ -96,6 +97,18 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Attribute narrator guidance — core + sensory glosses** —
+  [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) —
+  2026-07-13 — per-value `narratorGuidance` glosses shipped end-to-end (schema
+  + invariants, both lanes' `attributePhrase` renderers, `describeConstraint`
+  + picker tooltips) with the sensory palettes as the first authored batch
+  (`feet.smell` + shared intimate scent/taste maps), alongside sensory-focus
+  block fixes ([sensory-grounding.followups.md](sensory-grounding.followups.md):
+  authored region scent is the current truth — no "clean skin" default beneath
+  it, hygiene deepens instead of competing, the taste clause's hardcoded
+  "salt" removed, character-preserving directive). Fixes "cheesy feet narrated
+  as clean/salty". Remainder (vocabulary audit + sweep, broader authoring
+  pass) stays in Next.
 - **Chat reply-failure surfacing** —
   [chat-reply-failures.plan.md](chat-reply-failures.plan.md) — 2026-07-13 —
   the "didn't reply" popup names the real cause instead of guessing "usually a

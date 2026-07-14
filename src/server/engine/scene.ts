@@ -811,11 +811,19 @@ function intimateAttrAllowed(def: AttributeDefinition, exposure: ExposureMask): 
   return exposure.appearance === "intimate";
 }
 
+// A `narratorGuidance` gloss renders as an inline parenthetical so the narrator reads
+// the game-calibrated meaning of the member, not a bare token (see the chat renderer;
+// attribute-narrator-guidance.plan.md). No gloss ⇒ byte-identical output.
 function attributePhrase(def: AttributeDefinition, value: unknown): string | null {
+  const glossed = (raw: string): string => {
+    const text = humanize(raw);
+    const gloss = def.narratorGuidance?.[raw];
+    return gloss ? `${text} (${gloss})` : text;
+  };
   if (typeof value === "boolean") return value ? def.label.toLowerCase() : null;
   if (typeof value === "number") return `${def.label.toLowerCase()}: ${value}${def.unit ? ` ${def.unit}` : ""}`;
-  if (Array.isArray(value)) return `${def.label.toLowerCase()}: ${value.map((v) => humanize(String(v))).join(", ")}`;
-  if (typeof value === "string") return `${def.label.toLowerCase()}: ${humanize(value)}`;
+  if (Array.isArray(value)) return `${def.label.toLowerCase()}: ${value.map((v) => glossed(String(v))).join(", ")}`;
+  if (typeof value === "string") return `${def.label.toLowerCase()}: ${glossed(value)}`;
   return null;
 }
 

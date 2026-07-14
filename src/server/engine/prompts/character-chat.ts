@@ -586,16 +586,31 @@ function buildMemorySection(memory: NonNullable<CharacterChatPromptInput["memory
 
 const humanize = (value: string): string => value.replaceAll("_", " ").trim();
 
-/** One resolved attribute → a `label: value` phrase, or null for empty/false. */
-function attributePhrase(label: string, unit: string | undefined, value: AttributeValue["value"]): string | null {
-  if (typeof value === "boolean") return value ? label.toLowerCase() : null;
-  if (typeof value === "number") return `${label.toLowerCase()}: ${value}${unit ? ` ${unit}` : ""}`;
+/**
+ * One resolved attribute → a `label: value` phrase, or null for empty/false. When the
+ * definition authors a `narratorGuidance` gloss for the resolved enum member, it renders
+ * as an inline parenthetical — `foot scent: cheesy (dense fermented funk…)` — so the
+ * narrator knows what the value means *in this game* instead of guessing from a bare
+ * token (attribute-narrator-guidance.plan.md). No gloss ⇒ byte-identical to before.
+ */
+function attributePhrase(
+  def: Pick<AttributeDefinition, "label" | "unit" | "narratorGuidance">,
+  value: AttributeValue["value"],
+): string | null {
+  const glossed = (raw: string): string => {
+    const text = humanize(raw);
+    const gloss = def.narratorGuidance?.[raw];
+    return gloss ? `${text} (${gloss})` : text;
+  };
+  const label = def.label.toLowerCase();
+  if (typeof value === "boolean") return value ? label : null;
+  if (typeof value === "number") return `${label}: ${value}${def.unit ? ` ${def.unit}` : ""}`;
   if (Array.isArray(value)) {
-    const joined = value.map((v) => humanize(String(v))).join(", ");
-    return joined ? `${label.toLowerCase()}: ${joined}` : null;
+    const joined = value.map((v) => glossed(String(v))).join(", ");
+    return joined ? `${label}: ${joined}` : null;
   }
-  const text = humanize(value);
-  return text ? `${label.toLowerCase()}: ${text}` : null;
+  const text = value.trim() ? glossed(value) : "";
+  return text ? `${label}: ${text}` : null;
 }
 
 function excerpt(text: string, max: number): string {
@@ -636,7 +651,7 @@ function sensoryCues(resolved: readonly AttributeValue[], realizedBody: Realized
     if (isIntimateAttributeCategory(def.category)) continue; // no exposure signal in chat earns it
     if (def.excludeFromPrompts) continue;
     if (!realizedBody.isAttributeApplicable(def)) continue;
-    const phrase = attributePhrase(def.label, def.unit, value.value);
+    const phrase = attributePhrase(def, value.value);
     if (!phrase) continue;
     cues.push({ id: value.id, phrase });
   }
@@ -818,7 +833,7 @@ function focusExperienceClause(sense: SensoryFocusHint["sense"], player: string)
     case "smell":
       return `the scent itself — its character and strength, how it deepens as ${player} breathes in — and the warmth of skin this close`;
     case "taste":
-      return `taste and texture together — skin under the tongue, its warmth and salt, the scent that carries into taste this close`;
+      return `taste and texture together — skin under the tongue, its warmth, the scent that carries into taste this close`;
     case "touch":
       return `texture, temperature, the give and firmness under ${player}'s hand`;
     case "study":
@@ -835,9 +850,11 @@ function focusExperienceClause(sense: SensoryFocusHint["sense"], player: string)
  * then the generic grounding (baseline scent + hygiene for smell/taste, outfit + grooming +
  * close hygiene for touch/study, active conditions always). Intimate-region attributes ride
  * the same join, gated by the hint's `intimate` flag and the realized body. The directive
- * OPENS the reply with the sensation itself and forbids echoing values verbatim — they are
- * guide-rails for prose, never vocabulary. "" when nothing authored grounds it (the builder
- * then degrades the allowance line instead of leaving the turn grantless). Volatile tail.
+ * OPENS the reply with the sensation itself and holds each value's CHARACTER fixed: unfold
+ * it into prose (with its `narratorGuidance` gloss inline when authored), let state deepen
+ * it, never trade it for a milder or generic sensation. "" when nothing authored grounds it
+ * (the builder then degrades the allowance line instead of leaving the turn grantless).
+ * Volatile tail.
  */
 function buildSensoryFocusSection(
   player: string,
@@ -858,6 +875,12 @@ function buildSensoryFocusSection(
   const expansion = hint.region
     ? expandBodyTarget(hint.region, (def) => realizedBody.isAttributeApplicable(def))
     : undefined;
+  // Whether an authored scent/taste value for the TARGET REGION rendered — when it did,
+  // that value is the current truth of the region and the generic lines below must layer
+  // over it (perfume as an overlay, hygiene as a deepener), never compete with it. The old
+  // unconditional `Right now: clean skin, nothing strong` default sat directly under
+  // `foot scent: cheesy` and the model obediently reconciled toward clean.
+  let regionSenseAuthored = false;
   if (expansion) {
     const ranked = expansion.definitions
       .filter((def) => !def.excludeFromPrompts)
@@ -869,18 +892,35 @@ function buildSensoryFocusSection(
       if (lines.length >= FOCUS_REGION_LINE_CAP) break;
       const value = byId(def.id);
       if (!value) continue;
-      const phrase = attributePhrase(def.label, def.unit, value.value);
+      const phrase = attributePhrase(def, value.value);
       if (!phrase) continue;
       lines.push(`- ${name}'s ${phrase}`);
+      if (/\.(scent|smell|taste)$/.test(def.id)) regionSenseAuthored = true;
     }
   }
 
   if (hint.sense === "smell" || hint.sense === "taste") {
     const scent = byId("presentation.scent_baseline");
     if (scent && typeof scent.value === "string" && scent.value.trim()) {
-      lines.push(`- ${name}'s overall scent when clean (perfume, skin): ${humanize(String(scent.value))}`);
+      lines.push(
+        `- ${name}'s usual perfume/skin scent: ${humanize(String(scent.value))}` +
+          (regionSenseAuthored ? " — an overlay riding above the scent named above, never replacing it" : ""),
+      );
     }
-    lines.push(`- Right now: ${hygieneCue ? hygieneCue.hint : "clean skin, nothing strong"}`);
+    if (hygieneCue) {
+      lines.push(
+        `- Right now: ${hygieneCue.hint}` +
+          (regionSenseAuthored
+            ? " — this DEEPENS the authored scent above: stronger and staler, never a different character."
+            : ""),
+      );
+    } else if (!regionSenseAuthored) {
+      // Nothing authored for the region and hygiene is unremarkable: give the model a
+      // grounded default rather than a vacuum it would fill by invention.
+      lines.push("- Right now: clean skin, nothing strong");
+    }
+    // With an authored region scent and unremarkable hygiene, say nothing more: the
+    // authored value IS the current scent (mutable state, not a "when dirty" hypothetical).
   }
 
   if (hint.sense === "touch" || hint.sense === "study") {
@@ -902,8 +942,9 @@ function buildSensoryFocusSection(
     `Sensory focus — ${player} is ${SENSE_FOCUS_VERB[hint.sense]} ${name}'s ${hint.target}. ` +
       `OPEN your reply with the experience itself: two to four sentences of what ${player} directly perceives — ` +
       `${focusExperienceClause(hint.sense, player)} — written as sensation landing in ${player}'s senses, before ${name} reacts or the scene moves on. ` +
-      `Ground it in the values below: they are guide-rails, not vocabulary — never repeat them verbatim and never contradict them; ` +
-      `translate them into rich, specific, felt prose, composing the authored baseline with ${name}'s current state (freshly washed mutes a scent; a long day deepens it):`,
+      `Ground it in the values below — they are the truth of what ${player} perceives, and each names the CHARACTER of a sensation. ` +
+      `Unfold each into rich, specific, felt prose that stays inside what it names — never trade it for a milder, cleaner, or more generic sensation (a scent authored pungent lands pungent, not fresh, not faintly salty). ` +
+      `Don't parrot a bare value word as the whole description; elaborate it. ${name}'s current state can deepen or sharpen what is authored (a long day, heat, exertion) — it never washes it away:`,
     ...lines,
   ].join("\n");
 }
@@ -1140,7 +1181,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
     if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue; // intimate scent/taste: chat has no exposure signal to earn it
     if (!realizedBody.isAttributeApplicable(def)) continue;
-    const phrase = attributePhrase(def.label, def.unit, value.value);
+    const phrase = attributePhrase(def, value.value);
     if (!phrase) continue;
     attributeLines.push(`- ${phrase}`);
     for (const hint of def.promptHints ?? []) hints.add(hint);
@@ -1334,7 +1375,7 @@ function buildTransientAppearanceSection(
     if (!realizedBody.isAttributeApplicable(def)) continue;
     const stable = stableById.get(value.id);
     if (stable && stable.value === value.value) continue; // unchanged by the condition
-    const phrase = attributePhrase(def.label, def.unit, value.value);
+    const phrase = attributePhrase(def, value.value);
     if (!phrase) continue;
     lines.push(`- ${phrase}`);
   }
@@ -1702,7 +1743,7 @@ function ensembleAttributeLines(member: EnsembleMemberInput): string[] {
     if (def.excludeFromPrompts) continue;
     if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue;
     if (!realizedBody.isAttributeApplicable(def)) continue;
-    const phrase = attributePhrase(def.label, def.unit, value.value);
+    const phrase = attributePhrase(def, value.value);
     if (phrase) lines.push(`- ${phrase}`);
   }
   return lines;
@@ -1769,7 +1810,7 @@ function ensembleMemberEnactment(member: EnsembleMemberInput): string {
       if (!realizedBody.isAttributeApplicable(def)) continue;
       const stable = stableById.get(value.id);
       if (stable && stable.value === value.value) continue;
-      const phrase = attributePhrase(def.label, def.unit, value.value);
+      const phrase = attributePhrase(def, value.value);
       if (!phrase) continue;
       lines.push(`- ${phrase}`);
     }

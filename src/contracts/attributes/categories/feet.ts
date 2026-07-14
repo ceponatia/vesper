@@ -99,6 +99,31 @@ export const feetGroup = defineAttributeGroup("feet", [
     promptHints: [
       "Foot scent is only worth a mention when the feet are bare and near the player's face.",
     ],
+    // The palette runs clean → overpowering; glosses anchor each member's register so the
+    // narrator elaborates within it (a "cheesy" foot never reads clean or merely salty).
+    narratorGuidance: {
+      lightly_sweaty: "fresh faint sweat — honest and mild, gone in a breath",
+      warm_skin: "just warmed skin — soft, human, barely a scent at all",
+      faint_sock: "a mild trace of cotton worn a few hours",
+      musky: "warm animal depth — low, personal, unmistakably body",
+      earthy: "damp-soil depth, grounded rather than sour",
+      ripe: "a full day's depth — strong, human, just past earthy",
+      leathery: "shoe leather steeped into warm skin",
+      vinegary: "a sour acetic bite at the top of the nose",
+      cheesy: "dense fermented funk, like aged cheese — thick and unmistakable up close",
+      sour_sweat: "sweat gone acidic and stale",
+      musty: "stale closed-shoe air, like a damp closet",
+      worn_leather: "old leather gone deep and dry into the skin",
+      heavy_sweat: "thick, humid, soaked-sock sweat",
+      pungent: "forceful — it fills every breath taken near it",
+      thick_musk: "musk so dense it almost has texture",
+      feral: "raw animal reek — wild, heady, unignorable",
+      intense_sweat: "fresh sweat at full, prickling strength",
+      stale_sock: "flat, days-worn sock funk",
+      sharp_vinegar: "acrid vinegar sting that pricks the eyes",
+      rank: "aggressively foul — a wall of it",
+      overpowering: "saturates every breath; the strongest thing in the room",
+    },
   },
   {
     id: "feet.toes",
