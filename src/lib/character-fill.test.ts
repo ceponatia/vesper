@@ -61,6 +61,14 @@ describe("mergeFillDraft — scalars", () => {
     expect(mergeFillDraft(draftOf(), incoming).profile.voice).toBe("Low and dry.");
     expect(mergeFillDraft(draftOf({}, { voice: "Bright." }), incoming).profile.voice).toBe("Bright.");
   });
+
+  it("fills the intimate disposition only when unset or blank (intimacy-notes.spec.md)", () => {
+    const incoming = draftOf({}, { intimacy: "Unhurried and quietly generous." });
+    expect(mergeFillDraft(draftOf(), incoming).profile.intimacy).toBe("Unhurried and quietly generous.");
+    expect(mergeFillDraft(draftOf({}, { intimacy: "Shy, then insatiable." }), incoming).profile.intimacy).toBe(
+      "Shy, then insatiable.",
+    );
+  });
 });
 
 describe("mergeFillDraft — provenance lists", () => {

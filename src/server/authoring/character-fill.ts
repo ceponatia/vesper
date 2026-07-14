@@ -56,6 +56,7 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
   if (p.bio.trim()) lines.push(`Bio: ${p.bio.trim()}`);
   if (p.personality.trim()) lines.push(`Personality: ${p.personality.trim()}`);
   if (p.voice?.trim()) lines.push(`Voice: ${p.voice.trim()}`);
+  if (p.intimacy?.trim()) lines.push(`Intimate disposition: ${p.intimacy.trim()}`);
   if (p.microExemplars.length > 0) {
     lines.push(
       `Voice examples: ${p.microExemplars

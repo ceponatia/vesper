@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { initialMeters } from "@/contracts/meters/registry";
-import { defaultExposureMask, emptyBrief } from "@/contracts/state/brief";
+import { defaultExposureMask, emptyBrief, type ExposureMask } from "@/contracts/state/brief";
 import { participantStateSchema, type ParticipantState } from "@/contracts/state/participant-state";
 import { emptySessionRuntime } from "@/contracts/state/session-runtime";
 import { itemDefinitionSchema, type ItemDefinition } from "@/contracts/items/item";
@@ -22,6 +22,7 @@ import {
   buildDarknessLine,
   buildDispositionBlock,
   buildIntimateDispositionLine,
+  buildIntimateDispositionBlock,
   buildFollowGuidance,
   buildGlanceImpressions,
   buildMeterConditionBlock,
@@ -423,6 +424,89 @@ describe("buildIntimateDispositionLine", () => {
       appearance: "intimate",
     });
     expect(adult).toContain("Lena — Libido: high");
+  });
+});
+
+describe("buildIntimateDispositionBlock", () => {
+  const intimate = (axis: "appearance" | "touch" | "taste"): ExposureMask => {
+    const mask = defaultExposureMask();
+    mask[axis] = "intimate";
+    return mask;
+  };
+
+  // Maya (p_maya) is co-located in the kitchen ⇒ sight-present; Rhett is in the garden.
+  function withMaya(snapshot: Partial<CharacterProfile>): SceneBundleInput {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya")!;
+    maya.snapshot = profile(snapshot);
+    return bundle;
+  }
+
+  it("emits nothing below the intimate tier (close is not enough)", () => {
+    const bundle = withMaya({ speciesId: "succubus", intimacy: "She likes to lead." });
+    expect(buildIntimateDispositionBlock(bundle, undefined, defaultExposureMask())).toBe("");
+    expect(
+      buildIntimateDispositionBlock(bundle, undefined, {
+        ...defaultExposureMask(),
+        appearance: "close",
+        touch: "close",
+      }),
+    ).toBe("");
+  });
+
+  it("surfaces when ANY axis reaches intimate — appearance, touch, or taste (ruled 2026-07-13)", () => {
+    const bundle = withMaya({ speciesId: "succubus" });
+    for (const axis of ["appearance", "touch", "taste"] as const) {
+      const block = buildIntimateDispositionBlock(bundle, undefined, intimate(axis));
+      expect(block).toContain("## Intimate nature");
+      expect(block).toContain("- Maya: Feeds on intimacy"); // the succubus archetype note
+    }
+  });
+
+  it("appends the character's own note AFTER the species archetype (both contribute)", () => {
+    const bundle = withMaya({ speciesId: "succubus", intimacy: "With Brian she finally lets go." });
+    const block = buildIntimateDispositionBlock(bundle, undefined, intimate("touch"));
+    const archetypeIdx = block.indexOf("Feeds on intimacy");
+    const personalIdx = block.indexOf("With Brian she finally lets go");
+    expect(archetypeIdx).toBeGreaterThan(-1);
+    expect(personalIdx).toBeGreaterThan(archetypeIdx); // species first, then character
+  });
+
+  it("uses only the character note when the species has no archetype (human)", () => {
+    const bundle = withMaya({ speciesId: "human", intimacy: "Shy at first, then insatiable." });
+    const block = buildIntimateDispositionBlock(bundle, undefined, intimate("appearance"));
+    expect(block).toContain("- Maya: Shy at first, then insatiable.");
+  });
+
+  it("heritage archetype REPLACES the species one (sprite over faerie)", () => {
+    const bundle = withMaya({ speciesId: "faerie", heritageId: "sprite" });
+    const block = buildIntimateDispositionBlock(bundle, undefined, intimate("appearance"));
+    expect(block).toContain("Mischievous and devious"); // sprite note
+    expect(block).not.toContain("takes to intimacy the way she takes to flight"); // not the base faerie note
+  });
+
+  it("degrades to '' when no present NPC has an authored archetype or character note", () => {
+    const bundle = withMaya({ speciesId: "human" }); // human + no profile.intimacy
+    expect(buildIntimateDispositionBlock(bundle, undefined, intimate("appearance"))).toBe("");
+  });
+
+  it("never surfaces an authored minor's note, whatever the tier (character-fidelity slice 2)", () => {
+    const minor = withMaya({ speciesId: "succubus", age: "16", intimacy: "..." });
+    expect(buildIntimateDispositionBlock(minor, undefined, intimate("touch"))).toBe("");
+    const adult = withMaya({ speciesId: "succubus", age: "26" });
+    expect(buildIntimateDispositionBlock(adult, undefined, intimate("touch"))).toContain("- Maya:");
+  });
+
+  it("only SIGHT-present NPCs contribute (a non-co-located partner is excluded)", () => {
+    const bundle = withMaya({ speciesId: "succubus" });
+    // Rhett is in the garden — give him an archetype too, but the kitchen-anchored
+    // channels classify him `absent`, so he must not reach the block.
+    const rhett = bundle.participants.find((p) => p.id === "p_rhett")!;
+    rhett.snapshot = profile({ speciesId: "succubus" });
+    const channels = classifyPresenceChannels(bundle, "loc_kitchen");
+    const block = buildIntimateDispositionBlock(bundle, channels, intimate("appearance"));
+    expect(block).toContain("- Maya:");
+    expect(block).not.toContain("Rhett");
   });
 });
 

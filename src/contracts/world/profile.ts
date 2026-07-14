@@ -185,6 +185,16 @@ export const characterProfileObjectSchema = z.object({
   personality: z.string().default(""),
   voice: z.string().optional(),
   /**
+   * This character's INTIMATE disposition (intimacy-notes.spec.md): how they read as a
+   * lover — preferences, temperament in intimacy. The per-character layer of the
+   * `intimacy` note trio, **appended on top of** the species/heritage archetype and
+   * surfaced to the narrator ONLY when the turn's exposure mask reaches the intimate
+   * tier (`buildIntimateDispositionBlock`). Deliberately separate from `personality`
+   * (always-on) so it never colours an ordinary scene. Optional ⇒ old rows and the
+   * save path round-trip unchanged; absent/blank ⇒ no per-character contribution.
+   */
+  intimacy: z.string().optional(),
+  /**
    * Worked dialogue exemplars (character-fidelity slice 6): 2–3 forge/redraft-drafted
    * examples of how the character answers a charged moment (a deflection, a boundary,
    * a tease), rendered as few-shots in the chat prefix so voice + disposition + age

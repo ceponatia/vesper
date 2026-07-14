@@ -123,16 +123,17 @@ What ships:
 
 A further humanoid variant is a data add once its feature groups exist; true non-humanoid body plans stay future work.
 
-### Model-facing notes: appearance vs. lore
+### Model-facing notes: appearance, lore, intimacy
 
-Each species carries two optional, **model-facing** notes — both empty by default, both distinct from the internal `description`:
+Each species carries three optional, **model-facing** notes — all empty by default, all distinct from the internal `description`. Each has one audience and one surfacing rule:
 
 | Note | Audience | Contents | Surfaced via | Feeds |
 | --- | --- | --- | --- | --- |
 | `appearance` | image | A generic, image-safe description of the species' default morphology (pointed ears, a greenish skin cast, wings/horns/tail, broad stature) — **not** any one character's specific attribute values. | `speciesForgeDescriptor` (forge), reading `species.appearance` directly — `speciesAppearancePhrase(speciesId)` is retained but **currently unused**. | The character forge's species-context prompt (`authoring/character-forge.ts`), which folds the generic look into the prompt to guide per-character attribute inference. **Not** sent to image prompts — those name the species via `speciesLabelPhrase` (name only) and let the character's feature attributes carry the morphology; `speciesAppearancePhrase` is kept for a possible re-enable. |
-| `lore` | narrator | Cultural / identity backstory — temperament, standing, relations. | `speciesLorePhrase(speciesId)` | The narrator's canonical-facts block (`engine/scene.ts`). |
+| `lore` | narrator (**always**) | Cultural / identity backstory — temperament, standing, relations. | `speciesLorePhrase(speciesId)` | The narrator's canonical-facts block (`engine/scene.ts`). |
+| `intimacy` | narrator (**intimate-tier only**) | How that kind of being tends to read as a lover — innate temperament, instincts, quirks. Bare text (no `Label —` prefix). | `speciesIntimacyNote(speciesId, heritageId)` | The **exposure-gated** intimate-disposition block (`engine/scene.ts` `buildIntimateDispositionBlock`), appended with the per-character `profile.intimacy` and surfaced to the narrator **only when the turn's `ExposureMask` reaches the intimate tier on any axis** (appearance/touch/taste — ruled 2026-07-13). Zero tokens in every ordinary scene. See [intimacy-notes.spec.md](../developer-notes/intimacy-notes.spec.md). |
 
-The narrator's *physical* detail comes from per-character attributes (`buildGlanceImpressions`), so via `lore` it gets culture here, not looks. Both notes surface only for **non-human** casts (label-only when the field is unauthored); the unmarked `human` default surfaces nothing.
+The narrator's *physical* detail comes from per-character attributes (`buildGlanceImpressions`), so via `lore` it gets culture here, not looks. `appearance` and `lore` surface only for **non-human** casts (label-only when the field is unauthored); the unmarked `human` default surfaces nothing. `intimacy` is the odd one out on merge — it returns **bare** text and is gated by the exposure mask, not by presence alone; a human character with no species archetype still contributes its own `profile.intimacy` at the gate.
 
 ### Heritages
 
@@ -140,7 +141,7 @@ A species may also carry **`heritages`** — optional sub-groups within it (e.g.
 
 - adds feature groups,
 - **overrides** the species attribute rule for any shared `attributeId` (last-wins),
-- carries its own `appearance` (**combined** with the species look) and `lore` (**replaces** the species culture note, falling back to it when absent).
+- carries its own `appearance` (**combined** with the species look), `lore` (**replaces** the species culture note, falling back to it when absent), and `intimacy` (**replaces** the species intimate-disposition note, falling back to it when absent — same rule as `lore`; the sprite/faerie pair is the worked example).
 
 The character stores an optional `profile.heritageId`. `realizeBody`'s `heritageId` composes the overlay, the phrase helpers take it as a second argument, and the forge infers it (`inferHeritageFromText`, scoped to the resolved species — heritage names like "drow" also resolve the parent species). Heritage never changes the body plan, so structural non-humanoids stay future work.
 

@@ -28,6 +28,16 @@ export const heritageDefinitionSchema = z.object({
    * falls back to the species' lore.
    */
   lore: z.string().default(""),
+  /**
+   * Heritage-specific INTIMATE disposition note for the narrator — how members of
+   * this heritage tend to read as lovers (innate temperament, instincts, quirks).
+   * Surfaced ONLY when the turn's exposure mask reaches the intimate tier (never in
+   * an ordinary scene), via `speciesIntimacyNote`. **Replaces** the species'
+   * `intimacy` when present (falls back to it when empty) — the same merge rule
+   * `lore` uses. Empty ⇒ falls back to the species note.
+   * See docs/developer-notes/intimacy-notes.spec.md.
+   */
+  intimacy: z.string().default(""),
   /** Additive feature groups switched on **on top of** the species defaults. */
   defaultFeatureGroups: z.array(z.string().min(1)).readonly().optional(),
   /** Per-attribute rules that **override** the species rule for the same `attributeId`. */
@@ -77,6 +87,17 @@ export const speciesDefinitionSchema = z.object({
    */
   lore: z.string().default(""),
   /**
+   * Model-facing INTIMATE disposition note (optional): how members of this species
+   * tend to read as lovers — innate temperament, instincts, quirks — surfaced to the
+   * narrator ONLY when the turn's exposure mask reaches the intimate tier (never in an
+   * ordinary scene), via `speciesIntimacyNote`. The third species note, distinct from
+   * `lore` (always-on identity/culture → narrator) and `appearance` (morphology →
+   * image models). Kept to a sentence or two — emitted under a length budget. Empty ⇒
+   * nothing surfaced (human, the unmarked baseline, ships empty). A heritage's note
+   * **replaces** this when present. See docs/developer-notes/intimacy-notes.spec.md.
+   */
+  intimacy: z.string().default(""),
+  /**
    * Optional whitelist for a species that uses only part of its body plan's
    * locations. Absent ⇒ inherits the full body-plan location list (then minus
    * `disallowedBodyLocationIds`).
@@ -103,7 +124,7 @@ export type SpeciesDefinition = z.infer<typeof speciesDefinitionSchema>;
 
 /**
  * Build one species definition (mirrors `defineAttributeGroup`): parses through
- * the schema so defaults (`description` / `appearance` / `lore` / `attributeRules` / `heritages`) apply and
+ * the schema so defaults (`description` / `appearance` / `lore` / `intimacy` / `attributeRules` / `heritages`) apply and
  * the record is validated at module load. One file per species under
  * `./catalog/`, listed in `./catalog/index.ts` (docs/contracts/body.md §Body model).
  */

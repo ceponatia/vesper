@@ -29,7 +29,7 @@ import { daylightBand, type GameTime } from "@/lib/clock";
 import type { LinkAccess } from "@/contracts/world/access";
 import { defaultExposureMask, type ExposureMask, type NextTurnBrief } from "@/contracts/state/brief";
 import { INTIMATE_ATTRIBUTE_CATEGORIES } from "@/contracts/body/locations";
-import { realizeBody, speciesLorePhrase } from "@/contracts/species";
+import { realizeBody, speciesIntimacyNote, speciesLorePhrase } from "@/contracts/species";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
 import { isMinorAge, lifeStageForAge } from "@/contracts/world/life-stage";
@@ -800,6 +800,52 @@ export function buildIntimateDispositionLine(
   }
   if (!lines.length) return "";
   return ["## Intimate disposition (this scene only — exposure-earned)", ...lines].join("\n");
+}
+
+/**
+ * Volatile, exposure-gated **intimate disposition notes** (intimacy-notes.spec.md): the
+ * species/heritage archetype (how that kind reads as a lover, `speciesIntimacyNote`)
+ * appended with this character's own `profile.intimacy`, surfaced ONLY when the turn's
+ * effective exposure mask has reached the intimate tier on **any axis** (ruled 2026-07-13:
+ * `appearance | touch | taste === "intimate"` — intimate *behavior* matters the moment a
+ * scene is physically intimate, even if line-of-sight detail is still `close`). Sibling to
+ * `buildIntimateDispositionLine` (that renders intimate *trait bands*; this renders the
+ * authored prose notes) — both are the only character/species text this exposure-gated.
+ *
+ * Only SIGHT-present NPCs contribute (a comms partner can't be a physical intimate); when
+ * `channels` is omitted every NPC is treated as sight (legacy parity with
+ * `buildGlanceImpressions`). Merge: heritage **replaces** species (in the helper), then the
+ * character's note **appends** (both contribute). The minor fence (character-fidelity slice
+ * 2) drops an authored minor's intimate note whatever the tier. Emits "" below the gate, or
+ * when no present NPC has an authored archetype/character note — zero tokens, no leakage.
+ */
+export function buildIntimateDispositionBlock(
+  bundle: SceneBundleInput,
+  channels: Map<string, PresenceChannel> | undefined,
+  exposure: ExposureMask,
+): string {
+  if (exposure.appearance !== "intimate" && exposure.touch !== "intimate" && exposure.taste !== "intimate") {
+    return "";
+  }
+  const lines: string[] = [];
+  for (const p of npcs(bundle)) {
+    const channel = channels?.get(p.id) ?? "sight";
+    if (channel !== "sight") continue; // comms-present can't be a physical intimate partner
+    // Minor fence (character-fidelity slice 2): an authored minor's intimate disposition
+    // never surfaces, whatever the scene's exposure tier.
+    if (p.snapshot.age && isMinorAge(p.snapshot.age)) continue;
+    const archetype = speciesIntimacyNote(p.snapshot.speciesId, p.snapshot.heritageId);
+    const personal = (p.snapshot.intimacy ?? "").trim();
+    // Append: species/heritage archetype first, then the individual (both may be empty).
+    const parts = [archetype, personal].filter(Boolean);
+    if (!parts.length) continue;
+    lines.push(`- ${p.displayName}: ${parts.join(" ")}`);
+  }
+  if (!lines.length) return "";
+  return [
+    "## Intimate nature (this scene only — how each character reads as a lover; exposure-earned)",
+    ...lines,
+  ].join("\n");
 }
 
 /**

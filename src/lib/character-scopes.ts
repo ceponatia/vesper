@@ -39,8 +39,9 @@ export function mergeRedraftScope<T extends FillableDraft>(
     case "profile":
       // Ruling 1: prose fields only — name/age/aliases/tags are not this tab's
       // re-sync surface (rename by hand; age is a fact, not formatting). The voice
-      // micro-exemplars (character-fidelity slice 6) and structured voice anchors
-      // (slice 7) ride this prose scope too.
+      // micro-exemplars (character-fidelity slice 6), structured voice anchors
+      // (slice 7), and the intimate disposition (intimacy-notes.spec.md) ride this
+      // prose scope too — all live on the Profile tab.
       return {
         ...base,
         profile: {
@@ -48,6 +49,7 @@ export function mergeRedraftScope<T extends FillableDraft>(
           bio: incoming.profile.bio,
           personality: incoming.profile.personality,
           voice: incoming.profile.voice,
+          intimacy: incoming.profile.intimacy,
           microExemplars: incoming.profile.microExemplars,
           voiceAnchors: incoming.profile.voiceAnchors,
         },
