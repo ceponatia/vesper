@@ -33,3 +33,15 @@ export function resolveTraits(base: readonly TraitValue[], overlays: readonly Tr
 export function effectiveTraitValue(traits: readonly TraitValue[], id: string): number {
   return resolveTraits(traits, []).find((t) => t.id === id)?.value ?? 0;
 }
+
+/**
+ * Which pole a bipolar trait value sits at, using the shared ±34 band boundary
+ * (matches the three-band definitions: first band max −34, last band from +34).
+ * The single source the slider-wiring posture lines key on (character-fidelity
+ * slice 5) so every consumer reads the same threshold. `mid` ⇒ no posture steer.
+ */
+export function traitPole(value: number): "low" | "mid" | "high" {
+  if (value >= 34) return "high";
+  if (value <= -34) return "low";
+  return "mid";
+}

@@ -27,6 +27,7 @@ import {
   familiarityBands,
   interactionConceptIds,
   interactionFamilies,
+  MICRO_EXEMPLARS_MAX,
   normalizeTag,
   axisRange,
   PLAYER_RELATIONSHIP_NOTE_MAX,
@@ -45,6 +46,7 @@ import {
   type Drive,
   type HeritageDefinition,
   type ItemDefinition,
+  type MicroExemplar,
   type Preference,
   type RealizedBody,
   type ScheduleEntry,
@@ -197,6 +199,10 @@ const profileSectionSchema = z.object({
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().default(""),
+  /** Worked dialogue exemplars (character-fidelity slice 6) — few-shots of the character's voice/manner. */
+  microExemplars: z
+    .array(z.object({ situation: z.string().default(""), line: z.string().default("") }))
+    .default([]),
   /** Real/chronological age, free text — the narrator's `profile.age`, distinct from the visual `identity.apparent_age` attribute. */
   age: z.string().default(""),
   aliases: z.array(z.string()).default([]),
@@ -301,6 +307,25 @@ function groundPreferences(raw: ProfileSection["preferences"], sink?: Diagnostic
     seen.add(key);
     const hint = p.hint?.trim();
     out.push({ target, valence: p.valence, intensity: Math.min(10, Math.max(1, Math.round(p.intensity))), ...(hint ? { hint } : {}) });
+  }
+  return out;
+}
+
+/**
+ * Ground forge micro-exemplars (character-fidelity slice 6): drop rows with no line,
+ * trim both fields, cap at MICRO_EXEMPLARS_MAX. A row's situation may be blank (a
+ * standalone voice sample); the line is what makes the row worth keeping.
+ */
+export function groundMicroExemplars(raw: ProfileSection["microExemplars"], sink?: DiagnosticSink): MicroExemplar[] {
+  const out: MicroExemplar[] = [];
+  for (const e of raw) {
+    if (out.length >= MICRO_EXEMPLARS_MAX) {
+      sink?.push(diag("info", "forge.character.profile.micro_exemplars_capped", `dropped voice example "${e.line}": over the ${MICRO_EXEMPLARS_MAX}-example cap`));
+      break;
+    }
+    const line = e.line.trim();
+    if (!line) continue;
+    out.push({ situation: e.situation.trim(), line });
   }
   return out;
 }
@@ -585,6 +610,10 @@ function profilePrompt(context: CharacterForgeContext): string {
     "- traits: scalar readings of the character's temperament, each {id, value}. Map any personality words you used onto the closest trait (negative value = the first/low pole, positive = the second/high pole), then infer the rest from role, species, and vibe. Emit a value for every trait you have a read on; a 0 means genuinely middling. Trait vocabulary (the example words show where the poles sit):",
     traitVocabulary(),
     "",
+    `Then write ${MICRO_EXEMPLARS_MAX} short WORKED EXAMPLES of how this character actually talks — micro-exemplars the narrator few-shots from, so the voice, disposition, and age land in the prose, not just in the sliders:`,
+    `- microExemplars: 2-${MICRO_EXEMPLARS_MAX} entries, each {situation (a short cue for a charged moment — "pushed to talk about her past", "someone flirts too fast", "caught in a lie"), line (how THIS character answers it, in their own voice — a spoken line and/or a small beat, e.g. 'A dry look. "That's a long story, and you haven't earned it.")}.`,
+    "  Pick moments that SHOW the character's manner — how they deflect, tease, set a boundary, or soften — not neutral small talk. Write the line exactly as they'd say it (diction, rhythm, age); keep each to a sentence or two.",
+    "",
     "Then give the character DRIVES — the desires & secrets they actively pursue (the game steers scenes with these):",
     `- drives: 0-${DRIVES_MAX} entries, each {want (a short concrete phrase), why (one line of motive), secrecy, revealBand?}.`,
     "  secrecy: \"open\" (talks about it freely — it steers what they bring up), \"guarded\" (never volunteers it; comes out only if genuinely asked), or \"secret\" (actively protected — they deflect and will lie to keep it hidden until the relationship earns the reveal).",
@@ -640,6 +669,7 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
     tags: groundDispositionTags(section.dispositionTags),
     preferences,
     traits: groundTraitValues(section.traits, context.sink),
+    microExemplars: groundMicroExemplars(section.microExemplars, context.sink),
     drives: groundDrives(section.drives, context.sink),
     schedule: groundSchedule(section.schedule, context.sink),
   };
@@ -1351,6 +1381,11 @@ export function demoCharacterProfileSection(): ProfileSection {
     personality:
       "Dry, watchful, unhurried. Keeps a soft spot for green deckhands and a colder shelf for smooth talkers. Allergic to paperwork, flattery, and being thanked.",
     voice: "Low and gravelled; clipped harbor slang; says less than she knows and means more than she says.",
+    microExemplars: [
+      { situation: "thanked warmly for a kindness", line: 'She waves it off before you finish. "Don\'t. It\'s a job, not a favor."' },
+      { situation: "a smooth talker lays on the flattery", line: 'A flat look over the ledger. "You want something. Get to it or get off my quay."' },
+      { situation: "a green deckhand admits they\'re scared", line: 'A long pause, then, quieter: "Good. Means you\'re paying attention. Now tie it off proper."' },
+    ],
     age: "52",
     aliases: ["Voss", "the harbor-master"],
     tags: ["harbor", "gruff", "mentor", "working-class"],

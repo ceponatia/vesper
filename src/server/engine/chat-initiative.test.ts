@@ -57,4 +57,10 @@ describe("buildInitiativeCue (chat-initiative.plan.md)", () => {
     expect(cue).toContain("mornings: waiting tables at the Dockside Café");
     expect(buildInitiativeCue({ ...base, rhythm: "" })).toBe(buildInitiativeCue(base));
   });
+
+  it("extraversion colors the opener cadence (slice 5); mid/absent adds nothing", () => {
+    expect(buildInitiativeCue({ ...base, extraversion: 70 })).toContain("comes easily to you");
+    expect(buildInitiativeCue({ ...base, extraversion: -70 })).toContain("doesn't come naturally to you");
+    expect(buildInitiativeCue({ ...base, extraversion: 0 })).toBe(buildInitiativeCue(base));
+  });
 });

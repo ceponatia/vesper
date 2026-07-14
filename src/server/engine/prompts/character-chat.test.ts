@@ -10,6 +10,8 @@ import {
   chatCallbackLine,
   chatNotationNote,
   chatSelfieLine,
+  ENSEMBLE_QUIET_EXCHANGES,
+  ensembleQuietThreshold,
   wrapNarratorInput,
   type EnsembleMemberInput,
 } from "./character-chat";
@@ -819,6 +821,14 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     expect(at(curt, 57)).toContain("one of the few exceptions"); // curt generally, warm to YOU
     expect(at(curt, -25)).not.toContain("one of the few exceptions"); // signs agree — no line
     expect(at(profile(), 57)).not.toContain("one of the few exceptions"); // no authored lean — no line
+  });
+
+  it("adds the idiom line at warm+ regard so a cold character keeps their manner (slice 3)", () => {
+    const cold = profile({ traits: [{ id: "temperament.warmth", value: -60, source: "base" as const }] });
+    const at = (regard: number) =>
+      buildCharacterChatPromptParts({ name: "Mara", profile: cold, state: { meters: {}, regard, conditions: [] } }).prefix;
+    expect(at(60)).toContain("you express it in your OWN manner");
+    expect(at(20)).not.toContain("you express it in your OWN manner"); // below warm regard — no idiom
   });
 
   it("states the D11 gate invariants in the law block: premise wins, disinhibition never moves the line, values outrank", () => {
@@ -2036,5 +2046,102 @@ describe("life stage & the minor fence (character-fidelity.plan.md slices 1–2)
       { selfie: { kind: "request", memberName: "Mara" } },
     );
     expect(selfieAdult.tail).toContain("Brian asked Mara for a photo this turn");
+  });
+});
+
+describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars)", () => {
+  it("renders the preferences block in the stable prefix; empty ⇒ no block (slice 4)", () => {
+    const withPrefs = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile({
+        preferences: [
+          { target: "compliment", valence: "dislike", intensity: 6, hint: "flattery makes her wary" },
+          { target: "confide", valence: "like", intensity: 5 },
+        ],
+      }),
+    });
+    expect(withPrefs.prefix).toContain("What lands well and badly with you");
+    expect(withPrefs.prefix).toContain("Lands badly: compliment — flattery makes her wary");
+    expect(withPrefs.prefix).toContain("Lands well: confiding");
+    // Stable-prefix, not the volatile tail.
+    expect(withPrefs.tail).not.toContain("What lands well and badly with you");
+    expect(buildCharacterChatPromptParts({ name: "Mara", profile: profile() }).prefix).not.toContain(
+      "What lands well and badly",
+    );
+  });
+
+  it("fences intimate-concept preferences out for a minor (slice 4 × the minor fence)", () => {
+    const prefs = [{ target: "proposition", valence: "like" as const, intensity: 6 }];
+    expect(
+      buildCharacterChatPromptParts({ name: "Mara", profile: profile({ preferences: prefs }) }).prefix,
+    ).toContain("proposition");
+    expect(
+      buildCharacterChatPromptParts({ name: "Pip", profile: profile({ age: "12", preferences: prefs }) }).prefix,
+    ).not.toContain("What lands well and badly");
+  });
+
+  it("renders the micro-exemplar few-shots in the prefix; empty ⇒ no block (slice 6)", () => {
+    const withExemplars = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile({
+        microExemplars: [{ situation: "pushed to talk about her past", line: '"That\'s a long story, and you haven\'t earned it."' }],
+      }),
+    });
+    expect(withExemplars.prefix).toContain("How you actually answer a charged moment");
+    expect(withExemplars.prefix).toContain("pushed to talk about her past → ");
+    expect(buildCharacterChatPromptParts({ name: "Mara", profile: profile() }).prefix).not.toContain(
+      "How you actually answer a charged moment",
+    );
+  });
+
+  it("dominance owns the forward move; mid dominance adds nothing (slice 5)", () => {
+    const rules = (value: number) =>
+      buildCharacterChatPromptParts({
+        name: "Mara",
+        profile: profile({ traits: [{ id: "social.dominance", value, source: "creation" as const }] }),
+      }).prefix;
+    expect(rules(70)).toContain("You lead by temperament");
+    expect(rules(-70)).toContain("You defer by temperament");
+    expect(rules(0)).not.toContain("by temperament");
+  });
+
+  it("confidence colors the drive-reveal posture; mid adds nothing (slice 5)", () => {
+    const drives = [{ want: "to reopen the gallery", why: "", secrecy: "open" as const, progress: "", revealed: false, resolved: false }];
+    const tail = (value: number) =>
+      buildCharacterChatPromptParts({
+        name: "Mara",
+        profile: profile({ traits: [{ id: "temperament.confidence", value, source: "creation" as const }] }),
+        state: { meters: {}, regard: 0, conditions: [], drives },
+      }).tail;
+    expect(tail(70)).toContain("You state what you want plainly");
+    expect(tail(-70)).toContain("Wanting makes you hesitant");
+    expect(tail(0)).not.toContain("You state what you want plainly");
+    expect(tail(0)).not.toContain("Wanting makes you hesitant");
+  });
+
+  it("ensembleQuietThreshold scales tolerance with extraversion (slice 5)", () => {
+    expect(ensembleQuietThreshold(0)).toBe(ENSEMBLE_QUIET_EXCHANGES);
+    expect(ensembleQuietThreshold(-70)).toBe(ENSEMBLE_QUIET_EXCHANGES - 1);
+    expect(ensembleQuietThreshold(70)).toBe(ENSEMBLE_QUIET_EXCHANGES + 2);
+  });
+
+  it("an extravert holds their full ensemble sheet longer than a mid member (slice 5)", () => {
+    const roster: EnsembleMemberInput[] = [
+      {
+        name: "Ivy",
+        profile: profile({ traits: [{ id: "social.extraversion", value: 70, source: "creation" }] }),
+        presence: "present",
+        quietExchanges: ENSEMBLE_QUIET_EXCHANGES + 1, // 4: past the mid threshold, under the extravert's
+      },
+      {
+        name: "Quinn",
+        profile: profile({ traits: [{ id: "social.extraversion", value: 0, source: "creation" }] }),
+        presence: "present",
+        quietExchanges: ENSEMBLE_QUIET_EXCHANGES + 1,
+      },
+    ];
+    const prefix = buildChatPromptPartsForRoster({ name: "Ivy", profile: profile() }, roster).prefix;
+    expect(prefix).not.toContain("## Ivy (quiet just now)"); // extravert stays full
+    expect(prefix).toContain("## Quinn (quiet just now)"); // mid member compresses
   });
 });

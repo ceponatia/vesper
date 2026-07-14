@@ -4,6 +4,7 @@ import {
   characterProfileSchema,
   DiagnosticCollector,
   diag,
+  effectiveTraitValue,
   emptyCharacterProfile,
   formatScheduleRhythm,
   samePlaceName,
@@ -903,6 +904,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             // Slice-2/4 material: the unseen shift + the authored daily rhythm.
             recentShift,
             rhythm: formatScheduleRhythm(profile.schedule),
+            // Slice 5: extraversion colors the opener's cadence (eager vs. reticent).
+            extraversion: effectiveTraitValue(profile.traits, "social.extraversion"),
           })
         : effectiveKind === "continue" && input.cue?.trim()
           ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`

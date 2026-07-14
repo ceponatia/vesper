@@ -13,6 +13,7 @@ import {
   groundAttributeRanges,
   groundAttributeValues,
   groundDrives,
+  groundMicroExemplars,
   groundPlayerRelationship,
   groundSchedule,
   groundSocialCards,
@@ -351,6 +352,29 @@ describe("groundSocialCards (forge-gaps gap 2)", () => {
     );
     expect(cards.map((c) => c.label)).toEqual(["Rule A", "Rule B"]);
     expect(sink.items.some((d) => d.code === "forge.character.profile.cards_capped")).toBe(true);
+  });
+});
+
+describe("groundMicroExemplars (character-fidelity slice 6)", () => {
+  it("trims both fields, drops rows with no line, and caps at MICRO_EXEMPLARS_MAX with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const rows = groundMicroExemplars(
+      [
+        { situation: " pushed about her past ", line: ' "Long story." ' },
+        { situation: "no line", line: "   " }, // dropped — the line is what makes a row
+        { situation: "", line: "just a voice sample" }, // blank situation is fine
+        { situation: "a", line: "1" },
+        { situation: "b", line: "2" },
+        { situation: "c", line: "over the cap" }, // dropped — over MICRO_EXEMPLARS_MAX (3)
+      ],
+      sink,
+    );
+    expect(rows).toEqual([
+      { situation: "pushed about her past", line: '"Long story."' },
+      { situation: "", line: "just a voice sample" },
+      { situation: "a", line: "1" },
+    ]);
+    expect(sink.items.map((d) => d.code)).toContain("forge.character.profile.micro_exemplars_capped");
   });
 });
 

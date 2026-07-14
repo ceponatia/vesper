@@ -269,6 +269,30 @@ export function dispositionContrastLine(input: { name: string; warmth: number; r
   return "";
 }
 
+/** Regard at/above this (the "warm" band floor) reads as real, shown warmth toward the target. */
+const IDIOM_REGARD_FLOOR = 50;
+
+/**
+ * The "in your own idiom" line (character-fidelity slice 3): at warm+ regard the
+ * regard soft-coloring pushes a character warmer, which — for a character authored
+ * on the cold side — risks flattening their manner into generic sweetness. This
+ * states that the growing closeness is expressed in THIS character's own way, so a
+ * reserved or cold character stays reserved or cold even as they come to care.
+ * Composed (owner ruling 2026-07-14: not registry data — one function keyed off the
+ * authored warmth value, mirroring `dispositionContrastLine`). Fires only for an
+ * authored cold-side warmth lean (< 0); "" for neutral/warm warmth (congruent, no
+ * manner to preserve) or below warm regard.
+ */
+export function dispositionIdiomLine(input: { name: string; warmth: number; regard: number }): string {
+  if (input.regard < IDIOM_REGARD_FLOOR) return "";
+  if (input.warmth >= 0) return ""; // no cold-side lean to preserve — warm regard is congruent
+  const manner =
+    input.warmth <= -CONTRAST_WARMTH_LEAN
+      ? "it shows in what you stop withholding, not in warmth you perform — a rare softening, a wall quietly down, never gush"
+      : "measured and shown more than said — a small tell, a dry fondness, warmth you let be felt rather than declared";
+  return `Whatever you now feel for ${input.name}, you express it in your OWN manner: ${manner}. Growing close does not make you effusive or sweet like someone you are not — it deepens how you already are.`;
+}
+
 export interface ComposeRelationshipLawInput {
   /** The other party's display name (the edge's target). */
   name: string;

@@ -1,4 +1,5 @@
 import type { ChatDrive } from "@/contracts/personality/drives";
+import { traitPole } from "@/contracts/personality/traits";
 
 /**
  * Chat initiative (chat-initiative.plan.md): the reopen opener's cue — the
@@ -38,6 +39,13 @@ export interface InitiativeCueInput {
    * meanwhile" license; empty ⇒ no rhythm line.
    */
   rhythm?: string;
+  /**
+   * The character's `social.extraversion` (character-fidelity slice 5) — colors the
+   * initiative CADENCE: an extravert opens readily and warmly, an introvert reaches
+   * out on quieter, more reticent terms (still reaching, just not gushing). Mid /
+   * absent (0) ⇒ no cadence line, so the cue is byte-identical to before.
+   */
+  extraversion?: number;
 }
 
 /**
@@ -60,8 +68,16 @@ export function buildInitiativeCue(input: InitiativeCueInput): string {
     ...(shift ? [`what just shifted between you: "${shift}" — still fresh for you`] : []),
   ];
   const rhythm = input.rhythm?.trim() ?? "";
+  const pole = traitPole(input.extraversion ?? 0);
+  const cadence =
+    pole === "high"
+      ? "Reaching out first comes easily to you — open readily and warmly, like someone glad of the company."
+      : pole === "low"
+        ? "Reaching out first doesn't come naturally to you — let the opener carry that: a shorter reach, a beat of reticence, the contact real but on your own quieter terms. You still reach out; you just don't gush."
+        : "";
   const lines = [
     `${input.playerName} has come back to you — reach out FIRST, in character: you have the opening move, and you have your own reasons to take it.`,
+    ...(cadence ? [cadence] : []),
     material.length
       ? `Your material (pick what genuinely pulls at you — never list it): ${material.join("; ")}.`
       : `Nothing specific is pending between you — open with what YOU are doing, thinking, or wanting right now.`,

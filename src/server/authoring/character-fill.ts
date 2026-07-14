@@ -55,6 +55,13 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
   if (p.bio.trim()) lines.push(`Bio: ${p.bio.trim()}`);
   if (p.personality.trim()) lines.push(`Personality: ${p.personality.trim()}`);
   if (p.voice?.trim()) lines.push(`Voice: ${p.voice.trim()}`);
+  if (p.microExemplars.length > 0) {
+    lines.push(
+      `Voice examples: ${p.microExemplars
+        .map((m) => `${m.line.trim()}${m.situation.trim() ? ` (${m.situation.trim()})` : ""}`)
+        .join(" | ")}`,
+    );
+  }
   if (p.aliases.length > 0) lines.push(`Aliases: ${p.aliases.join(", ")}`);
   if (draft.tags.length > 0) lines.push(`Library tags: ${draft.tags.join(", ")}`);
   if (p.tags.length > 0) lines.push(`Disposition tags: ${p.tags.join(", ")}`);

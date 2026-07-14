@@ -31,12 +31,13 @@ const SCOPE_LEG: Record<CharacterSheetScope, CharacterForgeSection> = {
 
 const REDRAFT_DIRECTIVES: Record<CharacterSheetScope, string> = {
   profile: [
-    "You are RE-DRAFTING this character's profile prose — the bio, the personality sketch, and the voice notes ONLY —",
-    "from the whole sheet above (name, age, aliases, and tags are not yours to change). Rewrite those three fields cleanly",
-    "for the game's narrator: the bio holds background and situation (no personality analysis, no physical description),",
-    "the personality sketch holds temperament, quirks, humor, and flaws (no backstory), voice notes describe how they",
-    "sound and speak. Move misplaced material into its correct field. Preserve every authored fact and the core concept;",
-    "do not invent major new facts.",
+    "You are RE-DRAFTING this character's profile prose — the bio, the personality sketch, the voice notes, and the",
+    "voice examples ONLY — from the whole sheet above (name, age, aliases, and tags are not yours to change). Rewrite those",
+    "fields cleanly for the game's narrator: the bio holds background and situation (no personality analysis, no physical",
+    "description), the personality sketch holds temperament, quirks, humor, and flaws (no backstory), voice notes describe",
+    "how they sound and speak, and the voice examples show that voice in action (2-3 worked lines for charged moments).",
+    "Move misplaced material into its correct field. Preserve every authored fact and the core concept; do not invent",
+    "major new facts.",
   ].join(" "),
   disposition: [
     "You are RE-DRAFTING this character's social disposition — dispositionTags, preferences, trait scalars, and drives",

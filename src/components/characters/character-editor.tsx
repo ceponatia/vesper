@@ -27,6 +27,7 @@ import { seedRequiredAttributes } from "./attribute-helpers";
 import { CharacterChat } from "./character-chat";
 import { DispositionEditor } from "./disposition-editor";
 import { DrivesEditor } from "./drives-editor";
+import { MicroExemplarsEditor } from "./micro-exemplars-editor";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 import { PreferencesEditor } from "./preferences-editor";
@@ -303,6 +304,12 @@ export function CharacterEditor({
           <Field label="Aliases" hint="Other names the narrative may use.">
             {(id) => <TagInput id={id} value={draft.profile.aliases} onChange={(aliases) => patchProfile({ aliases })} />}
           </Field>
+          <div className="sm:col-span-2">
+            <MicroExemplarsEditor
+              exemplars={draft.profile.microExemplars}
+              onChange={(microExemplars) => patchProfile({ microExemplars })}
+            />
+          </div>
           <div className="sm:col-span-2">
             <ScheduleEditor
               schedule={draft.profile.schedule}

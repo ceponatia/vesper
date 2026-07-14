@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { interactionConceptById } from "./interactions";
 
 /**
  * A character's bespoke like/dislike (docs/developer-notes/personality-and-state.spec.md
@@ -22,3 +23,16 @@ export const preferenceSchema = z.object({
 });
 
 export type Preference = z.infer<typeof preferenceSchema>;
+
+/**
+ * A preference as one narrator-facing phrase (character-fidelity slice 4): the concept
+ * (or family) it targets, plus the character's own reaction hint when authored — so the
+ * chat prefix can tell the narrator what actually lands well/badly *in the moment*, not
+ * just what the post-turn pulse scores. Pure; a family target with no concept humanizes
+ * its id ("affection_display" → "affection display").
+ */
+export function describePreference(pref: Preference): string {
+  const subject = interactionConceptById(pref.target)?.label.toLowerCase() ?? pref.target.replace(/_/g, " ");
+  const hint = pref.hint?.trim();
+  return hint ? `${subject} — ${hint}` : subject;
+}

@@ -1,5 +1,6 @@
 import type { MeterDefinition } from "../meters/registry";
 import type { SocialReaction } from "./reactions";
+import { clampValueToBandSteps, traitRegistry } from "./traits";
 import { effectiveTraitValue, resolveTraits, type TraitValue } from "./traits/value";
 
 /**
@@ -153,6 +154,14 @@ export function stateDispositionOverlays(
  * Familiarity deliberately does NOT color disposition — knowing someone well is
  * not the same as being warm toward them (the composed law block carries it).
  */
+/**
+ * The regard overlay may color disposition, but never carry a trait more than this
+ * many bands from its authored value (character-fidelity slice 3, ruled: ONE step) —
+ * so a long, warm chat can't converge every character on the same warm/open/
+ * uninhibited reading; the authored band stays recognizable through the coloring.
+ */
+export const REGARD_OVERLAY_MAX_BAND_STEPS = 1;
+
 export const REGARD_TRAIT_SHIFTS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
   hostile: { "temperament.warmth": -30, "social.guardedness": +30, "social.agreeableness": -20 },
   wary: { "temperament.warmth": -15, "social.guardedness": +20 },
@@ -183,7 +192,14 @@ export function regardDispositionOverlays(bandId: string, traits: readonly Trait
   for (const [id, delta] of Object.entries(shifts)) {
     const current = resolved.find((t) => t.id === id);
     if (!current) continue; // only shift authored traits
-    overlays.push({ id, value: Math.max(-100, Math.min(100, current.value + delta)), source: "condition" });
+    // Cap the coloring at one band step from what the author set (slice 3), so the
+    // overlay tints disposition without ever converting it to a different character.
+    const def = traitRegistry.byId(id);
+    const shifted = current.value + delta;
+    const bounded = def
+      ? clampValueToBandSteps(def, current.value, shifted, REGARD_OVERLAY_MAX_BAND_STEPS)
+      : shifted;
+    overlays.push({ id, value: Math.max(-100, Math.min(100, bounded)), source: "condition" });
   }
   return overlays;
 }
