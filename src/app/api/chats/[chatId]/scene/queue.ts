@@ -3,7 +3,7 @@ import { characterProfileSchema, currentScenePlace, emptyCharacterProfile } from
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
 import { characterChatMessages, db, jobs } from "@/server/db";
-import { enqueueChatPlaceImage, loadChatScenario, loadChatState, resolveSeededOutfit } from "@/server/engine";
+import { enqueueChatPlaceImage, loadChatScenario, loadChatState, resolveChatWardrobe } from "@/server/engine";
 import { chatLookKey, renderCharacterSceneImage } from "@/server/images";
 import { log } from "@/server/log";
 
@@ -79,12 +79,11 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     const recentChat = recent.map((r) => r.content).reverse();
     const anchorMessageId = args.anchorMessageId ?? recent[0]?.id;
 
-    // The scene's outfit comes from the conversation's state (scenario modal free text +
-    // exposed toggle), not the character's structured defaultOutfit — chat has no
-    // equippable wardrobe. The seeded outfit MARKER (raw item ids) is resolved to the
-    // garment phrase here like every other state consumer.
+    // The scene's outfit comes from the conversation's structured worn state
+    // (chat-wardrobe-parity): the rendered garment phrase + coverage-computed exposure, via
+    // the shared wardrobe seam — the same source the narrator prompt and look key read.
     const stored = await loadChatState(args.chatId, args.character.id);
-    const chatState = stored ? await resolveSeededOutfit(stored, args.userId, profile) : null;
+    const wardrobe = stored ? await resolveChatWardrobe(stored, args.userId, profile) : null;
     const scenario = await loadChatScenario(args.chatId);
 
     // The setting comes from chat scene memory (chat-scene-fidelity.plan.md slice 2):
@@ -99,7 +98,15 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // key the render resolves against the cached `chat_look`, and the LAZY place
     // mint — a sketched current place without an image gets one queued on the
     // first render there (fire-and-forget; this render still ships without it).
-    const lookKey = chatState ? chatLookKey(chatState) : undefined;
+    const lookKey =
+      wardrobe && stored
+        ? chatLookKey({
+            wornItemIds: wardrobe.wornItemIds,
+            overlay: wardrobe.overlay,
+            exposure: wardrobe.exposure,
+            attributeOverlays: stored.attributeOverlays,
+          })
+        : undefined;
     if (place?.sketch && !place.imageId) {
       void enqueueChatPlaceImage({ chatId: args.chatId, characterId: args.character.id, placeName: place.name });
     }
@@ -117,10 +124,11 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           room,
           timeOfDay: scenario?.sceneMemory.timeOfDay,
           recentChat,
-          outfit: chatState?.outfit ?? "",
-          outfitExposed: chatState?.outfitExposed ?? false,
-          meters: chatState?.meters,
-          conditions: chatState?.conditions,
+          outfit: wardrobe?.garments ?? "",
+          outfitExposed: wardrobe?.exposed ?? false,
+          exposure: wardrobe?.exposure,
+          meters: stored?.meters,
+          conditions: stored?.conditions,
           sceneModel: scenario?.sceneModel,
           chatId: args.chatId,
           anchorMessageId,

@@ -337,9 +337,14 @@ export const chatStateSnapshotSchema = z.object({
   // False ⇒ a seed-on-read (no row yet); the chat strip then previews the authored
   // Starting Relationship. Defaults true so a missing flag shows the stored disposition.
   persisted: z.boolean().catch(true),
-  // Scenario-modal fields (character-chat-scenario.plan.md): free-text outfit + intimate-reveal
-  // gate for scene images, and the social cards live in this chat.
+  // Structured worn state (chat-wardrobe-parity): the worn item-definition ids + active preset
+  // id (the Character sheet's equip editor), the free-text outfit overlay/fallback, and the
+  // manual intimate-reveal flag (superseded by computed coverage when items are worn).
+  wornItemIds: z.array(z.string()).catch([]),
+  outfitPresetId: textOr(""),
   outfit: textOr(""),
+  // Rendered garment phrase (worn items + overlay) for the read-only strip chip.
+  outfitLabel: textOr(""),
   outfitExposed: z.boolean().catch(false),
   activeSocialCards: z.array(socialReactionCardSchema).catch([]),
   // Meter bands last surfaced as a "just shifted" beat (character-chat-state-narration.spec.md
@@ -393,6 +398,10 @@ export interface ChatStateEdit {
   mindNote?: string;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
+  /** Structured worn item-definition ids (chat-wardrobe-parity rung 3) — the sheet's equip editor. */
+  wornItemIds?: string[];
+  /** The active outfit preset id (rung 1) — the sheet's preset switcher. */
+  outfitPresetId?: string;
   outfit?: string;
   outfitExposed?: boolean;
   activeSocialCards?: SocialReactionCard[];

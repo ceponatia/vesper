@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { buildChatLookPrompt, buildChatPlacePrompt, chatLookKey } from "./chat-look";
 
-describe("chatLookKey", () => {
-  const base = { outfit: "a linen sundress", outfitExposed: false, attributeOverlays: [] };
+describe("chatLookKey (chat-wardrobe-parity — structured key)", () => {
+  const bare: RegionExposure = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" };
+  const base = { wornItemIds: ["item-b", "item-a"], overlay: "", exposure: FULLY_COVERED, attributeOverlays: [] };
 
-  it("is stable across calls and insensitive to case/whitespace and overlay order", () => {
-    expect(chatLookKey(base)).toBe(chatLookKey({ ...base, outfit: "  A Linen Sundress " }));
+  it("is stable and insensitive to worn-id order, overlay case/whitespace, and overlay order", () => {
+    // Worn ids are sorted, so reordering the worn list is a no-op.
+    expect(chatLookKey(base)).toBe(chatLookKey({ ...base, wornItemIds: ["item-a", "item-b"] }));
+    // Overlay text normalizes case/whitespace.
+    expect(chatLookKey({ ...base, overlay: "a Scarf" })).toBe(chatLookKey({ ...base, overlay: "  A SCARF " }));
     const a = chatLookKey({
       ...base,
       attributeOverlays: [
@@ -23,13 +28,20 @@ describe("chatLookKey", () => {
     expect(a).toBe(b);
   });
 
-  it("changes when the outfit, exposure, or an overlay changes (owner ruling: a haircut invalidates)", () => {
+  it("changes when the worn list, overlay, computed exposure, or an overlay changes (a haircut invalidates)", () => {
     const key = chatLookKey(base);
-    expect(chatLookKey({ ...base, outfit: "jeans and a t-shirt" })).not.toBe(key);
-    expect(chatLookKey({ ...base, outfitExposed: true })).not.toBe(key);
+    expect(chatLookKey({ ...base, wornItemIds: ["item-a"] })).not.toBe(key);
+    expect(chatLookKey({ ...base, overlay: "a borrowed hoodie" })).not.toBe(key);
+    expect(chatLookKey({ ...base, exposure: bare })).not.toBe(key);
     expect(
       chatLookKey({ ...base, attributeOverlays: [{ id: "hair.length", value: "short", source: "narrative" }] }),
     ).not.toBe(key);
+  });
+
+  it("a legacy free-text chat (empty worn list) keys on the overlay alone — stable across the change", () => {
+    const legacy = { wornItemIds: [], overlay: "a linen sundress", exposure: FULLY_COVERED, attributeOverlays: [] };
+    expect(chatLookKey(legacy)).toBe(chatLookKey({ ...legacy, overlay: "  A Linen Sundress " }));
+    expect(chatLookKey(legacy)).not.toBe(chatLookKey({ ...legacy, overlay: "jeans and a t-shirt" }));
   });
 });
 

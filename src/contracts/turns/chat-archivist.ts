@@ -36,6 +36,8 @@ export const CHAT_ARCHIVIST_MAX_QUERIES = 3;
 export const CHAT_ARCHIVIST_MAX_OPEN_LOOPS = 3;
 /** Cap on milestone-gated developable-trait nudges per exchange (character-fidelity slice 10) — rare, one or two at most. */
 export const CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS = 2;
+/** Cap on garment-level add/remove proposals per exchange (chat-wardrobe-parity rung 2) — a beat swaps a piece or two, not a rack. */
+export const CHAT_ARCHIVIST_MAX_WORN_CHANGES = 4;
 
 /**
  * A milestone-gated developable-trait nudge (character-fidelity slice 10): the
@@ -83,14 +85,22 @@ export const chatArchivistSchema = z.object({
    */
   scene: chatSceneProposalSchema,
   /**
-   * Optional outfit change (chat-scene-fidelity.plan.md slice 1): what the character is
-   * WEARING when this exchange changed it — they dressed, changed clothes, or removed
-   * clothing (partly or fully). `description` is a FULL replacement of the tracked outfit
-   * (the complete current look, never a delta); `exposed` = intimate areas are bared. An
-   * empty description is the no-change no-op (the common case), so `{}` parses clean and
-   * a bad proposal never fails the turn. Consumed by `finalizeChatState` into
-   * `state.outfit`/`outfitExposed`, which drive the narrator's wearing-line and the scene
-   * image's authoritative outfit override.
+   * Optional outfit change (chat-scene-fidelity.plan.md slice 1; structured worn state —
+   * chat-wardrobe-parity.plan.md). Two grammars, both optional and lenient:
+   *
+   * - `description` — a WHOLE-outfit swap: the complete current look (never a delta). When
+   *   it names an authored outfit preset ("her work clothes" → the "Work" preset) the fold
+   *   seeds the structured worn list from that preset (rung 1); otherwise it lands as the
+   *   free-text overlay/replacement. `exposed` = intimate areas bared (free-text path only —
+   *   the structured path computes exposure from coverage).
+   * - `removed` / `added` — garment-LEVEL deltas (rung 2): individual pieces the fiction took
+   *   off or put on this exchange ("she slips off her jacket" → `removed: ["her jacket"]`).
+   *   Resolved against the worn items / wardrobe pool by `applyWornGarmentChanges`; an
+   *   unmatched addition becomes free-text overlay, an unmatched removal skips (diagnostic).
+   *
+   * An empty proposal (`{}`) is the no-change no-op (the common case), so a bad value never
+   * fails the turn. Consumed by `finalizeChatState`; drives the narrator's wearing-line, the
+   * computed exposure, and the scene image's authoritative outfit.
    */
   outfit: z
     .object({
@@ -102,9 +112,19 @@ export const chatArchivistSchema = z.object({
         .default("")
         .transform((s) => s.trim()),
       exposed: z.boolean().catch(false).default(false),
+      removed: z
+        .array(z.string().trim().min(1))
+        .catch([])
+        .default([])
+        .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
+      added: z
+        .array(z.string().trim().min(1))
+        .catch([])
+        .default([])
+        .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
     })
-    .catch({ description: "", exposed: false })
-    .default({ description: "", exposed: false }),
+    .catch({ description: "", exposed: false, removed: [], added: [] })
+    .default({ description: "", exposed: false, removed: [], added: [] }),
   /**
    * Drive updates (character-drives.plan.md): progress/reveal/resolution on the
    * character's EXISTING drives (matched by `want` text — unmatched entries drop).
@@ -181,7 +201,7 @@ export function degradedChatArchivist(): ChatArchivist {
     attributeChanges: [],
     openLoops: [],
     scene: { places: [] },
-    outfit: { description: "", exposed: false },
+    outfit: { description: "", exposed: false, removed: [], added: [] },
     driveUpdates: [],
     presence: [],
     cast: [],
@@ -214,9 +234,19 @@ export const chatPersonalNotesSchema = z.object({
         .default("")
         .transform((s) => s.trim()),
       exposed: z.boolean().catch(false).default(false),
+      removed: z
+        .array(z.string().trim().min(1))
+        .catch([])
+        .default([])
+        .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
+      added: z
+        .array(z.string().trim().min(1))
+        .catch([])
+        .default([])
+        .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
     })
-    .catch({ description: "", exposed: false })
-    .default({ description: "", exposed: false }),
+    .catch({ description: "", exposed: false, removed: [], added: [] })
+    .default({ description: "", exposed: false, removed: [], added: [] }),
   driveUpdates: z
     .array(driveUpdateSchema)
     .catch([])
@@ -231,7 +261,7 @@ export function degradedChatPersonalNotes(): ChatPersonalNotes {
   return {
     openLoops: [],
     attributeChanges: [],
-    outfit: { description: "", exposed: false },
+    outfit: { description: "", exposed: false, removed: [], added: [] },
     driveUpdates: [],
   };
 }

@@ -177,25 +177,21 @@ guarded state write:
   `scene_memory` ([state.md](state.md) §Scene memory), the optional `cast` proposals merged into
   `supporting_cast` ([supporting-cast.md](supporting-cast.md) §Supporting cast; roster/player names excluded), the roster-gated
   `presence` transitions ([multi-character.md](multi-character.md) §Multi-character), `driveUpdates` ([state.md](state.md) §Drives), and the optional
-  `outfit` change (chat-scene-fidelity
-  slice 1): a full-replacement description + `exposed` flag when the exchange dressed,
-  changed, or undressed the character, folded into `state.outfit`/`outfitExposed` — which
-  the wearing-line and the scene image's authoritative outfit override both read. Since
-  ux-improvements slice 8.3, a proposal that **names an authored outfit preset**
-  ("changes into her work clothes" → the "Work" preset — `matchOutfitPresetInText`,
-  conservative: exact name or name + outfit-word) writes that preset's id-join marker
-  instead of the paraphrase, so she dresses in the actual authored garments. The
-  seed falls back to the character's **default outfit preset** (`profile.outfits[0]`)
-  when Starting Outfit is blank — but presets hold item **ids**, and the pure
-  `seedChatState` can't resolve them, so it writes them as a **marker** that every
-  IO-capable consumer (exchange pipeline, prompt preview, scenario GET/PATCH/action,
-  time-skip) swaps for the readable garment phrase (any preset's marker resolves)
-  via `resolveSeededOutfit` → `defaultOutfitPhrase` (occlusion-filtered,
-  description-primary, subtype-led, sensory appearance in parens — the same
-  `formatGarment` phrasing as image prompts). Stored rows from before the 2026-07-11 fix
-  persisted the raw ids; the same exact-marker match self-heals them on load. A failed
-  item lookup degrades to `""` (composer inference) — ids never reach the narrator or
-  the scenario modal.
+  `outfit` change (chat-wardrobe-parity — see [state.md](state.md) §Wardrobe):
+  `foldOutfitProposal` (in `finalizeChatState`) reads the archivist's two grammars —
+  a whole-outfit `description` (naming an authored preset → seeds the structured
+  `worn_item_ids` via `matchOutfitPresetInText`; unmatched → a free-text overlay
+  replacement) and garment-level `removed`/`added` (folded through the pure
+  `applyWornGarmentChanges` against the loaded worn items + the character's preset pool
+  — an unmatched removal skips with a diagnostic, an unmatched addition rides the
+  free-text overlay). The narrator wearing-line, the scene image, and the `chat_look`
+  key all read the resolved wardrobe (`resolveChatWardrobe` — [state.md](state.md)
+  §Wardrobe): the rendered garment phrase (`wardrobeOutfitText`, occlusion-filtered +
+  subtype-led) plus coverage-computed exposure (`exposedRegions`). `seedChatState` seeds
+  `worn_item_ids` from the default preset directly; a legacy free-text row (empty worn
+  list) still resolves through the marker-heal (`resolveSeededOutfit` →
+  `defaultOutfitPhrase`) until re-dressed. A failed item lookup degrades to `""`
+  (composer inference) — ids never reach the narrator.
   Its memory write is additionally fenced
   so an infra throw never costs the pulse's state. Every write is **provenance-stamped**
   (`source_message_id` on facts + episodes, spec §4.3): deleting or editing an assistant

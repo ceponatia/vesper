@@ -456,11 +456,22 @@ export const characterChatState = pgTable(
      */
     surfacedCues: jsonb("surfaced_cues").notNull().default({}),
     /**
-     * Free-text starting outfit for THIS chat (character-chat-scenario.plan.md). Drives the
-     * chat scene-image prompt instead of structured clothing items, which chat can't equip.
+     * string[] — the structured worn item-definition ids (chat-wardrobe-parity.plan.md rung 2),
+     * seeded from the active outfit preset. When non-empty, THIS is the wardrobe truth: the
+     * narrator's wearing-line renders these garments and exposure is COMPUTED from their coverage
+     * via the session classifier (`items/visibility.ts`). Empty ⇒ the free-text `outfit` path
+     * (legacy chats + ad-hoc looks) still applies (self-healing migration, ruled).
+     */
+    wornItemIds: jsonb("worn_item_ids").notNull().default([]),
+    /** The active outfit preset id (chat-wardrobe-parity rung 1) — which named look is "on"; "" ⇒ default/none. */
+    outfitPresetId: text("outfit_preset_id").notNull().default(""),
+    /**
+     * Free-text outfit OVERLAY / fallback (chat-wardrobe-parity ruling): narrated-but-unowned
+     * garments ("a borrowed hoodie") ride alongside the worn list, and legacy chats carry their
+     * whole look here until re-dressed. Drives the scene-image prompt when no items are worn.
      */
     outfit: text("outfit").notNull().default(""),
-    /** Gate for intimate-anatomy reveal in chat scene images (no structured wardrobe to derive it). */
+    /** Manual intimate-reveal flag — authoritative only on the free-text path (empty worn list); computed from coverage otherwise. */
     outfitExposed: boolean("outfit_exposed").notNull().default(false),
     /**
      * string[] — the chat archivist's memory-retrieval queries for the NEXT turn

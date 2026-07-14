@@ -93,6 +93,7 @@ describe("finalizeChatState under a memory-write failure", () => {
       preExchangeState: null,
       chatId: fixture.chatId,
       characterId: fixture.characterId,
+      ownerId: fixture.userId,
       memoryGroupId: fixture.memoryGroupId,
       promptMessageId: fixture.messageId,
       profile: emptyCharacterProfile(),

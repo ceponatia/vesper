@@ -71,6 +71,8 @@ export interface AvatarOutfitItem {
 
 /** A default-outfit garment before occlusion / waist-up filtering. */
 export interface AvatarWardrobeItem {
+  /** Item-definition id (chat-wardrobe-parity — the chat worn list keys by it); absent for avatar-only use. */
+  id?: string;
   name: string;
   coverage: readonly string[];
   layer?: number | null;

@@ -13,7 +13,8 @@ import { parseOr, parseOrNull } from "@/lib/parse";
 import { isDemoMode } from "../ai";
 import { characterChats, characters, db, images } from "../db";
 import { absoluteImagePath, chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
-import { loadChatState, resolveSeededOutfit } from "./chat-state";
+import { loadChatState } from "./chat-state";
+import { resolveChatWardrobe } from "./chat-wardrobe";
 import { registerJobHandler } from "./jobs";
 
 /**
@@ -58,8 +59,15 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
   if (!ctx?.avatarImageId) return; // no identity source — scenes fall back to text anyway
   const stored = await loadChatState(input.chatId, input.characterId);
   if (!stored) return;
-  const state = await resolveSeededOutfit(stored, ctx.ownerId, ctx.profile);
-  const lookKey = chatLookKey(state);
+  // Structured wardrobe (chat-wardrobe-parity): resolve the worn state to its rendered look +
+  // coverage-computed exposure, and key on the sorted worn ids + overlay + exposure fingerprint.
+  const wardrobe = await resolveChatWardrobe(stored, ctx.ownerId, ctx.profile);
+  const lookKey = chatLookKey({
+    wornItemIds: wardrobe.wornItemIds,
+    overlay: wardrobe.overlay,
+    exposure: wardrobe.exposure,
+    attributeOverlays: stored.attributeOverlays,
+  });
   if (await latestChatLook(input.chatId, lookKey)) return; // already fresh (a lost race, or a no-op change)
 
   // The identity source: the canonical avatar's bytes (owned + ready).
@@ -82,8 +90,8 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
     characterId: input.characterId,
     avatar,
     lookKey,
-    outfit: state.outfit,
-    outfitExposed: state.outfitExposed,
+    outfit: wardrobe.garments,
+    outfitExposed: wardrobe.exposed,
   });
 }
 

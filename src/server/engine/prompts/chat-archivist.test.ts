@@ -104,14 +104,16 @@ describe("CHAT_ARCHIVIST_SYSTEM", () => {
     expect(group).toContain("Roster (for field 9 — match names exactly): Mara (present), Vera (away)");
   });
 
-  it("declares the optional outfit field with a worked example (chat-scene-fidelity slice 1)", () => {
-    // Full-replacement semantics, change-gated, undressing included, player excluded.
+  it("declares the outfit field with both grammars + worked examples (chat-wardrobe-parity)", () => {
+    // Change-gated, player excluded; whole-swap AND garment-level delta grammars.
     expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"outfit": what the character is WEARING, only when this exchange CHANGED it/);
-    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/a full replacement, never a delta/);
-    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/Undressing counts/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/a FULL replacement \(never a delta\)/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/SINGLE-garment change/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"removed": \["<the garment taken off/);
     expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/Never record the player's clothing/);
-    // The dressed-for-dinner example shows the populated shape; the others show the {} no-op.
+    // The dressed-for-dinner example shows the whole-swap shape; the cardigan the delta; {} the no-op.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"outfit":{"description":"a black wrap dress and low heels, hair pinned up","exposed":false}');
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"outfit":{"removed":["her cardigan"]}');
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"outfit":{}');
   });
 

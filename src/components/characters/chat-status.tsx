@@ -99,7 +99,9 @@ export function outfitSummary(outfit: string): string {
 export function StatusStrip({ state }: { state: ChatStateSnapshot }) {
   const pips = meterPips(state.meters);
   const [outfitOpen, setOutfitOpen] = useState(false);
-  const outfit = state.outfit.trim();
+  // The rendered garment phrase (structured worn items + overlay); falls back to the
+  // free-text outfit for legacy/ad-hoc chats (chat-wardrobe-parity).
+  const outfit = (state.outfitLabel || state.outfit).trim();
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <MoodChip emotion={state.emotion} className="text-xs" />

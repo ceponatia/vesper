@@ -330,6 +330,13 @@
       "when": 1784037413096,
       "tag": "0046_fearless_raider",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784043995173,
+      "tag": "0047_oval_thena",
+      "breakpoints": true
     }
   ]
 }

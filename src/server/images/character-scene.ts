@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { resolveAttributes } from "@/contracts/attributes/value";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
-import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
+import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneReferenceSource } from "@/contracts/images/scene-reference";
@@ -53,10 +53,12 @@ export interface RenderCharacterSceneInput {
   timeOfDay?: string;
   /** Recent assistant turns (oldest first) for the composer to center the shot on. */
   recentChat?: string[];
-  /** Free-text starting outfit from the chat-state scenario modal; "" ⇒ composer-inferred. */
+  /** Rendered outfit phrase (structured worn items + overlay), from the wardrobe seam; "" ⇒ composer-inferred. */
   outfit?: string;
-  /** Reveal intimate anatomy (the scenario modal's exposed toggle). */
+  /** Reveal intimate anatomy — the free-text/legacy manual flag (superseded by `exposure` when present). */
   outfitExposed?: boolean;
+  /** Coverage-computed per-region exposure (chat-wardrobe-parity); overrides the boolean flag. */
+  exposure?: RegionExposure;
   /** Live chat meters — fold a visible-state note (flushed/tipsy/disheveled/tired) into the shot (D4). */
   meters?: Record<string, number>;
   /** Active conditions — overlay grooming/scent/hair so a "disheveled" character renders that way (D4). */
@@ -117,16 +119,13 @@ export function visualStateNote(meters: Record<string, number> = {}): string {
   return parts.join("; ");
 }
 
-/** Fully-clothed coverage: the chat's SFW default when the outfit isn't flagged exposed. */
-const FULLY_COVERED: RegionExposure = { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" };
-
 /**
  * The composer context for a single library character in the default room
- * (character-chat-scenario.plan.md). The character chat has **no equippable wardrobe**, so
- * the outfit is the scenario modal's **free text** (`outfit`) and a single `outfitExposed`
- * toggle stands in for region coverage — there are no structured items to derive it from.
- * Exposed ⇒ fully bare (intimate-anatomy reveal on the uncensored route); otherwise fully
- * covered (SFW). `profile.defaultOutfit` is deliberately NOT read here.
+ * (character-chat-scenario.plan.md; structured worn state — chat-wardrobe-parity). The
+ * `outfit` is the rendered garment phrase (structured worn items + free-text overlay), and
+ * `exposure` — when the caller supplies it — is COMPUTED from the worn items' coverage via the
+ * session classifier; absent, the manual `outfitExposed` flag stands in (free-text / legacy
+ * path): exposed ⇒ fully bare (intimate-anatomy reveal on the uncensored route), else SFW.
  */
 export function buildCharacterSceneContext(input: {
   name: string;
@@ -136,10 +135,12 @@ export function buildCharacterSceneContext(input: {
   recentChat: string[];
   outfit: string;
   outfitExposed: boolean;
+  /** Coverage-computed exposure (chat-wardrobe-parity); overrides the boolean flag when present. */
+  exposure?: RegionExposure;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
 }): SceneComposerContext {
-  const exposure: RegionExposure = input.outfitExposed ? exposedRegions([]) : FULLY_COVERED;
+  const exposure: RegionExposure = input.exposure ?? (input.outfitExposed ? exposedRegions([]) : FULLY_COVERED);
 
   // Active conditions overlay attributes (grooming/scent/hair) the same way the chat prompt
   // does (character-chat-state-narration.spec.md §2/§8), and a visible-state note layers the
@@ -233,6 +234,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     recentChat: (input.recentChat ?? []).filter((t) => t.trim()),
     outfit: input.outfit ?? "",
     outfitExposed: input.outfitExposed ?? false,
+    exposure: input.exposure,
     meters: input.meters,
     conditions: input.conditions,
   });
