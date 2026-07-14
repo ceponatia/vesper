@@ -29,7 +29,9 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
     .from(images)
     .where(and(eq(images.ownerId, row.ownerId), eq(images.entityKind, "character"), eq(images.entityId, id)))
     .orderBy(desc(images.createdAt));
-  return jsonOk({ character: row, portraits });
+  // `mine` — read-only preview + duplicate CTA for foreign public rows (the
+  // item/location slice-6 pattern; edits would 404 server-side anyway).
+  return jsonOk({ character: row, portraits, mine: row.ownerId === user.id });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {

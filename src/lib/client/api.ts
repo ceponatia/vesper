@@ -268,6 +268,8 @@ export const characterDetailSchema = characterSummarySchema.extend({
   visibility: visibilitySchema,
   /** The owner's last character-chat narrator pick (a NARRATIVE_MODELS id); empty ⇒ the chat default. */
   chatModel: textOr(""),
+  /** Viewer owns it — false renders the read-only preview + duplicate CTA (item/location pattern). */
+  mine: z.boolean().catch(true),
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
