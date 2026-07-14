@@ -91,7 +91,7 @@ import { evaluateActReaction } from "@/contracts/personality/act-reaction";
 import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
-import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
+import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { healOutfitMarker, loadChatWardrobe, wardrobeDescriptors } from "./chat-wardrobe";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
@@ -107,7 +107,7 @@ import {
   scaleRegardDelta,
   type ChatFeelingState,
 } from "./chat-feeling";
-import { runChatExtraction, writeChatMemory } from "./chat-memory";
+import { runChatExtraction, writeChatMemory, type AgentLegTrace } from "./chat-memory";
 import { enqueueChatLookImage } from "./chat-reference-enqueue";
 import { appendSelfieEntry, selfieHistorySchema, type SelfieEntry } from "./chat-selfie";
 import { appendVoiceExemplar, voiceExemplarsSchema, type VoiceExemplar } from "./chat-voice";
@@ -1154,6 +1154,8 @@ export interface ChatPulseInput {
    * the full fold.
    */
   scope?: "full" | "opener";
+  /** Failure telemetry only (agent-failure.ts) — never reaches the prompt. */
+  trace?: AgentLegTrace;
   sink?: DiagnosticSink;
 }
 
@@ -1170,19 +1172,31 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
   if (isDemoMode()) return { state: degradeState(state, sink, "demo mode"), degraded: true };
 
   const controller = new AbortController();
+  const prompt = buildChatPulsePrompt({
+    characterName,
+    playerName: input.playerName,
+    mindNote: state.mindNote,
+    // The standing feeling, so the model can judge resolution ("neutral" clears)
+    // instead of proposing blind (emotional-weather.plan.md).
+    feeling: state.feeling.current,
+    exchange: input.exchange,
+  });
+  const modelId = agentModelId();
+  // Failure telemetry (contracts/turns/agent-failure.ts) — a pulse that times out every
+  // exchange freezes the whole relationship curve silently; now it lands in the tally.
+  const telemetry: Partial<AgentTelemetry> = {
+    legId: "chat_state.pulse",
+    chatId: input.trace?.chatId,
+    messageId: input.trace?.messageId,
+    modelId,
+    promptChars: CHAT_PULSE_SYSTEM.length + prompt.length,
+    maxOutputTokens: CHAT_PULSE_MAX_OUTPUT_TOKENS,
+  };
   const work = generateChecked<ChatPulse>({
     schema: chatPulseSchema,
     system: CHAT_PULSE_SYSTEM,
-    prompt: buildChatPulsePrompt({
-      characterName,
-      playerName: input.playerName,
-      mindNote: state.mindNote,
-      // The standing feeling, so the model can judge resolution ("neutral" clears)
-      // instead of proposing blind (emotional-weather.plan.md).
-      feeling: state.feeling.current,
-      exchange: input.exchange,
-    }),
-    modelId: agentModelId(),
+    prompt,
+    modelId,
     temperature: 0,
     maxOutputTokens: CHAT_PULSE_MAX_OUTPUT_TOKENS,
     code: "chat_state.pulse",
@@ -1193,6 +1207,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     lowLatencyRouting: true,
     repair: false,
     degradeSeverity: "warn",
+    telemetry,
   });
 
   const { value, degraded } = await withGenerateTimeout(
@@ -1201,6 +1216,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     CHAT_PULSE_TIMEOUT_MS,
     "chat_state.pulse.timeout",
     sink,
+    telemetry,
   );
   if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded"), degraded: true };
   if (input.scope === "opener") return { state: applyOpenerPulse(state, value).state, degraded: false };
@@ -1415,6 +1431,7 @@ export async function finalizeChatState(input: {
           exchange: input.exchange,
           activeSocialCards: input.scenario.activeSocialCards,
           scope: input.pulseScope,
+          trace: { chatId: input.chatId, messageId: input.assistantMessageId },
           sink: input.sink,
         }),
     runChatExtraction({
@@ -1430,6 +1447,8 @@ export async function finalizeChatState(input: {
       // The recap's ledger grounds the scribe's facts in NAMES (chat-agent-improvements
       // open question D — a pronoun-heavy beat used to file a dangling referent).
       priorSummary: input.priorSummary,
+      // Failure telemetry only — never reaches a prompt (agent-failure.ts).
+      trace: { chatId: input.chatId, messageId: input.assistantMessageId },
       sink: input.sink,
     }),
   ]);

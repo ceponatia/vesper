@@ -2,7 +2,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@/lib/ids";
-import { characterChats, characters, chatParticipants, db, episodes, facts, images, users } from "@/server/db";
+import { characterChats, characters, chatParticipants, db, episodes, events, facts, images, users } from "@/server/db";
 
 // Admin chat-inspector integration suite (character-chat-standalone.spec.md §6.1):
 // the /api/admin/chat-inspector/[chatId] route family invoked directly with mocked
@@ -24,8 +24,10 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
+import { recordAgentFailure } from "@/server/ai";
 import { POST as chatsCreate } from "../../chats/route";
 import { GET as inspectorGet } from "./[chatId]/route";
+import { GET as failuresGet } from "./[chatId]/agent-failures/route";
 import { GET as promptGet } from "./[chatId]/prompt/route";
 import { POST as factCreate } from "./[chatId]/facts/route";
 import { PATCH as factPatch } from "./[chatId]/facts/[factId]/route";
@@ -141,6 +143,12 @@ afterAll(async () => {
     await db().delete(facts).where(inArray(facts.chatMemoryGroupId, plantedGroups));
     await db().delete(episodes).where(inArray(episodes.chatMemoryGroupId, plantedGroups));
   }
+  // Agent-failure events are chat-scoped only in their PAYLOAD (the chat lane has no session
+  // id), so nothing cascades them — without this they'd survive the suite and inflate the
+  // next run's global tally with failures that never happened.
+  await db()
+    .delete(events)
+    .where(sql`${events.type} = 'agent_failure' and ${events.payload} ->> 'chatId' in (${ids.chat}, ${ids.otherChat})`);
   // images.owner_id has no ON DELETE cascade, so clear test assets before users;
   // chats own the transcript/state/summary cascades and users FK them (no cascade).
   await db().delete(images).where(eq(images.ownerId, authState.user.id));
@@ -359,5 +367,69 @@ describe("role gate (admin-only — 404 for non-admins, even on their own chat)"
     }
     const reopened = await inspectorGet(getReq(`/api/admin/chat-inspector/${ids.chat}`), ctx(ids.chat));
     expect(reopened.status).toBe(200);
+  });
+});
+
+/**
+ * Agent health (contracts/turns/agent-failure.ts): the whole loop — a leg failure recorded
+ * through `recordAgentFailure` must come back as a tallied row on the inspector route, with
+ * its suspected cause. A silent leg failure is exactly what this surface exists to catch.
+ */
+describe("agent-failure telemetry (recorded → tallied → readable)", () => {
+  it("reports a recorded failure for this chat, tallied by leg and cause", async (t) => {
+    if (!ready) return t.skip();
+    recordAgentFailure({
+      legId: "chat_continuity",
+      chatId: ids.chat,
+      messageId: "msg-int-1",
+      kind: "timeout",
+      timeoutMs: 6000,
+      modelId: "some/agent-model",
+      promptChars: 30_000,
+      maxOutputTokens: 400,
+    });
+    // Fire-and-forget by design (a failed record must never cost a turn), so the write is
+    // not awaited by the caller — wait for it here before reading it back.
+    await vi.waitFor(async () => {
+      const res = await failuresGet(getReq(`/api/admin/chat-inspector/${ids.chat}/agent-failures`), ctx(ids.chat));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        days: number;
+        chat: { total: number; recent: { legId: string; cause: string; chatId: string | null }[]; byLeg: { key: string; count: number }[] };
+      };
+      expect(body.chat.total).toBeGreaterThanOrEqual(1);
+      const mine = body.chat.recent.find((f) => f.legId === "chat_continuity");
+      expect(mine).toBeDefined();
+      // The classifier ran on the way in: a 30k-char prompt is what blew the budget.
+      expect(mine?.cause).toBe("prompt_too_large");
+      expect(body.chat.byLeg.some((r) => r.key === "chat_continuity")).toBe(true);
+    });
+  });
+
+  it("does not attribute another chat's failures to this one", async (t) => {
+    if (!ready) return t.skip();
+    recordAgentFailure({ legId: "chat_state.pulse", chatId: ids.otherChat, kind: "api_error", providerCode: "rate_limited" });
+    await vi.waitFor(async () => {
+      const res = await failuresGet(getReq(`/api/admin/chat-inspector/${ids.chat}/agent-failures`), ctx(ids.chat));
+      const body = (await res.json()) as {
+        chat: { recent: { legId: string }[] };
+        global: { total: number; byCause: { key: string; count: number }[] };
+      };
+      // The other chat's pulse failure is absent HERE…
+      expect(body.chat.recent.some((f) => f.legId === "chat_state.pulse")).toBe(false);
+      // …but present in the all-conversations tally, which is the point of having both.
+      expect(body.global.byCause.some((r) => r.key === "rate_limited")).toBe(true);
+    });
+  });
+
+  it("404s for a non-admin", async (t) => {
+    if (!ready) return t.skip();
+    authState.user = { ...authState.user, role: "user" };
+    try {
+      const res = await failuresGet(getReq(`/api/admin/chat-inspector/${ids.chat}/agent-failures`), ctx(ids.chat));
+      expect(res.status).toBe(404);
+    } finally {
+      authState.user = { ...authState.user, role: "admin" };
+    }
   });
 });

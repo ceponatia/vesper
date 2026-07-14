@@ -18,7 +18,7 @@ import {
   type RetrievedMemoryDetail,
 } from "@/contracts";
 import type { Milestone } from "@/contracts/relationships/history";
-import { agentModelId, embedText, generateChecked, isDemoMode, toVectorLiteral, withGenerateTimeout } from "../ai";
+import { agentModelId, embedText, generateChecked, isDemoMode, toVectorLiteral, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import type { DbWriter } from "../db";
 import {
   addFacts,
@@ -195,7 +195,18 @@ export async function retrieveChatCallback(input: {
   }
 }
 
+/**
+ * Which conversation + exchange a leg is running for. Carried only so a FAILED leg can be
+ * recorded against something a human can open (contracts/turns/agent-failure.ts); it never
+ * reaches a prompt.
+ */
+export interface AgentLegTrace {
+  chatId?: string;
+  messageId?: string | null;
+}
+
 export interface ChatExtractionInput extends Omit<ChatExtractorContext, "personal"> {
+  trace?: AgentLegTrace;
   sink?: DiagnosticSink;
 }
 
@@ -226,14 +237,31 @@ async function runExtractorLeg<T>(args: {
   maxOutputTokens: number;
   timeoutMs: number;
   code: string;
+  /** Which conversation/exchange this leg is running for — so a failure is diagnosable. */
+  trace?: AgentLegTrace;
   sink?: DiagnosticSink;
 }): Promise<{ value: T | null; degraded: boolean }> {
   const controller = new AbortController();
+  const system = buildChatExtractorSystem(args.legId, args.ctx);
+  const prompt = buildChatExtractorPrompt(args.legId, args.ctx);
+  const modelId = agentModelId();
+  // Failure telemetry (contracts/turns/agent-failure.ts): the leg's identity plus the two
+  // signals that explain a timeout — how big its sheet actually was, and what it was
+  // allowed to emit. A leg that times out on every exchange now shows up in the
+  // inspector's tally with a suspected cause, instead of only in `fly logs`.
+  const telemetry: Partial<AgentTelemetry> = {
+    legId: args.code,
+    chatId: args.trace?.chatId,
+    messageId: args.trace?.messageId,
+    modelId,
+    promptChars: system.length + prompt.length,
+    maxOutputTokens: args.maxOutputTokens,
+  };
   const work = generateChecked<T>({
     schema: args.schema,
-    system: buildChatExtractorSystem(args.legId, args.ctx),
-    prompt: buildChatExtractorPrompt(args.legId, args.ctx),
-    modelId: agentModelId(),
+    system,
+    prompt,
+    modelId,
     temperature: 0,
     maxOutputTokens: args.maxOutputTokens,
     code: `${args.code}.extract`,
@@ -244,9 +272,17 @@ async function runExtractorLeg<T>(args: {
     lowLatencyRouting: true,
     repair: false,
     degradeSeverity: "warn",
+    telemetry,
   });
 
-  const { value, degraded } = await withGenerateTimeout(work, controller, args.timeoutMs, `${args.code}.timeout`, args.sink);
+  const { value, degraded } = await withGenerateTimeout(
+    work,
+    controller,
+    args.timeoutMs,
+    `${args.code}.timeout`,
+    args.sink,
+    telemetry,
+  );
   return { value: degraded ? null : value, degraded };
 }
 
@@ -279,6 +315,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       maxOutputTokens: CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS,
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_memory_scribe",
+      trace: input.trace,
       sink: input.sink,
     }),
     runExtractorLeg<ChatContinuity>({
@@ -295,6 +332,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       maxOutputTokens: CHAT_CONTINUITY_MAX_OUTPUT_TOKENS,
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_continuity",
+      trace: input.trace,
       sink: input.sink,
     }),
     runExtractorLeg<ChatCharacterNotes>({
@@ -311,6 +349,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       maxOutputTokens: CHAT_CHARACTER_NOTES_MAX_OUTPUT_TOKENS,
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_character_notes",
+      trace: input.trace,
       sink: input.sink,
     }),
   ]);
@@ -348,6 +387,7 @@ export async function runChatMemoryScribe(input: ChatExtractionInput): Promise<{
     maxOutputTokens: CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS,
     timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
     code: "chat_memory_scribe",
+    trace: input.trace,
     sink: input.sink,
   });
   return {
@@ -364,6 +404,8 @@ export interface ChatPersonalNotesInput {
   openLoops?: readonly string[];
   /** This member's standing drives — the driveUpdates match targets. */
   drives?: readonly { want: string; secrecy: string; revealed: boolean }[];
+  /** Failure telemetry only (agent-failure.ts) — never reaches the prompt. */
+  trace?: AgentLegTrace;
   sink?: DiagnosticSink;
 }
 
@@ -397,6 +439,7 @@ export async function runChatPersonalNotes(
     maxOutputTokens: CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS,
     timeoutMs: CHAT_PERSONAL_NOTES_TIMEOUT_MS,
     code: "chat_personal_notes",
+    trace: input.trace,
     sink: input.sink,
   });
 }

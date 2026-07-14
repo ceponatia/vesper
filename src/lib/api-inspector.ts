@@ -127,11 +127,51 @@ export interface InspectorFactCreate {
 
 const base = (chatId: string) => `/api/admin/chat-inspector/${chatId}`;
 
+/**
+ * Agent health (contracts/turns/agent-failure.ts): the recorded failures of the helper legs
+ * behind this chat's replies, plus the tallies. Forgiving like every response schema here —
+ * an unreadable row is dropped, a bad field falls back, and the panel still renders.
+ */
+export const agentFailureRowSchema = z.object({
+  legId: textOr("unknown"),
+  kind: z.enum(["timeout", "api_error", "parse_failed"]).catch("timeout"),
+  cause: textOr("unknown"),
+  messageId: optionalId,
+  modelId: textOr(""),
+  provider: optionalId,
+  promptChars: z.number().catch(0),
+  maxOutputTokens: z.number().catch(0),
+  timeoutMs: z.number().catch(0),
+  latencyMs: z.number().catch(0),
+  detail: textOr(""),
+  at: textOr(""),
+});
+export type AgentFailureRow = z.infer<typeof agentFailureRowSchema>;
+
+const tallyRowSchema = z.object({ key: textOr(""), count: z.number().catch(0) });
+
+const failureReportSchema = z.object({
+  recent: arrayOf(agentFailureRowSchema),
+  total: z.number().catch(0),
+  byLeg: arrayOf(tallyRowSchema),
+  byCause: arrayOf(tallyRowSchema),
+});
+
+export const agentHealthSchema = z.object({
+  days: z.number().catch(7),
+  chat: failureReportSchema,
+  global: failureReportSchema,
+});
+export type AgentHealth = z.infer<typeof agentHealthSchema>;
+
 export const chatInspectorApi = {
   /** Everything stored for the conversation: all facts, episodes, summary row, character card. */
   overview: (chatId: string) => apiGet(inspectorOverviewSchema, base(chatId)),
   /** Rebuild the exact prompt the next exchange would send (read-only). */
   prompt: (chatId: string) => apiGet(inspectorPromptSchema, `${base(chatId)}/prompt`),
+  /** Which helper legs FAILED behind this chat's replies, how often, and why (probably). */
+  agentFailures: (chatId: string, days?: number) =>
+    apiGet(agentHealthSchema, withQuery(`${base(chatId)}/agent-failures`, days ? { days: String(days) } : {})),
   /** Ad-hoc dev fact — origin "dev", confidence 1; subjectName defaults to the character. */
   createFact: (chatId: string, body: InspectorFactCreate) =>
     apiPost(z.object({ id: z.string().min(1) }), `${base(chatId)}/facts`, body),

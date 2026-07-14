@@ -52,14 +52,19 @@ Details: `docs/character-chat/pipeline.md` §Reply failures.
 - **Session-lane parity.** The session narrator (`pipeline.liveNarrativeStream`)
   still reports static strings over SSE and has no watchdog at all. Chat leads
   (product direction 2026-07-13); port when the successor model firms up.
-- **`generateChecked` mislabeling.** Every agent-call failure — network, 4xx,
-  5xx, abort — still lands as `${code}.parse_failed`, actively mislabeling
-  transport failures as schema failures. `classifyProviderError` is the ready
-  building block.
-- **Durable chat diagnostics.** Chat-lane diagnostics are still `log.info`'d and
-  dropped (no chat equivalent of `turns.diagnostics`), contradicting
-  resilience.md §8's persisted-diagnostics posture. `last_reply_failure` covers
-  the narrator leg only.
+- ~~**`generateChecked` mislabeling.**~~ **Closed 2026-07-14** (agent-failure
+  telemetry — [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md)
+  §Agent health): a transport failure now classifies through
+  `classifyProviderError` and emits `${code}.api_error` with the provider's own
+  class; only genuine schema failures still say `.parse_failed`.
+- ~~**Durable chat diagnostics.**~~ **Closed 2026-07-14 for the failure half** —
+  every failed agent leg is now recorded durably (an `events` row, `type =
+  "agent_failure"`) with a suspected cause, and tallied in the inspector's
+  **Agent health** panel; see [../resilience.md](../resilience.md)
+  §Agent-failure telemetry. What remains un-persisted is the *non-failure*
+  chat diagnostic stream (the `info`-level codes) — still `log.info`'d and
+  dropped, with no chat equivalent of `turns.diagnostics`. Lower value now that
+  the failures are visible.
 - **Partial-then-died replies.** A stream that dies mid-reply persists the
   partial and records no failure (the reply is visible); the client shows no
   cause. Acceptable for now — the transcript shows what happened.
