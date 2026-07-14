@@ -276,8 +276,32 @@ window, less pre-reply work).
 ## Completion (2026-07-14)
 
 All five slices shipped in one pass. Gates green (lint · cycles · typecheck ·
-2 397 pure tests · 257 integration tests · jscpd), deployed to Fly and verified
+2 401 pure tests · 257 integration tests · jscpd), deployed to Fly and verified
 against a live exchange.
+
+**Live verification** (Fly, the uxtest ensemble chat — Sabrina Vale + Milo Finch;
+one message naming a new person, moving the scene, and removing the PLAYER's
+jacket):
+
+- **memory scribe** — filed two facts, both correctly **named** rather than
+  pronoun-dangling: "Iris is UX Tester's sister, lives in Lisbon, and is flying in
+  to visit on Friday" · "Iris taught UX Tester to appreciate and actually taste
+  coffee" (the open-question-D ledger doing its job).
+- **continuity tracker** — minted the scene (`roasting room` + four established
+  details: the steel door, the drum roaster, the burlap sacks, the workbench) AND
+  the supporting-cast entry (`Iris — the player's sister, flying in from Lisbon ·
+  taught the player to taste coffee`), and correctly **ignored the player's
+  jacket** (neither character's outfit was clobbered — the field's "never record
+  the player's clothing" rule held).
+- **no degradation** — the exchange logged zero diagnostics.
+
+**A supporting data point for the split.** `fly logs` from the day BEFORE this
+change (the single 13-field archivist, same 6s budget) show
+`chat_archivist.timeout` firing **repeatedly** in ordinary play — the monolith was
+routinely failing to produce all thirteen fields in time, silently costing every
+one of them. The three focused legs, each with its own smaller sheet and cap, went
+clean on the first live exchange. That is not a controlled measurement, but it is
+the failure mode the split predicts, observed in production.
 
 **What shipped**
 
