@@ -5,6 +5,7 @@ import {
   buildAttributeSectionSchema,
   demoCharacterAttributeSection,
   demoCharacterOutfitSection,
+  describeConstraint,
   fillVisualDefaults,
   fillSpeciesRequiredDefaults,
   forgeCharacter,
@@ -83,6 +84,22 @@ describe("registry-derived attribute section schema", () => {
     const schema = buildAttributeSectionSchema({ prompt: "a succubus bartender", userId: "user_1", draft });
     expect(schema.safeParse({ attributes: [{ id: "horns.shape", value: "swept_back" }] }).success).toBe(true);
     expect(schema.safeParse({ attributes: [{ id: "wings.type", value: "membranous" }] }).success).toBe(false);
+  });
+});
+
+describe("describeConstraint", () => {
+  it("appends the narrator gloss to glossed choices and leaves bare members untouched", () => {
+    const def = attributeRegistry.byId("feet.smell");
+    expect(def).toBeDefined();
+    const constraint = describeConstraint(def!);
+    expect(constraint).toContain("cheesy (dense fermented funk, like aged cheese");
+    expect(constraint).toContain("clean |"); // unglossed member stays a bare token
+  });
+
+  it("renders unglossed definitions exactly as before", () => {
+    const def = attributeRegistry.byId("feet.arch");
+    expect(def).toBeDefined();
+    expect(describeConstraint(def!)).toBe("one of: flat | low | average | high");
   });
 });
 

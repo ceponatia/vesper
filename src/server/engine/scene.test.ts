@@ -441,6 +441,23 @@ describe("buildGlanceImpressions", () => {
     });
     expect(buildGlanceImpressions(bundle, {})).toContain("wing type: membranous");
   });
+
+  it("renders the narrator gloss beside a glossed value (attribute-narrator-guidance)", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya");
+    expect(maya).toBeDefined();
+    maya!.snapshot = profile({
+      attributes: [
+        { id: "hair.color", value: "auburn", source: "base" },
+        { id: "feet.smell", value: "cheesy", source: "base" },
+      ],
+    });
+    const block = buildGlanceImpressions(bundle, {}, undefined, { ...defaultExposureMask(), scent: "close" });
+    expect(block).toContain("foot scent: cheesy (dense fermented funk, like aged cheese");
+    // An unglossed value stays bare — byte-identical to the pre-gloss rendering.
+    expect(block).toContain("hair color: auburn");
+    expect(block).not.toContain("auburn (");
+  });
 });
 
 describe("buildAffordancesBlock", () => {

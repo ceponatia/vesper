@@ -1,6 +1,32 @@
 # Attribute narrator guidance — plan
 
-Status: **next** (queued — design settled in the 2026-07-08 brainstorm; no code yet).
+Status: **next** — core mechanism SHIPPED 2026-07-13 (see §Shipped so far);
+remaining: the vocabulary audit + stored-value sweep (slice 3) and the broader
+authoring pass (slice 4).
+
+## Shipped so far (2026-07-13)
+
+Driven by the owner's sensory-drift report ("cheesy" feet narrated as clean /
+salty — see [sensory-grounding.followups.md](sensory-grounding.followups.md)):
+
+- **Slice 1 (schema + invariants):** `narratorGuidance` on
+  `attributeDefinitionSchema`; `defineAttributeGroup` throws on non-enum
+  guidance or keys outside `allowedValues`; registry invariant tests + the
+  height-word orthogonality tripwire.
+- **Slice 2 (rendering):** both `attributePhrase` renderers
+  (`engine/prompts/character-chat.ts` — all call sites incl. the sensory-focus
+  block — and `engine/scene.ts` glance impressions) append the gloss as an
+  inline parenthetical; no gloss ⇒ byte-identical output. Chat renders glosses
+  unconditionally per the 2026-07-13 ruling.
+- **Slice 5 (write-side + UI reuse):** `describeConstraint` appends the gloss
+  to each listed choice (forge + portrait-extraction prompts); the attribute
+  picker shows it as the enum option / enum_list chip tooltip.
+- **First authoring batch (sensory palettes only):** the full `feet.smell`
+  palette plus shared `INTIMATE_SCENT_GUIDANCE` / `INTIMATE_TASTE_GUIDANCE`
+  maps in `contracts/attributes/shared-values.ts` (spread by `vulva.scent`,
+  `vulva.taste` — each glossing its own `sweet` augment — and `penis.scent`).
+- **Slice 6 (docs):** contracts/attributes.md (field + orthogonality rule),
+  prompts.md (render sites), authoring.md (authoring guidance).
 
 Reference docs: [../contracts/attributes.md](../contracts/attributes.md) (the
 definition schema this extends), [../prompts.md](../prompts.md) (the blocks that
@@ -56,13 +82,13 @@ catalog already carry per-value hints).
 
 ## Build order
 
-1. **Schema + invariants.** `narratorGuidance` on `attributeDefinitionSchema`
+1. **Schema + invariants** (shipped 2026-07-13). `narratorGuidance` on `attributeDefinitionSchema`
    (zod `record`). Registry invariant tests: keys ⊆ `allowedValues`; only on
    enum/enum_list definitions; values non-empty. Optionally a cheap
    orthogonality tripwire: guidance text outside `build.height` /
    `identity.apparent_age` may not match `/\b(tall|short|towering|height)\b/i`
    (extend the blocklist per dimension as authoring reveals leaks).
-2. **Rendering.** Both attribute renderers append the gloss inline as a
+2. **Rendering** (shipped 2026-07-13). Both attribute renderers append the gloss inline as a
    parenthetical when the resolved value has one:
    - `attributePhrase` in `engine/scene.ts:808` (glance impressions — cost is
      naturally bounded: full impressions only fire on first encounter /
@@ -104,15 +130,16 @@ catalog already carry per-value hints).
      `sour` → `sour_sweat`, `cheesy and vinegary` → `cheesy`,
      `erotically stinky` → nearest of `thick_musk`/`feral`) — same sweep
      applies to stored rows.
-4. **Authoring pass.** Draft glosses for the genuinely ambiguous enums (build,
+4. **Authoring pass** (sensory palettes shipped 2026-07-13 — `feet.smell` +
+   the shared intimate scent/taste maps; the rest remains). Draft glosses for the genuinely ambiguous enums (build,
    weight/musculature, intimate categories, voice, movement, skin), applying
    the orthogonality rule; owner reviews the batch. Data-only edit per the
    registry philosophy — no migration.
 5. **Write-side + UI reuse (ruled 2026-07-13: ships with the core, not
-   deferred).** `describeConstraint` appends the gloss to each listed choice so
+   deferred; shipped 2026-07-13).** `describeConstraint` appends the gloss to each listed choice so
    the forge picks better; the attribute-picker UI surfaces it as option
    tooltip/help text. One authored string, three consumers.
-6. **Docs.** `contracts/attributes.md` (new field + orthogonality rule),
+6. **Docs** (shipped 2026-07-13). `contracts/attributes.md` (new field + orthogonality rule),
    `prompts.md` (where glosses render), `authoring.md` (authoring guidance +
    the sparse-by-design rule).
 

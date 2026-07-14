@@ -1146,7 +1146,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
     expect(parts.tail).toContain("Sensory focus — Theo is breathing in Mara's hair.");
     expect(parts.tail).toContain("cedar and warm skin");
     expect(parts.tail).toMatch(/unwashed/i); // the low-hygiene band layered over the scent
-    expect(parts.tail).toContain("never repeat them verbatim");
+    expect(parts.tail).toContain("never trade it for a milder");
     expect(parts.prefix).not.toContain("Sensory focus"); // volatile
   });
 
@@ -1160,7 +1160,10 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
     });
     expect(parts.tail).toContain("OPEN your reply with the experience itself");
     expect(parts.tail).toContain("before Mara reacts or the scene moves on");
-    expect(parts.tail).toContain("guide-rails, not vocabulary");
+    expect(parts.tail).toContain("names the CHARACTER of a sensation");
+    // The old taste clause hardcoded "its warmth and salt" — the word steered every foot
+    // beat toward "salty" prose whatever the authored scent said (owner report 2026-07-13).
+    expect(parts.tail).not.toContain("warmth and salt");
   });
 
   it("surfaces the TARGET REGION's own authored values — a foot beat carries feet.smell, sense-ranked first", () => {
@@ -1183,6 +1186,58 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
     expect(parts.tail).toContain("Mara's foot arch: high");
     // The region's own scent leads the generic perfume line.
     expect(parts.tail.indexOf("foot scent")).toBeLessThan(parts.tail.indexOf("cedar and warm skin"));
+  });
+
+  it("renders the authored narrator gloss beside the value (attribute-narrator-guidance)", () => {
+    const footed = profile({
+      attributes: [attr("identity.gender", "female"), attr("feet.smell", "cheesy")],
+    });
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: footed,
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "smell", target: "feet", intimate: false, region: "feet" },
+    });
+    expect(parts.tail).toContain("Mara's foot scent: cheesy (dense fermented funk, like aged cheese");
+  });
+
+  it("an authored region scent is the current truth — no contradictory 'clean' default beneath it", () => {
+    const footed = profile({
+      attributes: [
+        attr("identity.gender", "female"),
+        attr("presentation.scent_baseline", "cedar and warm skin"),
+        attr("feet.smell", "cheesy"),
+      ],
+    });
+    // Unremarkable hygiene (no threshold crossed): the block must NOT assert clean skin.
+    const fresh = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: footed,
+      player: { name: "Theo" },
+      state: { meters: { hygiene: 0.9 }, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "smell", target: "feet", intimate: false, region: "feet" },
+    });
+    expect(fresh.tail).not.toContain("clean skin, nothing strong");
+    expect(fresh.tail).toContain("an overlay riding above the scent named above");
+    // Low hygiene deepens the authored scent rather than replacing it.
+    const grimy = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: footed,
+      player: { name: "Theo" },
+      state: { meters: { hygiene: 0.2 }, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "smell", target: "feet", intimate: false, region: "feet" },
+    });
+    expect(grimy.tail).toContain("DEEPENS the authored scent above");
+    // Without any authored region scent the grounded default remains (no invention vacuum).
+    const bare = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile({ attributes: [attr("identity.gender", "female")] }),
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+      sensoryFocus: { sense: "smell", target: "hair", intimate: false, region: "hair" },
+    });
+    expect(bare.tail).toContain("clean skin, nothing strong");
   });
 
   it("drops off-sense region values (a study beat never surfaces scent)", () => {

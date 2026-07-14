@@ -1,5 +1,5 @@
 import { defineAttributeGroup } from "../../types";
-import { INTIMATE_SCENT_BASE } from "../../shared-values";
+import { INTIMATE_SCENT_BASE, INTIMATE_SCENT_GUIDANCE } from "../../shared-values";
 
 /**
  * Penis — intimate region, gated by the body-config group "penis". These describe
@@ -53,5 +53,6 @@ export const penisGroup = defineAttributeGroup("penis", [
     mutability: "mutable",
     allowedValues: [...INTIMATE_SCENT_BASE],
     bodyLocationId: "penis",
+    narratorGuidance: INTIMATE_SCENT_GUIDANCE,
   },
 ]);

@@ -644,7 +644,7 @@ function AttributeControl({
           <option value="">—</option>
           {outOfRule ? <option value={current}>{`⚠ ${current.replaceAll("_", " ")} (not allowed)`}</option> : null}
           {allowed.map((option) => (
-            <option key={option} value={option}>
+            <option key={option} value={option} title={def.narratorGuidance?.[option]}>
               {option.replaceAll("_", " ")}
             </option>
           ))}
@@ -665,7 +665,7 @@ function AttributeControl({
                 key={option}
                 type="button"
                 aria-pressed={active}
-                title={outOfRule ? "Not allowed for this species" : undefined}
+                title={outOfRule ? "Not allowed for this species" : def.narratorGuidance?.[option]}
                 onClick={() => {
                   const next = active ? selected.filter((s) => s !== option) : [...selected, option];
                   // Deselecting the last chip clears the attribute back to unset.

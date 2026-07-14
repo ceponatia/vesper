@@ -2,7 +2,9 @@
 
 Status: **shipped — 2026-07-12** (core slices 1–3 + the allowance-degrade fix + the
 session-lane suffix gate; leftovers listed at the end). Decisions recorded inline —
-no separate spec.
+no separate spec. Post-ship fixes:
+[sensory-grounding.followups.md](sensory-grounding.followups.md) (2026-07-13 —
+the focus block's own "clean"/"salt" wording was overriding authored scents).
 
 ## The problem
 

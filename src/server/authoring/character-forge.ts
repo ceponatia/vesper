@@ -856,11 +856,14 @@ const ATTRIBUTES_SYSTEM = [
 
 export function describeConstraint(def: AttributeDefinition, allowedValues?: readonly string[]): string {
   const allowed = allowedValues ?? def.allowedValues ?? [];
+  // Choices carry their narrator gloss when authored — the same authored string the
+  // read-side prompts render — so the forge picks the member that MEANS what it wants.
+  const choice = (v: string): string => (def.narratorGuidance?.[v] ? `${v} (${def.narratorGuidance[v]})` : v);
   switch (def.valueType) {
     case "enum":
-      return `one of: ${allowed.join(" | ")}`;
+      return `one of: ${allowed.map(choice).join(" | ")}`;
     case "enum_list":
-      return `list from: ${allowed.join(" | ")}`;
+      return `list from: ${allowed.map(choice).join(" | ")}`;
     case "number": {
       const range = def.min !== undefined || def.max !== undefined ? ` ${def.min ?? ""}-${def.max ?? ""}` : "";
       return `number${range}${def.unit ? ` ${def.unit}` : ""}`;
