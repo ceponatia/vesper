@@ -67,6 +67,10 @@ with hard caps and `parseOr` degraded-empty at the load boundary.
   by id/normalized `what`; caps; degraded proposal = no-op. Prompt guidance:
   a concrete commitment (who + roughly when) files as a **plan**; `open_loops`
   keeps only fuzzy unfinished business — never both for the same beat.
+  _Note: if [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md)
+  stage 1a (the extractor field library) lands first, `plans` arrives as a
+  field module instead of a hand-threaded 14th archivist field — same behavior,
+  cleaner landing._
 - The pure due-ness derivation + a compact volatile-tail **Plans** block (both
   frames): only what matters this turn — due/imminent/just-missed plus at most
   a couple of upcoming — with directives per state (anticipation before, the

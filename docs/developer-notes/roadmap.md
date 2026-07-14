@@ -41,6 +41,15 @@ _(nothing — pull the next entry from Next)_
   big time skips proposing off-screen developments — including NPC↔NPC
   interactions filed as relationship facts — away-member whereabouts, and the
   daily-rhythm line in ordinary turns. "The world moves," scoped to the cast.
+- **Chat agent improvements** — [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md)
+  (draft — planned 2026-07-14 from an owner-requested agent-architecture review;
+  slices independent). The archivist's 13 jobs become a composable **field
+  library** (then, owner-gated, 2–3 focused parallel extractors), the ensemble
+  settle loop parallelized, embeddings computed once per turn, a tail digest
+  ordering the one-turn notes, and prompt-wording dedup. **Interacts with the
+  two entries above**: stage 1a ideally lands before plans & promises adds its
+  archivist field, and off-screen life's meanwhile pass composes from the same
+  library — see the plan's §Roadmap fit.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
