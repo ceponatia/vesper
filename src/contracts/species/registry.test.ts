@@ -6,6 +6,7 @@ import {
   inferSpeciesFromText,
   speciesAppearancePhrase,
   speciesCatalog,
+  speciesIntimacyNote,
   speciesLorePhrase,
 } from "./registry";
 import { realizeBody } from "./realize";
@@ -125,6 +126,37 @@ describe("speciesLorePhrase", () => {
     const dark = elf?.heritages.find((h) => h.id === "dark_elf");
     expect(speciesLorePhrase("elf", "dark_elf")).toBe(`Dark Elf — ${dark?.lore}`);
     expect(speciesLorePhrase("elf", "dark_elf")).not.toContain(elf?.lore ?? "__none__");
+  });
+});
+
+describe("speciesIntimacyNote", () => {
+  it("is empty for the default species, unknown ids, and unauthored species", () => {
+    expect(speciesIntimacyNote("human")).toBe("");
+    expect(speciesIntimacyNote("not_a_species")).toBe("");
+    // dwarf ships no intimacy note (baseline humanoid) — bare "".
+    expect(speciesIntimacyNote("dwarf")).toBe("");
+  });
+
+  it("returns the BARE authored note (no `Label — ` prefix, unlike lore/appearance)", () => {
+    const succubus = speciesCatalog.find((s) => s.id === "succubus");
+    expect(succubus?.intimacy).toBeTruthy();
+    expect(speciesIntimacyNote("succubus")).toBe(succubus?.intimacy);
+    expect(speciesIntimacyNote("succubus").startsWith("Succubus")).toBe(false);
+  });
+
+  it("REPLACES the species note with the heritage's when the heritage authored one (sprite over faerie)", () => {
+    const faerie = speciesCatalog.find((s) => s.id === "faerie");
+    const sprite = faerie?.heritages.find((h) => h.id === "sprite");
+    expect(sprite?.intimacy).toBeTruthy();
+    expect(speciesIntimacyNote("faerie", "sprite")).toBe(sprite?.intimacy);
+    expect(speciesIntimacyNote("faerie", "sprite")).not.toBe(faerie?.intimacy);
+  });
+
+  it("falls back to the species note when the heritage has none, or the heritage is unknown", () => {
+    // elf authors an intimacy note; a heritage without its own falls back to it.
+    const elf = speciesCatalog.find((s) => s.id === "elf");
+    expect(elf?.intimacy).toBeTruthy();
+    expect(speciesIntimacyNote("elf", "nope")).toBe(elf?.intimacy);
   });
 });
 

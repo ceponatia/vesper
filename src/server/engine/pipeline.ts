@@ -51,6 +51,7 @@ import {
   buildCommsLine,
   buildDispositionBlock,
   buildIntimateDispositionLine,
+  buildIntimateDispositionBlock,
   buildDarknessLine,
   buildFollowGuidance,
   buildGlanceImpressions,
@@ -844,6 +845,9 @@ async function assemblePreTurn(
         : "",
       // Intimate trait bands, surfaced only when this turn's exposure earns it (volatile).
       buildIntimateDispositionLine(dispositionNpcs, exposure),
+      // Intimate disposition notes (species/heritage archetype + profile.intimacy),
+      // sight-present NPCs only, same exposure gate — any axis intimate (intimacy-notes.spec.md).
+      buildIntimateDispositionBlock(bundle, channels, exposure),
     ]
       .filter(Boolean)
       .join("\n\n"),

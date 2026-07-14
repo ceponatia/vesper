@@ -1,7 +1,9 @@
 # Intimacy notes — species/heritage + per-character disposition for intimate scenes — spec
 
-Status: **settled — 2026-07-13, not implemented** (all seven open questions
-ruled by the owner; see §Rulings). Graduated from a `TBD:` comment
+Status: **implemented — 2026-07-14 (session lane)** (all seven open questions
+ruled by the owner; see §Rulings). Shipped per the plan's build order — see
+[intimacy-notes.plan.md §Completion](intimacy-notes.plan.md#completion-2026-07-14),
+including the noted chat-lane leftover. Graduated from a `TBD:` comment
 in `src/contracts/species/catalog/faerie.ts` (the sprite record) on 2026-06-16.
 Plan/build order: [intimacy-notes.plan.md](intimacy-notes.plan.md) — this doc is
 the design truth it references. Plain-language first, with an _"under the hood"_

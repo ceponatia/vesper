@@ -174,6 +174,9 @@ export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: Filla
       bio: keepText(base.profile.bio, incoming.profile.bio),
       personality: keepText(base.profile.personality, incoming.profile.personality),
       voice: keepOptionalText(base.profile.voice, incoming.profile.voice),
+      // Intimate disposition (intimacy-notes.spec.md): a free-text scalar like voice —
+      // an authored note is fixed; a blank one takes the generated one.
+      intimacy: keepOptionalText(base.profile.intimacy, incoming.profile.intimacy),
       microExemplars:
         base.profile.microExemplars.length > 0 ? base.profile.microExemplars : incoming.profile.microExemplars,
       // Voice anchors (character-fidelity slice 7): all-or-nothing like the outfit — any

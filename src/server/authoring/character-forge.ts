@@ -201,6 +201,8 @@ const profileSectionSchema = z.object({
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().default(""),
+  /** Intimate disposition (intimacy-notes.spec.md) — how the character reads as a lover; surfaced to the narrator ONLY at the intimate exposure tier. */
+  intimacy: z.string().default(""),
   /** Worked dialogue exemplars (character-fidelity slice 6) — few-shots of the character's voice/manner. */
   microExemplars: z
     .array(z.object({ situation: z.string().default(""), line: z.string().default("") }))
@@ -623,6 +625,12 @@ function profilePrompt(context: CharacterForgeContext): string {
     "differ from how old they look), any aliases or nicknames, and 3-6 lowercase library tags",
     "(for search/categorization).",
     "",
+    "Also draft the character's INTIMATE DISPOSITION — a short, tasteful note on how they read as a lover:",
+    "their temperament, instincts, and preferences once things turn intimate. The game surfaces this to the",
+    "narrator ONLY after a scene has actually become intimate, never in ordinary play, so write it frankly and",
+    "specifically, but keep it to a sentence or two.",
+    "- intimacy: 1-2 sentences on how this character is as an intimate partner, or \"\" when the concept gives no basis for one.",
+    "",
     "Then infer the character's social DISPOSITION from the personality (used by the game, not just prose):",
     `- dispositionTags: 2-5 short trait labels. Prefer these canonical tags where they fit: ${canonicalTags}. Free-form is allowed but prefer canonical.`,
     `- preferences: 1-4 clear likes/dislikes that follow from the personality, each {target, valence: like|dislike, intensity: 1-10, hint}. target MUST be one of these interaction concepts/families: ${conceptVocab}. hint is a short note on how they react. Omit weak or generic preferences — sparse and characterful is correct.`,
@@ -703,6 +711,8 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
   if (socialCards.length > 0) profile.socialCards = socialCards;
   const voice = section.voice.trim();
   if (voice) profile.voice = voice;
+  const intimacy = section.intimacy.trim();
+  if (intimacy) profile.intimacy = intimacy;
   const age = section.age.trim();
   if (age) profile.age = age;
   const species = speciesForForgeContext(context);
@@ -1405,6 +1415,8 @@ export function demoCharacterProfileSection(): ProfileSection {
     personality:
       "Dry, watchful, unhurried. Keeps a soft spot for green deckhands and a colder shelf for smooth talkers. Allergic to paperwork, flattery, and being thanked.",
     voice: "Low and gravelled; clipped harbor slang; says less than she knows and means more than she says.",
+    intimacy:
+      "Guarded and unshowy about it, the way she is everywhere else — slow to let the walls down, but steady, unhurried, and quietly generous once she trusts you that far.",
     microExemplars: [
       { situation: "thanked warmly for a kindness", line: 'She waves it off before you finish. "Don\'t. It\'s a job, not a favor."' },
       { situation: "a smooth talker lays on the flattery", line: 'A flat look over the ledger. "You want something. Get to it or get off my quay."' },

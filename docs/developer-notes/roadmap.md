@@ -27,12 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
-  [intimacy-notes.spec.md](intimacy-notes.spec.md) (design settled — all seven
-  questions ruled 2026-07-13). Third species/heritage
-  note (`intimacy`) + per-character disposition, surfaced to the narrator only at
-  the intimate exposure tier. Standalone — builds on the shipped species note split +
-  the phase-4 exposure mask; feeds mood's intimacy-beat inputs but doesn't gate them.
 - **Attribute narrator guidance — remainder: vocabulary audit + broader authoring pass** —
   [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) (core
   mechanism + sensory glosses shipped 2026-07-13 — see Shipped). Remaining: the
@@ -85,6 +79,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
+  [intimacy-notes.spec.md](intimacy-notes.spec.md) — 2026-07-14 — the third species/heritage
+  note (`intimacy`, bare text) + a per-character `profile.intimacy`, merged (heritage-replaces,
+  character-appends) and surfaced to the session narrator via `buildIntimateDispositionBlock`
+  **only when the turn's exposure mask reaches the intimate tier on any axis**. Full trip: schema
+  (no migration), `speciesIntimacyNote` resolver, gate wired into `buildTurnContext`, forge/editor/
+  fill/redraft, authored notes for succubus·faerie·sprite·elf·dark_elf·orc. **Session-lane only** —
+  the chat test bed has no four-axis mask yet, so a chat port is the noted follow-up (see plan
+  §Completion).
 - **Chat wardrobe parity** — [chat-wardrobe-parity.plan.md](chat-wardrobe-parity.plan.md) —
   2026-07-14 — the chat lane's one free-text `outfit` string + manual `outfit_exposed` toggle
   became structured worn state to session parity, all three rungs: chat state holds `wornItemIds`

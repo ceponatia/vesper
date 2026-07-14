@@ -90,6 +90,27 @@ export function speciesLorePhrase(speciesId: string, heritageId?: string): strin
   return lore ? `${label} — ${lore}` : label;
 }
 
+/**
+ * The species/heritage *intimate disposition* note for the narrator, surfaced ONLY at
+ * the intimate exposure tier (`buildIntimateDispositionBlock`): how members of this
+ * kind tend to read as lovers. Returns the resolved **bare** text — unlike
+ * `speciesLorePhrase` / `speciesAppearancePhrase` it carries **no `Label — ` prefix**,
+ * because the narrator block already names the character. "" for the default species
+ * (human, the unmarked baseline), an unknown id, or an unauthored note. When a
+ * `heritageId` resolves, its note **replaces** the species' (falling back to the
+ * species' when the heritage has none) — the same merge rule `lore` uses. The
+ * per-character `profile.intimacy` is appended on top of this by the block builder,
+ * not here (the two layers merge at the surfacing site).
+ */
+export function speciesIntimacyNote(speciesId: string, heritageId?: string): string {
+  if (speciesId === DEFAULT_SPECIES_ID) return "";
+  const species = byId.get(speciesId);
+  if (!species) return "";
+  const heritage = heritageFor(speciesId, heritageId);
+  const note = (heritage?.intimacy.trim() ? heritage.intimacy : "") || species.intimacy;
+  return note.trim();
+}
+
 export interface InferredSpecies {
   species: SpeciesDefinition;
   matchedTerm: string;

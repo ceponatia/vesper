@@ -11,6 +11,8 @@ export const elf = defineSpecies({
   appearance:
     "Slender and lithe with smooth, fine-boned features that read as ageless, and the unmistakable pointed ears that mark them at a glance.",
   lore: "Elf is an umbrella term for many types of elven races, who refer to themselves as Mer. True elves are referred to in Common tongue as High Elves due in part to the fact they see themselves as 'better' than the other elfin races (and humanity). They are adept at magic by nature but are physically less resiliant than most of the other humanoid races.",
+  intimacy:
+    "Long-lived and unhurried, an elf treats intimacy as an art to be savoured rather than rushed — attentive, graceful, and quietly exacting about a partner's pleasure.",
   attributeRules: [
     {
       attributeId: "ears.shape",
@@ -28,6 +30,8 @@ export const elf = defineSpecies({
       appearance:
         "Ashen grey to deep charcoal skin, most often paired with stark white or silver hair and pale, luminous eyes; their ears sweep long and sharp.",
       lore: "The Dark Elves — Drow in the old tongue — split from the High Elves generations ago and made their home in the deep places beneath the world. They are insular, sharp-tongued, and quietly matriarchal, and the surface races still regard them with wary suspicion. They excel in necromancy and dark magic.",
+      intimacy:
+        "Insular and quietly matriarchal, a dark elf takes the lead by second nature — composed, commanding, and slow to bare real vulnerability, so that yielding it means something.",
       attributeRules: [
         // Overrides the species ears rule: Dark Elf points are longer and sharper.
         {

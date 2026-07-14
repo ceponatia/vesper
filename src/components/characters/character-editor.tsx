@@ -302,6 +302,20 @@ export function CharacterEditor({
               />
             )}
           </Field>
+          <Field
+            label="Intimate disposition"
+            hint="How they are as a lover. Surfaces to the narrator only when a scene turns intimate — never in ordinary play."
+            className="sm:col-span-2"
+          >
+            {(id) => (
+              <Textarea
+                id={id}
+                rows={2}
+                value={draft.profile.intimacy ?? ""}
+                onChange={(e) => patchProfile({ intimacy: e.target.value || undefined })}
+              />
+            )}
+          </Field>
           <Field label="Aliases" hint="Other names the narrative may use.">
             {(id) => <TagInput id={id} value={draft.profile.aliases} onChange={(aliases) => patchProfile({ aliases })} />}
           </Field>
