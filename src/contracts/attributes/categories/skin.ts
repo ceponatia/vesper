@@ -48,6 +48,14 @@ export const skinGroup = defineAttributeGroup("skin", [
     mutability: "mutable",
     allowedValues: ["smooth", "soft", "dewy", "dry", "rough", "weathered", "leathery"],
     aliases: ["skin texture"],
+    // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+    // OWNER REVIEW. Texture = surface feel only, never tone/color. Sparse: smooth/soft/dry stay bare.
+    narratorGuidance: {
+      dewy: "fresh and faintly moist, catches the light",
+      rough: "coarse to the touch — texture you can feel",
+      weathered: "sun- and wind-worn, roughened by exposure",
+      leathery: "tough and thick, tanned like worn hide",
+    },
   },
   {
     id: "skin.markings",

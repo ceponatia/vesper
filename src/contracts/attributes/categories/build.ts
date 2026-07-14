@@ -1,5 +1,10 @@
 import { defineAttributeGroup } from "../types";
 
+// Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+// OWNER REVIEW. Each gloss stays strictly in its own dimension per the orthogonality
+// rule: frame speaks bone gauge (never height/weight), musculature speaks muscle only,
+// weight speaks adiposity only. Sparse — self-evident members (average) stay bare.
+
 export const buildGroup = defineAttributeGroup("build", [
   {
     id: "build.height",
@@ -45,6 +50,12 @@ export const buildGroup = defineAttributeGroup("build", [
     aliases: ["frame", "build", "figure", "physique", "bone structure"],
     coreVisual: true,
     defaultValue: "slight",
+    narratorGuidance: {
+      delicate: "fine, bird-light bones — thin wrists and ankles",
+      slight: "lightly built bone, a step up from delicate",
+      sturdy: "dense, solid bone — thick at wrist and joint",
+      heavy_boned: "big-jointed and thick-framed, heavy bone throughout",
+    },
   },
   {
     id: "build.musculature",
@@ -65,6 +76,15 @@ export const buildGroup = defineAttributeGroup("build", [
       "powerfully_built",
     ],
     aliases: ["muscles", "muscle tone", "musculature"],
+    narratorGuidance: {
+      untoned: "no muscle definition — soft and unworked",
+      lightly_toned: "the faintest firmness, barely worked",
+      sinewy: "lean, wiry cord and tendon — no bulk",
+      toned: "clearly fit and firm, definition without size",
+      defined: "sharp, visible separation between muscles",
+      muscular: "substantial, obvious muscle mass",
+      powerfully_built: "heavy, powerful muscle — built for force",
+    },
   },
   {
     id: "build.weight_presentation",
@@ -88,5 +108,13 @@ export const buildGroup = defineAttributeGroup("build", [
     promptHints: [
       "Describe weight as silhouette and presence, never as a number or a judgement.",
     ],
+    narratorGuidance: {
+      underweight: "visibly thin — the edges of bone showing",
+      slim: "lean and light, little softness carried",
+      soft: "a gentle layer of softness over the body",
+      plump: "rounded and full, softness carried everywhere",
+      heavy: "carries real weight — full and substantial",
+      very_heavy: "large-bodied; the weight is the first impression",
+    },
   },
 ]);

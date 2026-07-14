@@ -184,3 +184,10 @@ manual  >  condition / injury / item / magic / environment  >  narrative  >  cre
 ```
 
 The sources, the precedence order, and the last-write-wins resolver are the shared `contracts/registry` provenance spine (`provenanceSources`, `SOURCE_PRECEDENCE`, `resolveProvenance`). `resolveAttributes` and the traits' `resolveTraits` are thin aliases over it.
+
+## Renaming vocabulary (data edit + one-off sweep)
+
+Vocabulary changes are **data edits in the registry, never schema migrations** — but renaming an enum member (or re-scoping an attribute's `allowedValues`) is the one edit that can *invalidate stored values*: a value no longer in `allowedValues` fails `parseValue` and degrades away on read, silently losing authored detail. Adding values is always safe; renaming/removing them takes the two-part pattern:
+
+1. **Freeform still maps.** If the old word is a useful free-text mention, keep it as an `aliases` entry on whichever attribute it now belongs to (definition-level text→attribute-id resolution — e.g. `curvy` moved from a dead `build.frame` value to `hips.width`'s aliases). This does **not** re-map a stored value; it only keeps authoring text resolving.
+2. **Stored rows get swept.** A one-off, idempotent script maps each old stored value to its canonical successor across **every** attribute-value storage site, so no pre-rename row survives to fail validation. The template is `scripts/sweep-renamed-attribute-values.ts` (the attribute-narrator-guidance slice-3 sweep): remaps keyed **by attribute id** (the same word can stay valid on another attribute), covering `characters.profile.attributes`, the `world_cast` / `session_participants` profile snapshots, session `ParticipantState` overlays + condition `attributeEffects`, and `character_chat_state` overlays + conditions. It is deliberately **not** `parseOr`-based — a migration must never drop an element it can't recognize, so unknown-shaped entries pass through and only the `{id,value}` pair is rewritten. Run it once per environment after shipping the rename.
