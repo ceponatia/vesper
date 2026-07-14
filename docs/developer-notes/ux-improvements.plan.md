@@ -126,6 +126,14 @@ from name+description — extend that seam into the editor:
    (`social-card-editor-page.tsx` — `detail.mine` → read-only + "Clone to my
    library" CTA, which slice 1's clone button provides). Audit locations for
    the same gap while in there.
+   - **Post-ship (2026-07-14): characters had the same gap** — the audit
+     covered locations but missed the character sheet, whose autosave loop
+     fired "character not found" toasts on every edit of a foreign public row
+     (found while live-probing sensory glosses). Same fix: `mine` on the
+     characters GET + `characterDetailSchema` (`.catch(true)` degrade), and
+     `character-edit-page.tsx` renders a read-only preview (avatar, tags, age,
+     bio, personality) with **Duplicate to my library** + **Chat** CTAs when
+     `!mine`.
 
 ### Slice 7 — editor autosave refactor + scannability
 

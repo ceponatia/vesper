@@ -19,6 +19,7 @@ import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
 import { SaveBar } from "@/components/ui/save-bar";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
@@ -298,6 +299,43 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   }
 
   if (!draft) return null;
+
+  // Someone else's public character: read-only preview + duplicate CTA (the
+  // item/location slice-6 pattern). The live editor once rendered here and
+  // every autosave 404'd server-side ("character not found" toasts) — the
+  // owner-scoped PATCH was always going to reject it.
+  if (detail.data && !detail.data.mine) {
+    const profile = detail.data.profile;
+    return (
+      <PageContainer>
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h1 className="prose-display text-2xl">{detail.data.name || "Untitled character"}</h1>
+          <div className="flex items-center gap-3">
+            <Button onClick={() => router.push(`/chat?new=${characterId}`)}>Chat</Button>
+            <Button variant="primary" busy={cloning} onClick={() => void clone()}>
+              Duplicate to my library
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-col gap-4 rounded-card border border-ink-700 bg-ink-850 p-4 text-sm text-paper-300 sm:flex-row">
+          <EntityImage
+            imageId={detail.data.avatarImageId}
+            name={detail.data.name}
+            className="h-44 w-32 shrink-0 rounded-md"
+          />
+          <div className="flex min-w-0 flex-col gap-3">
+            <p className="text-paper-400">
+              Someone else&apos;s public character — duplicate it to edit your own copy, or start a chat as-is.
+            </p>
+            {detail.data.tags.length ? <p className="text-xs text-paper-500">{detail.data.tags.join(" · ")}</p> : null}
+            {profile.age ? <p className="text-xs text-paper-500">Age: {profile.age}</p> : null}
+            {profile.bio ? <p>{profile.bio}</p> : null}
+            {profile.personality ? <p className="text-paper-400">{profile.personality}</p> : null}
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>

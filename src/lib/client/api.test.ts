@@ -191,6 +191,17 @@ describe("resource schemas degrade per-field", () => {
     expect(parsed.profile.bodyPlanId).toBe("humanoid");
   });
 
+  it("character detail carries `mine`, defaulting to editable when absent", () => {
+    // A foreign public row renders the read-only preview + duplicate CTA…
+    const wrapped = detailOf(characterDetailSchema, "character").parse({
+      character: { id: "c1", name: "Cass" },
+      mine: false, // sibling of the wrapped row, merged by detailOf
+    });
+    expect(wrapped.mine).toBe(false);
+    // …and an old/absent flag degrades to the editor (owner-scoped PATCH still guards).
+    expect(characterDetailSchema.parse({ id: "c1", name: "Cass" }).mine).toBe(true);
+  });
+
   it("item detail tolerates a missing definition", () => {
     const parsed = itemDetailSchema.parse({ id: "i1", name: "Coat", kind: "clothing" });
     expect(parsed.definition.coverage).toEqual([]);
