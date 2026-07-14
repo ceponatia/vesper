@@ -91,13 +91,22 @@ export const CHAT_PULSE_MAX_OUTPUT_TOKENS = 256;
  */
 export const CHAT_PULSE_TIMEOUT_MS = 4000;
 /**
- * The chat archivist-lite (character-chat-primary.spec.md §2) runs in parallel with the
- * pulse in the same post-flush finalizer, so its budget also only delays controller.close().
- * It emits more than the pulse (an episode summary + facts + queries) so it gets a larger
- * token cap and a slightly longer timeout; a miss degrades to the summary+window path.
+ * The post-turn extraction legs (chat-agent-improvements.plan.md slice 1b — formerly ONE
+ * 700-token archivist call emitting all thirteen fields). Three focused legs now run in
+ * parallel with each other and with the pulse in the same post-flush finalizer, so this
+ * budget still only delays controller.close() — invisible to perceived latency — and each
+ * leg's cap covers only ITS fields. A missed leg degrades just its own reads; all three
+ * missing degrades to the summary+window path exactly as the single call used to.
+ *
+ * The scribe writes prose (an episode summary + up to 6 facts), so it keeps the largest
+ * cap; continuity emits short structured proposals; the character leg emits short lists
+ * plus one verbatim line.
  */
-export const CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS = 700;
-export const CHAT_ARCHIVIST_TIMEOUT_MS = 6000;
+export const CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS = 500;
+export const CHAT_CONTINUITY_MAX_OUTPUT_TOKENS = 400;
+export const CHAT_CHARACTER_NOTES_MAX_OUTPUT_TOKENS = 350;
+/** Shared per-leg timeout (they race each other, not a shared budget). */
+export const CHAT_EXTRACTOR_TIMEOUT_MS = 6000;
 /**
  * The per-member personal pass (multi-character-chat.followups.md ruling 10): one small
  * focused call per PRESENT ensemble member after the shared archivist. Four fields only

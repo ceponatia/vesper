@@ -2,7 +2,7 @@ import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
  * The chat location-sketch prompt (chat-scene-fidelity.plan.md slice 2b). A small,
- * single-concern background agent (like ./chat-archivist.ts): when the conversation
+ * single-concern background agent (like the ./chat-extractors.ts legs): when the conversation
  * introduces a place, expand it into a compact visual sketch — 2–4 sentences of layout,
  * light, palette, and a few fixtures — stored on the place's scene-memory record and
  * consumed by the scene image (`room`) and the narrator's Scene block. Runs detached

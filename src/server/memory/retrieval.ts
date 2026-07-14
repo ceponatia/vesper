@@ -3,6 +3,7 @@ import { EPISODE_RETRIEVAL_LIMIT, FACT_RETRIEVAL_LIMIT } from "./constants";
 import { retrieveEpisodesFused } from "./episodes";
 import { retrieveFactsFused } from "./facts";
 import { nonBlankQueries } from "./fusion";
+import { QueryEmbeddings } from "./query-embeddings";
 import { sessionScope } from "./scope";
 import {
   eligibleRetrievalChunks,
@@ -44,9 +45,14 @@ export async function preTurnRetrieve(input: PreTurnRetrieveInput): Promise<PreT
   const queryText = queries.join("\n");
 
   const scope = sessionScope(input.session.id);
+  // One embed for the whole turn (chat-agent-improvements slice 3): the episode and fact
+  // legs search the SAME queries, and each used to batch-embed them independently — two
+  // round-trips for one set of texts, on the pre-narration path. (Lore stays single-query
+  // over the joined text, a different string, so it embeds its own.)
+  const embeddings = await QueryEmbeddings.embed(queries, input.sink);
   const [episodesResult, factsResult, loreResult] = await Promise.allSettled([
-    retrieveEpisodesFused(scope, queries, EPISODE_RETRIEVAL_LIMIT, input.sink),
-    retrieveFactsFused(scope, queries, FACT_RETRIEVAL_LIMIT, input.sink),
+    retrieveEpisodesFused(scope, queries, EPISODE_RETRIEVAL_LIMIT, input.sink, embeddings),
+    retrieveFactsFused(scope, queries, FACT_RETRIEVAL_LIMIT, input.sink, embeddings),
     retrieveLoreLeg(input, queryText),
   ]);
 

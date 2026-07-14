@@ -7,6 +7,7 @@ import { db, episodes, type DbWriter } from "../db";
 import { logEvent } from "../events";
 import { EPISODE_MIN_SCORE, EPISODE_RETRIEVAL_LIMIT, EPISODE_WINDOW, RRF_K } from "./constants";
 import { fuseByRrf, nonBlankQueries } from "./fusion";
+import type { QueryEmbeddings } from "./query-embeddings";
 import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
 
 const stringArraySchema = z.array(z.string());
@@ -247,20 +248,33 @@ export async function retrieveEpisodesFused(
   queries: readonly string[],
   limit = EPISODE_RETRIEVAL_LIMIT,
   sink?: DiagnosticSink,
+  /**
+   * The turn's shared query-embedding cache (chat-agent-improvements slice 3) — the same
+   * texts the fact leg searches, embedded once for both. Absent ⇒ this leg embeds its own,
+   * exactly as before.
+   */
+  embeddings?: QueryEmbeddings,
 ): Promise<FusedEpisodeHit[]> {
   const usable = nonBlankQueries(queries);
   if (usable.length === 0 || limit <= 0) return [];
 
-  let embedded: Embedded[];
-  try {
-    embedded = await embedTexts(usable);
-  } catch (err) {
-    sink?.push(
-      diag("error", "memory.episodes.embed_failed", `query embedding failed: ${errorText(err)}`, {
-        context: { scope: scopeLabel(scope), queryCount: usable.length },
-      }),
-    );
-    return [];
+  let pairs: { query: string; vector: string }[];
+  if (embeddings) {
+    pairs = embeddings.pairsFor(usable);
+    // A failed shared embed degrades this leg to [] exactly as its own failure would.
+    if (pairs.length === 0) return [];
+  } else {
+    try {
+      const embedded = await embedTexts(usable);
+      pairs = embedded.map((emb, i) => ({ query: usable[i] ?? "", vector: toVectorLiteral(emb.vector) }));
+    } catch (err) {
+      sink?.push(
+        diag("error", "memory.episodes.embed_failed", `query embedding failed: ${errorText(err)}`, {
+          context: { scope: scopeLabel(scope), queryCount: usable.length },
+        }),
+      );
+      return [];
+    }
   }
 
   const maxTurn = await maxTurnNumber(scope);
@@ -268,11 +282,9 @@ export async function retrieveEpisodesFused(
   const cutoff = maxTurn - EPISODE_WINDOW;
 
   const lists = await Promise.all(
-    embedded.map(async (emb, i) => ({
-      query: usable[i] ?? "",
-      hits: (await queryEpisodeCandidates(scope, toVectorLiteral(emb.vector), cutoff, limit)).filter(
-        (c) => c.score >= EPISODE_MIN_SCORE,
-      ),
+    pairs.map(async (pair) => ({
+      query: pair.query,
+      hits: (await queryEpisodeCandidates(scope, pair.vector, cutoff, limit)).filter((c) => c.score >= EPISODE_MIN_SCORE),
     })),
   );
   const fused = fuseByRrf(lists);

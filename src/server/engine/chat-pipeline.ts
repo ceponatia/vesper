@@ -22,6 +22,7 @@ import { classifyProviderError } from "../ai";
 import { characterChats, characterChatMessages, chatParticipants, db, images } from "../db";
 import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
 import { log } from "../log";
+import { QueryEmbeddings } from "../memory";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { buildActionBeatCue } from "./chat-action-beat";
@@ -47,7 +48,7 @@ import {
   reconcileMessageMemory,
   retrieveChatCallback,
   retrieveChatMemory,
-  runChatArchivist,
+  runChatMemoryScribe,
   runChatPersonalNotes,
   writeChatMemory,
 } from "./chat-memory";
@@ -758,11 +759,23 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       (o) => o.state.presence === "present" && o.state.quietExchanges < ENSEMBLE_QUIET_EXCHANGES,
     );
     const legLimit = ensembleActive ? Math.max(2, 5 - activeOthers.length) : undefined;
+    // ONE embed for the whole turn (chat-agent-improvements slice 3): every retrieval leg
+    // below searches over the same texts — the player's input plus each participant's
+    // persisted `memoryQueries` — and each leg used to embed its own copy (the fact leg,
+    // the episode leg, every member's pair of legs, and the callback picker's third read of
+    // the input). This is the only agent-adjacent cost on the PRE-reply path, so it is the
+    // one worth de-duplicating. A failed embed degrades each leg exactly as its own failure
+    // would (facts → pinned-only, episodes → [], callback → null).
+    const queryEmbeddings = await QueryEmbeddings.embed(
+      [playerContent, ...driftedState.memoryQueries, ...activeOthers.flatMap((o) => o.state.memoryQueries)],
+      sink,
+    );
     const memory = await retrieveChatMemory({
       groupId: memoryGroupId,
       queries: driftedState.memoryQueries,
       input: playerContent,
       ...(legLimit !== undefined ? { limit: legLimit } : {}),
+      embeddings: queryEmbeddings,
       sink,
     });
     const otherMemories = new Map(
@@ -776,6 +789,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 queries: o.state.memoryQueries,
                 input: playerContent,
                 limit: legLimit ?? 3,
+                embeddings: queryEmbeddings,
                 sink,
               }),
             ] as const,
@@ -886,6 +900,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         intimateBeat,
         hasSensoryFocus: Boolean(sensoryFocus),
         lastReplyEndsInQuestion: replyEndsInQuestion(recentReplies.at(-1) ?? ""),
+        // The crowded-turn arms (chat-agent-improvements slice 4): the tail's flavor slot
+        // is single-occupancy, and the callback is what yields — decided HERE, before the
+        // ring burns, so a deferred callback is never spent unseen.
+        hasAttachments: Boolean(attachmentDescriptions?.length),
+        narratorInput,
+        photoBeat: selfieRequested || selfieOfferEligible || openerSelfieEligible,
       })
     ) {
       const chosen = await retrieveChatCallback({
@@ -893,6 +913,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         input: playerContent,
         milestones: callbackState.milestones,
         usedRefs: callbackState.callbackHistory.map((e) => e.ref),
+        // The input's vector is already in hand from the recall legs (slice 3).
+        embeddings: queryEmbeddings,
         sink,
       });
       if (chosen) {
@@ -948,7 +970,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // The one-turn memory callback (memory-callbacks.plan.md), already ring-burned above.
       callback,
       // Attached photos (chat-image-input.plan.md): the vision read, injected as
-      // seen-channel content the perception partition's rule 17 governs.
+      // seen-channel content the perception partition's rule 16 governs.
       attachments: attachmentDescriptions?.length ? { descriptions: attachmentDescriptions } : undefined,
       // One-turn selfie license (chat-selfies.plan.md), armed above; "opener" is
       // the initiative beat's register-conditional arm (chat-initiative slice 5).
@@ -1212,6 +1234,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           driftedState: ensembleActive ? { ...driftedState, quietExchanges: primaryQuiet } : driftedState,
           now,
           exchange: { player: agentPlayerContent, assistant: full },
+          // The recap ledger grounds the memory scribe's fact names (chat-agent-improvements).
+          priorSummary: summaryState?.summary,
           retrieved: memory,
           // A member-addressed selfie request (ruling 12) never burns the
           // PRIMARY's ring — the member's own settle handles it below. The
@@ -1244,7 +1268,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // deterministic per-member folds (ruling 11 — milestones + arc samples for
         // everyone who pulsed), the archivist's confirmed presence transition, and
         // the recency stamp — saved under the same prompt-row guard as the primary.
-        for (const member of others) {
+        //
+        // Members settle CONCURRENTLY (chat-agent-improvements slice 2): each member's
+        // legs read only their own row and write only their own row, and the whole settle
+        // runs while the exchange lock is held — so settling a full roster one member at a
+        // time stacked up to four back-to-back agent round-trips inside the lock window,
+        // and a fast-typing player ate a 409 `chat_busy` for the difference. Errors stay
+        // per-member (each iteration keeps its own try/catch), so one member's failure
+        // still can't cost another's state.
+        await Promise.all(
+          others.map(async (member) => {
           try {
             const preRegard = member.state.regard;
             const shouldPulse =
@@ -1312,7 +1345,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               error: describeError(error),
             });
           }
-        }
+          }),
+        );
         // Selfie first (more specific than a big-moment scene — the shared
         // one-live-render-per-chat dedupe keeps only whichever queues first).
         if (finalized.selfieSend) {
@@ -1657,9 +1691,11 @@ export async function persistAssistantReply(args: {
 
 /**
  * Memory reconciliation for an edited assistant reply (spec §4.3): retract the
- * old extraction, then re-run the archivist over the edited exchange
+ * old extraction, then re-file the edited exchange's long-term memory
  * fire-and-forget — same resilience as the live fan-out (a degraded re-extract
  * just leaves the exchange unremembered, with the retraction already honest).
+ * Only the MEMORY SCRIBE leg runs (chat-agent-improvements slice 1b): this path
+ * rewrites no state row, so the continuity/character reads would be discarded.
  */
 export async function reextractEditedReply(args: {
   chatId: string;
@@ -1679,7 +1715,7 @@ export async function reextractEditedReply(args: {
     .limit(1);
   if (!row) return;
   const prev = await messageBefore(args.chatId, row);
-  const archivist = await runChatArchivist({
+  const archivist = await runChatMemoryScribe({
     characterName: args.characterName,
     playerName: args.playerName,
     exchange: { player: prev?.role === "user" ? prev.content : "", assistant: args.content },

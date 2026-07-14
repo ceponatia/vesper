@@ -21,6 +21,7 @@ import {
   SUPERSEDE_MIN_SCORE,
 } from "./constants";
 import { fuseByRrf, nonBlankQueries } from "./fusion";
+import type { QueryEmbeddings } from "./query-embeddings";
 import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
 
 const stringArraySchema = z.array(z.string());
@@ -414,26 +415,37 @@ export async function retrieveFactsFused(
   queries: readonly string[],
   limit = FACT_RETRIEVAL_LIMIT,
   sink?: DiagnosticSink,
+  /**
+   * The turn's shared query-embedding cache (chat-agent-improvements slice 3). Passed by
+   * callers that also run the episode leg (and the chat callback) over the same texts, so
+   * one batch serves them all. Absent ⇒ this leg embeds its own queries, exactly as before.
+   */
+  embeddings?: QueryEmbeddings,
 ): Promise<FusedFactHit[]> {
   const usable = nonBlankQueries(queries);
 
-  let embedded: Embedded[] = [];
+  let pairs: { query: string; vector: string }[] = [];
   if (usable.length > 0 && limit > 0) {
-    try {
-      embedded = await embedTexts(usable);
-    } catch (err) {
-      sink?.push(
-        diag("error", "memory.facts.embed_failed", `query embedding failed: ${errorText(err)}`, {
-          context: { scope: scopeLabel(scope), queryCount: usable.length },
-        }),
-      );
+    if (embeddings) {
+      pairs = embeddings.pairsFor(usable);
+    } else {
+      try {
+        const embedded = await embedTexts(usable);
+        pairs = embedded.map((emb, i) => ({ query: usable[i] ?? "", vector: toVectorLiteral(emb.vector) }));
+      } catch (err) {
+        sink?.push(
+          diag("error", "memory.facts.embed_failed", `query embedding failed: ${errorText(err)}`, {
+            context: { scope: scopeLabel(scope), queryCount: usable.length },
+          }),
+        );
+      }
     }
   }
 
   const lists = await Promise.all(
-    embedded.map(async (emb, i) => ({
-      query: usable[i] ?? "",
-      hits: await queryFactCandidates(scope, toVectorLiteral(emb.vector), limit),
+    pairs.map(async (pair) => ({
+      query: pair.query,
+      hits: await queryFactCandidates(scope, pair.vector, limit),
     })),
   );
   const fused = fuseByRrf(lists);

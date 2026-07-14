@@ -27,7 +27,7 @@ multi-image from the start) and the character genuinely sees them
   exchange. The read runs pre-reply (tight 20s cap).
 - **Prompt**: the descriptions render as a fenced "Attached photos (what you see)"
   tail block — seen-channel content under the perception partition — governed by the
-  static **rule 17** (owner ruling): react in character to what the photo shows, never
+  static **rule 16** (owner ruling): react in character to what the photo shows, never
   inventory it back, never call it an "image"/"attachment". The pulse + archivist read
   the same descriptions appended to the player's turn (clearly labeled, never
   persisted), so a shown photo can be classified and remembered as ordinary

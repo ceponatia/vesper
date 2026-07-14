@@ -61,6 +61,24 @@ export interface ChatCallbackGateInput {
   hasSensoryFocus: boolean;
   /** The character's last reply ended on a question — the player is mid-answer. */
   lastReplyEndsInQuestion: boolean;
+  /**
+   * The player attached photos (chat-agent-improvements slice 4): the reply owes them a
+   * reaction — the one thing the turn is actually about — so a "remember when" aside
+   * would be competing with the beat the player just opened.
+   */
+  hasAttachments: boolean;
+  /**
+   * The message is storyteller narration, not the player's own words (§Narrator input):
+   * authored story events are not a lull to fill with reminiscence.
+   */
+  narratorInput: boolean;
+  /**
+   * A photo beat is armed this turn (a selfie request, an unprompted offer, or the
+   * opener's photo license — chat-agent-improvements slice 4): the turn already has its
+   * one flavor move. The callback yields rather than the offer, because the decision has
+   * to be made BEFORE the ring burns — see `chatCallbackEligible`.
+   */
+  photoBeat: boolean;
 }
 
 /**
@@ -70,6 +88,13 @@ export interface ChatCallbackGateInput {
  * CHAT_CALLBACK_MIN_GAP_MINUTES of chat clock. Deliberately NO regard-band
  * requirement (owner ruling): the band picks the wording, not the eligibility.
  * PURE and cheap — it runs before any embedding/DB cost is paid.
+ *
+ * This gate IS the tail's soft cap for the deferrable notes (chat-agent-improvements
+ * slice 4). Deferral has to happen here rather than at render time for a hard reason: an
+ * offered callback **burns its ring entry** the moment it is chosen, so a callback dropped
+ * later — by a crowded-tail cap in the prompt builder — would be spent without ever
+ * reaching the page, and the episode could never be offered again. Everything that could
+ * crowd it out is therefore a gate condition, evaluated before a single token is paid for.
  */
 export function chatCallbackEligible(input: ChatCallbackGateInput): boolean {
   if (input.firstExchange) return false;
@@ -78,6 +103,9 @@ export function chatCallbackEligible(input: ChatCallbackGateInput): boolean {
   if (input.intimateBeat) return false;
   if (input.hasSensoryFocus) return false;
   if (input.lastReplyEndsInQuestion) return false;
+  if (input.hasAttachments) return false;
+  if (input.narratorInput) return false;
+  if (input.photoBeat) return false;
   const last = input.callbackHistory.at(-1);
   if (last && input.clockMinutes - last.atClockMinutes < CHAT_CALLBACK_MIN_GAP_MINUTES) return false;
   return true;

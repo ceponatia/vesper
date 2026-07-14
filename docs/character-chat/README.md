@@ -49,7 +49,9 @@ share **one implementation** — the chat lane must never re-fork session machin
 | Exchange orchestration | `server/engine/chat-pipeline.ts` |
 | Model stream | `server/engine/character-chat.ts` |
 | State (drift/pulse/persist) | `server/engine/chat-state.ts` |
-| RAG client (recall/archivist/write) | `server/engine/chat-memory.ts` |
+| RAG client (recall / the three extraction legs / write) | `server/engine/chat-memory.ts` |
+| Extraction **field library** + the composed legs ([pipeline.md](pipeline.md) §Post-turn fan-out) | `server/engine/prompts/chat-extractors.ts` (pure) + the per-leg schemas / `mergeChatExtractions` in `contracts/turns/chat-archivist.ts` |
+| Per-turn query-embedding cache (one embed, every leg) | `server/memory/query-embeddings.ts` |
 | Rolling summary + fold job + rebuild | `server/engine/chat-summary.ts` |
 | One-turn player-input reads (cue / scene movement / sensory focus / reply gates) | `server/engine/chat-intent.ts` |
 | Memory callbacks (gate / selection / ring — §Memory callbacks) | `server/engine/chat-callback.ts` (pure) + `retrieveChatCallback` in `chat-memory.ts` + `chatCallbackLine` in `prompts/character-chat.ts` |

@@ -61,16 +61,21 @@ with hard caps and `parseOr` degraded-empty at the load boundary.
 ### Slice 1 — substrate (recognize, store, surface)
 
 - The contracts module + the scenario column (jsonb; migration).
-- A new archivist field `plans`: propose new plans / status changes **only
+- A new extraction field `plans`: propose new plans / status changes **only
   from what the fiction established** (both input registers count —
   storyteller-authored narrator-input plans are canon). Merge accrete + update
   by id/normalized `what`; caps; degraded proposal = no-op. Prompt guidance:
   a concrete commitment (who + roughly when) files as a **plan**; `open_loops`
   keeps only fuzzy unfinished business — never both for the same beat.
-  _Note: if [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md)
-  stage 1a (the extractor field library) lands first, `plans` arrives as a
-  field module instead of a hand-threaded 14th archivist field — same behavior,
-  cleaner landing._
+  **Landing (updated 2026-07-14):** [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md)
+  shipped, so this is **one new field module** in
+  `server/engine/prompts/chat-extractors.ts` (instruction + context block + rules
+  + example value + `armed`), added to the **character tracker** leg's key list —
+  commitments are that leg's business, and it already carries `openLoops`, so the
+  plan-vs-loop distinction lives in one sheet. Its schema is one field on
+  `chatArchivistSchema` (the legs are `pick`s of it, so the leg schema follows for
+  free), and its fold goes beside the others in `finalizeChatState`. No new agent
+  call, no monolith surgery.
 - The pure due-ness derivation + a compact volatile-tail **Plans** block (both
   frames): only what matters this turn — due/imminent/just-missed plus at most
   a couple of upcoming — with directives per state (anticipation before, the

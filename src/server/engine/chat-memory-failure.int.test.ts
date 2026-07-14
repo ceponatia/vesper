@@ -7,7 +7,7 @@ import { characterChatMessages, characterChats, characters, chatParticipants, db
 
 // Codebase-review A7: a hard infra throw in the long-term memory write must not
 // discard the exchange's state changes — `finalizeChatState` fences the write and
-// still persists. AI_FAKE degrades the pulse/archivist legs; the memory module is
+// still persists. AI_FAKE degrades the pulse/extraction legs; the memory module is
 // mocked to throw like a down database would. Keyed on the conversation record
 // (character-chat-standalone.spec.md §1.2): the state row is (chatId, characterId)
 // and the memory write targets the participant's memory group.
@@ -15,7 +15,10 @@ import { characterChatMessages, characterChats, characters, chatParticipants, db
 process.env.AI_FAKE = "1";
 
 vi.mock("./chat-memory", () => ({
-  runChatArchivist: () => Promise.resolve({ value: null, degraded: true }),
+  // Every extraction leg down (chat-agent-improvements slice 1b) — the pre-split
+  // whole-archivist degrade.
+  runChatExtraction: () =>
+    Promise.resolve({ value: null, degraded: true, legs: { memory: true, continuity: true, character: true } }),
   writeChatMemory: () => Promise.reject(new Error("memory infra down")),
 }));
 
