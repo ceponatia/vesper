@@ -1632,6 +1632,13 @@ function promptStateSlice(state: ChatState, scenario: ChatScenario): NonNullable
     outfitExposed: state.outfitExposed,
     activeSocialCards: scenario.activeSocialCards,
     attributeOverlays: state.attributeOverlays,
+    // Persisted narrative trait overlays (character-fidelity slice 10) — resolved into the
+    // prefix Disposition bands so the character's bounded evolution reaches the narrator.
+    traitOverlays: state.traitOverlays,
+    // Voice-exemplar ring (slice 8) — rendered as the "How you sound" few-shot block.
+    voiceExemplars: state.voiceExemplars,
+    // One-turn character-consistency corrective (slice 9): last exchange's slip note, if any.
+    slipNote: state.lastMemoryTrace.characterSlip,
     openLoops: state.openLoops,
     skipNote: scenario.pendingSkipNote,
     sceneMemory: scenario.sceneMemory,

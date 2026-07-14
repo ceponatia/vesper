@@ -1,6 +1,12 @@
 # Character fidelity — disposition & age realism, long-term anti-drift
 
-Status: next (slices 1–2 shipped — 2026-07-13; slices 3–10 queued below)
+Status: shipped — 2026-07-14 (all 10 slices shipped: slices 1–2 2026-07-13,
+slices 3–10 2026-07-14). Leftovers, all recorded in ## Follow-ups: the slice-4
+one-turn reaction-verdict line (deferred — needs the pulse's LLM classifier
+pre-turn), and slices 4 & 6 ensemble cast-block parity (the preferences /
+micro-exemplar / voice-anchor blocks render in the 1-on-1 lane only). Slice 9's
+measurement is the owner-gated enactment eval (deferred.plan.md §Owner-gated
+live eval runs), run on request.
 
 The owner's report (2026-07-13): some personality/disposition fields barely affect
 narration; long chats drift until characters read generic; and numeric age doesn't
@@ -73,31 +79,61 @@ session twins name them.
    hand-editable on the Profile tab (`MicroExemplarsEditor`); rendered as the "How you
    actually answer a charged moment" few-shots in the chat prefix so voice +
    disposition + age anchor near generation. Fill-merge is all-or-nothing (like outfit).
-7. **Voice anchors near generation** _(next)_ — structured `voiceAnchors` (pet
-   phrases, rhythm, never-says) + a one-line tail re-anchor beside the mood pin.
-8. **Voice-exemplar ring past the summary horizon** _(next)_ — archivist picks ≤1
-   distinctly in-voice line per exchange into a ≤5 ring on `character_chat_state`
-   (callback/selfie ring pattern), rendered as "How you sound" few-shots.
-9. **Chat-lane consistency check** _(next)_ — a `characterSlip` field on
-   pulse/archivist → one-turn corrective tail note (session corrections pattern);
-   promote the owner-gated enactment eval (deferred.plan.md §Owner-gated live
-   eval runs) as its measurement.
-10. **Explicit bounded personality evolution** _(next)_ — persisted `traitOverlays`
-    (parallel to `attributeOverlays`), milestone-gated archivist proposals, small
-    clamps, `narrative` source; flip plausible traits to `developable`. Change
-    becomes visible, editable, rollback-safe — instead of implicit prose drift.
+7. **Voice anchors near generation** _(shipped — 2026-07-14)_ — structured
+   `profile.voiceAnchors` (`{petPhrases ≤6, cadence, neverSays ≤6}`;
+   `contracts/world/profile.ts`) forge-drafted (`groundVoiceAnchors`), profile
+   Re-draft-scoped, fill-merged all-or-nothing (`hasVoiceAnchors`), hand-editable
+   (`VoiceAnchorsEditor`); rendered as the stable **"Your voice, concretely"** prefix
+   block AND a one-line **"Voice check"** tail re-anchor beside the mood pin so voice
+   sits near generation.
+8. **Voice-exemplar ring past the summary horizon** _(shipped — 2026-07-14)_ — a ≤5
+   ring on `character_chat_state.voice_exemplars` (`server/engine/chat-voice.ts`,
+   callback/selfie ring pattern, rollback-safe via `pre_exchange_state`); the archivist
+   picks ≤1 distinctly in-voice line per exchange (`voiceExemplar`, "" the common case),
+   rendered as the volatile **"How you sound"** few-shot block. Ruling below.
+9. **Chat-lane consistency check** _(shipped — 2026-07-14)_ — `characterSlip` on the
+   archivist output → stored on `lastMemoryTrace` (no new column; rolls back with the
+   snapshot) → one-turn corrective **"Voice correction"** tail note next turn; absent /
+   unparseable ⇒ no note (leaf `.catch` + `parseOr` at the load boundary). Measurement
+   is the owner-gated enactment eval (deferred.plan.md §Owner-gated live eval runs —
+   cross-referenced there).
+10. **Explicit bounded personality evolution** _(shipped — 2026-07-14)_ — persisted
+    `character_chat_state.trait_overlays` (`TraitValue[]`, parallel to
+    `attributeOverlays`); milestone-gated archivist `traitShifts` (direction-only) →
+    `applyChatTraitOverlays` clamps each to one band from the AUTHORED value
+    (`TRAIT_OVERLAY_MAX_BAND_STEPS` = 1), `source:"narrative"`, guarded to `developable`
+    traits, minor-intimate-fenced, rollback-safe; folded under the regard coloring at
+    prompt build so the arc reads and the coloring composes on top. Change is visible,
+    editable, rollback-safe — not implicit prose drift. Rulings below.
 
 ## Open questions
 
-- Slice 8: archivist-picked exemplars vs. a deterministic "most characterful line"
-  heuristic (avoid an extra agent judgment on a hot path?).
-- Slice 10: which traits flip to `developable` first, and the per-arc overlay clamp.
 - Session-lane register block: canonical facts carries the hint only (slice 2);
   does the session rulebook need the full register block once a session cast
-  regularly includes minors?
+  regularly includes minors? _(still open — a session-lane call, not chat; the
+  chat lane's register enactment shipped in slice 2.)_
 
 ### Resolved
 
+- Slice 8 (ruled 2026-07-14): the in-voice exemplar is **archivist-picked**, not a
+  deterministic "most characterful line" heuristic. The archivist already reads the
+  whole exchange every turn, so the pick rides the existing archivist call (armed with
+  a compact voice reference — `voiceAnchors` + the life-stage register line) as one
+  extra output field (`voiceExemplar`), not a new LLM leg or a second hot-path judgment;
+  a regex heuristic would be a weaker judge of "distinctly in-voice" than the agent that
+  just wrote the reply. The field is "" the common case and length-capped at the fold,
+  so the ring stays a few characterful lines, not a transcript.
+- Slice 10 (ruled 2026-07-14): the `developable` set is **`temperament.warmth`,
+  `temperament.confidence`, `social.guardedness`** — the three relationship-arc
+  temperament/social traits a character plausibly grows into (warmer, bolder, more open)
+  as an arc earns it. Everything else stays `core`: the other temperament/social sliders
+  (composure, agreeableness, extraversion, dominance) and **all intimate traits** (never
+  narrative-evolved; also minor-fenced in `applyChatTraitOverlays`). The per-arc clamp is
+  **one band from the AUTHORED value** (`TRAIT_OVERLAY_MAX_BAND_STEPS` = 1, mirroring
+  slice 3's regard cap), each landed milestone nudging `TRAIT_OVERLAY_STEP` = 20 points
+  toward the shift before the band cap ratchets it; nudges apply ONLY when a real
+  relationship milestone lands (not `first_exchange`). So evolution is rare, bounded,
+  never converts a character, and rolls back with the exchange.
 - Slice 3 (ruled 2026-07-14): the per-band step cap is **one** step
   (`REGARD_OVERLAY_MAX_BAND_STEPS`) — conservative, and with the current 3-band
   traits it's a guardrail that never actually mangles a real shift (their 67-wide

@@ -176,6 +176,15 @@ export interface ChatArchivistInput {
   roster?: readonly { name: string; presence: "present" | "away" }[];
   /** The established supporting cast (chat-supporting-cast.plan.md) — field 10's known-people list. */
   supportingCast?: readonly { name: string; relation: string }[];
+  /** The character's developable traits + current band (character-fidelity slice 10) — field 13's id list. */
+  developableTraits?: readonly { id: string; label: string; band: string }[];
+  /** Compact voice reference (character-fidelity slices 7 + 9) — arms the voiceExemplar + characterSlip reads. */
+  voiceReference?: {
+    petPhrases?: readonly string[];
+    cadence?: string;
+    neverSays?: readonly string[];
+    registerRule?: string;
+  };
   sink?: DiagnosticSink;
 }
 
@@ -204,6 +213,8 @@ export async function runChatArchivist(
       drives: input.drives,
       roster: input.roster,
       supportingCast: input.supportingCast,
+      developableTraits: input.developableTraits,
+      voiceReference: input.voiceReference,
     }),
     modelId: agentModelId(),
     temperature: 0,

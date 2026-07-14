@@ -323,6 +323,13 @@
       "when": 1783961824964,
       "tag": "0045_keen_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1784037413096,
+      "tag": "0046_fearless_raider",
+      "breakpoints": true
     }
   ]
 }

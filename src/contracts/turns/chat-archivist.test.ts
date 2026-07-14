@@ -5,6 +5,7 @@ import {
   CHAT_ARCHIVIST_MAX_FACTS,
   CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
   CHAT_ARCHIVIST_MAX_QUERIES,
+  CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS,
   degradedChatArchivist,
   emptyChatMemoryTrace,
 } from "./chat-archivist";
@@ -77,6 +78,35 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
     expect(chatArchivistSchema.parse({ cast: "Abby" }).cast).toEqual([]);
     expect(degradedChatArchivist().cast).toEqual([]);
   });
+
+  it("parses the voice/consistency/trait fields (slices 8-10), degrading each to empty", () => {
+    const parsed = chatArchivistSchema.parse({
+      voiceExemplar: "Tell me you at least practiced the toast.",
+      characterSlip: "spoke like a therapist, not a teen — loosen the diction",
+      traitShifts: [{ trait: "temperament.warmth", direction: "up" }],
+    });
+    expect(parsed.voiceExemplar).toBe("Tell me you at least practiced the toast.");
+    expect(parsed.characterSlip).toBe("spoke like a therapist, not a teen — loosen the diction");
+    expect(parsed.traitShifts).toEqual([{ trait: "temperament.warmth", direction: "up" }]);
+    // Absent ⇒ empty (the common case); degraded fallback carries them empty too.
+    expect(chatArchivistSchema.parse({}).voiceExemplar).toBe("");
+    expect(chatArchivistSchema.parse({}).characterSlip).toBe("");
+    expect(chatArchivistSchema.parse({}).traitShifts).toEqual([]);
+    expect(degradedChatArchivist().voiceExemplar).toBe("");
+    expect(degradedChatArchivist().characterSlip).toBe("");
+    expect(degradedChatArchivist().traitShifts).toEqual([]);
+    // Malformed values degrade rather than rejecting the object.
+    expect(chatArchivistSchema.parse({ voiceExemplar: 42, characterSlip: {}, traitShifts: "nope" })).toMatchObject({
+      voiceExemplar: "",
+      characterSlip: "",
+      traitShifts: [],
+    });
+    // Trait shifts are capped.
+    const many = chatArchivistSchema.parse({
+      traitShifts: Array.from({ length: CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS + 3 }, () => ({ trait: "social.guardedness", direction: "down" })),
+    });
+    expect(many.traitShifts).toHaveLength(CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS);
+  });
 });
 
 describe("chatMemoryTraceSchema", () => {
@@ -84,5 +114,12 @@ describe("chatMemoryTraceSchema", () => {
     expect(chatMemoryTraceSchema.parse({})).toEqual(emptyChatMemoryTrace());
     expect(emptyChatMemoryTrace().degraded).toBe(false);
     expect(emptyChatMemoryTrace().factsAdded).toBe(0);
+  });
+
+  it("carries the character-slip corrective (slice 9), degrading a malformed value to '' (no note)", () => {
+    expect(chatMemoryTraceSchema.parse({ characterSlip: "too formal for her age" }).characterSlip).toBe("too formal for her age");
+    // Absent / malformed ⇒ "" ⇒ no corrective tail note next turn.
+    expect(emptyChatMemoryTrace().characterSlip).toBe("");
+    expect(chatMemoryTraceSchema.parse({ characterSlip: 42 }).characterSlip).toBe("");
   });
 });

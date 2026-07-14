@@ -2,6 +2,7 @@ import {
   DEFAULT_SPECIES_ID,
   diag,
   formatScheduleRhythm,
+  hasVoiceAnchors,
   heritageFor,
   inferHeritageFromText,
   inferSpeciesFromText,
@@ -61,6 +62,15 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
         .map((m) => `${m.line.trim()}${m.situation.trim() ? ` (${m.situation.trim()})` : ""}`)
         .join(" | ")}`,
     );
+  }
+  if (hasVoiceAnchors(p.voiceAnchors)) {
+    const va = p.voiceAnchors;
+    const parts = [
+      va.petPhrases.length > 0 ? `phrases: ${va.petPhrases.join(", ")}` : "",
+      va.cadence.trim() ? `cadence: ${va.cadence.trim()}` : "",
+      va.neverSays.length > 0 ? `never: ${va.neverSays.join(", ")}` : "",
+    ].filter(Boolean);
+    lines.push(`Voice anchors: ${parts.join("; ")}`);
   }
   if (p.aliases.length > 0) lines.push(`Aliases: ${p.aliases.join(", ")}`);
   if (draft.tags.length > 0) lines.push(`Library tags: ${draft.tags.join(", ")}`);

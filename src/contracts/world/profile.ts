@@ -112,6 +112,49 @@ export const microExemplarSchema = z.object({
 });
 export type MicroExemplar = z.infer<typeof microExemplarSchema>;
 
+/** Caps on the structured voice anchors (character-fidelity slice 7) — a small set, not a script. */
+export const VOICE_PET_PHRASES_MAX = 6;
+export const VOICE_NEVER_SAYS_MAX = 6;
+export const VOICE_CADENCE_MAX = 240;
+
+/**
+ * Structured voice anchors (character-fidelity slice 7): the concrete, near-generation
+ * levers for a consistent voice — pet phrases the character actually reaches for, a one-line
+ * rhythm/cadence note, and a never-says list of words/registers off-limits for them. A small
+ * structured shape with headroom (following the microExemplars pattern), rendered two ways:
+ * in the stable prefix AND as a one-line tail re-anchor beside the mood pin, so voice sits
+ * near generation across a long chat. Every field defaults empty ⇒ old rows parse unchanged
+ * and render nothing. Leaf `.catch` so one malformed field degrades to empty rather than
+ * failing the whole profile.
+ */
+export const voiceAnchorsSchema = z
+  .object({
+    /** Turns of phrase the character actually uses ("darling", "no promises"). */
+    petPhrases: z.array(z.string()).catch([]).default([]),
+    /** One line on rhythm/cadence ("clipped and dry; trails off when she deflects"). */
+    cadence: z.string().catch("").default(""),
+    /** Words/registers off-limits for this character (never "babe"; no corporate-speak). */
+    neverSays: z.array(z.string()).catch([]).default([]),
+  })
+  .catch({ petPhrases: [], cadence: "", neverSays: [] })
+  .default({ petPhrases: [], cadence: "", neverSays: [] })
+  .transform((v) => ({
+    petPhrases: v.petPhrases.map((p) => p.trim()).filter(Boolean).slice(0, VOICE_PET_PHRASES_MAX),
+    cadence: v.cadence.trim().slice(0, VOICE_CADENCE_MAX),
+    neverSays: v.neverSays.map((p) => p.trim()).filter(Boolean).slice(0, VOICE_NEVER_SAYS_MAX),
+  }));
+export type VoiceAnchors = z.infer<typeof voiceAnchorsSchema>;
+
+/** Empty voice anchors — the render-nothing / not-yet-authored value. */
+export function emptyVoiceAnchors(): VoiceAnchors {
+  return { petPhrases: [], cadence: "", neverSays: [] };
+}
+
+/** Whether any voice anchor carries content (fill-merge "authored" test + prompt gates). PURE. */
+export function hasVoiceAnchors(v: VoiceAnchors): boolean {
+  return v.petPhrases.length > 0 || v.cadence.trim() !== "" || v.neverSays.length > 0;
+}
+
 /** One named look: a list of item definition ids from the owner's library. */
 export const outfitPresetSchema = z.object({
   id: z.string().min(1),
@@ -157,6 +200,13 @@ export const characterProfileObjectSchema = z.object({
         (r): r is MicroExemplar => r !== null && (r.situation.trim() !== "" || r.line.trim() !== ""),
       ),
     ),
+  /**
+   * Structured voice anchors (character-fidelity slice 7): pet phrases, a rhythm/cadence
+   * note, and a never-says list — rendered in the chat prefix AND as a one-line tail
+   * re-anchor beside the mood pin so voice stays consistent near generation. Self-healing
+   * (leaf `.catch` per field); absent ⇒ empty ⇒ no block, old rows parse unchanged.
+   */
+  voiceAnchors: voiceAnchorsSchema,
   /**
    * The character's real / chronological age, free text — a basic-info field the
    * **narrator** reads, deliberately separate from the visual

@@ -27,14 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Character fidelity — the remainder (slices 3–10)** —
-  [character-fidelity.plan.md](character-fidelity.plan.md) (next — slices 1–2
-  shipped 2026-07-13, see Shipped). The anti-drift and field-impact batch:
-  regard-coloring cap (the high-regard homogenizer), preferences-to-narrator,
-  slider wiring (extraversion/dominance/confidence), per-character
-  micro-exemplars, voice anchors + exemplar ring, the chat consistency check,
-  and explicit bounded trait evolution. Position here is provisional — owner
-  call vs. the entries below.
 - **Chat action beats** — [chat-action-beats.plan.md](chat-action-beats.plan.md)
   (next — spawned 2026-07-13 from the UX batch's slice-4 ruling). The four chat
   action chips stop being silent deterministic state nudges: a chip tap becomes
@@ -105,6 +97,18 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Character fidelity — anti-drift & field-impact remainder (slices 3–10)** —
+  [character-fidelity.plan.md](character-fidelity.plan.md) — 2026-07-14 — the
+  disposition/voice/evolution batch: regard-coloring cap (the high-regard
+  homogenizer), preferences-to-narrator, inert-slider wiring
+  (extraversion/dominance/confidence), per-character micro-exemplars, structured
+  **voiceAnchors** (prefix block + tail re-anchor), the **voice-exemplar ring**
+  past the summary horizon, the chat-lane **consistency check** (`characterSlip`
+  → one-turn corrective tail), and **bounded personality evolution** (persisted
+  `trait_overlays`, milestone-gated, clamped one band from authored, `developable`
+  warmth/confidence/guardedness). Migration `0046`. Leftovers: the slice-4
+  reaction-verdict line + slices 4/6 ensemble parity (both deferred, in-plan);
+  slice 9's measurement is the owner-gated enactment eval.
 - **Character fidelity — life-stage registry + minor fence (slices 1–2)** —
   [character-fidelity.plan.md](character-fidelity.plan.md) — 2026-07-13 —
   numeric age finally shapes prose: `contracts/world/life-stage.ts` bands
@@ -114,8 +118,8 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   both lanes, disinhibition, intimate-craft rules, selfie license, escalation
   bullet via `composeRelationshipLaw` `omitEscalation`), and the scoped
   `CONTENT_FRAMING` (adult assertion attaches to intimate-content
-  participants; minor-primary and minor-in-cast variants). Slices 3–10 stay
-  in Next.
+  participants; minor-primary and minor-in-cast variants). Slices 3–10 shipped
+  2026-07-14 (see the entry above).
 - **Attribute narrator guidance — core + sensory glosses** —
   [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) —
   2026-07-13 — per-value `narratorGuidance` glosses shipped end-to-end (schema

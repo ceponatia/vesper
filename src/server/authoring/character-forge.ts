@@ -47,6 +47,8 @@ import {
   type HeritageDefinition,
   type ItemDefinition,
   type MicroExemplar,
+  voiceAnchorsSchema,
+  type VoiceAnchors,
   type Preference,
   type RealizedBody,
   type ScheduleEntry,
@@ -203,6 +205,14 @@ const profileSectionSchema = z.object({
   microExemplars: z
     .array(z.object({ situation: z.string().default(""), line: z.string().default("") }))
     .default([]),
+  /** Structured voice anchors (character-fidelity slice 7) — pet phrases, cadence, never-says. */
+  voiceAnchors: z
+    .object({
+      petPhrases: z.array(z.string()).default([]),
+      cadence: z.string().default(""),
+      neverSays: z.array(z.string()).default([]),
+    })
+    .default({ petPhrases: [], cadence: "", neverSays: [] }),
   /** Real/chronological age, free text — the narrator's `profile.age`, distinct from the visual `identity.apparent_age` attribute. */
   age: z.string().default(""),
   aliases: z.array(z.string()).default([]),
@@ -328,6 +338,15 @@ export function groundMicroExemplars(raw: ProfileSection["microExemplars"], sink
     out.push({ situation: e.situation.trim(), line });
   }
   return out;
+}
+
+/**
+ * Ground forge voice anchors (character-fidelity slice 7): the schema trims each field,
+ * drops blanks, and caps the lists — so grounding is a boundary parse. Empty input ⇒ the
+ * empty anchors (no block rendered).
+ */
+export function groundVoiceAnchors(raw: ProfileSection["voiceAnchors"]): VoiceAnchors {
+  return voiceAnchorsSchema.parse(raw);
 }
 
 /** Ground forge trait scalars against the registry: drop unknown ids, clamp to the axis range. */
@@ -614,6 +633,10 @@ function profilePrompt(context: CharacterForgeContext): string {
     `- microExemplars: 2-${MICRO_EXEMPLARS_MAX} entries, each {situation (a short cue for a charged moment — "pushed to talk about her past", "someone flirts too fast", "caught in a lie"), line (how THIS character answers it, in their own voice — a spoken line and/or a small beat, e.g. 'A dry look. "That's a long story, and you haven't earned it.")}.`,
     "  Pick moments that SHOW the character's manner — how they deflect, tease, set a boundary, or soften — not neutral small talk. Write the line exactly as they'd say it (diction, rhythm, age); keep each to a sentence or two.",
     "",
+    "Then give the concrete VOICE ANCHORS — the small, mechanical levers that keep the voice consistent across a long chat (these anchor the narrator near generation, not just the sliders):",
+    "- voiceAnchors: {petPhrases (0-6 turns of phrase this character actually reaches for — a greeting, a verbal tic, a way they hedge or tease, e.g. \"no promises\", \"be serious\"), cadence (one line on their rhythm — clipped vs. rambling, dry, breathless, where they trail off), neverSays (0-6 words or registers that would be OUT of character for them — a word they'd never use, corporate-speak, baby-talk)}.",
+    "  Keep every entry true to the personality and AGE above. Omit any field the concept gives no basis for — sparse and characterful beats a filled grid.",
+    "",
     "Then give the character DRIVES — the desires & secrets they actively pursue (the game steers scenes with these):",
     `- drives: 0-${DRIVES_MAX} entries, each {want (a short concrete phrase), why (one line of motive), secrecy, revealBand?}.`,
     "  secrecy: \"open\" (talks about it freely — it steers what they bring up), \"guarded\" (never volunteers it; comes out only if genuinely asked), or \"secret\" (actively protected — they deflect and will lie to keep it hidden until the relationship earns the reveal).",
@@ -670,6 +693,7 @@ async function forgeProfileSection(context: CharacterForgeContext): Promise<Char
     preferences,
     traits: groundTraitValues(section.traits, context.sink),
     microExemplars: groundMicroExemplars(section.microExemplars, context.sink),
+    voiceAnchors: groundVoiceAnchors(section.voiceAnchors),
     drives: groundDrives(section.drives, context.sink),
     schedule: groundSchedule(section.schedule, context.sink),
   };
@@ -1386,6 +1410,11 @@ export function demoCharacterProfileSection(): ProfileSection {
       { situation: "a smooth talker lays on the flattery", line: 'A flat look over the ledger. "You want something. Get to it or get off my quay."' },
       { situation: "a green deckhand admits they\'re scared", line: 'A long pause, then, quieter: "Good. Means you\'re paying attention. Now tie it off proper."' },
     ],
+    voiceAnchors: {
+      petPhrases: ["off my quay", "tie it off proper", "means you're paying attention"],
+      cadence: "Clipped and low; short sentences, long pauses; trails off rather than softens.",
+      neverSays: ["gushing praise", "corporate jargon", "please and thank-you niceties"],
+    },
     age: "52",
     aliases: ["Voss", "the harbor-master"],
     tags: ["harbor", "gruff", "mentor", "working-class"],

@@ -11,7 +11,7 @@ import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
  * Pure and snapshot-testable; no IO.
  */
 
-export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private in-character chat. After each exchange you read the player's latest message and the reply, then produce a single JSON object with ten fields:
+export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private in-character chat. After each exchange you read the player's latest message and the reply, then produce a single JSON object with thirteen fields:
 
 1. "episodeSummary": 1-3 sentences, past tense, third person, capturing WHAT HAPPENED this exchange (the beat, not a stat dump). Empty string if nothing memorable happened (idle small talk).
 2. "facts": durable declarative knowledge worth recalling much later — relationship shifts, revealed preferences, promises, disclosed history, named people/places. One sentence each; "subjectName" exactly as written (usually the character or the player); "subjectKind" one of character|player|location|item|world; "confidence" 0-1; "channel" one of perceived|private (see rule 5). Prefer a few strong facts to many weak ones; 0-3 per exchange is typical, [] is fine. Never record transient physical state (mood, arousal, tipsiness) as a fact — that is tracked elsewhere.
@@ -23,6 +23,9 @@ export const CHAT_ARCHIVIST_SYSTEM = `You are the memory-keeper for a private in
 8. "driveUpdates": movement on the character's standing DRIVES (listed under "Current drives" below, when any exist) — as [{ "want": "<the drive's want, copied exactly>", "progress": "<a fresh one-line progress note, or ''>", "revealed": <true ONLY when the character spoke a previously-secret drive aloud to the player THIS exchange>, "resolved": <true when the fiction achieved or abandoned the drive> }]. Only drives from that list, matched by their exact want; [] when none moved (the common case).
 9. "presence": ONLY when a "Roster" line below lists this conversation's characters — the ones whose scene-presence the fiction actually CHANGED this exchange, as [{ "name": "<roster name, copied exactly>", "presence": "present" | "away" }]. "present" = they entered or are now sharing the player's scene; "away" = they left it / are elsewhere living their life. Only real transitions played on the page — never infer one from silence; [] is the common case, and always [] when there is no Roster line.
 10. "cast": recurring NAMED side characters this exchange introduced or established something durable about — people in the story who are NOT the main character(s) named above/in the Roster line and NOT the player (a named friend, coworker, relative, a named regular). Shape: [{ "name": "<their name>", "relation": "<who they are to the story, e.g. 'the player's coworker and close friend' — only when the exchange established it, else ''>", "details": ["<durable fact, e.g. 'training for a marathon'>"] }]. A "Supporting cast so far" list below names who is already known — attach new details to those by exact name, and give "relation" only for people not yet on that list (a known entry's relation is already recorded). Only people the fiction NAMED and treats as recurring — never one-scene walk-ons (a waiter, a passing voice), never the main characters or the player, and never invent anyone. [] is the common case.
+11. "voiceExemplar": ONE short line from the character's reply this exchange that is DISTINCTLY in their voice — a line that captures how they actually talk (their diction, rhythm, a pet phrase, a characteristic deflection or tease), copied VERBATIM from the reply. Pick at most one, and only when a line genuinely stands out as in-voice; "" when nothing this exchange was distinctly characterful (the common case). Never the player's words, never a paraphrase, never invented.
+12. "characterSlip": a SHORT corrective note ONLY when the reply broke character this exchange — it sounded out of voice, out of disposition, or wrong for the character's age/life-stage (see "Character voice reference" below when present): e.g. "spoke like a composed adult, not a 15-year-old — loosen the diction" or "far warmer than her guarded, cool manner — pull it back". "" when the reply held character (the overwhelming default). One clause naming what slipped and the fix — not praise, not a general note.
+13. "traitShifts": RARE, direction-only nudges to the character's DEVELOPABLE traits (listed under "Developable traits" below when any exist) that MEANINGFULLY and DURABLY shifted this exchange — as [{ "trait": "<id from that list>", "direction": "up" | "down" }]. Only a real arc beat moves one (she genuinely let her guard down, hardened, grew bolder); [] is the norm, and always [] when there is no Developable traits list. Never a fleeting mood, never a trait not on the list.
 
 Rules:
 1. Output ONLY the JSON object — no markdown, no commentary.
@@ -34,7 +37,7 @@ Rules:
 7. ${UNTRUSTED_DATA_NOTICE}
 
 Example — the player tells the character their sister is getting married in Prague:
-{"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9,"channel":"perceived"}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"],"attributeChanges":[],"openLoops":["hear how the wedding toast goes"],"scene":{},"outfit":{},"driveUpdates":[]}
+{"episodeSummary":"Mara asked about the player's weekend; they shared that their sister is getting married in Prague this spring and they're nervous about the toast.","facts":[{"kind":"knowledge","subjectName":"the player","subjectKind":"player","text":"The player's sister is getting married in Prague this spring.","tags":["family","wedding"],"confidence":0.9,"channel":"perceived"}],"memoryQueries":["the player's sister's wedding in Prague","the toast the player is nervous about"],"attributeChanges":[],"openLoops":["hear how the wedding toast goes"],"scene":{},"outfit":{},"driveUpdates":[],"voiceExemplar":"Prague in spring — of course it is. Please tell me you've practiced that toast on someone.","characterSlip":"","traitShifts":[]}
 
 Example — the player privately thinks they're falling for the character but only says goodnight aloud:
 {"episodeSummary":"They said an easy goodnight after a long, warm evening of talk.","facts":[{"kind":"relationship","subjectName":"the player","subjectKind":"player","text":"The player is quietly starting to fall for Mara.","tags":["attraction"],"confidence":0.7,"channel":"private"}],"memoryQueries":[],"attributeChanges":[],"openLoops":[],"scene":{},"outfit":{},"driveUpdates":[]}
@@ -73,6 +76,24 @@ export interface ChatArchivistPromptInput {
    * known people aren't re-minted with a fresh relation each mention.
    */
   supportingCast?: readonly { name: string; relation: string }[];
+  /**
+   * The character's DEVELOPABLE traits with their current band (character-fidelity
+   * slice 10) — the id list field 13 must pick from. Absent/empty ⇒ no block, and
+   * field 13 is always []. Never intimate traits (fenced upstream for a minor).
+   */
+  developableTraits?: readonly { id: string; label: string; band: string }[];
+  /**
+   * A compact voice reference (character-fidelity slices 7 + 9) — the character's
+   * pet phrases, cadence, never-says, and life-stage register line — so fields 11–12
+   * can judge what "in-voice" and an age/voice slip look like. Absent/empty ⇒ no block.
+   */
+  voiceReference?: {
+    petPhrases?: readonly string[];
+    cadence?: string;
+    neverSays?: readonly string[];
+    /** The binding life-stage register line (child/teen/elder), when the age maps to one. */
+    registerRule?: string;
+  };
 }
 
 export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): string {
@@ -93,6 +114,19 @@ export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): strin
     perceiverClause: `${input.characterName} did NOT perceive it`,
   });
   const roster = input.roster ?? [];
+  // The voice reference (slices 7 + 9) — pet phrases / cadence / never-says are
+  // author-written and the register line is framework text; fence the author-written
+  // half so a smuggled instruction reads as reference, not authority.
+  const voiceRef = input.voiceReference;
+  const voiceRefLines = voiceRef
+    ? [
+        voiceRef.petPhrases?.length ? `- Pet phrases: ${voiceRef.petPhrases.join("; ")}` : "",
+        voiceRef.cadence?.trim() ? `- Cadence: ${voiceRef.cadence.trim()}` : "",
+        voiceRef.neverSays?.length ? `- Never says: ${voiceRef.neverSays.join("; ")}` : "",
+        voiceRef.registerRule?.trim() ? `- Age/register: ${voiceRef.registerRule.trim()}` : "",
+      ].filter(Boolean)
+    : [];
+  const developable = input.developableTraits ?? [];
   return [
     `Character: ${input.characterName}`,
     `Player: ${input.playerName.trim() || "the player"}`,
@@ -121,6 +155,12 @@ export function buildChatArchivistPrompt(input: ChatArchivistPromptInput): strin
           )
         : "(none)"
     }`,
+    ...(voiceRefLines.length
+      ? [`Character voice reference (for fields 11-12 — what in-voice sounds like):\n${fenceUntrusted("voice reference", voiceRefLines.join("\n"))}`]
+      : []),
+    ...(developable.length
+      ? [`Developable traits (for field 13 — use these exact ids):\n${developable.map((t) => `- ${t.id} (currently ${t.band})`).join("\n")}`]
+      : []),
     `Latest exchange:\n${fenceUntrusted("latest exchange", transcript)}`,
     ...(hint ? [hint] : []),
   ].join("\n\n");

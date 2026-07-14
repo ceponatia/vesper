@@ -28,6 +28,7 @@ import { CharacterChat } from "./character-chat";
 import { DispositionEditor } from "./disposition-editor";
 import { DrivesEditor } from "./drives-editor";
 import { MicroExemplarsEditor } from "./micro-exemplars-editor";
+import { VoiceAnchorsEditor } from "./voice-anchors-editor";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
 import { PreferencesEditor } from "./preferences-editor";
@@ -308,6 +309,12 @@ export function CharacterEditor({
             <MicroExemplarsEditor
               exemplars={draft.profile.microExemplars}
               onChange={(microExemplars) => patchProfile({ microExemplars })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <VoiceAnchorsEditor
+              anchors={draft.profile.voiceAnchors}
+              onChange={(voiceAnchors) => patchProfile({ voiceAnchors })}
             />
           </div>
           <div className="sm:col-span-2">

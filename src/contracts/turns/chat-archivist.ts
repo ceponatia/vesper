@@ -34,6 +34,22 @@ export const CHAT_ARCHIVIST_MAX_FACTS = 6;
 export const CHAT_ARCHIVIST_MAX_QUERIES = 3;
 /** Cap on open loops (character-chat-standalone.spec.md §6.2) — a short list stays a pull, not a backlog. */
 export const CHAT_ARCHIVIST_MAX_OPEN_LOOPS = 3;
+/** Cap on milestone-gated developable-trait nudges per exchange (character-fidelity slice 10) — rare, one or two at most. */
+export const CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS = 2;
+
+/**
+ * A milestone-gated developable-trait nudge (character-fidelity slice 10): the
+ * archivist names a DEVELOPABLE trait that meaningfully and durably shifted this
+ * exchange and its DIRECTION — never a magnitude. The deterministic fold clamps it
+ * to one band step from the AUTHORED value and only applies it when a relationship
+ * milestone actually landed, so change stays bounded, visible, and rollback-safe.
+ */
+export const traitShiftSchema = z.object({
+  /** The trait id or the label the prompt listed (the fold resolves it against the registry). */
+  trait: z.string().trim().min(1),
+  direction: z.enum(["up", "down"]).catch("up"),
+});
+export type TraitShift = z.infer<typeof traitShiftSchema>;
 
 export const chatArchivistSchema = z.object({
   episodeSummary: z.string().catch("").default(""),
@@ -127,6 +143,31 @@ export const chatArchivistSchema = z.object({
    * excluded). Lenient; [] is the common no-new-people case.
    */
   cast: chatCastProposalSchema,
+  /**
+   * Voice-exemplar pick (character-fidelity slice 8): ONE distinctly in-voice line
+   * from the character's reply this exchange — verbatim — worth keeping past the
+   * events-only summary horizon as a "How you sound" few-shot. "" when nothing this
+   * exchange was distinctly in-voice (the common case). Length-capped at the fold.
+   */
+  voiceExemplar: z.string().catch("").default(""),
+  /**
+   * Character-consistency check (character-fidelity slice 9): a SHORT corrective note
+   * when the reply broke character — voice, disposition, or age register (e.g. "spoke
+   * like a therapist, not a 15-year-old — loosen the diction"). "" when the reply held
+   * character (the overwhelming default). The fold stores it on the memory trace so the
+   * NEXT turn renders a one-turn corrective tail note; absent/unparseable ⇒ no note.
+   */
+  characterSlip: z.string().catch("").default(""),
+  /**
+   * Developable-trait nudges (character-fidelity slice 10): rare direction-only shifts
+   * on the character's DEVELOPABLE traits — applied only when a relationship milestone
+   * landed this exchange, clamped one band from the authored value. [] is the norm.
+   */
+  traitShifts: z
+    .array(traitShiftSchema)
+    .catch([])
+    .default([])
+    .transform((s) => s.slice(0, CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS)),
 });
 
 export type ChatArchivist = z.infer<typeof chatArchivistSchema>;
@@ -144,6 +185,9 @@ export function degradedChatArchivist(): ChatArchivist {
     driveUpdates: [],
     presence: [],
     cast: [],
+    voiceExemplar: "",
+    characterSlip: "",
+    traitShifts: [],
   };
 }
 
@@ -231,6 +275,14 @@ export const chatMemoryTraceSchema = z.object({
     .default([]),
   /** True when the archivist leg degraded (demo / timeout / parse) — no memory written. */
   degraded: z.boolean().catch(false).default(false),
+  /**
+   * Character-consistency corrective (character-fidelity slice 9): the archivist's
+   * one-line "the reply broke character" note for THIS exchange, rendered as a
+   * one-turn corrective tail note on the NEXT turn. "" when the reply held character.
+   * Lives on the trace (no new column) so it rolls back with the pre-exchange
+   * snapshot and reads degradation-safe (`parseOr` at the load boundary ⇒ "").
+   */
+  characterSlip: z.string().catch("").default(""),
 });
 
 export type ChatMemoryTrace = z.infer<typeof chatMemoryTraceSchema>;

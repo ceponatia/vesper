@@ -21,6 +21,14 @@ self-expiring conditions, the `mindNote`, the free-text outfit + exposed flag, t
 anti-repetition `surfacedCues` bands, the RAG carry-overs (`memoryQueries`,
 `open_loops` — the archivist's ≤3 "unfinished business" phrases, re-emitted in full each
 exchange so resolved loops fall off; persisted narrative `attributeOverlays`;
+persisted narrative `trait_overlays` (character-fidelity slice 10 — bounded personality
+evolution: `source:"narrative"` trait shifts the archivist proposes only at relationship
+milestones, clamped one band from the authored value, guarded to `developable` traits —
+resolved on top of the authored traits at prompt build, editable/rollback-safe); the
+`voice_exemplars` ring (character-fidelity slice 8 — ≤5 distinctly in-voice lines the
+archivist picks ≤1 of per exchange, rendered as the "How you sound" few-shots past the
+events-only summary horizon; `lastMemoryTrace.characterSlip` is the one-turn
+character-consistency corrective, slice 9);
 `lastPulseTrace` / `lastMemoryTrace`), the relationship arc (`relationship_history` — a
 ≤200 sample ring `{at, clockMinutes, regard, band, familiarity}` appended when either
 axis moved; `milestones` — ≤100 of

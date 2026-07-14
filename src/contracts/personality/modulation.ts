@@ -162,6 +162,18 @@ export function stateDispositionOverlays(
  */
 export const REGARD_OVERLAY_MAX_BAND_STEPS = 1;
 
+/**
+ * Bounded personality evolution (character-fidelity slice 10): a milestone-gated
+ * narrative trait overlay may bend a DEVELOPABLE trait, but never more than this
+ * many bands from the AUTHORED value — the same "one step" spirit as the regard
+ * coloring cap (`REGARD_OVERLAY_MAX_BAND_STEPS`), so the authored character stays
+ * recognizable through the arc, and change stays visible/editable/rollback-safe
+ * instead of the old implicit prose drift.
+ */
+export const TRAIT_OVERLAY_MAX_BAND_STEPS = 1;
+/** Points one milestone nudges a developable trait toward its shift direction, before the band cap ratchets it. */
+export const TRAIT_OVERLAY_STEP = 20;
+
 export const REGARD_TRAIT_SHIFTS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
   hostile: { "temperament.warmth": -30, "social.guardedness": +30, "social.agreeableness": -20 },
   wary: { "temperament.warmth": -15, "social.guardedness": +20 },

@@ -22,7 +22,11 @@ validated; run when the owner asks, then record results in the owning plan._
   commented pre-softening wording), and carries the multi-character fixtures
   (multi-character-chat followups ruling 7) + the `chat-secret-hold`/`-reveal`
   fixtures ([character-drives.plan.md](character-drives.plan.md) slice 4,
-  `secretCue` metric).
+  `secretCue` metric). This is also the **measurement for character-fidelity
+  slice 9** (the chat-lane consistency check —
+  [character-fidelity.plan.md](character-fidelity.plan.md) slice 9): the
+  blind-identification/contrast bar quantifies whether the one-turn corrective
+  tail note actually holds voice/disposition/age register over a long chat.
 - **`mt-chat-*` longitudinal baseline** and the **`CHAT_PROMPT_LAYOUT` A/B**
   (before its default flips) —
   [narrator-prompt-consolidation.plan.md](finished/narrator-prompt-consolidation.plan.md)
@@ -33,16 +37,14 @@ validated; run when the owner asks, then record results in the owning plan._
 
 ## Example-dialogue voice anchors
 
-_Raised 2026-07-11, from the character-chat & schema engagement review (whose
-seven promoted plans sit at the top of [roadmap.md](roadmap.md) §Next)._ Add an
-authored example-dialogue field to `CharacterProfile` — 2–3 short sample
-exchanges rendered as few-shot voice anchors in the chat prompt's stable prefix
-(and later the session cast blocks). The cheapest known lever for voice
-consistency across the curated model list, and directly measurable: the
-enactment measurement run (§"Owner-gated live eval runs" above) provides the
-before/after. Deliberately
-**not** promoted with the batch — the enactment baseline should land first, so
-we know where voice actually drifts before adding prompt weight.
+_Graduated 2026-07-14 → [character-fidelity.plan.md](character-fidelity.plan.md)
+slices 6 (`profile.microExemplars` few-shots) + 7 (structured
+`profile.voiceAnchors`: pet phrases / cadence / never-says)._ The authored
+example-dialogue + voice-anchor levers this idea asked for shipped as those two
+slices — few-shots in the chat prefix (and a one-line tail re-anchor near
+generation). The enactment measurement run (§"Owner-gated live eval runs" above)
+remains the before/after; ensemble cast-block parity is the recorded leftover
+(character-fidelity §Follow-ups).
 
 ## Narration eval: self-consistency judge vote
 
