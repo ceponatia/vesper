@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { chatReplyFailureSchema } from "@/contracts";
+import { chatActionIdSchema, chatReplyFailureSchema } from "@/contracts";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { parseOr } from "@/lib/parse";
 import {
@@ -43,10 +43,11 @@ const sendBodySchema = z
   .object({
     /**
      * Exchange kind (character-chat-standalone.spec.md §4): a normal player turn,
-     * the opening beat ("Prompt character"), a "go on" continue beat, "another take"
-     * on the last reply, or an atomic "rerun" of a player line (data-loss-rerun fix).
+     * the opening beat ("Prompt character"), a "go on" continue beat, a tapped
+     * "action_beat" chip (chat-action-beats.plan.md), "another take" on the last
+     * reply, or an atomic "rerun" of a player line (data-loss-rerun fix).
      */
-    kind: z.enum(["send", "open", "continue", "regenerate", "rerun"]).default("send"),
+    kind: z.enum(["send", "open", "continue", "action_beat", "regenerate", "rerun"]).default("send"),
     content: z.string().trim().max(MESSAGE_CONTENT_MAX).optional(),
     /**
      * Composer register (chat-supporting-cast.plan.md §Narrator input) — send only:
@@ -62,6 +63,8 @@ const sendBodySchema = z
     cue: z.string().trim().max(200).optional(),
     /** Reopen-opener initiative (chat-initiative.plan.md) — only read for kind "continue". */
     initiative: z.boolean().optional(),
+    /** Tapped action-chip id (chat-action-beats.plan.md) — required for kind "action_beat". */
+    action: chatActionIdSchema.optional(),
     /** Target user-message id — required for kind "rerun" (the line to re-send from). */
     messageId: z.string().trim().min(1).max(120).optional(),
     /**
@@ -80,6 +83,10 @@ const sendBodySchema = z
   .refine((b) => b.kind !== "rerun" || (b.messageId?.length ?? 0) >= 1, {
     message: "messageId is required for a rerun",
     path: ["messageId"],
+  })
+  .refine((b) => b.kind !== "action_beat" || b.action !== undefined, {
+    message: "action is required for an action beat",
+    path: ["action"],
   });
 
 const patchBodySchema = z
@@ -233,6 +240,9 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     model: body.value.model ?? resolveChatModelId(owned.character.chatModel),
     cue: body.value.cue,
     initiative: body.value.initiative,
+    // Tapped action chip (chat-action-beats.plan.md) — the engine builds its
+    // register-aware cue and applies the paired deterministic effect pre-narration.
+    action: body.value.action,
     // "Auto at big moments" (slice 9): the engine signals, this route queues — a scene
     // render anchored to the exchange's reply, deduped against live renders.
     onBigMoment: ({ assistantMessageId }) => {

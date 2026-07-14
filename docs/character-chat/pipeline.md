@@ -17,12 +17,29 @@ exchange:
 2. **Exchange kind** (spec §4): `send` inserts the user line with a pre-minted id — the
    guard row for the reply persist; `open` (the "Prompt character" opening beat) and
    `continue` ("go on") have no player line — the model gets a synthetic, non-persisted
-   cue; `regenerate` ("another take") targets the LAST assistant reply: state rolls back
+   cue; `action_beat` (a tapped action chip, see below) is the same beat shape carrying a
+   chip id; `regenerate` ("another take") targets the LAST assistant reply: state rolls back
    to the pre-exchange snapshot, the old take's memory is retracted (provenance, §4.3),
    and the reply row updates in place with the old take kept browsable (`takes`, cap
    `CHAT_REPLY_TAKES_CAP`); `rerun` (re-send a player line, see below) is the atomic snip.
    A player **Stop** aborts the model stream server-side; the accumulated prefix persists
    with `meta.stopped` and the fan-out runs over it.
+
+   **Action beats** (`kind: "action_beat"`, `action` = the chip id — chat-action-beats.plan.md):
+   the four status-strip chips ("Offer a drink / Freshen up / Take a breather / Heat things
+   up") are no longer silent state pokes — a tap is a **narrated one-beat exchange**. No
+   player line is persisted; the server builds a **register-aware synthetic cue** from the
+   chip id (`engine/chat-action-beat.ts` `buildActionBeatCue` — apart ⇒ answer as a text,
+   co-present ⇒ in-scene, the apart/co-present read is the last reply's comms spans, the
+   same signal the selfie offer uses) and applies the chip's **deterministic effect**
+   (`applyChatAction`, intoxication↑ / hygiene refresh / energy↑ / arousal↑ + flushed) to
+   the drifted state **pre-narration**, so the reply reflects the shift. The pulse is
+   skipped (no player act, like `continue`); the archivist runs. The effect is rollback-safe
+   via the pre-exchange snapshot (the anchor is the PRE-effect state), and the chip id rides
+   the reply's `meta.actionBeat` so **"another take"** on the beat reproduces both the cue
+   and the effect (rolled back first, so it re-applies exactly once — never doubles). The
+   beat targets the **primary** — the roster member whose status strip hosts the chips; in a
+   group the other members neither pulse nor take the effect (build ruling).
 
    **Atomic rerun** (`kind: "rerun"`, `messageId` = the target user line): the ONE path
    that reconciles with an in-flight reply instead of 409ing off it. Ordering is the whole

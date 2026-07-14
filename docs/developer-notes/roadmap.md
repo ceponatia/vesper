@@ -27,11 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Chat action beats** — [chat-action-beats.plan.md](chat-action-beats.plan.md)
-  (next — spawned 2026-07-13 from the UX batch's slice-4 ruling). The four chat
-  action chips stop being silent deterministic state nudges: a chip tap becomes
-  a server-cued exchange the narrator plays as a real beat, deterministic
-  effect kept.
 - **Chat wardrobe parity** —
   [chat-wardrobe-parity.plan.md](chat-wardrobe-parity.plan.md) (next — ruled
   2026-07-13; depends on the UX batch's outfit presets). Chat wardrobe reaches
@@ -97,6 +92,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat action beats** — [chat-action-beats.plan.md](chat-action-beats.plan.md) —
+  2026-07-14 — the four status-strip chips stop being silent state pokes: a tap is now
+  a narrated `action_beat` exchange (no player line, a register-aware server-built cue,
+  the deterministic effect applied pre-narration so the reply reflects it — rollback-safe
+  via the pre-exchange snapshot, the chip id on `meta.actionBeat` so "another take"
+  reproduces it exactly once). Removed the dead POST `…/state {action}` endpoint; chips
+  gained tooltip copy. Rulings: chip set fixed at four for v1, the beat targets the primary.
 - **Character fidelity — anti-drift & field-impact remainder (slices 3–10)** —
   [character-fidelity.plan.md](character-fidelity.plan.md) — 2026-07-14 — the
   disposition/voice/evolution batch: regard-coloring cap (the high-regard

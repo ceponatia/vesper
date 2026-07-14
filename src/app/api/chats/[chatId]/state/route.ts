@@ -4,7 +4,6 @@ import {
   activeConditionSchema,
   attributeValueSchema,
   characterProfileSchema,
-  chatActionIdSchema,
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   chatDrivesSchema,
@@ -20,7 +19,6 @@ import {
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
-  applyChatAction,
   chatFeelingStateSchema,
   chatStateSnapshot,
   selfieHistorySchema,
@@ -28,7 +26,6 @@ import {
   editChatState,
   loadChatScenario,
   loadChatState,
-  persistChatState,
   resolveSeededOutfit,
   seedChatScenario,
   seedChatState,
@@ -47,8 +44,10 @@ type Params = { chatId: string };
  *   authored defaults.
  * - **PATCH** → an author edit (premise **Save** + the state-tools modal): upsert
  *   the provided fields (seeding the rest if absent).
- * - **POST `{ action }`** → a one-click test-bed action chip (offer a drink →
- *   intoxication↑, etc.), applied deterministically server-side.
+ *
+ * The action chips no longer POST here — a tap is now a narrated `action_beat`
+ * exchange through the chat pipeline (chat-action-beats.plan.md), which applies the
+ * same deterministic effect pre-narration so the reply reflects it.
  */
 
 const editBodySchema = z.object({
@@ -85,8 +84,6 @@ const editBodySchema = z.object({
   supportingCast: supportingCastSchema.optional(),
 });
 
-const actionBodySchema = z.object({ action: chatActionIdSchema });
-
 /**
  * Mood-chip inputs for the snapshot (mood.spec §4): the character's `social.dominance`
  * tilts a low-valence read angry vs sad, and chat — a private intimate-capable 1-on-1 —
@@ -96,9 +93,6 @@ const snapshotOpts = (profile: CharacterProfile) => ({
   dominance: effectiveTraitValue(profile.traits, "social.dominance"),
   intimateContext: true,
 });
-
-const parseProfile = (owned: OwnedChat, sink?: DiagnosticCollector) =>
-  parseOr(characterProfileSchema, owned.character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
 
 /**
  * Resolve the TARGET participant (followups ruling 13 — per-character sheets):
@@ -151,27 +145,4 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
     patch: body.value,
   });
   return jsonOk(chatStateSnapshot(state, scenario, snapshotOpts(profile)));
-});
-
-export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
-  const { chatId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
-  const busy = chatBusyResponse(chatId);
-  if (busy) return busy;
-
-  const body = await readBody(req, actionBodySchema);
-  if (!body.ok) return body.response;
-
-  const sink = new DiagnosticCollector();
-  const profile = parseProfile(owned, sink);
-  const stored = await loadChatState(chatId, owned.participant.characterId, sink);
-  // Apply the chip to the current state (seeded outfit marker resolved first —
-  // this path persists), then persist.
-  const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
-  const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
-  const current = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
-  const next = applyChatAction(current, body.value.action, scenario.clockMinutes);
-  await persistChatState(chatId, owned.participant.characterId, next);
-  return jsonOk(chatStateSnapshot(next, scenario, snapshotOpts(profile)));
 });

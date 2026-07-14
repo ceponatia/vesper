@@ -394,7 +394,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
    */
   const runStream = async (
     body: {
-      kind?: "send" | "open" | "continue" | "regenerate" | "rerun";
+      kind?: "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
       content?: string;
       model?: string;
       cue?: string;
@@ -402,6 +402,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       attachmentIds?: string[];
       initiative?: boolean;
       inputMode?: "player" | "narrator";
+      action?: ChatActionId;
     },
     opts: { userLine?: string; replaceId?: string; attachmentIds?: string[]; narrator?: boolean } = {},
   ): Promise<ChatStreamOutcome> => {
@@ -669,17 +670,18 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     }
   };
 
-  /** Apply a one-click test-bed action chip (offer a drink → intoxication↑, etc.). */
+  /**
+   * Tap an action chip (chat-action-beats.plan.md): a narrated `action_beat` exchange —
+   * the character plays a small beat and the paired deterministic state effect applies
+   * pre-narration server-side (the post-settle refresh shows the shift). No player line
+   * is persisted; `actionBusy` marks which chip is streaming.
+   */
   const runAction = async (action: ChatActionId) => {
+    if (sendingRef.current || !ready || archived) return;
     setActionBusy(action);
-    const result = await chatsApi.applyAction(chatId, action);
+    const outcome = await runStream({ kind: "action_beat", action, model: chatModel });
     setActionBusy(null);
-    if (result.ok) {
-      setChatState(result.data);
-      stageRef.current = result.data.regardBand.label;
-    } else {
-      toast.push({ title: "Action failed", description: result.error.message, tone: "error" });
-    }
+    if (!outcome.ok) toast.push({ title: "Action failed", description: outcome.error?.message, tone: "error" });
   };
 
   /** Prompt Character (opening beat): stream a character-authored opening turn (the premise comes from chat state). */
