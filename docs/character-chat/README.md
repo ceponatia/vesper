@@ -62,6 +62,7 @@ share **one implementation** — the chat lane must never re-fork session machin
 | Supporting cast (schema + merge — §Supporting cast) | `contracts/turns/chat-supporting-cast.ts` (pure) + `buildSupportingCastSection` in `prompts/character-chat.ts` + the finalize merge in `chat-state.ts`; panel in `components/chat/chat-supporting-cast-panel.tsx` |
 | Narrator input (§Narrator input) | `wrapNarratorInput`/`narratorInputNote` in `prompts/character-chat.ts` + `inputMode` through route/pipeline (`meta.inputMode`) + the composer toggle in `chat-conversation.tsx` |
 | System prompt | `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`) |
+| Life stage & minor fence ([prompts.md](../prompts.md) §Life stage & the minor fence) | `contracts/world/life-stage.ts` (pure registry) + the identity hint / `buildLifeStageSection` / scoped `CONTENT_FRAMING` in `prompts/character-chat.ts`; session twin in `engine/scene.ts` (canonical-facts hint + the `buildIntimateDispositionLine` fence) |
 | Relationship block / band profiles | `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones) |
 | RRF fusion (pure) | `server/memory/fusion.ts` ([memory.md](../memory.md)) |
 | Scene image | `server/images/character-scene.ts` ([images.md](../images.md) §state-aware chat scene); queue + anchor + dedupe in `app/api/chats/[chatId]/scene/queue.ts` (`queueChatScene`) |

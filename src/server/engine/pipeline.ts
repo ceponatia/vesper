@@ -755,6 +755,7 @@ async function assemblePreTurn(
   const dispositionNpcs = presentNpcs.map((p) => ({
     id: p.id,
     displayName: p.displayName,
+    age: p.snapshot.age,
     tags: p.snapshot.tags,
     preferences: p.snapshot.preferences,
     traits: p.snapshot.traits,

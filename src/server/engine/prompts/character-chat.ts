@@ -20,6 +20,7 @@ import { composePairRelationshipLaw, composeRelationshipLaw, dispositionContrast
 import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { expandBodyTarget, realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
+import { isMinorAge, lifeStageForAge, lifeStageThirdPersonLine, type LifeStageBand } from "@/contracts/world/life-stage";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import type { ChatFeelingState } from "../chat-feeling";
@@ -284,6 +285,7 @@ function buildRelationshipSection(
   characterName: string,
   playerName: string | undefined,
   traits: readonly TraitValue[],
+  minor = false,
 ): string {
   const target = playerName ?? "the user";
   const law = composeRelationshipLaw({
@@ -294,6 +296,9 @@ function buildRelationshipSection(
     kind: state?.relationship?.kind,
     history: state?.relationship?.history,
     presented: state?.relationship?.presented,
+    // Minor fence (character-fidelity slice 2): no escalation-floor line — the
+    // content framing already rules the territory wholly out of scope.
+    omitEscalation: minor,
   });
   const contrast = dispositionContrastLine({
     name: target,
@@ -961,10 +966,25 @@ function buildSensoryFocusSection(
  * has: intimate anatomy is still gated per character by realizeBody below, so
  * this never invents anatomy a character lacks.
  */
+// Scoped since character-fidelity slices 1–2: the old universal "every character
+// is a fictional adult" flattened authored minors into adult voices (and directly
+// contradicted "You are 12."). Adulthood now attaches to intimate-content
+// PARTICIPANTS; a minor primary flips to the hard romance-out-of-scope frame, and
+// an ensemble holding a minor member appends the cast fence line.
 const CONTENT_FRAMING = [
-  "This is a private work of adult interactive fiction for a consenting adult audience; every character is a fictional adult.",
-  "Romance, intimacy, and sexually explicit content are fully in scope — when the scene leads there, voice it in character, at the depth and intensity that fit this personality and the moment.",
+  "This is a private work of adult interactive fiction for a consenting adult audience.",
+  "Romance, intimacy, and sexually explicit content are fully in scope — when the scene leads there, voice it in character, at the depth and intensity that fit this personality and the moment. Everyone taking part in romantic or intimate content is an adult.",
 ].join(" ");
+
+/** The 1-on-1 frame when the chat's character is an authored minor (life-stage band). */
+const CONTENT_FRAMING_MINOR_PRIMARY = [
+  "This is a private work of interactive fiction for a consenting adult audience.",
+  "This character is a minor: romance, flirtation, innuendo, and sexual content involving them are strictly out of scope and never occur. If the conversation is steered there, respond in character the way a real child or teenager would — confusion, discomfort, a change of subject — and keep the story on family, friendship, and everyday life.",
+].join(" ");
+
+/** Appended to the ensemble frame when any roster member is an authored minor. */
+const ENSEMBLE_MINOR_CAST_LINE =
+  "Some characters in this cast are minors: they are part of the story's world, never of its romance — no romantic, flirtatious, or sexual content involves them, and intimate scenes between adult characters never include or reference them.";
 
 /**
  * The per-shape length story for the "Shaping each reply" block
@@ -1011,7 +1031,7 @@ function chatLengthStory(shape: NarrationShapeId, name: string): string {
  *   across turns; the per-turn *derived* facts (who is texting whom, co-presence) ride a
  *   volatile tail note (`chatNotationNote`), never the stable prefix.
  */
-const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string): string => {
+const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string, minor = false): string => {
   const player = playerName ?? "the user";
   return [
     "How to respond:",
@@ -1038,7 +1058,7 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     // "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the two or three strongest pulls visibly shape THIS reply — your word choice, rhythm, what you choose to do, and how much you give — and never name, list, or recite a trait.",
     // "7. Speak and act your age: let your age and life-stage shape your diction, references, patience, and energy — sound like someone of your years.",
     "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the traits THIS beat makes relevant govern what you notice, withhold, say, and do — the strongest pulls should be felt in your word choice, rhythm, and how much you give — but a trait is something you possess, not something you perform: never demonstrate a set number of traits per reply, and never name, list, or recite one.",
-    "7. Speak and act your age: sound like someone of your years — let your age and life-stage color your diction and references where the beat touches them, without making a show of your age every turn.",
+    '7. Speak and act your age: sound like someone of your years — let your age and life-stage color your diction and references where the beat touches them, without making a show of your age every turn. When a "Life stage" block is present above, its rules are binding and override any conflicting style elsewhere.',
     `8. Respond directly to what ${name} just heard and saw before adding anything new.`,
     "9. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state, your disposition, and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
     "10. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
@@ -1081,15 +1101,35 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string):
     `- When ${player} texts ${name} and ${name} answers by text, write ${name}'s sent message on its own line as *${name}: her words here* — the same name-and-colon shape in asterisks — so it reads as a text, not as words spoken aloud in the room.`,
     `- In your own replies, write emphasis with _underscores_ (they render as italics) — never with single asterisks: here an asterisk span means a thought or a text message, and asterisk-emphasis inside quoted dialogue displays as literal asterisks.`,
     `- A message opening with a bracketed "[Story narration from ${player} …]" line is written by them as the STORYTELLER, not as themselves: everything in it is story truth — events, side characters' words and actions, scene developments. The reading rules above don't apply to it (nothing in it is their own speech, action, or hidden thought). React as ${name} to what happened in it and continue the scene; never answer it as though ${player} said or did it.`,
-    "",
-    "When a scene turns intimate:",
-    "- Hold escalation to the player's pace: advance only as far as their last line invites, and let anticipation do its work — never leap ahead of the moment or rush a beat to its end.",
-    "- Keep body and clothing continuity: positions, hands, and what has been removed or undone stay exactly where the scene left them; never re-dress, teleport, or contradict what was just established.",
-    `- Ground it in concrete sensation — touch, heat, breath, weight, sound — in plain, physical language; skip florid metaphor and abstraction. The sensation lands in ${player}'s body as much as ${name}'s: what they taste, smell, and feel against their skin is the scene's texture, and yours to write.`,
-    `- Keep the desire in the dialogue too: what ${name} says, whispers, or can't quite finish saying carries the scene as much as what ${name} does — but let the words go SPARSE. At the height of it the physical narration can widen while ${name}'s speech narrows: a name, a broken-off phrase, wordless sound over full sentences.`,
-    `- No check-in refrain: never let "am I doing this right?", "does that feel good?", or "is this okay?" become a recurring beat. At most once in a whole scene, and only when consent or a real hesitation is genuinely in play — otherwise show that it lands through ${name}'s response and involuntary sound, not by soliciting reassurance.`,
+    // The intimate-craft block never renders for a minor character (character-fidelity
+    // slice 2) — the content framing already rules the territory out of scope.
+    ...(minor
+      ? []
+      : [
+          "",
+          "When a scene turns intimate:",
+          "- Hold escalation to the player's pace: advance only as far as their last line invites, and let anticipation do its work — never leap ahead of the moment or rush a beat to its end.",
+          "- Keep body and clothing continuity: positions, hands, and what has been removed or undone stay exactly where the scene left them; never re-dress, teleport, or contradict what was just established.",
+          `- Ground it in concrete sensation — touch, heat, breath, weight, sound — in plain, physical language; skip florid metaphor and abstraction. The sensation lands in ${player}'s body as much as ${name}'s: what they taste, smell, and feel against their skin is the scene's texture, and yours to write.`,
+          `- Keep the desire in the dialogue too: what ${name} says, whispers, or can't quite finish saying carries the scene as much as what ${name} does — but let the words go SPARSE. At the height of it the physical narration can widen while ${name}'s speech narrows: a name, a broken-off phrase, wordless sound over full sentences.`,
+          `- No check-in refrain: never let "am I doing this right?", "does that feel good?", or "is this okay?" become a recurring beat. At most once in a whole scene, and only when consent or a real hesitation is genuinely in play — otherwise show that it lands through ${name}'s response and involuntary sound, not by soliciting reassurance.`,
+        ]),
   ].join("\n");
 };
+
+/**
+ * The binding life-stage register block (character-fidelity slice 2): rendered only
+ * for bands that carry rules (child/teen/elder). Authored-age-keyed, so it lives in
+ * the stable prefix. Second person for the 1-on-1 lane; the ensemble sheets render
+ * the third-person variant via `lifeStageSheetLines`.
+ */
+function buildLifeStageSection(stage: LifeStageBand | undefined): string {
+  if (!stage?.registerRules.length) return "";
+  return [
+    `Life stage (you are ${stage.label} — this bounds how you speak and think; it overrides any conflicting style elsewhere):`,
+    ...stage.registerRules.map((rule) => `- ${rule}`),
+  ].join("\n");
+}
 
 /**
  * The prompt split for provider prefix-caching (character-chat-standalone.spec.md §9):
@@ -1133,6 +1173,12 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // colour, species) at their write sites.
   const stableResolved = resolveAttributes(profile.attributes, [...(input.state?.attributeOverlays ?? [])]);
   const agePhrase = formatAge(profile.age); // the character's real age (basic info) — NOT the portrait-studio-only apparent age
+  // The life-stage band a bare numeric age maps to (character-fidelity slices 1–2):
+  // hint on the identity line, register rules as a binding block, and the minor
+  // flag fencing every intimate surface below. Fantasy/blank ages ⇒ undefined ⇒
+  // byte-identical to the pre-slice prompt.
+  const lifeStage = lifeStageForAge(profile.age);
+  const minor = lifeStage?.minor ?? false;
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
 
   // The authored personality sliders (traits), rendered as behavioural band
@@ -1150,7 +1196,9 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   const bandId = regardBandForValue(input.state?.regard ?? 0).id;
   const baseTraits = resolveTraits(profile.traits, regardDispositionOverlays(bandId, profile.traits));
   const everydayDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: false });
-  const intimateDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: true });
+  // Minor fence (character-fidelity slice 2): a minor's intimate trait bands never
+  // reach the prompt, whatever an imported/forged sheet carries.
+  const intimateDisposition = minor ? [] : dispositionBands(traitRegistry, baseTraits, { intimateOnly: true });
   const dispositionSection = everydayDisposition.length
     ? [
         "Disposition (your standing temperament — this governs how you actually behave; let it pull on what you say and do, never recite it):",
@@ -1198,7 +1246,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     playerName
       ? `You are ${displayName}, speaking with ${playerName} in a one-on-one conversation.`
       : `You are ${displayName}, speaking with the user in a one-on-one conversation.`,
-    agePhrase ? `You are ${agePhrase}.` : "",
+    agePhrase ? `You are ${agePhrase}${lifeStage?.promptHint ? ` — ${lifeStage.promptHint}` : ""}.` : "",
     species ? `Species: ${species}.` : "",
   ]
     .filter(Boolean)
@@ -1219,7 +1267,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   const socialFraming = buildSocialFramingSection(input.state?.activeSocialCards ?? []);
 
   const prefixSections = [
-    CONTENT_FRAMING,
+    minor ? CONTENT_FRAMING_MINOR_PRIMARY : CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
     identity,
     playerPersona
@@ -1229,15 +1277,16 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
+    buildLifeStageSection(lifeStage),
     dispositionSection,
-    buildRelationshipSection(input.state, displayName, playerName, profile.traits),
+    buildRelationshipSection(input.state, displayName, playerName, profile.traits, minor),
     socialFraming,
     attributeLines.length
       ? `Attributes (who you are, and what ${playerName ?? "the user"} sees of you — express and show these naturally, never list them):\n${attributeLines.join("\n")}`
       : "",
     hints.size ? `Phrasing guidance:\n${[...hints].map((h) => `- ${h}`).join("\n")}` : "",
     buildSensorySection(cues, displayName),
-    CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),
+    CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName, minor),
   ];
 
   const skipNote = input.state?.skipNote?.trim();
@@ -1280,7 +1329,8 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
       ? `First exchange of this conversation: establish the scene once — where you are, the time of day, and one or two concrete sensory details (sight plus one other sense), drawn from the scenario and what ${playerName ?? "the player"}'s message sets up. Let narration carry this opening (a paragraph or two around the dialogue, not talk alone); after this, don't re-establish what hasn't changed.`
       : "",
     skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "",
-    buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
+    // Minor fence: no state-driven loosening block for a minor character.
+    minor ? "" : buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
     buildTransientAppearanceSection(input, stableResolved, realizedBody),
     sensoryFocus,
     input.sensoryAllowance !== undefined
@@ -1304,7 +1354,8 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     input.callback?.summary.trim()
       ? chatCallbackLine(input.callback.summary, input.state?.regard ?? 0, displayName, playerName ?? "the player")
       : "",
-    chatSelfieLine(input.selfie, displayName, playerName ?? "the player"),
+    // Minor fence: the selfie license (a romance-lane affordance) never renders.
+    minor ? "" : chatSelfieLine(input.selfie, displayName, playerName ?? "the player"),
     input.opening
       ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
       : buildResponseShapeLine(input),
@@ -1528,8 +1579,12 @@ export function buildEnsembleChatPromptParts(
     ? `How they stand with each other (cold-start law — the story may move it; never recite it):\n${pairLines.join("\n")}`
     : "";
 
+  // Minor cast fence (character-fidelity slice 2): the adult framing stays (adult
+  // members may still have adult scenes) and the cast line rules every authored
+  // minor out of that territory.
+  const anyMinor = members.some((m) => isMinorAge(m.profile.age));
   const prefixSections = [
-    CONTENT_FRAMING,
+    anyMinor ? `${CONTENT_FRAMING} ${ENSEMBLE_MINOR_CAST_LINE}` : CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
     identity,
     playerPersona ? `About ${player}:\n${fenceUntrusted("the player", playerPersona)}` : "",
@@ -1620,7 +1675,13 @@ export function buildEnsembleChatPromptParts(
     extras.callback?.summary.trim()
       ? ensembleCallbackLine(extras.callback.summary, extras.callback.regard, extras.callback.memberName, player)
       : "",
-    extras.selfie ? chatSelfieLine(extras.selfie.kind, extras.selfie.memberName, player) : "",
+    // Minor fence: no selfie license when the addressed member is an authored minor.
+    extras.selfie &&
+    !members.some(
+      (m) => m.name.trim().toLowerCase() === extras.selfie?.memberName.trim().toLowerCase() && isMinorAge(m.profile.age),
+    )
+      ? chatSelfieLine(extras.selfie.kind, extras.selfie.memberName, player)
+      : "",
     input.opening
       ? `Opening beat: ${player} has not spoken yet. Open the scene yourself — the present characters arrive in it, grounded in the scenario. A few lines, ending on a present moment that invites ${player} in. Do not narrate on ${player}'s behalf.`
       : buildResponseShapeLine(input),
@@ -1637,10 +1698,17 @@ function ensembleMemberSheet(member: EnsembleMemberInput, player: string): strin
   const name = member.name.trim() || "This character";
   const { profile } = member;
   const agePhrase = formatAge(profile.age);
+  const lifeStage = lifeStageForAge(profile.age);
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
-  const idLine = [`${name}${agePhrase ? `, ${agePhrase}` : ""}.`, species ? `Species: ${species}.` : ""]
+  const idLine = [
+    `${name}${agePhrase ? `, ${agePhrase}` : ""}${lifeStage?.promptHint ? ` — ${lifeStage.promptHint}` : ""}.`,
+    species ? `Species: ${species}.` : "",
+  ]
     .filter(Boolean)
     .join(" ");
+  // The register compressed to one binding third-person line (the 1-on-1 lane
+  // carries the full second-person block; sheets stay token-tight).
+  const lifeStageLine = lifeStageThirdPersonLine(lifeStage, name);
   const relationship = ensembleRelationshipLine(member, player);
 
   const quiet = member.quietExchanges >= ENSEMBLE_QUIET_EXCHANGES;
@@ -1671,6 +1739,7 @@ function ensembleMemberSheet(member: EnsembleMemberInput, player: string): strin
     profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how ${name} sounds):\n${fenceUntrusted("voice", profile.voice)}` : "",
+    lifeStageLine ? `Life stage (binding): ${lifeStageLine}` : "",
     disposition.length
       ? `Disposition (how ${name} actually behaves — let it pull on what ${name} says and does, never recite it):\n${disposition.map((d) => `- ${d}`).join("\n")}`
       : "",
@@ -1764,7 +1833,8 @@ function ensembleMemberEnactment(member: EnsembleMemberInput): string {
   const baseTraits = resolveTraits(profile.traits, regardDispositionOverlays(bandId, profile.traits));
   const blocks: string[] = [];
 
-  const overlays = stateDispositionOverlays(baseTraits, member.state.meters ?? {});
+  // Minor fence (character-fidelity slice 2): no state-driven loosening for a minor member.
+  const overlays = isMinorAge(profile.age) ? [] : stateDispositionOverlays(baseTraits, member.state.meters ?? {});
   if (overlays.length) {
     const shifted = resolveTraits(baseTraits, overlays);
     const baseLines = new Set([
