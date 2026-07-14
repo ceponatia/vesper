@@ -32,6 +32,7 @@ import { INTIMATE_ATTRIBUTE_CATEGORIES } from "@/contracts/body/locations";
 import { realizeBody, speciesLorePhrase } from "@/contracts/species";
 import type { ParticipantState } from "@/contracts/state/participant-state";
 import type { SessionRuntime } from "@/contracts/state/session-runtime";
+import { isMinorAge, lifeStageForAge } from "@/contracts/world/life-stage";
 import { formatAge } from "@/contracts/world/profile";
 import type { CharacterProfile, WorldLore, WorldStyle } from "@/contracts/world/profile";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
@@ -711,7 +712,11 @@ export function buildCanonicalFactsBlock(bundle: SceneBundleInput): string {
   const lines: string[] = [];
   for (const p of npcs(bundle)) {
     const age = formatAge(p.snapshot.age);
-    const agePhrase = age ? ` — ${age}` : "";
+    // The life-stage hint (character-fidelity slice 1): a numeric age carries its
+    // register into the canonical line — Prose rule 7's "age and life-stage" gets
+    // something concrete to enact. Fantasy/blank ages render exactly as before.
+    const stageHint = lifeStageForAge(p.snapshot.age)?.promptHint;
+    const agePhrase = age ? ` — ${age}${stageHint ? ` (${stageHint})` : ""}` : "";
     // Species is an identity truth ("who they ARE"); surface it (label + any
     // authored cultural lore) for non-human casts so the narrator knows the
     // character is an elf / succubus. Generic visual looks go to the image
@@ -781,12 +786,15 @@ export function buildDispositionBlock(bundle: SceneBundleInput): string {
  * when no present character has intimate traits.
  */
 export function buildIntimateDispositionLine(
-  present: ReadonlyArray<{ displayName: string; traits: readonly TraitValue[] }>,
+  present: ReadonlyArray<{ displayName: string; traits: readonly TraitValue[]; age?: string }>,
   exposure: ExposureMask,
 ): string {
   if (exposure.appearance !== "intimate") return "";
   const lines: string[] = [];
   for (const npc of present) {
+    // Minor fence (character-fidelity slice 2): an authored minor's intimate
+    // trait bands never surface, whatever the scene's exposure tier.
+    if (npc.age !== undefined && isMinorAge(npc.age)) continue;
     const parts = dispositionParts(npc.traits, true);
     if (parts.length) lines.push(`- ${npc.displayName} — ${parts.join("; ")}`);
   }

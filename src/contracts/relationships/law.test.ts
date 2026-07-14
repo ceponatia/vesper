@@ -78,6 +78,14 @@ describe("composeRelationshipLaw", () => {
     expect(block.split("\n")).toHaveLength(4); // header, familiarity, regard, escalation
   });
 
+  it("omitEscalation drops the escalation bullet and nothing else (character-fidelity slice 2)", () => {
+    const block = composeRelationshipLaw({ name: "Ann", familiarity: 40, regard: 0, omitEscalation: true });
+    expect(block).not.toContain("- Escalation:");
+    expect(block).toContain("- Familiarity");
+    expect(block).toContain("- Regard");
+    expect(block.split("\n")).toHaveLength(3); // header, familiarity, regard
+  });
+
   it("masks_dislike renders the professional-mask direction", () => {
     const block = composeRelationshipLaw({
       name: "Vane",

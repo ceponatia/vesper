@@ -303,6 +303,22 @@ describe("buildCanonicalFactsBlock", () => {
     expect(excerptBio("")).toBe("");
   });
 
+  it("carries the life-stage hint for marked bands, and none for the adult default or fantasy ages", () => {
+    const bundle = makeBundle();
+    const maya = bundle.participants.find((p) => p.id === "p_maya")!;
+
+    maya.snapshot = profile({ age: "15", bio: "Maya runs errands for the inn." });
+    expect(buildCanonicalFactsBlock(bundle)).toContain("- Maya — 15 years old (a teenager — teen diction");
+
+    maya.snapshot = profile({ age: "34", bio: "Maya runs the inn." });
+    expect(buildCanonicalFactsBlock(bundle)).toContain("- Maya — 34 years old.");
+
+    maya.snapshot = profile({ age: "ancient", bio: "Maya runs the inn." });
+    const fantasy = buildCanonicalFactsBlock(bundle);
+    expect(fantasy).toContain("- Maya — ancient.");
+    expect(fantasy).not.toContain("(a "); // no life-stage guess for a fantasy age
+  });
+
   it("names a non-human species and omits the species clause for human", () => {
     const bundle = makeBundle();
     const maya = bundle.participants.find((p) => p.id === "p_maya");
@@ -369,15 +385,14 @@ describe("buildDispositionBlock", () => {
 });
 
 describe("buildIntimateDispositionLine", () => {
-  const intimateNpc = [
-    {
-      displayName: "Lena",
-      traits: [
-        { id: "intimate.libido", value: 70, source: "creation" as const },
-        { id: "temperament.warmth", value: 60, source: "creation" as const },
-      ],
-    },
-  ];
+  const lena = {
+    displayName: "Lena",
+    traits: [
+      { id: "intimate.libido", value: 70, source: "creation" as const },
+      { id: "temperament.warmth", value: 60, source: "creation" as const },
+    ],
+  };
+  const intimateNpc = [lena];
 
   it("surfaces intimate bands only at the intimate exposure tier", () => {
     const gated = buildIntimateDispositionLine(intimateNpc, defaultExposureMask());
@@ -394,6 +409,20 @@ describe("buildIntimateDispositionLine", () => {
       { ...defaultExposureMask(), appearance: "intimate" },
     );
     expect(line).toBe("");
+  });
+
+  it("never surfaces a minor's intimate bands, whatever the exposure tier (character-fidelity slice 2)", () => {
+    const line = buildIntimateDispositionLine([{ ...lena, age: "16" }], {
+      ...defaultExposureMask(),
+      appearance: "intimate",
+    });
+    expect(line).toBe("");
+    // An adult or fantasy-aged character is untouched by the fence.
+    const adult = buildIntimateDispositionLine([{ ...lena, age: "26" }], {
+      ...defaultExposureMask(),
+      appearance: "intimate",
+    });
+    expect(adult).toContain("Lena — Libido: high");
   });
 });
 

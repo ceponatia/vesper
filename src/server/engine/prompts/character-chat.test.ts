@@ -1930,3 +1930,111 @@ describe("ensemble relationship matrix injection (relationship-model.plan.md sli
     expect(parts.prefix).toContain("(reads as: icily civil)");
   });
 });
+
+describe("life stage & the minor fence (character-fidelity.plan.md slices 1–2)", () => {
+  it("appends the life-stage hint to the identity age line for marked bands", () => {
+    const teen = buildCharacterChatSystemPrompt({ name: "Pip", profile: profile({ age: "16" }) });
+    expect(teen).toContain("You are 16 years old — a teenager");
+    const elder = buildCharacterChatSystemPrompt({ name: "Edda", profile: profile({ age: "72" }) });
+    expect(elder).toContain("You are 72 years old — an elder");
+    // The unmarked adult default and fantasy ages render exactly as before.
+    const adult = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile({ age: "29" }) });
+    expect(adult).toContain("You are 29 years old.");
+    const fantasy = buildCharacterChatSystemPrompt({ name: "Vael", profile: profile({ age: "ancient" }) });
+    expect(fantasy).toContain("You are ancient.");
+    expect(fantasy).not.toContain("Life stage (you are"); // no register block (rule 7's generic mention remains)
+  });
+
+  it("renders the binding register block only for bands that carry rules", () => {
+    const teen = buildCharacterChatSystemPrompt({ name: "Pip", profile: profile({ age: "16" }) });
+    expect(teen).toContain("Life stage (you are a teenager");
+    expect(teen).toContain("Never wise beyond your years");
+    // Rule 7 binds to it by heading name.
+    expect(teen).toContain('When a "Life stage" block is present above, its rules are binding');
+    const adult = buildCharacterChatSystemPrompt({ name: "Mara", profile: profile({ age: "29" }) });
+    expect(adult).not.toContain("Life stage (you are");
+  });
+
+  it("fences every intimate surface for a minor primary", () => {
+    const minorInput = {
+      name: "Pip",
+      profile: profile({
+        age: "15",
+        traits: [
+          { id: "temperament.warmth", value: 50, source: "creation" as const },
+          { id: "intimate.libido", value: 60, source: "creation" as const },
+          { id: "intimate.inhibition", value: 40, source: "creation" as const },
+          { id: "social.guardedness", value: 40, source: "creation" as const },
+        ],
+      }),
+      state: { meters: { intoxication: 0.9 }, regard: 70, familiarity: 60, conditions: [] },
+      selfie: "request" as const,
+    };
+    const prompt = buildCharacterChatSystemPrompt(minorInput);
+    // Content framing flips to the romance-out-of-scope frame.
+    expect(prompt).toContain("This character is a minor");
+    expect(prompt).not.toContain("sexually explicit content are fully in scope");
+    // Intimate trait bands never render…
+    expect(prompt).not.toContain("When the moment turns intimate");
+    expect(prompt).not.toContain("Libido");
+    // …nor the intimate-craft rules block, the escalation floor, the loosening
+    // block (drunk at 0.9), or the selfie license.
+    expect(prompt).not.toContain("When a scene turns intimate");
+    expect(prompt).not.toContain("- Escalation:");
+    expect(prompt).not.toContain("loosening you");
+    expect(prompt).not.toContain("for a photo this turn"); // the selfie request license
+    // The everyday disposition still renders — the character keeps their temperament.
+    expect(prompt).toContain("Warmth: warm");
+
+    // The same sheet at an adult age keeps all of it (the fence is age-keyed).
+    const adult = buildCharacterChatSystemPrompt({ ...minorInput, profile: profile({ ...minorInput.profile, age: "25" }) });
+    expect(adult).toContain("When a scene turns intimate");
+    expect(adult).toContain("- Escalation:");
+    expect(adult).toContain("Everyone taking part in romantic or intimate content is an adult");
+  });
+
+  it("keeps the minor prefix byte-stable across turns (cache-safe fence)", () => {
+    const at = (regard: number) =>
+      buildCharacterChatPromptParts({
+        name: "Pip",
+        profile: profile({ age: "15" }),
+        state: { meters: {}, regard, conditions: [] },
+      });
+    expect(at(50).prefix).toBe(at(64).prefix); // same band — byte-identical
+  });
+
+  it("ensemble: minor members get the cast fence line, the sheet register line, and no selfie license", () => {
+    const member = (name: string, over: Partial<EnsembleMemberInput> = {}): EnsembleMemberInput => ({
+      name,
+      profile: profile(),
+      presence: "present",
+      quietExchanges: 0,
+      ...over,
+    });
+    const input = { name: "Mara", profile: profile(), player: { name: "Brian" } };
+    const withMinor = buildChatPromptPartsForRoster(input, [
+      member("Mara"),
+      member("Pip", { profile: profile({ age: "12" }) }),
+    ]);
+    expect(withMinor.prefix).toContain("Some characters in this cast are minors");
+    expect(withMinor.prefix).toContain("Pip, 12 years old — a child");
+    expect(withMinor.prefix).toContain("Life stage (binding): Pip speaks and thinks like a real child");
+    // An all-adult cast renders no fence line.
+    const adults = buildChatPromptPartsForRoster(input, [member("Mara"), member("Rhett")]);
+    expect(adults.prefix).not.toContain("Some characters in this cast are minors");
+    // The selfie license never fires when the addressed member is the minor…
+    const selfieMinor = buildChatPromptPartsForRoster(
+      input,
+      [member("Mara"), member("Pip", { profile: profile({ age: "12" }) })],
+      { selfie: { kind: "request", memberName: "Pip" } },
+    );
+    expect(selfieMinor.tail).not.toContain("asked Pip for a photo");
+    // …but an adult member's license is untouched by a minor elsewhere in the cast.
+    const selfieAdult = buildChatPromptPartsForRoster(
+      input,
+      [member("Mara"), member("Pip", { profile: profile({ age: "12" }) })],
+      { selfie: { kind: "request", memberName: "Mara" } },
+    );
+    expect(selfieAdult.tail).toContain("Brian asked Mara for a photo this turn");
+  });
+});

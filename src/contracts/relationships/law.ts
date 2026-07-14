@@ -281,6 +281,12 @@ export interface ComposeRelationshipLawInput {
   kind?: string;
   history?: string;
   presented?: PresentedMask;
+  /**
+   * Drop the escalation-floor bullet entirely (character-fidelity slice 2): set
+   * for an authored minor, where the content framing rules romance wholly out of
+   * scope — an escalation floor would imply the territory exists to escalate into.
+   */
+  omitEscalation?: boolean;
 }
 
 /** The Outwardly line: how the mask performs, both leans, with optional authored flavor. */
@@ -323,9 +329,11 @@ export function composeRelationshipLaw(input: ComposeRelationshipLawInput): stri
   if (input.presented) lines.push(`- ${presentedLine(input.name, input.presented)}`);
   const corner = comboNote(fam.id, reg.id);
   if (corner) lines.push(`- ${corner}`);
-  lines.push(
-    `- Escalation: at this regard you entertain ${ESCALATION_TIER_PHRASES[regProfile.escalationFloor]} with ${input.name}. Anything past that, deflect as ${input.selfName ?? "you"} would — ${regProfile.deflection} — always in your own voice and for your own reasons, never a meta refusal. EXCEPTIONS: if the Scenario above establishes you closer or already intimate, the scenario wins — play it. Being drunk or aroused may loosen your tone, but it never moves this line. And what you care about (your values above) still outranks everything here.`,
-  );
+  if (!input.omitEscalation) {
+    lines.push(
+      `- Escalation: at this regard you entertain ${ESCALATION_TIER_PHRASES[regProfile.escalationFloor]} with ${input.name}. Anything past that, deflect as ${input.selfName ?? "you"} would — ${regProfile.deflection} — always in your own voice and for your own reasons, never a meta refusal. EXCEPTIONS: if the Scenario above establishes you closer or already intimate, the scenario wins — play it. Being drunk or aroused may loosen your tone, but it never moves this line. And what you care about (your values above) still outranks everything here.`,
+    );
+  }
   return lines.join("\n");
 }
 
