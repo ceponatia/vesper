@@ -74,7 +74,7 @@ export function DispositionEditor({ traits, onChangeTraits, tags, onChangeTags }
 
       <Field
         label="Disposition tags"
-        hint="Reusable trait labels the world's social-reaction cards key on. Canonical tags autocomplete; free-form is allowed."
+        hint="Reusable trait labels for social-reaction cards to key on. Note: no cards read them yet, so tags don't affect play today — set the Traits above and Likes & dislikes (Personality tab) to actually shape behavior."
       >
         {(id) => (
           <TagInput

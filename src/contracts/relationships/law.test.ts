@@ -3,6 +3,7 @@ import { familiarityBands, regardBands } from "./bands";
 import {
   comboNote,
   composeRelationshipLaw,
+  dispositionIdiomLine,
   familiarityBandProfile,
   familiarityBandsMissingProfiles,
   regardBandProfile,
@@ -109,5 +110,22 @@ describe("corners and regions", () => {
     expect(relationshipRegionLabel(5, 40)).toBe("Instant chemistry");
     expect(relationshipRegionLabel(90, 85)).toBe("Beloved");
     expect(relationshipRegionLabel(40, -20)).toBe("Acquainted · Cool");
+  });
+});
+
+describe("dispositionIdiomLine (slice 3 — warmth growth keeps the authored manner)", () => {
+  it("fires at warm+ regard for a cold-side lean, in that character's own manner", () => {
+    const cold = dispositionIdiomLine({ name: "Theo", warmth: -60, regard: 60 });
+    expect(cold).toContain("your OWN manner");
+    expect(cold).toContain("never gush");
+    const reserved = dispositionIdiomLine({ name: "Theo", warmth: -15, regard: 60 });
+    expect(reserved).toContain("your OWN manner");
+    expect(reserved).toContain("shown more than said");
+  });
+
+  it("stays silent below warm regard, and for neutral/warm warmth (no manner to preserve)", () => {
+    expect(dispositionIdiomLine({ name: "Theo", warmth: -60, regard: 49 })).toBe("");
+    expect(dispositionIdiomLine({ name: "Theo", warmth: 0, regard: 80 })).toBe("");
+    expect(dispositionIdiomLine({ name: "Theo", warmth: 60, regard: 80 })).toBe("");
   });
 });

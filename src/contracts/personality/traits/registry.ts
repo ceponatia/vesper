@@ -34,6 +34,41 @@ export function bandForValue(def: PersonalityTraitDefinition, value: number): Tr
   return def.bands.find((b) => v <= b.max) ?? def.bands[def.bands.length - 1];
 }
 
+/** Index (0-based, ascending) of the band a value falls in; defensive 0 when unresolved. */
+export function bandIndexForValue(def: PersonalityTraitDefinition, value: number): number {
+  const band = bandForValue(def, value);
+  const idx = band ? def.bands.indexOf(band) : -1;
+  return idx < 0 ? 0 : idx;
+}
+
+/**
+ * Clamp `shifted` so its band sits at most `maxSteps` bands from `authored`'s band
+ * (character-fidelity slice 3): a render-time overlay may *color* disposition but
+ * never carry a trait more than `maxSteps` bands from the value the author set — so
+ * a long, warm chat can't homogenize every character toward one warm/open reading.
+ * When the shift overshoots, the value is pulled to the near edge of the furthest
+ * allowed band in the shift's direction; no overshoot ⇒ `shifted` returned unchanged.
+ */
+export function clampValueToBandSteps(
+  def: PersonalityTraitDefinition,
+  authored: number,
+  shifted: number,
+  maxSteps: number,
+): number {
+  const authoredIdx = bandIndexForValue(def, authored);
+  const shiftedIdx = bandIndexForValue(def, shifted);
+  const lastIdx = def.bands.length - 1;
+  const lo = Math.max(0, authoredIdx - maxSteps);
+  const hi = Math.min(lastIdx, authoredIdx + maxSteps);
+  const allowedIdx = Math.max(lo, Math.min(hi, shiftedIdx));
+  if (allowedIdx === shiftedIdx) return shifted;
+  // Overshot: going up ⇒ the top of the allowed band; going down ⇒ just inside its
+  // bottom (one past the previous band's max), or the axis floor for band 0.
+  if (shifted > authored) return def.bands[allowedIdx]?.max ?? shifted;
+  const prevMax = allowedIdx > 0 ? def.bands[allowedIdx - 1]?.max : undefined;
+  return prevMax === undefined ? axisRange(def.axis).min : prevMax + 1;
+}
+
 export function buildTraitRegistry(definitions: readonly PersonalityTraitDefinition[]): TraitRegistry {
   const core = buildRegistryCore<PersonalityTraitDefinition, number>({
     definitions,

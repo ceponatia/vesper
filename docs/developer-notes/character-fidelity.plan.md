@@ -48,20 +48,31 @@ session twins name them.
    the adult assertion attaches to intimate-content *participants*; a minor
    primary flips to a hard romance-out-of-scope framing; an ensemble with a
    minor member adds a cast fence line.
-3. **Cap regard soft-coloring** _(next)_ — bound `regardDispositionOverlays` to one
-   band step from authored; add an "in her own idiom" line at warm+ bands so
-   warmth growth keeps the authored manner (today `dispositionContrastLine` only
-   fires on sign disagreement).
-4. **Preferences reach the chat narrator** _(next)_ — cache-stable prefix block
-   ("What lands well and badly with you") from `profile.preferences`; later a
-   regex-first one-turn reaction verdict line (`chat-intent.ts` pattern) so reply
-   and pulse agree in the same exchange.
-5. **Wire inert sliders into existing mechanics** _(next)_ — extraversion →
-   initiative cadence + ensemble quiet tolerance; dominance → forward-move
-   ownership; confidence → drive-reveal posture. Note tag inertness in the editor.
-6. **Per-character micro-exemplars** _(next)_ — forge/redraft generates 2–3 worked
-   dialogue examples (deflection style etc.) stored on the profile, rendered in
-   the prefix; encodes disposition + voice + age jointly.
+3. **Cap regard soft-coloring** _(shipped — 2026-07-14)_ — `regardDispositionOverlays`
+   now clamps each overlay to **one band step** from the authored value
+   (`REGARD_OVERLAY_MAX_BAND_STEPS` = 1, via `clampValueToBandSteps` in
+   `traits/registry.ts`); a composed `dispositionIdiomLine` (`relationships/law.ts`)
+   fires at warm+ regard for a cold-side authored warmth so growing closeness keeps
+   the character's own manner. Rulings below.
+4. **Preferences reach the chat narrator** _(shipped — 2026-07-14)_ — a cache-stable
+   "What lands well and badly with you" prefix block (`buildPreferencesSection`,
+   `describePreference`) renders `profile.preferences` so a like/dislike shapes the
+   reply IN the exchange, not just the post-turn pulse; intimate-concept preferences
+   fence out for a minor. The one-turn reaction-verdict line is deferred as a
+   **follow-up** (see Follow-ups) — a robust version needs the pulse's LLM classifier
+   pre-turn, which isn't the "clean and small" the stretch bar asked for.
+5. **Wire inert sliders into existing mechanics** _(shipped — 2026-07-14)_ —
+   `social.extraversion` → initiative-opener cadence (`buildInitiativeCue`) + ensemble
+   quiet tolerance (`ensembleQuietThreshold`); `social.dominance` → the `CHAT_RULES`
+   forward-move rule; `temperament.confidence` → the drives block's reveal posture.
+   All keyed off the shared `traitPole` (±34), so a mid/absent value is byte-identical.
+   The Disposition-tag editor now flags that tags are inert (no cards read them yet).
+6. **Per-character micro-exemplars** _(shipped — 2026-07-14)_ — `profile.microExemplars`
+   (`{situation, line}[]`, cap 3; `contracts/world/profile.ts`) drafted by the forge
+   (`groundMicroExemplars`), re-derived by the **profile** prose Re-draft scope, and
+   hand-editable on the Profile tab (`MicroExemplarsEditor`); rendered as the "How you
+   actually answer a charged moment" few-shots in the chat prefix so voice +
+   disposition + age anchor near generation. Fill-merge is all-or-nothing (like outfit).
 7. **Voice anchors near generation** _(next)_ — structured `voiceAnchors` (pet
    phrases, rhythm, never-says) + a one-line tail re-anchor beside the mood pin.
 8. **Voice-exemplar ring past the summary horizon** _(next)_ — archivist picks ≤1
@@ -78,11 +89,33 @@ session twins name them.
 
 ## Open questions
 
-- Slice 3: exact per-band step cap, and whether the idiom line is registry data
-  (per warmth band) or composed.
 - Slice 8: archivist-picked exemplars vs. a deterministic "most characterful line"
   heuristic (avoid an extra agent judgment on a hot path?).
 - Slice 10: which traits flip to `developable` first, and the per-arc overlay clamp.
 - Session-lane register block: canonical facts carries the hint only (slice 2);
   does the session rulebook need the full register block once a session cast
   regularly includes minors?
+
+### Resolved
+
+- Slice 3 (ruled 2026-07-14): the per-band step cap is **one** step
+  (`REGARD_OVERLAY_MAX_BAND_STEPS`) — conservative, and with the current 3-band
+  traits it's a guardrail that never actually mangles a real shift (their 67-wide
+  middle band means a ±40 overlay can't cross two bands on its own; it earns its
+  keep against future tuning / narrower bands). The idiom line is **composed**, not
+  registry data — one function keyed off the authored warmth value, mirroring
+  `dispositionContrastLine` (simpler; no per-warmth-band registry to maintain).
+
+## Follow-ups
+
+- **Slice 4 — one-turn reaction-verdict line (deferred).** The plan's "later"
+  regex-first verdict line so reply and pulse agree on the *same* exchange's act
+  wasn't shipped: robustly classifying a social act (compliment/insult/…) is the
+  pulse's LLM classifier's job, not a regex one (unlike the sensory/movement reads
+  `chat-intent.ts` already does), and reusing that classifier pre-turn is an extra
+  hot-path LLM leg — past the "clean and small" stretch bar. The prefix preferences
+  block already tells the reply what lands well/badly, which addresses the core
+  diagnosis; a future verdict line would sharpen turn-level agreement.
+- **Slices 4 & 6 — ensemble parity (deferred).** The preferences block and the
+  micro-exemplar few-shots render in the 1-on-1 lane only; ensemble member sheets
+  (token-tight by design) don't yet carry them. Add if ensemble fidelity needs it.

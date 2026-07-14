@@ -9,10 +9,13 @@ import {
   scaleAffinityGain,
   socialTraitScale,
   regardDispositionOverlays,
+  REGARD_OVERLAY_MAX_BAND_STEPS,
   stateDispositionOverlays,
   TRAIT_SCALE_MAX,
 } from "./modulation";
 import type { SocialReaction } from "./reactions";
+import { bandIndexForValue } from "./traits/registry";
+import { traitRegistry } from "./traits";
 import type { TraitValue } from "./traits/value";
 
 const dislike = (conceptId = "criticize"): SocialReaction => ({ conceptId, valence: "dislike", intensity: 5, hint: "", source: "preference" });
@@ -221,5 +224,25 @@ describe("regardDispositionOverlays (§7.1 soft coloring, re-keyed to regard ban
     expect(only.map((o) => o.id)).toEqual(["temperament.warmth"]);
     expect(only[0]?.value).toBe(100); // 90 + 35, clamped
     expect(regardDispositionOverlays("smitten", [])).toEqual([]);
+  });
+
+  it("caps the coloring at one band step from the authored value (slice 3 — no homogenization)", () => {
+    expect(REGARD_OVERLAY_MAX_BAND_STEPS).toBe(1);
+    const ids = ["temperament.warmth", "social.guardedness", "intimate.inhibition"] as const;
+    for (const bandId of ["hostile", "wary", "cool", "friendly", "warm", "close", "cherished", "devoted", "smitten"]) {
+      for (let authored = -100; authored <= 100; authored += 10) {
+        const overlays = regardDispositionOverlays(
+          bandId,
+          ids.map((id) => trait(id, authored)),
+        );
+        for (const overlay of overlays) {
+          const def = traitRegistry.byId(overlay.id);
+          if (!def) continue;
+          const authoredBand = bandIndexForValue(def, authored);
+          const overlaidBand = bandIndexForValue(def, overlay.value);
+          expect(Math.abs(overlaidBand - authoredBand)).toBeLessThanOrEqual(REGARD_OVERLAY_MAX_BAND_STEPS);
+        }
+      }
+    }
   });
 });

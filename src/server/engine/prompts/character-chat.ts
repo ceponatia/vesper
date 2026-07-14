@@ -12,16 +12,23 @@ import {
 import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
-import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contracts/personality/traits";
+import { dispositionBands, effectiveTraitValue, traitPole, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
 import { driveWithheld, type ChatDrive } from "@/contracts/personality/drives";
+import { describePreference, type Preference } from "@/contracts/personality/preference";
+import { conceptIdsInFamily, interactionConceptById } from "@/contracts/personality/interactions";
 import { familiarityBandForValue, regardBandForValue } from "@/contracts/relationships/bands";
-import { composePairRelationshipLaw, composeRelationshipLaw, dispositionContrastLine } from "@/contracts/relationships/law";
+import {
+  composePairRelationshipLaw,
+  composeRelationshipLaw,
+  dispositionContrastLine,
+  dispositionIdiomLine,
+} from "@/contracts/relationships/law";
 import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { expandBodyTarget, realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { isMinorAge, lifeStageForAge, lifeStageThirdPersonLine, type LifeStageBand } from "@/contracts/world/life-stage";
-import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
+import { formatAge, type CharacterProfile, type MicroExemplar } from "@/contracts/world/profile";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import type { ChatFeelingState } from "../chat-feeling";
 import type { ChatSensoryAllowance, SensoryFocusHint } from "../chat-intent";
@@ -300,12 +307,17 @@ function buildRelationshipSection(
     // content framing already rules the territory wholly out of scope.
     omitEscalation: minor,
   });
-  const contrast = dispositionContrastLine({
-    name: target,
-    warmth: effectiveTraitValue(traits, "temperament.warmth"),
-    regard: state?.regard ?? 0,
-  });
-  return contrast ? `${law}\n- ${contrast}` : law;
+  const warmth = effectiveTraitValue(traits, "temperament.warmth");
+  const regard = state?.regard ?? 0;
+  // The contrast line fires on sign disagreement; the idiom line fires at warm+ regard
+  // so growing closeness keeps the authored manner (character-fidelity slice 3).
+  const extras = [
+    dispositionContrastLine({ name: target, warmth, regard }),
+    dispositionIdiomLine({ name: target, warmth, regard }),
+  ]
+    .filter(Boolean)
+    .map((line) => `- ${line}`);
+  return extras.length ? `${law}\n${extras.join("\n")}` : law;
 }
 
 /** Lead line per skip amount (spec §8.1) — the fictional gap the next reply opens on. */
@@ -383,7 +395,11 @@ export function chatSelfieLine(selfie: "request" | "offer" | "opener" | undefine
  * carries the full-but-SCOPED lie license; a gate-cleared secret invites the
  * reveal as a big beat; guarded never volunteers. Resolved drives drop out.
  */
-function buildDrivesSection(state: NonNullable<CharacterChatPromptInput["state"]>, player: string): string {
+function buildDrivesSection(
+  state: NonNullable<CharacterChatPromptInput["state"]>,
+  player: string,
+  confidence = 0,
+): string {
   const drives = (state.drives ?? []).filter((d) => !d.resolved);
   if (!drives.length) return "";
   const axes = { regard: state.regard, familiarity: state.familiarity ?? 0 };
@@ -401,7 +417,15 @@ function buildDrivesSection(state: NonNullable<CharacterChatPromptInput["state"]
     }
     return `- You want ${d.want}${why}.${progress}${d.secrecy === "secret" ? " (now in the open between you.)" : ""}`;
   });
-  return `What you want (your own motive force — let it steer what you pursue, offer, and withhold; never recite this list):\n${lines.join("\n")}`;
+  // Slice 5: confidence colors HOW wants surface — a bold character states them plainly,
+  // a timid one circles and hedges even a secret they've decided to share.
+  const posture =
+    traitPole(confidence) === "high"
+      ? " You state what you want plainly — desire, and even a hard admission, come out direct and unhedged."
+      : traitPole(confidence) === "low"
+        ? " Wanting makes you hesitant — you circle what you want, hedge, half take it back; even a secret you've decided to share comes out haltingly, not as a bold declaration."
+        : "";
+  return `What you want (your own motive force — let it steer what you pursue, offer, and withhold; never recite this list):${posture}\n${lines.join("\n")}`;
 }
 
 /** Regard bands where a callback reads as warm nostalgia (at/above `warm`). */
@@ -563,6 +587,58 @@ function buildSocialFramingSection(cards: readonly SocialReactionCard[]): string
     return `- ${lead}: ${card.label}${desc ? ` — ${desc}` : ""}`;
   });
   return `What you care about (your own values — let them shape how you take what's said and done; react in character, never recite):\n${fenceUntrusted("values", lines.join("\n"))}`;
+}
+
+/** True when a preference targets intimate content — an intimate concept, or a family whose concepts all are. */
+function isIntimatePreference(pref: Preference): boolean {
+  const concept = interactionConceptById(pref.target);
+  if (concept) return concept.intimate;
+  const familyIds = conceptIdsInFamily(pref.target);
+  return familyIds.length > 0 && familyIds.every((id) => interactionConceptById(id)?.intimate === true);
+}
+
+/**
+ * The "What lands well and badly" block (character-fidelity slice 4): the authored
+ * `profile.preferences` rendered as narrator-facing law so a like/dislike shapes the
+ * REPLY in the same exchange — not just the post-turn affinity pulse (the old gap: a
+ * "dislikes compliments" character accepted the compliment and only the number stung).
+ * Stable (authored) ⇒ the §9 prefix. Intimate-concept preferences are fenced out for a
+ * minor. Fenced (the hint text is author-written). "" when nothing lands either way.
+ */
+function buildPreferencesSection(preferences: readonly Preference[], player: string, minor: boolean): string {
+  const visible = preferences.filter((p) => !(minor && isIntimatePreference(p)));
+  const likes = visible.filter((p) => p.valence === "like");
+  const dislikes = visible.filter((p) => p.valence === "dislike");
+  if (!likes.length && !dislikes.length) return "";
+  const lines = [
+    ...likes.map((p) => `- Lands well: ${describePreference(p)}.`),
+    ...dislikes.map((p) => `- Lands badly: ${describePreference(p)}.`),
+  ];
+  return (
+    `What lands well and badly with you (how specific things ${player} says and does actually sit with you — ` +
+    `let it color your reply IN the moment, not only how you feel afterward; a thing you dislike lands as friction ` +
+    `you show, never recite):\n${fenceUntrusted("preferences", lines.join("\n"))}`
+  );
+}
+
+/**
+ * The micro-exemplar block (character-fidelity slice 6): 2–3 forge/redraft-drafted worked
+ * examples — a charged situation paired with how THIS character answers it — rendered as
+ * few-shots so voice + disposition + age anchor near generation, not only in the abstract
+ * sliders. Stable (authored) ⇒ the §9 prefix. Fenced (author-written). "" when none carry a
+ * line. Distinct from slice 8's dynamic in-chat voice ring; these are the authored baseline.
+ */
+function buildMicroExemplarsSection(exemplars: readonly MicroExemplar[]): string {
+  const rows = exemplars.filter((e) => e.line.trim());
+  if (!rows.length) return "";
+  const lines = rows.map((e) => {
+    const cue = e.situation.trim();
+    return `- ${cue ? `${cue} → ` : ""}${e.line.trim()}`;
+  });
+  return (
+    `How you actually answer a charged moment (worked examples of your voice and manner — match the STYLE and rhythm, ` +
+    `never quote these back verbatim):\n${fenceUntrusted("voice examples", lines.join("\n"))}`
+  );
 }
 
 /**
@@ -1031,8 +1107,22 @@ function chatLengthStory(shape: NarrationShapeId, name: string): string {
  *   across turns; the per-turn *derived* facts (who is texting whom, co-presence) ride a
  *   volatile tail note (`chatNotationNote`), never the stable prefix.
  */
-const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string, minor = false): string => {
+const CHAT_RULES = (
+  name: string,
+  shape: NarrationShapeId,
+  playerName?: string,
+  minor = false,
+  opts: { dominance?: number } = {},
+): string => {
   const player = playerName ?? "the user";
+  // Slice 5: dominance decides who owns the one forward move — a dominant character
+  // takes it and sets the terms; a submissive one gives ground and follows the lead.
+  const forwardMove =
+    traitPole(opts.dominance ?? 0) === "high"
+      ? ` You lead by temperament: when the move is yours, take it — set the direction, name the next thing, make the claim; hand ${player} a question only when you truly want the answer.`
+      : traitPole(opts.dominance ?? 0) === "low"
+        ? ` You defer by temperament: your move often gives ground — you yield, follow ${player}'s lead, answer rather than steer; taking charge is the exception, not your reflex.`
+        : "";
   return [
     "How to respond:",
     `1. Stay fully in character as ${name}. Never break character, never mention being an AI, a model, or a chat app, never address the user as anyone but the person ${name} is talking to.`,
@@ -1076,7 +1166,7 @@ const CHAT_RULES = (name: string, shape: NarrationShapeId, playerName?: string, 
     `17. When ${player}'s message carries attached photos, an "Attached photos" note below describes what ${name} sees in each. Treat them as real photos ${player} is showing or sending ${name} — react in character to what they show, weave what genuinely matters into the reply, and let ${name}'s disposition decide how much they land. Never inventory a photo back detail-by-detail, and never speak of an "image" or "attachment" — it is a photo ${name} is looking at.`,
     "",
     "Shaping each reply (how much to give, and how to land it):",
-    `- Resolve, then one move. First answer what ${name} just heard and saw; then make AT MOST ONE forward move — an action or gesture ${player} can react to, an offer, a disclosure, a shift in the scene — or a question, but only when ${name} genuinely wants that answer right now. Never stack moves; never answer-then-ask-then-act in one reply; vary how replies end so they don't all close the same way.`,
+    `- Resolve, then one move. First answer what ${name} just heard and saw; then make AT MOST ONE forward move — an action or gesture ${player} can react to, an offer, a disclosure, a shift in the scene — or a question, but only when ${name} genuinely wants that answer right now. Never stack moves; never answer-then-ask-then-act in one reply; vary how replies end so they don't all close the same way.${forwardMove}`,
     `- Worked example, two endings: ${player} mentions they quit their job today — here a question IS the move: ${name} looks up, "You actually did it. What did they say when you told them?" — ${name} genuinely wants the answer, so the question earns its place. But when ${player} finally kisses ${name} after weeks of circling it, ending on "Was that okay?" is filler that kills the beat — the move is an action hook instead: ${name} pulls them back in without a word. Match the ending to the moment; never default to a question.`,
     // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 2 — the unconditional
     // three-paragraph baseline contradicted the aggressive_concise profile in rule 5; the length
@@ -1277,16 +1367,21 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
+    buildMicroExemplarsSection(profile.microExemplars),
     buildLifeStageSection(lifeStage),
     dispositionSection,
     buildRelationshipSection(input.state, displayName, playerName, profile.traits, minor),
     socialFraming,
+    buildPreferencesSection(profile.preferences, playerName ?? "the user", minor),
     attributeLines.length
       ? `Attributes (who you are, and what ${playerName ?? "the user"} sees of you — express and show these naturally, never list them):\n${attributeLines.join("\n")}`
       : "",
     hints.size ? `Phrasing guidance:\n${[...hints].map((h) => `- ${h}`).join("\n")}` : "",
     buildSensorySection(cues, displayName),
-    CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName, minor),
+    CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName, minor, {
+      // Slice 5: the forward-move rule owns the character's dominance posture.
+      dominance: effectiveTraitValue(baseTraits, "social.dominance"),
+    }),
   ];
 
   const skipNote = input.state?.skipNote?.trim();
@@ -1317,7 +1412,10 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
       : "",
     input.memory ? buildMemorySection(input.memory) : "",
     stateSection,
-    input.state ? buildDrivesSection(input.state, playerName ?? "the player") : "",
+    // Slice 5: confidence colors the drive-reveal posture (bold vs. hesitant disclosure).
+    input.state
+      ? buildDrivesSection(input.state, playerName ?? "the player", effectiveTraitValue(baseTraits, "temperament.confidence"))
+      : "",
     sceneSection,
     castSection,
     // The first-exchange scene directive (Fly screenshot, 2026-07-10): on a brand-new chat the
@@ -1464,6 +1562,17 @@ export interface EnsembleMemberInput {
 
 /** Exchanges without activity at/over which a present member's blocks compress to tier 2. */
 export const ENSEMBLE_QUIET_EXCHANGES = 3;
+
+/**
+ * Per-member quiet tolerance from extraversion (character-fidelity slice 5): an
+ * introvert recedes comfortably, so their sheet compresses a beat sooner; an
+ * extravert stays vocal, so their full sheet holds longer before compressing.
+ * Mid extraversion (or none) ⇒ exactly `ENSEMBLE_QUIET_EXCHANGES`.
+ */
+export function ensembleQuietThreshold(extraversion: number): number {
+  const pole = traitPole(extraversion);
+  return pole === "low" ? ENSEMBLE_QUIET_EXCHANGES - 1 : pole === "high" ? ENSEMBLE_QUIET_EXCHANGES + 2 : ENSEMBLE_QUIET_EXCHANGES;
+}
 
 /**
  * One directed member↔member edge for the ensemble prompt (the relationship
@@ -1711,7 +1820,7 @@ function ensembleMemberSheet(member: EnsembleMemberInput, player: string): strin
   const lifeStageLine = lifeStageThirdPersonLine(lifeStage, name);
   const relationship = ensembleRelationshipLine(member, player);
 
-  const quiet = member.quietExchanges >= ENSEMBLE_QUIET_EXCHANGES;
+  const quiet = member.quietExchanges >= ensembleQuietThreshold(effectiveTraitValue(profile.traits, "social.extraversion"));
   if (quiet || member.presence === "away") {
     // Tier 2/cutaway compression: identity + a one-line read; the full sheet returns
     // when they act again (a licensed prefix re-render, like a band crossing).

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectiveTraitValue, traitValueSchema, type TraitValue } from "./value";
+import { effectiveTraitValue, traitPole, traitValueSchema, type TraitValue } from "./value";
 
 const trait = (id: string, value: number): TraitValue => ({ id, value, source: "creation" });
 
@@ -27,5 +27,17 @@ describe("effectiveTraitValue", () => {
   it("reads the trait by id, neutral 0 when absent", () => {
     expect(effectiveTraitValue([trait("social.warmth", 55)], "social.warmth")).toBe(55);
     expect(effectiveTraitValue([], "social.warmth")).toBe(0);
+  });
+});
+
+describe("traitPole (slice 5 — slider posture threshold)", () => {
+  it("splits at the shared ±34 band boundary, mid ⇒ no steer", () => {
+    expect(traitPole(60)).toBe("high");
+    expect(traitPole(34)).toBe("high");
+    expect(traitPole(33)).toBe("mid");
+    expect(traitPole(0)).toBe("mid");
+    expect(traitPole(-33)).toBe("mid");
+    expect(traitPole(-34)).toBe("low");
+    expect(traitPole(-70)).toBe("low");
   });
 });

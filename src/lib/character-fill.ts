@@ -23,6 +23,9 @@ import {
  * - free-text scalars (name, bio, personality, voice, age): non-empty ⇒ fixed,
  *   whoever wrote them — predictable beats clever. The per-tab Re-draft is the
  *   tool that rewrites text.
+ * - microExemplars (character-fidelity slice 6): all-or-nothing like the outfit —
+ *   worked voice examples are a coherent set, so any authored row keeps them all
+ *   and generation only fills a blank slot.
  * - lists (library tags, disposition tags, aliases): additive — existing
  *   entries are never removed or edited; new ones append (deduped).
  * - attributes / traits (provenance-carrying): existing ids are never touched
@@ -170,6 +173,8 @@ export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: Filla
       bio: keepText(base.profile.bio, incoming.profile.bio),
       personality: keepText(base.profile.personality, incoming.profile.personality),
       voice: keepOptionalText(base.profile.voice, incoming.profile.voice),
+      microExemplars:
+        base.profile.microExemplars.length > 0 ? base.profile.microExemplars : incoming.profile.microExemplars,
       age: keepText(base.profile.age, incoming.profile.age),
       speciesId: speciesUnset ? incoming.profile.speciesId : base.profile.speciesId,
       heritageId: speciesUnset ? incoming.profile.heritageId : base.profile.heritageId,

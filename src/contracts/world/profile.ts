@@ -94,6 +94,24 @@ export function formatScheduleRhythm(schedule: readonly ScheduleEntry[], max = 4
     .join("; ");
 }
 
+/** Cap on stored worked dialogue examples — a few, not a script. */
+export const MICRO_EXEMPLARS_MAX = 3;
+
+/**
+ * A worked dialogue exemplar (character-fidelity slice 6): one situation cue paired
+ * with how THIS character answers it — a few-shot that encodes disposition + voice +
+ * age jointly, rendered near generation in the chat prefix. Structured (situation +
+ * line), not one blob string, so the editor and forge can curate each row. Leaf
+ * `.catch` so one malformed value degrades the row instead of failing the profile.
+ */
+export const microExemplarSchema = z.object({
+  /** The charged moment the line answers, a short cue ("pushed to talk about her past"). */
+  situation: z.string().catch("").default(""),
+  /** The character's in-voice answer/beat. */
+  line: z.string().catch("").default(""),
+});
+export type MicroExemplar = z.infer<typeof microExemplarSchema>;
+
 /** One named look: a list of item definition ids from the owner's library. */
 export const outfitPresetSchema = z.object({
   id: z.string().min(1),
@@ -123,6 +141,22 @@ export const characterProfileObjectSchema = z.object({
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().optional(),
+  /**
+   * Worked dialogue exemplars (character-fidelity slice 6): 2–3 forge/redraft-drafted
+   * examples of how the character answers a charged moment (a deflection, a boundary,
+   * a tease), rendered as few-shots in the chat prefix so voice + disposition + age
+   * anchor near generation. Element-wise `.catch` (docs/resilience.md §1) drops one bad
+   * row alone; empty/blank rows filter out. `[]` ⇒ no block (old rows parse unchanged).
+   */
+  microExemplars: z
+    .array(microExemplarSchema.nullable().catch(null))
+    .catch([])
+    .default([])
+    .transform((rows) =>
+      rows.filter(
+        (r): r is MicroExemplar => r !== null && (r.situation.trim() !== "" || r.line.trim() !== ""),
+      ),
+    ),
   /**
    * The character's real / chronological age, free text — a basic-info field the
    * **narrator** reads, deliberately separate from the visual
