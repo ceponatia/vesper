@@ -24,17 +24,19 @@ export const CHAT_FEELING_CAUSE_MAX = 120;
 export const CHAT_PREMISE_MAX_CHARS = 600;
 
 /**
- * Test-bed **action chips** (character-chat-state.spec.md slice 4): one-click
- * deterministic state nudges shown above the composer. The id + label live here
- * (pure) so the chat UI renders them and the engine's effect registry keys off the
- * same ids; the engine owns the effect functions. `chatActionIdSchema` validates
- * the action at the route boundary.
+ * **Action chips** (chat-action-beats.plan.md): a chip tap is a narrated one-beat
+ * exchange (`action_beat` — engine/chat-action-beat.ts builds the register-aware cue),
+ * carrying the chip id and a paired deterministic state effect the engine applies
+ * pre-narration. The id + label + `hint` live here (pure) so the chat UI renders the
+ * chips with affordance copy (label + tooltip that says what the tap will do) and the
+ * engine's effect registry keys off the same ids; the engine owns the effect functions.
+ * `chatActionIdSchema` validates the action at the route boundary.
  */
 export const CHAT_ACTIONS = [
-  { id: "drink", label: "Offer a drink" },
-  { id: "freshen", label: "Freshen up" },
-  { id: "rest", label: "Take a breather" },
-  { id: "fluster", label: "Heat things up" },
+  { id: "drink", label: "Offer a drink", hint: "Offer a drink — a beat as it loosens the mood." },
+  { id: "freshen", label: "Freshen up", hint: "A moment to freshen up and feel put-together again." },
+  { id: "rest", label: "Take a breather", hint: "Take a breather together — the tension eases." },
+  { id: "fluster", label: "Heat things up", hint: "Heat things up — the mood turns warmer." },
 ] as const;
 
 export type ChatActionId = (typeof CHAT_ACTIONS)[number]["id"];

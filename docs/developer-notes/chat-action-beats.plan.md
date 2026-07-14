@@ -1,7 +1,17 @@
 # Chat action beats — promote the action chips to narrated beats
 
-Status: **next** (spawned 2026-07-13 from the
-[ux-improvements.plan.md](ux-improvements.plan.md) slice-4 ruling; no code yet).
+Status: **shipped — 2026-07-14.** A chip tap is now an `action_beat` exchange
+through the chat pipeline: no persisted player line, a server-built register-aware
+cue (`engine/chat-action-beat.ts` `buildActionBeatCue`), the narrator plays it as a
+normal one-beat reply, and the chip's deterministic effect (`applyChatAction`) applies
+to the drifted state pre-narration — rollback-safe via the pre-exchange snapshot, the
+chip id riding the reply's `meta.actionBeat` so "another take" reproduces cue + effect
+(re-applied exactly once). The old POST `…/state {action}` deterministic-only endpoint
++ its `chatsApi.applyAction` client were **removed** (superseded). Chips gained tooltip
+`hint` copy. Tests: cue snapshot per chip (`chat-action-beat.test.ts`), effect + rollback
++ busy-409 int (`chat-state.int.test.ts`). Rulings recorded below.
+
+Spawned 2026-07-13 from the [ux-improvements.plan.md](ux-improvements.plan.md) slice-4 ruling.
 
 ## Goal
 
@@ -31,7 +41,11 @@ Follow the established server-built-cue exchange pattern (the reopen opener in
   declined in the UX batch ruling.
 - Multi-character chats: the beat targets the character the chip context
   implies (default: the primary / the roster member whose strip hosts the
-  chips) — settle at build.
+  chips) — settle at build. **Ruling (2026-07-14): the beat targets the primary**
+  — the status strip that hosts the chips reads the primary's state, so the cue and
+  the `applyChatAction` effect both key on `owned.participant.characterId`; other
+  roster members neither pulse nor take the effect on an action beat (the action
+  names no one, so the referenced-only fan-out simply doesn't reach them).
 
 ## Build order
 
@@ -46,7 +60,10 @@ Follow the established server-built-cue exchange pattern (the reopen opener in
 6. Docs: `character-chat/pipeline.md` (exchange kinds), `ui.md` (chips), `prompts.md`
    (the cue).
 
-## Open questions
+## Rulings
 
-- Does the chip set stay fixed at four, or become context-dependent (e.g.
-  "Heat things up" hidden at hostile regard)? Default: keep fixed for v1.
+- **Chip set stays fixed at four for v1** (2026-07-14 — took the plan's default).
+  No context-dependent hiding (e.g. "Heat things up" at hostile regard); the chip
+  set is the static `CHAT_ACTIONS` registry. A later slice can gate visibility if
+  the fixed set proves wrong.
+- **Multi-character targeting: the primary** (see the design-sketch note above).

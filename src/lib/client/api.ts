@@ -1108,9 +1108,6 @@ export const chatsApi = {
   /** Edit chat state fields from the character sheet / scenario modal; returns the refreshed snapshot. */
   editState: (chatId: string, patch: ChatStateEdit, characterId?: string) =>
     apiPatch(chatStateSnapshotSchema, `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`, patch),
-  /** Apply a one-click action chip (offer a drink → intoxication↑, etc.); returns the refreshed snapshot. */
-  applyAction: (chatId: string, action: ChatActionId) =>
-    apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/state`, { action }),
   /**
    * Upload ONE player photo for this conversation (chat-image-input.plan.md): a
    * data-URL in, the `chat_upload` asset id back — sent with the next message as
@@ -1259,7 +1256,7 @@ export interface ChatStreamOutcome {
 export async function sendChatMessage(
   chatId: string,
   body: {
-    kind?: "send" | "open" | "continue" | "regenerate" | "rerun";
+    kind?: "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
     content?: string;
     model?: string;
     cue?: string;
@@ -1271,6 +1268,8 @@ export async function sendChatMessage(
     initiative?: boolean;
     /** Composer register (chat-supporting-cast.plan.md §Narrator input) — send only. */
     inputMode?: "player" | "narrator";
+    /** Tapped action-chip id (chat-action-beats.plan.md) — required for kind "action_beat". */
+    action?: ChatActionId;
   },
   onChunk: (delta: string) => void,
   signal?: AbortSignal,

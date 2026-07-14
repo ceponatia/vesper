@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-or
 import { z } from "zod";
 import {
   characterProfileSchema,
+  chatActionIdSchema,
   DiagnosticCollector,
   diag,
   effectiveTraitValue,
@@ -11,6 +12,7 @@ import {
   splitStateCues,
   switchScenePlace,
   unseenMilestoneReason,
+  type ChatActionId,
   type ChatReplyFailure,
   type ChatReplyFailureCode,
 } from "@/contracts";
@@ -22,6 +24,7 @@ import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChat
 import { log } from "../log";
 import { resolvePlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
+import { buildActionBeatCue } from "./chat-action-beat";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import { buildInitiativeCue } from "./chat-initiative";
 import { loadChatRelationships } from "./chat-relationships";
@@ -49,6 +52,7 @@ import {
   writeChatMemory,
 } from "./chat-memory";
 import {
+  applyChatAction,
   driftChatState,
   finalizeChatState,
   loadChatScenario,
@@ -105,11 +109,17 @@ import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
  * parse → auth → stream shell. Keyed on the conversation (spec §1): the route
  * resolves chat + participant + character and hands their slices in.
  *
- * Five exchange kinds (spec §4):
+ * Six exchange kinds (spec §4):
  * - **send** — the normal player turn.
  * - **open** — the opening beat ("Prompt character"): no player line, no fan-out.
  * - **continue** — "go on": no player line; the archivist runs (new narrative is
  *   worth remembering) but the reaction pulse is skipped (no player act).
+ * - **action_beat** — a tapped action chip (chat-action-beats.plan.md): no player
+ *   line; the server builds a register-aware synthetic cue from the chip id and
+ *   applies the chip's deterministic state effect to the drifted state PRE-narration
+ *   (so the reply reflects it), rollback-safe via the pre-exchange snapshot. The
+ *   pulse is skipped (no player act — like `continue`); the archivist runs. The chip
+ *   id rides the reply's `meta.actionBeat` so a regenerate reproduces the cue + effect.
  * - **regenerate** — "another take" on the LAST assistant reply: state rolls back
  *   to the pre-exchange snapshot, the old take's memory is retracted, the reply
  *   row is updated in place with the old take kept browsable (`takes`).
@@ -123,7 +133,7 @@ import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
  *   successors have their extracted memory retracted.
  */
 
-export type ChatExchangeKind = "send" | "open" | "continue" | "regenerate" | "rerun";
+export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
 
 export interface SubmitChatMessageInput {
   /** The conversation (already authorized + not archived — the route owns both checks). */
@@ -178,6 +188,14 @@ export interface SubmitChatMessageInput {
    * generation is never background (D3).
    */
   initiative?: boolean;
+  /**
+   * Action-beat chip (chat-action-beats.plan.md) — `action_beat` only: the tapped
+   * chip id. The server builds a register-aware synthetic cue for it and applies the
+   * chip's deterministic state effect to the primary's drifted state pre-narration —
+   * so the reply reflects the shift — rollback-safe via the pre-exchange snapshot. No
+   * player line is persisted; the id rides the reply's `meta.actionBeat`.
+   */
+  action?: ChatActionId;
   /**
    * Player-attached photo ids (chat-image-input.plan.md) — `send` only. Validated +
    * claimed against this chat's ready `chat_upload` rows (foreign ids dropped), then
@@ -445,6 +463,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     let attachmentDescriptions: string[] | null = null;
     /** Narrator-mode input (chat-supporting-cast.plan.md): the line is story narration, not the player's POV. */
     let narratorInput = kind === "send" && input.inputMode === "narrator";
+    /**
+     * For an action beat (chat-action-beats.plan.md): the tapped chip. Set for a fresh
+     * `action_beat`, or recovered from the reply's meta when regenerating one. Drives the
+     * register-aware cue + the deterministic effect, both applied below once the recent
+     * replies (the apart/co-present signal) and the drifted state are in hand.
+     */
+    let actionBeatId: ChatActionId | null = null;
 
     switch (kind) {
       case "send": {
@@ -481,6 +506,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         syntheticCue = CONTINUE_CUE;
         break;
       }
+      case "action_beat": {
+        // No player line: the chip id builds a register-aware cue + a deterministic
+        // effect (both applied below). A missing/invalid id degrades to a plain continue.
+        actionBeatId = input.action ?? null;
+        if (!actionBeatId) {
+          syntheticCue = CONTINUE_CUE;
+          effectiveKind = "continue";
+        }
+        break;
+      }
       case "regenerate": {
         const target = await lastAssistantMessage(chatId);
         if (!target) {
@@ -493,6 +528,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         if (prev?.role === "user") {
           promptMessageId = prev.id;
           playerContent = prev.content;
+        } else if (target.actionBeat) {
+          // The reply being regenerated was an action beat — reproduce its chip so the
+          // register cue + deterministic effect land again (state rolls back to the
+          // pre-effect snapshot first, so a retake re-applies exactly once, never doubles).
+          actionBeatId = target.actionBeat;
+          effectiveKind = "action_beat";
         } else {
           // The reply being regenerated was itself an opening/continue beat.
           syntheticCue = prev ? CONTINUE_CUE : OPENING_CUE;
@@ -751,6 +792,23 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // a body region / garment ⇒ assemble the authored sensory values into a focus block.
     const sensoryFocus = playerContent ? (detectSensoryFocus(playerContent) ?? undefined) : undefined;
     const firstExchange = !opening && !recentReplies.length;
+
+    // --- Action beat (chat-action-beats.plan.md) -----------------------------
+    // A tapped chip is a narrated one-beat exchange. Build its register-aware cue —
+    // apart ⇒ answer as a text, co-present ⇒ in-scene, derived from the last reply's
+    // comms spans (the same signal the selfie offer reads) — and apply the chip's
+    // deterministic effect to the drifted state BEFORE the prompt builds, so the reply
+    // reflects the shift. The pre-exchange snapshot (storedState) is the PRE-effect
+    // anchor, so a regenerate rolls back and re-applies the effect exactly once.
+    if (actionBeatId) {
+      syntheticCue = buildActionBeatCue({
+        chipId: actionBeatId,
+        characterName,
+        playerName: player.name,
+        apart: hasCommsSpans(recentReplies.at(-1) ?? ""),
+      });
+      driftedState = applyChatAction(driftedState, actionBeatId, scenario.clockMinutes);
+    }
 
     // --- Perk targeting (followups ruling 12) --------------------------------
     // The "addressed" member: a group perk aims at whoever the player's message
@@ -1053,7 +1111,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- Settle work (runs once the reply has fully streamed) ----------------
     const settle = async (full: string, stopped: boolean): Promise<void> => {
-      const meta = stopped ? { stopped: true } : {};
+      // The action-beat chip id rides the reply meta so a later regenerate reproduces
+      // the cue + deterministic effect (recovered from the target's meta above).
+      const beatMeta = actionBeatId ? { actionBeat: actionBeatId } : {};
+      const meta = stopped ? { ...beatMeta, stopped: true } : beatMeta;
       if (regenerateTarget) {
         // Update the row in place: the old take stays browsable, the new one is
         // active (spec §4.1). Row-existence is the guard — a delete landing
@@ -1129,6 +1190,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // input (authored story events are not a player act to classify).
           skipPulse:
             (effectiveKind === "continue" && !openerSelfieEligible) ||
+            effectiveKind === "action_beat" ||
             narratorInput ||
             (!primaryReferenced && referencedOthers.length > 0),
           pulseScope: openerSelfieEligible ? "opener" : "full",
@@ -1385,7 +1447,6 @@ async function saveReplyFailure(
   }
 }
 
-/** The newest message when it is an assistant reply — the only regenerable target. */
 /** Defensive parse of a user line's meta: attachments (chat-image-input.plan.md) + input mode. */
 const messageAttachmentsMetaSchema = z.object({
   attachments: z
@@ -1418,22 +1479,30 @@ async function loadMessageAttachments(
   };
 }
 
+/** Defensive parse of an assistant reply's meta: the action-beat chip id (regenerate recovery). */
+const assistantReplyMetaSchema = z.object({
+  actionBeat: chatActionIdSchema.optional().catch(undefined),
+});
+
+/** The newest message when it is an assistant reply — the only regenerable target. */
 async function lastAssistantMessage(
   chatId: string,
-): Promise<{ id: string; content: string; createdAt: Date } | null> {
+): Promise<{ id: string; content: string; createdAt: Date; actionBeat?: ChatActionId } | null> {
   const [row] = await db()
     .select({
       id: characterChatMessages.id,
       role: characterChatMessages.role,
       content: characterChatMessages.content,
       createdAt: characterChatMessages.createdAt,
+      meta: characterChatMessages.meta,
     })
     .from(characterChatMessages)
     .where(eq(characterChatMessages.chatId, chatId))
     .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
     .limit(1);
   if (!row || row.role !== "assistant") return null;
-  return { id: row.id, content: row.content, createdAt: row.createdAt };
+  const meta = parseOr(assistantReplyMetaSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
+  return { id: row.id, content: row.content, createdAt: row.createdAt, actionBeat: meta.actionBeat };
 }
 
 /** The message immediately before `target`, collision-safe on the (createdAt, id) tuple. */

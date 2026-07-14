@@ -16,7 +16,12 @@ import { cx } from "@/components/ui/cx";
 import { MoodChip } from "@/components/ui/mood-chip";
 import { Tag, type TagTone } from "@/components/ui/tag";
 
-/** Test-bed action chips (character-chat-state.spec.md slice 4): one-click state nudges. */
+/**
+ * Action chips (chat-action-beats.plan.md): a tap is a narrated one-beat exchange —
+ * the character plays a small beat and the paired deterministic effect applies
+ * pre-narration. Each chip's `hint` (registry copy) is a tooltip saying what the tap
+ * will do; `busy` marks the tapped chip while its reply streams.
+ */
 export function ActionChips({
   busy,
   disabled,
@@ -33,6 +38,7 @@ export function ActionChips({
           key={action.id}
           size="sm"
           variant="quiet"
+          title={action.hint}
           busy={busy === action.id}
           disabled={disabled || busy !== null}
           onClick={() => onAction(action.id)}
