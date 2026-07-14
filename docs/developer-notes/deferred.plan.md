@@ -215,6 +215,18 @@ See
 [presence-and-perception-spec.phase3.md](finished/presence-and-perception-spec.phase3.md)
 §Gaps & opportunities.
 
+## Chat story map — scene-memory places graph
+
+_Raised 2026-07-14, from the world-sim carry-forward review (the chat-lane
+descendant of the demoted [world-map.plan.md](world-map.plan.md))._ Chat's
+`scene_memory` already stores places + connections — the same nodes-and-edges
+shape the world map renders — and the graph component was written generically
+(`lib/world-graph-layout.ts` + `components/worlds/world-map-graph.tsx`,
+locations + links in). A small read-only "places this story knows" view (in the
+Scenario modal or the desktop aside) is nearly free: nice texture for the
+player and a useful QA window into scene memory. Not promoted because it's
+garnish — pick up if players ask for it or scene-memory debugging warrants it.
+
 ## Item acquisition during play
 
 _Raised 2026-06-13, from the location-design ownership ruling._ Spawn-time item

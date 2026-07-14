@@ -27,6 +27,20 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
+- **Chat plans & promises** — [chat-plans-promises.plan.md](chat-plans-promises.plan.md)
+  (next — planned 2026-07-14). Commitments struck in the fiction become tracked
+  state that comes due on the story clock: archivist-recognized, surfaced only
+  when imminent/happening/just-missed, landing on feelings/milestones, feeding
+  the hub marker + reopen opener. Ensemble-aware: group plans, the
+  arrival/exit license for away members, NPC↔NPC plans. The chat descendant of
+  the retired scheduled-arrivals spec.
+- **Chat off-screen life** — [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md)
+  (next — planned 2026-07-14; after plans & promises, whose records its
+  meanwhile pass consumes). The cast's lives advance between visits: grounded
+  life-meanwhile material (drives/cast/plans), a capped **meanwhile pass** at
+  big time skips proposing off-screen developments — including NPC↔NPC
+  interactions filed as relationship facts — away-member whereabouts, and the
+  daily-rhythm line in ordinary turns. "The world moves," scoped to the cast.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
@@ -49,7 +63,9 @@ _(nothing — pull the next entry from Next)_
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
   minimap) remain — optional polish on a feature already delivering its core value.
   _Demoted to the bottom 2026-07-14 (owner): character chat is now the app's main
-  focus and the world model is headed for deprecation or refactor — don't polish it._
+  focus and the world model is headed for deprecation or refactor — don't polish it.
+  A chat-lane descendant (a read-only scene-memory places graph) is parked in
+  [deferred.plan.md](deferred.plan.md) §Chat story map._
 - **World simulation ("the world moves")** — the former "phase 5" cluster, not
   yet started, and now **direction-dependent**: character chat is the test bed
   for what the world/session model will eventually look like (owner direction
@@ -60,6 +76,12 @@ _(nothing — pull the next entry from Next)_
   findings (its intake half shipped). A future `world-simulation.plan.md` — or
   the chat-successor equivalent — re-derives what it needs when this becomes
   active. _Demoted to the bottom 2026-07-14 (owner) with the map, same rationale._
+  _Carry-forward 2026-07-14: the chat-applicable ideas graduated to
+  [chat-plans-promises.plan.md](chat-plans-promises.plan.md) (scheduled arrivals
+  reborn) and [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) (the
+  world moves, scoped to the cast's lives) — see the top of this list. What
+  stays here is only the session-side remainder (movement authority, world-scale
+  simulation), pending the direction._
 
 ## Someday / parking lot
 
