@@ -1,8 +1,74 @@
 # Attribute narrator guidance — plan
 
-Status: **next** — core mechanism SHIPPED 2026-07-13 (see §Shipped so far);
-remaining: the vocabulary audit + stored-value sweep (slice 3) and the broader
-authoring pass (slice 4).
+Status: **shipped — 2026-07-14** — core mechanism + sensory glosses shipped
+2026-07-13 (see §Shipped so far); the entangled-vocabulary audit + stored-value
+sweep (slice 3) and the broader gloss authoring pass (slice 4) shipped
+2026-07-14 (see §Slice 3–4 completion). Nothing implementable remains — the two
+leftovers are non-code: the authored glosses **await owner review/trim**, and
+the sweep script **awaits a run against each live DB** (local + Fly). Both are
+recorded below.
+
+## Slice 3–4 completion (2026-07-14)
+
+**Slice 3 — entangled-vocabulary audit + stored-value sweep.**
+
+- **Audit outcome: no NEW renames needed.** A fresh sweep of every enum's
+  `allowedValues` found no remaining member that borrows a *different*
+  attribute's dedicated dimension. The three entanglements were already
+  dissolved by prior sessions (the 2026-07-08 `build.frame` skeletal-gauge
+  rescope, the `vulva.labia` → majora/minora split, and the `feet.smell`
+  palette swap) — this slice confirms nothing else leaks. The per-limb build
+  words (`legs.build` / `arms.build` carrying `athletic` / `muscular` /
+  `toned`) are **in-dimension** — they describe *that limb's own* build, not
+  the whole-body `build.musculature` — and stay. Neck girth (`neck.length`'s
+  `thick` / `slender`) has no dedicated attribute of its own, so it is a broad
+  attribute, not an entanglement, and stays. Net: **zero registry renames this
+  slice**, so no new `aliases` were added (the alias mechanism is
+  definition-level text→id resolution, and the one useful value→word carry,
+  `curvy` → `hips.width`, already landed in the 2026-07-08 change).
+- **The stored-value sweep script** —
+  `scripts/sweep-renamed-attribute-values.ts` (idempotent, `--dry-run`,
+  self-contained pure remap core + entrypoint-guarded `main`), with pure tests
+  in `scripts/sweep-renamed-attribute-values.test.ts`. It maps every *already-
+  renamed* stored value to its canonical successor, **keyed by attribute id**
+  (the same word can be valid elsewhere — `soft` stays on weight/skin, `sour`
+  stays on vulva/penis scent):
+  - `build.frame`: `willowy`/`lean`/`athletic`/`curvy` → `slight`/`average`,
+    `stocky`/`broad` → `sturdy`, `heavyset` → `heavy_boned`.
+  - `build.musculature`: dropped `soft` → `untoned`.
+  - `feet.smell`: `freshly washed`/`neutral` → `clean`, `cheesy and vinegary`
+    → `cheesy`, `sour` → `sour_sweat`, `erotically stinky` → `thick_musk`.
+  - `vulva.labia` (dead id) → `vulva.labia_minora`, `prominent` → `protruding`
+    (`tucked`/`even`/`asymmetric` carried under the new id unchanged).
+  - **Storage sites swept** (every place an `AttributeValue` / condition effect
+    persists): `characters.profile.attributes`, `world_cast.snapshot.attributes`,
+    `session_participants.snapshot.attributes`,
+    `session_participants.state.attributeOverlays`,
+    `session_participants.state.conditions[].attributeEffects`,
+    `character_chat_state.attributeOverlays`,
+    `character_chat_state.conditions[].attributeEffects`.
+  - Deliberately **not** `parseOr`-based: a migration must never *drop* an
+    element it can't recognize, so unknown-shaped entries pass through verbatim
+    and only the `{id,value}` / `{attributeId,value}` pair is ever rewritten.
+  - **LEFTOVER — awaits a run against each live DB** (not run by this change; no
+    guaranteed local Postgres): `pnpm tsx scripts/sweep-renamed-attribute-values.ts`
+    locally, then on Fly via
+    `fly ssh console -a vesper -C "pnpm tsx scripts/sweep-renamed-attribute-values.ts"`.
+    Data-only; **no schema migration** (registries are the extension point).
+
+**Slice 4 — broader gloss authoring pass (DRAFTS AWAITING OWNER REVIEW).**
+Authored `narratorGuidance` for the ambiguous/game-calibrated members of:
+`build.frame`, `build.musculature`, `build.weight_presentation` (`build.ts`);
+`voice.timbre`, `voice.cadence` (`voice.ts` — `voice.pitch` left bare, it's a
+self-evident ordinal scale); `movement.gait`, `movement.posture_default`
+(`movement.ts`); `skin.texture` (`skin.ts` — tone/undertone/markings left bare,
+they're color/self-evident). Each map carries an inline `DRAFTS AWAITING OWNER
+REVIEW` comment naming the slice. Sparse per the design rule (self-evident
+members stay bare), each gloss held strictly in-dimension per the orthogonality
+rule (frame speaks bone, not height/weight; timbre speaks texture, not pitch;
+etc.), and clean against the height-word tripwire. They render live immediately
+(slices 1–2 render unconditionally) — owner reviews/trims in place; this is the
+same ship-then-review path the sensory palettes took 2026-07-13.
 
 ## Shipped so far (2026-07-13)
 
@@ -96,7 +162,9 @@ catalog already carry per-value hints).
    - `attributePhrase` in `engine/prompts/character-chat.ts:290` and its three
      call sites (attribute lines, sensory cues, chat-state overlays).
      Snapshot/degradation tests: no gloss ⇒ byte-identical output.
-3. **Vocabulary audit (entangled members).** Sweep every enum's
+3. **Vocabulary audit (entangled members)** (shipped 2026-07-14 — audit found no
+   new renames; sweep script written, awaits a DB run — see §Slice 3–4
+   completion). Sweep every enum's
    `allowedValues` for members that encode a _different_ attribute's dimension.
    For each rename: update `allowedValues` (+ keep the old word in
    `aliases` so freeform authoring still maps), and run a one-off value-sweep
@@ -131,7 +199,10 @@ catalog already carry per-value hints).
      `erotically stinky` → nearest of `thick_musk`/`feral`) — same sweep
      applies to stored rows.
 4. **Authoring pass** (sensory palettes shipped 2026-07-13 — `feet.smell` +
-   the shared intimate scent/taste maps; the rest remains). Draft glosses for the genuinely ambiguous enums (build,
+   the shared intimate scent/taste maps; build / weight-musculature / voice /
+   movement / skin drafts shipped 2026-07-14, **awaiting owner review** — see
+   §Slice 3–4 completion; intimate-category glosses beyond scent/taste remain a
+   future add). Draft glosses for the genuinely ambiguous enums (build,
    weight/musculature, intimate categories, voice, movement, skin), applying
    the orthogonality rule; owner reviews the batch. Data-only edit per the
    registry philosophy — no migration.

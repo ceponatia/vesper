@@ -25,6 +25,21 @@ export const voiceGroup = defineAttributeGroup("voice", [
       "breathy", "nasal", "resonant", "gravelly", "silvery", "reedy",
     ],
     aliases: ["voice timbre", "husky voice", "raspy voice"],
+    // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+    // OWNER REVIEW. Timbre = the texture/color of the voice only; pitch (its own
+    // attribute) is kept out — no "low"/"deep". Sparse: clear/warm stay bare.
+    narratorGuidance: {
+      soft_spoken: "gentle, hushed delivery — never forced",
+      husky: "grainy, caught-in-the-throat warmth and roughness",
+      raspy: "a dry, rough edge, like sandpaper on the words",
+      smoky: "dark, hazy richness — lounge-singer warmth",
+      breathy: "air threaded through the words, soft and close",
+      nasal: "pinched through the nose, thin and forward",
+      resonant: "full and ringing, body behind every word",
+      gravelly: "coarse and rumbling, a rough gravel scrape",
+      silvery: "bright, clear, bell-like — light on the ear",
+      reedy: "thin and faintly buzzing, like a reed",
+    },
   },
   {
     id: "voice.accent",
@@ -51,5 +66,17 @@ export const voiceGroup = defineAttributeGroup("voice", [
     ],
     aliases: ["cadence", "speaking rhythm"],
     promptHints: ["Cadence shapes dialogue beats and sentence length; keep it consistent across turns."],
+    // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+    // OWNER REVIEW. Cadence = speech rhythm/pacing only. Sparse: rapid/animated stay bare.
+    narratorGuidance: {
+      clipped: "curt, cut-off words — brisk and economical",
+      measured: "even, unhurried pacing — each word placed",
+      languid: "slow and trailing, words allowed to linger",
+      halting: "starts and stops, uncertain pauses between",
+      melodic: "rising and falling like a tune",
+      deadpan: "flat and level — no lift, no fall",
+      drawling: "stretched vowels, lazy and slow to land",
+      precise: "crisp and exact, every syllable deliberate",
+    },
   },
 ]);

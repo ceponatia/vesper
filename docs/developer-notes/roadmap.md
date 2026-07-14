@@ -27,14 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Attribute narrator guidance — remainder: vocabulary audit + broader authoring pass** —
-  [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) (core
-  mechanism + sensory glosses shipped 2026-07-13 — see Shipped). Remaining: the
-  entangled-vocabulary audit (rename members that bake in another attribute's
-  dimension) with the stored-value sweep over every attribute-value storage site
-  (must also map old `build.frame` / `vulva.labia` / `feet.scent` values already
-  renamed in the registry), and the broader gloss authoring pass (build,
-  weight/musculature, voice, movement, skin) for owner review.
 - **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
   force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
   minimap) remain — optional polish on a feature already delivering its core value.
@@ -79,6 +71,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Attribute narrator guidance — audit + broader glosses (slices 3–4, plan complete)** —
+  [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) — 2026-07-14 —
+  the entangled-vocabulary audit found no new renames (prior sessions had already
+  dissolved `build.frame` / `vulva.labia` / `feet.smell`; per-limb `legs`/`arms`
+  build words are in-dimension and stay), so the slice's deliverable is the
+  idempotent stored-value sweep `scripts/sweep-renamed-attribute-values.ts`
+  (+ pure tests) mapping every already-renamed value across all seven
+  attribute-value storage sites, and the broader gloss authoring pass (build,
+  weight/musculature, voice, movement, skin). Data-only, **no migration**.
+  Leftovers (both non-code, in the plan): the glosses **await owner review/trim**
+  and the sweep **awaits a run against each live DB** (local + Fly SSH).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) — 2026-07-14 — the third species/heritage
   note (`intimacy`, bare text) + a per-character `profile.intimacy`, merged (heritage-replaces,
