@@ -1,0 +1,2 @@
+ALTER TABLE "character_chat_state" ADD COLUMN "worn_item_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "character_chat_state" ADD COLUMN "outfit_preset_id" text DEFAULT '' NOT NULL;

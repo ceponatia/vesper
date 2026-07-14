@@ -28,6 +28,7 @@ export * from "./items/object-subtypes";
 export * from "./items/subtypes";
 export * from "./items/wearer";
 export * from "./items/visibility";
+export * from "./items/chat-wardrobe";
 export * from "./facts/taxonomy";
 export * from "./images/scene-reference";
 export * from "./images/image-models";

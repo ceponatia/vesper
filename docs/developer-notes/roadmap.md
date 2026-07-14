@@ -27,13 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Chat wardrobe parity** —
-  [chat-wardrobe-parity.plan.md](chat-wardrobe-parity.plan.md) (next — ruled
-  2026-07-13; depends on the UX batch's outfit presets). Chat wardrobe reaches
-  full session parity in three rungs: preset-as-state, item-level worn list
-  with computed exposure (the session classifier reused), equip/unequip UI in
-  the chat character sheet. First concrete step of the **chat-as-test-bed
-  direction** (see `CLAUDE.md`).
 - **Intimacy notes** — [intimacy-notes.plan.md](intimacy-notes.plan.md) · spec
   [intimacy-notes.spec.md](intimacy-notes.spec.md) (design settled — all seven
   questions ruled 2026-07-13). Third species/heritage
@@ -92,6 +85,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat wardrobe parity** — [chat-wardrobe-parity.plan.md](chat-wardrobe-parity.plan.md) —
+  2026-07-14 — the chat lane's one free-text `outfit` string + manual `outfit_exposed` toggle
+  became structured worn state to session parity, all three rungs: chat state holds `wornItemIds`
+  (seeded from the active preset) + `outfitPresetId`, with the free-text `outfit` repurposed as an
+  overlay/legacy fallback (migration 0047). The narrator + scene image render the actual garments
+  (reusing `wardrobeOutfitText`), exposure is COMPUTED from coverage via the session classifier
+  (`exposedRegions`, the manual toggle superseded), the archivist proposes whole-outfit preset
+  swaps AND garment-level add/remove (`applyWornGarmentChanges`, rollback-safe), and the chat
+  Character sheet gains a per-slot equip/remove editor reusing the outfit-editor primitives. New
+  `chat_look` key shape (worn ids + overlay + coverage fingerprint). First step of the
+  **chat-as-test-bed direction** (`CLAUDE.md`).
 - **Chat action beats** — [chat-action-beats.plan.md](chat-action-beats.plan.md) —
   2026-07-14 — the four status-strip chips stop being silent state pokes: a tap is now
   a narrated `action_beat` exchange (no player line, a register-aware server-built cue,
@@ -165,7 +169,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   value summaries, **named outfit presets** replacing `defaultOutfit` (lazy
   lift, preset switcher, archivist preset matching, rhythm auto-dress on time
   skips), and the polish batch. Spawned: chat-action-beats +
-  chat-wardrobe-parity (Next).
+  chat-wardrobe-parity (both shipped 2026-07-14).
 - **Sensory grounding** — [sensory-grounding.plan.md](sensory-grounding.plan.md) —
   2026-07-12 — the chat Sensory-focus block now joins the player's targeted body
   region to that region's own authored attributes (sense-ranked — "I lick her foot"

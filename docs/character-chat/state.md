@@ -17,8 +17,11 @@ chat row as the shared **scenario**.
 `familiarity_scene_gain` budget — trickle capped at `acquainted`, archivist facts push
 past it, reset on a time skip) plus the authored `relationship_record` texture
 (kind/history/`presented` mask/looming — `contracts/relationships/record.ts`),
-self-expiring conditions, the `mindNote`, the free-text outfit + exposed flag, the
-anti-repetition `surfacedCues` bands, the RAG carry-overs (`memoryQueries`,
+self-expiring conditions, the `mindNote`, the **structured wardrobe** (chat-wardrobe-parity:
+`worn_item_ids` — the worn item-definition ids seeded from the active preset; `outfit_preset_id`
+— which named look is on; `outfit` repurposed as the free-text overlay/legacy fallback;
+`outfit_exposed` retained but authoritative only on the free-text path — computed from coverage
+otherwise; see §Wardrobe), the anti-repetition `surfacedCues` bands, the RAG carry-overs (`memoryQueries`,
 `open_loops` — the archivist's ≤3 "unfinished business" phrases, re-emitted in full each
 exchange so resolved loops fall off; persisted narrative `attributeOverlays`;
 persisted narrative `trait_overlays` (character-fidelity slice 10 — bounded personality
@@ -63,6 +66,37 @@ chat-wide fields write the scenario) and `chatStateSnapshot(state, scenario)` me
 them back into the client's back-compat snapshot shape. State is inspected/edited
 through the per-character **Character sheet** and the chat-wide **Scenario** modal
 ([ui.md](../ui.md) §The conversation page).
+
+
+## Wardrobe
+
+Since chat-wardrobe-parity (2026-07-14) the chat lane carries **structured worn state** at
+full session parity, not one free-text string. A conversation holds `worn_item_ids` (the worn
+item-definition ids, seeded from the active outfit preset), `outfit_preset_id` (which named
+look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unowned garments —
+"a borrowed hoodie" — and the legacy fallback), and the retained `outfit_exposed` flag.
+
+- **The seam.** `resolveChatWardrobe` (`engine/chat-wardrobe.ts`) is the ONE place worn state
+  becomes what downstream reads — a rendered garment phrase (via `wardrobeOutfitText`,
+  occlusion-filtered + subtype-led) plus **coverage-computed exposure** (via the session
+  classifier `exposedRegions`, [../contracts/items.md](../contracts/items.md)) — reusing the
+  session renderers, never re-forking them. The narrator prompt (`promptStateSlice`), the scene
+  image (`queueChatScene` → `renderCharacterSceneImage`'s `exposure` override), and the
+  `chat_look` key all read it. When `worn_item_ids` is empty the seam falls back to the
+  free-text path (`outfit` + the manual `outfit_exposed`), self-healing the moment a preset
+  switch / equip populates the worn list (**migration**: legacy chats stay on the free-text
+  path until re-dressed — no sweep).
+- **Archivist changes.** The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
+  drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
+  `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
+  list from it, an unmatched description is a free-text replacement, and garment-level
+  `removed`/`added` fold through the pure `applyWornGarmentChanges` (contracts) against the
+  loaded worn items + the character's preset pool — a removed garment drops its id, an
+  unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
+  turn). Rollback-safe: `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`.
+- **Editing.** The Character sheet's per-slot equip/remove editor + preset switcher
+  (`components/characters/chat-wardrobe-editor.tsx` — [ui.md](../ui.md) §The conversation
+  page).
 
 
 ## Scene memory

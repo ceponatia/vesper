@@ -51,6 +51,7 @@ import {
   TRAIT_OVERLAY_STEP,
   hasVoiceAnchors,
   SKIP_HISTORY_CAP,
+  applyWornGarmentChanges,
   outfitItems,
   outfitPresetByName,
   resolveOutfitPreset,
@@ -92,7 +93,7 @@ import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } fro
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
-import { defaultOutfitPhrase } from "../images";
+import { healOutfitMarker, loadChatWardrobe, wardrobeDescriptors } from "./chat-wardrobe";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
 import {
   applyFeelingProposal,
@@ -172,9 +173,21 @@ export interface ChatState {
   relationship: RelationshipTexture;
   conditions: ActiveCondition[];
   mindNote: string;
-  /** Free-text starting outfit driving chat scene images (character-chat-scenario.plan.md). */
+  /**
+   * Structured worn item-definition ids (chat-wardrobe-parity.plan.md rung 2), seeded from
+   * the active preset. When non-empty this is the wardrobe truth — the narrator renders these
+   * garments and exposure is COMPUTED from their coverage; empty ⇒ the free-text path applies.
+   */
+  wornItemIds: string[];
+  /** The active outfit preset id (rung 1) — which named look is "on"; "" ⇒ default/none. */
+  outfitPresetId: string;
+  /**
+   * Free-text outfit OVERLAY / fallback (chat-wardrobe-parity ruling): narrated-but-unowned
+   * garments ("a borrowed hoodie") ride alongside the worn list; legacy chats carry their whole
+   * look here until re-dressed. The scene-image outfit source when no items are worn.
+   */
   outfit: string;
-  /** Whether chat scene images reveal intimate anatomy (no structured wardrobe to derive it). */
+  /** Manual intimate-reveal flag — authoritative only on the free-text path (empty worn list); computed from coverage otherwise. */
   outfitExposed: boolean;
   /**
    * Meter bands last surfaced to the narrator as a "just shifted" beat
@@ -276,9 +289,19 @@ export interface ChatStateSnapshot {
   conditions: ActiveCondition[];
   mindNote: string;
   premise: string;
-  /** Free-text starting outfit for the scenario modal (character-chat-scenario.plan.md). */
+  /** Structured worn item-definition ids (chat-wardrobe-parity rung 2) — the Character sheet's equip editor. */
+  wornItemIds: string[];
+  /** The active outfit preset id (rung 1) — the sheet's preset switcher state. */
+  outfitPresetId: string;
+  /** Free-text outfit overlay/fallback (ad-hoc + legacy looks) — the sheet's free-text field. */
   outfit: string;
-  /** Intimate-reveal gate for chat scene images. */
+  /**
+   * The RENDERED garment phrase (worn items + overlay) for the read-only strip chip
+   * (chat-wardrobe-parity). Filled by the async state routes via the wardrobe seam; the
+   * sync `chatStateSnapshot` defaults it to the overlay text.
+   */
+  outfitLabel: string;
+  /** Manual intimate-reveal flag (free-text path); computed from coverage when items are worn. */
   outfitExposed: boolean;
   /** The cards live in THIS chat (editable in the scenario modal). */
   activeSocialCards: SocialReactionCard[];
@@ -332,6 +355,7 @@ const conditionsSchema = z.array(activeConditionSchema);
 const activeSocialCardsSchema = z.array(socialReactionCardSchema);
 const surfacedCuesSchema = z.record(z.string(), z.string());
 const memoryQueriesSchema = z.array(z.string());
+const wornItemIdsSchema = z.array(z.string());
 const attributeOverlaysSchema = z.array(attributeValueSchema);
 const traitOverlaysSchema = z.array(traitValueSchema);
 const relationshipHistorySchema = z.array(relationshipSampleSchema);
@@ -351,22 +375,11 @@ const clamp01 = (n: number): number => clamp(n, 0, 1);
  * starts empty — it is purely dynamic. Pure.
  */
 /**
- * The raw form `seedChatState` writes into `outfit`: the default-outfit item ids,
- * comma-joined (the pure seed has no DB access to resolve them). It is a MARKER,
- * not display text — `resolveSeededOutfit` swaps it for the readable garment
- * phrase wherever IO is available, and matching against this exact string is how
- * stored pre-fix rows (which persisted the ids verbatim — owner report
- * 2026-07-11: the narrator ignored an outfit of ids) self-heal on load.
- */
-export function seededOutfitMarker(profile: CharacterProfile, presetId?: string | null): string {
-  return outfitItems(profile, presetId).join(", ").trim();
-}
-
-/**
- * Resolve the seeded outfit marker into the readable garment phrase (name /
- * description / sensory appearance, occlusion-filtered, subtype-led). No-op for
- * any author-edited outfit text; a failed item lookup degrades to "" (composer
- * inference), never ids reaching the narrator or the scenario modal.
+ * Heal a legacy chat state's free-text `outfit` marker (comma-joined item ids) into the
+ * readable garment phrase — a no-op for author-edited text and empty outfits (returns the
+ * same ChatState ref). Structured worn state (`wornItemIds`) never uses a marker; this stays
+ * for legacy free-text rows. Concrete `ChatState` in/out (the string-level heal lives in
+ * `chat-wardrobe.ts`); a failed lookup degrades to "" (composer inference).
  */
 export async function resolveSeededOutfit(
   state: ChatState,
@@ -374,14 +387,8 @@ export async function resolveSeededOutfit(
   profile: CharacterProfile,
   sink?: DiagnosticSink,
 ): Promise<ChatState> {
-  // Any preset's id-join marker resolves — a rhythm-dressed seed (slice 8.4)
-  // may have written a non-default preset's ids.
-  const preset =
-    profile.outfits.find((candidate) => seededOutfitMarker(profile, candidate.id) === state.outfit) ??
-    (seededOutfitMarker(profile) === state.outfit ? resolveOutfitPreset(profile) : undefined);
-  if (!preset || state.outfit === "") return state;
-  const phrase = (await defaultOutfitPhrase(ownerId, preset.items, sink)).trim();
-  return { ...state, outfit: phrase };
+  const healed = await healOutfitMarker(state.outfit, ownerId, profile, sink);
+  return healed === state.outfit ? state : { ...state, outfit: healed };
 }
 
 /**
@@ -423,12 +430,13 @@ export function seedChatState(profile: CharacterProfile): ChatState {
     relationship: { kind: live.kind, history: live.history, presented: live.presented, looming: live.looming },
     conditions: [],
     mindNote: "",
-    // Falls back to the character form's outfit (chat-scene-fidelity.plan.md slice 1) —
-    // the per-character sheet's Starting Outfit stays authoritative once the author edits
-    // it (including deliberately clearing it, which chooses composer inference). This pure
-    // seed can only write the item-id MARKER (see seededOutfitMarker); every IO-capable
-    // consumer resolves it to the readable phrase via resolveSeededOutfit.
-    outfit: seededOutfitMarker(profile),
+    // Structured worn state (chat-wardrobe-parity rung 1/2): seed the worn list + active
+    // preset directly from the default outfit — no id-marker hack needed now that ids have
+    // their own column. The free-text `outfit` overlay starts empty (the worn list is the
+    // truth); exposure is computed from the seeded garments' coverage.
+    wornItemIds: outfitItems(profile),
+    outfitPresetId: resolveOutfitPreset(profile)?.id ?? "",
+    outfit: "",
     outfitExposed: false,
     surfacedCues: {},
     memoryQueries: [],
@@ -603,6 +611,8 @@ export async function loadChatState(
       mindNote: characterChatState.mindNote,
       lastPulseTrace: characterChatState.lastPulseTrace,
       lastMemoryTrace: characterChatState.lastMemoryTrace,
+      wornItemIds: characterChatState.wornItemIds,
+      outfitPresetId: characterChatState.outfitPresetId,
       outfit: characterChatState.outfit,
       outfitExposed: characterChatState.outfitExposed,
       surfacedCues: characterChatState.surfacedCues,
@@ -632,6 +642,8 @@ export async function loadChatState(
     relationship: parseOr(relationshipTextureSchema, row.relationship, emptyRelationshipTexture(), sink, "character_chat_state.relationship_record"),
     conditions: parseOr(conditionsSchema, row.conditions, [], sink, "character_chat_state.conditions"),
     mindNote: row.mindNote,
+    wornItemIds: parseOr(wornItemIdsSchema, row.wornItemIds, [], sink, "character_chat_state.worn_item_ids"),
+    outfitPresetId: row.outfitPresetId,
     outfit: row.outfit,
     outfitExposed: row.outfitExposed,
     surfacedCues: parseOr(surfacedCuesSchema, row.surfacedCues, {}, sink, "character_chat_state.surfaced_cues"),
@@ -684,6 +696,8 @@ const storedChatStateSchema = z.object({
   relationship: relationshipTextureSchema.catch(emptyRelationshipTexture()).default(emptyRelationshipTexture()),
   conditions: conditionsSchema,
   mindNote: z.string(),
+  wornItemIds: wornItemIdsSchema.catch([]).default([]),
+  outfitPresetId: z.string().catch("").default(""),
   outfit: z.string(),
   outfitExposed: z.boolean(),
   surfacedCues: surfacedCuesSchema,
@@ -815,19 +829,22 @@ export function applyTimeSkipToScenario(
 /**
  * Rhythm auto-dress (ux-improvements slice 8.4, ruled: built with the slice):
  * a schedule row covering the skipped-to clock that names an outfit preset
- * re-dresses the character for that window — in MARKER form, so
- * `resolveSeededOutfit` swaps it for the real garment phrase on the next load.
- * A skip is a scene boundary, so the rhythm wins over the tracked outfit
- * (undressed overnight → dressed for the morning shift). Chat has no calendar,
- * so the weekday is a stable pseudo-index off the accumulated clock.
+ * re-dresses the character for that window — now in STRUCTURED form
+ * (chat-wardrobe-parity), seeding the worn list + active preset from that
+ * preset's items and clearing the free-text overlay. A skip is a scene boundary,
+ * so the rhythm wins over the tracked outfit (undressed overnight → dressed for
+ * the morning shift). Chat has no calendar, so the weekday is a stable
+ * pseudo-index off the accumulated clock.
  */
 export function rhythmOutfitPatch(profile: CharacterProfile, clockMinutes: number): Partial<ChatState> {
   const minuteOfDay = ((clockMinutes % 1440) + 1440) % 1440;
   const weekday = Math.floor(clockMinutes / 1440) % 7;
   const entry = scheduleEntryAt(profile.schedule, minuteOfDay, weekday);
   if (!entry?.outfitPresetId) return {};
-  const marker = seededOutfitMarker(profile, entry.outfitPresetId);
-  return marker ? { outfit: marker, outfitExposed: false } : {};
+  const preset = resolveOutfitPreset(profile, entry.outfitPresetId);
+  return preset && preset.items.length
+    ? { wornItemIds: preset.items, outfitPresetId: preset.id, outfit: "", outfitExposed: false }
+    : {};
 }
 
 /** The per-character half of a time skip: expiry vs the advanced shared clock + scene-boundary resets (+ rhythm dress when `profile` given). */
@@ -1220,6 +1237,60 @@ function arousalBumpForConcept(concept: string): number {
   return 0;
 }
 
+/** The archivist's outfit proposal shape (chat-wardrobe-parity) — structural, so the fold never imports the schema type. */
+interface OutfitProposal {
+  description: string;
+  exposed: boolean;
+  removed: readonly string[];
+  added: readonly string[];
+}
+
+/**
+ * Fold an archivist outfit proposal into a structured-wardrobe state patch (chat-wardrobe-parity).
+ * Three cases, all rollback-safe (the patched columns ride `storedChatStateSchema`):
+ *
+ * 1. `description` naming an authored preset → seed the worn list from it (rung 1, structured).
+ * 2. `description` matching no preset → free-text full replacement (clear the worn list, ad-hoc look).
+ * 3. `removed`/`added` garment deltas → `applyWornGarmentChanges` against the loaded worn items +
+ *    the character's wardrobe pool (rung 2). Unmatched additions ride the free-text overlay.
+ *
+ * `{}` (no change) for an empty proposal. IO only in case 3, and only when a delta is present.
+ */
+async function foldOutfitProposal(args: {
+  profile: CharacterProfile;
+  ownerId: string;
+  state: ChatState;
+  proposal: OutfitProposal | undefined;
+  sink?: DiagnosticSink;
+}): Promise<Partial<ChatState>> {
+  const { proposal } = args;
+  if (!proposal) return {};
+  if (proposal.description) {
+    const preset = matchOutfitPresetInText(args.profile, proposal.description);
+    if (preset && preset.items.length > 0) {
+      return { wornItemIds: preset.items, outfitPresetId: preset.id, outfit: "", outfitExposed: false };
+    }
+    // No matching preset — an ad-hoc whole look falls back to free text (ruled).
+    return { wornItemIds: [], outfitPresetId: "", outfit: proposal.description, outfitExposed: proposal.exposed };
+  }
+  if (proposal.removed.length === 0 && proposal.added.length === 0) return {};
+  const worn = await loadChatWardrobe(args.ownerId, args.state.wornItemIds, args.sink);
+  // Add-candidate pool = the character's known wardrobe (union of preset items) not already worn.
+  const poolIds = [...new Set(args.profile.outfits.flatMap((p) => p.items))].filter(
+    (id) => !args.state.wornItemIds.includes(id),
+  );
+  const pool = poolIds.length ? await loadChatWardrobe(args.ownerId, poolIds, args.sink) : [];
+  const result = applyWornGarmentChanges({
+    wornIds: args.state.wornItemIds,
+    worn: wardrobeDescriptors(worn),
+    pool: wardrobeDescriptors(pool),
+    change: { removed: proposal.removed, added: proposal.added },
+    overlay: args.state.outfit,
+    sink: args.sink,
+  });
+  return { wornItemIds: result.wornIds, outfit: result.overlay };
+}
+
 /**
  * Close the turn: run the post-turn fan-out — the reaction pulse ‖ the archivist-lite
  * (character-chat-primary.spec.md §2, D2) — in PARALLEL on the drifted state + the
@@ -1232,6 +1303,8 @@ function arousalBumpForConcept(concept: string): number {
 export async function finalizeChatState(input: {
   chatId: string;
   characterId: string;
+  /** Chat owner — loads worn/pool items when the archivist proposes garment-level changes (chat-wardrobe-parity rung 2). */
+  ownerId: string;
   /** The participant's memory group (character-chat-standalone.spec.md §1.3). */
   memoryGroupId: string;
   /** Provenance anchor (spec §4.3): the assistant message row this exchange produced/updated. */
@@ -1432,24 +1505,24 @@ export async function finalizeChatState(input: {
       ])
     : input.scenario.supportingCast;
 
-  // Outfit change (chat-scene-fidelity.plan.md slice 1): a non-empty archivist proposal is
-  // a FULL replacement of the tracked outfit + exposed flag — the fiction dressed, changed,
-  // or undressed the character this exchange. Empty proposal / degraded archivist keeps the
-  // prior values ("another take" rolls it back via the pre-exchange snapshot like the rest).
-  // Preset matching (ux-improvements slice 8.3): a proposal that names an authored outfit
-  // preset ("work clothes" → the "Work" preset) writes that preset's id-join MARKER instead
-  // of the paraphrase — resolveSeededOutfit swaps it for the real garment phrase on the
-  // next load, so "changes into her work clothes" dresses her in the actual work outfit.
+  // Outfit change (chat-wardrobe-parity.plan.md): the archivist proposes wardrobe changes two
+  // ways, folded by `foldOutfitProposal`. A whole-outfit `description` naming an authored preset
+  // ("her work clothes" → the "Work" preset) seeds the STRUCTURED worn list (rung 1); an
+  // unmatched description is a free-text full replacement. Garment-level `removed`/`added`
+  // (rung 2) fold individual pieces against the loaded worn items + wardrobe pool. Empty
+  // proposal / degraded archivist keeps the prior wardrobe; "another take" rolls it back via
+  // the pre-exchange snapshot (wornItemIds/outfitPresetId ride `storedChatStateSchema`).
   const outfitProposal = archivist.value?.outfit;
-  const namedPreset = outfitProposal?.description
-    ? matchOutfitPresetInText(input.profile, outfitProposal.description)
-    : undefined;
-  const outfitPatch = outfitProposal?.description
-    ? {
-        outfit: namedPreset ? seededOutfitMarker(input.profile, namedPreset.id) : outfitProposal.description,
-        outfitExposed: outfitProposal.exposed,
-      }
-    : {};
+  const outfitChanged = Boolean(
+    outfitProposal && (outfitProposal.description || outfitProposal.removed.length || outfitProposal.added.length),
+  );
+  const outfitPatch = await foldOutfitProposal({
+    profile: input.profile,
+    ownerId: input.ownerId,
+    state: input.driftedState,
+    proposal: outfitProposal,
+    sink: input.sink,
+  });
 
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
   // exchange (bounded by the acquainted ceiling), plus a moment tick when the
@@ -1620,7 +1693,7 @@ export async function finalizeChatState(input: {
   // the character or landed a lasting appearance change — mint a fresh look anchor.
   // The job itself gates on image-active chats + key match (ruled), so this enqueue
   // is cheap and idempotent; fire-and-forget after the state write it reads.
-  if (outfitProposal?.description || (archivist.value?.attributeChanges.length ?? 0) > 0) {
+  if (outfitChanged || (archivist.value?.attributeChanges.length ?? 0) > 0) {
     void enqueueChatLookImage({ chatId: input.chatId, characterId: input.characterId });
   }
   return { bigMoment, selfieSend: selfieKind !== null, presenceChanges };
@@ -1702,8 +1775,11 @@ export function settleEnsembleMember(args: {
   }
 
   if (args.personal) {
+    // Ensemble members take the free-text wardrobe path (chat-wardrobe-parity v1): this pure
+    // fold has no item-loading seam, so a whole-look `description` clears the structured worn
+    // list and lands as free text; garment-level removed/added are the primary's (IO-backed) path.
     const outfitPatch = args.personal.outfit.description
-      ? { outfit: args.personal.outfit.description, outfitExposed: args.personal.outfit.exposed }
+      ? { wornItemIds: [], outfitPresetId: "", outfit: args.personal.outfit.description, outfitExposed: args.personal.outfit.exposed }
       : {};
     const driveResult = applyDriveUpdates(next.drives, args.personal.driveUpdates);
     for (const revealedDrive of driveResult.revealed) {
@@ -1770,14 +1846,15 @@ async function upsertChatState(
   const feeling = JSON.stringify(state.feeling);
   const selfieHistory = JSON.stringify(state.selfieHistory);
   const drives = JSON.stringify(state.drives);
+  const wornItemIds = JSON.stringify(state.wornItemIds);
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, presence, quiet_exchanges, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, presence, quiet_exchanges, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${state.presence}, ${state.quietExchanges}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${wornItemIds}::jsonb, ${state.outfitPresetId}, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${state.presence}, ${state.quietExchanges}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1795,6 +1872,8 @@ async function upsertChatState(
       trait_overlays = excluded.trait_overlays,
       voice_exemplars = excluded.voice_exemplars,
       last_memory_trace = excluded.last_memory_trace,
+      worn_item_ids = excluded.worn_item_ids,
+      outfit_preset_id = excluded.outfit_preset_id,
       outfit = excluded.outfit,
       outfit_exposed = excluded.outfit_exposed,
       relationship_history = excluded.relationship_history,
@@ -1846,6 +1925,11 @@ export interface ChatStateEdit {
   mindNote?: string;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
+  /** Structured worn item-definition ids (chat-wardrobe-parity rung 3) — the sheet's equip editor. */
+  wornItemIds?: string[];
+  /** The active outfit preset id (rung 1) — the sheet's preset switcher. */
+  outfitPresetId?: string;
+  /** Free-text outfit overlay/fallback (ad-hoc + legacy looks). */
   outfit?: string;
   outfitExposed?: boolean;
   activeSocialCards?: SocialReactionCard[];
@@ -1906,6 +1990,8 @@ export async function editChatState(args: {
   if (patch.mindNote !== undefined) next.mindNote = patch.mindNote.trim().slice(0, CHAT_MIND_NOTE_MAX_CHARS);
   if (patch.meters !== undefined) next.meters = clampMeters(patch.meters);
   if (patch.conditions !== undefined) next.conditions = patch.conditions.map(seedConditionEffects);
+  if (patch.wornItemIds !== undefined) next.wornItemIds = patch.wornItemIds.map((s) => s.trim()).filter(Boolean);
+  if (patch.outfitPresetId !== undefined) next.outfitPresetId = patch.outfitPresetId.trim();
   if (patch.outfit !== undefined) next.outfit = patch.outfit;
   if (patch.outfitExposed !== undefined) next.outfitExposed = patch.outfitExposed;
   if (patch.openLoops !== undefined) {
@@ -2037,7 +2123,11 @@ export function chatStateSnapshot(
     conditions: state.conditions,
     mindNote: state.mindNote,
     premise: scenario.premise,
+    wornItemIds: state.wornItemIds,
+    outfitPresetId: state.outfitPresetId,
     outfit: state.outfit,
+    // Default to the overlay text; the async state routes overwrite with the resolved garments.
+    outfitLabel: state.outfit,
     outfitExposed: state.outfitExposed,
     activeSocialCards: scenario.activeSocialCards,
     surfacedCues: state.surfacedCues,

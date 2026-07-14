@@ -10,9 +10,11 @@ import {
   splitStateCues,
   type ActiveCondition,
 } from "@/contracts";
-import { charactersApi, chatsApi, itemsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { charactersApi, chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { wearerHintForGender } from "@/lib/clothing-slots";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
+import { ChatWardrobeEditor } from "./chat-wardrobe-editor";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -98,6 +100,8 @@ function StateToolsForm({
   const [meters, setMeters] = useState<Record<string, number>>({ ...snapshot.meters });
   const [conditions, setConditions] = useState<ActiveCondition[]>(snapshot.conditions);
   const [mindNote, setMindNote] = useState(snapshot.mindNote);
+  const [wornItemIds, setWornItemIds] = useState(snapshot.wornItemIds);
+  const [outfitPresetId, setOutfitPresetId] = useState(snapshot.outfitPresetId);
   const [outfit, setOutfit] = useState(snapshot.outfit);
   const [outfitExposed, setOutfitExposed] = useState(snapshot.outfitExposed);
   const [livePresence, setLivePresence] = useState(presence);
@@ -109,8 +113,9 @@ function StateToolsForm({
   const [memoryQueries, setMemoryQueries] = useState(snapshot.memoryQueries.join("\n"));
   const [saving, setSaving] = useState(false);
 
-  // The character's authored outfit presets (slice 8.3 quick-picks) — fetched
-  // once per sheet open; absent characterId or a failed fetch just hides the row.
+  // The character's authored profile — the outfit presets (the wardrobe switcher) and the
+  // wearer hint for the equip picker. Fetched once per sheet open; absent characterId or a
+  // failed fetch just leaves the presets empty (the equip slots + free text still work).
   const presetSource = useAsyncData(
     () =>
       characterId
@@ -118,26 +123,9 @@ function StateToolsForm({
         : Promise.resolve({ ok: false as const, error: { code: "no_character", message: "", status: 0 } }),
     [characterId],
   );
-  const outfitPresets = (presetSource.data?.profile.outfits ?? []).filter((p) => p.items.length > 0);
-  const [applyingPresetId, setApplyingPresetId] = useState<string | null>(null);
-  const applyPreset = async (preset: { id: string; name: string; items: string[] }) => {
-    setApplyingPresetId(preset.id);
-    const result = await itemsApi.listByIds(preset.items);
-    setApplyingPresetId(null);
-    if (!result.ok) {
-      toast.push({ title: "Couldn't load the preset's items", description: result.error.message, tone: "error" });
-      return;
-    }
-    const names = preset.items
-      .map((id) => result.data.find((item) => item.id === id)?.name)
-      .filter((name): name is string => Boolean(name));
-    if (names.length === 0) {
-      toast.push({ title: "Preset items missing", description: "None of its items are in the library anymore.", tone: "error" });
-      return;
-    }
-    setOutfit(names.join(", "));
-    setOutfitExposed(false);
-  };
+  const outfitPresets = presetSource.data?.profile.outfits ?? [];
+  const genderValue = presetSource.data?.profile.attributes.find((a) => a.id === "identity.gender")?.value;
+  const wearerHint = wearerHintForGender(typeof genderValue === "string" ? genderValue : undefined);
 
   const regardBand = regardBandForValue(regard);
   const familiarityBand = familiarityBandForValue(familiarity);
@@ -177,6 +165,8 @@ function StateToolsForm({
         meters,
         conditions,
         mindNote,
+        wornItemIds,
+        outfitPresetId,
         outfit,
         outfitExposed,
         openLoops: toLines(openLoops),
@@ -376,41 +366,20 @@ function StateToolsForm({
         />
       </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Outfit</span>
-        {outfitPresets.length > 0 ? (
-          // Preset quick-picks (ux-improvements slice 8.3): fill the free text
-          // with a named preset's garments; the text stays freely editable.
-          <div className="flex flex-wrap gap-1.5">
-            {outfitPresets.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                disabled={applyingPresetId !== null}
-                onClick={() => void applyPreset(preset)}
-                className="cursor-pointer rounded-full border border-ink-500 px-2.5 py-0.5 text-xs text-paper-400 transition-colors hover:border-accent-500/50 hover:text-paper-200"
-              >
-                {applyingPresetId === preset.id ? "…" : preset.name || "Unnamed"}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <Textarea
-          rows={2}
-          value={outfit}
-          onChange={(e) => setOutfit(e.target.value)}
-          placeholder="What they're wearing right now — drives scene images…"
-        />
-        <label className="flex items-center gap-2 text-xs text-paper-400">
-          <input
-            type="checkbox"
-            checked={outfitExposed}
-            onChange={(e) => setOutfitExposed(e.target.checked)}
-            className="size-4 accent-accent-500"
-          />
-          Reveal intimate anatomy in scene images
-        </label>
-      </label>
+      <ChatWardrobeEditor
+        wornItemIds={wornItemIds}
+        outfitPresetId={outfitPresetId}
+        outfit={outfit}
+        outfitExposed={outfitExposed}
+        presets={outfitPresets}
+        wearerHint={wearerHint}
+        onChange={(patch) => {
+          if (patch.wornItemIds !== undefined) setWornItemIds(patch.wornItemIds);
+          if (patch.outfitPresetId !== undefined) setOutfitPresetId(patch.outfitPresetId);
+          if (patch.outfit !== undefined) setOutfit(patch.outfit);
+          if (patch.outfitExposed !== undefined) setOutfitExposed(patch.outfitExposed);
+        }}
+      />
 
       <label className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Open loops (one per line, max 3)</span>

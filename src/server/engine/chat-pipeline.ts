@@ -74,6 +74,7 @@ import {
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
+import { resolveChatWardrobe, type ResolvedChatWardrobe } from "./chat-wardrobe";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
 import {
   CHARACTER_CHAT_SUMMARIZE_AT,
@@ -923,13 +924,18 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       ? unseenMilestoneReason(driftedState.milestones, (await loadMilestonesSeenAt(chatId)) ?? new Date())
       : null;
 
+    // Structured wardrobe (chat-wardrobe-parity): resolve the drifted worn state into its
+    // rendered garment phrase + coverage-computed exposure — the ONE seam the prompt, scene
+    // image, and look key share (reusing the session renderers, never re-forking them).
+    const wardrobe = await resolveChatWardrobe(driftedState, owner, profile, sink);
+
     const promptInput: CharacterChatPromptInput = {
       name: characterName,
       profile,
       priorSummary: summaryState?.summary,
       memory,
       player: { name: player.name, persona: player.persona },
-      state: promptStateSlice(driftedState, scenario),
+      state: promptStateSlice(driftedState, scenario, wardrobe),
       opening,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
@@ -1043,19 +1049,23 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           {
             name: characterName,
             profile,
-            state: promptStateSlice(driftedState, scenario),
+            state: promptStateSlice(driftedState, scenario, wardrobe),
             memory,
             presence: driftedState.presence,
             quietExchanges: driftedState.quietExchanges,
           },
-          ...others.map((o) => ({
-            name: o.name,
-            profile: o.profile,
-            state: promptStateSlice(o.state, scenario),
-            memory: otherMemories.get(o.characterId),
-            presence: o.state.presence,
-            quietExchanges: o.state.quietExchanges,
-          })),
+          // Each present member resolves their OWN worn state (chat-wardrobe-parity) — same
+          // owner library, so the shared loader keys their garments too.
+          ...(await Promise.all(
+            others.map(async (o) => ({
+              name: o.name,
+              profile: o.profile,
+              state: promptStateSlice(o.state, scenario, await resolveChatWardrobe(o.state, owner, o.profile, sink)),
+              memory: otherMemories.get(o.characterId),
+              presence: o.state.presence,
+              quietExchanges: o.state.quietExchanges,
+            })),
+          )),
         ]
       : undefined;
 
@@ -1181,6 +1191,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const finalized = await finalizeChatState({
           chatId,
           characterId,
+          ownerId: owner,
           memoryGroupId,
           assistantMessageId,
           preExchangeState: storedState,
@@ -1686,8 +1697,17 @@ export async function reextractEditedReply(args: {
   }
 }
 
-/** The prompt builder's per-turn state slice from a drifted ChatState + the chat-wide scenario. */
-function promptStateSlice(state: ChatState, scenario: ChatScenario): NonNullable<CharacterChatPromptInput["state"]> {
+/**
+ * The prompt builder's per-turn state slice from a drifted ChatState + the chat-wide scenario.
+ * The `wardrobe` (chat-wardrobe-parity) supplies the RENDERED garment phrase + coverage-computed
+ * exposure — the narrator sees the actual worn garments (subtype-led, occlusion-filtered), and
+ * the exposure steer is coverage-accurate rather than the manual toggle.
+ */
+function promptStateSlice(
+  state: ChatState,
+  scenario: ChatScenario,
+  wardrobe: ResolvedChatWardrobe,
+): NonNullable<CharacterChatPromptInput["state"]> {
   return {
     meters: state.meters,
     regard: state.regard,
@@ -1697,8 +1717,8 @@ function promptStateSlice(state: ChatState, scenario: ChatScenario): NonNullable
     mindNote: state.mindNote,
     premise: scenario.premise,
     surfacedCues: state.surfacedCues,
-    outfit: state.outfit,
-    outfitExposed: state.outfitExposed,
+    outfit: wardrobe.garments,
+    outfitExposed: wardrobe.exposed,
     activeSocialCards: scenario.activeSocialCards,
     attributeOverlays: state.attributeOverlays,
     // Persisted narrative trait overlays (character-fidelity slice 10) — resolved into the
@@ -1756,6 +1776,7 @@ export async function previewChatPrompt(input: {
   );
   const summaryState = await loadChatSummary(input.chatId);
   const player = await resolvePlayerPersona(owner);
+  const wardrobe = await resolveChatWardrobe(state, owner, profile, sink);
   const memory = await retrieveChatMemory({
     groupId: input.memoryGroupId,
     queries: state.memoryQueries,
@@ -1768,7 +1789,7 @@ export async function previewChatPrompt(input: {
     priorSummary: summaryState?.summary,
     memory,
     player: { name: player.name, persona: player.persona },
-    state: promptStateSlice(state, scenario),
+    state: promptStateSlice(state, scenario, wardrobe),
     narrationShape: narrationShapeId("chat"),
   });
   return {

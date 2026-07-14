@@ -26,6 +26,7 @@ import {
   editChatState,
   loadChatScenario,
   loadChatState,
+  resolveChatWardrobe,
   resolveSeededOutfit,
   seedChatScenario,
   seedChatState,
@@ -59,6 +60,10 @@ const editBodySchema = z.object({
   mindNote: z.string().trim().max(CHAT_MIND_NOTE_MAX_CHARS).optional(),
   meters: z.record(z.string(), z.number()).optional(),
   conditions: z.array(activeConditionSchema).optional(),
+  /** Structured worn item-definition ids (chat-wardrobe-parity rung 3) — the sheet's equip editor. */
+  wornItemIds: z.array(z.string().trim().min(1)).max(40).optional(),
+  /** The active outfit preset id (rung 1) — the sheet's preset switcher. */
+  outfitPresetId: z.string().max(120).optional(),
   outfit: z.string().optional(),
   outfitExposed: z.boolean().optional(),
   activeSocialCards: z.array(socialReactionCardSchema).optional(),
@@ -121,7 +126,13 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
   const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
   const state = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
-  return jsonOk(chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }));
+  // Rendered garment phrase for the read-only strip chip (chat-wardrobe-parity): the structured
+  // worn items resolved through the shared seam, else the free-text overlay.
+  const wardrobe = await resolveChatWardrobe(state, user.id, profile, sink);
+  return jsonOk({
+    ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
+    outfitLabel: wardrobe.garments,
+  });
 });
 
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
@@ -144,5 +155,6 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
     profile,
     patch: body.value,
   });
-  return jsonOk(chatStateSnapshot(state, scenario, snapshotOpts(profile)));
+  const wardrobe = await resolveChatWardrobe(state, user.id, profile);
+  return jsonOk({ ...chatStateSnapshot(state, scenario, snapshotOpts(profile)), outfitLabel: wardrobe.garments });
 });

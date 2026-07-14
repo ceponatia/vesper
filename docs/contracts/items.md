@@ -50,7 +50,16 @@ The **visibility rule** (which replaces the old occlusion stack depths) is per b
 | hidden | Any item beneath a covering one. |
 | hinted | A hidden item where *everything* above it is sheer. |
 
-Implemented once in `items/visibility.ts`, and used by prompts, the simulant grounding, and the UI.
+Implemented once in `items/visibility.ts` (`resolveWardrobeVisibility` for the occlusion rule;
+`exposedRegions` → `RegionExposure` for per-region bare/sheer/covered, plus the shared
+`FULLY_COVERED` constant and `intimateRegionsBare` predicate), and used by prompts, the simulant
+grounding, image prompts, and the UI. Since chat-wardrobe-parity (2026-07-14) the **character-chat
+lane reuses this same classifier** — not a re-fork: `resolveChatWardrobe`
+(`server/engine/chat-wardrobe.ts`) feeds the chat's worn item ids through `exposedRegions` for
+coverage-computed exposure and `wardrobeOutfitText` for the rendered garment phrase, so chat and
+session agree on what a garment covers ([../character-chat/state.md](../character-chat/state.md)
+§Wardrobe). The pure garment-phrase matcher + worn-list reducer the chat archivist's add/remove
+proposals fold through live in `items/chat-wardrobe.ts` (`matchGarment` / `applyWornGarmentChanges`).
 
 ## Clothing categories
 

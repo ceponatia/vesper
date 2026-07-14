@@ -26,11 +26,11 @@ import {
   runChatPulse,
   seedChatScenario,
   seedChatState,
-  seededOutfitMarker,
   settleEnsembleMember,
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
+import { seededOutfitMarker } from "./chat-wardrobe";
 
 // These run with AI_FAKE=1 (src/test/setup.ts): demo mode short-circuits the
 // pulse LLM, so runChatPulse exercises the drift-only degrade path.
@@ -50,17 +50,20 @@ describe("seedChatState", () => {
     expect(state.presence).toBe("present");
   });
 
-  it("seeds the outfit MARKER from the default preset's item ids; blank when none authored", () => {
-    // The default preset (outfits[0]) holds library item IDS — the pure seed
-    // writes them as the marker resolveSeededOutfit later swaps for the
-    // readable garment phrase (owner report 2026-07-11: the raw ids used to
-    // reach the narrator).
+  it("seeds the structured worn list + active preset from the default preset (chat-wardrobe-parity)", () => {
+    // The default preset (outfits[0]) holds library item IDS — the pure seed now writes them
+    // straight into the structured `wornItemIds` (no marker hack) + the active preset id; the
+    // free-text overlay starts empty.
     const dressedProfile = () =>
       profile({ outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc", "itemid2def"] }] });
-    expect(seedChatState(profile()).outfit).toBe("");
+    const empty = seedChatState(profile());
+    expect(empty.wornItemIds).toEqual([]);
+    expect(empty.outfitPresetId).toBe("");
+    expect(empty.outfit).toBe("");
     const dressed = seedChatState(dressedProfile());
-    expect(dressed.outfit).toBe(seededOutfitMarker(dressedProfile()));
-    expect(dressed.outfit).toBe("itemid1abc, itemid2def");
+    expect(dressed.wornItemIds).toEqual(["itemid1abc", "itemid2def"]);
+    expect(dressed.outfitPresetId).toBe("everyday");
+    expect(dressed.outfit).toBe("");
     expect(dressed.outfitExposed).toBe(false);
   });
 
@@ -117,18 +120,33 @@ describe("seedChatState", () => {
         { startMinute: 360, endMinute: 720, locationName: "the café", activity: "waiting tables" },
       ],
     });
-    // 23:30 → the sleep window → the sleep preset's marker.
-    expect(rhythmOutfitPatch(rhythm, 1410)).toEqual({ outfit: "itemid9xyz", outfitExposed: false });
+    // 23:30 → the sleep window → the sleep preset's structured worn list.
+    expect(rhythmOutfitPatch(rhythm, 1410)).toEqual({
+      wornItemIds: ["itemid9xyz"],
+      outfitPresetId: "sleep",
+      outfit: "",
+      outfitExposed: false,
+    });
     // 08:00 → the morning row names no preset → no patch.
     expect(rhythmOutfitPatch(rhythm, 480)).toEqual({});
     // A skip past midnight lands in the same wrap window on the next pseudo-day.
-    expect(rhythmOutfitPatch(rhythm, 1440 + 60)).toEqual({ outfit: "itemid9xyz", outfitExposed: false });
-    // Unknown preset id on a row degrades to the DEFAULT preset's marker.
+    expect(rhythmOutfitPatch(rhythm, 1440 + 60)).toEqual({
+      wornItemIds: ["itemid9xyz"],
+      outfitPresetId: "sleep",
+      outfit: "",
+      outfitExposed: false,
+    });
+    // Unknown preset id on a row degrades to the DEFAULT preset (id + items).
     const dangling = profile({
       outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc"] }],
       schedule: [{ startMinute: 0, endMinute: 1439, locationName: "x", activity: "y", outfitPresetId: "gone" }],
     });
-    expect(rhythmOutfitPatch(dangling, 100)).toEqual({ outfit: "itemid1abc", outfitExposed: false });
+    expect(rhythmOutfitPatch(dangling, 100)).toEqual({
+      wornItemIds: ["itemid1abc"],
+      outfitPresetId: "everyday",
+      outfit: "",
+      outfitExposed: false,
+    });
   });
 
   it("applyTimeSkip re-dresses only when given a profile with a rhythm row", () => {
@@ -136,9 +154,14 @@ describe("seedChatState", () => {
       outfits: [{ id: "sleep", name: "Sleep", items: ["itemid9xyz"] }],
       schedule: [{ startMinute: 0, endMinute: 1439, locationName: "home", activity: "resting", outfitPresetId: "sleep" }],
     });
-    const state = { ...seedChatState(rhythm), outfit: "a cocktail dress" };
-    expect(applyTimeSkip(state, "hours", 200).outfit).toBe("a cocktail dress"); // no profile ⇒ no re-dress
-    expect(applyTimeSkip(state, "hours", 200, rhythm).outfit).toBe("itemid9xyz");
+    const state = { ...seedChatState(rhythm), wornItemIds: [], outfit: "a cocktail dress" };
+    // No profile ⇒ no re-dress: the free-text overlay is untouched.
+    expect(applyTimeSkip(state, "hours", 200).outfit).toBe("a cocktail dress");
+    expect(applyTimeSkip(state, "hours", 200).wornItemIds).toEqual([]);
+    // With the profile ⇒ the rhythm dresses her structurally + clears the overlay.
+    const dressed = applyTimeSkip(state, "hours", 200, rhythm);
+    expect(dressed.wornItemIds).toEqual(["itemid9xyz"]);
+    expect(dressed.outfit).toBe("");
   });
 
   it("seeds both axes from the authored playerRelationship record at band midpoints", () => {
@@ -536,12 +559,14 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
       personal: {
         openLoops: ["show the player her studio"],
         attributeChanges: [],
-        outfit: { description: "a paint-streaked tank top", exposed: false },
+        outfit: { description: "a paint-streaked tank top", exposed: false, removed: [], added: [] },
         driveUpdates: [],
       },
     });
     expect(next.openLoops).toEqual(["show the player her studio"]);
+    // A whole-look description clears the structured worn list and lands as free text (v1).
     expect(next.outfit).toBe("a paint-streaked tank top");
+    expect(next.wornItemIds).toEqual([]);
   });
 
   it("a null personal pass (absent/degraded) keeps the member's prior personal fields", () => {
@@ -570,7 +595,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
       personal: {
         openLoops: [],
         attributeChanges: [],
-        outfit: { description: "", exposed: false },
+        outfit: { description: "", exposed: false, removed: [], added: [] },
         driveUpdates: [{ want: "leave this town", progress: "", revealed: true, resolved: false }],
       },
     });

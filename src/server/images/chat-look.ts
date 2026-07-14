@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { AttributeValue } from "@/contracts/attributes/value";
+import type { RegionExposure } from "@/contracts/items/visibility";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { describeProviderError, hasVenice, isDemoMode, veniceEditImage, veniceGenerateImage, veniceSceneImageModelId } from "../ai";
 import { db, images } from "../db";
@@ -39,20 +40,27 @@ function fnv1a(text: string): string {
 }
 
 /**
- * The look cache key (owner ruling: outfit + exposed flag + appearance-relevant
- * narrative overlays — a haircut invalidates the look like a change of clothes).
- * PURE and order-stable over the overlays.
+ * The look cache key (chat-wardrobe-parity — new key shape, ruled): sorted structured
+ * worn item ids + the free-text overlay + a coverage-computed exposure fingerprint +
+ * appearance-relevant narrative overlays (a haircut invalidates the look like a change
+ * of clothes). Structured worn state replaces the old free-text `outfit` string; a
+ * legacy/free-text chat (empty worn list) keys on the overlay alone, so its key stays
+ * stable across the change. PURE and order-stable.
  */
 export function chatLookKey(input: {
-  outfit: string;
-  outfitExposed: boolean;
+  wornItemIds: readonly string[];
+  overlay: string;
+  exposure: RegionExposure;
   attributeOverlays: readonly AttributeValue[];
 }): string {
+  const worn = [...input.wornItemIds].sort().join(",");
+  const { torso, pelvis, legs, feet } = input.exposure;
+  const exposure = [torso, pelvis, legs, feet].map((r) => r[0]).join("");
   const overlays = [...input.attributeOverlays]
     .map((o) => `${o.id}=${JSON.stringify(o.value)}`)
     .sort()
     .join(";");
-  return fnv1a(`${input.outfit.trim().toLowerCase()}|${input.outfitExposed ? "x" : "-"}|${overlays}`);
+  return fnv1a(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}`);
 }
 
 /** The identity-locked look-edit instruction: same person, new outfit, neutral framing. */

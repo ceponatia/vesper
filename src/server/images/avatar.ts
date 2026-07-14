@@ -142,6 +142,7 @@ export async function loadDefaultWardrobe(
       const description = row.description?.trim() ?? "";
       return [
         {
+          id: row.id,
           name: row.name,
           coverage: extras.coverage,
           layer: extras.layer,

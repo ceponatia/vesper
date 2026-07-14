@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { chatActionIdSchema, chatReplyFailureSchema } from "@/contracts";
+import { chatActionIdSchema, chatReplyFailureSchema, characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { parseOr } from "@/lib/parse";
 import {
@@ -15,7 +15,7 @@ import {
   withUser,
 } from "@/server/api";
 import { characterChats, characterChatMessages, characterChatState, db } from "@/server/db";
-import { deleteChat, submitChatMessage } from "@/server/engine";
+import { deleteChat, resolveChatWardrobe, submitChatMessage } from "@/server/engine";
 import { loadOwnedChat } from "../owned";
 import { queueChatScene } from "./scene/queue";
 
@@ -157,11 +157,31 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
     .select({
       characterId: characterChatState.characterId,
       presence: characterChatState.presence,
+      wornItemIds: characterChatState.wornItemIds,
       outfit: characterChatState.outfit,
+      outfitExposed: characterChatState.outfitExposed,
     })
     .from(characterChatState)
     .where(eq(characterChatState.chatId, chatId));
   const stateBy = new Map(stateRows.map((r) => [r.characterId, r]));
+  // The roster outfit line renders the RESOLVED garments (chat-wardrobe-parity): worn item
+  // ids → the rendered phrase via the shared seam, else the free-text overlay. One resolve
+  // per member (≤4), on the once-per-open envelope.
+  const outfitLabels = new Map<string, string>(
+    await Promise.all(
+      owned.roster.map(async (m): Promise<[string, string]> => {
+        const row = stateBy.get(m.characterId);
+        if (!row) return [m.characterId, ""];
+        const profile = parseOr(characterProfileSchema, m.character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+        const wardrobe = await resolveChatWardrobe(
+          { wornItemIds: Array.isArray(row.wornItemIds) ? (row.wornItemIds as string[]) : [], outfit: row.outfit, outfitExposed: row.outfitExposed },
+          owned.chat.ownerId,
+          profile,
+        );
+        return [m.characterId, wardrobe.garments];
+      }),
+    ),
+  );
 
   return jsonOk({
     messages: page.reverse(),
@@ -197,7 +217,7 @@ export const GET = withUser<Params>(async (user, req: NextRequest, ctx) => {
       avatarImageId: m.character.avatarImageId,
       sort: m.sort,
       presence: stateBy.get(m.characterId)?.presence ?? "present",
-      outfit: stateBy.get(m.characterId)?.outfit ?? "",
+      outfit: outfitLabels.get(m.characterId) ?? "",
     })),
   });
 });

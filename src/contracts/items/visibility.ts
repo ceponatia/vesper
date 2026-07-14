@@ -70,6 +70,19 @@ export function resolveWardrobeVisibility(
 
 export type RegionCoverage = "covered" | "sheer" | "bare";
 
+/** Fully-clothed coverage — the free-text / legacy chat default when no worn items exist. */
+export const FULLY_COVERED: RegionExposure = { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" };
+
+/**
+ * The single boolean "intimate areas are bared" derived from per-region coverage
+ * (chat-wardrobe-parity): torso (chest) or pelvis (groin/hips) reading `bare`. Drives
+ * the chat prompt's exposure tone-steer and the legacy look-key's exposed flag — the
+ * coverage-accurate successor to the manual `outfitExposed` toggle. PURE.
+ */
+export function intimateRegionsBare(exposure: RegionExposure): boolean {
+  return exposure.torso === "bare" || exposure.pelvis === "bare";
+}
+
 /**
  * Coverage state of the body regions whose *bareness* is worth stating in an
  * image prompt. Image models default every subject to fully clothed, so a
