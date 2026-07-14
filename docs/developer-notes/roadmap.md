@@ -27,19 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
-  force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
-  minimap) remain — optional polish on a feature already delivering its core value.
-- **World simulation ("the world moves")** — the former "phase 5" cluster, not
-  yet started, and now **direction-dependent**: character chat is the test bed
-  for what the world/session model will eventually look like (owner direction
-  2026-07-13 — see `CLAUDE.md`), so the movement-authority and
-  scheduled-arrivals specs were retired (deleted) 2026-07-13 rather than built
-  against the possibly-deprecated session model.
-  [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) remains as
-  findings (its intake half shipped). A future `world-simulation.plan.md` — or
-  the chat-successor equivalent — re-derives what it needs when this becomes
-  active.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
@@ -58,6 +45,21 @@ _(nothing — pull the next entry from Next)_
   into [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)** (top of
   this list). Sequenced after batch 1 per the 2026-07-02 agreement; where the remainder
   slots versus the feature work above is the author's call.
+- **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
+  force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
+  minimap) remain — optional polish on a feature already delivering its core value.
+  _Demoted to the bottom 2026-07-14 (owner): character chat is now the app's main
+  focus and the world model is headed for deprecation or refactor — don't polish it._
+- **World simulation ("the world moves")** — the former "phase 5" cluster, not
+  yet started, and now **direction-dependent**: character chat is the test bed
+  for what the world/session model will eventually look like (owner direction
+  2026-07-13 — see `CLAUDE.md`), so the movement-authority and
+  scheduled-arrivals specs were retired (deleted) 2026-07-13 rather than built
+  against the possibly-deprecated session model.
+  [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) remains as
+  findings (its intake half shipped). A future `world-simulation.plan.md` — or
+  the chat-successor equivalent — re-derives what it needs when this becomes
+  active. _Demoted to the bottom 2026-07-14 (owner) with the map, same rationale._
 
 ## Someday / parking lot
 
