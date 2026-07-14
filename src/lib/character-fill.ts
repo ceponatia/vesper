@@ -2,6 +2,7 @@ import {
   DEFAULT_BODY_PLAN_ID,
   DEFAULT_SPECIES_ID,
   DRIVES_MAX,
+  hasVoiceAnchors,
   type AttributeValue,
   type CharacterProfile,
   type Drive,
@@ -175,6 +176,9 @@ export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: Filla
       voice: keepOptionalText(base.profile.voice, incoming.profile.voice),
       microExemplars:
         base.profile.microExemplars.length > 0 ? base.profile.microExemplars : incoming.profile.microExemplars,
+      // Voice anchors (character-fidelity slice 7): all-or-nothing like the outfit — any
+      // authored anchor keeps the whole authored block, else take the generated one.
+      voiceAnchors: hasVoiceAnchors(base.profile.voiceAnchors) ? base.profile.voiceAnchors : incoming.profile.voiceAnchors,
       age: keepText(base.profile.age, incoming.profile.age),
       speciesId: speciesUnset ? incoming.profile.speciesId : base.profile.speciesId,
       heritageId: speciesUnset ? incoming.profile.heritageId : base.profile.heritageId,

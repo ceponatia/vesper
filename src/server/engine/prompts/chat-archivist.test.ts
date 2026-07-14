@@ -2,13 +2,55 @@ import { describe, expect, it } from "vitest";
 import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./chat-archivist";
 
 describe("CHAT_ARCHIVIST_SYSTEM", () => {
-  it("declares ten fields and carries a worked example for each rare field", () => {
-    expect(CHAT_ARCHIVIST_SYSTEM).toContain("ten fields");
+  it("declares thirteen fields and carries a worked example for each rare field", () => {
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain("thirteen fields");
     // The attributeChanges micro-example (C6 — the haircut) so the proposer stops under-firing.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeId":"hair.length"');
     // Both examples carry every field, so the model sees the full shape.
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"openLoops":[]');
     expect(CHAT_ARCHIVIST_SYSTEM).toContain('"attributeChanges":[]');
+  });
+
+  it("declares the voice/consistency/trait fields (character-fidelity slices 8-10) with a full-shape example", () => {
+    // Fields 11-13 are declared with their rare-firing discipline.
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"voiceExemplar": ONE short line/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"characterSlip": a SHORT corrective note ONLY when the reply broke character/);
+    expect(CHAT_ARCHIVIST_SYSTEM).toMatch(/"traitShifts": RARE, direction-only nudges/);
+    // The first worked example (Prague) now showcases all three so the model sees the full shape.
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"voiceExemplar":"Prague in spring');
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"characterSlip":""');
+    expect(CHAT_ARCHIVIST_SYSTEM).toContain('"traitShifts":[]');
+  });
+
+  it("renders the voice reference + developable-traits blocks only when armed (slices 7+9, 10)", () => {
+    // 1-on-1 with no voice/trait arming ⇒ neither block renders.
+    const bare = buildChatArchivistPrompt({
+      characterName: "Mara",
+      playerName: "Brian",
+      exchange: { player: "hi", assistant: "hello" },
+    });
+    expect(bare).not.toContain("Character voice reference");
+    expect(bare).not.toContain("Developable traits");
+    // Armed ⇒ both render, the voice reference fenced (author-written), traits by exact id + band.
+    const armed = buildChatArchivistPrompt({
+      characterName: "Mara",
+      playerName: "Brian",
+      exchange: { player: "hi", assistant: "hello" },
+      voiceReference: {
+        petPhrases: ["no promises"],
+        cadence: "clipped and dry",
+        neverSays: ["babe"],
+        registerRule: "Mara is 15; keep her diction age-true.",
+      },
+      developableTraits: [{ id: "temperament.warmth", label: "Warmth", band: "cold" }],
+    });
+    expect(armed).toContain("Character voice reference (for fields 11-12");
+    expect(armed).toContain("Pet phrases: no promises");
+    expect(armed).toContain("Cadence: clipped and dry");
+    expect(armed).toContain("Never says: babe");
+    expect(armed).toContain("Age/register: Mara is 15");
+    expect(armed).toContain("Developable traits (for field 13 — use these exact ids):");
+    expect(armed).toContain("- temperament.warmth (currently cold)");
   });
 
   it("declares the supporting-cast field with its exclusions (chat-supporting-cast.plan.md)", () => {

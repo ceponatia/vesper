@@ -357,6 +357,8 @@ export const chatStateSnapshotSchema = z.object({
     attributeChanges: [],
     retrievedDetail: [],
     degraded: false,
+    // Character-consistency corrective (character-fidelity slice 9) — "" when the reply held character.
+    characterSlip: "",
   })),
   // The character's unfinished business (character-chat-standalone.spec.md §6.2) — shown in
   // the relationship panel and driving the hub's "has something to say" marker (§8.4).

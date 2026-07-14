@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   characterProfileSchema,
   describeScheduleWindow,
+  emptyVoiceAnchors,
   formatScheduleMinute,
   formatScheduleRhythm,
+  hasVoiceAnchors,
   matchScheduleDayPart,
   SCHEDULE_DAY_PARTS,
   scheduleDayPartById,
+  VOICE_PET_PHRASES_MAX,
+  voiceAnchorsSchema,
   type ScheduleEntry,
 } from "./profile";
 
@@ -48,6 +52,39 @@ describe("schedule day parts (chat-initiative.plan.md slice 4)", () => {
     ]);
     expect(rhythm).toBe("mornings: waiting tables at the Dockside Café; evenings: sketching at the pier");
     expect(formatScheduleRhythm([])).toBe("");
+  });
+});
+
+describe("voiceAnchors (character-fidelity slice 7)", () => {
+  it("trims, drops blanks, and caps the lists", () => {
+    const parsed = voiceAnchorsSchema.parse({
+      petPhrases: ["  no promises  ", "", "  ", ...Array.from({ length: 10 }, (_, i) => `p${i}`)],
+      cadence: "  clipped and dry  ",
+      neverSays: ["babe", ""],
+    });
+    expect(parsed.petPhrases).toContain("no promises");
+    expect(parsed.petPhrases.length).toBeLessThanOrEqual(VOICE_PET_PHRASES_MAX);
+    expect(parsed.petPhrases).not.toContain("");
+    expect(parsed.cadence).toBe("clipped and dry");
+    expect(parsed.neverSays).toEqual(["babe"]);
+  });
+
+  it("degrades a malformed value to empty anchors rather than throwing", () => {
+    expect(voiceAnchorsSchema.parse("not an object")).toEqual(emptyVoiceAnchors());
+    expect(voiceAnchorsSchema.parse(undefined)).toEqual(emptyVoiceAnchors());
+    expect(voiceAnchorsSchema.parse({ petPhrases: "oops", cadence: 5, neverSays: null })).toEqual(emptyVoiceAnchors());
+  });
+
+  it("old rows parse unchanged: no voiceAnchors key ⇒ empty ⇒ hasVoiceAnchors false", () => {
+    const profile = characterProfileSchema.parse({ bio: "x" });
+    expect(profile.voiceAnchors).toEqual(emptyVoiceAnchors());
+    expect(hasVoiceAnchors(profile.voiceAnchors)).toBe(false);
+  });
+
+  it("hasVoiceAnchors is true when any field carries content", () => {
+    expect(hasVoiceAnchors({ petPhrases: ["hey"], cadence: "", neverSays: [] })).toBe(true);
+    expect(hasVoiceAnchors({ petPhrases: [], cadence: "clipped", neverSays: [] })).toBe(true);
+    expect(hasVoiceAnchors(emptyVoiceAnchors())).toBe(false);
   });
 });
 

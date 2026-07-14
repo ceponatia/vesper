@@ -43,6 +43,13 @@ import {
   regardBandToStageId,
   relationshipSampleSchema,
   relationshipTextureSchema,
+  resolveTraits,
+  traitValueSchema,
+  traitRegistry,
+  clampValueToBandSteps,
+  TRAIT_OVERLAY_MAX_BAND_STEPS,
+  TRAIT_OVERLAY_STEP,
+  hasVoiceAnchors,
   SKIP_HISTORY_CAP,
   outfitItems,
   outfitPresetByName,
@@ -73,8 +80,12 @@ import {
   type SocialReactionCard,
   type SupportingCast,
   type SupportingCastMember,
+  type TraitValue,
+  type TraitShift,
 } from "@/contracts";
 import { catalogConditionForLabel } from "@/contracts/conditions/catalog";
+// life-stage is not re-exported by the @/contracts barrel (see scene.ts / prompts/character-chat.ts) — import direct.
+import { lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/life-stage";
 import { evaluateActReaction } from "@/contracts/personality/act-reaction";
 import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
@@ -98,6 +109,7 @@ import {
 import { runChatArchivist, writeChatMemory } from "./chat-memory";
 import { enqueueChatLookImage } from "./chat-reference-enqueue";
 import { appendSelfieEntry, selfieHistorySchema, type SelfieEntry } from "./chat-selfie";
+import { appendVoiceExemplar, voiceExemplarsSchema, type VoiceExemplar } from "./chat-voice";
 import { enqueueChatSceneSketch } from "./chat-scene-sketch";
 import {
   AFFINITY_DELTA_CLAMP,
@@ -187,6 +199,21 @@ export interface ChatState {
    * authored base at prompt-build time. Distinct from the transient condition overlays.
    */
   attributeOverlays: AttributeValue[];
+  /**
+   * Persisted narrative TRAIT overlays that evolve over the chat (character-fidelity
+   * slice 10): `source:"narrative"` values the archivist proposes only at relationship
+   * milestones, clamped one band from the authored value, resolved on top of the
+   * authored traits at prompt build. Parallel to `attributeOverlays`; guarded to the
+   * `developable` traits. Editable/rollback-safe — evolution becomes visible, not drift.
+   */
+  traitOverlays: TraitValue[];
+  /**
+   * Voice-exemplar ring (character-fidelity slice 8): ≤5 distinctly in-voice lines the
+   * character actually said, one picked per exchange by the archivist — rendered as a
+   * "How you sound" few-shot block past the events-only summary horizon. Rolls back
+   * with the pre-exchange snapshot; per-character, so it composes in the ensemble.
+   */
+  voiceExemplars: VoiceExemplar[];
   lastPulseTrace: ChatPulseTrace;
   /** Last-turn RAG debug trace for the dev inspector (character-chat-primary.spec.md §5). */
   lastMemoryTrace: ChatMemoryTrace;
@@ -263,6 +290,10 @@ export interface ChatStateSnapshot {
   memoryQueries: string[];
   /** Persisted narrative attribute overlays (character-chat-primary.spec.md §3) — for the inspector. */
   attributeOverlays: AttributeValue[];
+  /** Persisted narrative trait overlays (character-fidelity slice 10) — for the inspector/state tools. */
+  traitOverlays: TraitValue[];
+  /** Voice-exemplar ring (character-fidelity slice 8) — for the inspector/state tools. */
+  voiceExemplars: VoiceExemplar[];
   lastPulseTrace: ChatPulseTrace;
   /** Last-turn RAG debug trace (retrieved + extracted) for the chat inspector (§5). */
   lastMemoryTrace: ChatMemoryTrace;
@@ -302,6 +333,7 @@ const activeSocialCardsSchema = z.array(socialReactionCardSchema);
 const surfacedCuesSchema = z.record(z.string(), z.string());
 const memoryQueriesSchema = z.array(z.string());
 const attributeOverlaysSchema = z.array(attributeValueSchema);
+const traitOverlaysSchema = z.array(traitValueSchema);
 const relationshipHistorySchema = z.array(relationshipSampleSchema);
 const milestonesSchema = z.array(milestoneSchema);
 const skipHistorySchema = z.array(skipRecordSchema);
@@ -402,6 +434,8 @@ export function seedChatState(profile: CharacterProfile): ChatState {
     memoryQueries: [],
     openLoops: [],
     attributeOverlays: [],
+    traitOverlays: [],
+    voiceExemplars: [],
     lastPulseTrace: emptyChatPulseTrace(),
     lastMemoryTrace: emptyChatMemoryTrace(),
     relationshipHistory: [],
@@ -575,6 +609,8 @@ export async function loadChatState(
       memoryQueries: characterChatState.memoryQueries,
       openLoops: characterChatState.openLoops,
       attributeOverlays: characterChatState.attributeOverlays,
+      traitOverlays: characterChatState.traitOverlays,
+      voiceExemplars: characterChatState.voiceExemplars,
       relationshipHistory: characterChatState.relationshipHistory,
       milestones: characterChatState.milestones,
       callbackHistory: characterChatState.callbackHistory,
@@ -602,6 +638,8 @@ export async function loadChatState(
     memoryQueries: parseOr(memoryQueriesSchema, row.memoryQueries, [], sink, "character_chat_state.memory_queries"),
     openLoops: parseOr(memoryQueriesSchema, row.openLoops, [], sink, "character_chat_state.open_loops"),
     attributeOverlays: parseOr(attributeOverlaysSchema, row.attributeOverlays, [], sink, "character_chat_state.attribute_overlays"),
+    traitOverlays: parseOr(traitOverlaysSchema, row.traitOverlays, [], sink, "character_chat_state.trait_overlays"),
+    voiceExemplars: parseOr(voiceExemplarsSchema, row.voiceExemplars, [], sink, "character_chat_state.voice_exemplars"),
     lastPulseTrace: parseOr(
       chatPulseTraceSchema,
       row.lastPulseTrace,
@@ -652,6 +690,8 @@ const storedChatStateSchema = z.object({
   memoryQueries: memoryQueriesSchema,
   openLoops: memoryQueriesSchema.catch([]).default([]),
   attributeOverlays: attributeOverlaysSchema,
+  traitOverlays: traitOverlaysSchema.catch([]).default([]),
+  voiceExemplars: voiceExemplarsSchema.catch([]).default([]),
   lastPulseTrace: chatPulseTraceSchema,
   lastMemoryTrace: chatMemoryTraceSchema,
   relationshipHistory: relationshipHistorySchema.catch([]).default([]),
@@ -1024,6 +1064,64 @@ export function applyChatAttributeOverlays(
   return overlays;
 }
 
+/**
+ * Fold milestone-gated developable-trait nudges into the persisted narrative trait
+ * overlays (character-fidelity slice 10) — the trait parallel to
+ * `applyChatAttributeOverlays`. Each accepted shift becomes a `source:"narrative"`
+ * overlay, clamped to `TRAIT_OVERLAY_MAX_BAND_STEPS` bands from the AUTHORED value so a
+ * long arc bends a character a bounded step without ever converting them (the slice-3
+ * spirit). Guards, each dropping with a diagnostic: an unknown trait, a `core`
+ * (non-developable) trait, an intimate trait for a minor, or a trait the author never set
+ * (only authored traits evolve, mirroring the regard-coloring rule). A repeat nudge
+ * ratchets the SAME overlay another `TRAIT_OVERLAY_STEP`, capped by the band clamp — a
+ * nudge already at the cap is a no-op. PURE; the caller gates the whole call on a landed
+ * milestone and persists the result on the state row.
+ */
+export function applyChatTraitOverlays(
+  authored: readonly TraitValue[],
+  current: readonly TraitValue[],
+  shifts: readonly TraitShift[],
+  options: { minor: boolean },
+  sink?: DiagnosticSink,
+): TraitValue[] {
+  const overlays: TraitValue[] = [...current];
+  const resolvedAuthored = resolveTraits(authored, []);
+  for (const shift of shifts) {
+    const id = shift.trait.trim();
+    const def = traitRegistry.byId(id);
+    if (!def) {
+      sink?.push(diag("warn", "chat_state.trait.unknown", `unknown trait "${id}" dropped`));
+      continue;
+    }
+    // Fence intimate traits for a minor FIRST — before the mutability check — so an
+    // intimate trait never evolves for a minor whatever its mutability (mirrors the
+    // prompt-builder intimate fence).
+    if (options.minor && def.intimate) {
+      sink?.push(diag("warn", "chat_state.trait.minor_intimate_rejected", `intimate trait shift "${id}" dropped for a minor`));
+      continue;
+    }
+    if (def.mutability !== "developable") {
+      sink?.push(diag("warn", "chat_state.trait.core_change_rejected", `narrative shift to non-developable trait "${id}" dropped`));
+      continue;
+    }
+    const authoredEntry = resolvedAuthored.find((t) => t.id === id);
+    if (!authoredEntry) {
+      sink?.push(diag("info", "chat_state.trait.unauthored_skipped", `trait shift "${id}" skipped — the author set no baseline to evolve from`));
+      continue;
+    }
+    const currentValue = overlays.find((o) => o.id === id)?.value ?? authoredEntry.value;
+    const step = shift.direction === "up" ? TRAIT_OVERLAY_STEP : -TRAIT_OVERLAY_STEP;
+    const bounded = clampValueToBandSteps(def, authoredEntry.value, currentValue + step, TRAIT_OVERLAY_MAX_BAND_STEPS);
+    const value = Math.max(-100, Math.min(100, bounded));
+    if (value === currentValue) continue; // already at the band cap — don't churn the overlay
+    const overlay: TraitValue = { id, value, source: "narrative", note: "narrative arc" };
+    const idx = overlays.findIndex((o) => o.id === id);
+    if (idx >= 0) overlays[idx] = overlay;
+    else overlays.push(overlay);
+  }
+  return overlays;
+}
+
 export interface ChatPulseInput {
   /** The SETTING-wide house rules (followups ruling 9) — one set for every member. */
   activeSocialCards: readonly SocialReactionCard[];
@@ -1200,6 +1298,29 @@ export async function finalizeChatState(input: {
   /** The archivist's confirmed presence transitions (ensemble only; [] otherwise). */
   presenceChanges: readonly { name: string; presence: "present" | "away" }[];
 }> {
+  // Character-fidelity slices 7-10: arm the archivist's voice reads (voiceExemplar /
+  // characterSlip) with a compact voice reference, and its trait-shift proposals with the
+  // character's DEVELOPABLE traits at their current (authored + evolved) band. Intimate
+  // traits are fenced for a minor, mirroring the prompt-builder fence.
+  const lifeStage = lifeStageForAge(input.profile.age);
+  const minor = lifeStage?.minor ?? false;
+  const evolvedTraits = resolveTraits(input.profile.traits, input.driftedState.traitOverlays);
+  const developableTraits = evolvedTraits.flatMap((t) => {
+    const def = traitRegistry.byId(t.id);
+    if (!def || def.mutability !== "developable" || (minor && def.intimate)) return [];
+    return [{ id: def.id, label: def.label, band: traitRegistry.bandFor(def.id, t.value)?.label ?? "" }];
+  });
+  const anchors = input.profile.voiceAnchors;
+  const voiceReference =
+    hasVoiceAnchors(anchors) || (lifeStage?.registerRules.length ?? 0) > 0
+      ? {
+          petPhrases: anchors.petPhrases,
+          cadence: anchors.cadence,
+          neverSays: anchors.neverSays,
+          registerRule: lifeStageThirdPersonLine(lifeStage, input.characterName),
+        }
+      : undefined;
+
   const [pulse, archivist] = await Promise.all([
     input.skipPulse
       ? Promise.resolve({ state: input.driftedState, degraded: false })
@@ -1221,6 +1342,8 @@ export async function finalizeChatState(input: {
       drives: input.driftedState.drives,
       roster: input.roster,
       supportingCast: input.scenario.supportingCast.map((m) => ({ name: m.name, relation: m.relation })),
+      developableTraits,
+      voiceReference,
       sink: input.sink,
     }),
   ]);
@@ -1281,6 +1404,11 @@ export async function finalizeChatState(input: {
   const attributeOverlays = archivist.value
     ? applyChatAttributeOverlays(input.driftedState.attributeOverlays, archivist.value.attributeChanges, input.sink)
     : input.driftedState.attributeOverlays;
+  // Voice-exemplar ring (slice 8): the archivist's picked in-voice line joins the ≤5 ring
+  // (a "" pick / degraded archivist is a no-op via appendVoiceExemplar). Rolls back with the snapshot.
+  const voiceExemplars = archivist.value
+    ? appendVoiceExemplar(input.driftedState.voiceExemplars, archivist.value.voiceExemplar, input.scenario.clockMinutes)
+    : input.driftedState.voiceExemplars;
   // Open loops are full-list-each-time (spec §6.2) — but a degraded archivist emits an
   // empty list that must NOT wipe the standing loops; keep the prior list on degrade.
   const openLoops = archivist.degraded ? input.driftedState.openLoops : (archivist.value?.openLoops ?? input.driftedState.openLoops);
@@ -1391,6 +1519,15 @@ export async function finalizeChatState(input: {
     });
   }
   const milestones = appendMilestones(input.driftedState.milestones, exchangeMilestones);
+  // Bounded personality evolution (slice 10): apply the archivist's developable-trait
+  // nudges ONLY when a relationship milestone landed this exchange (first_exchange is
+  // not an arc beat), clamped one band from the authored value. Off-milestone turns and a
+  // degraded archivist leave the overlays untouched.
+  const milestoneLanded = exchangeMilestones.some((m) => m.kind !== "first_exchange");
+  const traitOverlays =
+    archivist.value && milestoneLanded
+      ? applyChatTraitOverlays(input.profile.traits, input.driftedState.traitOverlays, archivist.value.traitShifts, { minor }, input.sink)
+      : input.driftedState.traitOverlays;
   // Selfie send (chat-selfies.plan.md): the pulse read the reply as actually sending
   // a photo AND a deterministic gate armed it. Recording the send here (the cooldown
   // ring) rides the same guarded state write; "another take" rolls it back.
@@ -1417,6 +1554,9 @@ export async function finalizeChatState(input: {
     attributeChanges: (archivist.value?.attributeChanges ?? []).map((c) => `${c.attributeId}=${String(c.value)}`),
     retrievedDetail: input.retrieved?.detail ?? [],
     degraded: archivist.degraded,
+    // Character-consistency corrective (slice 9): this exchange's slip note (or "") rides the
+    // trace so NEXT turn's prompt build renders a one-turn corrective tail; rolls back safely.
+    characterSlip: archivist.value?.characterSlip ?? "",
   };
   // Presence transitions (multi-character-chat.plan.md slice 3): the archivist's
   // confirmed reads. The primary's own transition folds into THIS save; the
@@ -1438,6 +1578,8 @@ export async function finalizeChatState(input: {
       memoryQueries: archivist.value?.memoryQueries ?? [],
       openLoops,
       attributeOverlays,
+      traitOverlays,
+      voiceExemplars,
       lastMemoryTrace,
       relationshipHistory,
       milestones,
@@ -1619,6 +1761,8 @@ async function upsertChatState(
   const memoryQueries = JSON.stringify(state.memoryQueries);
   const openLoops = JSON.stringify(state.openLoops);
   const attributeOverlays = JSON.stringify(state.attributeOverlays);
+  const traitOverlays = JSON.stringify(state.traitOverlays);
+  const voiceExemplars = JSON.stringify(state.voiceExemplars);
   const memoryTrace = JSON.stringify(state.lastMemoryTrace);
   const relationshipHistory = JSON.stringify(state.relationshipHistory);
   const milestones = JSON.stringify(state.milestones);
@@ -1631,9 +1775,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, last_memory_trace, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, presence, quiet_exchanges, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, presence, quiet_exchanges, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${memoryTrace}::jsonb, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${state.presence}, ${state.quietExchanges}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${state.presence}, ${state.quietExchanges}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -1648,6 +1792,8 @@ async function upsertChatState(
       memory_queries = excluded.memory_queries,
       open_loops = excluded.open_loops,
       attribute_overlays = excluded.attribute_overlays,
+      trait_overlays = excluded.trait_overlays,
+      voice_exemplars = excluded.voice_exemplars,
       last_memory_trace = excluded.last_memory_trace,
       outfit = excluded.outfit,
       outfit_exposed = excluded.outfit_exposed,
@@ -1707,6 +1853,10 @@ export interface ChatStateEdit {
   memoryQueries?: string[];
   surfacedCues?: Record<string, string>;
   attributeOverlays?: AttributeValue[];
+  /** Persisted narrative trait overlays (character-fidelity slice 10) — inspector-grade reset/edit. */
+  traitOverlays?: TraitValue[];
+  /** Voice-exemplar ring (character-fidelity slice 8) — inspector-grade reset/edit. */
+  voiceExemplars?: VoiceExemplar[];
   /** Auto scene-generation mode (slice 9): "off" | "milestones". */
   sceneAuto?: string;
   /** Scene-image model pick (the strip's save-on-select dropdown). */
@@ -1766,6 +1916,8 @@ export async function editChatState(args: {
   }
   if (patch.surfacedCues !== undefined) next.surfacedCues = patch.surfacedCues;
   if (patch.attributeOverlays !== undefined) next.attributeOverlays = patch.attributeOverlays;
+  if (patch.traitOverlays !== undefined) next.traitOverlays = patch.traitOverlays;
+  if (patch.voiceExemplars !== undefined) next.voiceExemplars = patch.voiceExemplars;
   if (patch.callbackHistory !== undefined) next.callbackHistory = patch.callbackHistory;
   if (patch.feeling !== undefined) next.feeling = patch.feeling;
   if (patch.selfieHistory !== undefined) next.selfieHistory = patch.selfieHistory;
@@ -1892,6 +2044,8 @@ export function chatStateSnapshot(
     openLoops: state.openLoops,
     memoryQueries: state.memoryQueries,
     attributeOverlays: state.attributeOverlays,
+    traitOverlays: state.traitOverlays,
+    voiceExemplars: state.voiceExemplars,
     lastPulseTrace: state.lastPulseTrace,
     lastMemoryTrace: state.lastMemoryTrace,
     clockMinutes: scenario.clockMinutes,

@@ -23,7 +23,9 @@ export const traitDefinitions: readonly PersonalityTraitDefinition[] = [
     description: "How readily the character shows affection and care (cold ↔ warm).",
     axis: "bipolar",
     default: 0,
-    mutability: "core",
+    // Developable (character-fidelity slice 10): a relationship arc may bend warmth a bounded
+    // step from the authored value (milestone-gated narrative overlay, clamped one band).
+    mutability: "developable",
     bands: [
       { max: -34, label: "cold", promptHint: "slow to show affection; keeps feeling at arm's length" },
       { max: 33, label: "reserved", promptHint: "measured warmth; affection is earned, not given freely" },
@@ -75,7 +77,8 @@ export const traitDefinitions: readonly PersonalityTraitDefinition[] = [
     description: "How sure of herself the character carries herself (timid ↔ assured).",
     axis: "bipolar",
     default: 0,
-    mutability: "core",
+    // Developable (character-fidelity slice 10): confidence can grow (or falter) a bounded step over an arc.
+    mutability: "developable",
     bands: [
       { max: -34, label: "timid", promptHint: "hesitant, self-doubting, easily cowed" },
       { max: 33, label: "steady", promptHint: "quietly self-possessed without bravado" },
@@ -168,7 +171,8 @@ export const traitDefinitions: readonly PersonalityTraitDefinition[] = [
     description: "How freely the character opens up (open ↔ guarded) — the affinity-gain damper.",
     axis: "bipolar",
     default: 0,
-    mutability: "core",
+    // Developable (character-fidelity slice 10): guardedness eases (or hardens) a bounded step as the arc earns it.
+    mutability: "developable",
     bands: [
       { max: -34, label: "open", promptHint: "candid and trusting; lets people in quickly" },
       { max: 33, label: "private", promptHint: "shares selectively; trust is earned in steps" },

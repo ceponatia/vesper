@@ -476,6 +476,21 @@ export const characterChatState = pgTable(
      */
     attributeOverlays: jsonb("attribute_overlays").notNull().default([]),
     /**
+     * TraitValue[] — persisted narrative TRAIT overlays that evolve over a chat
+     * (character-fidelity slice 10): the archivist proposes `source:"narrative"` trait
+     * shifts only at relationship milestones, clamped one band from the authored value and
+     * guarded to `developable` traits; the prompt builder resolves them on top of the
+     * authored traits so a bounded personality arc becomes visible/editable, not implicit drift.
+     */
+    traitOverlays: jsonb("trait_overlays").notNull().default([]),
+    /**
+     * VoiceExemplar[] ring (character-fidelity slice 8, cap 5): a few distinctly in-voice
+     * lines the character actually said, one picked per exchange by the archivist — rendered
+     * as a "How you sound" few-shot past the events-only summary horizon. Capped; rolls back
+     * with the pre-exchange snapshot like the other rings.
+     */
+    voiceExemplars: jsonb("voice_exemplars").notNull().default([]),
+    /**
      * ChatMemoryTrace — last-turn RAG debug (character-chat-primary.spec.md §5): what was
      * retrieved + extracted this exchange, for the dev inspector. Parsed defensively.
      */

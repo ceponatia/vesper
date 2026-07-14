@@ -28,7 +28,8 @@ import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relati
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { expandBodyTarget, realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { isMinorAge, lifeStageForAge, lifeStageThirdPersonLine, type LifeStageBand } from "@/contracts/world/life-stage";
-import { formatAge, type CharacterProfile, type MicroExemplar } from "@/contracts/world/profile";
+import { formatAge, hasVoiceAnchors, type CharacterProfile, type MicroExemplar, type VoiceAnchors } from "@/contracts/world/profile";
+import type { VoiceExemplar } from "../chat-voice";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import type { ChatFeelingState } from "../chat-feeling";
 import type { ChatSensoryAllowance, SensoryFocusHint } from "../chat-intent";
@@ -126,6 +127,25 @@ export interface CharacterChatPromptInput {
      * today's behavior (authored attributes only). A haircut/dye recorded by the archivist lands here.
      */
     attributeOverlays?: AttributeValue[];
+    /**
+     * Persisted narrative TRAIT overlays that evolve over the chat (character-fidelity
+     * slice 10): resolved on top of the authored traits so the character's bounded
+     * personality arc (a warmth/guardedness/confidence shift) reaches the Disposition
+     * bands and the slider-wired mechanics. Absent ⇒ authored traits only.
+     */
+    traitOverlays?: TraitValue[];
+    /**
+     * Voice-exemplar ring (character-fidelity slice 8): ≤5 distinctly in-voice lines the
+     * character actually said, rendered as a "How you sound" few-shot block past the
+     * events-only summary horizon. Absent/empty ⇒ no block.
+     */
+    voiceExemplars?: VoiceExemplar[];
+    /**
+     * One-turn character-consistency corrective (character-fidelity slice 9): last
+     * exchange's archivist slip note (voice/disposition/age register), rendered as a
+     * one-turn corrective tail line near generation. Absent/"" ⇒ no line.
+     */
+    slipNote?: string;
     /**
      * Accumulating scene memory (chat-scene-memory.ts): the narrator-imagined setting kept
      * consistent across turns — current place, time of day, known places with details +
@@ -639,6 +659,63 @@ function buildMicroExemplarsSection(exemplars: readonly MicroExemplar[]): string
     `How you actually answer a charged moment (worked examples of your voice and manner — match the STYLE and rhythm, ` +
     `never quote these back verbatim):\n${fenceUntrusted("voice examples", lines.join("\n"))}`
   );
+}
+
+/**
+ * The structured voice-anchors block (character-fidelity slice 7): pet phrases, a
+ * rhythm/cadence note, and a never-says list rendered as concrete near-generation levers
+ * for a consistent voice. Stable (authored) ⇒ the §9 prefix, paired with a one-line tail
+ * re-anchor (`buildVoiceReanchorLine`) beside the mood pin so voice sits near generation.
+ * Fenced (author-written). "" when nothing is authored.
+ */
+function buildVoiceAnchorsSection(anchors: VoiceAnchors): string {
+  if (!hasVoiceAnchors(anchors)) return "";
+  const lines: string[] = [];
+  if (anchors.petPhrases.length) lines.push(`- Turns of phrase you actually use: ${anchors.petPhrases.join("; ")}.`);
+  if (anchors.cadence.trim()) lines.push(`- Rhythm and cadence: ${anchors.cadence.trim()}.`);
+  if (anchors.neverSays.length) lines.push(`- You never say (off-limits for you): ${anchors.neverSays.join("; ")}.`);
+  return `Your voice, concretely (the sound of you — let it shape word choice and rhythm; never recite this):\n${fenceUntrusted("voice anchors", lines.join("\n"))}`;
+}
+
+/**
+ * The one-line voice re-anchor (character-fidelity slice 7): a compact restatement of the
+ * voice anchors that rides the volatile tail beside the mood pin, where models heed it
+ * most — so voice stays consistent even as a long history dominates attention. "" when
+ * nothing is authored.
+ */
+function buildVoiceReanchorLine(anchors: VoiceAnchors): string {
+  if (!hasVoiceAnchors(anchors)) return "";
+  const parts: string[] = [];
+  if (anchors.cadence.trim()) parts.push(anchors.cadence.trim());
+  if (anchors.petPhrases.length) parts.push(`phrases like ${anchors.petPhrases.slice(0, 3).join(", ")}`);
+  if (anchors.neverSays.length) parts.push(`never ${anchors.neverSays.slice(0, 3).join(", ")}`);
+  if (!parts.length) return "";
+  return `Voice check: sound like yourself this turn — ${parts.join("; ")}.`;
+}
+
+/**
+ * The "How you sound" voice-exemplar ring block (character-fidelity slice 8): a few recent
+ * distinctly in-voice lines the character actually said, kept past the events-only summary
+ * horizon so voice survives a long chat. Volatile (the ring accretes each exchange).
+ * Distinct from the authored micro-exemplars — these are grown in-chat. Fenced (prior
+ * character text). "" when the ring is empty.
+ */
+function buildVoiceRingSection(exemplars: readonly VoiceExemplar[]): string {
+  const lines = exemplars.map((e) => e.line.trim()).filter(Boolean);
+  if (!lines.length) return "";
+  return `How you sound (recent lines in your own voice from this conversation — match the register and rhythm, never quote them back):\n${fenceUntrusted("voice ring", lines.map((l) => `- ${l}`).join("\n"))}`;
+}
+
+/**
+ * The one-turn character-consistency corrective (character-fidelity slice 9): last
+ * exchange's archivist slip note, rendered near generation so the next reply pulls the
+ * voice/disposition/age register back. Degrades to no line on an absent/empty note (the
+ * common case); the slip is fenced (model-written text). "" when the reply held character.
+ */
+function buildSlipCorrectionLine(slip: string | undefined): string {
+  const note = slip?.trim();
+  if (!note) return "";
+  return `Voice correction — your last reply slipped out of character; fix it this turn without overcorrecting:\n${fenceUntrusted("voice correction", note)}`;
 }
 
 /**
@@ -1284,7 +1361,13 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // inhibition, guardedness, composure at render time) surfaces as a volatile
   // tail block listing just the bands it changed.
   const bandId = regardBandForValue(input.state?.regard ?? 0).id;
-  const baseTraits = resolveTraits(profile.traits, regardDispositionOverlays(bandId, profile.traits));
+  // Bounded personality evolution (character-fidelity slice 10): the persisted narrative
+  // trait overlays fold onto the authored traits FIRST (the evolved resting disposition),
+  // then the regard coloring shifts relative to that evolved value — so a character who
+  // grew warmer over the arc reads warmer, and the coloring composes on top instead of
+  // being overridden by it (condition precedence > narrative).
+  const evolvedTraits = resolveTraits(profile.traits, input.state?.traitOverlays ?? []);
+  const baseTraits = resolveTraits(evolvedTraits, regardDispositionOverlays(bandId, evolvedTraits));
   const everydayDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: false });
   // Minor fence (character-fidelity slice 2): a minor's intimate trait bands never
   // reach the prompt, whatever an imported/forged sheet carries.
@@ -1368,6 +1451,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
     profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
     buildMicroExemplarsSection(profile.microExemplars),
+    buildVoiceAnchorsSection(profile.voiceAnchors),
     buildLifeStageSection(lifeStage),
     dispositionSection,
     buildRelationshipSection(input.state, displayName, playerName, profile.traits, minor),
@@ -1411,6 +1495,8 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
       : "",
     input.memory ? buildMemorySection(input.memory) : "",
+    // Voice-exemplar ring (slice 8): "How you sound" few-shots kept past the summary horizon.
+    buildVoiceRingSection(input.state?.voiceExemplars ?? []),
     stateSection,
     // Slice 5: confidence colors the drive-reveal posture (bold vs. hesitant disclosure).
     input.state
@@ -1454,6 +1540,10 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
       : "",
     // Minor fence: the selfie license (a romance-lane affordance) never renders.
     minor ? "" : chatSelfieLine(input.selfie, displayName, playerName ?? "the player"),
+    // Slice 9: last exchange's one-turn character-consistency corrective (absent/"" ⇒ no line).
+    buildSlipCorrectionLine(input.state?.slipNote),
+    // Slice 7: the one-line voice re-anchor rides beside the mood pin, near generation.
+    buildVoiceReanchorLine(profile.voiceAnchors),
     input.opening
       ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
       : buildResponseShapeLine(input),

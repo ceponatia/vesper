@@ -144,9 +144,17 @@ guarded state write:
   derives from the curve's move). Degrades to drift-only state. Skipped for
   `continue` beats and narrator-mode inputs (no player act to react to — §Narrator
   input).
-- **Archivist-lite** (`runChatArchivist`): one call emitting ten fields — the episode
+- **Archivist-lite** (`runChatArchivist`): one call emitting thirteen fields — the episode
   summary, `FactDraft[]`, next-turn `memoryQueries`, `attributeChanges` (applied through
-  the `overlaySourceMayChange` inherent-trait guard), `openLoops` (the full ≤3 list
+  the `overlaySourceMayChange` inherent-trait guard), plus the three character-fidelity
+  voice/consistency reads (slices 8-10; the archivist is armed with a compact voice
+  reference — the profile's `voiceAnchors` + the life-stage register — and the character's
+  `developable` traits at their current band): `voiceExemplar` (≤1 distinctly in-voice line
+  → the `voice_exemplars` ring), `characterSlip` (a one-line "the reply broke character"
+  corrective → `lastMemoryTrace.characterSlip`, rendered as next turn's corrective tail),
+  and `traitShifts` (direction-only developable-trait nudges → `trait_overlays`, applied
+  ONLY when a relationship milestone landed this exchange, clamped one band from the
+  authored value via `applyChatTraitOverlays`); `openLoops` (the full ≤3 list
   each time, prior loops fed back through the prompt; a **degraded** archivist keeps the
   prior loops rather than wiping them), the optional `scene` proposal merged into
   `scene_memory` ([state.md](state.md) §Scene memory), the optional `cast` proposals merged into

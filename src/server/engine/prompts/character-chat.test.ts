@@ -2145,3 +2145,87 @@ describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars
     expect(prefix).toContain("## Quinn (quiet just now)"); // mid member compresses
   });
 });
+
+describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
+  const anchors = { petPhrases: ["no promises", "be serious"], cadence: "clipped and dry; trails off when she deflects", neverSays: ["babe"] };
+
+  it("renders voice anchors in the stable prefix AND a one-line re-anchor near generation (slice 7)", () => {
+    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile({ voiceAnchors: anchors }) });
+    // Prefix carries the concrete anchors…
+    expect(parts.prefix).toContain("Your voice, concretely");
+    expect(parts.prefix).toContain("no promises; be serious");
+    expect(parts.prefix).toContain("clipped and dry; trails off when she deflects");
+    expect(parts.prefix).toContain("babe");
+    // …and the volatile tail carries the compact re-anchor beside the mood pin.
+    expect(parts.tail).toContain("Voice check: sound like yourself this turn");
+    expect(parts.tail).toContain("never babe");
+  });
+
+  it("omits both voice-anchor blocks when nothing is authored (prompt unchanged)", () => {
+    const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile() });
+    expect(parts.prefix).not.toContain("Your voice, concretely");
+    expect(parts.tail).not.toContain("Voice check:");
+  });
+
+  it("renders the 'How you sound' voice-exemplar ring from state, past the summary horizon (slice 8)", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: {
+        meters: {},
+        regard: 0,
+        conditions: [],
+        voiceExemplars: [
+          { line: "Prague in spring — of course it is.", atClockMinutes: 30 },
+          { line: "No promises.", atClockMinutes: 60 },
+        ],
+      },
+    });
+    expect(prompt).toContain("How you sound");
+    expect(prompt).toContain("- Prague in spring — of course it is.");
+    expect(prompt).toContain("- No promises.");
+  });
+
+  it("omits the voice ring when it is empty (prompt unchanged)", () => {
+    const prompt = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, regard: 0, conditions: [], voiceExemplars: [] },
+    });
+    expect(prompt).not.toContain("How you sound");
+  });
+
+  it("renders a one-turn character-consistency corrective from a slip note, and degrades to no line when absent (slice 9)", () => {
+    const corrected = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, regard: 0, conditions: [], slipNote: "spoke like a therapist, not a teen — loosen the diction" },
+    });
+    expect(corrected).toContain("Voice correction");
+    expect(corrected).toContain("loosen the diction");
+    // Absent / empty slip ⇒ no corrective line (the degraded default).
+    const held = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile(),
+      state: { meters: {}, regard: 0, conditions: [], slipNote: "" },
+    });
+    expect(held).not.toContain("Voice correction");
+  });
+
+  it("folds a persisted narrative trait overlay into the Disposition bands (slice 10)", () => {
+    // Authored warmth is cold (creation-sourced); a narrative overlay (precedence > creation)
+    // bends the evolved resting disposition so the Disposition block reads the arc, not the base.
+    const evolved = buildCharacterChatSystemPrompt({
+      name: "Mara",
+      profile: profile({ traits: [{ id: "temperament.warmth", value: -70, source: "creation" }] }),
+      state: {
+        meters: {},
+        regard: 0,
+        conditions: [],
+        traitOverlays: [{ id: "temperament.warmth", value: 70, source: "narrative", note: "narrative arc" }],
+      },
+    });
+    expect(evolved).toContain("Warmth: warm");
+    expect(evolved).not.toContain("Warmth: cold");
+  });
+});

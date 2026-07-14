@@ -1,0 +1,2 @@
+ALTER TABLE "character_chat_state" ADD COLUMN "trait_overlays" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "character_chat_state" ADD COLUMN "voice_exemplars" jsonb DEFAULT '[]'::jsonb NOT NULL;

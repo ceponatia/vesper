@@ -12,6 +12,7 @@ import { CHAT_AROUSAL_INTIMATE, CHAT_SKIP_MINUTES, CHAT_TICK_MINUTES } from "./c
 import {
   applyChatAction,
   applyChatAttributeOverlays,
+  applyChatTraitOverlays,
   applyChatPulse,
   applyOpenerPulse,
   applyTimeSkip,
@@ -675,6 +676,62 @@ describe("applyChatAttributeOverlays (mutable-attribute evolution — spec §3)"
     const second = applyChatAttributeOverlays(first, [{ participantName: "Mara", attributeId: "hair.color", value: "silver" }]);
     expect(second.filter((o) => o.id === "hair.color")).toHaveLength(1);
     expect(second.find((o) => o.id === "hair.color")?.value).toBe("silver");
+  });
+});
+
+describe("applyChatTraitOverlays (bounded personality evolution — character-fidelity slice 10)", () => {
+  // temperament.warmth / social.guardedness / temperament.confidence are developable;
+  // temperament.composure is core; the authored value is the clamp anchor.
+  const authored = [{ id: "temperament.warmth", value: 0, source: "creation" as const }];
+
+  it("nudges an authored developable trait a bounded step, as a narrative overlay", () => {
+    const out = applyChatTraitOverlays(authored, [], [{ trait: "temperament.warmth", direction: "up" }], { minor: false });
+    expect(out).toContainEqual(expect.objectContaining({ id: "temperament.warmth", source: "narrative" }));
+    expect(out.find((o) => o.id === "temperament.warmth")?.value).toBe(20); // authored 0 + one TRAIT_OVERLAY_STEP
+  });
+
+  it("ratchets the same overlay on a repeat nudge, but never past one band from the authored value", () => {
+    // Authored cold (−80, band 0); a long arc of 'up' nudges may reach the reserved band's
+    // top (33) at most — never the 'warm' band (two steps away).
+    const cold = [{ id: "temperament.warmth", value: -80, source: "creation" as const }];
+    let overlays = applyChatTraitOverlays(cold, [], [{ trait: "temperament.warmth", direction: "up" }], { minor: false });
+    for (let i = 0; i < 12; i++) {
+      overlays = applyChatTraitOverlays(cold, overlays, [{ trait: "temperament.warmth", direction: "up" }], { minor: false });
+    }
+    const value = overlays.find((o) => o.id === "temperament.warmth")?.value ?? 0;
+    expect(value).toBeLessThanOrEqual(33); // clamped one band from authored −80
+    expect(value).toBeGreaterThan(-80);
+  });
+
+  it("rejects a core (non-developable) trait with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const base = [{ id: "temperament.composure", value: 0, source: "creation" as const }];
+    const out = applyChatTraitOverlays(base, [], [{ trait: "temperament.composure", direction: "up" }], { minor: false }, sink);
+    expect(out).toHaveLength(0);
+    expect(sink.items.some((d) => d.code === "chat_state.trait.core_change_rejected")).toBe(true);
+  });
+
+  it("drops an unknown trait id with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const out = applyChatTraitOverlays(authored, [], [{ trait: "nonsense.trait", direction: "up" }], { minor: false }, sink);
+    expect(out).toHaveLength(0);
+    expect(sink.items.some((d) => d.code === "chat_state.trait.unknown")).toBe(true);
+  });
+
+  it("skips a developable trait the author never set (only authored traits evolve)", () => {
+    const sink = new DiagnosticCollector();
+    const out = applyChatTraitOverlays([], [], [{ trait: "temperament.warmth", direction: "up" }], { minor: false }, sink);
+    expect(out).toHaveLength(0);
+    expect(sink.items.some((d) => d.code === "chat_state.trait.unauthored_skipped")).toBe(true);
+  });
+
+  it("fences an intimate trait shift for a minor with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    // intimate.libido is intimate; even if it were developable, a minor never evolves it.
+    const base = [{ id: "intimate.libido", value: 0, source: "creation" as const }];
+    const out = applyChatTraitOverlays(base, [], [{ trait: "intimate.libido", direction: "up" }], { minor: true }, sink);
+    expect(out).toHaveLength(0);
+    expect(sink.items.some((d) => d.code === "chat_state.trait.minor_intimate_rejected")).toBe(true);
   });
 });
 
