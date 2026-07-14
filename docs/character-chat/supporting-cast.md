@@ -32,7 +32,7 @@ The scene-memory pattern applied to people:
   a `[Name]` tag; the render contract is unchanged) and give them initiative true to what's
   established, while they stay supporting (never steal a beat, never contradict what the
   player wrote for them, never act FOR the player). Rule 3 carves them out of the
-  incidental-person clause; **rule 16** lets them populate the character's side of a scene
+  incidental-person clause; **rule 15** lets them populate the character's side of a scene
   cut, so she and a cast member can carry threads forward while the player is away.
 - **UI**: the **Supporting Cast panel** (`components/chat/chat-supporting-cast-panel.tsx`),
   below "In this story" in the desktop aside and the Roster sheet — names listed as they

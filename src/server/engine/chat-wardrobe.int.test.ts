@@ -7,11 +7,11 @@ import { newId } from "@/lib/ids";
 import { characterChatMessages, characterChats, characters, chatParticipants, db, items, users } from "@/server/db";
 
 /**
- * Chat wardrobe parity (chat-wardrobe-parity.plan.md rung 2): the archivist proposes a
+ * Chat wardrobe parity (chat-wardrobe-parity.plan.md rung 2): the continuity leg proposes a
  * garment-level change; `finalizeChatState` folds it into the structured `wornItemIds`
  * against the loaded worn items + wardrobe pool, and the pre-exchange snapshot preserves the
  * prior worn list so "another take" rolls it back. Drives `finalizeChatState` directly with
- * a mocked archivist (AI_FAKE would degrade it), following chat-memory-failure.int.test.ts.
+ * a mocked extraction (AI_FAKE would degrade it), following chat-memory-failure.int.test.ts.
  */
 
 process.env.AI_FAKE = "1";
@@ -19,7 +19,10 @@ process.env.AI_FAKE = "1";
 const mock = vi.hoisted(() => ({ archivist: { value: null as ChatArchivist | null, degraded: false } }));
 
 vi.mock("./chat-memory", () => ({
-  runChatArchivist: () => Promise.resolve(mock.archivist),
+  // The merged aggregate the folds consume (chat-agent-improvements slice 1b) — mocking at
+  // the merge seam keeps this test about the WARDROBE fold, not the leg composition.
+  runChatExtraction: () =>
+    Promise.resolve({ ...mock.archivist, legs: { memory: false, continuity: false, character: false } }),
   writeChatMemory: () => Promise.resolve(),
 }));
 

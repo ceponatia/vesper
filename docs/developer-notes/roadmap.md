@@ -41,15 +41,6 @@ _(nothing — pull the next entry from Next)_
   big time skips proposing off-screen developments — including NPC↔NPC
   interactions filed as relationship facts — away-member whereabouts, and the
   daily-rhythm line in ordinary turns. "The world moves," scoped to the cast.
-- **Chat agent improvements** — [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md)
-  (draft — planned 2026-07-14 from an owner-requested agent-architecture review;
-  slices independent). The archivist's 13 jobs become a composable **field
-  library** (then, owner-gated, 2–3 focused parallel extractors), the ensemble
-  settle loop parallelized, embeddings computed once per turn, a tail digest
-  ordering the one-turn notes, and prompt-wording dedup. **Interacts with the
-  two entries above**: stage 1a ideally lands before plans & promises adds its
-  archivist field, and off-screen life's meanwhile pass composes from the same
-  library — see the plan's §Roadmap fit.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
@@ -104,6 +95,21 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat agent improvements — the extraction field library + three parallel legs** —
+  [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md) — 2026-07-14 — all
+  five slices: extraction fields became **data** (`prompts/chat-extractors.ts` — one module
+  per field owning its instruction/context/rules/example; a leg is an ordered key list and
+  its whole sheet is assembled), the 13-field archivist split into **memory scribe ‖
+  continuity tracker ‖ character tracker** running in parallel in the same post-flush slot
+  (no perceived latency; per-leg degradation so one failed leg costs only its own fields;
+  the personal pass recomposed from the same modules, killing the copy-paste), the ensemble
+  settle loop parallelized, **one query-embed per turn** shared by every retrieval leg +
+  the callback picker (both lanes — the only pre-reply saving), the volatile tail's dozen
+  one-turn notes gathered into a tiered **"Right now" digest** (binding → gate → license →
+  flavor; crowded-turn deferral kept **pre-burn** in `chatCallbackEligible`, since an
+  offered callback burns its ring), and the duplicate rule 8 folded into the Shaping block
+  (rules renumbered 9–17 → 8–16). Unmeasured: the split's quality premise rides the
+  owner-gated eval spend.
 - **Attribute narrator guidance — audit + broader glosses (slices 3–4, plan complete)** —
   [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) — 2026-07-14 —
   the entangled-vocabulary audit found no new renames (prior sessions had already

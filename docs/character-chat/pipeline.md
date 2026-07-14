@@ -87,15 +87,35 @@ exchange:
    the top-k regardless of similarity. Shared-history conversations share a group;
    fresh starts are islands. Each leg degrades with a diagnostic (facts to
    pinned-only, episodes to `[]`).
+
+   **One embed per turn** (chat-agent-improvements.plan.md slice 3): the pipeline embeds the
+   whole turn's query set ONCE — the player's input plus every participant's persisted
+   `memoryQueries` — through `QueryEmbeddings.embed` (`server/memory/query-embeddings.ts`;
+   trimmed + deduped) and hands that cache to every consumer: the fact leg, the episode leg,
+   each ensemble member's pair of legs, and the memory-callback picker (whose anti-echo
+   anchor IS the player's input). Each of those used to embed its own copy of the same
+   texts — 2–3 round-trips for one text set, and unlike every other agent cost this one sits
+   on the **pre-reply** path the player actually waits on. A failed embed degrades each leg
+   exactly as its own would (facts → pinned-only, episodes → `[]`, callback → none). The
+   session lane's `preTurnRetrieve` shares the same cache (its episode + fact legs carried
+   the identical duplicate); a caller that passes none still embeds internally, unchanged.
 6. **Prompt build.** `buildCharacterChatPromptParts` (pure, snapshot-tested) — split
    for provider prefix caching (spec §9) into a **stable prefix** (identity → persona →
    scenario → background → regard-colored disposition → the composed **Relationship** block → cards →
    attributes → sensory cues → rules; byte-identical across turns, re-rendering only on
    a band crossing on either relationship axis — asserted by a prefix-byte-stability test) and a **volatile tail**
-   (recap, memory, state, skip note, disinhibition + transient-appearance overrides,
-   the per-turn **sensory allowance** line, continue-beat cue, notation note, the
-   optional one-turn **memory-callback** line ([initiative.md](initiative.md) §Memory callbacks), beat
-   instructions). An experimental `CHAT_PROMPT_LAYOUT=turn_context` switch (default off)
+   (recap, memory, voice ring, state, drives, scene, cast, disinhibition +
+   transient-appearance overrides — then the **"Right now" digest**, then the voice
+   re-anchor + response-shape line). The digest (chat-agent-improvements slice 4) is the
+   tail's one-turn directives gathered under a single heading that states their authority
+   and **ordered by tier** — **binding** (storyteller-narration note, notation/comms
+   routing, attached photos, time passed, first-scene establish) → **gate** (sensory focus,
+   the sensory-allowance ceiling, the reply-discipline gates, a voice-slip correction) →
+   **license** (the continue/initiative cue, the selfie license) → **flavor** (the
+   memory-callback line). Before it, a dozen possible notes rendered in the order their
+   features happened to ship, with nothing stating which governs when they pull apart.
+   Deferral for a crowded turn is deliberately NOT done at render time — see §The one-turn
+   notes below. An experimental `CHAT_PROMPT_LAYOUT=turn_context` switch (default off)
    moves the tail + fenced current input into a final user message instead — the session
    lane's shape; see [prompts.md](../prompts.md) §Character-chat prompt-cache split. The rules carry the **player-input
    perception partition** (quoted = heard, narration = seen, interiority = invisible), the
@@ -105,7 +125,7 @@ exchange:
    never asterisk-emphasis), and the **player-POV narrator camera** (involuntary perception +
    light reflex writable, the player's agency not — and never the player's story advanced on
    the narrator's turn; when the two are in different places, the reply follows the
-   character's side only, reaching the player solely through comms — rule 16). See
+   character's side only, reaching the player solely through comms — rule 15). See
    [prompts.md](../prompts.md) §§Character-chat sensory cues / player-input perception /
    player-POV narration / state as a narration system / long-term memory, plus the
    regex-only one-turn cue (`engine/chat-intent.ts`).
@@ -152,8 +172,8 @@ exchange:
 
 ## Post-turn fan-out
 
-`finalizeChatState` runs **pulse ‖ archivist-lite** in parallel (`Promise.all`), then one
-guarded state write:
+`finalizeChatState` runs **pulse ‖ the three extraction legs** in parallel (`Promise.all`),
+then one guarded state write:
 
 - **Pulse** (`runChatPulse`): classifies the exchange onto the §6 personality curve —
   regard/mood deltas, arousal bump for intimate concepts, mindNote refresh, and the
@@ -161,10 +181,42 @@ guarded state write:
   derives from the curve's move). Degrades to drift-only state. Skipped for
   `continue` beats and narrator-mode inputs (no player act to react to — §Narrator
   input).
-- **Archivist-lite** (`runChatArchivist`): one call emitting thirteen fields — the episode
-  summary, `FactDraft[]`, next-turn `memoryQueries`, `attributeChanges` (applied through
+- **Extraction** (`runChatExtraction`, chat-agent-improvements.plan.md slice 1b): what was
+  ONE 13-field "archivist-lite" call is now **three focused legs run in parallel** with each
+  other and with the pulse — same post-flush slot, so the split costs two extra small calls
+  and **no perceived latency**, while each leg holds 3–5 assignments instead of thirteen:
+
+  | Leg | Fields | Diagnostic prefix |
+  | --- | --- | --- |
+  | **memory scribe** | `episodeSummary`, `facts`, `memoryQueries` | `chat_memory_scribe.*` |
+  | **continuity tracker** | `scene`, `outfit`, `attributeChanges`, `presence`, `cast` | `chat_continuity.*` |
+  | **character tracker** | `openLoops`, `driveUpdates`, `voiceExemplar`, `characterSlip`, `traitShifts` | `chat_character_notes.*` |
+
+  All three sheets are **composed from the field library** (`prompts/chat-extractors.ts` —
+  slice 1a: one module per field owning its instruction, context block, rules, and example
+  value; a leg is an ordered list of field keys). Unarmed fields vanish from the sheet
+  entirely (a 1-on-1 never sees the `presence` instructions; a drive-less character never
+  sees `driveUpdates`), and every worked example is RENDERED from the leg's own field list,
+  so examples can no longer drift out of sync with it. The legs merge back into the one
+  `ChatArchivist` aggregate (`mergeChatExtractions`), so **every fold below is unchanged**.
+
+  **Per-leg degradation** is the point of the split: a failed leg costs only its own
+  fields. The folds key on the leg that owns each field — a degraded **character** leg keeps
+  the standing open loops (an empty list must never wipe them), a degraded **memory** leg
+  drops the stale `memoryQueries` and flags `lastMemoryTrace.degraded`, and every other
+  leg's reads still land. All three down ⇒ the pre-split whole-archivist degrade (no memory
+  written, nothing folded). Covered by `chat-extraction-legs.int.test.ts`.
+
+  The **edited-reply re-extraction** (`reextractEditedReply`) runs the memory scribe
+  ALONE (`runChatMemoryScribe`): that path re-files long-term memory and rewrites no state
+  row, so before the split it paid for all thirteen fields and discarded eleven.
+
+  The merged aggregate carries the same fields as before — the episode
+  summary, `FactDraft[]`, next-turn `memoryQueries` (the scribe also reads the rolling
+  summary's `Established:` ledger, so a pronoun-heavy beat files a fact naming the person
+  instead of a dangling referent), `attributeChanges` (applied through
   the `overlaySourceMayChange` inherent-trait guard), plus the three character-fidelity
-  voice/consistency reads (slices 8-10; the archivist is armed with a compact voice
+  voice/consistency reads (slices 8-10; the character leg is armed with a compact voice
   reference — the profile's `voiceAnchors` + the life-stage register — and the character's
   `developable` traits at their current band): `voiceExemplar` (≤1 distinctly in-voice line
   → the `voice_exemplars` ring), `characterSlip` (a one-line "the reply broke character"
@@ -172,7 +224,7 @@ guarded state write:
   and `traitShifts` (direction-only developable-trait nudges → `trait_overlays`, applied
   ONLY when a relationship milestone landed this exchange, clamped one band from the
   authored value via `applyChatTraitOverlays`); `openLoops` (the full ≤3 list
-  each time, prior loops fed back through the prompt; a **degraded** archivist keeps the
+  each time, prior loops fed back through the prompt; a **degraded** character leg keeps the
   prior loops rather than wiping them), the optional `scene` proposal merged into
   `scene_memory` ([state.md](state.md) §Scene memory), the optional `cast` proposals merged into
   `supporting_cast` ([supporting-cast.md](supporting-cast.md) §Supporting cast; roster/player names excluded), the roster-gated
@@ -223,15 +275,41 @@ guarded state write:
   state save, so a mid-stream delete can't split the halves (F5). "First exchange" (the arc baseline + `first_exchange` milestone) keys on an
   empty relationship history, not a null snapshot, so a state row that pre-exists the first
   send — a premise Save, an opening beat, a pickup skip — still records it (F4).
+- **Ensemble members settle CONCURRENTLY** (chat-agent-improvements slice 2): every present
+  member's referenced-only pulse + personal note-taker + state save runs in one
+  `Promise.all`, not one member after another. Each member's legs read and write only their
+  own row, and the whole settle runs **inside the exchange lock** — so settling a four-member
+  roster serially stacked up to four back-to-back agent round-trips in the lock window, and
+  a fast-typing player ate a 409 `chat_busy` for the difference. Error handling stays
+  per-member (each keeps its own `try`/`catch`), so one member's failure still can't cost
+  another's state.
 - **State mutations 409 while a reply streams** (followups F1): the exchange holds the
   `chat_exchange:{chatId}` lock across the whole settle and the finalizer rewrites the full
   state row, so time skip / mark moment / state-tools PATCH / action chips first check
   `chatBusyResponse` and return **409 `chat_busy`** rather than be clobbered by the pending
   finalize.
-- Both legs race a shared timeout (`withGenerateTimeout`, `server/ai`) and run on the
+- Every leg races a shared timeout (`withGenerateTimeout`, `server/ai`) and runs on the
   agent model. Every degradation is a diagnostic, never a failed reply — the reply already
   streamed.
 
+
+## The one-turn notes (and why deferral happens pre-burn)
+
+The volatile tail's per-turn directives render through one ordered digest (§Prompt build,
+step 6). Where a turn is **crowded** — several one-turn notes competing for the same beat —
+the low-priority ones are dropped, but that decision is made **upstream in the pipeline, not
+at render time**, for a hard reason: an offered **memory callback burns its anti-repeat ring
+entry the moment it is chosen** (`appendCallbackEntry`, riding this exchange's ordinary state
+write). A callback dropped later by a render-time cap would be *spent without ever reaching
+the page*, and that episode could never be offered again.
+
+So `chatCallbackEligible` (`engine/chat-callback.ts`, pure) is the tail's soft cap: it runs
+**before** a single token or embedding is paid for, and yields the flavor slot to anything
+that outranks it — a first exchange, a pending skip note, a scene change, an intimate beat, a
+sensory-focus block, an unanswered question, **attached photos**, **storyteller-narration
+input**, or an **armed photo beat** (a selfie request, an unprompted offer, or the opener's
+photo license — the last three added by chat-agent-improvements slice 4). The prompt builder
+then renders exactly what survived the gate; it never silently drops a note.
 
 ## Reply failures
 

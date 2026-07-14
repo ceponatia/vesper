@@ -199,7 +199,7 @@ export interface CharacterChatPromptInput {
    * derived by the route from the existing detectors (`deriveChatSensoryAllowance` over
    * `detectChatCue` / `detectSensoryFocus`). Replaces the four scattered "one cue, earned"
    * teachings (old rules 11–12, the cue-invite sensory arms, the Sensory-cues closing bullet) with
-   * one authority the static rules defer to. Absent (opening/continue beats) ⇒ no line ⇒ rule 11's
+   * one authority the static rules defer to. Absent (opening/continue beats) ⇒ no line ⇒ rule 10's
    * conservative default. `focused_description` renders no line — the Sensory-focus block IS the grant.
    */
   sensoryAllowance?: ChatSensoryAllowance;
@@ -251,7 +251,7 @@ export interface CharacterChatPromptInput {
   /**
    * Attached-photo vision reads (chat-image-input.plan.md): what the character SEES
    * in each photo the player's current message attached, in order — seen-channel
-   * content under the perception partition, handled by rule 17. Fenced (the reads
+   * content under the perception partition, handled by rule 16. Fenced (the reads
    * derive from player-supplied images). Absent/empty ⇒ no block.
    */
   attachments?: { descriptions: string[] };
@@ -380,7 +380,7 @@ export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string): stri
 
 /**
  * The attached-photos tail block (chat-image-input.plan.md): the vision reads as
- * seen-channel content — rule 17 owns the handling; this is the data. Fenced:
+ * seen-channel content — rule 16 owns the handling; this is the data. Fenced:
  * the descriptions derive from player-supplied images. "" ⇒ no block.
  */
 function buildAttachmentsSection(attachments: CharacterChatPromptInput["attachments"], player: string): string {
@@ -905,6 +905,50 @@ function buildSupportingCastSection(cast: SupportingCast, selfName: string | nul
 }
 
 /**
+ * The one-turn note digest (chat-agent-improvements.plan.md slice 4).
+ *
+ * The volatile tail had grown ~a dozen possible one-turn directives — a skip note, a scene
+ * establish, a sensory focus + allowance, reply-discipline gates, a voice correction, a cue
+ * invite, a selfie license, a memory callback, a notation note, a photo block, a narrator-
+ * input note — each added by a different feature at a different time, in the order its
+ * builder happened to be appended, with no stated relationship between them. A model reading
+ * eleven unranked "note that…" paragraphs has to guess which one governs when they pull in
+ * different directions; and the roadmap's next two features (chat-plans-promises,
+ * chat-offscreen-life) both add more.
+ *
+ * So the notes are now GATHERED into one block under a heading that states their authority,
+ * and ordered by declared tier:
+ *
+ * - **binding** — what is true this turn and reframes how the message is read (storyteller
+ *   narration, notation/comms routing, attached photos, time passed, a first scene).
+ * - **gate** — the ceilings and corrections that bound the reply (sensory focus + allowance,
+ *   the hook-cadence / check-in gates, a voice slip correction).
+ * - **license** — what the beat PERMITS but never demands (an open-loop cue, a selfie).
+ * - **flavor** — the optional grace note (a "remember when" callback).
+ *
+ * Deferral (the plan's soft cap) is deliberately NOT done here: the deferrable notes — the
+ * callback and the unprompted selfie offer — are armed upstream in the pipeline, and an
+ * offered callback BURNS its anti-repeat ring the moment it is picked. Dropping one at
+ * render time would spend an episode that never reached the page. The pipeline's
+ * `chatCallbackEligible` gate therefore owns the crowded-turn decision, pre-burn, and this
+ * composer renders exactly what survived it.
+ */
+type TurnNoteTier = "binding" | "gate" | "license" | "flavor";
+const TURN_NOTE_TIERS: readonly TurnNoteTier[] = ["binding", "gate", "license", "flavor"];
+
+const TURN_NOTES_HEADING =
+  "Right now (directives for THIS turn only, most binding first — where they conflict with the standing rules above, these win; none of them carry to the next turn):";
+
+function buildTurnNotes(notes: readonly { tier: TurnNoteTier; text: string }[]): string {
+  const armed = notes.filter((n) => n.text.trim());
+  if (!armed.length) return "";
+  // Stable within a tier: declaration order is the tie-break, so a turn's notes always
+  // render in the same sequence for the same arming (snapshot-testable).
+  const ordered = TURN_NOTE_TIERS.flatMap((tier) => armed.filter((n) => n.tier === tier).map((n) => n.text.trim()));
+  return [TURN_NOTES_HEADING, ...ordered].join("\n\n");
+}
+
+/**
  * The per-turn response-shape + mood-pin line (deliverable C): a deterministic steer built
  * from what's already at prompt-build time — no new LLM leg. Restates the on-beat discipline
  * (respond to the player's input, don't introduce unrequested topics, keep the scale
@@ -927,7 +971,7 @@ function buildResponseShapeLine(input: CharacterChatPromptInput): string {
 
 /**
  * The binding per-turn sensory-allowance line (narrator-prompt-consolidation.plan.md slice 4) —
- * the single authority rules 11–12 defer to. Worded as a ceiling, not an instruction: a grant is
+ * the single authority rules 10–11 defer to. Worded as a ceiling, not an instruction: a grant is
  * permission for at most one cue, never a demand that one appears. `focused_description` returns
  * "" because the Sensory-focus block below carries that turn's (richer) grant.
  */
@@ -1226,24 +1270,32 @@ const CHAT_RULES = (
     // "7. Speak and act your age: let your age and life-stage shape your diction, references, patience, and energy — sound like someone of your years.",
     "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the traits THIS beat makes relevant govern what you notice, withhold, say, and do — the strongest pulls should be felt in your word choice, rhythm, and how much you give — but a trait is something you possess, not something you perform: never demonstrate a set number of traits per reply, and never name, list, or recite one.",
     '7. Speak and act your age: sound like someone of your years — let your age and life-stage color your diction and references where the beat touches them, without making a show of your age every turn. When a "Life stage" block is present above, its rules are binding and override any conflicting style elsewhere.',
-    `8. Respond directly to what ${name} just heard and saw before adding anything new.`,
-    "9. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state, your disposition, and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
-    "10. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
+    // Rule 8 ("Respond directly to what ${name} just heard and saw before adding anything
+    // new") retired 2026-07-14 (chat-agent-improvements slice 5): it was a strictly weaker
+    // restatement of the "Resolve, then one move" bullet that opens the Shaping block below —
+    // the same instruction stated twice, once vaguely. The Shaping bullet keeps the teaching
+    // (and adds what "then" may be); rules 9+ shift up one. (Rollback: restore this line as
+    // rule 8 and renumber.)
+    "8. React in proportion. An ordinary remark, greeting, or mild compliment gets a natural, in-character answer — not effusive gratitude or doting. Let warmth track your current state, your disposition, and how you actually feel about this person (above); affection is earned, not automatic. You may tease, deflect, change the subject, or answer plainly.",
+    "9. Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.",
     // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 4 — the "one cue, earned"
     // teaching now lives in the deterministic per-turn Sensory-allowance line; rollback: restore these
     // two rules and the pipeline's chatCueInviteLine arm):
     // `11. When you move close, ${player} notices you closely, or the moment turns intimate, you may work in one relevant sensory cue if you have one — scent, warmth, texture, the sound of your voice — woven into a gesture or action and written as it lands in ${player}'s senses (the scent that reaches them, the warmth they feel). One is enough. Do not force sensory detail into ordinary, distant conversation, and never list it.`,
     // `12. Show, don't inventory: when ${player}'s attention lands on you — a look, a compliment, a mention of what you're wearing — or when you enter, move, or adjust your clothes, give one concrete visual detail from ${player}'s eye, drawn from your Attributes and outfit (e.g. the slit of a dress parting over a crossed leg, sleeves pushed up off flour-dusted forearms). Sight carries at any distance. One detail woven into the beat — never a head-to-toe description, never repeated for an unchanged look, and none at all when nothing draws the eye.`,
-    `11. Sensory and appearance detail is gated per turn: when a "Sensory allowance" line is present below, it states exactly what may land this turn — follow it. When it grants a cue, weave AT MOST ONE into a gesture or action, written as it arrives in ${player}'s senses (the scent that reaches them, the warmth they feel) — never listed, and never forced into ordinary, distant conversation. When no allowance line is present, default to none.`,
-    `12. Show, don't inventory: when your own movement this turn — entering, standing, adjusting your clothes — draws the eye, one concrete visual detail from ${player}'s eye is welcome (drawn from your Attributes and outfit, e.g. sleeves pushed up off flour-dusted forearms). Everything beyond that follows the Sensory allowance line. Never a head-to-toe description, never a detail repeated for an unchanged look.`,
-    "13. Your physical state (below, when given) is behavioral law: act it out continuously — intoxication loosens and slurs you, low hygiene and dishevelment show at close range, exhaustion drags at you. But you have a long memory for it: a state you are already in is simply how you are right now, so let it colour your manner and word choice WITHOUT describing it afresh each turn. Only when a state visibly SHIFTS (you sober up, tip into drunk, grow tired) do you mark it once, in action, then let it ride.",
-    `14. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
-    `15. Dialogue is speech, not prose: let ${name} talk the way people actually talk — fragments, interruptions, trailing off, dodging a question instead of answering it, saying less than they mean. Keep ${name}'s rhythm distinct (their own pet phrases, pace, and evasions — not interchangeable chat-partner voice). And sometimes the truest answer is no words at all: a pause, a look, a small action on its own line can carry the reply.`,
-    `16. When ${name} and ${player} are not in the same place — they parted, someone left, the scene split — your reply follows ${name} and ONLY ${name}: narrate what ${name} does, where ${name} goes, what ${name} feels and sends, like a scene cut to ${name}'s side of the world. ${name}'s side needn't be empty: Supporting-cast members who would plausibly be with ${name} may appear there — you may play them, and let them and ${name} carry their own threads forward. Never narrate ${player}'s side of the separation — not their trip home, their evening, or their phone lighting up; that is ${player}'s to write. ${name} reaches ${player} only through a channel that carries — a text on its own line as *${name}: her words here*, a call — and the reply ends on ${name}'s move, waiting for ${player}'s answer.`,
-    `17. When ${player}'s message carries attached photos, an "Attached photos" note below describes what ${name} sees in each. Treat them as real photos ${player} is showing or sending ${name} — react in character to what they show, weave what genuinely matters into the reply, and let ${name}'s disposition decide how much they land. Never inventory a photo back detail-by-detail, and never speak of an "image" or "attachment" — it is a photo ${name} is looking at.`,
+    `10. Sensory and appearance detail is gated per turn: when a "Sensory allowance" line is present below, it states exactly what may land this turn — follow it. When it grants a cue, weave AT MOST ONE into a gesture or action, written as it arrives in ${player}'s senses (the scent that reaches them, the warmth they feel) — never listed, and never forced into ordinary, distant conversation. When no allowance line is present, default to none.`,
+    `11. Show, don't inventory: when your own movement this turn — entering, standing, adjusting your clothes — draws the eye, one concrete visual detail from ${player}'s eye is welcome (drawn from your Attributes and outfit, e.g. sleeves pushed up off flour-dusted forearms). Everything beyond that follows the Sensory allowance line. Never a head-to-toe description, never a detail repeated for an unchanged look.`,
+    "12. Your physical state (below, when given) is behavioral law: act it out continuously — intoxication loosens and slurs you, low hygiene and dishevelment show at close range, exhaustion drags at you. But you have a long memory for it: a state you are already in is simply how you are right now, so let it colour your manner and word choice WITHOUT describing it afresh each turn. Only when a state visibly SHIFTS (you sober up, tip into drunk, grow tired) do you mark it once, in action, then let it ride.",
+    `13. Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`,
+    `14. Dialogue is speech, not prose: let ${name} talk the way people actually talk — fragments, interruptions, trailing off, dodging a question instead of answering it, saying less than they mean. Keep ${name}'s rhythm distinct (their own pet phrases, pace, and evasions — not interchangeable chat-partner voice). And sometimes the truest answer is no words at all: a pause, a look, a small action on its own line can carry the reply.`,
+    `15. When ${name} and ${player} are not in the same place — they parted, someone left, the scene split — your reply follows ${name} and ONLY ${name}: narrate what ${name} does, where ${name} goes, what ${name} feels and sends, like a scene cut to ${name}'s side of the world. ${name}'s side needn't be empty: Supporting-cast members who would plausibly be with ${name} may appear there — you may play them, and let them and ${name} carry their own threads forward. Never narrate ${player}'s side of the separation — not their trip home, their evening, or their phone lighting up; that is ${player}'s to write. ${name} reaches ${player} only through a channel that carries — a text on its own line as *${name}: her words here*, a call — and the reply ends on ${name}'s move, waiting for ${player}'s answer.`,
+    `16. When ${player}'s message carries attached photos, an "Attached photos" note below describes what ${name} sees in each. Treat them as real photos ${player} is showing or sending ${name} — react in character to what they show, weave what genuinely matters into the reply, and let ${name}'s disposition decide how much they land. Never inventory a photo back detail-by-detail, and never speak of an "image" or "attachment" — it is a photo ${name} is looking at.`,
     "",
     "Shaping each reply (how much to give, and how to land it):",
-    `- Resolve, then one move. First answer what ${name} just heard and saw; then make AT MOST ONE forward move — an action or gesture ${player} can react to, an offer, a disclosure, a shift in the scene — or a question, but only when ${name} genuinely wants that answer right now. Never stack moves; never answer-then-ask-then-act in one reply; vary how replies end so they don't all close the same way.${forwardMove}`,
+    // Absorbs the retired rule 8 (chat-agent-improvements slice 5): "respond directly to what
+    // ${name} just heard and saw before adding anything new" said exactly this bullet's first
+    // clause, one rule block earlier and without the "then what?" the bullet supplies.
+    `- Resolve, then one move. FIRST answer what ${name} just heard and saw — that comes before anything new enters the reply; then make AT MOST ONE forward move — an action or gesture ${player} can react to, an offer, a disclosure, a shift in the scene — or a question, but only when ${name} genuinely wants that answer right now. Never stack moves; never answer-then-ask-then-act in one reply; vary how replies end so they don't all close the same way.${forwardMove}`,
     `- Worked example, two endings: ${player} mentions they quit their job today — here a question IS the move: ${name} looks up, "You actually did it. What did they say when you told them?" — ${name} genuinely wants the answer, so the question earns its place. But when ${player} finally kisses ${name} after weeks of circling it, ending on "Was that okay?" is filler that kills the beat — the move is an action hook instead: ${name} pulls them back in without a word. Match the ending to the moment; never default to a question.`,
     // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 2 — the unconditional
     // three-paragraph baseline contradicted the aggressive_concise profile in rule 5; the length
@@ -1490,6 +1542,63 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
         displayName,
       )
     : "";
+  // The one-turn directives (chat-agent-improvements slice 4): gathered into ONE ordered
+  // "Right now" block by tier — binding truths, then the ceilings that bound the reply, then
+  // what the beat merely permits, then the optional grace note — instead of a dozen unranked
+  // paragraphs appended in the order their features happened to ship.
+  const turnNotes = buildTurnNotes([
+    // — binding: what is true this turn, and how to read the message at all.
+    { tier: "binding", text: input.narratorInput ? narratorInputNote(displayName, playerName ?? "the player") : "" },
+    { tier: "binding", text: input.notationNote?.trim() ?? "" },
+    { tier: "binding", text: buildAttachmentsSection(input.attachments, playerName ?? "the player") },
+    { tier: "binding", text: skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "" },
+    {
+      // The first-exchange scene directive (Fly screenshot, 2026-07-10): on a brand-new chat the
+      // Scene block is empty and `sceneChanged` can't fire (nothing to change FROM), so no rule
+      // directed scene establishment — the model got the brand-new-scene length license and spent
+      // it all on dialogue. One volatile line fills that gap; sceneChanged's own directive wins
+      // when a first-message movement minted a place.
+      tier: "binding",
+      text:
+        input.firstExchange && !input.sceneChanged
+          ? `First exchange of this conversation: establish the scene once — where you are, the time of day, and one or two concrete sensory details (sight plus one other sense), drawn from the scenario and what ${playerName ?? "the player"}'s message sets up. Let narration carry this opening (a paragraph or two around the dialogue, not talk alone); after this, don't re-establish what hasn't changed.`
+          : "",
+    },
+    // — gate: the ceilings and corrections that bound the reply.
+    { tier: "gate", text: sensoryFocus },
+    {
+      tier: "gate",
+      text:
+        input.sensoryAllowance !== undefined
+          ? chatSensoryAllowanceLine(
+              // A focused_description grant with an EMPTY focus block (nothing authored grounds
+              // the beat) would otherwise render no line at all — and rule 10's default-none
+              // then forbids sensory detail on the one turn that most earned it. Degrade to the
+              // close-range grant instead.
+              input.sensoryAllowance === "focused_description" && !sensoryFocus
+                ? "close_range_hook"
+                : input.sensoryAllowance,
+              displayName,
+              playerName ?? "the player",
+            )
+          : "",
+    },
+    { tier: "gate", text: input.gateNotes?.trim() ?? "" },
+    // Slice 9: last exchange's one-turn character-consistency corrective (absent/"" ⇒ no line).
+    { tier: "gate", text: buildSlipCorrectionLine(input.state?.slipNote) },
+    // — license: what the beat permits, never demands.
+    { tier: "license", text: input.cueInvite?.trim() ?? "" },
+    // Minor fence: the selfie license (a romance-lane affordance) never renders.
+    { tier: "license", text: minor ? "" : chatSelfieLine(input.selfie, displayName, playerName ?? "the player") },
+    // — flavor: the optional grace note. Already crowd-gated pre-burn (chatCallbackEligible).
+    {
+      tier: "flavor",
+      text: input.callback?.summary.trim()
+        ? chatCallbackLine(input.callback.summary, input.state?.regard ?? 0, displayName, playerName ?? "the player")
+        : "",
+    },
+  ]);
+
   const tailSections = [
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
@@ -1504,44 +1613,12 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
       : "",
     sceneSection,
     castSection,
-    // The first-exchange scene directive (Fly screenshot, 2026-07-10): on a brand-new chat the
-    // Scene block is empty and `sceneChanged` can't fire (nothing to change FROM), so no rule
-    // directed scene establishment — the model got the brand-new-scene length license and spent
-    // it all on dialogue. One volatile line fills that gap; sceneChanged's own directive wins
-    // when a first-message movement minted a place.
-    input.firstExchange && !input.sceneChanged
-      ? `First exchange of this conversation: establish the scene once — where you are, the time of day, and one or two concrete sensory details (sight plus one other sense), drawn from the scenario and what ${playerName ?? "the player"}'s message sets up. Let narration carry this opening (a paragraph or two around the dialogue, not talk alone); after this, don't re-establish what hasn't changed.`
-      : "",
-    skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "",
+    // State-derived overrides of the prefix's own blocks — data, not directives, so they
+    // stay above the "Right now" digest with the rest of the standing state.
     // Minor fence: no state-driven loosening block for a minor character.
     minor ? "" : buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
     buildTransientAppearanceSection(input, stableResolved, realizedBody),
-    sensoryFocus,
-    input.sensoryAllowance !== undefined
-      ? chatSensoryAllowanceLine(
-          // A focused_description grant with an EMPTY focus block (nothing authored grounds
-          // the beat) would otherwise render no line at all — and rule 11's default-none
-          // then forbids sensory detail on the one turn that most earned it. Degrade to the
-          // close-range grant instead.
-          input.sensoryAllowance === "focused_description" && !sensoryFocus
-            ? "close_range_hook"
-            : input.sensoryAllowance,
-          displayName,
-          playerName ?? "the player",
-        )
-      : "",
-    input.cueInvite?.trim() ?? "",
-    input.narratorInput ? narratorInputNote(displayName, playerName ?? "the player") : "",
-    input.notationNote?.trim() ?? "",
-    buildAttachmentsSection(input.attachments, playerName ?? "the player"),
-    input.gateNotes?.trim() ?? "",
-    input.callback?.summary.trim()
-      ? chatCallbackLine(input.callback.summary, input.state?.regard ?? 0, displayName, playerName ?? "the player")
-      : "",
-    // Minor fence: the selfie license (a romance-lane affordance) never renders.
-    minor ? "" : chatSelfieLine(input.selfie, displayName, playerName ?? "the player"),
-    // Slice 9: last exchange's one-turn character-consistency corrective (absent/"" ⇒ no line).
-    buildSlipCorrectionLine(input.state?.slipNote),
+    turnNotes,
     // Slice 7: the one-line voice re-anchor rides beside the mood pin, near generation.
     buildVoiceReanchorLine(profile.voiceAnchors),
     input.opening
@@ -1850,6 +1927,40 @@ export function buildEnsembleChatPromptParts(
         )
       : "";
 
+  // The same one-turn digest as the 1-on-1 lane (chat-agent-improvements slice 4) — the
+  // ensemble tail carries the group arms of the same notes, so it gets the same tiering.
+  const turnNotes = buildTurnNotes([
+    { tier: "binding", text: input.narratorInput ? narratorInputNote("each present character", player) : "" },
+    { tier: "binding", text: input.notationNote?.trim() ?? "" },
+    { tier: "binding", text: buildAttachmentsSection(input.attachments, player) },
+    { tier: "binding", text: skipNote ? `Time has passed in the story since the last exchange: ${skipNote}` : "" },
+    {
+      tier: "binding",
+      text:
+        input.firstExchange && !input.sceneChanged
+          ? `First exchange of this conversation: establish the scene once — where everyone is, the time of day, and one or two concrete sensory details — drawn from the scenario and what ${player}'s message sets up. After this, don't re-establish what hasn't changed.`
+          : "",
+    },
+    { tier: "gate", text: sensoryFocusSection },
+    // Minor fence: no selfie license when the addressed member is an authored minor.
+    {
+      tier: "license",
+      text:
+        extras.selfie &&
+        !members.some(
+          (m) => m.name.trim().toLowerCase() === extras.selfie?.memberName.trim().toLowerCase() && isMinorAge(m.profile.age),
+        )
+          ? chatSelfieLine(extras.selfie.kind, extras.selfie.memberName, player)
+          : "",
+    },
+    {
+      tier: "flavor",
+      text: extras.callback?.summary.trim()
+        ? ensembleCallbackLine(extras.callback.summary, extras.callback.regard, extras.callback.memberName, player)
+        : "",
+    },
+  ]);
+
   const tailSections = [
     priorSummary
       ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
@@ -1863,24 +1974,7 @@ export function buildEnsembleChatPromptParts(
     ...enactments,
     sceneSection,
     castSection,
-    input.firstExchange && !input.sceneChanged
-      ? `First exchange of this conversation: establish the scene once — where everyone is, the time of day, and one or two concrete sensory details — drawn from the scenario and what ${player}'s message sets up. After this, don't re-establish what hasn't changed.`
-      : "",
-    skipNote ? `Time has passed in the story since the last exchange: ${skipNote}` : "",
-    buildAttachmentsSection(input.attachments, player),
-    input.narratorInput ? narratorInputNote("each present character", player) : "",
-    input.notationNote?.trim() ?? "",
-    sensoryFocusSection,
-    extras.callback?.summary.trim()
-      ? ensembleCallbackLine(extras.callback.summary, extras.callback.regard, extras.callback.memberName, player)
-      : "",
-    // Minor fence: no selfie license when the addressed member is an authored minor.
-    extras.selfie &&
-    !members.some(
-      (m) => m.name.trim().toLowerCase() === extras.selfie?.memberName.trim().toLowerCase() && isMinorAge(m.profile.age),
-    )
-      ? chatSelfieLine(extras.selfie.kind, extras.selfie.memberName, player)
-      : "",
+    turnNotes,
     input.opening
       ? `Opening beat: ${player} has not spoken yet. Open the scene yourself — the present characters arrive in it, grounded in the scenario. A few lines, ending on a present moment that invites ${player} in. Do not narrate on ${player}'s behalf.`
       : buildResponseShapeLine(input),

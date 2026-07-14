@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   chatArchivistSchema,
+  chatCharacterNotesSchema,
+  chatContinuitySchema,
+  chatMemoryScribeSchema,
   chatMemoryTraceSchema,
+  chatPersonalNotesSchema,
   CHAT_ARCHIVIST_MAX_FACTS,
   CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
   CHAT_ARCHIVIST_MAX_QUERIES,
   CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS,
   degradedChatArchivist,
+  degradedChatPersonalNotes,
   emptyChatMemoryTrace,
+  mergeChatExtractions,
 } from "./chat-archivist";
 
 describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
@@ -109,6 +115,54 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
       traitShifts: Array.from({ length: CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS + 3 }, () => ({ trait: "social.guardedness", direction: "down" })),
     });
     expect(many.traitShifts).toHaveLength(CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS);
+  });
+});
+
+describe("the extraction legs (chat-agent-improvements slice 1b)", () => {
+  it("each leg's degraded parse equals the aggregate's, field for field", () => {
+    const whole = degradedChatArchivist();
+    const scribe = chatMemoryScribeSchema.parse({});
+    const continuity = chatContinuitySchema.parse({});
+    const character = chatCharacterNotesSchema.parse({});
+    // The legs are `pick`s of the aggregate, so the caps/defaults have ONE source.
+    expect(scribe).toEqual({ episodeSummary: whole.episodeSummary, facts: whole.facts, memoryQueries: whole.memoryQueries });
+    expect(continuity).toEqual({
+      scene: whole.scene,
+      outfit: whole.outfit,
+      attributeChanges: whole.attributeChanges,
+      presence: whole.presence,
+      cast: whole.cast,
+    });
+    expect(character).toEqual({
+      openLoops: whole.openLoops,
+      driveUpdates: whole.driveUpdates,
+      voiceExemplar: whole.voiceExemplar,
+      characterSlip: whole.characterSlip,
+      traitShifts: whole.traitShifts,
+    });
+  });
+
+  it("mergeChatExtractions reassembles the aggregate; an absent leg contributes empties, never nulls", () => {
+    const merged = mergeChatExtractions({
+      memory: chatMemoryScribeSchema.parse({ episodeSummary: "They talked." }),
+      continuity: null,
+      character: null,
+    });
+    expect(merged).toEqual({ ...degradedChatArchivist(), episodeSummary: "They talked." });
+    // Every-leg-null is still a complete, parseable aggregate (the folds never see undefined).
+    expect(mergeChatExtractions({ memory: null, continuity: null, character: null })).toEqual(degradedChatArchivist());
+  });
+
+  it("the personal pass is a pick of the same four fields (not a second copy of them)", () => {
+    expect(chatPersonalNotesSchema.parse({})).toEqual(degradedChatPersonalNotes());
+    expect(Object.keys(chatPersonalNotesSchema.shape).sort()).toEqual(
+      ["attributeChanges", "driveUpdates", "openLoops", "outfit"].sort(),
+    );
+    // Same caps as the aggregate, because they ARE the aggregate's fields.
+    const capped = chatPersonalNotesSchema.parse({
+      openLoops: ["a", "b", "c", "d", "e"],
+    });
+    expect(capped.openLoops).toHaveLength(CHAT_ARCHIVIST_MAX_OPEN_LOOPS);
   });
 });
 

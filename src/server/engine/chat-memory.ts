@@ -1,10 +1,17 @@
 import {
-  chatArchivistSchema,
+  chatCharacterNotesSchema,
+  chatContinuitySchema,
+  chatMemoryScribeSchema,
   chatPersonalNotesSchema,
   degradedChatArchivist,
   degradedChatPersonalNotes,
   diag,
+  mergeChatExtractions,
   type ChatArchivist,
+  type ChatCharacterNotes,
+  type ChatContinuity,
+  type ChatExtractionLegs,
+  type ChatMemoryScribe,
   type ChatPersonalNotes,
   type DiagnosticSink,
   type FactDraft,
@@ -27,6 +34,7 @@ import {
   retrieveEpisodesFused,
   retrieveFactsFused,
   type FactDraftInput,
+  type QueryEmbeddings,
 } from "../memory";
 import {
   CHAT_CALLBACK_CANDIDATE_LIMIT,
@@ -35,13 +43,19 @@ import {
   type ChatCallback,
 } from "./chat-callback";
 import {
-  CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS,
-  CHAT_ARCHIVIST_TIMEOUT_MS,
+  CHAT_CHARACTER_NOTES_MAX_OUTPUT_TOKENS,
+  CHAT_CONTINUITY_MAX_OUTPUT_TOKENS,
+  CHAT_EXTRACTOR_TIMEOUT_MS,
+  CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS,
   CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS,
   CHAT_PERSONAL_NOTES_TIMEOUT_MS,
 } from "./constants";
-import { buildChatArchivistPrompt, CHAT_ARCHIVIST_SYSTEM } from "./prompts/chat-archivist";
-import { buildChatPersonalNotesPrompt, CHAT_PERSONAL_NOTES_SYSTEM } from "./prompts/chat-personal-notes";
+import {
+  buildChatExtractorPrompt,
+  buildChatExtractorSystem,
+  type ChatExtractorContext,
+  type ChatExtractorLegId,
+} from "./prompts/chat-extractors";
 
 /**
  * Character-chat long-term memory (character-chat-primary.spec.md §2), the RAG half the
@@ -49,9 +63,13 @@ import { buildChatPersonalNotesPrompt, CHAT_PERSONAL_NOTES_SYSTEM } from "./prom
  *
  * - `retrieveChatMemory` — PRE-turn recall: cosine RAG over the participant's memory group
  *   (spec §1.3), keyed on last turn's `memoryQueries` + the player input.
- * - `runChatArchivist` — POST-turn extraction: one cheap structured call (the pulse recipe —
- *   reasoning off, latency-sorted routing, no repair, hard timeout) emitting an episode summary,
- *   durable facts, and next-turn queries. Runs in parallel with the reaction pulse.
+ * - `runChatExtraction` — POST-turn extraction: THREE cheap structured calls (the pulse recipe —
+ *   reasoning off, latency-sorted routing, no repair, hard timeout) run in parallel with each
+ *   other and with the reaction pulse — the memory scribe (episode + facts + next-turn queries),
+ *   the continuity tracker (scene/outfit/appearance/presence/cast), and the character tracker
+ *   (loops/drives/voice/slip/trait shifts). Composed from the field library
+ *   (`prompts/chat-extractors.ts`) and merged back into one aggregate; formerly a single
+ *   13-field `runChatArchivist` (chat-agent-improvements.plan.md).
  * - `writeChatMemory` — persists that extraction through the shared `appendEpisode` / `addFacts`
  *   memory API under the chat scope (`sourceTurnId = null`, the inner-note template).
  *
@@ -88,13 +106,19 @@ export async function retrieveChatMemory(input: {
    * tightens each member's leg as the active count grows. Absent ⇒ the defaults.
    */
   limit?: number;
+  /**
+   * The turn's shared query-embedding cache (chat-agent-improvements slice 3) — one embed
+   * batch serves the fact leg, the episode leg, EVERY ensemble member's legs, and the
+   * callback picker. Absent ⇒ each leg embeds its own (unchanged behavior).
+   */
+  embeddings?: QueryEmbeddings;
   sink?: DiagnosticSink;
 }): Promise<ChatMemoryHits> {
   const queries = [...input.queries, input.input];
   const scope = chatScope(input.groupId);
   const [ep, fa] = await Promise.allSettled([
-    retrieveEpisodesFused(scope, queries, input.limit, input.sink),
-    retrieveFactsFused(scope, queries, input.limit ?? FACT_RETRIEVAL_LIMIT, input.sink),
+    retrieveEpisodesFused(scope, queries, input.limit, input.sink, input.embeddings),
+    retrieveFactsFused(scope, queries, input.limit ?? FACT_RETRIEVAL_LIMIT, input.sink, input.embeddings),
   ]);
 
   if (ep.status === "rejected") {
@@ -144,6 +168,12 @@ export async function retrieveChatCallback(input: {
   milestones: readonly Milestone[];
   /** Refs already offered (the state's callback ring) — never repeated. */
   usedRefs: readonly string[];
+  /**
+   * The turn's shared query-embedding cache (chat-agent-improvements slice 3): the player's
+   * input is ALREADY embedded for the recall legs, so the callback picker reuses that vector
+   * instead of paying for a third embed of the same text. Absent ⇒ it embeds its own.
+   */
+  embeddings?: QueryEmbeddings;
   sink?: DiagnosticSink;
 }): Promise<ChatCallback | null> {
   try {
@@ -151,8 +181,9 @@ export async function retrieveChatCallback(input: {
     const latestTurn = await latestEpisodeNumber(scope);
     const maxTurn = latestTurn - CHAT_CALLBACK_MIN_AGE_TURNS;
     if (maxTurn < 1) return null;
-    const embedded = await embedText(input.input);
-    const candidates = await callbackEpisodeCandidates(scope, toVectorLiteral(embedded.vector), {
+    const cached = input.embeddings?.vectorFor(input.input);
+    const vector = cached ?? toVectorLiteral((await embedText(input.input)).vector);
+    const candidates = await callbackEpisodeCandidates(scope, vector, {
       maxTurn,
       excludeIds: input.usedRefs.filter((r) => r.startsWith("e:")).map((r) => r.slice(2)),
       limit: CHAT_CALLBACK_CANDIDATE_LIMIT,
@@ -164,64 +195,50 @@ export async function retrieveChatCallback(input: {
   }
 }
 
-export interface ChatArchivistInput {
-  characterName: string;
-  playerName: string;
-  exchange: { player: string; assistant: string };
-  /** The standing open-loops list (spec §6.2) — re-emitted in full so resolved loops fall off. */
-  openLoops?: readonly string[];
-  /** The standing drives (character-drives.plan.md) — the driveUpdates match targets. */
-  drives?: readonly { want: string; secrecy: string; revealed: boolean }[];
-  /** The roster with live presence (multi-character-chat.plan.md) — arms the presence field. */
-  roster?: readonly { name: string; presence: "present" | "away" }[];
-  /** The established supporting cast (chat-supporting-cast.plan.md) — field 10's known-people list. */
-  supportingCast?: readonly { name: string; relation: string }[];
-  /** The character's developable traits + current band (character-fidelity slice 10) — field 13's id list. */
-  developableTraits?: readonly { id: string; label: string; band: string }[];
-  /** Compact voice reference (character-fidelity slices 7 + 9) — arms the voiceExemplar + characterSlip reads. */
-  voiceReference?: {
-    petPhrases?: readonly string[];
-    cadence?: string;
-    neverSays?: readonly string[];
-    registerRule?: string;
-  };
+export interface ChatExtractionInput extends Omit<ChatExtractorContext, "personal"> {
   sink?: DiagnosticSink;
 }
 
 /**
- * Run the archivist-lite leg. Mirrors `runChatPulse`'s resilience recipe; returns `null`
- * on demo mode / timeout / parse failure so the caller writes no memory and carries no
- * stale queries. Uses the cheap AGENT model, never the narrator model.
+ * Per-leg degradation (chat-agent-improvements slice 1b). The folds need to tell "the
+ * model said nothing" from "we never heard back", and now they can do it PER LEG: a
+ * degraded character leg keeps the standing open loops instead of wiping them, a degraded
+ * scribe drops the stale memory queries. One leg failing costs only its own fields.
  */
-export async function runChatArchivist(
-  input: ChatArchivistInput,
-): Promise<{ value: ChatArchivist | null; degraded: boolean }> {
-  if (isDemoMode()) {
-    input.sink?.push(diag("info", "chat_archivist.degraded", "demo mode; skipping chat memory extraction"));
-    return { value: null, degraded: true };
-  }
+export interface ChatExtractionResult {
+  /** The merged aggregate every fold consumes — degraded legs contribute empty fields. */
+  value: ChatArchivist | null;
+  /** True when EVERY leg degraded (the old whole-archivist degrade). */
+  degraded: boolean;
+  legs: ChatExtractionLegs;
+}
 
+/**
+ * One extraction leg: the shared resilience recipe (cheap AGENT model, reasoning off,
+ * latency-sorted routing, no repair, hard timeout, degrade-to-null) applied to a composed
+ * sheet from the field library. Generic over the leg's picked schema.
+ */
+async function runExtractorLeg<T>(args: {
+  legId: ChatExtractorLegId;
+  ctx: ChatExtractorContext;
+  schema: Parameters<typeof generateChecked<T>>[0]["schema"];
+  fallback: () => T;
+  maxOutputTokens: number;
+  timeoutMs: number;
+  code: string;
+  sink?: DiagnosticSink;
+}): Promise<{ value: T | null; degraded: boolean }> {
   const controller = new AbortController();
-  const work = generateChecked<ChatArchivist>({
-    schema: chatArchivistSchema,
-    system: CHAT_ARCHIVIST_SYSTEM,
-    prompt: buildChatArchivistPrompt({
-      characterName: input.characterName,
-      playerName: input.playerName,
-      exchange: input.exchange,
-      openLoops: input.openLoops,
-      drives: input.drives,
-      roster: input.roster,
-      supportingCast: input.supportingCast,
-      developableTraits: input.developableTraits,
-      voiceReference: input.voiceReference,
-    }),
+  const work = generateChecked<T>({
+    schema: args.schema,
+    system: buildChatExtractorSystem(args.legId, args.ctx),
+    prompt: buildChatExtractorPrompt(args.legId, args.ctx),
     modelId: agentModelId(),
     temperature: 0,
-    maxOutputTokens: CHAT_ARCHIVIST_MAX_OUTPUT_TOKENS,
-    code: "chat_archivist.extract",
-    sink: input.sink,
-    fallback: degradedChatArchivist,
+    maxOutputTokens: args.maxOutputTokens,
+    code: `${args.code}.extract`,
+    sink: args.sink,
+    fallback: args.fallback,
     signal: controller.signal,
     disableReasoning: true,
     lowLatencyRouting: true,
@@ -229,14 +246,114 @@ export async function runChatArchivist(
     degradeSeverity: "warn",
   });
 
-  const { value, degraded } = await withGenerateTimeout(
-    work,
-    controller,
-    CHAT_ARCHIVIST_TIMEOUT_MS,
-    "chat_archivist.timeout",
-    input.sink,
-  );
+  const { value, degraded } = await withGenerateTimeout(work, controller, args.timeoutMs, `${args.code}.timeout`, args.sink);
   return { value: degraded ? null : value, degraded };
+}
+
+/**
+ * The post-turn extraction (chat-agent-improvements.plan.md slice 1b — formerly the single
+ * 13-field `runChatArchivist`): three focused legs over the same exchange, run in PARALLEL
+ * with each other AND with the reaction pulse, all inside the post-flush finalizer — so the
+ * split costs two extra small calls and NO perceived latency. Each leg carries 3–5
+ * assignments on a sheet composed from the field library (`prompts/chat-extractors.ts`)
+ * instead of thirteen on a hand-written monolith.
+ *
+ * Merged back into the one `ChatArchivist` aggregate (`mergeChatExtractions`), so every
+ * downstream fold in `finalizeChatState` is untouched by the split.
+ */
+export async function runChatExtraction(input: ChatExtractionInput): Promise<ChatExtractionResult> {
+  if (isDemoMode()) {
+    input.sink?.push(diag("info", "chat_archivist.degraded", "demo mode; skipping chat memory extraction"));
+    return { value: null, degraded: true, legs: { memory: true, continuity: true, character: true } };
+  }
+
+  const ctx: ChatExtractorContext = { ...input };
+  const empty = degradedChatArchivist();
+
+  const [memory, continuity, character] = await Promise.all([
+    runExtractorLeg<ChatMemoryScribe>({
+      legId: "memory",
+      ctx,
+      schema: chatMemoryScribeSchema,
+      fallback: () => ({ episodeSummary: empty.episodeSummary, facts: empty.facts, memoryQueries: empty.memoryQueries }),
+      maxOutputTokens: CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS,
+      timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
+      code: "chat_memory_scribe",
+      sink: input.sink,
+    }),
+    runExtractorLeg<ChatContinuity>({
+      legId: "continuity",
+      ctx,
+      schema: chatContinuitySchema,
+      fallback: () => ({
+        scene: empty.scene,
+        outfit: empty.outfit,
+        attributeChanges: empty.attributeChanges,
+        presence: empty.presence,
+        cast: empty.cast,
+      }),
+      maxOutputTokens: CHAT_CONTINUITY_MAX_OUTPUT_TOKENS,
+      timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
+      code: "chat_continuity",
+      sink: input.sink,
+    }),
+    runExtractorLeg<ChatCharacterNotes>({
+      legId: "character",
+      ctx,
+      schema: chatCharacterNotesSchema,
+      fallback: () => ({
+        openLoops: empty.openLoops,
+        driveUpdates: empty.driveUpdates,
+        voiceExemplar: empty.voiceExemplar,
+        characterSlip: empty.characterSlip,
+        traitShifts: empty.traitShifts,
+      }),
+      maxOutputTokens: CHAT_CHARACTER_NOTES_MAX_OUTPUT_TOKENS,
+      timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
+      code: "chat_character_notes",
+      sink: input.sink,
+    }),
+  ]);
+
+  const legs = { memory: memory.degraded, continuity: continuity.degraded, character: character.degraded };
+  const allDegraded = legs.memory && legs.continuity && legs.character;
+  return {
+    // Every leg down ⇒ null (the pre-split contract: no memory written, nothing folded).
+    value: allDegraded
+      ? null
+      : mergeChatExtractions({ memory: memory.value, continuity: continuity.value, character: character.value }),
+    degraded: allDegraded,
+    legs,
+  };
+}
+
+/**
+ * The memory scribe ALONE, merged into the aggregate `writeChatMemory` consumes. The
+ * edited-reply re-extraction (`reextractEditedReply`) re-files an edited exchange's
+ * long-term memory and nothing else — no state row is rewritten, no scene/outfit/loops are
+ * folded — so it pays for exactly the one leg whose output it uses. (Before the split it
+ * re-ran all thirteen fields and discarded eleven of them.)
+ */
+export async function runChatMemoryScribe(input: ChatExtractionInput): Promise<{ value: ChatArchivist | null; degraded: boolean }> {
+  if (isDemoMode()) {
+    input.sink?.push(diag("info", "chat_archivist.degraded", "demo mode; skipping chat memory extraction"));
+    return { value: null, degraded: true };
+  }
+  const empty = degradedChatArchivist();
+  const { value, degraded } = await runExtractorLeg<ChatMemoryScribe>({
+    legId: "memory",
+    ctx: { ...input },
+    schema: chatMemoryScribeSchema,
+    fallback: () => ({ episodeSummary: empty.episodeSummary, facts: empty.facts, memoryQueries: empty.memoryQueries }),
+    maxOutputTokens: CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS,
+    timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
+    code: "chat_memory_scribe",
+    sink: input.sink,
+  });
+  return {
+    value: value ? mergeChatExtractions({ memory: value, continuity: null, character: null }) : null,
+    degraded,
+  };
 }
 
 export interface ChatPersonalNotesInput {
@@ -252,9 +369,10 @@ export interface ChatPersonalNotesInput {
 
 /**
  * Run one ensemble member's personal pass (multi-character-chat.followups.md ruling 10):
- * the four per-character fields the shared archivist covers only for the primary. Same
- * resilience recipe as `runChatArchivist`; `null` on demo / timeout / parse failure so
- * the member keeps their prior loops/outfit/drives. Cheap AGENT model.
+ * the four per-character fields the shared legs cover only for the primary — composed from
+ * the SAME field library (slice 1a), so its instructions are no longer a second copy of the
+ * shared ones. `null` on demo / timeout / parse failure, so the member keeps their prior
+ * loops/outfit/drives. Cheap AGENT model.
  */
 export async function runChatPersonalNotes(
   input: ChatPersonalNotesInput,
@@ -264,38 +382,23 @@ export async function runChatPersonalNotes(
     return { value: null, degraded: true };
   }
 
-  const controller = new AbortController();
-  const work = generateChecked<ChatPersonalNotes>({
-    schema: chatPersonalNotesSchema,
-    system: CHAT_PERSONAL_NOTES_SYSTEM,
-    prompt: buildChatPersonalNotesPrompt({
+  return runExtractorLeg<ChatPersonalNotes>({
+    legId: "personal",
+    ctx: {
       characterName: input.characterName,
       playerName: input.playerName,
       exchange: input.exchange,
       openLoops: input.openLoops,
       drives: input.drives,
-    }),
-    modelId: agentModelId(),
-    temperature: 0,
-    maxOutputTokens: CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS,
-    code: "chat_personal_notes.extract",
-    sink: input.sink,
+      personal: true,
+    },
+    schema: chatPersonalNotesSchema,
     fallback: degradedChatPersonalNotes,
-    signal: controller.signal,
-    disableReasoning: true,
-    lowLatencyRouting: true,
-    repair: false,
-    degradeSeverity: "warn",
+    maxOutputTokens: CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS,
+    timeoutMs: CHAT_PERSONAL_NOTES_TIMEOUT_MS,
+    code: "chat_personal_notes",
+    sink: input.sink,
   });
-
-  const { value, degraded } = await withGenerateTimeout(
-    work,
-    controller,
-    CHAT_PERSONAL_NOTES_TIMEOUT_MS,
-    "chat_personal_notes.timeout",
-    input.sink,
-  );
-  return { value: degraded ? null : value, degraded };
 }
 
 /**

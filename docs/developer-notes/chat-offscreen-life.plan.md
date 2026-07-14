@@ -47,6 +47,15 @@ member's rhythm, drives, whereabouts, the supporting cast, the relationship
 matrix pairs, and open plans (fenced, so it builds on canon instead of
 contradicting it), propose **1–3 concrete off-screen developments** total:
 
+_Build note (updated 2026-07-14, after [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md)
+shipped): the meanwhile pass is **another leg composed from the extraction field
+library** (`server/engine/prompts/chat-extractors.ts`) — a `meanwhile` leg whose
+key list reuses the existing `facts` / `driveUpdates` / `cast` modules (plus the
+plan-status module once plans & promises lands) with a different role sentence and
+its own context blocks. The folds it needs (`addFacts`, `applyDriveUpdates`,
+`mergeSupportingCast`) already exist and are already shared. Do NOT hand-write a
+fourth extractor prompt._
+
 - a member's life beat consistent with her rhythm ("closed the café alone
   Tuesday; the espresso machine died");
 - a **drive progress notch** ("heard back about the commission");

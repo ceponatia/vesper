@@ -107,7 +107,7 @@ import {
   scaleRegardDelta,
   type ChatFeelingState,
 } from "./chat-feeling";
-import { runChatArchivist, writeChatMemory } from "./chat-memory";
+import { runChatExtraction, writeChatMemory } from "./chat-memory";
 import { enqueueChatLookImage } from "./chat-reference-enqueue";
 import { appendSelfieEntry, selfieHistorySchema, type SelfieEntry } from "./chat-selfie";
 import { appendVoiceExemplar, voiceExemplarsSchema, type VoiceExemplar } from "./chat-voice";
@@ -1334,6 +1334,13 @@ export async function finalizeChatState(input: {
   driftedState: ChatState;
   now: Date;
   exchange: { player: string; assistant: string };
+  /**
+   * The rolling summary as it stood for this exchange (chat-agent-improvements open
+   * question D): the memory scribe reads its durable ledger so a pronoun-heavy beat files
+   * a fact naming the person instead of a dangling referent. Scribe-only — the other legs
+   * judge the exchange itself. Absent on an early chat ⇒ no block.
+   */
+  priorSummary?: string;
   /** What RAG retrieved for THIS turn (from the route's pre-turn recall), for the debug trace. */
   retrieved?: { facts: string[]; episodes: string[]; detail?: RetrievedMemoryDetail[] };
   /**
@@ -1394,6 +1401,9 @@ export async function finalizeChatState(input: {
         }
       : undefined;
 
+  // The post-turn fan-out: the reaction pulse ‖ the three extraction legs (the memory
+  // scribe, the continuity tracker, the character tracker — chat-agent-improvements slice
+  // 1b), all in flight together after the reply has already flushed.
   const [pulse, archivist] = await Promise.all([
     input.skipPulse
       ? Promise.resolve({ state: input.driftedState, degraded: false })
@@ -1407,7 +1417,7 @@ export async function finalizeChatState(input: {
           scope: input.pulseScope,
           sink: input.sink,
         }),
-    runChatArchivist({
+    runChatExtraction({
       characterName: input.characterName,
       playerName: input.playerName,
       exchange: input.exchange,
@@ -1417,6 +1427,9 @@ export async function finalizeChatState(input: {
       supportingCast: input.scenario.supportingCast.map((m) => ({ name: m.name, relation: m.relation })),
       developableTraits,
       voiceReference,
+      // The recap's ledger grounds the scribe's facts in NAMES (chat-agent-improvements
+      // open question D — a pronoun-heavy beat used to file a dangling referent).
+      priorSummary: input.priorSummary,
       sink: input.sink,
     }),
   ]);
@@ -1482,9 +1495,12 @@ export async function finalizeChatState(input: {
   const voiceExemplars = archivist.value
     ? appendVoiceExemplar(input.driftedState.voiceExemplars, archivist.value.voiceExemplar, input.scenario.clockMinutes)
     : input.driftedState.voiceExemplars;
-  // Open loops are full-list-each-time (spec §6.2) — but a degraded archivist emits an
-  // empty list that must NOT wipe the standing loops; keep the prior list on degrade.
-  const openLoops = archivist.degraded ? input.driftedState.openLoops : (archivist.value?.openLoops ?? input.driftedState.openLoops);
+  // Open loops are full-list-each-time (spec §6.2) — but a degraded leg emits an empty
+  // list that must NOT wipe the standing loops; keep the prior list on degrade. Keyed on
+  // the CHARACTER leg specifically (slice 1b): a failed scribe or continuity leg has
+  // nothing to say about loops, and must not cost them.
+  const openLoops =
+    archivist.legs.character || !archivist.value ? input.driftedState.openLoops : archivist.value.openLoops;
 
   // Scene memory: reconcile the archivist's `scene` proposal onto the pre-turn memory (the
   // deterministic movement switch already applied to `scenario.sceneMemory` before the
@@ -1626,7 +1642,10 @@ export async function finalizeChatState(input: {
     memoryQueries: archivist.value?.memoryQueries ?? [],
     attributeChanges: (archivist.value?.attributeChanges ?? []).map((c) => `${c.attributeId}=${String(c.value)}`),
     retrievedDetail: input.retrieved?.detail ?? [],
-    degraded: archivist.degraded,
+    // The MEMORY trace's degraded flag tracks the leg that owns memory (the scribe): its
+    // other fields — summary, facts, queries — all come from that leg, so a failed
+    // continuity/character leg must not flag the memory read as degraded (slice 1b).
+    degraded: archivist.legs.memory,
     // Character-consistency corrective (slice 9): this exchange's slip note (or "") rides the
     // trace so NEXT turn's prompt build renders a one-turn corrective tail; rolls back safely.
     characterSlip: archivist.value?.characterSlip ?? "",

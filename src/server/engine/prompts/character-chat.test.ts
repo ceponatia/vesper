@@ -474,7 +474,10 @@ describe("buildCharacterChatSystemPrompt — player-input perception (player-inp
 
   it("routes rule 2 and the respond-first rule through what the character heard and saw", () => {
     expect(prompt).toMatch(/react to what Mara could actually hear and see in it/);
-    expect(prompt).toContain("Respond directly to what Mara just heard and saw");
+    // The respond-first teaching lives in the Shaping block's "Resolve, then one move"
+    // bullet, which absorbed the duplicate rule 8 (chat-agent-improvements slice 5).
+    expect(prompt).toContain("FIRST answer what Mara just heard and saw");
+    expect(prompt).not.toContain("Respond directly to what Mara just heard and saw");
     // The old everything-is-said-at-you framing is gone.
     expect(prompt).not.toContain("said or did to Mara — react to it");
   });
@@ -1594,8 +1597,59 @@ describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
   });
 });
 
+describe("the one-turn note digest (chat-agent-improvements.plan.md slice 4)", () => {
+  // A deliberately crowded turn: a binding truth (photos), a gate (the allowance ceiling),
+  // a license (the selfie), and the flavor note (a callback) all armed at once.
+  const crowded = buildCharacterChatPromptParts({
+    name: "Mara",
+    profile: profile(),
+    player: { name: "Theo" },
+    state: { meters: {}, regard: 60, conditions: [] },
+    attachments: { descriptions: ["A harbor at dusk."] },
+    sensoryAllowance: "visual_accent",
+    selfie: "offer",
+    callback: { summary: "the night they watched the storm roll in" },
+  });
+
+  it("gathers the one-turn directives under one heading that states their authority", () => {
+    expect(crowded.tail).toContain("Right now (directives for THIS turn only, most binding first");
+    // Exactly one digest heading, however many notes fire.
+    expect(crowded.tail.match(/Right now \(directives/g)).toHaveLength(1);
+  });
+
+  it("orders them binding → gate → license → flavor", () => {
+    const at = (needle: string): number => {
+      const index = crowded.tail.indexOf(needle);
+      expect(index, `missing tail note: ${needle}`).toBeGreaterThan(-1);
+      return index;
+    };
+    const binding = at("Attached photos");
+    const gate = at("Sensory allowance");
+    const license = at("photo");
+    const flavor = at("watched the storm roll in");
+    expect(binding).toBeLessThan(gate);
+    expect(gate).toBeLessThan(flavor);
+    expect(license).toBeLessThan(flavor); // the grace note lands last, after every directive
+  });
+
+  it("renders no heading at all on a turn with no one-turn notes", () => {
+    const quiet = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: { meters: {}, regard: 0, conditions: [] },
+    });
+    expect(quiet.tail).not.toContain("Right now (directives");
+  });
+
+  it("keeps the notes in the volatile tail — the cached prefix never carries a one-turn note", () => {
+    expect(crowded.prefix).not.toContain("Right now (directives");
+    expect(crowded.prefix).not.toContain("Attached photos (Theo shared");
+  });
+});
+
 describe("attached photos (chat-image-input.plan.md)", () => {
-  it("renders the fenced attachments block and the static rule 17", () => {
+  it("renders the fenced attachments block and the static rule 16", () => {
     const parts = buildCharacterChatPromptParts({
       name: "Mara",
       profile: profile(),
@@ -1607,8 +1661,9 @@ describe("attached photos (chat-image-input.plan.md)", () => {
     expect(parts.tail).toContain("2. A harbor at dusk.");
     // The block is fenced — the descriptions derive from a player-supplied image.
     expect(parts.tail).toMatch(/vsp-untrusted-[0-9a-f]+:attached photos/);
-    // The handling rule is static prefix law (owner ruling).
-    expect(parts.prefix).toContain("17. When Theo's message carries attached photos");
+    // The handling rule is static prefix law (owner ruling). Renumbered 17 → 16 when the
+    // duplicate rule 8 folded into the Shaping block (chat-agent-improvements slice 5).
+    expect(parts.prefix).toContain("16. When Theo's message carries attached photos");
     expect(parts.prefix).toContain("never speak of an \"image\" or \"attachment\"");
   });
 

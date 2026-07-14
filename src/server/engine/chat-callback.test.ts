@@ -22,6 +22,9 @@ const gate = (overrides: Partial<ChatCallbackGateInput> = {}): ChatCallbackGateI
   intimateBeat: false,
   hasSensoryFocus: false,
   lastReplyEndsInQuestion: false,
+  hasAttachments: false,
+  narratorInput: false,
+  photoBeat: false,
   ...overrides,
 });
 
@@ -46,6 +49,15 @@ describe("chatCallbackEligible", () => {
     expect(chatCallbackEligible(gate({ intimateBeat: true }))).toBe(false);
     expect(chatCallbackEligible(gate({ hasSensoryFocus: true }))).toBe(false);
     expect(chatCallbackEligible(gate({ lastReplyEndsInQuestion: true }))).toBe(false);
+  });
+
+  // chat-agent-improvements slice 4: the tail's flavor slot is single-occupancy, and the
+  // callback is what yields — decided here, pre-burn, so a deferred callback is never spent
+  // without reaching the page.
+  it("yields on a crowded turn: attached photos, storyteller narration, or an armed photo beat", () => {
+    expect(chatCallbackEligible(gate({ hasAttachments: true }))).toBe(false);
+    expect(chatCallbackEligible(gate({ narratorInput: true }))).toBe(false);
+    expect(chatCallbackEligible(gate({ photoBeat: true }))).toBe(false);
   });
 
   it("enforces the cadence gap on the chat clock", () => {

@@ -32,10 +32,16 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 
 ## Diagnostics
 
-`chat_state.pulse` / `.degraded` / `.timeout` · `chat_archivist.extract` / `.degraded` /
-`.timeout` · `chat_memory.episodes_failed` / `.facts_failed` ·
-`memory.facts.embed_failed` / `memory.episodes.embed_failed` (a fused-retrieval
-query-embedding failure — facts degrade to pinned-only, episodes to `[]`) ·
+`chat_state.pulse` / `.degraded` / `.timeout` · the three extraction legs
+(chat-agent-improvements slice 1b), each with its own `.extract` / `.timeout` /
+`.parse_failed`: `chat_memory_scribe.*` · `chat_continuity.*` · `chat_character_notes.*`
+(one degraded leg costs only its own fields — see [pipeline.md](pipeline.md) §Post-turn
+fan-out; `chat_archivist.degraded` still marks the demo-mode skip of all three) ·
+`chat_personal_notes.*` (the ensemble's per-member pass) ·
+`chat_memory.episodes_failed` / `.facts_failed` ·
+`memory.queries.embed_failed` (the turn's shared query-embed batch — every leg then takes
+its own degraded path) · `memory.facts.embed_failed` / `memory.episodes.embed_failed` (a
+per-leg fused-retrieval embed failure — facts degrade to pinned-only, episodes to `[]`) ·
 `chat_memory.callback.failed` (a degraded memory-callback retrieval — the turn just
 carries no callback line) ·
 `chat_vision.describe_failed` (a degraded photo read — the character sees "a photo

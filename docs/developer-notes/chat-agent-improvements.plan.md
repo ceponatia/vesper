@@ -1,11 +1,20 @@
 # Chat agent improvements — a tune-up for the helpers behind every reply
 
-Status: **draft** (written 2026-07-14 from an agent-architecture review of the
-character-chat lane, on owner request. Deliberately written in plain language —
-each slice below stands alone and can be promoted, reordered, or dropped
-independently. Review scope: the chat lane's tool + narrative agents, fit with
-the queued roadmap items, whether any agent should split into smaller parallel
-specialists, latency, and instruction-text cleanup.)
+Status: **shipped — 2026-07-14** (all five slices, in one pass. Written the same
+day from an agent-architecture review of the character-chat lane, on owner
+request; built on the owner's rulings below. Deliberately written in plain
+language — the recommendations are preserved as written, with a §Completion
+section at the end recording what actually shipped, the two places the build
+deviated from the plan, and what is left.)
+
+**Owner rulings (2026-07-14, before the build):**
+
+- **Stage 1b — split live now**, not behind a flag: the three specialists are
+  the live extraction path.
+- **Tail digest — order AND defer**: crowded turns drop the low-priority notes,
+  not just reorder them. (The build found the deferral has to happen *pre-burn*,
+  in the pipeline gate rather than the prompt builder — see §Completion.)
+- **Deploy + verify on Fly** after the gates.
 
 ## The cast of helpers today (a plain-language map)
 
@@ -247,39 +256,128 @@ keep it at 2 helper calls. Player-visible wait: unchanged by the split
 (parallel, after the reply), slightly **better** from slices 2–3 (shorter lock
 window, less pre-reply work).
 
-## Open questions
+## Open questions — all resolved at build time
 
-- **A. Split now or library-first?** Lean: Stage 1a unconditionally, 1b only
-  after a quality comparison on real conversations (the retrieval/narration
-  eval harnesses can carry it; live judged runs are owner-gated spend as
-  usual).
-- **B. Should the continuity tracker be skippable?** A regex gate ("no
-  movement/clothing/people words this exchange → skip the call") would save
-  most of its runs, but silent misses are the cost (an outfit change worded
-  unusually). Lean: always-run with a small sheet; revisit with data.
-- **C. If plans & promises ships before Stage 1a**, its field lands the old
-  way — acceptable, but then Stage 1a should absorb it in the same change.
-- **D. Should the memory scribe get more context?** Today the Archivist sees
-  only the latest exchange, so a pronoun-heavy beat ("she actually said yes!")
-  can file a vague fact. Feeding it the recap's "Established:" bullets would
-  ground names at a small token cost. Lean: yes, scribe-only, once 1b exists.
+- **A. Split now or library-first?** **Ruled (owner): split live now.** Stage 1a
+  and 1b both shipped; the three specialists are the live path, no flag.
+- **B. Should the continuity tracker be skippable?** **Ruled: no** (the plan's
+  lean held). It always runs on a small sheet — a regex gate would save calls at
+  the cost of silent misses (an outfit change worded unusually), and a missed
+  continuity read corrupts state rather than merely omitting a nicety. Revisit
+  only with data.
+- **C. If plans & promises ships before Stage 1a** — moot: 1a shipped first, so
+  the `plans` field lands as a field module (one file, slotted into the character
+  leg).
+- **D. Should the memory scribe get more context?** **Ruled: yes, scribe-only.**
+  It now receives the rolling summary's `Established:` ledger, fenced and
+  explicitly marked "never extract facts from this — use it only to resolve who a
+  pronoun refers to", so a pronoun-heavy beat files a NAMED fact.
 
-## Where things live (for the implementing agent)
+## Completion (2026-07-14)
+
+All five slices shipped in one pass. Gates green (lint · cycles · typecheck ·
+2 397 pure tests · 257 integration tests · jscpd), deployed to Fly and verified
+against a live exchange.
+
+**What shipped**
+
+- **Slice 1a — the field library** (`server/engine/prompts/chat-extractors.ts`).
+  One `ExtractorField` module per field owns its instruction, its context block,
+  the rules it implies, whether it is *armed* this exchange, and its empty value
+  for examples. A **leg** is an ordered list of field keys; its whole system
+  prompt is assembled. Consequences: unarmed fields vanish from the sheet (a
+  1-on-1 never reads the ensemble `presence` instructions; a drive-less character
+  never reads `driveUpdates`), the hand-maintained "thirteen fields" count is
+  gone, and every worked example is RENDERED from the leg's own field list — so
+  examples can no longer drift out of sync with it. Each leg also closes with a
+  **generated empty-output example**, the single most common reply, which the old
+  sheets never showed for most fields. The two hand-written prompt files
+  (`chat-archivist.ts`, `chat-personal-notes.ts`) are deleted.
+- **Slice 1b — three parallel specialists.** `runChatExtraction` runs the
+  **memory scribe** (episode/facts/queries), the **continuity tracker**
+  (scene/outfit/appearance/presence/cast), and the **character tracker**
+  (loops/drives/voice/slip/trait-shifts) concurrently, in the same post-flush
+  slot the single archivist held — so the split costs two extra small calls and
+  **no perceived latency**. They merge back into the one `ChatArchivist`
+  aggregate (`mergeChatExtractions`), leaving every fold untouched. The per-leg
+  schemas are `pick`s of the aggregate, so caps/defaults keep one source; a test
+  asserts the three legs **partition** it exactly (no field lost, none twice).
+  **Per-leg degradation** is the payoff: a degraded character leg keeps the
+  standing open loops, a degraded scribe drops stale queries and flags the memory
+  trace, and each healthy leg still lands (`chat-extraction-legs.int.test.ts`).
+- **Slice 2 — concurrent ensemble settle.** The per-member pulse + note-taker +
+  save now run in one `Promise.all` inside the exchange lock instead of serially,
+  shortening the lock window a fast typer collides with. Per-member error
+  isolation preserved.
+- **Slice 3 — one embed per turn** (`server/memory/query-embeddings.ts`). The
+  fact leg, the episode leg, every ensemble member's legs, and the callback picker
+  now share ONE embedding batch instead of re-embedding the same texts 2–3×. This
+  is the only change on the **pre-reply** path. The session lane's
+  `preTurnRetrieve` shares it too (it carried the identical duplicate).
+- **Slice 4 — the "Right now" digest.** The tail's dozen one-turn notes render
+  under one heading that states their authority, ordered **binding → gate →
+  license → flavor**. Both lanes (1-on-1 + ensemble).
+- **Slice 5 — rulebook cleanup.** Rule 8 ("respond directly to what she just
+  heard and saw") folded into the Shaping block's "Resolve, then one move" bullet
+  that already said it; rules 9–17 renumbered to 8–16, with every cross-reference
+  in code and docs updated. The retired-wording rollback comments **stay** (still
+  gated on the enactment eval).
+
+**Deviations from the plan (2)**
+
+1. **Deferral moved from the prompt builder to the pipeline gate.** The plan put
+   the soft cap in the tail composer. That is unsafe: an offered memory callback
+   **burns its anti-repeat ring entry** the moment it is chosen, so a callback
+   dropped at render time would be spent without ever reaching the page, and that
+   episode could never be offered again. Deferral therefore lives in
+   `chatCallbackEligible` — pure, pre-burn, before any embedding cost — which
+   gained the crowded-turn arms the plan wanted (attached photos, storyteller
+   narration, an armed photo beat). The builder now only ORDERS; it never drops.
+   The deferrable set is exactly the callback and the unprompted selfie offer,
+   both pipeline-armed, so nothing else needed a cap.
+2. **The edited-reply re-extraction got cheaper, unplanned.** `reextractEditedReply`
+   re-files long-term memory and rewrites no state row, so it now runs the
+   **memory scribe alone** (`runChatMemoryScribe`) — before the split it paid for
+   all thirteen fields and discarded eleven.
+
+**Cost, honestly.** An ordinary 1-on-1 exchange went from 1 streamed narrator call
++ 2 small helper calls + 2–3 duplicate embed batches → 1 streamed call + **4**
+small helper calls (pulse + three legs) + **1** embed batch. Player-visible wait
+is unchanged by the split (parallel, post-reply) and slightly better from slices
+2–3 (shorter lock window, less pre-reply work). Per-leg token caps (500/400/350)
+are tighter than the old single 700, so total extraction tokens rise well under
+3×.
+
+**Left / follow-ups**
+
+- **The quality claim is unmeasured.** The split's premise — that 4–5 assignments
+  per sheet beats thirteen on the rare fields (a haircut, a trait shift, a new
+  cast member) — is a design argument, not a measurement. The comparison rides
+  the owner-gated live eval spend ([deferred.plan.md](deferred.plan.md) §Owner-gated
+  live eval runs); the harnesses can carry it whenever that budget opens.
+- **Session-lane agents are untouched.** They remain hand-written
+  (`prompts/agents.ts`). The field library is the pattern to reach for when one of
+  them next grows a field — noted in `prompts.md` §Agent prompts, not scheduled.
+
+## Where things live (as built)
 
 | Concern | File |
 | --- | --- |
-| Archivist prompt (the 13 fields) | `src/server/engine/prompts/chat-archivist.ts` |
-| Personal note-taker prompt (the copy-paste) | `src/server/engine/prompts/chat-personal-notes.ts` |
-| Archivist/pulse run + parallel fan-out | `src/server/engine/chat-memory.ts`, `src/server/engine/chat-state.ts` (`finalizeChatState`) |
-| Sequential group settle loop | `src/server/engine/chat-pipeline.ts` (~line 1247, `for (const member of others)`) |
-| Duplicate fingerprinting | `src/server/memory/facts.ts` (`retrieveFactsFused`) + `episodes.ts` (`retrieveEpisodesFused`) + `chat-memory.ts` (`retrieveChatMemory`, `retrieveChatCallback`) |
-| The volatile-tail pile | `src/server/engine/prompts/character-chat.ts` (`buildCharacterChatPromptParts`, `tailSections`) |
-| Rulebook overlaps + rollback comments | `src/server/engine/prompts/character-chat.ts` (`CHAT_RULES`) |
-| Archivist output shape (defaults) | `src/contracts/turns/chat-archivist.ts` |
+| The extraction **field library** + the four composed legs | `src/server/engine/prompts/chat-extractors.ts` |
+| Per-leg schemas (`pick`s of the aggregate) + `mergeChatExtractions` + `ChatExtractionLegs` | `src/contracts/turns/chat-archivist.ts` |
+| The three-leg run + the scribe-only re-extract | `src/server/engine/chat-memory.ts` (`runChatExtraction`, `runChatMemoryScribe`, `runChatPersonalNotes`) |
+| Per-leg fold semantics | `src/server/engine/chat-state.ts` (`finalizeChatState`) |
+| Concurrent ensemble settle | `src/server/engine/chat-pipeline.ts` (the `Promise.all` over `others`) |
+| One embed per turn | `src/server/memory/query-embeddings.ts` (+ the optional 5th arg on both fused retrievers) |
+| The "Right now" digest | `src/server/engine/prompts/character-chat.ts` (`buildTurnNotes`, both lanes) |
+| Pre-burn crowded-turn deferral | `src/server/engine/chat-callback.ts` (`chatCallbackEligible`) |
+| Per-leg timeouts + token caps | `src/server/engine/constants.ts` |
 
-## Docs to update when implementing
+## Docs updated
 
-`character-chat/pipeline.md` (fan-out shape, settle parallelism),
-`prompts.md` (field library, tail digest), `character-chat/state.md` (if fold
-sites move), `testing.md` (snapshot-test layout for composed prompts), and the
-two queued plans' cross-references.
+`character-chat/pipeline.md` (three-leg fan-out, per-leg degradation, the shared
+embed, concurrent settle, §The one-turn notes), `prompts.md` (§The chat extraction
+field library, the retiered tail, rule renumbering), `memory.md` (§Fused retrieval
+— one embed per turn), `character-chat/README.md` + `character-chat/api.md` (new
+files + per-leg diagnostic codes), `character-chat/images.md` +
+`character-chat/supporting-cast.md` (rule renumbering).

@@ -6,10 +6,16 @@ import { chatSceneProposalSchema } from "./chat-scene-memory";
 import { chatCastProposalSchema } from "./chat-supporting-cast";
 
 /**
- * The character-chat archivist-lite (character-chat-primary.spec.md §2): one small
- * structured agent call after a chat reply settles, run in PARALLEL with the reaction
- * pulse (D2). Where the pulse tracks disposition (playerAct + mindNote), the archivist
- * condenses the exchange into long-term memory — the RAG half chat previously lacked:
+ * The character-chat extraction contract. Historically ONE "archivist-lite" agent call
+ * (character-chat-primary.spec.md §2) emitting every field below; since
+ * chat-agent-improvements.plan.md (slice 1b) the same shape is produced by THREE focused
+ * legs run in parallel in the same post-flush slot — the memory scribe, the continuity
+ * tracker, and the character tracker (`prompts/chat-extractors.ts`) — merged back into
+ * this one aggregate by `mergeChatExtractions` so every downstream fold is unchanged.
+ * The aggregate stays the contract; the legs are a prompt-side composition detail.
+ *
+ * Where the pulse tracks disposition (playerAct + mindNote), the extraction condenses the
+ * exchange into long-term memory — the RAG half chat previously lacked:
  *
  * - "episodeSummary": a 1–3 sentence past-tense summary of what just happened, embedded
  *   and recalled by similarity across the summary horizon (mirrors the session archivist).
@@ -212,57 +218,99 @@ export function degradedChatArchivist(): ChatArchivist {
 }
 
 /**
- * The per-member personal pass (multi-character-chat.followups.md ruling 10): in an
- * ensemble, the shared archivist keeps the scene-level reads (episode, facts, queries,
- * scene, presence) while each present member gets this small focused extraction — the
- * four PERSONAL fields folded into their own state row. Field shapes are the archivist's
- * exactly, so the folds are shared. The classic 1-on-1 never runs it (the combined call
- * already covers the primary).
+ * The extraction LEGS (chat-agent-improvements.plan.md slice 1b). One overloaded
+ * 13-field extractor became three focused ones, run in parallel in the same post-flush
+ * slot — so perceived latency is unchanged while each leg holds 3–5 assignments instead
+ * of thirteen. Each leg's shape is a `pick` of the aggregate above, so the field
+ * definitions, caps, and degraded defaults have exactly ONE source and every fold in
+ * `finalizeChatState` keeps consuming the merged aggregate.
+ *
+ * - **memory scribe** — what happened + what to remember + what to look up next turn.
+ * - **continuity tracker** — the state of the world the fiction just moved: scene,
+ *   wardrobe, lasting appearance changes, who is present, recurring side characters.
+ * - **character tracker** — the character's own thread: unfinished business, drives,
+ *   how they sounded, whether they held character, and bounded personality movement.
  */
-export const chatPersonalNotesSchema = z.object({
-  openLoops: z
-    .array(z.string().trim().min(1))
-    .catch([])
-    .default([])
-    .transform((loops) => loops.slice(0, CHAT_ARCHIVIST_MAX_OPEN_LOOPS)),
-  attributeChanges: z.array(attributeChangeSchema).catch([]).default([]),
-  outfit: z
-    .object({
-      description: z
-        .string()
-        .catch("")
-        .default("")
-        .transform((s) => s.trim()),
-      exposed: z.boolean().catch(false).default(false),
-      removed: z
-        .array(z.string().trim().min(1))
-        .catch([])
-        .default([])
-        .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
-      added: z
-        .array(z.string().trim().min(1))
-        .catch([])
-        .default([])
-        .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
-    })
-    .catch({ description: "", exposed: false, removed: [], added: [] })
-    .default({ description: "", exposed: false, removed: [], added: [] }),
-  driveUpdates: z
-    .array(driveUpdateSchema)
-    .catch([])
-    .default([])
-    .transform((u) => u.slice(0, DRIVES_MAX)),
+export const chatMemoryScribeSchema = chatArchivistSchema.pick({
+  episodeSummary: true,
+  facts: true,
+  memoryQueries: true,
+});
+export type ChatMemoryScribe = z.infer<typeof chatMemoryScribeSchema>;
+
+export const chatContinuitySchema = chatArchivistSchema.pick({
+  scene: true,
+  outfit: true,
+  attributeChanges: true,
+  presence: true,
+  cast: true,
+});
+export type ChatContinuity = z.infer<typeof chatContinuitySchema>;
+
+export const chatCharacterNotesSchema = chatArchivistSchema.pick({
+  openLoops: true,
+  driveUpdates: true,
+  voiceExemplar: true,
+  characterSlip: true,
+  traitShifts: true,
+});
+export type ChatCharacterNotes = z.infer<typeof chatCharacterNotesSchema>;
+
+/**
+ * The per-member personal pass (multi-character-chat.followups.md ruling 10): in an
+ * ensemble, the shared legs keep the scene-level reads while each present member gets
+ * this small focused extraction — the four PERSONAL fields folded into their own state
+ * row. A `pick` of the aggregate like the legs above (it was a hand-duplicated copy of
+ * the same four field definitions until chat-agent-improvements slice 1a). The classic
+ * 1-on-1 never runs it (the shared legs already cover the primary).
+ */
+export const chatPersonalNotesSchema = chatArchivistSchema.pick({
+  openLoops: true,
+  attributeChanges: true,
+  outfit: true,
+  driveUpdates: true,
 });
 
 export type ChatPersonalNotes = z.infer<typeof chatPersonalNotesSchema>;
 
 /** Degraded default: nothing personal extracted — the member keeps their prior fields. */
 export function degradedChatPersonalNotes(): ChatPersonalNotes {
+  const { openLoops, attributeChanges, outfit, driveUpdates } = degradedChatArchivist();
+  return { openLoops, attributeChanges, outfit, driveUpdates };
+}
+
+/**
+ * Which legs degraded this exchange. The folds distinguish "the model said nothing" from
+ * "we never heard back" PER LEG: a degraded character leg keeps the standing open loops
+ * rather than wiping them; a degraded scribe drops stale memory queries and flags the
+ * memory trace. Travels beside the merged aggregate (`ChatExtractionResult`).
+ */
+export interface ChatExtractionLegs {
+  memory: boolean;
+  continuity: boolean;
+  character: boolean;
+}
+
+/**
+ * Merge the three legs' results back into the aggregate every fold consumes. A `null`
+ * leg (demo / timeout / parse failure) contributes its degraded defaults — so one failed
+ * leg costs only its own fields and never the others' (the whole point of the split).
+ * Per-leg degradation flags travel separately (`ChatExtractionResult`) because the folds
+ * distinguish "the model said nothing" from "we never heard back": open loops are kept on
+ * a degraded character leg rather than wiped, memory queries are dropped on a degraded
+ * scribe rather than left stale. PURE.
+ */
+export function mergeChatExtractions(legs: {
+  memory: ChatMemoryScribe | null;
+  continuity: ChatContinuity | null;
+  character: ChatCharacterNotes | null;
+}): ChatArchivist {
+  const empty = degradedChatArchivist();
   return {
-    openLoops: [],
-    attributeChanges: [],
-    outfit: { description: "", exposed: false, removed: [], added: [] },
-    driveUpdates: [],
+    ...empty,
+    ...(legs.memory ?? {}),
+    ...(legs.continuity ?? {}),
+    ...(legs.character ?? {}),
   };
 }
 

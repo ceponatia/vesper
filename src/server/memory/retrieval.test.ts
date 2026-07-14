@@ -13,6 +13,7 @@ import { EPISODE_RETRIEVAL_LIMIT, FACT_RETRIEVAL_LIMIT } from "./constants";
 import { retrieveEpisodesFused } from "./episodes";
 import { retrieveFactsFused } from "./facts";
 import { eligibleRetrievalChunks, loadWorldLoreChunks, retrieveLoreChunks } from "./lore";
+import { QueryEmbeddings } from "./query-embeddings";
 import { preTurnRetrieve } from "./retrieval";
 
 const mockEpisodes = vi.mocked(retrieveEpisodesFused);
@@ -77,8 +78,12 @@ describe("preTurnRetrieve", () => {
     const queries = ["the harbor meeting", "I walk to the docks."];
     // Session-lane call-sites wrap the id in a MemoryScope (character-chat-primary.spec §1).
     const scope = { kind: "session", sessionId: "sess-1" };
-    expect(mockEpisodes).toHaveBeenCalledWith(scope, queries, EPISODE_RETRIEVAL_LIMIT, undefined);
-    expect(mockFacts).toHaveBeenCalledWith(scope, queries, FACT_RETRIEVAL_LIMIT, undefined);
+    // Both fused legs receive the turn's ONE shared query-embedding cache
+    // (chat-agent-improvements slice 3) — they no longer embed the same texts twice.
+    expect(mockEpisodes).toHaveBeenCalledWith(scope, queries, EPISODE_RETRIEVAL_LIMIT, undefined, expect.any(QueryEmbeddings));
+    expect(mockFacts).toHaveBeenCalledWith(scope, queries, FACT_RETRIEVAL_LIMIT, undefined, expect.any(QueryEmbeddings));
+    // …and it is the SAME instance, not one each.
+    expect(mockEpisodes.mock.calls[0]?.[4]).toBe(mockFacts.mock.calls[0]?.[4]);
     expect(mockLore).toHaveBeenCalledWith(
       "world-1",
       queries.join("\n"),
