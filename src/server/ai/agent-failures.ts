@@ -1,10 +1,17 @@
 import {
   agentFailureSchema,
+  agentRunSchema,
   classifyAgentFailure,
   type AgentFailure,
   type AgentFailureKind,
+  type AgentRun,
 } from "@/contracts/turns/agent-failure";
 import { logEvent } from "../events";
+
+/** The `events.type` for a SUCCESSFUL agent run (the activity + latency log). */
+export const AGENT_RUN_EVENT = "agent_run";
+/** The `events.type` for a FAILED agent leg. */
+export const AGENT_FAILURE_EVENT = "agent_failure";
 
 /**
  * Recording side of the agent-failure telemetry (contract + classifier in
@@ -85,5 +92,45 @@ export function buildAgentFailure(input: RecordAgentFailureInput): AgentFailure 
 /** Record a failed agent leg. Fire-and-forget — callers do not await it. */
 export function recordAgentFailure(input: RecordAgentFailureInput): void {
   const failure = buildAgentFailure(input);
-  void logEvent(input.sessionId ?? null, "agent_failure", { ...failure });
+  void logEvent(input.sessionId ?? null, AGENT_FAILURE_EVENT, { ...failure });
+}
+
+const SUMMARY_CAP = 200;
+
+/** What a successful run knows on top of the shared telemetry. */
+export interface RecordAgentRunInput extends AgentTelemetry {
+  /** The upstream OpenRouter routed to (from the completed call's providerMetadata). */
+  provider?: string | null;
+  /** How long the model call actually took. */
+  latencyMs?: number;
+  /** One line of what the leg produced this run. */
+  summary?: string;
+  /** Injectable for tests; defaults to now. */
+  at?: Date;
+}
+
+/** Build a run record (pure). */
+export function buildAgentRun(input: RecordAgentRunInput): AgentRun {
+  return agentRunSchema.parse({
+    legId: input.legId,
+    chatId: input.chatId ?? null,
+    messageId: input.messageId ?? null,
+    modelId: input.modelId ?? "",
+    provider: input.provider ?? null,
+    promptChars: input.promptChars ?? 0,
+    maxOutputTokens: input.maxOutputTokens ?? 0,
+    latencyMs: input.latencyMs ?? 0,
+    summary: (input.summary ?? "").slice(0, SUMMARY_CAP),
+    at: (input.at ?? new Date()).toISOString(),
+  });
+}
+
+/**
+ * Record a SUCCESSFUL agent run — the activity + latency log (chat-plans-promises follow-up:
+ * DeepSeek was still timing out, so we need to SEE how long the ones that DO complete take).
+ * Fire-and-forget, same as `recordAgentFailure`; a run with no `legId` is skipped by the caller.
+ */
+export function recordAgentRun(input: RecordAgentRunInput): void {
+  const run = buildAgentRun(input);
+  void logEvent(input.sessionId ?? null, AGENT_RUN_EVENT, { ...run });
 }

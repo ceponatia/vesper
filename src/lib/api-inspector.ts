@@ -157,10 +157,42 @@ const failureReportSchema = z.object({
   byCause: arrayOf(tallyRowSchema),
 });
 
+/** One SUCCESSFUL run (the activity + latency log) — mirrors `agentRunSchema`. */
+export const agentRunRowSchema = z.object({
+  legId: textOr("unknown"),
+  messageId: optionalId,
+  modelId: textOr(""),
+  provider: optionalId,
+  promptChars: z.number().catch(0),
+  maxOutputTokens: z.number().catch(0),
+  latencyMs: z.number().catch(0),
+  summary: textOr(""),
+  at: textOr(""),
+});
+export type AgentRunRow = z.infer<typeof agentRunRowSchema>;
+
+const runStatRowSchema = z.object({
+  key: textOr(""),
+  count: z.number().catch(0),
+  medianMs: z.number().catch(0),
+  maxMs: z.number().catch(0),
+});
+export type AgentRunStatRow = z.infer<typeof runStatRowSchema>;
+
+const runReportSchema = z.object({
+  recent: arrayOf(agentRunRowSchema),
+  total: z.number().catch(0),
+  byLeg: arrayOf(runStatRowSchema),
+});
+
 export const agentHealthSchema = z.object({
   days: z.number().catch(7),
   chat: failureReportSchema,
   global: failureReportSchema,
+  // The successful-run activity + latency log (chat-plans-promises follow-up). Defaulted so an
+  // older API build (no runs field) still parses and the failure panel renders unchanged.
+  runs: runReportSchema.catch({ recent: [], total: 0, byLeg: [] }).default({ recent: [], total: 0, byLeg: [] }),
+  runsGlobal: runReportSchema.catch({ recent: [], total: 0, byLeg: [] }).default({ recent: [], total: 0, byLeg: [] }),
 });
 export type AgentHealth = z.infer<typeof agentHealthSchema>;
 
