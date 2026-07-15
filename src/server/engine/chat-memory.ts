@@ -341,6 +341,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       schema: chatCharacterNotesSchema,
       fallback: () => ({
         openLoops: empty.openLoops,
+        plans: empty.plans,
         driveUpdates: empty.driveUpdates,
         voiceExemplar: empty.voiceExemplar,
         characterSlip: empty.characterSlip,

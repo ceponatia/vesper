@@ -1,9 +1,23 @@
 # Chat plans & promises — commitments that come due
 
-Status: **next** (planned 2026-07-14, from the world-sim carry-forward review —
-the chat descendant of the retired `scheduled-arrivals.spec.md`. The spec gets
-written when this goes active; this plan records the design intent and rulings
-needed before then.)
+Status: **shipped — 2026-07-15** (all four slices in one arc; the chat descendant of
+the retired `scheduled-arrivals.spec.md`). Design + rulings A–F in
+[chat-plans-promises.spec.md](chat-plans-promises.spec.md). What shipped: the contract
+(`contracts/turns/chat-plans.ts` — `ChatPlan`, `mergeChatPlans`/`advancePlans`/
+`derivePlanSalience`, pure + tested) + the `plans` column (migration 0048) on the
+scenario; the `plans` extraction field on the character-tracker leg; the fold in
+`finalizeChatState` (merge → deterministic advance); the volatile-tail **Plans** block
+(both frames); the pulse's `commitmentsDue` context (ruling C); `plan_kept`/`plan_missed`
+milestones (ruling D, callback-boosted); the hub marker (`planHubReason`) + reopen-opener
+plan material; the ensemble arrival/exit license (`buildPlanPresenceLicense`); and the
+**Plans** card + lightbox editor (`chat-plans-panel.tsx`, `ChatStateEdit.plans`).
+**Leftovers:** NPC↔NPC unwitnessed plans currently ride the assume-kept default (ruling E)
+— filing them as archivist relationship facts arrives with
+[chat-offscreen-life.plan.md](chat-offscreen-life.plan.md)'s meanwhile pass; per-member
+ensemble pulse `commitmentsDue` (a missed group-dinner informs each stood-up member's own
+pulse) is folded through the primary for v1; and the live-judged consequence eval rides the
+owner-gated spend. Migration 0048 applies to Neon on deploy (a live DB never ran
+`db:migrate`).
 
 ## Goal
 
@@ -142,24 +156,13 @@ Plans are the first system where the cast's *own* social lives get structure:
 
 ## Open questions
 
-- **A. `when` representation** — exact clock target vs day-offset + day-part
-  vs both; how a day-part window converts to a due/missed boundary in minutes.
-- **B. Rollback semantics** — ride the `pre_exchange_scenario` snapshot like
-  `scene_memory` (a regenerated reply that minted a plan must not double-mint)
-  vs accrete-exempt like `supporting_cast`. Lean: **snapshot** — plans are
-  fiction state, not author curation.
-- **C. Consequence mediation** — pulse-mediated only (lean: the model sees the
-  miss and the curve moves feelings; ambiguous misses stay ambiguous) vs a
-  deterministic regard penalty on `missed` (predictable but misfire-prone).
-- **D. Milestone kinds** — new `plan_kept` / `plan_missed` kinds (clearer
-  panel glyphs, callback boosting) vs riding `strong_reaction`. Lean: new
-  kinds — the list is designed to grow.
-- **E. Unwitnessed-plan default** — an NPC↔NPC plan skipped past with no
-  meanwhile pass: assume kept unless the fiction later says otherwise (lean),
-  or leave unresolved until referenced.
-- **F. Caps & history** — open-plan cap (~8?), and whether resolved plans keep
-  a short ring (useful callback material) or convert to ordinary
-  facts/episodes and leave the list.
+All resolved when the plan went active — the rulings live in
+[chat-plans-promises.spec.md](chat-plans-promises.spec.md): **A** `when` = coarse
+day-offset + day-part (or unscheduled), resolved to an absolute `targetMinutes` + label;
+**B** snapshot (plans roll back with `pre_exchange_scenario`); **C** pulse-mediated only
+(no deterministic regard penalty); **D** new `plan_kept`/`plan_missed` kinds
+(callback-boosted); **E** unwitnessed NPC↔NPC = assume kept; **F** `CHAT_PLANS_MAX = 16`
+total / `CHAT_PLANS_OPEN_MAX = 8` open, resolved plans keep a short callback ring.
 
 ## Not in scope
 

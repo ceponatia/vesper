@@ -9,7 +9,9 @@ The reopen opener ([developer-notes/chat-initiative.plan.md](../developer-notes/
 the pickup strip gains **"Let {who} start ✦"**, which runs a `continue`-kind
 exchange with `initiative: true` — the server builds the cue
 (`buildInitiativeCue`, `engine/chat-initiative.ts`): reach out FIRST, with her
-own material (top open loops + unresolved non-secret wants — withheld secrets
+own material (**near plans lead** since chat-plans-promises — an imminent
+commitment "is tonight still on?" or the cold open after being stood up — then
+top open loops + unresolved non-secret wants — withheld secrets
 never leak into the cue; the drives tail law owns them — plus, since the
 remainder pass, the **unseen shift** and the **daily rhythm** below), the **"a
 life meanwhile" license** folded in (build decision: instead of a separate
@@ -28,8 +30,11 @@ opener-selfie license armed, where it runs **opener-scoped** (below).
 The remainder slices (shipped 2026-07-12):
 
 - **Marker v2 — the unseen-milestone seen-cursor** (spec §8.4 v2). The hub's
-  "has something to say" derivation (`GET /api/chats`) stays read-time-pure:
-  the top open loop leads, and with no loops the reason is the **newest
+  "has something to say" derivation (`GET /api/chats`) stays read-time-pure.
+  Since chat-plans-promises an **imminent or just-missed PLAN outranks open
+  loops** (`planHubReason` over the chat's `plans` + `clock_minutes` — a
+  commitment coming due is the strongest pull); with no near plan the top open
+  loop leads, and with no loops the reason is the **newest
   milestone unseen since the player last opened the conversation**
   (`unseenMilestoneReason`, `contracts/relationships/history.ts` —
   `first_exchange` never fires it). "Seen" is the `character_chats.

@@ -27,13 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Chat plans & promises** — [chat-plans-promises.plan.md](chat-plans-promises.plan.md)
-  (next — planned 2026-07-14). Commitments struck in the fiction become tracked
-  state that comes due on the story clock: archivist-recognized, surfaced only
-  when imminent/happening/just-missed, landing on feelings/milestones, feeding
-  the hub marker + reopen opener. Ensemble-aware: group plans, the
-  arrival/exit license for away members, NPC↔NPC plans. The chat descendant of
-  the retired scheduled-arrivals spec.
 - **Chat off-screen life** — [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md)
   (next — planned 2026-07-14; after plans & promises, whose records its
   meanwhile pass consumes). The cast's lives advance between visits: grounded
@@ -72,6 +65,22 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat plans & promises — commitments that come due** —
+  [chat-plans-promises.plan.md](chat-plans-promises.plan.md) · spec
+  [chat-plans-promises.spec.md](chat-plans-promises.spec.md) — 2026-07-15 — all four slices:
+  commitments the fiction strikes become tracked scenario state (`contracts/turns/chat-plans.ts`,
+  `plans` column — migration 0048) that comes DUE on the story clock — archivist-recognized
+  via a `plans` field on the character-tracker leg, resolved to an absolute target from a
+  coarse day-offset + day-part, advanced **deterministically** (overdue player plan → missed,
+  NPC↔NPC → assume-kept), surfaced only when imminent/happening/just-missed in a compact
+  volatile-tail **Plans** block. Consequences land through existing machinery: the pulse's
+  `commitmentsDue` (model-mediated hurt, no deterministic penalty), new callback-boosted
+  `plan_kept`/`plan_missed` milestones, the hub marker + reopen-opener plan material, and the
+  ensemble **arrival/exit license** (the presence law's one principled don't-teleport
+  exception). Author surface: the **Plans** card + lightbox editor (`ChatStateEdit.plans`).
+  Rulings A–F in the spec. The chat descendant of the retired scheduled-arrivals spec —
+  *time skips finally have teeth*. Leftover: NPC↔NPC fact-filing rides
+  [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md)'s meanwhile pass.
 - **Agent health — failed legs are visible instead of silent** —
   [chat-agent-improvements.plan.md](chat-agent-improvements.plan.md) §Agent health —
   2026-07-14 — the counter-measure to best-effort agents: a failed leg (timeout /

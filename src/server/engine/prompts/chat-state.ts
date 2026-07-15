@@ -36,7 +36,8 @@ Rules:
 3. The player's whole message is yours to read — their narration and unspoken inner thoughts included, not only what the character could hear or see. Interiority is a strong signal of intent and disposition, so weigh it.
 4. The mindNote tracks the CHANGING disposition; it is not a recap of facts and must not repeat the scenario framing or quote dialogue back.
 5. A "feeling" is rarer than a mindNote refresh: it is the exchange's lasting emotional residue, not this turn's mood. Report one only when a beat genuinely lands or resolves.
-6. ${UNTRUSTED_DATA_NOTICE}
+6. If a "Commitments that just came due" block is present, weigh it for "feeling": a plan the character counted on that went by UNKEPT is a real hurt that lingers (label it sad, angry, or hurt with the plan as the cause) — unless the exchange itself made it right; a plan just KEPT together is warm (glad, loved) and can lift or resolve a standing feeling. Judge by what the exchange actually shows; do not manufacture a feeling the beat doesn't support.
+7. ${UNTRUSTED_DATA_NOTICE}
 
 Example — the character shared bad news and the player pulled her into a hug:
 {"playerAct":{"concept":"physical_affection"},"mindNote":"Mara is steadied by the hug and a little embarrassed at being seen so raw. She trusts him more than she meant to let show.","feeling":null,"sentPhoto":false}
@@ -55,6 +56,12 @@ export interface ChatPulsePromptInput {
    * judge resolution (`"neutral"` clears it) instead of proposing blind. Null ⇒ none.
    */
   feeling?: { label: string; cause: string } | null;
+  /**
+   * Commitments that just came due this exchange (chat-plans-promises): a just-missed plan
+   * is a hurt that lingers; a just-kept one is warm. The feeling proposal reads these — the
+   * curve/regard never move off them (model-mediated only). Absent when nothing came due.
+   */
+  commitmentsDue?: { missed: readonly string[]; kept: readonly string[] };
   /** The exchange just completed — the player's line and the character's reply. */
   exchange: { player: string; assistant: string };
 }
@@ -72,11 +79,21 @@ export function buildChatPulsePrompt(input: ChatPulsePromptInput): string {
     `${speaker}: ${input.exchange.player.trim()}`,
     `${input.characterName}: ${input.exchange.assistant.trim()}`,
   ].join("\n");
+  const missed = input.commitmentsDue?.missed.filter((m) => m.trim()) ?? [];
+  const kept = input.commitmentsDue?.kept.filter((k) => k.trim()) ?? [];
+  const commitmentLines: string[] = [];
+  if (missed.length) commitmentLines.push(`just went by unkept: ${missed.join("; ")}`);
+  if (kept.length) commitmentLines.push(`just kept: ${kept.join("; ")}`);
   return [
     `Character: ${input.characterName}`,
     `Player: ${input.playerName.trim() || "the player"}`,
     `Prior mindNote:\n${prior ? fenceUntrusted("prior mind note", prior) : "(none yet)"}`,
     `Standing feeling: ${feeling || "(none)"}`,
+    // Commitments that came due this exchange (chat-plans-promises) — untrusted (player/
+    // character-authored plan text), so fenced like the rest.
+    ...(commitmentLines.length
+      ? [`Commitments that just came due (weigh these for "feeling"):\n${fenceUntrusted("commitments", commitmentLines.join("\n"))}`]
+      : []),
     `Latest exchange:\n${fenceUntrusted("latest exchange", transcript)}`,
   ].join("\n\n");
 }

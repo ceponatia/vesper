@@ -51,7 +51,8 @@ per-character divergence rides character **tags** flipping the reaction, never
 per-character rule lists), `scene_auto` (`"off" | "milestones"` — text with headroom,
 never a boolean), `scene_model`, `scene_memory` (the accumulating narrator-imagined
 setting — see §Scene memory), `supporting_cast` (recurring named side characters — see
-[supporting-cast.md](supporting-cast.md) §Supporting cast), the time model (`clock_minutes` — **one** story timeline
+[supporting-cast.md](supporting-cast.md) §Supporting cast), `plans` (tracked commitments
+that come due on the story clock — see §Plans & promises), the time model (`clock_minutes` — **one** story timeline
 for the whole roster, D3/D8; away members skip meter decay, never fork the clock;
 `skip_history` ring ≤50; one-shot `pending_skip_note`), and `pre_exchange_scenario`
 (the rollback anchor's chat-wide half). Beside the scenario the chat row also
@@ -182,6 +183,44 @@ owner rulings 2026-07-11) adds three layers, all in the pure `engine/chat-feelin
 Rollback-safe like everything else: `feeling` rides `storedChatStateSchema`, so
 "another take" restores the pre-exchange weather exactly.
 
+
+## Plans & promises
+
+Commitments the fiction strikes — "come over Friday", "I'll text you after my shift" —
+become tracked state that comes DUE on the story clock
+([developer-notes/chat-plans-promises.plan.md](../developer-notes/chat-plans-promises.plan.md)
+· [.spec.md](../developer-notes/chat-plans-promises.spec.md)): the chat descendant of the
+retired scheduled-arrivals spec, without the location model. The frame — *the story makes a
+commitment → the system records it deterministically → the clock makes it come due → the
+narration honors it.*
+
+- **Storage** (`contracts/turns/chat-plans.ts` `ChatPlan`): a chat-wide list on the
+  scenario (`character_chats.plans` jsonb, migration 0048; `parseOr`'d empty at the load
+  boundary) — plans belong to the CONVERSATION like `scene_memory`/`supporting_cast`.
+  `{ id, what, participants[], where?, when, status, struckAtMinutes }`, capped
+  (`CHAT_PLANS_MAX = 16` total; `CHAT_PLANS_OPEN_MAX = 8` open — oldest-out; resolved
+  plans keep a short callback ring). Rolls back with `pre_exchange_scenario` (ruling B —
+  fiction state, so a regenerated reply that struck a plan never double-mints; **unlike**
+  the accrete-only supporting cast).
+- **`when`** (ruling A) is coarse and keyed to `clock_minutes`, never the wall clock: the
+  archivist proposes a day-offset + day-part (`morning`/`afternoon`/`evening`/`night`,
+  reusing the schedule vocabulary) or `unscheduled`; the fold resolves it to an absolute
+  `targetMinutes` + a human label (`resolvePlanWhen`). Unscheduled plans never go missed.
+- **`status`** — `kept`/`canceled` are archivist-recognized, `missed` is **deterministic**
+  (the archivist may never propose it); *imminent* / *due now* / *just missed* are DERIVED
+  pure at prompt-build time (`derivePlanSalience` vs the clock), never stored. The fold
+  runs `mergeChatPlans` (upsert by normalized `what`) then `advancePlans` — an overdue
+  upcoming plan involving the PLAYER becomes `missed`, an overdue NPC↔NPC plan is assumed
+  `kept` (ruling E, the default until the meanwhile pass). A time skip is the main mover
+  (4-min ticks barely move the clock; the 30/180/540/4320-min skips give it teeth).
+- **Consequences** land through existing machinery: the just-resolved plans reach the
+  reaction pulse's `commitmentsDue` context so a stood-up character proposes `hurt`
+  (ruling C — model-mediated, no deterministic regard penalty); a kept/missed plan
+  involving the player mints a `plan_kept`/`plan_missed` milestone (callback-boosted like
+  `secret_shared`); the hub marker + reopen opener surface near plans (see
+  [initiative.md](initiative.md)); and the ensemble arrival/exit license moves people in
+  and out of the scene (see [multi-character.md](multi-character.md)). Editing/inspection:
+  the **Plans** card (`ChatStateEdit.plans`, chat-wide half — [api.md](api.md)).
 
 ## Drives (desires & secrets)
 

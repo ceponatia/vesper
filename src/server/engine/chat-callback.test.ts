@@ -25,6 +25,7 @@ const gate = (overrides: Partial<ChatCallbackGateInput> = {}): ChatCallbackGateI
   hasAttachments: false,
   narratorInput: false,
   photoBeat: false,
+  planSalient: false,
   ...overrides,
 });
 

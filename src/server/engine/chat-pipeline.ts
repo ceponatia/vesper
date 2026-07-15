@@ -3,11 +3,13 @@ import { z } from "zod";
 import {
   characterProfileSchema,
   chatActionIdSchema,
+  derivePlanSalience,
   DiagnosticCollector,
   diag,
   effectiveTraitValue,
   emptyCharacterProfile,
   formatScheduleRhythm,
+  hasSalientPlan,
   samePlaceName,
   splitStateCues,
   switchScenePlace,
@@ -906,6 +908,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         hasAttachments: Boolean(attachmentDescriptions?.length),
         narratorInput,
         photoBeat: selfieRequested || selfieOfferEligible || openerSelfieEligible,
+        // A commitment near this turn owns the beat (chat-plans-promises) — the callback yields.
+        planSalient: hasSalientPlan(derivePlanSalience(scenario.plans, scenario.clockMinutes)),
       })
     ) {
       const chosen = await retrieveChatCallback({
@@ -987,6 +991,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             openLoops: driftedState.openLoops,
             drives: driftedState.drives,
             skipPending: Boolean(scenario.pendingSkipNote.trim()),
+            // Plans near this turn LEAD the opener material (chat-plans-promises): "is
+            // tonight still on?" / the cold open after being stood up.
+            openPlans: derivePlanSalience(scenario.plans, scenario.clockMinutes),
             // Slice-2/4 material: the unseen shift + the authored daily rhythm.
             recentShift,
             rhythm: formatScheduleRhythm(profile.schedule),
@@ -1770,6 +1777,8 @@ function promptStateSlice(
     skipNote: scenario.pendingSkipNote,
     sceneMemory: scenario.sceneMemory,
     supportingCast: scenario.supportingCast,
+    // Plans near this turn (chat-plans-promises): derived against the ticked story clock.
+    plans: derivePlanSalience(scenario.plans, scenario.clockMinutes),
     feeling: state.feeling,
     drives: state.drives,
   };

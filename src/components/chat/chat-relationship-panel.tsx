@@ -249,6 +249,8 @@ const MILESTONE_GLYPHS: Record<MilestoneKind, { glyph: string; className: string
   strong_reaction: { glyph: "!", className: "text-paper-300" },
   secret_shared: { glyph: "❖", className: "text-accent-300" },
   player_marked: { glyph: "★", className: "text-accent-300" },
+  plan_kept: { glyph: "✓", className: "text-accent-300" },
+  plan_missed: { glyph: "✕", className: "text-paper-500" },
 };
 
 function Milestones({ milestones }: { milestones: ChatRelationship["milestones"] }) {

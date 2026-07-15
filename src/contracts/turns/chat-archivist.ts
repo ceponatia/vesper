@@ -4,6 +4,7 @@ import { attributeChangeSchema } from "./agent-results";
 import { DRIVES_MAX, driveUpdateSchema } from "../personality/drives";
 import { chatSceneProposalSchema } from "./chat-scene-memory";
 import { chatCastProposalSchema } from "./chat-supporting-cast";
+import { chatPlanProposalSchema } from "./chat-plans";
 
 /**
  * The character-chat extraction contract. Historically ONE "archivist-lite" agent call
@@ -170,6 +171,16 @@ export const chatArchivistSchema = z.object({
    */
   cast: chatCastProposalSchema,
   /**
+   * Plans & promises (chat-plans-promises.plan.md): commitments the fiction STRUCK,
+   * CHANGED, or CANCELED this exchange — a concrete who + roughly-when commitment ("come
+   * over Friday", "dinner at the pier tonight"). Merged via `mergeChatPlans` (upsert by
+   * normalized `what`, `when` resolved against the clock, caps). The archivist may mark a
+   * plan `kept`/`canceled` but NEVER `missed` (deterministic). A concrete commitment files
+   * here; `openLoops` keeps only fuzzy unfinished business — never both for one beat.
+   * Lenient; [] is the common no-new-commitment case.
+   */
+  plans: chatPlanProposalSchema,
+  /**
    * Voice-exemplar pick (character-fidelity slice 8): ONE distinctly in-voice line
    * from the character's reply this exchange — verbatim — worth keeping past the
    * events-only summary horizon as a "How you sound" few-shot. "" when nothing this
@@ -211,6 +222,7 @@ export function degradedChatArchivist(): ChatArchivist {
     driveUpdates: [],
     presence: [],
     cast: [],
+    plans: [],
     voiceExemplar: "",
     characterSlip: "",
     traitShifts: [],
@@ -250,6 +262,7 @@ export type ChatContinuity = z.infer<typeof chatContinuitySchema>;
 export const chatCharacterNotesSchema = chatArchivistSchema.pick({
   openLoops: true,
   driveUpdates: true,
+  plans: true,
   voiceExemplar: true,
   characterSlip: true,
   traitShifts: true,
