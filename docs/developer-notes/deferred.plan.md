@@ -189,15 +189,15 @@ back here:
   [scene-images.spec.md](finished/scene-images.spec.md) §3.
 - **Self-hosted ComfyUI — the uncapped multi-character-NSFW upgrade.** The path
   beyond Venice's hosted `/image/multi-edit` 3-reference cap: pursue when we need
-  >3 references or premium multi-subject identity-locking (Chroma / Qwen-Edit-2511
-  base + InstantID/InfiniteYou identity + OpenPose ControlNet + regional masks on a
-  cloud GPU). It slots in behind the existing provider seam as one more provider,
-  and is the GPU background worker that is the most plausible **second deployable**
-  — decide it together with the monorepo split (§"Monorepo split" below; its
-  standalone evaluation doc was retired 2026-07-13). Stack + hosting recommendation in
-  [scene-images.spec.md](finished/scene-images.spec.md) §7. A cheaper interim lever
-  for the 3+-character case (a multi-pass hosted composite) is sketched in the
-  shipped plan before reaching for this.
+  > 3 references or premium multi-subject identity-locking (Chroma / Qwen-Edit-2511
+  > base + InstantID/InfiniteYou identity + OpenPose ControlNet + regional masks on a
+  > cloud GPU). It slots in behind the existing provider seam as one more provider,
+  > and is the GPU background worker that is the most plausible **second deployable**
+  > — decide it together with the monorepo split (§"Monorepo split" below; its
+  > standalone evaluation doc was retired 2026-07-13). Stack + hosting recommendation in
+  > [scene-images.spec.md](finished/scene-images.spec.md) §7. A cheaper interim lever
+  > for the 3+-character case (a multi-pass hosted composite) is sketched in the
+  > shipped plan before reaching for this.
 
 ## Comms expansions
 
@@ -367,12 +367,13 @@ _Raised 2026-06-29, alongside the gender born-variant change._ The character
 (`androgynous_born_female` / `…_born_male` / `nonbinary_born_*`) so image generation
 gets the natal build, and a separate **`identity.natal_sex`** attribute (enum
 `female`/`male`) was created as a **scaffold** — flagged `excludeFromPrompts` (stored
-+ authored + editable, but not yet surfaced in any generated prompt) and shown in the
-editor **only for an androgynous / nonbinary presentation** (redundant for plain
-female/male). The born-variant on `gender` carries natal sex into rendering for now;
-`natal_sex` is the placeholder for doing this properly later. See
-[../contracts/attributes.md](../contracts/attributes.md) §"`natal_sex` is a
-forward-looking scaffold".
+
+- authored + editable, but not yet surfaced in any generated prompt) and shown in the
+  editor **only for an androgynous / nonbinary presentation** (redundant for plain
+  female/male). The born-variant on `gender` carries natal sex into rendering for now;
+  `natal_sex` is the placeholder for doing this properly later. See
+  [../contracts/attributes.md](../contracts/attributes.md) §"`natal_sex` is a
+  forward-looking scaffold".
 
 What "fleshing it out" should cover (none built yet):
 
@@ -386,7 +387,7 @@ What "fleshing it out" should cover (none built yet):
   presentations** the born-variant enum can't (e.g. female-presenting, natal male).
 - **A model-facing definition of each gender term** — the open question from the
   2026-06-29 discussion: tell the narrator/image models what `androgynous` vs
-  `nonbinary` actually *mean for this game* (presentation vs identity), since for a
+  `nonbinary` actually _mean for this game_ (presentation vs identity), since for a
   purely visual prompt they otherwise overlap. Likely a `promptHints`-style gloss or a
   small rulebook note, gated on whether `natal_sex` becomes the visual driver.
 - **Wider value set** — `intersex` (and possibly more) on `natal_sex`, and the matching
@@ -458,3 +459,31 @@ visual axis with the prose enactment so they reuse the same state derivations �
 light state (mood/meters: flushed, tipsy, tired; active conditions; the `mindNote`) into the
 **chat scene-image prompt** (`renderCharacterSceneImage`) so a generated scene reflects how the
 character actually is right now. Detail now lives in that plan/spec._
+
+## Old World-Model Plans from the Roadmap
+
+These items were in the roadmap and are holdovers from the world-model system which is being deprecated in favor of expanding and perfecting the character-chat system _first_ and then deciding if we want to incorporate that into a bigger world system. My current lean is we will eventually incorporate all desired features into character chat and character chat will become less 1-on-1 focused. We may want to branch to a different app route for that or it may make sense to keep everything in one chat system.
+
+- **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
+  force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
+  minimap) remain — optional polish on a feature already delivering its core value.
+  _Demoted to the bottom 2026-07-14 (owner): character chat is now the app's main
+  focus and the world model is headed for deprecation or refactor — don't polish it.
+  A chat-lane descendant (a read-only scene-memory places graph) is parked in
+  [deferred.plan.md](deferred.plan.md) §Chat story map._
+- **World simulation ("the world moves")** — the former "phase 5" cluster, not
+  yet started, and now **direction-dependent**: character chat is the test bed
+  for what the world/session model will eventually look like (owner direction
+  2026-07-13 — see `CLAUDE.md`), so the movement-authority and
+  scheduled-arrivals specs were retired (deleted) 2026-07-13 rather than built
+  against the possibly-deprecated session model.
+  [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) remains as
+  findings (its intake half shipped). A future `world-simulation.plan.md` — or
+  the chat-successor equivalent — re-derives what it needs when this becomes
+  active. _Demoted to the bottom 2026-07-14 (owner) with the map, same rationale._
+  _Carry-forward 2026-07-14: the chat-applicable ideas graduated to
+  [chat-plans-promises.plan.md](chat-plans-promises.plan.md) (scheduled arrivals
+  reborn) and [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) (the
+  world moves, scoped to the cast's lives) — see the top of this list. What
+  stays here is only the session-side remainder (movement authority, world-scale
+  simulation), pending the direction._
