@@ -1,4 +1,5 @@
 import { diag, type DiagnosticSink } from "@/contracts";
+import type { AgentRunDescription } from "@/contracts/turns/agent-failure";
 import { recordAgentFailure, recordAgentRun, type AgentTelemetry } from "./agent-failures";
 import type { GenerateCheckedResult } from "./generate-checked";
 
@@ -19,10 +20,11 @@ import type { GenerateCheckedResult } from "./generate-checked";
  * conversation); without it the timeout is still counted, just with less to say about why.
  *
  * A clean SUCCESS (the work resolves before the timeout, un-degraded) is recorded too
- * (`recordAgentRun`) — the activity + latency half of the inspector. `summarize` turns the
- * leg's value into a one-line "what it did" note; the measured `latencyMs`/`provider` come
- * straight off the resolved `GenerateCheckedResult`. A `done` flag guards the race so a call
- * that resolves right as the timeout fires records exactly one of the two, never both.
+ * (`recordAgentRun`) — the activity + latency half of the inspector. `describe` turns the
+ * leg's value into a one-line summary AND the detail sections behind it (the click-to-open
+ * "db viewer"); the measured `latencyMs`/`provider` come straight off the resolved
+ * `GenerateCheckedResult`. A `done` flag guards the race so a call that resolves right as the
+ * timeout fires records exactly one of the two, never both.
  */
 export async function withGenerateTimeout<T>(
   work: Promise<GenerateCheckedResult<T>>,
@@ -31,7 +33,7 @@ export async function withGenerateTimeout<T>(
   timeoutCode: string,
   sink?: DiagnosticSink,
   telemetry?: Partial<AgentTelemetry>,
-  summarize?: (value: T) => string,
+  describe?: (value: T) => AgentRunDescription,
 ): Promise<{ value: T | null; degraded: boolean }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Whichever of {work resolves, timeout fires} wins the race claims the record; the loser
@@ -66,6 +68,7 @@ export async function withGenerateTimeout<T>(
         // A clean, un-degraded value → record the successful run (an internally-degraded
         // result already recorded its own api_error/parse_failed in generateChecked).
         if (!r.degraded && r.value != null && telemetry?.legId) {
+          const described = describe?.(r.value);
           recordAgentRun({
             legId: telemetry.legId,
             chatId: telemetry.chatId,
@@ -76,7 +79,8 @@ export async function withGenerateTimeout<T>(
             maxOutputTokens: telemetry.maxOutputTokens,
             provider: r.provider,
             latencyMs: r.latencyMs,
-            summary: summarize ? summarize(r.value) : "",
+            summary: described?.summary ?? "",
+            details: described?.details ?? [],
           });
         }
       }

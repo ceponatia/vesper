@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { agentFailureExplanation, agentFailureCauseSchema, agentLegLabel } from "@/contracts/turns/agent-failure";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { Dialog } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { chatInspectorApi, type AgentFailureRow, type AgentRunRow, type AgentRunStatRow } from "@/lib/api-inspector";
@@ -30,6 +31,8 @@ export function ChatInspectorAgentHealth({ chatId }: { chatId: string }) {
 
   const [legFilter, setLegFilter] = useState("all");
   const [query, setQuery] = useState("");
+  // The row the user clicked to open the detail lightbox (null = closed).
+  const [selected, setSelected] = useState<FeedItem | null>(null);
 
   // One chronological feed of this conversation's agent items — successful runs AND failures,
   // newest first — so a single filter / search / scroll governs the whole (potentially large)
@@ -153,9 +156,13 @@ export function ChatInspectorAgentHealth({ chatId }: { chatId: string }) {
                   <ul className="flex flex-col gap-2">
                     {filtered.map((item, i) =>
                       item.kind === "run" ? (
-                        <RunRow key={`r-${item.run.at}-${item.legId}-${i}`} run={item.run} />
+                        <RunRow key={`r-${item.run.at}-${item.legId}-${i}`} run={item.run} onSelect={() => setSelected(item)} />
                       ) : (
-                        <FailureRow key={`f-${item.failure.at}-${item.legId}-${i}`} failure={item.failure} />
+                        <FailureRow
+                          key={`f-${item.failure.at}-${item.legId}-${i}`}
+                          failure={item.failure}
+                          onSelect={() => setSelected(item)}
+                        />
                       ),
                     )}
                   </ul>
@@ -167,6 +174,8 @@ export function ChatInspectorAgentHealth({ chatId }: { chatId: string }) {
           ) : null}
         </div>
       ) : null}
+
+      {selected ? <AgentItemDialog item={selected} onClose={() => setSelected(null)} /> : null}
     </section>
   );
 }
@@ -203,19 +212,25 @@ function RunLatencyList({ title, rows }: { title: string; rows: AgentRunStatRow[
   );
 }
 
-/** One successful run: leg · latency · what it did · model. */
-function RunRow({ run }: { run: AgentRunRow }) {
+/** One successful run: leg · latency · what it did · model. Click opens the detail lightbox. */
+function RunRow({ run, onSelect }: { run: AgentRunRow; onSelect: () => void }) {
   const when = run.at ? run.at.slice(0, 16).replace("T", " ") : "unknown time";
   const facts = [run.provider ? `via ${run.provider}` : "", run.modelId].filter(Boolean);
   return (
-    <li className="rounded-card border border-paper-800 bg-paper-900/40 px-3 py-2">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-sm text-paper-200">{agentLegLabel(run.legId)}</span>
-        <span className="text-xs text-accent-300 tabular-nums">{formatMs(run.latencyMs)}</span>
-        {run.summary ? <span className="text-xs text-paper-400">— {run.summary}</span> : null}
-        <span className="ml-auto text-[11px] text-paper-600">{when}</span>
-      </div>
-      {facts.length > 0 ? <p className="mt-1 text-[11px] text-paper-600">{facts.join(" · ")}</p> : null}
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="w-full cursor-pointer rounded-card border border-paper-800 bg-paper-900/40 px-3 py-2 text-left transition-colors hover:border-accent-500/50"
+      >
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-sm text-paper-200">{agentLegLabel(run.legId)}</span>
+          <span className="text-xs tabular-nums text-accent-300">{formatMs(run.latencyMs)}</span>
+          {run.summary ? <span className="text-xs text-paper-400">— {run.summary}</span> : null}
+          <span className="ml-auto text-[11px] text-paper-600">{when}</span>
+        </div>
+        {facts.length > 0 ? <p className="mt-1 text-[11px] text-paper-600">{facts.join(" · ")}</p> : null}
+      </button>
     </li>
   );
 }
@@ -276,11 +291,37 @@ const KIND_LABELS: Record<AgentFailureRow["kind"], string> = {
   parse_failed: "bad output",
 };
 
-function FailureRow({ failure }: { failure: AgentFailureRow }) {
+/** One failed leg: leg · kind · suspected cause. Click opens the detail lightbox. */
+function FailureRow({ failure, onSelect }: { failure: AgentFailureRow; onSelect: () => void }) {
   const cause = agentFailureCauseSchema.parse(failure.cause);
   const when = failure.at ? failure.at.slice(0, 16).replace("T", " ") : "unknown time";
-  // The numbers that make the suspected cause checkable rather than a bare assertion.
-  const facts = [
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="w-full cursor-pointer rounded-card border border-paper-800 bg-paper-900/40 px-3 py-2 text-left transition-colors hover:border-accent-500/50"
+      >
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-sm text-paper-200">{agentLegLabel(failure.legId)}</span>
+          <span className="text-xs text-danger-300">{KIND_LABELS[failure.kind]}</span>
+          <span className="text-xs text-paper-500">— probably: {causeLabel(cause)}</span>
+          <span className="ml-auto text-[11px] text-paper-600">{when}</span>
+        </div>
+        <p className="mt-1 text-xs text-paper-400">{agentFailureExplanation(cause)}</p>
+        {failure.detail ? (
+          <p className="mt-1 truncate text-[11px] text-paper-600" title={failure.detail}>
+            {failure.detail}
+          </p>
+        ) : null}
+      </button>
+    </li>
+  );
+}
+
+/** Numbered signals shown in the failure lightbox — the facts that make the cause checkable. */
+function failureFacts(failure: AgentFailureRow): string[] {
+  return [
     failure.kind === "timeout" && failure.timeoutMs ? `budget ${failure.timeoutMs}ms` : "",
     failure.latencyMs ? `took ${failure.latencyMs}ms` : "",
     failure.promptChars ? `prompt ${Math.round(failure.promptChars / 100) / 10}k chars` : "",
@@ -288,22 +329,89 @@ function FailureRow({ failure }: { failure: AgentFailureRow }) {
     failure.provider ? `via ${failure.provider}` : "",
     failure.modelId,
   ].filter(Boolean);
+}
+
+/**
+ * The click-to-open detail lightbox (the "db viewer"): for a RUN, its metadata + the detail
+ * sections behind the summary (the actual facts / loops / queries the leg produced); for a
+ * FAILURE, the suspected cause + the raw provider/parser message + the checkable signals.
+ */
+function AgentItemDialog({ item, onClose }: { item: FeedItem; onClose: () => void }) {
+  const when = item.at ? item.at.slice(0, 16).replace("T", " ") : "unknown time";
+  const title = `${agentLegLabel(item.legId)} — ${item.kind === "run" ? "completed" : "failed"}`;
+
+  const meta: [string, string][] =
+    item.kind === "run"
+      ? [
+          ["Latency", formatMs(item.run.latencyMs)],
+          ["Model", item.run.modelId || "—"],
+          ["Provider", item.run.provider || "—"],
+          ["Prompt", item.run.promptChars ? `${Math.round(item.run.promptChars / 100) / 10}k chars` : "—"],
+          ["Output cap", item.run.maxOutputTokens ? `${item.run.maxOutputTokens} tok` : "—"],
+          ["When", when],
+          ["Exchange", item.run.messageId || "—"],
+        ]
+      : [
+          ["Kind", KIND_LABELS[item.failure.kind]],
+          ["Cause", causeLabel(agentFailureCauseSchema.parse(item.failure.cause))],
+          ["Model", item.failure.modelId || "—"],
+          ["When", when],
+          ["Exchange", item.failure.messageId || "—"],
+        ];
 
   return (
-    <li className="rounded-card border border-paper-800 bg-paper-900/40 px-3 py-2">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-sm text-paper-200">{agentLegLabel(failure.legId)}</span>
-        <span className="text-xs text-danger-300">{KIND_LABELS[failure.kind]}</span>
-        <span className="text-xs text-paper-500">— probably: {causeLabel(cause)}</span>
-        <span className="ml-auto text-[11px] text-paper-600">{when}</span>
+    <Dialog open onClose={onClose} title={title}>
+      <div className="flex flex-col gap-4">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          {meta.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="text-paper-500">{k}</dt>
+              <dd className="break-words text-paper-300 tabular-nums">{v}</dd>
+            </div>
+          ))}
+        </dl>
+
+        {item.kind === "run" ? (
+          item.run.details.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {item.run.details.map((section, i) => (
+                <div key={`${section.label}-${i}`} className="flex flex-col gap-1">
+                  <h4 className="text-xs font-medium tracking-wide text-paper-500 uppercase">{section.label}</h4>
+                  <ul className="flex flex-col gap-1">
+                    {section.items.map((line, j) => (
+                      <li
+                        key={j}
+                        className="rounded-md border border-paper-800/60 bg-paper-900/40 px-2 py-1 text-xs break-words text-paper-300"
+                      >
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-paper-500">This run completed but changed nothing (no facts, state, or queries).</p>
+          )
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-paper-400">
+              {agentFailureExplanation(agentFailureCauseSchema.parse(item.failure.cause))}
+            </p>
+            {failureFacts(item.failure).length > 0 ? (
+              <p className="text-[11px] text-paper-600">{failureFacts(item.failure).join(" · ")}</p>
+            ) : null}
+            {item.failure.detail ? (
+              <div className="flex flex-col gap-1">
+                <h4 className="text-xs font-medium tracking-wide text-paper-500 uppercase">What the provider / parser said</h4>
+                <p className="rounded-md border border-paper-800/60 bg-paper-900/40 px-2 py-1 text-xs break-words text-paper-300">
+                  {item.failure.detail}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
-      <p className="mt-1 text-xs text-paper-400">{agentFailureExplanation(cause)}</p>
-      {facts.length > 0 ? <p className="mt-1 text-[11px] text-paper-600">{facts.join(" · ")}</p> : null}
-      {failure.detail ? (
-        <p className="mt-1 truncate text-[11px] text-paper-600" title={failure.detail}>
-          {failure.detail}
-        </p>
-      ) : null}
-    </li>
+    </Dialog>
   );
 }
