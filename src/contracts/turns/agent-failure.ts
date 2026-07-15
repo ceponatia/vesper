@@ -223,6 +223,23 @@ export function tallyAgentFailures(failures: readonly AgentFailure[]): {
  * "when it lives, how slow is it, and what did it actually do?" — which is what tells a
  * timeout apart from a slow-but-alive endpoint.
  */
+/**
+ * One labelled section of a run's DETAIL — the actual content the leg produced, for the
+ * inspector's click-to-open "db viewer" (e.g. `{ label: "Facts (2)", items: ["Mara · knowledge:
+ * …", …] }`). A run's summary is the one-line count; the details are the rows behind it.
+ */
+export const agentRunDetailSectionSchema = z.object({
+  label: z.string().catch(""),
+  items: z.array(z.string()).catch([]),
+});
+export type AgentRunDetailSection = z.infer<typeof agentRunDetailSectionSchema>;
+
+/** What a per-leg describer produces: the one-line summary AND the detail sections behind it. */
+export interface AgentRunDescription {
+  summary: string;
+  details: AgentRunDetailSection[];
+}
+
 export const agentRunSchema = z.object({
   legId: z.string().catch("unknown"),
   chatId: z.string().nullish().catch(null).transform((v) => v ?? null),
@@ -235,6 +252,8 @@ export const agentRunSchema = z.object({
   latencyMs: z.number().int().nonnegative().catch(0),
   /** One line of what the leg produced ("3 facts · 1 episode · 2 queries"); "" = nothing changed. */
   summary: z.string().catch(""),
+  /** The actual content behind the summary — the click-to-open detail (empty on old rows). */
+  details: z.array(agentRunDetailSectionSchema).catch([]).default([]),
   at: z.string().catch(""),
 });
 export type AgentRun = z.infer<typeof agentRunSchema>;

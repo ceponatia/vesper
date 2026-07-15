@@ -101,6 +101,7 @@ import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { newId } from "@/lib/ids";
+import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/turns/agent-failure";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { healOutfitMarker, loadChatWardrobe, wardrobeDescriptors } from "./chat-wardrobe";
@@ -1188,14 +1189,23 @@ export interface ChatPulseInput {
   sink?: DiagnosticSink;
 }
 
-/** One-line "what the pulse read" for the inspector's activity log. PURE. */
-function summarizeChatPulse(p: ChatPulse): string {
-  const parts: string[] = [];
-  if (p.playerAct?.concept) parts.push(`act: ${p.playerAct.concept}`);
-  if (p.feeling) parts.push(`feeling: ${p.feeling.label}`);
-  if (p.mindNote.trim()) parts.push("mind-note");
-  if (p.sentPhoto) parts.push("sent photo");
-  return parts.join(" · ") || "no change";
+/** Summary + detail of "what the pulse read" for the inspector's activity log / lightbox. PURE. */
+function describeChatPulse(p: ChatPulse): AgentRunDescription {
+  const details: AgentRunDetailSection[] = [];
+  if (p.playerAct?.concept) details.push({ label: "Player act", items: [p.playerAct.concept] });
+  if (p.feeling) details.push({ label: "Feeling", items: [`${p.feeling.label}${p.feeling.cause.trim() ? ` — ${p.feeling.cause.trim()}` : ""}`] });
+  if (p.mindNote.trim()) details.push({ label: "Mind note", items: [p.mindNote.trim()] });
+  if (p.sentPhoto) details.push({ label: "Photo", items: ["sent a selfie"] });
+  const summary =
+    [
+      p.playerAct?.concept ? `act: ${p.playerAct.concept}` : "",
+      p.feeling ? `feeling: ${p.feeling.label}` : "",
+      p.mindNote.trim() ? "mind-note" : "",
+      p.sentPhoto ? "sent photo" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ") || "no change";
+  return { summary, details };
 }
 
 /**
@@ -1257,7 +1267,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     "chat_state.pulse.timeout",
     sink,
     telemetry,
-    summarizeChatPulse,
+    describeChatPulse,
   );
   if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded"), degraded: true };
   if (input.scope === "opener") return { state: applyOpenerPulse(state, value).state, degraded: false };

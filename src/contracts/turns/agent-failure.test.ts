@@ -126,4 +126,13 @@ describe("tallyAgentRuns", () => {
   it("an empty window tallies to zero", () => {
     expect(tallyAgentRuns([])).toEqual({ total: 0, byLeg: [] });
   });
+
+  it("agentRunSchema defaults details to [] (old rows) and round-trips detail sections", () => {
+    expect(agentRunSchema.parse({ legId: "chat_memory_scribe" }).details).toEqual([]);
+    const parsed = agentRunSchema.parse({
+      legId: "chat_memory_scribe",
+      details: [{ label: "Facts (1)", items: ["Mara · knowledge: she roasts coffee"] }],
+    });
+    expect(parsed.details).toEqual([{ label: "Facts (1)", items: ["Mara · knowledge: she roasts coffee"] }]);
+  });
 });

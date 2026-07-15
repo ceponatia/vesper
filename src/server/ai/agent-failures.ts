@@ -5,6 +5,7 @@ import {
   type AgentFailure,
   type AgentFailureKind,
   type AgentRun,
+  type AgentRunDetailSection,
 } from "@/contracts/turns/agent-failure";
 import { logEvent } from "../events";
 
@@ -96,6 +97,11 @@ export function recordAgentFailure(input: RecordAgentFailureInput): void {
 }
 
 const SUMMARY_CAP = 200;
+// Safety caps on the recorded detail (the leg outputs are already bounded; this just bounds
+// the event-payload size for a debug surface): sections, items/section, chars/item.
+const DETAIL_SECTIONS_CAP = 12;
+const DETAIL_ITEMS_CAP = 20;
+const DETAIL_ITEM_CHARS = 300;
 
 /** What a successful run knows on top of the shared telemetry. */
 export interface RecordAgentRunInput extends AgentTelemetry {
@@ -105,8 +111,18 @@ export interface RecordAgentRunInput extends AgentTelemetry {
   latencyMs?: number;
   /** One line of what the leg produced this run. */
   summary?: string;
+  /** The actual content behind the summary — the click-to-open detail. */
+  details?: AgentRunDetailSection[];
   /** Injectable for tests; defaults to now. */
   at?: Date;
+}
+
+/** Cap the recorded detail so a debug event never bloats (leg outputs are already small). */
+function capDetails(details: readonly AgentRunDetailSection[]): AgentRunDetailSection[] {
+  return details.slice(0, DETAIL_SECTIONS_CAP).map((section) => ({
+    label: section.label.slice(0, SUMMARY_CAP),
+    items: section.items.slice(0, DETAIL_ITEMS_CAP).map((item) => item.slice(0, DETAIL_ITEM_CHARS)),
+  }));
 }
 
 /** Build a run record (pure). */
@@ -121,6 +137,7 @@ export function buildAgentRun(input: RecordAgentRunInput): AgentRun {
     maxOutputTokens: input.maxOutputTokens ?? 0,
     latencyMs: input.latencyMs ?? 0,
     summary: (input.summary ?? "").slice(0, SUMMARY_CAP),
+    details: capDetails(input.details ?? []),
     at: (input.at ?? new Date()).toISOString(),
   });
 }

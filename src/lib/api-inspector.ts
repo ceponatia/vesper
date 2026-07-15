@@ -157,6 +157,10 @@ const failureReportSchema = z.object({
   byCause: arrayOf(tallyRowSchema),
 });
 
+/** One labelled detail section behind a run's summary (the click-to-open "db viewer"). */
+export const agentRunDetailRowSchema = z.object({ label: textOr(""), items: arrayOf(z.string().catch("")) });
+export type AgentRunDetailRow = z.infer<typeof agentRunDetailRowSchema>;
+
 /** One SUCCESSFUL run (the activity + latency log) — mirrors `agentRunSchema`. */
 export const agentRunRowSchema = z.object({
   legId: textOr("unknown"),
@@ -167,6 +171,7 @@ export const agentRunRowSchema = z.object({
   maxOutputTokens: z.number().catch(0),
   latencyMs: z.number().catch(0),
   summary: textOr(""),
+  details: arrayOf(agentRunDetailRowSchema),
   at: textOr(""),
 });
 export type AgentRunRow = z.infer<typeof agentRunRowSchema>;

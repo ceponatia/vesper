@@ -18,6 +18,7 @@ import {
   type RetrievedMemoryDetail,
 } from "@/contracts";
 import type { Milestone } from "@/contracts/relationships/history";
+import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/turns/agent-failure";
 import { agentModelId, embedText, generateChecked, isDemoMode, toVectorLiteral, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import type { DbWriter } from "../db";
 import {
@@ -239,8 +240,8 @@ async function runExtractorLeg<T>(args: {
   code: string;
   /** Which conversation/exchange this leg is running for — so a failure is diagnosable. */
   trace?: AgentLegTrace;
-  /** One line of what a successful run produced — the inspector's activity log. */
-  summarize?: (value: T) => string;
+  /** Summary + detail of what a successful run produced — the inspector's activity log. */
+  describe?: (value: T) => AgentRunDescription;
   sink?: DiagnosticSink;
 }): Promise<{ value: T | null; degraded: boolean }> {
   const controller = new AbortController();
@@ -284,47 +285,109 @@ async function runExtractorLeg<T>(args: {
     `${args.code}.timeout`,
     args.sink,
     telemetry,
-    args.summarize,
+    args.describe,
   );
   return { value: degraded ? null : value, degraded };
 }
 
-/* One-line "what it did" summaries for the inspector's activity log (chat-plans-promises
- * follow-up). Pure reads over each leg's own output — enough to see the agent worked and
- * roughly what it touched, without cross-referencing the post-merge fold. */
-function summarizeScribe(v: ChatMemoryScribe): string {
-  const parts: string[] = [];
-  if (v.facts.length) parts.push(`${v.facts.length} fact${v.facts.length === 1 ? "" : "s"}`);
-  if (v.episodeSummary.trim()) parts.push("1 episode");
-  if (v.memoryQueries.length) parts.push(`${v.memoryQueries.length} quer${v.memoryQueries.length === 1 ? "y" : "ies"}`);
-  return parts.join(" · ") || "nothing memorable";
+/* Per-leg "describers" for the inspector's activity log (chat-plans-promises follow-up): the
+ * one-line summary AND the detail sections behind it (the click-to-open "db viewer" — the
+ * actual facts/loops/etc. the leg produced). Pure reads over each leg's own output. */
+type Section = AgentRunDetailSection;
+const joinParts = (parts: readonly string[], empty = "no change"): string => parts.filter(Boolean).join(" · ") || empty;
+const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+const compact = (sections: readonly (Section | null)[]): Section[] => sections.filter((s): s is Section => s !== null);
+
+// Shared field-detailers (reused across continuity + personal — same fields, one description).
+const loopSection = (loops: readonly string[]): Section | null =>
+  loops.length ? { label: `Open loops (${loops.length})`, items: [...loops] } : null;
+const outfitSection = (o: { description: string; removed: readonly string[]; added: readonly string[] }): Section | null => {
+  const items = [
+    o.description,
+    o.removed.length ? `removed: ${o.removed.join(", ")}` : "",
+    o.added.length ? `added: ${o.added.join(", ")}` : "",
+  ].filter(Boolean);
+  return items.length ? { label: "Outfit", items } : null;
+};
+const outfitChanged = (o: { description: string; removed: readonly string[]; added: readonly string[] }): boolean =>
+  Boolean(o.description || o.removed.length || o.added.length);
+const attrSection = (changes: readonly { attributeId: string; value: unknown }[]): Section | null =>
+  changes.length ? { label: "Appearance", items: changes.map((c) => `${c.attributeId} = ${String(c.value)}`) } : null;
+const driveSection = (updates: readonly { want: string; revealed: boolean; resolved: boolean }[]): Section | null =>
+  updates.length
+    ? {
+        label: "Drives",
+        items: updates.map((d) => `${d.want}${d.revealed ? " (revealed)" : ""}${d.resolved ? " (resolved)" : ""}`),
+      }
+    : null;
+
+function describeScribe(v: ChatMemoryScribe): AgentRunDescription {
+  return {
+    summary: joinParts(
+      [
+        v.facts.length ? plural(v.facts.length, "fact") : "",
+        v.episodeSummary.trim() ? "1 episode" : "",
+        v.memoryQueries.length ? plural(v.memoryQueries.length, "query", "queries") : "",
+      ],
+      "nothing memorable",
+    ),
+    details: compact([
+      v.facts.length ? { label: `Facts (${v.facts.length})`, items: v.facts.map((f) => `${f.subjectName} · ${f.kind}: ${f.text}`) } : null,
+      v.episodeSummary.trim() ? { label: "Episode", items: [v.episodeSummary.trim()] } : null,
+      v.memoryQueries.length ? { label: `Next-turn queries (${v.memoryQueries.length})`, items: [...v.memoryQueries] } : null,
+    ]),
+  };
 }
-function summarizeContinuity(v: ChatContinuity): string {
-  const parts: string[] = [];
-  if (v.scene.current) parts.push(`scene: ${v.scene.current}`);
-  if (v.outfit.description || v.outfit.removed.length || v.outfit.added.length) parts.push("outfit change");
-  if (v.attributeChanges.length) parts.push(`${v.attributeChanges.length} appearance`);
-  if (v.presence.length) parts.push(`${v.presence.length} presence`);
-  if (v.cast.length) parts.push(`${v.cast.length} cast`);
-  return parts.join(" · ") || "no change";
+function describeContinuity(v: ChatContinuity): AgentRunDescription {
+  return {
+    summary: joinParts([
+      v.scene.current ? `scene: ${v.scene.current}` : "",
+      outfitChanged(v.outfit) ? "outfit change" : "",
+      v.attributeChanges.length ? `${v.attributeChanges.length} appearance` : "",
+      v.presence.length ? `${v.presence.length} presence` : "",
+      v.cast.length ? `${v.cast.length} cast` : "",
+    ]),
+    details: compact([
+      v.scene.current
+        ? { label: "Scene", items: [v.scene.current, v.scene.timeOfDay ? `time: ${v.scene.timeOfDay}` : ""].filter(Boolean) }
+        : null,
+      outfitSection(v.outfit),
+      attrSection(v.attributeChanges),
+      v.presence.length ? { label: "Presence", items: v.presence.map((p) => `${p.name}: ${p.presence}`) } : null,
+      v.cast.length ? { label: "Cast", items: v.cast.map((c) => `${c.name}${c.relation ? ` — ${c.relation}` : ""}`) } : null,
+    ]),
+  };
 }
-function summarizeCharacter(v: ChatCharacterNotes): string {
-  const parts: string[] = [];
-  if (v.openLoops.length) parts.push(`${v.openLoops.length} loop${v.openLoops.length === 1 ? "" : "s"}`);
-  if (v.plans.length) parts.push(`${v.plans.length} plan${v.plans.length === 1 ? "" : "s"}`);
-  if (v.driveUpdates.length) parts.push(`${v.driveUpdates.length} drive`);
-  if (v.voiceExemplar.trim()) parts.push("voice line");
-  if (v.characterSlip.trim()) parts.push("slip noted");
-  if (v.traitShifts.length) parts.push(`${v.traitShifts.length} trait`);
-  return parts.join(" · ") || "no change";
+function describeCharacter(v: ChatCharacterNotes): AgentRunDescription {
+  return {
+    summary: joinParts([
+      v.openLoops.length ? plural(v.openLoops.length, "loop") : "",
+      v.plans.length ? plural(v.plans.length, "plan") : "",
+      v.driveUpdates.length ? `${v.driveUpdates.length} drive` : "",
+      v.voiceExemplar.trim() ? "voice line" : "",
+      v.characterSlip.trim() ? "slip noted" : "",
+      v.traitShifts.length ? `${v.traitShifts.length} trait` : "",
+    ]),
+    details: compact([
+      loopSection(v.openLoops),
+      v.plans.length ? { label: `Plans (${v.plans.length})`, items: v.plans.map((p) => `${p.what}${p.status ? ` [${p.status}]` : ""}`) } : null,
+      driveSection(v.driveUpdates),
+      v.voiceExemplar.trim() ? { label: "Voice line", items: [v.voiceExemplar.trim()] } : null,
+      v.characterSlip.trim() ? { label: "Character slip", items: [v.characterSlip.trim()] } : null,
+      v.traitShifts.length ? { label: "Trait shifts", items: v.traitShifts.map((t) => `${t.trait}: ${t.direction}`) } : null,
+    ]),
+  };
 }
-function summarizePersonal(v: ChatPersonalNotes): string {
-  const parts: string[] = [];
-  if (v.openLoops.length) parts.push(`${v.openLoops.length} loop${v.openLoops.length === 1 ? "" : "s"}`);
-  if (v.outfit.description || v.outfit.removed.length || v.outfit.added.length) parts.push("outfit change");
-  if (v.attributeChanges.length) parts.push(`${v.attributeChanges.length} appearance`);
-  if (v.driveUpdates.length) parts.push(`${v.driveUpdates.length} drive`);
-  return parts.join(" · ") || "no change";
+function describePersonal(v: ChatPersonalNotes): AgentRunDescription {
+  return {
+    summary: joinParts([
+      v.openLoops.length ? plural(v.openLoops.length, "loop") : "",
+      outfitChanged(v.outfit) ? "outfit change" : "",
+      v.attributeChanges.length ? `${v.attributeChanges.length} appearance` : "",
+      v.driveUpdates.length ? `${v.driveUpdates.length} drive` : "",
+    ]),
+    details: compact([loopSection(v.openLoops), outfitSection(v.outfit), attrSection(v.attributeChanges), driveSection(v.driveUpdates)]),
+  };
 }
 
 /**
@@ -357,7 +420,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_memory_scribe",
       trace: input.trace,
-      summarize: summarizeScribe,
+      describe: describeScribe,
       sink: input.sink,
     }),
     runExtractorLeg<ChatContinuity>({
@@ -375,7 +438,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_continuity",
       trace: input.trace,
-      summarize: summarizeContinuity,
+      describe: describeContinuity,
       sink: input.sink,
     }),
     runExtractorLeg<ChatCharacterNotes>({
@@ -394,7 +457,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_character_notes",
       trace: input.trace,
-      summarize: summarizeCharacter,
+      describe: describeCharacter,
       sink: input.sink,
     }),
   ]);
@@ -485,7 +548,7 @@ export async function runChatPersonalNotes(
     timeoutMs: CHAT_PERSONAL_NOTES_TIMEOUT_MS,
     code: "chat_personal_notes",
     trace: input.trace,
-    summarize: summarizePersonal,
+    describe: describePersonal,
     sink: input.sink,
   });
 }
