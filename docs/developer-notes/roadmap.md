@@ -59,29 +59,6 @@ _(nothing — pull the next entry from Next)_
   into [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)** (top of
   this list). Sequenced after batch 1 per the 2026-07-02 agreement; where the remainder
   slots versus the feature work above is the author's call.
-- **Visual world map** — [world-map.plan.md](world-map.plan.md). Slice 1 (read-only
-  force-directed graph) shipped 2026-06-18; slices 2–3 (editable layout, play-screen
-  minimap) remain — optional polish on a feature already delivering its core value.
-  _Demoted to the bottom 2026-07-14 (owner): character chat is now the app's main
-  focus and the world model is headed for deprecation or refactor — don't polish it.
-  A chat-lane descendant (a read-only scene-memory places graph) is parked in
-  [deferred.plan.md](deferred.plan.md) §Chat story map._
-- **World simulation ("the world moves")** — the former "phase 5" cluster, not
-  yet started, and now **direction-dependent**: character chat is the test bed
-  for what the world/session model will eventually look like (owner direction
-  2026-07-13 — see `CLAUDE.md`), so the movement-authority and
-  scheduled-arrivals specs were retired (deleted) 2026-07-13 rather than built
-  against the possibly-deprecated session model.
-  [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) remains as
-  findings (its intake half shipped). A future `world-simulation.plan.md` — or
-  the chat-successor equivalent — re-derives what it needs when this becomes
-  active. _Demoted to the bottom 2026-07-14 (owner) with the map, same rationale._
-  _Carry-forward 2026-07-14: the chat-applicable ideas graduated to
-  [chat-plans-promises.plan.md](chat-plans-promises.plan.md) (scheduled arrivals
-  reborn) and [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) (the
-  world moves, scoped to the cast's lives) — see the top of this list. What
-  stays here is only the session-side remainder (movement authority, world-scale
-  simulation), pending the direction._
 
 ## Someday / parking lot
 
@@ -186,15 +163,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 - **Attribute narrator guidance — core + sensory glosses** —
   [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) —
   2026-07-13 — per-value `narratorGuidance` glosses shipped end-to-end (schema
-  + invariants, both lanes' `attributePhrase` renderers, `describeConstraint`
-  + picker tooltips) with the sensory palettes as the first authored batch
-  (`feet.smell` + shared intimate scent/taste maps), alongside sensory-focus
-  block fixes ([sensory-grounding.followups.md](sensory-grounding.followups.md):
-  authored region scent is the current truth — no "clean skin" default beneath
-  it, hygiene deepens instead of competing, the taste clause's hardcoded
-  "salt" removed, character-preserving directive). Fixes "cheesy feet narrated
-  as clean/salty". Remainder (vocabulary audit + sweep, broader authoring
-  pass) stays in Next.
+  - invariants, both lanes' `attributePhrase` renderers, `describeConstraint`
+  - picker tooltips) with the sensory palettes as the first authored batch
+    (`feet.smell` + shared intimate scent/taste maps), alongside sensory-focus
+    block fixes ([sensory-grounding.followups.md](sensory-grounding.followups.md):
+    authored region scent is the current truth — no "clean skin" default beneath
+    it, hygiene deepens instead of competing, the taste clause's hardcoded
+    "salt" removed, character-preserving directive). Fixes "cheesy feet narrated
+    as clean/salty". Remainder (vocabulary audit + sweep, broader authoring
+    pass) stays in Next.
 - **Chat reply-failure surfacing** —
   [chat-reply-failures.plan.md](chat-reply-failures.plan.md) — 2026-07-13 —
   the "didn't reply" popup names the real cause instead of guessing "usually a
@@ -220,13 +197,13 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   pagination + jump-to-latest, the status-strip outfit chip + roster outfit
   lines, admin-gated sheet debug traces, the item ✦ draft-from-description
   assist (registry-grounded, carve-outs included), item delete in-use warnings
-  + read-only public items/locations, the editor **autosave** refactor
-  (create-on-new placeholders, save-on-change/blur, forge-draft review
-  preserved; world editor exempt — its save forges) + attribute-accordion
-  value summaries, **named outfit presets** replacing `defaultOutfit` (lazy
-  lift, preset switcher, archivist preset matching, rhythm auto-dress on time
-  skips), and the polish batch. Spawned: chat-action-beats +
-  chat-wardrobe-parity (both shipped 2026-07-14).
+  - read-only public items/locations, the editor **autosave** refactor
+    (create-on-new placeholders, save-on-change/blur, forge-draft review
+    preserved; world editor exempt — its save forges) + attribute-accordion
+    value summaries, **named outfit presets** replacing `defaultOutfit` (lazy
+    lift, preset switcher, archivist preset matching, rhythm auto-dress on time
+    skips), and the polish batch. Spawned: chat-action-beats +
+    chat-wardrobe-parity (both shipped 2026-07-14).
 - **Sensory grounding** — [sensory-grounding.plan.md](sensory-grounding.plan.md) —
   2026-07-12 — the chat Sensory-focus block now joins the player's targeted body
   region to that region's own authored attributes (sense-ranked — "I lick her foot"
@@ -293,7 +270,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   character editor's Relationships tab, presence × salience tier injection
   with the don't-teleport guard. Slices 1–4 shipped 2026-07-07. Leftovers
   (preset band pickers, third-person pair-law port, multi-char eval fixtures)
-  + the slice-7 sessions earmark are recorded in the plan.
+  - the slice-7 sessions earmark are recorded in the plan.
 - **Library UX — the follow-up pass** —
   [library-ux.plan.md](finished/library-ux.plan.md) — 2026-07-12 — facets for the other
   libraries (characters species/gender/world-usage, locations scale/world-usage,
@@ -445,7 +422,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   allowance** (`deriveChatSensoryAllowance` + one binding tail line; rules 11–12 and
   the cue-invite sensory arms collapsed into it), the intake `react_emotionally` →
   `acknowledge_emotional_beat` rename, the experimental `CHAT_PROMPT_LAYOUT=
-  turn_context` layout (default OFF pending eval A/B), and multi-turn `mt-chat-*`
+turn_context` layout (default OFF pending eval A/B), and multi-turn `mt-chat-*`
   transcript eval scenarios with longitudinal metrics (q-end%, repeat 5-gram%,
   sensory-turn%, paragraph inflation). Declined with reasons: mature-content
   reframe, POV rewrite, reflex-license removal.
@@ -558,11 +535,11 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   seed-credential guard, `BETTER_AUTH_SECRET` boot check, strict curated model-id
   resolvers), and four client fixes (registry-driven meter pips via threshold `pipLabel`s,
   debounce ref, lightbox focus trap, serialized chat-model PATCHes). No migration; verify
-  + full int suite green. Batches 2–4 remain queued (bottom of Next).
+  - full int suite green. Batches 2–4 remain queued (bottom of Next).
 - **Character chat as a primary feature** —
   [finished/character-chat-primary.plan.md](finished/character-chat-primary.plan.md) · spec
   [finished/character-chat-primary.spec.md](finished/character-chat-primary.spec.md), 2026-07-01. Chat now works like
-  the session lane for a *single* character (location via narration only): **RAG long-term memory**
+  the session lane for a _single_ character (location via narration only): **RAG long-term memory**
   (per-chat facts + episodes) atop the window + rolling summary, **mutable attributes** that evolve
   over a chat, and a **dev memory inspector**. The load-bearing keying decision (D1) landed on
   **widening** `facts`/`episodes` to a nullable session + `(ownerId, characterId)` key via a
@@ -575,7 +552,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   The chat narrator now **enacts** the tracked `character_chat_state` instead of listing it:
   condition→attribute overlays (a designed-but-unbuilt seam, guarded so a condition can't rewrite
   an inherent attribute), graded meter cues with a **band-change anti-repetition gate** (new
-  `surfaced_cues` column, migration `0017`) so a state is marked once when it *shifts* then rides as
+  `surfaced_cues` column, migration `0017`) so a state is marked once when it _shifts_ then rides as
   coloring, render-time **disinhibition** (intoxication lowers inhibition/guardedness/composure),
   soft social-card framing (theme not severity), a regex-first **one-turn intent cue**
   (`engine/chat-intent.ts`), a **state-aware chat scene image** (`visualStateNote` + overlays), and a
