@@ -1,10 +1,19 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { agentFailureExplanation, agentFailureCauseSchema, agentLegLabel } from "@/contracts/turns/agent-failure";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { chatInspectorApi, type AgentFailureRow, type AgentRunRow, type AgentRunStatRow } from "@/lib/api-inspector";
+
+/** One row of the merged activity feed — a successful run OR a failure, tagged for rendering. */
+type FeedItem =
+  | { kind: "run"; at: string; legId: string; run: AgentRunRow }
+  | { kind: "failure"; at: string; legId: string; failure: AgentFailureRow };
+
+const CONTROL_CLASS =
+  "rounded-md border border-paper-800 bg-paper-900/60 px-2 py-1 text-xs text-paper-200 focus:border-accent-500 focus:outline-none";
 
 /**
  * Agent health (contracts/turns/agent-failure.ts): the helper legs behind every reply are
@@ -19,13 +28,45 @@ export function ChatInspectorAgentHealth({ chatId }: { chatId: string }) {
   const health = useAsyncData(() => chatInspectorApi.agentFailures(chatId), [chatId]);
   const data = health.data;
 
+  const [legFilter, setLegFilter] = useState("all");
+  const [query, setQuery] = useState("");
+
+  // One chronological feed of this conversation's agent items — successful runs AND failures,
+  // newest first — so a single filter / search / scroll governs the whole (potentially large)
+  // list instead of two unbounded stacks eating the page.
+  const feed = useMemo<FeedItem[]>(() => {
+    if (!data) return [];
+    const runs: FeedItem[] = data.runs.recent.map((run) => ({ kind: "run", at: run.at, legId: run.legId, run }));
+    const failures: FeedItem[] = data.chat.recent.map((failure) => ({
+      kind: "failure",
+      at: failure.at,
+      legId: failure.legId,
+      failure,
+    }));
+    return [...runs, ...failures].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  }, [data]);
+
+  // The agent-type options are whatever legs actually appear (labelled), plus "All".
+  const legOptions = useMemo(() => [...new Set(feed.map((item) => item.legId))].sort(), [feed]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return feed.filter((item) => {
+      if (legFilter !== "all" && item.legId !== legFilter) return false;
+      if (!q) return true;
+      const hay =
+        item.kind === "run"
+          ? `${agentLegLabel(item.legId)} ${item.run.summary} ${item.run.modelId} ${item.run.provider ?? ""}`
+          : `${agentLegLabel(item.legId)} ${item.failure.detail} ${item.failure.cause} ${item.failure.modelId} ${item.failure.provider ?? ""}`;
+      return hay.toLowerCase().includes(q);
+    });
+  }, [feed, legFilter, query]);
+
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-medium tracking-wide text-paper-400 uppercase">Agent health</h2>
-        <span className="text-[11px] text-paper-600">
-          failed helper legs · last {data?.days ?? 7} days
-        </span>
+        <span className="text-[11px] text-paper-600">helper legs · last {data?.days ?? 7} days</span>
       </div>
 
       {health.loading ? (
@@ -66,35 +107,62 @@ export function ChatInspectorAgentHealth({ chatId }: { chatId: string }) {
             </div>
           ) : null}
 
-          {data.chat.recent.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <h3 className="text-xs font-medium tracking-wide text-paper-500 uppercase">
-                Recent failures in this conversation
-              </h3>
-              <ul className="flex flex-col gap-2">
-                {data.chat.recent.map((failure, i) => (
-                  <FailureRow key={`${failure.at}-${failure.legId}-${i}`} failure={failure} />
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {/* The activity + latency half (chat-plans-promises follow-up): how long the legs that
-              DO complete actually take — the diagnostic that tells a slow endpoint from a dead one. */}
+          {/* The latency half (chat-plans-promises follow-up): how long the legs that DO complete
+              actually take — the diagnostic that tells a slow endpoint from a dead one. */}
           {data.runsGlobal.byLeg.length > 0 ? (
             <RunLatencyList title="Completed runs — latency by leg (all conversations)" rows={data.runsGlobal.byLeg} />
           ) : null}
 
-          {data.runs.recent.length > 0 ? (
+          {/* The per-item activity feed (runs + failures) — filterable by agent type, keyword-
+              searchable, and height-capped so hundreds of items scroll inside a fixed box. */}
+          {feed.length > 0 ? (
             <div className="flex flex-col gap-2">
-              <h3 className="text-xs font-medium tracking-wide text-paper-500 uppercase">
-                Recent activity in this conversation
-              </h3>
-              <ul className="flex flex-col gap-2">
-                {data.runs.recent.map((run, i) => (
-                  <RunRow key={`${run.at}-${run.legId}-${i}`} run={run} />
-                ))}
-              </ul>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h3 className="text-xs font-medium tracking-wide text-paper-500 uppercase">
+                  Activity in this conversation
+                </h3>
+                <span className="text-[11px] tabular-nums text-paper-600">
+                  {filtered.length === feed.length ? feed.length : `${filtered.length} of ${feed.length}`}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={legFilter}
+                  onChange={(e) => setLegFilter(e.target.value)}
+                  aria-label="Filter by agent type"
+                  className={CONTROL_CLASS}
+                >
+                  <option value="all">All agents</option>
+                  {legOptions.map((leg) => (
+                    <option key={leg} value={leg}>
+                      {agentLegLabel(leg)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search summaries, models, causes…"
+                  aria-label="Search agent activity"
+                  className={`${CONTROL_CLASS} min-w-0 flex-1`}
+                />
+              </div>
+              {filtered.length > 0 ? (
+                <div className="max-h-96 overflow-y-auto rounded-card border border-paper-800/60 bg-paper-950/40 p-1">
+                  <ul className="flex flex-col gap-2">
+                    {filtered.map((item, i) =>
+                      item.kind === "run" ? (
+                        <RunRow key={`r-${item.run.at}-${item.legId}-${i}`} run={item.run} />
+                      ) : (
+                        <FailureRow key={`f-${item.failure.at}-${item.legId}-${i}`} failure={item.failure} />
+                      ),
+                    )}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-xs text-paper-500">No items match this filter.</p>
+              )}
             </div>
           ) : null}
         </div>
