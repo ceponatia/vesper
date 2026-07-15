@@ -1,5 +1,13 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
-import { agentFailureSchema, tallyAgentFailures, type AgentFailure } from "@/contracts/turns/agent-failure";
+import {
+  agentFailureSchema,
+  agentRunSchema,
+  tallyAgentFailures,
+  tallyAgentRuns,
+  type AgentFailure,
+  type AgentRun,
+  type AgentRunStat,
+} from "@/contracts/turns/agent-failure";
 import { parseOr } from "@/lib/parse";
 import { db, events } from "../db";
 
@@ -15,6 +23,7 @@ import { db, events } from "../db";
  */
 
 const AGENT_FAILURE_EVENT = "agent_failure";
+const AGENT_RUN_EVENT = "agent_run";
 
 export interface AgentFailureQuery {
   /** Restrict to one conversation (the inspector's per-chat panel). Omit for the global view. */
@@ -78,3 +87,42 @@ export async function agentFailureReport(query: AgentFailureQuery): Promise<Agen
  * window (a healthy build records zero), and a bound on the memory this debug read can cost.
  */
 export const TALLY_SCAN_CAP = 1000;
+
+export interface AgentRunReport {
+  /** The most recent successful runs, newest first (capped by `limit`). */
+  recent: AgentRun[];
+  total: number;
+  /** Per-leg count + median/max latency — the "how slow, really?" view. */
+  byLeg: AgentRunStat[];
+}
+
+/**
+ * Read side of the SUCCESSFUL-run log (`type = "agent_run"`, written by `withGenerateTimeout`
+ * on a clean completion): the activity + latency half of agent health. Same shape as
+ * `agentFailureReport` — recent list + tallies over the scanned window — but tallied by
+ * latency so you can SEE how long the completing legs take (the timeout diagnostic).
+ */
+export async function agentRunReport(query: AgentFailureQuery): Promise<AgentRunReport> {
+  const limit = query.limit ?? 30;
+  const rows = await db()
+    .select({ payload: events.payload, createdAt: events.createdAt })
+    .from(events)
+    .where(
+      and(
+        eq(events.type, AGENT_RUN_EVENT),
+        gte(events.createdAt, query.since),
+        ...(query.chatId ? [sql`${events.payload} ->> 'chatId' = ${query.chatId}`] : []),
+      ),
+    )
+    .orderBy(desc(events.createdAt))
+    .limit(TALLY_SCAN_CAP);
+
+  const runs = rows.flatMap((row) => {
+    const parsed = parseOr<AgentRun | null>(agentRunSchema, row.payload, null);
+    if (!parsed) return [];
+    return [parsed.at ? parsed : { ...parsed, at: row.createdAt?.toISOString() ?? "" }];
+  });
+
+  const tally = tallyAgentRuns(runs);
+  return { recent: runs.slice(0, limit), total: tally.total, byLeg: tally.byLeg };
+}

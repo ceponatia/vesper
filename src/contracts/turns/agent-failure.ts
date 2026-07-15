@@ -214,3 +214,64 @@ export function tallyAgentFailures(failures: readonly AgentFailure[]): {
   };
   return { total: failures.length, byLeg: count((f) => f.legId), byCause: count((f) => f.cause) };
 }
+
+/**
+ * One recorded SUCCESSFUL run — the `events` row payload (`type = "agent_run"`). A completed
+ * agent leg (the pulse or an extraction leg) with its measured latency, the provider that
+ * served it, and a one-line summary of what it produced. This is the activity + latency half
+ * of the health picture: a failure record answers "is a leg dying?"; a run record answers
+ * "when it lives, how slow is it, and what did it actually do?" — which is what tells a
+ * timeout apart from a slow-but-alive endpoint.
+ */
+export const agentRunSchema = z.object({
+  legId: z.string().catch("unknown"),
+  chatId: z.string().nullish().catch(null).transform((v) => v ?? null),
+  messageId: z.string().nullish().catch(null).transform((v) => v ?? null),
+  modelId: z.string().catch(""),
+  provider: z.string().nullish().catch(null).transform((v) => v ?? null),
+  promptChars: z.number().int().nonnegative().catch(0),
+  maxOutputTokens: z.number().int().nonnegative().catch(0),
+  /** How long the model call actually took — the diagnostic that separates slow from dead. */
+  latencyMs: z.number().int().nonnegative().catch(0),
+  /** One line of what the leg produced ("3 facts · 1 episode · 2 queries"); "" = nothing changed. */
+  summary: z.string().catch(""),
+  at: z.string().catch(""),
+});
+export type AgentRun = z.infer<typeof agentRunSchema>;
+
+/** Per-leg latency stat over a set of runs (the "how slow, really?" view). */
+export const agentRunStatSchema = z.object({
+  key: z.string().catch(""),
+  count: z.number().int().nonnegative().catch(0),
+  medianMs: z.number().int().nonnegative().catch(0),
+  maxMs: z.number().int().nonnegative().catch(0),
+});
+export type AgentRunStat = z.infer<typeof agentRunStatSchema>;
+
+/** Median of a numeric list (integer, midpoint-rounded). PURE. */
+function medianMs(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
+  return Math.round(((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2);
+}
+
+/** Tally runs by leg with count + median/max latency (the "how slow, really?" view). PURE. */
+export function tallyAgentRuns(runs: readonly AgentRun[]): { total: number; byLeg: AgentRunStat[] } {
+  const byLeg = new Map<string, number[]>();
+  for (const run of runs) {
+    const latencies = byLeg.get(run.legId) ?? [];
+    latencies.push(run.latencyMs);
+    byLeg.set(run.legId, latencies);
+  }
+  const stats: AgentRunStat[] = [...byLeg.entries()]
+    .map(([key, latencies]) => ({
+      key,
+      count: latencies.length,
+      medianMs: medianMs(latencies),
+      maxMs: latencies.length ? Math.max(...latencies) : 0,
+    }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  return { total: runs.length, byLeg: stats };
+}

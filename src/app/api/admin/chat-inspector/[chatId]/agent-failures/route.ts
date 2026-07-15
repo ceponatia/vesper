@@ -1,5 +1,5 @@
 import { jsonError, jsonOk, withUser } from "@/server/api";
-import { agentFailureReport } from "@/server/memory";
+import { agentFailureReport, agentRunReport } from "@/server/memory";
 import { loadOwnedChat } from "../../../../chats/owned";
 
 type Params = { chatId: string };
@@ -28,12 +28,16 @@ export const GET = withUser<Params>(async (user, req, ctx) => {
   const days = Number.isFinite(raw) && raw > 0 ? Math.min(Math.floor(raw), MAX_WINDOW_DAYS) : DEFAULT_WINDOW_DAYS;
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-  const [chat, global] = await Promise.all([
+  const [chat, global, runs, runsGlobal] = await Promise.all([
     agentFailureReport({ chatId, since }),
     // Every chat (the events stream is not per-owner, but this route is admin-only and the
     // deployment is single-tenant dev — stated here so it isn't mistaken for a leak).
     agentFailureReport({ since, limit: 0 }),
+    // The SUCCESSFUL-run activity + latency log (chat-plans-promises follow-up): the recent
+    // runs for THIS chat, plus the per-leg latency tally across all chats.
+    agentRunReport({ chatId, since }),
+    agentRunReport({ since, limit: 0 }),
   ]);
 
-  return jsonOk({ days, chat, global });
+  return jsonOk({ days, chat, global, runs, runsGlobal });
 });

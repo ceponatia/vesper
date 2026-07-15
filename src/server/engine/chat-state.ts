@@ -1188,6 +1188,16 @@ export interface ChatPulseInput {
   sink?: DiagnosticSink;
 }
 
+/** One-line "what the pulse read" for the inspector's activity log. PURE. */
+function summarizeChatPulse(p: ChatPulse): string {
+  const parts: string[] = [];
+  if (p.playerAct?.concept) parts.push(`act: ${p.playerAct.concept}`);
+  if (p.feeling) parts.push(`feeling: ${p.feeling.label}`);
+  if (p.mindNote.trim()) parts.push("mind-note");
+  if (p.sentPhoto) parts.push("sent photo");
+  return parts.join(" · ") || "no change";
+}
+
 /**
  * Run the reaction pulse: one cheap structured agent call (the `runIntake` recipe —
  * reasoning off, latency-sorted routing, no repair, hard timeout) followed by the
@@ -1247,6 +1257,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     "chat_state.pulse.timeout",
     sink,
     telemetry,
+    summarizeChatPulse,
   );
   if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded"), degraded: true };
   if (input.scope === "opener") return { state: applyOpenerPulse(state, value).state, degraded: false };

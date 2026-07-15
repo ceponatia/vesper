@@ -239,6 +239,8 @@ async function runExtractorLeg<T>(args: {
   code: string;
   /** Which conversation/exchange this leg is running for — so a failure is diagnosable. */
   trace?: AgentLegTrace;
+  /** One line of what a successful run produced — the inspector's activity log. */
+  summarize?: (value: T) => string;
   sink?: DiagnosticSink;
 }): Promise<{ value: T | null; degraded: boolean }> {
   const controller = new AbortController();
@@ -282,8 +284,47 @@ async function runExtractorLeg<T>(args: {
     `${args.code}.timeout`,
     args.sink,
     telemetry,
+    args.summarize,
   );
   return { value: degraded ? null : value, degraded };
+}
+
+/* One-line "what it did" summaries for the inspector's activity log (chat-plans-promises
+ * follow-up). Pure reads over each leg's own output — enough to see the agent worked and
+ * roughly what it touched, without cross-referencing the post-merge fold. */
+function summarizeScribe(v: ChatMemoryScribe): string {
+  const parts: string[] = [];
+  if (v.facts.length) parts.push(`${v.facts.length} fact${v.facts.length === 1 ? "" : "s"}`);
+  if (v.episodeSummary.trim()) parts.push("1 episode");
+  if (v.memoryQueries.length) parts.push(`${v.memoryQueries.length} quer${v.memoryQueries.length === 1 ? "y" : "ies"}`);
+  return parts.join(" · ") || "nothing memorable";
+}
+function summarizeContinuity(v: ChatContinuity): string {
+  const parts: string[] = [];
+  if (v.scene.current) parts.push(`scene: ${v.scene.current}`);
+  if (v.outfit.description || v.outfit.removed.length || v.outfit.added.length) parts.push("outfit change");
+  if (v.attributeChanges.length) parts.push(`${v.attributeChanges.length} appearance`);
+  if (v.presence.length) parts.push(`${v.presence.length} presence`);
+  if (v.cast.length) parts.push(`${v.cast.length} cast`);
+  return parts.join(" · ") || "no change";
+}
+function summarizeCharacter(v: ChatCharacterNotes): string {
+  const parts: string[] = [];
+  if (v.openLoops.length) parts.push(`${v.openLoops.length} loop${v.openLoops.length === 1 ? "" : "s"}`);
+  if (v.plans.length) parts.push(`${v.plans.length} plan${v.plans.length === 1 ? "" : "s"}`);
+  if (v.driveUpdates.length) parts.push(`${v.driveUpdates.length} drive`);
+  if (v.voiceExemplar.trim()) parts.push("voice line");
+  if (v.characterSlip.trim()) parts.push("slip noted");
+  if (v.traitShifts.length) parts.push(`${v.traitShifts.length} trait`);
+  return parts.join(" · ") || "no change";
+}
+function summarizePersonal(v: ChatPersonalNotes): string {
+  const parts: string[] = [];
+  if (v.openLoops.length) parts.push(`${v.openLoops.length} loop${v.openLoops.length === 1 ? "" : "s"}`);
+  if (v.outfit.description || v.outfit.removed.length || v.outfit.added.length) parts.push("outfit change");
+  if (v.attributeChanges.length) parts.push(`${v.attributeChanges.length} appearance`);
+  if (v.driveUpdates.length) parts.push(`${v.driveUpdates.length} drive`);
+  return parts.join(" · ") || "no change";
 }
 
 /**
@@ -316,6 +357,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_memory_scribe",
       trace: input.trace,
+      summarize: summarizeScribe,
       sink: input.sink,
     }),
     runExtractorLeg<ChatContinuity>({
@@ -333,6 +375,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_continuity",
       trace: input.trace,
+      summarize: summarizeContinuity,
       sink: input.sink,
     }),
     runExtractorLeg<ChatCharacterNotes>({
@@ -351,6 +394,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_character_notes",
       trace: input.trace,
+      summarize: summarizeCharacter,
       sink: input.sink,
     }),
   ]);
@@ -441,6 +485,7 @@ export async function runChatPersonalNotes(
     timeoutMs: CHAT_PERSONAL_NOTES_TIMEOUT_MS,
     code: "chat_personal_notes",
     trace: input.trace,
+    summarize: summarizePersonal,
     sink: input.sink,
   });
 }

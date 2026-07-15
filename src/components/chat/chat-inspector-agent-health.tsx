@@ -4,7 +4,7 @@ import { agentFailureExplanation, agentFailureCauseSchema, agentLegLabel } from 
 import { useAsyncData } from "@/components/hooks/use-async";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { chatInspectorApi, type AgentFailureRow } from "@/lib/api-inspector";
+import { chatInspectorApi, type AgentFailureRow, type AgentRunRow, type AgentRunStatRow } from "@/lib/api-inspector";
 
 /**
  * Agent health (contracts/turns/agent-failure.ts): the helper legs behind every reply are
@@ -78,9 +78,77 @@ export function ChatInspectorAgentHealth({ chatId }: { chatId: string }) {
               </ul>
             </div>
           ) : null}
+
+          {/* The activity + latency half (chat-plans-promises follow-up): how long the legs that
+              DO complete actually take — the diagnostic that tells a slow endpoint from a dead one. */}
+          {data.runsGlobal.byLeg.length > 0 ? (
+            <RunLatencyList title="Completed runs — latency by leg (all conversations)" rows={data.runsGlobal.byLeg} />
+          ) : null}
+
+          {data.runs.recent.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xs font-medium tracking-wide text-paper-500 uppercase">
+                Recent activity in this conversation
+              </h3>
+              <ul className="flex flex-col gap-2">
+                {data.runs.recent.map((run, i) => (
+                  <RunRow key={`${run.at}-${run.legId}-${i}`} run={run} />
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** ms → "12.3s" / "840ms" / "—". */
+function formatMs(ms: number): string {
+  if (ms <= 0) return "—";
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+/** Per-leg latency bars (median scaled to the slowest max) — the "how slow, really?" view. */
+function RunLatencyList({ title, rows }: { title: string; rows: AgentRunStatRow[] }) {
+  if (rows.length === 0) return null;
+  const max = Math.max(...rows.map((r) => r.maxMs), 1);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h3 className="text-xs font-medium tracking-wide text-paper-500 uppercase">{title}</h3>
+      <ul className="flex flex-col gap-1">
+        {rows.map((row) => (
+          <li key={row.key} className="flex items-center gap-2 text-xs">
+            <span className="min-w-0 flex-1 truncate text-paper-300">{agentLegLabel(row.key)}</span>
+            <span
+              aria-hidden="true"
+              className="h-1.5 rounded-full bg-accent-500/50"
+              style={{ width: `${Math.round((row.medianMs / max) * 64)}px` }}
+            />
+            <span className="text-right tabular-nums text-paper-400">
+              {formatMs(row.medianMs)} med · {formatMs(row.maxMs)} max · {row.count}×
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** One successful run: leg · latency · what it did · model. */
+function RunRow({ run }: { run: AgentRunRow }) {
+  const when = run.at ? run.at.slice(0, 16).replace("T", " ") : "unknown time";
+  const facts = [run.provider ? `via ${run.provider}` : "", run.modelId].filter(Boolean);
+  return (
+    <li className="rounded-card border border-paper-800 bg-paper-900/40 px-3 py-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-sm text-paper-200">{agentLegLabel(run.legId)}</span>
+        <span className="text-xs text-accent-300 tabular-nums">{formatMs(run.latencyMs)}</span>
+        {run.summary ? <span className="text-xs text-paper-400">— {run.summary}</span> : null}
+        <span className="ml-auto text-[11px] text-paper-600">{when}</span>
+      </div>
+      {facts.length > 0 ? <p className="mt-1 text-[11px] text-paper-600">{facts.join(" · ")}</p> : null}
+    </li>
   );
 }
 
