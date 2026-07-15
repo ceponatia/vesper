@@ -906,7 +906,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       onRename={menuAction(() => setRenameOpen(true))}
       onArchiveToggle={() => void toggleArchived()}
       onDelete={menuAction(() => setDeleteOpen(true))}
-      onInspector={isAdmin ? menuAction(() => router.push(`/chat/${chatId}/inspector`)) : undefined}
+      onInspector={
+        isAdmin
+          ? // Open the inspector in a NEW tab so it never unmounts the live conversation
+            // (a same-tab navigation would tear down a streaming reply / the composer).
+            menuAction(() => window.open(`/chat/${chatId}/inspector`, "_blank", "noopener,noreferrer"))
+          : undefined
+      }
       onRoster={menuAction(() => setRosterOpen(true))}
     />
   );
