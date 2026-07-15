@@ -87,9 +87,13 @@ export const CHAT_PULSE_MAX_OUTPUT_TOKENS = 256;
 /**
  * Timeout for the inline reaction pulse before degrading to drift-only state. It
  * runs in the stream finalizer AFTER the reply has flushed to the client, so this
- * budget only delays the controller.close() — invisible to perceived latency.
+ * budget only delays the controller.close() — invisible to perceived latency (its
+ * one real cost is holding the per-chat exchange lock a little longer, so a very
+ * fast re-send can 409 `chat_busy`). Raised 4000→8000 (2026-07-15) alongside the
+ * DeepSeek-4-Flash agent-model swap: the pulse was the tightest budget and the
+ * single most-timed-out leg, so it gets the most headroom for a slow-but-alive route.
  */
-export const CHAT_PULSE_TIMEOUT_MS = 4000;
+export const CHAT_PULSE_TIMEOUT_MS = 8000;
 /**
  * The post-turn extraction legs (chat-agent-improvements.plan.md slice 1b — formerly ONE
  * 700-token archivist call emitting all thirteen fields). Three focused legs now run in
@@ -105,15 +109,18 @@ export const CHAT_PULSE_TIMEOUT_MS = 4000;
 export const CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS = 500;
 export const CHAT_CONTINUITY_MAX_OUTPUT_TOKENS = 400;
 export const CHAT_CHARACTER_NOTES_MAX_OUTPUT_TOKENS = 350;
-/** Shared per-leg timeout (they race each other, not a shared budget). */
-export const CHAT_EXTRACTOR_TIMEOUT_MS = 6000;
+/** Shared per-leg timeout (they race each other, not a shared budget). Raised 6000→10000
+ * (2026-07-15) with the DeepSeek-4-Flash swap — off the perceived-latency path, so the only
+ * cost is a slightly longer exchange-lock hold; catches a slow-but-alive route instead of dropping the leg. */
+export const CHAT_EXTRACTOR_TIMEOUT_MS = 10000;
 /**
  * The per-member personal pass (multi-character-chat.followups.md ruling 10): one small
  * focused call per PRESENT ensemble member after the shared archivist. Four fields only
  * (loops/outfit/attributes/drives), so a tighter cap; same off-reply-path latency budget.
  */
 export const CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS = 400;
-export const CHAT_PERSONAL_NOTES_TIMEOUT_MS = 6000;
+// Matched to CHAT_EXTRACTOR_TIMEOUT_MS (raised 6000→10000, 2026-07-15) — same off-reply-path budget.
+export const CHAT_PERSONAL_NOTES_TIMEOUT_MS = 10000;
 /**
  * The background location-sketch agent (chat-scene-fidelity.plan.md slice 2b) runs as a
  * DETACHED job — nothing waits on it — so it affords a roomier timeout than the post-flush
