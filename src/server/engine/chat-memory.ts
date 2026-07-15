@@ -348,9 +348,7 @@ function describeContinuity(v: ChatContinuity): AgentRunDescription {
       v.cast.length ? `${v.cast.length} cast` : "",
     ]),
     details: compact([
-      v.scene.current
-        ? { label: "Scene", items: [v.scene.current, v.scene.timeOfDay ? `time: ${v.scene.timeOfDay}` : ""].filter(Boolean) }
-        : null,
+      v.scene.current ? { label: "Scene", items: [v.scene.current] } : null,
       outfitSection(v.outfit),
       attrSection(v.attributeChanges),
       v.presence.length ? { label: "Presence", items: v.presence.map((p) => `${p.name}: ${p.presence}`) } : null,

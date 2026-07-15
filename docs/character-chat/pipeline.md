@@ -66,14 +66,17 @@ exchange:
    When the unsummarized tail reaches the fold trigger, a detached `chat_summary` job is
    enqueued fire-and-forget (§4).
 4. **State drift.** The pipeline loads the shared **scenario** once, ticks its clock
-   once for the whole exchange (`CHAT_TICK_MINUTES` — ONE story timeline, never per
-   member), then `driftChatState` (pure) drifts each member against it — meters decay
-   toward personalized baselines (present members only; the away-freeze), conditions
-   expire against the shared clock for everyone. **No time passes between visits**
+   once for the whole exchange (`CHAT_TICK_MINUTES` = 1 story minute since
+   chat-clock-calendar — ONE story timeline, never per member), then `driftChatState`
+   (pure) drifts each member against it — meters decay toward personalized baselines
+   by `CHAT_METER_DRIFT_MINUTES` (= 4; meter pacing is exchange-keyed, deliberately
+   decoupled from the 1-minute clock tick) for present members only (the away-freeze);
+   conditions expire against the shared clock for everyone. **No time passes between visits**
    (spec §8, D8 — the wall-clock model was removed outright): the only between-scene
    lever is a player **time skip** (`POST …/time-skip`), which advances the scenario
    clock, stamps its one-shot `pending_skip_note` (worded by the primary's regard band,
-   `chatSkipNote`, with a "a life meanwhile" license) and `skip_history` ring, then
+   `chatSkipNote`, with a "a life meanwhile" license **and the calendar landing** —
+   "It is now Friday evening", chat-clock-calendar) and `skip_history` ring, then
    gives each PRESENT member the per-character half (condition expiry, scene-budget
    reset, feeling decay, and **rhythm auto-dress** — a `profile.schedule` row covering
    the skipped-to clock that names an outfit preset re-dresses the member for that

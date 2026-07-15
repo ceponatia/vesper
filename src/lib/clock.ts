@@ -12,8 +12,8 @@ export type CalendarStart = z.infer<typeof calendarStartSchema>;
 
 export const DEFAULT_CALENDAR_START: CalendarStart = { year: 2024, month: 6, day: 1, hour: 8, minute: 0 };
 
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
-const MONTHS = [
+export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+export const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ] as const;

@@ -1,5 +1,7 @@
 import { z } from "zod";
+import type { CalendarStart } from "@/lib/clock";
 import { scheduleDayPartById, type ScheduleDayPartId } from "../world/profile";
+import { chatMomentLabel, dayStartClockMinutes } from "./chat-clock";
 
 /**
  * Chat plans & promises (chat-plans-promises.plan.md / .spec.md): commitments the
@@ -192,11 +194,15 @@ export function planInvolvesPlayer(plan: ChatPlan, playerName: string): boolean 
  * target that lands at/before the strike is bumped one day forward (a plan can't be born
  * in the past). Pure.
  */
-export function resolvePlanWhen(when: PlanMove["when"], nowMinutes: number): PlanWhen {
+export function resolvePlanWhen(when: PlanMove["when"], nowMinutes: number, calendarStart?: CalendarStart): PlanWhen {
   const part = when?.dayPart ? scheduleDayPartById(when.dayPart) : undefined;
   const hasDay = Boolean(when && (when.dayOffset !== undefined || part));
   if (!when || when.unscheduled || !hasDay) return { kind: "unscheduled" };
-  const dayStart = Math.floor(nowMinutes / MINUTES_PER_DAY) * MINUTES_PER_DAY;
+  // The day boundary is REAL midnight when the calendar anchor is known (the anchor rarely
+  // starts a story at 00:00, so `floor(now / 1440)` would put "tomorrow morning" mid-day).
+  const dayStart = calendarStart
+    ? dayStartClockMinutes(nowMinutes, calendarStart)
+    : Math.floor(nowMinutes / MINUTES_PER_DAY) * MINUTES_PER_DAY;
   const dayOffset = Math.max(0, Math.trunc(when.dayOffset ?? 0));
   const partMinute = part ? part.startMinute : 720; // midday when only a day is named
   let targetMinutes = dayStart + dayOffset * MINUTES_PER_DAY + partMinute;
@@ -223,9 +229,22 @@ export function buildWhenLabel(dayOffset: number, dayPart?: ScheduleDayPartId): 
   return `in ${dayOffset} days, ${dayPart}`;
 }
 
-/** A one-line "when" phrase for prompts/UI ("tomorrow evening" / "sometime"). Pure. */
-export function describePlanWhen(when: PlanWhen): string {
+/** Render context for calendar-aware plan labels (chat-clock-calendar.plan.md). */
+export interface PlanLabelContext {
+  nowMinutes: number;
+  calendarStart: CalendarStart;
+}
+
+/**
+ * A one-line "when" phrase for prompts/UI. With `ctx`, a scheduled plan's label is
+ * DERIVED against the story calendar at render time — real weekdays (owner ruling
+ * 2026-07-15: "Friday evening"; the date past a week out), never stored, so editing
+ * `calendarStart` rebases every label. Without ctx (or unscheduled), the stored
+ * relative label ("tomorrow evening" / "sometime") is the fallback. Pure.
+ */
+export function describePlanWhen(when: PlanWhen, ctx?: PlanLabelContext): string {
   if (when.kind === "unscheduled") return when.label?.trim() || "sometime";
+  if (ctx) return chatMomentLabel(when.targetMinutes, ctx.nowMinutes, ctx.calendarStart);
   return when.label.trim() || "soon";
 }
 
@@ -266,7 +285,7 @@ function capPlans(plans: readonly ChatPlan[]): ChatPlan[] {
 export function mergeChatPlans(
   plans: readonly ChatPlan[],
   proposal: ChatPlanProposal,
-  ctx: { nowMinutes: number; mintId: () => string },
+  ctx: { nowMinutes: number; mintId: () => string; calendarStart?: CalendarStart },
 ): { plans: ChatPlan[]; archivistKept: ChatPlan[] } {
   if (!proposal.length) return { plans: [...plans], archivistKept: [] };
   const out: ChatPlan[] = plans.map((p) => ({ ...p, participants: [...p.participants] }));
@@ -285,7 +304,7 @@ export function mergeChatPlans(
         what,
         participants: dedupeParticipants(move.participants),
         where: move.where.trim() ? move.where.trim().slice(0, PLAN_WHERE_MAX_CHARS) : undefined,
-        when: resolvePlanWhen(move.when, ctx.nowMinutes),
+        when: resolvePlanWhen(move.when, ctx.nowMinutes, ctx.calendarStart),
         status: "upcoming",
         struckAtMinutes: ctx.nowMinutes,
       };
@@ -294,7 +313,7 @@ export function mergeChatPlans(
       if (move.participants.length) plan.participants = dedupeParticipants([...plan.participants, ...move.participants]);
       if (move.where.trim()) plan.where = move.where.trim().slice(0, PLAN_WHERE_MAX_CHARS);
       if (move.when && (move.when.dayOffset !== undefined || move.when.dayPart || move.when.unscheduled)) {
-        plan.when = resolvePlanWhen(move.when, plan.struckAtMinutes || ctx.nowMinutes);
+        plan.when = resolvePlanWhen(move.when, plan.struckAtMinutes || ctx.nowMinutes, ctx.calendarStart);
       }
     }
     if (move.status === "kept" && plan.status !== "kept") {
@@ -348,10 +367,12 @@ export function advancePlans(
 /** A plan's transient salience this turn (derived, never stored). */
 export type PlanSalience = "dueNow" | "imminent" | "justMissed" | "upcoming";
 
-/** One salient plan for the narrator/tail. */
+/** One salient plan for the narrator/tail. `whenLabel` is the render-time calendar label. */
 export interface SalientPlan {
   plan: ChatPlan;
   salience: PlanSalience;
+  /** "Friday evening" with a calendar anchor; the stored relative label otherwise. */
+  whenLabel: string;
 }
 
 const SALIENCE_RANK: Record<PlanSalience, number> = { dueNow: 0, justMissed: 1, imminent: 2, upcoming: 3 };
@@ -363,23 +384,33 @@ const SALIENCE_RANK: Record<PlanSalience, number> = { dueNow: 0, justMissed: 1, 
  * near list). Unscheduled plans never surface as "near". The tail renderer decides how many
  * of the far-upcoming to keep.
  */
-export function derivePlanSalience(plans: readonly ChatPlan[], nowMinutes: number): SalientPlan[] {
+export function derivePlanSalience(
+  plans: readonly ChatPlan[],
+  nowMinutes: number,
+  calendarStart?: CalendarStart,
+): SalientPlan[] {
+  const ctx = calendarStart ? { nowMinutes, calendarStart } : undefined;
+  const salient = (plan: ChatPlan, salience: PlanSalience): SalientPlan => ({
+    plan,
+    salience,
+    whenLabel: describePlanWhen(plan.when, ctx),
+  });
   const out: SalientPlan[] = [];
   for (const plan of plans) {
     if (plan.status === "canceled" || plan.status === "kept") continue;
     if (plan.status === "missed") {
       if (plan.when.kind === "scheduled" && plan.when.targetMinutes - nowMinutes >= -PLAN_JUST_MISSED_WINDOW_MINUTES) {
-        out.push({ plan, salience: "justMissed" });
+        out.push(salient(plan, "justMissed"));
       }
       continue;
     }
     // upcoming
     if (plan.when.kind !== "scheduled") continue;
     const delta = plan.when.targetMinutes - nowMinutes;
-    if (delta > PLAN_IMMINENT_WINDOW_MINUTES) out.push({ plan, salience: "upcoming" });
-    else if (delta > 0) out.push({ plan, salience: "imminent" });
-    else if (delta >= -PLAN_DUE_WINDOW_MINUTES) out.push({ plan, salience: "dueNow" });
-    else if (delta >= -PLAN_JUST_MISSED_WINDOW_MINUTES) out.push({ plan, salience: "justMissed" });
+    if (delta > PLAN_IMMINENT_WINDOW_MINUTES) out.push(salient(plan, "upcoming"));
+    else if (delta > 0) out.push(salient(plan, "imminent"));
+    else if (delta >= -PLAN_DUE_WINDOW_MINUTES) out.push(salient(plan, "dueNow"));
+    else if (delta >= -PLAN_JUST_MISSED_WINDOW_MINUTES) out.push(salient(plan, "justMissed"));
   }
   return out.sort((a, b) => SALIENCE_RANK[a.salience] - SALIENCE_RANK[b.salience]);
 }
@@ -394,8 +425,8 @@ export function hasSalientPlan(salient: readonly SalientPlan[]): boolean {
  * urgent NEAR plan phrased for the chat list, or null when nothing is near. Outranks open
  * loops in the marker (an imminent / just-missed commitment is a stronger pull). Pure.
  */
-export function planHubReason(plans: readonly ChatPlan[], nowMinutes: number): string | null {
-  const near = derivePlanSalience(plans, nowMinutes).find((s) => s.salience !== "upcoming");
+export function planHubReason(plans: readonly ChatPlan[], nowMinutes: number, calendarStart?: CalendarStart): string | null {
+  const near = derivePlanSalience(plans, nowMinutes, calendarStart).find((s) => s.salience !== "upcoming");
   if (!near) return null;
   const what = near.plan.what.trim();
   switch (near.salience) {
@@ -404,7 +435,7 @@ export function planHubReason(plans: readonly ChatPlan[], nowMinutes: number): s
     case "dueNow":
       return `${what} — right now`;
     case "imminent":
-      return `${what} — ${describePlanWhen(near.plan.when)}`;
+      return `${what} — ${near.whenLabel}`;
     case "upcoming":
       return null;
   }

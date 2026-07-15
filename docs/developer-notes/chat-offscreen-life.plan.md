@@ -3,7 +3,11 @@
 Status: **next** (planned 2026-07-14, from the world-sim carry-forward review —
 "the world moves" scoped down to the one world chat actually has: the cast's
 lives. Sequenced after [chat-plans-promises.plan.md](chat-plans-promises.plan.md),
-whose plan records the meanwhile pass consumes. Spec when active.)
+whose plan records the meanwhile pass consumes — **shipped 2026-07-15, so this
+plan is unblocked**. Now sequenced after
+[chat-clock-calendar.plan.md](chat-clock-calendar.plan.md) (2026-07-15) — the
+meanwhile pass triggers on big skips, and skips won't get used until story
+time is legible. Spec when active; see §Feasibility notes below first.)
 
 ## Goal
 
@@ -31,8 +35,11 @@ commitments come due; this plan makes the *rest* of off-screen life real.
 
 ### 1. Grounded meanwhile material (prompt plumbing, no new model calls)
 
-The initiative cue's life-meanwhile license — and the `pending_skip_note`
-path on ordinary exchanges — currently ground on the daily-rhythm line alone.
+The initiative cue's life-meanwhile license currently grounds on the
+daily-rhythm line alone; the `pending_skip_note` path on ordinary exchanges
+grounds on even less — `chatSkipNote` licenses its meanwhile line against
+nothing but "the scenario and your personality" (`formatScheduleRhythm` feeds
+only the initiative cue today).
 Feed them the rest of what's already tracked: active non-secret drives (her
 projects ARE her life), the supporting cast list (names + relations +
 whereabouts — the sister is who she'd have seen), and open plans. Improvised
@@ -51,7 +58,7 @@ _Build note (updated 2026-07-14, after [chat-agent-improvements.plan.md](chat-ag
 shipped): the meanwhile pass is **another leg composed from the extraction field
 library** (`server/engine/prompts/chat-extractors.ts`) — a `meanwhile` leg whose
 key list reuses the existing `facts` / `driveUpdates` / `cast` modules (plus the
-plan-status module once plans & promises lands) with a different role sentence and
+`plans` module that landed with plans & promises) with a different role sentence and
 its own context blocks. The folds it needs (`addFacts`, `applyDriveUpdates`,
 `mergeSupportingCast`) already exist and are already shared. Do NOT hand-write a
 fourth extractor prompt._
@@ -127,13 +134,50 @@ The meanwhile pass is deliberately **cast-wide** — it is the chat lane's
 One archivist-class call per qualifying big skip, plus modestly larger opener
 / skip-note prompts. Player-triggered, capped, degradable — no standing spend.
 
+## Feasibility notes (code review, 2026-07-15)
+
+A pre-active trace against the shipped code. The plan is feasible and unblocked
+(plans & promises landed with the NPC↔NPC hook pointing here), but the build
+note understates four pieces of net-new work:
+
+1. **The field library is single-subject; the meanwhile pass is ensemble-wide.**
+   Every `ExtractorField` instruction closure bakes in one `ctx.characterName`
+   (one `drives` list, one subject), so the `meanwhile` leg cannot literally
+   reuse the `facts`/`driveUpdates`/`cast` key list — a cast-wide pass needs a
+   new **composite meanwhile field** whose proposed developments each carry a
+   subject/pair binding, with the fold dispatching each development to the
+   existing sinks. Reuse the *folds* and the *library assembly machinery*
+   (role/blocks/rules), not the single-subject instructions. (The alternative —
+   per-member fan-out of the personal leg — breaks the one-call cost budget and
+   can't see NPC↔NPC pairs.)
+2. **Per-member fact routing is new plumbing.** `writeChatMemory` today fans
+   the *same* aggregate out to all *present* witnesses; "each member knows
+   different things" (and away members receiving their own week) needs a
+   targeted write — fact → involved members' memory groups, including away
+   members, who currently never receive writes.
+3. **Whereabouts is net-new end to end**: no column on `character_chat_state`
+   (presence is bare `present|away`), the archivist `cast` proposal schema
+   carries no `whereabouts`, and `mergeSupportingCast` never writes it — the
+   stored supporting-cast field is author-set only today.
+4. **The scene-sketch CAS doesn't map 1:1.** It CAS-writes one jsonb column;
+   the meanwhile pass writes many sinks across two tables plus `addFacts`
+   (which is the async embed+transaction memory path, not a pure fold). The
+   never-409 property carries over, but idempotency should key off the
+   `SkipRecord` (e.g. a per-skip marker / `guardMessageId`-style guard), not a
+   value CAS.
+5. **Threshold lumpiness (feeds Open Q A):** skip amounts are a fixed enum
+   (`moments` 30 / `hours` 180 / `overnight` 540 / `days` 4320 minutes), so a
+   literal ≥1-story-day (1440) gate arms on `days` only — `overnight` reads as
+   "the next morning" but is 540 min. Consider gating on cumulative minutes
+   since the last pass, or arming `overnight` by label semantics.
+
 ## Open questions
 
 - **A. Threshold & scaling** — what skip size arms the pass (one story day?);
   do longer skips get more/weightier developments or the same 1–3?
 - **B. Placement** — detached job at skip time (lean) vs inline in the skip
-  PATCH (simpler, adds latency to a quick action) vs next exchange pre-turn
-  (rejected lean: first-token latency, the intake lesson).
+  POST (`POST …/time-skip` — simpler, adds latency to a quick action) vs next
+  exchange pre-turn (rejected lean: first-token latency, the intake lesson).
 - **C. Whereabouts storage** — a new small column on `character_chat_state`
   vs riding `mindNote`. Lean: its own field (forward-compatible; the ensemble
   prompt reads it directly).

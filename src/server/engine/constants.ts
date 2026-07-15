@@ -65,21 +65,32 @@ export const CHARACTER_CHAT_VERBATIM_KEEP = 15;
 /**
  * Character-chat light state (docs/developer-notes/character-chat-state.spec.md §3,
  * re-ruled by character-chat-standalone.spec.md §8, D3/D8). The chat clock is the
- * ONLY time model: within a visit each exchange advances it CHAT_TICK_MINUTES and
- * decays meters that far (the session decay model, scaled tiny); between visits no
- * time passes at all — a player away for a week returns to a scene where nothing
- * moved. Player-chosen time skips (CHAT_SKIP_MINUTES) are the one between-scene
- * lever, and in v1 they are narrative flavor only: clock + condition expiry + the
- * skip note — meters untouched (D14). (Affinity never decays, spec §10.)
+ * ONLY time model: within a visit each exchange advances it CHAT_TICK_MINUTES;
+ * between visits no time passes at all — a player away for a week returns to a
+ * scene where nothing moved. Player-chosen time skips (CHAT_SKIP_MINUTES) are the
+ * one between-scene lever, and in v1 they are narrative flavor only: clock +
+ * condition expiry + the skip note — meters untouched (D14). (Affinity never
+ * decays, spec §10.)
+ *
+ * 4 → 1 (chat-clock-calendar.plan.md, owner ruling 2026-07-15): one exchange ≈ one
+ * story minute, so ordinary conversation barely moves the visible clock and skips
+ * are the primary time mover. Meter pacing did NOT follow the tick — see
+ * CHAT_METER_DRIFT_MINUTES.
  */
-export const CHAT_TICK_MINUTES = 4;
-/** In-game minutes per player skip amount (spec §8.1 — a fixed four-value map, never free-form). */
-export const CHAT_SKIP_MINUTES: Record<"moments" | "hours" | "overnight" | "days", number> = {
-  moments: 30,
-  hours: 180,
-  overnight: 540,
-  days: 4320,
-};
+export const CHAT_TICK_MINUTES = 1;
+/**
+ * Story-minutes of meter decay applied per exchange (the drift sweep, plan §1):
+ * meter pacing is exchange-keyed in spirit — like the feeling's per-exchange decay
+ * — so when the clock tick dropped 4 → 1 this kept the shipped per-exchange meter
+ * feel instead of slowing it 4×. Deliberately decoupled from CHAT_TICK_MINUTES.
+ */
+export const CHAT_METER_DRIFT_MINUTES = 4;
+/**
+ * In-game minutes per player skip amount (spec §8.1) — moved to the contract
+ * (chat-clock-calendar: the clock card previews landings client-side); re-exported
+ * here beside its tuning siblings.
+ */
+export { CHAT_SKIP_MINUTES } from "@/contracts/turns/chat-skip";
 /** Run the reaction pulse every Nth exchange (1 = every exchange; batch later if cost bites). */
 export const CHAT_PULSE_EVERY_N = 1;
 /** Output-token cap for the pulse call — a concept id + a short mindNote; keep it cheap/fast. */

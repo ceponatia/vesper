@@ -12,6 +12,7 @@ import {
   type ScheduleDayPartId,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
+import type { CalendarStart } from "@/lib/clock";
 import { chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -46,6 +47,7 @@ export function ChatPlansPanel({
   chatId,
   plans,
   clockMinutes,
+  calendarStart,
   archived,
   onSaved,
 }: {
@@ -53,6 +55,8 @@ export function ChatPlansPanel({
   plans: ChatPlan[];
   /** The story clock, so an edited "when" resolves to an absolute target and salience derives. */
   clockMinutes: number;
+  /** The story-calendar anchor — labels render as real weekdays (chat-clock-calendar.plan.md). */
+  calendarStart: CalendarStart;
   archived: boolean;
   /** Receives the fresh state snapshot after a successful save. */
   onSaved: (snapshot: ChatStateSnapshot) => void;
@@ -62,7 +66,8 @@ export function ChatPlansPanel({
   const [editing, setEditing] = useState<ChatPlan | "new" | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const salience = new Map(derivePlanSalience(plans, clockMinutes).map((s) => [s.plan.id, s.salience]));
+  const labelCtx = { nowMinutes: clockMinutes, calendarStart };
+  const salience = new Map(derivePlanSalience(plans, clockMinutes, calendarStart).map((s) => [s.plan.id, s.salience]));
   const openCount = plans.filter((p) => p.status === "upcoming").length;
 
   const save = async (next: ChatPlan[]) => {
@@ -117,7 +122,7 @@ export function ChatPlansPanel({
                   {plan.what}
                 </span>
                 <span className={`truncate text-[10px] ${soon ? "text-accent-300" : "text-paper-500"}`}>
-                  {describePlanWhen(plan.when)}
+                  {describePlanWhen(plan.when, labelCtx)}
                   {plan.participants.length ? ` · ${plan.participants.join(", ")}` : ""}
                 </span>
               </span>
@@ -138,6 +143,7 @@ export function ChatPlansPanel({
         <PlanDialog
           plan={editing === "new" ? null : editing}
           clockMinutes={clockMinutes}
+          calendarStart={calendarStart}
           readOnly={archived}
           saving={saving}
           onClose={() => {
@@ -155,6 +161,7 @@ export function ChatPlansPanel({
 function PlanDialog({
   plan,
   clockMinutes,
+  calendarStart,
   readOnly,
   saving,
   onClose,
@@ -164,6 +171,7 @@ function PlanDialog({
   /** null = the add-plan flow (empty form). */
   plan: ChatPlan | null;
   clockMinutes: number;
+  calendarStart: CalendarStart;
   readOnly: boolean;
   saving: boolean;
   onClose: () => void;
@@ -186,7 +194,7 @@ function PlanDialog({
         ? plan.when
         : whenMode === "unscheduled"
           ? ({ kind: "unscheduled" } as const)
-          : resolvePlanWhen({ dayOffset, dayPart }, clockMinutes);
+          : resolvePlanWhen({ dayOffset, dayPart }, clockMinutes, calendarStart);
     onSave({
       id: plan?.id || newId(),
       what: what.trim(),
@@ -262,7 +270,9 @@ function PlanDialog({
               disabled={readOnly}
               className={selectClass}
             >
-              {plan ? <option value="keep">Keep current ({describePlanWhen(plan.when)})</option> : null}
+              {plan ? (
+                <option value="keep">Keep current ({describePlanWhen(plan.when, { nowMinutes: clockMinutes, calendarStart })})</option>
+              ) : null}
               <option value="unscheduled">No set time (soon)</option>
               <option value="scheduled">Scheduled…</option>
             </select>

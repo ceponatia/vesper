@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   activeConditionSchema,
   characterProfileSchema,
+  CHAT_DEFAULT_CALENDAR_START,
   chatPlansSchema,
   deriveEmotionLabel,
   effectiveTraitValue,
@@ -18,6 +19,7 @@ import {
   authoredRelationshipRecordSchema,
   unseenMilestoneReason,
 } from "@/contracts";
+import { calendarStartSchema } from "@/lib/clock";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
@@ -91,6 +93,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       milestonesSeenAt: characterChats.milestonesSeenAt,
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
+      calendarStart: characterChats.calendarStart,
       lastLine: sql<string | null>`(
         select left(m.content, 160) from character_chat_messages m
         where m.chat_id = ${characterChats.id}
@@ -124,7 +127,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .orderBy(desc(characterChats.lastMessageAt))
     .limit(LIST_LIMIT);
 
-  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, milestones, milestonesSeenAt, plans, clockMinutes, ...rest }) => {
+  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, milestones, milestonesSeenAt, plans, clockMinutes, calendarStart, ...rest }) => {
     // "Has something to say" (spec §8.4, D4; v2 chat-initiative.plan.md slice 2): a pure
     // read-time derivation — never a job, never the wall clock. An imminent / just-missed
     // PLAN leads (chat-plans-promises — a commitment coming due is the strongest pull), then
@@ -134,7 +137,11 @@ export const GET = withUser(async (user, req: NextRequest) => {
     const parsedMilestones = parseOr(listMilestonesSchema, milestones ?? [], [], undefined, "character_chat_state.milestones");
     const parsedPlans = parseOr(chatPlansSchema, plans ?? [], [], undefined, "character_chats.plans");
     const say =
-      planHubReason(parsedPlans, clockMinutes ?? 0) ||
+      planHubReason(
+        parsedPlans,
+        clockMinutes ?? 0,
+        parseOr(calendarStartSchema, calendarStart, CHAT_DEFAULT_CALENDAR_START, undefined, "character_chats.calendar_start"),
+      ) ||
       loops[0]?.trim() ||
       (unseenMilestoneReason(parsedMilestones, milestonesSeenAt ?? new Date()) ?? "");
     if (regard === null) return { ...rest, regardBand: null, emotion: null, say };

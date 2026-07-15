@@ -120,22 +120,28 @@ describe("seedChatState", () => {
         { startMinute: 360, endMinute: 720, locationName: "the café", activity: "waiting tables" },
       ],
     });
+    // Minute-of-day is anchor-relative (chat-clock-calendar): a midnight anchor keeps
+    // this test's raw clock numbers readable as times of day.
+    const midnight = { year: 2024, month: 1, day: 1, hour: 0, minute: 0 };
     // 23:30 → the sleep window → the sleep preset's structured worn list.
-    expect(rhythmOutfitPatch(rhythm, 1410)).toEqual({
+    expect(rhythmOutfitPatch(rhythm, 1410, midnight)).toEqual({
       wornItemIds: ["itemid9xyz"],
       outfitPresetId: "sleep",
       outfit: "",
       outfitExposed: false,
     });
     // 08:00 → the morning row names no preset → no patch.
-    expect(rhythmOutfitPatch(rhythm, 480)).toEqual({});
-    // A skip past midnight lands in the same wrap window on the next pseudo-day.
-    expect(rhythmOutfitPatch(rhythm, 1440 + 60)).toEqual({
+    expect(rhythmOutfitPatch(rhythm, 480, midnight)).toEqual({});
+    // A skip past midnight lands in the same wrap window on the next day.
+    expect(rhythmOutfitPatch(rhythm, 1440 + 60, midnight)).toEqual({
       wornItemIds: ["itemid9xyz"],
       outfitPresetId: "sleep",
       outfit: "",
       outfitExposed: false,
     });
+    // The DEFAULT anchor starts the story at 8:00am: clock 1410 is 7:30 the NEXT
+    // morning — inside the café row (no preset) — so no patch.
+    expect(rhythmOutfitPatch(rhythm, 1410)).toEqual({});
     // Unknown preset id on a row degrades to the DEFAULT preset (id + items).
     const dangling = profile({
       outfits: [{ id: "everyday", name: "Everyday", items: ["itemid1abc"] }],
@@ -285,11 +291,11 @@ describe("driftChatState (D8 — in-game time only, clock on the shared scenario
   it("expires conditions past the SHARED clock — even for a frozen (no-advance) member", () => {
     const condition: ActiveCondition = { id: "tipsy", label: "Tipsy", startedAtMinutes: 0, durationMinutes: 2, attributeEffects: [] };
     const withCondition = base({ conditions: [condition] });
-    // The ticked clock is past started + duration (2) ⇒ expired.
-    expect(driftChatState(withCondition, profile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES }).conditions).toHaveLength(0);
+    // A clock past started + duration (2) ⇒ expired.
+    expect(driftChatState(withCondition, profile(), { advance: true, clockMinutes: 3 }).conditions).toHaveLength(0);
     // Away members share the ONE story timeline (ruling 8): only meter decay is
     // skipped — their conditions still expire against the shared clock.
-    expect(driftChatState(withCondition, profile(), { advance: false, clockMinutes: CHAT_TICK_MINUTES }).conditions).toHaveLength(0);
+    expect(driftChatState(withCondition, profile(), { advance: false, clockMinutes: 3 }).conditions).toHaveLength(0);
     // A read with the clock still at 0 keeps the condition running.
     expect(driftChatState(withCondition, profile(), { advance: false, clockMinutes: 0 }).conditions).toHaveLength(1);
   });

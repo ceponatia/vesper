@@ -1041,17 +1041,27 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
     conditions: [],
     sceneMemory: {
       current: "the living room",
-      timeOfDay: "early evening",
       places: [{ name: "the living room", details: ["blue sofa", "tall windows"], connections: ["kitchen through the doorway"] }],
     },
   };
 
-  it("renders the current place, details, time of day, and connections", () => {
+  it("renders the current place, details, and connections", () => {
     const parts = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
     expect(parts.tail).toContain("Scene (the setting established so far");
     expect(parts.tail).toContain("- Here: the living room — blue sofa; tall windows");
-    expect(parts.tail).toContain("- Time of day: early evening");
     expect(parts.tail).toContain("- Nearby: kitchen through the doorway");
+  });
+
+  it("renders the clock-derived story moment as a binding tail line (chat-clock-calendar)", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: { ...sceneState, storyMoment: "Friday, January 5 — 2:10pm (afternoon)" },
+    });
+    expect(parts.tail).toContain("Story time: it is Friday, January 5 — 2:10pm (afternoon).");
+    // No storyMoment ⇒ no line (degraded default).
+    const bare = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    expect(bare.tail).not.toContain("Story time:");
   });
 
   it("renders the place's background sketch as a fixed-reference line (chat-scene-fidelity slice 2b)", () => {

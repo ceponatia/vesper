@@ -10,7 +10,7 @@ import {
   type ChatSceneMemory,
 } from "@/contracts/turns/chat-scene-memory";
 import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
-import { describePlanWhen, planOthersLabel, type SalientPlan } from "@/contracts/turns/chat-plans";
+import { planOthersLabel, type SalientPlan } from "@/contracts/turns/chat-plans";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, effectiveTraitValue, traitPole, traitRegistry } from "@/contracts/personality/traits";
@@ -120,6 +120,13 @@ export interface CharacterChatPromptInput {
      * by stage band via `chatSkipNote`. Absent/empty ⇒ no line; cleared by the finalizer.
      */
     skipNote?: string;
+    /**
+     * The current story moment (chat-clock-calendar.plan.md), pre-formatted by the
+     * pipeline from the clock + calendar anchor ("Friday, January 5 — 2:10pm
+     * (afternoon)"). The ONE authoritative time — replaces the retired archivist
+     * free-text `sceneMemory.timeOfDay`. Absent/"" ⇒ no line.
+     */
+    storyMoment?: string;
     /** Active social cards — surfaced as soft "what you care about" framing, never severity (§6, D3). */
     activeSocialCards?: SocialReactionCard[];
     /**
@@ -382,9 +389,13 @@ function skipToneForBand(bandId: string): string {
  * skips time, rendered as a volatile one-turn prompt line, cleared after the
  * exchange that rendered it. Carries the "a life meanwhile" license (§8.2) —
  * one line of what the character was doing, prompt-only, no extra model call.
+ * `landing` names where the skip arrived on the story calendar ("Friday evening",
+ * chat-clock-calendar.plan.md) so the narrator's sense of time matches the clock
+ * card instead of guessing from the lead phrase.
  */
-export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string): string {
-  return `${SKIP_LEADS[amount]} ${skipToneForBand(regardBandId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
+export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string, landing?: string): string {
+  const arrived = landing ? ` It is now ${landing}.` : "";
+  return `${SKIP_LEADS[amount]}${arrived} ${skipToneForBand(regardBandId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
 }
 
 /**
@@ -852,8 +863,8 @@ function buildSensorySection(cues: SensoryCue[], name: string): string {
 
 /**
  * The compact "Scene" block (chat scene memory): the narrator-imagined setting kept
- * consistent across turns — the current place + its established details, the time of day,
- * and the current place's connections — followed by a directive line that flips on whether
+ * consistent across turns — the current place + its established details and the current
+ * place's connections — followed by a directive line that flips on whether
  * the scene just changed. Unchanged ⇒ "do not re-establish"; just changed ⇒ "establish the
  * new scene once, then leave it alone". "" when the memory is empty AND nothing changed
  * (byte-identical to the pre-scene-memory tail). Volatile tail (it accretes), never the prefix.
@@ -870,7 +881,6 @@ function buildSceneSection(memory: ChatSceneMemory, changed: boolean): string {
   // The background sketch (chat-scene-fidelity.plan.md slice 2b): fixed-feature reference
   // for this place — authority for what's physically here, never prose to recite.
   if (place?.sketch) lines.push(`- Setting (fixed reference): ${place.sketch}`);
-  if (memory.timeOfDay) lines.push(`- Time of day: ${memory.timeOfDay}`);
   if (place && place.connections.length) lines.push(`- Nearby: ${place.connections.join("; ")}`);
   const directive = changed
     ? "This scene just changed — establish the new setting in one or two paragraphs (sight plus one other sense), then leave it alone."
@@ -929,7 +939,7 @@ function buildPlansSection(salient: readonly SalientPlan[], player: string): str
     const others = planOthersLabel(s.plan, player);
     const who = others ? ` ${others}` : "";
     const where = s.plan.where ? ` at ${s.plan.where}` : "";
-    const when = describePlanWhen(s.plan.when);
+    const when = s.whenLabel;
     const tag =
       s.salience === "dueNow"
         ? "HAPPENING NOW"
@@ -960,7 +970,7 @@ function buildPlansSection(salient: readonly SalientPlan[], player: string): str
     "Plans (commitments in play — honor the character's memory of them):",
     ...near.map(line),
     ...(upcoming.length
-      ? [`On the horizon: ${upcoming.map((s) => `${s.plan.what} (${describePlanWhen(s.plan.when)})`).join("; ")}.`]
+      ? [`On the horizon: ${upcoming.map((s) => `${s.plan.what} (${s.whenLabel})`).join("; ")}.`]
       : []),
     ...directives,
   ].join("\n");
@@ -1652,6 +1662,14 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     { tier: "binding", text: input.narratorInput ? narratorInputNote(displayName, playerName ?? "the player") : "" },
     { tier: "binding", text: input.notationNote?.trim() ?? "" },
     { tier: "binding", text: buildAttachmentsSection(input.attachments, playerName ?? "the player") },
+    {
+      // The authoritative story moment (chat-clock-calendar.plan.md): the narrator reads the
+      // same clock the player's clock card shows — light, meals, and routine follow it.
+      tier: "binding",
+      text: input.state?.storyMoment?.trim()
+        ? `Story time: it is ${input.state.storyMoment.trim()}. Time-of-day texture (light, meals, routine) follows this clock.`
+        : "",
+    },
     { tier: "binding", text: skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "" },
     {
       // The first-exchange scene directive (Fly screenshot, 2026-07-10): on a brand-new chat the
@@ -2045,6 +2063,13 @@ export function buildEnsembleChatPromptParts(
     { tier: "binding", text: input.narratorInput ? narratorInputNote("each present character", player) : "" },
     { tier: "binding", text: input.notationNote?.trim() ?? "" },
     { tier: "binding", text: buildAttachmentsSection(input.attachments, player) },
+    {
+      // The authoritative story moment (chat-clock-calendar.plan.md) — same line as the 1-on-1 frame.
+      tier: "binding",
+      text: input.state?.storyMoment?.trim()
+        ? `Story time: it is ${input.state.storyMoment.trim()}. Time-of-day texture (light, meals, routine) follows this clock.`
+        : "",
+    },
     { tier: "binding", text: skipNote ? `Time has passed in the story since the last exchange: ${skipNote}` : "" },
     {
       tier: "binding",

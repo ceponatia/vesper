@@ -152,7 +152,7 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
     key: "scene",
     empty: {},
     instruction: () =>
-      `"scene": the setting the narration established or CHANGED this exchange — chat locations are imagined by the narrator, so this keeps them consistent. Omit it entirely (or {}) unless the fiction actually established something new. Shape: { "current": "<the place the scene is in now, if it was named/changed>", "timeOfDay": "<e.g. 'early evening', if stated or clearly shifted>", "places": [{ "name": "<place>", "details": ["<durable fact, e.g. 'blue sofa'>"], "connections": ["<e.g. 'kitchen through the doorway'>"] }] }. ONLY record what the text actually established — a concrete object, layout, light, or a stated time — never invent decor. Short noun phrases, a few at most. Physical STATE (weather changing, a door opening) is not a durable detail.`,
+      `"scene": the setting the narration established or CHANGED this exchange — chat locations are imagined by the narrator, so this keeps them consistent. Omit it entirely (or {}) unless the fiction actually established something new. Shape: { "current": "<the place the scene is in now, if it was named/changed>", "places": [{ "name": "<place>", "details": ["<durable fact, e.g. 'blue sofa'>"], "connections": ["<e.g. 'kitchen through the doorway'>"] }] }. ONLY record what the text actually established — a concrete object or layout — never invent decor, and never record the time of day (the story clock owns time). Short noun phrases, a few at most. Physical STATE (weather changing, a door opening) is not a durable detail.`,
   },
 
   outfit: {
@@ -352,12 +352,11 @@ const EXAMPLES: readonly ExtractorExample[] = [
     },
   },
   {
-    caption: "they move to the kitchen and the narration establishes it (evening, blue-tiled counter, a doorway back to the living room)",
+    caption: "they move to the kitchen and the narration establishes it (blue-tiled counter, a doorway back to the living room)",
     values: {
       episodeSummary: "Mara led the player into the kitchen to make tea, the evening settling in around them.",
       scene: {
         current: "kitchen",
-        timeOfDay: "evening",
         places: [
           {
             name: "kitchen",

@@ -11,7 +11,14 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { parseChatSceneModel, type ChatActionId, type ChatSceneModel, type ChatSkipAmount } from "@/contracts";
+import {
+  CHAT_DEFAULT_CALENDAR_START,
+  formatChatMoment,
+  parseChatSceneModel,
+  type ChatActionId,
+  type ChatSceneModel,
+  type ChatSkipAmount,
+} from "@/contracts";
 import {
   charactersApi,
   chatsApi,
@@ -38,6 +45,7 @@ import { ChatRelationshipsEditor } from "@/components/chat/chat-relationships-ed
 import { ChatRosterPanel } from "@/components/chat/chat-roster-panel";
 import { ChatSupportingCastPanel } from "@/components/chat/chat-supporting-cast-panel";
 import { ChatPlansPanel } from "@/components/chat/chat-plans-panel";
+import { ChatClockCard } from "@/components/chat/chat-clock-card";
 import { replyFailureToast } from "@/components/chat/reply-failure";
 import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
@@ -856,7 +864,11 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     }
     setChatState(result.data);
     stageRef.current = result.data.regardBand.label;
-    toast.push({ title: "Time passes…", description: `${who} will pick the scene up from there.` });
+    // Name the landing (chat-clock-calendar.plan.md): a skip is never a leap in the dark.
+    toast.push({
+      title: "Time passes…",
+      description: `It's now ${formatChatMoment(result.data.clockMinutes, result.data.calendarStart)}. ${who} will pick the scene up from there.`,
+    });
   };
 
   /** "Mark this moment" (spec §7.2): pin a player milestone on a message. */
@@ -999,6 +1011,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           panel + the relationship matrix (roster > 1). */}
       <Sheet open={rosterOpen} onClose={() => setRosterOpen(false)} side="bottom" title="Roster">
         <div className="flex flex-col gap-4 p-3">
+          {/* Story time on phones (chat-clock-calendar.plan.md) — the desktop right aside's card. */}
+          <ChatClockCard
+            chatId={chatId}
+            clockMinutes={chatState?.clockMinutes ?? 0}
+            calendarStart={chatState?.calendarStart ?? CHAT_DEFAULT_CALENDAR_START}
+            archived={archived}
+            skipBusy={skipBusy || sending}
+            onSkip={(amount) => void skipTime(amount)}
+            onSaved={(snapshot) => setChatState(snapshot)}
+          />
           {roster.length > 0 ? (
             <ChatRosterPanel
               chatId={chatId}
@@ -1021,6 +1043,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             chatId={chatId}
             plans={chatState?.plans ?? []}
             clockMinutes={chatState?.clockMinutes ?? 0}
+            calendarStart={chatState?.calendarStart ?? CHAT_DEFAULT_CALENDAR_START}
             archived={archived}
             onSaved={(snapshot) => setChatState(snapshot)}
           />
@@ -1110,6 +1133,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               chatId={chatId}
               plans={chatState?.plans ?? []}
               clockMinutes={chatState?.clockMinutes ?? 0}
+              calendarStart={chatState?.calendarStart ?? CHAT_DEFAULT_CALENDAR_START}
               archived={archived}
               onSaved={(snapshot) => setChatState(snapshot)}
             />
@@ -1184,6 +1208,23 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           </button>
         ) : null}
         </div>
+        {/* Right aside (chat-clock-calendar.plan.md): the transcript is a centered
+            max-w-3xl column, so the right gutter is free real estate at desktop
+            widths — story time lives here, with the skip chips beside the display
+            that makes them legible. */}
+        {ready && character ? (
+          <aside className="hidden w-52 shrink-0 flex-col gap-4 p-4 lg:flex xl:w-64">
+            <ChatClockCard
+              chatId={chatId}
+              clockMinutes={chatState?.clockMinutes ?? 0}
+              calendarStart={chatState?.calendarStart ?? CHAT_DEFAULT_CALENDAR_START}
+              archived={archived}
+              skipBusy={skipBusy || sending}
+              onSkip={(amount) => void skipTime(amount)}
+              onSaved={(snapshot) => setChatState(snapshot)}
+            />
+          </aside>
+        ) : null}
       </div>
 
       <div className="shrink-0 border-t border-ink-600 bg-ink-900/95 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
@@ -1193,6 +1234,11 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             <ChatPickupStrip
               who={who}
               busy={skipBusy}
+              clock={
+                chatState
+                  ? { clockMinutes: chatState.clockMinutes, calendarStart: chatState.calendarStart }
+                  : undefined
+              }
               onPick={(amount) => {
                 if (amount === null) setPickupDismissed(true);
                 else void skipTime(amount);

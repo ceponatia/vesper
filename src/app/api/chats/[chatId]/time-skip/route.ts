@@ -100,7 +100,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     // Profile in ⇒ rhythm auto-dress: a schedule row at the new clock naming a
     // preset re-dresses this member for the window (slice 8.4).
     const next = await resolveSeededOutfit(
-      applyTimeSkip(base, body.value.amount, nextScenario.clockMinutes, profile),
+      applyTimeSkip(base, body.value.amount, nextScenario.clockMinutes, profile, nextScenario.calendarStart),
       user.id,
       profile,
       sink,
