@@ -17,6 +17,7 @@ import {
   supportingCastSchema,
   type CharacterProfile,
 } from "@/contracts";
+import { calendarStartSchema } from "@/lib/clock";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
@@ -90,6 +91,8 @@ const editBodySchema = z.object({
   supportingCast: supportingCastSchema.optional(),
   /** Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's whole-list save. */
   plans: chatPlansSchema.optional(),
+  /** The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card's editor. */
+  calendarStart: calendarStartSchema.optional(),
 });
 
 /**

@@ -1,5 +1,5 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
-import { characterProfileSchema, currentScenePlace, emptyCharacterProfile } from "@/contracts";
+import { characterProfileSchema, currentScenePlace, emptyCharacterProfile, timeOfDayFor } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
 import { characterChatMessages, db, jobs } from "@/server/db";
@@ -122,7 +122,9 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           profile,
           avatarImageId: args.character.avatarImageId,
           room,
-          timeOfDay: scenario?.sceneMemory.timeOfDay,
+          // Derived from the story clock (chat-clock-calendar.plan.md) — the retired
+          // free-text scene field no longer exists.
+          timeOfDay: scenario ? timeOfDayFor(scenario.clockMinutes, scenario.calendarStart) : undefined,
           recentChat,
           outfit: wardrobe?.garments ?? "",
           outfitExposed: wardrobe?.exposed ?? false,

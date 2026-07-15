@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CharacterSheetScope } from "@/lib/character-scopes";
+import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import {
   activeConditionSchema,
   type ActiveCondition,
@@ -336,6 +337,9 @@ export const chatStateSnapshotSchema = z.object({
     degraded: false,
   })),
   clockMinutes: z.number().catch(0),
+  // The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card formats
+  // clockMinutes against it; degraded default matches CHAT_DEFAULT_CALENDAR_START.
+  calendarStart: calendarStartSchema.catch({ year: 2024, month: 1, day: 1, hour: 8, minute: 0 }),
   // False ⇒ a seed-on-read (no row yet); the chat strip then previews the authored
   // Starting Relationship. Defaults true so a missing flag shows the stored disposition.
   persisted: z.boolean().catch(true),
@@ -419,6 +423,8 @@ export interface ChatStateEdit {
   supportingCast?: SupportingCastMember[];
   /** Tracked plans & promises (chat-plans-promises.plan.md) — whole-list replacement. */
   plans?: ChatPlan[];
+  /** The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card's editor. */
+  calendarStart?: CalendarStart;
 }
 
 export const locationSummarySchema = z.object({

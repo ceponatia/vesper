@@ -1,14 +1,17 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  CHAT_DEFAULT_CALENDAR_START,
   chatSceneMemorySchema,
   chatSceneSketchSchema,
   degradedChatSceneSketch,
   emptyChatSceneMemory,
   samePlaceName,
+  timeOfDayFor,
   withPlaceSketch,
   type ChatSceneSketch,
 } from "@/contracts";
+import { calendarStartSchema } from "@/lib/clock";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import { characterChatMessages, characterChats, db, jobs } from "../db";
@@ -83,7 +86,12 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
   // The scene memory + premise live on the CHAT row (the shared scenario,
   // followups ruling 8) — one imagined setting for the whole roster.
   const [row] = await db()
-    .select({ sceneMemory: characterChats.sceneMemory, premise: characterChats.premise })
+    .select({
+      sceneMemory: characterChats.sceneMemory,
+      premise: characterChats.premise,
+      clockMinutes: characterChats.clockMinutes,
+      calendarStart: characterChats.calendarStart,
+    })
     .from(characterChats)
     .where(eq(characterChats.id, input.chatId))
     .limit(1);
@@ -114,7 +122,11 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
       placeName: place.name,
       details: place.details,
       connections: place.connections,
-      timeOfDay: memory.timeOfDay,
+      // Derived from the story clock (chat-clock-calendar.plan.md).
+      timeOfDay: timeOfDayFor(
+        row.clockMinutes,
+        parseOr(calendarStartSchema, row.calendarStart, CHAT_DEFAULT_CALENDAR_START, undefined, "character_chats.calendar_start"),
+      ),
       premise: row.premise || undefined,
       characterName: input.characterName,
       recentNarration,

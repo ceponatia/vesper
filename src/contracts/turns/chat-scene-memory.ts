@@ -27,8 +27,6 @@ export const SCENE_MEMORY_MAX_CONNECTIONS = 6;
 export const SCENE_DETAIL_MAX_CHARS = 140;
 /** Length cap on a place name. */
 export const SCENE_PLACE_NAME_MAX_CHARS = 60;
-/** Length cap on the time-of-day phrase. */
-export const SCENE_TIME_OF_DAY_MAX_CHARS = 40;
 /**
  * Length cap on a place's visual sketch (chat-scene-fidelity.plan.md slice 2): the
  * background sketch agent's 2–4 sentence description of the place, consumed by the
@@ -38,7 +36,6 @@ export const SCENE_SKETCH_MAX_CHARS = 600;
 
 const detailString = z.string().trim().min(1).max(SCENE_DETAIL_MAX_CHARS);
 const placeNameString = z.string().trim().min(1).max(SCENE_PLACE_NAME_MAX_CHARS);
-const timeOfDayString = z.string().trim().min(1).max(SCENE_TIME_OF_DAY_MAX_CHARS);
 
 /** One established place: a name plus its durable details and named connections. */
 export const scenePlaceSchema = z.object({
@@ -78,7 +75,6 @@ export type ScenePlace = z.infer<typeof scenePlaceSchema>;
  */
 export const chatSceneMemorySchema = z.object({
   current: placeNameString.optional(),
-  timeOfDay: timeOfDayString.optional(),
   places: z
     .array(scenePlaceSchema)
     .catch([])
@@ -94,7 +90,7 @@ export function emptyChatSceneMemory(): ChatSceneMemory {
 
 /** True when the memory carries nothing yet (⇒ the Scene block renders nothing). */
 export function isEmptyChatSceneMemory(memory: ChatSceneMemory): boolean {
-  return !memory.current && !memory.timeOfDay && memory.places.length === 0;
+  return !memory.current && memory.places.length === 0;
 }
 
 /**
@@ -106,7 +102,6 @@ export function isEmptyChatSceneMemory(memory: ChatSceneMemory): boolean {
 export const chatSceneProposalSchema = z
   .object({
     current: placeNameString.optional(),
-    timeOfDay: timeOfDayString.optional(),
     places: z
       .array(
         z.object({
@@ -184,9 +179,10 @@ export function switchScenePlace(memory: ChatSceneMemory, placeName: string): Ch
 
 /**
  * Merge the archivist's post-turn `scene` proposal into the accumulated memory (pure): the
- * current place / time-of-day are updated when proposed, new places minted, and each
- * place's details + connections deduped and capped (oldest-out). The current place is
- * never evicted by the place cap. An empty proposal is a no-op.
+ * current place is updated when proposed, new places minted, and each place's details +
+ * connections deduped and capped (oldest-out). The current place is never evicted by the
+ * place cap. An empty proposal is a no-op. (Time of day is NOT scene memory — it derives
+ * from the story clock, chat-clock-calendar.plan.md.)
  */
 export function mergeSceneMemory(memory: ChatSceneMemory, proposal: ChatSceneProposal): ChatSceneMemory {
   let places: ScenePlace[] = memory.places.map((p) => ({
@@ -221,9 +217,7 @@ export function mergeSceneMemory(memory: ChatSceneMemory, proposal: ChatScenePro
   }
   places = capPlaces(places, current);
 
-  const timeOfDay = proposal.timeOfDay?.trim().slice(0, SCENE_TIME_OF_DAY_MAX_CHARS) || memory.timeOfDay;
-
-  return { current, timeOfDay, places };
+  return { current, places };
 }
 
 /** The current place record, or null when there is no current place / it has no record yet. */

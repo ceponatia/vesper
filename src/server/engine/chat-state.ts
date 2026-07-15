@@ -28,6 +28,9 @@ import {
   supportingCastSchema,
   advancePlans,
   chatPlansSchema,
+  CHAT_DEFAULT_CALENDAR_START,
+  chatGameTime,
+  formatChatMoment,
   describePlanWhen,
   emptyChatPlans,
   fillMissingPlanIds,
@@ -100,6 +103,7 @@ import { evaluateActReaction } from "@/contracts/personality/act-reaction";
 import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
+import { calendarStartSchema, minuteOfDay, type CalendarStart } from "@/lib/clock";
 import { newId } from "@/lib/ids";
 import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/turns/agent-failure";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
@@ -127,10 +131,10 @@ import {
   AFFINITY_DELTA_CLAMP,
   CHAT_ACTION_CONDITION_MINUTES,
   CHAT_AROUSAL_INTIMATE,
+  CHAT_METER_DRIFT_MINUTES,
   CHAT_PULSE_MAX_OUTPUT_TOKENS,
   CHAT_PULSE_TIMEOUT_MS,
   CHAT_SKIP_MINUTES,
-  CHAT_TICK_MINUTES,
 } from "./constants";
 import { scheduleEntryAt } from "./merge/phases/schedule";
 import { chatSkipNote } from "./prompts/character-chat";
@@ -169,6 +173,8 @@ export interface ChatScenario {
   /** Tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
   plans: ChatPlan[];
   clockMinutes: number;
+  /** The story-calendar anchor (chat-clock-calendar.plan.md): minute 0 = this date+time. Author-editable. */
+  calendarStart: CalendarStart;
   pendingSkipNote: string;
   skipHistory: SkipRecord[];
 }
@@ -333,8 +339,10 @@ export interface ChatStateSnapshot {
   lastPulseTrace: ChatPulseTrace;
   /** Last-turn RAG debug trace (retrieved + extracted) for the chat inspector (§5). */
   lastMemoryTrace: ChatMemoryTrace;
-  /** Read-only chat clock (the only time model, D3/D8), surfaced for the state-tools modal. */
+  /** Read-only chat clock (the only time model, D3/D8) — the clock card + plan salience read it. */
   clockMinutes: number;
+  /** The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card formats + edits it. */
+  calendarStart: CalendarStart;
   /** Auto scene-generation mode (slice 9) — the scenario modal's toggle. */
   sceneAuto: string;
   /** Scene-image model pick — the scene strip's save-on-select dropdown. */
@@ -489,6 +497,7 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     supportingCast: emptySupportingCast(),
     plans: emptyChatPlans(),
     clockMinutes: 0,
+    calendarStart: CHAT_DEFAULT_CALENDAR_START,
     pendingSkipNote: "",
     skipHistory: [],
   };
@@ -504,6 +513,7 @@ const chatScenarioSchema = z.object({
   supportingCast: supportingCastSchema.catch([]).default([]),
   plans: chatPlansSchema.catch([]).default([]),
   clockMinutes: z.number().catch(0).default(0),
+  calendarStart: calendarStartSchema.catch(CHAT_DEFAULT_CALENDAR_START).default(CHAT_DEFAULT_CALENDAR_START),
   pendingSkipNote: z.string().catch("").default(""),
   skipHistory: z.array(skipRecordSchema).catch([]).default([]),
 });
@@ -520,6 +530,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       supportingCast: characterChats.supportingCast,
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
+      calendarStart: characterChats.calendarStart,
       pendingSkipNote: characterChats.pendingSkipNote,
       skipHistory: characterChats.skipHistory,
     })
@@ -536,6 +547,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
     plans: parseOr(chatPlansSchema, row.plans, [], sink, "character_chats.plans"),
     clockMinutes: row.clockMinutes,
+    calendarStart: parseOr(calendarStartSchema, row.calendarStart, CHAT_DEFAULT_CALENDAR_START, sink, "character_chats.calendar_start"),
     pendingSkipNote: row.pendingSkipNote,
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chats.skip_history"),
   };
@@ -560,6 +572,7 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       supporting_cast = ${JSON.stringify(scenario.supportingCast)}::jsonb,
       plans = ${JSON.stringify(scenario.plans)}::jsonb,
       clock_minutes = ${scenario.clockMinutes},
+      calendar_start = ${JSON.stringify(scenario.calendarStart)}::jsonb,
       pending_skip_note = ${scenario.pendingSkipNote},
       skip_history = ${JSON.stringify(scenario.skipHistory)}::jsonb
     where id = ${chatId} and ${guard}
@@ -804,9 +817,10 @@ function isEmptyJsonObject(value: unknown): boolean {
  * Advance the in-game state for one exchange (spec §3, re-ruled by
  * character-chat-standalone.spec.md §8.3 / D8: the between-visit wall-clock
  * recovery is GONE — no time passes between visits at all). PURE and idempotent
- * on read: without `advance` it is a pass-through projection, with it the chat
- * clock ticks `CHAT_TICK_MINUTES`, meters decay that far toward their
- * *personalized* baselines, and conditions past the clock expire.
+ * on read: without `advance` it is a pass-through projection, with it meters
+ * decay CHAT_METER_DRIFT_MINUTES toward their *personalized* baselines (meter
+ * pacing is exchange-keyed — deliberately NOT the 1-minute clock tick, see
+ * constants.ts) and conditions past the clock expire.
  */
 export function driftChatState(
   state: ChatState,
@@ -817,7 +831,7 @@ export function driftChatState(
   // when this member's meters are frozen — one timeline for the roster.
   const conditions = state.conditions.filter((c) => !isConditionExpired(c, options.clockMinutes));
   if (!options.advance) return conditions.length === state.conditions.length ? state : { ...state, conditions };
-  const meters = applyMeterDrift({ ...state.meters }, CHAT_TICK_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
+  const meters = applyMeterDrift({ ...state.meters }, CHAT_METER_DRIFT_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
   // Emotional weather decays per EXCHANGE, not clock minutes (emotional-weather.plan.md):
   // one advance = one beat of the feeling fading and the bruise healing.
   return { ...state, meters, conditions, feeling: decayFeelingState(state.feeling) };
@@ -843,8 +857,9 @@ export function applyTimeSkipToScenario(
   return {
     ...scenario,
     clockMinutes,
-    // The one-shot note is worded by the PRIMARY's current band (the anchor voice).
-    pendingSkipNote: chatSkipNote(amount, primaryRegardBandId),
+    // The one-shot note is worded by the PRIMARY's current band (the anchor voice)
+    // and names the landing on the story calendar ("Friday evening").
+    pendingSkipNote: chatSkipNote(amount, primaryRegardBandId, formatChatMoment(clockMinutes, scenario.calendarStart)),
     skipHistory: [...scenario.skipHistory, record].slice(-SKIP_HISTORY_CAP),
   };
 }
@@ -856,13 +871,17 @@ export function applyTimeSkipToScenario(
  * (chat-wardrobe-parity), seeding the worn list + active preset from that
  * preset's items and clearing the free-text overlay. A skip is a scene boundary,
  * so the rhythm wins over the tracked outfit (undressed overnight → dressed for
- * the morning shift). Chat has no calendar, so the weekday is a stable
- * pseudo-index off the accumulated clock.
+ * the morning shift). The weekday and minute-of-day are REAL — resolved against
+ * the scenario's calendar anchor (chat-clock-calendar.plan.md), replacing the old
+ * `clock % 1440` / day-mod-7 pseudo-calendar.
  */
-export function rhythmOutfitPatch(profile: CharacterProfile, clockMinutes: number): Partial<ChatState> {
-  const minuteOfDay = ((clockMinutes % 1440) + 1440) % 1440;
-  const weekday = Math.floor(clockMinutes / 1440) % 7;
-  const entry = scheduleEntryAt(profile.schedule, minuteOfDay, weekday);
+export function rhythmOutfitPatch(
+  profile: CharacterProfile,
+  clockMinutes: number,
+  calendarStart: CalendarStart = CHAT_DEFAULT_CALENDAR_START,
+): Partial<ChatState> {
+  const time = chatGameTime(clockMinutes, calendarStart);
+  const entry = scheduleEntryAt(profile.schedule, minuteOfDay(time), time.weekdayIndex);
   if (!entry?.outfitPresetId) return {};
   const preset = resolveOutfitPreset(profile, entry.outfitPresetId);
   return preset && preset.items.length
@@ -876,6 +895,7 @@ export function applyTimeSkip(
   amount: ChatSkipAmount,
   clockMinutes: number,
   profile?: CharacterProfile,
+  calendarStart: CalendarStart = CHAT_DEFAULT_CALENDAR_START,
 ): ChatState {
   return {
     ...state,
@@ -886,7 +906,7 @@ export function applyTimeSkip(
     // beat-for-beat conversion (a "moments" skip barely dents a strong feeling; a
     // night softens it; days clear it). Bruises heal on the same steps.
     feeling: decayFeelingState(state.feeling, CHAT_FEELING_SKIP_STEPS[amount]),
-    ...(profile ? rhythmOutfitPatch(profile, clockMinutes) : {}),
+    ...(profile ? rhythmOutfitPatch(profile, clockMinutes, calendarStart) : {}),
   };
 }
 
@@ -1473,9 +1493,10 @@ export async function finalizeChatState(input: {
   // the archivist — can see a just-missed commitment and propose the hurt (consequences stay
   // model-mediated, ruling C: no deterministic regard penalty). The real fold below re-runs
   // the advance AFTER the archivist's kept/canceled land (which may spare an overdue plan).
+  const planLabelCtx = { nowMinutes: input.scenario.clockMinutes, calendarStart: input.scenario.calendarStart };
   const planPhrase = (p: ChatPlan): string => {
     const others = planOthersLabel(p, input.playerName);
-    const when = describePlanWhen(p.when);
+    const when = describePlanWhen(p.when, planLabelCtx);
     return `"${p.what}"${others ? ` ${others}` : ""}${when ? ` (${when})` : ""}`;
   };
   const preAdvance = advancePlans(input.scenario.plans, input.scenario.clockMinutes, input.playerName);
@@ -1513,7 +1534,7 @@ export async function finalizeChatState(input: {
       // Open commitments the archivist can mark kept/canceled (chat-plans-promises).
       openPlans: input.scenario.plans
         .filter((p) => p.status === "upcoming")
-        .map((p) => ({ what: p.what, who: p.participants.join(", "), when: describePlanWhen(p.when) })),
+        .map((p) => ({ what: p.what, who: p.participants.join(", "), when: describePlanWhen(p.when, planLabelCtx) })),
       developableTraits,
       voiceReference,
       // The recap's ledger grounds the scribe's facts in NAMES (chat-agent-improvements
@@ -1621,6 +1642,7 @@ export async function finalizeChatState(input: {
     ? mergeChatPlans(input.scenario.plans, archivist.value.plans, {
         nowMinutes: input.scenario.clockMinutes,
         mintId: newId,
+        calendarStart: input.scenario.calendarStart,
       })
     : { plans: input.scenario.plans, archivistKept: [] as ChatPlan[] };
   const planAdvance = advancePlans(planMerge.plans, input.scenario.clockMinutes, input.playerName);
@@ -2096,6 +2118,8 @@ export interface ChatStateEdit {
   drives?: ChatDrive[];
   /** Narrative presence (multi-character-chat.plan.md) — the roster panel's manual toggle. */
   presence?: ChatPresence;
+  /** The story-calendar anchor (chat-wide) — the clock card's "story starts on…" editor. */
+  calendarStart?: CalendarStart;
 }
 
 /**
@@ -2161,6 +2185,12 @@ export async function editChatState(args: {
     // Whole-list replacement through the boundary schema (caps + healing); fill any ids the
     // UI author-edit path left blank so a hand-added plan gets a stable identity.
     nextScenario.plans = fillMissingPlanIds(chatPlansSchema.parse(patch.plans), newId);
+  }
+  if (patch.calendarStart !== undefined) {
+    // Rebasing is safe: nothing stores derived dates — plans/schedules hold
+    // anchor-relative minutes, so every displayed weekday/date re-derives.
+    // An impossible day (Feb 31) rolls forward via the Date math rather than failing.
+    nextScenario.calendarStart = calendarStartSchema.parse(patch.calendarStart);
   }
 
   await persistChatState(chatId, characterId, next);
@@ -2281,6 +2311,7 @@ export function chatStateSnapshot(
     lastPulseTrace: state.lastPulseTrace,
     lastMemoryTrace: state.lastMemoryTrace,
     clockMinutes: scenario.clockMinutes,
+    calendarStart: scenario.calendarStart,
     sceneAuto: scenario.sceneAuto,
     sceneModel: scenario.sceneModel,
     sceneMemory: scenario.sceneMemory,

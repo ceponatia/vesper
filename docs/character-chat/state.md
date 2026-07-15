@@ -54,8 +54,19 @@ setting — see §Scene memory), `supporting_cast` (recurring named side charact
 [supporting-cast.md](supporting-cast.md) §Supporting cast), `plans` (tracked commitments
 that come due on the story clock — see §Plans & promises), the time model (`clock_minutes` — **one** story timeline
 for the whole roster, D3/D8; away members skip meter decay, never fork the clock;
-`skip_history` ring ≤50; one-shot `pending_skip_note`), and `pre_exchange_scenario`
-(the rollback anchor's chat-wide half). Beside the scenario the chat row also
+`skip_history` ring ≤50; one-shot `pending_skip_note`), the **story-calendar anchor**
+(`calendar_start` jsonb, migration 0049 — chat-clock-calendar: minute 0 of the chat =
+this date+time; `parseOr` heals `{}`/bad rows to `CHAT_DEFAULT_CALENDAR_START` = Jan 1,
+8:00am; author-editable via `ChatStateEdit.calendarStart` from the clock card, and
+rebasing is safe because nothing stores derived dates), and `pre_exchange_scenario`
+(the rollback anchor's chat-wide half). The calendar derivations are pure in
+`contracts/turns/chat-clock.ts` (`chatGameTime`/`timeOfDayFor`/`formatStoryMoment`/
+`chatMomentLabel` over `lib/clock.ts`'s Date-backed `resolveGameTime` — real month
+lengths, leap years, true weekday alignment). **Time-model constants** (chat-clock-calendar,
+2026-07-15): `CHAT_TICK_MINUTES = 1` (one exchange ≈ one story minute — skips are the
+primary time mover), while meter pacing stays exchange-keyed via
+`CHAT_METER_DRIFT_MINUTES = 4` (drift per exchange unchanged by the tick drop; feelings
+already decay per exchange; conditions and plan windows stay story-real minutes). Beside the scenario the chat row also
 carries `milestones_seen_at` (migration 0043) — the marker-v2 seen-cursor
 ([initiative.md](initiative.md) §Initiative), stamped on conversation open, deliberately outside `ChatScenario`
 (it is a UI cursor, not fiction state — never snapshot/rolled back).
@@ -106,7 +117,9 @@ Chat locations are **narrator-imagined** (not world entities — the lane has no
 presence, or wardrobe state), so nothing kept an established setting consistent. `scene_memory`
 (one jsonb column on the CHAT row — the shared scenario, one imagined setting for the whole
 roster; `contracts/turns/chat-scene-memory.ts` `ChatSceneMemory`) is an accumulating,
-forward-compatible memory: `{ current?, timeOfDay?, places: [{ name, details[], connections[] }] }`
+forward-compatible memory: `{ current?, places: [{ name, details[], connections[] }] }`
+(`timeOfDay` was removed by chat-clock-calendar — time derives from the story clock, never
+the archivist)
 with hard caps (≤12 places, ≤8 details/place, ≤6 connections, length caps) and a `parseOr`
 degraded default (empty memory) at the load boundary. It is maintained **deterministic-first**,
 then reconciled by the archivist:
@@ -117,16 +130,18 @@ then reconciled by the archivist:
    **before** the prompt builds, so this turn's Scene injection is right. "Just changed" = a new
    current place this turn, or a pending time skip.
 2. **Injection.** The prompt builder renders the compact **Scene** block in the volatile tail
-   (current place + details + time of day + connections + a directive that flips on "just changed"
-   — see [prompts.md](../prompts.md) §Character-chat reply discipline & scene memory). On the
+   (current place + details + connections + a directive that flips on "just changed"
+   — see [prompts.md](../prompts.md) §Character-chat reply discipline & scene memory); the time
+   of day rides the separate binding **Story time** line (`storyMoment`, derived from
+   `clock_minutes` + `calendar_start`), so the narrator reads the same clock the clock card shows. On the
    conversation's **first exchange** (no assistant reply yet, not an opening beat) the memory is
    empty and "just changed" can't fire, so the tail instead renders a one-turn **first-exchange
    scene directive** (`firstExchange`, 2026-07-10): establish the scene once, narration-forward
    (sight plus one other sense), drawn from the scenario and the player's message — the movement
    path's own directive wins when a first-message move minted a place.
 3. **Post-turn (reconcile).** The archivist's optional `scene` field (current-place confirmation,
-   time-of-day hint, new place details/connections — ONLY what the fiction established, lenient
-   parse) is merged onto the pre-turn memory in `finalizeChatState` via `mergeSceneMemory` (dedupe
+   new place details/connections — ONLY what the fiction established, lenient
+   parse; never the time of day) is merged onto the pre-turn memory in `finalizeChatState` via `mergeSceneMemory` (dedupe
    + caps, oldest-out; the current place is never evicted). A degraded/empty proposal is a no-op —
    the memory only ever accretes what the fiction established.
 4. **Background sketch (chat-scene-fidelity slice 2b).** After the state write, a current place
@@ -205,14 +220,20 @@ narration honors it.*
 - **`when`** (ruling A) is coarse and keyed to `clock_minutes`, never the wall clock: the
   archivist proposes a day-offset + day-part (`morning`/`afternoon`/`evening`/`night`,
   reusing the schedule vocabulary) or `unscheduled`; the fold resolves it to an absolute
-  `targetMinutes` + a human label (`resolvePlanWhen`). Unscheduled plans never go missed.
+  `targetMinutes` + a stored relative fallback label (`resolvePlanWhen` — day boundaries
+  come from the calendar anchor, real midnight, not `clock % 1440`). Unscheduled plans
+  never go missed. **Display labels are calendar-derived at render time**
+  (chat-clock-calendar: `describePlanWhen(when, {nowMinutes, calendarStart})` /
+  `SalientPlan.whenLabel` — "tomorrow evening" inside a day, the bare weekday
+  ("Friday evening") 2–6 days out, the date ("Friday the 12th, evening") at 7+ —
+  never stored, so editing the anchor rebases every label).
 - **`status`** — `kept`/`canceled` are archivist-recognized, `missed` is **deterministic**
   (the archivist may never propose it); *imminent* / *due now* / *just missed* are DERIVED
   pure at prompt-build time (`derivePlanSalience` vs the clock), never stored. The fold
   runs `mergeChatPlans` (upsert by normalized `what`) then `advancePlans` — an overdue
   upcoming plan involving the PLAYER becomes `missed`, an overdue NPC↔NPC plan is assumed
   `kept` (ruling E, the default until the meanwhile pass). A time skip is the main mover
-  (4-min ticks barely move the clock; the 30/180/540/4320-min skips give it teeth).
+  (1-min ticks barely move the clock; the 30/180/540/4320-min skips give it teeth).
 - **Consequences** land through existing machinery: the just-resolved plans reach the
   reaction pulse's `commitmentsDue` context so a stood-up character proposes `hurt`
   (ruling C — model-mediated, no deterministic regard penalty); a kept/missed plan

@@ -9,6 +9,7 @@ import {
   effectiveTraitValue,
   emptyCharacterProfile,
   formatScheduleRhythm,
+  formatStoryMoment,
   hasSalientPlan,
   samePlaceName,
   splitStateCues,
@@ -909,7 +910,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         narratorInput,
         photoBeat: selfieRequested || selfieOfferEligible || openerSelfieEligible,
         // A commitment near this turn owns the beat (chat-plans-promises) — the callback yields.
-        planSalient: hasSalientPlan(derivePlanSalience(scenario.plans, scenario.clockMinutes)),
+        planSalient: hasSalientPlan(derivePlanSalience(scenario.plans, scenario.clockMinutes, scenario.calendarStart)),
       })
     ) {
       const chosen = await retrieveChatCallback({
@@ -993,7 +994,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             skipPending: Boolean(scenario.pendingSkipNote.trim()),
             // Plans near this turn LEAD the opener material (chat-plans-promises): "is
             // tonight still on?" / the cold open after being stood up.
-            openPlans: derivePlanSalience(scenario.plans, scenario.clockMinutes),
+            openPlans: derivePlanSalience(scenario.plans, scenario.clockMinutes, scenario.calendarStart),
             // Slice-2/4 material: the unseen shift + the authored daily rhythm.
             recentShift,
             rhythm: formatScheduleRhythm(profile.schedule),
@@ -1775,10 +1776,13 @@ function promptStateSlice(
     slipNote: state.lastMemoryTrace.characterSlip,
     openLoops: state.openLoops,
     skipNote: scenario.pendingSkipNote,
+    // The authoritative story moment (chat-clock-calendar.plan.md): the narrator reads
+    // the same clock + calendar anchor the player's clock card shows.
+    storyMoment: formatStoryMoment(scenario.clockMinutes, scenario.calendarStart),
     sceneMemory: scenario.sceneMemory,
     supportingCast: scenario.supportingCast,
     // Plans near this turn (chat-plans-promises): derived against the ticked story clock.
-    plans: derivePlanSalience(scenario.plans, scenario.clockMinutes),
+    plans: derivePlanSalience(scenario.plans, scenario.clockMinutes, scenario.calendarStart),
     feeling: state.feeling,
     drives: state.drives,
   };

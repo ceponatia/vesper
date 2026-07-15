@@ -1,6 +1,6 @@
 import type { ChatDrive } from "@/contracts/personality/drives";
 import { traitPole } from "@/contracts/personality/traits";
-import { describePlanWhen, type SalientPlan } from "@/contracts/turns/chat-plans";
+import type { SalientPlan } from "@/contracts/turns/chat-plans";
 
 /**
  * Chat initiative (chat-initiative.plan.md): the reopen opener's cue — the
@@ -77,7 +77,7 @@ export function buildInitiativeCue(input: InitiativeCueInput): string {
     .slice(0, 2)
     .map((s) => {
       const what = s.plan.what.trim();
-      const when = describePlanWhen(s.plan.when);
+      const when = s.whenLabel;
       if (s.salience === "justMissed") return `a plan you two missed: "${what}" — it was ${when} and it didn't happen`;
       if (s.salience === "dueNow") return `a plan for right now: "${what}"`;
       return `a plan coming up: "${what}" (${when}) — is it still on?`;

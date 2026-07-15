@@ -56,13 +56,11 @@ describe("mergeSceneMemory", () => {
     };
     const merged = mergeSceneMemory(base, {
       current: "kitchen",
-      timeOfDay: "evening",
       places: [{ name: "kitchen", details: ["Blue Tiles", "kettle on the stove"], connections: ["hall to the door"] }],
     });
     const place = currentScenePlace(merged);
     expect(place?.details).toEqual(["blue tiles", "kettle on the stove"]); // dedup keeps the first casing
     expect(place?.connections).toEqual(["hall to the door"]);
-    expect(merged.timeOfDay).toBe("evening");
   });
 
   it("mints a new place from the proposal and can move current to it", () => {
@@ -72,8 +70,8 @@ describe("mergeSceneMemory", () => {
     expect(merged.places.map((p) => p.name)).toEqual(["kitchen", "garden"]);
   });
 
-  it("keeps the prior time-of-day when the proposal omits it (an empty proposal is a no-op)", () => {
-    const base: ChatSceneMemory = { current: "kitchen", timeOfDay: "morning", places: [] };
+  it("is a no-op on an empty proposal", () => {
+    const base: ChatSceneMemory = { current: "kitchen", places: [] };
     expect(mergeSceneMemory(base, { places: [] })).toEqual(base);
   });
 
@@ -122,7 +120,6 @@ describe("chatSceneMemorySchema parse boundary", () => {
   it("round-trips a valid memory and re-applies the per-place caps", () => {
     const raw = {
       current: "kitchen",
-      timeOfDay: "dusk",
       places: [{ name: "kitchen", details: ["a", "a", "b"], connections: ["door", "door"] }],
     };
     const out = parseOr(chatSceneMemorySchema, raw, emptyChatSceneMemory());

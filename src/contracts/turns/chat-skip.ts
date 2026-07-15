@@ -7,12 +7,24 @@ import { z } from "zod";
  * skip note, and records itself. **Meters do not change** (flavor-only v1 — whether
  * twelve skipped hours mean recovery or deterioration is circumstance, so the full
  * time-effects system stays scaffolded, not wired). The fixed four amounts map to
- * minutes in the engine (`CHAT_SKIP_MINUTES`), never free-form durations.
+ * minutes via `CHAT_SKIP_MINUTES` below, never free-form durations.
  */
 
 export const chatSkipAmounts = ["moments", "hours", "overnight", "days"] as const;
 export const chatSkipAmountSchema = z.enum(chatSkipAmounts);
 export type ChatSkipAmount = z.infer<typeof chatSkipAmountSchema>;
+
+/**
+ * In-game minutes per player skip amount (spec §8.1 — a fixed four-value map).
+ * Lives on the contract (pure vocabulary) so the clock card / pickup strip can
+ * preview a skip's landing; the engine re-exports it beside its tuning siblings.
+ */
+export const CHAT_SKIP_MINUTES: Record<ChatSkipAmount, number> = {
+  moments: 30,
+  hours: 180,
+  overnight: 540,
+  days: 4320,
+};
 
 /** Cap on the recorded skip ring — the future time-effects system's data (§8.1). */
 export const SKIP_HISTORY_CAP = 50;

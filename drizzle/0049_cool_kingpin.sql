@@ -1,0 +1,1 @@
+ALTER TABLE "character_chats" ADD COLUMN "calendar_start" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -65,6 +65,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat clock & calendar — story time the player can see** —
+  [chat-clock-calendar.plan.md](chat-clock-calendar.plan.md) — 2026-07-15 — the chat clock
+  anchored to a real Date-backed calendar (`calendar_start`, migration 0049; default Jan 1
+  8:00am, editable from the clock card); a **desktop right aside** with the Story-time card +
+  skip chips whose tooltips and toast name the landing ("→ Friday evening"); ONE authoritative
+  time — the binding Story-time tail line replaces the removed archivist `timeOfDay`; real
+  weekdays in plan labels (render-derived, anchor-rebasable) and schedules; tick 4 → 1
+  min/exchange with meter pacing preserved (`CHAT_METER_DRIFT_MINUTES`). *Skips stop being a
+  leap in the dark — the off-screen-life prerequisite.*
 - **Chat plans & promises — commitments that come due** —
   [chat-plans-promises.plan.md](chat-plans-promises.plan.md) · spec
   [chat-plans-promises.spec.md](chat-plans-promises.spec.md) — 2026-07-15 — all four slices:

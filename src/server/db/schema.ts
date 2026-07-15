@@ -201,6 +201,13 @@ export const characterChats = pgTable(
     plans: jsonb("plans").notNull().default([]),
     /** The chat-local game clock (the only time model) — one timeline for the roster. */
     clockMinutes: integer("clock_minutes").notNull().default(0),
+    /**
+     * CalendarStart — the story-calendar anchor for clock_minutes
+     * (chat-clock-calendar.plan.md): minute 0 = this date+time. `{}` (the
+     * default and every pre-feature row) heals to CHAT_DEFAULT_CALENDAR_START
+     * (Jan 1, 8:00am) at the load boundary. Author-editable.
+     */
+    calendarStart: jsonb("calendar_start").notNull().default({}),
     pendingSkipNote: text("pending_skip_note").notNull().default(""),
     /** SkipRecord[] — player time skips. */
     skipHistory: jsonb("skip_history").notNull().default([]),
