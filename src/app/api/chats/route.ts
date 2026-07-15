@@ -4,10 +4,12 @@ import { z } from "zod";
 import {
   activeConditionSchema,
   characterProfileSchema,
+  chatPlansSchema,
   deriveEmotionLabel,
   effectiveTraitValue,
   emptyCharacterProfile,
   milestoneSchema,
+  planHubReason,
   NEUTRAL_MOOD_METER,
   regardBandForValue,
   regardBandToStageId,
@@ -87,6 +89,8 @@ export const GET = withUser(async (user, req: NextRequest) => {
       openLoops: characterChatState.openLoops,
       milestones: characterChatState.milestones,
       milestonesSeenAt: characterChats.milestonesSeenAt,
+      plans: characterChats.plans,
+      clockMinutes: characterChats.clockMinutes,
       lastLine: sql<string | null>`(
         select left(m.content, 160) from character_chat_messages m
         where m.chat_id = ${characterChats.id}
@@ -120,14 +124,19 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .orderBy(desc(characterChats.lastMessageAt))
     .limit(LIST_LIMIT);
 
-  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, milestones, milestonesSeenAt, ...rest }) => {
+  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, milestones, milestonesSeenAt, plans, clockMinutes, ...rest }) => {
     // "Has something to say" (spec §8.4, D4; v2 chat-initiative.plan.md slice 2): a pure
-    // read-time derivation — never a job, never the wall clock. The top open loop leads;
-    // with no loops, a milestone unseen since the player last OPENED the chat (the
-    // seen-cursor, stamped by the conversation mount) is the reason.
+    // read-time derivation — never a job, never the wall clock. An imminent / just-missed
+    // PLAN leads (chat-plans-promises — a commitment coming due is the strongest pull), then
+    // the top open loop, then a milestone unseen since the player last OPENED the chat (the
+    // seen-cursor, stamped by the conversation mount).
     const loops = parseOr(listLoopsSchema, openLoops ?? [], [], undefined, "character_chat_state.open_loops");
     const parsedMilestones = parseOr(listMilestonesSchema, milestones ?? [], [], undefined, "character_chat_state.milestones");
-    const say = loops[0]?.trim() || (unseenMilestoneReason(parsedMilestones, milestonesSeenAt ?? new Date()) ?? "");
+    const parsedPlans = parseOr(chatPlansSchema, plans ?? [], [], undefined, "character_chats.plans");
+    const say =
+      planHubReason(parsedPlans, clockMinutes ?? 0) ||
+      loops[0]?.trim() ||
+      (unseenMilestoneReason(parsedMilestones, milestonesSeenAt ?? new Date()) ?? "");
     if (regard === null) return { ...rest, regardBand: null, emotion: null, say };
     const parsedMeters = parseOr(listMetersSchema, meters ?? {}, {}, undefined, "character_chat_state.meters");
     const parsedConditions = parseOr(listConditionsSchema, conditions ?? [], [], undefined, "character_chat_state.conditions");

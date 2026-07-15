@@ -132,8 +132,8 @@ describe("unarmed fields disappear from the sheet entirely", () => {
 
   it("numbering is contiguous whatever is armed", () => {
     const bare = buildChatExtractorSystem("character", ctx());
-    expect(bare).toContain("Produce a single JSON object with these 3 fields:");
-    expect(instructedKeys(bare)).toEqual(["openLoops", "voiceExemplar", "characterSlip"]);
+    expect(bare).toContain("Produce a single JSON object with these 4 fields:");
+    expect(instructedKeys(bare)).toEqual(["openLoops", "plans", "voiceExemplar", "characterSlip"]);
   });
 });
 

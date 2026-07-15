@@ -40,6 +40,8 @@ import {
   type SocialReactionCard,
   supportingCastSchema,
   type SupportingCastMember,
+  chatPlansSchema,
+  type ChatPlan,
   worldLoreSchema,
   worldStyleSchema,
 } from "@/contracts";
@@ -376,6 +378,8 @@ export const chatStateSnapshotSchema = z.object({
   sceneModel: z.string().catch("reference"),
   // Recurring named side characters (chat-supporting-cast.plan.md) — the Supporting Cast panel's data.
   supportingCast: supportingCastSchema.catch([]),
+  // Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's data.
+  plans: chatPlansSchema.catch([]),
   // Emotional weather (emotional-weather.plan.md): the persistent feeling + bruise —
   // read by the reply-pacing hold and shown in the state tools. Degrades to empty.
   feeling: z
@@ -413,6 +417,8 @@ export interface ChatStateEdit {
   sceneModel?: ChatSceneModel;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — whole-list replacement. */
   supportingCast?: SupportingCastMember[];
+  /** Tracked plans & promises (chat-plans-promises.plan.md) — whole-list replacement. */
+  plans?: ChatPlan[];
 }
 
 export const locationSummarySchema = z.object({

@@ -41,6 +41,10 @@ export const milestoneKindSchema = z.enum([
   "strong_reaction",
   "secret_shared",
   "player_marked",
+  // Plans & promises (chat-plans-promises.plan.md): a kept/missed commitment involving the
+  // player — callback-boosted, so "remember our first real date" surfaces on its own.
+  "plan_kept",
+  "plan_missed",
 ]);
 export type MilestoneKind = z.infer<typeof milestoneKindSchema>;
 

@@ -135,6 +135,7 @@ describe("the extraction legs (chat-agent-improvements slice 1b)", () => {
     });
     expect(character).toEqual({
       openLoops: whole.openLoops,
+      plans: whole.plans,
       driveUpdates: whole.driveUpdates,
       voiceExemplar: whole.voiceExemplar,
       characterSlip: whole.characterSlip,

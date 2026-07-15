@@ -58,6 +58,16 @@ both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-
   exposure, presence toggle); the state routes take `?characterId=` targeting. The
   Scenario modal holds only the chat-wide fields (premise, presets, house rules,
   auto-scene + scene model).
+- **Plan-driven arrivals & exits** (chat-plans-promises.plan.md Slice 3): a chat-wide plan
+  ([state.md](state.md) §Plans & promises) that is DUE/imminent is the fiction's own reason
+  to move a character — `buildPlanPresenceLicense` (ensemble tail) grants the presence law's
+  ONE principled exception to the don't-teleport guard: a plan involving an **away** roster
+  member licenses their narrated **arrival** (the plan is why they show up), and a plan
+  happening now that does NOT involve the player, involving a **present** member, licenses
+  their **exit** ("her shift starts"). Group plans share due-ness + directives; consequences
+  stay **per-character** (each stood-up participant reacts through their own state row).
+  NPC↔NPC plans skipped past default to assumed-kept (ruling E, until the meanwhile pass) and
+  reach the story as conversation material / relationship facts.
 - **Relationship matrix** (`character_chat_relationships`, directed rows): per-conversation
   NPC↔NPC records seeded at creation/join from the library defaults
   (`character_relationships` — the character editor's **Relationships tab**), edited

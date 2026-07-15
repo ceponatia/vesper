@@ -10,6 +10,7 @@ import {
   type ChatSceneMemory,
 } from "@/contracts/turns/chat-scene-memory";
 import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
+import { describePlanWhen, planOthersLabel, type SalientPlan } from "@/contracts/turns/chat-plans";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, effectiveTraitValue, traitPole, traitRegistry } from "@/contracts/personality/traits";
@@ -173,6 +174,14 @@ export interface CharacterChatPromptInput {
      * owner ruling 2026-07-11). Absent/empty ⇒ no block.
      */
     drives?: ChatDrive[];
+    /**
+     * Plans & promises (chat-plans-promises.plan.md): the commitments NEAR this turn —
+     * due now / imminent / just-missed, plus at most a couple upcoming — already derived
+     * against the story clock (`derivePlanSalience`). Rendered as the compact "Plans"
+     * block with per-state directives (anticipation / the event / the fallout). Absent or
+     * all-far ⇒ no block; a standing list is never dumped every turn.
+     */
+    plans?: readonly SalientPlan[];
   };
   /**
    * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): the
@@ -905,6 +914,96 @@ function buildSupportingCastSection(cast: SupportingCast, selfName: string | nul
 }
 
 /**
+ * The compact "Plans" block (chat-plans-promises.plan.md): the commitments NEAR this turn,
+ * each with a directive by state — anticipation before, the event when due, the fallout when
+ * just missed. Only the salient plans render (the pipeline derived them against the story
+ * clock); at most a couple far-upcoming plans ride along as "on the horizon". "" when nothing
+ * is near — a standing list is never dumped every turn. Volatile tail (it accretes / comes
+ * due), never the prefix.
+ */
+function buildPlansSection(salient: readonly SalientPlan[], player: string): string {
+  const near = salient.filter((s) => s.salience !== "upcoming");
+  const upcoming = salient.filter((s) => s.salience === "upcoming").slice(0, 2);
+  if (!near.length && !upcoming.length) return "";
+  const line = (s: SalientPlan): string => {
+    const others = planOthersLabel(s.plan, player);
+    const who = others ? ` ${others}` : "";
+    const where = s.plan.where ? ` at ${s.plan.where}` : "";
+    const when = describePlanWhen(s.plan.when);
+    const tag =
+      s.salience === "dueNow"
+        ? "HAPPENING NOW"
+        : s.salience === "imminent"
+          ? `coming up — ${when}`
+          : s.salience === "justMissed"
+            ? "JUST MISSED"
+            : when;
+    return `- ${s.plan.what}${who}${where} — ${tag}`;
+  };
+  const directives: string[] = [];
+  if (near.some((s) => s.salience === "dueNow")) {
+    directives.push(
+      "A plan's time has arrived: let it happen in the fiction — meet it, be there, do the thing, or show honestly why it can't.",
+    );
+  }
+  if (near.some((s) => s.salience === "imminent")) {
+    directives.push(
+      "A plan is coming up soon: it can pull at the character — anticipation, a reminder, wanting to firm it up — without forcing the scene there yet.",
+    );
+  }
+  if (near.some((s) => s.salience === "justMissed")) {
+    directives.push(
+      `A plan was just missed — it did not happen when it should have. Let the fallout land honestly for the character, true to how much it mattered and to their regard for ${player} (a quiet hurt, open disappointment, or a pointed question). Never pretend it still happened.`,
+    );
+  }
+  return [
+    "Plans (commitments in play — honor the character's memory of them):",
+    ...near.map(line),
+    ...(upcoming.length
+      ? [`On the horizon: ${upcoming.map((s) => `${s.plan.what} (${describePlanWhen(s.plan.when)})`).join("; ")}.`]
+      : []),
+    ...directives,
+  ].join("\n");
+}
+
+/**
+ * The ensemble arrival/exit license (chat-plans-promises.plan.md Slice 3): a due/imminent
+ * plan is the fiction's OWN reason to move a character into or out of the scene — the one
+ * principled exception to the presence law's don't-teleport guard. A plan involving an AWAY
+ * roster member licenses their narrated ARRIVAL (the plan is why they show up); a plan
+ * happening now that does NOT involve the player, involving a PRESENT member, licenses their
+ * EXIT ("her shift starts"). "" when no plan pulls anyone. Ensemble-only.
+ */
+function buildPlanPresenceLicense(
+  salient: readonly SalientPlan[],
+  presentNames: readonly string[],
+  awayNames: readonly string[],
+  player: string,
+): string {
+  const norm = (s: string): string => s.trim().toLowerCase();
+  const playerKeys = new Set([norm(player), "you", "the player", "player", "me"]);
+  const present = new Set(presentNames.map(norm));
+  const away = new Set(awayNames.map(norm));
+  const lines: string[] = [];
+  for (const s of salient) {
+    if (s.salience !== "dueNow" && s.salience !== "imminent") continue;
+    const involvesPlayer = s.plan.participants.some((p) => playerKeys.has(norm(p)));
+    for (const who of s.plan.participants.filter((p) => away.has(norm(p)))) {
+      lines.push(
+        `${who} is away, but has a plan ${s.salience === "dueNow" ? "happening now" : "coming up"} — "${s.plan.what}". That plan is reason enough for ${who} to arrive: you MAY bring ${who} into the scene with their arrival narrated (the ONE exception to not moving an away character in uninvited).`,
+      );
+    }
+    if (!involvesPlayer && s.salience === "dueNow") {
+      for (const who of s.plan.participants.filter((p) => present.has(norm(p)))) {
+        lines.push(`${who} has a commitment of their own right now — "${s.plan.what}" — so ${who} may step out of the scene for it if it fits.`);
+      }
+    }
+  }
+  if (!lines.length) return "";
+  return ["Plans in motion (the fiction's own commitments pull people into or out of the scene):", ...lines.map((l) => `- ${l}`)].join("\n");
+}
+
+/**
  * The one-turn note digest (chat-agent-improvements.plan.md slice 4).
  *
  * The volatile tail had grown ~a dozen possible one-turn directives — a skip note, a scene
@@ -1531,6 +1630,8 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     displayName,
     playerName ?? "the player",
   );
+  // The compact plans block (chat-plans-promises.plan.md) — the commitments near this turn.
+  const plansSection = buildPlansSection(input.state?.plans ?? [], playerName ?? "the player");
   // The one-turn sense-targeted focus block (scope guard) — earned by the player's beat.
   const sensoryFocus = input.sensoryFocus
     ? buildSensoryFocusSection(
@@ -1613,6 +1714,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
       : "",
     sceneSection,
     castSection,
+    plansSection,
     // State-derived overrides of the prefix's own blocks — data, not directives, so they
     // stay above the "Right now" digest with the rest of the standing state.
     // Minor fence: no state-driven loosening block for a minor character.
@@ -1880,6 +1982,16 @@ export function buildEnsembleChatPromptParts(
     ? buildSceneSection(input.state.sceneMemory, input.sceneChanged ?? false)
     : "";
   const castSection = buildSupportingCastSection(input.state?.supportingCast ?? [], null, player);
+  // The plans block reads the PRIMARY's state (plans are chat-wide, shared by the roster).
+  const plansSection = buildPlansSection(input.state?.plans ?? [], player);
+  // The arrival/exit license (Slice 3): a due plan pulls an away member IN or a present
+  // member OUT — the presence law's one principled exception.
+  const planPresenceLicense = buildPlanPresenceLicense(
+    input.state?.plans ?? [],
+    present.map((m) => m.name),
+    away.map((m) => m.name),
+    player,
+  );
   const skipNote = input.state?.skipNote?.trim();
   const rosterLine = `In the scene with ${player} right now: ${
     present.length ? present.map((m) => m.name).join(", ") : "no one — every character is away"
@@ -1974,6 +2086,8 @@ export function buildEnsembleChatPromptParts(
     ...enactments,
     sceneSection,
     castSection,
+    plansSection,
+    planPresenceLicense,
     turnNotes,
     input.opening
       ? `Opening beat: ${player} has not spoken yet. Open the scene yourself — the present characters arrive in it, grounded in the scenario. A few lines, ending on a present moment that invites ${player} in. Do not narrate on ${player}'s behalf.`

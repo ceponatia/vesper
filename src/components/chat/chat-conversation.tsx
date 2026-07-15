@@ -37,6 +37,7 @@ import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel
 import { ChatRelationshipsEditor } from "@/components/chat/chat-relationships-editor";
 import { ChatRosterPanel } from "@/components/chat/chat-roster-panel";
 import { ChatSupportingCastPanel } from "@/components/chat/chat-supporting-cast-panel";
+import { ChatPlansPanel } from "@/components/chat/chat-plans-panel";
 import { replyFailureToast } from "@/components/chat/reply-failure";
 import { SceneMomentRow, scenesByAnchor } from "@/components/chat/chat-scene-moments";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
@@ -1010,6 +1011,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             archived={archived}
             onSaved={(snapshot) => setChatState(snapshot)}
           />
+          <ChatPlansPanel
+            chatId={chatId}
+            plans={chatState?.plans ?? []}
+            clockMinutes={chatState?.clockMinutes ?? 0}
+            archived={archived}
+            onSaved={(snapshot) => setChatState(snapshot)}
+          />
           {rosterOpen && roster.length > 1 ? <ChatRelationshipsEditor chatId={chatId} archived={archived} /> : null}
         </div>
       </Sheet>
@@ -1087,6 +1095,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             <ChatSupportingCastPanel
               chatId={chatId}
               cast={chatState?.supportingCast ?? []}
+              archived={archived}
+              onSaved={(snapshot) => setChatState(snapshot)}
+            />
+            {/* Plans & promises (chat-plans-promises.plan.md): tracked commitments that come
+                due on the story clock — below Supporting Cast. */}
+            <ChatPlansPanel
+              chatId={chatId}
+              plans={chatState?.plans ?? []}
+              clockMinutes={chatState?.clockMinutes ?? 0}
               archived={archived}
               onSaved={(snapshot) => setChatState(snapshot)}
             />

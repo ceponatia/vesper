@@ -44,6 +44,7 @@ export type ChatExtractorFieldKey =
   | "presence"
   | "cast"
   | "openLoops"
+  | "plans"
   | "driveUpdates"
   | "voiceExemplar"
   | "characterSlip"
@@ -64,6 +65,8 @@ export interface ChatExtractorContext {
   roster?: readonly { name: string; presence: "present" | "away" }[];
   /** The already-established supporting cast — new details attach by exact name. */
   supportingCast?: readonly { name: string; relation: string }[];
+  /** The conversation's currently-open plans — the `plans` field's status-change targets. */
+  openPlans?: readonly { what: string; who: string; when: string }[];
   /** The character's DEVELOPABLE traits at their current band — the traitShifts id list. */
   developableTraits?: readonly { id: string; label: string; band: string }[];
   /** A compact voice reference — what "in-voice" and an age/voice slip sound like. */
@@ -209,6 +212,26 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
       const loops = (ctx.openLoops ?? []).map((l) => l.trim()).filter(Boolean);
       return `Currently open loops:\n${loops.length ? fenceUntrusted("open loops", loops.map((l) => `- ${l}`).join("\n")) : "(none)"}`;
     },
+  },
+
+  plans: {
+    key: "plans",
+    empty: [],
+    instruction: (ctx) => {
+      const known = (ctx.openPlans ?? []).length
+        ? ` The "Plans so far" list shows what is already tracked — to record that one HAPPENED or was CALLED OFF, copy its "what" and set "status" ("kept" / "canceled"); do not re-strike a plan already listed.`
+        : "";
+      return `"plans": commitments the fiction STRUCK, CHANGED, or resolved this exchange — a concrete plan with WHO and roughly WHEN ("come over Friday", "dinner at the pier tonight", "I'll call after my shift"). Shape: [{ "what": "<the plan, short>", "participants": ["<name — ${ctx.playerName}, ${ctx.characterName}, another roster character, or a named side character>"], "where": "<place, or ''>", "when": { "dayOffset": <0 = today, 1 = tomorrow, 2 = in two days, …>, "dayPart": "morning" | "afternoon" | "evening" | "night", "unscheduled": <true for "soon"/"sometime" with no set time> }, "status": "kept" | "canceled" (omit for a new/ongoing plan) }].${known} A concrete commitment (who + roughly when) belongs HERE, not in "openLoops" — never file the same beat as both. Only real commitments the fiction actually made; NEVER mark a plan "missed" (the system decides that from the clock). [] is the common no-new-commitment case.`;
+    },
+    context: (ctx) =>
+      (ctx.openPlans ?? []).length
+        ? `Plans so far (copy "what" exactly to mark kept/canceled):\n${fenceUntrusted(
+            "plans",
+            (ctx.openPlans ?? [])
+              .map((p) => `- ${p.what}${p.who ? ` (${p.who})` : ""}${p.when ? ` — ${p.when}` : ""}`)
+              .join("\n"),
+          )}`
+        : "",
   },
 
   driveUpdates: {
@@ -390,6 +413,28 @@ const EXAMPLES: readonly ExtractorExample[] = [
     },
   },
   {
+    caption: "they make a plan — dinner at the pier tomorrow evening (a concrete commitment, not a fuzzy loop)",
+    values: {
+      episodeSummary: "Mara talked the player into dinner at the pier tomorrow evening — her treat, she insisted, already deciding what to wear.",
+      plans: [
+        {
+          what: "dinner at the pier",
+          participants: ["Mara", "the player"],
+          where: "the pier",
+          when: { dayOffset: 1, dayPart: "evening" },
+        },
+      ],
+      voiceExemplar: "The pier. Tomorrow. Wear something you don't mind the wind in — and no, you don't get a say in the wine.",
+    },
+  },
+  {
+    caption: "the plan they made for tonight actually happened — mark it kept",
+    values: {
+      episodeSummary: "Mara finally got her pier dinner; they split the wine and stayed until the lights came on.",
+      plans: [{ what: "dinner at the pier", participants: ["Mara", "the player"], status: "kept" }],
+    },
+  },
+  {
     caption:
       "the character finally admits the thing she has been circling for weeks — a secret drive spoken aloud (and the arc beat that goes with it)",
     values: {
@@ -470,8 +515,8 @@ const LEGS: Record<ChatExtractorLegId, ExtractorLeg> = {
   character: {
     id: "character",
     role: (ctx) =>
-      `You are the character-continuity keeper for ${ctx.characterName} in a private in-character chat. After each exchange you read the player's latest message and ${ctx.characterName}'s reply, then track ${ctx.characterName}'s own thread through it: what they still owe the story, what they want, how they sounded, and whether they held character.`,
-    fields: ["openLoops", "driveUpdates", "voiceExemplar", "characterSlip", "traitShifts"],
+      `You are the character-continuity keeper for ${ctx.characterName} in a private in-character chat. After each exchange you read the player's latest message and ${ctx.characterName}'s reply, then track ${ctx.characterName}'s own thread through it: what they still owe the story, the commitments they make, what they want, how they sounded, and whether they held character.`,
+    fields: ["openLoops", "plans", "driveUpdates", "voiceExemplar", "characterSlip", "traitShifts"],
     blocks: [voiceReferenceBlock],
   },
 

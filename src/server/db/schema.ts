@@ -197,6 +197,8 @@ export const characterChats = pgTable(
     sceneMemory: jsonb("scene_memory").notNull().default({}),
     /** SupportingCastMember[] — recurring named side characters (chat-supporting-cast.plan.md). */
     supportingCast: jsonb("supporting_cast").notNull().default([]),
+    /** ChatPlan[] — tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
+    plans: jsonb("plans").notNull().default([]),
     /** The chat-local game clock (the only time model) — one timeline for the roster. */
     clockMinutes: integer("clock_minutes").notNull().default(0),
     pendingSkipNote: text("pending_skip_note").notNull().default(""),

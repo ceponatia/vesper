@@ -190,7 +190,7 @@ then one guarded state write:
   | --- | --- | --- |
   | **memory scribe** | `episodeSummary`, `facts`, `memoryQueries` | `chat_memory_scribe.*` |
   | **continuity tracker** | `scene`, `outfit`, `attributeChanges`, `presence`, `cast` | `chat_continuity.*` |
-  | **character tracker** | `openLoops`, `driveUpdates`, `voiceExemplar`, `characterSlip`, `traitShifts` | `chat_character_notes.*` |
+  | **character tracker** | `openLoops`, `plans`, `driveUpdates`, `voiceExemplar`, `characterSlip`, `traitShifts` | `chat_character_notes.*` |
 
   All three sheets are **composed from the field library** (`prompts/chat-extractors.ts` —
   slice 1a: one module per field owning its instruction, context block, rules, and example
@@ -227,7 +227,11 @@ then one guarded state write:
   each time, prior loops fed back through the prompt; a **degraded** character leg keeps the
   prior loops rather than wiping them), the optional `scene` proposal merged into
   `scene_memory` ([state.md](state.md) §Scene memory), the optional `cast` proposals merged into
-  `supporting_cast` ([supporting-cast.md](supporting-cast.md) §Supporting cast; roster/player names excluded), the roster-gated
+  `supporting_cast` ([supporting-cast.md](supporting-cast.md) §Supporting cast; roster/player names excluded), the optional
+  `plans` proposals folded into the scenario ([state.md](state.md) §Plans & promises) —
+  `mergeChatPlans` then `advancePlans` (deterministic due/missed transitions), whose fresh
+  resolutions feed the pulse's `commitmentsDue` (computed pre-fan-out so the parallel pulse
+  sees a just-missed commitment) and mint `plan_kept`/`plan_missed` milestones — the roster-gated
   `presence` transitions ([multi-character.md](multi-character.md) §Multi-character), `driveUpdates` ([state.md](state.md) §Drives), and the optional
   `outfit` change (chat-wardrobe-parity — see [state.md](state.md) §Wardrobe):
   `foldOutfitProposal` (in `finalizeChatState`) reads the archivist's two grammars —

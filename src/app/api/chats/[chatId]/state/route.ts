@@ -7,6 +7,7 @@ import {
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
   chatDrivesSchema,
+  chatPlansSchema,
   chatSceneModels,
   DiagnosticCollector,
   effectiveTraitValue,
@@ -87,6 +88,8 @@ const editBodySchema = z.object({
   drives: chatDrivesSchema.optional(),
   /** Recurring named side characters (chat-supporting-cast.plan.md) — the panel's whole-list save. */
   supportingCast: supportingCastSchema.optional(),
+  /** Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's whole-list save. */
+  plans: chatPlansSchema.optional(),
 });
 
 /**

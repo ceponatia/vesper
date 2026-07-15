@@ -79,6 +79,12 @@ export interface ChatCallbackGateInput {
    * to be made BEFORE the ring burns — see `chatCallbackEligible`.
    */
   photoBeat: boolean;
+  /**
+   * A commitment is near this turn (chat-plans-promises): a plan due now, imminent, or
+   * just-missed owns the beat — the Plans block's directive is what the reply is about, so
+   * a "remember when" aside would compete with it.
+   */
+  planSalient: boolean;
 }
 
 /**
@@ -106,6 +112,7 @@ export function chatCallbackEligible(input: ChatCallbackGateInput): boolean {
   if (input.hasAttachments) return false;
   if (input.narratorInput) return false;
   if (input.photoBeat) return false;
+  if (input.planSalient) return false;
   const last = input.callbackHistory.at(-1);
   if (last && input.clockMinutes - last.atClockMinutes < CHAT_CALLBACK_MIN_GAP_MINUTES) return false;
   return true;
@@ -136,6 +143,8 @@ export interface ChatCallback {
 const MILESTONE_BOOST: Record<MilestoneKind, number> = {
   player_marked: 0.5,
   secret_shared: 0.5,
+  plan_kept: 0.5,
+  plan_missed: 0.45,
   strong_reaction: 0.45,
   stage_up: 0.4,
   stage_down: 0.4,

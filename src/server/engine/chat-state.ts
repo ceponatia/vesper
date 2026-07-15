@@ -26,6 +26,15 @@ import {
   emptySupportingCast,
   mergeSupportingCast,
   supportingCastSchema,
+  advancePlans,
+  chatPlansSchema,
+  describePlanWhen,
+  emptyChatPlans,
+  fillMissingPlanIds,
+  mergeChatPlans,
+  planInvolvesPlayer,
+  planOthersLabel,
+  type ChatPlan,
   emptyRelationshipTexture,
   deriveEmotionLabel,
   diag,
@@ -91,6 +100,7 @@ import { evaluateActReaction } from "@/contracts/personality/act-reaction";
 import { attributeRegistry } from "@/contracts/attributes";
 import { attributeValueSchema, overlaySourceMayChange, type AttributeValue } from "@/contracts/attributes/value";
 import { parseOr, parseOrNull } from "@/lib/parse";
+import { newId } from "@/lib/ids";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { healOutfitMarker, loadChatWardrobe, wardrobeDescriptors } from "./chat-wardrobe";
@@ -155,6 +165,8 @@ export interface ChatScenario {
   sceneMemory: ChatSceneMemory;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — one cast for the roster. */
   supportingCast: SupportingCast;
+  /** Tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
+  plans: ChatPlan[];
   clockMinutes: number;
   pendingSkipNote: string;
   skipHistory: SkipRecord[];
@@ -330,6 +342,8 @@ export interface ChatStateSnapshot {
   sceneMemory: ChatSceneMemory;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — the Supporting Cast panel's data. */
   supportingCast: SupportingCast;
+  /** Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's data (salience derived client-side vs clockMinutes). */
+  plans: ChatPlan[];
   /** Memory-callback ring (memory-callbacks.plan.md) — for the state-tools/inspector view. */
   callbackHistory: CallbackEntry[];
   /** Emotional weather (emotional-weather.plan.md) — the persistent feeling + bruise, for the strip/state tools. */
@@ -472,6 +486,7 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     sceneModel: "reference",
     sceneMemory: emptyChatSceneMemory(),
     supportingCast: emptySupportingCast(),
+    plans: emptyChatPlans(),
     clockMinutes: 0,
     pendingSkipNote: "",
     skipHistory: [],
@@ -486,6 +501,7 @@ const chatScenarioSchema = z.object({
   sceneModel: z.string().catch("reference").default("reference"),
   sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
   supportingCast: supportingCastSchema.catch([]).default([]),
+  plans: chatPlansSchema.catch([]).default([]),
   clockMinutes: z.number().catch(0).default(0),
   pendingSkipNote: z.string().catch("").default(""),
   skipHistory: z.array(skipRecordSchema).catch([]).default([]),
@@ -501,6 +517,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       sceneModel: characterChats.sceneModel,
       sceneMemory: characterChats.sceneMemory,
       supportingCast: characterChats.supportingCast,
+      plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
       pendingSkipNote: characterChats.pendingSkipNote,
       skipHistory: characterChats.skipHistory,
@@ -516,6 +533,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     sceneModel: row.sceneModel,
     sceneMemory: parseOr(chatSceneMemorySchema, row.sceneMemory, emptyChatSceneMemory(), sink, "character_chats.scene_memory"),
     supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
+    plans: parseOr(chatPlansSchema, row.plans, [], sink, "character_chats.plans"),
     clockMinutes: row.clockMinutes,
     pendingSkipNote: row.pendingSkipNote,
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chats.skip_history"),
@@ -539,6 +557,7 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       scene_model = ${scenario.sceneModel},
       scene_memory = ${JSON.stringify(scenario.sceneMemory)}::jsonb,
       supporting_cast = ${JSON.stringify(scenario.supportingCast)}::jsonb,
+      plans = ${JSON.stringify(scenario.plans)}::jsonb,
       clock_minutes = ${scenario.clockMinutes},
       pending_skip_note = ${scenario.pendingSkipNote},
       skip_history = ${JSON.stringify(scenario.skipHistory)}::jsonb
@@ -577,7 +596,10 @@ export async function savePreExchangeScenario(chatId: string, scenario: ChatScen
  * rolls back: it is accrete-only and author-curated between takes (owner
  * report: a member added after the discarded reply vanished when that reply
  * was redone), so the live list always wins. Cast entries only ever leave via
- * the panel's Remove or the SUPPORTING_CAST_MAX oldest-out eviction.
+ * the panel's Remove or the SUPPORTING_CAST_MAX oldest-out eviction. Plans, by
+ * contrast, DO roll back (they ride `...anchor` — ruling B): a regenerated reply
+ * that struck a plan must not double-mint it, and plans are fiction state, not
+ * author curation.
  */
 export function rollbackScenario(anchor: ChatScenario, live: ChatScenario | null): ChatScenario {
   return { ...anchor, supportingCast: live?.supportingCast ?? anchor.supportingCast };
@@ -1154,6 +1176,13 @@ export interface ChatPulseInput {
    * the full fold.
    */
   scope?: "full" | "opener";
+  /**
+   * Commitments that just came due this exchange (chat-plans-promises, ruling C): so the
+   * feeling proposal is informed — a just-missed plan is a hurt that lingers, a just-kept
+   * one is warm. Model-mediated only; the curve/regard never move off this (no deterministic
+   * penalty). Absent when nothing came due (the common case).
+   */
+  commitmentsDue?: { missed: readonly string[]; kept: readonly string[] };
   /** Failure telemetry only (agent-failure.ts) — never reaches the prompt. */
   trace?: AgentLegTrace;
   sink?: DiagnosticSink;
@@ -1179,6 +1208,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     // The standing feeling, so the model can judge resolution ("neutral" clears)
     // instead of proposing blind (emotional-weather.plan.md).
     feeling: state.feeling.current,
+    commitmentsDue: input.commitmentsDue,
     exchange: input.exchange,
   });
   const modelId = agentModelId();
@@ -1417,6 +1447,22 @@ export async function finalizeChatState(input: {
         }
       : undefined;
 
+  // Plans coming due (chat-plans-promises): the DETERMINISTIC transitions are knowable from
+  // the already-ticked clock before the fan-out, so the pulse — which runs in PARALLEL with
+  // the archivist — can see a just-missed commitment and propose the hurt (consequences stay
+  // model-mediated, ruling C: no deterministic regard penalty). The real fold below re-runs
+  // the advance AFTER the archivist's kept/canceled land (which may spare an overdue plan).
+  const planPhrase = (p: ChatPlan): string => {
+    const others = planOthersLabel(p, input.playerName);
+    const when = describePlanWhen(p.when);
+    return `"${p.what}"${others ? ` ${others}` : ""}${when ? ` (${when})` : ""}`;
+  };
+  const preAdvance = advancePlans(input.scenario.plans, input.scenario.clockMinutes, input.playerName);
+  const commitmentsDue =
+    input.skipPulse || preAdvance.justMissed.length === 0
+      ? undefined
+      : { missed: preAdvance.justMissed.map(planPhrase), kept: [] as string[] };
+
   // The post-turn fan-out: the reaction pulse ‖ the three extraction legs (the memory
   // scribe, the continuity tracker, the character tracker — chat-agent-improvements slice
   // 1b), all in flight together after the reply has already flushed.
@@ -1431,6 +1477,7 @@ export async function finalizeChatState(input: {
           exchange: input.exchange,
           activeSocialCards: input.scenario.activeSocialCards,
           scope: input.pulseScope,
+          commitmentsDue,
           trace: { chatId: input.chatId, messageId: input.assistantMessageId },
           sink: input.sink,
         }),
@@ -1442,6 +1489,10 @@ export async function finalizeChatState(input: {
       drives: input.driftedState.drives,
       roster: input.roster,
       supportingCast: input.scenario.supportingCast.map((m) => ({ name: m.name, relation: m.relation })),
+      // Open commitments the archivist can mark kept/canceled (chat-plans-promises).
+      openPlans: input.scenario.plans
+        .filter((p) => p.status === "upcoming")
+        .map((p) => ({ what: p.what, who: p.participants.join(", "), when: describePlanWhen(p.when) })),
       developableTraits,
       voiceReference,
       // The recap's ledger grounds the scribe's facts in NAMES (chat-agent-improvements
@@ -1540,6 +1591,20 @@ export async function finalizeChatState(input: {
       ])
     : input.scenario.supportingCast;
 
+  // Plans (chat-plans-promises): merge the archivist's struck/changed/canceled commitments
+  // (new ids via `newId`), then advance deterministically as the ticked clock passes each
+  // due-time — an overdue player plan the archivist did NOT resolve becomes `missed`, an
+  // overdue NPC↔NPC plan is assumed kept (ruling E). A degraded archivist proposes nothing
+  // but the plans still advance. Rolls back with the snapshot (ruling B).
+  const planMerge = archivist.value
+    ? mergeChatPlans(input.scenario.plans, archivist.value.plans, {
+        nowMinutes: input.scenario.clockMinutes,
+        mintId: newId,
+      })
+    : { plans: input.scenario.plans, archivistKept: [] as ChatPlan[] };
+  const planAdvance = advancePlans(planMerge.plans, input.scenario.clockMinutes, input.playerName);
+  const plans = planAdvance.plans;
+
   // Outfit change (chat-wardrobe-parity.plan.md): the archivist proposes wardrobe changes two
   // ways, folded by `foldOutfitProposal`. A whole-outfit `description` naming an authored preset
   // ("her work clothes" → the "Work" preset) seeds the STRUCTURED worn list (rung 1); an
@@ -1626,6 +1691,17 @@ export async function finalizeChatState(input: {
       messageId: input.assistantMessageId,
     });
   }
+  // Plan resolutions land milestones (chat-plans-promises, ruling D): a kept/missed plan
+  // INVOLVING THE PLAYER mints `plan_kept`/`plan_missed` — callback-boosted like
+  // `secret_shared`, so "remember our first real date" emerges from the callback system.
+  // NPC↔NPC keeps (assume-kept) carry no player milestone (they reach the story as facts).
+  for (const kept of planMerge.archivistKept) {
+    if (!planInvolvesPlayer(kept, input.playerName)) continue;
+    exchangeMilestones.push({ at, kind: "plan_kept", label: `Kept a plan — ${kept.what}`, messageId: input.assistantMessageId });
+  }
+  for (const missed of planAdvance.justMissed) {
+    exchangeMilestones.push({ at, kind: "plan_missed", label: `Missed a plan — ${missed.what}`, messageId: input.assistantMessageId });
+  }
   const milestones = appendMilestones(input.driftedState.milestones, exchangeMilestones);
   // Bounded personality evolution (slice 10): apply the archivist's developable-trait
   // nudges ONLY when a relationship milestone landed this exchange (first_exchange is
@@ -1704,7 +1780,7 @@ export async function finalizeChatState(input: {
   // guarded like the state save.
   await saveChatScenario(
     input.chatId,
-    { ...input.scenario, sceneMemory, supportingCast, pendingSkipNote: "" },
+    { ...input.scenario, sceneMemory, supportingCast, plans, pendingSkipNote: "" },
     input.promptMessageId,
   );
   // The rollback anchors ride targeted follow-up UPDATEs (never the shared upsert
@@ -1987,6 +2063,8 @@ export interface ChatStateEdit {
   sceneMemory?: ChatSceneMemory;
   /** Recurring named side characters (chat-wide) — the Supporting Cast panel's whole-list save. */
   supportingCast?: SupportingCastMember[];
+  /** Tracked plans & promises (chat-wide) — the Plans panel's whole-list save (chat-plans-promises.plan.md). */
+  plans?: ChatPlan[];
   /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit surface. */
   callbackHistory?: CallbackEntry[];
   /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear surface. */
@@ -2057,6 +2135,11 @@ export async function editChatState(args: {
   if (patch.supportingCast !== undefined) {
     // Whole-list replacement through the boundary schema (caps + dedupe + healing).
     nextScenario.supportingCast = supportingCastSchema.parse(patch.supportingCast);
+  }
+  if (patch.plans !== undefined) {
+    // Whole-list replacement through the boundary schema (caps + healing); fill any ids the
+    // UI author-edit path left blank so a hand-added plan gets a stable identity.
+    nextScenario.plans = fillMissingPlanIds(chatPlansSchema.parse(patch.plans), newId);
   }
 
   await persistChatState(chatId, characterId, next);
@@ -2181,6 +2264,7 @@ export function chatStateSnapshot(
     sceneModel: scenario.sceneModel,
     sceneMemory: scenario.sceneMemory,
     supportingCast: scenario.supportingCast,
+    plans: scenario.plans,
     callbackHistory: state.callbackHistory,
     feeling: state.feeling,
     selfieHistory: state.selfieHistory,

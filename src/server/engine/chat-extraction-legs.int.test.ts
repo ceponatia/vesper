@@ -156,6 +156,7 @@ describe("finalizeChatState — per-leg extraction degradation (slice 1b)", () =
         continuity: null,
         character: {
           openLoops: ["show him the studio"],
+          plans: [],
           driveUpdates: [],
           voiceExemplar: "",
           characterSlip: "",
@@ -176,6 +177,7 @@ describe("finalizeChatState — per-leg extraction degradation (slice 1b)", () =
         continuity: null,
         character: {
           openLoops: ["show him the studio"],
+          plans: [],
           driveUpdates: [],
           voiceExemplar: "",
           characterSlip: "",
