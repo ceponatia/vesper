@@ -28,14 +28,17 @@ export const GET = withUser<Params>(async (user, req, ctx) => {
   const days = Number.isFinite(raw) && raw > 0 ? Math.min(Math.floor(raw), MAX_WINDOW_DAYS) : DEFAULT_WINDOW_DAYS;
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
+  // The per-chat lists feed the inspector's scrollable, filterable activity feed, so return a
+  // deep window (hundreds) — bounded by TALLY_SCAN_CAP and the fixed-height scroll box.
+  const RECENT_LIMIT = 250;
   const [chat, global, runs, runsGlobal] = await Promise.all([
-    agentFailureReport({ chatId, since }),
+    agentFailureReport({ chatId, since, limit: RECENT_LIMIT }),
     // Every chat (the events stream is not per-owner, but this route is admin-only and the
     // deployment is single-tenant dev — stated here so it isn't mistaken for a leak).
     agentFailureReport({ since, limit: 0 }),
     // The SUCCESSFUL-run activity + latency log (chat-plans-promises follow-up): the recent
     // runs for THIS chat, plus the per-leg latency tally across all chats.
-    agentRunReport({ chatId, since }),
+    agentRunReport({ chatId, since, limit: RECENT_LIMIT }),
     agentRunReport({ since, limit: 0 }),
   ]);
 
