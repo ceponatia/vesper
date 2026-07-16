@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const simulationIdSchema = z.string().trim().min(1).max(200);
+const simulationIdSchema = z.string().trim().min(1).max(512);
 
 export const holdingContainerKinds = ["actor", "location", "container"] as const;
 export const holdingContainerKindSchema = z.enum(holdingContainerKinds);
