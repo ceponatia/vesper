@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterProfile } from "@/contracts/world/profile";
-import type { ItemTransferNarrativeCut } from "@/contracts/simulation/item-transfer";
+import {
+  itemTransferNarrativeCutSchema,
+  type ItemTransferNarrativeCut,
+} from "@/contracts/simulation/item-transfer";
 import { buildCharacterChatPromptForNarrativeCut } from "./world-engine";
 
 describe("buildCharacterChatPromptForNarrativeCut", () => {
   it("adds an immutable authority cut to the existing character-chat narrator", () => {
-    const cut: ItemTransferNarrativeCut = {
+    const cut: ItemTransferNarrativeCut = itemTransferNarrativeCutSchema.parse({
       id: "cut_gate1",
       semanticHash: "abc12345",
       worldId: "world_gate1",
@@ -37,7 +40,7 @@ describe("buildCharacterChatPromptForNarrativeCut", () => {
         { kind: "additional_item_transfer", publicText: "Do not invent another inventory change." },
       ],
       provenance: [{ eventId: "event_gate1", observationId: "observation_gate1" }],
-    };
+    });
 
     const prompt = buildCharacterChatPromptForNarrativeCut(
       { name: "Mara", profile: emptyCharacterProfile() },
