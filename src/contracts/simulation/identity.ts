@@ -7,12 +7,18 @@ import { z } from "zod";
  * trust boundary can alias two commands or entities. Prefixes remain an adapter
  * concern so persisted cuid2 values and deterministic test IDs are both legal.
  */
-const opaqueSimulationIdSchema = z
-  .string()
-  .min(1)
-  .max(512)
-  .refine((value) => value.trim() === value, "Simulation IDs cannot have surrounding whitespace")
-  .refine((value) => !/\s/u.test(value), "Simulation IDs cannot contain whitespace");
+function opaqueSimulationIdSchema(maxLength: number) {
+  return z
+    .string()
+    .min(1)
+    .max(maxLength)
+    .refine((value) => value.trim() === value, "Simulation IDs cannot have surrounding whitespace")
+    .refine((value) => !/\s/u.test(value), "Simulation IDs cannot contain whitespace");
+}
+
+const compactSimulationIdSchema = opaqueSimulationIdSchema(256);
+const derivedSimulationIdSchema = opaqueSimulationIdSchema(1_024);
+const observationIdentitySchema = opaqueSimulationIdSchema(2_048);
 
 const stableTokenSchema = z
   .string()
@@ -21,34 +27,34 @@ const stableTokenSchema = z
   .refine((value) => value.trim() === value, "Stable tokens cannot have surrounding whitespace")
   .refine((value) => !/\s/u.test(value), "Stable tokens cannot contain whitespace");
 
-export const worldTypeIdSchema = opaqueSimulationIdSchema.brand<"WorldTypeId">();
-export const worldIdSchema = opaqueSimulationIdSchema.brand<"WorldId">();
-export const worldBranchIdSchema = opaqueSimulationIdSchema.brand<"WorldBranchId">();
-export const characterTemplateIdSchema = opaqueSimulationIdSchema.brand<"CharacterTemplateId">();
-export const worldCharacterIdSchema = opaqueSimulationIdSchema.brand<"WorldCharacterId">();
-export const playerCharacterIdSchema = opaqueSimulationIdSchema.brand<"PlayerCharacterId">();
-export const locationIdSchema = opaqueSimulationIdSchema.brand<"LocationId">();
-export const zoneIdSchema = opaqueSimulationIdSchema.brand<"ZoneId">();
-export const linkIdSchema = opaqueSimulationIdSchema.brand<"LinkId">();
-export const itemIdSchema = opaqueSimulationIdSchema.brand<"ItemId">();
-export const holdingContainerIdSchema = opaqueSimulationIdSchema.brand<"HoldingContainerId">();
-export const actionDefinitionIdSchema = opaqueSimulationIdSchema.brand<"ActionDefinitionId">();
-export const activityInstanceIdSchema = opaqueSimulationIdSchema.brand<"ActivityInstanceId">();
-export const commitmentIdSchema = opaqueSimulationIdSchema.brand<"CommitmentId">();
-export const journeyIdSchema = opaqueSimulationIdSchema.brand<"JourneyId">();
-export const engagementIdSchema = opaqueSimulationIdSchema.brand<"EngagementId">();
-export const commandIdSchema = opaqueSimulationIdSchema.brand<"CommandId">();
-export const eventIdSchema = opaqueSimulationIdSchema.brand<"EventId">();
-export const triggerIdSchema = opaqueSimulationIdSchema.brand<"TriggerId">();
-export const observationIdSchema = opaqueSimulationIdSchema.brand<"ObservationId">();
-export const narrativeCutIdSchema = opaqueSimulationIdSchema.brand<"NarrativeCutId">();
-export const principalIdSchema = opaqueSimulationIdSchema.brand<"PrincipalId">();
-export const correlationIdSchema = opaqueSimulationIdSchema.brand<"CorrelationId">();
-export const outboxMessageIdSchema = opaqueSimulationIdSchema.brand<"OutboxMessageId">();
-export const snapshotIdSchema = opaqueSimulationIdSchema.brand<"SnapshotId">();
+export const worldTypeIdSchema = compactSimulationIdSchema.brand<"WorldTypeId">();
+export const worldIdSchema = compactSimulationIdSchema.brand<"WorldId">();
+export const worldBranchIdSchema = compactSimulationIdSchema.brand<"WorldBranchId">();
+export const characterTemplateIdSchema = compactSimulationIdSchema.brand<"CharacterTemplateId">();
+export const worldCharacterIdSchema = compactSimulationIdSchema.brand<"WorldCharacterId">();
+export const playerCharacterIdSchema = compactSimulationIdSchema.brand<"PlayerCharacterId">();
+export const locationIdSchema = compactSimulationIdSchema.brand<"LocationId">();
+export const zoneIdSchema = compactSimulationIdSchema.brand<"ZoneId">();
+export const linkIdSchema = compactSimulationIdSchema.brand<"LinkId">();
+export const itemIdSchema = compactSimulationIdSchema.brand<"ItemId">();
+export const holdingContainerIdSchema = compactSimulationIdSchema.brand<"HoldingContainerId">();
+export const actionDefinitionIdSchema = compactSimulationIdSchema.brand<"ActionDefinitionId">();
+export const activityInstanceIdSchema = compactSimulationIdSchema.brand<"ActivityInstanceId">();
+export const commitmentIdSchema = compactSimulationIdSchema.brand<"CommitmentId">();
+export const journeyIdSchema = compactSimulationIdSchema.brand<"JourneyId">();
+export const engagementIdSchema = compactSimulationIdSchema.brand<"EngagementId">();
+export const commandIdSchema = compactSimulationIdSchema.brand<"CommandId">();
+export const eventIdSchema = derivedSimulationIdSchema.brand<"EventId">();
+export const triggerIdSchema = compactSimulationIdSchema.brand<"TriggerId">();
+export const observationIdSchema = observationIdentitySchema.brand<"ObservationId">();
+export const narrativeCutIdSchema = derivedSimulationIdSchema.brand<"NarrativeCutId">();
+export const principalIdSchema = compactSimulationIdSchema.brand<"PrincipalId">();
+export const correlationIdSchema = compactSimulationIdSchema.brand<"CorrelationId">();
+export const outboxMessageIdSchema = observationIdentitySchema.brand<"OutboxMessageId">();
+export const snapshotIdSchema = compactSimulationIdSchema.brand<"SnapshotId">();
 
 /** Heterogeneous event references use this registry identity, never a display name. */
-export const simulationEntityIdSchema = opaqueSimulationIdSchema.brand<"SimulationEntityId">();
+export const simulationEntityIdSchema = compactSimulationIdSchema.brand<"SimulationEntityId">();
 
 export const rulesetVersionSchema = stableTokenSchema.brand<"RulesetVersion">();
 export const idempotencyKeySchema = stableTokenSchema.brand<"IdempotencyKey">();
@@ -59,6 +65,11 @@ export const branchVersionSchema = z.number().int().nonnegative().max(Number.MAX
 export const branchHeadSequenceSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const branchSequenceSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const schemaVersionSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+
+/** Length-prefixing prevents delimiter-bearing opaque IDs from aliasing one another. */
+export function composeSimulationId(namespace: string, parts: readonly string[]): string {
+  return [namespace, ...parts].map((part) => `${part.length}:${part}`).join(":");
+}
 
 export type WorldTypeId = z.infer<typeof worldTypeIdSchema>;
 export type WorldId = z.infer<typeof worldIdSchema>;
