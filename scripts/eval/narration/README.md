@@ -75,22 +75,33 @@ pnpm eval:narration:compare --limit 2 --dry-run   # inspect the comparison group
 ## Paired contrast fixtures — does the chat engine's depth show? (`--axis contrast`)
 
 The measurement baseline for character-chat-standalone.plan.md area 3 / spec §5 (the PM reports NO
-noticeable effect from the personality sliders or tracked state in play). `fixtures.ts` carries five
-`chat-contrast-*` pairs over ONE character (Wren), each **identical except one flipped input**, all
-through the real `buildCharacterChatSystemPrompt`:
+noticeable effect from the personality sliders or tracked state in play), extended by the Gate 0
+grounding spike. `fixtures.ts` carries eight `chat-contrast-*` pairs over ONE character (Wren);
+each pair is **identical except one flipped input** and uses the real
+`buildCharacterChatSystemPrompt`:
 
-| axis      | flagged / control                                | fixture ids                                    |
-| --------- | ------------------------------------------------ | ---------------------------------------------- |
-| `state`   | heavy tracked state vs `state` omitted entirely  | `chat-contrast-state-on` / `-state-off`        |
-| `sliders` | Warmth +80 & Inhibition −80 vs −80 & +80         | `chat-contrast-warm` / `-cold`                 |
-| `stage`   | affinity 93 (devoted) vs 0 (stranger)            | `chat-contrast-lover` / `-stranger`            |
-| `drunk`   | intoxication 0.8 (standing cue + disinhibition shift) vs 0 | `chat-contrast-drunk` / `-sober`     |
-| `memory`  | 3 planted facts + 1 episode vs no `memory` input | `chat-contrast-memory-on` / `-memory-off`      |
+| axis | flagged / control | fixture ids |
+| --- | --- | --- |
+| `state` | heavy tracked state vs `state` omitted entirely | `chat-contrast-state-on` / `-state-off` |
+| `sliders` | Warmth +80 & Inhibition −80 vs −80 & +80 | `chat-contrast-warm` / `-cold` |
+| `stage` | regard 93 (devoted) vs 0 (neutral) | `chat-contrast-lover` / `-stranger` |
+| `drunk` | intoxication 0.8 vs 0 | `chat-contrast-drunk` / `-sober` |
+| `memory` | 3 facts + 1 episode vs no `memory` | `chat-contrast-memory-on` / `-memory-off` |
+| `familiarity` | deeply known vs stranger, same cool regard | `chat-contrast-familiar-hostile` / `-stranger-hostile` |
+| `mask` | warm regard behind a cold front vs openly warm | `chat-contrast-masked` / `-honest` |
+| `grounding` | 6am pre-shower/not ready vs 8am post-shower/ready | `chat-contrast-grounding-pre-shower` / `-post-shower` |
 
 ```bash
 pnpm eval:narration --scenarios chat-contrast --models aion,glm --seeds 5 --no-judge   # generate (live spend)
 pnpm eval:narration:compare --axis contrast                                            # blind pair judging
 pnpm eval:narration:compare --axis contrast --dry-run                                  # inspect pairing, no calls
+```
+
+To run only the Gate 0 ablation cheaply:
+
+```bash
+pnpm eval:narration --scenarios chat-contrast-grounding --profiles concise --models aion --seeds 5 --no-judge
+pnpm eval:narration:compare --axis contrast
 ```
 
 `compare.ts` pairs flagged vs control by the fixtures' `contrast` metadata within
@@ -101,7 +112,7 @@ identify which reply carries the flag and rate the difference's visibility (1 = 
 defaulted guess. **Acceptance bar: ≥80% correct identification per axis** — the table prints
 PASS/FAIL; below the bar the axis is declared **not enacted** and its prompt wording gets tuned and
 re-run (spec §5 outcome routing). Where an axis defines a lexical cue list (`CONTRAST_AXES[..].cueRe`
-— state/drunk/memory), the deterministic `cueSep` column reports flagged-hits-cue-and-control-doesn't
+— state/drunk/memory/grounding), the deterministic `cueSep` column reports flagged-hits-cue-and-control-doesn't
 (the `sensoryRelevant` pattern; also per-row as the `cue` column in `run.ts`), a judge-drift guard.
 After tuning, the pairs stay as the permanent regression harness.
 - **Judge model:** set `EVAL_JUDGE_MODEL` to a **strong** model so it out-classes the cast it scores

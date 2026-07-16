@@ -1,6 +1,6 @@
 import { CONTRAST_AXES, EVAL_SCENARIOS, type EvalScenario } from "../narration/fixtures";
 
-export const GATE0_CORPUS_VERSION = "gate0-baseline-v1";
+export const GATE0_CORPUS_VERSION = "gate0-baseline-v2";
 
 export interface Gate0QualityChecks {
   contradictionRe?: RegExp;
@@ -128,6 +128,39 @@ const DEFINITIONS: Gate0CaseDefinition[] = [
     ...same({ lane: "chat", trackedState: null }),
     checks: {
       notes: ["Control for the paired tracked-state case."],
+    },
+  },
+  {
+    id: "chat-contrast-grounding-pre-shower",
+    ...same({
+      lane: "chat",
+      storyTime: "06:00",
+      scheduleWindow: { kind: "hygiene", startsAt: "07:00", status: "upcoming" },
+      body: { showered: false, clothing: "sleep clothes", readyToLeave: false },
+      grounding: "deterministic redacted narrator context; no model-derived state",
+    }),
+    checks: {
+      requiredCueRe: CONTRAST_AXES.grounding.cueRe,
+      notes: [
+        "Treatment: the narrator receives one deterministic pre-shower context value.",
+        "The reply must not teleport Wren to the curb; it should enact delay, refusal, or preparation.",
+      ],
+    },
+  },
+  {
+    id: "chat-contrast-grounding-post-shower",
+    ...same({
+      lane: "chat",
+      storyTime: "08:00",
+      scheduleWindow: { kind: "hygiene", startsAt: "07:00", status: "completed" },
+      body: { showered: true, clothing: "day clothes", readyToLeave: true },
+      grounding: "deterministic redacted narrator context; no model-derived state",
+    }),
+    checks: {
+      notes: [
+        "Control: the narrator receives the corresponding post-shower context value.",
+        "The reply must not invent an outstanding shower or dressing requirement.",
+      ],
     },
   },
   {
