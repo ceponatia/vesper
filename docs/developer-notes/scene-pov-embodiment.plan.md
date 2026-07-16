@@ -1,7 +1,10 @@
 # Scene POV embodiment — the player's own body in frame (plan)
 
-Status: **active** — written 2026-07-16 from an owner brainstorm ask. **Slice 0 (the
-blush scrub) shipped 2026-07-16**; slices 1–4 remain and are all **unblocked**:
+Status: **active** — written 2026-07-16 from an owner brainstorm ask. **Slices 0, 1 and 2
+shipped 2026-07-16** (the blush scrub; the framing builder + viewer-part registry + the
+coverage gate). **Nothing renders differently yet** — every caller still passes an empty
+part list, by design: the machinery lands and is tested before slice 3 lets the composer
+fill it. Slices 3–4 remain and are **unblocked**:
 [persona-library.plan.md](persona-library.plan.md) shipped the same day, so the
 persona's body attributes (`personaToCharacterProfile` → `characterAppearanceSummary`)
 and the player's worn coverage (`resolvePlayerWardrobe` →
@@ -140,7 +143,7 @@ asserted the literal word "flushed" now assert the **inverse invariant** across 
 whole meter grid, which is the property worth pinning. Still unverified against a
 live model — see [Testing](#testing).
 
-### Slice 1 — `SCENE_POV_RULE` becomes a builder (independent)
+### Slice 1 — `SCENE_POV_RULE` becomes a builder — **shipped 2026-07-16**
 
 Replace the constant with `sceneFramingRule(parts)`:
 
@@ -154,7 +157,23 @@ rendered image. Belongs in the **never-dropped** tier of `budgetVenicePrompt`
 (`prompts.ts:1140`) alongside the POV rule and pose — the Venice edit routes cap
 at 1500 chars (`prompts.ts:1045`) and this must not be what gets excerpted.
 
-### Slice 2 — the viewer-part registry + the coverage gate
+> **Shipped together with slice 2**, not before it: `sceneFramingRule(parts)` cannot be
+> written without the part type slice 2 defines, and slice 1 alone would have been a
+> builder with nothing to build from. The byte-identical property the split existed to
+> protect is kept as a **test** instead (`sceneFramingRule({})` ⇒ `SCENE_POV_RULE`), which
+> is where it belonged anyway — and every caller still passes no parts, so not one rendered
+> image changes yet.
+>
+> Two refinements found in build: the rule needs the **featured names** for its count
+> assertion, so the signature is `sceneFramingRule({parts, subjects})` rather than
+> `(parts)`; and **selfies ignore viewer parts entirely** — a selfie is the subject's own
+> camera, with no viewer standing in the scene to have a body (pinned by test). The
+> never-dropped-tier requirement turned out to be satisfied structurally: only
+> `outfitSummary`/`setting` pass through `budgetVenicePrompt`'s `fit()`, so the framing rule
+> was never at risk of being excerpted — now asserted by a test that budgets a fat prompt
+> down to the 1500-char cap and checks the rule survives intact.
+
+### Slice 2 — the viewer-part registry + the coverage gate — **shipped 2026-07-16**
 
 `contracts/images/viewer-body.ts` — a closed vocabulary, not free text.
 Registries are the extension point, so phrasing is a data edit:
@@ -175,6 +194,14 @@ Parts: `hands`, `forearms`, `lap_thighs`, `legs_feet`, `torso`, `genitals`.
 The gate intersects a proposed list against `exposedRegions(playerWorn)` and the
 route's `allowIntimate`. Pure, unit-testable without a model: *pants on ⇒
 genitals gone* is a table test.
+
+> **Shipped as designed.** `resolveViewerParts` filters unknown id → route → coverage, and
+> **missing coverage counts as covered** — the same default-shut rule `chatSceneIsIntimate`
+> follows, so an unestablished scene earns nothing. One correction to the sketch above:
+> **only anatomy is gated.** `torso` and `lap_thighs` are `requiresBare: null`, because a
+> *clothed* torso in frame is a perfectly good POV element (you can look down at your own
+> shirt) — the gate exists to stop anatomy rendering through trousers, not to stop the body
+> being in shot. In practice `genitals` is the only gated part today.
 
 ### Slice 3 — the composer proposes
 
