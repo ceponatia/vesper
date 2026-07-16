@@ -7,7 +7,7 @@ import {
   type TransferItemCommand,
 } from "@/contracts/simulation/item-transfer";
 import { newId } from "@/lib/ids";
-import { db, simCommands, simWorlds } from "@/server/db";
+import { db, simCommands, simHoldingContainers, simWorlds } from "@/server/db";
 import {
   InjectedSimulationCrash,
   readDurableItemTransferBranch,
@@ -347,5 +347,26 @@ describe("E2.2 durable item-transfer branch transaction", () => {
       readDurableItemTransferBranch(secondIds.branchId),
     ]);
     expect(first.events[0]?.id).not.toBe(second.events[0]?.id);
+  });
+
+  it("blocks standalone deletion of a live container while allowing branch teardown", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds();
+    await seedCase(ids);
+
+    await expect(
+      db()
+        .delete(simHoldingContainers)
+        .where(
+          and(
+            eq(simHoldingContainers.branchId, ids.branchId),
+            eq(simHoldingContainers.holdingContainerId, ids.sourceId),
+          ),
+        ),
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({ constraint: "sim_item_holdings_container_fk" }),
+    });
+
+    await expect(db().delete(simWorlds).where(eq(simWorlds.id, ids.worldId))).resolves.toBeDefined();
   });
 });
