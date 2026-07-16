@@ -379,6 +379,13 @@
       "when": 1784219431192,
       "tag": "0053_worried_flatman",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1784234865848,
+      "tag": "0054_e2_2_durable_branch_transaction",
+      "breakpoints": true
     }
   ]
 }
