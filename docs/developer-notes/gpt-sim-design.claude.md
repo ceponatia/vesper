@@ -274,6 +274,33 @@ Beyond §2, honestly enumerated:
 
 ### 6.1 — The project already ran this experiment, and neither doc cites the result
 
+> **RETRACTED (2026-07-16) — the premise is false. See
+> [world-engine-refactor.claude.md](world-engine-refactor.claude.md) §1.**
+>
+> I checked the record instead of the recollection. **The experiment never ran.**
+> `profile.schedule` was write-orphaned until 2026-07-12, so `scheduleEntryAt` always
+> returned `null` and **the schedule tick was a no-op for every character in every
+> session** — schedule-driven movement never executed once. The one real failure
+> (`movement-authority.spec.md`, deleted 2026-07-13) traces the decisive corruption to a
+> **player narrating an NPC out of a room with no authority gate** — an *ungated write
+> path*, which argues **for** authority, not against it — and concludes the session
+> _"would have self-healed"_ with one-hop routing. Every diagnosed fix was designed and
+> never built; the specs were deleted _"rather than built against the possibly-deprecated
+> session model"_ — a portfolio decision, not a verdict.
+>
+> So GPT's inference (_"it does not follow that authoritative location is inherently
+> wrong"_) is **supported**, and this section's argument is **not**. Worse for it:
+> `stagedLocationAnchor` exists precisely to reconcile engine authority with narrator
+> freedom, and **it worked** — and `prompts/narrative.ts:77` bridles the narrator with
+> state today, in the shipped product, fine. **The veto column's cost is unproven and the
+> one time it was tested it held.**
+>
+> The three-way split below may still be a useful design frame, and the §6.1′ partition of
+> the owner's location capabilities still stands on its own logic. But **the natural
+> experiment it claimed as evidence does not exist**, and the `developer-notes/CLAUDE.md`
+> account it rests on is itself inaccurate. Read what follows as a hypothesis, not a
+> finding.
+
 This is the most important thing in this document.
 
 The session lane had authoritative state: real locations, real movement, schedules moving
