@@ -27,19 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Persona library — the chat wiring (slices 6–8)** —
-  [persona-library.plan.md](persona-library.plan.md) (**partially shipped** — the
-  library itself landed 2026-07-16, see **Shipped**; this is the remainder). What makes
-  a persona actually *playable*: the `resolveChatPersona` ladder + the backfill that
-  retires the `users.player_persona` blob, the per-chat "Playing as" pick, and the
-  **player wardrobe** — a `playerState` jsonb on `character_chats`, a `playerOutfit`
-  archivist field (one field covers both directions, since the archivist sees the whole
-  exchange) folding through the existing `applyWornGarmentChanges` reducer, and the
-  `preExchangeScenario` rollback snapshot — without which "another take" leaves the
-  player undressed by a beat that no longer exists. Structured-only with no manual
-  `exposed` toggle, because a toggle would be a hole straight through the scene plan's
-  coverage gate. **Unblocks**
-  [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) slices 2–4.
 - **Scene POV embodiment — the player's own body in frame** —
   [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) (draft; planned 2026-07-16
   from the same ask). **Supplemental to the persona library** — slices 2–4 consume its
@@ -120,15 +107,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
-- **Persona library — build a player you can be** (slices 1–5 of many) —
+- **Persona library — the player as a first-class library entity** —
   [persona-library.plan.md](persona-library.plan.md) — 2026-07-16 — the player graduates
-  from a single inline blob to a real library entity: `personas` table (migration 0051,
-  `(owner_id, title)` UNIQUE so `name` can repeat), a narrow `PersonaProfile` + the one
-  `personaToCharacterProfile` adapter that buys the wardrobe seam, attribute picker,
-  outfit editor and exposure classifier unforked, CRUD with a typed 409 on title
-  collision, the `/personas` library tab, and a three-tab editor. Title is barred from
-  prompts *structurally* — it isn't a field on the resolver's shape. **Nothing consumes a
-  persona yet** — the chat wiring is slices 6–8, still in **Next**.
+  from a single inline blob to a real library entity you pick per chat: `personas`
+  (migration 0051, `(owner_id, title)` UNIQUE so `name` can repeat), a narrow
+  `PersonaProfile` + the one `personaToCharacterProfile` adapter that buys the wardrobe
+  seam, attribute picker, outfit editor and exposure classifier unforked, CRUD, the
+  `/personas` tab + editor, the three-rung `resolveChatPersona` ladder (0052 backfills
+  the blob into a real row, 0053 drops it), the "Playing as" pick, and a **player
+  wardrobe the fiction can undress** — `playerOutfit` on the shared continuity leg folds
+  through the existing `applyWornGarmentChanges` against the persona's pool, rides the
+  "another take" rollback, and is structured-only so exposure is always coverage-computed.
+  Title is barred from prompts *structurally* — it isn't a field on the resolver's shape.
+  **Unblocks** [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) slices 2–4.
 - **Scene image blush scrub — stop asking for clown makeup** (slice 0 of
   [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md)) — 2026-07-16 — owner
   report: "flushed"/"blushing" in an image prompt renders as stage blusher, not
