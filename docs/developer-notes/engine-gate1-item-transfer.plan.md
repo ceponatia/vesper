@@ -1,6 +1,6 @@
 # World-engine Gate 1 — item-transfer authority seam
 
-Status: active — PR [#8](https://github.com/ceponatia/vesper/pull/8) ready for review (started 2026-07-16)
+Status: shipped — 2026-07-16 (Gate 1 ADVANCE; squash commit [`0455560e`](https://github.com/ceponatia/vesper/commit/0455560e4a8c6f93aef76c571c8bc8b56f944d23))
 
 Parent: [engine.plan.md](engine.plan.md) · Contract: [engine.spec.md](engine.spec.md)
 
@@ -71,14 +71,18 @@ same command, event, replay, and cut contracts.
 
 ## Evidence log
 
-Implementation evidence (CI run 208, 2026-07-16):
+Final implementation evidence (CI runs 208 and 213, 2026-07-16):
 
-- canonical `pnpm verify`: passed — lint, circular-dependency scan, typecheck,
-  173 test files / 2,510 tests, and duplication threshold;
+- canonical `pnpm verify`: passed on the final PR head (CI run 213) — lint,
+  circular-dependency scan, typecheck, the complete test suite, and duplication threshold;
 - Gate 1 contract coverage: ten kernel/runtime scenarios plus one current-narrator
   integration test;
 - CI benchmark, 4,000 samples after warmup: p50 0.118 ms, p95 0.233 ms,
   p99 0.405 ms against the predeclared 5.0 ms p95 budget;
 - model calls and tokens added by the deterministic path: zero;
-- architecture verdict: retain the command/event/projection/observation/cut seam for the
-  next slice; do not treat the in-memory adapter as production durability.
+- final review found and fixed reused command IDs with new idempotency keys; the
+  regression proves the runtime rejects the duplicate before event-ID derivation;
+- architecture verdict: **ADVANCE** — retain the command/event/projection/observation/cut
+  seam for E2.1; do not treat the in-memory adapter as production durability;
+- PR [#8](https://github.com/ceponatia/vesper/pull/8) squash-merged into `engine`.
+
