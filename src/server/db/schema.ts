@@ -162,6 +162,48 @@ export const characters = pgTable(
 );
 
 /**
+ * **Personas** (persona-library.plan.md) — the player as a library entity: who *you*
+ * are in a chat, with a body, a wardrobe and a bio. The graduated successor to the
+ * single inline `users.player_persona` blob (one per account); a chat picks one.
+ *
+ * Deliberately NOT a row in `characters`: a "self" character would clutter every
+ * library list and need a `kind` discriminator + filtering everywhere (the reasoning
+ * recorded in finished/player-character.plan.md, which chose the blob for the same
+ * reason and left this as the graduation).
+ *
+ * No `visibility`/`clonedFromId` in v1 — a persona is *you*, so cross-account sharing
+ * has no obvious want. Both are additive later.
+ */
+export const personas = pgTable(
+  "personas",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    /**
+     * The library label, **unique per owner** — the disambiguator that lets `name`
+     * repeat across personas ("Brian, 22" and "Brian, 40" are both named Brian).
+     * A database/UX concern ONLY: it is deliberately absent from the `PlayerPersona`
+     * shape every prompt consumer reads, so it has no path to an agent.
+     */
+    title: text("title").notNull(),
+    /** The in-fiction name characters address. Freely repeatable across personas. */
+    name: text("name").notNull(),
+    /** PersonaProfile (contracts/players/persona-profile.ts) */
+    profile: jsonb("profile").notNull().default({}),
+    tags: jsonb("tags").notNull().default([]),
+    avatarImageId: text("avatar_image_id"),
+    searchEmbedding: vector("search_embedding", { dimensions: 1536 }),
+    embedder: text("embedder"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  // The composite unique's LEADING column doubles as the owner-scoped lookup index,
+  // so no separate `personas_owner_idx` is needed (the reasoning recorded on
+  // `session_participants_name_unique` / `turns_session_number_unique` below).
+  (t) => [uniqueIndex("personas_owner_title_unique").on(t.ownerId, t.title)],
+);
+
+/**
  * A conversation (docs/character-chat/; character-chat-standalone.spec.md §1):
  * the chat lane's first-class record — the transcript, rolling summary, and
  * per-participant state hang off `chat_id`, so one character can host many
