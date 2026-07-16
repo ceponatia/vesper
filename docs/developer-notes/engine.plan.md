@@ -188,6 +188,10 @@ No later phase is justified merely because it appears in this plan.
 
 ## Gate 0 — establish trustworthy evidence
 
+Status: **ADVANCE — closed 2026-07-16.** See the exact evidence and bounded follow-ups in
+[gate0.closeout.md](gate0.closeout.md). This status permits Gate 1 only; no spike was
+promoted to production.
+
 Rough effort: **3–6 developer-days**, excluding the already queued meter plan.
 
 ### G0.1 Repair the known invariant
