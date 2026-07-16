@@ -135,6 +135,7 @@ describe("E2.1 command and event envelopes", () => {
     expect(acceptedSimulationCommandResultSchema.parse(accepted).status).toBe("accepted");
     expect(resultSchema.safeParse({ ...accepted, firstSequence: 3 }).success).toBe(false);
     expect(resultSchema.safeParse({ ...accepted, eventIds: ["event_a", "event_a"] }).success).toBe(false);
+    expect(resultSchema.safeParse({ ...accepted, eventIds: ["event_a"] }).success).toBe(false);
     expect(
       resultSchema.safeParse({
         status: "rejected",
