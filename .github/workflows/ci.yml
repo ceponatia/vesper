@@ -43,3 +43,16 @@ jobs:
 
       - name: Gate 1 deterministic-path benchmark
         run: pnpm eval:engine-gate1
+
+      - name: Start Postgres 17 + pgvector for E2.2
+        run: docker compose up -d --wait
+
+      - name: Apply migrations from zero
+        run: pnpm db:migrate
+
+      - name: E2.2 durable branch transaction integration
+        run: pnpm test:engine-e2-2
+
+      - name: Stop E2.2 database
+        if: always()
+        run: docker compose down -v

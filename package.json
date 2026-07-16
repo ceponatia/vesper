@@ -19,6 +19,7 @@
     "test": "vitest run --exclude '**/*.int.test.ts'",
     "test:watch": "vitest --exclude '**/*.int.test.ts'",
     "test:int": "vitest run --no-file-parallelism .int.test.",
+    "test:engine-e2-2": "vitest run --no-file-parallelism src/server/engine/simulation/item-transfer-store.int.test.ts",
     "verify": "pnpm lint && pnpm lint:cycles && pnpm typecheck && pnpm test && pnpm jscpd",
     "prepare": "husky",
     "db:up": "docker compose up -d --wait",
