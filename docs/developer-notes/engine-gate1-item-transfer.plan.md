@@ -75,7 +75,7 @@ Implementation evidence (CI run 208, 2026-07-16):
 
 - canonical `pnpm verify`: passed — lint, circular-dependency scan, typecheck,
   173 test files / 2,510 tests, and duplication threshold;
-- Gate 1 contract coverage: nine kernel/runtime scenarios plus one current-narrator
+- Gate 1 contract coverage: ten kernel/runtime scenarios plus one current-narrator
   integration test;
 - CI benchmark, 4,000 samples after warmup: p50 0.118 ms, p95 0.233 ms,
   p99 0.405 ms against the predeclared 5.0 ms p95 budget;
