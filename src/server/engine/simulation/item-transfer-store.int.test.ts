@@ -460,6 +460,46 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     expect(checkpoint?.throughSequence).toBe(1);
   });
 
+  it("allows only one concurrent worker to complete one obligation", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds();
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids));
+    const now = new Date(Date.now() + 60_000);
+
+    const results = await Promise.all([
+      consumeNextItemTransferOutbox({ workerId: "worker_one", now }),
+      consumeNextItemTransferOutbox({ workerId: "worker_two", now }),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual(["completed", "idle"]);
+    expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toHaveLength(1);
+  });
+
+  it("checkpoints different branches independently", async (test) => {
+    if (!ready) return test.skip();
+    const worldId = newId();
+    const firstIds = makeIds(1, worldId);
+    const secondIds = makeIds(1, worldId);
+    await seedCase(firstIds);
+    await seedCase(secondIds);
+    await submitDurableItemTransfer(command(firstIds));
+    await submitDurableItemTransfer(command(secondIds));
+    const now = new Date(Date.now() + 60_000);
+
+    expect(await consumeNextItemTransferOutbox({ workerId: "branch_worker_a", now })).toMatchObject({ status: "completed" });
+    expect(await consumeNextItemTransferOutbox({ workerId: "branch_worker_b", now })).toMatchObject({ status: "completed" });
+    const checkpoints = await db()
+      .select()
+      .from(simConsumerCheckpoints)
+      .where(eq(simConsumerCheckpoints.consumerKind, "item_transfer_feed"));
+    expect(checkpoints.map((row) => [row.branchId, row.throughSequence]).sort()).toEqual(
+      [
+        [firstIds.branchId, 1],
+        [secondIds.branchId, 1],
+      ].sort(),
+    );
+  });
+
   it("recovers an expired lease and preserves live-versus-rebuild equality", async (test) => {
     if (!ready) return test.skip();
     const ids = makeIds();
@@ -480,9 +520,12 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
       status: "completed",
       throughSequence: 1,
     });
+    const authorityBefore = await readDurableItemTransferBranch(ids.branchId);
     const live = await rebuildItemTransferFeed(ids.branchId);
     const repeated = await rebuildItemTransferFeed(ids.branchId);
+    const authorityAfter = await readDurableItemTransferBranch(ids.branchId);
     expect(live).toEqual(repeated);
+    expect(authorityAfter).toEqual(authorityBefore);
     expect(live).toMatchObject({ branchId: ids.branchId, throughSequence: 1, rowCount: 1 });
     expect(live.projectionHash).toMatch(/^[a-f0-9]{64}$/u);
   });
