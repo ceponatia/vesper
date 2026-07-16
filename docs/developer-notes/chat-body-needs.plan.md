@@ -60,19 +60,21 @@ deprecated, so the registry gets taken rather than paralleled:
 
 **Reserve meter**, clock-keyed, seeded ~0.8.
 
-- **Drain**: roughly linear, ~`−0.045/h` (a meal at 0.9 → hungry (< 0.4) in ~11h). Unlike
-  energy this needs no piecewise curve — hunger is close enough to linear over a day, and
-  the *felt* timing comes from the read, not the rate.
+- **Drain**: linear, ~`−0.045/h` (a meal at 0.9 → hungry in ~11h). Unlike energy this needs
+  no proportional law — hunger is close enough to linear over a day, and the *felt* timing
+  comes from the read, not the rate.
 - **Sources**: `meal` (`satiation set 0.9`), `snack` (`+0.25`). The registry rows exist and
   are empty; this slice fills them.
-- **The read is circadian, and this is the whole trick.** The owner: "an npc might have a
-  lifestyle where they don't sit down and eat lunch and dinner at set times but they know
-  when they're hungry (and it's roughly the same time every day)." That is exactly
-  `deriveCircadianPressure`'s shape from the meter-economy plan, pointed at `meal` rhythm
-  rows instead of `sleep` rows. **Generalize it** (`deriveRhythmPressure(profile, kind,
-  clock)`) rather than writing a second copy — the hunger read blends satiation × mealtime
-  proximity, so she gets peckish near her usual times and genuinely hungry when she has
-  skipped them.
+- **The read is a deficit read, and this is the whole trick.** The owner: "an npc might have
+  a lifestyle where they don't sit down and eat lunch and dinner at set times but they know
+  when they're hungry (and it's roughly the same time every day)." That is precisely the
+  meter-economy plan's energy shape with `meal` rhythm rows swapped in for `sleep` rows:
+  `read = clamp(−1, +1, satiation − pressure)`, zero at *her* usual mealtime, negative =
+  overdue, both poles saturating (+1 stuffed, −1 ravenous — and it stops there rather than
+  sliding forever).
+- **Generalize the pressure**, don't copy it: `deriveRhythmPressure(profile, kind, clock)`
+  serves `sleep` and `meal` from one function, and `desire`/social battery after it. If this
+  plan writes a second circadian curve by hand, that is the bug.
 - **Off-screen meals ride `rhythmBodyPatch`** — a crossed `meal` row feeds her, on the same
   crossed-slot rule as washing. "All npcs should eat at least twice a day" is therefore an
   *authoring* invariant, not an engine rule: a schedule with fewer than two `meal` rows
@@ -105,9 +107,11 @@ a full bladder that only shows a pip is worse than no bladder at all.
   a lot makes them have to pee"), and alcohol adds disproportionately.
 - **Empties** on a `restroom` action (new registry row, 5 min) and on `rhythmBodyPatch`'s
   crossed slots.
-- **The channel**: a reserve/load crossing its band emits a **need** — a small, derived,
-  never-stored `{ kind, urgency, want }` from the same read seam. Needs feed the *existing*
-  consumers rather than a new system:
+- **The channel**: a **deficit read going negative** emits a **need** — a small, derived,
+  never-stored `{ kind, urgency, want }` from the same read seam, where `urgency` is just
+  the read's magnitude below zero. This is why the signed shape is worth generalizing: the
+  sign *is* the gate, so "she is overdue for X" needs no per-meter threshold table. Needs
+  feed the *existing* consumers rather than a new system:
   - the **initiative cue** (`buildInitiativeCue`), which already assembles plans / open loops
     / wants / rhythm — a need is one more want, and this is how "she excuses herself" or "she
     suggests getting food" happens without a bespoke path;

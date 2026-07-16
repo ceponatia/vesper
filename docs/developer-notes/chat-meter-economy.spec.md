@@ -38,53 +38,110 @@ A read may still *describe* behavior ("she is fading") — the difference is tha
 derived from context and gated on perceivability, while a threshold hint is an
 unconditional directive stapled to a number.
 
-## Ruling OQ1 — energy is sleep reserve; tiredness is a read
+## Ruling OQ1 — energy is a bidirectional read over a reserve and the circadian
 
-The owner's timeline: slow decay for the first few hours → normal → faster at 12–15h →
-faster at 24h → rapid at 36h → **pass out at 48h**; "mentally tired by 5 or 6pm but still
-functional"; "not truly exhausted until over 24 hours"; wake after 8h, no debuffs for now.
+The owner's first timeline: slow decay for the first few hours → normal → faster at 12–15h
+→ faster at 24h → rapid at 36h → pass out at 48h; "mentally tired by 5 or 6pm but still
+functional"; "not truly exhausted until over 24 hours".
 
-**These are not all the same axis, and one linear meter cannot hold them.** Requiring the
-value to cross `tired` (0.45) at 12h forces an average drain of 0.042/h, which zeroes the
-meter at ~24h — the exact opposite of "not exhausted until 24h+" and "pass out at 48h".
-Monotonically *increasing* decay that lands at 0 exactly at 48h mathematically requires
-the meter to still sit near ~0.88 at hour 12. The contradiction is real and it is
-diagnostic: **"tired at 5pm" and "wrecked at 30h up" are different phenomena.**
+**As one 0–1 meter this was unsatisfiable.** Requiring the value to cross `tired` (0.45) at
+12h forces an average drain of 0.042/h, zeroing the meter at ~24h — the opposite of "not
+exhausted until 24h+" and "pass out at 48h". The contradiction was diagnostic: **"tired at
+5pm" and "wrecked at 30h up" are different phenomena.** (48h was later clarified as "a test
+example", not a requirement — good, because the read below reaches collapse at ~40h
+*emergently*, with no hardcoded hour anywhere.)
 
-Ruled — three axes, which is the standard three-process model of sleep regulation:
+**Ruled (owner, 2026-07-16) — a bidirectional read: positive is fuel in the tank, negative
+is how far the body is past wanting sleep.** The decisive framing is the owner's: "even if
+people have energy they still feel more tired when they know it's past their normal
+bedtime." So the two axes are not alternatives to choose between — one *subtracts from* the
+other:
 
-1. **`energy` = homeostatic sleep reserve.** Drains on hours awake via the owner's
-   piecewise curve, restored by sleep. Its bands mean *sleep deprivation*, so they move to
-   that scale (`tired` < 0.70 ≈ 25h awake, `exhausted` < 0.40 ≈ 37h). At hour 12 it reads
-   ~0.87 and shows **nothing** — correct: being up 12 hours is not sleep-deprived.
-2. **Circadian pressure** — derived, never stored: a pure function of the story clock
-   against the character's own `sleep` rhythm rows. Peaks inside the sleep window, ramps in
-   the ~2h before it, decays over the ~2h after waking (sleep inertia — grogginess). This
-   is what makes 3am hard and what makes a short night felt.
-3. **Time-on-task** — hours awake, read directly. This is the owner's 5–6pm: the end of a
-   long day, gone after a night's sleep, invisible to the reserve.
+```
+read = clamp(−1, +1, reserve − pressure)
+```
 
-`deriveEnergyRead(energy, hoursAwake, circadian)` blends all three into the one phrase the
-narrator sees and the one pip the strip shows. Energy therefore **joins mood** as a meter
-with no registry thresholds — the read owns its vocabulary.
+- **`reserve`** — the stored 0–1 `energy` meter. Fuel. Decays **proportionally** (below),
+  restored by sleep, floors at 0. A tank cannot hold a negative amount.
+- **`pressure`** — circadian sleep pressure. Derived, never stored: a pure function of the
+  story clock against the character's own `sleep` rhythm rows. Low by day, a small
+  afternoon dip, ramping into bedtime, peaking at the ~4am trough, **falling after it**
+  (the second wind), plus a brief post-waking bump (sleep inertia).
+- **Zero is a definition, not a threshold.** At her normal bedtime, pressure exactly equals
+  her remaining reserve — *that is what bedtime means*. It is per-character (a night owl's
+  zero is 2am) and needs no magic number.
 
-Consequences ruled with it:
+**Both poles saturate, which is the point** (owner: "a max negative energy point where it
+doesn't keep decreasing… helps us develop systems around both polar maxes"):
 
-- **Pass-out fires on `energy` reaching 0, not on a 48h timer.** Hours-awake only sets the
-  *rate*, so a nap legitimately buys real time (+0.2 at the 0.037/h band ≈ 5 more hours)
-  without resetting the debt. 48h is the no-naps case, which is what the owner described.
-- **Sleep is one concept with two sources**: a rhythm `sleep` window a skip crossed, and an
-  `asleep` condition (how a pass-out is stored). `sleepMinutesBetween` unifies them, so the
-  pass-out needs no bespoke wake path — the existing self-expiring condition machinery
-  (`isConditionExpired`) already does the timing.
-- **A nap is not a night.** Only a sleep episode ≥ `CHAT_SLEEP_MIN_HOURS` resets the awake
-  clock; below it, the `rest` chip's energy top-up stands alone.
-- **Short sleep carries debt forward.** Waking sets `awakeSinceMinutes = now − carried`,
-  where sleeping *h* hours clears `h × CHAT_SLEEP_DEBT_CLEAR_RATIO` hours of prior
-  wakefulness. Eight hours clears a full day; four hours leaves you four hours "already
-  into" the next one. The awake clock *is* the debt ledger — no second field.
-- Per the owner, waking carries **no debuffs** for now. The energy-condition family
-  (`groggy`, `wired`, `microsleeps`) is named in the plan's Later section, not built.
+- **+1** — maximally rested. The reserve cap (0.95) means sleeping longer does not stack, so
+  the ceiling is a real state to hang systems off rather than an unreachable asymptote.
+- **−1** — maximally sleep-demanding. Collapse hangs off *sitting at the floor*, not off an
+  hour count — and how long a character can hold there is characterful (a trait seam), not
+  a constant.
+
+Verified against the cases that broke the single-axis version (7am wake / 11pm bedtime):
+
+| moment       | h awake | reserve | pressure | read     | reads as             |
+| ------------ | ------- | ------- | -------- | -------- | -------------------- |
+| 11am         | 4       | 0.74    | 0.05     | +0.69    | bright               |
+| 3pm          | 8       | 0.58    | 0.15     | +0.43    | the afternoon dip    |
+| 9pm          | 14      | 0.40    | 0.20     | +0.20    | winding down         |
+| **11pm bed** | 16      | 0.35    | 0.35     | **0.00** | **the zero**         |
+| 4am trough   | 21      | 0.26    | 1.05     | −0.79    | wrecked              |
+| 8am next day | 25      | 0.20    | 0.55     | −0.35    | **second wind**      |
+| 11pm night 2 | 40      | 0.08    | 1.10     | −1.00    | the floor — collapse |
+
+The **nap case** the single axis could not answer: naps 2–6pm, so at her 11pm bedtime
+reserve is ~0.70 against pressure 0.35 ⇒ read **+0.35**. She is past her bedtime and feels
+it, but she has fuel — up, and a little wired. Exactly the owner's framing.
+
+**`reserve` decays proportionally, not linearly** — `reserve *= exp(−elapsed/CHAT_ENERGY_TAU)`,
+τ ≈ 16h. This is a small registry extension (a `proportional` drift law beside the linear
+`perHour`), and it earns it four times over:
+
+- It is the biologically correct shape — Process S in the three-process model is exponential.
+- It is **exactly composable**: `exp(−a)·exp(−b) = exp(−(a+b))`, so sixty 1-minute drifts
+  equal one 60-minute drift by construction. The piecewise-curve version had a real
+  path-dependence gotcha at band boundaries; this deletes it.
+- **One knob (τ) replaces a five-row curve table.** The felt acceleration the owner
+  originally described now comes from `pressure` rising through the night — which is where
+  it actually comes from.
+- **Sleep debt becomes free.** Restore is linear (`+0.09/h`, capped 0.95) onto a
+  proportional tank, so a full night from a normal bedtime (0.35) refills to 0.95, but a
+  full night after a 40h bender (0.08) reaches only **0.80** — day two starts short, with no
+  debt mechanic written. Proportional decay is also start-point-independent, so a short
+  night simply decays onward from wherever it left her.
+
+**Two things this deletes.** `awakeSinceMinutes` is unnecessary — a proportional rate does
+not need to know hours awake, so **the reserve value *is* the debt ledger** (migration 0051
+drops to one column). And `CHAT_SLEEP_MIN_HOURS` ("a nap is not a night") is unnecessary — a
+90-minute nap simply restores +0.135 because it is short. Both were scaffolding for the
+piecewise model.
+
+`deriveEnergyRead(reserve, pressure)` owns the vocabulary, so energy **joins mood** as a
+meter with no registry thresholds. Sleep stays one concept with two sources — a rhythm
+`sleep` window a skip crossed, and an `asleep` condition (how a collapse is stored) —
+unified by `sleepMinutesBetween`, so a collapse needs no bespoke wake path: the existing
+self-expiring condition machinery (`isConditionExpired`) already does the timing. Per the
+owner, waking carries **no debuffs** for now; the energy-condition family (`groggy`,
+`wired`, `microsleeps`) gates on the read's sign and is named in the plan's Later section.
+
+### The generalization: deficit reads
+
+The signed-with-a-meaningful-zero shape is **not energy-specific** — it belongs to the read
+seam, and every reserve meter wants it. Hunger's zero is "when she'd normally eat"; thirst,
+`desire`, and social battery all have an act-point. A **deficit read** is therefore the
+reusable shape: signed, zero at the character's own act-point, negative meaning overdue,
+both poles saturating. One seam serves all of them
+([chat-body-needs.plan.md](chat-body-needs.plan.md) §2 is its second customer).
+
+This is also why the axis is a **read and not the storage**. Storing energy signed would
+fork the meter registry (`initial`/`baseline` are `min(0).max(1)`, `driftToward` clamps
+`[0,1]`, the cue-intensity math assumes those bounds) for what is, in storage terms, a
+coordinate change — and every reserve meter would then queue up to be forked the same way.
+Reserve stays a legal 0–1 meter; the signed axis is what the narrator, the pips, and the
+debug tools see.
 
 ## Ruling OQ2 — arousal is a driver, not a talk-switch
 

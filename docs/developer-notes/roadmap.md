@@ -35,10 +35,12 @@ _(nothing — pull the next entry from Next)_
   time mover; **re-scoped 2026-07-16** on the owner's OQ1–OQ3 rulings and the world-model
   deprecation license). Drift moves off exchange-counting onto the **story clock** at
   retuned rates — which also deletes the `advance` flag, the away-freeze, and the skip's
-  meter code — plus an energy sleep model (awake clock, the owner's drain curve, pass-out
-  at 48h) with a derived tiredness read, a pulse `intimacy` read with a climax reset +
-  afterglow, arousal regraded to body facts rather than a talk-switch, and rhythm-driven
-  off-screen self-care that retires D14. Carries migration 0051 (+ a backfill).
+  meter code — plus an energy sleep model read as a **bidirectional axis** (positive = fuel
+  in the tank, negative = past wanting sleep, both poles saturating; the afternoon dip,
+  second wind, and collapse at ~40h all emerge, with no hardcoded hour), a pulse `intimacy`
+  read with a climax reset + afterglow, arousal regraded to body facts rather than a
+  talk-switch, and rhythm-driven off-screen self-care that retires D14. Carries migration
+  0051 (+ a backfill).
 - **Chat body needs — satiation, hydration, and needs that push** —
   [chat-body-needs.plan.md](chat-body-needs.plan.md) (draft; planned 2026-07-16 from the
   owner's PM notes on the meter-economy plan). The three asked-for meters plus the
