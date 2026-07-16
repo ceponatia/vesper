@@ -25,8 +25,9 @@ deprecation of the world model (no session-lane parity left to protect, owner 20
 together license the real fix.
 
 Deliverable: **meters drift on the story clock at honest rates**, energy becomes a real
-sleep model with a derived tiredness read, arousal resolves, and skips get their
-consequences from the character's own authored rhythm rather than a flat rule.
+sleep model read as a **bidirectional axis** (positive = fuel in the tank, negative = past
+wanting sleep, both poles saturating), arousal resolves, and skips get their consequences
+from the character's own authored rhythm rather than a flat rule.
 
 ## The current economy (measured 2026-07-15)
 
@@ -63,8 +64,8 @@ has a strong source and no resolution, and skips move the clock without moving t
   speeds stress recovery). The climax reset targets the **personalized** baseline, not 0.
 - **Rollback safety**: every new field rides `storedChatStateSchema`, so all of this stays
   "another take"-safe.
-- **This one needs a migration** (0051 — the first in this plan's family). Two additive
-  integer columns, so `db:generate` cannot hit the create-vs-rename prompt; the SQL needs a
+- **This one needs a migration** (0051 — the first in this plan's family). One additive
+  integer column, so `db:generate` cannot hit the create-vs-rename prompt; the SQL needs a
   hand-checked **backfill** (see §1) before `pnpm db:migrate`.
 - ~~`meterDefinitions` is shared with the session lane — do not fix chat by inflating
   `perHour`.~~ **Void** (owner, 2026-07-16): the world model is deprecated and the session
@@ -99,11 +100,12 @@ deletes three special cases**:
   away primary desyncing at `time-skip/route.ts:115`, and the route committing the scenario
   before the member loop; see the spec's §Latent bugs).
 
-**Migration 0051** (`character_chat_state`): `meters_at_minutes` and `awake_since_minutes`
-(§2), both `integer not null default 0`. Default 0 would make the first read of every
-existing row drift the entire history at once, so the migration **must backfill both from
-`character_chats.clock_minutes`**; `CHAT_MAX_CATCHUP_MINUTES` (7 story days) is the
-belt-and-braces guard, not the fix.
+**Migration 0051** (`character_chat_state`): **one** column — `meters_at_minutes`,
+`integer not null default 0`. (§2's proportional reserve deleted the second one:
+`awake_since_minutes` is unnecessary once decay needs no hours-awake input.) Default 0 would
+make the first read of every existing row drift the entire history at once, so the migration
+**must backfill from `character_chats.clock_minutes`**; `CHAT_MAX_CATCHUP_MINUTES` (7 story
+days) is the belt-and-braces guard, not the fix.
 
 **The retuned table** — one table, one meaning, in `meters/registry.ts`:
 
@@ -114,7 +116,7 @@ belt-and-braces guard, not the fix.
 | stress       | −0.03 → **−0.10** | 1.0 eases off-edge in ~4h, calm in ~10h (was ~33h)          |
 | intoxication | −0.12 (keep)      | one drink clears in ~2.5h — already right                    |
 | mood         | 0.06 → **0.10** recovery | an even keel returns over an evening, not a day     |
-| energy       | *piecewise* — see §2 | the first meter whose rate is a function, not a constant |
+| energy       | *proportional* — see §2 | the one meter on the exponential law (τ = 16h), not `perHour` |
 
 Sanity check on a **100-exchange visit** (= 100 story-minutes): hygiene −0.05, energy
 −0.01, arousal −0.50, stress −0.17, mood +0.17. Nothing about talking dirties or exhausts
@@ -126,72 +128,88 @@ are for.
 > currently doing double duty as the scene's *persistent charge*. −0.50 lands once the
 > `desire` appetite meter exists to hold that charge — see the spec's §Ruling OQ2.
 
-### 2. Energy: a sleep reserve + a derived tiredness read
+### 2. Energy: a bidirectional read over a reserve and the circadian
 
-The owner's OQ1 timeline cannot live on one linear meter — requiring "tired at 12h" forces
-a drain that zeroes the meter at ~24h, contradicting "not truly exhausted until over 24
-hours" and "pass out at 48h". The contradiction is diagnostic: **"tired at 5pm" and
-"wrecked at 30h up" are different phenomena** (spec §Ruling OQ1). Three axes:
-
-**(a) `energy` = homeostatic sleep reserve.** Drains on hours awake via the owner's curve
-(`awakeSinceMinutes`, new column, reset by sleep):
+The owner's OQ1 timeline could not live on one 0–1 meter (spec §Ruling OQ1 — requiring
+"tired at 12h" forces a drain that zeroes the meter at ~24h). **Ruled 2026-07-16: energy is
+a signed read — positive is fuel in the tank, negative is how far the body is past wanting
+sleep.** The two axes don't compete; one subtracts from the other, because "even if people
+have energy they still feel more tired when they know it's past their normal bedtime":
 
 ```ts
-export const CHAT_ENERGY_DRAIN_CURVE = [
-  { throughHours: 4, perHour: 0.004 },  // "very slowly after waking"
-  { throughHours: 14, perHour: 0.008 }, // a normal baseline
-  { throughHours: 24, perHour: 0.014 }, // "after 12-15 hours, increases a bit"
-  { throughHours: 36, perHour: 0.022 }, // "after 24 hours it increases further"
-  { throughHours: 48, perHour: 0.037 }, // "after ~36 hours it decays rapidly"
-];
+read = clamp(-1, +1, reserve - pressure);
 ```
 
-From a 0.95 wake: **4h → 0.93 · 14h → 0.85 · 24h → 0.71 · 36h → 0.45 · 48h → 0.00**.
-Bands move to the sleep-debt scale they now measure: `tired` < **0.70** (~25h awake — just
-past the owner's "over 24 hours"), `exhausted` < **0.40** (~37h), `spent` < **0.15**
-(~44h, the pre-collapse warning). At hour 12 it reads ~0.87 and shows nothing, which is
-correct — being up 12 hours is not sleep-deprived.
+**(a) `reserve`** — the stored 0–1 `energy` meter. Fuel. **Decays proportionally**:
+`reserve *= Math.exp(-elapsedHours / CHAT_ENERGY_TAU)`, τ = **16h**, restored by sleep,
+capped at `CHAT_ENERGY_WAKE_CAP` (0.95). One knob, not a five-row curve. This is a small
+registry extension — a `proportional` drift law beside the linear `perHour` — and it pays
+for itself: it is the biologically correct shape (Process S is exponential), it is
+**exactly composable** (`exp(−a)·exp(−b) = exp(−(a+b))`, so sixty 1-minute drifts equal one
+60-minute drift *by construction*), and it makes sleep debt free (below).
 
-> **Implementation note**: the drain must be **integrated across band boundaries**, not
-> sampled at one point — an exchange spanning hour 23→25 draws from two rates. Sampling
-> makes drift path-dependent and breaks the "sixty 1-minute drifts == one 60-minute drift"
-> invariant that every other meter satisfies for free (`driftToward` is linear).
-
-**(b) Circadian pressure** — derived, never stored: `deriveCircadianPressure(profile,
-clockMinutes, calendarStart)`, a pure function of the story clock against the character's
-own `sleep` rhythm rows (§4). Peaks inside the sleep window, ramps in the ~2h before,
-decays over the ~2h after waking (sleep inertia — grogginess). Absent rows ⇒ a 23:00–07:00
+**(b) `pressure`** — circadian sleep pressure. Derived, never stored:
+`deriveCircadianPressure(profile, clockMinutes, calendarStart)`, a pure function of the
+story clock against the character's own `sleep` rhythm rows (§4). Low by day, a small
+afternoon dip, ramping into bedtime, peaking at the ~4am trough, **falling after it** (the
+second wind), plus a brief post-waking bump (sleep inertia). Absent rows ⇒ a 23:00–07:00
 default. No storage, no migration, and it rebases for free if the calendar anchor is edited.
 
-**(c) Time-on-task** — hours awake read directly. This is the owner's 5–6pm: the end of a
-long day, gone after a night's sleep, invisible to the reserve.
+**Zero is a definition, not a threshold**: at her normal bedtime, pressure exactly equals
+her remaining reserve — *that is what bedtime means*. Per-character (a night owl's zero is
+2am), no magic number. **Both poles saturate**, which is what makes them useful to build on:
+**+1** = maximally rested (the 0.95 cap means sleeping longer doesn't stack), **−1** =
+maximally sleep-demanding (collapse hangs off *sitting at the floor*, not an hour count —
+and how long a character holds there is characterful, a trait seam).
 
-**`deriveEnergyRead(energy, hoursAwake, circadian)`** blends all three into the one phrase
-the narrator sees and the one pip the strip shows. Energy therefore **joins mood** as a
-meter with no registry thresholds — the read owns the vocabulary. Rather than hardcode a
-second exception in `chat-status.tsx` (where mood's `bright`/`low` pips live today), this
-slice adds the small shared **derived-read seam** (`meters/reads.ts`) that mood, energy, and
-§3's arousal signs all resolve through.
+The arc for a 7am wake / 11pm bedtime — every number below is emergent from τ and the
+pressure curve, with **no hardcoded hour anywhere**:
+
+| moment       | h awake | reserve | pressure | read     | reads as             |
+| ------------ | ------- | ------- | -------- | -------- | -------------------- |
+| 11am         | 4       | 0.74    | 0.05     | +0.69    | bright               |
+| 3pm          | 8       | 0.58    | 0.15     | +0.43    | the afternoon dip    |
+| 9pm          | 14      | 0.40    | 0.20     | +0.20    | winding down         |
+| **11pm bed** | 16      | 0.35    | 0.35     | **0.00** | **the zero**         |
+| 4am trough   | 21      | 0.26    | 1.05     | −0.79    | wrecked              |
+| 8am next day | 25      | 0.20    | 0.55     | −0.35    | **second wind**      |
+| 11pm night 2 | 40      | 0.08    | 1.10     | −1.00    | the floor — collapse |
+
+τ is the tuning knob for the owner's "mentally tired by 5 or 6pm": at 11h awake the read is
++0.43, and lowering τ walks the whole evening arc down together.
+
+**Read bands** (the read owns the vocabulary, so energy **joins mood** as a meter with no
+registry thresholds): ≥ +0.5 bright · +0.5…+0.2 fine, no cue · +0.2…0 winding down ·
+0…−0.35 past it · −0.35…−0.75 running on fumes · ≤ −0.75 at the floor, collapse risk. Rather
+than hardcode a second exception in `chat-status.tsx` (where mood's `bright`/`low` pips live
+today), this slice adds the shared **derived-read seam** (`meters/reads.ts`) that mood,
+energy, and §3's arousal signs all resolve through.
 
 **Sleep** is one concept with two sources — a rhythm `sleep` window a skip crossed, and an
-`asleep` condition (how a pass-out is stored) — unified by a pure
-`sleepMinutesBetween(profile, conditions, from, to)`:
+`asleep` condition (how a collapse is stored) — unified by a pure
+`sleepMinutesBetween(profile, conditions, from, to)`. Restore is **linear**
+(`+CHAT_SLEEP_RECOVERY_PER_HOUR (0.09)` per hour slept, capped 0.95) onto the proportional
+tank, and that asymmetry is the whole debt mechanic, for free:
 
-- `energy = min(CHAT_ENERGY_WAKE_CAP (0.95), energy + hoursSlept × CHAT_SLEEP_RECOVERY_PER_HOUR (0.09))`
-- **Short sleep carries debt forward**: `awakeSinceMinutes = now − carried`, where sleeping
-  *h* hours clears `h × CHAT_SLEEP_DEBT_CLEAR_RATIO (3)` hours of prior wakefulness. Eight
-  hours clears a full day; four leaves you four hours "already into" the next one. The awake
-  clock *is* the debt ledger — no second field.
-- **A nap is not a night**: only an episode ≥ `CHAT_SLEEP_MIN_HOURS (2)` resets the awake
-  clock. Below it the `rest` chip's top-up stands alone.
+| sleep                            | result   |                                        |
+| -------------------------------- | -------- | -------------------------------------- |
+| 8h from a normal bedtime (0.35)  | **0.95** | a full night fully refills             |
+| 4h from a normal bedtime (0.35)  | **0.71** | a short night starts the day short     |
+| 8h after a 40h bender (0.08)     | **0.80** | one night does not clear a real debt   |
+| 12h from 0.35                    | **0.95** | oversleeping doesn't stack — the +1 pole |
+| a 90-min nap from 0.60           | **0.73** | a nap is a top-up, no threshold needed |
 
-**Pass-out** fires on `energy` reaching 0 — *not* a 48h timer. Hours-awake only sets the
-rate, so a nap legitimately buys real time (+0.2 at the 0.037/h band ≈ 5 hours) without
-clearing the debt; 48h is the no-naps case the owner described. Reaching 0 mints an
-`asleep` condition (`durationMinutes: 480`), which self-expires through the **existing**
-clock-keyed expiry — so the wake needs no bespoke path, and `sleepMinutesBetween` restores
-the energy on the drift that crosses it. Per the owner: **no debuffs on waking for now**;
-the energy-condition family is named in §Later, not built.
+**Collapse** fires on the read sitting at the floor, and resolves through machinery that
+already exists: it mints an `asleep` condition (`durationMinutes: 480`) which self-expires
+via the clock-keyed expiry, and `sleepMinutesBetween` restores the reserve on the drift that
+crosses it. Per the owner, **no debuffs on waking for now** — the energy-condition family
+gates on the read's sign and is named in §Later.
+
+> **Two things this model deletes.** `awakeSinceMinutes` is unnecessary — a *proportional*
+> rate needs no hours-awake input, so the reserve value **is** the debt ledger, and
+> migration 0051 drops to one column (`meters_at_minutes`). `CHAT_SLEEP_MIN_HOURS` ("a nap
+> is not a night") is unnecessary too — a short sleep simply restores less. Both were
+> scaffolding for the piecewise curve.
 
 ### 3. Arousal: resolution, and body facts instead of a talk-switch
 
@@ -282,16 +300,23 @@ with [chat-body-needs.plan.md](chat-body-needs.plan.md).
 
 ## Verification
 
-- **Unit** (`chat-state.test.ts`, `registry.test.ts`): drift is idempotent on a zero
-  elapsed and equals one 60-minute call for sixty 1-minute calls; a 100-exchange visit
-  moves hygiene < 0.06; band crossings pinned to §1's table (hygiene 0.95 → lived-in in
-  12–14h; arousal 1.0 → below flushed in 1.3–1.7h); the energy curve pinned at 4/14/24/36/48h
-  (±0.02) with pass-out at 47–49h; short-sleep debt carry (16h up + 4h sleep ⇒ awake clock
-  reads 4h, not 0); climax lands at personalized baseline + residue and below 0.55 for a
+- **Unit** (`chat-state.test.ts`, `registry.test.ts`): drift is idempotent on a zero elapsed
+  and equals one 60-minute call for sixty 1-minute calls — assert this for **both** drift
+  laws (the proportional one satisfies it by construction; it is the linear one's clamp that
+  could regress); a 100-exchange visit moves hygiene < 0.06; band crossings pinned to §1's
+  table (hygiene 0.95 → lived-in in 12–14h; arousal 1.0 → below flushed in 1.3–1.7h).
+- **Unit, energy** — pin the §2 arc, since every number in it is emergent and a τ or
+  pressure-curve edit should have to restate its intent: `read ≈ 0` at her bedtime (±0.05)
+  **for a character with a non-default sleep row too** (the zero is per-character, not 11pm);
+  the 4am trough below −0.7; the 8am second wind strictly **above** the 4am trough (the
+  property, not the number — this is the one behavior a naive monotonic model would lose);
+  the floor reached in 38–42h; the nap case reading positive at bedtime; and the four sleep
+  restores from §2's table (0.35+8h → 0.95, 0.35+4h → 0.71, 0.08+8h → 0.80, 12h → capped).
+- **Unit, the rest**: climax lands at personalized baseline + residue and below 0.55 for a
   high-libido profile; a `heated` condition suppresses arousal drift **and survives a
-  degraded pulse**; `rhythmBodyPatch` credits a crossed `wash` row and *not* an uncrossed one;
-  an away member's meters catch up on next read; degradation: null `intimacy` ⇒ byte-equal
-  to the no-read fold **and** the mandated diagnostic on a degraded pulse.
+  degraded pulse**; `rhythmBodyPatch` credits a crossed `wash` row and *not* an uncrossed
+  one; an away member's meters catch up on next read; degradation: null `intimacy` ⇒
+  byte-equal to the no-read fold **and** the mandated diagnostic on a degraded pulse.
 - **Migration**: verify the 0051 backfill on a **branch** first (`neonctl branches create`),
   not prod — an un-backfilled row drifts its whole history on first read.
 - **Playtest on Fly** (deploy first — the UI-testing surface): one long flirt → intercourse →
@@ -326,7 +351,7 @@ with [chat-body-needs.plan.md](chat-body-needs.plan.md).
 `src/server/engine/chat-state.ts` (`driftChatState`, `applyChatPulse`, `applyTimeSkip`, `rhythmBodyPatch`),
 `src/server/engine/chat-pipeline.ts` (drop the away-freeze `advance` branch),
 `src/app/api/chats/[chatId]/time-skip/route.ts` (drop the presence `continue`),
-`src/server/db/schema.ts` + `drizzle/0051_*.sql` (`meters_at_minutes`, `awake_since_minutes`, **+ backfill**),
+`src/server/db/schema.ts` + `drizzle/0051_*.sql` (`meters_at_minutes` — one column, **+ backfill**),
 `src/components/characters/chat-status.tsx` (pips through the read seam),
 tests beside each. Docs: `docs/character-chat/state.md` (time-model + tracked-state),
 `docs/contracts/meters-actions.md` (the classes + the substrate/read law),
