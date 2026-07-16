@@ -48,8 +48,9 @@ reference sets, optional location, operational timestamp, and typed payload. Ref
 sets must be sorted and unique so insertion order cannot become replay behavior.
 
 Command outcomes share an accepted/rejected/conflict union. Accepted ranges cannot run
-backward or repeat an event ID. Rejected public reasons and alternatives remain separate
-from private predicates, while conflicts report the current branch version.
+backward, skip a sequence, or repeat an event ID. Rejected public reasons and alternatives
+remain separate from private predicates, while conflicts report the current branch
+version.
 
 ## Item-transfer authority flow
 
