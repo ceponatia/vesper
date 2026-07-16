@@ -6,8 +6,10 @@ import {
   createCommandEnvelopeSchema,
   createCommandResultSchema,
   createEventEnvelopeSchema,
+  createStableStringSetSchema,
 } from "./envelopes";
 import {
+  branchHeadSequenceSchema,
   branchSequenceSchema,
   branchVersionSchema,
   commandIdSchema,
@@ -28,17 +30,11 @@ export { commandPrincipalSchema };
 const GATE1_PERCEPTION_VERSION = "gate1-perception-v1" as const;
 const gate1PerceptionVersionSchema = z.literal(GATE1_PERCEPTION_VERSION).brand<"DerivationVersion">();
 
-function isStableSet(values: readonly string[]): boolean {
-  if (new Set(values).size !== values.length) return false;
-  return values.every((value, index) => index === 0 || (values[index - 1] ?? "") < value);
-}
-
-const holdingContainerIdsSchema = z
-  .array(holdingContainerIdSchema)
-  .refine(isStableSet, "Holding container IDs must be unique and sorted");
-const actorIdsSchema = z
-  .array(worldCharacterIdSchema)
-  .refine(isStableSet, "Actor IDs must be unique and sorted");
+const holdingContainerIdsSchema = createStableStringSetSchema(
+  holdingContainerIdSchema,
+  "Holding container IDs",
+);
+const actorIdsSchema = createStableStringSetSchema(worldCharacterIdSchema, "Actor IDs");
 
 export const holdingContainerKinds = ["actor", "location", "container"] as const;
 export const holdingContainerKindSchema = z.enum(holdingContainerKinds);
@@ -91,7 +87,7 @@ export const itemTransferProjectionSchema = z
     branchId: worldBranchIdSchema,
     rulesetVersion: rulesetVersionSchema,
     version: branchVersionSchema,
-    headSequence: branchVersionSchema,
+    headSequence: branchHeadSequenceSchema,
     storySecond: storySecondSchema,
     actors: z.array(simulationActorSchema),
     containers: z.array(holdingContainerSchema),
@@ -183,8 +179,8 @@ export const itemTransferNarrativeCutSchema = z
     worldId: worldIdSchema,
     branchId: worldBranchIdSchema,
     branchVersion: branchVersionSchema,
-    fromSequence: branchVersionSchema,
-    throughSequence: branchVersionSchema,
+    fromSequence: branchHeadSequenceSchema,
+    throughSequence: branchHeadSequenceSchema,
     fromStorySecond: storySecondSchema,
     throughStorySecond: storySecondSchema,
     viewpointActorId: worldCharacterIdSchema,
