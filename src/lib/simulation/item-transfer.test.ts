@@ -161,6 +161,23 @@ describe("Gate 1 item-transfer authority seam", () => {
     expect(runtime.getProjection().items[0]?.holdingContainerId).toBe("table_cafe");
   });
 
+  it("derives globally distinct event identities for the same command id on different branches", () => {
+    const first = createItemTransferBranchRuntime(seedProjection());
+    const secondSeed = itemTransferProjectionSchema.parse({
+      ...seedProjection(),
+      branchId: "branch_gate1_alternate",
+    });
+    const second = createItemTransferBranchRuntime(secondSeed);
+
+    expect(first.submit(transferCommand())).toMatchObject({ status: "accepted" });
+    expect(
+      second.submit(transferCommand({
+        branchId: "branch_gate1_alternate",
+      })),
+    ).toMatchObject({ status: "accepted" });
+    expect(first.getEvents()[0]?.id).not.toBe(second.getEvents()[0]?.id);
+  });
+
   it("rebuilds the identical projection from immutable history", () => {
     const runtime = createItemTransferBranchRuntime(seedProjection());
     runtime.submit(transferCommand());
