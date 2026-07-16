@@ -395,6 +395,13 @@ play as). 6–8 are the chat wiring. The dependent scene work is
 - **Persona avatars?** The column exists, unused — **still open**. The scene plan needs
   *attributes*, not a portrait, and a player portrait implies symmetric rendering (a
   whole arc — `avatar-3d.plan.md`). Deferred, column kept.
+  - **Prerequisite for whoever picks this up** (found in a completeness audit): the
+    column's *read* side is wired (the list route selects it, the grid renders it — an
+    `EntityImage` monogram today), but the **cleanup fan-out is not**.
+    `ImageEntityKind` is `character|location|item|world`, so `deleteEntityImages("persona", …)`
+    is not even callable, and `clearEntityImagePointers` (`server/images/assets.ts`) has no
+    persona case. Both need extending the moment anything writes `personas.avatar_image_id`,
+    or a deleted image will dangle on the row. Inert until then.
 - ~~**Migration number.**~~ **Resolved: this took 0051–0053** — `0051` creates
   `personas`, `0052` adds `default_persona_id` + `player_state` **and backfills the
   blob**, `0053` drops `player_persona`. Split because one users-column add beside a
