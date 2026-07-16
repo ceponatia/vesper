@@ -45,7 +45,7 @@ new model calls, and live-chat mutation. Those begin at E2.2 or later.
   fail schema validation;
 - all seven principal families use one controller envelope;
 - command/event schema factories preserve literal command type and schema version;
-- accepted results reject reversed sequence ranges and duplicate event IDs;
+- accepted results reject reversed or incomplete sequence ranges and duplicate event IDs;
 - the Gate 1 transfer still passes authorization, idempotency, replay, viewpoint,
   NarrativeCut, and rerender tests after migration;
 - the focused contract/runtime suite, repository lint, cycle scan, typecheck, pure tests,
