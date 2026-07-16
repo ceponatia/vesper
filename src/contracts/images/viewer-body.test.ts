@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { FULLY_COVERED, exposedRegions, type RegionExposure } from "../items/visibility";
-import { resolveViewerParts, viewerBodyPartById, viewerBodyParts } from "./viewer-body";
+import { attributeRegistry } from "../attributes";
+import {
+  resolveViewerParts,
+  VIEWER_SKIN_ATTRIBUTE_IDS,
+  viewerBodyPartById,
+  viewerBodyParts,
+} from "./viewer-body";
 
 const ids = (parts: readonly { id: string }[]): string[] => parts.map((p) => p.id);
 /** Nothing worn ⇒ every region bare. */
@@ -62,8 +68,8 @@ describe("resolveViewerParts (the composer proposes, coverage disposes)", () => 
   });
 
   it("preserves order and collapses duplicates so the phrasing stays stable", () => {
-    expect(ids(resolveViewerParts({ proposed: ["torso", "hands", "torso"], exposure: NUDE, ...allowed }))).toEqual([
-      "torso",
+    expect(ids(resolveViewerParts({ proposed: ["forearms", "hands", "forearms"], exposure: NUDE, ...allowed }))).toEqual([
+      "forearms",
       "hands",
     ]);
   });
@@ -78,5 +84,60 @@ describe("resolveViewerParts (the composer proposes, coverage disposes)", () => 
 
   it("is empty for an empty proposal — the default path", () => {
     expect(resolveViewerParts({ proposed: [], exposure: NUDE, ...allowed })).toEqual([]);
+  });
+});
+
+/**
+ * The composer has no intimate vocabulary — it runs allowIntimate:false on the
+ * moderation-prone tool model — so `genitals` can never be PROPOSED. It has to be earned
+ * deterministically (scene-pov-embodiment slice 4), and three independent conditions must
+ * all hold: the shot is already looking down the viewer's body, the pelvis reads bare, and
+ * the route is uncensored.
+ */
+describe("the derived intimate part", () => {
+  const allowed = { allowIntimate: true };
+
+  it("is earned when the shot already looks down the viewer's body and the pelvis is bare", () => {
+    expect(ids(resolveViewerParts({ proposed: ["lap_thighs"], exposure: NUDE, ...allowed }))).toContain("genitals");
+    expect(ids(resolveViewerParts({ proposed: ["torso"], exposure: NUDE, ...allowed }))).toContain("genitals");
+  });
+
+  // A hand on her cheek is not a view of your own crotch.
+  it("is NOT earned by parts that aren't looking down", () => {
+    expect(ids(resolveViewerParts({ proposed: ["hands", "forearms"], exposure: NUDE, ...allowed }))).not.toContain(
+      "genitals",
+    );
+  });
+
+  it("still obeys coverage and the route once derived", () => {
+    expect(ids(resolveViewerParts({ proposed: ["lap_thighs"], exposure: PANTS, ...allowed }))).toEqual(["lap_thighs"]);
+    expect(ids(resolveViewerParts({ proposed: ["lap_thighs"], exposure: NUDE, allowIntimate: false }))).toEqual([
+      "lap_thighs",
+    ]);
+  });
+
+  it("never derives from an empty proposal — no shot, no body", () => {
+    expect(resolveViewerParts({ proposed: [], exposure: NUDE, ...allowed })).toEqual([]);
+  });
+
+  it("doesn't duplicate an already-present genitals", () => {
+    const out = ids(resolveViewerParts({ proposed: ["torso", "genitals"], exposure: NUDE, ...allowed }));
+    expect(out.filter((id) => id === "genitals")).toHaveLength(1);
+  });
+});
+
+describe("per-part attribute ids", () => {
+  it("names only what each part can show, so a hands shot doesn't state leg hair", () => {
+    expect(viewerBodyPartById("hands")?.attributeIds).not.toContain("legs.hair");
+    expect(viewerBodyPartById("legs_feet")?.attributeIds).toContain("legs.hair");
+    expect(viewerBodyPartById("forearms")?.attributeIds).toContain("arms.hair");
+  });
+
+  it("every listed id is real — a typo'd id would silently describe nothing", () => {
+    const known = new Set(attributeRegistry.definitions.map((d) => d.id as string));
+    for (const part of viewerBodyParts) {
+      for (const id of part.attributeIds) expect(known).toContain(id);
+    }
+    for (const id of VIEWER_SKIN_ATTRIBUTE_IDS) expect(known).toContain(id);
   });
 });

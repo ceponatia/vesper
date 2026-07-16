@@ -8,6 +8,7 @@ import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
 import {
   resolveViewerParts,
+  VIEWER_SKIN_ATTRIBUTE_IDS,
   viewerBodyPartById,
   type ViewerBodyPart,
   type ViewerBodyPartId,
@@ -542,6 +543,12 @@ export interface SceneComposerContext {
    * judgment call.
    */
   playerExposure?: RegionExposure;
+  /** The persona's resolved attributes — the viewer's own body facts (slice 4). */
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  /** The persona's profile, for realized-body applicability of those attributes. */
+  playerProfile?: CharacterProfile;
+  /** The viewer's exposure-gated intimate anatomy (uncensored route only). */
+  playerIntimateAppearance?: string;
 }
 
 /** The player-absence rules (session lane, and the chat lane before slice 3). */
@@ -764,6 +771,52 @@ export function identityAnchorSummary(
   return excerpt(parts.join("; "), IDENTITY_ANCHOR_CHARS);
 }
 
+/** Budget for the viewer's body line — it competes with everything else for Venice's 1500. */
+const VIEWER_BODY_CHARS = 200;
+
+/**
+ * The viewer's own body facts (scene-pov-embodiment.plan.md slice 4) — **only for the parts
+ * actually in frame**, so a shot of their hands on her cheek doesn't state their leg hair.
+ *
+ * Without this the viewer's arms change colour between shots, which reads as a different
+ * person reaching in — so `skin.tone`/`build.frame` ride any embodied shot
+ * (`VIEWER_SKIN_ATTRIBUTE_IDS`) and each part contributes its own descriptors on top.
+ * Attribute applicability is checked against the persona's realized body, exactly like every
+ * other prompt builder here, so a stale attribute can't leak.
+ *
+ * Intimate anatomy is deliberately NOT here: it rides `sceneRevealAppearance(…, {intimate})`
+ * on the uncensored route only, the same seam the character's has always used.
+ */
+export function viewerBodyAppearance(
+  attributes: ReadonlyArray<AttributeValue>,
+  parts: ReadonlyArray<ViewerBodyPart>,
+  profile?: CharacterProfile,
+): string {
+  if (parts.length === 0) return "";
+  const realizedBody = profile ? realizedBodyForProfile(profile) : undefined;
+  const byId = new Map(attributes.map((v) => [v.id, v]));
+  const wanted = [...VIEWER_SKIN_ATTRIBUTE_IDS, ...parts.flatMap((p) => p.attributeIds)];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const rawId of wanted) {
+    if (seen.has(rawId)) continue;
+    seen.add(rawId);
+    // The registry's id type is a `<category>.<name>` template union; the registry entries
+    // hold plain strings. Both lookups below tolerate a miss, which IS the "unknown ids are
+    // ignored" contract — and a test asserts every listed id is real, so a typo fails loudly
+    // in CI rather than silently describing nothing.
+    const id = rawId as AttributeValue["id"];
+    const value = byId.get(id);
+    if (!value) continue;
+    const def = attributeRegistry.byId(id);
+    if (!def || def.excludeFromPrompts) continue;
+    if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
+    const formatted = formatAttribute(def, value.value);
+    if (formatted) out.push(formatted);
+  }
+  return excerpt(out.join("; "), VIEWER_BODY_CHARS);
+}
+
 /** Which exposure region uncovers each intimate attribute category. */
 const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
   breasts: "torso",
@@ -933,6 +986,16 @@ export interface SceneRenderPlan {
    * Absent ⇒ treated as covered, so anatomy stays shut (the default-shut rule).
    */
   playerExposure?: RegionExposure;
+  /**
+   * The persona's resolved attributes (slice 4) — the viewer's own body facts, filtered to
+   * the parts in frame at render time by `viewerBodyAppearance`. Without them the viewer's
+   * arms change colour between shots and read as a different person reaching in.
+   */
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  /** The persona's profile — realized-body applicability for those attributes. */
+  playerProfile?: CharacterProfile;
+  /** The viewer's exposure-gated intimate anatomy; emitted only on an uncensored route. */
+  playerIntimateAppearance?: string;
 }
 
 export function emptySceneRenderPlan(): SceneRenderPlan {
@@ -1083,6 +1146,9 @@ export function resolveScenePlan(
     others,
     viewerBody,
     ...(context.playerExposure ? { playerExposure: context.playerExposure } : {}),
+    ...(context.playerAttributes ? { playerAttributes: context.playerAttributes } : {}),
+    ...(context.playerProfile ? { playerProfile: context.playerProfile } : {}),
+    ...(context.playerIntimateAppearance ? { playerIntimateAppearance: context.playerIntimateAppearance } : {}),
     setting:
       spec.setting.trim() ||
       [context.locationName, context.locationDescription].filter(Boolean).join(" — ").slice(0, 300),
@@ -1198,15 +1264,28 @@ export function sceneFramingRule(args: {
   parts?: readonly ViewerBodyPart[];
   /** Everyone fully in frame — the count assertion's subjects. */
   subjects?: readonly string[];
+  /** The viewer's own body facts for those parts (`viewerBodyAppearance`) — keeps them one person. */
+  body?: string;
+  /** The viewer's exposure-gated intimate anatomy; the caller emits it only on an uncensored route. */
+  intimate?: string;
 }): string {
   const parts = args.parts ?? [];
   if (parts.length === 0) return SCENE_POV_RULE;
   const names = (args.subjects ?? []).map((n) => n.trim()).filter(Boolean);
+  const body = args.body?.trim();
+  const intimate = args.intimate?.trim();
   return [
     "First-person POV through the viewer's own eyes; the viewer's face and head are never in frame.",
     countAssertion(names),
     `Also in frame, in the viewer's immediate foreground: ${joinPhrases(parts.map((p) => p.framing))}.`,
-  ].join(" ");
+    // The facts ride AFTER the geometry deliberately: the model has to know these limbs are
+    // the viewer's and cropped before it is told what they look like, or a described body
+    // is just an invitation to paint a whole person wearing it.
+    body ? `The viewer's own body: ${body}.` : "",
+    intimate ? `${capitalizeFirst(intimate)}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** "Exactly one person is fully in frame: Mira." — the positive form of "no third person". */
@@ -1295,6 +1374,19 @@ function viewerPartsFor(plan: SceneRenderPlan, opts: SceneRenderOptions): readon
   });
 }
 
+/** The whole framing clause for one route: gate the parts, then describe exactly those. */
+function framingFor(plan: SceneRenderPlan, opts: SceneRenderOptions, subjects: readonly string[]): string {
+  if (opts.framing === "selfie") return SELFIE_FRAMING;
+  const parts = viewerPartsFor(plan, opts);
+  const intimate = opts.allowIntimate && parts.some((p) => p.intimate) ? (plan.playerIntimateAppearance ?? "") : "";
+  return sceneFramingRule({
+    parts,
+    subjects,
+    body: viewerBodyAppearance(plan.playerAttributes ?? [], parts, plan.playerProfile),
+    intimate,
+  });
+}
+
 /**
  * Final render instruction. Venice is single-reference edit, so at most ONE
  * character is identity-locked (`referenceName`); every other featured
@@ -1324,11 +1416,7 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     const fit = makeFit(outfitCap);
     const pieces: string[] = [];
     if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
-    pieces.push(
-      opts.framing === "selfie"
-        ? SELFIE_FRAMING
-        : sceneFramingRule({ parts: viewerPartsFor(plan, opts), subjects: featured.map((c) => c.name) }),
-    );
+    pieces.push(framingFor(plan, opts, featured.map((c) => c.name)));
     if (reference) {
       // Identity anchors reinforce the lock; the reference image stays authoritative
       // (owner constraint: these must never override the reference).
@@ -1429,9 +1517,7 @@ function assembleMulti(
 
   const pieces: string[] = [
     PORTRAIT_IDENTITY_LOCK,
-    opts.framing === "selfie"
-      ? SELFIE_FRAMING
-      : sceneFramingRule({ parts: viewerPartsFor(plan, opts), subjects: featured.map((c) => c.name) }),
+    framingFor(plan, opts, featured.map((c) => c.name)),
   ];
   pieces.push(`${multi.length} reference images provided — ${describeMultiReferences(multi)}`);
   pieces.push("Compose all referenced people together into one shared scene, each keeping the exact face, hair and build of their reference image.");

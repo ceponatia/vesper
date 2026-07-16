@@ -42,7 +42,22 @@ export interface ViewerBodyPart {
    * perfectly good POV element, so those are ungated and simply render whatever they have on.
    */
   requiresBare: keyof RegionExposure | null;
+  /**
+   * The persona attributes that describe THIS part (slice 4) — so a shot with only the
+   * viewer's hands in frame doesn't state their leg hair. Registry ids; unknown ones are
+   * ignored downstream. `skin.tone` is added for any part (see `VIEWER_SKIN_ATTRIBUTE_IDS`)
+   * — it is the one fact that must not drift between scenes, since arms that change colour
+   * shot to shot read as a different person.
+   */
+  attributeIds: readonly string[];
 }
+
+/**
+ * Stated whenever the viewer has ANY body in frame: the facts that make the limbs read as
+ * one consistent person rather than a stock hand. Deliberately tiny — this rides the Venice
+ * prompt budget alongside everything else.
+ */
+export const VIEWER_SKIN_ATTRIBUTE_IDS = ["skin.tone", "build.frame"] as const;
 
 export const viewerBodyParts: readonly ViewerBodyPart[] = [
   {
@@ -50,36 +65,42 @@ export const viewerBodyParts: readonly ViewerBodyPart[] = [
     framing: "the viewer's own hands entering frame from the lower edge, close to the lens and strongly foreshortened",
     intimate: false,
     requiresBare: null,
+    attributeIds: ["hands.size", "hands.texture", "hands.nails"],
   },
   {
     id: "forearms",
     framing: "the viewer's own forearms entering frame from the lower edge, foreshortened, cropped where the frame cuts them",
     intimate: false,
     requiresBare: null,
+    attributeIds: ["arms.build", "arms.hair"],
   },
   {
     id: "lap_thighs",
     framing: "the viewer's own thighs across the bottom of the frame, seen from above as they look down at their own lap",
     intimate: false,
     requiresBare: null,
+    attributeIds: ["legs.build", "legs.hair"],
   },
   {
     id: "legs_feet",
     framing: "the viewer's own legs receding away from the lens toward the lower frame edge, feet at the far end",
     intimate: false,
     requiresBare: null,
+    attributeIds: ["legs.build", "legs.hair", "legs.length", "feet.size"],
   },
   {
     id: "torso",
     framing: "the viewer's own chest and stomach along the bottom of the frame, foreshortened as they look down over themselves",
     intimate: false,
     requiresBare: null,
+    attributeIds: ["build.musculature", "chest.hair", "skin.markings"],
   },
   {
     id: "genitals",
     framing: "the viewer's own genitals in the immediate foreground, close to the lens and cropped by the lower frame edge",
     intimate: true,
     requiresBare: "pelvis",
+    attributeIds: [],
   },
 ];
 
@@ -120,7 +141,7 @@ export interface ResolveViewerPartsArgs {
 export function resolveViewerParts(args: ResolveViewerPartsArgs): ViewerBodyPart[] {
   const seen = new Set<string>();
   const out: ViewerBodyPart[] = [];
-  for (const id of args.proposed) {
+  for (const id of withDerivedIntimateParts(args.proposed)) {
     const part = viewerBodyPartById(id.trim());
     if (!part || seen.has(part.id)) continue;
     if (part.intimate && args.allowIntimate !== true) continue;
@@ -132,4 +153,32 @@ export function resolveViewerParts(args: ResolveViewerPartsArgs): ViewerBodyPart
     out.push(part);
   }
   return out;
+}
+
+/**
+ * Parts whose presence means the shot is **already looking down the viewer's own body** —
+ * the only framing in which their genitals are plausibly in view at all.
+ */
+const LOOKING_DOWN_PART_IDS: readonly string[] = ["lap_thighs", "torso"];
+
+/**
+ * Derive the intimate parts the composer is structurally unable to ask for (slice 4).
+ *
+ * The composer has no intimate vocabulary — it runs `allowIntimate: false` on the
+ * moderation-prone tool model — so `genitals` can never be *proposed*. It has to be
+ * **earned**, deterministically, the way `intimateSceneAppearance` is:
+ *
+ * - the shot must already be looking down the viewer's body (`lap_thighs` or `torso` in
+ *   frame). Hands in frame is a hand on someone's cheek, not a view of your own crotch;
+ * - and then the ordinary gate still applies — `resolveViewerParts` drops it unless the
+ *   pelvis reads bare/sheer AND the route is uncensored.
+ *
+ * So three independent conditions must all hold, and the two that matter (coverage, route)
+ * are code, not judgment. **This rule is a guess worth revisiting** — it is the one piece of
+ * the feature with no owner ruling behind it (recorded as an open question in the plan).
+ */
+function withDerivedIntimateParts(proposed: readonly string[]): readonly string[] {
+  const lookingDown = proposed.some((id) => LOOKING_DOWN_PART_IDS.includes(id.trim()));
+  if (!lookingDown || proposed.some((id) => id.trim() === "genitals")) return proposed;
+  return [...proposed, "genitals"];
 }

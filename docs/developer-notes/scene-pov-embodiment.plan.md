@@ -1,16 +1,30 @@
 # Scene POV embodiment — the player's own body in frame (plan)
 
-Status: **active** — written 2026-07-16 from an owner brainstorm ask. **Slices 0–3 shipped
-2026-07-16** (the blush scrub; the framing builder + viewer-part registry + coverage gate;
-the composer's proposal + clamp). **Slice 3 is the first one that changes rendered images**
-— chat-lane scene shots may now put the viewer's own hands/arms/lap/legs in frame when the
-narration puts them there. Non-intimate parts only: `genitals` needs `playerExposure`, which
-slice 4 wires. Slice 4 remains and is **unblocked**:
-[persona-library.plan.md](persona-library.plan.md) shipped the same day, so the
-persona's body attributes (`personaToCharacterProfile` → `characterAppearanceSummary`)
-and the player's worn coverage (`resolvePlayerWardrobe` →
-`exposedRegions(playerWorn)` — structured-only, no manual `exposed` flag to fake) are
-both available now. `character_chats.player_state` is where the wardrobe lives.
+Status: **shipped — 2026-07-16** (all five slices). Written the same day from an owner
+brainstorm ask, alongside [persona-library.plan.md](persona-library.plan.md), which it
+depends on and which shipped first.
+
+> **Completion note.** Chat-lane scene images are now composed from the player's eyes *with
+> a body*: their hands/arms/lap/legs enter frame when the narration puts them there, and
+> their genitals only when the shot is already looking down their own body, their coverage
+> reads bare, and the route is uncensored — three independent conditions, two of them code
+> rather than judgment.
+>
+> **Not verified against a live model.** Every gate, clamp and phrase is unit-tested (pure),
+> but no image has been rendered through this. §Testing describes the eval sweep and the
+> **third-person contamination rate** it exists to measure — that is the next step, and it is
+> the only thing that can tell us whether the anti-third-person levers actually work.
+> Slices 1–4 are also **not deployed** (the running Fly build predates them).
+>
+> **Deviations, all recorded per slice below:** slices 1+2 landed together (the builder needs
+> the registry's type); `SCENE_COMPOSER_SYSTEM` had to become lane-aware because it is shared
+> by both lanes; the route gate runs per-prompt, not at plan time; and only anatomy is
+> coverage-gated, since a clothed torso in frame is a fine POV element.
+
+The dependency it needed: [persona-library.plan.md](persona-library.plan.md) supplies the
+persona's body attributes (via `personaToCharacterProfile`) and the player's worn coverage
+(`resolvePlayerWardrobe` → `exposedRegions(playerWorn)` — structured-only, with no manual
+`exposed` flag to fake), stored on `character_chats.player_state`.
 
 Topic slug `scene-pov-embodiment`. Scope: **the character-chat scene path only**
 (`server/images/character-scene.ts`) — see [Lane scope](#lane-scope).
@@ -239,7 +253,7 @@ list is empty.
 > rewriting "her hand on the player's arm" → "the viewer's arm" in a shot with no arm in it
 > would ask for something the image doesn't contain.
 
-### Slice 4 — persona body facts reach the prompt
+### Slice 4 — persona body facts reach the prompt — **shipped 2026-07-16**
 
 The viewer's arms need a skin tone or they change color every scene. Source them
 from the persona's attributes through `personaToCharacterProfile` +
@@ -275,10 +289,17 @@ it before slice 3 ships, since that's the slice that can regress it.
   inverse and says "No one else in frame", so viewer parts must be **forced
   empty** there. `chat_look` is a wardrobe reference render, also no viewer.
   Recommend: parts are scene-framing-only, asserted by test.
-- **Which parts should the composer be allowed to propose unprompted?** A
-  conservative default (only when the narration states contact) keeps the blast
-  radius small — most scenes render exactly as they do today. Alternative: let it
-  propose hands freely for immersion. Recommend conservative to start.
+- ~~**Which parts should the composer be allowed to propose unprompted?**~~ **Built
+  conservative**: the rule says "empty is the default and the common case — list a part
+  ONLY when the recent narration puts it in the frame", so most scenes render exactly as
+  they did. Loosen it if POV shots feel too rare once the eval has run.
+- **When are the viewer's genitals in frame? — the one rule with no owner ruling behind
+  it.** The composer cannot propose them (no intimate vocabulary, by design), so they are
+  *derived*: the shot must already be looking down the viewer's body (`lap_thighs` or
+  `torso` in frame) — a hand on her cheek is not a view of your own crotch — and then the
+  ordinary gate still applies (pelvis bare/sheer, uncensored route).
+  `LOOKING_DOWN_PART_IDS` in `contracts/images/viewer-body.ts` is that guess, and it is a
+  one-line data edit. **Worth an explicit ruling once the eval shows what it looks like.**
 - **Does the multi-reference rung need different geometry wording?**
   `assembleMulti` (`prompts.ts:1164`) enumerates references and identity-locks
   each; a viewer limb is not a reference, so the count line has to read "two

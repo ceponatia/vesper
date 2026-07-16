@@ -27,19 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Scene POV embodiment — the player's own body in frame** —
-  [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) (draft; planned 2026-07-16
-  from the same ask). **Supplemental to the persona library** — slices 2–4 consume its
-  body attributes and worn coverage; slices 0–1 are independent and shippable now. Scene
-  images stop pretending the player has no body: POV shots including the viewer's own
-  arms/legs/torso — and genitals only when coverage says bare, gated by **code, not the
-  composer** (`exposedRegions(playerWorn).pelvis === "covered"` makes the part
-  structurally unavailable). Third-person-man leakage is fought with a person-count
-  assertion + frame geometry rather than negatives, which anchor (the same lesson the "no
-  camera" scar recorded). Slice 0 is the standalone **blush/flushed scrub** (owner report:
-  renders as clown makeup) — `visualStateNote` says "flushed" in 3 of 5 phrases, plus a
-  composer echo path from the narrator's arousal hint. Chat lane only; the session lane
-  keeps its absolute rule and its tests.
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
   [spec](chat-meter-economy.spec.md) (planned 2026-07-15 from an owner report after the
@@ -120,14 +107,21 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   "another take" rollback, and is structured-only so exposure is always coverage-computed.
   Title is barred from prompts *structurally* — it isn't a field on the resolver's shape.
   **Unblocks** [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) slices 2–4.
-- **Scene image blush scrub — stop asking for clown makeup** (slice 0 of
-  [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md)) — 2026-07-16 — owner
-  report: "flushed"/"blushing" in an image prompt renders as stage blusher, not
-  physiology. `visualStateNote` said it in 3 of 5 phrases; reworded to eyes/breath/sweat/
-  posture. The LLM echo path (the narrator's arousal hint literally says "flushed skin" →
-  the composer reads it in the narration → hands it back in pose/mood) is closed by a
-  composer rule **plus** `scrubBlush`, since the rule alone isn't trustworthy. Authored
-  `skin.undertone: rosy` is deliberately untouched.
+- **Scene POV embodiment — the player's own body in frame** —
+  [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) — 2026-07-16 — chat-lane
+  scene images stop pretending the player has no body: their hands/arms/lap/legs enter frame
+  when the narration puts them there, and their genitals only when the shot already looks
+  down their own body **and** coverage reads bare **and** the route is uncensored — three
+  conditions, two of them code rather than judgment (`exposedRegions(playerWorn).pelvis`
+  makes the part structurally unavailable; the composer has no intimate vocabulary at all).
+  Third-person leakage is fought with a **positive person-count assertion + frame geometry**,
+  never negatives, which anchor on exactly what they forbid (the "no camera" scar). Viewer
+  parts are a closed registry — the phrasing *is* the feature. Also slice 0, the standalone
+  **blush scrub**: "flushed" rendered as stage blusher, and `visualStateNote` said it in 3
+  of 5 phrases; the narrator's arousal hint echoes it through the composer, so a rule **and**
+  `scrubBlush` close it. Session lane untouched and byte-identical, pinned by test.
+  **Unverified against a live model** — the eval sweep + third-person-contamination metric
+  (plan §Testing) is the next step.
 - **Chat off-screen life — the cast moves between visits** —
   [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) · spec
   [chat-offscreen-life.spec.md](chat-offscreen-life.spec.md) — 2026-07-15 — the chat lane's
