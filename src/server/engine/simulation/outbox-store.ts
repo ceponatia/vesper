@@ -200,7 +200,7 @@ export async function consumeNextItemTransferOutbox(
   } catch (error) {
     const terminal = claimed.attempts >= maxAttempts;
     const retryAt = terminal ? null : new Date(now.getTime() + outboxRetryDelaySeconds(claimed.attempts) * 1000);
-    await database
+    const released = await database
       .update(simOutbox)
       .set({
         state: terminal ? "failed" : "pending",
@@ -209,7 +209,9 @@ export async function consumeNextItemTransferOutbox(
         leaseExpiresAt: null,
         lastError: safeDiagnostic(error, claimed),
       })
-      .where(and(eq(simOutbox.id, claimed.id), eq(simOutbox.leaseOwner, workerId)));
+      .where(and(eq(simOutbox.id, claimed.id), eq(simOutbox.leaseOwner, workerId)))
+      .returning({ id: simOutbox.id });
+    if (released.length === 0) return { status: "lease_lost", outboxId: claimed.id };
     return { status: "failed", outboxId: claimed.id, retryAt, terminal };
   }
 }
