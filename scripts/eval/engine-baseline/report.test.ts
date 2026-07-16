@@ -86,12 +86,14 @@ describe("Gate 0 baseline report", () => {
   });
 
   it("aggregates calls, tokens, degradation, latency and quality", () => {
+    const [baseLeg] = row().legs;
+    if (!baseLeg) throw new Error("missing test narrator leg");
     const degraded = row({
       seed: 1,
       transcript: "",
       legs: [
         {
-          ...row().legs[0],
+          ...baseLeg,
           attemptedCalls: 2,
           promptTokens: 40,
           completionTokens: 0,
