@@ -5,6 +5,7 @@ export * from "./facts";
 export * from "./fusion";
 export * from "./query-embeddings";
 export * from "./scope";
+export * from "./witness-eligibility";
 export * from "./lore";
 export * from "./retrieval";
 export * from "./library-search";

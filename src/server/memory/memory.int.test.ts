@@ -795,4 +795,99 @@ describe.skipIf(!ready)("memory integration", () => {
       await deleteFactsForScope(scope);
     });
   });
+
+  describe("Gate 0 witness eligibility spike", () => {
+    it("filters facts, pinned facts and episode windows before top-k while preserving global rows", async () => {
+      const sessionId = await makeSession("witness eligibility");
+      const scope = sessionScope(sessionId);
+      const observer = "participant-observer";
+      const other = "participant-other";
+      const globalFact = "The harbor bell rings at noon for everyone.";
+      const observerFact = "Mara quietly handed the observer a brass key.";
+      const hiddenPinnedFact = "Tobias hid a red ledger under the floorboards.";
+
+      await addFacts(
+        scope,
+        [
+          { ...draft({ subjectName: "harbor", text: globalFact }), witnessedBy: [] },
+          { ...draft({ subjectName: "mara", text: observerFact }), witnessedBy: [observer] },
+          {
+            ...draft({ subjectName: "tobias", text: hiddenPinnedFact }),
+            witnessedBy: [other],
+            pinned: true,
+            origin: "dev",
+          },
+        ],
+        null,
+      );
+
+      const queries = [globalFact, observerFact, hiddenPinnedFact];
+      const observerFacts = await retrieveFactsFused(
+        scope,
+        queries,
+        10,
+        undefined,
+        undefined,
+        { viewpointId: observer },
+      );
+      expect(observerFacts.map((hit) => hit.text)).toEqual(expect.arrayContaining([globalFact, observerFact]));
+      expect(observerFacts.map((hit) => hit.text)).not.toContain(hiddenPinnedFact);
+
+      const otherFacts = await retrieveFactsFused(
+        scope,
+        queries,
+        10,
+        undefined,
+        undefined,
+        { viewpointId: other },
+      );
+      expect(otherFacts.map((hit) => hit.text)).toEqual(expect.arrayContaining([globalFact, hiddenPinnedFact]));
+      expect(otherFacts.map((hit) => hit.text)).not.toContain(observerFact);
+
+      // No viewpoint is the legacy/control path for the experiment.
+      const legacyFacts = await retrieveFactsFused(scope, queries, 10);
+      expect(legacyFacts.map((hit) => hit.text)).toEqual(
+        expect.arrayContaining([globalFact, observerFact, hiddenPinnedFact]),
+      );
+
+      const observerEpisode = "Mara passed the observer the brass key beside the fountain.";
+      const hiddenEpisode = "Tobias showed the other participant the hidden ledger.";
+      const globalEpisode = "The town clock struck midnight across the harbor.";
+      await appendEpisode(scope, 1, observerEpisode, [], undefined, [observer]);
+      await appendEpisode(scope, 2, hiddenEpisode, [], undefined, [other]);
+      await appendEpisode(scope, 3, globalEpisode, [], undefined, []);
+      await appendEpisode(scope, 4, "Rain swept across every roof.", [], undefined, []);
+      await appendEpisode(scope, 5, "The market opened to the public.", [], undefined, []);
+      await appendEpisode(scope, 6, "The ferry horn sounded for everyone.", [], undefined, []);
+      await appendEpisode(scope, 7, "Night settled over the common square.", [], undefined, []);
+      await appendEpisode(scope, 8, "Only the other participant saw the coded signal.", [], undefined, [other]);
+
+      // Eligibility is before LIMIT: the observer skips unseen turn 8 and still
+      // receives the two preceding global episodes.
+      const observerRecent = await recentEpisodes(scope, 2, undefined, { viewpointId: observer });
+      expect(observerRecent.map((episode) => episode.turnNumber)).toEqual([6, 7]);
+      const otherRecent = await recentEpisodes(scope, 2, undefined, { viewpointId: other });
+      expect(otherRecent.map((episode) => episode.turnNumber)).toEqual([7, 8]);
+
+      const episodeQueries = [observerEpisode, hiddenEpisode, globalEpisode];
+      const observerEpisodes = await retrieveEpisodesFused(
+        scope,
+        episodeQueries,
+        10,
+        undefined,
+        undefined,
+        { viewpointId: observer },
+      );
+      expect(observerEpisodes.map((hit) => hit.summary)).toEqual(
+        expect.arrayContaining([observerEpisode, globalEpisode]),
+      );
+      expect(observerEpisodes.map((hit) => hit.summary)).not.toContain(hiddenEpisode);
+
+      const legacyEpisodes = await retrieveEpisodesFused(scope, episodeQueries, 10);
+      expect(legacyEpisodes.map((hit) => hit.summary)).toEqual(
+        expect.arrayContaining([observerEpisode, hiddenEpisode, globalEpisode]),
+      );
+    });
+  });
+
 });

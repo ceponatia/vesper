@@ -26,6 +26,7 @@ function baseInput(sink?: DiagnosticCollector) {
   return {
     session: { id: "sess-1" },
     world: { id: "world-1" },
+    viewpointId: "player-1",
     queries: ["the harbor meeting"],
     input: "I walk to the docks.",
     sceneCtx: { locationTags: ["docks"], presentCharacterIds: [] },
@@ -80,10 +81,25 @@ describe("preTurnRetrieve", () => {
     const scope = { kind: "session", sessionId: "sess-1" };
     // Both fused legs receive the turn's ONE shared query-embedding cache
     // (chat-agent-improvements slice 3) — they no longer embed the same texts twice.
-    expect(mockEpisodes).toHaveBeenCalledWith(scope, queries, EPISODE_RETRIEVAL_LIMIT, undefined, expect.any(QueryEmbeddings));
-    expect(mockFacts).toHaveBeenCalledWith(scope, queries, FACT_RETRIEVAL_LIMIT, undefined, expect.any(QueryEmbeddings));
-    // …and it is the SAME instance, not one each.
+    expect(mockEpisodes).toHaveBeenCalledWith(
+      scope,
+      queries,
+      EPISODE_RETRIEVAL_LIMIT,
+      undefined,
+      expect.any(QueryEmbeddings),
+      { viewpointId: "player-1" },
+    );
+    expect(mockFacts).toHaveBeenCalledWith(
+      scope,
+      queries,
+      FACT_RETRIEVAL_LIMIT,
+      undefined,
+      expect.any(QueryEmbeddings),
+      { viewpointId: "player-1" },
+    );
+    // …and both the embedding cache and eligibility object are shared.
     expect(mockEpisodes.mock.calls[0]?.[4]).toBe(mockFacts.mock.calls[0]?.[4]);
+    expect(mockEpisodes.mock.calls[0]?.[5]).toBe(mockFacts.mock.calls[0]?.[5]);
     expect(mockLore).toHaveBeenCalledWith(
       "world-1",
       queries.join("\n"),

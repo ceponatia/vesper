@@ -9,6 +9,7 @@ import { EPISODE_MIN_SCORE, EPISODE_RETRIEVAL_LIMIT, EPISODE_WINDOW, RRF_K } fro
 import { fuseByRrf, nonBlankQueries } from "./fusion";
 import type { QueryEmbeddings } from "./query-embeddings";
 import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
+import { witnessEligibilityWhere, type WitnessEligibility } from "./witness-eligibility";
 
 const stringArraySchema = z.array(z.string());
 
@@ -41,7 +42,7 @@ export interface EpisodeListRecord {
   embedded: boolean;
 }
 
-export interface RetrieveEpisodesOptions {
+export interface RetrieveEpisodesOptions extends WitnessEligibility {
   limit?: number;
   minScore?: number;
   /** Most recent turn numbers excluded from RAG (they ride in context verbatim). */
@@ -91,7 +92,12 @@ export async function appendEpisode(
 }
 
 /** Last `n` episodes, chronological order (for the narrative recency window). */
-export async function recentEpisodes(scope: MemoryScope, n: number, sink?: DiagnosticSink): Promise<EpisodeRecord[]> {
+export async function recentEpisodes(
+  scope: MemoryScope,
+  n: number,
+  sink?: DiagnosticSink,
+  eligibility?: WitnessEligibility,
+): Promise<EpisodeRecord[]> {
   const rows = await db()
     .select({
       id: episodes.id,
@@ -100,7 +106,7 @@ export async function recentEpisodes(scope: MemoryScope, n: number, sink?: Diagn
       threadIds: episodes.threadIds,
     })
     .from(episodes)
-    .where(memoryScopeWhere(episodes, scope))
+    .where(and(memoryScopeWhere(episodes, scope), witnessEligibilityWhere(episodes.witnessedBy, eligibility)))
     .orderBy(desc(episodes.turnNumber))
     .limit(Math.max(0, n));
   return rows.reverse().map((row) => ({
@@ -112,11 +118,11 @@ export async function recentEpisodes(scope: MemoryScope, n: number, sink?: Diagn
 }
 
 /** Highest episode `turnNumber` in a scope, or null when the scope has none. */
-async function maxTurnNumber(scope: MemoryScope): Promise<number | null> {
+async function maxTurnNumber(scope: MemoryScope, eligibility?: WitnessEligibility): Promise<number | null> {
   const [agg] = await db()
     .select({ maxTurn: sql<number | null>`max(${episodes.turnNumber})` })
     .from(episodes)
-    .where(memoryScopeWhere(episodes, scope));
+    .where(and(memoryScopeWhere(episodes, scope), witnessEligibilityWhere(episodes.witnessedBy, eligibility)));
   return agg?.maxTurn ?? null;
 }
 
@@ -126,6 +132,7 @@ async function queryEpisodeCandidates(
   vec: string,
   cutoff: number,
   limit: number,
+  eligibility?: WitnessEligibility,
 ): Promise<EpisodeHit[]> {
   return db()
     .select({
@@ -141,6 +148,7 @@ async function queryEpisodeCandidates(
         eq(episodes.embedder, currentEmbedder()),
         isNotNull(episodes.embedding),
         lte(episodes.turnNumber, cutoff),
+        witnessEligibilityWhere(episodes.witnessedBy, eligibility),
       ),
     )
     .orderBy(sql`${episodes.embedding} <=> ${vec}::vector`)
@@ -175,11 +183,11 @@ export async function retrieveEpisodes(
     return [];
   }
 
-  const maxTurn = await maxTurnNumber(scope);
+  const maxTurn = await maxTurnNumber(scope, opts);
   if (maxTurn == null) return [];
   const cutoff = maxTurn - window;
 
-  const candidates = await queryEpisodeCandidates(scope, toVectorLiteral(embedded.vector), cutoff, limit);
+  const candidates = await queryEpisodeCandidates(scope, toVectorLiteral(embedded.vector), cutoff, limit, opts);
   const hits = candidates.filter((c) => c.score >= minScore);
   await logEvent(scopeSessionId(scope), "retrieval", {
     kind: "episodes",
@@ -187,6 +195,7 @@ export async function retrieveEpisodes(
     query: query.slice(0, 300),
     minScore,
     windowCutoff: cutoff,
+    viewpointId: opts.viewpointId ?? null,
     candidates: candidates.map((c) => ({ id: c.id, turnNumber: c.turnNumber, score: round(c.score) })),
     hitIds: hits.map((h) => h.id),
   });
@@ -254,6 +263,7 @@ export async function retrieveEpisodesFused(
    * exactly as before.
    */
   embeddings?: QueryEmbeddings,
+  eligibility?: WitnessEligibility,
 ): Promise<FusedEpisodeHit[]> {
   const usable = nonBlankQueries(queries);
   if (usable.length === 0 || limit <= 0) return [];
@@ -277,14 +287,16 @@ export async function retrieveEpisodesFused(
     }
   }
 
-  const maxTurn = await maxTurnNumber(scope);
+  const maxTurn = await maxTurnNumber(scope, eligibility);
   if (maxTurn == null) return [];
   const cutoff = maxTurn - EPISODE_WINDOW;
 
   const lists = await Promise.all(
     pairs.map(async (pair) => ({
       query: pair.query,
-      hits: (await queryEpisodeCandidates(scope, pair.vector, cutoff, limit)).filter((c) => c.score >= EPISODE_MIN_SCORE),
+      hits: (await queryEpisodeCandidates(scope, pair.vector, cutoff, limit, eligibility)).filter(
+        (c) => c.score >= EPISODE_MIN_SCORE,
+      ),
     })),
   );
   const fused = fuseByRrf(lists);
@@ -300,6 +312,7 @@ export async function retrieveEpisodesFused(
     minScore: EPISODE_MIN_SCORE,
     rrfK: RRF_K,
     windowCutoff: cutoff,
+    viewpointId: eligibility?.viewpointId ?? null,
     candidates: fused.map((f) => ({
       id: f.hit.id,
       turnNumber: f.hit.turnNumber,
