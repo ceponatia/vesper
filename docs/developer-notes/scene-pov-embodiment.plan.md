@@ -1,10 +1,11 @@
 # Scene POV embodiment — the player's own body in frame (plan)
 
-Status: **active** — written 2026-07-16 from an owner brainstorm ask. **Slices 0, 1 and 2
-shipped 2026-07-16** (the blush scrub; the framing builder + viewer-part registry + the
-coverage gate). **Nothing renders differently yet** — every caller still passes an empty
-part list, by design: the machinery lands and is tested before slice 3 lets the composer
-fill it. Slices 3–4 remain and are **unblocked**:
+Status: **active** — written 2026-07-16 from an owner brainstorm ask. **Slices 0–3 shipped
+2026-07-16** (the blush scrub; the framing builder + viewer-part registry + coverage gate;
+the composer's proposal + clamp). **Slice 3 is the first one that changes rendered images**
+— chat-lane scene shots may now put the viewer's own hands/arms/lap/legs in frame when the
+narration puts them there. Non-intimate parts only: `genitals` needs `playerExposure`, which
+slice 4 wires. Slice 4 remains and is **unblocked**:
 [persona-library.plan.md](persona-library.plan.md) shipped the same day, so the
 persona's body attributes (`personaToCharacterProfile` → `characterAppearanceSummary`)
 and the player's worn coverage (`resolvePlayerWardrobe` →
@@ -203,7 +204,7 @@ genitals gone* is a table test.
 > shirt) — the gate exists to stop anatomy rendering through trousers, not to stop the body
 > being in shot. In practice `genitals` is the only gated part today.
 
-### Slice 3 — the composer proposes
+### Slice 3 — the composer proposes — **shipped 2026-07-16**
 
 Add `viewerBody: string[]` to `SceneSpec`, clamped against the registry in
 `resolveScenePlan` (`prompts.ts:913`) with a diagnostic — the same clamp pattern
@@ -213,6 +214,30 @@ viewer parts **plus** the character's half of the contact. Make
 `scrubPlayerFromAction` part-aware — with parts in frame, rewrite "the player's
 arm" → "the viewer's arm" rather than deleting the clause; keep the drop when the
 list is empty.
+
+> **Shipped as designed, plus one thing the plan missed: `SCENE_COMPOSER_SYSTEM` is shared
+> by both lanes.** `composeSceneSpec` is called by the session pipeline *and* the chat
+> scene, so inverting its rules in place would have quietly embodied the session lane too —
+> against this plan's own §Lane scope. It is now `sceneComposerSystem(embodied)`, opted into
+> by `SceneComposerContext.embodiedViewer`, which only `buildCharacterSceneContext` sets.
+> `SCENE_COMPOSER_SYSTEM` remains as the disembodied prompt and a test pins the two
+> byte-identical, so the session lane's prompt did not move at all.
+>
+> The clamp turned out to want **two** diagnostics rather than one:
+> `viewer_body_unrequested` (a lane that never asked — the composer ignored its rules) and
+> `viewer_body_dropped` (an id outside the vocabulary, *including an intimate one* — the
+> composer runs `allowIntimate: false` and has no intimate vocabulary, so proposing
+> `genitals` is off-script even though the render gate would also catch it).
+>
+> The **route gate runs per-prompt, inside `buildSceneRenderPrompt`**, not at plan time:
+> the ladder's rungs disagree about `allowIntimate` (uncensored edit yes, text-to-image
+> fallback no) and each gets its own prompt — so the plan carries the registry-clamped
+> proposal + the player's coverage, and each prompt intersects them with its own route.
+> Exactly how `intimateAppearance` already works.
+>
+> `scrubPlayerFromAction` is embodied-aware, but only when parts are actually in frame:
+> rewriting "her hand on the player's arm" → "the viewer's arm" in a shot with no arm in it
+> would ask for something the image doesn't contain.
 
 ### Slice 4 — persona body facts reach the prompt
 

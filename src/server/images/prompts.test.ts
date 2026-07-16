@@ -28,6 +28,7 @@ import {
   RECENT_NARRATION_LATEST_CHARS,
   RECENT_NARRATION_PRIOR_CHARS,
   resolveScenePlan,
+  sceneComposerSystem,
   sceneFramingRule,
   sceneRevealAppearance,
   scrubBlush,
@@ -1265,5 +1266,104 @@ describe("buildSceneRenderPrompt with viewer parts", () => {
     });
     expect(prompt).toContain(SELFIE_FRAMING);
     expect(prompt).not.toContain("the viewer's own forearms");
+  });
+});
+
+describe("the composer's viewer-body proposal (slice 3)", () => {
+  const present: ScenePresentCharacter = { name: "Mira", wornVisible: [] };
+  const ctx = (over: Partial<SceneComposerContext> = {}): SceneComposerContext => ({ present: [present], ...over });
+  const spec = (viewerBody: string[]) => ({ ...emptySceneSpec(), focalCharacter: "Mira", viewerBody });
+
+  it("keeps registry parts when the lane asked for embodiment", () => {
+    const plan = resolveScenePlan(spec(["hands", "forearms"]), ctx({ embodiedViewer: true }));
+    expect(plan.viewerBody).toEqual(["hands", "forearms"]);
+  });
+
+  // The session lane never sets embodiedViewer and gets the disembodied rules, so a
+  // proposal there means the composer went off-script — dropped AND logged.
+  it("drops everything in a lane that never asked, with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(spec(["hands"]), ctx(), sink);
+    expect(plan.viewerBody).toEqual([]);
+    expect(sink.items.map((d) => d.code)).toContain("images.scene_composer.viewer_body_unrequested");
+  });
+
+  it("drops invented ids, keeping the rest, with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(spec(["hands", "elbows"]), ctx({ embodiedViewer: true }), sink);
+    expect(plan.viewerBody).toEqual(["hands"]);
+    expect(sink.items.map((d) => d.code)).toContain("images.scene_composer.viewer_body_dropped");
+  });
+
+  // The composer runs allowIntimate:false on the moderation-prone tool model and has no
+  // intimate vocabulary — proposing one is off-script, even though the render gate would
+  // also have caught it.
+  it("drops an intimate part the composer had no business proposing", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(spec(["genitals", "torso"]), ctx({ embodiedViewer: true }), sink);
+    expect(plan.viewerBody).toEqual(["torso"]);
+    expect(sink.items.map((d) => d.code)).toContain("images.scene_composer.viewer_body_dropped");
+  });
+
+  it("carries the player's coverage onto the plan for the render gate", () => {
+    const exposure = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" } as const;
+    expect(resolveScenePlan(spec([]), ctx({ embodiedViewer: true, playerExposure: exposure })).playerExposure).toEqual(
+      exposure,
+    );
+    expect(resolveScenePlan(spec([]), ctx({ embodiedViewer: true })).playerExposure).toBeUndefined();
+  });
+
+  it("is empty by default — an unembodied plan is exactly today's shot", () => {
+    expect(resolveScenePlan(emptySceneSpec(), ctx()).viewerBody).toEqual([]);
+    expect(emptySceneRenderPlan().viewerBody).toEqual([]);
+  });
+});
+
+describe("sceneComposerSystem lane scope (slice 3)", () => {
+  it("is byte-identical to the shipped constant when not embodied — the session lane", () => {
+    expect(sceneComposerSystem(false)).toBe(SCENE_COMPOSER_SYSTEM);
+    expect(sceneComposerSystem()).toBe(SCENE_COMPOSER_SYSTEM);
+  });
+
+  it("keeps the session lane's absolute player-absence rule", () => {
+    expect(SCENE_COMPOSER_SYSTEM).toContain("The player must NEVER appear in the image");
+    expect(SCENE_COMPOSER_SYSTEM).not.toContain("viewerBody");
+  });
+
+  it("inverts both rules when embodied, and offers only the non-intimate vocabulary", () => {
+    const embodied = sceneComposerSystem(true);
+    expect(embodied).not.toContain("The player must NEVER appear in the image");
+    expect(embodied).toContain("viewerBody");
+    expect(embodied).toContain('"hands", "forearms", "lap_thighs", "legs_feet", "torso"');
+    // Intimate anatomy is derived at render assembly, never proposed by this model.
+    expect(embodied).not.toContain("genitals");
+  });
+
+  it("keeps the blush rule on both lanes", () => {
+    for (const system of [sceneComposerSystem(false), sceneComposerSystem(true)]) {
+      expect(system).toContain("NEVER describe skin colour");
+    }
+  });
+});
+
+describe("scrubPlayerFromAction when the viewer has a body (slice 3)", () => {
+  it("rewrites player references to the viewer instead of dropping the clause", () => {
+    expect(scrubPlayerFromAction("her hand closing over the player's forearm", { embodied: true })).toBe(
+      "her hand closing over the viewer's forearm",
+    );
+    expect(scrubPlayerFromAction("leaning into the player, laughing", { embodied: true })).toBe(
+      "leaning into the viewer, laughing",
+    );
+  });
+
+  it("still drops the clause when the viewer has no body in frame", () => {
+    expect(scrubPlayerFromAction("her hand closing over the player's forearm")).toBe("");
+    expect(scrubPlayerFromAction("leaning into the player, laughing")).toBe("laughing");
+  });
+
+  it("leaves clean text alone either way", () => {
+    const clean = "seated by the window, flipping a page";
+    expect(scrubPlayerFromAction(clean, { embodied: true })).toBe(clean);
+    expect(scrubPlayerFromAction(clean)).toBe(clean);
   });
 });

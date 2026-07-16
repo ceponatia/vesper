@@ -48,7 +48,10 @@ function locRef(name: string, entityId: string): SceneVisualReference {
 }
 
 function plan(over: Partial<SceneRenderPlan> & Pick<SceneRenderPlan, "focal">): SceneRenderPlan {
-  return { others: [], setting: "a sunlit room", lighting: "soft natural light", mood: "calm", ...over };
+  // `viewerBody: []` ⇒ the disembodied shot every fixture here describes. Embodied POV
+  // fixtures are scene-pov-embodiment.plan.md §Testing's job, alongside the
+  // third-person-contamination metric they exist to measure.
+  return { others: [], setting: "a sunlit room", lighting: "soft natural light", mood: "calm", viewerBody: [], ...over };
 }
 
 export const EVAL_FIXTURES: EvalFixture[] = [
