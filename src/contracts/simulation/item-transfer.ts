@@ -96,6 +96,7 @@ export const transferItemCommandSchema = z
 
 export const itemTransferRejectionCodes = [
   "invalid_command",
+  "duplicate_command_id",
   "branch_mismatch",
   "actor_not_found",
   "unauthorized_actor",
