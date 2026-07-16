@@ -25,6 +25,10 @@ import {
   worldTypeIdSchema,
 } from "@/contracts/simulation/identity";
 import {
+  itemTransferFeedConsumerKind,
+  itemTransferFeedProjectionSchemaVersion,
+} from "@/contracts/simulation/outbox";
+import {
   resolveItemTransferFromView,
   type ItemTransferResolutionView,
 } from "@/lib/simulation/item-transfer";
@@ -37,6 +41,7 @@ import {
   simHoldingContainers,
   simItemHoldings,
   simItems,
+  simOutbox,
   simWorlds,
   type Db,
 } from "@/server/db";
@@ -51,6 +56,7 @@ const worldSeedSchema = z
 export type DurableItemTransferCrashPoint =
   | "after_event_append"
   | "after_projection_update"
+  | "after_outbox_insert"
   | "after_branch_advance"
   | "after_command_result"
   | "after_commit";
@@ -523,6 +529,19 @@ export async function submitDurableItemTransfer(
           throw new Error("Locked item holding changed before projection update");
         }
         injectCrash(options.crashAt, "after_projection_update");
+
+        await tx.insert(simOutbox).values({
+          id: composeSimulationId("outbox", [itemTransferFeedConsumerKind, event.id]),
+          worldId: event.worldId,
+          branchId: event.branchId,
+          sourceEventId: event.id,
+          firstSequence: event.sequence,
+          lastSequence: event.sequence,
+          consumerKind: itemTransferFeedConsumerKind,
+          schemaVersion: itemTransferFeedProjectionSchemaVersion,
+          payload: { sourceEventId: event.id },
+        });
+        injectCrash(options.crashAt, "after_outbox_insert");
 
         const advanced = await tx
           .update(simBranches)

@@ -1445,6 +1445,7 @@ export const simEvents = pgTable(
       foreignColumns: [simBranches.id, simBranches.worldId],
     }).onDelete("cascade"),
     uniqueIndex("sim_events_branch_sequence_unique").on(t.branchId, t.sequence),
+    unique("sim_events_branch_id_unique").on(t.branchId, t.id),
     index("sim_events_branch_command_idx").on(t.branchId, t.commandId),
     index("sim_events_type_idx").on(t.type),
     check(
@@ -1548,6 +1549,136 @@ export const simItemHoldings = pgTable(
     check(
       "sim_item_holdings_updated_sequence_safe",
       sql`${t.updatedSequence} >= 0 AND ${t.updatedSequence} <= 9007199254740991`,
+    ),
+  ],
+);
+/**
+ * Delivery obligations created atomically with authoritative simulation events.
+ * Consumers may lag or fail; this table and every downstream projection remain
+ * disposable coordination state rather than world truth.
+ */
+export const simOutbox = pgTable(
+  "sim_outbox",
+  {
+    id: text("id").primaryKey(),
+    worldId: text("world_id").notNull(),
+    branchId: text("branch_id").notNull(),
+    sourceEventId: text("source_event_id").notNull(),
+    firstSequence: bigint("first_sequence", { mode: "number" }).notNull(),
+    lastSequence: bigint("last_sequence", { mode: "number" }).notNull(),
+    consumerKind: text("consumer_kind").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    payload: jsonb("payload").$type<{ sourceEventId: string }>().notNull(),
+    state: text("state", { enum: ["pending", "processing", "completed", "failed"] })
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "sim_outbox_branch_world_fk",
+      columns: [t.branchId, t.worldId],
+      foreignColumns: [simBranches.id, simBranches.worldId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "sim_outbox_branch_event_fk",
+      columns: [t.branchId, t.sourceEventId],
+      foreignColumns: [simEvents.branchId, simEvents.id],
+    }).onDelete("cascade"),
+    unique("sim_outbox_consumer_event_unique").on(t.consumerKind, t.branchId, t.sourceEventId),
+    index("sim_outbox_claim_idx").on(t.consumerKind, t.state, t.availableAt, t.firstSequence),
+    index("sim_outbox_branch_sequence_idx").on(t.consumerKind, t.branchId, t.firstSequence),
+    check(
+      "sim_outbox_sequence_range_safe",
+      sql`${t.firstSequence} > 0 AND ${t.firstSequence} <= ${t.lastSequence} AND ${t.lastSequence} <= 9007199254740991`,
+    ),
+    check("sim_outbox_schema_version_positive", sql`${t.schemaVersion} > 0`),
+    check("sim_outbox_attempts_nonnegative", sql`${t.attempts} >= 0`),
+    check(
+      "sim_outbox_processing_has_lease",
+      sql`${t.state} <> 'processing' OR (${t.leaseOwner} IS NOT NULL AND ${t.leaseExpiresAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/** Greatest contiguous source sequence committed by one consumer on one branch. */
+export const simConsumerCheckpoints = pgTable(
+  "sim_consumer_checkpoints",
+  {
+    consumerKind: text("consumer_kind").notNull(),
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    throughSequence: bigint("through_sequence", { mode: "number" }).notNull().default(0),
+    projectionSchemaVersion: integer("projection_schema_version").notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_consumer_checkpoints_consumer_branch_pk",
+      columns: [t.consumerKind, t.branchId],
+    }),
+    check(
+      "sim_consumer_checkpoints_sequence_safe",
+      sql`${t.throughSequence} >= 0 AND ${t.throughSequence} <= 9007199254740991`,
+    ),
+    check(
+      "sim_consumer_checkpoints_schema_version_positive",
+      sql`${t.projectionSchemaVersion} > 0`,
+    ),
+  ],
+);
+
+/** First disposable async projection: one stable row per transferred item event. */
+export const simItemTransferFeed = pgTable(
+  "sim_item_transfer_feed",
+  {
+    consumerKind: text("consumer_kind").notNull(),
+    branchId: text("branch_id").notNull(),
+    sourceEventId: text("source_event_id").notNull(),
+    sourceSequence: bigint("source_sequence", { mode: "number" }).notNull(),
+    storySecond: bigint("story_second", { mode: "number" }).notNull(),
+    actorId: text("actor_id").notNull(),
+    itemId: text("item_id").notNull(),
+    fromContainerId: text("from_container_id").notNull(),
+    toContainerId: text("to_container_id").notNull(),
+    projectionSchemaVersion: integer("projection_schema_version").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_item_transfer_feed_consumer_branch_event_pk",
+      columns: [t.consumerKind, t.branchId, t.sourceEventId],
+    }),
+    foreignKey({
+      name: "sim_item_transfer_feed_branch_event_fk",
+      columns: [t.branchId, t.sourceEventId],
+      foreignColumns: [simEvents.branchId, simEvents.id],
+    }).onDelete("cascade"),
+    unique("sim_item_transfer_feed_branch_sequence_unique").on(
+      t.consumerKind,
+      t.branchId,
+      t.sourceSequence,
+    ),
+    index("sim_item_transfer_feed_branch_story_idx").on(t.branchId, t.storySecond),
+    check(
+      "sim_item_transfer_feed_sequence_safe",
+      sql`${t.sourceSequence} > 0 AND ${t.sourceSequence} <= 9007199254740991`,
+    ),
+    check(
+      "sim_item_transfer_feed_story_second_safe",
+      sql`${t.storySecond} >= 0 AND ${t.storySecond} <= 9007199254740991`,
+    ),
+    check(
+      "sim_item_transfer_feed_schema_version_positive",
+      sql`${t.projectionSchemaVersion} > 0`,
     ),
   ],
 );
