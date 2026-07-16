@@ -14,6 +14,7 @@ import {
   CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
+  chatPlayerStateSchema,
   chatPulseTraceSchema,
   chatSceneMemorySchema,
   currentScenePlace,
@@ -22,6 +23,7 @@ import {
   degradedChatPulse,
   deriveExchangeMilestones,
   emptyChatMemoryTrace,
+  emptyChatPlayerState,
   emptyChatSceneMemory,
   emptySupportingCast,
   mergeSupportingCast,
@@ -78,6 +80,7 @@ import {
   type CharacterProfile,
   type ChatMemoryTrace,
   type ChatPersonalNotes,
+  type ChatPlayerState,
   type ChatPulse,
   type ChatPulseTrace,
   type ChatSceneMemory,
@@ -169,6 +172,15 @@ export interface ChatScenario {
   sceneAuto: string;
   sceneModel: string;
   sceneMemory: ChatSceneMemory;
+  /**
+   * Who the PLAYER is in this conversation, and what they're wearing
+   * (persona-library.plan.md slices 7–8). It lives on the scenario — not on the
+   * per-character `ChatState` — because there is one player and many roster
+   * characters, and because the scenario IS the "another take" rollback snapshot
+   * (`pre_exchange_scenario`): riding it means a discarded reply can't leave the
+   * player undressed by a beat that no longer exists.
+   */
+  playerState: ChatPlayerState;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — one cast for the roster. */
   supportingCast: SupportingCast;
   /** Tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
@@ -334,6 +346,8 @@ export interface ChatStateSnapshot {
   outfitLabel: string;
   /** Manual intimate-reveal flag (free-text path); computed from coverage when items are worn. */
   outfitExposed: boolean;
+  /** Who the player is here + what they're wearing (persona-library.plan.md) — chat-wide. */
+  playerState: ChatPlayerState;
   /** The cards live in THIS chat (editable in the scenario modal). */
   activeSocialCards: SocialReactionCard[];
   /** Meter bands last surfaced as a "just shifted" beat (§5) — for the state-tools debug view. */
@@ -509,6 +523,7 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     sceneAuto: "off",
     sceneModel: "reference",
     sceneMemory: emptyChatSceneMemory(),
+    playerState: emptyChatPlayerState(),
     supportingCast: emptySupportingCast(),
     plans: emptyChatPlans(),
     clockMinutes: 0,
@@ -527,6 +542,7 @@ const chatScenarioSchema = z.object({
   sceneAuto: z.string().catch("off").default("off"),
   sceneModel: z.string().catch("reference").default("reference"),
   sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
+  playerState: chatPlayerStateSchema.catch(emptyChatPlayerState()).default(emptyChatPlayerState()),
   supportingCast: supportingCastSchema.catch([]).default([]),
   plans: chatPlansSchema.catch([]).default([]),
   clockMinutes: z.number().catch(0).default(0),
@@ -546,6 +562,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       sceneAuto: characterChats.sceneAuto,
       sceneModel: characterChats.sceneModel,
       sceneMemory: characterChats.sceneMemory,
+      playerState: characterChats.playerState,
       supportingCast: characterChats.supportingCast,
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
@@ -565,6 +582,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     sceneAuto: row.sceneAuto,
     sceneModel: row.sceneModel,
     sceneMemory: parseOr(chatSceneMemorySchema, row.sceneMemory, emptyChatSceneMemory(), sink, "character_chats.scene_memory"),
+    playerState: parseOr(chatPlayerStateSchema, row.playerState, emptyChatPlayerState(), sink, "character_chats.player_state"),
     supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
     plans: parseOr(chatPlansSchema, row.plans, [], sink, "character_chats.plans"),
     clockMinutes: row.clockMinutes,
@@ -592,6 +610,7 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       scene_auto = ${scenario.sceneAuto},
       scene_model = ${scenario.sceneModel},
       scene_memory = ${JSON.stringify(scenario.sceneMemory)}::jsonb,
+      player_state = ${JSON.stringify(scenario.playerState)}::jsonb,
       supporting_cast = ${JSON.stringify(scenario.supportingCast)}::jsonb,
       plans = ${JSON.stringify(scenario.plans)}::jsonb,
       clock_minutes = ${scenario.clockMinutes},
@@ -2143,6 +2162,8 @@ export interface ChatStateEdit {
   sceneModel?: string;
   /** Accumulating scene memory (current place / time of day / known places). */
   sceneMemory?: ChatSceneMemory;
+  /** Who the player is here + what they're wearing (chat-wide) — the "Playing as" pick and the equip surface. */
+  playerState?: ChatPlayerState;
   /** Recurring named side characters (chat-wide) — the Supporting Cast panel's whole-list save. */
   supportingCast?: SupportingCastMember[];
   /** Tracked plans & promises (chat-wide) — the Plans panel's whole-list save (chat-plans-promises.plan.md). */
@@ -2219,6 +2240,9 @@ export async function editChatState(args: {
   if (patch.sceneAuto !== undefined) nextScenario.sceneAuto = patch.sceneAuto;
   if (patch.sceneModel !== undefined) nextScenario.sceneModel = patch.sceneModel;
   if (patch.sceneMemory !== undefined) nextScenario.sceneMemory = patch.sceneMemory;
+  // Whole-object replacement through the boundary schema (healing + caps), like the
+  // supportingCast/plans edits below.
+  if (patch.playerState !== undefined) nextScenario.playerState = chatPlayerStateSchema.parse(patch.playerState);
   if (patch.supportingCast !== undefined) {
     // Whole-list replacement through the boundary schema (caps + dedupe + healing).
     nextScenario.supportingCast = supportingCastSchema.parse(patch.supportingCast);
@@ -2343,6 +2367,7 @@ export function chatStateSnapshot(
     // Default to the overlay text; the async state routes overwrite with the resolved garments.
     outfitLabel: state.outfit,
     outfitExposed: state.outfitExposed,
+    playerState: scenario.playerState,
     activeSocialCards: scenario.activeSocialCards,
     surfacedCues: state.surfacedCues,
     openLoops: state.openLoops,
