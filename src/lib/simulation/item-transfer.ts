@@ -12,8 +12,6 @@ import {
   type TransferItemCommand,
 } from "@/contracts/simulation/item-transfer";
 
-const LEGAL_ALTERNATIVES: string[] = [];
-
 interface RejectedResolution {
   ok: false;
   code: ItemTransferRejectionCode;
@@ -368,7 +366,7 @@ export function createItemTransferBranchRuntime(rawSeed: unknown): ItemTransferB
           commandId: "invalid",
           code: "invalid_command",
           publicReason: "That action request is invalid.",
-          legalAlternativeCommandTypes: LEGAL_ALTERNATIVES,
+          legalAlternativeCommandTypes: [],
         };
       }
       const command = parsed.data;
@@ -391,7 +389,7 @@ export function createItemTransferBranchRuntime(rawSeed: unknown): ItemTransferB
             commandId: command.id,
             code: resolution.code,
             publicReason: resolution.publicReason,
-            legalAlternativeCommandTypes: LEGAL_ALTERNATIVES,
+            legalAlternativeCommandTypes: [],
           };
         } else {
           projection = applyItemTransferredEvent(projection, resolution.event);
