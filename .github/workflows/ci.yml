@@ -6,9 +6,9 @@ name: CI
 # protection requires before a promotion PR can merge.
 on:
   pull_request:
-    branches: [main, prod]
+    branches: [main, prod, engine]
   push:
-    branches: [main, prod]
+    branches: [main, prod, engine]
 
 # A newer push to the same ref cancels the in-flight run — saves CI minutes.
 concurrency:
