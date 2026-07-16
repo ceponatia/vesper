@@ -382,11 +382,16 @@ play as). 6–8 are the chat wiring. The dependent scene work is
   if the `/settings` picker should go away and every chat should pick for itself.
 - ~~**Is `voice` always-on, or intimate-gated like `intimacy`?**~~ **Built: always-on**
   — a voice is a voice; intimacy is merely where it matters most. Worth revisiting only
-  if it proves noisy in ordinary scenes. Note the chat lane has **no exposure mask** to
-  gate on anyway (that is the session lane's `buildIntimateDispositionBlock`), so the
-  persona's `intimacy` earns its place the way the lane's other intimate text does — by
-  wording ("once things turn intimate; irrelevant until then"), not a hard gate. If that
-  proves too leaky, a real chat-side gate is the fix, and it would serve both.
+  if it proves noisy in ordinary scenes.
+- ~~**The persona's `intimacy` has no gate, only wording.**~~ **Fixed 2026-07-16 (owner
+  ask): the chat lane now has a real gate**, `chatSceneIsIntimate`
+  (`contracts/turns/chat-intimacy.ts`) — either party's coverage-computed bare state, or
+  arousal ≥ 0.55. Below it the note is zero tokens rather than text the model is asked to
+  ignore. It served both lanes as predicted: the same gate finally surfaces the
+  **character's** `profile.intimacy` + species archetype in chat, closing the leftover
+  [intimacy-notes.plan.md](intimacy-notes.plan.md) §Chat-lane port recorded. This plan's
+  slice 8 is what made it possible — the player's coverage is one of the three signals,
+  and before the player had a wardrobe the gate would have been half-blind.
 - **Persona avatars?** The column exists, unused — **still open**. The scene plan needs
   *attributes*, not a portrait, and a player portrait implies symmetric rendering (a
   whole arc — `avatar-3d.plan.md`). Deferred, column kept.
