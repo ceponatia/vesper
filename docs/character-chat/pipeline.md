@@ -198,7 +198,7 @@ then one guarded state write:
   | Leg | Fields | Diagnostic prefix |
   | --- | --- | --- |
   | **memory scribe** | `episodeSummary`, `facts`, `memoryQueries` | `chat_memory_scribe.*` |
-  | **continuity tracker** | `scene`, `outfit`, `attributeChanges`, `presence`, `cast` | `chat_continuity.*` |
+  | **continuity tracker** | `scene`, `outfit`, `playerOutfit`, `attributeChanges`, `presence`, `cast` | `chat_continuity.*` |
   | **character tracker** | `openLoops`, `plans`, `driveUpdates`, `voiceExemplar`, `characterSlip`, `traitShifts` | `chat_character_notes.*` |
 
   All three sheets are **composed from the field library** (`prompts/chat-extractors.ts` —

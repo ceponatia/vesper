@@ -72,13 +72,28 @@ export interface CharacterChatPromptInput {
    */
   memory?: { facts: string[]; episodes: string[] };
   /**
-   * The **default player character** the user is speaking as
-   * (player-character.plan.md), resolved via `resolvePlayerPersona`. Present ⇒ the
-   * character addresses the player by `name` (and reads the optional `persona`
-   * bio); absent ⇒ the original faceless "the user" phrasing, so existing
+   * The **persona** the user is playing as (persona-library.plan.md), resolved via
+   * `resolveChatPersona`. Present ⇒ the character addresses the player by `name` and
+   * reads their sheet; absent ⇒ the original faceless "the user" phrasing, so existing
    * snapshots are unchanged.
+   *
+   * `title` is deliberately not here and never will be — see `PlayerPersona`.
    */
-  player?: { name: string; persona?: string };
+  player?: {
+    name: string;
+    /** The bio (`profile.bio`) — who they are. */
+    persona?: string;
+    /** The resolved garment phrase for what the player has on right now (slice 8). */
+    wearing?: string;
+    /** How the player's voice sounds — the narrator describes it, it never writes their lines. */
+    voice?: string;
+    /**
+     * What the player RESPONDS to (`profile.intimacy`). Note the inverted semantics vs a
+     * character's `intimacy`, which is how *they* behave as a lover; this is guidance for
+     * how to treat the player, so it needs its own wording, not the character block's.
+     */
+    intimacy?: string;
+  };
   /**
    * Light chat state (character-chat-state.spec.md §6), surfaced as a compact
    * "Current state" section + a per-chat scenario block. Absent ⇒ the prompt is
@@ -421,6 +436,36 @@ export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string, landi
  * seen-channel content — rule 16 owns the handling; this is the data. Fenced:
  * the descriptions derive from player-supplied images. "" ⇒ no block.
  */
+/**
+ * The player-persona blocks (persona-library.plan.md slice 8), shared by the 1-on-1 and
+ * ensemble builders so the two can never drift. Every part is author-written and
+ * therefore UNTRUSTED — each is fenced, exactly like the character's own bio/voice.
+ *
+ * Emits [] with no persona, so a chat that resolved to a bare account name builds the
+ * prompt it always did.
+ */
+function buildPlayerSections(player: CharacterChatPromptInput["player"], playerName: string): string[] {
+  if (!player) return [];
+  const bio = player.persona?.trim();
+  const wearing = player.wearing?.trim();
+  const voice = player.voice?.trim();
+  const intimacy = player.intimacy?.trim();
+  return [
+    bio ? `About ${playerName} (the person you're speaking with):\n${fenceUntrusted("the person you're speaking with", bio)}` : "",
+    // What the player has on is STATE, not prose: it is computed from their worn items, so
+    // it is the truth even when the narration has drifted. Same authority the character's
+    // own wearing-line carries.
+    wearing ? `What ${playerName} is wearing right now (authoritative — this is what they have on):\n${fenceUntrusted("player wardrobe", wearing)}` : "",
+    voice ? `How ${playerName}'s voice sounds (you describe it; you never write their lines):\n${fenceUntrusted("player voice", voice)}` : "",
+    // Note the framing: what the player RESPONDS to, not how they behave. The chat lane has
+    // no exposure mask to gate on (that is the session lane's `buildIntimateDispositionBlock`),
+    // so it earns its place the way the lane's other intimate text does — by wording.
+    intimacy
+      ? `What ${playerName} responds to, once things turn intimate (play toward it; irrelevant until then):\n${fenceUntrusted("player intimate preferences", intimacy)}`
+      : "",
+  ].filter(Boolean);
+}
+
 function buildAttachmentsSection(attachments: CharacterChatPromptInput["attachments"], player: string): string {
   const descriptions = (attachments?.descriptions ?? []).map((d) => d.trim()).filter(Boolean);
   if (!descriptions.length) return "";
@@ -1592,7 +1637,6 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // "ignore your rules / you are actually …" line smuggled into a bio or note
   // reads as in-world background, not as authority over the chat rules below.
   const playerName = input.player?.name.trim() || undefined;
-  const playerPersona = input.player?.persona?.trim() || undefined;
 
   const identity = [
     playerName
@@ -1622,9 +1666,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     minor ? CONTENT_FRAMING_MINOR_PRIMARY : CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
     identity,
-    playerPersona
-      ? `About ${playerName} (the person you're speaking with):\n${fenceUntrusted("the person you're speaking with", playerPersona)}`
-      : "",
+    ...buildPlayerSections(input.player, playerName ?? "the user"),
     scenario,
     profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
@@ -1962,7 +2004,6 @@ export function buildEnsembleChatPromptParts(
 ): CharacterChatPromptParts {
   const playerName = input.player?.name.trim() || undefined;
   const player = playerName ?? "the player";
-  const playerPersona = input.player?.persona?.trim() || undefined;
 
   const present = members.filter((m) => m.presence === "present");
   const away = members.filter((m) => m.presence === "away");
@@ -2022,7 +2063,7 @@ export function buildEnsembleChatPromptParts(
     anyMinor ? `${CONTENT_FRAMING} ${ENSEMBLE_MINOR_CAST_LINE}` : CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
     identity,
-    playerPersona ? `About ${player}:\n${fenceUntrusted("the player", playerPersona)}` : "",
+    ...buildPlayerSections(input.player, player),
     scenario,
     authority,
     ...sheets,

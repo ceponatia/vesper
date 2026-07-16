@@ -66,21 +66,39 @@ text PKs and every `ownerId` FK are untouched, so seeded users keep their ids.
 The two failure codes are distinct so clients can redirect-to-sign-in vs. retry
 ([resilience.md](resilience.md)).
 
-## Default player character (`users.playerPersona`)
+## Who the player is (`users.default_persona_id` → `personas`)
 
-The account's **default player character** (a light name + short bio the player
-is represented by in character chat — `docs/developer-notes/finished/player-character.plan.md`)
-is a JSONB blob on the `users` row (`StoredPlayerPersona`, `src/contracts/players`),
-edited via `PATCH /api/users/me` and the `/settings` page.
+The player is a **library entity** — a `personas` row with a body, a wardrobe and a
+bio ([database.md](database.md), `persona-library.plan.md`). `users.default_persona_id`
+is a soft pointer (no FK) naming which one new chats start as; `PATCH /api/users/me`
+and the `/settings` page set it, and the persona editor authors the persona itself.
 
-Every consumer reads it through **one resolver**, `resolvePlayerPersona(ownerId)`
-(`src/server/players/`) — the user-level analog of the session's
-`bundlePlayerName()` ([turn-engine.md](turn-engine.md)). It `parseOr`s the blob
-and never throws: a missing/blank name falls back to the account name, so a chat
-turn always has someone to address. The resolved `PlayerPersona.id` is `null`
-today (an inline persona); if the persona later graduates to a real library
-character, only the resolver changes — callers keep reading the same shape. The
-character-chat prompt threads it in as the addressee (`src/server/engine/prompts/character-chat.ts`).
+> The old `users.playerPersona` JSONB blob (a light name + bio, one per account —
+> `finished/player-character.plan.md`) is **gone**: migration 0052 backfilled every
+> non-empty blob into a real persona row and set `default_persona_id`; 0053 dropped
+> the column. `StoredPlayerPersona` was deleted with it.
+
+Every consumer reads through **one resolver**, `resolveChatPersona({ownerId, chatId})`
+(`src/server/players/`) — the user-level analog of the session's `bundlePlayerName()`
+([turn-engine.md](turn-engine.md)). It is a three-rung ladder, each rung degrading
+rather than throwing, so a chat turn always has someone to address
+([resilience.md](resilience.md)):
+
+1. the **chat's** own pick (`character_chats.player_state.personaId`);
+2. the owner's **default** persona (`users.default_persona_id`);
+3. the **account name** (then `FALLBACK_PLAYER_NAME`).
+
+Every lookup is owner-strict, so a dangling or foreign id simply misses and falls
+through — which is also why deleting a persona needs no write fan-out across chats.
+`resolvePlayerPersona(ownerId)` remains as the no-chat-context wrapper.
+
+**The resolved `PlayerPersona` shape carries no `title`, and that is load-bearing.**
+The persona's per-owner-unique library label is a database/UX concern that must never
+reach a model; since every prompt consumer reads this one type, its absence there —
+not a rule anyone has to remember — is what enforces that. The character-chat prompt
+threads the rest in as the addressee (`src/server/engine/prompts/character-chat.ts`):
+name, bio, what they're wearing, how their voice sounds, and what they respond to once
+things turn intimate.
 
 ## Sign-in methods
 

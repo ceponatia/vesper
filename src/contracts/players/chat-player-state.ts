@@ -25,6 +25,19 @@ export const chatPlayerStateSchema = z.object({
   personaId: z.string().catch("").default(""),
   /** Worn item-definition ids — THE wardrobe truth, exactly like the character side's `wornItemIds`. */
   wornItemIds: z.array(z.string()).catch([]).default([]),
+  /**
+   * Has `wornItemIds` been initialized from the persona's wardrobe yet?
+   *
+   * This exists to break a genuine ambiguity: an empty worn list means **"not dressed
+   * yet"** before seeding and **"stripped"** after it, and those must not render the
+   * same way. Without the flag, a fresh chat — or a persona whose wardrobe was never
+   * authored — would read as *naked*, which is a spectacularly wrong default.
+   *
+   * `false` ⇒ resolve the persona's default outfit preset instead of the (empty) list.
+   * It flips to `true` the moment something actually changes the wardrobe, so the seed
+   * materializes on first write rather than as a side effect of a read.
+   */
+  seeded: z.boolean().catch(false).default(false),
   /** Which of the persona's named outfit presets is on; "" ⇒ none/default. */
   outfitPresetId: z.string().catch("").default(""),
   /**
