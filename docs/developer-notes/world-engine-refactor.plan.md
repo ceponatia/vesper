@@ -144,6 +144,16 @@ it out loud.
 3. **The teamwork playbook** — deterministic gates decide; focused agents propose in
    parallel _after_ the reply; plain code folds; slow work detaches; **no AI call before
    the reply**.
+   > **Correction (2026-07-16, [gpt-sim-design.claude.md](gpt-sim-design.claude.md) §2):**
+   > the "agents propose, code disposes" half of this is **aspirational, not descriptive** —
+   > this doc cited it as settled fact and was wrong. Verified: it holds for **meters,
+   > `plans.missed`, and selfies**. For wardrobe, presence, plans struck/kept/canceled,
+   > drives/secrets revealed, facts, scene, and cast, the "deterministic fold" only *parses
+   > the narrator's prose* — the narrator is the de facto authority, and a hallucinated
+   > secret reveal **ratchets permanently**. The catalog below is unaffected (it is almost
+   > entirely derive-and-arm, which sits upstream of narration), but the law as stated
+   > overclaims. See that doc's §7 for the small in-place fixes and §6.1 for why the
+   > distinction between authority-as-input and authority-as-veto is the whole argument.
 4. **Authored canon is never machine-edited; evolution is bounded and rolls back.** The
    relationship matrix, authored traits, cast `relation` — read-only to agents. Overlays
    clamp to one band step. Everything rides `pre_exchange_state` / `pre_exchange_scenario`.
