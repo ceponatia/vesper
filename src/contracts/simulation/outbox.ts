@@ -14,7 +14,12 @@ import { itemTransferredEventSchema, type ItemTransferredEvent } from "./item-tr
 export const itemTransferFeedConsumerKind = "item_transfer_feed" as const;
 export const itemTransferFeedProjectionSchemaVersion = 1 as const;
 
-export const simulationOutboxStateSchema = z.enum(["pending", "processing", "completed"]);
+export const simulationOutboxStateSchema = z.enum([
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+]);
 
 export const itemTransferOutboxPayloadSchema = z
   .object({ sourceEventId: eventIdSchema })
