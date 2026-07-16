@@ -16,6 +16,66 @@ The interesting question neither doc asks is in §6.
 
 ---
 
+## 0. Read this first — written against a moving target
+
+**This doc was drafted blind to two things that landed the same morning** (commits
+`73f5c1c` 10:16 and `e1baa65` 10:25; this was written after both and pushed without seeing
+them). Both change its standing. Rather than silently revise, here is what they overturn:
+
+**(a) The owner answered OQ1–OQ7** inline in
+[world-engine-refactor.plan.md](world-engine-refactor.plan.md) §8. **My §8 below is
+obsolete** — see §8′ for what actually remains open. The rulings land **substantially
+GPT's way**, which repricing this whole comparison:
+
+| Ruling | Effect |
+| --- | --- |
+| **Many worlds** (OQ1) | GPT's world/branch identity model is now *direction*, not speculation. My §5 credited it as "an answer to a question it doesn't ask" — the owner just asked it and answered it GPT's way. |
+| **Locations return** (OQ2) — simpler, but with furniture, owner/inhabitant links, routine inclusion, **and mapping between them** | **Directly overrides my D.6 "do not build."** The owner wants the spatial layer back, procedurally generable, with _"strong guardrails to reduce false positives and prevent worlds with hundreds of duplicate or erroneous locations."_ |
+| **No ceiling on realism** (OQ3), ordered by usefulness, with **"sway"** — an NPC doing something it values can defer eating/sleeping "to a degree" | A design primitive **neither doc had**. And it is *utility scoring in disguise* — which validates GPT's utility-AI proposal from a direction neither doc argued. |
+| **Player has a body** (OQ4) | Confirms my A.12/§4.7 as direction; simpler contracts (no personality — the player acts it out). |
+| **State is too siloed; GPT's decomposition is agreed with** (OQ6) | The owner leans GPT on normalization. |
+| **Overlay paths may be redesigned entirely** (OQ7) | Bigger than my "declare a composition order." |
+
+**(b) [world-engine-refactor.gpt.md](world-engine-refactor.gpt.md)** — GPT reviewed *my*
+plan (799 lines), incorporating those answers. It is newer and better-informed than this
+doc, and it corrects my thesis in two places I concede outright:
+
+1. **A derived value that causes history must be captured.** If weather cancels a plan, the
+   *event* must record the read and its derivation version — otherwise a `weather-v5`
+   replay diverges from the `weather-v2` history. Derivation is replayable only while the
+   algorithm, seed, and calendar semantics hold still. I treated "pure function" as
+   equivalent to "durable," and it isn't.
+2. **Skip partitioning must not change outcomes.** My illness proposal (A.13) seeds a roll
+   from `chatId + clockMinutes` at a skip crossing. **That is deterministic but not
+   invariant**: one 3-day skip and three 1-day skips produce different illnesses. It needs
+   a stable hazard process with interval keys, and the property test
+   `advance(t0→t3) == advance(t0→t1→t2→t3)`. This is a real bug in my catalog that I would
+   have shipped. Good catch.
+
+GPT's **reconciled thesis supersedes mine** and I adopt it:
+
+> **Derive exogenous fields. Schedule possible changes. Record what actually happens.
+> Project current world state. Remember each character's perspective. Narrate only from an
+> allowed view.**
+
+"Derive the world, remember the people" was right about *exogenous, path-independent*
+fields and wrong to generalize. GPT's review also fairly punctures my cost ladder: it
+prices **model latency only**, and _"a T0 function can be CPU-heavy or semantically
+dangerous, and a T2 field can degrade an existing extractor enough to recreate the failed
+thirteen-field monolith."_ Correct. Likewise its restatement of my T5 rule is better than
+mine: **closed by default, not constitutionally forbidden** — refusing an interpreter at
+the cost of misreading the player is not a win.
+
+**What survives from this doc, and why it's still worth reading:** §1 (I *verified* what
+the other docs *assert* — that repricing is load-bearing), §2 (the field-by-field authority
+table and the selfie asymmetry — the evidence under GPT's "narration needs a formal
+authority boundary"), §6.1 (**the project already ran this experiment** — nowhere else in
+the corpus, and now *more* relevant, since it's the lens for bringing locations back
+safely), §6.2 (nobody has proposed a *quality* eval), and §7 (four fixes worth days, not
+years).
+
+---
+
 ## 1. Verification first — GPT's claims all hold
 
 This reprices everything below, so it goes first. I ran two adversarial passes over the
@@ -257,6 +317,33 @@ after.** Weather is authoritative and costs nothing narratively because it's an 
 Movement was authoritative and cost everything because it was a veto. A revealed secret is
 the live bug because it's an unguarded ratchet.
 
+### Post-ruling: this stops being an argument against locations and becomes the test for them
+
+The owner has since ruled that **locations come back** (§0a) — simpler, but with furniture,
+owner/inhabitant links, routine inclusion, and mapping. So "don't rebuild the spatial
+layer" is off the table, and this section's value inverts: **the input/veto/adjudication
+split is the design test for bringing it back without repeating the failure.**
+
+Applied to the owner's own list, it partitions cleanly:
+
+| Location capability | Category | Verdict |
+| --- | --- | --- |
+| Properties: privacy, indoor, noise, shelter, capacity | **Input** | **Free.** Grounds prose, gates escalation, hooks the environment layer. Build first. |
+| Furniture / affordances | **Input** | **Free.** Affordances are inputs the narrator plays with, not permissions it must clear. |
+| Owner / inhabitant links, routine inclusion | **Input** | **Free.** Answers "whose room is this," "who'd be here now" — grounding, not gating. |
+| Mapping / adjacency | **Input** *if* it informs; **veto** *if* it gates | **The whole risk lives in this one row.** A map the narrator *consults* is free. A map that decides she can't be here yet is the 2026-06 failure. |
+| Travel time | **Veto** if enforced mid-scene | Enforce it **at skips**, where the player already accepts time passing. Never as a mid-scene blocker. |
+| Procedural generation | Neither — an **authoring** concern | The owner's own guardrail ask (_"hundreds of duplicate or erroneous locations"_) is a dedup/identity problem, and the corpus already has the tool: semantic dedup at 0.86 cosine, as story-threads uses. |
+
+So the rule for the returning spatial layer: **locations may inform the narrator and may
+gate at skips; they may never contradict the narrator mid-scene.** That is the difference
+between the map as a grounding input and the map as an authority — and it's the specific
+thing that broke last time. GPT's review reaches a compatible place from the other side
+(_"lightweight authoritative spatial graph; no continuous geometry or narrator-blocking
+traversal"_) — **"no narrator-blocking traversal" is the same rule in its vocabulary**, and
+the independent convergence is the strongest signal either doc offers about how to do this
+safely.
+
 ### 6.2 — Neither doc proposes to measure whether any of this improves the product
 
 The corpus's own record (my §C13 synthesis) is that it is **shipping faster than it
@@ -343,30 +430,42 @@ while removing narrator authority, and it's adoptable in isolation.
 
 ---
 
-## 8. Questions for the owner
+## 8. ~~Questions for the owner~~ — **superseded, see §8′**
 
-Ordered by how much they gate.
+_(OQ1–OQ7 were answered in `world-engine-refactor.plan.md` §8 before this doc was written;
+see §0a. Retained only as the record of what was open on 2026-07-16 morning.)_
 
-1. **Is narrative quality allowed to regress at all?** If no, GPT's kernel is out on
-   arrival — every category-2 constraint spends narrative latitude, and the project has
-   already run this experiment once (§6.1). If a temporary dip is acceptable in exchange
-   for causal depth, the calculus changes completely. **Nothing else in either document
-   can be decided before this.**
-2. **Causality or texture?** GPT: the player should be able to ask "why did she leave?"
-   and get a structured causal answer. Me: the world should feel lived-in without new
-   machinery. These are not the same product. My §7 assumes texture-with-causal-fixes;
-   GPT assumes causal-first.
-3. **Does the sim get an eval before it gets more scope?** (§6.2) The corpus already ships
-   faster than it measures; both docs make that worse.
-4. **Is `character_chat_state` allowed to normalize?** GPT's contention argument is sound
-   independent of everything else. This is decidable on its own.
-5. **Do these three documents consolidate?** [gpt-sim-design.plan.md](gpt-sim-design.plan.md)
-   carries `Status: proposal / architecture direction` — not one of the legal values
-   (draft/next/active/shipped/parked) — and has **no roadmap line**, which
-   `CLAUDE.md` requires of a `.plan.md`. Mine has a line as a draft umbrella. Two north-star
-   docs pointing different directions is exactly the state the roadmap exists to prevent.
-   Suggested: one survives as the umbrella, the other becomes its `.spec.md` or a
-   `<topic>.deferred.md`; this supplemental folds into whichever wins.
+## 8′. What actually remains open
+
+The rulings closed the identity, space, ceiling, and player-body questions. Four things
+they did **not** touch — ordered by how much they gate:
+
+1. **Is narrative quality allowed to regress at all?** Still the top question, and now the
+   sharpest one: locations are coming back (§6.1′), and the last time authoritative space
+   met the narrator it _"broke the narrative aspect of the game."_ If the answer is "no
+   regression," the returning spatial layer is **input-only** and the map may never block.
+   If a dip is acceptable for causal depth, GPT's kernel is live. **Nothing else can be
+   sequenced before this.** Neither the owner's OQ2 answer nor GPT's review states which.
+2. **Does the sim get a quality eval before it gets more scope?** (§6.2) Untouched by
+   every doc and every ruling. The corpus already ships faster than it measures; three
+   plans and two reviews now propose to make that considerably worse. GPT's admission
+   contract asks _"what is its player-facing value relative to complexity and noise?"_ —
+   an excellent gate with **no instrument behind it**. A blind transcript A/B on the
+   existing ≥80% enactment bar is a day's work and gates everything.
+3. **What does the player *do* with the world?** (§6.3) Still no interrogation surface in
+   any doc. `chat-clock-calendar.plan.md` OQ-C ("right-aside tenants") is the waiting seam.
+   A causally perfect world the player cannot query is set dressing with a replay test.
+4. **Do these four documents consolidate, and under whose roadmap line?** There are now
+   two north-star plans ([world-engine-refactor.plan.md](world-engine-refactor.plan.md),
+   [gpt-sim-design.plan.md](gpt-sim-design.plan.md)) and two supplementals (this,
+   [world-engine-refactor.gpt.md](world-engine-refactor.gpt.md)) — ~2,400 lines pointing in
+   two directions. Only one carries a roadmap line; `gpt-sim-design.plan.md` also carries
+   `Status: proposal / architecture direction`, not a legal value
+   (draft/next/active/shipped/parked). Two competing north stars is precisely the state the
+   roadmap exists to prevent. **Suggested:** one umbrella plan absorbing the reconciled
+   thesis (§0b) and the owner rulings; the other three become its `.spec.md` / detail docs
+   or tombstones. That consolidation is itself the next task, and it should happen before
+   any code.
 
 ---
 
