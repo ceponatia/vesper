@@ -59,6 +59,11 @@ export interface RenderCharacterSceneInput {
   outfitExposed?: boolean;
   /** Coverage-computed per-region exposure (chat-wardrobe-parity); overrides the boolean flag. */
   exposure?: RegionExposure;
+  /**
+   * The PLAYER's coverage, from their persona's worn items (persona-library slice 8) — the
+   * gate on whether the viewer's own anatomy may enter frame. Absent ⇒ covered ⇒ shut.
+   */
+  playerExposure?: RegionExposure;
   /** Live chat meters — fold a visible-state note (unsteady/disheveled/tired/breathless) into the shot (D4). */
   meters?: Record<string, number>;
   /** Active conditions — overlay grooming/scent/hair so a "disheveled" character renders that way (D4). */
@@ -143,6 +148,8 @@ export function buildCharacterSceneContext(input: {
   outfitExposed: boolean;
   /** Coverage-computed exposure (chat-wardrobe-parity); overrides the boolean flag when present. */
   exposure?: RegionExposure;
+  /** The PLAYER's coverage — gates whether their own anatomy may render (scene-pov-embodiment). */
+  playerExposure?: RegionExposure;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
 }): SceneComposerContext {
@@ -183,6 +190,11 @@ export function buildCharacterSceneContext(input: {
     locationDescription: input.room,
     timeOfDay: input.timeOfDay?.trim() || "day",
     recentNarration: input.recentChat,
+    // The chat lane is the iteration ground for image-prompt tuning, so embodied POV lands
+    // here first (scene-pov-embodiment.plan.md §Lane scope) — the session lane keeps the
+    // absolute player-is-invisible rule and its tests.
+    embodiedViewer: true,
+    ...(input.playerExposure ? { playerExposure: input.playerExposure } : {}),
   };
 }
 
@@ -241,6 +253,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     outfit: input.outfit ?? "",
     outfitExposed: input.outfitExposed ?? false,
     exposure: input.exposure,
+    playerExposure: input.playerExposure,
     meters: input.meters,
     conditions: input.conditions,
   });
