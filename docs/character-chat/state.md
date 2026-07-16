@@ -83,6 +83,24 @@ through the per-character **Character sheet** and the chat-wide **Scenario** mod
 ([ui.md](../ui.md) §The conversation page).
 
 
+## Retake rollback boundary
+
+A retake is a roster-wide transaction boundary, not a primary-character convenience.
+Every `(chat_id, character_id)` row carries its own `pre_exchange_state`; the shared
+scenario carries `pre_exchange_scenario`. Before a regenerate or accepted rerun drifts
+anything, the pipeline restores every roster member from that same exchange boundary.
+After settle, each member's new state and its next rollback anchor use the same
+prompt-message existence guard. This covers the full stored state—meters, relationship
+axes and history, conditions, feeling, drives, wardrobe, memory queries, open loops,
+milestones, callbacks, presence and whereabouts—so a discarded group take cannot survive
+through a non-primary row. A missing member anchor degrades explicitly with
+`chat_state.snapshot.missing`.
+
+Only the latest exchange can be rerun in place. Reaching farther back requires a
+conversation branch because one snapshot cannot reconstruct every intervening state;
+the API rejects that request before transcript mutation with `rerun_requires_branch`.
+
+
 ## Wardrobe
 
 Since chat-wardrobe-parity (2026-07-14) the chat lane carries **structured worn state** at
