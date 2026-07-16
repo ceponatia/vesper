@@ -1,6 +1,6 @@
 # World engine refactor — GPT supplemental review
 
-Status: **supplemental architecture review**
+Status: **supplemental architecture review — corrected after adversarial verification**
 
 Companion to [world-engine-refactor.plan.md](world-engine-refactor.plan.md) and
 [gpt-sim-design.plan.md](gpt-sim-design.plan.md). This document does not replace either
@@ -59,6 +59,28 @@ The reconciled thesis should be:
 This is not a return to per-minute ticking. The missing middle is an event-driven world
 kernel.
 
+## Correction ledger after repository verification
+
+A later adversarial pass found three errors in this review and one important defect that
+all prior documents missed:
+
+1. The criticism that `rhythmBodyPatch` “silently launders” missed meals or washing was
+   wrong. The queued meter plan had already removed the blanket restore under owner
+   ruling OQ3 and explicitly distinguishes a 6am landing from an 8am landing.
+2. “Both tracks can proceed” was structurally false. Two Track A constraints depend on
+   the command/event and space/action foundations that the same sequence placed in Track
+   B. For one developer, this is a gated sequence, not parallel work.
+3. The recommended first integrated slice was not a cheap slice. It combined identity,
+   bodies, space, schedules, resources, illness, perception, RAG, replay, and narration.
+   It is a graduation scenario after most risk has already been taken.
+4. Group-chat retakes have a live rollback-integrity bug: only the primary member receives
+   a pre-exchange state snapshot. Non-primary members retain state changes from the
+   discarded reply and then settle the replacement reply on top.
+
+The corrections below replace the affected recommendations rather than merely appending
+a caveat. The event-driven north star still stands, but it must earn its scope through
+small experiments, quality evaluation, and invariant repairs.
+
 ## Comparison at a glance
 
 | Concern | Claude plan | GPT plan | Reconciled direction |
@@ -66,7 +88,7 @@ kernel.
 | World evolution | Derive from authored data, seed, and clock; remember history | Commands, events, scheduler, projections | Derive only path-independent inputs; event-source path-dependent outcomes |
 | Time | Lazy formulas and skip folds | Priority queue and analytical integration | Analytical values plus scheduled threshold/action events; no fixed tick |
 | Space | Inert place properties; reject movement authority | Containment/travel/access graph with authoritative events | Lightweight authoritative spatial graph; no continuous geometry or narrator-blocking traversal |
-| Schedules | Rhythm slots can credit off-screen care | Schedule is intention, not proof | Slots enqueue activity attempts; actions resolve access, resources, conflicts, and completion |
+| Schedules | The queued chat plan deliberately credits crossed rhythm slots under owner ruling OQ3 | In a mature causal kernel, schedule is intention rather than proof | Ship the ruling-compatible chat adapter without pretending it is action history; introduce attempted-action semantics only after the required substrate exists and the ruling is explicitly revisited |
 | LOD | Primarily ration post-turn settle calls | Ration both simulation fidelity and LLM attention | Two independent LOD policies sharing one relevance model |
 | Agents | Add no new legs; extend current calls | Narrow current extractors; add sparse semantic/deliberation jobs when justified | No new fixed per-turn legs; allow event-triggered jobs and an optional bounded input interpreter |
 | Narrator | Existing pipeline remains central | Narrator renders pre-resolved events through `NarrativeView` | Formalize current digest tiers as a typed context contract; narrator never creates hard effects |
@@ -263,42 +285,50 @@ retrieval. They become canon when visited, explicitly authored, or referenced by
 authoritative event. Duplicate proposals merge into an existing location rather than
 creating “Café”, “The Café”, and “Cafe Downtown” as separate places.
 
-## Schedules are intentions, not completed history
+## Schedule semantics — current owner ruling versus successor target
 
-Both plans identify `ScheduleEntry.activity.kind` as an important unlock. The supplemental
-qualification is that a schedule row must not directly feed, wash, dress, move, or pay a
-character.
+The earlier criticism of `rhythmBodyPatch` attacked a design the queued
+[chat-meter-economy plan](chat-meter-economy.plan.md) no longer contains. Owner ruling OQ3
+already removed the blanket `hygiene = max(current, 0.9)` restore. The proposed patch
+scans the skipped window: a skip landing at 6am before a 7am wash row leaves the character
+unwashed, while an 8am landing credits the crossed row. The unmet need then remains in the
+scene. Calling that “silently laundering away” the missed action was inaccurate, and this
+review retracts the claim.
 
-A schedule crossing should create an activity candidate:
+It was also inappropriate to make the current number-one queued plan depend on
+availability, travel, opening hours, inventory, competing commitments, and action
+completion when the chat lane has none of those primitives. That would silently reverse
+a fresh owner ruling and block near-term meter repair on a successor kernel.
 
-```ts
-type ScheduledIntent = {
-  characterId: string;
-  activityKind: string;
-  preferredLocationId?: string;
-  windowStart: number;
-  windowEnd: number;
-  priority: number;
-  flexibility: number;
-  requiredAffordances: string[];
-};
-```
+Two implementation qualifications still matter:
 
-Resolution then checks:
+- The shipped `rhythmOutfitPatch(profile, clockMinutes)` is **arrival-covering**: it
+  chooses the schedule row covering the landing clock. The proposed
+  `rhythmBodyPatch(profile, fromMinutes, toMinutes)` is **window-crossing**: it must scan
+  and apply every relevant row crossed during the interval. Calling it a deterministic
+  sibling understates new iteration, boundary, duplicate-day, long-skip, and partition
+  behavior.
+- `inferScheduleKind(activity)` is a brand-new text-matching contract. It is precisely
+  the tactical debt this review warns against elsewhere. It may be a migration adapter,
+  but it needs a corpus test, explicit unknown behavior, telemetry, typed `kind`
+  authoring going forward, and a deletion plan. A false-positive `wash` or `meal`
+  classification is a hard state mutation, not harmless prompt flavor.
 
-- whether the character is available;
-- whether travel is possible;
-- whether the location is open and accessible;
-- whether required items or money exist;
-- whether a higher-priority commitment or emergency displaced it;
-- whether the action started, completed, was shortened, or was missed.
+The corrected recommendation is therefore two-level:
 
-This distinction is essential for emergence. A missed meal, late shift, occupied
-bathroom, cancelled train, or lack of groceries becomes an actual cause rather than being
-silently laundered away by `rhythmBodyPatch`.
+1. **Current chat lane:** implement the owner-approved window-crossing rhythm projection
+   without pretending it proves access, inventory, or a fully simulated action. Mark its
+   effects as a chat-LOD policy and test interval partitioning. Do not block it on
+   nonexistent world primitives.
+2. **Successor causal kernel:** after command/event and space/action contracts exist,
+   schedules may produce `ScheduledIntent` candidates whose completion is resolved
+   against availability, access, resources, interruptions, and conflicts. This is a
+   later fidelity upgrade and owner-policy decision, not a correction the queued plan
+   must absorb now.
 
-Routine remains valuable as a low-cost prior and a dormant-LOD summary. It simply is not
-proof of completion.
+Routine can remain a deterministic off-screen policy at low LOD even after richer action
+resolution exists. The important boundary is to avoid mistaking the current adapter for
+general-purpose authoritative action history.
 
 ## LOD has two separate jobs
 
@@ -558,6 +588,42 @@ affordances, and deterministic parsing. If confidence is low, a small interprete
 map text onto enumerated candidate commands. T5 should be **closed by default**, not
 constitutionally forbidden at the cost of misinterpreting the player.
 
+## Immediate P0 defect — group retakes are not rollback-invariant
+
+Repository verification found a live data-integrity bug stronger than the abstract
+warning about aggregate snapshots.
+
+In [chat-pipeline.ts](../../src/server/engine/chat-pipeline.ts),
+`restoreOrDegrade()` loads `preExchangeState` only for the primary
+`characterId`. In [chat-state.ts](../../src/server/engine/chat-state.ts),
+`finalizeChatState()` saves that primary snapshot. The non-primary roster loop instead
+loads each member's current state, applies its pulse and personal-note folds, and calls
+`saveChatState()` without saving a corresponding pre-exchange snapshot.
+
+Consequently, an applicable group-chat regenerate or “another take” rolls back the
+primary and shared scenario but not the other members. Non-primary regard, emotional
+state, drives, wardrobe/personal fields, relationship samples, and milestones produced
+by the discarded reply remain persisted; the replacement reply then settles on top of
+them. Message-provenance memory retraction does not repair these state columns.
+
+This should be fixed before architecture experiments and does not require a world kernel:
+
+1. Preserve each roster member's stored pre-drift state during prompt assembly.
+2. On regenerate and a latest-target rerun, load every member from their own recorded
+   snapshot before drift and prompt construction.
+3. After each guarded member save, write that same member's pre-exchange snapshot under
+   the same prompt-row guard.
+4. Add group tests in which a discarded reply changes a secondary member's regard,
+   emotional state, drive reveal, and milestone, then assert the replacement is applied
+   exactly once and the discarded effects are absent.
+5. Keep reach-back reruns explicit: if the requested target predates the one available
+   snapshot, reject full rollback or branch from durable history rather than implying
+   restoration occurred.
+
+A later event journal makes multi-aggregate rollback auditable, but the immediate lesson
+is smaller: a snapshot is only an invariant if it covers every aggregate the exchange
+can mutate.
+
 ## The settle lock is a transition blocker
 
 Claude correctly identifies that post-turn work is not truly free because the exchange
@@ -677,62 +743,203 @@ Physical traces are particularly high-value: cooking consumes ingredients and pr
 food/dishes, travel consumes time or fare, a gift changes ownership, and work creates
 income or output. These are world history and cannot be reconstructed safely from prose.
 
-## Revised sequencing
+## Corrected sequencing — one gated path, not two parallel tracks
 
-Claude's sequence begins with meter economy and body needs because it follows the current
-roadmap. The GPT sequence begins with simulation authority because it optimizes for the
-long-term target. Both can proceed if tactical work obeys the future boundary.
+The previous sentence “Both can proceed if tactical work obeys the future boundary” was
+wrong. At least two of Track A's seven constraints presuppose Track B:
 
-### Track A — current chat improvements
+| Prior Track A constraint | Required foundation | Why it is gated |
+| --- | --- | --- |
+| Schedules produce intent, not guaranteed completed actions | Track B item 4: space, actions, affordances, resources, and interruptions | The current chat lane cannot resolve an attempted action because those primitives do not exist |
+| Derivation functions are versioned when their output can cause history | Track B item 2: commands, events, replay, and durable causation | A version has nowhere authoritative to attach until history-producing events exist |
 
-Meter economy, body needs, environment reads, `SceneFrame`, and a typed signal bus may
-continue, with constraints:
+Signals with stable subjects and provenance also become much more useful after identity
+contracts exist, although a typed in-process bus can be prototyped earlier. For a single
+developer, the plan must be a dependency-ordered queue.
 
-- every dynamic value is clock-keyed and carries a last integration time;
-- schedules produce intent, not guaranteed completed actions;
-- new code is pure and independent of Next.js/DB where possible;
-- no large expansion of whole-row `ChatState` writeback;
-- new agent fields do not bypass extractor-size and latency budgets;
-- derivation functions are versioned when their output can cause history;
-- signals retain subject, provenance, observability, and consumer-specific scores.
+### Gate 0 — repair current invariants
 
-### Track B — successor foundation
+- Fix the primary-only group-retake snapshot bug.
+- Assert the single-machine premise or add database-level per-session ordering.
+- Fence the highest-risk narrator ratchets, especially secret revelation and plan
+  completion.
+- Record a baseline of latency, model-call fan-out, degraded legs, and representative
+  transcript quality.
 
-1. **World identity and rulings**
-   - `WorldType`, `World`, `WorldBranch`, `CharacterTemplate`, `WorldCharacter`, and
-     `PlayerCharacter` boundaries;
-   - story-clock ownership;
-   - branch/fresh-start/shared-history semantics;
-   - character/world compatibility and instantiation.
-2. **Command/event kernel**
-   - stable IDs, world versions, commands, events, replay, snapshots, idempotency, and
-     deterministic random streams.
-3. **Scheduler and state projection**
-   - scheduled events, analytical integration, modifier resolver, transactional outbox,
-     and distributed worker contracts.
-4. **Space, actions, and schedules**
-   - locations, containment/connections, affordances, travel, action preconditions,
-     resources, interruptions, and scheduled intents.
-5. **Perspective and narration**
-   - observation events, knowledge ledger, `NarrativeView`, exact-state retrieval, and
-     perspective-scoped RAG.
-6. **Life and material systems**
-   - player/NPC bodies, needs and sway, inventories, households, relationships, and
-     physical traces.
-7. **Dual LOD and autonomy**
-   - background aggregation, lazy materialization, utility decision controllers, and
-     sparse high-LOD LLM deliberation.
+### Gate 1 — ship only independent current-lane work
 
-Track A should be adapted behind Track B's interfaces rather than discarded. The danger
-is letting tactical features create more state and text-matching contracts that later
-have to be unwound.
+The clock-keyed meter economy, the owner-approved `rhythmBodyPatch`, read-only
+environment derivations, a composed `SceneFrame`, and a typed signal bus may proceed
+when they do not claim future action semantics or create new unrestricted hard-state
+writeback. `inferScheduleKind` must be treated as a measured migration adapter, not a
+successor contract.
 
-## Recommended first integrated slice
+This work is sequential with kernel work in developer time. “Independent” means it does
+not require a kernel to be correct, not that one developer can build both simultaneously.
 
-The first slice should test the disagreements between the two plans rather than merely
-add more meters.
+### Gate 2 — run cheap discriminating experiments
 
-Build:
+Run the three sub-day spikes below and the quality harness before committing to a broad
+foundation. Each experiment must have a result that can reduce or redirect scope.
+
+### Gate 3 — build the minimum authority seam
+
+Only after the experiments, implement the smallest command → event → projection →
+viewpoint path. Do not begin with bodies, illness, economies, two worlds, and a week of
+fast-forward.
+
+### Gate 4 — expand in dependency order
+
+If the seam earns expansion, the successor order remains:
+
+1. world and character identity;
+2. command/event authority, versions, idempotency, and replay;
+3. scheduler, analytical integration, projections, and outbox;
+4. space, affordances, actions, schedules, and resources;
+5. observation, knowledge eligibility, `NarrativeView`, and perspective-scoped RAG;
+6. bodies, inventories, households, relationships, and material traces;
+7. dual LOD, utility-driven autonomy, and sparse high-LOD deliberation.
+
+Current-lane features should migrate behind these interfaces only when the interface they
+need exists.
+
+## Rough single-developer cost envelope
+
+These are order-of-magnitude engineering estimates, not commitments. They assume
+familiarity with the repository, exclude content authoring and production polish, and
+must be re-estimated after each gate.
+
+| Work | Rough effort | Confidence |
+| --- | ---: | --- |
+| Fix and regression-test the group-retake snapshot invariant | 0.5–1.5 days | Medium |
+| Add baseline transcript/latency/call-count harness | 1–2 days | Medium |
+| Each sub-day spike below | 0.5–1 day | Medium |
+| Queued meter-economy implementation, including window-crossing tests and schedule-kind audit | 3–7 days | Low–medium |
+| Minimum command/event/projection/viewpoint slice | 5–10 days | Low |
+| Identity + event kernel + scheduler/projection production foundation | 15–30 days | Low |
+| Space/action/schedule/resource substrate | 10–25 days | Low |
+| Perspective ledger, narrator view, and RAG eligibility migration | 10–25 days | Low |
+| Bodies/material systems and current-chat migration | 15–35 days | Very low |
+| Dual LOD and autonomous background behavior | 10–25 days | Very low |
+
+The north-star foundation is therefore plausibly **60–120+ focused developer-days**
+before broad content, UI tooling, balancing, migration cleanup, and production hardening.
+The old “first integrated slice” touched most of that surface and could not provide an
+early verdict.
+
+## Product-quality evaluation
+
+Correct state is not enough. The live chat lane's writing quality is the asset at risk,
+so every architecture experiment needs a paired product evaluation.
+
+Start with a small, versioned corpus of at least 12–20 representative exchanges covering
+romance, conflict, secrets, group scenes, time skips, callbacks, and ordinary banter.
+For each change:
+
+- run baseline and treatment with the same inputs and model configuration, using multiple
+  samples where model nondeterminism matters;
+- blind the ordering during review;
+- score character voice, chemistry/tension, emotional continuity, pacing, causal
+  enactment, contradiction, unwanted exposition, perspective leakage, and player agency;
+- record p50/p95 latency, synchronous and settlement calls, token use, degraded legs, and
+  hard-effect repair/rejection rate;
+- predeclare the pass/fail threshold before reading results.
+
+A reasonable initial non-regression gate is: zero deterministic secret-leak failures,
+at least 80% correct enactment when the tested state is relevant, no forced mention when
+it is irrelevant, no median decline in voice/chemistry, and no material latency increase
+unless player-visible value clearly improves. The exact numbers can change after the
+baseline, but an experiment without a threshold cannot fail.
+
+## Three sub-day discriminating spikes
+
+### Spike 1 — make witness eligibility real
+
+**Build:** Add a `viewpointId` to the controlled session-lane fact retrieval path and
+apply witness eligibility in SQL before top-k selection. For the spike, use extracted
+facts with non-empty `witnessedBy`; explicitly preserve separately authored/global
+facts rather than blindly hiding every row whose witness set is empty. Reuse the existing
+concealment tests and add an end-to-end case where a back-turned character must not
+retrieve the hidden act while an actual witness still can.
+
+**Budget:** 0.5–1 day.
+
+**Falsifies:** Whether the existing perception → persisted witness set → retrieval path
+can enforce a meaningful perspective boundary without a new ledger. It succeeds only if
+leakage disappears without deleting legitimate witnessed recall or damaging transcript
+quality.
+
+This is the best cheap test in the current repository. It validates one vertical seam of
+the proposed belief architecture. It does **not** prove the entire belief tier: hearsay,
+inference, lies, forgetting, confidence, contradictions, authored knowledge, and empty
+legacy witness sets still require explicit semantics.
+
+### Spike 2 — shadow-test `inferScheduleKind`
+
+**Build:** Run `inferScheduleKind` in non-mutating shadow mode over every authored
+schedule used by the live app. Compare results with a small manually labeled corpus,
+record unknowns and ambiguous phrases, and inspect the exact intervals
+`rhythmBodyPatch` would credit. Do not change meters during the experiment.
+
+**Budget:** 0.5–1 day.
+
+**Falsifies:** Whether text inference is safe enough as a temporary migration adapter.
+For automatic body-state credit, precision matters more than coverage: any material
+false-positive `wash` or `meal` classification should fail the adapter and require
+authored `kind` values or a migration.
+
+### Spike 3 — one grounded-context ablation in the live chat
+
+**Build:** Behind a flag, compile one deterministic, already-available state distinction
+into the prompt—such as daylight/privacy or the 6am-unwashed versus 8am-washed rhythm
+state—without adding a model call or a new state writer. Run paired transcripts with the
+field present and withheld.
+
+**Budget:** 0.5–1 day for the flag and corpus run, plus review time.
+
+**Falsifies:** Whether code-grounded context is enacted naturally and improves perceived
+continuity without harming voice or turning the reply into mechanical exposition. If
+reviewers cannot detect relevant causal enactment, or quality falls, pause context
+expansion and fix the compiler/presentation seam before building more simulation.
+
+The group-retake repair is deliberately not counted as an experiment. It is a known
+integrity defect and should be fixed regardless of architectural preference.
+
+## First architectural slice — one invariant across one seam
+
+The first kernel slice should be small enough to reject the architecture before the
+world has been built.
+
+Build only:
+
+- one world/branch identity and version;
+- one stable item, two containers or locations, and one `transfer_item` command;
+- command validation, one domain event, and one current-state projection;
+- one observer and one non-observer;
+- a minimal perspective view consumed by the existing narrator;
+- no scheduler, physiology, illness, economy, autonomous NPC, procedural generation, or
+  new LLM leg.
+
+Acceptance properties:
+
+- an invalid transfer emits no event and cannot appear in the projection;
+- the same command/event replay produces the same projection hash;
+- the observer may recall the transfer and the non-observer may not;
+- regenerate/another-take cannot leave a discarded transfer in either state or memory;
+- the narrator cannot invent a second transfer or reveal it to the wrong viewpoint;
+- paired transcripts pass the quality and latency gate.
+
+This is roughly a 5–10 day risk probe. It tests identity, authority, replay, projection,
+perspective, retake behavior, and narrator integration without first implementing every
+world subsystem.
+
+## Later graduation scenario — not the first slice
+
+The prior “first integrated slice” is retained only as a later integration milestone. It
+should not be used to decide whether the architecture is viable because it reports its
+verdict after most foundational risk has already been taken.
+
+After the smaller seams work, a graduation scenario may include:
 
 - one `WorldType` and two world instances;
 - one reusable character template instantiated independently in both worlds;
@@ -746,7 +953,7 @@ Build:
 - a seven-day fast-forward with no routine LLM calls;
 - one narrator reply compiled from the resulting perspective-safe view.
 
-Acceptance properties:
+Its acceptance properties remain valuable:
 
 - the same seed and commands replay to the same event hash;
 - one seven-day skip equals seven one-day skips;
@@ -759,9 +966,7 @@ Acceptance properties:
 - every visible consequence has an inspectable causation chain;
 - changing a derivation implementation does not rewrite committed history.
 
-This slice is more valuable than implementing the full physiology catalog because it
-proves identity, causality, time composability, spatial authority, player symmetry,
-perspective, and narrator grounding together.
+This is a broad integration and graduation test, not a cheap slice.
 
 ## Remaining product decisions
 
@@ -791,6 +996,16 @@ Keep Claude's cost discipline, environment derivations, substrate/read law, `Sce
 salience insight, and warning about settle fan-out. Keep the GPT plan's event authority,
 identity split, scheduler, spatial/action contracts, knowledge ledger, narrator view,
 durable concurrency, and replay requirements.
+
+Correct the execution order: fix the group-retake invariant first, establish a quality
+baseline, run the three cheap discriminating spikes, and ship only current-lane work that
+is genuinely independent. The queued rhythm/body work should not be forced to solve
+unbuilt action primitives or silently reverse its owner ruling; its text-matching adapter
+must be measured and explicitly temporary.
+
+Only then should the command/event design be tested through one narrow authority seam.
+The broad two-world, body, space, schedule, illness, perception, and fast-forward scenario
+is a graduation test, not the first bet.
 
 The combined design is neither the old ticked world model nor a larger conversational
 state blob. It is a sparse event-driven world in which cheap fields are derived, actual
