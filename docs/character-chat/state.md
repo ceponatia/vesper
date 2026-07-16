@@ -131,6 +131,34 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   (`components/characters/chat-wardrobe-editor.tsx` — [ui.md](../ui.md) §The conversation
   page).
 
+### The player's wardrobe
+
+The **player** has one too (persona-library.plan.md slice 8) — "she pulls your shirt over
+your head" is a state change, not just prose. It lives on `character_chats.player_state`
+(a `ChatPlayerState` jsonb: `personaId`, `wornItemIds`, `seeded`, `outfitPresetId`,
+`overlay`) rather than `character_chat_state`, because there is one player and many roster
+characters. That placement also puts it inside the `pre_exchange_scenario` rollback
+snapshot for free, so "another take" can't leave the player undressed by a discarded beat.
+
+- **Structured-only, no manual flag.** A persona is a library entity with real outfit
+  presets, so `resolvePlayerWardrobe` (the character seam's twin in `chat-wardrobe.ts`)
+  always computes exposure from coverage. There is deliberately no `exposed` toggle: it
+  would be a hole through the scene-image gate that decides whether the viewer's anatomy
+  renders (scene-pov-embodiment.plan.md).
+- **`seeded` breaks a real ambiguity.** An empty worn list means *"not dressed yet"* before
+  seeding and *"stripped"* after it. Unseeded, `playerWornIds` resolves the persona's
+  default preset — so a fresh chat, or a persona whose wardrobe was never authored, doesn't
+  read as naked. The flag flips on the first actual change, so the seed materializes on a
+  write rather than as a side effect of a read.
+- **One archivist field, both directions.** `playerOutfit` (`description`/`removed`/`added`,
+  no `exposed`) rides the **shared continuity leg** — never the per-member personal pass,
+  where several ensemble members would each propose changes to the one player's clothes.
+  The archivist reads the whole exchange, so the player writing "I pull my shirt off" and
+  the character doing it are the same event to it. `foldPlayerOutfitProposal` reuses
+  `applyWornGarmentChanges` verbatim against the **persona's** preset pool.
+- **Switching persona resets the wardrobe** (`seeded: false`) — the worn list described the
+  person who was wearing it.
+
 
 ## Scene memory
 
@@ -317,4 +345,3 @@ an optional `revealBand`), seeded into `character_chat_state.drives` (migration
   picker on secrets). Forge-the-rest fills drives **additively up to the 3-cap**
   (ruled — authored drives never change); a Disposition re-draft re-derives them
   wholesale ([authoring.md](../authoring.md) §Character sheet forge).
-

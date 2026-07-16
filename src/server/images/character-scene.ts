@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
-import { resolveAttributes } from "@/contracts/attributes/value";
+import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
@@ -59,7 +59,16 @@ export interface RenderCharacterSceneInput {
   outfitExposed?: boolean;
   /** Coverage-computed per-region exposure (chat-wardrobe-parity); overrides the boolean flag. */
   exposure?: RegionExposure;
-  /** Live chat meters — fold a visible-state note (flushed/tipsy/disheveled/tired) into the shot (D4). */
+  /**
+   * The PLAYER's coverage, from their persona's worn items (persona-library slice 8) — the
+   * gate on whether the viewer's own anatomy may enter frame. Absent ⇒ covered ⇒ shut.
+   */
+  playerExposure?: RegionExposure;
+  /** The persona's resolved attributes — the viewer's own body facts (slice 4). */
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  /** The persona adapted to a character profile — realized-body applicability for the above. */
+  playerProfile?: CharacterProfile;
+  /** Live chat meters — fold a visible-state note (unsteady/disheveled/tired/breathless) into the shot (D4). */
   meters?: Record<string, number>;
   /** Active conditions — overlay grooming/scent/hair so a "disheveled" character renders that way (D4). */
   conditions?: ActiveCondition[];
@@ -102,20 +111,26 @@ export interface RenderCharacterSceneInput {
  * §8): the meters with a visual signature, in image-appropriate wording (the narrator-facing
  * threshold hints are behavioral, so this is a separate, render-tuned mapping). "" when the
  * character reads rested and presentable. Mood/affect ride the avatar reference, not this note.
+ *
+ * **No skin-colour words** (scene-pov-embodiment.plan.md slice 0, owner report): "flushed" /
+ * "blushing" / "rosy" render as stage blusher — a clown-makeup face, not a body state. Every
+ * phrase here states physiology the model paints as physiology instead: eyes, breath, sweat,
+ * posture, hair. `scrubBlush` (images/prompts.ts) is the backstop for the LLM-authored text
+ * this note sits beside; keep the two in agreement.
  */
 export function visualStateNote(meters: Record<string, number> = {}): string {
   const parts: string[] = [];
   const intoxication = meters.intoxication ?? 0;
-  if (intoxication > 0.7) parts.push("flushed and visibly unsteady from drink");
-  else if (intoxication > 0.35) parts.push("lightly flushed and loose from a drink or two");
+  if (intoxication > 0.7) parts.push("visibly unsteady from drink, eyes glassy and unfocused, posture slack");
+  else if (intoxication > 0.35) parts.push("loose and warm from a drink or two, gaze a little unfocused");
   const hygiene = meters.hygiene ?? 1;
   if (hygiene < 0.3) parts.push("unwashed — hair gone lank, skin sheened, clothes rumpled");
-  else if (hygiene < 0.55) parts.push("a little disheveled, hair loosened and skin warm");
+  else if (hygiene < 0.55) parts.push("a little disheveled, hair loosened and skin damp");
   const energy = meters.energy ?? 1;
   if (energy < 0.2) parts.push("exhausted and heavy-lidded");
   else if (energy < 0.45) parts.push("tired, eyes heavy");
   const arousal = meters.arousal ?? 0;
-  if (arousal > 0.55) parts.push("flushed, eyes bright and breath shallow");
+  if (arousal > 0.55) parts.push("eyes bright and heavy-lidded, lips parted, breath shallow, a faint sheen of sweat");
   return parts.join("; ");
 }
 
@@ -137,6 +152,10 @@ export function buildCharacterSceneContext(input: {
   outfitExposed: boolean;
   /** Coverage-computed exposure (chat-wardrobe-parity); overrides the boolean flag when present. */
   exposure?: RegionExposure;
+  /** The PLAYER's coverage — gates whether their own anatomy may render (scene-pov-embodiment). */
+  playerExposure?: RegionExposure;
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  playerProfile?: CharacterProfile;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
 }): SceneComposerContext {
@@ -177,6 +196,25 @@ export function buildCharacterSceneContext(input: {
     locationDescription: input.room,
     timeOfDay: input.timeOfDay?.trim() || "day",
     recentNarration: input.recentChat,
+    // The chat lane is the iteration ground for image-prompt tuning, so embodied POV lands
+    // here first (scene-pov-embodiment.plan.md §Lane scope) — the session lane keeps the
+    // absolute player-is-invisible rule and its tests.
+    embodiedViewer: true,
+    ...(input.playerExposure ? { playerExposure: input.playerExposure } : {}),
+    ...(input.playerAttributes ? { playerAttributes: input.playerAttributes } : {}),
+    ...(input.playerProfile ? { playerProfile: input.playerProfile } : {}),
+    // The viewer's intimate anatomy, exposure-gated exactly like the character's — the
+    // render only emits it on an uncensored route AND when a gated part survived.
+    ...(input.playerProfile && input.playerExposure
+      ? {
+          playerIntimateAppearance: sceneRevealAppearance(
+            resolveAttributes(input.playerProfile.attributes, []),
+            input.playerExposure,
+            input.playerProfile,
+            { intimate: true },
+          ),
+        }
+      : {}),
   };
 }
 
@@ -235,6 +273,9 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     outfit: input.outfit ?? "",
     outfitExposed: input.outfitExposed ?? false,
     exposure: input.exposure,
+    playerExposure: input.playerExposure,
+    playerAttributes: input.playerAttributes,
+    playerProfile: input.playerProfile,
     meters: input.meters,
     conditions: input.conditions,
   });

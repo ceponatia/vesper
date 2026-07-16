@@ -21,12 +21,17 @@ import {
   type ChatSkipAmount,
   DEFAULT_AVATAR_IMAGE_MODEL,
   type AvatarImageModel,
+  type ChatPlayerState,
   type ChatSceneModel,
   characterProfileSchema,
+  chatPlayerStateSchema,
   emptyCharacterProfile,
+  emptyChatPlayerState,
   emptyItemDefinition,
+  emptyPersonaProfile,
   emptyWorldLore,
   emptyWorldStyle,
+  personaProfileSchema,
   diagnosticSchema,
   emotionLabelSchema,
   itemDefinitionSchema,
@@ -212,7 +217,7 @@ export const createdRefSchema = z.preprocess((raw) => {
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
     if (typeof obj.id === "string") return { id: obj.id };
-    for (const key of ["session", "world", "character", "location", "item", "socialCard", "draft"]) {
+    for (const key of ["session", "world", "character", "location", "item", "socialCard", "persona", "draft"]) {
       const inner = obj[key];
       if (inner && typeof inner === "object" && typeof (inner as Record<string, unknown>).id === "string") {
         return { id: (inner as Record<string, unknown>).id };
@@ -275,6 +280,26 @@ export const characterDetailSchema = characterSummarySchema.extend({
   mine: z.boolean().catch(true),
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
+
+/**
+ * A persona library card (persona-library.plan.md). `title` is the per-owner-unique
+ * label the card shows and the owner searches by; `name` is the in-fiction name a
+ * character addresses — which is why the two are separate and why `name` may repeat.
+ */
+export const personaSummarySchema = z.object({
+  id: idSchema,
+  title: nameSchema,
+  name: nameSchema,
+  tags: tagsSchema,
+  avatarImageId: optionalId,
+  updatedAt: optionalText,
+});
+export type PersonaSummary = z.infer<typeof personaSummarySchema>;
+
+export const personaDetailSchema = personaSummarySchema.extend({
+  profile: personaProfileSchema.catch(() => emptyPersonaProfile()),
+});
+export type PersonaDetail = z.infer<typeof personaDetailSchema>;
 
 /** One line of a conversation transcript (docs/developer-notes/character-chat-standalone.spec.md). */
 /** Alternate generations browsable on an assistant reply (character-chat-standalone.spec.md §4.1). */
@@ -352,6 +377,8 @@ export const chatStateSnapshotSchema = z.object({
   // Rendered garment phrase (worn items + overlay) for the read-only strip chip.
   outfitLabel: textOr(""),
   outfitExposed: z.boolean().catch(false),
+  /** Who the player is here + what they're wearing (persona-library.plan.md) — chat-wide. */
+  playerState: chatPlayerStateSchema.catch(() => emptyChatPlayerState()),
   activeSocialCards: z.array(socialReactionCardSchema).catch([]),
   // Meter bands last surfaced as a "just shifted" beat (character-chat-state-narration.spec.md
   // §5) — for the state-tools "State → narration" debug readout.
@@ -412,6 +439,8 @@ export interface ChatStateEdit {
   outfitPresetId?: string;
   outfit?: string;
   outfitExposed?: boolean;
+  /** Who the player is here + what they're wearing — the "Playing as" pick. */
+  playerState?: ChatPlayerState;
   activeSocialCards?: SocialReactionCard[];
   openLoops?: string[];
   memoryQueries?: string[];
@@ -1431,6 +1460,18 @@ export const socialCardsApi = {
   clone: (id: string) => apiPost(createdRefSchema, `/api/social-cards/${id}/clone`, {}),
 };
 
+/**
+ * Personas (persona-library.plan.md) — the player as a library entity. No `clone` and
+ * no `scope`: a persona is *you*, so there is no public tier to browse or copy from.
+ */
+export const personasApi = {
+  list: (params: ListParams = {}) => apiGet(listOf(personaSummarySchema, "personas"), withQuery("/api/personas", params)),
+  get: (id: string) => apiGet(detailOf(personaDetailSchema, "persona"), `/api/personas/${id}`),
+  create: (body: unknown) => apiPost(createdRefSchema, "/api/personas", body),
+  update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/personas/${id}`, body),
+  remove: (id: string) => apiDelete(`/api/personas/${id}`),
+};
+
 export const worldsApi = {
   list: (params: ListParams = {}) => apiGet(listOf(worldSummarySchema, "worlds"), withQuery("/api/worlds", params)),
   get: (id: string) => apiGet(detailOf(worldDetailSchema, "world"), `/api/worlds/${id}`),
@@ -1464,32 +1505,22 @@ export const worldsApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Account / default player character (player-character.plan.md)
+// Account / default persona (persona-library.plan.md slice 6)
 // ---------------------------------------------------------------------------
 
-export const playerPersonaClientSchema = z.object({
-  /** Display name; absent ⇒ the character falls back to the account name. */
-  name: z.string().min(1).optional().catch(undefined),
-  persona: textOr(""),
-});
-export type PlayerPersonaClient = z.infer<typeof playerPersonaClientSchema>;
-
 export const meSchema = z.object({
-  /** The account display name — the form's placeholder + the name fallback. */
+  /** The account display name — the resolver's last rung before FALLBACK_PLAYER_NAME. */
   accountName: textOr(""),
-  playerPersona: playerPersonaClientSchema.catch(() => ({ persona: "" })),
+  /** Which persona new chats start as; null ⇒ none picked (chats fall back to the account name). */
+  defaultPersonaId: optionalId,
 });
 export type Me = z.infer<typeof meSchema>;
 
 export const meApi = {
   get: () => apiGet(meSchema, "/api/users/me"),
-  /** Replace the default player character persona (the settings form sends both fields). */
-  updatePersona: (playerPersona: { name?: string; persona: string }) =>
-    apiPatch(
-      z.object({ playerPersona: playerPersonaClientSchema.catch(() => ({ persona: "" })) }),
-      "/api/users/me",
-      { playerPersona },
-    ),
+  /** Set (or clear, with null) the persona new chats start as. */
+  setDefaultPersona: (defaultPersonaId: string | null) =>
+    apiPatch(z.object({ defaultPersonaId: optionalId }), "/api/users/me", { defaultPersonaId }),
 };
 
 // Type alias (not interface) so it satisfies withQuery's index signature.

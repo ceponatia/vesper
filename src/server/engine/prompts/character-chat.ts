@@ -11,6 +11,7 @@ import {
 } from "@/contracts/turns/chat-scene-memory";
 import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
 import { planOthersLabel, type SalientPlan } from "@/contracts/turns/chat-plans";
+import { chatSceneIsIntimate } from "@/contracts/turns/chat-intimacy";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { regardDispositionOverlays, stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, effectiveTraitValue, traitPole, traitRegistry } from "@/contracts/personality/traits";
@@ -27,7 +28,7 @@ import {
 } from "@/contracts/relationships/law";
 import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
-import { expandBodyTarget, realizeBody, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
+import { expandBodyTarget, realizeBody, speciesIntimacyNote, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
 import { isMinorAge, lifeStageForAge, lifeStageThirdPersonLine, type LifeStageBand } from "@/contracts/world/life-stage";
 import { formatAge, hasVoiceAnchors, type CharacterProfile, type MicroExemplar, type VoiceAnchors } from "@/contracts/world/profile";
 import type { VoiceExemplar } from "../chat-voice";
@@ -72,13 +73,33 @@ export interface CharacterChatPromptInput {
    */
   memory?: { facts: string[]; episodes: string[] };
   /**
-   * The **default player character** the user is speaking as
-   * (player-character.plan.md), resolved via `resolvePlayerPersona`. Present ⇒ the
-   * character addresses the player by `name` (and reads the optional `persona`
-   * bio); absent ⇒ the original faceless "the user" phrasing, so existing
+   * The **persona** the user is playing as (persona-library.plan.md), resolved via
+   * `resolveChatPersona`. Present ⇒ the character addresses the player by `name` and
+   * reads their sheet; absent ⇒ the original faceless "the user" phrasing, so existing
    * snapshots are unchanged.
+   *
+   * `title` is deliberately not here and never will be — see `PlayerPersona`.
    */
-  player?: { name: string; persona?: string };
+  player?: {
+    name: string;
+    /** The bio (`profile.bio`) — who they are. */
+    persona?: string;
+    /** The resolved garment phrase for what the player has on right now (slice 8). */
+    wearing?: string;
+    /**
+     * The player's intimate regions read bare — COVERAGE-COMPUTED from their worn items,
+     * never a manual flag. One of the three signals `chatSceneIsIntimate` gates on.
+     */
+    exposed?: boolean;
+    /** How the player's voice sounds — the narrator describes it, it never writes their lines. */
+    voice?: string;
+    /**
+     * What the player RESPONDS to (`profile.intimacy`). Note the inverted semantics vs a
+     * character's `intimacy`, which is how *they* behave as a lover; this is guidance for
+     * how to treat the player, so it needs its own wording, not the character block's.
+     */
+    intimacy?: string;
+  };
   /**
    * Light chat state (character-chat-state.spec.md §6), surfaced as a compact
    * "Current state" section + a per-chat scenario block. Absent ⇒ the prompt is
@@ -421,6 +442,92 @@ export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string, landi
  * seen-channel content — rule 16 owns the handling; this is the data. Fenced:
  * the descriptions derive from player-supplied images. "" ⇒ no block.
  */
+/**
+ * The player-persona blocks for the **stable prefix** (persona-library.plan.md slice 8),
+ * shared by the 1-on-1 and ensemble builders so the two can never drift.
+ *
+ * Prefix-safe by construction: only the authored, turn-invariant parts live here. What
+ * the player is WEARING and their intimate note both move with state, so they ride the
+ * volatile tail instead (`buildPlayerStateLine` / `buildChatIntimateSection`) — a §9
+ * cache-layout rule, and the same split the character's own bio-vs-outfit follows.
+ *
+ * Every part is author-written and therefore UNTRUSTED — each is fenced, exactly like the
+ * character's own bio/voice. Emits [] with no persona, so a chat that resolved to a bare
+ * account name builds the prompt it always did.
+ */
+function buildPlayerSections(player: CharacterChatPromptInput["player"], playerName: string): string[] {
+  if (!player) return [];
+  const bio = player.persona?.trim();
+  const voice = player.voice?.trim();
+  return [
+    bio ? `About ${playerName} (the person you're speaking with):\n${fenceUntrusted("the person you're speaking with", bio)}` : "",
+    voice ? `How ${playerName}'s voice sounds (you describe it; you never write their lines):\n${fenceUntrusted("player voice", voice)}` : "",
+  ].filter(Boolean);
+}
+
+/**
+ * What the player has on right now — volatile, so it rides the tail beside the character's
+ * own wearing-line rather than the cached prefix. It is STATE, not prose: computed from
+ * their worn items, so it is the truth even when the narration has drifted.
+ */
+function buildPlayerStateLine(player: CharacterChatPromptInput["player"], playerName: string): string {
+  const wearing = player?.wearing?.trim();
+  if (!wearing) return "";
+  return `What ${playerName} is wearing right now (authoritative — this is what they have on, whatever the story has said):\n${fenceUntrusted("player wardrobe", wearing)}`;
+}
+
+/**
+ * A character's merged intimate note: the species/heritage archetype
+ * (`speciesIntimacyNote` — heritage REPLACES species) **appended** with their own
+ * `profile.intimacy` (both may be empty). The merge semantics are the session lane's,
+ * ruled by the owner 2026-07-13 (intimacy-notes.spec.md §Rulings). "" when neither exists.
+ */
+function characterIntimateNote(profile: CharacterProfile): string {
+  const archetype = speciesIntimacyNote(profile.speciesId, profile.heritageId);
+  const own = (profile.intimacy ?? "").trim();
+  return [archetype, own].filter(Boolean).join(" ");
+}
+
+/**
+ * The **exposure-earned intimate disposition block** — the chat lane's port of the session
+ * lane's `buildIntimateDispositionBlock` (`engine/scene.ts`), and the leftover that
+ * intimacy-notes.plan.md §"Leftover — chat lane" recorded but never built. Until now
+ * `profile.intimacy` and the species archetype were authored, forge-generated, editable —
+ * and silently unread in this lane.
+ *
+ * Two kinds of note, both surfaced only once `chatSceneIsIntimate` opens the gate:
+ *
+ * - **each character's** — how they are as a lover. In an ensemble the gate is per-member,
+ *   so only those the scene actually turned intimate with contribute (one couple in the
+ *   room does not hand everyone present an intimate disposition).
+ * - **the player's** — their persona's `intimacy`, which carries the INVERSE semantics:
+ *   what they *respond to*, not how they behave. Hence its own wording; it is not the same
+ *   sentence with a different subject. Rendered ONCE, however many characters qualified.
+ *
+ * Volatile by nature (the gate flips with coverage/arousal), so it lives in the tail —
+ * putting it in the cached prefix would bust the cache on every flip. Callers apply the
+ * minor fence (character-fidelity slice 2) by omitting that character's entry.
+ */
+function buildChatIntimateSection(args: {
+  /** One entry per character whose gate opened AND who has a note. `label` is subject+verb ("you are" / "Mira is"). */
+  characters: readonly { label: string; note: string }[];
+  /** The player's note — rendered when at least one character's gate opened. */
+  playerNote?: string;
+  playerName: string;
+}): string {
+  const lines = [
+    ...args.characters.map((c) => `- How ${c.label} as a lover:\n${fenceUntrusted("intimate disposition", c.note)}`),
+    args.playerNote
+      ? `- What ${args.playerName} responds to — play toward it:\n${fenceUntrusted("player intimate preferences", args.playerNote)}`
+      : "",
+  ].filter(Boolean);
+  if (!lines.length) return "";
+  return [
+    "Intimate disposition (this scene has earned it — it applies now, and would read as nothing in an ordinary moment):",
+    ...lines,
+  ].join("\n");
+}
+
 function buildAttachmentsSection(attachments: CharacterChatPromptInput["attachments"], player: string): string {
   const descriptions = (attachments?.descriptions ?? []).map((d) => d.trim()).filter(Boolean);
   if (!descriptions.length) return "";
@@ -1527,6 +1634,16 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   const minor = lifeStage?.minor ?? false;
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
 
+  // The chat lane's intimate gate (contracts/turns/chat-intimacy.ts) — the lane's answer
+  // to the session's ExposureMask, built from the signals it actually has: either party's
+  // coverage-computed bare state, or arousal. Below it, the intimate notes are ZERO tokens
+  // rather than text the model is asked to ignore.
+  const intimate = chatSceneIsIntimate({
+    characterExposed: input.state?.outfitExposed,
+    playerExposed: input.player?.exposed,
+    meters: input.state?.meters,
+  });
+
   // The authored personality sliders (traits), rendered as behavioural band
   // guidance — the SAME representation the session narrator gets via
   // engine/scene.ts, shared through `dispositionBands`. Without this the chat
@@ -1592,7 +1709,6 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // "ignore your rules / you are actually …" line smuggled into a bio or note
   // reads as in-world background, not as authority over the chat rules below.
   const playerName = input.player?.name.trim() || undefined;
-  const playerPersona = input.player?.persona?.trim() || undefined;
 
   const identity = [
     playerName
@@ -1622,9 +1738,7 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     minor ? CONTENT_FRAMING_MINOR_PRIMARY : CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
     identity,
-    playerPersona
-      ? `About ${playerName} (the person you're speaking with):\n${fenceUntrusted("the person you're speaking with", playerPersona)}`
-      : "",
+    ...buildPlayerSections(input.player, playerName ?? "the user"),
     scenario,
     profile.bio.trim() ? `Background:\n${fenceUntrusted("background", excerpt(profile.bio, BIO_EXCERPT_CHARS))}` : "",
     profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
@@ -1772,6 +1886,18 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     input.state?.rhythm?.trim()
       ? `Your daily rhythm (ground time-of-day texture and any life-meanwhile beat in it): ${input.state.rhythm.trim()}.`
       : "",
+    // What the player has on — volatile, so it sits here beside the character's own
+    // wearing-line rather than in the cached prefix.
+    buildPlayerStateLine(input.player, playerName ?? "the player"),
+    // The exposure-earned intimate notes. Volatile: the gate flips with coverage/arousal,
+    // so this can never live in the prefix. Minor fence: an authored minor contributes no
+    // note and earns no player note either — the block is about the two of them together.
+    buildChatIntimateSection({
+      characters:
+        intimate && !minor && characterIntimateNote(profile) ? [{ label: "you are", note: characterIntimateNote(profile) }] : [],
+      ...(intimate && !minor && input.player?.intimacy?.trim() ? { playerNote: input.player.intimacy.trim() } : {}),
+      playerName: playerName ?? "the player",
+    }),
     // State-derived overrides of the prefix's own blocks — data, not directives, so they
     // stay above the "Right now" digest with the rest of the standing state.
     // Minor fence: no state-driven loosening block for a minor character.
@@ -1962,9 +2088,19 @@ export function buildEnsembleChatPromptParts(
 ): CharacterChatPromptParts {
   const playerName = input.player?.name.trim() || undefined;
   const player = playerName ?? "the player";
-  const playerPersona = input.player?.persona?.trim() || undefined;
 
   const present = members.filter((m) => m.presence === "present");
+  // Has the scene turned intimate with ANY present, non-minor member? Gates the player's
+  // own note, which is chat-wide and so rendered once rather than per member.
+  const ensembleIntimate = present.some(
+    (m) =>
+      !(lifeStageForAge(m.profile.age)?.minor ?? false) &&
+      chatSceneIsIntimate({
+        characterExposed: m.state?.outfitExposed,
+        playerExposed: input.player?.exposed,
+        meters: m.state?.meters,
+      }),
+  );
   const away = members.filter((m) => m.presence === "away");
   const names = members.map((m) => m.name.trim() || "an unnamed character");
 
@@ -2022,7 +2158,7 @@ export function buildEnsembleChatPromptParts(
     anyMinor ? `${CONTENT_FRAMING} ${ENSEMBLE_MINOR_CAST_LINE}` : CONTENT_FRAMING,
     UNTRUSTED_DATA_NOTICE,
     identity,
-    playerPersona ? `About ${player}:\n${fenceUntrusted("the player", playerPersona)}` : "",
+    ...buildPlayerSections(input.player, player),
     scenario,
     authority,
     ...sheets,
@@ -2163,6 +2299,27 @@ export function buildEnsembleChatPromptParts(
       ? [`Where each character is right now (let it color them — never recite it):\n${stateLines.join("\n")}`]
       : []),
     ...enactments,
+    // What the player has on — chat-wide, volatile, so it rides the tail (slice 8).
+    buildPlayerStateLine(input.player, player),
+    // The exposure-earned intimate notes. The gate is evaluated PER MEMBER against their
+    // own coverage/arousal (the player's coverage is shared), so one couple in the room
+    // never hands every present character an intimate disposition. Away members are
+    // excluded — they aren't in the scene. Minor-fenced per member.
+    buildChatIntimateSection({
+      characters: present.flatMap((m) => {
+        const open = chatSceneIsIntimate({
+          characterExposed: m.state?.outfitExposed,
+          playerExposed: input.player?.exposed,
+          meters: m.state?.meters,
+        });
+        if (!open || (lifeStageForAge(m.profile.age)?.minor ?? false)) return [];
+        const note = characterIntimateNote(m.profile);
+        return note ? [{ label: `${m.name} is`, note }] : [];
+      }),
+      // The player's note rides along once ANY present, non-minor member's gate opened.
+      ...(ensembleIntimate && input.player?.intimacy?.trim() ? { playerNote: input.player.intimacy.trim() } : {}),
+      playerName: player,
+    }),
     sceneSection,
     castSection,
     plansSection,

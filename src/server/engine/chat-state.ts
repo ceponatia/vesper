@@ -14,6 +14,7 @@ import {
   CHAT_ARCHIVIST_MAX_OPEN_LOOPS,
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
+  chatPlayerStateSchema,
   chatPulseTraceSchema,
   chatSceneMemorySchema,
   currentScenePlace,
@@ -22,6 +23,7 @@ import {
   degradedChatPulse,
   deriveExchangeMilestones,
   emptyChatMemoryTrace,
+  emptyChatPlayerState,
   emptyChatSceneMemory,
   emptySupportingCast,
   mergeSupportingCast,
@@ -78,9 +80,11 @@ import {
   type CharacterProfile,
   type ChatMemoryTrace,
   type ChatPersonalNotes,
+  type ChatPlayerState,
   type ChatPulse,
   type ChatPulseTrace,
   type ChatSceneMemory,
+  type PersonaProfile,
   type ChatDrive,
   type ChatSkipAmount,
   type DiagnosticSink,
@@ -109,7 +113,7 @@ import { newId } from "@/lib/ids";
 import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/turns/agent-failure";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
-import { healOutfitMarker, loadChatWardrobe, wardrobeDescriptors } from "./chat-wardrobe";
+import { healOutfitMarker, loadChatWardrobe, playerWornIds, wardrobeDescriptors } from "./chat-wardrobe";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
 import {
   applyFeelingProposal,
@@ -169,6 +173,15 @@ export interface ChatScenario {
   sceneAuto: string;
   sceneModel: string;
   sceneMemory: ChatSceneMemory;
+  /**
+   * Who the PLAYER is in this conversation, and what they're wearing
+   * (persona-library.plan.md slices 7–8). It lives on the scenario — not on the
+   * per-character `ChatState` — because there is one player and many roster
+   * characters, and because the scenario IS the "another take" rollback snapshot
+   * (`pre_exchange_scenario`): riding it means a discarded reply can't leave the
+   * player undressed by a beat that no longer exists.
+   */
+  playerState: ChatPlayerState;
   /** Recurring named side characters (chat-supporting-cast.plan.md) — one cast for the roster. */
   supportingCast: SupportingCast;
   /** Tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
@@ -334,6 +347,8 @@ export interface ChatStateSnapshot {
   outfitLabel: string;
   /** Manual intimate-reveal flag (free-text path); computed from coverage when items are worn. */
   outfitExposed: boolean;
+  /** Who the player is here + what they're wearing (persona-library.plan.md) — chat-wide. */
+  playerState: ChatPlayerState;
   /** The cards live in THIS chat (editable in the scenario modal). */
   activeSocialCards: SocialReactionCard[];
   /** Meter bands last surfaced as a "just shifted" beat (§5) — for the state-tools debug view. */
@@ -509,6 +524,7 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     sceneAuto: "off",
     sceneModel: "reference",
     sceneMemory: emptyChatSceneMemory(),
+    playerState: emptyChatPlayerState(),
     supportingCast: emptySupportingCast(),
     plans: emptyChatPlans(),
     clockMinutes: 0,
@@ -527,6 +543,7 @@ const chatScenarioSchema = z.object({
   sceneAuto: z.string().catch("off").default("off"),
   sceneModel: z.string().catch("reference").default("reference"),
   sceneMemory: chatSceneMemorySchema.catch(emptyChatSceneMemory()).default(emptyChatSceneMemory()),
+  playerState: chatPlayerStateSchema.catch(emptyChatPlayerState()).default(emptyChatPlayerState()),
   supportingCast: supportingCastSchema.catch([]).default([]),
   plans: chatPlansSchema.catch([]).default([]),
   clockMinutes: z.number().catch(0).default(0),
@@ -546,6 +563,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       sceneAuto: characterChats.sceneAuto,
       sceneModel: characterChats.sceneModel,
       sceneMemory: characterChats.sceneMemory,
+      playerState: characterChats.playerState,
       supportingCast: characterChats.supportingCast,
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
@@ -565,6 +583,7 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     sceneAuto: row.sceneAuto,
     sceneModel: row.sceneModel,
     sceneMemory: parseOr(chatSceneMemorySchema, row.sceneMemory, emptyChatSceneMemory(), sink, "character_chats.scene_memory"),
+    playerState: parseOr(chatPlayerStateSchema, row.playerState, emptyChatPlayerState(), sink, "character_chats.player_state"),
     supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
     plans: parseOr(chatPlansSchema, row.plans, [], sink, "character_chats.plans"),
     clockMinutes: row.clockMinutes,
@@ -592,6 +611,7 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       scene_auto = ${scenario.sceneAuto},
       scene_model = ${scenario.sceneModel},
       scene_memory = ${JSON.stringify(scenario.sceneMemory)}::jsonb,
+      player_state = ${JSON.stringify(scenario.playerState)}::jsonb,
       supporting_cast = ${JSON.stringify(scenario.supportingCast)}::jsonb,
       plans = ${JSON.stringify(scenario.plans)}::jsonb,
       clock_minutes = ${scenario.clockMinutes},
@@ -1360,6 +1380,13 @@ interface OutfitProposal {
   added: readonly string[];
 }
 
+/** The player's outfit proposal (persona-library slice 8) — the same, minus `exposed` (always computed). */
+interface PlayerOutfitProposal {
+  description: string;
+  removed: readonly string[];
+  added: readonly string[];
+}
+
 /**
  * Fold an archivist outfit proposal into a structured-wardrobe state patch (chat-wardrobe-parity).
  * Three cases, all rollback-safe (the patched columns ride `storedChatStateSchema`):
@@ -1383,7 +1410,9 @@ async function foldOutfitProposal(args: {
   if (proposal.description) {
     const preset = matchOutfitPresetInText(args.profile, proposal.description);
     if (preset && preset.items.length > 0) {
-      return { wornItemIds: preset.items, outfitPresetId: preset.id, outfit: "", outfitExposed: false };
+      // Copied, not aliased: this becomes the chat's mutable worn list, and the preset's
+      // array belongs to the library profile (found via the player twin's test).
+      return { wornItemIds: [...preset.items], outfitPresetId: preset.id, outfit: "", outfitExposed: false };
     }
     // No matching preset — an ad-hoc whole look falls back to free text (ruled).
     return { wornItemIds: [], outfitPresetId: "", outfit: proposal.description, outfitExposed: proposal.exposed };
@@ -1404,6 +1433,60 @@ async function foldOutfitProposal(args: {
     sink: args.sink,
   });
   return { wornItemIds: result.wornIds, outfit: result.overlay };
+}
+
+/**
+ * The same fold for the **PLAYER's** clothing (persona-library.plan.md slice 8) — "she
+ * tugs your shirt over your head" is a state change, not just prose.
+ *
+ * Reuses `applyWornGarmentChanges` verbatim: the reducer is already generic over
+ * `{wornIds, worn, pool}` and knows nothing about characters, so the player needs no
+ * fork of the matching rules, the caps, or the unmatched-garment diagnostics.
+ *
+ * Three differences from the character twin above:
+ * - The pool is the **persona's** wardrobe, and "what's on now" comes from
+ *   `playerWornIds` — so a first-ever change resolves against the default preset the
+ *   player is implicitly wearing rather than an empty list.
+ * - Every write sets `seeded: true`: once the fiction has moved the wardrobe, an empty
+ *   list means *stripped*, not *not-dressed-yet*.
+ * - No `exposed` — the player's exposure is always computed from coverage.
+ *
+ * Returns `{}` (no change) for an empty proposal or when there is no persona to dress.
+ */
+async function foldPlayerOutfitProposal(args: {
+  persona: PersonaProfile | undefined;
+  ownerId: string;
+  playerState: ChatPlayerState;
+  proposal: PlayerOutfitProposal | undefined;
+  sink?: DiagnosticSink;
+}): Promise<Partial<ChatPlayerState>> {
+  const { proposal, persona } = args;
+  if (!proposal || !persona) return {};
+  if (proposal.description) {
+    const preset = matchOutfitPresetInText(persona, proposal.description);
+    if (preset && preset.items.length > 0) {
+      return { wornItemIds: [...preset.items], outfitPresetId: preset.id, overlay: "", seeded: true };
+    }
+    // No matching preset — an ad-hoc whole look rides the overlay text (the ruling the
+    // character path follows), and clears the structured list it replaces.
+    return { wornItemIds: [], outfitPresetId: "", overlay: proposal.description, seeded: true };
+  }
+  if (proposal.removed.length === 0 && proposal.added.length === 0) return {};
+
+  // What the player has on RIGHT NOW — the default preset until something has changed it.
+  const wornIds = playerWornIds(args.playerState, persona);
+  const worn = await loadChatWardrobe(args.ownerId, wornIds, args.sink);
+  const poolIds = [...new Set(persona.outfits.flatMap((p) => p.items))].filter((id) => !wornIds.includes(id));
+  const pool = poolIds.length ? await loadChatWardrobe(args.ownerId, poolIds, args.sink) : [];
+  const result = applyWornGarmentChanges({
+    wornIds,
+    worn: wardrobeDescriptors(worn),
+    pool: wardrobeDescriptors(pool),
+    change: { removed: proposal.removed, added: proposal.added },
+    overlay: args.playerState.overlay,
+    sink: args.sink,
+  });
+  return { wornItemIds: result.wornIds, overlay: result.overlay, seeded: true };
 }
 
 /**
@@ -1446,6 +1529,13 @@ export async function finalizeChatState(input: {
   profile: CharacterProfile;
   characterName: string;
   playerName: string;
+  /**
+   * The player's persona sheet (persona-library.plan.md slice 8) — the wardrobe pool the
+   * archivist's `playerOutfit` deltas resolve against. Absent when the chat resolved to
+   * the bare account name (no persona), in which case the player has no clothes to move
+   * and the fold is a no-op.
+   */
+  playerPersona?: PersonaProfile;
   driftedState: ChatState;
   now: Date;
   exchange: { player: string; assistant: string };
@@ -1695,6 +1785,18 @@ export async function finalizeChatState(input: {
     sink: input.sink,
   });
 
+  // The PLAYER's clothing (persona-library.plan.md slice 8) — the same fold against the
+  // persona's wardrobe. Chat-wide, so it lands on the scenario (and therefore on the
+  // "another take" rollback snapshot) rather than the per-character state row. No
+  // persona ⇒ no body to dress ⇒ a no-op.
+  const playerOutfitPatch = await foldPlayerOutfitProposal({
+    persona: input.playerPersona,
+    ownerId: input.ownerId,
+    playerState: input.scenario.playerState,
+    proposal: archivist.value?.playerOutfit,
+    sink: input.sink,
+  });
+
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
   // exchange (bounded by the acquainted ceiling), plus a moment tick when the
   // archivist recorded durable facts — a real disclosure or shared experience.
@@ -1861,7 +1963,15 @@ export async function finalizeChatState(input: {
     input.chatId,
     // Both one-shot notes clear together: the exchange that rendered the skip
     // note also rendered the meanwhile note (chat-offscreen-life).
-    { ...input.scenario, sceneMemory, supportingCast, plans, pendingSkipNote: "", pendingMeanwhileNote: "" },
+    {
+      ...input.scenario,
+      sceneMemory,
+      supportingCast,
+      plans,
+      playerState: { ...input.scenario.playerState, ...playerOutfitPatch },
+      pendingSkipNote: "",
+      pendingMeanwhileNote: "",
+    },
     input.promptMessageId,
   );
   // The rollback anchors ride targeted follow-up UPDATEs (never the shared upsert
@@ -2143,6 +2253,8 @@ export interface ChatStateEdit {
   sceneModel?: string;
   /** Accumulating scene memory (current place / time of day / known places). */
   sceneMemory?: ChatSceneMemory;
+  /** Who the player is here + what they're wearing (chat-wide) — the "Playing as" pick and the equip surface. */
+  playerState?: ChatPlayerState;
   /** Recurring named side characters (chat-wide) — the Supporting Cast panel's whole-list save. */
   supportingCast?: SupportingCastMember[];
   /** Tracked plans & promises (chat-wide) — the Plans panel's whole-list save (chat-plans-promises.plan.md). */
@@ -2219,6 +2331,9 @@ export async function editChatState(args: {
   if (patch.sceneAuto !== undefined) nextScenario.sceneAuto = patch.sceneAuto;
   if (patch.sceneModel !== undefined) nextScenario.sceneModel = patch.sceneModel;
   if (patch.sceneMemory !== undefined) nextScenario.sceneMemory = patch.sceneMemory;
+  // Whole-object replacement through the boundary schema (healing + caps), like the
+  // supportingCast/plans edits below.
+  if (patch.playerState !== undefined) nextScenario.playerState = chatPlayerStateSchema.parse(patch.playerState);
   if (patch.supportingCast !== undefined) {
     // Whole-list replacement through the boundary schema (caps + dedupe + healing).
     nextScenario.supportingCast = supportingCastSchema.parse(patch.supportingCast);
@@ -2343,6 +2458,7 @@ export function chatStateSnapshot(
     // Default to the overlay text; the async state routes overwrite with the resolved garments.
     outfitLabel: state.outfit,
     outfitExposed: state.outfitExposed,
+    playerState: scenario.playerState,
     activeSocialCards: scenario.activeSocialCards,
     surfacedCues: state.surfacedCues,
     openLoops: state.openLoops,

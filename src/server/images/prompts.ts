@@ -6,6 +6,13 @@ import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
 import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
+import {
+  resolveViewerParts,
+  VIEWER_SKIN_ATTRIBUTE_IDS,
+  viewerBodyPartById,
+  type ViewerBodyPart,
+  type ViewerBodyPartId,
+} from "@/contracts/images/viewer-body";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
 /**
@@ -439,6 +446,13 @@ export const sceneSpecSchema = z.object({
   setting: z.string().default(""),
   lighting: z.string().default("soft natural light"),
   mood: z.string().default("calm"),
+  /**
+   * The viewer's own body parts in frame (scene-pov-embodiment.plan.md slice 3) — ids
+   * from the viewer-body registry. Lenient: unknown ids and anything proposed when the
+   * lane didn't ask for embodiment are clamped away in `resolveScenePlan`, so a confused
+   * composer degrades to today's disembodied shot rather than failing the render.
+   */
+  viewerBody: z.array(z.string()).catch([]).default([]),
 });
 
 export type SceneSpec = z.infer<typeof sceneSpecSchema>;
@@ -514,21 +528,82 @@ export interface SceneComposerContext {
   sceneSummary?: string;
   /** The last 1–2 turns' narration, oldest first. Budgeted by the prompt builder. */
   recentNarration?: ReadonlyArray<string>;
+  /**
+   * **Embodied POV** (scene-pov-embodiment.plan.md slice 3): may the viewer's own body
+   * enter frame? Set by the **chat lane only** — the session lane keeps the absolute
+   * player-is-invisible rule (and its tests), per the plan's lane scope. When false or
+   * absent the composer sees the original rules verbatim and `viewerBody` is clamped away,
+   * so the session prompt is byte-identical.
+   */
+  embodiedViewer?: boolean;
+  /**
+   * The PLAYER's coverage, computed from their worn items (persona-library slice 8). Rides
+   * through to the plan, where it gates whether the viewer's anatomy may render. The
+   * composer itself never sees it — this is the half of the decision that must not be a
+   * judgment call.
+   */
+  playerExposure?: RegionExposure;
+  /** The persona's resolved attributes — the viewer's own body facts (slice 4). */
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  /** The persona's profile, for realized-body applicability of those attributes. */
+  playerProfile?: CharacterProfile;
+  /** The viewer's exposure-gated intimate anatomy (uncensored route only). */
+  playerIntimateAppearance?: string;
 }
 
-export const SCENE_COMPOSER_SYSTEM = [
-  "You compose the visual spec for a scene image from roleplay session state.",
+/** The player-absence rules (session lane, and the chat lane before slice 3). */
+const COMPOSER_DISEMBODIED_RULES = [
   "The image is rendered from the player's first-person POV — shot through the player's own eyes. The player must NEVER appear in the image — no body, no face, no hands, and never a camera or held object in frame. Never describe the player or their clothing in any field.",
-  "Fill every field of the requested object. Rules:",
-  '- focalCharacter: exactly ONE name from the "Present characters" list — whoever the recent narration centers on. If the list is empty, leave it empty: a location-only shot is a valid image.',
-  '- others: any remaining names from the "Present characters" list that belong in frame, each with a short phrase for what they are doing. Never include the player or anyone not on the list — characters who are not in the room must not appear.',
-  "- pose and activity: what the focal character is doing right now, from the recent narration and their recorded activity. Pose is the body — stance, orientation, expression — in one compact phrase; activity is what they are doing in the scene. The two must not repeat each other's beats: state a facial expression ONCE, in pose (never a smile in pose and a laugh in activity — pick the single strongest beat).",
   '- Every pose/activity/action phrase must describe that character ALONE, paintable with no player in frame. Never mention the player or their body — "walking beside the player" or "a hand resting on his arm" cannot be painted. Translate player-directed beats into their solo visual equivalent: eyes or head turned toward the player become "toward the viewer"; touching, leading, or leaning on the player becomes the character\'s own posture and motion (a hand extended slightly, glancing back mid-step); keep the expression and energy, lose the contact. Example: narration "she leads you back toward the gallery, hand on your arm, laughing" → pose "glancing back toward the viewer, mid-laugh", activity "stepping toward the main gallery, heels clicking on the stone floor".',
-  '- Wardrobe: each character\'s "visible wardrobe" line is the authoritative outfit state; never infer clothing from the narration — prose lies.',
-  "- setting: the current location's appearance and atmosphere as seen from where the player stands.",
-  "- lighting and mood: match the time of day and the emotional tone of the recent narration.",
-  "- Keep each field to one or two short sentences.",
-].join("\n");
+] as const;
+
+/**
+ * The **embodied** rules (chat lane, slice 3) — the exact inversion of the two above.
+ * Contact beats stop being translated away and become a `viewerBody` part PLUS the
+ * character's half of the contact, which is the whole point: the fiction constantly puts
+ * the player's hands on someone and the image could never show it.
+ *
+ * `viewerBody` is deliberately a **short closed list** the composer picks from, not prose:
+ * the phrasing that stops a limb becoming a third person lives in the registry
+ * (`contracts/images/viewer-body.ts`), not in whatever the model felt like writing.
+ * **Genitals are absent from its vocabulary on purpose** — this composer runs on the
+ * moderation-prone tool model with `allowIntimate: false`, so intimate anatomy is derived
+ * at render assembly instead, exactly as `intimateSceneAppearance` always has been.
+ */
+const COMPOSER_EMBODIED_RULES = [
+  "The image is rendered from the player's first-person POV — shot through their own eyes, so their face and head are NEVER in frame. Their own hands, arms, lap or legs MAY enter the foreground when the scene actually puts them there — that is what `viewerBody` is for. Never describe the player's clothing, and never place the player as a person standing in the scene.",
+  '- viewerBody: which of the player\'s OWN body parts are in the shot, as a list of ids from exactly: "hands", "forearms", "lap_thighs", "legs_feet", "torso". Empty is the default and the common case — list a part ONLY when the recent narration puts it in the frame (her cheek against their palm → ["hands"]; her head resting in their lap → ["lap_thighs"]). Never list a part merely because the player has one, and never more than the beat needs.',
+  '- pose/activity may now name contact with the player, but ALWAYS from the character\'s side and only for a part you listed in viewerBody: "her hand closing over the viewer\'s forearm" is paintable when forearms is listed. Call them "the viewer", never "the player" and never "him"/"her". With viewerBody empty, translate contact away as before: eyes or head turned toward the player become "toward the viewer"; touching or leading becomes the character\'s own posture and motion (a hand extended, glancing back mid-step) — keep the expression and energy, lose the contact.',
+] as const;
+
+const composerRules = (embodied: boolean): readonly string[] => {
+  const [framing, contact] = embodied ? COMPOSER_EMBODIED_RULES : COMPOSER_DISEMBODIED_RULES;
+  return [
+    "You compose the visual spec for a scene image from roleplay session state.",
+    framing,
+    "Fill every field of the requested object. Rules:",
+    '- focalCharacter: exactly ONE name from the "Present characters" list — whoever the recent narration centers on. If the list is empty, leave it empty: a location-only shot is a valid image.',
+    '- others: any remaining names from the "Present characters" list that belong in frame, each with a short phrase for what they are doing. Never include the player or anyone not on the list — characters who are not in the room must not appear.',
+    "- pose and activity: what the focal character is doing right now, from the recent narration and their recorded activity. Pose is the body — stance, orientation, expression — in one compact phrase; activity is what they are doing in the scene. The two must not repeat each other's beats: state a facial expression ONCE, in pose (never a smile in pose and a laugh in activity — pick the single strongest beat).",
+    contact,
+    '- Wardrobe: each character\'s "visible wardrobe" line is the authoritative outfit state; never infer clothing from the narration — prose lies.',
+    "- setting: the current location's appearance and atmosphere as seen from where the player stands.",
+    "- lighting and mood: match the time of day and the emotional tone of the recent narration.",
+    '- NEVER describe skin colour or reddening in any field — no "flushed", "blushing", "rosy", "red-faced", "colour rising". An image model paints those as makeup, not feeling. State the same beat as physiology instead: eyes bright or heavy-lidded, lips parted, breath shallow, a sheen of sweat, damp hairline, loosened posture. The narration you are given WILL say "flushed" — translate it, never copy it.',
+    "- Keep each field to one or two short sentences.",
+  ];
+};
+
+/**
+ * The composer's system prompt. `embodied` opts into the viewer's-own-body rules — the
+ * **chat lane only** (scene-pov-embodiment.plan.md §Lane scope).
+ */
+export function sceneComposerSystem(embodied = false): string {
+  return composerRules(embodied).join("\n");
+}
+
+/** The disembodied system prompt — the session lane's, and every pre-slice-3 snapshot's. */
+export const SCENE_COMPOSER_SYSTEM = sceneComposerSystem(false);
 
 /** Recent-narration budget: the newest turn gets the larger excerpt. */
 export const RECENT_NARRATION_TURNS = 2;
@@ -696,6 +771,52 @@ export function identityAnchorSummary(
   return excerpt(parts.join("; "), IDENTITY_ANCHOR_CHARS);
 }
 
+/** Budget for the viewer's body line — it competes with everything else for Venice's 1500. */
+const VIEWER_BODY_CHARS = 200;
+
+/**
+ * The viewer's own body facts (scene-pov-embodiment.plan.md slice 4) — **only for the parts
+ * actually in frame**, so a shot of their hands on her cheek doesn't state their leg hair.
+ *
+ * Without this the viewer's arms change colour between shots, which reads as a different
+ * person reaching in — so `skin.tone`/`build.frame` ride any embodied shot
+ * (`VIEWER_SKIN_ATTRIBUTE_IDS`) and each part contributes its own descriptors on top.
+ * Attribute applicability is checked against the persona's realized body, exactly like every
+ * other prompt builder here, so a stale attribute can't leak.
+ *
+ * Intimate anatomy is deliberately NOT here: it rides `sceneRevealAppearance(…, {intimate})`
+ * on the uncensored route only, the same seam the character's has always used.
+ */
+export function viewerBodyAppearance(
+  attributes: ReadonlyArray<AttributeValue>,
+  parts: ReadonlyArray<ViewerBodyPart>,
+  profile?: CharacterProfile,
+): string {
+  if (parts.length === 0) return "";
+  const realizedBody = profile ? realizedBodyForProfile(profile) : undefined;
+  const byId = new Map(attributes.map((v) => [v.id, v]));
+  const wanted = [...VIEWER_SKIN_ATTRIBUTE_IDS, ...parts.flatMap((p) => p.attributeIds)];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const rawId of wanted) {
+    if (seen.has(rawId)) continue;
+    seen.add(rawId);
+    // The registry's id type is a `<category>.<name>` template union; the registry entries
+    // hold plain strings. Both lookups below tolerate a miss, which IS the "unknown ids are
+    // ignored" contract — and a test asserts every listed id is real, so a typo fails loudly
+    // in CI rather than silently describing nothing.
+    const id = rawId as AttributeValue["id"];
+    const value = byId.get(id);
+    if (!value) continue;
+    const def = attributeRegistry.byId(id);
+    if (!def || def.excludeFromPrompts) continue;
+    if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
+    const formatted = formatAttribute(def, value.value);
+    if (formatted) out.push(formatted);
+  }
+  return excerpt(out.join("; "), VIEWER_BODY_CHARS);
+}
+
 /** Which exposure region uncovers each intimate attribute category. */
 const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
   breasts: "torso",
@@ -853,10 +974,32 @@ export interface SceneRenderPlan {
   setting: string;
   lighting: string;
   mood: string;
+  /**
+   * The viewer's own parts in frame — registry-validated, but NOT yet gated on coverage or
+   * the route. That last filter runs per-prompt in `buildSceneRenderPrompt`, because
+   * `allowIntimate` differs per provider rung (the uncensored edit allows intimate detail;
+   * the text-to-image fallback does not), exactly like `intimateAppearance`.
+   */
+  viewerBody: ViewerBodyPartId[];
+  /**
+   * The PLAYER's coverage, computed from their worn items — the other half of that gate.
+   * Absent ⇒ treated as covered, so anatomy stays shut (the default-shut rule).
+   */
+  playerExposure?: RegionExposure;
+  /**
+   * The persona's resolved attributes (slice 4) — the viewer's own body facts, filtered to
+   * the parts in frame at render time by `viewerBodyAppearance`. Without them the viewer's
+   * arms change colour between shots and read as a different person reaching in.
+   */
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  /** The persona's profile — realized-body applicability for those attributes. */
+  playerProfile?: CharacterProfile;
+  /** The viewer's exposure-gated intimate anatomy; emitted only on an uncensored route. */
+  playerIntimateAppearance?: string;
 }
 
 export function emptySceneRenderPlan(): SceneRenderPlan {
-  return { focal: null, others: [], setting: "", lighting: "soft natural light", mood: "calm" };
+  return { focal: null, others: [], setting: "", lighting: "soft natural light", mood: "calm", viewerBody: [] };
 }
 
 const normalizeName = (name: string): string => name.trim().toLowerCase();
@@ -872,15 +1015,51 @@ const normalizeName = (name: string): string => name.trim().toLowerCase();
  * multi-character scene a pronoun may be another character; that case belongs to the
  * composer rule, not a regex.
  */
-export function scrubPlayerFromAction(action: string): string {
+export function scrubPlayerFromAction(action: string, opts: { embodied?: boolean } = {}): string {
   if (!/\bplayer\b/i.test(action)) return action;
   // Gaze/orientation toward the player = toward the camera. Possessives ("at the
   // player's side") are proximity, not gaze — they fall through to the clause drop.
   const rewritten = action.replace(/\b(facing|toward|towards|at)\s+the\s+player\b(?!['’]s)/gi, "$1 the viewer");
+  if (opts.embodied) {
+    // With the viewer's body in frame (scene-pov-embodiment slice 3), contact is paintable
+    // — so a clause naming the player is REWRITTEN to the viewer rather than dropped. The
+    // composer is told to say "the viewer" already; this catches the slips, and the render
+    // gate still decides whether the part it refers to is actually in frame.
+    return rewritten.replace(/\bthe\s+player\b/gi, "the viewer");
+  }
   return rewritten
     .split(/[;,]/)
     .map((clause) => clause.trim())
     .filter((clause) => clause.length > 0 && !/\bplayer\b/i.test(clause))
+    .join(", ");
+}
+
+/**
+ * Skin-colour words an image model paints as COSMETICS, not physiology
+ * (scene-pov-embodiment.plan.md slice 0, owner report): "flushed"/"blushing" comes
+ * back as stage blusher — a clown-makeup face. Deliberately the state-language
+ * family only; `skin.undertone: rosy` is an *authored identity attribute* and is
+ * never scrubbed (the registry is the author's intent, not the composer's slip).
+ */
+const BLUSH_WORDS = /\b(blush\w*|flush\w*|rosy|ruddy|reddening|red-faced|pink-cheeked)\b/i;
+
+/**
+ * Deterministic backstop for skin-colour words in composer-authored text (pose,
+ * activity, mood). `SCENE_COMPOSER_SYSTEM` also rules against them, but the rule
+ * alone is not trustworthy — the narrator's own arousal hint says "flushed skin"
+ * (contracts/meters/registry.ts), so the composer reads it in the recent narration
+ * and hands it straight back. Same shape as {@link scrubPlayerFromAction}: drop the
+ * offending clause whole and keep the rest, since the surrounding beats ("eyes
+ * bright", "breath shallow") are the physiology we actually wanted. The
+ * deterministic sibling is `visualStateNote` (images/character-scene.ts) — keep the
+ * two in agreement.
+ */
+export function scrubBlush(text: string): string {
+  if (!BLUSH_WORDS.test(text)) return text;
+  return text
+    .split(/[;,]/)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0 && !BLUSH_WORDS.test(clause))
     .join(", ");
 }
 
@@ -931,13 +1110,18 @@ export function resolveScenePlan(
     focalEntry = byName.get(normalizeName(fallbackName)) ?? roster[0] ?? null;
   }
 
+  const viewerBody = resolveViewerBody(spec.viewerBody, context, sink);
   // Trailing periods stripped before the join — "…teasing smile.; Leading…" read as two
   // stitched sentences in the render prompt instead of one pose phrase.
   const focalAction = [spec.pose, spec.activity]
     .map((part) => part.trim().replace(/\.+$/, ""))
     .filter(Boolean)
     .join("; ");
-  const focal = focalEntry ? characterSpec(focalEntry, focalAction) : null;
+  // The scrub only rewrites (rather than drops) player references when the viewer actually
+  // has a body in frame — otherwise "her hand on the viewer's arm" would ask for an arm the
+  // shot doesn't contain.
+  const embodied = Boolean(context.embodiedViewer) && viewerBody.length > 0;
+  const focal = focalEntry ? characterSpec(focalEntry, focalAction, embodied) : null;
   const seen = new Set(focalEntry ? [normalizeName(focalEntry.name)] : []);
   const others: SceneCharacterSpec[] = [];
   for (const other of spec.others) {
@@ -954,27 +1138,81 @@ export function resolveScenePlan(
     }
     if (seen.has(normalizeName(entry.name))) continue;
     seen.add(normalizeName(entry.name));
-    others.push(characterSpec(entry, other.action));
+    others.push(characterSpec(entry, other.action, embodied));
   }
 
   return {
     focal,
     others,
+    viewerBody,
+    ...(context.playerExposure ? { playerExposure: context.playerExposure } : {}),
+    ...(context.playerAttributes ? { playerAttributes: context.playerAttributes } : {}),
+    ...(context.playerProfile ? { playerProfile: context.playerProfile } : {}),
+    ...(context.playerIntimateAppearance ? { playerIntimateAppearance: context.playerIntimateAppearance } : {}),
     setting:
       spec.setting.trim() ||
       [context.locationName, context.locationDescription].filter(Boolean).join(" — ").slice(0, 300),
     lighting: spec.lighting,
-    mood: spec.mood,
+    // Mood is the composer's other free-text field that reaches the render prompt
+    // verbatim ("flushed, intimate") — scrubbed like pose/activity. Lighting is about
+    // light, not skin, so it is left alone.
+    mood: scrubBlush(spec.mood),
   };
 }
 
-function characterSpec(entry: ScenePresentCharacter, action: string): SceneCharacterSpec {
+/**
+ * Clamp the composer's `viewerBody` proposal to the registry — the same
+ * the-composer-cannot-invent-things rule as `focal_clamped` / `absent_character_dropped`.
+ *
+ * Two ways to end up with nothing: the lane never asked for embodiment (the session lane —
+ * it gets the disembodied rules, so a proposal here means the model ignored them), or the
+ * id isn't in the registry. Both log, because both mean the composer went off-script.
+ * Coverage and route gating do NOT happen here — they run per-prompt, where `allowIntimate`
+ * is known.
+ */
+function resolveViewerBody(
+  proposed: readonly string[],
+  context: SceneComposerContext,
+  sink?: DiagnosticSink,
+): ViewerBodyPartId[] {
+  if (proposed.length === 0) return [];
+  if (!context.embodiedViewer) {
+    sink?.push(
+      diag("warn", "images.scene_composer.viewer_body_unrequested", "composer proposed viewer body parts in a lane that did not ask for them — dropped", {
+        context: { proposed: [...proposed] },
+      }),
+    );
+    return [];
+  }
+  const kept: ViewerBodyPartId[] = [];
+  const dropped: string[] = [];
+  for (const id of proposed) {
+    const part = viewerBodyPartById(id.trim());
+    // The composer has no intimate vocabulary by design (it runs allowIntimate:false), so
+    // proposing one is off-script even though the render gate would have caught it too.
+    if (!part || part.intimate) dropped.push(id);
+    else if (!kept.includes(part.id)) kept.push(part.id);
+  }
+  if (dropped.length > 0) {
+    sink?.push(
+      diag("warn", "images.scene_composer.viewer_body_dropped", "composer proposed viewer body parts outside its vocabulary — dropped", {
+        context: { dropped, kept },
+      }),
+    );
+  }
+  return kept;
+}
+
+function characterSpec(entry: ScenePresentCharacter, action: string, embodied = false): SceneCharacterSpec {
   return {
     name: entry.name,
     ...(entry.species ? { species: entry.species } : {}),
     // The player scrub covers the composer's text AND the posture/activity fallback
-    // (session state can carry player-referencing activity phrases too).
-    action: scrubPlayerFromAction(action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; ")),
+    // (session state can carry player-referencing activity phrases too); the blush
+    // scrub then strips skin-colour words out of whatever survived.
+    action: scrubBlush(
+      scrubPlayerFromAction(action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; "), { embodied }),
+    ),
     // Forced from occlusion-filtered state regardless of anything the model said; a free-text
     // override (character chat — no equippable wardrobe) wins when present.
     outfitSummary: entry.outfitDescription ?? wardrobeOutfitSummary(entry.wornVisible),
@@ -999,6 +1237,76 @@ export const SCENE_POV_RULE =
   "First-person POV through the player's own eyes. The player must NEVER be visible — no body, no face, no hands or held objects in frame.";
 
 /**
+ * The shot's framing rule (scene-pov-embodiment.plan.md slice 1) — {@link SCENE_POV_RULE}
+ * when the viewer has no body in frame, the **embodied** variant when they do.
+ *
+ * With no parts this returns the old constant **byte-identical**, which is the point: the
+ * default path can't regress, and callers opt in one at a time. A test pins it.
+ *
+ * The embodied variant's job is to put a limb in frame without the model promoting it into
+ * a whole second person. Three things do that work, and none of them is a negative (the
+ * "no camera" scar: a negative anchors the model on exactly what it forbids):
+ *
+ * 1. **Possessive binding** — "the viewer's own", never "a man's". No subject noun for the
+ *    player, ever; the registry's phrases carry this.
+ * 2. **Frame geometry** — cropped by the frame edge, strongly foreshortened. A limb the
+ *    frame cuts through cannot be composed as someone standing there.
+ * 3. **A person-count assertion** — the positive form of "no third person", and the
+ *    realistic-model analogue of the booru `solo focus` tag. Derived from the featured
+ *    list, never hardcoded.
+ *
+ * The reference-edit route helps too: the base image is the character's portrait, so the
+ * composition is already anchored on her and a foreground forearm is a small edit rather
+ * than a recomposition.
+ */
+export function sceneFramingRule(args: {
+  /** The viewer's parts in frame, already gated (`resolveViewerParts`). Empty ⇒ today's rule. */
+  parts?: readonly ViewerBodyPart[];
+  /** Everyone fully in frame — the count assertion's subjects. */
+  subjects?: readonly string[];
+  /** The viewer's own body facts for those parts (`viewerBodyAppearance`) — keeps them one person. */
+  body?: string;
+  /** The viewer's exposure-gated intimate anatomy; the caller emits it only on an uncensored route. */
+  intimate?: string;
+}): string {
+  const parts = args.parts ?? [];
+  if (parts.length === 0) return SCENE_POV_RULE;
+  const names = (args.subjects ?? []).map((n) => n.trim()).filter(Boolean);
+  const body = args.body?.trim();
+  const intimate = args.intimate?.trim();
+  return [
+    "First-person POV through the viewer's own eyes; the viewer's face and head are never in frame.",
+    countAssertion(names),
+    `Also in frame, in the viewer's immediate foreground: ${joinPhrases(parts.map((p) => p.framing))}.`,
+    // The facts ride AFTER the geometry deliberately: the model has to know these limbs are
+    // the viewer's and cropped before it is told what they look like, or a described body
+    // is just an invitation to paint a whole person wearing it.
+    body ? `The viewer's own body: ${body}.` : "",
+    intimate ? `${capitalizeFirst(intimate)}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** "Exactly one person is fully in frame: Mira." — the positive form of "no third person". */
+function countAssertion(names: readonly string[]): string {
+  if (names.length === 0) return "No other person is in frame.";
+  const count = names.length === 1 ? "Exactly one person is" : `Exactly ${numberWord(names.length)} people are`;
+  return `${count} fully in frame: ${joinPhrases(names)}. Nobody else appears.`;
+}
+
+/** Small-number words; past the cap the digit reads fine and never occurs in practice. */
+function numberWord(n: number): string {
+  return ["zero", "one", "two", "three", "four", "five"][n] ?? String(n);
+}
+
+/** "a, b and c" — an Oxford-less join, since these are prompt phrases and not prose. */
+function joinPhrases(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
  * The selfie framing (chat-selfies.plan.md) — the exact INVERSE of the scene POV
  * rule: the subject's own phone camera, subject aware of the lens and composing
  * the shot. Positive phrasing only (a literal "no camera" would anchor the model
@@ -1013,6 +1321,12 @@ export interface SceneRenderOptions {
    * (chat-selfies.plan.md — the subject's own camera). Applies on every route.
    */
   framing?: "pov" | "selfie";
+  /**
+   * Force the viewer's parts, bypassing the plan + gate. Tests and the eval harness only —
+   * the render path derives them from `plan.viewerBody` ∩ coverage ∩ this route's
+   * `allowIntimate`, which is why the gate lives in the builder and not the caller.
+   */
+  viewerParts?: readonly ViewerBodyPart[];
   /** Name of the character the reference image identity-locks (Venice single edit); omit for text-to-image. */
   referenceName?: string;
   /** Uncensored route (Venice/Qwen): emit exposed intimate-anatomy detail (Decision 3). Off for the moderated text-to-image fallback. */
@@ -1045,6 +1359,35 @@ export interface SceneMultiReference {
 export const VENICE_RENDER_PROMPT_LIMIT = 1500;
 
 /**
+ * The viewer's parts for THIS prompt: the plan's registry-clamped proposal, intersected
+ * with the player's coverage and **this rung's** `allowIntimate`. It runs per-prompt rather
+ * than once at plan time because the ladder's rungs disagree — the uncensored Venice edit
+ * permits intimate detail, the text-to-image fallback does not — exactly as
+ * `intimateAppearance` already works. `opts.viewerParts` is a test/eval override.
+ */
+function viewerPartsFor(plan: SceneRenderPlan, opts: SceneRenderOptions): readonly ViewerBodyPart[] {
+  if (opts.viewerParts) return opts.viewerParts;
+  return resolveViewerParts({
+    proposed: plan.viewerBody,
+    ...(plan.playerExposure ? { exposure: plan.playerExposure } : {}),
+    allowIntimate: opts.allowIntimate === true,
+  });
+}
+
+/** The whole framing clause for one route: gate the parts, then describe exactly those. */
+function framingFor(plan: SceneRenderPlan, opts: SceneRenderOptions, subjects: readonly string[]): string {
+  if (opts.framing === "selfie") return SELFIE_FRAMING;
+  const parts = viewerPartsFor(plan, opts);
+  const intimate = opts.allowIntimate && parts.some((p) => p.intimate) ? (plan.playerIntimateAppearance ?? "") : "";
+  return sceneFramingRule({
+    parts,
+    subjects,
+    body: viewerBodyAppearance(plan.playerAttributes ?? [], parts, plan.playerProfile),
+    intimate,
+  });
+}
+
+/**
  * Final render instruction. Venice is single-reference edit, so at most ONE
  * character is identity-locked (`referenceName`); every other featured
  * character — including the focal one when the reference fell back to another
@@ -1073,7 +1416,7 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     const fit = makeFit(outfitCap);
     const pieces: string[] = [];
     if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
-    pieces.push(opts.framing === "selfie" ? SELFIE_FRAMING : SCENE_POV_RULE);
+    pieces.push(framingFor(plan, opts, featured.map((c) => c.name)));
     if (reference) {
       // Identity anchors reinforce the lock; the reference image stays authoritative
       // (owner constraint: these must never override the reference).
@@ -1172,7 +1515,10 @@ function assembleMulti(
   const multi = opts.multiReferences ?? [];
   const refCharNames = new Set(multi.filter((m) => m.kind === "character").map((m) => normalizeName(m.name)));
 
-  const pieces: string[] = [PORTRAIT_IDENTITY_LOCK, opts.framing === "selfie" ? SELFIE_FRAMING : SCENE_POV_RULE];
+  const pieces: string[] = [
+    PORTRAIT_IDENTITY_LOCK,
+    framingFor(plan, opts, featured.map((c) => c.name)),
+  ];
   pieces.push(`${multi.length} reference images provided — ${describeMultiReferences(multi)}`);
   pieces.push("Compose all referenced people together into one shared scene, each keeping the exact face, hair and build of their reference image.");
 
