@@ -356,6 +356,7 @@ export function createItemTransferBranchRuntime(rawSeed: unknown): ItemTransferB
   let projection = seed;
   const events: ItemTransferredEvent[] = [];
   const results = new Map<string, ItemTransferCommandResult>();
+  const commandIds = new Set<string>();
 
   return {
     submit(rawCommand: unknown): ItemTransferCommandResult {
@@ -372,6 +373,19 @@ export function createItemTransferBranchRuntime(rawSeed: unknown): ItemTransferB
       const command = parsed.data;
       const cached = results.get(command.idempotencyKey);
       if (cached) return structuredClone(cached);
+
+      if (commandIds.has(command.id)) {
+        const duplicate: ItemTransferCommandResult = {
+          status: "rejected",
+          commandId: command.id,
+          code: "duplicate_command_id",
+          publicReason: "That action request has already been submitted.",
+          legalAlternativeCommandTypes: [],
+        };
+        results.set(command.idempotencyKey, duplicate);
+        return structuredClone(duplicate);
+      }
+      commandIds.add(command.id);
 
       let result: ItemTransferCommandResult;
       if (command.expectedVersion !== projection.version) {
