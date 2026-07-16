@@ -1,0 +1,130 @@
+name: Gate 0 Evidence
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate0-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  no-spend:
+    name: gate0-no-spend
+    if: github.head_ref == 'engine-gate0-closeout'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact evidence commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+
+      - name: Create evidence directory
+        run: mkdir -p data/eval/gate0
+
+      - name: Pin baseline corpus and prompts
+        run: pnpm eval:engine-baseline --dry-run --out data/eval/gate0/engine-baseline
+
+      - name: Audit schedule-kind fixtures
+        run: pnpm eval:schedule-kind --fixtures-only --out data/eval/gate0/schedule-fixtures | tee data/eval/gate0/schedule-fixtures.log
+
+      - name: Assemble grounded-context prompts
+        run: pnpm eval:narration --scenarios chat-contrast-grounding --profiles concise --dry-run | tee data/eval/gate0/grounding-prompts.txt
+
+      - name: Hash evidence
+        run: find data/eval/gate0 -type f -print0 | sort -z | xargs -0 sha256sum > data/eval/gate0/SHA256SUMS
+
+      - name: Upload no-spend evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate0-no-spend-${{ github.event.pull_request.head.sha }}
+          path: data/eval/gate0
+          if-no-files-found: error
+          retention-days: 30
+
+  database:
+    name: gate0-database
+    if: github.head_ref == 'engine-gate0-closeout'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AI_FAKE: 1
+      DATABASE_URL: postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev
+    steps:
+      - name: Checkout exact evidence commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+
+      - name: Create evidence directory
+        run: mkdir -p data/eval/gate0/database
+
+      - name: Start isolated Postgres
+        run: docker compose up -d --wait
+
+      - name: Create and migrate database
+        run: |
+          pnpm db:create
+          pnpm db:migrate
+
+      - name: Run database integration regressions
+        run: pnpm test:int | tee data/eval/gate0/database/integration-tests.log
+
+      - name: Seed deterministic authored world
+        run: pnpm db:seed | tee data/eval/gate0/database/seed.log
+
+      - name: Audit authored schedule data
+        run: pnpm eval:schedule-kind --out data/eval/gate0/database/schedule-authored | tee data/eval/gate0/database/schedule-authored.log
+
+      - name: Capture database diagnostics
+        if: always()
+        run: |
+          docker compose ps > data/eval/gate0/database/docker-compose-ps.txt
+          docker compose logs --no-color > data/eval/gate0/database/docker-compose.log
+          find data/eval/gate0/database -type f -print0 | sort -z | xargs -0 sha256sum > data/eval/gate0/database/SHA256SUMS
+
+      - name: Upload database evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate0-database-${{ github.event.pull_request.head.sha }}
+          path: data/eval/gate0/database
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Stop isolated Postgres
+        if: always()
+        run: docker compose down -v
