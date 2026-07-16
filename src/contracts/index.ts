@@ -33,6 +33,7 @@ export * from "./facts/taxonomy";
 export * from "./images/scene-reference";
 export * from "./images/image-models";
 export * from "./players/persona";
+export * from "./players/persona-profile";
 export * from "./world/profile";
 export * from "./world/access";
 export * from "./world/location";
