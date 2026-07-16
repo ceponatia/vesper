@@ -180,7 +180,7 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
     // Ensemble-only: a 1-on-1 sheet never carries the instruction at all.
     armed: (ctx) => (ctx.roster?.length ?? 0) > 1,
     instruction: () =>
-      `"presence": the roster characters (see the "Roster" line) whose scene-presence the fiction actually CHANGED this exchange, as [{ "name": "<roster name, copied exactly>", "presence": "present" | "away" }]. "present" = they entered or are now sharing the player's scene; "away" = they left it / are elsewhere living their life. Only real transitions played on the page — never infer one from silence; [] is the common case.`,
+      `"presence": the roster characters (see the "Roster" line) whose scene-presence the fiction actually CHANGED this exchange, as [{ "name": "<roster name, copied exactly>", "presence": "present" | "away", "where": "<on 'away' only, and only when the fiction said where they went — a short phrase like 'to her shift at the café'; omit otherwise>" }]. "present" = they entered or are now sharing the player's scene; "away" = they left it / are elsewhere living their life. Only real transitions played on the page — never infer one from silence; [] is the common case.`,
     context: (ctx) =>
       `Roster (match names exactly): ${(ctx.roster ?? []).map((m) => `${m.name} (${m.presence})`).join(", ")}`,
   },

@@ -157,6 +157,11 @@ export const chatArchivistSchema = z.object({
       z.object({
         name: z.string().trim().min(1),
         presence: z.enum(["present", "away"]).catch("present"),
+        /**
+         * Where an AWAY departure went, as a phrase ("to her shift at the café") —
+         * chat-offscreen-life §Whereabouts. Optional; only meaningful on "away".
+         */
+        where: z.string().trim().min(1).max(120).optional().catch(undefined),
       }),
     )
     .catch([])

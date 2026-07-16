@@ -82,6 +82,12 @@ exchange:
    the skipped-to clock that names an outfit preset re-dresses the member for that
    window, `rhythmOutfitPatch`; ux-improvements slice 8.4) — **meters untouched**
    (D14, flavor-only v1). Lazily seeds from the authored defaults when no row exists.
+   A qualifying skip (cumulative ≥ one story day since the last pass) also fires the
+   detached **meanwhile pass** (`chat_meanwhile` job — chat-offscreen-life,
+   [the spec](../developer-notes/chat-offscreen-life.spec.md)): one call proposing the
+   cast's off-screen developments, folded into facts / drives / cast / plans /
+   whereabouts + the one-shot meanwhile note. Fire-and-forget: the next exchange
+   proceeds on grounded improvisation if it hasn't landed.
 5. **RAG recall.** `retrieveChatMemory` — fused retrieval over the participant's
    **memory group** (`MemoryScope` `{kind:"chat", groupId}`, [memory.md](../memory.md)
    §Memory keying): each of last turn's persisted `memoryQueries` + this input is

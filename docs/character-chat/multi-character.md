@@ -25,6 +25,16 @@ both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-
   played; `quiet_exchanges` counts activity recency (deterministic stamping —
   `mentionsCharacter`/`spokeInReply` in `chat-intent.ts` — reset by a name/alias mention
   or a tagged spoken line), and for away members it doubles as the tier-3 salience window.
+  Since chat-offscreen-life an away member also carries a **whereabouts** phrase
+  (`character_chat_state.whereabouts` — the presence proposal's optional `where` on a
+  departure, refreshed by the meanwhile pass): the roster line renders "Away, living
+  their own lives: Kira (at her studio)", the salient-away block gets a "Right now
+  Kira is …" line, and a member returning to *present* with one pending gets a
+  one-turn **"just got back — was …"** license in their state line, then it clears.
+  Off-screen **NPC↔NPC developments** (the meanwhile pass's two-name entries) file as
+  relationship FACTS to both members' own memory groups — the shipped v2 pattern; the
+  authored matrix is never machine-edited
+  ([chat-offscreen-life.spec.md](../developer-notes/chat-offscreen-life.spec.md)).
 - **Ensemble prompt** (`buildChatPromptPartsForRoster` → `buildEnsembleChatPromptParts`):
   one continuous narrative, the narrator omniscient over the roster; THIRD-person member
   sheets (full / quiet-compressed at `ENSEMBLE_QUIET_EXCHANGES` / away-dropped while

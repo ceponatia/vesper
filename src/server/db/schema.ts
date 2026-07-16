@@ -209,6 +209,13 @@ export const characterChats = pgTable(
      */
     calendarStart: jsonb("calendar_start").notNull().default({}),
     pendingSkipNote: text("pending_skip_note").notNull().default(""),
+    /**
+     * The meanwhile pass's one-shot narrator note (chat-offscreen-life.plan.md) —
+     * composes with pending_skip_note, cleared with it. "" = none pending.
+     */
+    pendingMeanwhileNote: text("pending_meanwhile_note").notNull().default(""),
+    /** Clock minute the meanwhile pass last ran at (the cumulative ≥1-day gate's origin + the job's idempotency CAS). */
+    meanwhilePassAtMinutes: integer("meanwhile_pass_at_minutes").notNull().default(0),
     /** SkipRecord[] — player time skips. */
     skipHistory: jsonb("skip_history").notNull().default([]),
     /** The scenario as it stood BEFORE the last exchange — "another take"'s rollback half. */
@@ -540,6 +547,15 @@ export const characterChatState = pgTable(
      * is the manual override, the archivist confirms transitions.
      */
     presence: text("presence", { enum: ["present", "away"] }).notNull().default("present"),
+    /**
+     * Where an AWAY member is, as a phrase — never a location entity
+     * (chat-offscreen-life.plan.md §Whereabouts): written by the archivist's
+     * presence read on an away transition and refreshed by the meanwhile pass;
+     * rendered in the ensemble's away/salient lines. A PRESENT member with a
+     * non-empty whereabouts "just returned" — the tail renders a one-turn
+     * came-from license, then it clears.
+     */
+    whereabouts: text("whereabouts").notNull().default(""),
     /**
      * Consecutive exchanges without this character being mentioned, acting, or
      * being spoken to (activity recency): 0 = active this exchange; ≥ the quiet
@@ -1214,7 +1230,7 @@ export const jobs = pgTable(
     id: id(),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "cascade" }),
     type: text("type", {
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify"],
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify"],
     }).notNull(),
     status: text("status", { enum: ["queued", "running", "done", "failed"] }).notNull().default("queued"),
     runnerId: text("runner_id"),

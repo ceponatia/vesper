@@ -63,6 +63,7 @@ import {
   TRAIT_OVERLAY_STEP,
   hasVoiceAnchors,
   SKIP_HISTORY_CAP,
+  WHEREABOUTS_MAX_CHARS,
   applyWornGarmentChanges,
   outfitItems,
   outfitPresetByName,
@@ -176,6 +177,10 @@ export interface ChatScenario {
   /** The story-calendar anchor (chat-clock-calendar.plan.md): minute 0 = this date+time. Author-editable. */
   calendarStart: CalendarStart;
   pendingSkipNote: string;
+  /** The meanwhile pass's one-shot narrator note (chat-offscreen-life) — composes with the skip note, cleared with it. */
+  pendingMeanwhileNote: string;
+  /** Clock minute the meanwhile pass last ran (the cumulative gate's origin + the job's idempotency CAS). */
+  meanwhilePassAtMinutes: number;
   skipHistory: SkipRecord[];
 }
 
@@ -192,6 +197,13 @@ export interface ChatState {
   relationship: RelationshipTexture;
   conditions: ActiveCondition[];
   mindNote: string;
+  /**
+   * Where an AWAY member is, as a phrase (chat-offscreen-life §Whereabouts) — the
+   * presence read / meanwhile pass write it; the ensemble away lines render it; a
+   * PRESENT member with one pending gets a one-turn "just came from" license, then
+   * it clears. Never a location entity.
+   */
+  whereabouts: string;
   /**
    * Structured worn item-definition ids (chat-wardrobe-parity.plan.md rung 2), seeded from
    * the active preset. When non-empty this is the wardrobe truth — the narrator renders these
@@ -363,6 +375,8 @@ export interface ChatStateSnapshot {
   drives: ChatDrive[];
   /** Narrative presence (multi-character-chat.plan.md) — the roster panel's toggle state. */
   presence: ChatPresence;
+  /** Where an away member is, as a phrase (chat-offscreen-life) — roster/tools view. */
+  whereabouts: string;
   /** Exchanges since this character was last active (recency; for the roster/tools view). */
   quietExchanges: number;
   /**
@@ -453,6 +467,7 @@ export function seedChatState(profile: CharacterProfile): ChatState {
     relationship: { kind: live.kind, history: live.history, presented: live.presented, looming: live.looming },
     conditions: [],
     mindNote: "",
+    whereabouts: "",
     // Structured worn state (chat-wardrobe-parity rung 1/2): seed the worn list + active
     // preset directly from the default outfit — no id-marker hack needed now that ids have
     // their own column. The free-text `outfit` overlay starts empty (the worn list is the
@@ -499,6 +514,8 @@ export function seedChatScenario(profile: CharacterProfile, premise?: string): C
     clockMinutes: 0,
     calendarStart: CHAT_DEFAULT_CALENDAR_START,
     pendingSkipNote: "",
+    pendingMeanwhileNote: "",
+    meanwhilePassAtMinutes: 0,
     skipHistory: [],
   };
 }
@@ -515,6 +532,8 @@ const chatScenarioSchema = z.object({
   clockMinutes: z.number().catch(0).default(0),
   calendarStart: calendarStartSchema.catch(CHAT_DEFAULT_CALENDAR_START).default(CHAT_DEFAULT_CALENDAR_START),
   pendingSkipNote: z.string().catch("").default(""),
+  pendingMeanwhileNote: z.string().catch("").default(""),
+  meanwhilePassAtMinutes: z.number().catch(0).default(0),
   skipHistory: z.array(skipRecordSchema).catch([]).default([]),
 });
 
@@ -532,6 +551,8 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
       clockMinutes: characterChats.clockMinutes,
       calendarStart: characterChats.calendarStart,
       pendingSkipNote: characterChats.pendingSkipNote,
+      pendingMeanwhileNote: characterChats.pendingMeanwhileNote,
+      meanwhilePassAtMinutes: characterChats.meanwhilePassAtMinutes,
       skipHistory: characterChats.skipHistory,
     })
     .from(characterChats)
@@ -549,6 +570,8 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     clockMinutes: row.clockMinutes,
     calendarStart: parseOr(calendarStartSchema, row.calendarStart, CHAT_DEFAULT_CALENDAR_START, sink, "character_chats.calendar_start"),
     pendingSkipNote: row.pendingSkipNote,
+    pendingMeanwhileNote: row.pendingMeanwhileNote,
+    meanwhilePassAtMinutes: Math.max(0, row.meanwhilePassAtMinutes),
     skipHistory: parseOr(skipHistorySchema, row.skipHistory, [], sink, "character_chats.skip_history"),
   };
 }
@@ -574,6 +597,8 @@ export async function saveChatScenario(chatId: string, scenario: ChatScenario, g
       clock_minutes = ${scenario.clockMinutes},
       calendar_start = ${JSON.stringify(scenario.calendarStart)}::jsonb,
       pending_skip_note = ${scenario.pendingSkipNote},
+      pending_meanwhile_note = ${scenario.pendingMeanwhileNote},
+      meanwhile_pass_at_minutes = ${scenario.meanwhilePassAtMinutes},
       skip_history = ${JSON.stringify(scenario.skipHistory)}::jsonb
     where id = ${chatId} and ${guard}
   `);
@@ -664,6 +689,7 @@ export async function loadChatState(
       selfieHistory: characterChatState.selfieHistory,
       drives: characterChatState.drives,
       presence: characterChatState.presence,
+      whereabouts: characterChatState.whereabouts,
       quietExchanges: characterChatState.quietExchanges,
     })
     .from(characterChatState)
@@ -715,6 +741,7 @@ export async function loadChatState(
     selfieHistory: parseOr(selfieHistorySchema, row.selfieHistory, [], sink, "character_chat_state.selfie_history"),
     drives: parseOr(chatDrivesSchema, row.drives, [], sink, "character_chat_state.drives"),
     presence: row.presence,
+    whereabouts: row.whereabouts,
     quietExchanges: Math.max(0, row.quietExchanges),
   };
 }
@@ -751,6 +778,7 @@ const storedChatStateSchema = z.object({
   selfieHistory: selfieHistorySchema.catch([]).default([]),
   drives: chatDrivesSchema.catch([]).default([]),
   presence: z.enum(["present", "away"]).catch("present").default("present"),
+  whereabouts: z.string().catch("").default(""),
   quietExchanges: z.number().catch(0).default(0),
 });
 
@@ -1462,8 +1490,8 @@ export async function finalizeChatState(input: {
   bigMoment: boolean;
   /** True when the reply sent a selfie (pulse-read + gate-armed) — the route queues the render. */
   selfieSend: boolean;
-  /** The archivist's confirmed presence transitions (ensemble only; [] otherwise). */
-  presenceChanges: readonly { name: string; presence: "present" | "away" }[];
+  /** The archivist's confirmed presence transitions (ensemble only; [] otherwise). `where` = an away departure's destination phrase. */
+  presenceChanges: readonly { name: string; presence: "present" | "away"; where?: string }[];
 }> {
   // Character-fidelity slices 7-10: arm the archivist's voice reads (voiceExemplar /
   // characterSlip) with a compact voice reference, and its trait-shift proposals with the
@@ -1792,16 +1820,24 @@ export async function finalizeChatState(input: {
   // confirmed reads. The primary's own transition folds into THIS save; the
   // caller applies the others' to their member states.
   const presenceChanges = archivist.value?.presence ?? [];
-  const selfPresence = presenceChanges.find(
+  const selfChange = presenceChanges.find(
     (p) => p.name.trim().toLowerCase() === input.characterName.trim().toLowerCase(),
-  )?.presence;
+  );
+  const selfPresence = selfChange?.presence;
+  // Whereabouts (chat-offscreen-life §Whereabouts): a member who was PRESENT with a
+  // pending whereabouts just spent it on this exchange's return license — clear it;
+  // an away departure that named where it went records the phrase.
+  const whereabouts =
+    input.driftedState.presence === "present" && input.driftedState.whereabouts ? "" : pulse.state.whereabouts;
   await saveChatState({
     chatId: input.chatId,
     characterId: input.characterId,
     promptMessageId: input.promptMessageId,
     state: {
       ...pulse.state,
+      whereabouts,
       ...(selfPresence ? { presence: selfPresence } : {}),
+      ...(selfPresence === "away" && selfChange?.where ? { whereabouts: selfChange.where } : {}),
       familiarity,
       familiaritySceneGain,
       surfacedCues,
@@ -1823,7 +1859,9 @@ export async function finalizeChatState(input: {
   // guarded like the state save.
   await saveChatScenario(
     input.chatId,
-    { ...input.scenario, sceneMemory, supportingCast, plans, pendingSkipNote: "" },
+    // Both one-shot notes clear together: the exchange that rendered the skip
+    // note also rendered the meanwhile note (chat-offscreen-life).
+    { ...input.scenario, sceneMemory, supportingCast, plans, pendingSkipNote: "", pendingMeanwhileNote: "" },
     input.promptMessageId,
   );
   // The rollback anchors ride targeted follow-up UPDATEs (never the shared upsert
@@ -2009,9 +2047,9 @@ async function upsertChatState(
     : sql`true`;
   await db().execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, presence, quiet_exchanges, updated_at)
+      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, presence, whereabouts, quiet_exchanges, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
-           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${wornItemIds}::jsonb, ${state.outfitPresetId}, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${state.presence}, ${state.quietExchanges}, now()
+           ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${wornItemIds}::jsonb, ${state.outfitPresetId}, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${state.presence}, ${state.whereabouts}, ${state.quietExchanges}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
@@ -2040,6 +2078,7 @@ async function upsertChatState(
       selfie_history = excluded.selfie_history,
       drives = excluded.drives,
       presence = excluded.presence,
+      whereabouts = excluded.whereabouts,
       quiet_exchanges = excluded.quiet_exchanges,
       updated_at = now()
   `);
@@ -2118,6 +2157,8 @@ export interface ChatStateEdit {
   drives?: ChatDrive[];
   /** Narrative presence (multi-character-chat.plan.md) — the roster panel's manual toggle. */
   presence?: ChatPresence;
+  /** Where an away member is, as a phrase (chat-offscreen-life) — author-correctable. */
+  whereabouts?: string;
   /** The story-calendar anchor (chat-wide) — the clock card's "story starts on…" editor. */
   calendarStart?: CalendarStart;
 }
@@ -2170,6 +2211,7 @@ export async function editChatState(args: {
   if (patch.selfieHistory !== undefined) next.selfieHistory = patch.selfieHistory;
   if (patch.drives !== undefined) next.drives = patch.drives.slice(0, 3);
   if (patch.presence !== undefined) next.presence = patch.presence;
+  if (patch.whereabouts !== undefined) next.whereabouts = patch.whereabouts.trim().slice(0, WHEREABOUTS_MAX_CHARS);
 
   const nextScenario: ChatScenario = { ...scenario };
   if (patch.premise !== undefined) nextScenario.premise = patch.premise.trim().slice(0, CHAT_PREMISE_MAX_CHARS);
@@ -2322,6 +2364,7 @@ export function chatStateSnapshot(
     selfieHistory: state.selfieHistory,
     drives: state.drives,
     presence: state.presence,
+    whereabouts: state.whereabouts,
     quietExchanges: state.quietExchanges,
     // Defaults true: PATCH/POST always persist a row, and a stored GET passes its own value.
     persisted: opts.persisted ?? true,

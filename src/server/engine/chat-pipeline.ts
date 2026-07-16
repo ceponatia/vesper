@@ -18,6 +18,7 @@ import {
   type ChatActionId,
   type ChatReplyFailure,
   type ChatReplyFailureCode,
+  type CharacterProfile,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
@@ -962,7 +963,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       priorSummary: summaryState?.summary,
       memory,
       player: { name: player.name, persona: player.persona },
-      state: promptStateSlice(driftedState, scenario, wardrobe),
+      state: promptStateSlice(driftedState, scenario, wardrobe, profile),
       opening,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
@@ -1000,6 +1001,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             rhythm: formatScheduleRhythm(profile.schedule),
             // Slice 5: extraversion colors the opener's cadence (eager vs. reticent).
             extraversion: effectiveTraitValue(profile.traits, "social.extraversion"),
+            // Off-screen life (§1 + dedupe rule F): established people ground improvised
+            // beats, and a meanwhile-pass note REPLACES free invention for this gap.
+            cast: scenario.supportingCast
+              .slice(0, 3)
+              .map((m) => `${m.name}${m.relation ? ` (${m.relation}${m.whereabouts ? ` — ${m.whereabouts}` : ""})` : ""}`)
+              .join(", "),
+            meanwhile: scenario.pendingMeanwhileNote,
           })
         : effectiveKind === "continue" && input.cue?.trim()
           ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
@@ -1079,7 +1087,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           {
             name: characterName,
             profile,
-            state: promptStateSlice(driftedState, scenario, wardrobe),
+            state: promptStateSlice(driftedState, scenario, wardrobe, profile),
             memory,
             presence: driftedState.presence,
             quietExchanges: driftedState.quietExchanges,
@@ -1090,7 +1098,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             others.map(async (o) => ({
               name: o.name,
               profile: o.profile,
-              state: promptStateSlice(o.state, scenario, await resolveChatWardrobe(o.state, owner, o.profile, sink)),
+              state: promptStateSlice(o.state, scenario, await resolveChatWardrobe(o.state, owner, o.profile, sink), o.profile),
               memory: otherMemories.get(o.characterId),
               presence: o.state.presence,
               quietExchanges: o.state.quietExchanges,
@@ -1186,7 +1194,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         try {
           const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
           await persistChatState(chatId, characterId, { ...driftedState, surfacedCues });
-          await saveChatScenario(chatId, { ...scenario, pendingSkipNote: "" });
+          await saveChatScenario(chatId, { ...scenario, pendingSkipNote: "", pendingMeanwhileNote: "" });
           await savePreExchangeSnapshot(chatId, characterId, storedState);
           await savePreExchangeScenario(chatId, preExchangeScenario);
         } catch (error) {
@@ -1331,9 +1339,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               selfieRequestTarget: isSelfieTarget,
               sink,
             });
-            const confirmed = finalized.presenceChanges.find(
+            const change = finalized.presenceChanges.find(
               (p) => p.name.trim().toLowerCase() === member.name.trim().toLowerCase(),
-            )?.presence;
+            );
+            const confirmed = change?.presence;
             const active =
               mentionsCharacter(agentPlayerContent, member.name, member.profile.aliases) ||
               spokeInReply(full, member.name);
@@ -1342,7 +1351,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               chatId,
               characterId: member.characterId,
               promptMessageId: promptMessageId ?? assistantMessageId,
-              state: { ...memberState, ...(confirmed ? { presence: confirmed } : {}), quietExchanges },
+              state: {
+                ...memberState,
+                // Whereabouts (chat-offscreen-life): a present member's pending whereabouts
+                // was spent on this exchange's return license; an away departure that named
+                // where it went records the phrase (the set wins over the clear).
+                ...(member.state.presence === "present" && member.state.whereabouts ? { whereabouts: "" } : {}),
+                ...(confirmed ? { presence: confirmed } : {}),
+                ...(confirmed === "away" && change?.where ? { whereabouts: change.where } : {}),
+                quietExchanges,
+              },
             });
             // The addressed member actually sent the photo (their pulse read it) —
             // queue the render with THEIR identity (ruling 12).
@@ -1753,6 +1771,7 @@ function promptStateSlice(
   state: ChatState,
   scenario: ChatScenario,
   wardrobe: ResolvedChatWardrobe,
+  profile?: CharacterProfile,
 ): NonNullable<CharacterChatPromptInput["state"]> {
   return {
     meters: state.meters,
@@ -1779,6 +1798,11 @@ function promptStateSlice(
     // The authoritative story moment (chat-clock-calendar.plan.md): the narrator reads
     // the same clock + calendar anchor the player's clock card shows.
     storyMoment: formatStoryMoment(scenario.clockMinutes, scenario.calendarStart),
+    // Off-screen life (chat-offscreen-life): the one-shot meanwhile note, this member's
+    // daily rhythm (§4), and the pending whereabouts (the one-turn return license).
+    meanwhileNote: scenario.pendingMeanwhileNote,
+    rhythm: profile ? formatScheduleRhythm(profile.schedule) : undefined,
+    whereabouts: state.whereabouts,
     sceneMemory: scenario.sceneMemory,
     supportingCast: scenario.supportingCast,
     // Plans near this turn (chat-plans-promises): derived against the ticked story clock.
@@ -1840,7 +1864,7 @@ export async function previewChatPrompt(input: {
     priorSummary: summaryState?.summary,
     memory,
     player: { name: player.name, persona: player.persona },
-    state: promptStateSlice(state, scenario, wardrobe),
+    state: promptStateSlice(state, scenario, wardrobe, profile),
     narrationShape: narrationShapeId("chat"),
   });
   return {

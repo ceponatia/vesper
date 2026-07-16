@@ -425,6 +425,8 @@ export interface ChatStateEdit {
   plans?: ChatPlan[];
   /** The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card's editor. */
   calendarStart?: CalendarStart;
+  /** Where an away member is (chat-offscreen-life) — author-correctable phrase. */
+  whereabouts?: string;
 }
 
 export const locationSummarySchema = z.object({

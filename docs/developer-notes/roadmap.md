@@ -27,13 +27,6 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Chat off-screen life** — [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md)
-  (next — planned 2026-07-14; after plans & promises, whose records its
-  meanwhile pass consumes). The cast's lives advance between visits: grounded
-  life-meanwhile material (drives/cast/plans), a capped **meanwhile pass** at
-  big time skips proposing off-screen developments — including NPC↔NPC
-  interactions filed as relationship facts — away-member whereabouts, and the
-  daily-rhythm line in ordinary turns. "The world moves," scoped to the cast.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
@@ -65,6 +58,17 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Chat off-screen life — the cast moves between visits** —
+  [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) · spec
+  [chat-offscreen-life.spec.md](chat-offscreen-life.spec.md) — 2026-07-15 — the chat lane's
+  "world tick", D3-safe: a qualifying skip (cumulative ≥1 story day) fires ONE detached
+  `chat_meanwhile` pass over the fenced ensemble dossier; ≤3 grounded developments fold
+  into facts (routed to each involved member's OWN memory group — members know different
+  things), drive notches, cast accretion, NPC↔NPC plan outcomes (replacing ruling E's
+  assume-kept), away **whereabouts** (+ presence-read `where`, one-turn return license),
+  and a one-shot meanwhile note beside the skip note. Grounded improvisation everywhere
+  else: skip-note grounding, opener cast material + dedupe rule F, rhythm in ordinary
+  turns. Migration 0050. *Returning after "two weeks" finally feels like two weeks.*
 - **Chat clock & calendar — story time the player can see** —
   [chat-clock-calendar.plan.md](chat-clock-calendar.plan.md) — 2026-07-15 — the chat clock
   anchored to a real Date-backed calendar (`calendar_start`, migration 0049; default Jan 1

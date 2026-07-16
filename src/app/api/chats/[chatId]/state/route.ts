@@ -93,6 +93,8 @@ const editBodySchema = z.object({
   plans: chatPlansSchema.optional(),
   /** The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card's editor. */
   calendarStart: calendarStartSchema.optional(),
+  /** Where an away member is (chat-offscreen-life) — author-correctable phrase. */
+  whereabouts: z.string().trim().max(120).optional(),
 });
 
 /**

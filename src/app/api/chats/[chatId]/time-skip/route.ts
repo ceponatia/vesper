@@ -13,7 +13,9 @@ import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
   applyTimeSkip,
   applyTimeSkipToScenario,
+  armMeanwhilePass,
   chatStateSnapshot,
+  enqueueChatMeanwhile,
   loadChatScenario,
   loadChatState,
   persistChatState,
@@ -78,6 +80,20 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     new Date(),
   );
   await saveChatScenario(chatId, nextScenario);
+
+  // The meanwhile pass (chat-offscreen-life.plan.md): once the cumulative skipped
+  // time since the last pass crosses the gate, ONE detached archivist-class job
+  // advances the whole cast's off-screen lives. Fire-and-forget — the next exchange
+  // proceeds on grounded improvisation if it hasn't landed (D3-safe: player-triggered).
+  if (armMeanwhilePass(scenario.meanwhilePassAtMinutes, nextScenario.clockMinutes)) {
+    void enqueueChatMeanwhile({
+      chatId,
+      ownerId: user.id,
+      prevPassAtMinutes: scenario.meanwhilePassAtMinutes,
+      clockMinutes: nextScenario.clockMinutes,
+      skipNote: nextScenario.pendingSkipNote,
+    });
+  }
 
   // The per-character half for every PRESENT roster member (the primary reuses
   // its already-resolved state; away members stay frozen — their conditions

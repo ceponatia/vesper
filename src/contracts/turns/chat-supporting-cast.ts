@@ -81,6 +81,8 @@ export const chatCastProposalSchema = z
       name: nameString,
       relation: z.string().catch("").default(""),
       details: z.array(detailString).catch([]).default([]),
+      /** A refreshed whereabouts phrase (chat-offscreen-life — the meanwhile pass's cast beats). */
+      whereabouts: z.string().trim().max(CAST_WHEREABOUTS_MAX_CHARS).optional().catch(undefined),
     }),
   )
   .catch([])
@@ -142,6 +144,11 @@ export function mergeSupportingCast(
     }
     if (!member.relation && proposed.relation.trim()) {
       member.relation = proposed.relation.trim().slice(0, CAST_RELATION_MAX_CHARS);
+    }
+    // Whereabouts REFRESHES (unlike relation): it is current-state, not authored canon
+    // (chat-offscreen-life — "Mira started her new job" moves where her days happen).
+    if (proposed.whereabouts?.trim()) {
+      member.whereabouts = proposed.whereabouts.trim().slice(0, CAST_WHEREABOUTS_MAX_CHARS);
     }
     member.details = dedupeCap([...member.details, ...proposed.details], CAST_MAX_DETAILS);
   }

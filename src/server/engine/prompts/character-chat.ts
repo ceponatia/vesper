@@ -127,6 +127,24 @@ export interface CharacterChatPromptInput {
      * free-text `sceneMemory.timeOfDay`. Absent/"" ⇒ no line.
      */
     storyMoment?: string;
+    /**
+     * The meanwhile pass's one-shot note (chat-offscreen-life): what actually happened
+     * off-screen while time passed — composes with the skip note, rendered once, cleared
+     * by the finalizer with it. Absent/"" ⇒ no line (an ordinary skip).
+     */
+    meanwhileNote?: string;
+    /**
+     * The character's daily rhythm (formatScheduleRhythm — chat-offscreen-life §4): one
+     * compact standing line grounding time-of-day texture and meanwhile beats in their
+     * actual routine. Absent/"" ⇒ no line.
+     */
+    rhythm?: string;
+    /**
+     * Where this character was while away (chat-offscreen-life §Whereabouts). On a
+     * PRESENT character this is a one-turn "just came from" license — the finalizer
+     * clears it after it renders.
+     */
+    whereabouts?: string;
     /** Active social cards — surfaced as soft "what you care about" framing, never severity (§6, D3). */
     activeSocialCards?: SocialReactionCard[];
     /**
@@ -395,7 +413,7 @@ function skipToneForBand(bandId: string): string {
  */
 export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string, landing?: string): string {
   const arrived = landing ? ` It is now ${landing}.` : "";
-  return `${SKIP_LEADS[amount]}${arrived} ${skipToneForBand(regardBandId)} You may weave in ONE line about what you were doing meanwhile, consistent with the scenario and your personality — then let the scene move on; don't dwell on the gap.`;
+  return `${SKIP_LEADS[amount]}${arrived} ${skipToneForBand(regardBandId)} You may weave in ONE line about what you were doing meanwhile — grounded in your daily rhythm, what you want, the people in your life, and any plans you had, never invented strangers — then let the scene move on; don't dwell on the gap.`;
 }
 
 /**
@@ -1672,6 +1690,22 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     },
     { tier: "binding", text: skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "" },
     {
+      // The meanwhile pass's one-shot note (chat-offscreen-life): what actually happened
+      // off-screen — the meanwhile license draws from THIS, never free invention.
+      tier: "binding",
+      text: input.state?.meanwhileNote?.trim()
+        ? `While you were apart, off-screen (true — your ONE meanwhile beat comes from this, not invention; weave in at most one piece, naturally): ${input.state.meanwhileNote.trim()}`
+        : "",
+    },
+    {
+      // The one-turn return license (chat-offscreen-life §3): a pending whereabouts on a
+      // present character means they JUST got back — carry one trace of it, then let it go.
+      tier: "binding",
+      text: input.state?.whereabouts?.trim()
+        ? `You just got back — you were ${input.state.whereabouts.trim()}. You may carry ONE trace of it into the scene (texture, mood, a mention), then let it go.`
+        : "",
+    },
+    {
       // The first-exchange scene directive (Fly screenshot, 2026-07-10): on a brand-new chat the
       // Scene block is empty and `sceneChanged` can't fire (nothing to change FROM), so no rule
       // directed scene establishment — the model got the brand-new-scene length license and spent
@@ -1733,6 +1767,11 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     sceneSection,
     castSection,
     plansSection,
+    // Daily rhythm (chat-offscreen-life §4): one compact standing line so time-of-day
+    // texture and meanwhile beats ground in the character's actual routine.
+    input.state?.rhythm?.trim()
+      ? `Your daily rhythm (ground time-of-day texture and any life-meanwhile beat in it): ${input.state.rhythm.trim()}.`
+      : "",
     // State-derived overrides of the prefix's own blocks — data, not directives, so they
     // stay above the "Right now" digest with the rest of the standing state.
     // Minor fence: no state-driven loosening block for a minor character.
@@ -2011,9 +2050,13 @@ export function buildEnsembleChatPromptParts(
     player,
   );
   const skipNote = input.state?.skipNote?.trim();
+  // Away members carry their whereabouts phrase (chat-offscreen-life §Whereabouts), so
+  // "where is everyone" stops being narrator guesswork.
+  const awayLabel = (m: EnsembleMemberInput): string =>
+    `${m.name}${m.state?.whereabouts?.trim() ? ` (${m.state.whereabouts.trim()})` : ""}`;
   const rosterLine = `In the scene with ${player} right now: ${
     present.length ? present.map((m) => m.name).join(", ") : "no one — every character is away"
-  }.${away.length ? ` Away, living their own lives: ${away.map((m) => m.name).join(", ")}.` : ""}`;
+  }.${away.length ? ` Away, living their own lives: ${away.map(awayLabel).join(", ")}.` : ""}`;
 
   // Tier-3 salience (volatile — the mention window moves): one conditional block
   // per salient away member, under the don't-teleport guard. Reactive, never
@@ -2025,9 +2068,13 @@ export function buildEnsembleChatPromptParts(
   }
   const awaySections = [...awayByName.entries()].map(([awayName, edges]) => {
     const lines = edges.map((edge) => `- ${relationshipLineBetween(edge.fromName, edge.toName, edge.record)}`);
+    const where = away
+      .find((m) => m.name.trim().toLowerCase() === awayName.trim().toLowerCase())
+      ?.state?.whereabouts?.trim();
     return [
       `If ${awayName} comes up (they are NOT here):`,
       ...lines,
+      ...(where ? [`- Right now ${awayName} is ${where}.`] : []),
       `- ${awayName} is elsewhere, living their own life. You may show what ${awayName} is doing where they are, or let them text or call — but never merge ${awayName} into ${player}'s scene uninvited.`,
     ].join("\n");
   });
@@ -2071,6 +2118,13 @@ export function buildEnsembleChatPromptParts(
         : "",
     },
     { tier: "binding", text: skipNote ? `Time has passed in the story since the last exchange: ${skipNote}` : "" },
+    {
+      // The meanwhile pass's one-shot note (chat-offscreen-life) — same line as the 1-on-1 frame.
+      tier: "binding",
+      text: input.state?.meanwhileNote?.trim()
+        ? `While time passed, off-screen (true — meanwhile beats come from this, not invention; weave in at most one piece, naturally): ${input.state.meanwhileNote.trim()}`
+        : "",
+    },
     {
       tier: "binding",
       text:
@@ -2338,13 +2392,19 @@ function ensembleMemberStateLines(member: EnsembleMemberInput, player: string): 
   const outfit = member.state.outfit?.trim();
   const loops = (member.state.openLoops ?? []).map((l) => l.trim()).filter(Boolean);
   const conditionHints = member.state.conditions.flatMap((c) => (c.promptHint ? [c.promptHint] : []));
+  // Chat-offscreen-life: a pending whereabouts on a PRESENT member = they just got
+  // back (one-turn came-from license); the rhythm grounds their day (§4).
+  const returned = member.state.whereabouts?.trim();
+  const rhythm = member.state.rhythm?.trim();
   const bits = [
+    returned ? `just got back — was ${returned} (one trace of it, then let it go)` : "",
     mood ? `feeling ${mood}` : "",
     feeling ? `underneath it, ${feeling}` : "",
     outfit ? `wearing ${outfit}` : "",
     ...conditionHints,
     mind ? `on ${name}'s mind: ${mind}` : "",
     loops.length ? `unfinished with ${player}: ${loops.join("; ")}` : "",
+    rhythm ? `usual rhythm: ${rhythm}` : "",
   ].filter(Boolean);
   return bits.length ? `- ${name}: ${bits.join(" · ")}` : "";
 }

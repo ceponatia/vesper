@@ -351,6 +351,13 @@
       "when": 1784156346615,
       "tag": "0049_cool_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1784159706337,
+      "tag": "0050_burly_thaddeus_ross",
+      "breakpoints": true
     }
   ]
 }

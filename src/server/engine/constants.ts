@@ -148,6 +148,14 @@ export const CHAT_PERSONAL_NOTES_TIMEOUT_MS = 60_000;
 export const CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS = 300;
 export const CHAT_SCENE_SKETCH_TIMEOUT_MS = 15000;
 /**
+ * The meanwhile pass (chat-offscreen-life.plan.md): ONE archivist-class call per
+ * qualifying big skip, DETACHED like the scene sketch — nothing waits on it, so it
+ * affords a roomy timeout. A miss degrades to an ordinary skip (grounded
+ * improvisation covers the gap) and the gate re-arms on the next qualifying skip.
+ */
+export const CHAT_MEANWHILE_MAX_OUTPUT_TOKENS = 600;
+export const CHAT_MEANWHILE_TIMEOUT_MS = 25_000;
+/**
  * Arousal a pulse-classified **intimate** act adds (slice 4): full for an intimate
  * concept (e.g. a proposition), half for courtship / physical-affection. Skipped
  * when the act is disliked. Clamped to [0,1] like every meter.
