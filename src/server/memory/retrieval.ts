@@ -16,6 +16,11 @@ import {
 export interface PreTurnRetrieveInput {
   session: { id: string };
   world: { id: string };
+  /**
+   * Participant whose perspective is compiling this turn. Session callers supply
+   * the player participant id; absent preserves the legacy unfiltered read.
+   */
+  viewpointId?: string;
   /** Previous turn's `brief.memoryQueries`. */
   queries: readonly string[];
   /** The player input for this turn. */
@@ -50,9 +55,10 @@ export async function preTurnRetrieve(input: PreTurnRetrieveInput): Promise<PreT
   // round-trips for one set of texts, on the pre-narration path. (Lore stays single-query
   // over the joined text, a different string, so it embeds its own.)
   const embeddings = await QueryEmbeddings.embed(queries, input.sink);
+  const eligibility = input.viewpointId ? { viewpointId: input.viewpointId } : undefined;
   const [episodesResult, factsResult, loreResult] = await Promise.allSettled([
-    retrieveEpisodesFused(scope, queries, EPISODE_RETRIEVAL_LIMIT, input.sink, embeddings),
-    retrieveFactsFused(scope, queries, FACT_RETRIEVAL_LIMIT, input.sink, embeddings),
+    retrieveEpisodesFused(scope, queries, EPISODE_RETRIEVAL_LIMIT, input.sink, embeddings, eligibility),
+    retrieveFactsFused(scope, queries, FACT_RETRIEVAL_LIMIT, input.sink, embeddings, eligibility),
     retrieveLoreLeg(input, queryText),
   ]);
 
