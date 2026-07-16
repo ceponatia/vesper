@@ -25,8 +25,10 @@ import {
   characterProfileSchema,
   emptyCharacterProfile,
   emptyItemDefinition,
+  emptyPersonaProfile,
   emptyWorldLore,
   emptyWorldStyle,
+  personaProfileSchema,
   diagnosticSchema,
   emotionLabelSchema,
   itemDefinitionSchema,
@@ -212,7 +214,7 @@ export const createdRefSchema = z.preprocess((raw) => {
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
     if (typeof obj.id === "string") return { id: obj.id };
-    for (const key of ["session", "world", "character", "location", "item", "socialCard", "draft"]) {
+    for (const key of ["session", "world", "character", "location", "item", "socialCard", "persona", "draft"]) {
       const inner = obj[key];
       if (inner && typeof inner === "object" && typeof (inner as Record<string, unknown>).id === "string") {
         return { id: (inner as Record<string, unknown>).id };
@@ -275,6 +277,26 @@ export const characterDetailSchema = characterSummarySchema.extend({
   mine: z.boolean().catch(true),
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
+
+/**
+ * A persona library card (persona-library.plan.md). `title` is the per-owner-unique
+ * label the card shows and the owner searches by; `name` is the in-fiction name a
+ * character addresses — which is why the two are separate and why `name` may repeat.
+ */
+export const personaSummarySchema = z.object({
+  id: idSchema,
+  title: nameSchema,
+  name: nameSchema,
+  tags: tagsSchema,
+  avatarImageId: optionalId,
+  updatedAt: optionalText,
+});
+export type PersonaSummary = z.infer<typeof personaSummarySchema>;
+
+export const personaDetailSchema = personaSummarySchema.extend({
+  profile: personaProfileSchema.catch(() => emptyPersonaProfile()),
+});
+export type PersonaDetail = z.infer<typeof personaDetailSchema>;
 
 /** One line of a conversation transcript (docs/developer-notes/character-chat-standalone.spec.md). */
 /** Alternate generations browsable on an assistant reply (character-chat-standalone.spec.md §4.1). */
@@ -1429,6 +1451,18 @@ export const socialCardsApi = {
   remove: (id: string) => apiDelete(`/api/social-cards/${id}`),
   /** Clone a public (or own) card into your library as an owned, private copy. */
   clone: (id: string) => apiPost(createdRefSchema, `/api/social-cards/${id}/clone`, {}),
+};
+
+/**
+ * Personas (persona-library.plan.md) — the player as a library entity. No `clone` and
+ * no `scope`: a persona is *you*, so there is no public tier to browse or copy from.
+ */
+export const personasApi = {
+  list: (params: ListParams = {}) => apiGet(listOf(personaSummarySchema, "personas"), withQuery("/api/personas", params)),
+  get: (id: string) => apiGet(detailOf(personaDetailSchema, "persona"), `/api/personas/${id}`),
+  create: (body: unknown) => apiPost(createdRefSchema, "/api/personas", body),
+  update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/personas/${id}`, body),
+  remove: (id: string) => apiDelete(`/api/personas/${id}`),
 };
 
 export const worldsApi = {

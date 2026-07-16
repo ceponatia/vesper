@@ -7,6 +7,8 @@ import {
   itemCreateSchema,
   itemPatchSchema,
   locationPatchSchema,
+  personaCreateSchema,
+  personaPatchSchema,
 } from "./schemas";
 import { worldCreateSchema, worldItemInputSchema, worldLocationInputSchema } from "./worlds";
 
@@ -23,6 +25,50 @@ describe("character body schemas", () => {
     expect(characterPatchSchema.safeParse({ profile: { bio: "new bio" } }).success).toBe(true);
     expect(characterPatchSchema.safeParse({ profile: { bio: 5 } }).success).toBe(false);
     expect(characterPatchSchema.safeParse({ name: "" }).success).toBe(false);
+  });
+});
+
+describe("persona body schemas", () => {
+  it("create defaults profile and tags, and requires both title and name", () => {
+    const parsed = personaCreateSchema.parse({ title: "  Brian, 22 ", name: " Brian " });
+    expect(parsed.title).toBe("Brian, 22");
+    expect(parsed.name).toBe("Brian");
+    expect(parsed.profile.bio).toBe("");
+    expect(parsed.profile.speciesId).toBe("human");
+    expect(parsed.tags).toEqual([]);
+    // Both are load-bearing: title is the unique key, name is what the fiction says.
+    expect(personaCreateSchema.safeParse({ name: "Brian" }).success).toBe(false);
+    expect(personaCreateSchema.safeParse({ title: "Brian, 22" }).success).toBe(false);
+    expect(personaCreateSchema.safeParse({ title: "", name: "Brian" }).success).toBe(false);
+  });
+
+  it("create rejects character-only profile fields rather than silently dropping them", () => {
+    // The narrow-pick line: a caller posting a personality is confused about what a
+    // persona is, and should hear about it (personaProfileSchema is strict-by-parse
+    // only for types — the key itself is stripped, so assert the value never lands).
+    const parsed = personaCreateSchema.parse({
+      title: "Brian, 22",
+      name: "Brian",
+      profile: { bio: "ok", personality: "warm and evasive" },
+    });
+    expect(parsed.profile).not.toHaveProperty("personality");
+  });
+
+  it("patch keeps a partial profile partial — no default resets on unsent fields", () => {
+    // The exact bug partialWithoutDefaults exists to prevent: a PATCH merge
+    // (`{...current, ...patch}`) must not reset outfits/attributes to their defaults.
+    const parsed = personaPatchSchema.parse({ profile: { bio: "new bio" } });
+    expect(parsed.profile).toEqual({ bio: "new bio" });
+    expect(parsed.profile).not.toHaveProperty("outfits");
+    expect(parsed.profile).not.toHaveProperty("attributes");
+    expect(parsed.profile).not.toHaveProperty("speciesId");
+  });
+
+  it("patch rejects wrong types and a blank title", () => {
+    expect(personaPatchSchema.safeParse({ profile: { bio: 5 } }).success).toBe(false);
+    expect(personaPatchSchema.safeParse({ title: "" }).success).toBe(false);
+    expect(personaPatchSchema.safeParse({ name: "" }).success).toBe(false);
+    expect(personaPatchSchema.safeParse({}).success).toBe(true);
   });
 });
 

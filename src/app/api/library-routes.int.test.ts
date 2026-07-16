@@ -13,6 +13,7 @@ import {
   jobs,
   locations,
   loreChunks,
+  personas,
   sessionLinks,
   sessionLocations,
   sessionParticipants,
@@ -68,6 +69,12 @@ import { GET as imageFileRoute } from "./images/[id]/file/route";
 import { POST as itemImagesBatchRoute } from "./items/images/route";
 import { POST as locationImagesBatchRoute } from "./locations/images/route";
 import { POST as cloneCharacterRoute } from "./characters/[id]/clone/route";
+import { GET as listPersonasRoute, POST as createPersonaRoute } from "./personas/route";
+import {
+  DELETE as deletePersonaRoute,
+  GET as getPersonaRoute,
+  PATCH as patchPersonaRoute,
+} from "./personas/[id]/route";
 import { GET as devMeRoute } from "./dev/me/route";
 
 async function probe(): Promise<boolean> {
@@ -146,6 +153,7 @@ afterAll(async () => {
   await db().delete(items).where(eq(items.ownerId, ownerId));
   await db().delete(locations).where(eq(locations.ownerId, ownerId));
   await db().delete(characters).where(eq(characters.ownerId, ownerId));
+  await db().delete(personas).where(eq(personas.ownerId, ownerId));
   await db().delete(jobs).where(gte(jobs.createdAt, testStart));
   await db().delete(users).where(eq(users.id, ownerId));
   await globalThis.__vesperPool?.end();
@@ -155,6 +163,7 @@ let characterId = "";
 let locationId = "";
 let clothingItemId = "";
 let worldId = "";
+let personaId = "";
 
 describe("characters CRUD + search", () => {
   it("creates a character and lists it via ?q and ?tag", async (t) => {
@@ -1030,5 +1039,86 @@ describe("deletion guards", () => {
       .from(loreChunks)
       .where(eq(loreChunks.worldId, worldId));
     expect(chunkCount?.count).toBe(0);
+  });
+});
+
+describe("personas CRUD", () => {
+  it("creates a persona and lists it", async (t) => {
+    if (!ready) return t.skip();
+    const res = await createPersonaRoute(
+      send("http://t/api/personas", "POST", {
+        title: "Brian, 22",
+        name: "Brian",
+        tags: ["young"],
+        profile: { bio: "A quiet man who fixes things.", intimateRegions: ["penis"] },
+      }),
+      noParams,
+    );
+    expect(res.status).toBe(201);
+    personaId = ((await json(res)).persona as { id: string }).id;
+
+    const list = await listPersonasRoute(get("http://t/api/personas"), noParams);
+    const rows = (await json(list)).personas as { id: string; title: string; name: string }[];
+    expect(rows.map((r) => r.id)).toContain(personaId);
+    expect(rows.find((r) => r.id === personaId)?.title).toBe("Brian, 22");
+  });
+
+  // The whole reason `title` exists: `name` must be free to repeat across personas.
+  it("allows a duplicate name under a different title", async (t) => {
+    if (!ready) return t.skip();
+    const res = await createPersonaRoute(
+      send("http://t/api/personas", "POST", { title: "Brian, 40", name: "Brian" }),
+      noParams,
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects a duplicate title with a typed 409, not a raw unique-violation 500", async (t) => {
+    if (!ready) return t.skip();
+    const res = await createPersonaRoute(
+      send("http://t/api/personas", "POST", { title: "Brian, 22", name: "Someone Else" }),
+      noParams,
+    );
+    expect(res.status).toBe(409);
+    expect(((await json(res)).error as { code: string }).code).toBe("title_conflict");
+  });
+
+  it("merges a partial profile PATCH instead of replacing it", async (t) => {
+    if (!ready) return t.skip();
+    // Seed a wardrobe, then PATCH only `attributes` — the outfits must survive.
+    const seeded = await patchPersonaRoute(
+      send("http://t/api/personas/x", "PATCH", {
+        profile: { outfits: [{ id: "everyday", name: "Everyday", items: ["shirt"] }] },
+      }),
+      ctx({ id: personaId }),
+    );
+    expect(seeded.status).toBe(200);
+
+    const patched = await patchPersonaRoute(
+      send("http://t/api/personas/x", "PATCH", {
+        profile: { attributes: [{ id: "skin.tone", value: "tan", source: "manual" }] },
+      }),
+      ctx({ id: personaId }),
+    );
+    expect(patched.status).toBe(200);
+    const profile = ((await json(patched)).persona as { profile: Record<string, unknown> }).profile;
+    expect(profile.attributes).toHaveLength(1);
+    // The invariant partialWithoutDefaults exists to protect: unsent fields keep their value.
+    expect(profile.outfits).toHaveLength(1);
+    expect(profile.bio).toBe("A quiet man who fixes things.");
+  });
+
+  it("gets and deletes a persona; a foreign id is a 404", async (t) => {
+    if (!ready) return t.skip();
+    const got = await getPersonaRoute(get("http://t/api/personas/x"), ctx({ id: personaId }));
+    expect(got.status).toBe(200);
+
+    const missing = await getPersonaRoute(get("http://t/api/personas/x"), ctx({ id: "nope-not-a-real-id" }));
+    expect(missing.status).toBe(404);
+
+    const gone = await deletePersonaRoute(send("http://t/api/personas/x", "DELETE"), ctx({ id: personaId }));
+    expect(gone.status).toBe(200);
+    const after = await getPersonaRoute(get("http://t/api/personas/x"), ctx({ id: personaId }));
+    expect(after.status).toBe(404);
   });
 });
