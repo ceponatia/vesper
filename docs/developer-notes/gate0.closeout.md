@@ -1,14 +1,18 @@
 # Gate 0 evidence closeout
 
-Status: **IN PROGRESS — HOLD**
-Evidence branch: `engine-gate0-closeout`
-Implementation base: `engine@95d13c4922a03119f7ced3da2b864c598346f158`
-Protocol version: 1
+Status: **COMPLETE — ADVANCE**
+
+- Evidence branch: `engine-gate0-closeout`
+- Implementation base: `engine@95d13c4922a03119f7ced3da2b864c598346f158`
+- Evidence commit: `94392d298783f409f5ed90d7b83ab5bb1666dc8e`
+- Executed: 2026-07-16
+- Protocol version: 1
 
 This document closes Gate 0 of [engine.plan.md](engine.plan.md). It is an evidence
 record, not a new architecture proposal. Results are recorded against exact commits and
-predeclared decision rules; a failed experiment remains a useful result and is not tuned
-away after inspection.
+the decision rules declared before execution. **ADVANCE** authorizes work on Gate 1's
+minimum item-transfer authority seam; it does not promote any Gate 0 spike to production
+or authorize Gate 2.
 
 ## Gate 0 implementation under test
 
@@ -20,117 +24,192 @@ away after inspection.
 | G0.3 schedule-kind shadow spike | #5 | complete, no effects |
 | G0.3 grounded-context ablation | #6 | complete, eval only |
 
-## Exit criteria
+## Exit decision
 
-| Criterion | Required evidence | Current result |
+| Criterion | Result | Evidence |
 | --- | --- | --- |
-| Retakes restore every member | DB integration regression for primary plus two non-primary members | pending |
-| Baseline is reproducible | pinned corpus manifest/hash plus report tests | pending |
-| At least one spike improves a declared quality dimension | controlled treatment/control result with no new deterministic leak | pending |
-| No experiment is silently promoted | production import/flag/schema inspection | pending |
-| Repository remains healthy | canonical `pnpm verify` | pending |
+| Retakes restore every member | **PASS** | Real-Postgres regression covers one primary plus two non-primary members, exact per-member rollback anchors, and removal of discarded values across the complete tested state surface. |
+| Baseline is reproducible | **PASS** | Pinned 11-case manifest, stable corpus hash, prompt hashes, replay/report unit tests, and a zero-call dry run. |
+| At least one spike improves a declared quality dimension | **PASS** | Witness eligibility eliminates all controlled cross-viewpoint fact and episode leaks while preserving global rows and the legacy control. |
+| No experiment is silently promoted | **PASS** | Witness reads remain default off; schedule classification is read-only shadow code with effects blocked; grounding remains eval-only. |
+| Repository remains healthy | **PASS** | Canonical CI passed lint, cycle detection, typecheck, 2,500 unit tests, and copy/paste detection. Database CI passed all 262 integration tests. |
 
-The Gate 0 verdict remains **HOLD** until every required row has evidence. `advance`
-requires all exit criteria; `revise`, `hold`, or `stop` must name the failed seam.
+Gate 0 therefore exits **ADVANCE**. The witness experiment is the evidence-bearing spike;
+the other two spikes retain their narrower verdicts below.
 
-## Reproducible execution protocol
+## Evidence runs and environment
 
-### A. Canonical no-spend checks
+- Canonical repository run: [CI run 197](https://github.com/ceponatia/vesper/actions/runs/29520529824)
+- Exact-commit evidence run: [Gate 0 Evidence run 2](https://github.com/ceponatia/vesper/actions/runs/29521388220)
+- Runner: Ubuntu 24.04, Node 22.23.1, pnpm 10.12.1
+- Database: disposable repository Postgres 17 + pgvector image
+- Database mode: `AI_FAKE=1`; no provider-backed generation or embedding calls
+- Model calls made by this closeout: **0**
 
-```bash
-pnpm install --frozen-lockfile
-pnpm verify
-pnpm eval:engine-baseline --dry-run
-pnpm eval:schedule-kind --fixtures-only
-pnpm eval:narration --scenarios chat-contrast-grounding --profiles concise --dry-run
-```
+The evidence workflow checked out the evidence head SHA rather than the PR merge ref. It
+was temporary, branch-scoped, and removed after both archives passed. GitHub retains the
+run, logs, checks, and artifacts independently of that cleanup.
 
-Capture the workflow URL, commit, corpus version/hash, pass/fail result, duration, and
-generated manifest hashes.
+## Automated repository and no-spend results
 
-### B. Isolated database checks
+### Canonical repository gate
 
-```bash
-docker compose up -d --wait
-pnpm db:create
-pnpm db:migrate
-AI_FAKE=1 pnpm test:int
-AI_FAKE=1 pnpm db:seed
-AI_FAKE=1 pnpm eval:schedule-kind
-```
+`pnpm verify` passed:
 
-The database is disposable. Record integration test totals/skips and the authored schedule
-audit's matched/ambiguous/unknown distribution, hard-effect queue, confusion matrix, and
-fixture false positives.
+- ESLint with zero warnings;
+- no circular dependencies across 777 processed files;
+- TypeScript typecheck;
+- 171/171 unit-test files and 2,500/2,500 tests;
+- `jscpd` using the checked-in configuration.
 
-The witness experiment advances only if its controlled fixture proves:
+Relevant permanent eval tests included:
 
-- observer-only rows are retrievable by the observer;
-- the same rows are absent for a non-observer;
-- global rows remain eligible;
-- pinned facts cannot bypass eligibility;
-- eligibility is applied before top-k/recency limits;
-- the legacy control still retrieves all rows.
+- `scripts/eval/engine-baseline/report.test.ts`: 3/3;
+- `scripts/eval/schedule-kind/classifier.test.ts`: 38/38;
+- `scripts/eval/narration/grounding.test.ts`: 2/2;
+- `src/server/memory/retrieval.test.ts`: 5/5.
 
-This deterministic perspective-leak reduction is sufficient for Gate 0's “at least one
-spike” criterion if the complete repository and integration suites find no regression.
-It does not promote the feature flag or substitute for Gate 4's belief ledger.
+### Pinned baseline manifest
 
-### C. Live narrator evidence
+The dry run wrote 11 assembled cases without a model call:
 
-Live calls are not part of CI. Use the pinned model/profile/seeds and preserve raw results:
+| Field | Value |
+| --- | --- |
+| Corpus version | `gate0-baseline-v2` |
+| Corpus hash | `012d4b0ff38c6efd1e679fbff5ff409b6051f0f1de71198841000723fc12e24c` |
+| Model setting | `aion-labs/aion-2.0` |
+| Prompt profile | `concise_immersive` |
+| Temperature | `0.2` |
+| Seeds | `3` |
+| Manifest file SHA-256 | `fefb0179933dca4dd2ab4553a306c8cfc10d6d9a901264ff587aed4b0c66c811` |
 
-```bash
-pnpm eval:engine-baseline --model aion-labs/aion-2.0 --seeds 3
-pnpm eval:narration --scenarios chat-contrast-grounding --profiles concise --models aion --seeds 5 --no-judge
-EVAL_JUDGE_MODEL=google/gemini-3.1-pro-preview pnpm eval:narration:compare --axis contrast
-```
+Report tests prove saved rows can be summarized and replay-scored without regenerating
+prose. The manifest pins authored setup, state before and after, complete assembled
+prompts, and per-prompt hashes.
 
-Predeclared call envelope:
+### No-spend spike preparation
 
-- baseline: 11 cases × 3 seeds = 33 narrator calls;
-- grounding: 2 variants × 5 seeds = 10 narrator calls;
-- grounding blind judge: 5 paired judgements;
-- maximum planned total: 48 model calls, excluding a retry of a degraded provider leg.
+- schedule fixtures: 33/33 correct, 100% labeled accuracy, zero false-positive hard effects;
+- grounded-context dry run: exactly two cells, one pre-shower treatment and one
+  post-shower control, with one model/profile/reasoning/seed configuration;
+- grounding prompt transcript SHA-256:
+  `7beff7c91c62f34b6578d8a48f26c8f999aff0bd2f130791e3f72849c2037fea`;
+- unit tests prove the grounding pair has byte-identical player input and assembled
+  prompts that differ only in the deterministic redacted context value.
 
-Do not retry a valid low-quality output. Retry only a recorded provider/degradation failure
-and retain both attempts. Before execution, confirm the provider's current price and stop if
-the estimated run exceeds the owner's approved spend ceiling.
+The clean no-spend archive is
+[artifact 8384838884](https://github.com/ceponatia/vesper/actions/runs/29521388220/artifacts/8384838884),
+digest `sha256:cf0d6cb32122bc951c9427f3b992be8730c50714473d5cdb7ee53d1675ebd5dd`.
+Its internal checksum manifest excludes itself and covers every payload file. GitHub's
+configured retention expires 2026-08-15.
 
-### D. Manual review
+## Database and authored-data results
 
-Review successful baseline and grounding rows blind to treatment where pairing permits.
-Record:
+The isolated database job built the repository image, created and migrated the database,
+ran every integration suite without file parallelism, seeded the authored world, audited
+its schedule prose, captured database diagnostics, uploaded evidence, and removed the
+container and volume.
 
-- voice fidelity and chemistry;
-- continuity and causal enactment;
-- perspective leakage;
-- contradiction or hard-state repair;
-- exposition burden;
-- NPC agency.
+### Integration regressions
 
-The grounding spike requires at least 80% blind identification, cue separation, no new
-deterministic leak, and no median voice/chemistry decline. A grounding failure does not
-block Gate 0 when the witnessedBy spike independently passes the exit criterion.
+- 22/22 test files passed;
+- 262/262 tests passed;
+- zero skipped files or tests;
+- duration: 42.74 seconds.
 
-## Results
+The group-retake regression creates Mara, Nia, and Oren, giving every member distinctive
+baseline state. It contaminates the discarded take across scalar regard, familiarity,
+mind note, outfit, memory queries, open loops, surfaced cues, callback history,
+relationship history, milestones, feeling, and drives. After regenerate, every member's
+rollback anchor equals their original baseline and no settled member contains their
+discarded marker. The same suite also proves an older reach-back rerun returns
+`rerun_requires_branch` without changing transcript or state.
 
-### Automated repository and no-spend checks
+### Witness treatment/control
 
-Pending.
+The real-Postgres memory fixture passed all declared checks:
 
-### Database and authored-data checks
+- the observer retrieves observer-only facts and episodes;
+- the other participant cannot retrieve those rows;
+- the other participant retrieves their own private rows;
+- global rows with an empty witness set remain visible;
+- a pinned fact cannot bypass witness eligibility;
+- eligibility runs before recent-window and top-k limits;
+- the legacy no-viewpoint control retrieves all three visibility classes;
+- facts and episodes follow the same fence.
 
-Pending.
+Result: **zero deterministic cross-viewpoint leaks in the controlled fixture**, with no
+new model call and no regression in the legacy control. This is a measurable improvement
+to the declared perspective-leak dimension and satisfies the Gate 0 spike criterion. It
+does not claim that the spike is a complete belief or disclosure system.
 
-### Live model and manual quality checks
+### Seed and schedule audit
 
-Pending explicit spend authority and an available `OPENROUTER_API_KEY`.
+The deterministic Harbor House seed completed with 6 locations, 2 characters, 25 items,
+10 lore chunks, 10 pseudo-embedded lore chunks, and 33 refreshed pseudo search
+embeddings.
+
+The authored schedule audit found:
+
+| Classification | Rows |
+| --- | ---: |
+| Matched | 1 |
+| Ambiguous | 2 |
+| Unknown | 7 |
+| Total | 10 |
+| Coverage | 10% |
+
+The only match was explicit `sleeping`. The ambiguous rows were the compound shower/radio
+description and coffee/toast/tide-tables description. Three rows entered the hard-effect
+manual-review queue. This is the desired safe failure mode, but **10% coverage is strong
+evidence against using text inference as runtime authority**. New and edited schedules
+still need a typed kind; the adapter should be deleted after migration.
+
+The clean database archive is
+[artifact 8384866281](https://github.com/ceponatia/vesper/actions/runs/29521388220/artifacts/8384866281),
+digest `sha256:3a31a79dd3d5d7d6b065b2ae5dd7eba0194ed28f235e94fe5995c3407c11c0fd`.
+Its integration log SHA-256 is
+`a854a04d741f75d4b6dc3f49e37a2d67660799e924d6e1c74bec094f2465fee1`.
+GitHub's configured retention expires 2026-08-15.
+
+## Per-spike verdicts
+
+| Spike | Verdict | Consequence |
+| --- | --- | --- |
+| Witness eligibility | **PASS as Gate 0 evidence** | Supports the successor's perspective-first architecture. Keep the old-lane flag default off; Gate 4 still owns normalized beliefs, disclosure, contradiction, and production rollout. |
+| Schedule-kind inference | **PASS as a shadow safety probe; reject runtime promotion** | The classifier abstains safely, but authored coverage is only 10%. Add typed schedule contracts rather than expanding regex authority. |
+| Grounded-context ablation | **READY, not quality-scored** | Prompt isolation and the dry run pass. Do not adopt the treatment based on fixture construction alone; live paired narration and blind review remain required. |
+
+## Live model and manual quality evidence
+
+No live narrator or judge calls were made because there was no explicit spend ceiling or
+available `OPENROUTER_API_KEY`. This does not block Gate 0: the predeclared witness
+treatment/control independently satisfies the spike exit rule, and the grounded-context
+result is explicitly not promoted.
+
+Before Gate 1 can claim its latency and narration acceptance criteria, run the pinned live
+baseline and record p50/p95 latency, tokens, call count, degraded legs, transcripts, and
+manual review. If the grounded-context experiment is reconsidered for production, run its
+five paired seeds and blind judge under the already declared 80% identification rule; do
+not reuse this Gate 0 verdict as narrative-quality evidence.
+
+## Promotion safety
+
+- `MEMORY_WITNESS_ELIGIBILITY` remains opt-in and defaults to the legacy unfiltered path;
+- schedule classification lives under `scripts/eval`, performs no writes, and emits
+  `productionEffectsAllowed: false`;
+- grounded context lives only in the eval corpus and adds no runtime model leg;
+- no schema or feature default was changed by evidence collection;
+- the disposable evidence database and volume were removed;
+- the temporary evidence workflow was removed from the closeout branch.
 
 ## Final verdict
 
-**HOLD — evidence collection in progress.**
+**ADVANCE to Gate 1.**
 
-Gate 1 must not begin from this document until the verdict is updated with exact evidence
-and changed to **ADVANCE**. No Gate 3 product ruling is required to complete Gate 0 or the
-minimum Gate 1 item-transfer seam.
+Gate 0 repaired the known rollback invariant, produced a reproducible baseline corpus,
+demonstrated a controlled perspective-leak improvement, and kept every spike behind its
+declared boundary. Gate 1 may now build only the minimum item-transfer authority seam in
+the plan. This verdict does not enable a spike in production, authorize Gate 2, or erase
+the requirement for a cost-approved live latency and narration baseline before Gate 1
+acceptance.
