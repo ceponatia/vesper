@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { projectItemTransferredFeedRow, outboxRetryDelaySeconds } from "./outbox";
+import {
+  projectItemTransferredFeedRow,
+  outboxRetryDelaySeconds,
+  simulationOutboxStateSchema,
+} from "./outbox";
 
 const event = {
   id: "event_transfer_1",
@@ -50,5 +54,9 @@ describe("E2.3 outbox contracts", () => {
   it("uses deterministic bounded retry delays", () => {
     expect([1, 2, 3, 9, 10].map(outboxRetryDelaySeconds)).toEqual([1, 2, 4, 256, 256]);
     expect(() => outboxRetryDelaySeconds(0)).toThrow(RangeError);
+  });
+
+  it("admits the terminal quarantine state used by the durable consumer", () => {
+    expect(simulationOutboxStateSchema.parse("failed")).toBe("failed");
   });
 });
