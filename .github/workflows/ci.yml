@@ -6,9 +6,9 @@ name: CI
 # protection requires before a promotion PR can merge.
 on:
   pull_request:
-    branches: [main, prod]
+    branches: [main, prod, engine]
   push:
-    branches: [main, prod]
+    branches: [main, prod, engine]
 
 # A newer push to the same ref cancels the in-flight run — saves CI minutes.
 concurrency:
@@ -40,3 +40,6 @@ jobs:
 
       - name: Verify (lint + typecheck + test + jscpd)
         run: pnpm verify
+
+      - name: Gate 1 deterministic-path benchmark
+        run: pnpm eval:engine-gate1
