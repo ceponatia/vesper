@@ -1540,7 +1540,7 @@ export const simItemHoldings = pgTable(
       name: "sim_item_holdings_container_fk",
       columns: [t.branchId, t.holdingContainerId],
       foreignColumns: [simHoldingContainers.branchId, simHoldingContainers.holdingContainerId],
-    }).onDelete("restrict"),
+    }).onDelete("no action"),
     index("sim_item_holdings_container_idx").on(t.branchId, t.holdingContainerId),
     check(
       "sim_item_holdings_updated_sequence_safe",
