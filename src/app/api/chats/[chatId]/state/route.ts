@@ -14,6 +14,7 @@ import {
   emptyCharacterProfile,
   relationshipTextureSchema,
   socialReactionCardSchema,
+  chatPlayerStateSchema,
   supportingCastSchema,
   type CharacterProfile,
 } from "@/contracts";
@@ -87,6 +88,8 @@ const editBodySchema = z.object({
   selfieHistory: selfieHistorySchema.optional(),
   /** Runtime drives (character-drives.plan.md) — scenario/state-tools edit surface. */
   drives: chatDrivesSchema.optional(),
+  /** Who the player is here + what they're wearing (persona-library.plan.md) — the "Playing as" pick. */
+  playerState: chatPlayerStateSchema.optional(),
   /** Recurring named side characters (chat-supporting-cast.plan.md) — the panel's whole-list save. */
   supportingCast: supportingCastSchema.optional(),
   /** Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's whole-list save. */

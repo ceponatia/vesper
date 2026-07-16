@@ -21,9 +21,12 @@ import {
   type ChatSkipAmount,
   DEFAULT_AVATAR_IMAGE_MODEL,
   type AvatarImageModel,
+  type ChatPlayerState,
   type ChatSceneModel,
   characterProfileSchema,
+  chatPlayerStateSchema,
   emptyCharacterProfile,
+  emptyChatPlayerState,
   emptyItemDefinition,
   emptyPersonaProfile,
   emptyWorldLore,
@@ -374,6 +377,8 @@ export const chatStateSnapshotSchema = z.object({
   // Rendered garment phrase (worn items + overlay) for the read-only strip chip.
   outfitLabel: textOr(""),
   outfitExposed: z.boolean().catch(false),
+  /** Who the player is here + what they're wearing (persona-library.plan.md) — chat-wide. */
+  playerState: chatPlayerStateSchema.catch(() => emptyChatPlayerState()),
   activeSocialCards: z.array(socialReactionCardSchema).catch([]),
   // Meter bands last surfaced as a "just shifted" beat (character-chat-state-narration.spec.md
   // §5) — for the state-tools "State → narration" debug readout.
@@ -434,6 +439,8 @@ export interface ChatStateEdit {
   outfitPresetId?: string;
   outfit?: string;
   outfitExposed?: boolean;
+  /** Who the player is here + what they're wearing — the "Playing as" pick. */
+  playerState?: ChatPlayerState;
   activeSocialCards?: SocialReactionCard[];
   openLoops?: string[];
   memoryQueries?: string[];

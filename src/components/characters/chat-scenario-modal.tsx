@@ -8,7 +8,7 @@ import {
   parseChatSceneModel,
   type SocialReactionCard,
 } from "@/contracts";
-import { chatPresetsApi, chatsApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatPresetsApi, chatsApi, personasApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
@@ -72,7 +72,13 @@ function ScenarioForm({
   const [sceneAuto, setSceneAuto] = useState(snapshot.sceneAuto === "milestones");
   const [sceneModel, setSceneModel] = useState(parseChatSceneModel(snapshot.sceneModel));
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
+  const [personaId, setPersonaId] = useState(snapshot.playerState.personaId);
   const [saving, setSaving] = useState(false);
+
+  // Who the player can be here (persona-library.plan.md slice 7). Chat-wide, like the
+  // premise beside it. Blank ⇒ the resolver falls back to the owner's default persona,
+  // so an untouched chat still knows who you are.
+  const personas = useAsyncData(() => personasApi.list({ sort: "name" }), []);
 
   // --- Scenario presets (spec §1.5) — the form mounts per open, so this loads then.
   const presets = useAsyncData(() => chatPresetsApi.list(), []);
@@ -159,6 +165,13 @@ function ScenarioForm({
     if (sceneAutoMode !== snapshot.sceneAuto) patch.sceneAuto = sceneAutoMode;
     if (sceneModel !== parseChatSceneModel(snapshot.sceneModel)) patch.sceneModel = sceneModel;
     if (JSON.stringify(cards) !== JSON.stringify(snapshot.activeSocialCards)) patch.activeSocialCards = cards;
+    // Switching persona RESETS the wardrobe rather than carrying it over: the worn list
+    // and overlay describe the person who was wearing them. A blank list re-seeds from
+    // the new persona's default outfit preset on the next resolve (resolveChatWardrobe),
+    // exactly as a fresh chat does.
+    if (personaId !== snapshot.playerState.personaId) {
+      patch.playerState = { personaId, wornItemIds: [], outfitPresetId: "", overlay: "" };
+    }
     setSaving(true);
     const result = await chatsApi.editState(chatId, patch);
     setSaving(false);
@@ -210,6 +223,27 @@ function ScenarioForm({
           placeholder={`Set the scene for this chat with ${who} — e.g. "it's the night before you move away…"`}
         />
         <span className="text-[11px] text-paper-600">This chat only — it never touches {who}&rsquo;s saved bio or personality.</span>
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Playing as</span>
+        <Select
+          value={personaId}
+          onChange={(e) => setPersonaId(e.target.value)}
+          aria-label="The persona you play as in this chat"
+        >
+          <option value="">— Your default persona —</option>
+          {(personas.data ?? []).map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.title}
+            </option>
+          ))}
+        </Select>
+        <span className="text-[11px] text-paper-600">
+          {personaId
+            ? `${who} will know you as ${personas.data?.find((p) => p.id === personaId)?.name ?? "this persona"}. Switching resets what you're wearing here.`
+            : "Personas are built in your library. Leave this to use whichever one you set as default."}
+        </span>
       </label>
 
       <div className="flex flex-col gap-2">
