@@ -31,7 +31,7 @@ import {
   buildSceneRenderPrompt,
   heuristicFocalName,
   resolveScenePlan,
-  SCENE_COMPOSER_SYSTEM,
+  sceneComposerSystem,
   sceneSpecSchema,
   type SceneComposerContext,
   type SceneRenderPlan,
@@ -53,7 +53,9 @@ export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneR
   const fallback = (): SceneSpec => heuristicSceneSpec(context);
   const { value } = await generateChecked({
     schema: sceneSpecSchema,
-    system: SCENE_COMPOSER_SYSTEM,
+    // The embodied rules are the chat lane's opt-in; the session lane never sets it and
+    // gets the byte-identical disembodied prompt (scene-pov-embodiment.plan.md §Lane scope).
+    system: sceneComposerSystem(context.embodiedViewer === true),
     prompt: buildSceneComposerPrompt(context),
     modelId: toolModelId(),
     code: "images.scene_composer",

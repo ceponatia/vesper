@@ -9,6 +9,7 @@ import {
   isIntimateAttributeCategory,
 } from "@/contracts/body/locations";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
+import { viewerBodyPartById } from "@/contracts/images/viewer-body";
 import {
   buildAvatarPrompt,
   buildItemImagePrompt,
@@ -27,16 +28,21 @@ import {
   RECENT_NARRATION_LATEST_CHARS,
   RECENT_NARRATION_PRIOR_CHARS,
   resolveScenePlan,
+  sceneComposerSystem,
+  sceneFramingRule,
   sceneRevealAppearance,
+  scrubBlush,
   scrubPlayerFromAction,
   SCENE_COMPOSER_SYSTEM,
   SCENE_POV_RULE,
+  SELFIE_FRAMING,
   sceneSpecSchema,
   VENICE_RENDER_PROMPT_LIMIT,
   visibleAvatarOutfit,
   wardrobeOutfitSummary,
   type SceneComposerContext,
   type ScenePresentCharacter,
+  type SceneRenderPlan,
 } from "./prompts";
 
 function profileWith(overrides: Partial<CharacterProfile>): CharacterProfile {
@@ -988,6 +994,37 @@ describe("scrubPlayerFromAction (deterministic backstop)", () => {
   });
 });
 
+describe("scrubBlush (deterministic backstop)", () => {
+  it("returns clean text unchanged (identity — no rejoin churn on the common case)", () => {
+    const clean = "seated by the window, one leg crossed; flipping a page";
+    expect(scrubBlush(clean)).toBe(clean);
+  });
+
+  it("drops the skin-colour clause and keeps the physiology beside it", () => {
+    expect(scrubBlush("flushed, eyes bright and breath shallow")).toBe("eyes bright and breath shallow");
+    expect(scrubBlush("blushing hard; looking away")).toBe("looking away");
+    expect(scrubBlush("cheeks reddening, lips parted")).toBe("lips parted");
+  });
+
+  it("catches the whole word family the narrator's arousal hint seeds", () => {
+    for (const word of ["flushed", "flushing", "flush", "blush", "blushed", "blushes", "rosy", "ruddy", "red-faced"]) {
+      expect(scrubBlush(`${word} and still, mid-laugh`)).toBe("mid-laugh");
+    }
+  });
+
+  it("leaves a clause with no colour word alone even when the text has one elsewhere", () => {
+    expect(scrubBlush("flushed pink, seated by the window, flipping a page")).toBe(
+      "seated by the window, flipping a page",
+    );
+  });
+
+  // Degenerate case: nothing survives. buildSceneRenderPrompt guards on a truthy
+  // action, so the Pose line is simply omitted — a missing pose beats a painted one.
+  it("returns empty when every clause is a colour word", () => {
+    expect(scrubBlush("flushed, blushing")).toBe("");
+  });
+});
+
 describe("buildSceneRenderPrompt", () => {
   const plan = {
     ...emptySceneRenderPlan(),
@@ -1130,5 +1167,271 @@ describe("formatExposure", () => {
 
   it("reports a sheer top distinctly from a bare one", () => {
     expect(formatExposure({ ...covered, torso: "sheer" }, true)).toBe("wearing only a sheer top, skin visible through it");
+  });
+});
+
+describe("sceneFramingRule (scene-pov-embodiment slices 1+2)", () => {
+  const part = (id: string) => viewerBodyPartById(id)!;
+
+  // THE property that makes this slice safe to land: every caller passes no parts today,
+  // so not one rendered image changes. If this breaks, the default path regressed.
+  it("is byte-identical to the old constant with no viewer parts", () => {
+    expect(sceneFramingRule({})).toBe(SCENE_POV_RULE);
+    expect(sceneFramingRule({ parts: [] })).toBe(SCENE_POV_RULE);
+    expect(sceneFramingRule({ parts: [], subjects: ["Mira"] })).toBe(SCENE_POV_RULE);
+  });
+
+  it("binds every part to the viewer and to the frame, never as a subject", () => {
+    const rule = sceneFramingRule({ parts: [part("forearms")], subjects: ["Mira"] });
+    expect(rule).toContain("the viewer's own forearms");
+    expect(rule).toContain("foreshortened");
+    expect(rule).toContain("face and head are never in frame");
+  });
+
+  // The anti-third-person lever: a POSITIVE count, not a negative. "No man in frame" would
+  // anchor the model on `man`, exactly as the literal "no camera" once summoned cameras.
+  it("asserts the person count positively, from the featured list", () => {
+    expect(sceneFramingRule({ parts: [part("hands")], subjects: ["Mira"] })).toContain(
+      "Exactly one person is fully in frame: Mira.",
+    );
+    expect(sceneFramingRule({ parts: [part("hands")], subjects: ["Mira", "Sayed"] })).toContain(
+      "Exactly two people are fully in frame: Mira and Sayed.",
+    );
+    expect(sceneFramingRule({ parts: [part("hands")], subjects: [] })).toContain("No other person is in frame.");
+  });
+
+  it("never names the player as a subject noun", () => {
+    const rule = sceneFramingRule({ parts: [part("genitals"), part("torso")], subjects: ["Mira"] });
+    expect(rule).not.toMatch(/\ba man\b|\bhis\b|\bthe player\b/i);
+  });
+
+  it("joins several parts readably", () => {
+    const rule = sceneFramingRule({ parts: [part("hands"), part("forearms"), part("torso")], subjects: ["Mira"] });
+    expect(rule).toContain("hands");
+    expect(rule).toContain(" and ");
+    expect(rule.split("Also in frame").length - 1).toBe(1);
+  });
+
+  it("drops trailing/blank subject names rather than rendering an empty slot", () => {
+    expect(sceneFramingRule({ parts: [part("hands")], subjects: ["Mira", "  "] })).toContain(
+      "Exactly one person is fully in frame: Mira.",
+    );
+  });
+});
+
+describe("buildSceneRenderPrompt with viewer parts", () => {
+  const plan = {
+    ...emptySceneRenderPlan(),
+    focal: { name: "Mira", action: "seated by the window", outfitSummary: "linen shirt", appearance: "Hair color: red" },
+  };
+
+  it("carries today's rule when no parts are passed (every caller, today)", () => {
+    expect(buildSceneRenderPrompt(plan, { referenceName: "Mira" })).toContain(SCENE_POV_RULE);
+  });
+
+  it("swaps in the embodied rule when parts are passed", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      referenceName: "Mira",
+      viewerParts: [viewerBodyPartById("forearms")!],
+    });
+    expect(prompt).not.toContain(SCENE_POV_RULE);
+    expect(prompt).toContain("the viewer's own forearms");
+    expect(prompt).toContain("Exactly one person is fully in frame: Mira.");
+  });
+
+  // The framing rule is never-dropped tier: budgetVenicePrompt shrinks outfit/setting text
+  // to fit Venice's 1500-char cap, and must not eat the thing that stops a second person
+  // appearing.
+  it("keeps the embodied rule intact even when the prompt is budgeted down", () => {
+    const fat = {
+      ...plan,
+      focal: { ...plan.focal, outfitSummary: "a ".repeat(900) },
+      setting: "s ".repeat(900),
+    };
+    const prompt = buildSceneRenderPrompt(fat, {
+      referenceName: "Mira",
+      viewerParts: [viewerBodyPartById("forearms")!],
+    });
+    expect(prompt.length).toBeLessThanOrEqual(VENICE_RENDER_PROMPT_LIMIT);
+    expect(prompt).toContain("the viewer's own forearms");
+    expect(prompt).toContain("Exactly one person is fully in frame: Mira.");
+  });
+
+  // A selfie is the subject's own camera — there is no viewer standing in the scene at all,
+  // so viewer parts must not leak into that framing.
+  it("ignores viewer parts for a selfie", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      referenceName: "Mira",
+      framing: "selfie",
+      viewerParts: [viewerBodyPartById("forearms")!],
+    });
+    expect(prompt).toContain(SELFIE_FRAMING);
+    expect(prompt).not.toContain("the viewer's own forearms");
+  });
+});
+
+describe("the composer's viewer-body proposal (slice 3)", () => {
+  const present: ScenePresentCharacter = { name: "Mira", wornVisible: [] };
+  const ctx = (over: Partial<SceneComposerContext> = {}): SceneComposerContext => ({ present: [present], ...over });
+  const spec = (viewerBody: string[]) => ({ ...emptySceneSpec(), focalCharacter: "Mira", viewerBody });
+
+  it("keeps registry parts when the lane asked for embodiment", () => {
+    const plan = resolveScenePlan(spec(["hands", "forearms"]), ctx({ embodiedViewer: true }));
+    expect(plan.viewerBody).toEqual(["hands", "forearms"]);
+  });
+
+  // The session lane never sets embodiedViewer and gets the disembodied rules, so a
+  // proposal there means the composer went off-script — dropped AND logged.
+  it("drops everything in a lane that never asked, with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(spec(["hands"]), ctx(), sink);
+    expect(plan.viewerBody).toEqual([]);
+    expect(sink.items.map((d) => d.code)).toContain("images.scene_composer.viewer_body_unrequested");
+  });
+
+  it("drops invented ids, keeping the rest, with a diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(spec(["hands", "elbows"]), ctx({ embodiedViewer: true }), sink);
+    expect(plan.viewerBody).toEqual(["hands"]);
+    expect(sink.items.map((d) => d.code)).toContain("images.scene_composer.viewer_body_dropped");
+  });
+
+  // The composer runs allowIntimate:false on the moderation-prone tool model and has no
+  // intimate vocabulary — proposing one is off-script, even though the render gate would
+  // also have caught it.
+  it("drops an intimate part the composer had no business proposing", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(spec(["genitals", "torso"]), ctx({ embodiedViewer: true }), sink);
+    expect(plan.viewerBody).toEqual(["torso"]);
+    expect(sink.items.map((d) => d.code)).toContain("images.scene_composer.viewer_body_dropped");
+  });
+
+  it("carries the player's coverage onto the plan for the render gate", () => {
+    const exposure = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" } as const;
+    expect(resolveScenePlan(spec([]), ctx({ embodiedViewer: true, playerExposure: exposure })).playerExposure).toEqual(
+      exposure,
+    );
+    expect(resolveScenePlan(spec([]), ctx({ embodiedViewer: true })).playerExposure).toBeUndefined();
+  });
+
+  it("is empty by default — an unembodied plan is exactly today's shot", () => {
+    expect(resolveScenePlan(emptySceneSpec(), ctx()).viewerBody).toEqual([]);
+    expect(emptySceneRenderPlan().viewerBody).toEqual([]);
+  });
+});
+
+describe("sceneComposerSystem lane scope (slice 3)", () => {
+  it("is byte-identical to the shipped constant when not embodied — the session lane", () => {
+    expect(sceneComposerSystem(false)).toBe(SCENE_COMPOSER_SYSTEM);
+    expect(sceneComposerSystem()).toBe(SCENE_COMPOSER_SYSTEM);
+  });
+
+  it("keeps the session lane's absolute player-absence rule", () => {
+    expect(SCENE_COMPOSER_SYSTEM).toContain("The player must NEVER appear in the image");
+    expect(SCENE_COMPOSER_SYSTEM).not.toContain("viewerBody");
+  });
+
+  it("inverts both rules when embodied, and offers only the non-intimate vocabulary", () => {
+    const embodied = sceneComposerSystem(true);
+    expect(embodied).not.toContain("The player must NEVER appear in the image");
+    expect(embodied).toContain("viewerBody");
+    expect(embodied).toContain('"hands", "forearms", "lap_thighs", "legs_feet", "torso"');
+    // Intimate anatomy is derived at render assembly, never proposed by this model.
+    expect(embodied).not.toContain("genitals");
+  });
+
+  it("keeps the blush rule on both lanes", () => {
+    for (const system of [sceneComposerSystem(false), sceneComposerSystem(true)]) {
+      expect(system).toContain("NEVER describe skin colour");
+    }
+  });
+});
+
+describe("scrubPlayerFromAction when the viewer has a body (slice 3)", () => {
+  it("rewrites player references to the viewer instead of dropping the clause", () => {
+    expect(scrubPlayerFromAction("her hand closing over the player's forearm", { embodied: true })).toBe(
+      "her hand closing over the viewer's forearm",
+    );
+    expect(scrubPlayerFromAction("leaning into the player, laughing", { embodied: true })).toBe(
+      "leaning into the viewer, laughing",
+    );
+  });
+
+  it("still drops the clause when the viewer has no body in frame", () => {
+    expect(scrubPlayerFromAction("her hand closing over the player's forearm")).toBe("");
+    expect(scrubPlayerFromAction("leaning into the player, laughing")).toBe("laughing");
+  });
+
+  it("leaves clean text alone either way", () => {
+    const clean = "seated by the window, flipping a page";
+    expect(scrubPlayerFromAction(clean, { embodied: true })).toBe(clean);
+    expect(scrubPlayerFromAction(clean)).toBe(clean);
+  });
+});
+
+describe("the viewer's own body facts (slice 4)", () => {
+  const persona = profileWith({
+    intimateRegions: ["penis"],
+    attributes: [
+      { id: "skin.tone", value: "tan", source: "base" },
+      { id: "arms.hair", value: "moderate", source: "base" },
+      { id: "legs.hair", value: "heavy", source: "base" },
+      { id: "build.frame", value: "broad", source: "base" },
+    ],
+  });
+  const planWith = (over: Partial<SceneRenderPlan>): SceneRenderPlan => ({
+    ...emptySceneRenderPlan(),
+    focal: { name: "Mira", action: "seated", outfitSummary: "linen shirt", appearance: "" },
+    playerAttributes: persona.attributes,
+    playerProfile: persona,
+    ...over,
+  });
+
+  // Without this the viewer's arms change colour between shots, which reads as a different
+  // person reaching in — the whole reason the facts exist.
+  it("always states skin tone and frame for an embodied shot", () => {
+    const prompt = buildSceneRenderPrompt(planWith({ viewerBody: ["forearms"] }), {
+      referenceName: "Mira",
+      allowIntimate: true,
+    });
+    expect(prompt).toContain("The viewer's own body:");
+    expect(prompt).toContain("tan");
+    expect(prompt).toContain("broad");
+  });
+
+  it("states only what the parts in frame can show", () => {
+    const armsOnly = buildSceneRenderPrompt(planWith({ viewerBody: ["forearms"] }), { referenceName: "Mira" });
+    expect(armsOnly).toContain("moderate"); // arms.hair — in frame
+    expect(armsOnly).not.toContain("heavy"); // legs.hair — not in frame
+
+    const legs = buildSceneRenderPrompt(planWith({ viewerBody: ["legs_feet"] }), { referenceName: "Mira" });
+    expect(legs).toContain("heavy");
+  });
+
+  it("says nothing at all when the viewer has no body in frame", () => {
+    const prompt = buildSceneRenderPrompt(planWith({ viewerBody: [] }), { referenceName: "Mira" });
+    expect(prompt).toContain(SCENE_POV_RULE);
+    expect(prompt).not.toContain("The viewer's own body:");
+    expect(prompt).not.toContain("tan");
+  });
+
+  it("emits the viewer's intimate anatomy only when a gated part survived AND the route allows it", () => {
+    const nude = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" } as const;
+    const plan = planWith({
+      viewerBody: ["lap_thighs"],
+      playerExposure: nude,
+      playerIntimateAppearance: "circumcised, average length",
+    });
+    // Uncensored route + looking-down shot + bare pelvis ⇒ the derived part earns it.
+    expect(buildSceneRenderPrompt(plan, { referenceName: "Mira", allowIntimate: true })).toMatch(/circumcised/i);
+    // Same plan, moderated text-to-image fallback ⇒ nothing.
+    expect(buildSceneRenderPrompt(plan, {})).not.toMatch(/circumcised/i);
+    // Uncensored, but trousered ⇒ the gate drops the part, so the anatomy goes with it.
+    const dressed = planWith({
+      viewerBody: ["lap_thighs"],
+      playerExposure: { torso: "bare", pelvis: "covered", legs: "covered", feet: "bare" },
+      playerIntimateAppearance: "circumcised, average length",
+    });
+    expect(buildSceneRenderPrompt(dressed, { referenceName: "Mira", allowIntimate: true })).not.toMatch(/circumcised/i);
   });
 });

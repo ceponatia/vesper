@@ -48,12 +48,15 @@ export const users = pgTable("users", {
   /** Better Auth profile image URL (OAuth avatar); null for password sign-ups. */
   image: text("image"),
   /**
-   * The default player character (player-character.plan.md): a light persona
-   * (StoredPlayerPersona — name + short bio) the player is represented by in
-   * character chat. `{}` ⇒ none set; read back via `resolvePlayerPersona`, which
-   * `parseOr`s it. JSONB so growing the persona never needs a migration.
+   * The persona pre-selected for new chats (persona-library.plan.md slice 6) — the
+   * middle rung of `resolveChatPersona`'s ladder, so one-time setup still works and
+   * the per-chat pick is an override rather than a chore on every new conversation.
+   *
+   * A **soft pointer** (no FK), like `characters.avatar_image_id`: the resolver's
+   * lookup is owner-strict, so a dangling id simply misses and falls through to the
+   * account name rather than erroring. The persona DELETE route clears it anyway.
    */
-  playerPersona: jsonb("player_persona").notNull().default({}),
+  defaultPersonaId: text("default_persona_id"),
   /** Admin plugin ban fields — null/false ⇒ not banned. */
   banned: boolean("banned"),
   banReason: text("ban_reason"),
@@ -162,6 +165,48 @@ export const characters = pgTable(
 );
 
 /**
+ * **Personas** (persona-library.plan.md) — the player as a library entity: who *you*
+ * are in a chat, with a body, a wardrobe and a bio. The graduated successor to the
+ * single inline `users.player_persona` blob (one per account); a chat picks one.
+ *
+ * Deliberately NOT a row in `characters`: a "self" character would clutter every
+ * library list and need a `kind` discriminator + filtering everywhere (the reasoning
+ * recorded in finished/player-character.plan.md, which chose the blob for the same
+ * reason and left this as the graduation).
+ *
+ * No `visibility`/`clonedFromId` in v1 — a persona is *you*, so cross-account sharing
+ * has no obvious want. Both are additive later.
+ */
+export const personas = pgTable(
+  "personas",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    /**
+     * The library label, **unique per owner** — the disambiguator that lets `name`
+     * repeat across personas ("Brian, 22" and "Brian, 40" are both named Brian).
+     * A database/UX concern ONLY: it is deliberately absent from the `PlayerPersona`
+     * shape every prompt consumer reads, so it has no path to an agent.
+     */
+    title: text("title").notNull(),
+    /** The in-fiction name characters address. Freely repeatable across personas. */
+    name: text("name").notNull(),
+    /** PersonaProfile (contracts/players/persona-profile.ts) */
+    profile: jsonb("profile").notNull().default({}),
+    tags: jsonb("tags").notNull().default([]),
+    avatarImageId: text("avatar_image_id"),
+    searchEmbedding: vector("search_embedding", { dimensions: 1536 }),
+    embedder: text("embedder"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  // The composite unique's LEADING column doubles as the owner-scoped lookup index,
+  // so no separate `personas_owner_idx` is needed (the reasoning recorded on
+  // `session_participants_name_unique` / `turns_session_number_unique` below).
+  (t) => [uniqueIndex("personas_owner_title_unique").on(t.ownerId, t.title)],
+);
+
+/**
  * A conversation (docs/character-chat/; character-chat-standalone.spec.md §1):
  * the chat lane's first-class record — the transcript, rolling summary, and
  * per-participant state hang off `chat_id`, so one character can host many
@@ -195,6 +240,18 @@ export const characterChats = pgTable(
     sceneModel: text("scene_model").notNull().default("reference"),
     /** ChatSceneMemory — the shared imagined setting. */
     sceneMemory: jsonb("scene_memory").notNull().default({}),
+    /**
+     * `ChatPlayerState` (contracts/players/chat-player-state.ts) — **who the player is
+     * in this conversation and what they're wearing** (persona-library.plan.md slices
+     * 7–8). Chat-wide, like every other field in this block: one player, many roster
+     * characters. `{}` ⇒ no pick ⇒ the resolver falls to the owner's default persona.
+     *
+     * ONE jsonb column rather than five, following `scene_memory`'s precedent — field
+     * additions here are never migrations. Parsed with `parseOr` at the read boundary.
+     * It rides the `pre_exchange_scenario` rollback snapshot, so "another take" can't
+     * leave the player undressed by a beat that no longer exists.
+     */
+    playerState: jsonb("player_state").notNull().default({}),
     /** SupportingCastMember[] — recurring named side characters (chat-supporting-cast.plan.md). */
     supportingCast: jsonb("supporting_cast").notNull().default([]),
     /** ChatPlan[] — tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */

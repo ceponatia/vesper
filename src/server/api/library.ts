@@ -22,6 +22,7 @@ const TABLE_NAMES: Record<LibraryKind, string> = {
   location: "locations",
   item: "items",
   social_card: "social_cards",
+  persona: "personas",
 };
 
 const idRowSchema = z.object({ id: z.string() });
