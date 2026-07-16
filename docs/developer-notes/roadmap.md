@@ -27,6 +27,13 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
+- **Chat meter economy — visible decay, arousal resolution, skips with consequences** —
+  [chat-meter-economy.plan.md](chat-meter-economy.plan.md) (planned 2026-07-15 from an
+  owner report after the clock change: hygiene never visibly decays, arousal never
+  resolves after intimacy completes, and flavor-only skips (D14) no longer fit a world
+  where skips are the primary time mover). Per-meter chat drift pacing in one tunable
+  table, a pulse `intimacy` read with a climax reset + afterglow condition, and scoped
+  skip meter effects (cooling meters always cool; self-care on overnight/days).
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
