@@ -1445,6 +1445,7 @@ export const simEvents = pgTable(
       foreignColumns: [simBranches.id, simBranches.worldId],
     }).onDelete("cascade"),
     uniqueIndex("sim_events_branch_sequence_unique").on(t.branchId, t.sequence),
+    unique("sim_events_branch_id_unique").on(t.branchId, t.id),
     index("sim_events_branch_command_idx").on(t.branchId, t.commandId),
     index("sim_events_type_idx").on(t.type),
     check(
@@ -1551,3 +1552,6 @@ export const simItemHoldings = pgTable(
     ),
   ],
 );
+
+/**
+ * sed: -e expression #1, char 12: unterminated address regex
