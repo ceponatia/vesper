@@ -29,7 +29,23 @@ Declarative long-term knowledge (`facts` table, taxonomy in [contracts/facts.md]
 4. **Retrieval**: active facts by similarity with a **relevance floor** — `FACT_MIN_SCORE` = 0.25 on the best raw cosine, pinned rows exempt — then the top 5, merged (session lane) with the director's curated `characterNotes` into a single deduped ≤8-item facts channel for the narrator (one list, not three competing ones). Pinned facts are **force-included ahead of the top-k** (cap `PINNED_FACT_CAP` = 8, newest first, no embedder filter — a pinned row is retrieved even unembedded, reported with the honest "not scored" 0).
 5. **Edit reconciliation**: facts sourced from an edited/rerun turn (or, chat lane, an edited/deleted/regenerated assistant message via `source_message_id`) are `retracted` (not deleted — audit trail), and re-extracted from the new narration. Pinned player facts carry no message anchor, so message reconciliation never reaps them.
 
-Facts and episodes carry `witnessed_by`: as of phase 3 (presence & perception v1) this is the **perception-based witness set** computed each turn from attention × salience — `[player, ...perceivers]`, the NPCs who actually perceived a salient action this turn, not everyone co-located (see [perception.md](perception.md)). The stamp is now real perception. The knowledge-ledger **consumer** (per-character episodes / fact knowers reading the stamp, [developer-notes/character-memory-spec.phase3.md](developer-notes/finished/character-memory-spec.phase3.md)) is still phase 6 — for now the set is written truthfully and waits on its reader. Facts also carry `canon` (default true) — reserved for the lies/beliefs model, ignored by retrieval for now.
+Facts and episodes carry `witnessed_by`: as of phase 3 (presence & perception v1) this is the **perception-based witness set** computed each turn from attention × salience — `[player, ...perceivers]`, the NPCs who actually perceived a salient action this turn, not everyone co-located (see [perception.md](perception.md)). The stamp is now real perception.
+
+**Gate 0 witness-eligibility spike.** The session lane has an explicit, default-off
+consumer controlled by `MEMORY_WITNESS_ELIGIBILITY=1`. When enabled,
+`assemblePreTurn` passes the player participant id into both fused RAG legs and the
+chronological episode window. `witnessEligibilityWhere` admits rows whose witness array
+contains that id plus rows with an empty array (the authored/global and legacy-compatible
+class), in SQL **before** cosine ordering, pinned selection, recency ordering, and LIMIT.
+A pinned fact is not a visibility bypass. Missing viewpoint preserves the old baseline;
+non-array corrupted metadata is denied instead of crashing or leaking. Retrieval events
+record the viewpoint id for A/B evidence.
+
+This is not yet the phase-6 knowledge ledger: it adds no beliefs, disclosure, gossip,
+contradiction, or per-NPC narrator. The chat lane, inspector reads, supersedence, writes,
+and memory deletion remain unchanged. The experiment must beat the baseline before the
+flag becomes a default. Facts also carry `canon` (default true) — reserved for the
+lies/beliefs model.
 
 ### Fact channel — the RAG visibility fence
 
