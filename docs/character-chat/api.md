@@ -10,7 +10,7 @@ All under `/api/chats` (ownership resolves through the chat row — `chats/owned
 | Route | What |
 | --- | --- |
 | `GET /api/chats?characterId=&archived=1` · `POST /api/chats` | list conversations · create one (`memory: "shared" \| "fresh"` — the D7 choice) |
-| `GET/POST/PATCH/DELETE /api/chats/:chatId` | newest transcript page (100 rows; `?before=<messageId>` keysets older pages, `hasMore`/`nextBefore` in the envelope — the UI's "Load earlier") · one exchange (`kind: send \| open \| continue \| regenerate \| rerun`; `rerun` takes `messageId` = the target user line; `send` may carry `attachmentIds` ≤4 — [images.md](images.md) §Player photos — and may be photo-only, and may carry `inputMode: "narrator"` — [supporting-cast.md](supporting-cast.md) §Narrator input; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
+| `GET/POST/PATCH/DELETE /api/chats/:chatId` | newest transcript page (100 rows; `?before=<messageId>` keysets older pages, `hasMore`/`nextBefore` in the envelope — the UI's "Load earlier") · one exchange (`kind: send \| open \| continue \| regenerate \| rerun`; `rerun` takes `messageId` = the latest exchange's user line; older targets return `rerun_requires_branch` without mutation; `send` may carry `attachmentIds` ≤4 — [images.md](images.md) §Player photos — and may be photo-only, and may carry `inputMode: "narrator"` — [supporting-cast.md](supporting-cast.md) §Narrator input; plain-text token stream; 409 `chat_archived` on an archived chat) · rename/archive/restore · hard delete |
 | `POST /api/chats/:chatId/attachments` | upload ONE player photo (data URL in, `chat_upload` asset id back — [images.md](images.md) §Player photos); 409 on an archived chat, generation-rate-limited |
 | `POST /api/chats/:chatId/participants` · `PATCH/DELETE …/participants/:characterId` | roster add (cap 4, D7 memory choice; seeds matrix pairs) · presence flip (through `editChatState`, 409 mid-stream) · remove (never the last; primary's heir promotes — [multi-character.md](multi-character.md) §Multi-character) |
 | `GET/PUT /api/chats/:chatId/relationships` | the conversation's directed NPC↔NPC matrix + roster · upsert authored edges (band picks → live scalars; roster-validated — [multi-character.md](multi-character.md) §Multi-character) |
@@ -54,10 +54,10 @@ carries no callback line) ·
 you can't quite make out"; a non-degraded later retake retries) ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
 `.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` · `chat_state.snapshot.missing` ·
-`chat_state.rerun.no_rollback` (a rerun target that is not the last exchange's prompt —
-regenerating without state rollback) ·
 `chat_memory.reconciled` — plus route
-errors `chat_busy` (409), `chat_archived` (409), `invalid_rerun_target` (400), `scene_busy` (409), `rate_limited` (429),
+errors `chat_busy` (409), `chat_archived` (409), `invalid_rerun_target` (400),
+`rerun_requires_branch` (400; an older line cannot be safely rewritten through a
+one-exchange state snapshot), `scene_busy` (409), `rate_limited` (429),
 `not_found` (404). A failed `queueChatScene` (auto or manual) log-warns
 (`chat_scene` scope) and returns null — never a failed exchange. Degradation tests
 assert the fallback **and** the code ([testing.md](../testing.md)).

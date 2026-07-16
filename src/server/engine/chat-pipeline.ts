@@ -134,9 +134,10 @@ import { chatPromptLayout, narrationShapeId } from "./prompts/constants";
  *   delete only the target user line's SUCCESSORS and reuse the target itself as the
  *   prompt guard — a fresh reply streams like a `send`. Nothing is deleted until the
  *   lock is held and the target validates, so a failed acquire leaves the transcript
- *   byte-identical. State mirrors regenerate (snapshot rollback when the target is the
- *   last exchange's prompt, else no-rollback + diagnostic); deleted assistant
- *   successors have their extracted memory retracted.
+ *   byte-identical. Only the latest exchange's prompt can rerun in place: an older
+ *   target requires conversation branching because the one-exchange snapshot cannot
+ *   restore every discarded successor honestly. State mirrors regenerate; the deleted
+ *   assistant successor has its extracted memory retracted.
  */
 
 export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
@@ -226,7 +227,11 @@ export interface SubmitChatMessageInput {
 }
 
 export type SubmitChatMessageResult =
-  | { ok: false; code: "chat_busy" | "nothing_to_regenerate" | "invalid_rerun_target"; message: string }
+  | {
+      ok: false;
+      code: "chat_busy" | "nothing_to_regenerate" | "invalid_rerun_target" | "rerun_requires_branch";
+      message: string;
+    }
   | { ok: true; stream: AsyncGenerator<string, void, unknown> };
 
 /** A synthetic, non-persisted cue that gives the model a turn to respond to when the character opens the scene. */
@@ -462,7 +467,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     let effectiveKind: ChatExchangeKind = kind;
     /** For rerun: the assistant successors deleted this exchange (their memory is retracted). */
     let rerunDeletedAssistantIds: string[] = [];
-    /** For rerun: whether the pre-exchange snapshot still applies (target was the last exchange's prompt). */
+    /** For rerun: true only after the target is proven to be the latest exchange's prompt. */
     let rerunSnapshotApplies = false;
     /** Attached photos on this exchange's prompting line (chat-image-input.plan.md). */
     let attachmentFiles: { id: string; path: string }[] = [];
@@ -558,12 +563,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const resolved = await resolveRerunTarget(chatId, input.targetMessageId);
         if (!resolved.ok) {
           releaseChatLock();
-          return { ok: false, code: "invalid_rerun_target", message: resolved.message };
+          return { ok: false, code: resolved.code, message: resolved.message };
         }
         promptMessageId = resolved.target.id;
         playerContent = resolved.target.content;
         rerunDeletedAssistantIds = resolved.deletedAssistantIds;
-        rerunSnapshotApplies = resolved.snapshotApplies;
+        rerunSnapshotApplies = true;
         // Snipped user lines take their attached photos with them — player content,
         // never Gallery survivors. Fire-and-forget: the transcript rows are already gone.
         if (resolved.deletedIds.length) void deleteChatUploads(chatId, resolved.deletedIds);
@@ -609,35 +614,23 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // applicable rerun. A found `state: null` means the anchor was `{}` — a first
     // exchange with no prior state — so drift re-seeds from the authored defaults below,
     // exactly as the original first exchange did.
-    const restoreOrDegrade = async (): Promise<ChatState | null> => {
-      const restored = await loadPreExchangeState(chatId, characterId);
+    const restoreOrDegrade = async (targetCharacterId: string): Promise<ChatState | null> => {
+      const restored = await loadPreExchangeState(chatId, targetCharacterId);
       if (restored.found) return restored.state;
       sink.push(
         diag("warn", "chat_state.snapshot.missing", "no pre-exchange snapshot; regenerating without state rollback"),
       );
-      return loadChatState(chatId, characterId, sink);
+      return loadChatState(chatId, targetCharacterId, sink);
     };
 
     let storedState: ChatState | null;
     if (regenerateTarget) {
-      storedState = await restoreOrDegrade();
+      storedState = await restoreOrDegrade(characterId);
       await reconcileMessageMemory(regenerateTarget.id, sink);
     } else if (kind === "rerun") {
-      // Mirror regenerate's rollback when the target WAS the last exchange's prompt (its
-      // only successor was the newest reply); otherwise the snapshot covers just one
-      // exchange and can't roll back a reach-back rerun, so degrade to no rollback.
-      if (rerunSnapshotApplies) {
-        storedState = await restoreOrDegrade();
-      } else {
-        sink.push(
-          diag(
-            "warn",
-            "chat_state.rerun.no_rollback",
-            "rerun target is not the latest exchange's prompt; regenerating without state rollback",
-          ),
-        );
-        storedState = await loadChatState(chatId, characterId, sink);
-      }
+      // A successful rerun is necessarily the latest exchange: older targets are
+      // rejected before mutation because this one-exchange anchor cannot restore them.
+      storedState = await restoreOrDegrade(characterId);
       // Retract the extracted memory of every assistant reply this rerun deleted
       // (spec §4.3 — provenance), like regenerate does for the single old take.
       for (const deletedId of rerunDeletedAssistantIds) {
@@ -740,14 +733,25 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 undefined,
                 "characters.profile",
               );
-              const storedMember = (await loadChatState(chatId, member.characterId, sink)) ?? seedChatState(memberProfile);
-              const resolved = await resolveSeededOutfit(storedMember, owner, memberProfile, sink);
-              const state = driftChatState(resolved, memberProfile, { advance: resolved.presence === "present", clockMinutes: tickedClock });
+              // Regenerate/rerun is roster-wide: every participant restores the same
+              // exchange boundary before any drift or member-specific fan-out can run.
+              const storedMember =
+                regenerateTarget || (kind === "rerun" && rerunSnapshotApplies)
+                  ? await restoreOrDegrade(member.characterId)
+                  : await loadChatState(chatId, member.characterId, sink);
+              const preExchangeState = storedMember;
+              const seededMember = storedMember ?? seedChatState(memberProfile);
+              const resolved = await resolveSeededOutfit(seededMember, owner, memberProfile, sink);
+              const state = driftChatState(resolved, memberProfile, {
+                advance: resolved.presence === "present",
+                clockMinutes: tickedClock,
+              });
               return {
                 characterId: member.characterId,
                 memoryGroupId: member.memoryGroupId,
                 name: member.name,
                 profile: memberProfile,
+                preExchangeState,
                 state,
               };
             }),
@@ -1347,10 +1351,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               mentionsCharacter(agentPlayerContent, member.name, member.profile.aliases) ||
               spokeInReply(full, member.name);
             const quietExchanges = active ? 0 : memberState.quietExchanges + 1;
+            const guardMessageId = promptMessageId ?? assistantMessageId;
             await saveChatState({
               chatId,
               characterId: member.characterId,
-              promptMessageId: promptMessageId ?? assistantMessageId,
+              promptMessageId: guardMessageId,
               state: {
                 ...memberState,
                 // Whereabouts (chat-offscreen-life): a present member's pending whereabouts
@@ -1362,6 +1367,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 quietExchanges,
               },
             });
+            // Snapshot and state share the same guard: a deleted prompt can commit
+            // neither half, and every roster member advances from one rollback boundary.
+            await savePreExchangeSnapshot(
+              chatId,
+              member.characterId,
+              member.preExchangeState,
+              guardMessageId,
+            );
             // The addressed member actually sent the photo (their pulse read it) —
             // queue the render with THEIR identity (ruling 12).
             if (isSelfieTarget && pulsed && !pulsed.state.lastPulseTrace.degraded && pulsed.state.lastPulseTrace.sentPhoto) {
@@ -1602,14 +1615,13 @@ async function messageBefore(
 }
 
 type RerunResolution =
-  | { ok: false; message: string }
+  | { ok: false; code: "invalid_rerun_target" | "rerun_requires_branch"; message: string }
   | {
       ok: true;
       target: { id: string; content: string };
       deletedAssistantIds: string[];
       /** EVERY deleted successor id (both roles) — user lines' attachments clean up on these. */
       deletedIds: string[];
-      snapshotApplies: boolean;
     };
 
 /**
@@ -1618,11 +1630,10 @@ type RerunResolution =
  * `ok: false`, nothing modified — the delete only runs after validation passes), then
  * delete ONLY its successors — every row ordered after it on the `(created_at, id)` tuple
  * the transcript sorts by. The target row is left intact for the caller to reuse as the
- * prompt guard. Reports the deleted assistant successors (their extracted memory is
- * retracted upstream) and whether the pre-exchange snapshot still applies — true only
- * when the sole successor was the newest assistant reply, i.e. this rerun IS the last
- * exchange (so its rollback is exactly regenerate's; older reach-backs and continue beats
- * degrade to no rollback).
+ * prompt guard. In-place rerun is admitted only when the sole successor is the latest
+ * assistant reply. Any older reach-back is rejected before deletion with
+ * `rerun_requires_branch`: the state store has one exchange anchor, not enough history
+ * to roll every discarded successor back without corrupting the simulation.
  *
  * "Successors" is computed by ORDERING in SQL (full `created_at` precision) and slicing
  * after the target's position — deliberately NOT by comparing `created_at` against a Date
@@ -1631,7 +1642,9 @@ type RerunResolution =
  * same-millisecond rows), deleting the very line we mean to keep.
  */
 async function resolveRerunTarget(chatId: string, targetMessageId: string | undefined): Promise<RerunResolution> {
-  if (!targetMessageId) return { ok: false, message: "no target message id for the rerun" };
+  if (!targetMessageId) {
+    return { ok: false, code: "invalid_rerun_target", message: "no target message id for the rerun" };
+  }
   return db().transaction(async (tx) => {
     const ordered = await tx
       .select({
@@ -1645,21 +1658,30 @@ async function resolveRerunTarget(chatId: string, targetMessageId: string | unde
     const idx = ordered.findIndex((m) => m.id === targetMessageId);
     const target = idx === -1 ? undefined : ordered[idx];
     if (!target || target.role !== "user") {
-      return { ok: false as const, message: "that message can't be rerun (not a player line in this conversation)" };
+      return {
+        ok: false as const,
+        code: "invalid_rerun_target" as const,
+        message: "that message can't be rerun (not a player line in this conversation)",
+      };
     }
     const successors = ordered.slice(idx + 1);
+    if (successors.length !== 1 || successors[0]?.role !== "assistant") {
+      return {
+        ok: false as const,
+        code: "rerun_requires_branch" as const,
+        message: "older messages cannot be rerun in place; branch the conversation from this point instead",
+      };
+    }
     const successorIds = successors.map((s) => s.id);
     if (successorIds.length > 0) {
       await tx.delete(characterChatMessages).where(inArray(characterChatMessages.id, successorIds));
     }
     const deletedAssistantIds = successors.filter((s) => s.role === "assistant").map((s) => s.id);
-    const snapshotApplies = successors.length === 1 && successors[0]?.role === "assistant";
     return {
       ok: true as const,
       target: { id: target.id, content: target.content },
       deletedAssistantIds,
       deletedIds: successorIds,
-      snapshotApplies,
     };
   });
 }
