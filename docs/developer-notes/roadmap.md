@@ -23,13 +23,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **World-engine Gate 1 — item-transfer authority seam** —
-  [engine-gate1-item-transfer.plan.md](engine-gate1-item-transfer.plan.md) (active;
-  started 2026-07-16 from the approved `engine.plan.md` target list). Proves one
-  command → event → projection → observer-filtered NarrativeCut → existing-narrator
-  path, plus optimistic versioning, idempotency, deterministic replay, and state-free
-  rerender. It is an in-memory, deleteable experiment with a predeclared 5 ms p95
-  budget and no scheduler, migration, RAG change, or new model call.
+- **World-engine identity and causal envelopes (E2.1)** —
+  [engine-identity-envelopes.plan.md](engine-identity-envelopes.plan.md) (active;
+  started 2026-07-16 after Gate 1 advanced). Promotes the proven item-transfer-local
+  identities, integer causal primitives, complete principal taxonomy, and strict
+  command/event/result shapes into reusable contracts. Migrates Gate 1 onto them without
+  adding persistence, scheduling, live-chat mutation, or a model call; E2.2 consumes this
+  boundary for the first durable branch transaction.
 
 ## Next (queued)
 
@@ -128,6 +128,12 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine Gate 1 — item-transfer authority seam** —
+  [engine-gate1-item-transfer.plan.md](engine-gate1-item-transfer.plan.md) · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-16 — one authorized item transfer now proves
+  command → immutable event → synchronous projection → observer-filtered NarrativeCut →
+  existing narrator, with optimistic versioning, idempotency, deterministic replay,
+  state-free rerender, duplicate-command defense, zero model calls, and a 0.233 ms CI p95.
 - **Chat off-screen life — the cast moves between visits** —
   [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) · spec
   [chat-offscreen-life.spec.md](chat-offscreen-life.spec.md) — 2026-07-15 — the chat lane's

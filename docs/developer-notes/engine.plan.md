@@ -287,6 +287,33 @@ Rough effort: **15–30 developer-days** after Gate 1.
 - branch-level serialization without holding a database lock across a model call;
 - feature flags that assign a test world to the successor.
 
+### Gate 2 build order
+
+Gate 2 is split into stable implementation targets. The IDs describe dependency order;
+they are not GitHub pull-request numbers.
+
+1. **E2.1 — production identity and envelopes.** Promote the Gate 1 identifiers,
+   integer causal primitives, principal taxonomy, command envelopes, event envelopes,
+   and exhaustive results into reusable contracts. Migrate `transfer_item` onto them
+   without changing its outcome. No database tables yet.
+2. **E2.2 — durable branch transaction.** Add `sim_worlds`, `sim_branches`,
+   `sim_commands`, `sim_events`, and the minimum typed item-holding projection. Serialize
+   accepted work per branch; persist idempotent results and prove crash atomicity.
+3. **E2.3 — outbox and rebuildable consumers.** Add transactional outbox rows,
+   idempotent consumer checkpoints, one asynchronous projection, retry diagnostics, and
+   rebuild-from-zero tooling.
+4. **E2.4 — durable scheduler and deterministic draws.** Add trigger identity,
+   uniqueness, claim/retry semantics, stable simultaneous ordering, named random streams,
+   and one trigger that resolves through the same kernel transaction.
+5. **E2.5 — forks, snapshots, and audit.** Add branch ancestry, fork boundaries,
+   checksummed snapshots, projection comparison, and causal explanation queries.
+6. **E2.6 — Gate 2 soak and verdict.** Run the synthetic-month, partition-invariance,
+   retry, crash, queue-growth, replay-hash, and diagnostics proofs. Record advance,
+   revise, hold, or stop before movement or live-scene work begins.
+
+Each target stays reviewable on its own. E2.2 consumes E2.1; E2.3 and E2.4 consume the
+E2.2 transaction; E2.5 consumes the stable event store; E2.6 closes the gate.
+
 ### Required proofs
 
 - a large time skip and equivalent partitions produce the same material outcomes;

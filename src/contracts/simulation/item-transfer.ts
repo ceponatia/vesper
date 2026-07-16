@@ -1,60 +1,94 @@
 import { z } from "zod";
+import {
+  acceptedSimulationCommandResultSchema,
+  commandPrincipalSchema,
+  conflictSimulationCommandResultSchema,
+  createCommandEnvelopeSchema,
+  createCommandResultSchema,
+  createEventEnvelopeSchema,
+  createStableStringSetSchema,
+} from "./envelopes";
+import {
+  branchHeadSequenceSchema,
+  branchSequenceSchema,
+  branchVersionSchema,
+  commandIdSchema,
+  eventIdSchema,
+  holdingContainerIdSchema,
+  itemIdSchema,
+  narrativeCutIdSchema,
+  observationIdSchema,
+  rulesetVersionSchema,
+  storySecondSchema,
+  worldBranchIdSchema,
+  worldCharacterIdSchema,
+  worldIdSchema,
+} from "./identity";
 
-const simulationIdSchema = z.string().trim().min(1).max(512);
+export { commandPrincipalSchema };
+
+const GATE1_PERCEPTION_VERSION = "gate1-perception-v1" as const;
+const gate1PerceptionVersionSchema = z.literal(GATE1_PERCEPTION_VERSION).brand<"DerivationVersion">();
+
+const holdingContainerIdsSchema = createStableStringSetSchema(
+  holdingContainerIdSchema,
+  "Holding container IDs",
+);
+const actorIdsSchema = createStableStringSetSchema(worldCharacterIdSchema, "Actor IDs");
 
 export const holdingContainerKinds = ["actor", "location", "container"] as const;
 export const holdingContainerKindSchema = z.enum(holdingContainerKinds);
 
 export const simulationActorSchema = z
   .object({
-    id: simulationIdSchema,
+    id: worldCharacterIdSchema,
     name: z.string().trim().min(1),
     /** Containers whose contents this actor can currently perceive. */
-    observedContainerIds: z.array(simulationIdSchema).default([]),
+    observedContainerIds: holdingContainerIdsSchema.default([]),
   })
   .strict();
 
 export const holdingContainerSchema = z
   .object({
-    id: simulationIdSchema,
+    id: holdingContainerIdSchema,
     kind: holdingContainerKindSchema,
     name: z.string().trim().min(1),
-    capacity: z.number().int().nonnegative(),
+    capacity: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     /** Actors allowed to manipulate this holding locus in the Gate 1 slice. */
-    accessibleToActorIds: z.array(simulationIdSchema).default([]),
+    accessibleToActorIds: actorIdsSchema.default([]),
   })
   .strict();
 
 export const simulationItemSchema = z
   .object({
-    id: simulationIdSchema,
+    id: itemIdSchema,
     name: z.string().trim().min(1),
-    holdingContainerId: simulationIdSchema,
+    holdingContainerId: holdingContainerIdSchema,
   })
   .strict();
 
 export const itemTransferObservationSchema = z
   .object({
-    id: simulationIdSchema,
-    sourceEventId: simulationIdSchema,
-    witnessActorId: simulationIdSchema,
-    sequence: z.number().int().positive(),
-    storySecond: z.number().int().nonnegative(),
-    itemId: simulationIdSchema,
-    fromContainerId: simulationIdSchema,
-    toContainerId: simulationIdSchema,
-    derivationVersion: z.literal("gate1-perception-v1"),
+    id: observationIdSchema,
+    sourceEventId: eventIdSchema,
+    witnessActorId: worldCharacterIdSchema,
+    sequence: branchSequenceSchema,
+    storySecond: storySecondSchema,
+    itemId: itemIdSchema,
+    fromContainerId: holdingContainerIdSchema,
+    toContainerId: holdingContainerIdSchema,
+    derivationVersion: gate1PerceptionVersionSchema,
   })
   .strict();
 
 export const itemTransferProjectionSchema = z
   .object({
-    worldId: simulationIdSchema,
-    branchId: simulationIdSchema,
-    rulesetVersion: z.string().trim().min(1),
-    version: z.number().int().nonnegative(),
-    headSequence: z.number().int().nonnegative(),
-    storySecond: z.number().int().nonnegative(),
+    worldId: worldIdSchema,
+    branchId: worldBranchIdSchema,
+    rulesetVersion: rulesetVersionSchema,
+    version: branchVersionSchema,
+    headSequence: branchHeadSequenceSchema,
+    storySecond: storySecondSchema,
     actors: z.array(simulationActorSchema),
     containers: z.array(holdingContainerSchema),
     items: z.array(simulationItemSchema),
@@ -62,37 +96,20 @@ export const itemTransferProjectionSchema = z
   })
   .strict();
 
-export const commandPrincipalSchema = z
+const transferItemPayloadSchema = z
   .object({
-    kind: z.enum(["player", "npc_policy", "storyteller", "migration"]),
-    principalId: simulationIdSchema,
-    controlledActorIds: z.array(simulationIdSchema),
+    actorId: worldCharacterIdSchema,
+    itemId: itemIdSchema,
+    fromContainerId: holdingContainerIdSchema,
+    toContainerId: holdingContainerIdSchema,
   })
   .strict();
 
-export const transferItemCommandSchema = z
-  .object({
-    id: simulationIdSchema,
-    branchId: simulationIdSchema,
-    expectedVersion: z.number().int().nonnegative(),
-    idempotencyKey: simulationIdSchema,
-    principal: commandPrincipalSchema,
-    /** Operational metadata only; it never advances story time. */
-    submittedAtWallClock: z.string().trim().min(1),
-    requestedStorySecond: z.number().int().nonnegative().optional(),
-    type: z.literal("transfer_item"),
-    schemaVersion: z.literal(1),
-    correlationId: simulationIdSchema,
-    payload: z
-      .object({
-        actorId: simulationIdSchema,
-        itemId: simulationIdSchema,
-        fromContainerId: simulationIdSchema,
-        toContainerId: simulationIdSchema,
-      })
-      .strict(),
-  })
-  .strict();
+export const transferItemCommandSchema = createCommandEnvelopeSchema(
+  "transfer_item",
+  1,
+  transferItemPayloadSchema,
+);
 
 export const itemTransferRejectionCodes = [
   "invalid_command",
@@ -110,116 +127,98 @@ export const itemTransferRejectionCodes = [
 ] as const;
 
 export const itemTransferRejectionCodeSchema = z.enum(itemTransferRejectionCodes);
+export const itemTransferCommandResultSchema = createCommandResultSchema(itemTransferRejectionCodeSchema);
 
-export const acceptedCommandResultSchema = z
+// Compatibility aliases remain local to this first command family while later
+// families import the generic result contracts directly.
+export const acceptedCommandResultSchema = acceptedSimulationCommandResultSchema;
+export const conflictCommandResultSchema = conflictSimulationCommandResultSchema;
+
+const itemTransferredPayloadSchema = transferItemPayloadSchema.extend({
+  /** Captured derived value: replay does not recompute historical eligibility. */
+  observerActorIds: actorIdsSchema,
+});
+
+export const itemTransferredEventSchema = createEventEnvelopeSchema(
+  "item_transferred",
+  1,
+  itemTransferredPayloadSchema,
+).extend({
+  derivationVersion: gate1PerceptionVersionSchema,
+  commandId: commandIdSchema,
+});
+
+export const itemTransferNarrativeBeatSchema = z
   .object({
-    status: z.literal("accepted"),
-    commandId: simulationIdSchema,
-    branchVersion: z.number().int().positive(),
-    firstSequence: z.number().int().positive(),
-    lastSequence: z.number().int().positive(),
-    eventIds: z.array(simulationIdSchema),
+    kind: z.literal("item_transferred"),
+    eventId: eventIdSchema,
+    sequence: branchSequenceSchema,
+    actorId: worldCharacterIdSchema,
+    actorName: z.string().trim().min(1),
+    itemId: itemIdSchema,
+    itemName: z.string().trim().min(1),
+    fromContainerId: holdingContainerIdSchema,
+    fromContainerName: z.string().trim().min(1),
+    toContainerId: holdingContainerIdSchema,
+    toContainerName: z.string().trim().min(1),
   })
   .strict();
 
-export const rejectedCommandResultSchema = z
+export const itemTransferForbiddenClaimSchema = z
   .object({
-    status: z.literal("rejected"),
-    commandId: z.string(),
-    code: itemTransferRejectionCodeSchema,
-    publicReason: z.string(),
-    legalAlternativeCommandTypes: z.array(z.string()),
+    kind: z.enum(["additional_item_transfer", "unobserved_inventory_change"]),
+    publicText: z.string().trim().min(1),
   })
   .strict();
 
-export const conflictCommandResultSchema = z
+/** The deliberately small, perspective-safe Gate 1 subset of engine.spec §22. */
+export const itemTransferNarrativeCutSchema = z
   .object({
-    status: z.literal("conflict"),
-    commandId: simulationIdSchema,
-    currentVersion: z.number().int().nonnegative(),
-    retryable: z.boolean(),
+    id: narrativeCutIdSchema,
+    semanticHash: z.string().regex(/^[0-9a-f]{8}$/u),
+    worldId: worldIdSchema,
+    branchId: worldBranchIdSchema,
+    branchVersion: branchVersionSchema,
+    fromSequence: branchHeadSequenceSchema,
+    throughSequence: branchHeadSequenceSchema,
+    fromStorySecond: storySecondSchema,
+    throughStorySecond: storySecondSchema,
+    viewpointActorId: worldCharacterIdSchema,
+    mustEnact: z.array(itemTransferNarrativeBeatSchema),
+    perceptibleNow: z.array(itemTransferNarrativeBeatSchema),
+    allowedTransitions: z.tuple([]),
+    forbiddenClaims: z.array(itemTransferForbiddenClaimSchema),
+    provenance: z.array(
+      z
+        .object({
+          eventId: eventIdSchema,
+          observationId: observationIdSchema,
+        })
+        .strict(),
+    ),
   })
-  .strict();
-
-export const itemTransferCommandResultSchema = z.discriminatedUnion("status", [
-  acceptedCommandResultSchema,
-  rejectedCommandResultSchema,
-  conflictCommandResultSchema,
-]);
-
-export const itemTransferredEventSchema = z
-  .object({
-    id: simulationIdSchema,
-    worldId: simulationIdSchema,
-    branchId: simulationIdSchema,
-    sequence: z.number().int().positive(),
-    storySecond: z.number().int().nonnegative(),
-    type: z.literal("item_transferred"),
-    schemaVersion: z.literal(1),
-    rulesetVersion: z.string().trim().min(1),
-    derivationVersion: z.literal("gate1-perception-v1"),
-    commandId: simulationIdSchema,
-    correlationId: simulationIdSchema,
-    actorIds: z.array(simulationIdSchema),
-    entityIds: z.array(simulationIdSchema),
-    recordedAtWallClock: z.string().trim().min(1),
-    payload: z
-      .object({
-        actorId: simulationIdSchema,
-        itemId: simulationIdSchema,
-        fromContainerId: simulationIdSchema,
-        toContainerId: simulationIdSchema,
-        /** Captured derived value: replay does not recompute historical eligibility. */
-        observerActorIds: z.array(simulationIdSchema),
-      })
-      .strict(),
+  .strict()
+  .refine((cut) => cut.throughSequence >= cut.fromSequence, {
+    message: "NarrativeCut sequence range is reversed",
+    path: ["throughSequence"],
   })
-  .strict();
+  .refine((cut) => cut.throughStorySecond >= cut.fromStorySecond, {
+    message: "NarrativeCut story-time range is reversed",
+    path: ["throughStorySecond"],
+  });
 
 export type SimulationActor = z.infer<typeof simulationActorSchema>;
 export type HoldingContainer = z.infer<typeof holdingContainerSchema>;
 export type SimulationItem = z.infer<typeof simulationItemSchema>;
 export type ItemTransferObservation = z.infer<typeof itemTransferObservationSchema>;
 export type ItemTransferProjection = z.infer<typeof itemTransferProjectionSchema>;
+export type ItemTransferProjectionInput = z.input<typeof itemTransferProjectionSchema>;
 export type TransferItemCommand = z.infer<typeof transferItemCommandSchema>;
+export type TransferItemCommandInput = z.input<typeof transferItemCommandSchema>;
 export type ItemTransferRejectionCode = z.infer<typeof itemTransferRejectionCodeSchema>;
 export type ItemTransferCommandResult = z.infer<typeof itemTransferCommandResultSchema>;
 export type ItemTransferredEvent = z.infer<typeof itemTransferredEventSchema>;
-
-export interface ItemTransferNarrativeBeat {
-  kind: "item_transferred";
-  eventId: string;
-  sequence: number;
-  actorId: string;
-  actorName: string;
-  itemId: string;
-  itemName: string;
-  fromContainerId: string;
-  fromContainerName: string;
-  toContainerId: string;
-  toContainerName: string;
-}
-
-export interface ItemTransferForbiddenClaim {
-  kind: "additional_item_transfer" | "unobserved_inventory_change";
-  publicText: string;
-}
-
-/** The deliberately small, perspective-safe Gate 1 subset of engine.spec §22. */
-export interface ItemTransferNarrativeCut {
-  id: string;
-  semanticHash: string;
-  worldId: string;
-  branchId: string;
-  branchVersion: number;
-  fromSequence: number;
-  throughSequence: number;
-  fromStorySecond: number;
-  throughStorySecond: number;
-  viewpointActorId: string;
-  mustEnact: ItemTransferNarrativeBeat[];
-  perceptibleNow: ItemTransferNarrativeBeat[];
-  allowedTransitions: [];
-  forbiddenClaims: ItemTransferForbiddenClaim[];
-  provenance: Array<{ eventId: string; observationId: string }>;
-}
+export type ItemTransferNarrativeBeat = z.infer<typeof itemTransferNarrativeBeatSchema>;
+export type ItemTransferForbiddenClaim = z.infer<typeof itemTransferForbiddenClaimSchema>;
+export type ItemTransferNarrativeCut = z.infer<typeof itemTransferNarrativeCutSchema>;
+export type ItemTransferNarrativeCutInput = z.input<typeof itemTransferNarrativeCutSchema>;
