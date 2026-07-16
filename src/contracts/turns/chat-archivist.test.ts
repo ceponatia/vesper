@@ -129,6 +129,7 @@ describe("the extraction legs (chat-agent-improvements slice 1b)", () => {
     expect(continuity).toEqual({
       scene: whole.scene,
       outfit: whole.outfit,
+      playerOutfit: whole.playerOutfit,
       attributeChanges: whole.attributeChanges,
       presence: whole.presence,
       cast: whole.cast,
@@ -141,6 +142,17 @@ describe("the extraction legs (chat-agent-improvements slice 1b)", () => {
       characterSlip: whole.characterSlip,
       traitShifts: whole.traitShifts,
     });
+  });
+
+  /**
+   * The player's wardrobe is chat-wide, so it belongs to the SHARED continuity leg only.
+   * The personal pass runs once per present ensemble member — if it carried playerOutfit,
+   * three members would each propose changes to the one player's clothes and the last
+   * fold would win at random (persona-library.plan.md slice 8).
+   */
+  it("keeps playerOutfit out of the per-member personal pass", () => {
+    expect(chatPersonalNotesSchema.parse({})).not.toHaveProperty("playerOutfit");
+    expect(chatContinuitySchema.parse({})).toHaveProperty("playerOutfit");
   });
 
   it("mergeChatExtractions reassembles the aggregate; an absent leg contributes empties, never nulls", () => {

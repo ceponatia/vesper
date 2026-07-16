@@ -75,14 +75,44 @@ Shipped end to end in the **session lane** (all seven build-order steps):
 - **Docs.** `contracts/body.md` (the note trio + gate), `prompts.md` (the block + Exposure
   gating), `authoring.md` (forge field + editor + redraft scope).
 
-**Leftover — chat lane (the test bed).** The feature ships **session-lane only**. The chat
-lane has **no four-axis `ExposureMask`** (it computes coverage-based `RegionExposure`, and
-its intimate *trait* bands surface under a soft "when the moment turns intimate" framing, not
-a hard exposure gate — `prompts/character-chat.ts`). So `profile.intimacy` and the species
-`intimacy` note are **authored and stored** but do not yet surface in chat. A chat-lane port
-(rendering the same archetype+`profile.intimacy` under that soft framing beside the intimate
-trait bands) is the natural follow-up if the owner wants intimate disposition in the chat
-test bed — captured here, not built (the plan/spec scoped only the session `buildTurnContext`).
+**~~Leftover — chat lane (the test bed).~~ CLOSED 2026-07-16** — see below. As shipped
+2026-07-14 the feature was **session-lane only**: the chat lane had no four-axis
+`ExposureMask`, so `profile.intimacy` and the species `intimacy` note were authored,
+forge-drafted, editable — and silently never read in chat. This plan captured the port as
+the natural follow-up, under the existing soft "when the moment turns intimate" framing.
+
+### Chat-lane port (2026-07-16, owner ask)
+
+Built **with a real gate rather than the soft framing** this plan suggested — the framing
+means the model reads intimate prose every turn and is asked to ignore it, which is the
+always-on dump the notes exist to avoid. The chat lane now has its own gate,
+`chatSceneIsIntimate` (`contracts/turns/chat-intimacy.ts`), built from the three signals
+the lane actually has rather than a faked `ExposureMask` (whose axes describe a spatial
+scene chat doesn't model):
+
+1. the **character's** coverage-computed bare state (`intimateRegionsBare`),
+2. the **player's** — newly possible: the player only got a real wardrobe with
+   [persona-library.plan.md](persona-library.plan.md) slice 8, so this half of the scene
+   was invisible to any gate before it,
+3. **arousal** ≥ `CHAT_INTIMATE_AROUSAL_AT` (0.55) — held as its own constant rather than
+   read off the meter registry, so retuning a *narrator hint* can't silently move a
+   content gate.
+
+Any one signal opens it (the session lane's "any axis" ruling, transposed); it defaults
+**shut** on missing input. `buildChatIntimateSection` then renders the same merged note
+(archetype **appended** with `profile.intimacy`, heritage-replaces-species) plus the
+player persona's own `intimacy` — which carries **inverted semantics** (what they *respond
+to*, not how they behave), so it gets its own wording and is rendered once. Per-member in
+an ensemble, so one couple in the room doesn't hand everyone an intimate disposition;
+minor-fenced per member; and in the **volatile tail**, never the cached prefix — the gate
+flips with state, so a prefix block would bust the cache on every flip.
+
+**Still soft-framed (deliberate):** the intimate *trait bands*
+(`dispositionBands(..., {intimateOnly: true})`) keep their "when the moment turns intimate"
+wording. They are milder content than authored prose, and `buildDisinhibitionSection`
+consumes them as its dedupe baseline — gating them is a separate, entangled change. The
+session lane gates both (`buildIntimateDispositionLine` is its sibling), so bringing the
+bands behind this gate is the obvious next step if wanted.
 
 ## Not in scope (this plan)
 

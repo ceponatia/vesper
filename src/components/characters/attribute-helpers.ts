@@ -1,6 +1,8 @@
 import {
   attributeRegistry,
+  heritageFor,
   realizeBody,
+  speciesById,
   type AttributeDefinition,
   type AttributeValue,
   type RealizedBody,
@@ -151,4 +153,66 @@ export function seedRequiredAttributes(attributes: readonly AttributeValue[], co
     seeded.push({ id: def.id, value: value as AttributeValue["value"], source: "creation" });
   }
   return seeded.length > 0 ? [...attributes, ...seeded] : [...attributes];
+}
+
+/**
+ * The body-bearing slice of a profile — everything species/heritage changes touch.
+ * Structural, not a named contract, so BOTH `CharacterProfile` and `PersonaProfile`
+ * satisfy it (persona-library.plan.md: reuse, never fork).
+ */
+export interface BodyProfileParts {
+  speciesId: string;
+  heritageId?: string;
+  bodyPlanId: string;
+  intimateRegions: string[];
+  bodyFeatures?: string[];
+  attributes: AttributeValue[];
+}
+
+/**
+ * The patch for changing species: a heritage belongs to ONE species, so it clears,
+ * the body plan follows the species, the feature config resets to the species
+ * defaults, and required attributes re-seed. Returns `null` for an unknown id
+ * (the caller leaves state alone).
+ */
+export function speciesChangePatch(profile: BodyProfileParts, speciesId: string): Partial<BodyProfileParts> | null {
+  const species = speciesById(speciesId);
+  if (!species) return null;
+  const bodyFeatures = species.defaultFeatureGroups ? [...species.defaultFeatureGroups] : undefined;
+  return {
+    speciesId: species.id,
+    heritageId: undefined,
+    bodyPlanId: species.bodyPlanId,
+    bodyFeatures,
+    attributes: seedRequiredAttributes(profile.attributes, {
+      speciesId: species.id,
+      bodyPlanId: species.bodyPlanId,
+      intimateRegions: profile.intimateRegions,
+      bodyFeatures,
+    }),
+  };
+}
+
+/**
+ * The patch for changing heritage: features compose species + heritage defaults, and
+ * required attributes re-seed. Returns `null` when the profile's species is unknown;
+ * an unknown/blank heritage id clears the heritage (the "— None —" option).
+ */
+export function heritageChangePatch(profile: BodyProfileParts, heritageId: string): Partial<BodyProfileParts> | null {
+  const species = speciesById(profile.speciesId);
+  if (!species) return null;
+  const heritage = heritageFor(species.id, heritageId);
+  const groups = [...(species.defaultFeatureGroups ?? []), ...(heritage?.defaultFeatureGroups ?? [])];
+  const bodyFeatures = groups.length > 0 ? [...new Set(groups)] : undefined;
+  return {
+    heritageId: heritage?.id,
+    bodyFeatures,
+    attributes: seedRequiredAttributes(profile.attributes, {
+      speciesId: species.id,
+      heritageId: heritage?.id,
+      bodyPlanId: profile.bodyPlanId,
+      intimateRegions: profile.intimateRegions,
+      bodyFeatures,
+    }),
+  };
 }

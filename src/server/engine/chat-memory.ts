@@ -428,6 +428,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       fallback: () => ({
         scene: empty.scene,
         outfit: empty.outfit,
+        playerOutfit: empty.playerOutfit,
         attributeChanges: empty.attributeChanges,
         presence: empty.presence,
         cast: empty.cast,

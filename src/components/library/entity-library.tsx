@@ -7,6 +7,7 @@ import { z } from "zod";
 import { clothingSubtypesForCategory, itemKindSchema, type SocialReactionCardExtras } from "@/contracts";
 import {
   charactersApi,
+  personasApi,
   itemsApi,
   locationsApi,
   socialCardsApi,
@@ -42,7 +43,7 @@ import {
   socialCardFacetDefs,
 } from "./library-facets";
 
-export type LibraryEntity = "worlds" | "characters" | "locations" | "items" | "social-cards";
+export type LibraryEntity = "worlds" | "characters" | "locations" | "items" | "social-cards" | "personas";
 
 interface LibraryCard {
   id: string;
@@ -276,6 +277,39 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     facets: socialCardFacetDefs<LibraryCard>(),
     cardChips: socialCardChips,
   },
+  personas: {
+    title: "Personas",
+    blurb: "Who you are when you talk to a character — your body, wardrobe and bio.",
+    basePath: "/personas",
+    emptyTitle: "No personas yet",
+    emptyBody: "Build one to play as. Give it a title you'll recognise, a name the character calls you, and a body.",
+    newName: "Untitled persona",
+    square: true,
+    // Not shareable (no visibility column — a persona is *you*), so no scope toggle
+    // and no clone; sortable/viewToggle come free from searchLibraryIds.
+    sortable: true,
+    viewToggle: true,
+    list: async ({ q, tag, sort }) => {
+      const result = await personasApi.list({ q, tag, sort });
+      return result.ok
+        ? {
+            ok: true,
+            data: result.data.map((p) => ({
+              id: p.id,
+              // The CARD shows the title — it is the per-owner-unique label the owner
+              // recognises. The in-fiction `name` rides the description line, since two
+              // personas may share it (that separation is the whole point of `title`).
+              name: p.title,
+              description: `Plays as ${p.name}`,
+              tags: p.tags,
+              imageId: p.avatarImageId,
+            }))
+          }
+        : result;
+    },
+    // Title and name both start from the randomized placeholder; the editor splits them.
+    create: ({ name }) => personasApi.create({ title: name, name }),
+  },
 };
 
 const SCOPE_OPTIONS: { id: Scope; label: string }[] = [
@@ -292,6 +326,7 @@ const SCOPE_OPTIONS: { id: Scope; label: string }[] = [
  */
 const LIBRARY_TABS: { entity: LibraryEntity; href: string; label: string }[] = [
   { entity: "characters", href: "/characters", label: "Characters" },
+  { entity: "personas", href: "/personas", label: "Personas" },
   { entity: "locations", href: "/locations", label: "Locations" },
   { entity: "items", href: "/items", label: "Items" },
   { entity: "social-cards", href: "/social-cards", label: "Social cards" },

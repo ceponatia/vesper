@@ -9,15 +9,15 @@ export interface NavDest {
 }
 
 /**
- * The Library hub — one nav entry over the four collection routes, which keep
- * their URLs and share a tab strip inside the library shell (library-ux.plan.md
+ * The Library hub — one nav entry over the collection routes, which keep their
+ * URLs and share a tab strip inside the library shell (library-ux.plan.md
  * §Follow-up pass: header becomes Chats · Worlds · Library · Gallery).
  */
 const LIBRARY_DEST: NavDest = {
   href: "/characters",
   label: "Library",
   icon: "library",
-  match: ["/locations", "/items", "/social-cards"],
+  match: ["/personas", "/locations", "/items", "/social-cards"],
 };
 
 /**

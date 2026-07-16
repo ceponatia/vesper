@@ -1,9 +1,23 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
-import { characterProfileSchema, currentScenePlace, emptyCharacterProfile, timeOfDayFor } from "@/contracts";
+import {
+  characterProfileSchema,
+  currentScenePlace,
+  emptyCharacterProfile,
+  personaToCharacterProfile,
+  resolveAttributes,
+  timeOfDayFor,
+} from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
 import { characterChatMessages, db, jobs } from "@/server/db";
-import { enqueueChatPlaceImage, loadChatScenario, loadChatState, resolveChatWardrobe } from "@/server/engine";
+import {
+  enqueueChatPlaceImage,
+  loadChatScenario,
+  loadChatState,
+  resolveChatWardrobe,
+  resolvePlayerWardrobe,
+} from "@/server/engine";
+import { resolveChatPersona } from "@/server/players";
 import { chatLookKey, renderCharacterSceneImage } from "@/server/images";
 import { log } from "@/server/log";
 
@@ -86,6 +100,17 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     const wardrobe = stored ? await resolveChatWardrobe(stored, args.userId, profile) : null;
     const scenario = await loadChatScenario(args.chatId);
 
+    // The PLAYER's own body + coverage (scene-pov-embodiment.plan.md slice 4): the persona
+    // the chat is played as, dressed from the same wardrobe seam. Their coverage is what
+    // decides whether the viewer's anatomy may render at all — computed from worn items,
+    // never a flag. No persona ⇒ no body ⇒ the gate stays shut and the shot is today's.
+    const player = await resolveChatPersona({ ownerId: args.userId, chatId: args.chatId });
+    const playerWardrobe = scenario
+      ? await resolvePlayerWardrobe(scenario.playerState, args.userId, player.profile)
+      : null;
+    const playerProfile = player.profile ? personaToCharacterProfile(player.profile) : undefined;
+    const playerResolved = playerProfile ? resolveAttributes(playerProfile.attributes, []) : [];
+
     // The setting comes from chat scene memory (chat-scene-fidelity.plan.md slice 2):
     // the current place's agent-written sketch when it exists, else its established
     // name + details. Empty memory keeps the DEFAULT_CHAT_ROOM placeholder.
@@ -129,6 +154,9 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           outfit: wardrobe?.garments ?? "",
           outfitExposed: wardrobe?.exposed ?? false,
           exposure: wardrobe?.exposure,
+          playerExposure: playerWardrobe?.exposure,
+          playerAttributes: playerResolved,
+          playerProfile,
           meters: stored?.meters,
           conditions: stored?.conditions,
           sceneModel: scenario?.sceneModel,

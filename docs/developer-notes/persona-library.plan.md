@@ -1,14 +1,45 @@
 # Persona library — the player as a first-class library entity (plan)
 
-Status: **draft** — written 2026-07-16 from an owner brainstorm ask. Supersedes
-the shipped [player-character.plan.md](finished/player-character.plan.md), whose
-own Open questions anticipated exactly this ("Multiple saved personas? … a clean
-future extension on the same resolver") and whose `id: null` field was left as
-the graduation seam.
+Status: **shipped — 2026-07-16** (all eight slices, branch `worktree-persona-library`).
+Written the same day from an owner brainstorm ask. Supersedes the shipped
+[player-character.plan.md](finished/player-character.plan.md), whose own Open
+questions anticipated exactly this ("Multiple saved personas? … a clean future
+extension on the same resolver") and whose `id: null` field was left as the
+graduation seam.
+
+> **Completion note.** Built as planned; the design below stands. What landed:
+> `personaProfileSchema` + `personaToCharacterProfile`
+> (`contracts/players/persona-profile.ts`), the `personas` table (migration **0051**,
+> `(owner_id, title)` UNIQUE), CRUD with a typed 409 on title collision, the
+> `/personas` library tab, the three-tab `PersonaEditor`, the `resolveChatPersona`
+> ladder + the backfill that retired the blob (**0052** backfills, **0053** drops),
+> the per-chat "Playing as" pick, and the player wardrobe + undressing fold.
+>
+> **Not run: `pnpm db:migrate`** — no local Postgres in the worktree; the Fly deploy
+> applies 0051–0053. The persona **route** tests live in
+> `app/api/library-routes.int.test.ts` and self-skip without a database, so they have
+> **never executed** — run `pnpm test:int` against a migrated DB before trusting them.
+>
+> **Deviations from the plan, all deliberate:**
+> - **Two migrations, not one.** Adding `default_persona_id` while dropping
+>   `player_persona` on the same table is exactly the rename-vs-create prompt CLAUDE.md
+>   says to stop on; split, each diff is unambiguous.
+> - **The backfill is DML inside 0052, not a script.** 0053 drops the column and Fly
+>   runs `db:migrate` unattended — a script would be one forgotten command away from
+>   dropping the data. Backfilled ids are `gen_random_uuid()::text` (SQL can't make
+>   cuid2; nothing validates id *format*).
+> - **`ChatPlayerState.seeded`** — an addition the plan didn't foresee. See
+>   [The player's wardrobe](#player-wardrobe-in-chat).
+> - **The blob contract was deleted, not deprecated** (no readers left).
+>
+> **Follow-ups worth knowing:** the persona `avatar_image_id` column exists but no
+> pipeline fills it; `voice` shipped always-on (the recommendation below); the
+> `imageReveal`/POV consumer is [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md)
+> slices 2–4, now unblocked.
 
 Topic slug `persona-library` (grep `persona` finds this plus
-`contracts/players/persona.ts` and `server/players/persona.ts`). The scene-image
-consumer is a separate, dependent plan:
+`contracts/players/persona-profile.ts`, `contracts/players/chat-player-state.ts` and
+`server/players/persona.ts`). The scene-image consumer is a separate, dependent plan:
 [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md).
 
 ## What we're building
@@ -237,6 +268,21 @@ persona is a library entity with real outfit presets, so the structured path
 always applies. Exposure is always `exposedRegions(worn)`. This is what makes the
 scene plan's coverage gate unfakeable.
 
+**`seeded` — the field this plan missed.** Built and shipped; recorded here because
+it is the one thing the design got wrong by omission. An empty `wornItemIds` is
+ambiguous: it means **"not dressed yet"** before the wardrobe is initialized and
+**"stripped"** after it, and those must not render the same way. Without the flag a
+fresh chat — or a persona whose wardrobe was never authored — reads as *naked*, which
+is a spectacularly wrong default once a scene image is looking at it. So:
+
+- `seeded: false` ⇒ `playerWornIds` resolves the persona's **default outfit preset**
+  rather than the empty list.
+- It flips `true` on the first real change, so the seed materializes on a **write**,
+  never as a side effect of a read (deliberately unlike the character side's
+  `resolveSeededOutfit`, which heals during a load).
+- Switching persona resets it to `false` — the worn list described the person who was
+  wearing it, so the new persona arrives in their own clothes.
+
 ### Undressing
 
 The archivist already sees the whole exchange — the player's input *and* the
@@ -322,26 +368,46 @@ play as). 6–8 are the chat wiring. The dependent scene work is
 
 ## Open questions
 
-- **Narrow `PersonaProfile` + adapter, or just store a full `CharacterProfile`?**
-  Recommended: narrow + adapter (documents intent, keeps the editor from growing
-  a personality tab by accretion, and the adapter is ~10 lines). The alternative —
-  store a real `CharacterProfile` and simply not author most of it — needs no
-  adapter and makes a future "embody this persona in a session" free, at the cost
-  of a row full of fields that will rot. **This is the one call I'd want settled
-  before slice 1.**
-- **Keep a default persona at all?** Recommended yes
-  (`users.default_persona_id`), so one-time setup still works and the per-chat
-  pick is an override rather than a chore on every new chat.
-- **Is `voice` always-on, or intimate-gated like `intimacy`?** The ask tied it to
-  intimacy ("how the player's voice sounds while intimate"). Recommended
-  always-on — a voice is a voice; intimacy is merely where it matters most.
-- **Persona avatars?** The column is in the table above, unused. The scene plan
-  needs *attributes*, not a portrait, and a player portrait implies symmetric
-  rendering (a whole arc — `avatar-3d.plan.md`). Recommend deferring the pipeline
-  and keeping the column.
-- **Migration number.** 0051 is next free today, but
-  [chat-meter-economy.plan.md](chat-meter-economy.plan.md) also claims 0051 —
-  whichever lands first takes it.
+- ~~**Narrow `PersonaProfile` + adapter, or a full `CharacterProfile`?**~~ **Ruled
+  2026-07-16 (owner): narrow + adapter.** Built as
+  `contracts/players/persona-profile.ts`. One refinement found in build: the adapter
+  parses **through `characterProfileSchema`** rather than spreading a hand-written
+  defaults object, so a new character field can never silently leave it behind; its
+  optional fields are conditionally spread, because zod keeps an
+  explicitly-`undefined` key and the output must be indistinguishable from a normal
+  parse.
+- ~~**Keep a default persona at all?**~~ **Built: yes** (`users.default_persona_id`),
+  the ladder's middle rung — one-time setup still works and the per-chat pick is an
+  override, not a chore on every new conversation. Shipped on the recommendation; say
+  if the `/settings` picker should go away and every chat should pick for itself.
+- ~~**Is `voice` always-on, or intimate-gated like `intimacy`?**~~ **Built: always-on**
+  — a voice is a voice; intimacy is merely where it matters most. Worth revisiting only
+  if it proves noisy in ordinary scenes.
+- ~~**The persona's `intimacy` has no gate, only wording.**~~ **Fixed 2026-07-16 (owner
+  ask): the chat lane now has a real gate**, `chatSceneIsIntimate`
+  (`contracts/turns/chat-intimacy.ts`) — either party's coverage-computed bare state, or
+  arousal ≥ 0.55. Below it the note is zero tokens rather than text the model is asked to
+  ignore. It served both lanes as predicted: the same gate finally surfaces the
+  **character's** `profile.intimacy` + species archetype in chat, closing the leftover
+  [intimacy-notes.plan.md](intimacy-notes.plan.md) §Chat-lane port recorded. This plan's
+  slice 8 is what made it possible — the player's coverage is one of the three signals,
+  and before the player had a wardrobe the gate would have been half-blind.
+- **Persona avatars?** The column exists, unused — **still open**. The scene plan needs
+  *attributes*, not a portrait, and a player portrait implies symmetric rendering (a
+  whole arc — `avatar-3d.plan.md`). Deferred, column kept.
+  - **Prerequisite for whoever picks this up** (found in a completeness audit): the
+    column's *read* side is wired (the list route selects it, the grid renders it — an
+    `EntityImage` monogram today), but the **cleanup fan-out is not**.
+    `ImageEntityKind` is `character|location|item|world`, so `deleteEntityImages("persona", …)`
+    is not even callable, and `clearEntityImagePointers` (`server/images/assets.ts`) has no
+    persona case. Both need extending the moment anything writes `personas.avatar_image_id`,
+    or a deleted image will dangle on the row. Inert until then.
+- ~~**Migration number.**~~ **Resolved: this took 0051–0053** — `0051` creates
+  `personas`, `0052` adds `default_persona_id` + `player_state` **and backfills the
+  blob**, `0053` drops `player_persona`. Split because one users-column add beside a
+  users-column drop is the ambiguous rename case. [chat-meter-economy.plan.md](chat-meter-economy.plan.md)
+  is now **0054+** (its doc still says 0052 — repoint it when that plan starts, rather
+  than churning it again from here).
 
 ## Related
 

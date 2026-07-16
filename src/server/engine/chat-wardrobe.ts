@@ -4,9 +4,11 @@ import {
   intimateRegionsBare,
   outfitItems,
   resolveOutfitPreset,
+  type ChatPlayerState,
   type CharacterProfile,
   type DiagnosticSink,
   type GarmentDescriptor,
+  type PersonaProfile,
   type RegionExposure,
 } from "@/contracts";
 import {
@@ -131,5 +133,76 @@ export async function resolveChatWardrobe(
     exposed: state.outfitExposed,
     wornItemIds: [],
     overlay: healed,
+  };
+}
+
+/**
+ * The effective worn ids for the player: the persona's default preset until the wardrobe
+ * has actually been seeded, the stored list after. PURE — shared by the read path
+ * (`resolvePlayerWardrobe`) and the write path (the archivist's outfit fold), so the two
+ * can never disagree about what the player had on before a change.
+ */
+export function playerWornIds(
+  state: Pick<ChatPlayerState, "wornItemIds" | "seeded" | "outfitPresetId">,
+  persona: Pick<PersonaProfile, "outfits"> | undefined,
+): string[] {
+  if (state.seeded) return [...state.wornItemIds];
+  // Copied, not aliased: `outfitItems` hands back the preset's own array, and callers
+  // treat this as the chat's mutable worn list — without the copy, taking a garment off
+  // in one chat would edit the persona's saved outfit.
+  return persona ? [...outfitItems(persona, state.outfitPresetId || undefined)] : [];
+}
+
+/** The player's resolved wardrobe — the same shape the character's resolves to, minus the free-text path. */
+export interface ResolvedPlayerWardrobe {
+  /** Rendered garment phrase — worn items (occlusion-filtered, subtype-led) + the overlay text. */
+  garments: string;
+  /** Per-region coverage, ALWAYS computed from worn items (there is no manual flag to fake it). */
+  exposure: RegionExposure;
+  /** The ids that actually resolved — a deleted item drops out. */
+  wornItemIds: string[];
+  overlay: string;
+}
+
+/**
+ * Resolve the PLAYER's wardrobe for a chat (persona-library.plan.md slice 8). The
+ * character-side twin above, with two deliberate differences:
+ *
+ * - **Structured-only.** There is no free-text path and no manual `outfitExposed` flag,
+ *   because a persona is a library entity with real outfit presets. Exposure is always
+ *   computed from coverage — which is what makes the scene-image gate that decides
+ *   whether the viewer's anatomy renders unfakeable (scene-pov-embodiment.plan.md).
+ * - **Unseeded reads the persona's default preset** rather than reading as naked (see
+ *   `ChatPlayerState.seeded`).
+ *
+ * With no persona at all (the account-name fallback rung) the player has no body and no
+ * wardrobe: everything comes back empty and FULLY_COVERED, so nothing is ever stated —
+ * exactly today's behavior, where the player simply isn't described.
+ */
+export async function resolvePlayerWardrobe(
+  state: ChatPlayerState,
+  ownerId: string,
+  persona: PersonaProfile | undefined,
+  sink?: DiagnosticSink,
+): Promise<ResolvedPlayerWardrobe> {
+  const overlay = state.overlay.trim();
+  const ids = playerWornIds(state, persona);
+  const items = ids.length > 0 ? await loadChatWardrobe(ownerId, ids, sink) : [];
+  if (items.length === 0) {
+    // Nothing resolvable. Read as COVERED, never bare: an unauthored wardrobe is
+    // unknown, not nude. Only a seeded-then-emptied list means stripped (below).
+    const strippedAfterSeeding = state.seeded && ids.length === 0 && persona !== undefined;
+    return {
+      garments: overlay,
+      exposure: strippedAfterSeeding ? exposedRegions([]) : FULLY_COVERED,
+      wornItemIds: [],
+      overlay,
+    };
+  }
+  return {
+    garments: [wardrobeOutfitText(items), overlay].filter(Boolean).join("; "),
+    exposure: exposedRegions(toWornInputs(items)),
+    wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
+    overlay,
   };
 }
