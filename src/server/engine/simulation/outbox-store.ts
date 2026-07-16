@@ -217,7 +217,18 @@ export async function consumeNextItemTransferOutbox(
 }
 
 function projectionHash(rows: Array<typeof simItemTransferFeed.$inferSelect>): string {
-  const canonical = rows.map(({ createdAt: _createdAt, ...row }) => row);
+  const canonical = rows.map((row) => ({
+    consumerKind: row.consumerKind,
+    branchId: row.branchId,
+    sourceEventId: row.sourceEventId,
+    sourceSequence: row.sourceSequence,
+    storySecond: row.storySecond,
+    actorId: row.actorId,
+    itemId: row.itemId,
+    fromContainerId: row.fromContainerId,
+    toContainerId: row.toContainerId,
+    projectionSchemaVersion: row.projectionSchemaVersion,
+  }));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
