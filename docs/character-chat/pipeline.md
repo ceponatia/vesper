@@ -55,10 +55,12 @@ exchange:
    `created_at > $date` predicate (JS `Date` truncates Postgres microseconds, which would
    re-select the target itself). The target row is **reused** as the prompt guard, never
    re-inserted; deleted assistant successors have their memory retracted
-   (`reconcileMessageMemory`), and state mirrors regenerate — the pre-exchange snapshot
-   rolls back when the target was the last exchange's prompt (sole successor = the newest
-   reply), else it degrades to no rollback with `chat_state.rerun.no_rollback`. From there
-   it streams exactly like `send`. The client (`chat-conversation.tsx`) deletes NOTHING
+   (`reconcileMessageMemory`), and state mirrors regenerate. Only the **latest
+   exchange's prompt** is eligible for in-place rerun (sole successor = the newest reply).
+   An older target returns 400 `rerun_requires_branch` before deleting anything: the
+   one-exchange snapshot cannot restore an arbitrary discarded suffix, so the honest
+   operation is a future conversation branch, not a false rollback. From there an accepted
+   rerun streams exactly like `send`. The client (`chat-conversation.tsx`) deletes NOTHING
    and never abort-and-hopes: it optimistically snips the lines after the target and, on
    any failure, restores them (the server guarantees the transcript is byte-identical).
 3. **Window + summary.** The rolling summary covers everything up to its watermark; the
@@ -272,9 +274,10 @@ then one guarded state write:
   fire-and-forget; a failed queue log-warns and never touches the settled reply). Caveat:
   a scene stays anchored to the message id it was queued for, so if "another take" later
   replaces that reply, the inline moment illustrates the superseded beat — acceptable.
-- The finalizer also persists the **pre-exchange snapshots** — the state half
-  (`character_chat_state.pre_exchange_state`) and the scenario half
-  (`character_chats.pre_exchange_scenario`) — the rollback anchors "another take"
+- The pipeline also persists the **pre-exchange snapshots** — one state half
+  per roster member (`character_chat_state.pre_exchange_state`, keyed by chat +
+  character) and one shared scenario half (`character_chats.pre_exchange_scenario`) —
+  the rollback boundary "another take"
   restores so a regenerated exchange never double-applies drift/pulse effects (the
   relationship samples/milestones AND the clock tick / scene merge / callback burn roll
   back with them). One carve-out: the **supporting cast never rolls back**
@@ -289,9 +292,13 @@ then one guarded state write:
   empty relationship history, not a null snapshot, so a state row that pre-exists the first
   send — a premise Save, an opening beat, a pickup skip — still records it (F4).
 - **Ensemble members settle CONCURRENTLY** (chat-agent-improvements slice 2): every present
-  member's referenced-only pulse + personal note-taker + state save runs in one
-  `Promise.all`, not one member after another. Each member's legs read and write only their
-  own row, and the whole settle runs **inside the exchange lock** — so settling a four-member
+  member's referenced-only pulse + personal note-taker + state save + rollback-snapshot
+  save runs in one `Promise.all`, not one member after another. Each member restores its
+  own anchor **before drift** on regenerate/rerun, then writes its pre-exchange state under
+  the same prompt-row guard as its settled state. Thus one discarded take cannot leave
+  non-primary regard, mood, drives, milestones, wardrobe, or carry-over queries behind.
+  Each member's legs read and write only their own row, and the whole settle runs **inside
+  the exchange lock** — so settling a four-member
   roster serially stacked up to four back-to-back agent round-trips in the lock window, and
   a fast-typing player ate a 409 `chat_busy` for the difference. Error handling stays
   per-member (each keeps its own `try`/`catch`), so one member's failure still can't cost
