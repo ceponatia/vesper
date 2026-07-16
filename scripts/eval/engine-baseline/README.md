@@ -19,7 +19,7 @@ pnpm eval:engine-baseline --replay data/eval/engine-baseline/results.json
 
 A live run needs `OPENROUTER_API_KEY`. Defaults are deliberately pinned:
 
-- corpus `gate0-baseline-v1`;
+- corpus `gate0-baseline-v2`;
 - narrator `aion-labs/aion-2.0` (override with `--model`);
 - `concise_immersive` prompt shape;
 - temperature 0.2;
@@ -35,7 +35,8 @@ summary over saved transcripts without regenerating prose.
 
 The corpus covers a quiet low-stakes exchange, an intimate beat, chat and session
 perspective partitions, remote-text register, player-POV sensory grounding, the tracked
-state/control pair, and a committed locked-door denial. The denial is important: the
+state/control pair, a deterministic 6am-pre-shower/8am-post-shower grounding pair, and a
+committed locked-door denial. The denial is important: the
 player's prose claims entry and contact, while the authoritative result says the handle
 stopped, the player remains in the hallway, and Maya is not co-present. A narrator that
 lets the player enter or take her hand has repaired a rejected hard effect.
@@ -79,3 +80,35 @@ versus reviewed counts.
 A spike earns promotion only after baseline and treatment use the same corpus/version,
 model/profile/seeds, and blinded transcript review. A detector improvement accompanied by
 a new deterministic leak fails the experiment.
+
+## Gate 0 grounded-context ablation
+
+The grounding pair holds Wren's profile, relationship, premise, player input, prompt
+builder, model settings, and number of narrator calls constant. The only prompt delta is
+one deterministic redacted body-context value:
+
+- treatment: 6:00am, before the 7:00am shower window; not showered or ready to leave;
+- control: 8:00am, after the window; showered, dressed, and ready.
+
+No agent derives this value and narration cannot mutate it. A unit test normalizes the
+two context strings and asserts the assembled prompts are otherwise byte-identical.
+
+First inspect the pinned prompts without spend:
+
+```bash
+pnpm eval:engine-baseline --dry-run --case chat-contrast-grounding-pre-shower,chat-contrast-grounding-post-shower
+pnpm eval:narration --scenarios chat-contrast-grounding --profiles concise --dry-run
+```
+
+Then generate matched samples and blind-judge the saved pair:
+
+```bash
+pnpm eval:narration --scenarios chat-contrast-grounding --profiles concise --models aion --seeds 5 --no-judge
+pnpm eval:narration:compare --axis contrast
+```
+
+Advance only if the blind judge identifies the grounded variant in at least 80% of
+matched seeds, the pre-shower cue separates from control, manual review finds no new
+deterministic leak, and voice/chemistry do not decline. A failure is useful: revise the
+context contract or stop before adding runtime machinery. Passing remains eval evidence,
+not permission to infer schedule state from prose or add another model leg.

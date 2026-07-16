@@ -49,7 +49,7 @@ export interface ContrastAxisSpec {
 }
 
 /** The measured axes — spec §5 (a)–(e), plus the relationship-model v2 pairs (f)–(g). */
-export type ContrastGroupId = "state" | "sliders" | "stage" | "drunk" | "memory" | "familiarity" | "mask";
+export type ContrastGroupId = "state" | "sliders" | "stage" | "drunk" | "memory" | "familiarity" | "mask" | "grounding";
 
 export const CONTRAST_AXES: Record<ContrastGroupId, ContrastAxisSpec> = {
   state: {
@@ -90,6 +90,14 @@ export const CONTRAST_AXES: Record<ContrastGroupId, ContrastAxisSpec> = {
       "with long-term memory of the player available (a cello recital coming up, a shellfish allergy, a running joke about an espresso machine named Brenda, a shared downpour on the pier)",
     control: "with no long-term memory of the player",
     cueRe: /\b(cello|recital|shellfish|espresso|brenda|pier|downpour)\b/i,
+  },
+  grounding: {
+    flagged:
+      "with one deterministic redacted body-context field saying it is 6:00am, before Wren's 7:00am shower window: she has not showered, is still in sleep clothes, and needs time to wash and dress",
+    control:
+      "with the same deterministic body-context field saying it is 8:00am, after Wren's 7:00am shower window: she has showered, is clean, dressed, and ready to leave",
+    cueRe:
+      /\b(shower\w*|wash(?:ed|ing)?|unwashed|sleep clothes|pajamas?|not ready|need(?:s|'s)? (?:a |some )?(?:time|minute|moment)|give me (?:a |\d+ |five |ten )?minutes?)\b/i,
   },
 };
 
@@ -393,6 +401,33 @@ const AFTERNOON_STATE: ChatState = {
   conditions: [],
   premise: "A gray, slow afternoon in the bookshop-café.",
 };
+
+// Gate 0 grounded-context ablation: both variants are byte-identical except this
+// deterministic, redacted body-context value. It stands in for the owner-approved
+// window-crossing result; neither fixture calls an agent or mutates state.
+export const PRE_SHOWER_GROUNDING =
+  "Grounded body context — 6:00am, before Wren's 7:00am shower window: she has not showered and is still in sleep clothes; she needs time to wash and dress before leaving.";
+export const POST_SHOWER_GROUNDING =
+  "Grounded body context — 8:00am, after Wren's 7:00am shower window: she has showered and is clean, dressed, and ready to leave.";
+
+// Keep hygiene out of the shared base: NEUTRAL_METERS.hygiene = 0.9 would
+// contradict the pre-shower treatment and create a second, hidden body-state signal.
+const GROUNDING_METERS: Record<string, number> = {
+  mood: 0.5,
+  energy: 0.8,
+  stress: 0.2,
+  arousal: 0,
+  intoxication: 0,
+};
+
+const groundedMorningState = (grounding: string): ChatState => ({
+  meters: { ...GROUNDING_METERS },
+  regard: 40,
+  conditions: [],
+  premise: "Morning at Wren's apartment; the player is waiting outside at the curb.",
+  mindNote: grounding,
+});
+
 const PLANTED_MEMORY: NonNullable<CharacterChatPromptInput["memory"]> = {
   facts: [
     "The player plays cello and has a recital coming up at the end of the month.",
@@ -412,6 +447,7 @@ const CONTRAST_DRUNK_INPUT = "Tell me the truth — what did you think of me the
 const CONTRAST_MEMORY_INPUT = "What a week I've had. Distract me — ask me about anything else.";
 const CONTRAST_FAMILIARITY_INPUT = "You know exactly why I'm here. Say it.";
 const CONTRAST_MASK_INPUT = "Admit it — you're glad I stayed.";
+const CONTRAST_GROUNDING_INPUT = "Come outside — I'm at the curb. We can grab coffee before the town wakes up.";
 
 /** Assemble a chat-lane prompt through the real builder (shape swept, focus N/A in chat). */
 function chatBuild(o: {
@@ -1170,6 +1206,38 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
     playerInput: CONTRAST_MASK_INPUT,
     knownNames: [],
     build: chatContrastBuild({ profile: wrenProfile(), state: maskState(false), playerInput: CONTRAST_MASK_INPUT }),
+  },
+  // ── Gate 0 grounded-context ablation: same profile, relationship, premise, and
+  // player input; only the deterministic body-context value changes. ──
+  {
+    id: "chat-contrast-grounding-pre-shower",
+    title: "Contrast (grounding) — 6am before the shower window",
+    lane: "chat",
+    contrast: { group: "grounding", variant: "flagged" },
+    expectation:
+      "The grounded pre-shower state should constrain the reply: Wren cannot simply appear at the curb. She should make the player wait, decline, or say she needs to wash and dress first, without reciting a schedule ledger.",
+    playerInput: CONTRAST_GROUNDING_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({
+      profile: wrenProfile(),
+      state: groundedMorningState(PRE_SHOWER_GROUNDING),
+      playerInput: CONTRAST_GROUNDING_INPUT,
+    }),
+  },
+  {
+    id: "chat-contrast-grounding-post-shower",
+    title: "Contrast (grounding) — 8am after the shower window (control)",
+    lane: "chat",
+    contrast: { group: "grounding", variant: "control" },
+    expectation:
+      "The grounded post-shower state says Wren is clean, dressed, and ready; she may accept naturally. She must not claim she still needs to shower or get dressed.",
+    playerInput: CONTRAST_GROUNDING_INPUT,
+    knownNames: [],
+    build: chatContrastBuild({
+      profile: wrenProfile(),
+      state: groundedMorningState(POST_SHOWER_GROUNDING),
+      playerInput: CONTRAST_GROUNDING_INPUT,
+    }),
   },
   // ── Multi-turn transcripts (narrator-prompt-consolidation.plan.md slice 6): the
   // longitudinal failure modes — repetition creep, interview-mode cadence, sensory
