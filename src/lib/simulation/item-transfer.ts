@@ -13,7 +13,10 @@ import {
   type ItemTransferredEvent,
   type TransferItemCommand,
 } from "@/contracts/simulation/item-transfer";
-import { worldCharacterIdSchema } from "@/contracts/simulation/identity";
+import {
+  composeSimulationId,
+  worldCharacterIdSchema,
+} from "@/contracts/simulation/identity";
 
 interface RejectedResolution {
   ok: false;
@@ -165,7 +168,7 @@ export function resolveItemTransfer(
   return {
     ok: true,
     event: itemTransferredEventSchema.parse({
-      id: `event:${command.id}`,
+      id: composeSimulationId("event", [projection.branchId, command.id]),
       worldId: projection.worldId,
       branchId: projection.branchId,
       sequence,
@@ -207,7 +210,7 @@ export function applyItemTransferredEvent(
 
   const newObservations = event.payload.observerActorIds.map((witnessActorId) =>
     itemTransferObservationSchema.parse({
-      id: `observation:${event.id}:${witnessActorId}`,
+      id: composeSimulationId("observation", [event.id, witnessActorId]),
       sourceEventId: event.id,
       witnessActorId,
       sequence: event.sequence,
@@ -307,7 +310,12 @@ export function compileItemTransferNarrativeCut(
   };
   const semanticHash = simulationHash(content);
   return itemTransferNarrativeCutSchema.parse({
-    id: `cut:${projection.branchId}:${viewpoint}:${firstSequence}:${projection.headSequence}`,
+    id: composeSimulationId("cut", [
+      projection.branchId,
+      viewpoint,
+      String(firstSequence),
+      String(projection.headSequence),
+    ]),
     semanticHash,
     ...content,
   });
