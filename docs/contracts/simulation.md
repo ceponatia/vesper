@@ -86,7 +86,7 @@ are durable audit outcomes but do not enter `sim_events`.
 Crash failpoints are closed synchronous throw locations—never arbitrary callbacks under
 the lock. Integration tests prove rollback after every pre-commit write, recovery from a
 lost post-commit acknowledgement, one acceptance plus one conflict for concurrent
-same-version commands, and one stored outcome when identical idempotent submissions race.
+same-version commands, and one stored outcome when identical idempotent submissions race. The typed branch reader uses a read-only repeatable-read transaction so projection and history cannot straddle a concurrent commit.
 
 ## Perspective and narration
 
