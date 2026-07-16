@@ -8,6 +8,7 @@ import {
   diag,
   effectiveTraitValue,
   emptyCharacterProfile,
+  exposureIsIntimate,
   formatScheduleRhythm,
   formatStoryMoment,
   hasSalientPlan,
@@ -79,7 +80,12 @@ import {
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
-import { resolveChatWardrobe, resolvePlayerWardrobe, type ResolvedChatWardrobe } from "./chat-wardrobe";
+import {
+  resolveChatWardrobe,
+  resolvePlayerWardrobe,
+  type ResolvedChatWardrobe,
+  type ResolvedPlayerWardrobe,
+} from "./chat-wardrobe";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
 import {
   CHARACTER_CHAT_SUMMARIZE_AT,
@@ -1775,12 +1781,14 @@ export async function reextractEditedReply(args: {
  */
 function playerPromptSlice(
   player: PlayerPersona,
-  wardrobe: { garments: string },
+  wardrobe: ResolvedPlayerWardrobe,
 ): NonNullable<CharacterChatPromptInput["player"]> {
   return {
     name: player.name,
     ...(player.persona === undefined ? {} : { persona: player.persona }),
     ...(wardrobe.garments.trim() ? { wearing: wardrobe.garments } : {}),
+    // One of the chat intimate gate's three signals — coverage-computed, never a flag.
+    ...(exposureIsIntimate(wardrobe.exposure) ? { exposed: true } : {}),
     ...(player.profile?.voice?.trim() ? { voice: player.profile.voice } : {}),
     ...(player.profile?.intimacy?.trim() ? { intimacy: player.profile.intimacy } : {}),
   };
