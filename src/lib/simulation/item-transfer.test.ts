@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type {
-  ItemTransferProjection,
-  TransferItemCommand,
+import {
+  itemTransferProjectionSchema,
+  transferItemCommandSchema,
+  type ItemTransferProjection,
+  type TransferItemCommand,
+  type TransferItemCommandInput,
 } from "@/contracts/simulation/item-transfer";
 import {
   appendItemTransferNarrativeCut,
@@ -10,7 +13,7 @@ import {
 } from "./item-transfer";
 
 function seedProjection(): ItemTransferProjection {
-  return {
+  return itemTransferProjectionSchema.parse({
     worldId: "world_gate1",
     branchId: "branch_gate1",
     rulesetVersion: "gate1-v1",
@@ -47,11 +50,11 @@ function seedProjection(): ItemTransferProjection {
     ],
     items: [{ id: "item_ring", name: "gold ring", holdingContainerId: "bag_mara" }],
     observations: [],
-  };
+  });
 }
 
-function transferCommand(overrides: Partial<TransferItemCommand> = {}): TransferItemCommand {
-  return {
+function transferCommand(overrides: Partial<TransferItemCommandInput> = {}): TransferItemCommand {
+  return transferItemCommandSchema.parse({
     id: "command_transfer_ring",
     branchId: "branch_gate1",
     expectedVersion: 0,
@@ -72,7 +75,7 @@ function transferCommand(overrides: Partial<TransferItemCommand> = {}): Transfer
       toContainerId: "table_cafe",
     },
     ...overrides,
-  };
+  });
 }
 
 describe("Gate 1 item-transfer authority seam", () => {
