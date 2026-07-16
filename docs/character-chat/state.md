@@ -54,7 +54,10 @@ setting — see §Scene memory), `supporting_cast` (recurring named side charact
 [supporting-cast.md](supporting-cast.md) §Supporting cast), `plans` (tracked commitments
 that come due on the story clock — see §Plans & promises), the time model (`clock_minutes` — **one** story timeline
 for the whole roster, D3/D8; away members skip meter decay, never fork the clock;
-`skip_history` ring ≤50; one-shot `pending_skip_note`), the **story-calendar anchor**
+`skip_history` ring ≤50; one-shot `pending_skip_note`; one-shot **`pending_meanwhile_note`**
++ **`meanwhile_pass_at_minutes`** — the meanwhile pass's narrator line and its
+cumulative-gate origin / idempotency CAS, migration 0050,
+[chat-offscreen-life.spec.md](../developer-notes/chat-offscreen-life.spec.md)), the **story-calendar anchor**
 (`calendar_start` jsonb, migration 0049 — chat-clock-calendar: minute 0 of the chat =
 this date+time; `parseOr` heals `{}`/bad rows to `CHAT_DEFAULT_CALENDAR_START` = Jan 1,
 8:00am; author-editable via `ChatStateEdit.calendarStart` from the clock card, and
@@ -242,6 +245,28 @@ narration honors it.*
   [initiative.md](initiative.md)); and the ensemble arrival/exit license moves people in
   and out of the scene (see [multi-character.md](multi-character.md)). Editing/inspection:
   the **Plans** card (`ChatStateEdit.plans`, chat-wide half — [api.md](api.md)).
+
+## Off-screen life (whereabouts + the meanwhile pass)
+
+The cast keeps living between visits (chat-offscreen-life — rulings in
+[the spec](../developer-notes/chat-offscreen-life.spec.md)):
+
+- **`character_chat_state.whereabouts`** (text ≤120, migration 0050): where an AWAY
+  member is, as a phrase — written by the archivist presence read's optional `where`
+  on away transitions and refreshed by the meanwhile pass; rendered in the ensemble's
+  away/salient lines. A **present** member with a non-empty whereabouts "just got
+  back" — the tail renders a one-turn came-from license and the post-exchange fold
+  clears it. Author-correctable (`ChatStateEdit.whereabouts`).
+- **The meanwhile pass** (`engine/chat-meanwhile.ts`): a detached `chat_meanwhile` job
+  fired from the skip route when cumulative skipped time since the last pass crosses
+  one story day (`armMeanwhilePass`). One archivist-class call over the fenced
+  ensemble dossier proposes ≤3 developments; deterministic folds: **facts to every
+  involved member's own memory group** (two names = a relationship fact to both —
+  members know different things), drive progress notches (reveal/resolve stripped),
+  supporting-cast detail/whereabouts accretion, NPC↔NPC plan outcomes (replacing
+  ruling E's assume-kept default), away whereabouts refreshes, and the one-shot
+  `pending_meanwhile_note`. Degrades to an ordinary skip; scenario folds are guarded
+  (marker CAS + the skip note still standing) so a racing exchange is never clobbered.
 
 ## Drives (desires & secrets)
 

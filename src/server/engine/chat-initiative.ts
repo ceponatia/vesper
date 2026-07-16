@@ -54,6 +54,18 @@ export interface InitiativeCueInput {
    * absent (0) ⇒ no cadence line, so the cue is byte-identical to before.
    */
   extraversion?: number;
+  /**
+   * The supporting cast, pre-rendered compact ("Mira (her sister — just started a new
+   * job)") — chat-offscreen-life §1: the sister is who she'd have seen, so improvised
+   * life beats attach to established people instead of minting strangers. "" ⇒ no line.
+   */
+  cast?: string;
+  /**
+   * The meanwhile pass's note (chat-offscreen-life, dedupe rule F): what ACTUALLY
+   * happened off-screen this gap. When present, the life-meanwhile license draws
+   * from it instead of free invention — same-beat dedupe by construction.
+   */
+  meanwhile?: string;
 }
 
 /**
@@ -82,11 +94,16 @@ export function buildInitiativeCue(input: InitiativeCueInput): string {
       if (s.salience === "dueNow") return `a plan for right now: "${what}"`;
       return `a plan coming up: "${what}" (${when}) — is it still on?`;
     });
+  const meanwhile = input.meanwhile?.trim() ?? "";
+  const cast = input.cast?.trim() ?? "";
   const material = [
+    // What actually happened off-screen LEADS (dedupe rule F): improvisation yields to canon.
+    ...(meanwhile ? [`what actually happened while you were apart (true — draw from this, don't invent a different beat): "${meanwhile}"`] : []),
     ...planMaterial,
     ...loops.map((l) => `unfinished business: "${l}"`),
     ...wants.map((w) => `something you want: "${w}"`),
     ...(shift ? [`what just shifted between you: "${shift}" — still fresh for you`] : []),
+    ...(cast ? [`people in your life (they're who your days actually contain): ${cast}`] : []),
   ];
   const rhythm = input.rhythm?.trim() ?? "";
   const pole = traitPole(input.extraversion ?? 0);
@@ -103,7 +120,9 @@ export function buildInitiativeCue(input: InitiativeCueInput): string {
       ? `Your material (pick what genuinely pulls at you — never list it): ${material.join("; ")}.`
       : `Nothing specific is pending between you — open with what YOU are doing, thinking, or wanting right now.`,
     input.skipPending
-      ? `Time has passed (the note below says how it feels): you may weave in ONE small, concrete thing from your life meanwhile — something that happened, changed, or nagged at you — consistent with the scenario, your personality, and what you want. One thing, lightly; never a report.`
+      ? meanwhile
+        ? `Time has passed, and your material above names what actually happened meanwhile — pick your ONE meanwhile beat from it, lightly; never a report, and never invent a different meanwhile.`
+        : `Time has passed (the note below says how it feels): you may weave in ONE small, concrete thing from your life meanwhile — something that happened, changed, or nagged at you — grounded in your rhythm, your wants, and the people in your life. One thing, lightly; never a report.`
       : `You may weave in ONE small, concrete thing from your own day — consistent with the scenario and your personality — if it gives the opening life.`,
     ...(rhythm ? [`Your usual rhythm, to ground what your life meanwhile actually looks like: ${rhythm}.`] : []),
     `Register: if you and ${input.playerName} are apart in the fiction, open as a text on its own line — *${input.characterName}: your words* — the way you'd actually reach out; if you are together in a scene, open in the scene.`,

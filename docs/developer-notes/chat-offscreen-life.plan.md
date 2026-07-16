@@ -1,13 +1,22 @@
 # Chat off-screen life — the cast moves between visits
 
-Status: **next** (planned 2026-07-14, from the world-sim carry-forward review —
-"the world moves" scoped down to the one world chat actually has: the cast's
-lives. Sequenced after [chat-plans-promises.plan.md](chat-plans-promises.plan.md),
-whose plan records the meanwhile pass consumes — **shipped 2026-07-15, so this
-plan is unblocked**. Now sequenced after
-[chat-clock-calendar.plan.md](chat-clock-calendar.plan.md) (2026-07-15) — the
-meanwhile pass triggers on big skips, and skips won't get used until story
-time is legible. Spec when active; see §Feasibility notes below first.)
+Status: **shipped — 2026-07-15** (planned 2026-07-14, from the world-sim
+carry-forward review; built the day after both prerequisites —
+[chat-plans-promises.plan.md](chat-plans-promises.plan.md) and
+[chat-clock-calendar.plan.md](chat-clock-calendar.plan.md) — landed. Rulings A–F
++ the settled build shape (including the one deliberate deviation from the §2
+build note: the pass is a sibling module in the field library's *style*, not a
+literal library leg — the library is single-subject) are in
+[chat-offscreen-life.spec.md](chat-offscreen-life.spec.md). What shipped: the
+`chat-meanwhile` contract + pure folds; the detached `chat_meanwhile` job at
+qualifying skips (cumulative ≥1-day gate, marker-CAS idempotency, skip-note
+guard); per-member fact routing to involved members' own memory groups;
+`whereabouts` (column, presence-read `where`, meanwhile refresh, away/salient
+rendering, one-turn return license); supporting-cast whereabouts accretion;
+NPC↔NPC plan outcomes replacing ruling E's default; the one-shot meanwhile note
+composing with the skip note; grounded skip-note/opener material + the rhythm
+line in ordinary turns; migration 0050. **Leftovers:** none structural — the
+session lane and cast promotion stay out of scope as planned.)
 
 ## Goal
 

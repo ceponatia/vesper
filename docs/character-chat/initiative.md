@@ -17,7 +17,12 @@ remainder pass, the **unseen shift** and the **daily rhythm** below), the **"a
 life meanwhile" license** folded in (build decision: instead of a separate
 life-event agent, the cue invites ONE small concrete thing from her life since,
 skip-aware — zero extra model calls, exactly as grounded as the narrator
-already is), the **comms-when-apart register** (`*Name: …*` texted opener when
+already is; since chat-offscreen-life it also carries the **supporting cast**
+as material — the sister is who she'd have seen — and when the meanwhile pass
+left a `pending_meanwhile_note` for this gap, that note **leads the material
+and the license switches to "pick your ONE meanwhile beat from it — never
+invent a different meanwhile"**: dedupe rule F, improvisation yields to canon),
+the **comms-when-apart register** (`*Name: …*` texted opener when
 the fiction has them apart), and a restraint clause (one beat, end on something
 answerable, never narrate the player). Standing rulings hold: **D3** —
 generation stays player-tapped, never background, and the marker never reads

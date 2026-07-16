@@ -1052,6 +1052,29 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
     expect(parts.tail).toContain("- Nearby: kitchen through the doorway");
   });
 
+  it("renders the meanwhile note, return license, and rhythm line (chat-offscreen-life)", () => {
+    const parts = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      state: {
+        ...sceneState,
+        meanwhileNote: "she heard back about the commission",
+        whereabouts: "at her studio, finishing the commission",
+        rhythm: "mornings: waiting tables at the Dockside Café",
+      },
+    });
+    expect(parts.tail).toContain("While you were apart, off-screen");
+    expect(parts.tail).toContain("she heard back about the commission");
+    expect(parts.tail).toContain("You just got back — you were at her studio, finishing the commission.");
+    expect(parts.tail).toContain("Your daily rhythm");
+    expect(parts.tail).toContain("mornings: waiting tables at the Dockside Café");
+    // None set ⇒ none of the lines render (degraded default).
+    const bare = buildCharacterChatPromptParts({ name: "Mara", profile: profile(), state: sceneState });
+    expect(bare.tail).not.toContain("While you were apart");
+    expect(bare.tail).not.toContain("You just got back");
+    expect(bare.tail).not.toContain("Your daily rhythm");
+  });
+
   it("renders the clock-derived story moment as a binding tail line (chat-clock-calendar)", () => {
     const parts = buildCharacterChatPromptParts({
       name: "Mara",
