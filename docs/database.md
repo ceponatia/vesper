@@ -80,7 +80,7 @@ dual-write the deprecated session engine or current character-chat rows.
 
 Domain identities are supplied explicitly instead of replaced by cuid2 row identities.
 Causal bigint columns are database-checked against JavaScript's safe integer range.
-Composite foreign keys prevent cross-world events and dangling item/container holdings.
+Composite foreign keys prevent cross-world events and dangling item/container holdings. The holding-to-container `NO ACTION` key is manually `DEFERRABLE INITIALLY DEFERRED` in migration 0054 because Drizzle cannot model that PostgreSQL option: standalone live-container deletion still fails, while complete branch/world cascades can settle before the check.
 
 ### Turns & memory
 
