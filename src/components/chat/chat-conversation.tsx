@@ -1099,7 +1099,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             desktop side real estate. Hidden below lg — phones reach the full-size
             portrait by tapping the header portrait or any reply's avatar instead. */}
         {ready && character ? (
-          <aside className="hidden w-52 shrink-0 flex-col gap-4 p-4 lg:flex xl:w-64">
+          <aside className="hidden min-h-0 w-52 shrink-0 flex-col gap-4 overflow-y-auto p-4 lg:flex xl:w-64">
             <button
               type="button"
               onClick={() => setPortraitOpen(true)}
@@ -1213,7 +1213,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             widths — story time lives here, with the skip chips beside the display
             that makes them legible. */}
         {ready && character ? (
-          <aside className="hidden w-52 shrink-0 flex-col gap-4 p-4 lg:flex xl:w-64">
+          <aside className="hidden min-h-0 w-52 shrink-0 flex-col gap-4 overflow-y-auto p-4 lg:flex xl:w-64">
             <ChatClockCard
               chatId={chatId}
               clockMinutes={chatState?.clockMinutes ?? 0}
