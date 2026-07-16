@@ -19,7 +19,7 @@ The first consumer builds an **item-transfer activity feed**. This is intentiona
 - stable outbox ID derived from consumer kind and event ID;
 - world, branch, first sequence, last sequence, and source event ID;
 - consumer kind and schema-versioned payload;
-- state: `pending`, `processing`, or `completed`;
+- state: `pending`, `processing`, `completed`, or terminal `failed`;
 - attempts, available-at time, lease owner, lease expiry, last error, and completion time;
 - created and updated timestamps.
 
@@ -33,7 +33,7 @@ Outbox identity and a unique `(consumer_kind, branch_id, source_event_id)` const
 
 A consumer transaction must:
 
-1. claim an eligible row with a bounded lease using `FOR UPDATE SKIP LOCKED`;
+1. claim an eligible row with a bounded lease using `FOR UPDATE SKIP LOCKED`, while an earlier non-completed row on that consumer and branch makes later rows ineligible;
 2. load and validate the referenced committed event;
 3. apply the async projection idempotently;
 4. advance the checkpoint only across a contiguous range;
