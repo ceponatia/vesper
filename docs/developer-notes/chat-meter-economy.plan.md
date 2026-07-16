@@ -64,7 +64,7 @@ has a strong source and no resolution, and skips move the clock without moving t
   speeds stress recovery). The climax reset targets the **personalized** baseline, not 0.
 - **Rollback safety**: every new field rides `storedChatStateSchema`, so all of this stays
   "another take"-safe.
-- **This one needs a migration** (0051 — the first in this plan's family). One additive
+- **This one needs a migration** (0052 — the first in this plan's family; persona-library.plan.md took 0051). One additive
   integer column, so `db:generate` cannot hit the create-vs-rename prompt; the SQL needs a
   hand-checked **backfill** (see §1) before `pnpm db:migrate`.
 - ~~`meterDefinitions` is shared with the session lane — do not fix chat by inflating
@@ -100,7 +100,7 @@ deletes three special cases**:
   away primary desyncing at `time-skip/route.ts:115`, and the route committing the scenario
   before the member loop; see the spec's §Latent bugs).
 
-**Migration 0051** (`character_chat_state`): **one** column — `meters_at_minutes`,
+**Migration 0052** (`character_chat_state`): **one** column — `meters_at_minutes`,
 `integer not null default 0`. (§2's proportional reserve deleted the second one:
 `awake_since_minutes` is unnecessary once decay needs no hours-awake input.) Default 0 would
 make the first read of every existing row drift the entire history at once, so the migration
@@ -207,7 +207,7 @@ gates on the read's sign and is named in §Later.
 
 > **Two things this model deletes.** `awakeSinceMinutes` is unnecessary — a *proportional*
 > rate needs no hours-awake input, so the reserve value **is** the debt ledger, and
-> migration 0051 drops to one column (`meters_at_minutes`). `CHAT_SLEEP_MIN_HOURS` ("a nap
+> migration 0052 drops to one column (`meters_at_minutes`). `CHAT_SLEEP_MIN_HOURS` ("a nap
 > is not a night") is unnecessary too — a short sleep simply restores less. Both were
 > scaffolding for the piecewise curve.
 
@@ -317,7 +317,7 @@ with [chat-body-needs.plan.md](chat-body-needs.plan.md).
   degraded pulse**; `rhythmBodyPatch` credits a crossed `wash` row and *not* an uncrossed
   one; an away member's meters catch up on next read; degradation: null `intimacy` ⇒
   byte-equal to the no-read fold **and** the mandated diagnostic on a degraded pulse.
-- **Migration**: verify the 0051 backfill on a **branch** first (`neonctl branches create`),
+- **Migration**: verify the 0052 backfill on a **branch** first (`neonctl branches create`),
   not prod — an un-backfilled row drifts its whole history on first read.
 - **Playtest on Fly** (deploy first — the UI-testing surface): one long flirt → intercourse →
   aftermath, checking the strip pips: heated during, arousal clears on the completion
@@ -351,7 +351,7 @@ with [chat-body-needs.plan.md](chat-body-needs.plan.md).
 `src/server/engine/chat-state.ts` (`driftChatState`, `applyChatPulse`, `applyTimeSkip`, `rhythmBodyPatch`),
 `src/server/engine/chat-pipeline.ts` (drop the away-freeze `advance` branch),
 `src/app/api/chats/[chatId]/time-skip/route.ts` (drop the presence `continue`),
-`src/server/db/schema.ts` + `drizzle/0051_*.sql` (`meters_at_minutes` — one column, **+ backfill**),
+`src/server/db/schema.ts` + `drizzle/0052_*.sql` (`meters_at_minutes` — one column, **+ backfill**),
 `src/components/characters/chat-status.tsx` (pips through the read seam),
 tests beside each. Docs: `docs/character-chat/state.md` (time-model + tracked-state),
 `docs/contracts/meters-actions.md` (the classes + the substrate/read law),
