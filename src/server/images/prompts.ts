@@ -6,6 +6,7 @@ import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
 import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
+import type { ViewerBodyPart } from "@/contracts/images/viewer-body";
 import type { CharacterProfile } from "@/contracts/world/profile";
 
 /**
@@ -1033,6 +1034,63 @@ export const SCENE_POV_RULE =
   "First-person POV through the player's own eyes. The player must NEVER be visible — no body, no face, no hands or held objects in frame.";
 
 /**
+ * The shot's framing rule (scene-pov-embodiment.plan.md slice 1) — {@link SCENE_POV_RULE}
+ * when the viewer has no body in frame, the **embodied** variant when they do.
+ *
+ * With no parts this returns the old constant **byte-identical**, which is the point: the
+ * default path can't regress, and callers opt in one at a time. A test pins it.
+ *
+ * The embodied variant's job is to put a limb in frame without the model promoting it into
+ * a whole second person. Three things do that work, and none of them is a negative (the
+ * "no camera" scar: a negative anchors the model on exactly what it forbids):
+ *
+ * 1. **Possessive binding** — "the viewer's own", never "a man's". No subject noun for the
+ *    player, ever; the registry's phrases carry this.
+ * 2. **Frame geometry** — cropped by the frame edge, strongly foreshortened. A limb the
+ *    frame cuts through cannot be composed as someone standing there.
+ * 3. **A person-count assertion** — the positive form of "no third person", and the
+ *    realistic-model analogue of the booru `solo focus` tag. Derived from the featured
+ *    list, never hardcoded.
+ *
+ * The reference-edit route helps too: the base image is the character's portrait, so the
+ * composition is already anchored on her and a foreground forearm is a small edit rather
+ * than a recomposition.
+ */
+export function sceneFramingRule(args: {
+  /** The viewer's parts in frame, already gated (`resolveViewerParts`). Empty ⇒ today's rule. */
+  parts?: readonly ViewerBodyPart[];
+  /** Everyone fully in frame — the count assertion's subjects. */
+  subjects?: readonly string[];
+}): string {
+  const parts = args.parts ?? [];
+  if (parts.length === 0) return SCENE_POV_RULE;
+  const names = (args.subjects ?? []).map((n) => n.trim()).filter(Boolean);
+  return [
+    "First-person POV through the viewer's own eyes; the viewer's face and head are never in frame.",
+    countAssertion(names),
+    `Also in frame, in the viewer's immediate foreground: ${joinPhrases(parts.map((p) => p.framing))}.`,
+  ].join(" ");
+}
+
+/** "Exactly one person is fully in frame: Mira." — the positive form of "no third person". */
+function countAssertion(names: readonly string[]): string {
+  if (names.length === 0) return "No other person is in frame.";
+  const count = names.length === 1 ? "Exactly one person is" : `Exactly ${numberWord(names.length)} people are`;
+  return `${count} fully in frame: ${joinPhrases(names)}. Nobody else appears.`;
+}
+
+/** Small-number words; past the cap the digit reads fine and never occurs in practice. */
+function numberWord(n: number): string {
+  return ["zero", "one", "two", "three", "four", "five"][n] ?? String(n);
+}
+
+/** "a, b and c" — an Oxford-less join, since these are prompt phrases and not prose. */
+function joinPhrases(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
  * The selfie framing (chat-selfies.plan.md) — the exact INVERSE of the scene POV
  * rule: the subject's own phone camera, subject aware of the lens and composing
  * the shot. Positive phrasing only (a literal "no camera" would anchor the model
@@ -1047,6 +1105,14 @@ export interface SceneRenderOptions {
    * (chat-selfies.plan.md — the subject's own camera). Applies on every route.
    */
   framing?: "pov" | "selfie";
+  /**
+   * The viewer's own body in frame (scene-pov-embodiment.plan.md) — **already gated** by
+   * `resolveViewerParts` against the player's coverage and the route's `allowIntimate`;
+   * this builder renders, it does not decide. Absent/empty ⇒ the classic
+   * player-is-invisible rule, byte-identical. Ignored for a selfie, whose framing is the
+   * subject's own camera with no viewer in the scene at all.
+   */
+  viewerParts?: readonly ViewerBodyPart[];
   /** Name of the character the reference image identity-locks (Venice single edit); omit for text-to-image. */
   referenceName?: string;
   /** Uncensored route (Venice/Qwen): emit exposed intimate-anatomy detail (Decision 3). Off for the moderated text-to-image fallback. */
@@ -1107,7 +1173,11 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
     const fit = makeFit(outfitCap);
     const pieces: string[] = [];
     if (reference) pieces.push(PORTRAIT_IDENTITY_LOCK);
-    pieces.push(opts.framing === "selfie" ? SELFIE_FRAMING : SCENE_POV_RULE);
+    pieces.push(
+      opts.framing === "selfie"
+        ? SELFIE_FRAMING
+        : sceneFramingRule({ parts: opts.viewerParts, subjects: featured.map((c) => c.name) }),
+    );
     if (reference) {
       // Identity anchors reinforce the lock; the reference image stays authoritative
       // (owner constraint: these must never override the reference).
@@ -1206,7 +1276,12 @@ function assembleMulti(
   const multi = opts.multiReferences ?? [];
   const refCharNames = new Set(multi.filter((m) => m.kind === "character").map((m) => normalizeName(m.name)));
 
-  const pieces: string[] = [PORTRAIT_IDENTITY_LOCK, opts.framing === "selfie" ? SELFIE_FRAMING : SCENE_POV_RULE];
+  const pieces: string[] = [
+    PORTRAIT_IDENTITY_LOCK,
+    opts.framing === "selfie"
+      ? SELFIE_FRAMING
+      : sceneFramingRule({ parts: opts.viewerParts, subjects: featured.map((c) => c.name) }),
+  ];
   pieces.push(`${multi.length} reference images provided — ${describeMultiReferences(multi)}`);
   pieces.push("Compose all referenced people together into one shared scene, each keeping the exact face, hair and build of their reference image.");
 

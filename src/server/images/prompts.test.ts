@@ -9,6 +9,7 @@ import {
   isIntimateAttributeCategory,
 } from "@/contracts/body/locations";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
+import { viewerBodyPartById } from "@/contracts/images/viewer-body";
 import {
   buildAvatarPrompt,
   buildItemImagePrompt,
@@ -27,11 +28,13 @@ import {
   RECENT_NARRATION_LATEST_CHARS,
   RECENT_NARRATION_PRIOR_CHARS,
   resolveScenePlan,
+  sceneFramingRule,
   sceneRevealAppearance,
   scrubBlush,
   scrubPlayerFromAction,
   SCENE_COMPOSER_SYSTEM,
   SCENE_POV_RULE,
+  SELFIE_FRAMING,
   sceneSpecSchema,
   VENICE_RENDER_PROMPT_LIMIT,
   visibleAvatarOutfit,
@@ -1162,5 +1165,105 @@ describe("formatExposure", () => {
 
   it("reports a sheer top distinctly from a bare one", () => {
     expect(formatExposure({ ...covered, torso: "sheer" }, true)).toBe("wearing only a sheer top, skin visible through it");
+  });
+});
+
+describe("sceneFramingRule (scene-pov-embodiment slices 1+2)", () => {
+  const part = (id: string) => viewerBodyPartById(id)!;
+
+  // THE property that makes this slice safe to land: every caller passes no parts today,
+  // so not one rendered image changes. If this breaks, the default path regressed.
+  it("is byte-identical to the old constant with no viewer parts", () => {
+    expect(sceneFramingRule({})).toBe(SCENE_POV_RULE);
+    expect(sceneFramingRule({ parts: [] })).toBe(SCENE_POV_RULE);
+    expect(sceneFramingRule({ parts: [], subjects: ["Mira"] })).toBe(SCENE_POV_RULE);
+  });
+
+  it("binds every part to the viewer and to the frame, never as a subject", () => {
+    const rule = sceneFramingRule({ parts: [part("forearms")], subjects: ["Mira"] });
+    expect(rule).toContain("the viewer's own forearms");
+    expect(rule).toContain("foreshortened");
+    expect(rule).toContain("face and head are never in frame");
+  });
+
+  // The anti-third-person lever: a POSITIVE count, not a negative. "No man in frame" would
+  // anchor the model on `man`, exactly as the literal "no camera" once summoned cameras.
+  it("asserts the person count positively, from the featured list", () => {
+    expect(sceneFramingRule({ parts: [part("hands")], subjects: ["Mira"] })).toContain(
+      "Exactly one person is fully in frame: Mira.",
+    );
+    expect(sceneFramingRule({ parts: [part("hands")], subjects: ["Mira", "Sayed"] })).toContain(
+      "Exactly two people are fully in frame: Mira and Sayed.",
+    );
+    expect(sceneFramingRule({ parts: [part("hands")], subjects: [] })).toContain("No other person is in frame.");
+  });
+
+  it("never names the player as a subject noun", () => {
+    const rule = sceneFramingRule({ parts: [part("genitals"), part("torso")], subjects: ["Mira"] });
+    expect(rule).not.toMatch(/\ba man\b|\bhis\b|\bthe player\b/i);
+  });
+
+  it("joins several parts readably", () => {
+    const rule = sceneFramingRule({ parts: [part("hands"), part("forearms"), part("torso")], subjects: ["Mira"] });
+    expect(rule).toContain("hands");
+    expect(rule).toContain(" and ");
+    expect(rule.split("Also in frame").length - 1).toBe(1);
+  });
+
+  it("drops trailing/blank subject names rather than rendering an empty slot", () => {
+    expect(sceneFramingRule({ parts: [part("hands")], subjects: ["Mira", "  "] })).toContain(
+      "Exactly one person is fully in frame: Mira.",
+    );
+  });
+});
+
+describe("buildSceneRenderPrompt with viewer parts", () => {
+  const plan = {
+    ...emptySceneRenderPlan(),
+    focal: { name: "Mira", action: "seated by the window", outfitSummary: "linen shirt", appearance: "Hair color: red" },
+  };
+
+  it("carries today's rule when no parts are passed (every caller, today)", () => {
+    expect(buildSceneRenderPrompt(plan, { referenceName: "Mira" })).toContain(SCENE_POV_RULE);
+  });
+
+  it("swaps in the embodied rule when parts are passed", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      referenceName: "Mira",
+      viewerParts: [viewerBodyPartById("forearms")!],
+    });
+    expect(prompt).not.toContain(SCENE_POV_RULE);
+    expect(prompt).toContain("the viewer's own forearms");
+    expect(prompt).toContain("Exactly one person is fully in frame: Mira.");
+  });
+
+  // The framing rule is never-dropped tier: budgetVenicePrompt shrinks outfit/setting text
+  // to fit Venice's 1500-char cap, and must not eat the thing that stops a second person
+  // appearing.
+  it("keeps the embodied rule intact even when the prompt is budgeted down", () => {
+    const fat = {
+      ...plan,
+      focal: { ...plan.focal, outfitSummary: "a ".repeat(900) },
+      setting: "s ".repeat(900),
+    };
+    const prompt = buildSceneRenderPrompt(fat, {
+      referenceName: "Mira",
+      viewerParts: [viewerBodyPartById("forearms")!],
+    });
+    expect(prompt.length).toBeLessThanOrEqual(VENICE_RENDER_PROMPT_LIMIT);
+    expect(prompt).toContain("the viewer's own forearms");
+    expect(prompt).toContain("Exactly one person is fully in frame: Mira.");
+  });
+
+  // A selfie is the subject's own camera — there is no viewer standing in the scene at all,
+  // so viewer parts must not leak into that framing.
+  it("ignores viewer parts for a selfie", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      referenceName: "Mira",
+      framing: "selfie",
+      viewerParts: [viewerBodyPartById("forearms")!],
+    });
+    expect(prompt).toContain(SELFIE_FRAMING);
+    expect(prompt).not.toContain("the viewer's own forearms");
   });
 });
