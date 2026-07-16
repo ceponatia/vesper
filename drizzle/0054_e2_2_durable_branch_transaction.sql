@@ -109,7 +109,7 @@ ALTER TABLE "sim_commands" ADD CONSTRAINT "sim_commands_branch_id_sim_branches_i
 ALTER TABLE "sim_events" ADD CONSTRAINT "sim_events_branch_world_fk" FOREIGN KEY ("branch_id","world_id") REFERENCES "public"."sim_branches"("id","world_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sim_holding_containers" ADD CONSTRAINT "sim_holding_containers_branch_id_sim_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."sim_branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sim_item_holdings" ADD CONSTRAINT "sim_item_holdings_item_fk" FOREIGN KEY ("branch_id","item_id") REFERENCES "public"."sim_items"("branch_id","item_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sim_item_holdings" ADD CONSTRAINT "sim_item_holdings_container_fk" FOREIGN KEY ("branch_id","holding_container_id") REFERENCES "public"."sim_holding_containers"("branch_id","holding_container_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sim_item_holdings" ADD CONSTRAINT "sim_item_holdings_container_fk" FOREIGN KEY ("branch_id","holding_container_id") REFERENCES "public"."sim_holding_containers"("branch_id","holding_container_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sim_items" ADD CONSTRAINT "sim_items_branch_id_sim_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."sim_branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "sim_branches_world_idx" ON "sim_branches" USING btree ("world_id");--> statement-breakpoint
 CREATE INDEX "sim_commands_branch_command_idx" ON "sim_commands" USING btree ("branch_id","command_id");--> statement-breakpoint
