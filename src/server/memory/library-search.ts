@@ -1,13 +1,14 @@
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { emptyPersonaProfile, personaProfileSchema } from "@/contracts/players/persona-profile";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral, type Embedded } from "../ai";
-import { characters, db, items, locations, socialCards } from "../db";
+import { characters, db, items, locations, personas, socialCards } from "../db";
 import { FUZZY_MIN_SCORE } from "./constants";
 
-export type LibraryKind = "character" | "location" | "item" | "social_card";
+export type LibraryKind = "character" | "location" | "item" | "social_card" | "persona";
 
 export interface FuzzyMatch {
   id: string;
@@ -20,6 +21,7 @@ const TABLE_NAMES: Record<LibraryKind, string> = {
   location: "locations",
   item: "items",
   social_card: "social_cards",
+  persona: "personas",
 };
 
 const stringArraySchema = z.array(z.string());
@@ -167,6 +169,20 @@ async function searchTextFor(kind: LibraryKind, id: string, sink?: DiagnosticSin
     if (!row) return null;
     const tags = parseOr(stringArraySchema, row.tags, [], sink, "social_cards.tags");
     return joinParts([row.name, row.description, ...tags]);
+  }
+  if (kind === "persona") {
+    const [row] = await db()
+      .select({ title: personas.title, name: personas.name, profile: personas.profile, tags: personas.tags })
+      .from(personas)
+      .where(eq(personas.id, id))
+      .limit(1);
+    if (!row) return null;
+    const profile = parseOr(personaProfileSchema, row.profile, emptyPersonaProfile(), sink, "personas.profile");
+    const tags = parseOr(stringArraySchema, row.tags, [], sink, "personas.tags");
+    // `title` IS embedded — it is the label the owner searches their own library by.
+    // That is a library-search concern and never a prompt one (the resolver's shape
+    // is what keeps title away from agents, not this).
+    return joinParts([row.title, row.name, profile.bio, ...tags]);
   }
   const [row] = await db()
     .select({ name: items.name, description: items.description, tags: items.tags })
