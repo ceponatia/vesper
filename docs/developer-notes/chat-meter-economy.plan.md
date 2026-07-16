@@ -1,196 +1,333 @@
-# Chat meter economy — visible decay, arousal resolution, skips with consequences
+# Chat meter economy — the body on the story clock
 
-Status: **next** (planned 2026-07-15 — owner request after the chat-clock-calendar time
-change: "hygiene never seems to decay, and arousal needs to reset after intercourse
-completes")
+Status: **next** (planned 2026-07-15 after the chat-clock-calendar time change: "hygiene
+never seems to decay, and arousal needs to reset after intercourse completes"; re-scoped
+2026-07-16 on the owner's OQ1–OQ3 rulings and the world-model deprecation license —
+rulings and rationale in [chat-meter-economy.spec.md](chat-meter-economy.spec.md))
 
 ## Goal
 
 Since the clock change ([chat-clock-calendar.plan.md](chat-clock-calendar.plan.md):
-`CHAT_TICK_MINUTES` 4 → 1, skips promoted to the primary time mover), the chat lane's
-meter economy is visibly mis-paced in three ways:
+`CHAT_TICK_MINUTES` 4 → 1, skips promoted to the primary time mover), the chat lane's meter
+economy is visibly broken in three ways: **hygiene never decays**, **arousal never
+resolves** after an intimate scene completes, and **skips carry no meter consequences**
+(D14) even though skips are now how story time passes.
 
-1. **Hygiene never decays.** Within-visit drift is negligible and skips don't touch
-   meters at all, so the meter is effectively frozen at its seed value forever.
-2. **Arousal never resolves.** Accumulation is fast (+0.18 per intimate act) but the
-   only sink is slow ambient drift — after an intimate scene completes the character
-   stays "flushed" for the next ~50+ exchanges. There is no climax/completion event.
-3. **Skips carry no meter consequences** (D14 flavor-only ruling), which was tolerable
-   when exchanges moved the clock 4 minutes each; now that skips are the main way story
-   time passes, "overnight" leaving arousal at 1.0 and energy unmoved reads as a bug.
+The first re-plan treated this as mistuning and proposed a per-meter *exchange-keyed* drift
+table. That was the wrong axis. `−0.04/h` hygiene is already physiologically right; the
+meter looks frozen because **drift is keyed to exchanges instead of the clock** — a legacy
+of the 4-minute tick — so a meter's pacing tracks how much the player types rather than how
+much story time passed. Keying pacing to exchanges makes "talking to her" the thing that
+dirties her.
 
-Deliverable: a **retuned, testable rate scheme** — every pacing number in one tunable
-table so a rate experiment is a one-line constant edit — plus the arousal-resolution
-event and a scoped revision of D14.
+The owner's OQ1 answer ("energy should tick down… based on our time system") and the
+deprecation of the world model (no session-lane parity left to protect, owner 2026-07-16)
+together license the real fix.
+
+Deliverable: **meters drift on the story clock at honest rates**, energy becomes a real
+sleep model with a derived tiredness read, arousal resolves, and skips get their
+consequences from the character's own authored rhythm rather than a flat rule.
 
 ## The current economy (measured 2026-07-15)
 
-Drift applies `CHAT_METER_DRIFT_MINUTES = 4` story-minutes of each meter's `perHour`
-rate per exchange (`driftChatState` → `applyMeterDrift`, personalized by
-`personalizeMeters`). Per-exchange deltas and time-to-first-band from seed:
+Drift applies `CHAT_METER_DRIFT_MINUTES = 4` story-minutes of each meter's `perHour` per
+**exchange** (`driftChatState` → `applyMeterDrift`, personalized by `personalizeMeters`):
 
-| Meter | perHour | Δ/exchange | First band | Exchanges to reach it |
-| --- | --- | --- | --- | --- |
-| hygiene (seed 0.9) | −0.04 | −0.0027 | lived-in < 0.55 | **~131** |
-| energy (seed 0.9) | −0.05 | −0.0033 | tired < 0.45 | ~135 |
-| stress (seed 0.15 → 0) | −0.03 | −0.002 | — (decays) | — |
-| arousal (→ baseline) | −0.10 | −0.0067 | flushed > 0.55 (cooling FROM 1.0 back below it) | **~67 to cool** |
-| intoxication (→ 0) | −0.12 | −0.008 | one drink chip (+0.3) clears in | ~37 |
-| mood (→ 0.5) | 0.06 recovery | 0.004 | — | — |
+| Meter                  | perHour       | Δ/exchange | First band                        | Exchanges to reach it |
+| ---------------------- | ------------- | ---------- | --------------------------------- | --------------------- |
+| hygiene (seed 0.9)     | −0.04         | −0.0027    | lived-in < 0.55                   | **~131**              |
+| energy (seed 0.9)      | −0.05         | −0.0033    | tired < 0.45                      | ~135                  |
+| stress (seed 0.15 → 0) | −0.03         | −0.002     | — (decays)                        | —                     |
+| arousal (→ baseline)   | −0.10         | −0.0067    | cooling from 1.0 below flushed    | **~67 to cool**       |
+| intoxication (→ 0)     | −0.12         | −0.008     | one drink chip (+0.3) clears in   | ~37                   |
+| mood (→ 0.5)           | 0.06 recovery | 0.004      | —                                 | —                     |
 
-Sources (accumulation) today:
+Sources today: the **pulse** (arousal +0.18 per intimate concept, +0.09 courtship/physical
+affection, unless disliked; mood/stress via the reaction curve) and the four **action
+chips** (`drink` +0.3 intoxication · `freshen` hygiene = 0.95, +0.05 energy · `rest` +0.2
+energy, −0.2 stress · `fluster` +0.25 arousal + the 90-min `flushed` condition). **Skips
+contribute nothing** (D14). Nothing lowers hygiene but invisible drift; nothing raises
+energy but the chips.
 
-- **Pulse** (`applyChatPulse`): arousal +0.18 per intimate concept (+0.09 courtship /
-  physical affection) unless disliked; mood/stress via the reaction curve.
-- **Action chips** (`applyChatAction`): drink +0.3 intoxication; freshen → hygiene
-  = 0.95, +0.05 energy; rest +0.2 energy / −0.2 stress; fluster +0.25 arousal +
-  the 90-min `flushed` condition.
-- **Skips**: nothing (D14). **Nothing lowers hygiene** except the invisible drift, and
-  nothing raises energy except the chips.
-
-So the failure modes are structural, not just mistuned: hygiene has no visible sink and
-no dirtying sources; arousal has a strong source and no resolution sink; skips move the
-clock without moving the body.
+So the failure modes are structural: hygiene has no visible sink and no sources, arousal
+has a strong source and no resolution, and skips move the clock without moving the body.
 
 ## Constraints
 
-- **`meterDefinitions` is shared with the session lane.** The session merge
-  (`merge/phases/meters.ts`) applies `perHour` over REAL elapsed turn minutes (1–480),
-  where −0.04/h hygiene is correctly paced. Do **not** fix chat by inflating `perHour`
-  — chat-lane pacing must live on the chat side.
-- Personalization stays: rates/baselines resolve through `personalizeMeters` (libido
-  shifts the arousal resting point up to +0.2 and halves its recovery at +100;
-  composure speeds stress recovery). The reset event must target the **personalized**
-  baseline, not 0.
-- Resilience rules: the new pulse read degrades to `null` (`.catch`) — a missed
-  detection costs one resolution beat, never a turn; ambient drift stays the backstop.
-- Rollback safety: meters + conditions already ride `storedChatStateSchema`, so all of
-  this is "another take"-safe with **no migration**.
+- **Resilience**: the new pulse read degrades to `null` — a missed detection costs one
+  resolution beat, never a turn. Critically, the intimacy read's drift suppression keys on
+  a **condition**, not on this exchange's pulse (§3), so a single dropped pulse can never
+  cool an active scene.
+- **Personalization stays**: rates/baselines resolve through `personalizeMeters` (libido
+  shifts arousal's resting point up to +0.2 and halves its recovery at +100; composure
+  speeds stress recovery). The climax reset targets the **personalized** baseline, not 0.
+- **Rollback safety**: every new field rides `storedChatStateSchema`, so all of this stays
+  "another take"-safe.
+- **This one needs a migration** (0051 — the first in this plan's family). Two additive
+  integer columns, so `db:generate` cannot hit the create-vs-rename prompt; the SQL needs a
+  hand-checked **backfill** (see §1) before `pnpm db:migrate`.
+- ~~`meterDefinitions` is shared with the session lane — do not fix chat by inflating
+  `perHour`.~~ **Void** (owner, 2026-07-16): the world model is deprecated and the session
+  lane is not in use. Rates get honest values in the registry, which is where a rate per
+  story hour always belonged.
 
 ## Design
 
-### 1. Per-meter drift pacing — the tunable table
+### 1. Drift moves to the story clock (the keystone)
 
-Replace the single `CHAT_METER_DRIFT_MINUTES` with a per-meter map in
-`engine/constants.ts` (fallback 4 for unlisted meters, so world-override/custom meters
-keep today's pacing):
+Delete `CHAT_METER_DRIFT_MINUTES`. `driftChatState` drifts by **real elapsed story
+minutes** since the last drift, read from a new per-character `metersAtMinutes`:
 
 ```ts
-/** Story-minutes of drift applied per exchange, PER METER (chat-meter-economy.plan.md).
- *  These are the chat lane's pacing knobs — perHour stays session-owned. */
-export const CHAT_METER_DRIFT_MINUTES: Record<string, number> = {
-  hygiene: 15, // −0.01/exchange → lived-in in ~35 exchanges of active play
-  arousal: 8,  // −0.013/exchange → a heated-then-interrupted scene cools in ~25
-};
-export const CHAT_METER_DRIFT_DEFAULT_MINUTES = 4; // energy/stress/intoxication/mood unchanged
+const elapsed = Math.min(CHAT_MAX_CATCHUP_MINUTES, clockMinutes - state.metersAtMinutes);
+const meters = applyMeterDrift(state.meters, elapsed, personalizeMeters(defs, profile.traits));
+// → { ...state, meters, metersAtMinutes: clockMinutes }
 ```
 
-`driftChatState` applies each meter's own minutes (a small loop over
-`applyMeterDrift`-per-definition, or extend `applyMeterDrift` to take a per-id minutes
-map — implementer's choice, keep it pure). **These first-test values are hypotheses**;
-the point of the table is that the next experiment is a one-line edit.
+This is worth doing for pacing alone, but the reason it is the keystone is that **it
+deletes three special cases**:
 
-Targets the test values encode (adjust here, not in prose, when retuning):
+- **The `advance` flag goes.** Lazy drift is idempotent on read (elapsed 0 ⇒ no-op), so the
+  read-only projection path (`/state/route.ts`) and the exchange path are the same call.
+- **The away-freeze goes.** `advance: resolved.presence === "present"` (`chat-pipeline.ts:745`)
+  encoded a world-model assumption that off-screen bodies pause. They don't — and
+  chat-offscreen-life already ruled the cast keeps living. Away members simply catch up from
+  `metersAtMinutes` when next read. **Ruled: drift is presence-independent; presence gates
+  narration, not physiology.**
+- **Skips need no meter code at all.** A skip advances the clock; the next drift covers it.
+  This is most of the old slice 3, for free — and it heals two latent bugs on the way (an
+  away primary desyncing at `time-skip/route.ts:115`, and the route committing the scenario
+  before the member loop; see the spec's §Latent bugs).
 
-- hygiene: first band inside one long session (~35 exchanges), second band only after
-  neglecting it across ~60 more — freshen/shower beats become worth taking.
-- arousal: ambient cooling from a fully heated state in ~25 exchanges — the backstop
-  when the resolution event (slice 2) misses; slow enough that a flirty mood lingers.
+**Migration 0051** (`character_chat_state`): `meters_at_minutes` and `awake_since_minutes`
+(§2), both `integer not null default 0`. Default 0 would make the first read of every
+existing row drift the entire history at once, so the migration **must backfill both from
+`character_chats.clock_minutes`**; `CHAT_MAX_CATCHUP_MINUTES` (7 story days) is the
+belt-and-braces guard, not the fix.
 
-### 2. Arousal resolution — the intimacy read + reset
+**The retuned table** — one table, one meaning, in `meters/registry.ts`:
 
-The concept vocabulary has `proposition` (initiation) but nothing for the act or its
-completion, and the pulse only classifies the **player's** act — completion usually
-lands in the narrator's reply. Add a scene-level read instead of new concepts:
+| Meter        | perHour        | → what that means                                             |
+| ------------ | -------------- | ------------------------------------------------------------- |
+| hygiene      | −0.04 → **−0.03** | lived-in (< 0.55) ~13h after a shower; unwashed ~22h        |
+| arousal      | −0.10 → **−0.30** | 1.0 cools below flushed in ~1.5h; a proposition fades in ~36m |
+| stress       | −0.03 → **−0.10** | 1.0 eases off-edge in ~4h, calm in ~10h (was ~33h)          |
+| intoxication | −0.12 (keep)      | one drink clears in ~2.5h — already right                    |
+| mood         | 0.06 → **0.10** recovery | an even keel returns over an evening, not a day     |
+| energy       | *piecewise* — see §2 | the first meter whose rate is a function, not a constant |
 
-- **Pulse schema** (`contracts/turns/chat-pulse.ts`): new field
-  `intimacy: z.enum(["active", "climax"]).nullable().catch(null).default(null)` —
-  "is this exchange inside an active intimate scene, and did it reach/complete a
-  climax?" Prompt guidance in `prompts/` beside the existing pulse fields; the pulse
-  already sees both sides of the exchange.
-- **On `climax`** (`applyChatPulse`):
-  - `arousal = min(current, personalizedBaseline + CHAT_AROUSAL_AFTERGLOW_RESIDUE)`
-    with `CHAT_AROUSAL_AFTERGLOW_RESIDUE = 0.15` — sated, not switched off, and always
-    below the 0.55 "flushed" band;
-  - upsert a self-expiring **`afterglow`** condition (90 min via
-    `CHAT_ACTION_CONDITION_MINUTES`, hint like "sated and loose-limbed, warm,
-    unhurried") — inline like the fluster chip's `flushed` condition, no catalog work;
-  - stress −0.15, mood +0.10 (composing with the exchange's curve deltas), hygiene
-    −0.05 (slice 4's rationale);
-  - the intimate-act arousal bump is **skipped** on a climax exchange (reset wins).
-- **On `active`**: suppress ambient arousal drift for this exchange (the scene sustains
-  itself; drift resuming the moment `intimacy` returns to null is the natural cooldown)
-  and hygiene −0.02 (sweat — slice 4).
-- Trace: extend `ChatPulseTrace.changed` values + an `intimacy` field so the state
-  debug tools and inspector show the read.
-- Degradation: `null` (missed/degraded pulse) = today's behavior exactly; the slice-1
-  faster arousal drift is the backstop, so a missed climax cools in ~25 exchanges
-  instead of sticking for 50+.
+Sanity check on a **100-exchange visit** (= 100 story-minutes): hygiene −0.05, energy
+−0.01, arousal −0.50, stress −0.17, mood +0.17. Nothing about talking dirties or exhausts
+anyone; arousal genuinely cools mid-scene; skips do the heavy lifting, which is what they
+are for.
 
-### 3. Skips get bounded meter effects (D14, revisited and scoped)
+> **On arousal's rate**: −0.30/h is a deliberate compromise. The physiologically honest
+> value is nearer −0.50/h (acute arousal subsides in 10–30 minutes), but arousal is
+> currently doing double duty as the scene's *persistent charge*. −0.50 lands once the
+> `desire` appetite meter exists to hold that charge — see the spec's §Ruling OQ2.
 
-D14's rationale ("whether 12 skipped hours mean recovery or deterioration is
-circumstance") ruled out a flat rule when exchanges were the time mover. Post-calendar,
-skips ARE time; keeping them meter-inert decouples body state from story time
-completely. Revision — flat rules **only where circumstance doesn't plausibly flip the
-sign**, in `applyTimeSkip`:
+### 2. Energy: a sleep reserve + a derived tiredness read
 
-- **Cooling meters always cool.** Run baseline-seeking drift (`applyMeterDrift`, real
-  skipped minutes, personalized defs) for **arousal, intoxication, stress, mood**.
-  There is no circumstance where nine skipped hours preserve arousal or drunkenness;
-  `driftToward` never overshoots the baseline, so no caps needed. (An `overnight` skip
-  = 540 min fully clears all four at current rates.)
-- **Self-care on big skips.** For `overnight` and `days` only: `hygiene =
-  max(current, 0.9)`, `energy = max(current, 0.9)` — assume the character slept and
-  washed, the same "the cast keeps living" default the meanwhile pass and rhythm
-  auto-dress already apply at skip boundaries. `moments`/`hours` skips leave hygiene
-  and energy on plain drift (hygiene DOWN over a 3-hour skip is correct).
-- The pure fall-through keeps D14's virtues: no LLM call, no new wiring — the skip
-  route already calls `applyTimeSkip` per member, and away members already share it.
-- Update the D14 comment blocks (`applyTimeSkipToScenario`, `contracts/turns/chat-skip.ts`)
-  to point here; the fully circumstance-aware time-effects system stays deferred.
+The owner's OQ1 timeline cannot live on one linear meter — requiring "tired at 12h" forces
+a drain that zeroes the meter at ~24h, contradicting "not truly exhausted until over 24
+hours" and "pass out at 48h". The contradiction is diagnostic: **"tired at 5pm" and
+"wrecked at 30h up" are different phenomena** (spec §Ruling OQ1). Three axes:
 
-### 4. Hygiene accumulation (small, rides slice 2)
+**(a) `energy` = homeostatic sleep reserve.** Drains on hours awake via the owner's curve
+(`awakeSinceMinutes`, new column, reset by sleep):
 
-Give hygiene sources so the sink means something: −0.02 per `intimacy: "active"`
-exchange, −0.05 on `climax` (both in the slice-2 fold, constants beside the residue).
-Nothing else — no new detection surface; workout/exertion dirtying waits for evidence
-it's missed.
+```ts
+export const CHAT_ENERGY_DRAIN_CURVE = [
+  { throughHours: 4, perHour: 0.004 },  // "very slowly after waking"
+  { throughHours: 14, perHour: 0.008 }, // a normal baseline
+  { throughHours: 24, perHour: 0.014 }, // "after 12-15 hours, increases a bit"
+  { throughHours: 36, perHour: 0.022 }, // "after 24 hours it increases further"
+  { throughHours: 48, perHour: 0.037 }, // "after ~36 hours it decays rapidly"
+];
+```
+
+From a 0.95 wake: **4h → 0.93 · 14h → 0.85 · 24h → 0.71 · 36h → 0.45 · 48h → 0.00**.
+Bands move to the sleep-debt scale they now measure: `tired` < **0.70** (~25h awake — just
+past the owner's "over 24 hours"), `exhausted` < **0.40** (~37h), `spent` < **0.15**
+(~44h, the pre-collapse warning). At hour 12 it reads ~0.87 and shows nothing, which is
+correct — being up 12 hours is not sleep-deprived.
+
+> **Implementation note**: the drain must be **integrated across band boundaries**, not
+> sampled at one point — an exchange spanning hour 23→25 draws from two rates. Sampling
+> makes drift path-dependent and breaks the "sixty 1-minute drifts == one 60-minute drift"
+> invariant that every other meter satisfies for free (`driftToward` is linear).
+
+**(b) Circadian pressure** — derived, never stored: `deriveCircadianPressure(profile,
+clockMinutes, calendarStart)`, a pure function of the story clock against the character's
+own `sleep` rhythm rows (§4). Peaks inside the sleep window, ramps in the ~2h before,
+decays over the ~2h after waking (sleep inertia — grogginess). Absent rows ⇒ a 23:00–07:00
+default. No storage, no migration, and it rebases for free if the calendar anchor is edited.
+
+**(c) Time-on-task** — hours awake read directly. This is the owner's 5–6pm: the end of a
+long day, gone after a night's sleep, invisible to the reserve.
+
+**`deriveEnergyRead(energy, hoursAwake, circadian)`** blends all three into the one phrase
+the narrator sees and the one pip the strip shows. Energy therefore **joins mood** as a
+meter with no registry thresholds — the read owns the vocabulary. Rather than hardcode a
+second exception in `chat-status.tsx` (where mood's `bright`/`low` pips live today), this
+slice adds the small shared **derived-read seam** (`meters/reads.ts`) that mood, energy, and
+§3's arousal signs all resolve through.
+
+**Sleep** is one concept with two sources — a rhythm `sleep` window a skip crossed, and an
+`asleep` condition (how a pass-out is stored) — unified by a pure
+`sleepMinutesBetween(profile, conditions, from, to)`:
+
+- `energy = min(CHAT_ENERGY_WAKE_CAP (0.95), energy + hoursSlept × CHAT_SLEEP_RECOVERY_PER_HOUR (0.09))`
+- **Short sleep carries debt forward**: `awakeSinceMinutes = now − carried`, where sleeping
+  *h* hours clears `h × CHAT_SLEEP_DEBT_CLEAR_RATIO (3)` hours of prior wakefulness. Eight
+  hours clears a full day; four leaves you four hours "already into" the next one. The awake
+  clock *is* the debt ledger — no second field.
+- **A nap is not a night**: only an episode ≥ `CHAT_SLEEP_MIN_HOURS (2)` resets the awake
+  clock. Below it the `rest` chip's top-up stands alone.
+
+**Pass-out** fires on `energy` reaching 0 — *not* a 48h timer. Hours-awake only sets the
+rate, so a nap legitimately buys real time (+0.2 at the 0.037/h band ≈ 5 hours) without
+clearing the debt; 48h is the no-naps case the owner described. Reaching 0 mints an
+`asleep` condition (`durationMinutes: 480`), which self-expires through the **existing**
+clock-keyed expiry — so the wake needs no bespoke path, and `sleepMinutesBetween` restores
+the energy on the drift that crosses it. Per the owner: **no debuffs on waking for now**;
+the energy-condition family is named in §Later, not built.
+
+### 3. Arousal: resolution, and body facts instead of a talk-switch
+
+Two problems, one slice. The concept vocabulary has `proposition` (the ask) but nothing for
+the act or its completion, and the pulse only classifies the **player's** act — completion
+usually lands in the narrator's reply. And per the owner's OQ2, arousal currently reads as
+"she's aroused so she talks different" rather than as physiology.
+
+**The scene-level read** — no new concepts:
+
+- **Pulse schema** (`contracts/turns/chat-pulse.ts`): `intimacy:
+  z.enum(["active", "climax"]).nullable().catch(null).default(null)` — "is this exchange
+  inside an active intimate scene, and did it complete?" Prompt guidance beside the existing
+  pulse fields; the pulse already sees both sides of the exchange.
+- **On `active`**: upsert a short `heated` condition (15 min) and suppress ambient arousal
+  drift **while that condition stands**. Keying suppression on the condition rather than on
+  this exchange's pulse is what makes a dropped pulse survivable — the scene holds, and the
+  condition's expiry 15 minutes after the last active read *is* the natural cooldown. Also
+  hygiene −0.02 (sweat, §5).
+- **On `climax`**: `arousal = min(current, personalizedBaseline + CHAT_AROUSAL_AFTERGLOW_RESIDUE
+  (0.15))` — sated, not switched off, and always below the `flushed` band. Upsert a
+  self-expiring **`afterglow`** condition (90 min, hint "sated and loose-limbed, warm,
+  unhurried"), inline like the fluster chip's `flushed`. Stress −0.15, mood +0.10 (composing
+  with the exchange's curve deltas), hygiene −0.05 (§5). The intimate-act arousal bump is
+  **skipped** on a climax exchange — the reset wins. Clears `heated`.
+- **Trace**: extend `ChatPulseTrace.changed` + an `intimacy` field so the state tools and
+  inspector show the read.
+- **Degradation**: `null` = today's behavior exactly; §1's faster ambient drift is the
+  backstop, so a missed climax cools in ~1.5h of story time instead of sticking for 50+
+  exchanges.
+
+**The physiology half** (spec §Ruling OQ2) — the substrate/read law applied:
+
+- **Regrade the bands to body facts.** One behavioral hint ("flushed skin, shallow breath,
+  lingering eye contact") becomes a graded physiological vocabulary — `kindled` / `flushed` /
+  `wound-tight` / `cresting` — naming what the body is doing, with no directive about diction.
+- **`deriveArousalSigns`** (through §2's read seam) is the perception gate: signs resolve
+  against `resolveChatWardrobe`'s coverage-computed exposure and the frame. Flush and breath
+  read at conversational range; swelling and wetness are gated on an intimate frame **and**
+  exposure/contact, and bind to the body model rather than being assumed.
+- **Re-scope disinhibition, don't delete it.** `stateDispositionOverlays` currently spends
+  arousal lowering `intimate.inhibition`, `social.guardedness`, **and** `temperament.composure`.
+  Ruled: **arousal loosens `intimate.inhibition` only** — being turned on lowers what you'll
+  do; it doesn't make you a different person or slur your words. Intoxication keeps all three.
+
+### 4. Skips: the rhythm is the circumstance (D14 deleted)
+
+Per §1 the cooling half is already free — a skip advances the clock and the next drift
+covers it. What remains is what a skip *implies*, and the owner's OQ3 ruling cuts the
+previous plan's `hygiene = max(current, 0.9)` blanket restore outright: the narrated main
+NPC should be *shown* washing, not silently reset.
+
+But the naive opposite (skips grant only sleep) puts a character at hygiene 0 after any
+`days` skip. The resolution: **off-screen self-care is a rhythm event, not a skip rule.**
+D14's rationale — "whether twelve skipped hours mean recovery or deterioration is
+circumstance" — was right, and the circumstance is **already authored**: `profile.schedule`.
+
+`rhythmBodyPatch(profile, fromMinutes, toMinutes)` — the deterministic sibling of the
+shipped `rhythmOutfitPatch` ("a schedule row covering the skipped-to clock re-dresses the
+character") — credits only the rhythm slots the skipped window actually crossed, at the
+clock minute they sit on:
+
+- An `overnight` skip landing at **8am**, past a 7am `wash` row → she slept *and* showered.
+- The same skip landing at **6am**, before it → she slept and has **not** showered, and that
+  need stands in the scene for the fiction to play. Exactly the owner's "they still need to
+  take a shower."
+- Drain resumes from the last crossed slot, so the tail is always a real, playable need —
+  never a blanket reset, never a filthy character.
+
+This makes the present/away branch unnecessary: the rhythm is the character's *own life*,
+not a narrator's assumption, so it applies to everyone. No LLM call, pure, and it is the
+"fully circumstance-aware time-effects system" D14 deferred.
+
+**Enabler — the one world-model redesign this plan needs.** `ScheduleEntry.activity` is a
+free-form string, so the rhythm is prose the narrator reads and nothing else can. It gains
+an optional structured `kind` (`sleep` | `wash` | `meal` | `work` | `leisure`), plus
+`inferScheduleKind(activity)` so already-authored schedules ("Sleeping", "Shower and
+coffee") light up with **no re-authoring and no migration** (it is a jsonb profile field).
+`scheduleEntryAt` moves from `engine/merge/phases/schedule.ts` (session lane) to contracts,
+beside the schema — the chat lane already reaches across the boundary for it.
+
+### 5. Hygiene sources (small, rides §3)
+
+Give the sink something to answer: hygiene −0.02 per `intimacy: "active"` exchange, −0.05
+on `climax`, constants beside the afterglow residue. Nothing else — no new detection
+surface; workout/exertion dirtying waits for the `workout` action to reach the chat lane
+with [chat-body-needs.plan.md](chat-body-needs.plan.md).
 
 ## Verification
 
-- **Unit** (`chat-state.test.ts`, `registry.test.ts`): band-crossing exchange counts
-  pinned to the table ("hygiene from 0.9 crosses lived-in within 32–38 exchanges",
-  "arousal 1.0 cools below flushed within 22–28"); climax reset lands at personalized
-  baseline + residue and below 0.55 for a high-libido profile; `active` suppresses
-  arousal drift; skip policy per amount (hours cools intoxication, overnight restores
-  hygiene/energy, moments does neither); degradation test: null `intimacy` ⇒ byte-equal
-  to today's fold **and** the mandated diagnostic on a degraded pulse.
-- **Playtest on Fly** (deploy first — the UI-testing surface): one long flirt →
-  intercourse → aftermath conversation checking the strip pips: flushed appears during,
-  clears on the completion exchange, afterglow chip shows, hygiene pip dips after
-  ~35 exchanges, freshen chip restores it; then `overnight` skip → arousal/intoxication
-  cleared, hygiene/energy back to ~0.9.
-- Full gate (lint → lint:cycles → typecheck → test → jscpd, one at a time) before
-  claiming done.
+- **Unit** (`chat-state.test.ts`, `registry.test.ts`): drift is idempotent on a zero
+  elapsed and equals one 60-minute call for sixty 1-minute calls; a 100-exchange visit
+  moves hygiene < 0.06; band crossings pinned to §1's table (hygiene 0.95 → lived-in in
+  12–14h; arousal 1.0 → below flushed in 1.3–1.7h); the energy curve pinned at 4/14/24/36/48h
+  (±0.02) with pass-out at 47–49h; short-sleep debt carry (16h up + 4h sleep ⇒ awake clock
+  reads 4h, not 0); climax lands at personalized baseline + residue and below 0.55 for a
+  high-libido profile; a `heated` condition suppresses arousal drift **and survives a
+  degraded pulse**; `rhythmBodyPatch` credits a crossed `wash` row and *not* an uncrossed one;
+  an away member's meters catch up on next read; degradation: null `intimacy` ⇒ byte-equal
+  to the no-read fold **and** the mandated diagnostic on a degraded pulse.
+- **Migration**: verify the 0051 backfill on a **branch** first (`neonctl branches create`),
+  not prod — an un-backfilled row drifts its whole history on first read.
+- **Playtest on Fly** (deploy first — the UI-testing surface): one long flirt → intercourse →
+  aftermath, checking the strip pips: heated during, arousal clears on the completion
+  exchange, afterglow chip shows; then `overnight` skip → arousal/intoxication cleared,
+  energy restored per hours slept, hygiene restored **only** if the landing crossed a wash
+  row; then a `days` skip → still not filthy.
+- Full gate (lint → lint:cycles → typecheck → test → jscpd, one at a time) before claiming done.
 
-## Open questions
+## Later (named, not built)
 
-- **OQ1 — energy within-visit pacing.** Unchanged here (a conversation shouldn't
-  exhaust anyone), but late-night play never showing "tired" may feel wrong once the
-  clock is visible. Revisit with the same table once slice 1's values are validated.
-- **OQ2 — an `intercourse` interaction concept.** The intimacy read makes it
-  unnecessary for meters, but preference/social-card matching can only target
-  `proposition` today (a character can't like/dislike the act itself, only the ask).
-  Registry data edit if wanted — decide when a card needs it.
-- **OQ3 — circumstance overrides for skip self-care.** A "trapped/rough night" scene
-  makes the overnight reset wrong. A condition-gated override (an active condition
-  suppressing self-care) is the natural shape; deferred until a real scene hits it.
+- **Energy conditions** — the owner's "many conditions related to energy": `groggy` (sleep
+  inertia), `wired`, `microsleeps` at `spent`. Waking carries no debuffs until these exist.
+- **Condition-gated self-care suppression** — a "trapped/rough night" condition suppressing
+  `rhythmBodyPatch`. The seam is named; deferred until a real scene hits it.
+- **`desire`** — the appetite meter that lets arousal's rate go physiologically honest
+  (−0.50/h). Graduates with [chat-body-needs.plan.md](chat-body-needs.plan.md).
+- **`intercourse` as an interaction concept** — unnecessary for meters (the `intimacy` read
+  covers them); a registry data edit for the day a preference card must like/dislike the act
+  itself rather than the ask.
 
 ## Files touched
 
-`src/server/engine/constants.ts` (pacing table + residue), `src/server/engine/chat-state.ts`
-(`driftChatState`, `applyChatPulse`, `applyTimeSkip`), `src/contracts/turns/chat-pulse.ts`
-(+ its prompt module and `ChatPulseTrace`), `src/contracts/turns/chat-skip.ts` (comment),
-tests beside each, docs: `docs/character-chat/state.md` (time-model + tracked-state
-paragraphs), `docs/contracts/meters-actions.md` (chat pacing note).
+`src/contracts/meters/registry.ts` (the retuned rate table, energy curve, band re-placement),
+`src/contracts/meters/reads.ts` (**new** — the derived-read seam: mood, energy, arousal signs),
+`src/contracts/world/profile.ts` (`ScheduleEntry.kind` + `inferScheduleKind`),
+`src/contracts/world/schedule.ts` (**new** — `scheduleEntryAt`, moved from the merge lane),
+`src/contracts/turns/chat-pulse.ts` (the `intimacy` field + `ChatPulseTrace`),
+`src/contracts/turns/chat-skip.ts` (delete the D14 comment),
+`src/contracts/personality/modulation.ts` (re-scope arousal's disinhibition reach),
+`src/server/engine/constants.ts` (delete `CHAT_METER_DRIFT_MINUTES`; add the sleep/afterglow/catchup constants),
+`src/server/engine/chat-state.ts` (`driftChatState`, `applyChatPulse`, `applyTimeSkip`, `rhythmBodyPatch`),
+`src/server/engine/chat-pipeline.ts` (drop the away-freeze `advance` branch),
+`src/app/api/chats/[chatId]/time-skip/route.ts` (drop the presence `continue`),
+`src/server/db/schema.ts` + `drizzle/0051_*.sql` (`meters_at_minutes`, `awake_since_minutes`, **+ backfill**),
+`src/components/characters/chat-status.tsx` (pips through the read seam),
+tests beside each. Docs: `docs/character-chat/state.md` (time-model + tracked-state),
+`docs/contracts/meters-actions.md` (the classes + the substrate/read law),
+`docs/contracts/conditions.md` (the `id`-is-semantic correction — see the spec).

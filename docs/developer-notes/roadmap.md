@@ -27,13 +27,25 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Chat meter economy — visible decay, arousal resolution, skips with consequences** —
-  [chat-meter-economy.plan.md](chat-meter-economy.plan.md) (planned 2026-07-15 from an
-  owner report after the clock change: hygiene never visibly decays, arousal never
-  resolves after intimacy completes, and flavor-only skips (D14) no longer fit a world
-  where skips are the primary time mover). Per-meter chat drift pacing in one tunable
-  table, a pulse `intimacy` read with a climax reset + afterglow condition, and scoped
-  skip meter effects (cooling meters always cool; self-care on overnight/days).
+- **Chat meter economy — the body on the story clock** —
+  [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
+  [spec](chat-meter-economy.spec.md) (planned 2026-07-15 from an owner report after the
+  clock change: hygiene never visibly decays, arousal never resolves after intimacy
+  completes, and flavor-only skips (D14) no longer fit a world where skips are the primary
+  time mover; **re-scoped 2026-07-16** on the owner's OQ1–OQ3 rulings and the world-model
+  deprecation license). Drift moves off exchange-counting onto the **story clock** at
+  retuned rates — which also deletes the `advance` flag, the away-freeze, and the skip's
+  meter code — plus an energy sleep model (awake clock, the owner's drain curve, pass-out
+  at 48h) with a derived tiredness read, a pulse `intimacy` read with a climax reset +
+  afterglow, arousal regraded to body facts rather than a talk-switch, and rhythm-driven
+  off-screen self-care that retires D14. Carries migration 0051 (+ a backfill).
+- **Chat body needs — satiation, hydration, and needs that push** —
+  [chat-body-needs.plan.md](chat-body-needs.plan.md) (draft; planned 2026-07-16 from the
+  owner's PM notes on the meter-economy plan). The three asked-for meters plus the
+  needs → initiative channel that makes them worth having, and the collapse of the
+  chat-chip / registered-action fork that currently leaves `meal` and `snack` with no
+  meter effects. **Depends on the meter economy landing first** — it is the second use of
+  that plan's clock-keyed drift, rhythm `kind`s, and read seam.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
