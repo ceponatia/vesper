@@ -61,7 +61,7 @@ function parseArgs(argv: string[]): Args {
 }
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
-const estimatedTokens = (value: string): number => Math.max(1, Math.ceil(value.length / 4));
+const estimatedTokens = (value: string): number => Math.ceil(value.length / 4);
 
 async function writeJson(filePath: string, value: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -71,7 +71,6 @@ async function writeJson(filePath: string, value: unknown): Promise<void> {
 async function narratorLeg(
   model: string,
   prompt: { system: string; messages: ModelMessage[] },
-  knownNames: readonly string[],
 ): Promise<{ transcript: string; leg: Gate0LegEvidence }> {
   const startedAt = Date.now();
   let ttftMs = 0;
@@ -117,15 +116,17 @@ async function narratorLeg(
       },
     };
   } catch (error) {
+    const promptTokens = estimatedTokens(`${prompt.system}\n${JSON.stringify(prompt.messages)}`);
+    const completionTokens = estimatedTokens(transcript);
     return {
       transcript,
       leg: {
         id: "narrator",
         model,
         attemptedCalls: 1,
-        promptTokens: estimatedTokens(`${prompt.system}\n${JSON.stringify(prompt.messages)}`),
-        completionTokens: estimatedTokens(transcript),
-        totalTokens: 0,
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
         tokenSource: "estimated",
         ttftMs,
         totalMs: Date.now() - startedAt,
@@ -134,8 +135,6 @@ async function narratorLeg(
         error: error instanceof Error ? error.message : String(error),
       },
     };
-  } finally {
-    void knownNames;
   }
 }
 
@@ -149,7 +148,7 @@ function buildPrompt(caseDef: Gate0Case): { system: string; messages: ModelMessa
 
 async function runCase(caseDef: Gate0Case, model: string, seed: number): Promise<Gate0ResultRow> {
   const prompt = buildPrompt(caseDef);
-  const { transcript, leg } = await narratorLeg(model, prompt, caseDef.scenario.knownNames);
+  const { transcript, leg } = await narratorLeg(model, prompt);
   return {
     caseId: caseDef.definition.id,
     title: caseDef.scenario.title,
