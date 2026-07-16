@@ -1,11 +1,18 @@
 # Successor simulation architecture — plan
 
-Status: **proposal / architecture direction**
+Status: **draft — north-star architecture direction**
 
-Grounded against `main` at commit `cd7baa280a463d3028640725aded623052a6644c`
-on 2026-07-16. This document deliberately does not treat the current session or
-character-chat model as a framework that must be preserved. It proposes a successor
-simulation kernel and a staged migration path.
+The original repository analysis was grounded against `main` at commit
+`cd7baa280a463d3028640725aded623052a6644c` on 2026-07-16. This revision incorporates
+the response in [gpt-sim-design.claude.md](gpt-sim-design.claude.md) and the synthesis in
+[world-engine-refactor.gpt.md](world-engine-refactor.gpt.md). It deliberately does not
+treat the current session or character-chat model as a framework that must be preserved.
+It proposes a successor simulation kernel, a safe bridge from the current narrator-led
+lane, and a staged migration path.
+
+This is a north-star architecture, not a promise to implement every subsystem or a
+single uninterrupted build queue. Each phase must earn the next through correctness,
+player-visible benefit, narrative non-regression, latency, and operating cost.
 
 ## Executive decision
 
@@ -28,6 +35,12 @@ The principal decisions are:
   projections, and a durable scheduler.
 - Preserve Vesper's strongest existing rule: **LLMs propose; deterministic folds
   dispose.**
+- Treat the current character-chat quality as a product asset and a non-regression
+  requirement, not merely an implementation detail to be replaced.
+- Give players a perspective-safe way to inspect and act on the simulated world; hidden
+  causal machinery that cannot be queried is insufficient.
+- Use incremental strangler-style migration, measured stop/go gates, and a pre-kernel
+  hardening phase instead of a big-bang rewrite.
 
 The target is causal realism: the player can observe consequences, investigate them,
 and receive a consistent answer about why they occurred. That produces more believable
@@ -131,6 +144,19 @@ The narrator should render resolved events. It should not silently become the au
 that determines whether an item moved, a promise was kept, a door opened, or someone
 learned a secret.
 
+The current lane also demonstrates the opposite failure mode: making movement or
+location authority too rigid at the wrong point in a live exchange can damage scene flow
+and writing quality. The design problem is therefore not simply “code authority versus
+narrator authority.” It is **when authority is applied**. The simulator should frame
+facts and possible outcomes before prose, resolve constraints as story events, and gate
+irreversible mutations after prose without retroactively invalidating already-streamed
+narration.
+
+Several current ratchets deserve immediate fencing during migration. A narrator-derived
+drive reveal is sticky, a narrator proposal can mark a plan kept, and fact drafts do not
+carry enough truth/belief semantics. These are evidence for an explicit effect contract,
+not reasons to make every line of prose mechanically sterile.
+
 ## Target architecture
 
 ```mermaid
@@ -194,6 +220,19 @@ type DomainEvent = {
   payload: unknown;
 };
 
+type ArmedEffect = {
+  id: string;
+  worldId: string;
+  branchId: string;
+  sourceCommandId: string;
+  kind: EffectKind;
+  actorIds: string[];
+  targetIds: string[];
+  preconditionsVersion: number;
+  allowedOutcomes: EffectOutcome[];
+  expiresAt?: number;
+};
+
 type NarrativeView = {
   mustBeTrue: GroundedFact[];
   perceptibleNow: Percept[];
@@ -203,12 +242,43 @@ type NarrativeView = {
   allowedAffordances: string[];
   forbiddenClaims: string[];
   creativeLicenses: CreativeLicense[];
+  armedEffects: ArmedEffect[];
 };
 ```
 
 All LLM proposals should use stable entity, action, plan, location, and event IDs. Name
 matching and normalized free-text plan matching are too fragile for authoritative
 mutation.
+
+### Authority timing and the arm–narrate–confirm contract
+
+Authority has three different moments, and conflating them creates either hallucinated
+state or brittle narration:
+
+| Moment | Code responsibility | Narrator responsibility |
+| --- | --- | --- |
+| Before narration | Derive world conditions, viewpoint, legal affordances, constraints, and the bounded outcomes that may occur | Understand the frame and choose presentation |
+| During action resolution | Apply binding constraints and turn impossible or failed actions into resolved in-world outcomes | Narrate success, failure, interruption, uncertainty, or resistance without overriding the result |
+| After narration | Confirm only pre-authorized hard effects, append events, and quarantine unsupported claims | Supply structured confirmation or a choice among armed outcomes |
+
+The operational rule is: **derive and arm before; resolve constraints as events; confirm
+ratchets after.** “Do not veto during narration” is useful only if it means “do not throw
+an infrastructure error or contradict prose after it has streamed.” It must not mean
+that impossible actions succeed. A locked door should produce an attempted-entry or
+failure event; an absent character cannot answer in person; insufficient travel time can
+produce delay or a changed plan.
+
+An `ArmedEffect` is a capability with a narrow scope, version, expiry, and allowed
+outcome range. The deterministic kernel creates it after validating preconditions. The
+narrator may render or select among those outcomes, and a post-turn fold may confirm one.
+An unarmed hard claim remains soft prose, belief, exaggeration, or a proposed event; it
+cannot silently change world truth.
+
+This contract should initially fence the most damaging irreversible mutations: secret
+disclosures, plan completion or cancellation, travel and presence, inventory transfer,
+injury, ownership, relationship milestones, and creation of durable supporting
+characters or locations. A plan becoming due may arm an attempt, but only a completion
+event can make it kept.
 
 ### Persistence and command processing
 
@@ -270,6 +340,14 @@ Continuous values store their last integration time and calculate their current 
 analytically when read. During a time skip, drain scheduled events until the target time,
 resolve any newly scheduled events, and then snapshot. This preserves causal detail
 without paying per-minute cost.
+
+Derived values do not need independent event rows merely because they can be computed.
+Once a derived value helps cause durable history—weather closing a route, a need threshold
+selecting an action, or a price causing a purchase—the resulting event must capture the
+relevant input value and derivation/rule version. Otherwise replay after a formula change
+can silently rewrite causality. Fast-forward must also satisfy a partition invariant:
+advancing three days once should produce the same authoritative result as advancing one
+day three times from the same state and seed.
 
 ### Spatial and physical substrate
 
@@ -430,7 +508,7 @@ architecture. In the successor architecture their responsibilities should narrow
 
 | Component | Synchronous? | Responsibility |
 | --- | --- | --- |
-| Input interpreter | Only when needed | Map free-form player language onto candidate commands, references, speech acts, and uncertainty |
+| Input interpreter | Fallback only | Resolve unusual or genuinely ambiguous free-form language after deterministic parsing, entity resolution, and structured affordances |
 | NPC deliberator | Rarely | Select among legal high-LOD actions at meaningful decision points |
 | World director | No | Propose pressures, complications, or opportunities; never mutate state directly |
 | Context compiler | Code, always | Build the narrator's exact perspective-safe view |
@@ -442,6 +520,11 @@ An agent is not needed merely to transfer game state to the narrator. Code shoul
 through a deterministic context compiler. An LLM may compress a long, low-priority trace,
 but hard facts, constraints, knowledge boundaries, and causal events should remain
 structured and templated.
+
+The input interpreter should not become a mandatory synchronous hop. Prefer structured
+actions, deterministic parsing for common commands, context-aware entity resolution, and
+explicit clarification for consequential ambiguity. Use an LLM only when those paths
+cannot safely represent the player's intent.
 
 The current binding/gate/license/flavor ordering should become typed `NarrativeView`
 sections:
@@ -469,6 +552,32 @@ hard simulation state:
 
 This preserves expressive narration without letting every colorful sentence mutate the
 world.
+
+## Player interrogation and interaction surface
+
+A causal simulation must be visible and interrogable without exposing omniscient debug
+state. Build a `PlayerWorldView` from the same projections and permission rules used by
+the narrator, scoped to the player character's senses, discoveries, memories, and
+beliefs.
+
+A useful surface can include:
+
+- a “now” view of perceived time, weather, location, nearby entities, and salient body
+  sensations;
+- a known calendar of commitments and expected travel;
+- a discovered map rather than a complete world graph;
+- inspect, travel, use, ask, wait, and plan affordances;
+- a perspective-safe “what changed while I was away?” recap;
+- causal explanations when the character could reasonably know them.
+
+Raw numeric meters are optional. The important property is that simulated state changes
+what the player can notice, ask, attempt, and understand. The same command contracts
+should support prose input and explicit UI actions so the interface does not create a
+second rules engine.
+
+Player queryability is an acceptance criterion. If a system changes hidden state but
+cannot influence action, perception, explanation, or consequences, it is probably
+unnecessary simulation or premature fidelity.
 
 ## Memory and RAG assessment
 
@@ -644,6 +753,7 @@ The simulation should expose metrics beyond character meters:
 - projection lag and outbox retry counts;
 - LOD population per tier and promotion/eviction reasons;
 - LLM calls per exchange and per story day;
+- synchronous and settlement call fan-out, timeout rates, and degraded-leg frequency;
 - LLM proposal acceptance, repair, and rejection rates;
 - narrator grounding violations;
 - perspective-leakage failures;
@@ -656,7 +766,53 @@ Every event should expose its causation chain in developer tools. “Why did she
 should be answerable as structured evidence: need threshold → chosen action → travel
 event → arrival, not an opaque sentence generated yesterday.
 
+## Product and narrative-quality evaluation
+
+Correctness tests are necessary but not sufficient. Every meaningful slice should be
+evaluated on four axes:
+
+| Axis | Questions and measurements |
+| --- | --- |
+| Simulation correctness | Do invariants hold? Is replay deterministic? Does one three-day skip match three one-day skips? Can every hard change be explained? |
+| Narrative quality | Does character voice, romantic tension, emotional continuity, pacing, and prose quality match or exceed the current lane? |
+| Player-visible value | Can blinded evaluators or players detect greater continuity and aliveness? Do world facts alter choices, affordances, and consequences rather than merely add exposition? |
+| Operational cost | What happens to p50/p95 latency, token usage, model-call fan-out, failure recovery, and cost per exchange or story day? |
+
+Maintain a versioned baseline corpus of representative conversations and scenario
+replays. Run blind transcript comparisons and targeted ablations in which one world read
+or subsystem is removed. Evaluate contradiction rate, character fidelity, romance
+quality, causal enactment, detectability, and grounding—not only whether a fact was
+mentioned.
+
+Feature experiments must exercise causality. A weather-only prose comparison measures
+texture; a useful weather slice changes travel, clothing, plans, availability, comfort,
+or resource use and then tests whether those effects are enacted coherently. If a
+correct subsystem produces no reliable player-visible improvement, stop expanding it
+until the interaction or narration surface is fixed.
+
 ## Migration sequence
+
+The phases below describe a north-star sequence, not a calendar promise. Size each phase,
+set an operating budget, and define exit criteria before starting it. Prefer adapters and
+strangler migration over a flag day. Do not proceed merely because the previous phase
+shipped.
+
+### Phase 0 — current-lane safety and evidence
+
+- Freeze a representative baseline of transcripts, scenario inputs, latency, token
+  usage, settlement fan-out, and failure behavior.
+- Fence current hard ratchets such as drive revelation, plan resolution, movement,
+  presence, inventory transfer, ownership, and durable canon.
+- Add explicit truth-versus-belief read policies and viewpoint-aware witness handling.
+- Assert single-machine operation or implement database-level per-session ordering before
+  relying on the job runner across machines.
+- Pilot one causal world-read experiment and one perspective-safe player query surface.
+- Proceed to kernel work only with defined correctness, narrative-quality, latency, and
+  player-value criteria.
+
+This phase should primarily remove unsafe authority and establish evidence. It should
+not add more post-turn agents or pretend that patches to aggregate state are the final
+world architecture.
 
 ### Phase 1 — simulation foundation
 
@@ -716,13 +872,21 @@ The slice should meet these conditions:
 
 - no per-NPC-per-tick LLM calls;
 - normally only the narrator is on the synchronous model path;
-- an input interpreter is used only for ambiguous free-form commands;
+- deterministic parsing and structured affordances handle common input; an LLM input
+  interpreter is a fallback for genuinely ambiguous free-form commands;
 - high-LOD deliberation is event-triggered and bounded to legal candidate actions;
 - background and dormant behavior remains deterministic;
 - a seven-day skip is substantially cheaper than simulating every minute;
 - every important change can be traced to a command or scheduled event;
+- impossible actions resolve as narratable failure, interruption, or constraint events
+  rather than infrastructure errors or retroactive prose rejection;
 - no narrator statement can silently transfer an item, move a character, resolve a plan,
-  or disclose a secret.
+  or disclose a secret;
+- the player can inspect the perceived current world, act through its affordances, and
+  understand important consequences without receiving omniscient truth;
+- blind transcript and scenario evaluation shows narrative non-regression and a
+  detectable increase in causal continuity or aliveness;
+- latency, model-call fan-out, and cost remain inside a predeclared budget.
 
 If this slice works, the architecture is ready to become intricate. If it does not,
 adding more meters will only make failures harder to diagnose.
@@ -737,3 +901,107 @@ simulation kernel.
 Keep the current chat lane as the narrative-quality benchmark. The successor succeeds
 when it can produce the same or better character writing while giving that writing a
 replayable, perspective-safe, materially causal world underneath it.
+
+## Recommendations not adopted unchanged
+
+The supplemental review proposes several valuable near-term corrections. They should
+inform the design, but adopting their simplest form would leave important semantic or
+product gaps. This section records each proposal, what it lacks, and the recommended
+form.
+
+### “Never veto during narration”
+
+**What it is:** Avoid letting deterministic movement, location, or action gates interrupt
+a live scene or invalidate prose after the narrator has committed to it. This responds
+to the project's earlier experience with rigid location authority harming conversation
+quality.
+
+**What it lacks:** Taken literally, the rule makes physical and institutional
+preconditions advisory. Locked doors, absence, travel time, missing resources, capacity,
+and permissions would cease to be causal if the narrator could simply carry the action
+through.
+
+**Recommendation:** Never produce a protocol-level veto after prose has streamed.
+Instead, validate and arm outcomes before narration and represent constraints as
+resolved story events: failure, resistance, delay, interruption, substitution, or a
+changed plan. Constraints remain binding; the result remains narratable.
+
+### Add `canon` to fact drafts and gate reads on it
+
+**What it is:** Allow fact extraction to mark a draft non-canonical and prevent
+non-canonical rows from being retrieved as world truth. This is a worthwhile immediate
+safety fence because the current draft schema cannot express the distinction.
+
+**What it lacks:** “Not world truth” does not mean “irrelevant.” A lie, rumor, mistaken
+inference, dream, or outdated observation may be false while remaining an authentic and
+important character belief. A Boolean also cannot express uncertainty, temporal
+validity, contradiction, or who holds the belief.
+
+**Recommendation:** Add the field and truth-channel read fence during Phase 0, but do not
+treat that as the final knowledge model. Separate propositions/world assertions from
+per-knower belief records carrying source, confidence, learned time, valid time,
+contradictions, and supersession. Non-canon content may enter a belief view only through
+a disclosure, observation, inference, or authored-memory event.
+
+### Consume `witnessedBy` as a retrieval filter
+
+**What it is:** Stop returning a memory to a character who did not witness its source
+event. This closes an obvious perspective-leak path in the current RAG lane.
+
+**What it lacks:** Witnessing is only one way to know. Characters can be told, infer,
+misremember, read, overhear, or forget. A flat witness filter also does not distinguish
+the player, a speaking character, the narrator, a world director, or an administrative
+debug view.
+
+**Recommendation:** Apply an immediate viewpoint-aware witness fence where the current
+data supports it, then replace the Boolean/set interpretation with observation and
+disclosure events plus a knower-scoped eligibility policy. Retrieval must first select
+the requesting viewpoint and knowledge channel, then apply semantic ranking inside the
+eligible set.
+
+### Mark a plan kept only after its target time
+
+**What it is:** Prevent narration from marking a future plan complete before the planned
+time arrives.
+
+**What it lacks:** Reaching or passing the target time proves only that a plan is due or
+overdue. It does not prove that participants arrived, the activity occurred, resources
+were available, or the commitment was fulfilled.
+
+**Recommendation:** Use the clock to schedule an attempt and transition the plan to due.
+Only a resolved completion event may mark it kept. Explicit cancellation, interruption,
+failure, lateness, and no-show events should drive their own states and consequences.
+
+### Use an ambient-weather transcript comparison to justify the kernel
+
+**What it is:** Add a cheap deterministic world read such as weather, run conversations
+with and without it, and test whether the narration uses the information.
+
+**What it lacks:** This primarily measures prose texture and prompt enactment. A result
+can be noticeable without proving causal simulation, or unnoticeable because the
+narration/interaction surface is weak rather than because a kernel has no value.
+
+**Recommendation:** Use ambient weather as a pipeline smoke test, not an architectural
+referendum. The decision experiment should exercise a small causal chain: weather alters
+travel, clothing, comfort, availability, a plan, or resource use; the player can inspect
+or react to it; later consequences remain consistent. Pair transcript ablation with
+state and action assertions.
+
+### Treat the cheap middle path as an alternative to the kernel
+
+**What it is:** First fix reveal gates, plan timing, canon handling, witness retrieval,
+and ambient context using existing tables and agents. This is an attractive way to gain
+safety and evidence with limited implementation cost.
+
+**What it lacks:** Those patches cannot provide shared multi-character worlds, stable
+object and location identity, mapped space, conserved inventories, player physiology,
+ordered cross-character causality, or replayable material consequences. Testing only
+ambient flavor may also understate the value of a kernel designed for causal
+interaction.
+
+**Recommendation:** Adopt this work as Phase 0 and as a regression baseline, not as the
+terminal architecture. Use it to remove unsafe narrator authority, measure the current
+lane, and validate the context path. Whether an individual experiment succeeds should
+change subsystem priority and presentation design, not erase requirements that aggregate
+chat state cannot satisfy.
+
