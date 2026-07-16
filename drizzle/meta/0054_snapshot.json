@@ -4630,7 +4630,7 @@
             "branch_id",
             "holding_container_id"
           ],
-          "onDelete": "restrict",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
