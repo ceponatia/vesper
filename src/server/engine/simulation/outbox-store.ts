@@ -4,6 +4,7 @@ import { itemTransferredEventSchema } from "@/contracts/simulation/item-transfer
 import {
   itemTransferFeedConsumerKind,
   itemTransferFeedProjectionSchemaVersion,
+  itemTransferOutboxPayloadSchema,
   outboxRetryDelaySeconds,
   projectItemTransferredFeedRow,
 } from "@/contracts/simulation/outbox";
@@ -140,6 +141,13 @@ export async function consumeNextItemTransferOutbox(
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext(${`${itemTransferFeedConsumerKind}:${work.branchId}`}))`,
       );
+      const payload = itemTransferOutboxPayloadSchema.parse(work.payload);
+      if (
+        payload.sourceEventId !== work.sourceEventId ||
+        work.schemaVersion !== itemTransferFeedProjectionSchemaVersion
+      ) {
+        throw new Error("Outbox envelope does not match its delivery contract");
+      }
 
       const [eventRow] = await tx
         .select()
@@ -148,6 +156,12 @@ export async function consumeNextItemTransferOutbox(
         .limit(1);
       if (!eventRow) throw new Error("Referenced committed simulation event is missing");
       const feedRow = projectItemTransferredFeedRow(eventFromRow(eventRow));
+      if (
+        feedRow.sourceSequence !== work.firstSequence ||
+        feedRow.sourceSequence !== work.lastSequence
+      ) {
+        throw new Error("Outbox sequence range does not match its source event");
+      }
 
       const [checkpoint] = await tx
         .select()
