@@ -28,6 +28,7 @@ import {
   RECENT_NARRATION_PRIOR_CHARS,
   resolveScenePlan,
   sceneRevealAppearance,
+  scrubBlush,
   scrubPlayerFromAction,
   SCENE_COMPOSER_SYSTEM,
   SCENE_POV_RULE,
@@ -985,6 +986,37 @@ describe("scrubPlayerFromAction (deterministic backstop)", () => {
     expect(scrubPlayerFromAction("walking beside the player, one hand resting on his arm")).toBe(
       "one hand resting on his arm",
     );
+  });
+});
+
+describe("scrubBlush (deterministic backstop)", () => {
+  it("returns clean text unchanged (identity — no rejoin churn on the common case)", () => {
+    const clean = "seated by the window, one leg crossed; flipping a page";
+    expect(scrubBlush(clean)).toBe(clean);
+  });
+
+  it("drops the skin-colour clause and keeps the physiology beside it", () => {
+    expect(scrubBlush("flushed, eyes bright and breath shallow")).toBe("eyes bright and breath shallow");
+    expect(scrubBlush("blushing hard; looking away")).toBe("looking away");
+    expect(scrubBlush("cheeks reddening, lips parted")).toBe("lips parted");
+  });
+
+  it("catches the whole word family the narrator's arousal hint seeds", () => {
+    for (const word of ["flushed", "flushing", "flush", "blush", "blushed", "blushes", "rosy", "ruddy", "red-faced"]) {
+      expect(scrubBlush(`${word} and still, mid-laugh`)).toBe("mid-laugh");
+    }
+  });
+
+  it("leaves a clause with no colour word alone even when the text has one elsewhere", () => {
+    expect(scrubBlush("flushed pink, seated by the window, flipping a page")).toBe(
+      "seated by the window, flipping a page",
+    );
+  });
+
+  // Degenerate case: nothing survives. buildSceneRenderPrompt guards on a truthy
+  // action, so the Pose line is simply omitted — a missing pose beats a painted one.
+  it("returns empty when every clause is a colour word", () => {
+    expect(scrubBlush("flushed, blushing")).toBe("");
   });
 });
 
