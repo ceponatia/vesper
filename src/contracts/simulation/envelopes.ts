@@ -35,9 +35,17 @@ function isStableSet(values: readonly string[]): boolean {
   return values.every((value, index) => index === 0 || (values[index - 1] ?? "") < value);
 }
 
-export const controlledActorIdsSchema = z
-  .array(worldCharacterIdSchema)
-  .refine(isStableSet, "Controlled actor IDs must be unique and sorted");
+export function createStableStringSetSchema<TElement extends z.ZodType<string>>(
+  element: TElement,
+  label: string,
+) {
+  return z.array(element).refine(isStableSet, `${label} must be unique and sorted`);
+}
+
+export const controlledActorIdsSchema = createStableStringSetSchema(
+  worldCharacterIdSchema,
+  "Controlled actor IDs",
+);
 
 export const commandPrincipalSchema = z
   .object({
@@ -77,12 +85,8 @@ export function createCommandEnvelopeSchema<
     .strict();
 }
 
-const eventActorIdsSchema = z
-  .array(worldCharacterIdSchema)
-  .refine(isStableSet, "Event actor IDs must be unique and sorted");
-const eventEntityIdsSchema = z
-  .array(simulationEntityIdSchema)
-  .refine(isStableSet, "Event entity IDs must be unique and sorted");
+const eventActorIdsSchema = createStableStringSetSchema(worldCharacterIdSchema, "Event actor IDs");
+const eventEntityIdsSchema = createStableStringSetSchema(simulationEntityIdSchema, "Event entity IDs");
 
 const eventEnvelopeFields = {
   id: eventIdSchema,
@@ -134,6 +138,10 @@ export const acceptedSimulationCommandResultSchema = z
   .refine((result) => new Set(result.eventIds).size === result.eventIds.length, {
     message: "Accepted command event IDs must be unique",
     path: ["eventIds"],
+  })
+  .refine((result) => result.eventIds.length === result.lastSequence - result.firstSequence + 1, {
+    message: "Accepted command event IDs must cover the complete sequence range",
+    path: ["eventIds"],
   });
 
 export const conflictSimulationCommandResultSchema = z
@@ -155,9 +163,10 @@ export function createCommandResultSchema<TRejectionCode extends z.ZodType<strin
       commandId: z.string().min(1).max(512),
       code: rejectionCode,
       publicReason: z.string().min(1),
-      legalAlternativeCommandTypes: z.array(z.string().min(1)).refine(isStableSet, {
-        message: "Legal alternative command types must be unique and sorted",
-      }),
+      legalAlternativeCommandTypes: createStableStringSetSchema(
+        z.string().min(1),
+        "Legal alternative command types",
+      ),
     })
     .strict();
 
