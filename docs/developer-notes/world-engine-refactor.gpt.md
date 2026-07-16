@@ -330,6 +330,479 @@ Routine can remain a deterministic off-screen policy at low LOD even after riche
 resolution exists. The important boundary is to avoid mistaking the current adapter for
 general-purpose authoritative action history.
 
+## Live-scene arbitration — world events must become playable transitions
+
+A live conversation is itself a world activity, not an exemption from the world. The
+scheduler must not teleport an NPC when a clock boundary is crossed, but the chat must
+not freeze obligations indefinitely either. The correct seam is a **live-scene
+arbiter**: it looks ahead, turns upcoming constraints into decision pressure, resolves
+the actor's choice, commits physical outcomes, and gives the narrator a bounded dramatic
+transition to portray.
+
+The governing rule is:
+
+> **The clock creates pressure; an actor decision creates an action; actions create
+> departures, journeys, interruptions, and arrivals. A schedule never directly changes
+> location.**
+
+Wall-clock latency never advances story time. Nothing becomes 4pm while the model is
+generating merely because thirty real seconds passed. Story time advances only through a
+committed turn span, action, wait, travel, or skip. That gives the engine a stable
+boundary at which to reconcile the world before prose streams.
+
+### What the current repository provides—and what is unsafe to inherit
+
+| Current seam | Useful precedent | Successor gap |
+| --- | --- | --- |
+| `ScheduleEntry` in [profile.ts](../../src/contracts/world/profile.ts) | Authored recurring time windows and day masks | `locationName` and `activity` are prose; there is no priority, flexibility, preparation time, travel deadline, or outcome |
+| Action registry in [registry.ts](../../src/contracts/actions/registry.ts) | Stable action IDs, durations, aliases, and meter effects | No real affordance/resource/access preconditions, interruption policy, concurrency claims, failure modes, or observation profile |
+| Chat plans in [chat-plans.ts](../../src/contracts/turns/chat-plans.ts) | Story-clock targets and lifecycle labels | Name/prose matching; a narrator may mark `kept`, and elapsed time can assume NPC↔NPC completion |
+| Chat scene memory in [chat-scene-memory.ts](../../src/contracts/turns/chat-scene-memory.ts) | Durable setting continuity and pre-prompt movement recognition | Places are narrator-imagined names; `switchScenePlace` can change the current scene immediately without route, access, or travel |
+| `StagedIntent` plus [movement.ts](../../src/server/engine/movement.ts) | No teleport from an unplaced NPC; passable path, one-hop movement, arrival-gated payload, and commitment that beats routine | Director-authored, turn-budgeted, hop-count routing; no story-time ETA, activity phases, player interaction, or general schedule arbitration |
+| Presence channels in [perception.md](../perception.md) | Physical sight, remote comms, and absence grant different narrator rights | Needs to become a world-wide projection shared by chat, actions, memory, and access—not prompt guidance alone |
+| `LinkAccess` in [access.ts](../../src/contracts/world/access.ts) | One pure rule for locks, doors, and opening windows | `private` deliberately does not block the player, malformed access degrades to public, keys are not implemented, and invitation/consent scopes do not exist |
+
+The session movement system is a good source of invariants, not a literal framework to
+restore. In particular, “staged intent beats the schedule, no path means no move, and
+arrival gates the beat” should survive. “One hop per turn,” narrator/director text
+contracts, and fail-open private access should not.
+
+### Non-negotiable world invariants
+
+These are database/kernel laws, never prompt suggestions:
+
+1. **One physical locus per body.** An entity is either at one location/zone or on one
+   journey edge. It cannot be at home, at work, and in the current chat simultaneously.
+2. **Every relocation has a cause.** Physical locus changes only through an authorized
+   departure/journey/arrival sequence, an explicit spawn/despawn rule, or an auditable
+   author override. Regular player prose and narrator prose cannot relocate an NPC.
+3. **Travel has a lower bound.** Arrival time is no earlier than departure plus the
+   selected route's minimum travel time. Route access is evaluated at traversal time.
+4. **Incompatible activities cannot overlap.** A body cannot shower, drive, sleep, work a
+   register, and physically socialize at once. Activities claim body, attention,
+   affordance, item, and space resources according to compatibility rules.
+5. **Control is capability-scoped.** A player command may directly control only their
+   player character. “Mara comes over” is a request, invitation, or asserted fiction—not
+   an NPC movement command. NPC policy owns Mara's choice.
+6. **Access is not consent.** A key, invitation to the home, or relationship does not
+   imply permission to enter every room, interrupt sleep, touch someone, or enter an
+   intimate activity. Location access, zone privacy, and interpersonal consent are
+   separate checks.
+7. **No deadline disappears silently.** Crossing a commitment's decision or departure
+   boundary must create a decision/outcome: leave, delay, renegotiate, cancel, miss, or
+   accept a consequence.
+8. **Knowledge is viewpoint-scoped.** A remote player may learn only “no answer,” not
+   “she is showering,” unless communication, sound, prior disclosure, or another
+   perception supports that inference.
+9. **Narration renders one committed cut.** Every reply is grounded in a world version,
+   story-time span, and event sequence range. Later events cannot retroactively alter
+   the cut already narrated.
+10. **Unarmed prose cannot create hard effects.** A narrator sentence cannot unlock a
+    door, grant an invitation, end a journey, complete a shift, or move an item without
+    the corresponding command/event authority.
+
+### State needed to enforce those invariants
+
+Do not model this as a larger `present | away` flag. The minimum successor contracts
+should distinguish commitments, activities, journeys, access, engagement, and physical
+locus:
+
+```ts
+type PhysicalLocus =
+  | { kind: "at"; locationId: string; zoneId?: string }
+  | { kind: "in_transit"; journeyId: string; linkId: string };
+
+type Commitment = {
+  id: string;
+  actorId: string;
+  kind: "shift" | "appointment" | "promise" | "reservation" | "routine";
+  destinationId?: string;
+  earliestStart: number;
+  targetStart: number;
+  latestArrival?: number;
+  priority: number;
+  flexibility: "fixed" | "negotiable" | "optional";
+  status: "planned" | "preparing" | "en_route" | "active" | "kept" |
+          "late" | "missed" | "cancelled";
+  consequencePolicyId?: string;
+};
+
+type ActivityInstance = {
+  id: string;
+  actorId: string;
+  actionId: string;
+  locationId: string;
+  phase: "queued" | "preparing" | "active" | "paused" | "interrupted" |
+         "completed" | "failed" | "cancelled";
+  startedAt?: number;
+  expectedEnd?: number;
+  interruptibility: "free" | "brief" | "costly" | "none";
+  attention: "available" | "divided" | "unavailable";
+  privacy: "public" | "private" | "intimate";
+  exclusiveClaims: string[];
+};
+
+type Journey = {
+  id: string;
+  travelerId: string;
+  originId: string;
+  destinationId: string;
+  routeLinkIds: string[];
+  departedAt: number;
+  earliestArrivalAt: number;
+  expectedArrivalAt: number;
+  status: "planned" | "in_transit" | "interrupted" | "arrived" | "abandoned";
+};
+
+type AccessGrant = {
+  id: string;
+  granteeId: string;
+  scopeId: string;
+  issuerId?: string;
+  basis: "public" | "resident" | "employee" | "invited" | "key" | "emergency";
+  validFrom: number;
+  validUntil?: number;
+  permissions: Array<"approach" | "enter" | "remain" | "use" | "bring_guest">;
+  revocable: boolean;
+};
+
+type Engagement = {
+  id: string;
+  participantIds: string[];
+  channel: "physical" | "call" | "text";
+  sceneLocationId?: string;
+  state: "opening" | "active" | "winding_down" | "ended" | "interrupted";
+  openedAt: number;
+  lastAcknowledgedPressureIds: string[];
+};
+
+type TemporalPressure = {
+  id: string;
+  actorId: string;
+  source: { kind: "commitment" | "need" | "hazard" | "access_window"; id: string };
+  noticeAt: number;
+  decideBy: number;
+  actBy: number;
+  severity: "background" | "salient" | "urgent" | "hard";
+  legalResponseIds: string[];
+};
+```
+
+A `Commitment` says what matters and when. An `ActivityInstance` says what the actor is
+actually doing. A `Journey` says where the actor is between locations. `AccessGrant` says
+what entry is authorized. `Engagement` makes a conversation a first-class activity
+without freezing the NPC in place. `TemporalPressure` is the bridge from scheduler state
+to an upcoming dramatic choice.
+
+Sleep generally starts as a routine or need pressure, not a fixed appointment. A shift
+or train may have a hard latest-arrival time. The same arbitration interface can serve
+both while preserving different flexibility.
+
+### Convert schedules into notice, decision, departure, and outcome boundaries
+
+A 4pm work row should not schedule “set location = workplace at 4pm.” It should create or
+refresh a work commitment and derive several thresholds:
+
+```text
+latestDeparture =
+  latestArrival
+  - routeTravelTime(expected conditions)
+  - preparationDuration
+  - reliabilityBuffer
+
+noticeAt   = latestDeparture - context/personality notice window
+decideBy   = latestDeparture - minimum wind-down time
+actBy      = latestDeparture
+```
+
+The notice window may vary with personality, relationship, urgency, and whether the
+other person already knows about the commitment. The physical deadline may not. World
+truth must still be separated from actor knowledge: an NPC policy receives the pressure
+only if the NPC remembers the commitment or perceives an alarm, calendar reminder, boss
+message, or contextual cue. A forgotten appointment may be missed; the scheduler must
+not make the character omniscient.
+
+Example for a 4pm shift, a 25-minute route, and five minutes of preparation:
+
+| Story time | Engine state | Narrative opportunity |
+| --- | --- | --- |
+| 3:05 | Work pressure enters the scene horizon | NPC may glance at the time or mention work once; no forced exposition |
+| 3:20 | Decision becomes salient | Legal choices might be wind down, ask the player to come along, call work, or knowingly risk lateness |
+| 3:30 | Latest safe departure | Resolve the NPC's choice; if leaving, commit `conversation_winding_down` and `departed` |
+| 3:30–3:55 | `PhysicalLocus = in_transit` | NPC cannot act at either endpoint; calls/texts depend on travel mode and attention |
+| 3:55 | Arrival | Commit `arrived`, then start or queue the work activity |
+| After 4:00 | Consequence window | If the NPC stayed, record late/missed work and let employment/reputation rules react |
+
+Journey progress can be integrated analytically from departure time, route, and
+interruptions. The journal needs departures, material route changes, delays, and arrivals,
+not a per-minute travel tick.
+
+Warnings should have acknowledgement state so the narrator does not repeat “I need to
+leave soon” every exchange. If the player asks the NPC to stay, that is a new social
+request. It can influence utility, trust, or consequences, but it cannot erase travel
+time. A high-LOD deliberator may choose among legal options; it never invents “teleport
+to work after the scene.”
+
+### Turn reconciliation must happen before the narrator streams
+
+The safe exchange pipeline is:
+
+```mermaid
+flowchart TD
+    A["Player input + world version"] --> B["Drain due triggers and look ahead"]
+    B --> C["Build legal actor choices"]
+    C --> D["Resolve and commit hard events"]
+    D --> E["Compile perspective-safe NarrativeCut"]
+    E --> F["Narrator renders the cut"]
+    F --> G["Confirm armed speech/soft effects"]
+```
+
+More concretely:
+
+1. **Resolve to turn start.** Drain scheduled triggers due at or before the current story
+   time; integrate continuous values; finish actions and journeys whose completion is
+   already due.
+2. **Estimate the turn span.** Determine the proposed story-time cost of speech, the
+   player's action, waiting, travel, or a skip. Model-generation wall time is irrelevant.
+3. **Look ahead.** Query commitments, action completions, access-window closures, need
+   thresholds, hazards, and journey arrivals intersecting the span plus a small scene
+   horizon.
+4. **Build legal outcomes.** Apply locus, route, access, resource, activity,
+   interruptibility, consent, relationship, and actor-control rules.
+5. **Choose.** Use deterministic policy/utility scoring for routine NPC behavior. Invoke
+   a high-LOD deliberator only for consequential close choices, and give it only legal
+   candidates.
+6. **Commit hard history.** Append decisions, action transitions, departures, journey
+   creation, arrivals, denials, and consequences transactionally before prose streams.
+7. **Compile a `NarrativeCut`.** Include the exact sequence range, viewpoint,
+   must-enact transitions, temporal pressures, perceptions, permitted dialogue/action
+   choices, and forbidden claims.
+8. **Narrate.** The narrator explains and dramatizes what was resolved; it does not
+   rerun pathfinding, access, or schedule logic.
+9. **Confirm semantic effects.** Disclosures, promises, warnings actually spoken, and
+   bounded soft canon may use the arm–narrate–confirm path. They cannot revise the
+   already-committed physical outcome.
+
+A useful contract is:
+
+```ts
+type NarrativeCut = {
+  worldId: string;
+  branchId: string;
+  worldVersion: number;
+  sequenceFrom: number;
+  sequenceTo: number;
+  storyTimeFrom: number;
+  storyTimeTo: number;
+  viewpointId: string;
+  mustEnact: DomainEventSummary[];
+  currentActivities: ActivityView[];
+  temporalPressures: TemporalPressureView[];
+  allowedTransitions: ArmedEffect[];
+  forbiddenClaims: string[];
+  perceptibleFailureReasons: FailurePresentation[];
+};
+```
+
+If another authorized command changes the shared world while narration is streaming, it
+receives a later sequence and appears on the next cut. Do not hold a database lock for
+the whole model stream. The committed cut is stable; later state is not allowed to
+rewrite it.
+
+### Engagement is a claim on attention, not a freeze on the NPC
+
+A conversation should create an `Engagement` so the world knows the NPC is occupied and
+which channel is in use. It must not grant the player ownership of the NPC's schedule.
+
+Activity compatibility can be table-driven:
+
+| Current activity | Physical chat | Call/text | Likely behavior |
+| --- | --- | --- | --- |
+| Casual cooking, walking, tidying | Usually compatible with divided attention | Usually compatible | Continue, pause briefly, or invite the player along |
+| Work task, driving, medical care | Limited or unsafe | Mode-dependent | Short reply, defer, or refuse; never perform impossible simultaneous acts |
+| Showering, toileting, changing | Privacy-gated and normally unavailable | Device/access dependent | Do not expose the private cause remotely; knock/text may go unanswered |
+| Sleeping | Unavailable until waking unless an interrupt succeeds | Phone rules and urgency apply | Missed call, wake event, or no response |
+| Intimate activity | Consent- and privacy-gated | Usually unavailable | No intrusion without an explicit, allowed interruption path |
+
+An interruption is its own command and event. It checks whether the activity is
+interruptible, what it costs, what claims must be released, and whether the actor chooses
+to accept. “NPC stops showering” cannot be a side effect of the player sending a line.
+
+At hard pressure, the engagement moves to `winding_down` or `interrupted`. The narrator
+receives a must-enact transition such as “Mara checks the time, says she has to leave,
+collects her bag, and ends the conversation.” The departure event is authoritative; the
+wording is not.
+
+### Player movement and NPC movement require different authority
+
+Normal player input must be interpreted as a proposed command, never accepted as a
+declarative rewrite of the world:
+
+- “I go to Mara's house” proposes player travel. The engine resolves a route and time,
+  then normally arrives at the public approach/doorstep—not inside a private room.
+- “I walk into Mara's bedroom” checks household access, zone permission, door state,
+  current privacy, and any invitation scope. If denied, the threshold is the scene.
+- “Mara comes here” is an invitation/request. Mara's controller may accept, refuse,
+  delay, negotiate, or start a journey. She does not appear immediately.
+- “Mara is standing beside me now” is an unsupported assertion in normal player mode.
+  It may become a social/imaginative utterance, a request for clarification, or a denied
+  authorial claim.
+- Storyteller/GM mode may propose an explicit `AuthorOverride`, but it still emits an
+  audited event, checks world-type policy, and resolves collisions. It is never smuggled
+  through ordinary dialogue.
+
+If the game permits trespass, lockpicking, coercion, or forced entry, those should be
+explicit risky actions with duration, noise, witnesses, skill/resource requirements, and
+social/legal consequences. “Secure” should not mean every transgressive choice is
+impossible; it means the choice cannot bypass causality.
+
+### Access, privacy, and consent must fail safely without leaking secrets
+
+The successor must change the current `private has no player effect` rule.
+
+Use layered authorization:
+
+1. **Route access:** can the actor reach the threshold?
+2. **Property access:** public, resident, employee, invited, key-holder, emergency, or
+   trespassing.
+3. **Zone access:** foyer, staff area, bedroom, bathroom, locked office, and so on.
+4. **Occupancy/privacy:** is the zone currently reserved by an activity or another actor?
+5. **Interaction consent:** may this actor interrupt, remain, touch, observe, or join?
+6. **Perception:** what reason for denial can the viewpoint actually know?
+
+Authored absence may deliberately default a clearly public link to public. Malformed or
+contradictory private-access data must not silently upgrade to public; quarantine it,
+fall back to the nearest safe threshold, and emit a diagnostic.
+
+Command results should separate private cause from public presentation:
+
+```ts
+type FailurePresentation = {
+  code: "unavailable" | "access_denied" | "locked" | "no_path" | "busy" | "refused";
+  publicReason: string;
+  perceptibleEvidence: string[];
+  safeAlternatives: string[];
+  privateCauseEventId?: string; // never placed in an unauthorized NarrativeCut
+};
+```
+
+A player texting from across town may see “She doesn't answer.” A player outside the
+bathroom may hear running water if acoustics and attention allow it. Only the latter view
+may support the inference that she is showering.
+
+### Multiple chats and shared-world concurrency
+
+One world character cannot be physically active in two independent chat scenes. A
+versioned `Engagement` is an authoritative reservation on participation/attention, not an
+in-process mutex:
+
+- a second physical-chat command for the same NPC must join the existing scene, use a
+  compatible comms channel, queue, or receive a grounded unavailable result;
+- world commands are ordered by the world/branch sequencer;
+- actions reserve exclusive resources with optimistic versions;
+- a conflict is resolved before narration, never by letting two replies establish
+  incompatible truths;
+- engagement expiry is based on story-time/state transitions, not wall-clock model
+  latency;
+- separate world instances have separate character instances and therefore do not
+  conflict.
+
+For a single-player product this may initially seem unnecessary, but it is also the rule
+that prevents two internal chat lanes or background jobs from moving the same NPC
+differently.
+
+### Agent and narrator responsibilities
+
+| Component | May decide | Must not decide |
+| --- | --- | --- |
+| Scheduler/kernel | Due triggers, route timing, access, compatibility, action phases, hard outcomes, event order | Character prose, emotional nuance, or hidden semantic meaning |
+| Deterministic NPC policy | Routine choices, obvious deadline behavior, utility-ranked legal actions | Illegal actions or exceptions outside its candidates |
+| High-LOD deliberator | Rare consequential choice among legal options: leave, stay late, renegotiate, invite along | New locations, zero-time travel, access grants, completed actions, or player intent |
+| Input interpreter | Map ambiguous player text to proposed commands and uncertainty | Treat asserted NPC behavior as authority |
+| Context compiler | Build `NarrativeCut`, redact private causes, label pressures, and expose affordances | Add story events |
+| Narrator | Voice warnings, refusals, wind-down, travel transitions, failed attempts, and consequences naturally | Mutate locus, access, activity, commitment, inventory, or knowledge |
+| Continuity/physics auditor | Flag contradiction with the committed cut and measure failure | Repair world truth from prose |
+| Memory consolidator | Summarize observed committed events for eligible viewpoints | Turn an uncommitted narration detail into history |
+| World director | Propose future pressures or opportunities early enough to schedule | Teleport actors or force immediate hard effects |
+
+Most of this path is code. An LLM deliberator is justified only when character nuance
+materially changes a close legal choice. To keep latency out of the turn, the scheduler
+can precompute high-LOD decisions when a pressure first enters the horizon and revalidate
+them at `decideBy`. A stale or invalid choice falls back to deterministic policy.
+
+### Security and immersion test matrix
+
+The subsystem needs property tests plus scripted scenes:
+
+- **4pm shift:** the NPC warns or otherwise winds down, departs by a resolved choice,
+  spends route time in transit, and arrives no earlier than physically possible.
+- **Player pressures them to stay:** the NPC may refuse, renegotiate, or accept lateness;
+  the work consequence is recorded instead of the deadline disappearing.
+- **Sleep:** fatigue and routine create a wind-down opportunity; sleep starts through an
+  action transition, not a mid-sentence location/presence switch.
+- **Shower/privacy:** a remote player receives no private-cause leak; an invited visitor
+  still cannot enter a private occupied zone without a new permission or force action.
+- **Summon attempt:** “come here now” cannot move the NPC; acceptance creates a journey
+  and ETA.
+- **Barge-in attempt:** player reaches the threshold, access is checked, and any forced
+  entry consumes time and creates evidence/consequences.
+- **Exclusive activity:** showering and sleeping cannot overlap work, driving, or a
+  physical scene.
+- **Travel partitioning:** one 30-minute advance and three 10-minute advances produce
+  the same journey/arrival result.
+- **Narrator hallucination:** an invented arrival, invitation, or activity completion
+  leaves projections unchanged and is recorded as a grounding failure.
+- **Retake:** discarded warnings, decisions, departures, and arrivals do not survive the
+  branch/rollback boundary.
+- **Concurrency:** two commands attempting incompatible engagements produce one ordered
+  winner and one grounded alternative, never two locations.
+- **Perspective:** blocked/failed command output reveals only what the viewpoint can
+  perceive.
+
+Track metrics for premature/late departures, schedule warnings emitted and actually
+enacted, repeated-warning rate, impossible-action proposals, access denials by reason,
+private-cause leakage, narrator grounding failures, decision-agent calls, and extra
+first-token latency.
+
+### Incremental implementation order
+
+This should not land as one giant “real life” subsystem:
+
+1. Add read-only `TemporalPressure` compilation for one existing schedule commitment and
+   measure whether the narrator winds down naturally.
+2. Add `Engagement` and actor-control checks so ordinary player prose cannot move an NPC
+   or claim them in two physical scenes.
+3. Replace physical `present/away` with `PhysicalLocus` plus a story-time `Journey` for
+   one route.
+4. Enforce property/zone access and invitations; change private access from advisory to
+   authoritative.
+5. Add one phased, exclusive activity—showering is a strong test because it exercises
+   duration, privacy, attention, interruption, perception redaction, and meter effects.
+6. Add commitment decisions and consequences using the 4pm-shift scenario.
+7. Generalize to sleep, work, appointments, calls, visits, and other actions.
+8. Add rare precomputed LLM deliberation only after deterministic policy and quality
+   evaluation show a real gap.
+
+The existing owner-approved `rhythmBodyPatch` remains a low-LOD current-chat policy
+during this migration. It should not be retrofitted into this entire mechanism before
+the mechanism exists.
+
+### Product rulings this design still needs
+
+- How many story minutes does ordinary dialogue consume, and when may narration compress
+  or expand a scene?
+- Are shift times exact deadlines, flexible windows, or world-type data?
+- Which violations—trespass, coercion, forced entry, waking someone—are playable actions
+  versus product-level prohibitions?
+- What privileges does storyteller/GM mode have, and how visible are override events?
+- How much should NPCs proactively reveal about obligations versus express them through
+  behavior?
+- When an NPC chooses the player over an obligation, which systems own the resulting
+  employment, relationship, health, or reputation consequences?
+- Can multiple players or chats share one active world concurrently, or is concurrency
+  initially limited to internal jobs?
+
+
 ## LOD has two separate jobs
 
 Claude's insight that roster growth makes the settle a scaling problem is correct. The
@@ -817,7 +1290,7 @@ must be re-estimated after each gate.
 | Queued meter-economy implementation, including window-crossing tests and schedule-kind audit | 3–7 days | Low–medium |
 | Minimum command/event/projection/viewpoint slice | 5–10 days | Low |
 | Identity + event kernel + scheduler/projection production foundation | 15–30 days | Low |
-| Space/action/schedule/resource substrate | 10–25 days | Low |
+| Space/action/schedule/resource substrate plus live-scene arbitration, journeys, and access | 15–35 days | Low |
 | Perspective ledger, narrator view, and RAG eligibility migration | 10–25 days | Low |
 | Bodies/material systems and current-chat migration | 15–35 days | Very low |
 | Dual LOD and autonomous background behavior | 10–25 days | Very low |
@@ -1004,8 +1477,11 @@ unbuilt action primitives or silently reverse its owner ruling; its text-matchin
 must be measured and explicitly temporary.
 
 Only then should the command/event design be tested through one narrow authority seam.
-The broad two-world, body, space, schedule, illness, perception, and fast-forward scenario
-is a graduation test, not the first bet.
+Before broad world expansion, the next earned seam should make one scheduled obligation
+play through a live scene as warning → decision → departure → journey → arrival, with
+access, actor control, and perspective-safe failure presentation enforced by code. The
+broad two-world, body, space, schedule, illness, perception, and fast-forward scenario is
+a graduation test, not the first bet.
 
 The combined design is neither the old ticked world model nor a larger conversational
 state blob. It is a sparse event-driven world in which cheap fields are derived, actual
