@@ -7,7 +7,15 @@ import {
   type TransferItemCommand,
 } from "@/contracts/simulation/item-transfer";
 import { newId } from "@/lib/ids";
-import { db, simCommands, simHoldingContainers, simWorlds } from "@/server/db";
+import {
+  db,
+  simCommands,
+  simConsumerCheckpoints,
+  simHoldingContainers,
+  simItemTransferFeed,
+  simOutbox,
+  simWorlds,
+} from "@/server/db";
 import {
   InjectedSimulationCrash,
   readDurableItemTransferBranch,
@@ -15,6 +23,7 @@ import {
   submitDurableItemTransfer,
   type DurableItemTransferCrashPoint,
 } from "./item-transfer-store";
+import { consumeNextItemTransferOutbox, rebuildItemTransferFeed } from "./outbox-store";
 
 async function probe(): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
@@ -278,6 +287,7 @@ describe("E2.2 durable item-transfer branch transaction", () => {
     const points: Exclude<DurableItemTransferCrashPoint, "after_commit">[] = [
       "after_event_append",
       "after_projection_update",
+      "after_outbox_insert",
       "after_branch_advance",
       "after_command_result",
     ];
@@ -368,5 +378,211 @@ describe("E2.2 durable item-transfer branch transaction", () => {
     });
 
     await expect(db().delete(simWorlds).where(eq(simWorlds.id, ids.worldId))).resolves.toBeDefined();
+  });
+});
+
+describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
+  it("publishes only accepted events once inside the authority transaction", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds();
+    await seedCase(ids);
+
+    const denied = command(ids, ids.itemIds[0], { controlledActorIds: [ids.observerId] });
+    expect(await submitDurableItemTransfer(denied)).toMatchObject({ status: "rejected" });
+    expect(await db().select().from(simOutbox).where(eq(simOutbox.branchId, ids.branchId))).toEqual([]);
+
+    const accepted = command(ids);
+    expect(await submitDurableItemTransfer(accepted)).toMatchObject({ status: "accepted" });
+    expect(await submitDurableItemTransfer(accepted)).toMatchObject({ status: "accepted" });
+    const rows = await db().select().from(simOutbox).where(eq(simOutbox.branchId, ids.branchId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      consumerKind: "item_transfer_feed",
+      firstSequence: 1,
+      lastSequence: 1,
+      state: "pending",
+      attempts: 0,
+    });
+  });
+
+  it("rolls projection, checkpoint, and completion back before recording a retry", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds();
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids));
+    const now = new Date(Date.now() + 60_000);
+
+    const failed = await consumeNextItemTransferOutbox({
+      workerId: "worker_crash",
+      now,
+      crashAt: "after_projection_write",
+    });
+    expect(failed).toMatchObject({ status: "failed", terminal: false });
+    expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toEqual([]);
+    expect(await db().select().from(simConsumerCheckpoints).where(eq(simConsumerCheckpoints.branchId, ids.branchId))).toEqual([]);
+
+    const [work] = await db().select().from(simOutbox).where(eq(simOutbox.branchId, ids.branchId));
+    if (!work) throw new Error("Expected retryable outbox work");
+    expect(work).toMatchObject({ state: "pending", attempts: 1, leaseOwner: null });
+    expect(work.lastError).toContain(`outbox=${work.id}`);
+    expect(work.lastError).toContain(`branch=${ids.branchId}`);
+    expect(work.lastError).toContain("sequence=1");
+
+    expect(
+      await consumeNextItemTransferOutbox({
+        workerId: "worker_retry",
+        now: new Date(now.getTime() + 1_000),
+      }),
+    ).toMatchObject({ status: "completed", branchId: ids.branchId, throughSequence: 1 });
+  });
+
+  it("makes duplicate delivery idempotent and checkpoints monotonically", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds();
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids));
+    const now = new Date(Date.now() + 60_000);
+    expect(await consumeNextItemTransferOutbox({ workerId: "worker_a", now })).toMatchObject({
+      status: "completed",
+      throughSequence: 1,
+    });
+
+    await db()
+      .update(simOutbox)
+      .set({ state: "pending", availableAt: now, completedAt: null })
+      .where(eq(simOutbox.branchId, ids.branchId));
+    expect(await consumeNextItemTransferOutbox({ workerId: "worker_b", now })).toMatchObject({
+      status: "completed",
+      throughSequence: 1,
+    });
+    expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toHaveLength(1);
+    const [checkpoint] = await db().select().from(simConsumerCheckpoints).where(eq(simConsumerCheckpoints.branchId, ids.branchId));
+    expect(checkpoint?.throughSequence).toBe(1);
+  });
+
+  it("allows only one concurrent worker to complete one obligation", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds();
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids));
+    const now = new Date(Date.now() + 60_000);
+
+    const results = await Promise.all([
+      consumeNextItemTransferOutbox({ workerId: "worker_one", now }),
+      consumeNextItemTransferOutbox({ workerId: "worker_two", now }),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual(["completed", "idle"]);
+    expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toHaveLength(1);
+  });
+
+  it("does not lease a later sequence while earlier work is incomplete", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds(2);
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids, ids.itemIds[0]));
+    await submitDurableItemTransfer(command(ids, ids.itemIds[1], { expectedVersion: 1 }));
+    const now = new Date(Date.now() + 60_000);
+    await db()
+      .update(simOutbox)
+      .set({
+        state: "processing",
+        attempts: 1,
+        leaseOwner: "slow_worker",
+        leaseExpiresAt: new Date(now.getTime() + 30_000),
+      })
+      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 1)));
+
+    expect(await consumeNextItemTransferOutbox({ workerId: "impatient_worker", now })).toEqual({
+      status: "idle",
+    });
+    const [later] = await db()
+      .select()
+      .from(simOutbox)
+      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 2)));
+    expect(later).toMatchObject({ state: "pending", attempts: 0, lastError: null });
+  });
+
+  it("checkpoints different branches independently", async (test) => {
+    if (!ready) return test.skip();
+    const worldId = newId();
+    const firstIds = makeIds(1, worldId);
+    const secondIds = makeIds(1, worldId);
+    await seedCase(firstIds);
+    await seedCase(secondIds);
+    await submitDurableItemTransfer(command(firstIds));
+    await submitDurableItemTransfer(command(secondIds));
+    const now = new Date(Date.now() + 60_000);
+
+    expect(await consumeNextItemTransferOutbox({ workerId: "branch_worker_a", now })).toMatchObject({ status: "completed" });
+    expect(await consumeNextItemTransferOutbox({ workerId: "branch_worker_b", now })).toMatchObject({ status: "completed" });
+    const checkpoints = await db()
+      .select()
+      .from(simConsumerCheckpoints)
+      .where(eq(simConsumerCheckpoints.consumerKind, "item_transfer_feed"));
+    expect(checkpoints.map((row) => [row.branchId, row.throughSequence]).sort()).toEqual(
+      [
+        [firstIds.branchId, 1],
+        [secondIds.branchId, 1],
+      ].sort(),
+    );
+  });
+
+  it("recovers an expired lease and preserves live-versus-rebuild equality", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds();
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids));
+    const now = new Date(Date.now() + 60_000);
+    await db()
+      .update(simOutbox)
+      .set({
+        state: "processing",
+        attempts: 1,
+        leaseOwner: "dead_worker",
+        leaseExpiresAt: new Date(now.getTime() - 1_000),
+      })
+      .where(eq(simOutbox.branchId, ids.branchId));
+
+    expect(await consumeNextItemTransferOutbox({ workerId: "recovery_worker", now })).toMatchObject({
+      status: "completed",
+      throughSequence: 1,
+    });
+    const authorityBefore = await readDurableItemTransferBranch(ids.branchId);
+    const live = await rebuildItemTransferFeed(ids.branchId);
+    const repeated = await rebuildItemTransferFeed(ids.branchId);
+    const authorityAfter = await readDurableItemTransferBranch(ids.branchId);
+    expect(live).toEqual(repeated);
+    expect(authorityAfter).toEqual(authorityBefore);
+    expect(live).toMatchObject({ branchId: ids.branchId, throughSequence: 1, rowCount: 1 });
+    expect(live.projectionHash).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it("does not advance a checkpoint across a missing sequence and can quarantine poison work", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds(2);
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids, ids.itemIds[0]));
+    await submitDurableItemTransfer(
+      command(ids, ids.itemIds[1], { expectedVersion: 1 }),
+    );
+    await db()
+      .update(simOutbox)
+      .set({ state: "completed", completedAt: new Date() })
+      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 1)));
+
+    const result = await consumeNextItemTransferOutbox({
+      workerId: "gap_worker",
+      now: new Date(Date.now() + 60_000),
+      maxAttempts: 1,
+    });
+    expect(result).toMatchObject({ status: "failed", terminal: true, retryAt: null });
+    expect(await db().select().from(simConsumerCheckpoints).where(eq(simConsumerCheckpoints.branchId, ids.branchId))).toEqual([]);
+    expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toEqual([]);
+    const [poison] = await db()
+      .select()
+      .from(simOutbox)
+      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 2)));
+    expect(poison).toMatchObject({ state: "failed", attempts: 1 });
+    expect(poison?.lastError).toContain("Consumer sequence gap");
   });
 });
