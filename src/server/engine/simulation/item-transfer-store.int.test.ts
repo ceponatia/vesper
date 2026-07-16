@@ -475,6 +475,33 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toHaveLength(1);
   });
 
+  it("does not lease a later sequence while earlier work is incomplete", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeIds(2);
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids, ids.itemIds[0]));
+    await submitDurableItemTransfer(command(ids, ids.itemIds[1], { expectedVersion: 1 }));
+    const now = new Date(Date.now() + 60_000);
+    await db()
+      .update(simOutbox)
+      .set({
+        state: "processing",
+        attempts: 1,
+        leaseOwner: "slow_worker",
+        leaseExpiresAt: new Date(now.getTime() + 30_000),
+      })
+      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 1)));
+
+    expect(await consumeNextItemTransferOutbox({ workerId: "impatient_worker", now })).toEqual({
+      status: "idle",
+    });
+    const [later] = await db()
+      .select()
+      .from(simOutbox)
+      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 2)));
+    expect(later).toMatchObject({ state: "pending", attempts: 0, lastError: null });
+  });
+
   it("checkpoints different branches independently", async (test) => {
     if (!ready) return test.skip();
     const worldId = newId();
