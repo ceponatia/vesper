@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  heritageFor,
   heritagesForSpecies,
   isPersonalityAttributeId,
   speciesById,
@@ -23,7 +22,7 @@ import { RelationshipsEditor } from "./relationships-editor";
 import { Textarea } from "@/components/ui/textarea";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { AttributePicker } from "./attribute-picker";
-import { seedRequiredAttributes } from "./attribute-helpers";
+import { heritageChangePatch, speciesChangePatch } from "./attribute-helpers";
 import { CharacterChat } from "./character-chat";
 import { DispositionEditor } from "./disposition-editor";
 import { DrivesEditor } from "./drives-editor";
@@ -128,42 +127,16 @@ export function CharacterEditor({
 
   const patchProfile = (patch: Partial<CharacterDraft["profile"]>) =>
     onChange({ ...draft, profile: { ...draft.profile, ...patch } });
+  // Shared with the persona editor (attribute-helpers.ts): a species change clears the
+  // heritage (a heritage belongs to one species), follows the body plan, resets features
+  // to the species defaults, and re-seeds required attributes.
   const setSpecies = (speciesId: string) => {
-    const species = speciesById(speciesId);
-    if (!species) return;
-    // A heritage belongs to one species, so changing species clears it and the
-    // feature config resets to the (bare) species defaults.
-    const bodyFeatures = species.defaultFeatureGroups ? [...species.defaultFeatureGroups] : undefined;
-    patchProfile({
-      speciesId: species.id,
-      heritageId: undefined,
-      bodyPlanId: species.bodyPlanId,
-      bodyFeatures,
-      attributes: seedRequiredAttributes(draft.profile.attributes, {
-        speciesId: species.id,
-        bodyPlanId: species.bodyPlanId,
-        intimateRegions: draft.profile.intimateRegions,
-        bodyFeatures,
-      }),
-    });
+    const patch = speciesChangePatch(draft.profile, speciesId);
+    if (patch) patchProfile(patch);
   };
   const setHeritage = (heritageId: string) => {
-    const species = speciesById(draft.profile.speciesId);
-    if (!species) return;
-    const heritage = heritageFor(species.id, heritageId);
-    const groups = [...(species.defaultFeatureGroups ?? []), ...(heritage?.defaultFeatureGroups ?? [])];
-    const bodyFeatures = groups.length > 0 ? [...new Set(groups)] : undefined;
-    patchProfile({
-      heritageId: heritage?.id,
-      bodyFeatures,
-      attributes: seedRequiredAttributes(draft.profile.attributes, {
-        speciesId: species.id,
-        heritageId: heritage?.id,
-        bodyPlanId: draft.profile.bodyPlanId,
-        intimateRegions: draft.profile.intimateRegions,
-        bodyFeatures,
-      }),
-    });
+    const patch = heritageChangePatch(draft.profile, heritageId);
+    if (patch) patchProfile(patch);
   };
   const heritages = heritagesForSpecies(draft.profile.speciesId);
 
