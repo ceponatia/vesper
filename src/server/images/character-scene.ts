@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
-import { resolveAttributes } from "@/contracts/attributes/value";
+import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
@@ -64,6 +64,10 @@ export interface RenderCharacterSceneInput {
    * gate on whether the viewer's own anatomy may enter frame. Absent ⇒ covered ⇒ shut.
    */
   playerExposure?: RegionExposure;
+  /** The persona's resolved attributes — the viewer's own body facts (slice 4). */
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  /** The persona adapted to a character profile — realized-body applicability for the above. */
+  playerProfile?: CharacterProfile;
   /** Live chat meters — fold a visible-state note (unsteady/disheveled/tired/breathless) into the shot (D4). */
   meters?: Record<string, number>;
   /** Active conditions — overlay grooming/scent/hair so a "disheveled" character renders that way (D4). */
@@ -150,6 +154,8 @@ export function buildCharacterSceneContext(input: {
   exposure?: RegionExposure;
   /** The PLAYER's coverage — gates whether their own anatomy may render (scene-pov-embodiment). */
   playerExposure?: RegionExposure;
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  playerProfile?: CharacterProfile;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
 }): SceneComposerContext {
@@ -195,6 +201,20 @@ export function buildCharacterSceneContext(input: {
     // absolute player-is-invisible rule and its tests.
     embodiedViewer: true,
     ...(input.playerExposure ? { playerExposure: input.playerExposure } : {}),
+    ...(input.playerAttributes ? { playerAttributes: input.playerAttributes } : {}),
+    ...(input.playerProfile ? { playerProfile: input.playerProfile } : {}),
+    // The viewer's intimate anatomy, exposure-gated exactly like the character's — the
+    // render only emits it on an uncensored route AND when a gated part survived.
+    ...(input.playerProfile && input.playerExposure
+      ? {
+          playerIntimateAppearance: sceneRevealAppearance(
+            resolveAttributes(input.playerProfile.attributes, []),
+            input.playerExposure,
+            input.playerProfile,
+            { intimate: true },
+          ),
+        }
+      : {}),
   };
 }
 
@@ -254,6 +274,8 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     outfitExposed: input.outfitExposed ?? false,
     exposure: input.exposure,
     playerExposure: input.playerExposure,
+    playerAttributes: input.playerAttributes,
+    playerProfile: input.playerProfile,
     meters: input.meters,
     conditions: input.conditions,
   });

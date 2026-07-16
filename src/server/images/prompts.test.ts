@@ -42,6 +42,7 @@ import {
   wardrobeOutfitSummary,
   type SceneComposerContext,
   type ScenePresentCharacter,
+  type SceneRenderPlan,
 } from "./prompts";
 
 function profileWith(overrides: Partial<CharacterProfile>): CharacterProfile {
@@ -1365,5 +1366,72 @@ describe("scrubPlayerFromAction when the viewer has a body (slice 3)", () => {
     const clean = "seated by the window, flipping a page";
     expect(scrubPlayerFromAction(clean, { embodied: true })).toBe(clean);
     expect(scrubPlayerFromAction(clean)).toBe(clean);
+  });
+});
+
+describe("the viewer's own body facts (slice 4)", () => {
+  const persona = profileWith({
+    intimateRegions: ["penis"],
+    attributes: [
+      { id: "skin.tone", value: "tan", source: "base" },
+      { id: "arms.hair", value: "moderate", source: "base" },
+      { id: "legs.hair", value: "heavy", source: "base" },
+      { id: "build.frame", value: "broad", source: "base" },
+    ],
+  });
+  const planWith = (over: Partial<SceneRenderPlan>): SceneRenderPlan => ({
+    ...emptySceneRenderPlan(),
+    focal: { name: "Mira", action: "seated", outfitSummary: "linen shirt", appearance: "" },
+    playerAttributes: persona.attributes,
+    playerProfile: persona,
+    ...over,
+  });
+
+  // Without this the viewer's arms change colour between shots, which reads as a different
+  // person reaching in — the whole reason the facts exist.
+  it("always states skin tone and frame for an embodied shot", () => {
+    const prompt = buildSceneRenderPrompt(planWith({ viewerBody: ["forearms"] }), {
+      referenceName: "Mira",
+      allowIntimate: true,
+    });
+    expect(prompt).toContain("The viewer's own body:");
+    expect(prompt).toContain("tan");
+    expect(prompt).toContain("broad");
+  });
+
+  it("states only what the parts in frame can show", () => {
+    const armsOnly = buildSceneRenderPrompt(planWith({ viewerBody: ["forearms"] }), { referenceName: "Mira" });
+    expect(armsOnly).toContain("moderate"); // arms.hair — in frame
+    expect(armsOnly).not.toContain("heavy"); // legs.hair — not in frame
+
+    const legs = buildSceneRenderPrompt(planWith({ viewerBody: ["legs_feet"] }), { referenceName: "Mira" });
+    expect(legs).toContain("heavy");
+  });
+
+  it("says nothing at all when the viewer has no body in frame", () => {
+    const prompt = buildSceneRenderPrompt(planWith({ viewerBody: [] }), { referenceName: "Mira" });
+    expect(prompt).toContain(SCENE_POV_RULE);
+    expect(prompt).not.toContain("The viewer's own body:");
+    expect(prompt).not.toContain("tan");
+  });
+
+  it("emits the viewer's intimate anatomy only when a gated part survived AND the route allows it", () => {
+    const nude = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" } as const;
+    const plan = planWith({
+      viewerBody: ["lap_thighs"],
+      playerExposure: nude,
+      playerIntimateAppearance: "circumcised, average length",
+    });
+    // Uncensored route + looking-down shot + bare pelvis ⇒ the derived part earns it.
+    expect(buildSceneRenderPrompt(plan, { referenceName: "Mira", allowIntimate: true })).toMatch(/circumcised/i);
+    // Same plan, moderated text-to-image fallback ⇒ nothing.
+    expect(buildSceneRenderPrompt(plan, {})).not.toMatch(/circumcised/i);
+    // Uncensored, but trousered ⇒ the gate drops the part, so the anatomy goes with it.
+    const dressed = planWith({
+      viewerBody: ["lap_thighs"],
+      playerExposure: { torso: "bare", pelvis: "covered", legs: "covered", feet: "bare" },
+      playerIntimateAppearance: "circumcised, average length",
+    });
+    expect(buildSceneRenderPrompt(dressed, { referenceName: "Mira", allowIntimate: true })).not.toMatch(/circumcised/i);
   });
 });
