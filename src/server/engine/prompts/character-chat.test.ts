@@ -2317,3 +2317,204 @@ describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
     expect(evolved).not.toContain("Warmth: cold");
   });
 });
+
+/**
+ * The chat-lane intimate gate (contracts/turns/chat-intimacy.ts) — the port of the
+ * session lane's exposure gate that intimacy-notes.plan.md recorded as a leftover.
+ * Before it, `profile.intimacy` and the species archetype were authored, forge-drafted
+ * and editable but never reached this lane at all.
+ */
+describe("the intimate disposition gate", () => {
+  const lover = profile({ intimacy: "Slow to start, and merciless once she is." });
+  const closed = { meters: { arousal: 0.1 }, regard: 20, conditions: [], outfitExposed: false };
+  const open = { meters: { arousal: 0.8 }, regard: 20, conditions: [], outfitExposed: false };
+
+  it("emits nothing below the gate — zero tokens, not text the model is told to ignore", () => {
+    const { prefix, tail } = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: lover,
+      player: { name: "Theo", intimacy: "Wants to be taken care of." },
+      state: closed,
+    });
+    expect(`${prefix}\n${tail}`).not.toContain("Slow to start");
+    expect(`${prefix}\n${tail}`).not.toContain("taken care of");
+    expect(`${prefix}\n${tail}`).not.toContain("Intimate disposition");
+  });
+
+  it("surfaces both notes once the scene earns it", () => {
+    const { tail } = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: lover,
+      player: { name: "Theo", intimacy: "Wants to be taken care of." },
+      state: open,
+    });
+    expect(tail).toContain("Intimate disposition");
+    expect(tail).toContain("How you are as a lover");
+    expect(tail).toContain("Slow to start");
+    expect(tail).toContain("What Theo responds to");
+    expect(tail).toContain("taken care of");
+  });
+
+  it("opens on either party's coverage, not only arousal", () => {
+    const byHer = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: lover,
+      player: { name: "Theo" },
+      state: { ...closed, outfitExposed: true },
+    });
+    expect(byHer.tail).toContain("Slow to start");
+
+    const byHim = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: lover,
+      player: { name: "Theo", exposed: true },
+      state: closed,
+    });
+    expect(byHim.tail).toContain("Slow to start");
+  });
+
+  // character-fidelity slice 2: an authored minor surfaces no intimate text at all,
+  // whatever the gate says — and that fence covers the player's note too, since the
+  // block is about the two of them together.
+  it("stays shut for an authored minor even with the gate wide open", () => {
+    const { tail } = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile({ age: "15", intimacy: "should never render" }),
+      player: { name: "Theo", intimacy: "also should never render", exposed: true },
+      state: { ...open, outfitExposed: true },
+    });
+    expect(tail).not.toContain("should never render");
+    expect(tail).not.toContain("Intimate disposition");
+  });
+
+  it("renders the species archetype merged with the character's own note", () => {
+    const { tail } = buildCharacterChatPromptParts({
+      name: "Lys",
+      profile: profile({ speciesId: "succubus", intimacy: "Her own authored line." }),
+      player: { name: "Theo" },
+      state: open,
+    });
+    // The archetype is APPENDED with the character's own — both contribute (owner ruling
+    // 2026-07-13), archetype first. This is the whole trio finally reaching the chat lane.
+    expect(tail).toContain("Feeds on intimacy itself");
+    expect(tail).toContain("Her own authored line.");
+    expect(tail.indexOf("Feeds on intimacy itself")).toBeLessThan(tail.indexOf("Her own authored line."));
+  });
+
+  it("renders a bare species archetype for a character with no note of their own", () => {
+    const { tail } = buildCharacterChatPromptParts({
+      name: "Lys",
+      profile: profile({ speciesId: "succubus" }),
+      player: { name: "Theo" },
+      state: open,
+    });
+    expect(tail).toContain("Feeds on intimacy itself");
+  });
+
+  it("a human with no authored note contributes nothing, however open the gate", () => {
+    const { tail } = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile({ speciesId: "human" }),
+      player: { name: "Theo", intimacy: "Wants to be taken care of." },
+      state: open,
+    });
+    // The player's note still stands on its own — the block isn't all-or-nothing.
+    expect(tail).toContain("What Theo responds to");
+    expect(tail).not.toContain("How you are as a lover");
+  });
+
+  it("emits nothing when the gate is open but nobody authored a note", () => {
+    const { tail } = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: profile(),
+      player: { name: "Theo" },
+      state: open,
+    });
+    expect(tail).not.toContain("Intimate disposition");
+  });
+
+  // The §9 cache layout: the gate flips with state, so its block MUST be volatile. If it
+  // rode the prefix, every arousal tick past the threshold would bust the cached prompt.
+  it("keeps the prefix byte-identical across a gate flip (cache-safe)", () => {
+    const shut = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: lover,
+      player: { name: "Theo", intimacy: "Wants to be taken care of.", wearing: "a coat" },
+      state: closed,
+    });
+    const opened = buildCharacterChatPromptParts({
+      name: "Mara",
+      profile: lover,
+      player: { name: "Theo", intimacy: "Wants to be taken care of.", wearing: "nothing at all", exposed: true },
+      state: open,
+    });
+    expect(shut.prefix).toBe(opened.prefix);
+    expect(shut.tail).not.toBe(opened.tail);
+  });
+});
+
+describe("the intimate disposition gate (ensemble)", () => {
+  const member = (name: string, over: Partial<EnsembleMemberInput> = {}): EnsembleMemberInput => ({
+    name,
+    profile: profile(),
+    presence: "present",
+    quietExchanges: 0,
+    ...over,
+  });
+  const input = (): Parameters<typeof buildCharacterChatPromptParts>[0] => ({
+    name: "Mara",
+    profile: profile(),
+    player: { name: "Brian", intimacy: "Wants to be taken care of." },
+  });
+
+  const closed = { meters: { arousal: 0.1 }, regard: 0, conditions: [], outfitExposed: false };
+  const open = { meters: { arousal: 0.9 }, regard: 0, conditions: [], outfitExposed: false };
+
+  // The reason the gate is per-member and not per-scene: one couple in the room must not
+  // hand every present character an intimate disposition.
+  it("opens only for the member the scene actually turned intimate with", () => {
+    const { tail } = buildChatPromptPartsForRoster(input(), [
+      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: open }),
+      member("Sayed", { profile: profile({ intimacy: "Sayed's note." }), state: closed }),
+    ]);
+    expect(tail).toContain("How Mara is as a lover");
+    expect(tail).toContain("Mara's note.");
+    expect(tail).not.toContain("Sayed's note.");
+  });
+
+  it("renders the player's note ONCE however many members qualified", () => {
+    const { tail } = buildChatPromptPartsForRoster(input(), [
+      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: open }),
+      member("Sayed", { profile: profile({ intimacy: "Sayed's note." }), state: open }),
+    ]);
+    expect(tail).toContain("Mara's note.");
+    expect(tail).toContain("Sayed's note.");
+    expect(tail.split("What Brian responds to").length - 1).toBe(1);
+  });
+
+  it("stays shut for everyone when no member's scene is intimate", () => {
+    const { tail } = buildChatPromptPartsForRoster(input(), [
+      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: closed }),
+      member("Sayed", { profile: profile({ intimacy: "Sayed's note." }), state: closed }),
+    ]);
+    expect(tail).not.toContain("Intimate disposition");
+    expect(tail).not.toContain("taken care of");
+  });
+
+  it("an away member never contributes, even with their own gate open", () => {
+    const { tail } = buildChatPromptPartsForRoster(input(), [
+      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: closed }),
+      member("Sayed", { presence: "away", profile: profile({ intimacy: "Sayed's note." }), state: open }),
+    ]);
+    expect(tail).not.toContain("Sayed's note.");
+  });
+
+  it("minor-fences per member — the adult's note still stands", () => {
+    const { tail } = buildChatPromptPartsForRoster(input(), [
+      member("Mara", { profile: profile({ intimacy: "Mara's note." }), state: open }),
+      member("Kit", { profile: profile({ age: "15", intimacy: "never renders" }), state: open }),
+    ]);
+    expect(tail).toContain("Mara's note.");
+    expect(tail).not.toContain("never renders");
+  });
+});
