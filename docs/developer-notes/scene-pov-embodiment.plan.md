@@ -1,10 +1,12 @@
 # Scene POV embodiment — the player's own body in frame (plan)
 
 Status: **active** — written 2026-07-16 from an owner brainstorm ask. **Slice 0 (the
-blush scrub) shipped 2026-07-16**; slices 1–4 remain. **Supplemental to
-[persona-library.plan.md](persona-library.plan.md)** — slices 2–4 consume the
-persona's body attributes and worn coverage, so they cannot land before that plan's
-wardrobe slice (6–8, still queued). Slice 1 is independent and shippable now.
+blush scrub) shipped 2026-07-16**; slices 1–4 remain and are all **unblocked**:
+[persona-library.plan.md](persona-library.plan.md) shipped the same day, so the
+persona's body attributes (`personaToCharacterProfile` → `characterAppearanceSummary`)
+and the player's worn coverage (`resolvePlayerWardrobe` →
+`exposedRegions(playerWorn)` — structured-only, no manual `exposed` flag to fake) are
+both available now. `character_chats.player_state` is where the wardrobe lives.
 
 Topic slug `scene-pov-embodiment`. Scope: **the character-chat scene path only**
 (`server/images/character-scene.ts`) — see [Lane scope](#lane-scope).
