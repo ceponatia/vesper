@@ -30,6 +30,10 @@ whitespace. World, branch, character, place, item, action, activity, commitment,
 engagement, command, event, trigger, observation, cut, outbox, and snapshot identities
 therefore cannot be interchanged accidentally after parsing.
 
+Deterministically derived identities use length-prefixed parts rather than ambiguous raw
+delimiter concatenation. Event identity includes branch plus command identity, so the
+same command ID on a causally isolated branch cannot collide in the global event catalog.
+
 Story time and branch versions are nonnegative safe integers. Event sequence and schema
 version are positive safe integers. Fractional, negative, infinite, and unsafe values fail
 at the trust boundary.
