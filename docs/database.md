@@ -120,7 +120,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 - E2.2 `submitDurableItemTransfer` performs the idempotency recheck, pure resolution,
   event append, exclusive holding update, branch compare-and-swap advance, and durable
   command result under one `FOR UPDATE OF sim_branches` transaction. The joined world row is metadata, not a sibling-branch mutex. No model, network
-  callback, or wall-clock-derived simulation decision is allowed under that lock.
+  callback, or wall-clock-derived simulation decision is allowed under that lock. The typed branch reader uses a read-only `REPEATABLE READ` transaction so head, projection rows, and events share one snapshot.
 - The post-turn merge commits all **world-state** writes — participant state, item instances, clock, runtime, brief, and the turn row — in **one transaction** (`engine/merge/apply.ts`). Facts (+supersedence) and the episode are written first through the memory module, each internally transactional; their embeddings degrade per [memory.md](memory.md) instead of failing the merge.
 - Fact supersedence updates `status`/`superseded_by_id`/`superseded_at` on the old row in the same transaction as the inserted replacement — the embedding lives on the row, so there is no orphaned-embedding state (a bug class in the old app).
 - Session status transitions use compare-and-swap (`WHERE status = 'ready'`) to serialize turn submission.
