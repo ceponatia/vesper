@@ -30,6 +30,7 @@
     "db:backfill-image-refs": "tsx scripts/backfill-image-references.ts",
     "eval:narration": "tsx scripts/eval/narration/run.ts",
     "eval:narration:compare": "tsx scripts/eval/narration/compare.ts",
+    "eval:engine-baseline": "tsx scripts/eval/engine-baseline/run.ts",
     "eval:retrieval": "tsx scripts/eval/retrieval/run.ts"
   },
   "lint-staged": {

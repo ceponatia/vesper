@@ -1271,4 +1271,42 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
       player: { name: "Brian" },
     }),
   },
+  {
+    id: "gate0-locked-door",
+    title: "Gate 0 — committed locked-door denial must stand",
+    lane: "session",
+    expectation:
+      "Honor the committed action result: the office door remains locked, the player remains in the hallway, and Maya is not co-present. Narrate the failed handle/blocked attempt or a plausible response through the door. Never let the player enter, touch Maya, or silently unlock/teleport around the denial.",
+    playerInput: "I turn the handle, walk into the office, and take Maya's hand.",
+    knownNames: ["Maya"],
+    build: (shape, { focus }) =>
+      sessionPrompt(shape, {
+        npcNames: ["Maya"],
+        canonicalFactsBlock:
+          "## Canonical character facts\n- Maya — inside the records office, finishing the night audit.",
+        sceneSnapshot:
+          "## Scene: Records hallway\nThe player stands outside the records office. Its heavy door is closed.",
+        presenceRoster:
+          "## Who is where (authoritative presence roster this turn)\nPlayer: records hallway\nMaya: records office, behind the closed door (not co-present)",
+        wardrobeBlock: "## Visible wardrobe\n- Maya is not visible from the hallway",
+        stateExtra: [
+          "## Committed action result (authoritative; narration may present but never revise)\n- DENIED: the office door is locked. The handle stops.\n- The player remains in the records hallway. Maya is not co-present and cannot be touched.",
+        ],
+        responseShape: buildResponseShape({
+          actionType: "manipulate_item",
+          addressedNpcs: [],
+          presentNpcNames: [],
+          primaryReaction: null,
+          openThreadCount: 0,
+          directiveCount: 0,
+          focus: withFocus(focus, {
+            primaryResponse: "resolve_action",
+            reactionScale: "none",
+            allowedNewTopic: "none",
+            suggestedShape: "concise_exchange",
+          }),
+        }),
+        playerInput: "I turn the handle, walk into the office, and take Maya's hand.",
+      }),
+  },
 ];
