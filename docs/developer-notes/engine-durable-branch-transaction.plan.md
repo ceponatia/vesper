@@ -56,9 +56,10 @@ Migration `0054_e2_2_durable_branch_transaction` adds:
 
 Database checks bound causal integers to JavaScript's safe range. Composite foreign keys
 prevent an event from naming a branch under a different world, and item-holding foreign
-keys prevent dangling items or containers. The holding-to-container key uses `NO ACTION`:
-standalone deletion of a container that still holds an item fails, while a world/branch
-delete may complete its same-statement cascades through items and holdings coherently.
+keys prevent dangling items or containers. Migration 0054 makes the holding-to-container
+`NO ACTION` key `DEFERRABLE INITIALLY DEFERRED` (a PostgreSQL option Drizzle cannot model):
+standalone deletion of a container that still holds an item fails at commit, while a
+world/branch deletion may finish its item, holding, and container cascades coherently.
 
 ## Transaction protocol
 
