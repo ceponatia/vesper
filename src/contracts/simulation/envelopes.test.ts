@@ -9,6 +9,7 @@ import {
 } from "./envelopes";
 import {
   branchSequenceSchema,
+  composeSimulationId,
   storySecondSchema,
   worldBranchIdSchema,
   worldIdSchema,
@@ -74,6 +75,9 @@ describe("E2.1 simulation identity", () => {
     expect(worldId).toBe("opaque_value:01");
     expect(branchId).toBe("opaque_value:01");
     expectTypeOf<WorldId>().not.toEqualTypeOf<WorldBranchId>();
+    expect(composeSimulationId("event", ["a:b", "c"])).not.toBe(
+      composeSimulationId("event", ["a", "b:c"]),
+    );
   });
 
   it("rejects identity normalization and unsafe story-time values", () => {
