@@ -1,0 +1,174 @@
+import { z } from "zod";
+import {
+  branchSequenceSchema,
+  branchVersionSchema,
+  commandIdSchema,
+  correlationIdSchema,
+  derivationVersionSchema,
+  eventIdSchema,
+  idempotencyKeySchema,
+  locationIdSchema,
+  principalIdSchema,
+  rulesetVersionSchema,
+  schemaVersionSchema,
+  simulationEntityIdSchema,
+  storySecondSchema,
+  worldBranchIdSchema,
+  worldCharacterIdSchema,
+  worldIdSchema,
+} from "./identity";
+
+export const principalKinds = [
+  "player",
+  "npc_policy",
+  "npc_deliberator",
+  "system",
+  "director",
+  "storyteller",
+  "migration",
+] as const;
+
+export const principalKindSchema = z.enum(principalKinds);
+
+function isStableSet(values: readonly string[]): boolean {
+  if (new Set(values).size !== values.length) return false;
+  return values.every((value, index) => index === 0 || (values[index - 1] ?? "") < value);
+}
+
+export const controlledActorIdsSchema = z
+  .array(worldCharacterIdSchema)
+  .refine(isStableSet, "Controlled actor IDs must be unique and sorted");
+
+export const commandPrincipalSchema = z
+  .object({
+    kind: principalKindSchema,
+    principalId: principalIdSchema,
+    controlledActorIds: controlledActorIdsSchema,
+  })
+  .strict();
+
+export const wallClockInstantSchema = z.iso.datetime({ offset: true });
+
+const commandEnvelopeFields = {
+  id: commandIdSchema,
+  branchId: worldBranchIdSchema,
+  expectedVersion: branchVersionSchema,
+  idempotencyKey: idempotencyKeySchema,
+  principal: commandPrincipalSchema,
+  /** Operational metadata only; it must never affect simulation resolution. */
+  submittedAtWallClock: wallClockInstantSchema,
+  requestedStorySecond: storySecondSchema.optional(),
+  correlationId: correlationIdSchema,
+};
+
+export function createCommandEnvelopeSchema<
+  const TType extends string,
+  const TSchemaVersion extends number,
+  TPayload extends z.ZodType,
+>(type: TType, schemaVersion: TSchemaVersion, payload: TPayload) {
+  schemaVersionSchema.parse(schemaVersion);
+  return z
+    .object({
+      ...commandEnvelopeFields,
+      type: z.literal(type),
+      schemaVersion: z.literal(schemaVersion),
+      payload,
+    })
+    .strict();
+}
+
+const eventActorIdsSchema = z
+  .array(worldCharacterIdSchema)
+  .refine(isStableSet, "Event actor IDs must be unique and sorted");
+const eventEntityIdsSchema = z
+  .array(simulationEntityIdSchema)
+  .refine(isStableSet, "Event entity IDs must be unique and sorted");
+
+const eventEnvelopeFields = {
+  id: eventIdSchema,
+  worldId: worldIdSchema,
+  branchId: worldBranchIdSchema,
+  sequence: branchSequenceSchema,
+  storySecond: storySecondSchema,
+  rulesetVersion: rulesetVersionSchema,
+  derivationVersion: derivationVersionSchema.optional(),
+  commandId: commandIdSchema.optional(),
+  causationId: eventIdSchema.optional(),
+  correlationId: correlationIdSchema,
+  actorIds: eventActorIdsSchema,
+  entityIds: eventEntityIdsSchema,
+  locationId: locationIdSchema.optional(),
+  recordedAtWallClock: wallClockInstantSchema,
+};
+
+export function createEventEnvelopeSchema<
+  const TType extends string,
+  const TSchemaVersion extends number,
+  TPayload extends z.ZodType,
+>(type: TType, schemaVersion: TSchemaVersion, payload: TPayload) {
+  schemaVersionSchema.parse(schemaVersion);
+  return z
+    .object({
+      ...eventEnvelopeFields,
+      type: z.literal(type),
+      schemaVersion: z.literal(schemaVersion),
+      payload,
+    })
+    .strict();
+}
+
+export const acceptedSimulationCommandResultSchema = z
+  .object({
+    status: z.literal("accepted"),
+    commandId: commandIdSchema,
+    branchVersion: branchVersionSchema,
+    firstSequence: branchSequenceSchema,
+    lastSequence: branchSequenceSchema,
+    eventIds: z.array(eventIdSchema).min(1),
+  })
+  .strict()
+  .refine((result) => result.lastSequence >= result.firstSequence, {
+    message: "Accepted command sequence range is reversed",
+    path: ["lastSequence"],
+  })
+  .refine((result) => new Set(result.eventIds).size === result.eventIds.length, {
+    message: "Accepted command event IDs must be unique",
+    path: ["eventIds"],
+  });
+
+export const conflictSimulationCommandResultSchema = z
+  .object({
+    status: z.literal("conflict"),
+    commandId: commandIdSchema,
+    currentVersion: branchVersionSchema,
+    retryable: z.boolean(),
+  })
+  .strict();
+
+export function createCommandResultSchema<TRejectionCode extends z.ZodType<string>>(
+  rejectionCode: TRejectionCode,
+) {
+  const rejected = z
+    .object({
+      status: z.literal("rejected"),
+      // Malformed input may not contain a parseable command identity.
+      commandId: z.string().min(1).max(512),
+      code: rejectionCode,
+      publicReason: z.string().min(1),
+      legalAlternativeCommandTypes: z.array(z.string().min(1)).refine(isStableSet, {
+        message: "Legal alternative command types must be unique and sorted",
+      }),
+    })
+    .strict();
+
+  return z.discriminatedUnion("status", [
+    acceptedSimulationCommandResultSchema,
+    rejected,
+    conflictSimulationCommandResultSchema,
+  ]);
+}
+
+export type PrincipalKind = z.infer<typeof principalKindSchema>;
+export type CommandPrincipal = z.infer<typeof commandPrincipalSchema>;
+export type AcceptedSimulationCommandResult = z.infer<typeof acceptedSimulationCommandResultSchema>;
+export type ConflictSimulationCommandResult = z.infer<typeof conflictSimulationCommandResultSchema>;
