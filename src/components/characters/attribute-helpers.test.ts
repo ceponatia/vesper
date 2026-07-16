@@ -5,11 +5,14 @@ import {
   asList,
   attributeValueMap,
   defaultValueFor,
+  heritageChangePatch,
   isAiSourced,
   isOutOfRuleValue,
   removeAttribute,
   seedRequiredAttributes,
   seedValueFor,
+  speciesChangePatch,
+  type BodyProfileParts,
   setAttribute,
   sliderBounds,
 } from "./attribute-helpers";
@@ -173,5 +176,60 @@ describe("seedRequiredAttributes — species/heritage default seeding", () => {
     });
     // …but explicitly stripping the feature drops the wings attributes entirely.
     expect(seedRequiredAttributes([], cfg("faerie", [])).some((a) => a.id === "wings.shape")).toBe(false);
+  });
+});
+
+/**
+ * The species/heritage patch builders (persona-library.plan.md slice 5): extracted so the
+ * character and persona editors share one rule instead of two copies. Structural over
+ * `BodyProfileParts`, so both CharacterProfile and PersonaProfile satisfy them.
+ */
+describe("speciesChangePatch / heritageChangePatch", () => {
+  const profile = (over: Partial<BodyProfileParts> = {}): BodyProfileParts => ({
+    speciesId: "human",
+    bodyPlanId: "humanoid",
+    intimateRegions: [],
+    attributes: [],
+    ...over,
+  });
+
+  it("changing species clears the heritage — a heritage belongs to exactly one species", () => {
+    const patch = speciesChangePatch(profile({ speciesId: "elf", heritageId: "dark_elf" }), "human");
+    expect(patch?.speciesId).toBe("human");
+    expect(patch?.heritageId).toBeUndefined();
+  });
+
+  it("changing species follows the body plan and re-seeds required attributes", () => {
+    const patch = speciesChangePatch(profile(), "elf");
+    expect(patch?.bodyPlanId).toBe("humanoid");
+    // The elf species rule requires pointed ears — seeded so the author needn't hunt for it.
+    expect(patch?.attributes?.some((a) => a.id === "ears.shape")).toBe(true);
+  });
+
+  it("returns null for an unknown species so the caller leaves state alone", () => {
+    expect(speciesChangePatch(profile(), "not-a-species")).toBeNull();
+  });
+
+  it("heritage patch composes species + heritage feature defaults and re-seeds", () => {
+    const patch = heritageChangePatch(profile({ speciesId: "elf" }), "dark_elf");
+    expect(patch?.heritageId).toBe("dark_elf");
+    // The Dark Elf rule overrides the species ears default.
+    const ears = patch?.attributes?.find((a) => a.id === "ears.shape");
+    expect(ears?.value).toBe("long_pointed");
+  });
+
+  it("a blank/unknown heritage id clears the heritage (the '— None —' option)", () => {
+    const patch = heritageChangePatch(profile({ speciesId: "elf", heritageId: "dark_elf" }), "");
+    expect(patch?.heritageId).toBeUndefined();
+  });
+
+  it("returns null when the profile's species is unknown", () => {
+    expect(heritageChangePatch(profile({ speciesId: "not-a-species" }), "dark_elf")).toBeNull();
+  });
+
+  it("never clobbers an attribute the author already set", () => {
+    const mine: AttributeValue = { id: "ears.shape", value: "slightly_pointed", source: "manual" };
+    const patch = speciesChangePatch(profile({ attributes: [mine] }), "elf");
+    expect(patch?.attributes?.find((a) => a.id === "ears.shape")).toEqual(mine);
   });
 });
