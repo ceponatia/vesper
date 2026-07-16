@@ -40,3 +40,6 @@ jobs:
 
       - name: Verify (lint + typecheck + test + jscpd)
         run: pnpm verify
+
+      - name: Gate 1 deterministic-path benchmark
+        run: pnpm eval:engine-gate1
