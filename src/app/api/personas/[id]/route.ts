@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { emptyPersonaProfile, personaProfileSchema } from "@/contracts";
 import { parseOr } from "@/lib/parse";
-import { db, personas } from "@/server/db";
+import { db, personas, users } from "@/server/db";
 import {
   isUniqueViolation,
   jsonError,
@@ -79,5 +79,13 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const existing = await findPersona(user.id, id);
   if (!existing) return jsonError("not_found", "persona not found", 404);
   await db().delete(personas).where(and(eq(personas.id, id), eq(personas.ownerId, user.id)));
+  // Clear the soft pointer at the deleted row so nothing dangles — the portrait
+  // studio's clearEntityImagePointers rule. A chat's own `player_state.personaId`
+  // is deliberately left: the resolver's owner-strict lookup misses and falls to the
+  // default persona, which is the right degradation and needs no write fan-out.
+  await db()
+    .update(users)
+    .set({ defaultPersonaId: null })
+    .where(and(eq(users.id, user.id), eq(users.defaultPersonaId, id)));
   return jsonOk({ ok: true });
 });

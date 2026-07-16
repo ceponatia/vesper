@@ -1498,32 +1498,22 @@ export const worldsApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Account / default player character (player-character.plan.md)
+// Account / default persona (persona-library.plan.md slice 6)
 // ---------------------------------------------------------------------------
 
-export const playerPersonaClientSchema = z.object({
-  /** Display name; absent ⇒ the character falls back to the account name. */
-  name: z.string().min(1).optional().catch(undefined),
-  persona: textOr(""),
-});
-export type PlayerPersonaClient = z.infer<typeof playerPersonaClientSchema>;
-
 export const meSchema = z.object({
-  /** The account display name — the form's placeholder + the name fallback. */
+  /** The account display name — the resolver's last rung before FALLBACK_PLAYER_NAME. */
   accountName: textOr(""),
-  playerPersona: playerPersonaClientSchema.catch(() => ({ persona: "" })),
+  /** Which persona new chats start as; null ⇒ none picked (chats fall back to the account name). */
+  defaultPersonaId: optionalId,
 });
 export type Me = z.infer<typeof meSchema>;
 
 export const meApi = {
   get: () => apiGet(meSchema, "/api/users/me"),
-  /** Replace the default player character persona (the settings form sends both fields). */
-  updatePersona: (playerPersona: { name?: string; persona: string }) =>
-    apiPatch(
-      z.object({ playerPersona: playerPersonaClientSchema.catch(() => ({ persona: "" })) }),
-      "/api/users/me",
-      { playerPersona },
-    ),
+  /** Set (or clear, with null) the persona new chats start as. */
+  setDefaultPersona: (defaultPersonaId: string | null) =>
+    apiPatch(z.object({ defaultPersonaId: optionalId }), "/api/users/me", { defaultPersonaId }),
 };
 
 // Type alias (not interface) so it satisfies withQuery's index signature.

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts";
 import { CHAT_RATE_LIMIT, jsonError, jsonOk, rateLimit, readBody, withUser } from "@/server/api";
 import { addFacts, chatScope } from "@/server/memory";
-import { resolvePlayerPersona } from "@/server/players";
+import { resolveChatPersona } from "@/server/players";
 import { loadOwnedChat } from "../../owned";
 
 type Params = { chatId: string };
@@ -40,7 +40,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   }
 
   const sink = new DiagnosticCollector();
-  const player = await resolvePlayerPersona(user.id);
+  const player = await resolveChatPersona({ ownerId: user.id, chatId });
   const result = await addFacts(
     chatScope(owned.participant.memoryGroupId),
     [

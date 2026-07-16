@@ -27,7 +27,7 @@ import { characterChats, characterChatMessages, chatParticipants, db, images } f
 import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
 import { log } from "../log";
 import { QueryEmbeddings } from "../memory";
-import { resolvePlayerPersona } from "../players";
+import { resolveChatPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { buildActionBeatCue } from "./chat-action-beat";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
@@ -704,9 +704,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       void enqueueChatSummary({ chatId });
     }
 
-    // The user's default player character (player-character.plan.md), so the
+    // Who the player is in THIS chat (persona-library.plan.md): the chat's own
+    // persona pick, else the owner's default, else their account name — so the
     // character addresses someone by name instead of a faceless "the user".
-    const player = await resolvePlayerPersona(owner);
+    const player = await resolveChatPersona({ ownerId: owner, chatId });
 
     // What the post-turn agents read as the player's turn: the message plus a
     // clearly-labeled note of what the attached photos showed — so a shown photo
@@ -1850,7 +1851,7 @@ export async function previewChatPrompt(input: {
     { clockMinutes: scenario.clockMinutes },
   );
   const summaryState = await loadChatSummary(input.chatId);
-  const player = await resolvePlayerPersona(owner);
+  const player = await resolveChatPersona({ ownerId: owner, chatId: input.chatId });
   const wardrobe = await resolveChatWardrobe(state, owner, profile, sink);
   const memory = await retrieveChatMemory({
     groupId: input.memoryGroupId,
