@@ -587,11 +587,18 @@ async function assemblePreTurn(
           sink,
         });
 
+  // Gate 0 witness spike: explicit opt-in keeps the experiment from silently
+  // becoming production policy. The same player viewpoint fences RAG and the
+  // chronological episode window; unset preserves the legacy baseline for A/B.
+  const memoryViewpointId =
+    process.env.MEMORY_WITNESS_ELIGIBILITY === "1" ? player?.id : undefined;
+
   // Pre-turn parallel fan-out: retrieval legs + recent context + intake.
   const [retrieval, history, episodeWindow, relationshipFacts, intentBrief] = await Promise.all([
     preTurnRetrieve({
       session: { id: bundle.session.id },
       world: { id: bundle.world.id },
+      viewpointId: memoryViewpointId,
       queries: bundle.brief.memoryQueries,
       input: body.input,
       sceneCtx: {
@@ -602,7 +609,12 @@ async function assemblePreTurn(
       sink,
     }),
     recentTurnHistory(bundle.session.id, NARRATIVE_HISTORY_TURNS),
-    recentEpisodes(sessionScope(bundle.session.id), EPISODE_WINDOW, sink),
+    recentEpisodes(
+      sessionScope(bundle.session.id),
+      EPISODE_WINDOW,
+      sink,
+      memoryViewpointId ? { viewpointId: memoryViewpointId } : undefined,
+    ),
     activeRelationshipFacts(bundle.session.id),
     intakeLeg,
   ]);
