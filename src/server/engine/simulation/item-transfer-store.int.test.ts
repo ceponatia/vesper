@@ -410,7 +410,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     const ids = makeIds();
     await seedCase(ids);
     await submitDurableItemTransfer(command(ids));
-    const now = new Date("2026-07-16T17:00:00.000Z");
+    const now = new Date(Date.now() + 60_000);
 
     const failed = await consumeNextItemTransferOutbox({
       workerId: "worker_crash",
@@ -441,7 +441,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     const ids = makeIds();
     await seedCase(ids);
     await submitDurableItemTransfer(command(ids));
-    const now = new Date("2026-07-16T17:00:00.000Z");
+    const now = new Date(Date.now() + 60_000);
     expect(await consumeNextItemTransferOutbox({ workerId: "worker_a", now })).toMatchObject({
       status: "completed",
       throughSequence: 1,
@@ -465,7 +465,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     const ids = makeIds();
     await seedCase(ids);
     await submitDurableItemTransfer(command(ids));
-    const now = new Date("2026-07-16T17:00:00.000Z");
+    const now = new Date(Date.now() + 60_000);
     await db()
       .update(simOutbox)
       .set({
@@ -502,7 +502,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
 
     const result = await consumeNextItemTransferOutbox({
       workerId: "gap_worker",
-      now: new Date("2026-07-16T17:00:00.000Z"),
+      now: new Date(Date.now() + 60_000),
       maxAttempts: 1,
     });
     expect(result).toMatchObject({ status: "failed", terminal: true, retryAt: null });
