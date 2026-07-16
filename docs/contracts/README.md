@@ -11,7 +11,7 @@
 | [attributes.md](attributes.md) | The attribute registry: definitions, the shared registry spine, and value provenance |
 | [body.md](body.md) | The body-location tree, body plans, species/heritage, the realized body, and colloquial targets |
 | [items.md](items.md) | Item definitions and visibility, clothing categories, object subtypes, and coverage editing |
-| [simulation.md](simulation.md) | Gate 1 successor-engine command, event, replay, observation, and NarrativeCut seam |
+| [simulation.md](simulation.md) | Successor-engine identity, command/event/result envelopes, replay, observation, and NarrativeCut contracts |
 | [meters-actions.md](meters-actions.md) | Continuous 0–1 meters and registered timed actions |
 | [conditions.md](conditions.md) | Discrete, temporary states (e.g. "soaked", "exhausted") |
 | [relationships.md](relationships.md) | Affinity stages, the bond classifier, and disposition (traits, preferences, tags, modulation, the guardrail) |

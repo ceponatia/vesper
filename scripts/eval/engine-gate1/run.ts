@@ -1,7 +1,9 @@
 import { performance } from "node:perf_hooks";
-import type {
-  ItemTransferProjection,
-  TransferItemCommand,
+import {
+  itemTransferProjectionSchema,
+  transferItemCommandSchema,
+  type ItemTransferProjection,
+  type TransferItemCommand,
 } from "@/contracts/simulation/item-transfer";
 import { createItemTransferBranchRuntime } from "@/lib/simulation";
 
@@ -9,7 +11,7 @@ const WARMUP_RUNS = 500;
 const SAMPLE_RUNS = 4_000;
 const P95_BUDGET_MS = 5;
 
-const seed: ItemTransferProjection = {
+const seed: ItemTransferProjection = itemTransferProjectionSchema.parse({
   worldId: "world_benchmark",
   branchId: "branch_benchmark",
   rulesetVersion: "gate1-v1",
@@ -26,10 +28,10 @@ const seed: ItemTransferProjection = {
   ],
   items: [{ id: "item_ring", name: "ring", holdingContainerId: "bag" }],
   observations: [],
-};
+});
 
 function command(index: number): TransferItemCommand {
-  return {
+  return transferItemCommandSchema.parse({
     id: `command_${index}`,
     branchId: seed.branchId,
     expectedVersion: 0,
@@ -45,7 +47,7 @@ function command(index: number): TransferItemCommand {
       fromContainerId: "bag",
       toContainerId: "table",
     },
-  };
+  });
 }
 
 function runOnce(index: number): number {

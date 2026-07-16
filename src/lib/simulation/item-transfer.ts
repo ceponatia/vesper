@@ -1,4 +1,6 @@
 import {
+  itemTransferNarrativeCutSchema,
+  itemTransferObservationSchema,
   itemTransferProjectionSchema,
   itemTransferredEventSchema,
   transferItemCommandSchema,
@@ -11,6 +13,10 @@ import {
   type ItemTransferredEvent,
   type TransferItemCommand,
 } from "@/contracts/simulation/item-transfer";
+import {
+  composeSimulationId,
+  worldCharacterIdSchema,
+} from "@/contracts/simulation/identity";
 
 interface RejectedResolution {
   ok: false;
@@ -162,7 +168,7 @@ export function resolveItemTransfer(
   return {
     ok: true,
     event: itemTransferredEventSchema.parse({
-      id: `event:${command.id}`,
+      id: composeSimulationId("event", [projection.branchId, command.id]),
       worldId: projection.worldId,
       branchId: projection.branchId,
       sequence,
@@ -202,6 +208,19 @@ export function applyItemTransferredEvent(
     throw new Error("Item transfer replay source precondition failed");
   }
 
+  const newObservations = event.payload.observerActorIds.map((witnessActorId) =>
+    itemTransferObservationSchema.parse({
+      id: composeSimulationId("observation", [event.id, witnessActorId]),
+      sourceEventId: event.id,
+      witnessActorId,
+      sequence: event.sequence,
+      storySecond: event.storySecond,
+      itemId: event.payload.itemId,
+      fromContainerId: event.payload.fromContainerId,
+      toContainerId: event.payload.toContainerId,
+      derivationVersion: "gate1-perception-v1",
+    }),
+  );
   const next = sortProjection({
     ...projection,
     version: projection.version + 1,
@@ -209,20 +228,7 @@ export function applyItemTransferredEvent(
     items: projection.items.map((candidate) =>
       candidate.id === item.id ? { ...candidate, holdingContainerId: event.payload.toContainerId } : candidate,
     ),
-    observations: [
-      ...projection.observations,
-      ...event.payload.observerActorIds.map((witnessActorId) => ({
-        id: `observation:${event.id}:${witnessActorId}`,
-        sourceEventId: event.id,
-        witnessActorId,
-        sequence: event.sequence,
-        storySecond: event.storySecond,
-        itemId: event.payload.itemId,
-        fromContainerId: event.payload.fromContainerId,
-        toContainerId: event.payload.toContainerId,
-        derivationVersion: "gate1-perception-v1" as const,
-      })),
-    ],
+    observations: [...projection.observations, ...newObservations],
   });
   assertProjectionInvariants(next);
   return next;
@@ -266,7 +272,8 @@ export function compileItemTransferNarrativeCut(
   events: readonly ItemTransferredEvent[],
   viewpointActorId: string,
 ): ItemTransferNarrativeCut {
-  const observations = projection.observations.filter((observation) => observation.witnessActorId === viewpointActorId);
+  const viewpoint = worldCharacterIdSchema.parse(viewpointActorId);
+  const observations = projection.observations.filter((observation) => observation.witnessActorId === viewpoint);
   const eventById = new Map(events.map((event) => [event.id, event]));
   const beats = observations.map((observation) => {
     const event = eventById.get(observation.sourceEventId);
@@ -282,7 +289,7 @@ export function compileItemTransferNarrativeCut(
     throughSequence: projection.headSequence,
     fromStorySecond: events[0]?.storySecond ?? projection.storySecond,
     throughStorySecond: projection.storySecond,
-    viewpointActorId,
+    viewpointActorId: viewpoint,
     mustEnact: beats,
     perceptibleNow: beats,
     allowedTransitions: [] as [],
@@ -302,11 +309,16 @@ export function compileItemTransferNarrativeCut(
     provenance: observations.map((observation) => ({ eventId: observation.sourceEventId, observationId: observation.id })),
   };
   const semanticHash = simulationHash(content);
-  return {
-    id: `cut:${projection.branchId}:${viewpointActorId}:${firstSequence}:${projection.headSequence}`,
+  return itemTransferNarrativeCutSchema.parse({
+    id: composeSimulationId("cut", [
+      projection.branchId,
+      viewpoint,
+      String(firstSequence),
+      String(projection.headSequence),
+    ]),
     semanticHash,
     ...content,
-  };
+  });
 }
 
 function quotedWorldData(value: string): string {
