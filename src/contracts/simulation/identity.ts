@@ -56,6 +56,7 @@ export const derivationVersionSchema = stableTokenSchema.brand<"DerivationVersio
 
 export const storySecondSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const branchVersionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const branchHeadSequenceSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const branchSequenceSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const schemaVersionSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
