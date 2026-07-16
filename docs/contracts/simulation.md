@@ -17,8 +17,10 @@ The implementation lives in:
   exhaustive-result schema factories;
 - `src/contracts/simulation/item-transfer.ts` — the first command/event/projection,
   observation, and NarrativeCut family;
-- `src/lib/simulation/item-transfer.ts` — pure resolver, projector, replay, cut compiler,
-  prompt formatter, and the temporary in-memory runtime;
+- `src/lib/simulation/item-transfer.ts` — pure resolver over a minimum authority view,
+  projector, replay, cut compiler, prompt formatter, and the temporary in-memory runtime;
+- `src/server/engine/simulation/item-transfer-store.ts` — the E2.2 PostgreSQL branch
+  transaction and typed read/bootstrap adapter;
 - `src/server/engine/world-engine.ts` — the adapter into the existing character-chat
   narrator.
 
@@ -68,6 +70,24 @@ therefore does not recompute historical visibility from newer state. The synchro
 projector moves the item to exactly one container and creates one typed observation per
 eligible witness.
 
+## Durable authority transaction
+
+E2.2 persists parsed command outcomes by branch and idempotency key. A PostgreSQL
+`FOR UPDATE` lock on `sim_branches` serializes resolution, event append, typed
+`sim_item_holdings` update, branch advance, and command-result insert. The adapter
+rechecks idempotency after it acquires the lock, so two concurrent retries cannot race
+through the lock-free fast path.
+
+The storage adapter loads only the actor, requested item and holding, two containers,
+destination count, and eligible witnesses into `ItemTransferResolutionView`. The same
+pure resolver serves the in-memory and durable paths. Rejections and optimistic conflicts
+are durable audit outcomes but do not enter `sim_events`.
+
+Crash failpoints are closed synchronous throw locations—never arbitrary callbacks under
+the lock. Integration tests prove rollback after every pre-commit write, recovery from a
+lost post-commit acknowledgement, one acceptance plus one conflict for concurrent
+same-version commands, and one stored outcome when identical idempotent submissions race.
+
 ## Perspective and narration
 
 The NarrativeCut query joins through the observation ledger before it reads event detail.
@@ -82,7 +102,8 @@ and have no command or persistence capability.
 
 ## Deliberate limits
 
-E2.1 defines contracts, not durability. The item-transfer adapter remains in memory and
-does not provide crash atomicity, concurrent process locking, durable command results,
-branch forking, scheduling, movement, or live-chat integration. E2.2 replaces that adapter
-with the minimum PostgreSQL branch transaction while retaining these schemas.
+E2.2 provides durability only for the first item-transfer family. The in-memory adapter
+remains a pure test/replay fixture; production persistence now has crash atomicity,
+cross-process branch locking, and durable command results. Branch forks, outbox consumers,
+scheduled triggers, movement, live-scene arbitration, and live-chat authority are still
+absent and remain E2.3 or later work.
