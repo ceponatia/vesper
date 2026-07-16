@@ -161,6 +161,11 @@ describe("Gate 1 item-transfer authority seam", () => {
     expect(hiddenSerialized).not.toContain("Mara's bag");
     expect(hiddenSerialized).not.toContain("cafe table");
     expect(hiddenSerialized).not.toContain("actor_mara");
+    const hiddenPrompt = appendItemTransferNarrativeCut("Narrator", hiddenCut);
+    expect(hiddenPrompt).not.toContain("gold ring");
+    expect(hiddenPrompt).not.toContain("Mara's bag");
+    expect(hiddenPrompt).not.toContain("cafe table");
+    expect(hiddenPrompt).not.toContain("actor_mara");
   });
 
   it("keeps cut identity stable and constrains the narrator to one hard outcome", () => {
