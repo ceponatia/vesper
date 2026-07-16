@@ -27,21 +27,19 @@ _(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
-- **Persona library — the player as a first-class library entity** —
-  [persona-library.plan.md](persona-library.plan.md) (draft; planned 2026-07-16 from an
-  owner brainstorm ask). Promotes the player from the single inline
-  `users.playerPersona` blob to a **library entity**: many saved personas, each with a
-  body (attributes from the existing registry), an equippable wardrobe, and a bio, picked
-  per chat. `(owner_id, title)` UNIQUE so `name` can repeat across personas; title is
-  structurally barred from prompts (it is simply not a field on the resolver's return
-  shape). No personality/demeanor/voice-anchors — the narrator never writes the player's
-  lines. Reuses the character contracts through ONE adapter
-  (`personaToCharacterProfile`), so the wardrobe seam, attribute picker, outfit editor,
-  and exposure classifier all work unforked. The player's clothing comes off when either
-  side narrates it, via a `playerOutfit` archivist field folding through the existing
-  `applyWornGarmentChanges` reducer. Supersedes
-  [finished/player-character.plan.md](finished/player-character.plan.md), whose Open
-  questions called this shot; carries a migration + a backfill that retires the blob.
+- **Persona library — the chat wiring (slices 6–8)** —
+  [persona-library.plan.md](persona-library.plan.md) (**partially shipped** — the
+  library itself landed 2026-07-16, see **Shipped**; this is the remainder). What makes
+  a persona actually *playable*: the `resolveChatPersona` ladder + the backfill that
+  retires the `users.player_persona` blob, the per-chat "Playing as" pick, and the
+  **player wardrobe** — a `playerState` jsonb on `character_chats`, a `playerOutfit`
+  archivist field (one field covers both directions, since the archivist sees the whole
+  exchange) folding through the existing `applyWornGarmentChanges` reducer, and the
+  `preExchangeScenario` rollback snapshot — without which "another take" leaves the
+  player undressed by a beat that no longer exists. Structured-only with no manual
+  `exposed` toggle, because a toggle would be a hole straight through the scene plan's
+  coverage gate. **Unblocks**
+  [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) slices 2–4.
 - **Scene POV embodiment — the player's own body in frame** —
   [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) (draft; planned 2026-07-16
   from the same ask). **Supplemental to the persona library** — slices 2–4 consume its
@@ -68,7 +66,7 @@ _(nothing — pull the next entry from Next)_
   second wind, and collapse at ~40h all emerge, with no hardcoded hour), a pulse `intimacy`
   read with a climax reset + afterglow, arousal regraded to body facts rather than a
   talk-switch, and rhythm-driven off-screen self-care that retires D14. Carries migration
-  0051 (+ a backfill).
+  0052 (+ a backfill).
 - **Chat body needs — satiation, hydration, and needs that push** —
   [chat-body-needs.plan.md](chat-body-needs.plan.md) (draft; planned 2026-07-16 from the
   owner's PM notes on the meter-economy plan). The three asked-for meters plus the
@@ -122,6 +120,23 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Persona library — build a player you can be** (slices 1–5 of many) —
+  [persona-library.plan.md](persona-library.plan.md) — 2026-07-16 — the player graduates
+  from a single inline blob to a real library entity: `personas` table (migration 0051,
+  `(owner_id, title)` UNIQUE so `name` can repeat), a narrow `PersonaProfile` + the one
+  `personaToCharacterProfile` adapter that buys the wardrobe seam, attribute picker,
+  outfit editor and exposure classifier unforked, CRUD with a typed 409 on title
+  collision, the `/personas` library tab, and a three-tab editor. Title is barred from
+  prompts *structurally* — it isn't a field on the resolver's shape. **Nothing consumes a
+  persona yet** — the chat wiring is slices 6–8, still in **Next**.
+- **Scene image blush scrub — stop asking for clown makeup** (slice 0 of
+  [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md)) — 2026-07-16 — owner
+  report: "flushed"/"blushing" in an image prompt renders as stage blusher, not
+  physiology. `visualStateNote` said it in 3 of 5 phrases; reworded to eyes/breath/sweat/
+  posture. The LLM echo path (the narrator's arousal hint literally says "flushed skin" →
+  the composer reads it in the narration → hands it back in pose/mood) is closed by a
+  composer rule **plus** `scrubBlush`, since the rule alone isn't trustworthy. Authored
+  `skin.undertone: rosy` is deliberately untouched.
 - **Chat off-screen life — the cast moves between visits** —
   [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) · spec
   [chat-offscreen-life.spec.md](chat-offscreen-life.spec.md) — 2026-07-15 — the chat lane's

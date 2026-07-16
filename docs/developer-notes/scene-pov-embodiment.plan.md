@@ -1,9 +1,10 @@
 # Scene POV embodiment — the player's own body in frame (plan)
 
-Status: **draft** — written 2026-07-16 from an owner brainstorm ask. **Supplemental
-to [persona-library.plan.md](persona-library.plan.md)** — slices 2+ consume the
-persona's body attributes and worn coverage, so they cannot land before that
-plan's wardrobe slice. Slices 0 and 1 are independent and shippable now.
+Status: **active** — written 2026-07-16 from an owner brainstorm ask. **Slice 0 (the
+blush scrub) shipped 2026-07-16**; slices 1–4 remain. **Supplemental to
+[persona-library.plan.md](persona-library.plan.md)** — slices 2–4 consume the
+persona's body attributes and worn coverage, so they cannot land before that plan's
+wardrobe slice (6–8, still queued). Slice 1 is independent and shippable now.
 
 Topic slug `scene-pov-embodiment`. Scope: **the character-chat scene path only**
 (`server/images/character-scene.ts`) — see [Lane scope](#lane-scope).
@@ -103,7 +104,7 @@ The session player is a different model (a real library character via
 
 ## Slices
 
-### Slice 0 — the blush scrub (independent, ship first)
+### Slice 0 — the blush scrub — **shipped 2026-07-16**
 
 Two leak paths, and the reword alone won't hold without both.
 
@@ -128,6 +129,14 @@ because the rule alone is not trustworthy.
 **Leave alone:** the narrator hint itself (good prose guidance; narration isn't
 rendered), the `flushed` pipLabel, and the `fluster` condition
 (`chat-state.ts:2264` — `attributeEffects: []`, so it never reaches an image).
+
+**Shipped as described.** Two notes from the build: `skin.undertone` has a `rosy`
+allowed value, but it is an **authored identity attribute** and is deliberately NOT
+scrubbed — the scrub's boundary is composer-authored free text (`action`, `mood`),
+exactly like `scrubPlayerFromAction`. And the two `visualStateNote` tests that
+asserted the literal word "flushed" now assert the **inverse invariant** across the
+whole meter grid, which is the property worth pinning. Still unverified against a
+live model — see [Testing](#testing).
 
 ### Slice 1 — `SCENE_POV_RULE` becomes a builder (independent)
 

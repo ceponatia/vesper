@@ -1,10 +1,20 @@
 # Persona library — the player as a first-class library entity (plan)
 
-Status: **draft** — written 2026-07-16 from an owner brainstorm ask. Supersedes
-the shipped [player-character.plan.md](finished/player-character.plan.md), whose
-own Open questions anticipated exactly this ("Multiple saved personas? … a clean
-future extension on the same resolver") and whose `id: null` field was left as
-the graduation seam.
+Status: **active** — written 2026-07-16 from an owner brainstorm ask. **Slices 1–5
+shipped 2026-07-16** (the library: a persona you can build, not yet play as);
+slices 6–8 (the chat wiring) are the remainder. Supersedes the shipped
+[player-character.plan.md](finished/player-character.plan.md), whose own Open
+questions anticipated exactly this ("Multiple saved personas? … a clean future
+extension on the same resolver") and whose `id: null` field was left as the
+graduation seam.
+
+> **Built so far** (branch `worktree-persona-library`): `personaProfileSchema` +
+> `personaToCharacterProfile` (`contracts/players/persona-profile.ts`), the
+> `personas` table (migration **0051**, `(owner_id, title)` UNIQUE), CRUD at
+> `/api/personas` with a typed 409 on title collision, the `/personas` library tab,
+> and the three-tab `PersonaEditor`. **`pnpm db:migrate` has NOT been run** — the
+> Fly deploy applies it. Nothing consumes a persona yet: `resolvePlayerPersona`
+> still reads the legacy `users.player_persona` blob (slice 6 replaces it).
 
 Topic slug `persona-library` (grep `persona` finds this plus
 `contracts/players/persona.ts` and `server/players/persona.ts`). The scene-image
@@ -322,16 +332,17 @@ play as). 6–8 are the chat wiring. The dependent scene work is
 
 ## Open questions
 
-- **Narrow `PersonaProfile` + adapter, or just store a full `CharacterProfile`?**
-  Recommended: narrow + adapter (documents intent, keeps the editor from growing
-  a personality tab by accretion, and the adapter is ~10 lines). The alternative —
-  store a real `CharacterProfile` and simply not author most of it — needs no
-  adapter and makes a future "embody this persona in a session" free, at the cost
-  of a row full of fields that will rot. **This is the one call I'd want settled
-  before slice 1.**
+- ~~**Narrow `PersonaProfile` + adapter, or a full `CharacterProfile`?**~~ **Ruled
+  2026-07-16 (owner): narrow + adapter.** Built as
+  `contracts/players/persona-profile.ts`. One refinement found in build: the adapter
+  parses **through `characterProfileSchema`** rather than spreading a hand-written
+  defaults object, so a new character field can never silently leave it behind; its
+  optional fields are conditionally spread, because zod keeps an
+  explicitly-`undefined` key and the output must be indistinguishable from a normal
+  parse.
 - **Keep a default persona at all?** Recommended yes
   (`users.default_persona_id`), so one-time setup still works and the per-chat
-  pick is an override rather than a chore on every new chat.
+  pick is an override rather than a chore on every new chat. **Still open — slice 6.**
 - **Is `voice` always-on, or intimate-gated like `intimacy`?** The ask tied it to
   intimacy ("how the player's voice sounds while intimate"). Recommended
   always-on — a voice is a voice; intimacy is merely where it matters most.
@@ -339,9 +350,10 @@ play as). 6–8 are the chat wiring. The dependent scene work is
   needs *attributes*, not a portrait, and a player portrait implies symmetric
   rendering (a whole arc — `avatar-3d.plan.md`). Recommend deferring the pipeline
   and keeping the column.
-- **Migration number.** 0051 is next free today, but
-  [chat-meter-economy.plan.md](chat-meter-economy.plan.md) also claims 0051 —
-  whichever lands first takes it.
+- ~~**Migration number.**~~ **Resolved: this took 0051**
+  (`drizzle/0051_ordinary_carlie_cooper.sql`), so
+  [chat-meter-economy.plan.md](chat-meter-economy.plan.md) needs **0052**. A pure
+  CREATE, so `db:generate` had no rename-vs-create decision to prompt on.
 
 ## Related
 
