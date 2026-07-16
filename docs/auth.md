@@ -90,7 +90,8 @@ rather than throwing, so a chat turn always has someone to address
 
 Every lookup is owner-strict, so a dangling or foreign id simply misses and falls
 through — which is also why deleting a persona needs no write fan-out across chats.
-`resolvePlayerPersona(ownerId)` remains as the no-chat-context wrapper.
+`chatId` is optional: omit it for an account-level read (rungs 2–3 only), though every
+caller in the codebase has a conversation in scope and passes it.
 
 **The resolved `PlayerPersona` shape carries no `title`, and that is load-bearing.**
 The persona's per-owner-unique library label is a database/UX concern that must never

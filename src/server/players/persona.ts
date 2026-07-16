@@ -102,12 +102,3 @@ export async function resolveChatPersona(args: { ownerId: string; chatId?: strin
 
   return personaFromRow(account?.name, row);
 }
-
-/**
- * The account-level persona (no chat context) — the owner's default, else their account
- * name. Prefer {@link resolveChatPersona} with a `chatId` wherever a conversation is in
- * scope, so the per-chat pick is honoured.
- */
-export async function resolvePlayerPersona(ownerId: string): Promise<PlayerPersona> {
-  return resolveChatPersona({ ownerId });
-}

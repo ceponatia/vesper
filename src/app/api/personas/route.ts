@@ -32,6 +32,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       name: personas.name,
       tags: personas.tags,
       avatarImageId: personas.avatarImageId,
+      updatedAt: personas.updatedAt,
     })
     .from(personas)
     .where(and(inArray(personas.id, ids), eq(personas.ownerId, user.id)));

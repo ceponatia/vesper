@@ -7,6 +7,7 @@ import { personasApi } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useAutosave } from "@/components/hooks/use-autosave";
+import { LibraryBackLink } from "@/components/library/back-link";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -112,9 +113,12 @@ export function PersonaEditPage({ personaId }: { personaId: string }) {
     }
   };
 
+  // The back link rides EVERY branch (loading/error included) — the editor's escape hatch
+  // on mobile, where the grid is otherwise only reachable through the nav menu (ui.md).
   if (detail.loading && !draft) {
     return (
       <PageContainer>
+        <LibraryBackLink href="/personas" label="Personas" />
         <Skeleton className="mb-6 h-8 w-64" />
         <SkeletonText lines={6} />
       </PageContainer>
@@ -124,6 +128,7 @@ export function PersonaEditPage({ personaId }: { personaId: string }) {
   if (detail.error && !draft) {
     return (
       <PageContainer>
+        <LibraryBackLink href="/personas" label="Personas" />
         <ErrorState error={detail.error} onRetry={() => detail.reload()} />
       </PageContainer>
     );
@@ -133,6 +138,7 @@ export function PersonaEditPage({ personaId }: { personaId: string }) {
 
   return (
     <PageContainer>
+      <LibraryBackLink href="/personas" label="Personas" />
       <div className="mb-6 flex items-center justify-between gap-4">
         <h1 className="prose-display text-2xl">{draft.title || "Untitled persona"}</h1>
       </div>
