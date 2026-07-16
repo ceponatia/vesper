@@ -37,7 +37,15 @@ vi.mock("@/server/auth", () => ({
   listUsers: async () => [authState.user],
 }));
 
-import { persistAssistantReply, replyTakesSchema, submitChatMessage, tryKeyedLock, type ReplyTakes } from "@/server/engine";
+import {
+  loadChatState,
+  loadPreExchangeState,
+  persistAssistantReply,
+  replyTakesSchema,
+  submitChatMessage,
+  tryKeyedLock,
+  type ReplyTakes,
+} from "@/server/engine";
 import { log } from "@/server/log";
 import { POST as chatsCreate } from "./route";
 import { DELETE as characterDelete } from "../characters/[id]/route";
@@ -99,8 +107,9 @@ function patchMsgReq(chatId: string, messageId: string, body: unknown): NextRequ
 }
 const delMsgReq = (chatId: string, messageId: string) =>
   new NextRequest(`http://t/api/chats/${chatId}/messages/${messageId}`, { method: "DELETE" });
-function stateReq(chatId: string, body: unknown): NextRequest {
-  return new NextRequest(`http://t/api/chats/${chatId}/state`, {
+function stateReq(chatId: string, body: unknown, characterId?: string): NextRequest {
+  const target = characterId ? `?characterId=${encodeURIComponent(characterId)}` : "";
+  return new NextRequest(`http://t/api/chats/${chatId}/state${target}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -128,6 +137,12 @@ async function pollUntil<T>(probe: () => Promise<T | null>): Promise<T | null> {
 async function createChat(characterId: string, memory: "shared" | "fresh" = "fresh"): Promise<{ id: string; memoryGroupId: string }> {
   const res = await chatsCreate(createReq({ characterIds: [characterId], memory }), collectionCtx);
   if (res.status !== 201) throw new Error(`chat create failed: ${res.status}`);
+  return (await res.json()) as { id: string; memoryGroupId: string };
+}
+
+async function createGroupChat(characterIds: string[]): Promise<{ id: string; memoryGroupId: string }> {
+  const res = await chatsCreate(createReq({ characterIds, memory: "fresh" }), collectionCtx);
+  if (res.status !== 201) throw new Error(`group chat create failed: ${res.status}`);
   return (await res.json()) as { id: string; memoryGroupId: string };
 }
 
@@ -701,6 +716,103 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
     expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
   });
 
+  it("restores and re-snapshots every roster member from the same exchange boundary", async (t) => {
+    if (!ready) return t.skip();
+    const [nia, oren] = await db()
+      .insert(characters)
+      .values([
+        { ownerId: authState.user.id, name: "Nia", profile: {} },
+        { ownerId: authState.user.id, name: "Oren", profile: {} },
+      ])
+      .returning();
+    if (!nia || !oren) throw new Error("failed to seed group members");
+
+    const chat = await createGroupChat([ids.character, nia.id, oren.id]);
+    const members = [
+      { id: ids.character, name: "Mara", regard: 11 },
+      { id: nia.id, name: "Nia", regard: 22 },
+      { id: oren.id, name: "Oren", regard: 33 },
+    ];
+    const baselines = new Map<string, NonNullable<Awaited<ReturnType<typeof loadChatState>>>>();
+
+    // Give every participant a distinctive, valid state before the exchange. The
+    // exchange snapshot must preserve the whole object, not only relationship meters.
+    for (const [index, member] of members.entries()) {
+      const patched = await statePatch(
+        stateReq(
+          chat.id,
+          {
+            regard: member.regard,
+            familiarity: index + 3,
+            mindNote: `baseline-${member.name}`,
+            outfit: `baseline-outfit-${member.name}`,
+            memoryQueries: [`baseline-query-${member.name}`],
+            openLoops: [`baseline-loop-${member.name}`],
+            surfacedCues: { energy: `baseline-band-${member.name}` },
+            callbackHistory: [{ ref: `baseline-callback-${member.name}`, atClockMinutes: index }],
+          },
+          member.id,
+        ),
+        ctx(chat.id),
+      );
+      expect(patched.status).toBe(200);
+      const baseline = await loadChatState(chat.id, member.id);
+      if (!baseline) throw new Error(`missing baseline for ${member.name}`);
+      baselines.set(member.id, baseline);
+    }
+
+    await (
+      await chatSend(
+        postReq(chat.id, { content: "Mara, Nia, and Oren: tell me what happened." }),
+        ctx(chat.id),
+      )
+    ).text();
+
+    // The first settle records an anchor for PRIMARY and non-primary members alike.
+    for (const member of members) {
+      expect(await loadPreExchangeState(chat.id, member.id)).toEqual({
+        found: true,
+        state: baselines.get(member.id),
+      });
+    }
+
+    // Simulate every category of discarded-take contamination with valid state:
+    // scalar, note, wardrobe, retrieval carry-over, open loop, cue and callback ring.
+    for (const [index, member] of members.entries()) {
+      const marker = `DISCARDED-${member.name}`;
+      const patched = await statePatch(
+        stateReq(
+          chat.id,
+          {
+            regard: 90 + index,
+            mindNote: marker,
+            outfit: marker,
+            memoryQueries: [marker],
+            openLoops: [marker],
+            surfacedCues: { energy: marker },
+            callbackHistory: [{ ref: marker, atClockMinutes: 99 }],
+          },
+          member.id,
+        ),
+        ctx(chat.id),
+      );
+      expect(patched.status).toBe(200);
+    }
+
+    const regenerated = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
+    expect(regenerated.status).toBe(200);
+    await regenerated.text();
+
+    for (const [index, member] of members.entries()) {
+      const baseline = baselines.get(member.id);
+      expect(await loadPreExchangeState(chat.id, member.id)).toEqual({ found: true, state: baseline });
+      const settled = await loadChatState(chat.id, member.id);
+      if (!settled) throw new Error(`missing settled state for ${member.name}`);
+      expect(JSON.stringify(settled)).not.toContain(`DISCARDED-${member.name}`);
+      expect(settled.regard).not.toBe(90 + index);
+    }
+  });
+
   it("caps browsable takes at 4 across repeated regenerates, newest take always active", async (t) => {
     if (!ready) return t.skip();
     const chat = await createChat(ids.character);
@@ -799,26 +911,26 @@ describe("message delete reconciles provenanced memory (spec §4.3)", () => {
 });
 
 describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-rerun fix)", () => {
-  it("snips only the target's successors, reuses the guard row, and streams a fresh reply", async (t) => {
+  it("snips the latest reply, reuses its player guard row, and streams a fresh reply", async (t) => {
     if (!ready) return t.skip();
     const chat = await createChat(ids.character);
-    await (await chatSend(postReq(chat.id, { content: "first prompt" }), ctx(chat.id))).text();
-    await (await chatSend(postReq(chat.id, { content: "second prompt" }), ctx(chat.id))).text();
-    expect(await roleCounts(chat.id)).toEqual({ user: 2, assistant: 2 });
-    const user1 = (await fullRows(chat.id)).find((m) => m.role === "user" && m.content === "first prompt");
-    if (!user1) throw new Error("missing the first user line");
+    await (await chatSend(postReq(chat.id, { content: "latest prompt" }), ctx(chat.id))).text();
+    expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
+    const before = await fullRows(chat.id);
+    const user1 = before.find((m) => m.role === "user");
+    const oldReply = before.find((m) => m.role === "assistant");
+    if (!user1 || !oldReply) throw new Error("missing latest exchange");
 
     const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("[Mara]");
 
-    // Everything after user1 (its reply + the whole second exchange) is gone; user1 stays.
     expect(await roleCounts(chat.id)).toEqual({ user: 1, assistant: 1 });
     const after = await fullRows(chat.id);
-    const survivor = after.find((m) => m.id === user1.id);
-    expect(survivor?.content).toBe("first prompt"); // reused in place — same id + content
-    expect(after.filter((m) => m.role === "user")).toHaveLength(1);
-    expect(after.some((m) => m.content === "second prompt")).toBe(false); // successor snipped
+    const survivor = after.find((m) => m.role === "user");
+    const freshReply = after.find((m) => m.role === "assistant");
+    expect(survivor).toEqual(user1); // same id + byte-identical player line
+    expect(freshReply?.id).not.toBe(oldReply.id);
   });
 
   it("stops an in-flight reply, re-acquires the lock, and completes the rerun", async (t) => {
@@ -952,7 +1064,7 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     expect(await stateAffinity(chat.id)).toBe(12);
   });
 
-  it("degrades to no state rollback (with a diagnostic) when the target is an earlier exchange", async (t) => {
+  it("rejects an earlier exchange with rerun_requires_branch and modifies nothing", async (t) => {
     if (!ready) return t.skip();
     const chat = await createChat(ids.character);
     expect((await statePatch(stateReq(chat.id, { regard: 5 }), ctx(chat.id))).status).toBe(200);
@@ -960,27 +1072,17 @@ describe("POST /api/chats/:chatId — kind=rerun (atomic re-send, data-loss-reru
     const user1 = (await fullRows(chat.id)).find((m) => m.role === "user" && m.content === "first");
     if (!user1) throw new Error("missing first user line");
     await (await chatSend(postReq(chat.id, { content: "second" }), ctx(chat.id))).text();
-    expect((await statePatch(stateReq(chat.id, { regard: 90 }), ctx(chat.id))).status).toBe(200); // distinctive current value
+    expect((await statePatch(stateReq(chat.id, { regard: 90 }), ctx(chat.id))).status).toBe(200);
+    const before = await fullRows(chat.id);
 
-    const infoSpy = vi.spyOn(log, "info");
-    try {
-      const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
-      expect(res.status).toBe(200);
-      await res.text();
+    const res = await chatSend(postReq(chat.id, { kind: "rerun", messageId: user1.id }), ctx(chat.id));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("rerun_requires_branch");
 
-      // Fallback: rerunning an OLDER line (successors span two exchanges) can't use the
-      // one-exchange snapshot, so state is NOT rolled back — it stays at the current 90,
-      // never the stale one-exchange-back value.
-      expect(await stateAffinity(chat.id)).toBe(90);
-      // …and the degrade is announced (resilience.md §8 — fallback AND diagnostic code).
-      const codes = infoSpy.mock.calls.flatMap((call) => {
-        const data = call[2] as { codes?: unknown } | undefined;
-        return Array.isArray(data?.codes) ? (data.codes as string[]) : [];
-      });
-      expect(codes).toContain("chat_state.rerun.no_rollback");
-    } finally {
-      infoSpy.mockRestore();
-    }
+    // No false rollback and no destructive reach-back: transcript and live state
+    // remain exactly as they were until a real branch operation exists.
+    expect(await fullRows(chat.id)).toEqual(before);
+    expect(await stateAffinity(chat.id)).toBe(90);
   });
 });
 
