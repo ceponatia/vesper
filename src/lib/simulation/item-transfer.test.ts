@@ -135,6 +135,29 @@ describe("Gate 1 item-transfer authority seam", () => {
     expect(runtime.getProjection().observations).toHaveLength(2);
   });
 
+  it("rejects a reused command id with a new idempotency key without deriving duplicate event ids", () => {
+    const runtime = createItemTransferBranchRuntime(seedProjection());
+    expect(runtime.submit(transferCommand())).toMatchObject({ status: "accepted" });
+
+    const duplicate = transferCommand({
+      expectedVersion: 1,
+      idempotencyKey: "idem_reverse_with_reused_command_id",
+      payload: {
+        actorId: "actor_mara",
+        itemId: "item_ring",
+        fromContainerId: "table_cafe",
+        toContainerId: "bag_mara",
+      },
+    });
+
+    expect(runtime.submit(duplicate)).toMatchObject({
+      status: "rejected",
+      code: "duplicate_command_id",
+    });
+    expect(runtime.getEvents()).toHaveLength(1);
+    expect(runtime.getProjection().items[0]?.holdingContainerId).toBe("table_cafe");
+  });
+
   it("rebuilds the identical projection from immutable history", () => {
     const runtime = createItemTransferBranchRuntime(seedProjection());
     runtime.submit(transferCommand());
