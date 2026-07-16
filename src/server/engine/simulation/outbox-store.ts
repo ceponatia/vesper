@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { itemTransferredEventSchema } from "@/contracts/simulation/item-transfer";
 import {
   itemTransferFeedConsumerKind,
@@ -20,6 +21,7 @@ import {
 
 const defaultLeaseSeconds = 30;
 const defaultMaxAttempts = 8;
+const priorOutbox = alias(simOutbox, "prior_sim_outbox");
 
 export type ItemTransferOutboxCrashPoint = "after_projection_write";
 
@@ -90,6 +92,19 @@ async function claimNext(database: Db, workerId: string, now: Date, leaseSeconds
           or(
             and(eq(simOutbox.state, "pending"), lte(simOutbox.availableAt, now)),
             and(eq(simOutbox.state, "processing"), sql`${simOutbox.leaseExpiresAt} <= ${now}`),
+          ),
+          notExists(
+            tx
+              .select({ id: priorOutbox.id })
+              .from(priorOutbox)
+              .where(
+                and(
+                  eq(priorOutbox.consumerKind, simOutbox.consumerKind),
+                  eq(priorOutbox.branchId, simOutbox.branchId),
+                  lt(priorOutbox.firstSequence, simOutbox.firstSequence),
+                  ne(priorOutbox.state, "completed"),
+                ),
+              ),
           ),
         ),
       )
