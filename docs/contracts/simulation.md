@@ -1,31 +1,67 @@
 [← Contracts index](README.md)
 
-# Successor simulation contracts (Gate 1)
+# Successor simulation contracts
 
-Gate 1 introduces the first executable authority seam described by
-[engine.spec.md](../developer-notes/engine.spec.md): a `transfer_item` request is validated,
-resolved to one immutable `item_transferred` event, synchronously projected, replayed, and
-compiled into a perspective-safe NarrativeCut.
+The successor engine begins with the executable authority seam described by
+[engine.spec.md](../developer-notes/engine.spec.md). Gate 1 proved that a
+`transfer_item` request can be validated, resolved to one immutable
+`item_transferred` event, synchronously projected, replayed, and compiled into a
+perspective-safe NarrativeCut. Gate 2 target E2.1 promotes the causal primitives into
+reusable production contracts.
 
-The implementation is intentionally narrow and lives in:
+The implementation lives in:
 
-- `src/contracts/simulation/item-transfer.ts` — trust-boundary schemas and types;
+- `src/contracts/simulation/identity.ts` — opaque branded identities and safe integer
+  causal primitives;
+- `src/contracts/simulation/envelopes.ts` — principals and strict command, event, and
+  exhaustive-result schema factories;
+- `src/contracts/simulation/item-transfer.ts` — the first command/event/projection,
+  observation, and NarrativeCut family;
 - `src/lib/simulation/item-transfer.ts` — pure resolver, projector, replay, cut compiler,
   prompt formatter, and the temporary in-memory runtime;
 - `src/server/engine/world-engine.ts` — the adapter into the existing character-chat
   narrator.
 
-## Authority flow
+## Identity and causal primitives
 
-`TransferItemCommand` includes branch identity, expected version, idempotency key,
-principal/controller grants, correlation identity, and the claimed source and destination.
-The resolver checks actor control, current source, access to both holding containers, and
-destination capacity. Rejection and conflict do not create domain history.
+Each identity family is a nominal TypeScript type backed by the same strict opaque string
+shape. IDs are never trimmed, case-folded, resolved from display names, or accepted with
+whitespace. World, branch, character, place, item, action, activity, commitment, journey,
+engagement, command, event, trigger, observation, cut, outbox, and snapshot identities
+therefore cannot be interchanged accidentally after parsing.
 
-An accepted command emits one `ItemTransferredEvent`. The event records the observer IDs
-derived at resolution time under `gate1-perception-v1`; replay therefore does not
-recompute historical visibility from newer state. The synchronous projector moves the
-item to exactly one container and creates one typed observation per eligible witness.
+Story time and branch versions are nonnegative safe integers. Event sequence and schema
+version are positive safe integers. Fractional, negative, infinite, and unsafe values fail
+at the trust boundary.
+
+## Command and event envelopes
+
+Every command family uses one envelope factory: command identity, branch identity,
+optimistic version, idempotency key, principal/controller grants, strict ISO operational
+timestamp, optional requested story boundary, literal type/schema version, correlation
+identity, and typed payload. The principal vocabulary includes player, deterministic NPC
+policy, sparse NPC deliberator, system, director, storyteller, and migration authority.
+
+Every event family uses one envelope factory with world/branch identity, branch sequence,
+story time, ruleset, optional derivation and causation, correlation, stable actor/entity
+reference sets, optional location, operational timestamp, and typed payload. Reference
+sets must be sorted and unique so insertion order cannot become replay behavior.
+
+Command outcomes share an accepted/rejected/conflict union. Accepted ranges cannot run
+backward or repeat an event ID. Rejected public reasons and alternatives remain separate
+from private predicates, while conflicts report the current branch version.
+
+## Item-transfer authority flow
+
+`TransferItemCommand` uses the shared envelope and checks actor control, current source,
+access to both holding containers, and destination capacity. Rejection and conflict do
+not create domain history.
+
+An accepted command emits one `ItemTransferredEvent` using the shared event envelope. The
+event records observer IDs derived at resolution time under `gate1-perception-v1`; replay
+therefore does not recompute historical visibility from newer state. The synchronous
+projector moves the item to exactly one container and creates one typed observation per
+eligible witness.
 
 ## Perspective and narration
 
@@ -41,8 +77,7 @@ and have no command or persistence capability.
 
 ## Deliberate limits
 
-This is an in-memory architecture experiment, not production persistence. It does not yet
-provide crash atomicity, concurrent process locking, durable command results, branch
-forking, scheduling, movement, or live-chat integration. Those stay outside Gate 1 so the
-command/event/projection/perspective contract can be measured and discarded or retained
-before a migration fixes it in place.
+E2.1 defines contracts, not durability. The item-transfer adapter remains in memory and
+does not provide crash atomicity, concurrent process locking, durable command results,
+branch forking, scheduling, movement, or live-chat integration. E2.2 replaces that adapter
+with the minimum PostgreSQL branch transaction while retaining these schemas.
