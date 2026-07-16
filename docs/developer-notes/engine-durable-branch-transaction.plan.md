@@ -78,6 +78,11 @@ For a parsed command:
 The current story second does not advance for a zero-duration item transfer. Operational
 timestamps are stored for audit and never drive resolution.
 
+The typed read seam uses a read-only `REPEATABLE READ` transaction. Branch head, current
+holdings, actors/containers, and immutable history therefore come from one PostgreSQL
+snapshot; it cannot hand an agent or replay tool a projection torn across a concurrent
+commit.
+
 ## Crash and concurrency proof
 
 The integration suite injects failure after event append, holding update, branch advance,
@@ -109,6 +114,7 @@ and runs the E2.2 database suite after the normal repository gate.
 - duplicate command IDs cannot derive a second event on one branch;
 - the same command ID remains legal on an isolated branch;
 - current state can be read back through the Gate 1 typed projection/event contracts;
+- one durable read cannot mix branch, projection, and event rows from different commits;
 - Gate 1 pure behavior and deterministic-path benchmark remain within budget;
 - no model call, scheduler, outbox consumer, or narrator mutation is added.
 
