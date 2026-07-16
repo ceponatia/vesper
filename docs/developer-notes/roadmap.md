@@ -48,6 +48,21 @@ _(nothing — pull the next entry from Next)_
   chat-chip / registered-action fork that currently leaves `meal` and `snack` with no
   meter effects. **Depends on the meter economy landing first** — it is the second use of
   that plan's clock-keyed drift, rhythm `kind`s, and read seam.
+- **World engine refactor — a simulated world under the chat lane** —
+  [world-engine-refactor.plan.md](world-engine-refactor.plan.md) (draft; written 2026-07-16
+  from an owner brainstorm ask). **An umbrella / north-star doc, not a build item** — it is
+  the `world-simulation.plan.md` that [deferred.plan.md](deferred.plan.md) §"Old World-Model
+  Plans" anticipated, re-derived as the chat successor rather than a session-model revival.
+  Nothing is built _as_ this plan; its buildable pieces promote out into their own
+  `<topic>.plan.md`, and the two entries above it are already its first two sequencing
+  steps. Sits here so it stays discoverable next to them. Thesis: **derive the world,
+  remember the people** — weather, season, daylight, ambient temperature, circadian
+  pressure, aging and sleep debt are all pure functions of the story clock, so a derived
+  world needs no tick, no storage, and (the whole point) **no new agent legs** — the
+  catalog is almost entirely deterministic code plus fields on legs that already run. Also
+  names the seams the queued plans keep circling: the salience bus (nobody owns
+  `buildInitiativeCue`'s budget), meter law by class, `SceneFrame`, and LOD as a way to
+  ration the _settle_ — which is what actually scales with roster size, not the sim.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —

@@ -480,7 +480,12 @@ These items were in the roadmap and are holdovers from the world-model system wh
   [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) remains as
   findings (its intake half shipped). A future `world-simulation.plan.md` — or
   the chat-successor equivalent — re-derives what it needs when this becomes
-  active. _Demoted to the bottom 2026-07-14 (owner) with the map, same rationale._
+  active. **Re-derived 2026-07-16 as that chat-successor equivalent:
+  [world-engine-refactor.plan.md](world-engine-refactor.plan.md)** (draft) — chat
+  generalized, not the session model revived. Its thesis is that a *derived* world
+  needs no tick, which is why the session-side remainder named here (movement
+  authority, world-scale simulation) stays parked rather than becoming its
+  prerequisite. _Demoted to the bottom 2026-07-14 (owner) with the map, same rationale._
   _Carry-forward 2026-07-14: the chat-applicable ideas graduated to
   [chat-plans-promises.plan.md](chat-plans-promises.plan.md) (scheduled arrivals
   reborn) and [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) (the
