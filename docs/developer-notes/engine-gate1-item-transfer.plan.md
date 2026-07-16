@@ -1,6 +1,6 @@
 # World-engine Gate 1 — item-transfer authority seam
 
-Status: active — implementation branch `engine-gate1-item-transfer` (started 2026-07-16)
+Status: active — draft PR [#8](https://github.com/ceponatia/vesper/pull/8) ready for review (started 2026-07-16)
 
 Parent: [engine.plan.md](engine.plan.md) · Contract: [engine.spec.md](engine.spec.md)
 
@@ -71,4 +71,14 @@ same command, event, replay, and cut contracts.
 
 ## Evidence log
 
-Pending implementation and CI evidence.
+Initial implementation evidence (CI run 205, 2026-07-16):
+
+- canonical `pnpm verify`: passed — lint, circular-dependency scan, typecheck,
+  173 test files / 2,510 tests, and duplication threshold;
+- Gate 1 contract coverage: nine kernel/runtime scenarios plus one current-narrator
+  integration test;
+- CI benchmark, 4,000 samples after warmup: p50 0.074 ms, p95 0.181 ms,
+  p99 0.347 ms against the predeclared 5.0 ms p95 budget;
+- model calls and tokens added by the deterministic path: zero;
+- architecture verdict: retain the command/event/projection/observation/cut seam for the
+  next slice; do not treat the in-memory adapter as production durability.
