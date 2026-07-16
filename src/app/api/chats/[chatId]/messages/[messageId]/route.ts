@@ -5,7 +5,7 @@ import { jsonError, jsonOk, MESSAGE_CONTENT_MAX, readBody, withUser } from "@/se
 import { characterChatMessages, db } from "@/server/db";
 import { reconcileMessageMemory, reextractEditedReply } from "@/server/engine";
 import { deleteChatUploads } from "@/server/images";
-import { resolvePlayerPersona } from "@/server/players";
+import { resolveChatPersona } from "@/server/players";
 import { loadOwnedChat } from "../../../owned";
 
 type Params = { chatId: string; messageId: string };
@@ -46,7 +46,7 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   if (!updated) return jsonError("not_found", "message not found", 404);
 
   if (updated.role === "assistant") {
-    const player = await resolvePlayerPersona(user.id);
+    const player = await resolveChatPersona({ ownerId: user.id, chatId });
     void reextractEditedReply({
       chatId,
       messageId,

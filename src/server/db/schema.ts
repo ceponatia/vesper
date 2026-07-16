@@ -48,12 +48,15 @@ export const users = pgTable("users", {
   /** Better Auth profile image URL (OAuth avatar); null for password sign-ups. */
   image: text("image"),
   /**
-   * The default player character (player-character.plan.md): a light persona
-   * (StoredPlayerPersona — name + short bio) the player is represented by in
-   * character chat. `{}` ⇒ none set; read back via `resolvePlayerPersona`, which
-   * `parseOr`s it. JSONB so growing the persona never needs a migration.
+   * The persona pre-selected for new chats (persona-library.plan.md slice 6) — the
+   * middle rung of `resolveChatPersona`'s ladder, so one-time setup still works and
+   * the per-chat pick is an override rather than a chore on every new conversation.
+   *
+   * A **soft pointer** (no FK), like `characters.avatar_image_id`: the resolver's
+   * lookup is owner-strict, so a dangling id simply misses and falls through to the
+   * account name rather than erroring. The persona DELETE route clears it anyway.
    */
-  playerPersona: jsonb("player_persona").notNull().default({}),
+  defaultPersonaId: text("default_persona_id"),
   /** Admin plugin ban fields — null/false ⇒ not banned. */
   banned: boolean("banned"),
   banReason: text("ban_reason"),
@@ -237,6 +240,18 @@ export const characterChats = pgTable(
     sceneModel: text("scene_model").notNull().default("reference"),
     /** ChatSceneMemory — the shared imagined setting. */
     sceneMemory: jsonb("scene_memory").notNull().default({}),
+    /**
+     * `ChatPlayerState` (contracts/players/chat-player-state.ts) — **who the player is
+     * in this conversation and what they're wearing** (persona-library.plan.md slices
+     * 7–8). Chat-wide, like every other field in this block: one player, many roster
+     * characters. `{}` ⇒ no pick ⇒ the resolver falls to the owner's default persona.
+     *
+     * ONE jsonb column rather than five, following `scene_memory`'s precedent — field
+     * additions here are never migrations. Parsed with `parseOr` at the read boundary.
+     * It rides the `pre_exchange_scenario` rollback snapshot, so "another take" can't
+     * leave the player undressed by a beat that no longer exists.
+     */
+    playerState: jsonb("player_state").notNull().default({}),
     /** SupportingCastMember[] — recurring named side characters (chat-supporting-cast.plan.md). */
     supportingCast: jsonb("supporting_cast").notNull().default([]),
     /** ChatPlan[] — tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */

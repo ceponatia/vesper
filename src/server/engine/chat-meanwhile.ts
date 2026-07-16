@@ -24,7 +24,7 @@ import { parseOr, parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout } from "../ai";
 import { characterChats, characterChatState, characters, chatParticipants, db, jobs } from "../db";
 import { addFacts, chatScope, type FactDraftInput } from "../memory";
-import { resolvePlayerPersona } from "../players";
+import { resolveChatPersona } from "../players";
 import { log } from "../log";
 import { CHAT_MEANWHILE_MAX_OUTPUT_TOKENS, CHAT_MEANWHILE_TIMEOUT_MS } from "./constants";
 import { loadChatRelationships } from "./chat-relationships";
@@ -134,7 +134,7 @@ export async function runChatMeanwhile(input: z.infer<typeof meanwhilePayloadSch
     .orderBy(chatParticipants.sort);
   if (!roster.length) return;
 
-  const player = await resolvePlayerPersona(input.ownerId);
+  const player = await resolveChatPersona({ ownerId: input.ownerId, chatId: input.chatId });
   const members = await Promise.all(
     roster.map(async (m) => {
       const profile = parseOr(characterProfileSchema, m.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
