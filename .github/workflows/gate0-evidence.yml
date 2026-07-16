@@ -51,7 +51,7 @@ jobs:
         run: pnpm eval:narration --scenarios chat-contrast-grounding --profiles concise --dry-run | tee data/eval/gate0/grounding-prompts.txt
 
       - name: Hash evidence
-        run: find data/eval/gate0 -type f -print0 | sort -z | xargs -0 sha256sum > data/eval/gate0/SHA256SUMS
+        run: find data/eval/gate0 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > data/eval/gate0/SHA256SUMS
 
       - name: Upload no-spend evidence
         uses: actions/upload-artifact@v4
@@ -114,7 +114,7 @@ jobs:
         run: |
           docker compose ps > data/eval/gate0/database/docker-compose-ps.txt
           docker compose logs --no-color > data/eval/gate0/database/docker-compose.log
-          find data/eval/gate0/database -type f -print0 | sort -z | xargs -0 sha256sum > data/eval/gate0/database/SHA256SUMS
+          find data/eval/gate0/database -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > data/eval/gate0/database/SHA256SUMS
 
       - name: Upload database evidence
         if: always()
