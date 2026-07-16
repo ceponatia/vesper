@@ -1540,6 +1540,9 @@ export const simItemHoldings = pgTable(
       name: "sim_item_holdings_container_fk",
       columns: [t.branchId, t.holdingContainerId],
       foreignColumns: [simHoldingContainers.branchId, simHoldingContainers.holdingContainerId],
+      // Drizzle cannot express FK deferrability. Migration 0054 makes this
+      // DEFERRABLE INITIALLY DEFERRED so coherent branch cascades can finish,
+      // while a standalone deletion of a live holding container still fails.
     }).onDelete("no action"),
     index("sim_item_holdings_container_idx").on(t.branchId, t.holdingContainerId),
     check(
