@@ -40,6 +40,8 @@ new model calls, and live-chat mutation. Those begin at E2.2 or later.
 
 - identity families are nominally distinct in TypeScript and retain opaque persisted
   values without trimming or case folding;
+- deterministic derived IDs use unambiguous length-prefixed parts, and event identity
+  includes branch identity;
 - identity whitespace, unsafe/fractional/negative story time, zero event sequence,
   malformed wall-clock metadata, unknown fields, duplicate IDs, and unstable set ordering
   fail schema validation;
@@ -57,9 +59,9 @@ new model calls, and live-chat mutation. Those begin at E2.2 or later.
 Local focused evidence on 2026-07-16:
 
 - simulation TypeScript contract check: passed;
-- E2.1 contract plus Gate 1 runtime suites: 2 files / 16 tests passed;
+- E2.1 contract plus Gate 1 runtime suites: 2 files / 17 tests passed;
 - Gate 1 behavior remains unchanged in the focused suite;
-- Gate 1 deterministic-path benchmark: p95 0.480 ms across 4,000 local samples,
+- Gate 1 deterministic-path benchmark: p95 0.511 ms across 4,000 local samples,
   below the unchanged 5.0 ms budget;
 - model calls added: zero.
 
