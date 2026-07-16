@@ -84,6 +84,7 @@ import {
   type ChatPulse,
   type ChatPulseTrace,
   type ChatSceneMemory,
+  type PersonaProfile,
   type ChatDrive,
   type ChatSkipAmount,
   type DiagnosticSink,
@@ -112,7 +113,7 @@ import { newId } from "@/lib/ids";
 import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/turns/agent-failure";
 import { agentModelId, generateChecked, isDemoMode, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
-import { healOutfitMarker, loadChatWardrobe, wardrobeDescriptors } from "./chat-wardrobe";
+import { healOutfitMarker, loadChatWardrobe, playerWornIds, wardrobeDescriptors } from "./chat-wardrobe";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
 import {
   applyFeelingProposal,
@@ -1379,6 +1380,13 @@ interface OutfitProposal {
   added: readonly string[];
 }
 
+/** The player's outfit proposal (persona-library slice 8) — the same, minus `exposed` (always computed). */
+interface PlayerOutfitProposal {
+  description: string;
+  removed: readonly string[];
+  added: readonly string[];
+}
+
 /**
  * Fold an archivist outfit proposal into a structured-wardrobe state patch (chat-wardrobe-parity).
  * Three cases, all rollback-safe (the patched columns ride `storedChatStateSchema`):
@@ -1402,7 +1410,9 @@ async function foldOutfitProposal(args: {
   if (proposal.description) {
     const preset = matchOutfitPresetInText(args.profile, proposal.description);
     if (preset && preset.items.length > 0) {
-      return { wornItemIds: preset.items, outfitPresetId: preset.id, outfit: "", outfitExposed: false };
+      // Copied, not aliased: this becomes the chat's mutable worn list, and the preset's
+      // array belongs to the library profile (found via the player twin's test).
+      return { wornItemIds: [...preset.items], outfitPresetId: preset.id, outfit: "", outfitExposed: false };
     }
     // No matching preset — an ad-hoc whole look falls back to free text (ruled).
     return { wornItemIds: [], outfitPresetId: "", outfit: proposal.description, outfitExposed: proposal.exposed };
@@ -1423,6 +1433,60 @@ async function foldOutfitProposal(args: {
     sink: args.sink,
   });
   return { wornItemIds: result.wornIds, outfit: result.overlay };
+}
+
+/**
+ * The same fold for the **PLAYER's** clothing (persona-library.plan.md slice 8) — "she
+ * tugs your shirt over your head" is a state change, not just prose.
+ *
+ * Reuses `applyWornGarmentChanges` verbatim: the reducer is already generic over
+ * `{wornIds, worn, pool}` and knows nothing about characters, so the player needs no
+ * fork of the matching rules, the caps, or the unmatched-garment diagnostics.
+ *
+ * Three differences from the character twin above:
+ * - The pool is the **persona's** wardrobe, and "what's on now" comes from
+ *   `playerWornIds` — so a first-ever change resolves against the default preset the
+ *   player is implicitly wearing rather than an empty list.
+ * - Every write sets `seeded: true`: once the fiction has moved the wardrobe, an empty
+ *   list means *stripped*, not *not-dressed-yet*.
+ * - No `exposed` — the player's exposure is always computed from coverage.
+ *
+ * Returns `{}` (no change) for an empty proposal or when there is no persona to dress.
+ */
+async function foldPlayerOutfitProposal(args: {
+  persona: PersonaProfile | undefined;
+  ownerId: string;
+  playerState: ChatPlayerState;
+  proposal: PlayerOutfitProposal | undefined;
+  sink?: DiagnosticSink;
+}): Promise<Partial<ChatPlayerState>> {
+  const { proposal, persona } = args;
+  if (!proposal || !persona) return {};
+  if (proposal.description) {
+    const preset = matchOutfitPresetInText(persona, proposal.description);
+    if (preset && preset.items.length > 0) {
+      return { wornItemIds: [...preset.items], outfitPresetId: preset.id, overlay: "", seeded: true };
+    }
+    // No matching preset — an ad-hoc whole look rides the overlay text (the ruling the
+    // character path follows), and clears the structured list it replaces.
+    return { wornItemIds: [], outfitPresetId: "", overlay: proposal.description, seeded: true };
+  }
+  if (proposal.removed.length === 0 && proposal.added.length === 0) return {};
+
+  // What the player has on RIGHT NOW — the default preset until something has changed it.
+  const wornIds = playerWornIds(args.playerState, persona);
+  const worn = await loadChatWardrobe(args.ownerId, wornIds, args.sink);
+  const poolIds = [...new Set(persona.outfits.flatMap((p) => p.items))].filter((id) => !wornIds.includes(id));
+  const pool = poolIds.length ? await loadChatWardrobe(args.ownerId, poolIds, args.sink) : [];
+  const result = applyWornGarmentChanges({
+    wornIds,
+    worn: wardrobeDescriptors(worn),
+    pool: wardrobeDescriptors(pool),
+    change: { removed: proposal.removed, added: proposal.added },
+    overlay: args.playerState.overlay,
+    sink: args.sink,
+  });
+  return { wornItemIds: result.wornIds, overlay: result.overlay, seeded: true };
 }
 
 /**
@@ -1465,6 +1529,13 @@ export async function finalizeChatState(input: {
   profile: CharacterProfile;
   characterName: string;
   playerName: string;
+  /**
+   * The player's persona sheet (persona-library.plan.md slice 8) — the wardrobe pool the
+   * archivist's `playerOutfit` deltas resolve against. Absent when the chat resolved to
+   * the bare account name (no persona), in which case the player has no clothes to move
+   * and the fold is a no-op.
+   */
+  playerPersona?: PersonaProfile;
   driftedState: ChatState;
   now: Date;
   exchange: { player: string; assistant: string };
@@ -1714,6 +1785,18 @@ export async function finalizeChatState(input: {
     sink: input.sink,
   });
 
+  // The PLAYER's clothing (persona-library.plan.md slice 8) — the same fold against the
+  // persona's wardrobe. Chat-wide, so it lands on the scenario (and therefore on the
+  // "another take" rollback snapshot) rather than the per-character state row. No
+  // persona ⇒ no body to dress ⇒ a no-op.
+  const playerOutfitPatch = await foldPlayerOutfitProposal({
+    persona: input.playerPersona,
+    ownerId: input.ownerId,
+    playerState: input.scenario.playerState,
+    proposal: archivist.value?.playerOutfit,
+    sink: input.sink,
+  });
+
   // The familiarity ratchet (owner ruling: moments + time). One trickle tick per
   // exchange (bounded by the acquainted ceiling), plus a moment tick when the
   // archivist recorded durable facts — a real disclosure or shared experience.
@@ -1880,7 +1963,15 @@ export async function finalizeChatState(input: {
     input.chatId,
     // Both one-shot notes clear together: the exchange that rendered the skip
     // note also rendered the meanwhile note (chat-offscreen-life).
-    { ...input.scenario, sceneMemory, supportingCast, plans, pendingSkipNote: "", pendingMeanwhileNote: "" },
+    {
+      ...input.scenario,
+      sceneMemory,
+      supportingCast,
+      plans,
+      playerState: { ...input.scenario.playerState, ...playerOutfitPatch },
+      pendingSkipNote: "",
+      pendingMeanwhileNote: "",
+    },
     input.promptMessageId,
   );
   // The rollback anchors ride targeted follow-up UPDATEs (never the shared upsert

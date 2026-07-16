@@ -27,7 +27,7 @@ import { characterChats, characterChatMessages, chatParticipants, db, images } f
 import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
 import { log } from "../log";
 import { QueryEmbeddings } from "../memory";
-import { resolveChatPersona } from "../players";
+import { resolveChatPersona, type PlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { buildActionBeatCue } from "./chat-action-beat";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
@@ -79,7 +79,7 @@ import {
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
-import { resolveChatWardrobe, type ResolvedChatWardrobe } from "./chat-wardrobe";
+import { resolveChatWardrobe, resolvePlayerWardrobe, type ResolvedChatWardrobe } from "./chat-wardrobe";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
 import {
   CHARACTER_CHAT_SUMMARIZE_AT,
@@ -957,13 +957,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // rendered garment phrase + coverage-computed exposure — the ONE seam the prompt, scene
     // image, and look key share (reusing the session renderers, never re-forking them).
     const wardrobe = await resolveChatWardrobe(driftedState, owner, profile, sink);
+    // The player's own wardrobe (persona-library.plan.md slice 8) — same seam, so the
+    // narrator knows what it can take off them. Empty without a persona.
+    const playerWardrobe = await resolvePlayerWardrobe(scenario.playerState, owner, player.profile, sink);
 
     const promptInput: CharacterChatPromptInput = {
       name: characterName,
       profile,
       priorSummary: summaryState?.summary,
       memory,
-      player: { name: player.name, persona: player.persona },
+      player: playerPromptSlice(player, playerWardrobe),
       state: promptStateSlice(driftedState, scenario, wardrobe, profile),
       opening,
       narrationShape: narrationShapeId("chat"),
@@ -1248,6 +1251,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           profile,
           characterName,
           playerName: player.name,
+          // The wardrobe pool the archivist's playerOutfit deltas resolve against;
+          // undefined when the chat has no persona (the account-name fallback rung).
+          playerPersona: player.profile,
           driftedState: ensembleActive ? { ...driftedState, quietExchanges: primaryQuiet } : driftedState,
           now,
           exchange: { player: agentPlayerContent, assistant: full },
@@ -1763,6 +1769,24 @@ export async function reextractEditedReply(args: {
 }
 
 /**
+ * The prompt builder's player slice (persona-library.plan.md slice 8): the resolved persona
+ * plus what they have on right now. Built in one place so the live turn and the dev prompt
+ * preview can't drift — and so `title` has exactly one shape to be absent from.
+ */
+function playerPromptSlice(
+  player: PlayerPersona,
+  wardrobe: { garments: string },
+): NonNullable<CharacterChatPromptInput["player"]> {
+  return {
+    name: player.name,
+    ...(player.persona === undefined ? {} : { persona: player.persona }),
+    ...(wardrobe.garments.trim() ? { wearing: wardrobe.garments } : {}),
+    ...(player.profile?.voice?.trim() ? { voice: player.profile.voice } : {}),
+    ...(player.profile?.intimacy?.trim() ? { intimacy: player.profile.intimacy } : {}),
+  };
+}
+
+/**
  * The prompt builder's per-turn state slice from a drifted ChatState + the chat-wide scenario.
  * The `wardrobe` (chat-wardrobe-parity) supplies the RENDERED garment phrase + coverage-computed
  * exposure — the narrator sees the actual worn garments (subtype-led, occlusion-filtered), and
@@ -1853,6 +1877,7 @@ export async function previewChatPrompt(input: {
   const summaryState = await loadChatSummary(input.chatId);
   const player = await resolveChatPersona({ ownerId: owner, chatId: input.chatId });
   const wardrobe = await resolveChatWardrobe(state, owner, profile, sink);
+  const playerWardrobe = await resolvePlayerWardrobe(scenario.playerState, owner, player.profile, sink);
   const memory = await retrieveChatMemory({
     groupId: input.memoryGroupId,
     queries: state.memoryQueries,
@@ -1864,7 +1889,7 @@ export async function previewChatPrompt(input: {
     profile,
     priorSummary: summaryState?.summary,
     memory,
-    player: { name: player.name, persona: player.persona },
+    player: playerPromptSlice(player, playerWardrobe),
     state: promptStateSlice(state, scenario, wardrobe, profile),
     narrationShape: narrationShapeId("chat"),
   });

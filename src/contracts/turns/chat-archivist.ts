@@ -133,6 +133,42 @@ export const chatArchivistSchema = z.object({
     .catch({ description: "", exposed: false, removed: [], added: [] })
     .default({ description: "", exposed: false, removed: [], added: [] }),
   /**
+   * The same, for the **PLAYER's** clothing (persona-library.plan.md slice 8).
+   *
+   * ONE field covers both directions, because the archivist reads the whole exchange —
+   * the player's own line ("I pull my shirt off") and the reply ("she tugs your shirt
+   * over your head") are the same event to it, and both must move the same state.
+   *
+   * Deliberately **no `exposed`**: the player's wardrobe is structured-only, so exposure
+   * is always computed from worn coverage. A manual flag here would be a hole through
+   * the scene-image gate that decides whether the viewer's anatomy renders.
+   *
+   * Resolved against the PERSONA's wardrobe by `applyWornGarmentChanges` — the same pure
+   * reducer the character side uses, which is already generic over `{wornIds, worn, pool}`
+   * and knows nothing about characters. `{}` is the no-change no-op (the common case).
+   */
+  playerOutfit: z
+    .object({
+      /** A WHOLE-outfit swap for the player — the complete current look, never a delta. */
+      description: z
+        .string()
+        .catch("")
+        .default("")
+        .transform((s) => s.trim()),
+      removed: z
+        .array(z.string().trim().min(1))
+        .catch([])
+        .default([])
+        .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
+      added: z
+        .array(z.string().trim().min(1))
+        .catch([])
+        .default([])
+        .transform((g) => g.slice(0, CHAT_ARCHIVIST_MAX_WORN_CHANGES)),
+    })
+    .catch({ description: "", removed: [], added: [] })
+    .default({ description: "", removed: [], added: [] }),
+  /**
    * Drive updates (character-drives.plan.md): progress/reveal/resolution on the
    * character's EXISTING drives (matched by `want` text — unmatched entries drop).
    * `revealed` = the character spoke a secret drive aloud to the player THIS
@@ -224,6 +260,7 @@ export function degradedChatArchivist(): ChatArchivist {
     openLoops: [],
     scene: { places: [] },
     outfit: { description: "", exposed: false, removed: [], added: [] },
+    playerOutfit: { description: "", removed: [], added: [] },
     driveUpdates: [],
     presence: [],
     cast: [],
@@ -258,6 +295,11 @@ export type ChatMemoryScribe = z.infer<typeof chatMemoryScribeSchema>;
 export const chatContinuitySchema = chatArchivistSchema.pick({
   scene: true,
   outfit: true,
+  // The player's wardrobe is chat-wide, so it rides the SHARED continuity leg and is
+  // deliberately absent from `chatPersonalNotesSchema` below — that pass runs once per
+  // ensemble member, and several members proposing changes to the one player's clothes
+  // would fight each other.
+  playerOutfit: true,
   attributeChanges: true,
   presence: true,
   cast: true,

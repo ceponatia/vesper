@@ -170,7 +170,9 @@ function ScenarioForm({
     // the new persona's default outfit preset on the next resolve (resolveChatWardrobe),
     // exactly as a fresh chat does.
     if (personaId !== snapshot.playerState.personaId) {
-      patch.playerState = { personaId, wornItemIds: [], outfitPresetId: "", overlay: "" };
+      // `seeded: false` is the load-bearing part — it re-arms the default-preset seed, so
+      // the new persona turns up dressed in their own clothes rather than naked.
+      patch.playerState = { personaId, wornItemIds: [], seeded: false, outfitPresetId: "", overlay: "" };
     }
     setSaving(true);
     const result = await chatsApi.editState(chatId, patch);
