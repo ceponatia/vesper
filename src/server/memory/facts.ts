@@ -23,6 +23,7 @@ import {
 import { fuseByRrf, nonBlankQueries } from "./fusion";
 import type { QueryEmbeddings } from "./query-embeddings";
 import { memoryScopeValues, memoryScopeWhere, scopeLabel, scopeSessionId, type MemoryScope } from "./scope";
+import { witnessEligibilityWhere, type WitnessEligibility } from "./witness-eligibility";
 
 const stringArraySchema = z.array(z.string());
 
@@ -295,7 +296,12 @@ export async function addFacts(
  * The dev inspector's `listFactsForScope` and the pulse are separate reads — they still see
  * every channel.
  */
-async function queryFactCandidates(scope: MemoryScope, vec: string, limit: number): Promise<FactHit[]> {
+async function queryFactCandidates(
+  scope: MemoryScope,
+  vec: string,
+  limit: number,
+  eligibility?: WitnessEligibility,
+): Promise<FactHit[]> {
   return db()
     .select({
       id: facts.id,
@@ -314,6 +320,7 @@ async function queryFactCandidates(scope: MemoryScope, vec: string, limit: numbe
         eq(facts.embedder, currentEmbedder()),
         isNotNull(facts.embedding),
         inArray(facts.channel, [...NARRATOR_VISIBLE_FACT_CHANNELS]),
+        witnessEligibilityWhere(facts.witnessedBy, eligibility),
       ),
     )
     .orderBy(sql`${facts.embedding} <=> ${vec}::vector`)
@@ -329,7 +336,11 @@ async function queryFactCandidates(scope: MemoryScope, vec: string, limit: numbe
  * channels (slice 6): a pinned fact filed on a non-perceived channel still never
  * reaches the narrator (the fence applies uniformly, force-include notwithstanding).
  */
-async function selectPinnedFacts(scope: MemoryScope, vec: string | null): Promise<FactHit[]> {
+async function selectPinnedFacts(
+  scope: MemoryScope,
+  vec: string | null,
+  eligibility?: WitnessEligibility,
+): Promise<FactHit[]> {
   const score = vec
     ? sql<number>`coalesce(case when ${facts.embedder} = ${currentEmbedder()} then 1 - (${facts.embedding} <=> ${vec}::vector) end, 0)`
     : sql<number>`0`;
@@ -350,6 +361,7 @@ async function selectPinnedFacts(scope: MemoryScope, vec: string | null): Promis
         eq(facts.status, "active"),
         eq(facts.pinned, true),
         inArray(facts.channel, [...NARRATOR_VISIBLE_FACT_CHANNELS]),
+        witnessEligibilityWhere(facts.witnessedBy, eligibility),
       ),
     )
     .orderBy(desc(facts.createdAt))
@@ -368,6 +380,7 @@ export async function retrieveFacts(
   queryText: string,
   limit = FACT_RETRIEVAL_LIMIT,
   sink?: DiagnosticSink,
+  eligibility?: WitnessEligibility,
 ): Promise<FactHit[]> {
   const query = queryText.trim();
   if (!query || limit <= 0) return [];
@@ -384,9 +397,9 @@ export async function retrieveFacts(
   }
 
   const vec = embedded ? toVectorLiteral(embedded.vector) : null;
-  const pinnedHits = await selectPinnedFacts(scope, vec);
+  const pinnedHits = await selectPinnedFacts(scope, vec, eligibility);
   const pinnedIds = new Set(pinnedHits.map((h) => h.id));
-  const candidates = vec ? await queryFactCandidates(scope, vec, limit) : [];
+  const candidates = vec ? await queryFactCandidates(scope, vec, limit, eligibility) : [];
   const scored = candidates.filter((c) => !pinnedIds.has(c.id) && (c.pinned || c.score >= FACT_MIN_SCORE));
   const hits = [...pinnedHits, ...scored];
 
@@ -396,6 +409,7 @@ export async function retrieveFacts(
     query: query.slice(0, 300),
     minScore: FACT_MIN_SCORE,
     pinnedCount: pinnedHits.length,
+    viewpointId: eligibility?.viewpointId ?? null,
     candidates: candidates.map((h) => ({ id: h.id, subjectName: h.subjectName, score: round(h.score) })),
     hitIds: hits.map((h) => h.id),
   });
@@ -421,6 +435,7 @@ export async function retrieveFactsFused(
    * one batch serves them all. Absent ⇒ this leg embeds its own queries, exactly as before.
    */
   embeddings?: QueryEmbeddings,
+  eligibility?: WitnessEligibility,
 ): Promise<FusedFactHit[]> {
   const usable = nonBlankQueries(queries);
 
@@ -445,13 +460,13 @@ export async function retrieveFactsFused(
   const lists = await Promise.all(
     pairs.map(async (pair) => ({
       query: pair.query,
-      hits: await queryFactCandidates(scope, pair.vector, limit),
+      hits: await queryFactCandidates(scope, pair.vector, limit, eligibility),
     })),
   );
   const fused = fuseByRrf(lists);
   const fusedById = new Map(fused.map((f) => [f.hit.id, f]));
 
-  const pinnedHits: FusedFactHit[] = (await selectPinnedFacts(scope, null)).map((row) => {
+  const pinnedHits: FusedFactHit[] = (await selectPinnedFacts(scope, null, eligibility)).map((row) => {
     const f = fusedById.get(row.id);
     return { ...row, score: f?.bestScore ?? 0, sources: f?.sources ?? [] };
   });
@@ -471,6 +486,7 @@ export async function retrieveFactsFused(
     minScore: FACT_MIN_SCORE,
     rrfK: RRF_K,
     pinnedCount: pinnedHits.length,
+    viewpointId: eligibility?.viewpointId ?? null,
     candidates: fused.map((f) => ({
       id: f.hit.id,
       subjectName: f.hit.subjectName,
