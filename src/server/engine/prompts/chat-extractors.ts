@@ -40,6 +40,7 @@ export type ChatExtractorFieldKey =
   | "memoryQueries"
   | "scene"
   | "outfit"
+  | "playerOutfit"
   | "attributeChanges"
   | "presence"
   | "cast"
@@ -164,6 +165,20 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
         `   • WHOLE change (dressed for the day, changed outfits): "description" = the complete current look as a FULL replacement (never a delta), naming their outfit if it matches one ("her work clothes", "her date-night dress"); "exposed": true when intimate areas are bared.`,
         `   • SINGLE-garment change (a piece comes off or goes on mid-scene): "removed": ["<the garment taken off, e.g. 'her jacket'>"] and/or "added": ["<the garment put on>"] — short garment phrases, one per piece. Use this for "she slips off her jacket" / "he pulls on a hoodie" rather than restating the whole look.`,
         `   Shape: { "description": "...", "exposed": <bool>, "removed": [...], "added": [...] }. Undressing counts: either describe what remains via "description" (with "exposed": true when it bares them) or list the pieces in "removed".`,
+      ].join("\n"),
+  },
+
+  playerOutfit: {
+    key: "playerOutfit",
+    empty: {},
+    instruction: (ctx) =>
+      [
+        `"playerOutfit": the same, but for what ${ctx.playerName} — the PLAYER — is wearing, only when this exchange CHANGED it. {} when nothing changed (the common case).`,
+        `   It does not matter WHO did it: ${ctx.playerName} taking their own shirt off and ${ctx.characterName} pulling it over their head are the same change, and both belong here. Record it whether the player wrote it or ${ctx.characterName} did.`,
+        `   • WHOLE change: "description" = the player's complete current look as a FULL replacement (never a delta).`,
+        `   • SINGLE-garment change: "removed": ["<the garment taken off, e.g. 'your shirt'>"] and/or "added": ["<the garment put on>"] — short garment phrases, one per piece. Prefer this for a piece coming off mid-scene.`,
+        `   Shape: { "description": "...", "removed": [...], "added": [...] }. There is no "exposed" here — the player's exposure is worked out from what they have on.`,
+        `   Only ${ctx.playerName}'s OWN clothing. ${ctx.characterName}'s goes in "outfit" above.`,
       ].join("\n"),
   },
 
@@ -506,8 +521,8 @@ const LEGS: Record<ChatExtractorLegId, ExtractorLeg> = {
   continuity: {
     id: "continuity",
     role: (ctx) =>
-      `You are the continuity tracker for a private in-character chat. After each exchange you read the player's latest message and the reply, then record what the fiction CHANGED about the world — where they are, what ${ctx.characterName} is wearing, how they look, who is in the scene. You track changes only: an unchanged world produces empty fields, which is the common case.`,
-    fields: ["scene", "outfit", "attributeChanges", "presence", "cast"],
+      `You are the continuity tracker for a private in-character chat. After each exchange you read the player's latest message and the reply, then record what the fiction CHANGED about the world — where they are, what ${ctx.characterName} and ${ctx.playerName} are wearing, how they look, who is in the scene. You track changes only: an unchanged world produces empty fields, which is the common case.`,
+    fields: ["scene", "outfit", "playerOutfit", "attributeChanges", "presence", "cast"],
   },
 
   // The character tracker: the character's own thread through the exchange.

@@ -7,6 +7,7 @@ import {
   clothingLayerSchema,
   itemDefinitionSchema,
   itemKindSchema,
+  personaProfileSchema,
   socialReactionCardExtrasSchema,
 } from "@/contracts";
 
@@ -204,3 +205,28 @@ export const socialCardPatchSchema = z.object({
   visibility: visibilitySchema.optional(),
 });
 export type SocialCardPatchBody = z.infer<typeof socialCardPatchSchema>;
+
+// --- personas ----------------------------------------------------------------
+
+/**
+ * The library label — unique per owner (`personas_owner_title_unique`), which is the
+ * whole reason it exists: it lets `name` repeat across personas. Shorter than
+ * `nameSchema` because it is a card label, not prose (persona-library.plan.md).
+ */
+export const personaTitleSchema = z.string().trim().min(1).max(80);
+
+export const personaCreateSchema = z.object({
+  title: personaTitleSchema,
+  name: nameSchema,
+  profile: personaProfileSchema.default(() => personaProfileSchema.parse({})),
+  tags: tagsSchema.default([]),
+});
+export type PersonaCreateBody = z.infer<typeof personaCreateSchema>;
+
+export const personaPatchSchema = z.object({
+  title: personaTitleSchema.optional(),
+  name: nameSchema.optional(),
+  profile: partialWithoutDefaults(personaProfileSchema).optional(),
+  tags: tagsSchema.optional(),
+});
+export type PersonaPatchBody = z.infer<typeof personaPatchSchema>;

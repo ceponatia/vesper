@@ -33,34 +33,6 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Next (queued)
 
-- **Persona library — the player as a first-class library entity** —
-  [persona-library.plan.md](persona-library.plan.md) (draft; planned 2026-07-16 from an
-  owner brainstorm ask). Promotes the player from the single inline
-  `users.playerPersona` blob to a **library entity**: many saved personas, each with a
-  body (attributes from the existing registry), an equippable wardrobe, and a bio, picked
-  per chat. `(owner_id, title)` UNIQUE so `name` can repeat across personas; title is
-  structurally barred from prompts (it is simply not a field on the resolver's return
-  shape). No personality/demeanor/voice-anchors — the narrator never writes the player's
-  lines. Reuses the character contracts through ONE adapter
-  (`personaToCharacterProfile`), so the wardrobe seam, attribute picker, outfit editor,
-  and exposure classifier all work unforked. The player's clothing comes off when either
-  side narrates it, via a `playerOutfit` archivist field folding through the existing
-  `applyWornGarmentChanges` reducer. Supersedes
-  [finished/player-character.plan.md](finished/player-character.plan.md), whose Open
-  questions called this shot; carries a migration + a backfill that retires the blob.
-- **Scene POV embodiment — the player's own body in frame** —
-  [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) (draft; planned 2026-07-16
-  from the same ask). **Supplemental to the persona library** — slices 2–4 consume its
-  body attributes and worn coverage; slices 0–1 are independent and shippable now. Scene
-  images stop pretending the player has no body: POV shots including the viewer's own
-  arms/legs/torso — and genitals only when coverage says bare, gated by **code, not the
-  composer** (`exposedRegions(playerWorn).pelvis === "covered"` makes the part
-  structurally unavailable). Third-person-man leakage is fought with a person-count
-  assertion + frame geometry rather than negatives, which anchor (the same lesson the "no
-  camera" scar recorded). Slice 0 is the standalone **blush/flushed scrub** (owner report:
-  renders as clown makeup) — `visualStateNote` says "flushed" in 3 of 5 phrases, plus a
-  composer echo path from the narrator's arousal hint. Chat lane only; the session lane
-  keeps its absolute rule and its tests.
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
   [spec](chat-meter-economy.spec.md) (planned 2026-07-15 from an owner report after the
@@ -74,7 +46,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   second wind, and collapse at ~40h all emerge, with no hardcoded hour), a pulse `intimacy`
   read with a climax reset + afterglow, arousal regraded to body facts rather than a
   talk-switch, and rhythm-driven off-screen self-care that retires D14. Carries migration
-  0051 (+ a backfill).
+  0052 (+ a backfill).
 - **Chat body needs — satiation, hydration, and needs that push** —
   [chat-body-needs.plan.md](chat-body-needs.plan.md) (draft; planned 2026-07-16 from the
   owner's PM notes on the meter-economy plan). The three asked-for meters plus the
@@ -134,6 +106,34 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   command → immutable event → synchronous projection → observer-filtered NarrativeCut →
   existing narrator, with optimistic versioning, idempotency, deterministic replay,
   state-free rerender, duplicate-command defense, zero model calls, and a 0.233 ms CI p95.
+- **Persona library — the player as a first-class library entity** —
+  [persona-library.plan.md](persona-library.plan.md) — 2026-07-16 — the player graduates
+  from a single inline blob to a real library entity you pick per chat: `personas`
+  (migration 0051, `(owner_id, title)` UNIQUE so `name` can repeat), a narrow
+  `PersonaProfile` + the one `personaToCharacterProfile` adapter that buys the wardrobe
+  seam, attribute picker, outfit editor and exposure classifier unforked, CRUD, the
+  `/personas` tab + editor, the three-rung `resolveChatPersona` ladder (0052 backfills
+  the blob into a real row, 0053 drops it), the "Playing as" pick, and a **player
+  wardrobe the fiction can undress** — `playerOutfit` on the shared continuity leg folds
+  through the existing `applyWornGarmentChanges` against the persona's pool, rides the
+  "another take" rollback, and is structured-only so exposure is always coverage-computed.
+  Title is barred from prompts *structurally* — it isn't a field on the resolver's shape.
+  **Unblocks** [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) slices 2–4.
+- **Scene POV embodiment — the player's own body in frame** —
+  [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) — 2026-07-16 — chat-lane
+  scene images stop pretending the player has no body: their hands/arms/lap/legs enter frame
+  when the narration puts them there, and their genitals only when the shot already looks
+  down their own body **and** coverage reads bare **and** the route is uncensored — three
+  conditions, two of them code rather than judgment (`exposedRegions(playerWorn).pelvis`
+  makes the part structurally unavailable; the composer has no intimate vocabulary at all).
+  Third-person leakage is fought with a **positive person-count assertion + frame geometry**,
+  never negatives, which anchor on exactly what they forbid (the "no camera" scar). Viewer
+  parts are a closed registry — the phrasing *is* the feature. Also slice 0, the standalone
+  **blush scrub**: "flushed" rendered as stage blusher, and `visualStateNote` said it in 3
+  of 5 phrases; the narrator's arousal hint echoes it through the composer, so a rule **and**
+  `scrubBlush` close it. Session lane untouched and byte-identical, pinned by test.
+  **Unverified against a live model** — the eval sweep + third-person-contamination metric
+  (plan §Testing) is the next step.
 - **Chat off-screen life — the cast moves between visits** —
   [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) · spec
   [chat-offscreen-life.spec.md](chat-offscreen-life.spec.md) — 2026-07-15 — the chat lane's
