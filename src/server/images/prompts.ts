@@ -527,6 +527,7 @@ export const SCENE_COMPOSER_SYSTEM = [
   '- Wardrobe: each character\'s "visible wardrobe" line is the authoritative outfit state; never infer clothing from the narration — prose lies.',
   "- setting: the current location's appearance and atmosphere as seen from where the player stands.",
   "- lighting and mood: match the time of day and the emotional tone of the recent narration.",
+  '- NEVER describe skin colour or reddening in any field — no "flushed", "blushing", "rosy", "red-faced", "colour rising". An image model paints those as makeup, not feeling. State the same beat as physiology instead: eyes bright or heavy-lidded, lips parted, breath shallow, a sheen of sweat, damp hairline, loosened posture. The narration you are given WILL say "flushed" — translate it, never copy it.',
   "- Keep each field to one or two short sentences.",
 ].join("\n");
 
@@ -885,6 +886,35 @@ export function scrubPlayerFromAction(action: string): string {
 }
 
 /**
+ * Skin-colour words an image model paints as COSMETICS, not physiology
+ * (scene-pov-embodiment.plan.md slice 0, owner report): "flushed"/"blushing" comes
+ * back as stage blusher — a clown-makeup face. Deliberately the state-language
+ * family only; `skin.undertone: rosy` is an *authored identity attribute* and is
+ * never scrubbed (the registry is the author's intent, not the composer's slip).
+ */
+const BLUSH_WORDS = /\b(blush\w*|flush\w*|rosy|ruddy|reddening|red-faced|pink-cheeked)\b/i;
+
+/**
+ * Deterministic backstop for skin-colour words in composer-authored text (pose,
+ * activity, mood). `SCENE_COMPOSER_SYSTEM` also rules against them, but the rule
+ * alone is not trustworthy — the narrator's own arousal hint says "flushed skin"
+ * (contracts/meters/registry.ts), so the composer reads it in the recent narration
+ * and hands it straight back. Same shape as {@link scrubPlayerFromAction}: drop the
+ * offending clause whole and keep the rest, since the surrounding beats ("eyes
+ * bright", "breath shallow") are the physiology we actually wanted. The
+ * deterministic sibling is `visualStateNote` (images/character-scene.ts) — keep the
+ * two in agreement.
+ */
+export function scrubBlush(text: string): string {
+  if (!BLUSH_WORDS.test(text)) return text;
+  return text
+    .split(/[;,]/)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0 && !BLUSH_WORDS.test(clause))
+    .join(", ");
+}
+
+/**
  * Deterministic focal pick (demo mode / clamp fallback): the present NPC
  * mentioned latest in the newest narration, else the first roster entry,
  * else "" (empty room — location-only shot).
@@ -964,7 +994,10 @@ export function resolveScenePlan(
       spec.setting.trim() ||
       [context.locationName, context.locationDescription].filter(Boolean).join(" — ").slice(0, 300),
     lighting: spec.lighting,
-    mood: spec.mood,
+    // Mood is the composer's other free-text field that reaches the render prompt
+    // verbatim ("flushed, intimate") — scrubbed like pose/activity. Lighting is about
+    // light, not skin, so it is left alone.
+    mood: scrubBlush(spec.mood),
   };
 }
 
@@ -973,8 +1006,9 @@ function characterSpec(entry: ScenePresentCharacter, action: string): SceneChara
     name: entry.name,
     ...(entry.species ? { species: entry.species } : {}),
     // The player scrub covers the composer's text AND the posture/activity fallback
-    // (session state can carry player-referencing activity phrases too).
-    action: scrubPlayerFromAction(action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; ")),
+    // (session state can carry player-referencing activity phrases too); the blush
+    // scrub then strips skin-colour words out of whatever survived.
+    action: scrubBlush(scrubPlayerFromAction(action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; "))),
     // Forced from occlusion-filtered state regardless of anything the model said; a free-text
     // override (character chat — no equippable wardrobe) wins when present.
     outfitSummary: entry.outfitDescription ?? wardrobeOutfitSummary(entry.wornVisible),
