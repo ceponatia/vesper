@@ -592,6 +592,9 @@ async function assemblePreTurn(
     preTurnRetrieve({
       session: { id: bundle.session.id },
       world: { id: bundle.world.id },
+      // Gate 0 witness spike: only the session player receives narrator recall.
+      // Empty-witness authored/global rows remain eligible.
+      viewpointId: player?.id,
       queries: bundle.brief.memoryQueries,
       input: body.input,
       sceneCtx: {
@@ -602,7 +605,12 @@ async function assemblePreTurn(
       sink,
     }),
     recentTurnHistory(bundle.session.id, NARRATIVE_HISTORY_TURNS),
-    recentEpisodes(sessionScope(bundle.session.id), EPISODE_WINDOW, sink),
+    recentEpisodes(
+      sessionScope(bundle.session.id),
+      EPISODE_WINDOW,
+      sink,
+      player ? { viewpointId: player.id } : undefined,
+    ),
     activeRelationshipFacts(bundle.session.id),
     intakeLeg,
   ]);
