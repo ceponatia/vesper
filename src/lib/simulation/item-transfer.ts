@@ -61,7 +61,13 @@ export function simulationHash(value: unknown): string {
 }
 
 function sortedUnique(values: readonly string[]): string[] {
-  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  return [...new Set(values)].sort(compareStableText);
+}
+
+function compareStableText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function sortProjection(projection: ItemTransferProjection): ItemTransferProjection {
@@ -69,13 +75,13 @@ function sortProjection(projection: ItemTransferProjection): ItemTransferProject
     ...projection,
     actors: projection.actors
       .map((actor) => ({ ...actor, observedContainerIds: sortedUnique(actor.observedContainerIds) }))
-      .sort((left, right) => left.id.localeCompare(right.id)),
+      .sort((left, right) => compareStableText(left.id, right.id)),
     containers: projection.containers
       .map((container) => ({ ...container, accessibleToActorIds: sortedUnique(container.accessibleToActorIds) }))
-      .sort((left, right) => left.id.localeCompare(right.id)),
-    items: [...projection.items].sort((left, right) => left.id.localeCompare(right.id)),
+      .sort((left, right) => compareStableText(left.id, right.id)),
+    items: [...projection.items].sort((left, right) => compareStableText(left.id, right.id)),
     observations: [...projection.observations].sort(
-      (left, right) => left.sequence - right.sequence || left.witnessActorId.localeCompare(right.witnessActorId),
+      (left, right) => left.sequence - right.sequence || compareStableText(left.witnessActorId, right.witnessActorId),
     ),
   });
 }
@@ -158,7 +164,7 @@ export function resolveItemTransfer(
   return {
     ok: true,
     event: itemTransferredEventSchema.parse({
-      id: `event_${simulationHash([projection.branchId, sequence, command.id])}`,
+      id: `event:${command.id}`,
       worldId: projection.worldId,
       branchId: projection.branchId,
       sequence,
@@ -208,7 +214,7 @@ export function applyItemTransferredEvent(
     observations: [
       ...projection.observations,
       ...event.payload.observerActorIds.map((witnessActorId) => ({
-        id: `observation_${simulationHash([event.id, witnessActorId])}`,
+        id: `observation:${event.id}:${witnessActorId}`,
         sourceEventId: event.id,
         witnessActorId,
         sequence: event.sequence,
@@ -299,7 +305,7 @@ export function compileItemTransferNarrativeCut(
   };
   const semanticHash = simulationHash(content);
   return {
-    id: `cut_${simulationHash([projection.branchId, viewpointActorId, firstSequence, projection.headSequence])}`,
+    id: `cut:${projection.branchId}:${viewpointActorId}:${firstSequence}:${projection.headSequence}`,
     semanticHash,
     ...content,
   };
