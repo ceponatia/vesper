@@ -23,7 +23,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(nothing — pull the next entry from Next)_
+- **World-engine Gate 1 — item-transfer authority seam** —
+  [engine-gate1-item-transfer.plan.md](engine-gate1-item-transfer.plan.md) (active;
+  started 2026-07-16 from the approved `engine.plan.md` target list). Proves one
+  command → event → projection → observer-filtered NarrativeCut → existing-narrator
+  path, plus optimistic versioning, idempotency, deterministic replay, and state-free
+  rerender. It is an in-memory, deleteable experiment with a predeclared 5 ms p95
+  budget and no scheduler, migration, RAG change, or new model call.
 
 ## Next (queued)
 
