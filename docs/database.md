@@ -62,6 +62,26 @@ leaves the snapshot intact.
 | `participant_relationships` | `session_id`, `from_participant_id` (edge owner — always an NPC), `to_participant_id`, `kind` (`feeling`/`perceived` — perceived only toward the player), `value` int, `stage` (denormalized from the stage registry, recomputed on write); unique (session, from, to, kind) |
 | `item_instances` | `session_id`, `item_id?`, `snapshot` JSONB (ItemDefinition snapshot), `name`, exactly-one placement (`holder_participant_id` + `worn` bool, `location_id`, `container_instance_id`) **enforced by CHECK constraints** (`item_instances_one_placement`; `item_instances_worn_needs_holder` — `worn` requires a holder), `position_note`, `state` JSONB (condition/cleanliness/wetness/notes). Wardrobe visibility (visible/hinted/hidden per body location) is computed by `contracts/items/visibility.ts`, never stored |
 
+### Successor simulation authority (E2.2)
+
+These `sim_*` tables are an isolated successor-engine authority catalog; they do not
+dual-write the deprecated session engine or current character-chat rows.
+
+| Table | Key columns |
+| --- | --- |
+| `sim_worlds` | explicit world ID, world type, opaque deterministic seed, ruleset version, lifecycle status |
+| `sim_branches` | world ID, head sequence, optimistic version, integer story second; the row is the branch sequencer lock |
+| `sim_commands` | full parsed envelope plus exhaustive accepted/rejected/conflict result; primary key `(branch_id, idempotency_key)` |
+| `sim_events` | immutable schema-versioned event envelope; event ID globally unique and `(branch_id, sequence)` unique |
+| `sim_characters` | minimum actor/observation facts used by the E2.2 transfer slice |
+| `sim_holding_containers` | typed holding kind, capacity, and actor-access facts |
+| `sim_items` | stable branch-local item identity/name |
+| `sim_item_holdings` | exactly one row per branch/item, current container, and last event sequence |
+
+Domain identities are supplied explicitly instead of replaced by cuid2 row identities.
+Causal bigint columns are database-checked against JavaScript's safe integer range.
+Composite foreign keys prevent cross-world events and dangling item/container holdings. The holding-to-container `NO ACTION` key is manually `DEFERRABLE INITIALLY DEFERRED` in migration 0054 because Drizzle cannot model that PostgreSQL option: standalone live-container deletion still fails, while complete branch/world cascades can settle before the check.
+
 ### Turns & memory
 
 | Table | Key columns |
@@ -91,9 +111,16 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 - `jobs(status, type)` composite index for queue claims.
 - A leading-column composite **covers** a plain index on its first column, so don't add both: `session_participants_session_idx` and `participant_relationships_session_idx` were dropped (migration 0006, UX-audit P8) as redundant with the `…_name_unique` / `…_edge_unique` composites that already lead with `session_id`.
 - `image_references(scene_image_id)` for grouping a scene's references; `image_references(kind, entity_id)` for the Gallery's "scenes featuring this character" facet.
+- Successor authority: `sim_events(branch_id, sequence)` unique,
+  `sim_commands(branch_id, idempotency_key)` primary, command-ID audit lookup, and
+  `sim_item_holdings(branch_id, holding_container_id)` capacity/count lookup.
 
 ## Transactional invariants
 
+- E2.2 `submitDurableItemTransfer` performs the idempotency recheck, pure resolution,
+  event append, exclusive holding update, branch compare-and-swap advance, and durable
+  command result under one `FOR UPDATE OF sim_branches` transaction. The joined world row is metadata, not a sibling-branch mutex. No model, network
+  callback, or wall-clock-derived simulation decision is allowed under that lock. The typed branch reader uses a read-only `REPEATABLE READ` transaction so head, projection rows, and events share one snapshot.
 - The post-turn merge commits all **world-state** writes — participant state, item instances, clock, runtime, brief, and the turn row — in **one transaction** (`engine/merge/apply.ts`). Facts (+supersedence) and the episode are written first through the memory module, each internally transactional; their embeddings degrade per [memory.md](memory.md) instead of failing the merge.
 - Fact supersedence updates `status`/`superseded_by_id`/`superseded_at` on the old row in the same transaction as the inserted replacement — the embedding lives on the row, so there is no orphaned-embedding state (a bug class in the old app).
 - Session status transitions use compare-and-swap (`WHERE status = 'ready'`) to serialize turn submission.

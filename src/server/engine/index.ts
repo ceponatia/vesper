@@ -16,6 +16,7 @@ export * from "./pipeline";
 export * from "./inner-note";
 export * from "./character-chat";
 export * from "./world-engine";
+export * from "./simulation";
 export * from "./chat-pipeline";
 export * from "./chat-reference-enqueue";
 export * from "./chat-reference-images";

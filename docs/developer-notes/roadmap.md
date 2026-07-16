@@ -23,13 +23,12 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **World-engine identity and causal envelopes (E2.1)** —
-  [engine-identity-envelopes.plan.md](engine-identity-envelopes.plan.md) (active;
-  started 2026-07-16 after Gate 1 advanced). Promotes the proven item-transfer-local
-  identities, integer causal primitives, complete principal taxonomy, and strict
-  command/event/result shapes into reusable contracts. Migrates Gate 1 onto them without
-  adding persistence, scheduling, live-chat mutation, or a model call; E2.2 consumes this
-  boundary for the first durable branch transaction.
+- **World-engine durable branch transaction (E2.2)** —
+  [engine-durable-branch-transaction.plan.md](engine-durable-branch-transaction.plan.md)
+  (active; started 2026-07-16 after E2.1 shipped). Adds the minimum PostgreSQL authority
+  catalog and one atomic `transfer_item` path: branch row serialization, durable
+  idempotent results, immutable events, typed exclusive item holdings, and injected crash
+  proofs. It adds no scheduler, outbox worker, model call, or live-chat mutation.
 
 ## Next (queued)
 
@@ -100,6 +99,15 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine identity and causal envelopes (E2.1)** —
+  [engine-identity-envelopes.plan.md](engine-identity-envelopes.plan.md) · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-16 — reusable branded identities, safe causal
+  integers, the complete principal taxonomy, strict command/event factories, deterministic
+  reference sets, and exhaustive accepted/rejected/conflict results now replace the
+  Gate 1-local causal shapes. Item transfer migrated without changing its authority,
+  replay, viewpoint, or NarrativeCut behavior; event identity includes branch identity;
+  repository CI passed 2,518 tests and the deterministic path held a 0.400 ms p95 with
+  zero model calls.
 - **World-engine Gate 1 — item-transfer authority seam** —
   [engine-gate1-item-transfer.plan.md](engine-gate1-item-transfer.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-16 — one authorized item transfer now proves

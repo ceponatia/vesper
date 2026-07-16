@@ -1,6 +1,6 @@
 # World-engine identity and causal envelopes
 
-Status: active — E2.1 implementation started 2026-07-16
+Status: shipped — 2026-07-16 (squash commit [`f8c7040b`](https://github.com/ceponatia/vesper/commit/f8c7040bfebba823a95bfa211aa00ffb686733f1))
 
 Parent: [engine.plan.md](engine.plan.md) · Contract: [engine.spec.md](engine.spec.md)
 
@@ -65,7 +65,15 @@ Local focused evidence on 2026-07-16:
   below the unchanged 5.0 ms budget;
 - model calls added: zero.
 
-Full repository and CI evidence will be recorded on the implementation pull request.
+Final repository evidence (PR [#9](https://github.com/ceponatia/vesper/pull/9), CI run 218):
+
+- lint, circular-dependency scan, typecheck, 174 test files / 2,518 tests, and
+  duplication gate: passed;
+- focused E2.1 contract plus Gate 1 runtime suites: 2 files / 17 tests passed;
+- deterministic-path benchmark over 4,000 samples: p50 0.170 ms, p95 0.400 ms,
+  p99 0.666 ms against the unchanged 5.0 ms p95 budget;
+- model calls added: zero;
+- architecture verdict: E2.1 complete; advance to E2.2 durability.
 
 ## Next target
 

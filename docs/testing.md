@@ -14,7 +14,7 @@ Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and 
 | api unit | `src/app/api/**/_shared/*.test.ts` | SSE framing, engine-error → HTTP status mapping, turn event streaming, status payloads | none |
 | components | `src/components/**/*.test.ts` | Pure logic extracted from components (draft merge/seed, attribute editor helpers, inline markup, message-markup span display + `commsLine` texted-line detection, chat reply segment→label mapping, focus-trap targeting, monogram initials) — no DOM rendering | none |
 | fixtures | `scripts/fixtures/harbor-house.test.ts` | The seed fixture validates against the contracts registries, so a vocabulary change that breaks the seed fails in tests, not at seed time | none |
-| db integration | `src/**/*.int.test.ts` (engine, memory, images) | Spawn + full demo-mode turns, CAS turn locking, transactional merge, vector queries, asset lifecycle | `DATABASE_URL` database (suites probe at collection and self-skip with a stderr warning if unreachable) |
+| db integration | `src/**/*.int.test.ts` (engine, memory, images) | Spawn + full demo-mode turns, CAS turn locking, transactional merge, vector queries, asset lifecycle; E2.2 branch-row serialization, idempotency, typed holdings, and injected crash atomicity | `DATABASE_URL` database (suites probe at collection and self-skip locally with a stderr warning if unreachable; CI applies migrations, runs the E2.2 target explicitly, and treats an unavailable or unmigrated database as failure) |
 | api | `src/app/api/**/*.int.test.ts` | Route handlers called directly with mocked auth (`vi.mock` of `server/auth`): validation, envelopes, the SSE event sequence in demo mode, the atomic chat **rerun** (stop→wait→acquire→transact: snips successors + reuses the guard row; stops an in-flight reply then succeeds; byte-identical transcript + 409 when the lock can't be re-acquired; 4xx on a non-user/missing/foreign target; snapshot rollback vs. the degraded `chat_state.rerun.no_rollback`) | demo mode, `DATABASE_URL` database |
 
 ## Rules
@@ -30,7 +30,8 @@ Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and 
 pnpm test               # all non-DB suites (excludes **/*.int.test.ts)
 pnpm test:watch         # same exclusion, watch mode
 pnpm test:int           # DB suites only (filename filter ".int.test.", file parallelism off — they share one DB)
-                        #   run `pnpm db:create && pnpm db:migrate` first; suites self-skip if the DB is unreachable
+pnpm test:engine-e2-2   # focused successor branch transaction + crash/concurrency proof
+                        #   run `pnpm db:create && pnpm db:migrate` first; local runs self-skip if unreachable, CI fails
 pnpm typecheck
 pnpm lint
 ```

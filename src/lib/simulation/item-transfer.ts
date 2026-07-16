@@ -5,6 +5,8 @@ import {
   itemTransferredEventSchema,
   transferItemCommandSchema,
   type HoldingContainer,
+  type SimulationActor,
+  type SimulationItem,
   type ItemTransferCommandResult,
   type ItemTransferNarrativeBeat,
   type ItemTransferNarrativeCut,
@@ -32,6 +34,28 @@ interface AcceptedResolution {
 type TransferResolution = RejectedResolution | AcceptedResolution;
 
 export type ItemTransferPresentationVariant = "default" | "sensory" | "concise";
+
+/**
+ * The minimum authoritative facts needed to resolve a transfer.
+ *
+ * Persistent adapters load this view under the branch lock instead of hydrating
+ * every item in a world. The in-memory Gate 1 adapter derives the same view from
+ * its projection, so both paths execute one resolver.
+ */
+export interface ItemTransferResolutionView {
+  worldId: ItemTransferProjection["worldId"];
+  branchId: ItemTransferProjection["branchId"];
+  rulesetVersion: ItemTransferProjection["rulesetVersion"];
+  version: ItemTransferProjection["version"];
+  headSequence: ItemTransferProjection["headSequence"];
+  storySecond: ItemTransferProjection["storySecond"];
+  actor?: SimulationActor;
+  item?: SimulationItem;
+  source?: HoldingContainer;
+  destination?: HoldingContainer;
+  destinationItemCount: number;
+  observerActorIds: readonly SimulationActor["id"][];
+}
 
 export interface ItemTransferBranchRuntime {
   submit(command: unknown): ItemTransferCommandResult;
@@ -64,7 +88,7 @@ export function simulationHash(value: unknown): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-function sortedUnique(values: readonly string[]): string[] {
+function sortedUnique<T extends string>(values: readonly T[]): T[] {
   return [...new Set(values)].sort(compareStableText);
 }
 
@@ -123,7 +147,10 @@ function findContainer(projection: ItemTransferProjection, id: string): HoldingC
   return projection.containers.find((container) => container.id === id);
 }
 
-function observerActorIds(projection: ItemTransferProjection, command: TransferItemCommand): string[] {
+function observerActorIds(
+  projection: ItemTransferProjection,
+  command: TransferItemCommand,
+): SimulationActor["id"][] {
   const visible = projection.actors
     .filter(
       (actor) =>
@@ -135,23 +162,23 @@ function observerActorIds(projection: ItemTransferProjection, command: TransferI
   return sortedUnique([...visible, command.payload.actorId]);
 }
 
-/** Pure command resolver: validation and event construction, with no mutation or IO. */
-export function resolveItemTransfer(
-  projection: ItemTransferProjection,
+/** Pure command resolver over a lock-consistent authority view. */
+export function resolveItemTransferFromView(
+  view: ItemTransferResolutionView,
   command: TransferItemCommand,
 ): TransferResolution {
-  if (command.branchId !== projection.branchId) return rejection("branch_mismatch", "That world branch is unavailable.");
+  if (command.branchId !== view.branchId) return rejection("branch_mismatch", "That world branch is unavailable.");
 
-  const actor = projection.actors.find((candidate) => candidate.id === command.payload.actorId);
+  const actor = view.actor;
   if (!actor) return rejection("actor_not_found", "That actor is unavailable.");
   if (!command.principal.controlledActorIds.includes(actor.id)) {
     return rejection("unauthorized_actor", "You cannot direct that actor.");
   }
 
-  const item = projection.items.find((candidate) => candidate.id === command.payload.itemId);
+  const item = view.item;
   if (!item) return rejection("item_not_found", "That item is unavailable.");
-  const source = findContainer(projection, command.payload.fromContainerId);
-  const destination = findContainer(projection, command.payload.toContainerId);
+  const source = view.source;
+  const destination = view.destination;
   if (!source || !destination) return rejection("container_not_found", "That transfer is not currently possible.");
   if (source.id === destination.id) return rejection("same_container", "The item is already there.");
   if (item.holdingContainerId !== source.id) return rejection("source_mismatch", "The item is not available from there.");
@@ -161,21 +188,25 @@ export function resolveItemTransfer(
   if (!destination.accessibleToActorIds.includes(actor.id)) {
     return rejection("destination_inaccessible", "That transfer is not currently possible.");
   }
-  const destinationCount = projection.items.filter((candidate) => candidate.holdingContainerId === destination.id).length;
-  if (destinationCount >= destination.capacity) return rejection("destination_full", "That transfer is not currently possible.");
+  if (!Number.isSafeInteger(view.destinationItemCount) || view.destinationItemCount < 0) {
+    throw new Error("Item transfer authority view has an invalid destination count");
+  }
+  if (view.destinationItemCount >= destination.capacity) {
+    return rejection("destination_full", "That transfer is not currently possible.");
+  }
 
-  const sequence = projection.headSequence + 1;
+  const sequence = view.headSequence + 1;
   return {
     ok: true,
     event: itemTransferredEventSchema.parse({
-      id: composeSimulationId("event", [projection.branchId, command.id]),
-      worldId: projection.worldId,
-      branchId: projection.branchId,
+      id: composeSimulationId("event", [view.branchId, command.id]),
+      worldId: view.worldId,
+      branchId: view.branchId,
       sequence,
-      storySecond: projection.storySecond,
+      storySecond: view.storySecond,
       type: "item_transferred",
       schemaVersion: 1,
-      rulesetVersion: projection.rulesetVersion,
+      rulesetVersion: view.rulesetVersion,
       derivationVersion: "gate1-perception-v1",
       commandId: command.id,
       correlationId: command.correlationId,
@@ -187,10 +218,37 @@ export function resolveItemTransfer(
         itemId: item.id,
         fromContainerId: source.id,
         toContainerId: destination.id,
-        observerActorIds: observerActorIds(projection, command),
+        observerActorIds: sortedUnique([...view.observerActorIds, actor.id]),
       },
     }),
   };
+}
+
+/** Pure Gate 1 convenience adapter over a complete in-memory projection. */
+export function resolveItemTransfer(
+  projection: ItemTransferProjection,
+  command: TransferItemCommand,
+): TransferResolution {
+  const destination = findContainer(projection, command.payload.toContainerId);
+  return resolveItemTransferFromView(
+    {
+      worldId: projection.worldId,
+      branchId: projection.branchId,
+      rulesetVersion: projection.rulesetVersion,
+      version: projection.version,
+      headSequence: projection.headSequence,
+      storySecond: projection.storySecond,
+      actor: projection.actors.find((candidate) => candidate.id === command.payload.actorId),
+      item: projection.items.find((candidate) => candidate.id === command.payload.itemId),
+      source: findContainer(projection, command.payload.fromContainerId),
+      destination,
+      destinationItemCount: destination
+        ? projection.items.filter((candidate) => candidate.holdingContainerId === destination.id).length
+        : 0,
+      observerActorIds: observerActorIds(projection, command),
+    },
+    command,
+  );
 }
 
 /** Pure synchronous projector. Historical witness eligibility is read from the event. */
