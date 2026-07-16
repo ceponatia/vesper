@@ -797,6 +797,29 @@ describe("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)
         ctx(chat.id),
       );
       expect(patched.status).toBe(200);
+      await db()
+        .update(characterChatState)
+        .set({
+          relationshipHistory: [
+            { at: new Date(0).toISOString(), clockMinutes: 99, regard: 99, band: marker, familiarity: 99 },
+          ],
+          milestones: [{ at: new Date(0).toISOString(), kind: "player_marked", label: marker }],
+          feeling: {
+            current: { label: "angry", intensity: 0.9, cause: marker },
+            bruise: { remaining: 9 },
+          },
+          drives: [
+            {
+              want: marker,
+              why: marker,
+              secrecy: "open",
+              progress: marker,
+              revealed: false,
+              resolved: false,
+            },
+          ],
+        })
+        .where(and(eq(characterChatState.chatId, chat.id), eq(characterChatState.characterId, member.id)));
     }
 
     const regenerated = await chatSend(postReq(chat.id, { kind: "regenerate" }), ctx(chat.id));
