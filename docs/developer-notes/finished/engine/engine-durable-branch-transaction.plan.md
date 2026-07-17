@@ -1,6 +1,7 @@
 # World-engine durable branch transaction
 
-Status: active — E2.2 implementation started 2026-07-16
+Status: **shipped — 2026-07-16** (status line updated late during the 2026-07-17 archive
+sweep; the work itself merged as PR #12)
 
 Parent: [engine.plan.md](engine.plan.md) · Contract: [engine.spec.md](engine.spec.md) ·
 Predecessor: [engine-identity-envelopes.plan.md](engine-identity-envelopes.plan.md)

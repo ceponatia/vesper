@@ -142,7 +142,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **World-engine Gate 2 soak and verdict (E2.6)** —
-  [engine-gate2-soak.plan.md](engine-gate2-soak.plan.md) · contract
+  [engine-gate2-soak.plan.md](finished/engine/engine-gate2-soak.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — **Gate 2 closed with the owner's
   advance ruling.** Deterministic synthetic-month harness (`runGate2Soak`): 21/21 proof
   checks at the full profile — partition-invariant material hashes stable across runs
@@ -155,7 +155,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   re-validation belongs at fire time, as the kernel already does. Next engine target:
   **Gate 3** (blocked on 10 owner rulings).
 - **World-engine forks, snapshots, and audit (E2.5)** —
-  [engine-forks-snapshots-audit.plan.md](engine-forks-snapshots-audit.plan.md) · contract
+  [engine-forks-snapshots-audit.plan.md](finished/engine/engine-forks-snapshots-audit.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — branch ancestry with the R4
   reference-not-copy bounded read, `forkBranch` rebuilding child state and pending alarms by
   replaying setting events ≤ N (already-fired alarms recorded completed, never re-armed),
@@ -165,7 +165,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   quarantine fix. 10 new PostgreSQL cases + 7 pure replay cases green; CI runs
   `test:engine-e2-5` from a zero-state migration. Next engine target: **E2.6**.
 - **World-engine durable scheduler and deterministic draws (E2.4)** —
-  [engine-durable-scheduler.plan.md](engine-durable-scheduler.plan.md) · contract
+  [engine-durable-scheduler.plan.md](finished/engine/engine-durable-scheduler.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — durable triggers with derived identity,
   branch-unique scheduling, claim-time attempts, fenced leases, quarantine of exhausted
   work, and a bounded `advanceBranchStoryTime` drain seam with `catch_up_required`. Fixed
@@ -175,18 +175,18 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   cross-branch command dispatch. Draw integration deliberately defers to Gate 3; analytical
   rate integration to Gate 5 bodies. 13 PostgreSQL cases green from a zero-state migration.
 - **World-engine outbox and rebuildable consumers (E2.3)** —
-  [engine-outbox-rebuildable-consumers.plan.md](engine-outbox-rebuildable-consumers.plan.md)
+  [engine-outbox-rebuildable-consumers.plan.md](finished/engine/engine-outbox-rebuildable-consumers.plan.md)
   · contract [engine.spec.md](engine.spec.md) — 2026-07-16 — atomic outbox publication in
   the command transaction, lease- and sequence-safe consumption, idempotent checkpoints, a
   disposable item-transfer feed, retry diagnostics, terminal quarantine, and
   rebuild-from-zero hashing.
 - **World-engine durable branch transaction (E2.2)** —
-  [engine-durable-branch-transaction.plan.md](engine-durable-branch-transaction.plan.md) ·
+  [engine-durable-branch-transaction.plan.md](finished/engine/engine-durable-branch-transaction.plan.md) ·
   contract [engine.spec.md](engine.spec.md) — 2026-07-16 — the minimum PostgreSQL authority
   catalog and one atomic `transfer_item` path: branch row serialization, durable idempotent
   results, immutable events, typed exclusive item holdings, and injected crash proofs.
 - **World-engine identity and causal envelopes (E2.1)** —
-  [engine-identity-envelopes.plan.md](engine-identity-envelopes.plan.md) · contract
+  [engine-identity-envelopes.plan.md](finished/engine/engine-identity-envelopes.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-16 — reusable branded identities, safe causal
   integers, the complete principal taxonomy, strict command/event factories, deterministic
   reference sets, and exhaustive accepted/rejected/conflict results now replace the
@@ -195,7 +195,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   repository CI passed 2,518 tests and the deterministic path held a 0.400 ms p95 with
   zero model calls.
 - **World-engine Gate 1 — item-transfer authority seam** —
-  [engine-gate1-item-transfer.plan.md](engine-gate1-item-transfer.plan.md) · contract
+  [engine-gate1-item-transfer.plan.md](finished/engine/engine-gate1-item-transfer.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-16 — one authorized item transfer now proves
   command → immutable event → synchronous projection → observer-filtered NarrativeCut →
   existing narrator, with optimistic versioning, idempotency, deterministic replay,

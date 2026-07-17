@@ -1,6 +1,7 @@
 # E2.3 — transactional outbox and rebuildable consumers
 
-Status: **implementation plan, 2026-07-16**
+Status: **shipped — 2026-07-16** (status line updated late during the 2026-07-17 archive
+sweep; the work itself merged as PR #13)
 
 Depends on E2.2 at `f884b835bef0c3f42576348cd81b0d032d006c93`. This target adds one durable asynchronous delivery path to the accepted `transfer_item` transaction. It does not add scheduling, model calls, forks, snapshots, or a general workflow framework.
 
