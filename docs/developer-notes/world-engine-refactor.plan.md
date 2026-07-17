@@ -1,6 +1,9 @@
 # World engine refactor — a simulated world under the chat lane
 
-Status: **draft** — a brainstorming superset, not a build queue. Everything here is a
+Status: **partly superseded** — engine.plan.md was built from this plan but may not cover
+100% of what this contains. This will be sorted out after the engine plan is shipped.
+
+A brainstorming superset, not a build queue. Everything here is a
 candidate to tune, cut, or promote into its own `<topic>.plan.md`. Nothing in this doc is
 committed; the roadmap line points here as the north star that the meter-economy and
 body-needs plans are already walking toward.
@@ -148,8 +151,8 @@ it out loud.
    > the "agents propose, code disposes" half of this is **aspirational, not descriptive** —
    > this doc cited it as settled fact and was wrong. Verified: it holds for **meters,
    > `plans.missed`, and selfies**. For wardrobe, presence, plans struck/kept/canceled,
-   > drives/secrets revealed, facts, scene, and cast, the "deterministic fold" only *parses
-   > the narrator's prose* — the narrator is the de facto authority, and a hallucinated
+   > drives/secrets revealed, facts, scene, and cast, the "deterministic fold" only _parses
+   > the narrator's prose_ — the narrator is the de facto authority, and a hallucinated
    > secret reveal **ratchets permanently**. The catalog below is unaffected (it is almost
    > entirely derive-and-arm, which sits upstream of narration), but the law as stated
    > overclaims. See that doc's §7 for the small in-place fixes and §6.1 for why the

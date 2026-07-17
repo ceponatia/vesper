@@ -1,6 +1,6 @@
 # Visual world map — plan
 
-Status: **Slice 1 shipped — 2026-06-18** (read-only force-directed graph); slices 2–3
+Status: **Superseded** (read-only force-directed graph); slices 2–3
 (editable layout, play-screen minimap) deferred. Graduated from
 [deferred.plan.md](deferred.plan.md) 2026-06-16; bumped via the UX-audit (feature #5).
 
@@ -35,8 +35,8 @@ would have made **M2** obvious at a glance — a hot-spring world forged with **
 bath**, three location links pointing at a non-existent "The Grand Onsen Bath" that
 went unnoticed in the flat card list. The audit recommends bumping this plan's
 priority alongside the forge-canon reconciler
-([ux-audit.plan.md](finished/ux-audit.plan.md) §2, which fixes the *cause*; this view
-surfaces the *symptom*).
+([ux-audit.plan.md](finished/ux-audit.plan.md) §2, which fixes the _cause_; this view
+surfaces the _symptom_).
 
 ## Current state
 
@@ -54,7 +54,7 @@ as per-card "↔ …" lists.
 
 ## Open questions
 
-- **Read-only vs editable** layout — *resolved for slice 1*: shipped read-only (auto-layout).
+- **Read-only vs editable** layout — _resolved for slice 1_: shipped read-only (auto-layout).
   Editable layout is slice 2 if/when wanted.
 - **Where node `x/y` live** — new per-location columns (a DB migration) vs
   auto-layout only (no storage). Slice 1 stores nothing (computed); revisit only when
