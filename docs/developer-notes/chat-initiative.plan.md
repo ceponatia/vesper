@@ -1,6 +1,6 @@
 # Chat initiative — the character reaches out first
 
-Status: **shipped — 2026-07-12** (planned 2026-07-11; the core opener — slice 1
+Status: **started — 2026-07-12** (planned 2026-07-11; the core opener — slice 1
 with slice 3 folded in — shipped 2026-07-12 morning, the remainder — slices 2,
 4, 5 — the same day. No leftovers.)
 
