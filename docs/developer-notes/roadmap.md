@@ -30,6 +30,50 @@ before movement or live-scene work begins.)_
 
 ## Next (queued)
 
+**Successor world engine (`engine.plan.md`) — remaining gates.** The gated event-kernel
+track, in sequence — each gate's exit criteria gate the next. E2.1–E2.5 shipped; **E2.6 —
+Gate 2 soak & verdict** is the immediate next target (flagged in **Active** above); the
+gates below follow it. Full plan [engine.plan.md](engine.plan.md) · contract
+[engine.spec.md](engine.spec.md). (Distinct build from the chat-lane
+[world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star umbrella further
+down.)
+
+- **Successor world engine — Gate 3: space, actions, schedules & live-scene arbitration** —
+  [engine.plan.md](engine.plan.md) §"Gate 3" (draft; ~15–35 dev-days). Proves world events
+  become playable transitions, not teleports: authoritative space + travel (G3.1), typed
+  actions with preconditions/claims/effects (G3.2), commitments with earliest/target/latest
+  pressure that never set location directly (G3.3), conversation-as-Engagement + the
+  live-scene arbiter — drain triggers → integrate state → enumerate legal outcomes → commit
+  → compile one NarrativeCut, all before narration (G3.4), and separate
+  route/property/zone/privacy/consent checks that fail closed (G3.5). **Blocked on 10 owner
+  rulings** — plan §"Product rulings needed before Gate 3".
+- **Successor world engine — Gate 4: perception, knowledge, narration & RAG** —
+  [engine.plan.md](engine.plan.md) §"Gate 4" (draft; ~10–25 dev-days). Observations /
+  assertions / beliefs with provenance, a typed NarrativeCut (must-enact · perceptible ·
+  believed · allowed · forbidden · failure-presentation), perspective eligibility resolved
+  in relational data **before** vector ranking, memory docs linked back to their
+  assertions/events, the ArmedEffect confirmation path, and a continuity auditor that flags
+  but can't mutate truth. Exit: zero cross-viewpoint leaks in the fixed corpus.
+- **Successor world engine — Gate 5: bodies, materials, households & relationships** —
+  [engine.plan.md](engine.plan.md) §"Gate 5" (draft; ~15–35 dev-days). The unified body
+  substrate with analytical drift on story time + one modifier engine (G5.1), typed material
+  life — containers/holdings/ownership/consumption/wear/money-at-LOD (G5.2), and social life
+  as ledger entries — promises/favors/debts/trust/gossip-with-provenance (G5.3). **Where
+  current-chat body learning migrates behind the successor contracts** — the meter-economy
+  and body-needs work below is meant to port through here later.
+- **Successor world engine — Gate 6: dual LOD & autonomous background life** —
+  [engine.plan.md](engine.plan.md) §"Gate 6" (draft; ~10–25 dev-days). Separate simulation
+  LOD (exact · event · aggregate · dormant) and inference LOD (no-model · small-model ·
+  deliberator · narrator) controls, plus promotion + event-driven catch-up. Exit: an
+  order-of-magnitude more off-screen actors does **not** grow model calls or per-minute work
+  linearly.
+- **Successor world engine — Gate 7: optional institutions & macro simulation** —
+  [engine.plan.md](engine.plan.md) §"Gate 7" (draft). **Explicitly post-foundation and
+  optional** — not part of the initial 60–120+ day build; admit a package (employers,
+  schools, housing, labor, markets, news, law, weather, factions…) only when a world type +
+  scenario corpus justifies it and it declares its authority, LOD, laws, budget, and disable
+  path. Listed for tracking, not committed near-term work.
+
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
   [spec](chat-meter-economy.spec.md) (planned 2026-07-15 from an owner report after the
