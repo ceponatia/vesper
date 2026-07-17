@@ -1,4 +1,18 @@
 import { z } from "zod";
+import {
+  activityCancelledEventSchema,
+  activityCompletedEventSchema,
+  activityFailedEventSchema,
+  activityInterruptedEventSchema,
+  activityResumedEventSchema,
+  activityStartedEventSchema,
+  type CancelActivityCommand,
+  type CancelActivityCommandResult,
+  type CompleteActivityCommand,
+  type CompleteActivityCommandResult,
+  type StartActivityCommand,
+  type StartActivityCommandResult,
+} from "./activities";
 import { commandPrincipalSchema, principalKindSchema } from "./envelopes";
 import {
   branchHeadSequenceSchema,
@@ -55,6 +69,12 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   journeyInterruptedEventSchema,
   actorArrivedEventSchema,
   journeyAbandonedEventSchema,
+  activityStartedEventSchema,
+  activityCompletedEventSchema,
+  activityCancelledEventSchema,
+  activityFailedEventSchema,
+  activityInterruptedEventSchema,
+  activityResumedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -76,17 +96,40 @@ export function isMovementEvent(event: SimulationBranchEvent): event is Simulati
   return movementEventTypes.has(event.type);
 }
 
+/** The activity family (E3.2). Replay treats these as activities-projection events. */
+const activityEventTypeList = [
+  "activity_started",
+  "activity_completed",
+  "activity_cancelled",
+  "activity_failed",
+  "activity_interrupted",
+  "activity_resumed",
+] as const;
+export type ActivityEventType = (typeof activityEventTypeList)[number];
+export type SimulationActivityEvent = Extract<SimulationBranchEvent, { type: ActivityEventType }>;
+export const activityEventTypes: ReadonlySet<string> = new Set(activityEventTypeList);
+
+export function isActivityEvent(event: SimulationBranchEvent): event is SimulationActivityEvent {
+  return activityEventTypes.has(event.type);
+}
+
 /** Union persisted in sim_commands; each family keeps its own result contract. */
 export type SimulationCommandEnvelope =
   | TransferItemCommand
   | ScheduleTransferTriggerCommand
   | MoveActorCommand
-  | ArriveJourneyCommand;
+  | ArriveJourneyCommand
+  | StartActivityCommand
+  | CompleteActivityCommand
+  | CancelActivityCommand;
 export type SimulationCommandResultRecord =
   | ItemTransferCommandResult
   | ScheduleTriggerCommandResult
   | MoveActorCommandResult
-  | ArriveJourneyCommandResult;
+  | ArriveJourneyCommandResult
+  | StartActivityCommandResult
+  | CompleteActivityCommandResult
+  | CancelActivityCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

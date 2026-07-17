@@ -8,6 +8,7 @@ import {
   scheduleTransferTriggerCommandSchema,
   scheduleTransferTriggerCommandType,
   scheduleTriggerCommandResultSchema,
+  journeyArrivalTriggerKind,
   scheduledTransferTriggerKind,
   schedulerDerivationVersion,
   schedulerRetryDelaySeconds,
@@ -22,9 +23,11 @@ import {
   worldBranchIdSchema,
   worldIdSchema,
 } from "@/contracts/simulation/identity";
+import { completeActivityCommandSchema } from "@/contracts/simulation/activities";
 import { transferItemCommandSchema } from "@/contracts/simulation/item-transfer";
 import { arriveJourneyCommandSchema } from "@/contracts/simulation/space";
 import { db, simBranches, simCommands, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
+import { submitDurableCompleteActivity } from "./activity-store";
 import { submitDurableItemTransfer } from "./item-transfer-store";
 import { submitDurableJourneyArrival } from "./space-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
@@ -349,7 +352,9 @@ export async function scheduleDurableTrigger(
   const template =
     rawTrigger.kind === scheduledTransferTriggerKind
       ? transferItemCommandSchema.parse(rawTrigger.payload.command)
-      : arriveJourneyCommandSchema.parse(rawTrigger.payload.command);
+      : rawTrigger.kind === journeyArrivalTriggerKind
+        ? arriveJourneyCommandSchema.parse(rawTrigger.payload.command)
+        : completeActivityCommandSchema.parse(rawTrigger.payload.command);
   const commandId = deriveScheduleCommandId(triggerId);
   const command = scheduleTransferTriggerCommandSchema.parse({
     id: commandId,
@@ -515,7 +520,9 @@ export async function resolveNextDueTrigger(
     const result =
       trigger.kind === scheduledTransferTriggerKind
         ? await submitDurableItemTransfer(dispatchEnvelope, { database, admitAtLockedVersion: true })
-        : await submitDurableJourneyArrival(dispatchEnvelope, { database, admitAtLockedVersion: true });
+        : trigger.kind === journeyArrivalTriggerKind
+          ? await submitDurableJourneyArrival(dispatchEnvelope, { database, admitAtLockedVersion: true })
+          : await submitDurableCompleteActivity(dispatchEnvelope, { database, admitAtLockedVersion: true });
 
     switch (result.status) {
       case "accepted": {

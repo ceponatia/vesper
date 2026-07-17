@@ -68,6 +68,9 @@ jobs:
       - name: E3.1 authoritative space integration
         run: pnpm test:engine-e3-1
 
+      - name: E3.2 activities and claims integration
+        run: pnpm test:engine-e3-2
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

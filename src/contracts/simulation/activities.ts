@@ -1,0 +1,408 @@
+import { z } from "zod";
+import {
+  createCommandEnvelopeSchema,
+  createCommandResultSchema,
+  createEventEnvelopeSchema,
+  createStableStringSetSchema,
+  principalKindSchema,
+} from "./envelopes";
+import {
+  actionDefinitionIdSchema,
+  activityInstanceIdSchema,
+  commandIdSchema,
+  storySecondSchema,
+  worldCharacterIdSchema,
+  zoneIdSchema,
+} from "./identity";
+
+/**
+ * E3.2 — typed actions, activities, and claims (engine.spec §16, plan §"Gate 3
+ * build order"). An action definition is authored, versioned data; an activity
+ * instance is one attempted action over story time whose claims are acquired
+ * atomically at start and released by every terminal phase.
+ *
+ * Deliberate E3.2 boundaries: resource costs join with Gate 5 materials;
+ * privacy/consent requirements join with E3.5's access layer; the §16.4 graded
+ * compatibility matrix (conversation-while-cooking) joins with E3.4
+ * engagements — in this slice every body-claiming activity is stationary and
+ * blocks departure outright.
+ */
+
+// --- Claims (engine.spec §16.2) --------------------------------------------
+
+export const attentionWeights = ["full", "partial"] as const;
+export const attentionWeightSchema = z.enum(attentionWeights);
+
+/**
+ * The E3.2 claim vocabulary. `body` is exclusive occupation of the actor's own
+ * physical capability; `attention` is graded so a partial claim can later
+ * coexist with a remote engagement (E3.4).
+ */
+export const activityClaimSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("body") }).strict(),
+  z.object({ kind: z.literal("attention"), weight: attentionWeightSchema }).strict(),
+]);
+
+export type ActivityClaim = z.infer<typeof activityClaimSchema>;
+
+/** Two claim sets conflict when either demands what the other already holds. */
+export function activityClaimsConflict(
+  held: readonly ActivityClaim[],
+  requested: readonly ActivityClaim[],
+): boolean {
+  const heldBody = held.some((claim) => claim.kind === "body");
+  const requestedBody = requested.some((claim) => claim.kind === "body");
+  if (heldBody && requestedBody) return true;
+  const heldFullAttention = held.some((claim) => claim.kind === "attention" && claim.weight === "full");
+  const requestedFullAttention = requested.some(
+    (claim) => claim.kind === "attention" && claim.weight === "full",
+  );
+  return heldFullAttention && requestedFullAttention;
+}
+
+// --- Action definition (engine.spec §16.1) ---------------------------------
+
+/** Fixed now; a duration distribution variant joins when a scenario funds it. */
+export const durationRuleSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("fixed"),
+      seconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    })
+    .strict(),
+]);
+
+/**
+ * Typed, enforced preconditions — an inert authored field is not acceptable
+ * (spec §16.1). Every E3.2 activity already requires an at-locus universally
+ * (graded in-transit compatibility is E3.4's), so the vocabulary starts with
+ * zone-kind placement alone and grows per scenario need.
+ */
+export const actionPreconditionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("at_zone_kind"), zoneKind: z.string().trim().min(1) }).strict(),
+]);
+
+export const interruptibilities = ["free", "pausable", "abort_only", "locked"] as const;
+export const interruptibilitySchema = z.enum(interruptibilities);
+
+/**
+ * Who perceives an activity's start/completion events. `obvious` is witnessed
+ * by every co-located actor, `private` only by the participants themselves.
+ * The full perception channel model is Gate 4; this profile is enforced now
+ * so activity events carry the same captured witness sets item transfers do.
+ */
+export const activityNoticeabilities = ["obvious", "private"] as const;
+export const activityNoticeabilitySchema = z.enum(activityNoticeabilities);
+
+export const simulationActionDefinitionSchema = z
+  .object({
+    id: actionDefinitionIdSchema,
+    version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    /** Principal kinds whose commands may start this action (spec §16.1). */
+    controllerKinds: z.array(principalKindSchema).min(1),
+    duration: durationRuleSchema,
+    preconditions: z.array(actionPreconditionSchema),
+    requiredClaims: z.array(activityClaimSchema),
+    interruptibility: interruptibilitySchema,
+    noticeability: activityNoticeabilitySchema,
+  })
+  .strict();
+
+export type SimulationActionDefinition = z.infer<typeof simulationActionDefinitionSchema>;
+
+// --- Activity instance (engine.spec §16.2–16.3) ----------------------------
+
+export const activityPhases = [
+  "queued",
+  "preparing",
+  "active",
+  "paused",
+  "interrupted",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+export const activityPhaseSchema = z.enum(activityPhases);
+export type ActivityPhase = z.infer<typeof activityPhaseSchema>;
+
+/** The §16.3 legal-transition table, exported so kernel and tests share one truth. */
+export const activityPhaseTransitions: Record<ActivityPhase, readonly ActivityPhase[]> = {
+  queued: ["preparing", "active", "cancelled", "failed"],
+  preparing: ["active", "interrupted", "cancelled", "failed"],
+  active: ["paused", "interrupted", "completed", "failed", "cancelled"],
+  paused: ["active", "interrupted", "cancelled", "failed"],
+  interrupted: ["active", "cancelled", "failed"],
+  completed: [],
+  failed: [],
+  cancelled: [],
+};
+
+export const terminalActivityPhases: readonly ActivityPhase[] = ["completed", "failed", "cancelled"];
+
+/** Phases whose claims are held: acquired at start, released only terminally (§16.3). */
+export const claimHoldingActivityPhases: readonly ActivityPhase[] = [
+  "queued",
+  "preparing",
+  "active",
+  "paused",
+  "interrupted",
+];
+
+/** Progress is fixed-point parts-per-million (spec §6.1: no float rounding in rules). */
+export const progressFixedPointSchema = z.number().int().min(0).max(1_000_000);
+
+const activityActorIdsSchema = createStableStringSetSchema(worldCharacterIdSchema, "Activity actor IDs");
+
+export const activityInstanceSchema = z
+  .object({
+    id: activityInstanceIdSchema,
+    actionDefinitionId: actionDefinitionIdSchema,
+    /** Captured at start: a later definition edit never rewrites a running activity. */
+    actionVersion: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    actorIds: activityActorIdsSchema.refine((ids) => ids.length >= 1, "An activity needs an actor"),
+    zoneId: zoneIdSchema,
+    phase: activityPhaseSchema,
+    startedAt: storySecondSchema.optional(),
+    expectedCompleteAt: storySecondSchema.optional(),
+    progressFixedPoint: progressFixedPointSchema,
+    claims: z.array(activityClaimSchema),
+    sourceCommandId: commandIdSchema,
+  })
+  .strict();
+
+export type ActivityInstance = z.infer<typeof activityInstanceSchema>;
+
+// --- Commands ---------------------------------------------------------------
+
+const startActivityPayloadSchema = z
+  .object({
+    actionDefinitionId: actionDefinitionIdSchema,
+    actorId: worldCharacterIdSchema,
+  })
+  .strict();
+
+export const startActivityCommandSchema = createCommandEnvelopeSchema(
+  "start_activity",
+  1,
+  startActivityPayloadSchema,
+);
+
+export const startActivityRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "actor_not_found",
+  "unauthorized_actor",
+  "unauthorized_controller",
+  "action_not_found",
+  "actor_in_transit",
+  "precondition_failed",
+  "claim_conflict",
+] as const;
+export const startActivityRejectionCodeSchema = z.enum(startActivityRejectionCodes);
+export const startActivityCommandResultSchema = createCommandResultSchema(
+  startActivityRejectionCodeSchema,
+);
+
+const completeActivityPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+  })
+  .strict();
+
+/** Dispatched by the completion trigger at its due second; system-only. */
+export const completeActivityCommandSchema = createCommandEnvelopeSchema(
+  "complete_activity",
+  1,
+  completeActivityPayloadSchema,
+);
+
+export const completeActivityRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "activity_not_found",
+  "activity_not_active",
+  "unauthorized_principal",
+] as const;
+export const completeActivityRejectionCodeSchema = z.enum(completeActivityRejectionCodes);
+export const completeActivityCommandResultSchema = createCommandResultSchema(
+  completeActivityRejectionCodeSchema,
+);
+
+export const cancelActivityReasons = ["actor_choice", "superseded"] as const;
+export const cancelActivityReasonSchema = z.enum(cancelActivityReasons);
+
+const cancelActivityPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+    reason: cancelActivityReasonSchema,
+  })
+  .strict();
+
+export const cancelActivityCommandSchema = createCommandEnvelopeSchema(
+  "cancel_activity",
+  1,
+  cancelActivityPayloadSchema,
+);
+
+export const cancelActivityRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "activity_not_found",
+  "activity_not_cancellable",
+  "unauthorized_actor",
+] as const;
+export const cancelActivityRejectionCodeSchema = z.enum(cancelActivityRejectionCodes);
+export const cancelActivityCommandResultSchema = createCommandResultSchema(
+  cancelActivityRejectionCodeSchema,
+);
+
+// --- Activity event family (engine.spec §9.2) ------------------------------
+
+const witnessActorIdsSchema = createStableStringSetSchema(
+  worldCharacterIdSchema,
+  "Activity witness actor IDs",
+);
+
+const activityStartedPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+    actionDefinitionId: actionDefinitionIdSchema,
+    actionVersion: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    zoneId: zoneIdSchema,
+    startedAt: storySecondSchema,
+    expectedCompleteAt: storySecondSchema,
+    claims: z.array(activityClaimSchema),
+    /** Captured derived value: replay does not recompute historical eligibility. */
+    observerActorIds: witnessActorIdsSchema,
+  })
+  .strict();
+
+export const activityStartedEventSchema = createEventEnvelopeSchema(
+  "activity_started",
+  1,
+  activityStartedPayloadSchema,
+).extend({ commandId: commandIdSchema });
+
+const activityCompletedPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+    completedAt: storySecondSchema,
+    observerActorIds: witnessActorIdsSchema,
+  })
+  .strict();
+
+export const activityCompletedEventSchema = createEventEnvelopeSchema(
+  "activity_completed",
+  1,
+  activityCompletedPayloadSchema,
+);
+
+const activityCancelledPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+    cancelledAt: storySecondSchema,
+    reason: cancelActivityReasonSchema,
+    observerActorIds: witnessActorIdsSchema,
+  })
+  .strict();
+
+export const activityCancelledEventSchema = createEventEnvelopeSchema(
+  "activity_cancelled",
+  1,
+  activityCancelledPayloadSchema,
+);
+
+export const activityFailureReasons = ["actor_incapacitated", "external_event"] as const;
+export const activityFailureReasonSchema = z.enum(activityFailureReasons);
+
+const activityFailedPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+    failedAt: storySecondSchema,
+    reason: activityFailureReasonSchema,
+    observerActorIds: witnessActorIdsSchema,
+  })
+  .strict();
+
+export const activityFailedEventSchema = createEventEnvelopeSchema(
+  "activity_failed",
+  1,
+  activityFailedPayloadSchema,
+);
+
+export const activityInterruptReasons = ["engagement", "pressure", "hazard"] as const;
+export const activityInterruptReasonSchema = z.enum(activityInterruptReasons);
+
+const activityInterruptedPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+    interruptedAt: storySecondSchema,
+    reason: activityInterruptReasonSchema,
+    progressFixedPoint: progressFixedPointSchema,
+  })
+  .strict();
+
+/** Vocabulary + applier now; the emitting path is E3.4's engagement interruption. */
+export const activityInterruptedEventSchema = createEventEnvelopeSchema(
+  "activity_interrupted",
+  1,
+  activityInterruptedPayloadSchema,
+);
+
+const activityResumedPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+    resumedAt: storySecondSchema,
+    newExpectedCompleteAt: storySecondSchema,
+  })
+  .strict();
+
+export const activityResumedEventSchema = createEventEnvelopeSchema(
+  "activity_resumed",
+  1,
+  activityResumedPayloadSchema,
+);
+
+// --- Activities projection ---------------------------------------------------
+
+export const activitiesProjectionSchema = z
+  .object({
+    branchId: z.string().min(1),
+    headSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    version: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    storySecond: storySecondSchema,
+    activities: z.array(activityInstanceSchema),
+  })
+  .strict();
+
+export type ActivitiesProjection = z.infer<typeof activitiesProjectionSchema>;
+
+// --- Types -------------------------------------------------------------------
+
+export type AttentionWeight = z.infer<typeof attentionWeightSchema>;
+export type DurationRule = z.infer<typeof durationRuleSchema>;
+export type ActionPrecondition = z.infer<typeof actionPreconditionSchema>;
+export type Interruptibility = z.infer<typeof interruptibilitySchema>;
+export type ActivityNoticeability = z.infer<typeof activityNoticeabilitySchema>;
+export type StartActivityCommand = z.infer<typeof startActivityCommandSchema>;
+export type StartActivityCommandInput = z.input<typeof startActivityCommandSchema>;
+export type StartActivityRejectionCode = z.infer<typeof startActivityRejectionCodeSchema>;
+export type StartActivityCommandResult = z.infer<typeof startActivityCommandResultSchema>;
+export type CompleteActivityCommand = z.infer<typeof completeActivityCommandSchema>;
+export type CompleteActivityRejectionCode = z.infer<typeof completeActivityRejectionCodeSchema>;
+export type CompleteActivityCommandResult = z.infer<typeof completeActivityCommandResultSchema>;
+export type CancelActivityCommand = z.infer<typeof cancelActivityCommandSchema>;
+export type CancelActivityReason = z.infer<typeof cancelActivityReasonSchema>;
+export type CancelActivityRejectionCode = z.infer<typeof cancelActivityRejectionCodeSchema>;
+export type CancelActivityCommandResult = z.infer<typeof cancelActivityCommandResultSchema>;
+export type ActivityStartedEvent = z.infer<typeof activityStartedEventSchema>;
+export type ActivityCompletedEvent = z.infer<typeof activityCompletedEventSchema>;
+export type ActivityCancelledEvent = z.infer<typeof activityCancelledEventSchema>;
+export type ActivityFailedEvent = z.infer<typeof activityFailedEventSchema>;
+export type ActivityFailureReason = z.infer<typeof activityFailureReasonSchema>;
+export type ActivityInterruptedEvent = z.infer<typeof activityInterruptedEventSchema>;
+export type ActivityInterruptReason = z.infer<typeof activityInterruptReasonSchema>;
+export type ActivityResumedEvent = z.infer<typeof activityResumedEventSchema>;

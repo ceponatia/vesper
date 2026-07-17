@@ -1,5 +1,9 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  activityClaimSchema,
+  claimHoldingActivityPhases,
+} from "@/contracts/simulation/activities";
 import {
   branchHeadSequenceSchema,
   branchVersionSchema,
@@ -35,6 +39,7 @@ import {
 } from "@/lib/simulation/space";
 import {
   db,
+  simActivities,
   simBranches,
   simCharacters,
   simCommands,
@@ -94,7 +99,7 @@ export async function loadSpaceRows(executor: DbExecutor, branchId: string): Pro
   return { locations, zones, links, loci, journeys };
 }
 
-function locusFromRow(row: typeof simPhysicalLoci.$inferSelect): PhysicalLocus {
+export function locusFromRow(row: typeof simPhysicalLoci.$inferSelect): PhysicalLocus {
   return physicalLocusSchema.parse(
     row.kind === "at"
       ? {
@@ -547,6 +552,22 @@ export async function submitDurableMoveActor(
       const { projection, topology } = await loadTopologyView(tx, meta);
       const locus = projection.loci.find((candidate) => candidate.actorId === command.payload.actorId);
 
+      // E3.2 claim integration: departure is illegal while a claim-holding
+      // activity occupies the actor's body (spec §3.1 invariant 4).
+      const claimRows = await tx
+        .select({ claims: simActivities.claims })
+        .from(simActivities)
+        .where(
+          and(
+            eq(simActivities.branchId, command.branchId),
+            inArray(simActivities.phase, [...claimHoldingActivityPhases]),
+            sql`${simActivities.actorIds} @> ${JSON.stringify([command.payload.actorId])}::jsonb`,
+          ),
+        );
+      const actorHoldsBodyClaim = claimRows.some((row) =>
+        z.array(activityClaimSchema).parse(row.claims).some((claim) => claim.kind === "body"),
+      );
+
       const resolution = resolveMoveActor(
         {
           worldId: worldIdSchema.parse(branch.worldId),
@@ -558,6 +579,7 @@ export async function submitDurableMoveActor(
           topology,
           actorExists: actorRow !== undefined,
           ...(locus ? { locus } : {}),
+          actorHoldsBodyClaim,
         },
         command,
       );

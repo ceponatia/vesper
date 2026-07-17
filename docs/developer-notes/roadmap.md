@@ -28,8 +28,8 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   **Rulings unblocked 2026-07-17** — all 10 blocking product rulings plus spec rulings 11
   and 13 resolved by the owner (plan §"Product rulings — RESOLVED 2026-07-17", normative
   record in [engine.spec.md](engine.spec.md) §39). Building in dependency order
-  **E3.1 → E3.5**; E3.1 shipped 2026-07-17 (see **Shipped**), so **E3.2 (typed actions,
-  activities & claims)** is the current sub-target. Proves world events become
+  **E3.1 → E3.5**; E3.1 and E3.2 shipped 2026-07-17 (see **Shipped**), so **E3.3
+  (commitments & temporal pressure)** is the current sub-target. Proves world events become
   playable transitions, not teleports: authoritative space + travel (G3.1), typed actions
   with preconditions/claims/effects (G3.2), commitments with earliest/target/latest pressure
   that never set location directly (G3.3), conversation-as-Engagement + the live-scene
@@ -141,6 +141,23 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine typed actions, activities & claims (E3.2)** —
+  [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-17 — the second Gate 3 slice: authored
+  `SimulationActionDefinition`s (versioned; typed enforced preconditions; body/attention
+  claims; interruptibility; obvious/private noticeability) seeded per branch
+  (`sim_action_definitions`, migration 0059), `ActivityInstance` rows (`sim_activities`)
+  driving the full §16.3 phase machine with claims **projected from activity state** (never
+  separately stored, so no orphaned claim is possible), `start_activity` → started event +
+  durable completion trigger atomically, fire-time re-validated `complete_activity` through
+  the scheduler drain, `cancel_activity` releasing claims **and retiring the pending
+  completion trigger in the same transaction**, claim law wired into movement (`MoveActor`
+  gains `activity_conflict`; starting while in transit is refused), co-located witness
+  capture on activity events, and fork/replay parity — mid-activity forks re-arm the
+  completion, post-cancel forks recognize the retirement through a new replay retirement
+  ledger. Also extracts the shared `runSimulationCommand` transaction shell (§11.1) that
+  later commands build on. 13 pure + 6 integration cases; CI runs `test:engine-e3-2`.
+  Gate 3 continues: E3.3 commitments are next.
 - **World-engine authoritative space (E3.1)** — [engine.plan.md](engine.plan.md) §"Gate 3
   build order" · contract [engine.spec.md](engine.spec.md) — 2026-07-17 — the first Gate 3
   slice: branch-scoped topology (`sim_locations`/`sim_zones`/`sim_links`, migration 0058),

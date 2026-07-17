@@ -1,4 +1,13 @@
 export {
+  readDurableActivities,
+  seedDurableActionDefinitions,
+  submitDurableCancelActivity,
+  submitDurableCompleteActivity,
+  submitDurableStartActivity,
+  type ActionDefinitionSeed,
+  type ActivityStoreOptions,
+} from "./activity-store";
+export {
   explainItemPlacement,
   type ExplainOptions,
 } from "./audit-store";

@@ -281,6 +281,7 @@ export const moveActorRejectionCodes = [
   "destination_not_found",
   "already_at_destination",
   "actor_in_transit",
+  "activity_conflict",
   "no_route",
   "route_access_denied",
   "travel_mode_unavailable",
