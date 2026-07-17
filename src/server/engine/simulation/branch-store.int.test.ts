@@ -511,6 +511,36 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     });
   });
 
+  it("delivers feed obligations across non-transfer sequences", async () => {
+    // Codex review P1 on PR #15: a trigger_scheduled event advances the
+    // branch sequence without creating feed work, so a density-based gap
+    // check would retry the very first fired transfer as a "gap" forever.
+    const ids = makeIds(2);
+    await seedCase(ids);
+    await scheduleAt(ids, SEED_STORY_SECOND, "alarm-feed"); // sequence 1, no obligation
+    expect((await resolveNextDueTrigger(ids.branchId, { workerId: "worker_a" })).status).toBe("completed"); // sequence 2
+
+    const now = new Date(Date.now() + 60_000);
+    expect(await consumeNextItemTransferOutbox({ workerId: "worker_feed", now })).toMatchObject({
+      status: "completed",
+      branchId: ids.branchId,
+      throughSequence: 2,
+    });
+
+    // Later obligations keep flowing through a stream that mixes families —
+    // a rejected trigger (sequence 4's schedule dispatches onto an item that
+    // already moved) adds no event and blocks nothing.
+    expect(
+      await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { expectedVersion: 2 })),
+    ).toMatchObject({ status: "accepted", firstSequence: 3 });
+    await scheduleAt(ids, SEED_STORY_SECOND, "alarm-feed-2", 1);
+    expect((await resolveNextDueTrigger(ids.branchId, { workerId: "worker_a" })).status).toBe("rejected");
+    expect(await consumeNextItemTransferOutbox({ workerId: "worker_feed", now })).toMatchObject({
+      status: "completed",
+      throughSequence: 3,
+    });
+  });
+
   it("validates fork boundaries and identities", async () => {
     const ids = makeIds();
     await seedCase(ids);

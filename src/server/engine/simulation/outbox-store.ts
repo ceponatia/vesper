@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { itemTransferredEventSchema } from "@/contracts/simulation/item-transfer";
 import {
@@ -229,8 +229,28 @@ export async function consumeNextItemTransferOutbox(
         .limit(1)
         .for("update");
       const throughSequence = checkpoint?.throughSequence ?? 0;
-      if (feedRow.sourceSequence > throughSequence + 1) {
-        throw new Error(`Consumer sequence gap: expected ${throughSequence + 1}, received ${feedRow.sourceSequence}`);
+      // Contiguity is defined over item-transfer obligations, not raw branch
+      // sequences: other event families (e.g. trigger_scheduled) advance the
+      // branch without creating feed work, so the guard asks whether an
+      // earlier transfer event exists that has not been applied yet — never
+      // whether the sequence numbers are dense.
+      const [missing] = await tx
+        .select({ sequence: simEvents.sequence })
+        .from(simEvents)
+        .where(
+          and(
+            eq(simEvents.branchId, work.branchId),
+            eq(simEvents.type, "item_transferred"),
+            gt(simEvents.sequence, throughSequence),
+            lt(simEvents.sequence, feedRow.sourceSequence),
+          ),
+        )
+        .orderBy(asc(simEvents.sequence))
+        .limit(1);
+      if (missing) {
+        throw new Error(
+          `Consumer sequence gap: transfer at sequence ${missing.sequence} is unapplied before ${feedRow.sourceSequence}`,
+        );
       }
 
       await tx.insert(simItemTransferFeed).values(feedRow).onConflictDoNothing();
