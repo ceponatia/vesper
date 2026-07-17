@@ -1,4 +1,5 @@
 import {
+  isActivityEvent,
   isMovementEvent,
   simulationBranchEventSchema,
   type SimulationBranchEvent,
@@ -126,6 +127,17 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
   const commandIds = new Set<string>();
   const triggers: ReplayedTriggerLedgerEntry[] = [];
   const firingIndex = new Map<string, ReplayedTriggerLedgerEntry>();
+  /**
+   * Triggers retired by a domain event other than their own firing — a
+   * cancelled activity retires its completion trigger, an abandoned journey
+   * its arrival trigger — keyed by kind:target so replay recognizes the
+   * retirement exactly as the live store recorded it.
+   */
+  const retirementIndex = new Map<string, ReplayedTriggerLedgerEntry>();
+  const retire = (key: string, commandId: string | undefined): void => {
+    const entry = retirementIndex.get(key);
+    if (entry && entry.firedByCommandId === null && commandId) entry.firedByCommandId = commandId;
+  };
   let lastSequence = seed.headSequence;
 
   for (const event of events) {
@@ -155,13 +167,27 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       for (const branchId of chainBranchIds) {
         firingIndex.set(deriveTriggerCommandId(deriveTriggerId(branchId, entry.uniquenessKey)), entry);
       }
+      if (event.payload.kind === "journey_arrival_due") {
+        retirementIndex.set(`journey_arrival_due:${event.payload.command.payload.journeyId}`, entry);
+      } else if (event.payload.kind === "activity_completion_due") {
+        retirementIndex.set(
+          `activity_completion_due:${event.payload.command.payload.activityInstanceId}`,
+          entry,
+        );
+      }
       projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
-    } else if (isMovementEvent(event)) {
-      // Movement events belong to the space projection (replaySpaceHistory).
-      // Here they advance the item boundary and — for a scheduler-dispatched
-      // arrival — mark the arrival trigger as already fired.
+    } else if (isMovementEvent(event) || isActivityEvent(event)) {
+      // Movement and activity events belong to their own projections
+      // (replaySpaceHistory / replayActivitiesHistory). Here they advance the
+      // item boundary and — for a scheduler-dispatched arrival or completion —
+      // mark the dispatching trigger as already fired.
       const fired = event.commandId ? firingIndex.get(event.commandId) : undefined;
       if (fired) fired.firedByCommandId = event.commandId ?? null;
+      if (event.type === "activity_cancelled" || event.type === "activity_failed") {
+        retire(`activity_completion_due:${event.payload.activityInstanceId}`, event.commandId);
+      } else if (event.type === "journey_abandoned") {
+        retire(`journey_arrival_due:${event.payload.journeyId}`, event.commandId);
+      }
       projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
     } else {
       const fired = event.commandId ? firingIndex.get(event.commandId) : undefined;

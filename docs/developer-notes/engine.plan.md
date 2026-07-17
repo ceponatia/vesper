@@ -789,10 +789,25 @@ branch.
    zero pending open ruling 12; movement emits no outbox rows until a consumer exists.
    The `journey_delayed` / `journey_interrupted` / `journey_abandoned` event vocabulary
    and appliers exist but no command emits them yet — E3.5's hazard/access work does.
-2. **E3.2 — typed actions, activities, and claims.** `ActionDefinition` / `ActivityInstance`
-   (§16), exclusive and attention claims with resource costs, the activity state machine and
-   the compatibility matrix (§16.4), start/progress/completion/failure/cancellation effects,
-   and observation emissions. Consumes E3.1 loci.
+2. **E3.2 — typed actions, activities, and claims.** Status: **shipped — 2026-07-17.**
+   Authored `SimulationActionDefinition`s (`sim_action_definitions`) and `ActivityInstance`
+   rows (`sim_activities`, migration 0059) with the full §16.3 phase machine; body/attention
+   claims projected from activity state (§16.3 — no orphanable claim rows);
+   `start_activity` emitting the started event + durable completion trigger atomically;
+   fire-time re-validated `complete_activity` on the scheduler drain; `cancel_activity`
+   releasing claims and retiring the pending completion trigger transactionally; claim law
+   wired into movement (`MoveActor` rejects `activity_conflict` on a held body claim;
+   starting in transit is refused); co-located witness capture per the noticeability
+   profile; fork/replay parity incl. a replay retirement ledger recognizing
+   cancelled-activity triggers. Also the shared `runSimulationCommand` §11.1 transaction
+   shell (earlier stores keep their inlined copies until a dedicated cleanup). Delivery
+   notes: resource costs join with Gate 5 materials; privacy/consent preconditions join
+   with E3.5; the §16.4 graded compatibility matrix (conversation-while-cooking, walking
+   chats) joins with E3.4 engagements — in this slice every body-claiming activity is
+   stationary and blocks departure outright; `activity_interrupted`/`activity_resumed`
+   are vocabulary + appliers whose emitting path is E3.4's interruption; pause is not yet
+   a command, and a resumed activity's completion re-arm is recorded as an E3.4 design
+   note (the retired trigger's uniqueness key must version by attempt).
 3. **E3.3 — commitments and temporal pressure.** `Commitment` (with the ruled `flexibility`
    dial) and `TemporalPressure` (§15); `noticeAt` / `decideBy` / `actBy` derivation from
    route + preparation + reliability buffer; `knowledgeSourceId` gating so an actor acts

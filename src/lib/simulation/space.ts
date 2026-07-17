@@ -243,6 +243,12 @@ export interface MoveActorResolutionView extends SpaceBranchMeta {
   actorExists: boolean;
   /** The actor's current locus; every registered actor has exactly one. */
   locus?: PhysicalLocus;
+  /**
+   * Whether a claim-holding activity currently occupies the actor's body
+   * (E3.2). Spec §3.1 invariant 4: departure would create incompatible
+   * exclusive claims, so the activity must end or be cancelled first.
+   */
+  actorHoldsBodyClaim: boolean;
 }
 
 interface MoveRejection {
@@ -290,6 +296,9 @@ export function resolveMoveActor(
   if (!locus) throw new Error(`Actor ${command.payload.actorId} has no physical locus`);
   if (locus.kind === "in_transit") {
     return moveRejection("actor_in_transit", "They are already traveling.");
+  }
+  if (view.actorHoldsBodyClaim) {
+    return moveRejection("activity_conflict", "They are in the middle of something.");
   }
   const destination = view.topology.zones.find((zone) => zone.id === command.payload.destinationZoneId);
   if (!destination) return moveRejection("destination_not_found", "That destination is unknown.");
@@ -705,6 +714,12 @@ export function applySpaceEvent(
     }
     case "item_transferred":
     case "trigger_scheduled":
+    case "activity_started":
+    case "activity_completed":
+    case "activity_cancelled":
+    case "activity_failed":
+    case "activity_interrupted":
+    case "activity_resumed":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }

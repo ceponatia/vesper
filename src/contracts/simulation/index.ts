@@ -5,3 +5,4 @@ export * from "./outbox";
 export * from "./scheduler";
 export * from "./branching";
 export * from "./space";
+export * from "./activities";

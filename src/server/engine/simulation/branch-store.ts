@@ -21,10 +21,12 @@ import {
   itemTransferFeedProjectionSchemaVersion,
 } from "@/contracts/simulation/outbox";
 import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
-import { isMovementEvent } from "@/contracts/simulation/branching";
+import { isActivityEvent, isMovementEvent } from "@/contracts/simulation/branching";
 import {
   composeAncestryEventBounds,
+  emptyActivitiesSeed,
   itemHoldingsAtSequence,
+  replayActivitiesHistory,
   replayBranchHistory,
   replaySpaceHistory,
   simulationHash,
@@ -34,6 +36,8 @@ import {
 } from "@/lib/simulation";
 import {
   db,
+  simActionDefinitions,
+  simActivities,
   simBranches,
   simCharacters,
   simConsumerCheckpoints,
@@ -46,6 +50,7 @@ import {
   simWorlds,
   type Db,
 } from "@/server/db";
+import { activityRowInsert } from "./activity-store";
 import {
   insertSpaceRows,
   loadSpaceRows,
@@ -514,6 +519,41 @@ export async function forkBranch(
       tx,
       spaceRowInsertsForProjection(input.childBranchId, childSpace, spaceSequenceByActor, spaceSequenceByJourney),
     );
+
+    // E3.2 activities: the action catalog copies over as authored statics;
+    // activity instances are fully evented and replay from the empty seed. A
+    // fork mid-activity keeps the child's claims held with the completion
+    // trigger re-armed by the ledger above; a cancelled activity's trigger is
+    // recognized retired.
+    const parentDefinitionRows = await tx
+      .select()
+      .from(simActionDefinitions)
+      .where(eq(simActionDefinitions.branchId, parent.id));
+    if (parentDefinitionRows.length > 0) {
+      await tx.insert(simActionDefinitions).values(
+        parentDefinitionRows.map((row) => ({
+          branchId: input.childBranchId,
+          actionDefinitionId: row.actionDefinitionId,
+          version: row.version,
+          payload: row.payload,
+        })),
+      );
+    }
+    const childActivities = replayActivitiesHistory({
+      seed: emptyActivitiesSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const activitySequenceById = new Map<string, number>();
+    for (const event of inherited) {
+      if (isActivityEvent(event)) activitySequenceById.set(event.payload.activityInstanceId, event.sequence);
+    }
+    if (childActivities.activities.length > 0) {
+      await tx.insert(simActivities).values(
+        childActivities.activities.map((activity) =>
+          activityRowInsert(input.childBranchId, activity, activitySequenceById.get(activity.id) ?? 0),
+        ),
+      );
+    }
 
     // Inherited delivery obligations were fulfilled on ancestor branches; the
     // child's consumer lane starts after the fork point (plan R4 — reference,

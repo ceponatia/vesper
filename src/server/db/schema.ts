@@ -22,6 +22,7 @@ import type {
   SimulationCommandResultRecord,
   SimulationSnapshot,
 } from "@/contracts/simulation/branching";
+import type { ActivityClaim, SimulationActionDefinition } from "@/contracts/simulation/activities";
 import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
@@ -1742,7 +1743,9 @@ export const simTriggers = pgTable(
     id: text("id").primaryKey(),
     worldId: text("world_id").notNull(),
     branchId: text("branch_id").notNull(),
-    kind: text("kind", { enum: ["scheduled_transfer_item", "journey_arrival_due"] }).notNull(),
+    kind: text("kind", {
+      enum: ["scheduled_transfer_item", "journey_arrival_due", "activity_completion_due"],
+    }).notNull(),
     schemaVersion: integer("schema_version").notNull(),
     dueStorySecond: bigint("due_story_second", { mode: "number" }).notNull(),
     /** Spec §12.1 queue order: lower is more urgent. No producer sets it above 0 yet. */
@@ -1977,6 +1980,77 @@ export const simPhysicalLoci = pgTable(
     check(
       "sim_physical_loci_transit_shape",
       sql`${t.kind} <> 'in_transit' OR (${t.journeyId} IS NOT NULL AND ${t.linkId} IS NOT NULL AND ${t.enteredAt} IS NOT NULL AND ${t.earliestExitAt} IS NOT NULL AND ${t.locationId} IS NULL AND ${t.zoneId} IS NULL AND ${t.since} IS NULL)`,
+    ),
+  ],
+);
+
+/**
+ * E3.2 authored action catalog: branch-scoped seeded statics (like topology).
+ * The typed payload is parsed through actionDefinitionSchema at every read —
+ * a definition edit is data, never a migration.
+ */
+export const simActionDefinitions = pgTable(
+  "sim_action_definitions",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    actionDefinitionId: text("action_definition_id").notNull(),
+    version: integer("version").notNull(),
+    payload: jsonb("payload").$type<SimulationActionDefinition>().notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_action_definitions_branch_action_pk",
+      columns: [t.branchId, t.actionDefinitionId],
+    }),
+    check("sim_action_definitions_version_positive", sql`${t.version} > 0`),
+  ],
+);
+
+/**
+ * E3.2 activity instances (engine.spec §16.2). Claims are projected from
+ * these rows — an actor's held claims are the claims of their non-terminal
+ * activities — so a crashed worker can never orphan a claim (§16.3).
+ */
+export const simActivities = pgTable(
+  "sim_activities",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    activityInstanceId: text("activity_instance_id").notNull(),
+    actionDefinitionId: text("action_definition_id").notNull(),
+    actionVersion: integer("action_version").notNull(),
+    actorIds: jsonb("actor_ids").$type<string[]>().notNull(),
+    zoneId: text("zone_id").notNull(),
+    phase: text("phase", {
+      enum: ["queued", "preparing", "active", "paused", "interrupted", "completed", "failed", "cancelled"],
+    }).notNull(),
+    startedAt: bigint("started_at", { mode: "number" }),
+    expectedCompleteAt: bigint("expected_complete_at", { mode: "number" }),
+    progressFixedPoint: integer("progress_fixed_point").notNull().default(0),
+    claims: jsonb("claims").$type<ActivityClaim[]>().notNull(),
+    sourceCommandId: text("source_command_id").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_activities_branch_activity_pk",
+      columns: [t.branchId, t.activityInstanceId],
+    }),
+    foreignKey({
+      name: "sim_activities_branch_zone_fk",
+      columns: [t.branchId, t.zoneId],
+      foreignColumns: [simZones.branchId, simZones.zoneId],
+    }).onDelete("cascade"),
+    index("sim_activities_branch_phase_idx").on(t.branchId, t.phase),
+    check("sim_activities_action_version_positive", sql`${t.actionVersion} > 0`),
+    check(
+      "sim_activities_progress_range",
+      sql`${t.progressFixedPoint} >= 0 AND ${t.progressFixedPoint} <= 1000000`,
     ),
   ],
 );

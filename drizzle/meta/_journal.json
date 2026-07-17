@@ -414,6 +414,13 @@
       "when": 1784316221551,
       "tag": "0058_perfect_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784317325488,
+      "tag": "0059_round_calypso",
+      "breakpoints": true
     }
   ]
 }
