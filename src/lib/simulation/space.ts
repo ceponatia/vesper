@@ -720,6 +720,11 @@ export function applySpaceEvent(
     case "activity_failed":
     case "activity_interrupted":
     case "activity_resumed":
+    case "commitment_created":
+    case "pressure_raised":
+    case "commitment_kept":
+    case "commitment_late":
+    case "commitment_missed":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }

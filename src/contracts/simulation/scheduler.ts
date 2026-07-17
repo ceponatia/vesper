@@ -18,6 +18,10 @@ import {
   worldIdSchema,
 } from "./identity";
 import { completeActivityCommandSchema } from "./activities";
+import {
+  raisePressureCommandSchema,
+  resolveCommitmentDeadlineCommandSchema,
+} from "./commitments";
 import { transferItemCommandSchema } from "./item-transfer";
 import { arriveJourneyCommandSchema } from "./space";
 
@@ -31,10 +35,14 @@ export const simulationTriggerStateSchema = z.enum([
 export const scheduledTransferTriggerKind = "scheduled_transfer_item" as const;
 export const journeyArrivalTriggerKind = "journey_arrival_due" as const;
 export const activityCompletionTriggerKind = "activity_completion_due" as const;
+export const commitmentNoticeTriggerKind = "commitment_notice_due" as const;
+export const commitmentDeadlineTriggerKind = "commitment_deadline_due" as const;
 export const simulationTriggerKinds = [
   scheduledTransferTriggerKind,
   journeyArrivalTriggerKind,
   activityCompletionTriggerKind,
+  commitmentNoticeTriggerKind,
+  commitmentDeadlineTriggerKind,
 ] as const;
 export const scheduledTransferTriggerSchemaVersion = 1 as const;
 export const schedulerDerivationVersion = "scheduler-v1" as const;
@@ -77,6 +85,8 @@ export const simulationTriggerSchema = z
     createTriggerRowSchema(scheduledTransferTriggerKind, transferItemCommandSchema),
     createTriggerRowSchema(journeyArrivalTriggerKind, arriveJourneyCommandSchema),
     createTriggerRowSchema(activityCompletionTriggerKind, completeActivityCommandSchema),
+    createTriggerRowSchema(commitmentNoticeTriggerKind, raisePressureCommandSchema),
+    createTriggerRowSchema(commitmentDeadlineTriggerKind, resolveCommitmentDeadlineCommandSchema),
   ])
   // A trigger on one branch must never carry a command aimed at another. The
   // command envelope has no worldId, so branch equality is the whole check;
@@ -132,6 +142,8 @@ const scheduleTriggerIntentSchema = z.discriminatedUnion("kind", [
   createTriggerIntentSchema(scheduledTransferTriggerKind, transferItemCommandSchema),
   createTriggerIntentSchema(journeyArrivalTriggerKind, arriveJourneyCommandSchema),
   createTriggerIntentSchema(activityCompletionTriggerKind, completeActivityCommandSchema),
+  createTriggerIntentSchema(commitmentNoticeTriggerKind, raisePressureCommandSchema),
+  createTriggerIntentSchema(commitmentDeadlineTriggerKind, resolveCommitmentDeadlineCommandSchema),
 ]);
 
 export const scheduleTransferTriggerCommandSchema = createCommandEnvelopeSchema(
@@ -204,6 +216,9 @@ function triggerIntentEnvelopeFacts(
     case activityCompletionTriggerKind:
       // Same rule: the activity row owns its participant set.
       return { actorIds: [], entityIds: [intent.command.payload.activityInstanceId] };
+    case commitmentNoticeTriggerKind:
+    case commitmentDeadlineTriggerKind:
+      return { actorIds: [], entityIds: [intent.command.payload.commitmentId] };
   }
 }
 

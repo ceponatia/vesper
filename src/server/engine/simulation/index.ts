@@ -12,6 +12,13 @@ export {
   type ExplainOptions,
 } from "./audit-store";
 export {
+  readDurableCommitments,
+  submitDurableCreateCommitment,
+  submitDurableRaisePressure,
+  submitDurableResolveCommitmentDeadline,
+  type CommitmentStoreOptions,
+} from "./commitment-store";
+export {
   assembleBranchState,
   forkBranch,
   loadBranchAncestry,

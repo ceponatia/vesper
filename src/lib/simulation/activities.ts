@@ -518,6 +518,11 @@ export function applyActivityEvent(
     case "journey_interrupted":
     case "actor_arrived":
     case "journey_abandoned":
+    case "commitment_created":
+    case "pressure_raised":
+    case "commitment_kept":
+    case "commitment_late":
+    case "commitment_missed":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

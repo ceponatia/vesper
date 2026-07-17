@@ -23,6 +23,7 @@ import type {
   SimulationSnapshot,
 } from "@/contracts/simulation/branching";
 import type { ActivityClaim, SimulationActionDefinition } from "@/contracts/simulation/activities";
+import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
 import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
@@ -1744,7 +1745,13 @@ export const simTriggers = pgTable(
     worldId: text("world_id").notNull(),
     branchId: text("branch_id").notNull(),
     kind: text("kind", {
-      enum: ["scheduled_transfer_item", "journey_arrival_due", "activity_completion_due"],
+      enum: [
+        "scheduled_transfer_item",
+        "journey_arrival_due",
+        "activity_completion_due",
+        "commitment_notice_due",
+        "commitment_deadline_due",
+      ],
     }).notNull(),
     schemaVersion: integer("schema_version").notNull(),
     dueStorySecond: bigint("due_story_second", { mode: "number" }).notNull(),
@@ -2052,6 +2059,94 @@ export const simActivities = pgTable(
       "sim_activities_progress_range",
       sql`${t.progressFixedPoint} >= 0 AND ${t.progressFixedPoint} <= 1000000`,
     ),
+  ],
+);
+
+/**
+ * E3.3 commitments (engine.spec §15). The window and derivation columns are
+ * captured at creation (the creating event records them too); status is the
+ * §15.4 machine driven by the notice and deadline triggers.
+ */
+export const simCommitments = pgTable(
+  "sim_commitments",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    commitmentId: text("commitment_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    kind: text("kind", { enum: ["shift", "appointment", "promise", "reservation", "routine"] }).notNull(),
+    destinationZoneId: text("destination_zone_id").notNull(),
+    earliestArrival: bigint("earliest_arrival", { mode: "number" }),
+    targetArrival: bigint("target_arrival", { mode: "number" }),
+    latestArrival: bigint("latest_arrival", { mode: "number" }).notNull(),
+    expectedDurationSeconds: bigint("expected_duration_seconds", { mode: "number" }),
+    priority: integer("priority").notNull().default(0),
+    flexibility: text("flexibility", { enum: ["soft", "negotiable", "firm", "hard"] }).notNull(),
+    preparationSeconds: bigint("preparation_seconds", { mode: "number" }).notNull().default(0),
+    reliabilityBufferSeconds: bigint("reliability_buffer_seconds", { mode: "number" }).notNull().default(0),
+    noticeLeadSeconds: bigint("notice_lead_seconds", { mode: "number" }).notNull().default(0),
+    status: text("status", {
+      enum: [
+        "planned",
+        "noticed",
+        "accepted",
+        "declined",
+        "in_progress",
+        "kept",
+        "late",
+        "missed",
+        "cancelled",
+      ],
+    }).notNull(),
+    knowledgeSource: jsonb("knowledge_source").$type<CommitmentKnowledgeSource>().notNull(),
+    sourceCommandId: text("source_command_id").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_commitments_branch_commitment_pk", columns: [t.branchId, t.commitmentId] }),
+    foreignKey({
+      name: "sim_commitments_branch_zone_fk",
+      columns: [t.branchId, t.destinationZoneId],
+      foreignColumns: [simZones.branchId, simZones.zoneId],
+    }).onDelete("cascade"),
+    index("sim_commitments_branch_status_idx").on(t.branchId, t.status),
+    check(
+      "sim_commitments_latest_arrival_safe",
+      sql`${t.latestArrival} >= 0 AND ${t.latestArrival} <= 9007199254740991`,
+    ),
+  ],
+);
+
+/** E3.3 temporal pressures (engine.spec §15.2), one per commitment notice. */
+export const simTemporalPressures = pgTable(
+  "sim_temporal_pressures",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    pressureId: text("pressure_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    sourceCommitmentId: text("source_commitment_id").notNull(),
+    noticeAt: bigint("notice_at", { mode: "number" }).notNull(),
+    decideBy: bigint("decide_by", { mode: "number" }).notNull(),
+    actBy: bigint("act_by", { mode: "number" }).notNull(),
+    severity: text("severity", { enum: ["background", "salient", "urgent", "hard"] }).notNull(),
+    acknowledgedAt: bigint("acknowledged_at", { mode: "number" }),
+    resolvedAt: bigint("resolved_at", { mode: "number" }),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_temporal_pressures_branch_pressure_pk", columns: [t.branchId, t.pressureId] }),
+    foreignKey({
+      name: "sim_temporal_pressures_branch_commitment_fk",
+      columns: [t.branchId, t.sourceCommitmentId],
+      foreignColumns: [simCommitments.branchId, simCommitments.commitmentId],
+    }).onDelete("cascade"),
+    index("sim_temporal_pressures_branch_actor_idx").on(t.branchId, t.actorId),
+    check("sim_temporal_pressures_ordering", sql`${t.noticeAt} <= ${t.decideBy} AND ${t.decideBy} <= ${t.actBy}`),
   ],
 );
 

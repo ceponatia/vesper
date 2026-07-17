@@ -120,7 +120,7 @@ export function locusFromRow(row: typeof simPhysicalLoci.$inferSelect): Physical
   );
 }
 
-function journeyFromRow(row: typeof simJourneys.$inferSelect): Journey {
+export function journeyFromRow(row: typeof simJourneys.$inferSelect): Journey {
   return journeySchema.parse({
     id: row.journeyId,
     actorIds: row.actorIds,

@@ -421,6 +421,13 @@
       "when": 1784317325488,
       "tag": "0059_round_calypso",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784318141728,
+      "tag": "0060_groovy_vivisector",
+      "breakpoints": true
     }
   ]
 }
