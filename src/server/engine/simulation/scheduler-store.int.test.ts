@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
   itemTransferProjectionSchema,
@@ -115,12 +115,12 @@ function projection(ids: CaseIds): ItemTransferProjection {
 function command(
   ids: CaseIds,
   itemId = ids.itemIds[0]!,
-  overrides: Partial<{ branchId: string; itemId: string; toContainerId: string }> = {},
+  overrides: Partial<{ branchId: string; itemId: string; toContainerId: string; expectedVersion: number }> = {},
 ): TransferItemCommand {
   return transferItemCommandSchema.parse({
     id: newId(),
     branchId: overrides.branchId ?? ids.branchId,
-    expectedVersion: 0,
+    expectedVersion: overrides.expectedVersion ?? 0,
     idempotencyKey: newId(),
     principal: { kind: "system", principalId: newId(), controlledActorIds: [ids.actorId] },
     submittedAtWallClock: "2026-07-17T16:00:00.000Z",
@@ -156,8 +156,15 @@ function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string,
   });
 }
 
+/**
+ * Transfers only: since E2.5, scheduling itself appends a trigger_scheduled
+ * event, so counting every row would conflate setting an alarm with it firing.
+ */
 async function eventCount(branchId: string): Promise<number> {
-  const rows = await db().select({ id: simEvents.id }).from(simEvents).where(eq(simEvents.branchId, branchId));
+  const rows = await db()
+    .select({ id: simEvents.id })
+    .from(simEvents)
+    .where(and(eq(simEvents.branchId, branchId), eq(simEvents.type, "item_transferred")));
   return rows.length;
 }
 
@@ -232,7 +239,9 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
     await seedCase(ids);
     const trigger = await scheduleAt(ids, SEED_STORY_SECOND, "transfer-after-race", 0);
 
-    const player = await submitDurableItemTransfer(command(ids, ids.itemIds[1]!));
+    // The schedule command advanced the branch to version 1 (its
+    // trigger_scheduled event is a committed part of history).
+    const player = await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { expectedVersion: 1 }));
     expect(player.status).toBe("accepted");
 
     const resolved = await resolveNextDueTrigger(ids.branchId, { workerId: "worker_a" });
@@ -352,7 +361,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
     const events = await db()
       .select({ sequence: simEvents.sequence })
       .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId));
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "item_transferred")));
     expect(events).toHaveLength(3);
   });
 
@@ -367,7 +376,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
     const events = await db()
       .select({ storySecond: simEvents.storySecond, sequence: simEvents.sequence })
       .from(simEvents)
-      .where(eq(simEvents.branchId, ids.branchId));
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "item_transferred")));
     expect(events.sort((a, b) => a.sequence - b.sequence).map((row) => row.storySecond)).toEqual([
       SEED_STORY_SECOND + 100,
       SEED_STORY_SECOND + 200,
@@ -391,7 +400,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
           itemId: sql<string>`${simEvents.payload}->>'itemId'`,
         })
         .from(simEvents)
-        .where(eq(simEvents.branchId, ids.branchId));
+        .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "item_transferred")));
       return events
         .sort((a, b) => a.sequence - b.sequence)
         .map((row) => [row.storySecond, row.itemId] as [number, string]);
@@ -504,11 +513,13 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
     expect((await resolveNextDueTrigger(ids.branchId, { workerId: "worker_b" })).status).toBe("completed");
     expect(await eventCount(ids.branchId)).toBe(1);
 
+    // Version 2: the schedule command committed one version, its resolution
+    // committed the other. The repeat schedule and re-resolve added nothing.
     const [branch] = await db()
       .select({ version: simBranches.version })
       .from(simBranches)
       .where(eq(simBranches.id, ids.branchId))
       .limit(1);
-    expect(branch?.version).toBe(1);
+    expect(branch?.version).toBe(2);
   });
 });

@@ -1,8 +1,17 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
+  createCommandEnvelopeSchema,
+  createCommandResultSchema,
+  createEventEnvelopeSchema,
+} from "./envelopes";
+import {
+  branchHeadSequenceSchema,
   branchSequenceSchema,
+  commandIdSchema,
   composeSimulationId,
+  derivationVersionSchema,
+  rulesetVersionSchema,
   storySecondSchema,
   triggerIdSchema,
   worldBranchIdSchema,
@@ -53,6 +62,116 @@ export type SimulationTrigger = z.infer<typeof simulationTriggerSchema>;
 
 export function deriveTriggerId(branchId: string, uniquenessKey: string): string {
   return triggerIdSchema.parse(composeSimulationId("trigger", [branchId, uniquenessKey]));
+}
+
+// ---------------------------------------------------------------------------
+// E2.5 — trigger creation as an event effect (plan R1 prerequisite)
+// ---------------------------------------------------------------------------
+
+export const scheduleTransferTriggerCommandType = "schedule_transfer_item" as const;
+export const triggerScheduledEventType = "trigger_scheduled" as const;
+
+/**
+ * The durable scheduling intent an event carries. Applying the event on any
+ * branch — live commit or fork replay — reconstructs the trigger row from this
+ * payload alone; coordination columns (state, attempts, lease) are never part
+ * of the intent.
+ */
+const scheduleTransferTriggerIntentSchema = z
+  .object({
+    kind: z.literal(scheduledTransferTriggerKind),
+    triggerSchemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
+    dueStorySecond: storySecondSchema,
+    priority: z.number().int().min(0).max(9_999).default(0),
+    uniquenessKey: z.string().min(1).max(512),
+    /**
+     * The command template the trigger will dispatch when due. Its routing
+     * fields (branchId, id, idempotencyKey, submittedAtWallClock) are always
+     * overridden at apply/dispatch time, so replaying this intent onto a fork
+     * child re-targets it structurally.
+     */
+    command: transferItemCommandSchema,
+  })
+  .strict();
+
+export const scheduleTransferTriggerCommandSchema = createCommandEnvelopeSchema(
+  scheduleTransferTriggerCommandType,
+  1,
+  scheduleTransferTriggerIntentSchema,
+).refine((command) => command.payload.command.branchId === command.branchId, {
+  message: "Scheduled command template must target its own branch",
+  path: ["payload", "command", "branchId"],
+});
+
+export const scheduleTriggerRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "duplicate_trigger",
+] as const;
+
+export const scheduleTriggerRejectionCodeSchema = z.enum(scheduleTriggerRejectionCodes);
+export const scheduleTriggerCommandResultSchema = createCommandResultSchema(
+  scheduleTriggerRejectionCodeSchema,
+);
+
+export const triggerScheduledEventSchema = createEventEnvelopeSchema(
+  triggerScheduledEventType,
+  1,
+  scheduleTransferTriggerIntentSchema,
+).extend({
+  derivationVersion: derivationVersionSchema,
+  commandId: commandIdSchema,
+});
+
+export type ScheduleTransferTriggerCommand = z.infer<typeof scheduleTransferTriggerCommandSchema>;
+export type ScheduleTriggerRejectionCode = z.infer<typeof scheduleTriggerRejectionCodeSchema>;
+export type ScheduleTriggerCommandResult = z.infer<typeof scheduleTriggerCommandResultSchema>;
+export type TriggerScheduledEvent = z.infer<typeof triggerScheduledEventSchema>;
+
+/** The deterministic command identity a schedule wrapper reuses across retries. */
+export function deriveScheduleCommandId(triggerId: string): string {
+  return commandIdSchema.parse(composeSimulationId("schedule-command", [triggerId]));
+}
+
+/**
+ * The deterministic command identity a trigger resolution dispatches under.
+ * Fork replay recomputes these across every ancestor branch to recognize
+ * transfers that a trigger already produced before the fork point.
+ */
+export function deriveTriggerCommandId(triggerId: string): string {
+  return commandIdSchema.parse(composeSimulationId("trigger-command", [triggerId]));
+}
+
+/** Deterministic event constructor shared by the live commit path and tests. */
+export function buildTriggerScheduledEvent(view: {
+  worldId: string;
+  branchId: string;
+  headSequence: number;
+  storySecond: number;
+  rulesetVersion: string;
+}, command: ScheduleTransferTriggerCommand): TriggerScheduledEvent {
+  const transfer = command.payload.command.payload;
+  const entityIds = [
+    ...new Set<string>([transfer.actorId, transfer.itemId, transfer.fromContainerId, transfer.toContainerId]),
+  ].sort();
+  return triggerScheduledEventSchema.parse({
+    id: composeSimulationId("event", [command.branchId, command.id]),
+    worldId: worldIdSchema.parse(view.worldId),
+    branchId: command.branchId,
+    sequence: branchHeadSequenceSchema.parse(view.headSequence) + 1,
+    storySecond: storySecondSchema.parse(view.storySecond),
+    type: triggerScheduledEventType,
+    schemaVersion: 1,
+    rulesetVersion: rulesetVersionSchema.parse(view.rulesetVersion),
+    derivationVersion: schedulerDerivationVersion,
+    commandId: command.id,
+    correlationId: command.correlationId,
+    actorIds: [transfer.actorId],
+    entityIds,
+    recordedAtWallClock: command.submittedAtWallClock,
+    payload: command.payload,
+  });
 }
 
 /**

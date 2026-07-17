@@ -59,6 +59,9 @@ jobs:
       - name: E2.4 durable scheduler integration
         run: pnpm test:engine-e2-4
 
+      - name: E2.5 forks, snapshots, and audit integration
+        run: pnpm test:engine-e2-5
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

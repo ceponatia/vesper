@@ -1,11 +1,9 @@
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   holdingContainerSchema,
   itemTransferCommandResultSchema,
-  itemTransferObservationSchema,
   itemTransferProjectionSchema,
-  itemTransferredEventSchema,
   simulationActorSchema,
   simulationItemSchema,
   transferItemCommandSchema,
@@ -45,6 +43,7 @@ import {
   simWorlds,
   type Db,
 } from "@/server/db";
+import { readDurableBranchState } from "./branch-store";
 
 const worldSeedSchema = z
   .string()
@@ -146,28 +145,6 @@ function parseStoredResult(value: unknown): ItemTransferCommandResult {
   return itemTransferCommandResultSchema.parse(value);
 }
 
-function eventFromRow(row: typeof simEvents.$inferSelect): ItemTransferredEvent {
-  return itemTransferredEventSchema.parse({
-    id: row.id,
-    worldId: row.worldId,
-    branchId: row.branchId,
-    sequence: row.sequence,
-    storySecond: row.storySecond,
-    type: row.type,
-    schemaVersion: row.schemaVersion,
-    rulesetVersion: row.rulesetVersion,
-    ...(row.derivationVersion ? { derivationVersion: row.derivationVersion } : {}),
-    ...(row.commandId ? { commandId: row.commandId } : {}),
-    ...(row.causationId ? { causationId: row.causationId } : {}),
-    correlationId: row.correlationId,
-    actorIds: row.actorIds,
-    entityIds: row.entityIds,
-    ...(row.locationId ? { locationId: row.locationId } : {}),
-    recordedAtWallClock: row.recordedAt.toISOString(),
-    payload: row.payload,
-  });
-}
-
 /**
  * Seed one new E2.2 branch atomically from the Gate 1 projection contract.
  *
@@ -237,6 +214,9 @@ export async function seedDurableItemTransferBranch(
       headSequence: 0,
       version: 0,
       storySecond: projection.storySecond,
+      // The seed step is not an event (plan R3), so the origin clock must be
+      // recorded here or a fork at sequence zero could never recover it.
+      originStorySecond: projection.storySecond,
     });
 
     if (projection.actors.length > 0) {
@@ -618,109 +598,20 @@ export async function submitDurableItemTransfer(
   return result;
 }
 
-/** Load the current typed projection and immutable events without taking a write lock. */
+/**
+ * Load the current typed projection and immutable transfer events without a
+ * write lock. Events resolve through branch ancestry (plan R4), so a fork
+ * child sees its inherited history here exactly as a root sees its own.
+ */
 export async function readDurableItemTransferBranch(
   rawBranchId: string,
   database: Db = db(),
 ): Promise<DurableItemTransferBranchState> {
-  const branchId = worldBranchIdSchema.parse(rawBranchId);
-  return database.transaction(
-    async (tx) => {
-      const [branchRows, actorRows, containerRows, itemRows, eventRows] = await Promise.all([
-        tx
-          .select({
-            id: simBranches.id,
-            worldId: simBranches.worldId,
-            headSequence: simBranches.headSequence,
-            version: simBranches.version,
-            storySecond: simBranches.storySecond,
-            rulesetVersion: simWorlds.rulesetVersion,
-          })
-          .from(simBranches)
-          .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
-          .where(eq(simBranches.id, branchId))
-          .limit(1),
-        tx
-          .select()
-          .from(simCharacters)
-          .where(eq(simCharacters.branchId, branchId))
-          .orderBy(asc(simCharacters.characterId)),
-        tx
-          .select()
-          .from(simHoldingContainers)
-          .where(eq(simHoldingContainers.branchId, branchId))
-          .orderBy(asc(simHoldingContainers.holdingContainerId)),
-        tx
-          .select({
-            itemId: simItems.itemId,
-            name: simItems.name,
-            holdingContainerId: simItemHoldings.holdingContainerId,
-          })
-          .from(simItems)
-          .innerJoin(
-            simItemHoldings,
-            and(
-              eq(simItemHoldings.branchId, simItems.branchId),
-              eq(simItemHoldings.itemId, simItems.itemId),
-            ),
-          )
-          .where(eq(simItems.branchId, branchId))
-          .orderBy(asc(simItems.itemId)),
-        tx
-          .select()
-          .from(simEvents)
-          .where(eq(simEvents.branchId, branchId))
-          .orderBy(asc(simEvents.sequence)),
-      ]);
-
-      const branch = branchRows[0];
-      if (!branch) throw new Error("Simulation branch not found");
-      const events = eventRows.map(eventFromRow);
-      const observations = events.flatMap((event) =>
-        event.payload.observerActorIds.map((witnessActorId) =>
-          itemTransferObservationSchema.parse({
-            id: composeSimulationId("observation", [event.id, witnessActorId]),
-            sourceEventId: event.id,
-            witnessActorId,
-            sequence: event.sequence,
-            storySecond: event.storySecond,
-            itemId: event.payload.itemId,
-            fromContainerId: event.payload.fromContainerId,
-            toContainerId: event.payload.toContainerId,
-            derivationVersion: "gate1-perception-v1",
-          }),
-        ),
-      );
-
-      const projection = itemTransferProjectionSchema.parse({
-        worldId: branch.worldId,
-        branchId: branch.id,
-        rulesetVersion: branch.rulesetVersion,
-        version: branch.version,
-        headSequence: branch.headSequence,
-        storySecond: branch.storySecond,
-        actors: actorRows.map((row) => ({
-          id: row.characterId,
-          name: row.name,
-          observedContainerIds: row.observedContainerIds,
-        })),
-        containers: containerRows.map((row) => ({
-          id: row.holdingContainerId,
-          kind: row.kind,
-          name: row.name,
-          capacity: row.capacity,
-          accessibleToActorIds: row.accessibleToActorIds,
-        })),
-        items: itemRows.map((row) => ({
-          id: row.itemId,
-          name: row.name,
-          holdingContainerId: row.holdingContainerId,
-        })),
-        observations,
-      });
-
-      return { projection, events };
-    },
-    { isolationLevel: "repeatable read", accessMode: "read only" },
-  );
+  const state = await readDurableBranchState(rawBranchId, database);
+  return {
+    projection: state.projection,
+    events: state.events.filter(
+      (event): event is ItemTransferredEvent => event.type === "item_transferred",
+    ),
+  };
 }

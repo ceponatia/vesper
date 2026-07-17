@@ -23,17 +23,10 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **World-engine forks, snapshots, and audit (E2.5)** —
-  [engine-forks-snapshots-audit.plan.md](engine-forks-snapshots-audit.plan.md) · contract
-  [engine.spec.md](engine.spec.md) (active; plan drafted 2026-07-17 after E2.4 merged, with
-  the owner's three fork rulings settled). Adds branch ancestry, fork boundaries, checksummed
-  snapshots, projection comparison, and causal explanation queries. A fork rebuilds by
-  replaying events (not by copying trigger rows), so pending alarms survive a rewind only if
-  their setting event predates the fork point. First closes the E2.3 outbox unbounded-reclaim
-  gap and moves trigger creation behind an event effect (the replay prerequisite). Followed by
-  **E2.6 — Gate 2 soak and verdict**, which runs the synthetic-month, partition-invariance,
-  retry, crash, queue-growth, and replay-hash proofs and records the owner's advance/revise/
-  hold/stop ruling before movement or live-scene work begins.
+_(Nothing at this moment — E2.5 shipped 2026-07-17; **E2.6 — Gate 2 soak and verdict** is
+the next engine target: the synthetic-month, partition-invariance, retry, crash,
+queue-growth, and replay-hash proofs, and the owner's advance/revise/hold/stop ruling
+before movement or live-scene work begins.)_
 
 ## Next (queued)
 
@@ -104,6 +97,16 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine forks, snapshots, and audit (E2.5)** —
+  [engine-forks-snapshots-audit.plan.md](engine-forks-snapshots-audit.plan.md) · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-17 — branch ancestry with the R4
+  reference-not-copy bounded read, `forkBranch` rebuilding child state and pending alarms by
+  replaying setting events ≤ N (already-fired alarms recorded completed, never re-armed),
+  trigger creation moved behind a committed `trigger_scheduled` event, checksummed
+  discardable `sim_snapshots` (auto-captured at fork), rebuild-from-zero/from-snapshot hash
+  comparison, `explainItemPlacement` causal chains, and the E2.3 outbox claim-time
+  quarantine fix. 10 new PostgreSQL cases + 7 pure replay cases green; CI runs
+  `test:engine-e2-5` from a zero-state migration. Next engine target: **E2.6**.
 - **World-engine durable scheduler and deterministic draws (E2.4)** —
   [engine-durable-scheduler.plan.md](engine-durable-scheduler.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — durable triggers with derived identity,

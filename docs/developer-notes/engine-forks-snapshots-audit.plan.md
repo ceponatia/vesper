@@ -1,6 +1,13 @@
 # E2.5 — forks, snapshots, and audit
 
-Status: **active — drafted 2026-07-17**
+Status: **shipped — 2026-07-17** — all deliverables landed in one slice: the pre-work outbox
+reclaim fix, trigger creation behind a `trigger_scheduled` event (R1 prerequisite), ancestry
+columns + the R4 bounded read, `forkBranch` with replay-recreated triggers, `sim_snapshots`
+with capture/discard, rebuild-from-zero/from-snapshot hash comparison, and
+`explainItemPlacement`. CI runs `test:engine-e2-5` after the E2.4 step. Leftovers: trigger
+*cancellation* as an event effect is deferred until a cancellation surface exists (noted in
+`docs/contracts/simulation.md` §Deliberate limits); chat-lane retake wiring stays Gate 3+;
+E2.6 (Gate 2 soak and verdict) is next.
 
 Depends on E2.4 at `04b7325` (PR #14, merged). The fifth Gate 2 target
 ([engine.plan.md](engine.plan.md) §"Gate 2 build order"). It adds branch ancestry, fork
@@ -250,8 +257,12 @@ diverges from a zero rebuild means revise rather than advance.
 
 ## Open questions
 
-1. **Snapshot cadence.** Every K events, on fork, on demand, or a mix? Low-stakes; pick a
-   simple default (e.g. on fork + on demand) and tune with data.
+None.
 
-Resolved: *copy vs reference for ancestor events* — reference-by-ancestry (owner ruling
-2026-07-17); see R4.
+Resolved:
+
+- *Copy vs reference for ancestor events* — reference-by-ancestry (owner ruling
+  2026-07-17); see R4.
+- *Snapshot cadence* — the suggested simple default shipped: `forkBranch` snapshots the
+  fork point automatically and `captureBranchSnapshot` covers on-demand; tune with data
+  later if a per-K-events cadence earns its cost.

@@ -62,7 +62,7 @@ leaves the snapshot intact.
 | `participant_relationships` | `session_id`, `from_participant_id` (edge owner — always an NPC), `to_participant_id`, `kind` (`feeling`/`perceived` — perceived only toward the player), `value` int, `stage` (denormalized from the stage registry, recomputed on write); unique (session, from, to, kind) |
 | `item_instances` | `session_id`, `item_id?`, `snapshot` JSONB (ItemDefinition snapshot), `name`, exactly-one placement (`holder_participant_id` + `worn` bool, `location_id`, `container_instance_id`) **enforced by CHECK constraints** (`item_instances_one_placement`; `item_instances_worn_needs_holder` — `worn` requires a holder), `position_note`, `state` JSONB (condition/cleanliness/wetness/notes). Wardrobe visibility (visible/hinted/hidden per body location) is computed by `contracts/items/visibility.ts`, never stored |
 
-### Successor simulation authority (E2.2–E2.4)
+### Successor simulation authority (E2.2–E2.5)
 
 These `sim_*` tables are an isolated successor-engine authority catalog; they do not
 dual-write the deprecated session engine or current character-chat rows.
@@ -70,7 +70,7 @@ dual-write the deprecated session engine or current character-chat rows.
 | Table | Key columns |
 | --- | --- |
 | `sim_worlds` | explicit world ID, world type, opaque deterministic seed, ruleset version, lifecycle status |
-| `sim_branches` | world ID, head sequence, optimistic version, integer story second; the row is the branch sequencer lock |
+| `sim_branches` | world ID, head sequence, optimistic version, integer story second; the row is the branch sequencer lock. **E2.5 ancestry (spec §29.3):** `origin_story_second` (seed clock for roots, fork clock for children), nullable `parent_branch_id` + `fork_sequence` + fork provenance (parent ruleset/event-schema versions, forking principal, reason, inherited snapshot checksum) — all-or-nothing per the `sim_branches_fork_shape` CHECK; `(parent_branch_id, world_id)` FK forces same-world parentage (`NO ACTION`, so a world cascade removing parent and child together still settles) |
 | `sim_commands` | full parsed envelope plus exhaustive accepted/rejected/conflict result; primary key `(branch_id, idempotency_key)` |
 | `sim_events` | immutable schema-versioned event envelope; event ID globally unique and `(branch_id, sequence)` unique |
 | `sim_characters` | minimum actor/observation facts used by the E2.2 transfer slice |
@@ -80,11 +80,23 @@ dual-write the deprecated session engine or current character-chat rows.
 | `sim_outbox` (E2.3) | one delivery obligation per accepted event and consumer kind; unique `(consumer_kind, branch_id, source_event_id)` makes publication idempotent |
 | `sim_consumer_checkpoints` (E2.3) | greatest contiguous sequence applied per consumer and branch; progress metadata, not authority |
 | `sim_item_transfer_feed` (E2.3) | first disposable async projection — one row per transferred-item event; never read by command validation |
-| `sim_triggers` (E2.4) | durable future-evaluation requests: due story second, immutable `stable_order` tie-break, branch-unique `uniqueness_key`, lease/attempt coordination, and the scheduler `derivation_version` that produced the terminal outcome |
+| `sim_triggers` (E2.4) | durable future-evaluation requests: due story second, immutable `stable_order` tie-break, branch-unique `uniqueness_key`, lease/attempt coordination, and the scheduler `derivation_version` that produced the terminal outcome. **Since E2.5 a trigger row is only ever created by applying a committed `trigger_scheduled` event** (`applyTriggerScheduledEvent`), live or on fork replay — never by direct insert |
+| `sim_snapshots` (E2.5) | replay checkpoints (spec §10.4): branch, projection kind, sequence, projection schema + ruleset versions, deterministic checksum, source event range, and the full projection payload so replay resumes there instead of walking to the root; unique `(branch_id, projection_kind, sequence)` |
 
-`sim_outbox`, `sim_consumer_checkpoints`, `sim_item_transfer_feed`, and the lease/attempt
-columns of `sim_triggers` are **disposable coordination state**. World truth is `sim_events`
-plus the synchronous typed projections; these may be rebuilt or requeued without changing it.
+`sim_outbox`, `sim_consumer_checkpoints`, `sim_item_transfer_feed`, `sim_snapshots`, and the
+lease/attempt columns of `sim_triggers` are **disposable coordination state**. World truth is
+`sim_events` plus the synchronous typed projections; these may be rebuilt, requeued, or (for
+snapshots) discarded without changing it.
+
+**Branch forks (E2.5).** A fork child stores only its own post-fork rows: ancestor events are
+read through the parent chain bounded by `fork_sequence` (`readBranchAncestryEvents`), never
+copied. `forkBranch` materializes the child's typed projections and trigger rows by replaying
+ancestor events ≤ N through the same projectors that ran live — an alarm whose firing is
+already inherited history is recorded `completed`, not re-armed — then checkpoints the fork
+point in `sim_snapshots` and starts the child's outbox lane at N via
+`sim_consumer_checkpoints`. Rebuild-from-zero (`rebuildDurableBranchProjection`) and
+rebuild-from-snapshot must both hash-match the live projection; CI's `test:engine-e2-5`
+enforces it so a wrong snapshot cannot hide a replay defect.
 
 Domain identities are supplied explicitly instead of replaced by cuid2 row identities.
 Causal bigint columns are database-checked against JavaScript's safe integer range.

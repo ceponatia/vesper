@@ -1,16 +1,31 @@
 import { and, asc, eq, lte, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import {
+  buildTriggerScheduledEvent,
+  deriveScheduleCommandId,
+  deriveTriggerCommandId,
   deriveTriggerId,
+  scheduleTransferTriggerCommandSchema,
+  scheduleTransferTriggerCommandType,
+  scheduleTriggerCommandResultSchema,
   scheduledTransferTriggerKind,
   schedulerDerivationVersion,
   schedulerRetryDelaySeconds,
   simulationTriggerSchema,
+  type ScheduleTransferTriggerCommand,
+  type ScheduleTriggerCommandResult,
   type SimulationTrigger,
 } from "@/contracts/simulation/scheduler";
-import { composeSimulationId, storySecondSchema } from "@/contracts/simulation/identity";
-import { db, simBranches, simTriggers, type Db } from "@/server/db";
+import {
+  branchVersionSchema,
+  storySecondSchema,
+  worldBranchIdSchema,
+  worldIdSchema,
+} from "@/contracts/simulation/identity";
+import { transferItemCommandSchema } from "@/contracts/simulation/item-transfer";
+import { db, simBranches, simCommands, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { submitDurableItemTransfer } from "./item-transfer-store";
+import { applyTriggerScheduledEvent } from "./trigger-projector";
 
 export interface ScheduleTriggerOptions {
   database?: Db;
@@ -95,48 +110,277 @@ function positiveSafeInteger(value: number, label: string): number {
   return value;
 }
 
-/** Insert one branch-unique trigger and assign its immutable simultaneous-order key. */
+function invalidScheduleResult(): ScheduleTriggerCommandResult {
+  return {
+    status: "rejected",
+    commandId: "invalid",
+    code: "invalid_command",
+    publicReason: "That scheduling request is invalid.",
+    legalAlternativeCommandTypes: [],
+  };
+}
+
+function scheduleBranchUnavailableResult(
+  command: ScheduleTransferTriggerCommand,
+): ScheduleTriggerCommandResult {
+  return {
+    status: "rejected",
+    commandId: command.id,
+    code: "branch_mismatch",
+    publicReason: "That world branch is unavailable.",
+    legalAlternativeCommandTypes: [],
+  };
+}
+
+/**
+ * Execute one schedule command against PostgreSQL authority (spec §11.1 step
+ * 10): the trigger_scheduled event, the trigger row it projects to, the branch
+ * advance, and the command result commit atomically under the branch lock.
+ */
+export async function submitDurableTriggerSchedule(
+  rawCommand: unknown,
+  options: { database?: Db; admitAtLockedVersion?: boolean } = {},
+): Promise<ScheduleTriggerCommandResult> {
+  const parsed = scheduleTransferTriggerCommandSchema.safeParse(rawCommand);
+  if (!parsed.success) return invalidScheduleResult();
+
+  const submitted = parsed.data;
+  const database = options.database ?? db();
+
+  const [preLockCached] = await database
+    .select({ result: simCommands.result })
+    .from(simCommands)
+    .where(
+      and(
+        eq(simCommands.branchId, submitted.branchId),
+        eq(simCommands.idempotencyKey, submitted.idempotencyKey),
+      ),
+    )
+    .limit(1);
+  if (preLockCached) return scheduleTriggerCommandResultSchema.parse(preLockCached.result);
+
+  return database.transaction(async (tx) => {
+    const [branch] = await tx
+      .select({
+        id: simBranches.id,
+        worldId: simBranches.worldId,
+        headSequence: simBranches.headSequence,
+        version: simBranches.version,
+        storySecond: simBranches.storySecond,
+        rulesetVersion: simWorlds.rulesetVersion,
+        worldStatus: simWorlds.status,
+      })
+      .from(simBranches)
+      .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
+      .where(eq(simBranches.id, submitted.branchId))
+      .limit(1)
+      .for("update", { of: simBranches });
+    if (!branch) return scheduleBranchUnavailableResult(submitted);
+
+    const command: ScheduleTransferTriggerCommand = options.admitAtLockedVersion
+      ? { ...submitted, expectedVersion: branchVersionSchema.parse(branch.version) }
+      : submitted;
+
+    const [cached] = await tx
+      .select({ result: simCommands.result })
+      .from(simCommands)
+      .where(
+        and(
+          eq(simCommands.branchId, command.branchId),
+          eq(simCommands.idempotencyKey, command.idempotencyKey),
+        ),
+      )
+      .limit(1);
+    if (cached) return scheduleTriggerCommandResultSchema.parse(cached.result);
+
+    const [sameCommandId] = await tx
+      .select({ idempotencyKey: simCommands.idempotencyKey })
+      .from(simCommands)
+      .where(and(eq(simCommands.branchId, command.branchId), eq(simCommands.commandId, command.id)))
+      .limit(1);
+
+    let commandResult: ScheduleTriggerCommandResult;
+    if (sameCommandId) {
+      commandResult = {
+        status: "rejected",
+        commandId: command.id,
+        code: "duplicate_command_id",
+        publicReason: "That scheduling request has already been submitted.",
+        legalAlternativeCommandTypes: [],
+      };
+    } else if (branch.worldStatus !== "active") {
+      commandResult = scheduleBranchUnavailableResult(command);
+    } else if (command.expectedVersion !== branch.version) {
+      commandResult = {
+        status: "conflict",
+        commandId: command.id,
+        currentVersion: branch.version,
+        retryable: true,
+      };
+    } else {
+      const [existingTrigger] = await tx
+        .select({ id: simTriggers.id })
+        .from(simTriggers)
+        .where(
+          and(
+            eq(simTriggers.branchId, command.branchId),
+            eq(simTriggers.uniquenessKey, command.payload.uniquenessKey),
+          ),
+        )
+        .limit(1);
+      if (existingTrigger) {
+        commandResult = {
+          status: "rejected",
+          commandId: command.id,
+          code: "duplicate_trigger",
+          publicReason: "That trigger is already scheduled.",
+          legalAlternativeCommandTypes: [],
+        };
+      } else {
+        const event = buildTriggerScheduledEvent(
+          {
+            worldId: branch.worldId,
+            branchId: branch.id,
+            headSequence: branch.headSequence,
+            storySecond: branch.storySecond,
+            rulesetVersion: branch.rulesetVersion,
+          },
+          command,
+        );
+        await tx.insert(simEvents).values({
+          id: event.id,
+          worldId: event.worldId,
+          branchId: event.branchId,
+          sequence: event.sequence,
+          storySecond: event.storySecond,
+          type: event.type,
+          schemaVersion: event.schemaVersion,
+          rulesetVersion: event.rulesetVersion,
+          derivationVersion: event.derivationVersion,
+          commandId: event.commandId,
+          correlationId: event.correlationId,
+          actorIds: event.actorIds,
+          entityIds: event.entityIds,
+          recordedAt: new Date(event.recordedAtWallClock),
+          payload: event.payload,
+        });
+        await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+
+        const advanced = await tx
+          .update(simBranches)
+          .set({ headSequence: event.sequence, version: branch.version + 1 })
+          .where(
+            and(
+              eq(simBranches.id, branch.id),
+              eq(simBranches.version, branch.version),
+              eq(simBranches.headSequence, branch.headSequence),
+            ),
+          )
+          .returning({ id: simBranches.id });
+        if (advanced.length !== 1) {
+          throw new Error("Locked simulation branch failed its compare-and-swap advance");
+        }
+
+        commandResult = {
+          status: "accepted",
+          commandId: command.id,
+          branchVersion: branch.version + 1,
+          firstSequence: event.sequence,
+          lastSequence: event.sequence,
+          eventIds: [event.id],
+        };
+      }
+    }
+
+    await tx.insert(simCommands).values({
+      branchId: command.branchId,
+      idempotencyKey: command.idempotencyKey,
+      commandId: command.id,
+      type: command.type,
+      schemaVersion: command.schemaVersion,
+      expectedVersion: command.expectedVersion,
+      principalKind: command.principal.kind,
+      envelope: command,
+      status: commandResult.status,
+      result: commandResult,
+      submittedAt: new Date(command.submittedAtWallClock),
+    });
+    return commandResult;
+  });
+}
+
+/**
+ * Schedule one branch-unique trigger as a committed event effect (plan R1).
+ *
+ * The signature is unchanged from E2.4, but the row is now created by a
+ * schedule command whose trigger_scheduled event replays on fork. Repeat calls
+ * for the same uniqueness key stay idempotent: the command identity derives
+ * from the trigger identity, so retries hit the stored result and return the
+ * existing row.
+ */
 export async function scheduleDurableTrigger(
   rawTrigger: ScheduleTriggerInput,
   options: ScheduleTriggerOptions = {},
 ): Promise<SimulationTrigger> {
   const database = options.database ?? db();
-  return database.transaction(async (tx) => {
-    const [branch] = await tx
-      .select({ id: simBranches.id, worldId: simBranches.worldId })
-      .from(simBranches)
-      .where(eq(simBranches.id, rawTrigger.branchId))
-      .limit(1)
-      .for("update");
-    if (!branch || branch.worldId !== rawTrigger.worldId) {
-      throw new Error("Cannot schedule a trigger for an unavailable branch");
-    }
+  const branchId = worldBranchIdSchema.parse(rawTrigger.branchId);
+  const worldId = worldIdSchema.parse(rawTrigger.worldId);
+  const triggerId = deriveTriggerId(branchId, rawTrigger.uniquenessKey);
 
-    const [existing] = await tx
-      .select()
-      .from(simTriggers)
-      .where(
-        and(
-          eq(simTriggers.branchId, rawTrigger.branchId),
-          eq(simTriggers.uniquenessKey, rawTrigger.uniquenessKey),
-        ),
-      )
-      .limit(1);
-    if (existing) return simulationTriggerSchema.parse(existing);
+  const loadTrigger = async () => {
+    const [row] = await database.select().from(simTriggers).where(eq(simTriggers.id, triggerId)).limit(1);
+    return row ? simulationTriggerSchema.parse(row) : undefined;
+  };
 
-    const [orderRow] = await tx
-      .select({ next: sql<number>`coalesce(max(${simTriggers.stableOrder}), 0) + 1` })
-      .from(simTriggers)
-      .where(eq(simTriggers.branchId, rawTrigger.branchId));
+  const existing = await loadTrigger();
+  if (existing) return existing;
 
-    const trigger = simulationTriggerSchema.parse({
-      ...rawTrigger,
-      id: deriveTriggerId(rawTrigger.branchId, rawTrigger.uniquenessKey),
-      stableOrder: Number(orderRow?.next ?? 1),
-    });
-    await tx.insert(simTriggers).values(trigger);
-    return trigger;
+  const [branch] = await database
+    .select({ id: simBranches.id, worldId: simBranches.worldId })
+    .from(simBranches)
+    .where(eq(simBranches.id, branchId))
+    .limit(1);
+  if (!branch || branch.worldId !== worldId) {
+    throw new Error("Cannot schedule a trigger for an unavailable branch");
+  }
+
+  const template = transferItemCommandSchema.parse(rawTrigger.payload.command);
+  const commandId = deriveScheduleCommandId(triggerId);
+  const command = scheduleTransferTriggerCommandSchema.parse({
+    id: commandId,
+    branchId,
+    expectedVersion: 0,
+    idempotencyKey: commandId,
+    principal: template.principal,
+    submittedAtWallClock: template.submittedAtWallClock,
+    type: scheduleTransferTriggerCommandType,
+    schemaVersion: 1,
+    correlationId: template.correlationId,
+    payload: {
+      kind: rawTrigger.kind,
+      triggerSchemaVersion: rawTrigger.schemaVersion,
+      dueStorySecond: rawTrigger.dueStorySecond,
+      priority: rawTrigger.priority ?? 0,
+      uniquenessKey: rawTrigger.uniquenessKey,
+      command: template,
+    },
   });
+
+  // A schedule depends on no optimistic read — its only precondition is key
+  // uniqueness, checked under the branch lock — so it admits at the locked
+  // version like any scheduler-originated command.
+  const result = await submitDurableTriggerSchedule(command, { database, admitAtLockedVersion: true });
+  if (result.status === "rejected" && result.code === "branch_mismatch") {
+    throw new Error("Cannot schedule a trigger for an unavailable branch");
+  }
+  if (result.status === "conflict" || (result.status === "rejected" && result.code !== "duplicate_trigger")) {
+    const detail = result.status === "conflict" ? "conflict" : result.code;
+    throw new Error(`Trigger scheduling failed unexpectedly: ${detail}`);
+  }
+
+  const scheduled = await loadTrigger();
+  if (!scheduled) throw new Error("Scheduled trigger row is missing after commit");
+  return scheduled;
 }
 
 /**
@@ -254,7 +498,7 @@ export async function resolveNextDueTrigger(
       throw new Error(`Unsupported trigger kind: ${trigger.kind}`);
     }
 
-    const commandId = composeSimulationId("trigger-command", [trigger.id]);
+    const commandId = deriveTriggerCommandId(trigger.id);
     const result = await submitDurableItemTransfer(
       {
         ...trigger.payload.command,
