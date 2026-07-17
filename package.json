@@ -39,7 +39,8 @@
     "test:engine-e2-3": "vitest run --no-file-parallelism --testNamePattern E2.3 src/server/engine/simulation/item-transfer-store.int.test.ts",
     "test:engine-e2-4": "vitest run --no-file-parallelism src/server/engine/simulation/scheduler-store.int.test.ts",
     "test:engine-e2-5": "vitest run --no-file-parallelism src/server/engine/simulation/branch-store.int.test.ts",
-    "test:engine-e2-6": "vitest run --no-file-parallelism src/server/engine/simulation/gate2-soak.int.test.ts"
+    "test:engine-e2-6": "vitest run --no-file-parallelism src/server/engine/simulation/gate2-soak.int.test.ts",
+    "test:engine-e3-1": "vitest run --no-file-parallelism src/lib/simulation/space.test.ts src/contracts/simulation/space.test.ts src/server/engine/simulation/space-store.int.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"

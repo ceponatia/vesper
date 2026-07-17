@@ -18,6 +18,7 @@ import {
   worldIdSchema,
 } from "./identity";
 import { transferItemCommandSchema } from "./item-transfer";
+import { arriveJourneyCommandSchema } from "./space";
 
 export const simulationTriggerStateSchema = z.enum([
   "pending",
@@ -27,8 +28,37 @@ export const simulationTriggerStateSchema = z.enum([
 ]);
 
 export const scheduledTransferTriggerKind = "scheduled_transfer_item" as const;
+export const journeyArrivalTriggerKind = "journey_arrival_due" as const;
+export const simulationTriggerKinds = [scheduledTransferTriggerKind, journeyArrivalTriggerKind] as const;
 export const scheduledTransferTriggerSchemaVersion = 1 as const;
 export const schedulerDerivationVersion = "scheduler-v1" as const;
+
+/**
+ * Each trigger kind pairs with exactly one dispatchable command family. The
+ * pairing is structural — a journey-arrival trigger cannot smuggle a transfer
+ * command and vice versa.
+ */
+function createTriggerRowSchema<TKind extends string, TCommand extends z.ZodType>(
+  kind: TKind,
+  command: TCommand,
+) {
+  // Deliberately non-strict: database coordination columns (state, attempts,
+  // lease, …) are stripped when a durable row projects back into the domain
+  // trigger contract.
+  return z.object({
+    id: triggerIdSchema,
+    worldId: worldIdSchema,
+    branchId: worldBranchIdSchema,
+    kind: z.literal(kind),
+    schemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
+    dueStorySecond: storySecondSchema,
+    /** Spec §12.1: lower is more urgent. Ties fall through to stableOrder. */
+    priority: z.number().int().min(0).max(9_999).default(0),
+    stableOrder: branchSequenceSchema,
+    uniquenessKey: z.string().min(1).max(512),
+    payload: z.object({ command }).strict(),
+  });
+}
 
 export const scheduledTransferTriggerPayloadSchema = z
   .object({ command: transferItemCommandSchema })
@@ -37,19 +67,10 @@ export const scheduledTransferTriggerPayloadSchema = z
 // Database coordination columns are intentionally stripped when a durable row is
 // projected back into the immutable domain trigger contract.
 export const simulationTriggerSchema = z
-  .object({
-    id: triggerIdSchema,
-    worldId: worldIdSchema,
-    branchId: worldBranchIdSchema,
-    kind: z.literal(scheduledTransferTriggerKind),
-    schemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
-    dueStorySecond: storySecondSchema,
-    /** Spec §12.1: lower is more urgent. Ties fall through to stableOrder. */
-    priority: z.number().int().min(0).max(9_999).default(0),
-    stableOrder: branchSequenceSchema,
-    uniquenessKey: z.string().min(1).max(512),
-    payload: scheduledTransferTriggerPayloadSchema,
-  })
+  .discriminatedUnion("kind", [
+    createTriggerRowSchema(scheduledTransferTriggerKind, transferItemCommandSchema),
+    createTriggerRowSchema(journeyArrivalTriggerKind, arriveJourneyCommandSchema),
+  ])
   // A trigger on one branch must never carry a command aimed at another. The
   // command envelope has no worldId, so branch equality is the whole check;
   // world equality follows from the trigger's branch/world foreign key.
@@ -59,6 +80,7 @@ export const simulationTriggerSchema = z
   });
 
 export type SimulationTrigger = z.infer<typeof simulationTriggerSchema>;
+export type SimulationTriggerKind = SimulationTrigger["kind"];
 
 export function deriveTriggerId(branchId: string, uniquenessKey: string): string {
   return triggerIdSchema.parse(composeSimulationId("trigger", [branchId, uniquenessKey]));
@@ -77,27 +99,37 @@ export const triggerScheduledEventType = "trigger_scheduled" as const;
  * payload alone; coordination columns (state, attempts, lease) are never part
  * of the intent.
  */
-const scheduleTransferTriggerIntentSchema = z
-  .object({
-    kind: z.literal(scheduledTransferTriggerKind),
-    triggerSchemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
-    dueStorySecond: storySecondSchema,
-    priority: z.number().int().min(0).max(9_999).default(0),
-    uniquenessKey: z.string().min(1).max(512),
-    /**
-     * The command template the trigger will dispatch when due. Its routing
-     * fields (branchId, id, idempotencyKey, submittedAtWallClock) are always
-     * overridden at apply/dispatch time, so replaying this intent onto a fork
-     * child re-targets it structurally.
-     */
-    command: transferItemCommandSchema,
-  })
-  .strict();
+function createTriggerIntentSchema<TKind extends string, TCommand extends z.ZodType>(
+  kind: TKind,
+  command: TCommand,
+) {
+  return z
+    .object({
+      kind: z.literal(kind),
+      triggerSchemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
+      dueStorySecond: storySecondSchema,
+      priority: z.number().int().min(0).max(9_999).default(0),
+      uniquenessKey: z.string().min(1).max(512),
+      /**
+       * The command template the trigger will dispatch when due. Its routing
+       * fields (branchId, id, idempotencyKey, submittedAtWallClock) are always
+       * overridden at apply/dispatch time, so replaying this intent onto a fork
+       * child re-targets it structurally.
+       */
+      command,
+    })
+    .strict();
+}
+
+const scheduleTriggerIntentSchema = z.discriminatedUnion("kind", [
+  createTriggerIntentSchema(scheduledTransferTriggerKind, transferItemCommandSchema),
+  createTriggerIntentSchema(journeyArrivalTriggerKind, arriveJourneyCommandSchema),
+]);
 
 export const scheduleTransferTriggerCommandSchema = createCommandEnvelopeSchema(
   scheduleTransferTriggerCommandType,
   1,
-  scheduleTransferTriggerIntentSchema,
+  scheduleTriggerIntentSchema,
 ).refine((command) => command.payload.command.branchId === command.branchId, {
   message: "Scheduled command template must target its own branch",
   path: ["payload", "command", "branchId"],
@@ -118,7 +150,7 @@ export const scheduleTriggerCommandResultSchema = createCommandResultSchema(
 export const triggerScheduledEventSchema = createEventEnvelopeSchema(
   triggerScheduledEventType,
   1,
-  scheduleTransferTriggerIntentSchema,
+  scheduleTriggerIntentSchema,
 ).extend({
   derivationVersion: derivationVersionSchema,
   commandId: commandIdSchema,
@@ -143,6 +175,27 @@ export function deriveTriggerCommandId(triggerId: string): string {
   return commandIdSchema.parse(composeSimulationId("trigger-command", [triggerId]));
 }
 
+/** Per-kind envelope facts for a scheduling event: who acts, what is referenced. */
+function triggerIntentEnvelopeFacts(
+  intent: z.infer<typeof scheduleTriggerIntentSchema>,
+): { actorIds: string[]; entityIds: string[] } {
+  switch (intent.kind) {
+    case scheduledTransferTriggerKind: {
+      const transfer = intent.command.payload;
+      return {
+        actorIds: [transfer.actorId],
+        entityIds: [
+          ...new Set<string>([transfer.actorId, transfer.itemId, transfer.fromContainerId, transfer.toContainerId]),
+        ].sort(),
+      };
+    }
+    case journeyArrivalTriggerKind:
+      // The journey row owns its traveller set; re-validation at fire time
+      // reads it there, so the scheduling envelope names only the journey.
+      return { actorIds: [], entityIds: [intent.command.payload.journeyId] };
+  }
+}
+
 /** Deterministic event constructor shared by the live commit path and tests. */
 export function buildTriggerScheduledEvent(view: {
   worldId: string;
@@ -151,10 +204,7 @@ export function buildTriggerScheduledEvent(view: {
   storySecond: number;
   rulesetVersion: string;
 }, command: ScheduleTransferTriggerCommand): TriggerScheduledEvent {
-  const transfer = command.payload.command.payload;
-  const entityIds = [
-    ...new Set<string>([transfer.actorId, transfer.itemId, transfer.fromContainerId, transfer.toContainerId]),
-  ].sort();
+  const facts = triggerIntentEnvelopeFacts(command.payload);
   return triggerScheduledEventSchema.parse({
     id: composeSimulationId("event", [command.branchId, command.id]),
     worldId: worldIdSchema.parse(view.worldId),
@@ -167,8 +217,8 @@ export function buildTriggerScheduledEvent(view: {
     derivationVersion: schedulerDerivationVersion,
     commandId: command.id,
     correlationId: command.correlationId,
-    actorIds: [transfer.actorId],
-    entityIds,
+    actorIds: facts.actorIds,
+    entityIds: facts.entityIds,
     recordedAtWallClock: command.submittedAtWallClock,
     payload: command.payload,
   });

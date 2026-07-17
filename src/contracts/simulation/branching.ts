@@ -28,6 +28,18 @@ import {
   type ScheduleTransferTriggerCommand,
   type ScheduleTriggerCommandResult,
 } from "./scheduler";
+import {
+  actorArrivedEventSchema,
+  actorDepartedEventSchema,
+  journeyAbandonedEventSchema,
+  journeyDelayedEventSchema,
+  journeyInterruptedEventSchema,
+  journeyPlannedEventSchema,
+  type ArriveJourneyCommand,
+  type ArriveJourneyCommandResult,
+  type MoveActorCommand,
+  type MoveActorCommandResult,
+} from "./space";
 
 /**
  * Every event family a branch's ordered stream can contain. Branch-scoped
@@ -37,13 +49,44 @@ import {
 export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   itemTransferredEventSchema,
   triggerScheduledEventSchema,
+  journeyPlannedEventSchema,
+  actorDepartedEventSchema,
+  journeyDelayedEventSchema,
+  journeyInterruptedEventSchema,
+  actorArrivedEventSchema,
+  journeyAbandonedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
 
+/** The movement family (E3.1). Replay treats these as space-projection events. */
+const movementEventTypeList = [
+  "journey_planned",
+  "actor_departed",
+  "journey_delayed",
+  "journey_interrupted",
+  "actor_arrived",
+  "journey_abandoned",
+] as const;
+export type MovementEventType = (typeof movementEventTypeList)[number];
+export type SimulationMovementEvent = Extract<SimulationBranchEvent, { type: MovementEventType }>;
+export const movementEventTypes: ReadonlySet<string> = new Set(movementEventTypeList);
+
+export function isMovementEvent(event: SimulationBranchEvent): event is SimulationMovementEvent {
+  return movementEventTypes.has(event.type);
+}
+
 /** Union persisted in sim_commands; each family keeps its own result contract. */
-export type SimulationCommandEnvelope = TransferItemCommand | ScheduleTransferTriggerCommand;
-export type SimulationCommandResultRecord = ItemTransferCommandResult | ScheduleTriggerCommandResult;
+export type SimulationCommandEnvelope =
+  | TransferItemCommand
+  | ScheduleTransferTriggerCommand
+  | MoveActorCommand
+  | ArriveJourneyCommand;
+export type SimulationCommandResultRecord =
+  | ItemTransferCommandResult
+  | ScheduleTriggerCommandResult
+  | MoveActorCommandResult
+  | ArriveJourneyCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)
