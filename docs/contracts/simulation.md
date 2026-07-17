@@ -18,13 +18,25 @@ The implementation lives in:
 - `src/contracts/simulation/item-transfer.ts` — the first command/event/projection,
   observation, and NarrativeCut family;
 - `src/contracts/simulation/scheduler.ts` — the E2.4 trigger contract, derived trigger
-  identity, named deterministic draw streams, and capped retry backoff;
+  identity, named deterministic draw streams, capped retry backoff, and the E2.5
+  `schedule_transfer_item` command / `trigger_scheduled` event family;
+- `src/contracts/simulation/branching.ts` — the E2.5 branch-event union, fork input/result,
+  snapshot, rebuild-comparison, and causal-explanation contracts;
 - `src/lib/simulation/item-transfer.ts` — pure resolver over a minimum authority view,
   projector, replay, cut compiler, prompt formatter, and the temporary in-memory runtime;
+- `src/lib/simulation/replay.ts` — pure E2.5 ancestry-bound math, seed reverse-derivation,
+  and the deterministic branch replay driver with its trigger ledger;
 - `src/server/engine/simulation/item-transfer-store.ts` — the E2.2 PostgreSQL branch
   transaction and typed read/bootstrap adapter;
 - `src/server/engine/simulation/scheduler-store.ts` — the E2.4 durable trigger queue,
-  lease/claim semantics, and the bounded story-time advance seam;
+  lease/claim semantics, the bounded story-time advance seam, and the E2.5 durable
+  schedule-command transaction;
+- `src/server/engine/simulation/branch-store.ts` (E2.5) — ancestry loading, the
+  R4-bounded event read, live-state assembly, and `forkBranch`;
+- `src/server/engine/simulation/snapshot-store.ts` (E2.5) — snapshot capture/discard and
+  rebuild-from-zero / rebuild-from-snapshot hash comparison;
+- `src/server/engine/simulation/audit-store.ts` (E2.5) — the read-only
+  `explainItemPlacement` causal chain;
 - `src/server/engine/world-engine.ts` — the adapter into the existing character-chat
   narrator.
 
@@ -121,6 +133,40 @@ Advance is bounded. A caller may declare `maxTriggers` and `budgetMs`; exceeding
 persists the boundary reached and returns `catch_up_required` (spec §12.3). Triggers are
 never skipped and never approximated away.
 
+Since E2.5, **a trigger is created only as the effect of a committed event**: a
+`schedule_transfer_item` command appends a `trigger_scheduled` event inside the branch
+transaction (spec §11.1 step 10), and `applyTriggerScheduledEvent` — the one projector that
+inserts trigger rows — applies it live and again on fork replay. `scheduleDurableTrigger`
+keeps its E2.4 signature as an idempotent wrapper whose command identity derives from the
+trigger identity.
+
+## Forks, snapshots, and audit
+
+A branch forks at a past sequence N into a causally isolated child
+(`forkBranch`, spec §29.3; owner rulings R1–R4 in
+[engine-forks-snapshots-audit.plan.md](../developer-notes/engine-forks-snapshots-audit.plan.md)):
+
+- **Replay, not copy (R1).** The child's projections and trigger rows are produced by
+  replaying ancestor events 1..N through the same pure projectors that ran live
+  (`replayBranchHistory`). An alarm set at or before N returns; one set by the discarded
+  future never replays and so never exists. An alarm whose firing is already inherited
+  history is recorded `completed` — replay re-applies recorded outcomes, never re-rolls
+  decisions.
+- **Reference, not copy (R4).** The child owns only its post-fork rows. Every
+  branch-scoped read walks the parent chain bounded by each fork sequence
+  (`readBranchAncestryEvents` over `composeAncestryEventBounds`), so a sibling's post-fork
+  events can never leak in.
+- **Snapshots are discardable accelerators (§10.4).** `captureBranchSnapshot` checksums
+  and stores the projection payload at the branch head (`simulationHash`, comparable with
+  live hashes); forking snapshots the fork point automatically (the plan's default
+  cadence: on fork + on demand). `rebuildDurableBranchProjection` replays from zero or
+  from the latest snapshot and reports whether the rebuilt hash matches live — tests keep
+  the from-zero path exercised so a wrong snapshot cannot hide a replay defect.
+- **Audit answers from records (§35.3).** `explainItemPlacement` walks a projection fact
+  back through the event that placed it, the command that produced the event, and — when
+  scheduler-dispatched — the trigger, its setting event, and the setting command, through
+  ancestry, read-only.
+
 ## Deliberate limits
 
 Durability covers only the first item-transfer family. The in-memory adapter remains a pure
@@ -136,6 +182,11 @@ Deliberately absent, with owners:
   with no production consumer — `transfer_item` consumes no draws. The first real use is
   Gate 3 lateness/travel, which must record stream, index, value, and derivation version on
   the event that consumed it.
-- **Branch forks, snapshots, and audit** are E2.5; the Gate 2 soak and verdict are E2.6.
+- **The Gate 2 soak and verdict** are E2.6.
+- **Trigger cancellation.** No mutation path cancels a trigger yet; when one arrives it
+  must be an event effect exactly as creation is (a `trigger_cancelled` family), or fork
+  replay would resurrect cancelled alarms.
+- **Chat-lane retake/reach-back wiring onto `forkBranch`** is Gate 3+; E2.5 builds the
+  fork, not its UI.
 - **Movement, commitments, and live-scene arbitration** are Gate 3. A trigger must not set
   location directly when they arrive.

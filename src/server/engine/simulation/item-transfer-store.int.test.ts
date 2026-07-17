@@ -557,6 +557,38 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     expect(live.projectionHash).toMatch(/^[a-f0-9]{64}$/u);
   });
 
+  it("retires an exhausted reclaimed obligation rather than reclaiming it forever", async (test) => {
+    if (!ready) return test.skip();
+    // A consumer that dies by process crash (not an exception) never runs its
+    // own catch block, so only claim-time quarantine can retire its work — the
+    // outbox twin of the E2.4 scheduler crash-loop fix.
+    const ids = makeIds();
+    await seedCase(ids);
+    await submitDurableItemTransfer(command(ids));
+    const now = new Date(Date.now() + 60_000);
+    await db()
+      .update(simOutbox)
+      .set({
+        state: "processing",
+        attempts: 3,
+        leaseOwner: "dead_worker",
+        leaseExpiresAt: new Date(now.getTime() - 1_000),
+      })
+      .where(eq(simOutbox.branchId, ids.branchId));
+
+    const result = await consumeNextItemTransferOutbox({ workerId: "worker_after_crash", now, maxAttempts: 3 });
+    expect(result).toMatchObject({ status: "failed", terminal: true, retryAt: null });
+    expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toEqual([]);
+
+    const [row] = await db().select().from(simOutbox).where(eq(simOutbox.branchId, ids.branchId));
+    expect(row).toMatchObject({ state: "failed", attempts: 3, leaseOwner: null });
+    expect(row?.lastError).toContain("exhausted");
+
+    expect(await consumeNextItemTransferOutbox({ workerId: "worker_later", now, maxAttempts: 3 })).toEqual({
+      status: "idle",
+    });
+  });
+
   it("does not advance a checkpoint across a missing sequence and can quarantine poison work", async (test) => {
     if (!ready) return test.skip();
     const ids = makeIds(2);

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { itemTransferredEventSchema } from "@/contracts/simulation/item-transfer";
 import {
@@ -12,6 +12,7 @@ import {
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
   db,
+  simBranches,
   simConsumerCheckpoints,
   simEvents,
   simItemTransferFeed,
@@ -80,11 +81,28 @@ function eventFromRow(row: typeof simEvents.$inferSelect) {
   });
 }
 
-async function claimNext(database: Db, workerId: string, now: Date, leaseSeconds: number) {
+/**
+ * Claiming either takes the work or quarantines it. A consumer that dies by
+ * process crash never runs its own catch block, so terminal state cannot only
+ * be written there: an exhausted obligation must be retired by whoever next
+ * tries to claim it, or a crash loop reclaims it forever (the outbox twin of
+ * the E2.4 scheduler claim-time quarantine).
+ */
+type OutboxClaimResult =
+  | { kind: "claimed"; claimed: { id: string; branchId: string; sourceEventId: string; firstSequence: number; attempts: number } }
+  | { kind: "quarantined"; outboxId: string };
+
+async function claimNext(
+  database: Db,
+  workerId: string,
+  now: Date,
+  leaseSeconds: number,
+  maxAttempts: number,
+): Promise<OutboxClaimResult | undefined> {
   const leaseExpiresAt = new Date(now.getTime() + leaseSeconds * 1000);
   return database.transaction(async (tx) => {
     const [candidate] = await tx
-      .select({ id: simOutbox.id })
+      .select({ id: simOutbox.id, attempts: simOutbox.attempts, branchId: simOutbox.branchId, firstSequence: simOutbox.firstSequence })
       .from(simOutbox)
       .where(
         and(
@@ -113,6 +131,23 @@ async function claimNext(database: Db, workerId: string, now: Date, leaseSeconds
       .for("update", { skipLocked: true });
     if (!candidate) return undefined;
 
+    // Retire work that has already spent its budget. Reaching here with
+    // attempts at the ceiling means previous workers died before their own
+    // failure path could write terminal state.
+    if (candidate.attempts >= maxAttempts) {
+      await tx
+        .update(simOutbox)
+        .set({
+          state: "failed",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          lastError: `outbox=${candidate.id} branch=${candidate.branchId} sequence=${candidate.firstSequence} exhausted ${candidate.attempts}/${maxAttempts} attempts without a terminal outcome`,
+          completedAt: now,
+        })
+        .where(eq(simOutbox.id, candidate.id));
+      return { kind: "quarantined", outboxId: candidate.id };
+    }
+
     const [claimed] = await tx
       .update(simOutbox)
       .set({
@@ -130,7 +165,7 @@ async function claimNext(database: Db, workerId: string, now: Date, leaseSeconds
         firstSequence: simOutbox.firstSequence,
         attempts: simOutbox.attempts,
       });
-    return claimed;
+    return claimed ? { kind: "claimed", claimed } : undefined;
   });
 }
 
@@ -146,8 +181,12 @@ export async function consumeNextItemTransferOutbox(
   const now = options.now ? new Date(options.now) : new Date();
   if (Number.isNaN(now.getTime())) throw new RangeError("Outbox clock is invalid");
 
-  const claimed = await claimNext(database, workerId, now, leaseSeconds);
-  if (!claimed) return { status: "idle" };
+  const claim = await claimNext(database, workerId, now, leaseSeconds, maxAttempts);
+  if (!claim) return { status: "idle" };
+  if (claim.kind === "quarantined") {
+    return { status: "failed", outboxId: claim.outboxId, retryAt: null, terminal: true };
+  }
+  const claimed = claim.claimed;
 
   try {
     const completed = await database.transaction(async (tx) => {
@@ -190,8 +229,28 @@ export async function consumeNextItemTransferOutbox(
         .limit(1)
         .for("update");
       const throughSequence = checkpoint?.throughSequence ?? 0;
-      if (feedRow.sourceSequence > throughSequence + 1) {
-        throw new Error(`Consumer sequence gap: expected ${throughSequence + 1}, received ${feedRow.sourceSequence}`);
+      // Contiguity is defined over item-transfer obligations, not raw branch
+      // sequences: other event families (e.g. trigger_scheduled) advance the
+      // branch without creating feed work, so the guard asks whether an
+      // earlier transfer event exists that has not been applied yet — never
+      // whether the sequence numbers are dense.
+      const [missing] = await tx
+        .select({ sequence: simEvents.sequence })
+        .from(simEvents)
+        .where(
+          and(
+            eq(simEvents.branchId, work.branchId),
+            eq(simEvents.type, "item_transferred"),
+            gt(simEvents.sequence, throughSequence),
+            lt(simEvents.sequence, feedRow.sourceSequence),
+          ),
+        )
+        .orderBy(asc(simEvents.sequence))
+        .limit(1);
+      if (missing) {
+        throw new Error(
+          `Consumer sequence gap: transfer at sequence ${missing.sequence} is unapplied before ${feedRow.sourceSequence}`,
+        );
       }
 
       await tx.insert(simItemTransferFeed).values(feedRow).onConflictDoNothing();
@@ -269,6 +328,12 @@ export async function rebuildItemTransferFeed(
   const branchId = worldBranchIdSchema.parse(rawBranchId);
   return database.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${itemTransferFeedConsumerKind}:${branchId}`}))`);
+    const [branch] = await tx
+      .select({ forkSequence: simBranches.forkSequence })
+      .from(simBranches)
+      .where(eq(simBranches.id, branchId))
+      .limit(1);
+    if (!branch) throw new Error("Simulation branch not found");
     await tx
       .delete(simItemTransferFeed)
       .where(and(eq(simItemTransferFeed.consumerKind, itemTransferFeedConsumerKind), eq(simItemTransferFeed.branchId, branchId)));
@@ -283,7 +348,9 @@ export async function rebuildItemTransferFeed(
       .orderBy(asc(simEvents.sequence));
     const projected = events.map((event) => projectItemTransferredFeedRow(eventFromRow(event)));
     if (projected.length > 0) await tx.insert(simItemTransferFeed).values(projected);
-    const throughSequence = projected.at(-1)?.sourceSequence ?? 0;
+    // A fork child's obligations start after the fork point — inherited events
+    // were delivered on ancestors — so its rebuilt checkpoint bases there.
+    const throughSequence = projected.at(-1)?.sourceSequence ?? branch.forkSequence ?? 0;
     await tx.insert(simConsumerCheckpoints).values({
       consumerKind: itemTransferFeedConsumerKind,
       branchId,
