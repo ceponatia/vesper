@@ -1,7 +1,9 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import * as schema from "./schema";
+import * as coreSchema from "./schema";
+import * as schedulerSchema from "./scheduler-schema";
 
+const schema = { ...coreSchema, ...schedulerSchema };
 const DEFAULT_URL = "postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev";
 
 declare global {
