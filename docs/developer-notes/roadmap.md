@@ -23,19 +23,19 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing in flight. The next Gate 2 target is **E2.5 — forks, snapshots, and audit**,
-first in **Next** below.)_
+- **World-engine forks, snapshots, and audit (E2.5)** —
+  [engine-forks-snapshots-audit.plan.md](engine-forks-snapshots-audit.plan.md) · contract
+  [engine.spec.md](engine.spec.md) (active; plan drafted 2026-07-17 after E2.4 merged, with
+  the owner's three fork rulings settled). Adds branch ancestry, fork boundaries, checksummed
+  snapshots, projection comparison, and causal explanation queries. A fork rebuilds by
+  replaying events (not by copying trigger rows), so pending alarms survive a rewind only if
+  their setting event predates the fork point. First closes the E2.3 outbox unbounded-reclaim
+  gap and moves trigger creation behind an event effect (the replay prerequisite). Followed by
+  **E2.6 — Gate 2 soak and verdict**, which runs the synthetic-month, partition-invariance,
+  retry, crash, queue-growth, and replay-hash proofs and records the owner's advance/revise/
+  hold/stop ruling before movement or live-scene work begins.
 
 ## Next (queued)
-
-- **World-engine forks, snapshots, and audit (E2.5)** — plan not yet written; scope is
-  fixed by [engine.plan.md](engine.plan.md) §"Gate 2 build order": branch ancestry, fork
-  boundaries, checksummed snapshots, projection comparison, and causal explanation
-  queries. It consumes the stable event store (E2.2–E2.4) and is followed by **E2.6 —
-  Gate 2 soak and verdict**, which runs the synthetic-month, partition-invariance, retry,
-  crash, queue-growth, and replay-hash proofs and records the owner's advance/revise/
-  hold/stop ruling before movement or live-scene work begins. Write the E2.5 plan first,
-  per the E2.1–E2.4 precedent (one plan and one reviewable PR per target).
 
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
