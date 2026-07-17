@@ -22,7 +22,7 @@ import type {
   SimulationCommandResultRecord,
   SimulationSnapshot,
 } from "@/contracts/simulation/branching";
-import type { TransferItemCommand } from "@/contracts/simulation/item-transfer";
+import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
 import { newId } from "@/lib/ids";
@@ -1742,7 +1742,7 @@ export const simTriggers = pgTable(
     id: text("id").primaryKey(),
     worldId: text("world_id").notNull(),
     branchId: text("branch_id").notNull(),
-    kind: text("kind", { enum: ["scheduled_transfer_item"] }).notNull(),
+    kind: text("kind", { enum: ["scheduled_transfer_item", "journey_arrival_due"] }).notNull(),
     schemaVersion: integer("schema_version").notNull(),
     dueStorySecond: bigint("due_story_second", { mode: "number" }).notNull(),
     /** Spec §12.1 queue order: lower is more urgent. No producer sets it above 0 yet. */
@@ -1750,7 +1750,7 @@ export const simTriggers = pgTable(
     /** Immutable tie-break among triggers sharing one due second and priority. */
     stableOrder: bigint("stable_order", { mode: "number" }).notNull(),
     uniquenessKey: text("uniqueness_key").notNull(),
-    payload: jsonb("payload").$type<{ command: TransferItemCommand }>().notNull(),
+    payload: jsonb("payload").$type<SimulationTrigger["payload"]>().notNull(),
     state: text("state", { enum: ["pending", "processing", "completed", "failed"] })
       .notNull()
       .default("pending"),
@@ -1846,5 +1846,171 @@ export const simSnapshots = pgTable(
       "sim_snapshots_source_range_safe",
       sql`${t.sourceFirstSequence} >= 0 AND ${t.sourceFirstSequence} <= ${t.sourceLastSequence} AND ${t.sourceLastSequence} <= 9007199254740991`,
     ),
+  ],
+);
+
+/**
+ * E3.1 authoritative space (engine.spec §13). Topology rows are branch-scoped
+ * seeded statics like sim_characters — no event mutates them yet, so a fork
+ * copies them; loci and journeys are event-projected state.
+ */
+export const simLocations = pgTable(
+  "sim_locations",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    locationId: text("location_id").notNull(),
+    kind: text("kind").notNull(),
+    coordinateX: real("coordinate_x"),
+    coordinateY: real("coordinate_y"),
+    defaultAccessPolicy: text("default_access_policy", {
+      enum: ["public", "restricted", "private"],
+    }).notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_locations_branch_location_pk", columns: [t.branchId, t.locationId] }),
+    check(
+      "sim_locations_coordinate_shape",
+      sql`(${t.coordinateX} IS NULL) = (${t.coordinateY} IS NULL)`,
+    ),
+  ],
+);
+
+export const simZones = pgTable(
+  "sim_zones",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    zoneId: text("zone_id").notNull(),
+    locationId: text("location_id").notNull(),
+    kind: text("kind").notNull(),
+    parentZoneId: text("parent_zone_id"),
+    occupancyLimit: integer("occupancy_limit"),
+    privacyPolicy: text("privacy_policy", { enum: ["public", "semi_private", "private"] }).notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_zones_branch_zone_pk", columns: [t.branchId, t.zoneId] }),
+    foreignKey({
+      name: "sim_zones_branch_location_fk",
+      columns: [t.branchId, t.locationId],
+      foreignColumns: [simLocations.branchId, simLocations.locationId],
+    }).onDelete("cascade"),
+    check("sim_zones_not_own_parent", sql`${t.parentZoneId} IS NULL OR ${t.parentZoneId} <> ${t.zoneId}`),
+    check("sim_zones_occupancy_positive", sql`${t.occupancyLimit} IS NULL OR ${t.occupancyLimit} > 0`),
+  ],
+);
+
+export const simLinks = pgTable(
+  "sim_links",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    linkId: text("link_id").notNull(),
+    fromZoneId: text("from_zone_id").notNull(),
+    toZoneId: text("to_zone_id").notNull(),
+    modes: jsonb("modes").$type<string[]>().notNull(),
+    minimumDurationSeconds: bigint("minimum_duration_seconds", { mode: "number" }).notNull(),
+    schedule: jsonb("schedule").$type<{ opensAtStorySecond: number; closesAtStorySecond: number }[]>(),
+    accessPolicy: text("access_policy", { enum: ["public", "restricted", "private"] }).notNull(),
+    state: text("state", { enum: ["open", "closed", "locked", "blocked"] }).notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_links_branch_link_pk", columns: [t.branchId, t.linkId] }),
+    foreignKey({
+      name: "sim_links_branch_from_zone_fk",
+      columns: [t.branchId, t.fromZoneId],
+      foreignColumns: [simZones.branchId, simZones.zoneId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "sim_links_branch_to_zone_fk",
+      columns: [t.branchId, t.toZoneId],
+      foreignColumns: [simZones.branchId, simZones.zoneId],
+    }).onDelete("cascade"),
+    check("sim_links_not_self_loop", sql`${t.fromZoneId} <> ${t.toZoneId}`),
+    check(
+      "sim_links_duration_safe",
+      sql`${t.minimumDurationSeconds} > 0 AND ${t.minimumDurationSeconds} <= 9007199254740991`,
+    ),
+  ],
+);
+
+/**
+ * Exactly one physical locus per actor per branch — the primary key IS the
+ * §3.1 invariant. Shape checks keep an `at` row from carrying journey fields
+ * and an `in_transit` row from carrying place fields.
+ */
+export const simPhysicalLoci = pgTable(
+  "sim_physical_loci",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    actorId: text("actor_id").notNull(),
+    kind: text("kind", { enum: ["at", "in_transit"] }).notNull(),
+    locationId: text("location_id"),
+    zoneId: text("zone_id"),
+    since: bigint("since", { mode: "number" }),
+    journeyId: text("journey_id"),
+    linkId: text("link_id"),
+    enteredAt: bigint("entered_at", { mode: "number" }),
+    earliestExitAt: bigint("earliest_exit_at", { mode: "number" }),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_physical_loci_branch_actor_pk", columns: [t.branchId, t.actorId] }),
+    foreignKey({
+      name: "sim_physical_loci_branch_actor_fk",
+      columns: [t.branchId, t.actorId],
+      foreignColumns: [simCharacters.branchId, simCharacters.characterId],
+    }).onDelete("cascade"),
+    check(
+      "sim_physical_loci_at_shape",
+      sql`${t.kind} <> 'at' OR (${t.locationId} IS NOT NULL AND ${t.zoneId} IS NOT NULL AND ${t.since} IS NOT NULL AND ${t.journeyId} IS NULL AND ${t.linkId} IS NULL AND ${t.enteredAt} IS NULL AND ${t.earliestExitAt} IS NULL)`,
+    ),
+    check(
+      "sim_physical_loci_transit_shape",
+      sql`${t.kind} <> 'in_transit' OR (${t.journeyId} IS NOT NULL AND ${t.linkId} IS NOT NULL AND ${t.enteredAt} IS NOT NULL AND ${t.earliestExitAt} IS NOT NULL AND ${t.locationId} IS NULL AND ${t.zoneId} IS NULL AND ${t.since} IS NULL)`,
+    ),
+  ],
+);
+
+export const simJourneys = pgTable(
+  "sim_journeys",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    journeyId: text("journey_id").notNull(),
+    actorIds: jsonb("actor_ids").$type<string[]>().notNull(),
+    originZoneId: text("origin_zone_id").notNull(),
+    destinationZoneId: text("destination_zone_id").notNull(),
+    routeLinkIds: jsonb("route_link_ids").$type<string[]>().notNull(),
+    travelMode: text("travel_mode").notNull(),
+    departedAt: bigint("departed_at", { mode: "number" }),
+    earliestArrivalAt: bigint("earliest_arrival_at", { mode: "number" }).notNull(),
+    expectedArrivalAt: bigint("expected_arrival_at", { mode: "number" }).notNull(),
+    status: text("status", {
+      enum: ["planned", "active", "delayed", "interrupted", "arrived", "abandoned"],
+    }).notNull(),
+    currentLinkIndex: integer("current_link_index").notNull().default(0),
+    routeDerivationVersion: text("route_derivation_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_journeys_branch_journey_pk", columns: [t.branchId, t.journeyId] }),
+    check("sim_journeys_not_self_journey", sql`${t.originZoneId} <> ${t.destinationZoneId}`),
+    check(
+      "sim_journeys_arrival_order",
+      sql`${t.expectedArrivalAt} >= ${t.earliestArrivalAt}`,
+    ),
+    check("sim_journeys_link_index_nonnegative", sql`${t.currentLinkIndex} >= 0`),
   ],
 );

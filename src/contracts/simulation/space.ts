@@ -288,6 +288,39 @@ export const moveActorRejectionCodes = [
 export const moveActorRejectionCodeSchema = z.enum(moveActorRejectionCodes);
 export const moveActorCommandResultSchema = createCommandResultSchema(moveActorRejectionCodeSchema);
 
+// --- ArriveJourney command (engine.spec §9.3) -------------------------------
+
+/**
+ * The command a journey-arrival trigger dispatches at its due story second.
+ * It re-validates at fire time (the E2.6 caveat): the journey must still be
+ * en route when the trigger fires, or the arrival is rejected rather than
+ * forced.
+ */
+const arriveJourneyPayloadSchema = z
+  .object({
+    journeyId: journeyIdSchema,
+  })
+  .strict();
+
+export const arriveJourneyCommandSchema = createCommandEnvelopeSchema(
+  "arrive_journey",
+  1,
+  arriveJourneyPayloadSchema,
+);
+
+export const arriveJourneyRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "journey_not_found",
+  "journey_not_active",
+  "unauthorized_principal",
+] as const;
+export const arriveJourneyRejectionCodeSchema = z.enum(arriveJourneyRejectionCodes);
+export const arriveJourneyCommandResultSchema = createCommandResultSchema(
+  arriveJourneyRejectionCodeSchema,
+);
+
 // --- Movement event family (engine.spec §9.2) ------------------------------
 
 const journeyPlannedPayloadSchema = z
@@ -449,6 +482,10 @@ export type MoveActorCommand = z.infer<typeof moveActorCommandSchema>;
 export type MoveActorCommandInput = z.input<typeof moveActorCommandSchema>;
 export type MoveActorRejectionCode = z.infer<typeof moveActorRejectionCodeSchema>;
 export type MoveActorCommandResult = z.infer<typeof moveActorCommandResultSchema>;
+export type ArriveJourneyCommand = z.infer<typeof arriveJourneyCommandSchema>;
+export type ArriveJourneyCommandInput = z.input<typeof arriveJourneyCommandSchema>;
+export type ArriveJourneyRejectionCode = z.infer<typeof arriveJourneyRejectionCodeSchema>;
+export type ArriveJourneyCommandResult = z.infer<typeof arriveJourneyCommandResultSchema>;
 export type JourneyPlannedEvent = z.infer<typeof journeyPlannedEventSchema>;
 export type ActorDepartedEvent = z.infer<typeof actorDepartedEventSchema>;
 export type JourneyDelayReason = z.infer<typeof journeyDelayReasonSchema>;

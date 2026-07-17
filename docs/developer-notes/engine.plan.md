@@ -773,11 +773,22 @@ Like Gate 2, Gate 3 splits into dependency-ordered targets. The IDs describe ord
 GitHub PR numbers; each stays reviewable on its own and ships to the long-lived `engine`
 branch.
 
-1. **E3.1 — authoritative space.** `sim_locations`, `sim_zones`, `sim_links`, and
-   `sim_physical_loci`; the topology and route contracts (§13); `MoveActor` plus journey
-   commands and the `movement` + `access` event families; database enforcement of one
-   active locus per actor per branch; a pure `planRoute` kernel with ordered links and
-   lower-bound durations. No commitments, activities, or engagements yet.
+1. **E3.1 — authoritative space.** Status: **shipped — 2026-07-17.** `sim_locations`,
+   `sim_zones`, `sim_links`, `sim_physical_loci`, and `sim_journeys` (migration 0058);
+   the topology and route contracts (§13); `MoveActor` resolving to journey_planned +
+   actor_departed + a durable arrival trigger atomically, with `arrive_journey`
+   re-validated at fire time through the E2.4 scheduler drain; one active locus per actor
+   per branch enforced as the primary key + shape checks; the pure `planRoute` kernel
+   (duration-cost, deterministic tie-breaks, relax-one-constraint failure diagnosis);
+   fork/replay parity for space state (mid-journey forks re-arm the arrival, post-arrival
+   forks record it completed; rebuild-from-zero matches the live hash). Delivery notes:
+   link-level access only (state open + public policy) — the six-layer zone/property
+   checks stay in E3.5; links traverse bidirectionally (one-way semantics join the
+   contract when a scenario demands them); journeys are one in-transit span on their
+   first link (per-link progression events come with E3.5 hazards); route uncertainty is
+   zero pending open ruling 12; movement emits no outbox rows until a consumer exists.
+   The `journey_delayed` / `journey_interrupted` / `journey_abandoned` event vocabulary
+   and appliers exist but no command emits them yet — E3.5's hazard/access work does.
 2. **E3.2 — typed actions, activities, and claims.** `ActionDefinition` / `ActivityInstance`
    (§16), exclusive and attention claims with resource costs, the activity state machine and
    the compatibility matrix (§16.4), start/progress/completion/failure/cancellation effects,

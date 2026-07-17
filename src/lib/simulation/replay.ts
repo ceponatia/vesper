@@ -1,4 +1,5 @@
 import {
+  isMovementEvent,
   simulationBranchEventSchema,
   type SimulationBranchEvent,
 } from "@/contracts/simulation/branching";
@@ -154,6 +155,13 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       for (const branchId of chainBranchIds) {
         firingIndex.set(deriveTriggerCommandId(deriveTriggerId(branchId, entry.uniquenessKey)), entry);
       }
+      projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
+    } else if (isMovementEvent(event)) {
+      // Movement events belong to the space projection (replaySpaceHistory).
+      // Here they advance the item boundary and — for a scheduler-dispatched
+      // arrival — mark the arrival trigger as already fired.
+      const fired = event.commandId ? firingIndex.get(event.commandId) : undefined;
+      if (fired) fired.firedByCommandId = event.commandId ?? null;
       projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
     } else {
       const fired = event.commandId ? firingIndex.get(event.commandId) : undefined;

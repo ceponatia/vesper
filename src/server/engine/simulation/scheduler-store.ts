@@ -23,8 +23,10 @@ import {
   worldIdSchema,
 } from "@/contracts/simulation/identity";
 import { transferItemCommandSchema } from "@/contracts/simulation/item-transfer";
+import { arriveJourneyCommandSchema } from "@/contracts/simulation/space";
 import { db, simBranches, simCommands, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { submitDurableItemTransfer } from "./item-transfer-store";
+import { submitDurableJourneyArrival } from "./space-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
 export interface ScheduleTriggerOptions {
@@ -344,7 +346,10 @@ export async function scheduleDurableTrigger(
     throw new Error("Cannot schedule a trigger for an unavailable branch");
   }
 
-  const template = transferItemCommandSchema.parse(rawTrigger.payload.command);
+  const template =
+    rawTrigger.kind === scheduledTransferTriggerKind
+      ? transferItemCommandSchema.parse(rawTrigger.payload.command)
+      : arriveJourneyCommandSchema.parse(rawTrigger.payload.command);
   const commandId = deriveScheduleCommandId(triggerId);
   const command = scheduleTransferTriggerCommandSchema.parse({
     id: commandId,
@@ -494,26 +499,23 @@ export async function resolveNextDueTrigger(
   );
 
   try {
-    if (trigger.kind !== scheduledTransferTriggerKind) {
-      throw new Error(`Unsupported trigger kind: ${trigger.kind}`);
-    }
-
     const commandId = deriveTriggerCommandId(trigger.id);
-    const result = await submitDurableItemTransfer(
-      {
-        ...trigger.payload.command,
-        // Routing comes from the trigger row, never the template, so a payload
-        // aimed at another branch cannot dispatch there.
-        branchId: trigger.branchId,
-        id: commandId,
-        idempotencyKey: commandId,
-        submittedAtWallClock: now.toISOString(),
-      },
-      // The trigger's idempotency key is permanent, so an optimistic conflict
-      // would be stored under it and replayed by every retry. See the option's
-      // contract in item-transfer-store.
-      { database, admitAtLockedVersion: true },
-    );
+    // Routing comes from the trigger row, never the template, so a payload
+    // aimed at another branch cannot dispatch there.
+    const dispatchEnvelope = {
+      ...trigger.payload.command,
+      branchId: trigger.branchId,
+      id: commandId,
+      idempotencyKey: commandId,
+      submittedAtWallClock: now.toISOString(),
+    };
+    // The trigger's idempotency key is permanent, so an optimistic conflict
+    // would be stored under it and replayed by every retry. See the option's
+    // contract in item-transfer-store.
+    const result =
+      trigger.kind === scheduledTransferTriggerKind
+        ? await submitDurableItemTransfer(dispatchEnvelope, { database, admitAtLockedVersion: true })
+        : await submitDurableJourneyArrival(dispatchEnvelope, { database, admitAtLockedVersion: true });
 
     switch (result.status) {
       case "accepted": {

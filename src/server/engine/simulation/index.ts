@@ -59,4 +59,12 @@ export {
   type Gate2SoakProofResult,
   type Gate2SoakReport,
 } from "./soak-harness";
+export {
+  readDurableSpaceBranch,
+  seedDurableSpaceTopology,
+  submitDurableJourneyArrival,
+  submitDurableMoveActor,
+  type SpaceStoreOptions,
+  type SpaceTopologySeed,
+} from "./space-store";
 export { applyTriggerScheduledEvent } from "./trigger-projector";

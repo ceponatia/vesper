@@ -21,11 +21,14 @@ import {
   itemTransferFeedProjectionSchemaVersion,
 } from "@/contracts/simulation/outbox";
 import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
+import { isMovementEvent } from "@/contracts/simulation/branching";
 import {
   composeAncestryEventBounds,
   itemHoldingsAtSequence,
   replayBranchHistory,
+  replaySpaceHistory,
   simulationHash,
+  spaceSeedForReplay,
   type BranchAncestryNode,
   type BranchEventRange,
 } from "@/lib/simulation";
@@ -43,6 +46,12 @@ import {
   simWorlds,
   type Db,
 } from "@/server/db";
+import {
+  insertSpaceRows,
+  loadSpaceRows,
+  spaceProjectionFromRows,
+  spaceRowInsertsForProjection,
+} from "./space-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 type DbExecutor = Db | SimTx;
@@ -466,6 +475,45 @@ export async function forkBranch(
         pendingTriggerIds.push(trigger.id);
       }
     }
+
+    // E3.1 space: topology statics copy over; loci and journeys are rebuilt by
+    // replaying inherited movement events onto the reverse-derived origin seed
+    // — the same R4 rules items follow, so a fork mid-journey keeps the child
+    // in transit and its pending arrival trigger re-arms through the trigger
+    // ledger above.
+    const parentRow = ancestry.rows[0];
+    if (!parentRow) throw new Error("Simulation branch not found");
+    const parentSpace = spaceProjectionFromRows(
+      {
+        worldId: parent.worldId,
+        branchId: parent.id,
+        rulesetVersion: parent.rulesetVersion,
+        version: parentRow.version,
+        headSequence: parentRow.headSequence,
+        storySecond: parentRow.storySecond,
+      },
+      await loadSpaceRows(tx, parent.id),
+    );
+    const childSpace = replaySpaceHistory({
+      seed: spaceSeedForReplay({
+        branchId: input.childBranchId,
+        current: parentSpace,
+        events: parentState.events,
+        originStorySecond: ancestry.rootOriginStorySecond,
+      }),
+      events: inherited,
+    });
+    const spaceSequenceByActor = new Map<string, number>();
+    const spaceSequenceByJourney = new Map<string, number>();
+    for (const event of inherited) {
+      if (!isMovementEvent(event)) continue;
+      for (const eventActorId of event.actorIds) spaceSequenceByActor.set(eventActorId, event.sequence);
+      spaceSequenceByJourney.set(event.payload.journeyId, event.sequence);
+    }
+    await insertSpaceRows(
+      tx,
+      spaceRowInsertsForProjection(input.childBranchId, childSpace, spaceSequenceByActor, spaceSequenceByJourney),
+    );
 
     // Inherited delivery obligations were fulfilled on ancestor branches; the
     // child's consumer lane starts after the fork point (plan R4 — reference,

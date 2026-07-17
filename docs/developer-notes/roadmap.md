@@ -28,8 +28,8 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   **Rulings unblocked 2026-07-17** — all 10 blocking product rulings plus spec rulings 11
   and 13 resolved by the owner (plan §"Product rulings — RESOLVED 2026-07-17", normative
   record in [engine.spec.md](engine.spec.md) §39). Building in dependency order
-  **E3.1 → E3.5**; **E3.1 (authoritative space — locations/zones/links/loci, routes, and
-  `MoveActor`/journey events)** is the current sub-target. Proves world events become
+  **E3.1 → E3.5**; E3.1 shipped 2026-07-17 (see **Shipped**), so **E3.2 (typed actions,
+  activities & claims)** is the current sub-target. Proves world events become
   playable transitions, not teleports: authoritative space + travel (G3.1), typed actions
   with preconditions/claims/effects (G3.2), commitments with earliest/target/latest pressure
   that never set location directly (G3.3), conversation-as-Engagement + the live-scene
@@ -141,6 +141,20 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine authoritative space (E3.1)** — [engine.plan.md](engine.plan.md) §"Gate 3
+  build order" · contract [engine.spec.md](engine.spec.md) — 2026-07-17 — the first Gate 3
+  slice: branch-scoped topology (`sim_locations`/`sim_zones`/`sim_links`, migration 0058),
+  one-locus-per-actor `sim_physical_loci` (the §3.1 invariant enforced as the primary key +
+  shape checks), the deterministic `planRoute` kernel (duration-cost, lexicographic
+  tie-breaks, a relax-one-constraint diagnosis cascade naming the binding restriction),
+  `MoveActor` resolving to journey_planned + actor_departed + a durable arrival trigger in
+  one atomic transaction, fire-time re-validated `arrive_journey` through the E2.4
+  scheduler drain (the arrival event stamped at its due second — the E2.6 stale-template
+  caveat answered), the scheduler contract widened to a trigger-kind union, and fork/replay
+  parity — mid-journey forks re-arm the pending arrival, post-arrival forks record it
+  completed, and the space projection rebuilds from zero to the live hash. 16 pure + 17
+  contract + 8 integration cases; CI runs `test:engine-e3-1` from a zero-state migration.
+  Gate 3 continues: E3.2 actions are next.
 - **World-engine Gate 2 soak and verdict (E2.6)** —
   [engine-gate2-soak.plan.md](finished/engine/engine-gate2-soak.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — **Gate 2 closed with the owner's

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import {
   itemPlacementExplanationSchema,
   type ItemPlacementExplanation,
+  type SimulationBranchEvent,
 } from "@/contracts/simulation/branching";
 import { commandPrincipalSchema } from "@/contracts/simulation/envelopes";
 import { itemIdSchema, worldBranchIdSchema } from "@/contracts/simulation/identity";
@@ -105,7 +106,7 @@ export async function explainItemPlacement(
           types: ["trigger_scheduled"],
         });
         const setting = settingEvents.find(
-          (candidate) =>
+          (candidate): candidate is Extract<SimulationBranchEvent, { type: "trigger_scheduled" }> =>
             candidate.type === "trigger_scheduled" &&
             candidate.payload.uniquenessKey === triggerRow.uniquenessKey,
         );
