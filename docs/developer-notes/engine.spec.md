@@ -502,9 +502,15 @@ Due triggers are ordered by:
 
 1. dueStorySecond ascending;
 2. priority ascending, where a lower number is more urgent;
-3. trigger ID ascending.
+3. stableOrder ascending — the immutable scheduling order assigned per branch;
+4. trigger ID ascending.
 
 The order is part of the ruleset version.
+
+stableOrder precedes trigger ID because a trigger ID is a derived hash: ordering
+simultaneous, equal-priority triggers by it is deterministic but arbitrary, whereas
+stableOrder reflects the order they were actually scheduled. Trigger ID remains the final
+tie-break so the order is total even if two rows ever share a stableOrder.
 
 ### 12.2 Advance algorithm
 
@@ -512,13 +518,20 @@ To advance from T0 to target T1:
 
 1. find the next due trigger at or before T1;
 2. analytically integrate affected rates from the current boundary to that trigger;
-3. process all triggers at that story second in stable order;
-4. append material events and schedule resulting triggers;
-5. repeat until no trigger is due;
-6. analytically integrate remaining rates to T1;
-7. set branch story time to T1.
+3. set branch story time to that trigger's due second;
+4. process all triggers at that story second in stable order;
+5. append material events and schedule resulting triggers;
+6. repeat until no trigger is due;
+7. analytically integrate remaining rates to T1;
+8. set branch story time to T1.
 
 The scheduler MUST NOT scan every actor or every minute.
+
+Step 3 is normative and easy to lose: the clock MUST step to each trigger's own due
+second **before** that trigger resolves. An event takes its story second from the branch
+clock, so jumping straight to T1 and draining afterwards stamps every drained event with
+T1 and silently violates §12.4 — advance(T0,T3) then disagrees with
+advance(T0,T1); advance(T1,T2); advance(T2,T3) even though both drained the same triggers.
 
 ### 12.3 Catch-up bounds
 

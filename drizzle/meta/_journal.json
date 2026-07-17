@@ -393,6 +393,13 @@
       "when": 1784240727954,
       "tag": "0055_e2_3_outbox_rebuildable_consumers",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784292637101,
+      "tag": "0056_e2_4_durable_scheduler",
+      "breakpoints": true
     }
   ]
 }
