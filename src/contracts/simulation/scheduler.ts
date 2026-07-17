@@ -25,19 +25,19 @@ export const scheduledTransferTriggerPayloadSchema = z
   .object({ command: transferItemCommandSchema })
   .strict();
 
-export const simulationTriggerSchema = z
-  .object({
-    id: triggerIdSchema,
-    worldId: worldIdSchema,
-    branchId: worldBranchIdSchema,
-    kind: z.literal(scheduledTransferTriggerKind),
-    schemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
-    dueStorySecond: storySecondSchema,
-    stableOrder: branchSequenceSchema,
-    uniquenessKey: z.string().min(1).max(512),
-    payload: scheduledTransferTriggerPayloadSchema,
-  })
-  .strict();
+// Database coordination columns are intentionally stripped when a durable row is
+// projected back into the immutable domain trigger contract.
+export const simulationTriggerSchema = z.object({
+  id: triggerIdSchema,
+  worldId: worldIdSchema,
+  branchId: worldBranchIdSchema,
+  kind: z.literal(scheduledTransferTriggerKind),
+  schemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
+  dueStorySecond: storySecondSchema,
+  stableOrder: branchSequenceSchema,
+  uniquenessKey: z.string().min(1).max(512),
+  payload: scheduledTransferTriggerPayloadSchema,
+});
 
 export type SimulationTrigger = z.infer<typeof simulationTriggerSchema>;
 
