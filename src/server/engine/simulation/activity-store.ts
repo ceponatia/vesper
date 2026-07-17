@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   simulationActionDefinitionSchema,
@@ -26,12 +26,18 @@ import {
   resolveCompleteActivity,
   resolveStartActivity,
 } from "@/lib/simulation/activities";
+import { engagementClaimsForActor } from "@/lib/simulation/engagements";
+import {
+  claimHoldingEngagementStates,
+  engagementSchema,
+} from "@/contracts/simulation/engagements";
 import {
   db,
   simActionDefinitions,
   simActivities,
   simBranches,
   simCharacters,
+  simEngagements,
   simPhysicalLoci,
   simTriggers,
   simZones,
@@ -183,7 +189,7 @@ async function loadDefinition(
   return row ? simulationActionDefinitionSchema.parse(row.payload) : undefined;
 }
 
-async function loadClaimHoldingActivities(tx: SimTx, branchId: string): Promise<ActivityInstance[]> {
+export async function loadClaimHoldingActivities(tx: SimTx, branchId: string): Promise<ActivityInstance[]> {
   const rows = await tx
     .select()
     .from(simActivities)
@@ -274,6 +280,28 @@ export async function submitDurableStartActivity(
           : undefined;
       const definition = await loadDefinition(tx, branch.id, command.payload.actionDefinitionId);
       const claimHolding = await loadClaimHoldingActivities(tx, branch.id);
+      const openEngagementRows = await tx
+        .select()
+        .from(simEngagements)
+        .where(
+          and(
+            eq(simEngagements.branchId, branch.id),
+            inArray(simEngagements.state, [...claimHoldingEngagementStates]),
+          ),
+        );
+      const openEngagements = openEngagementRows.map((row) =>
+        engagementSchema.parse({
+          id: row.engagementId,
+          participantIds: row.participantIds,
+          channel: row.channel,
+          ...(row.locationId === null ? {} : { locationId: row.locationId }),
+          ...(row.zoneId === null ? {} : { zoneId: row.zoneId }),
+          state: row.state,
+          openedAt: row.openedAt,
+          attentionClaim: row.attentionClaim,
+          sourceCommandId: row.sourceCommandId,
+        }),
+      );
       const coLocatedActorIds = zoneRow
         ? await loadCoLocatedActorIds(tx, branch.id, zoneRow.zoneId, [command.payload.actorId])
         : [];
@@ -289,7 +317,10 @@ export async function submitDurableStartActivity(
           ...(locusRow ? { locus: locusFromRow(locusRow) } : {}),
           ...(zoneRow ? { actorZone: { id: zoneRow.zoneId, kind: zoneRow.kind, locationId: zoneRow.locationId } } : {}),
           ...(definition ? { definition } : {}),
-          heldClaims: heldClaimsForActor(claimHolding, command.payload.actorId),
+          heldClaims: [
+            ...heldClaimsForActor(claimHolding, command.payload.actorId),
+            ...engagementClaimsForActor(openEngagements, command.payload.actorId),
+          ],
           coLocatedActorIds,
         },
         command,

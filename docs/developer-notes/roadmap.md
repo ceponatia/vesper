@@ -28,8 +28,10 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   **Rulings unblocked 2026-07-17** — all 10 blocking product rulings plus spec rulings 11
   and 13 resolved by the owner (plan §"Product rulings — RESOLVED 2026-07-17", normative
   record in [engine.spec.md](engine.spec.md) §39). Building in dependency order
-  **E3.1 → E3.5**; E3.1–E3.3 shipped 2026-07-17 (see **Shipped**), so **E3.4
-  (engagements & the live-scene arbiter)** is the current sub-target. Proves world events become
+  **E3.1 → E3.5**; E3.1–E3.3 and E3.4's first slice (the engagement substrate) shipped
+  2026-07-17 (see **Shipped**). **Current sub-target: E3.4 slice 2 — the live-scene
+  arbiter (§18.3), NarrativeCut compilation, ArmedEffect confirmation (ruling 9), and
+  hidden-retryable narrator failure (ruling 8).** Proves world events become
   playable transitions, not teleports: authoritative space + travel (G3.1), typed actions
   with preconditions/claims/effects (G3.2), commitments with earliest/target/latest pressure
   that never set location directly (G3.3), conversation-as-Engagement + the live-scene
@@ -141,6 +143,20 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine engagement substrate (E3.4 slice 1)** —
+  [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-17 — conversations become world activities
+  (§18.1–18.2, §11.3): `Engagement` rows (`sim_engagements`, migration 0061) with the §18.2
+  state machine, claiming **full** attention for a co-present scene and **partial** for a
+  remote channel through the same E3.2 claim arithmetic; one body, one physical scene
+  enforced at open (co-located at-loci required; a second co-present open rejects); any
+  channel requires presence of mind (a napping mind can't join even a text thread — the
+  ruled no-wake default intact, since message delivery is not an engagement); conversations
+  block body-claiming activities and vice versa; **a departure interrupts the mover's open
+  co-present scene atomically with the journey events**; ending releases claims and moves
+  no one; fork/replay parity. 7 pure + 4 integration cases; CI runs `test:engine-e3-4`.
+  Remaining for E3.4 slice 2: the §18.3 arbiter, NarrativeCut, ArmedEffects (ruling 9),
+  narrator-failure presentation (ruling 8).
 - **World-engine commitments & temporal pressure (E3.3)** —
   [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — the third Gate 3 slice, and the one that

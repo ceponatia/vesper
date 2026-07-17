@@ -523,6 +523,10 @@ export function applyActivityEvent(
     case "commitment_kept":
     case "commitment_late":
     case "commitment_missed":
+    case "engagement_opened":
+    case "engagement_ended":
+    case "engagement_interrupted":
+    case "engagement_winding_down":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

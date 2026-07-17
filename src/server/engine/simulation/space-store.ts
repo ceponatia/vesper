@@ -5,6 +5,11 @@ import {
   claimHoldingActivityPhases,
 } from "@/contracts/simulation/activities";
 import {
+  claimHoldingEngagementStates,
+  engagementSchema,
+} from "@/contracts/simulation/engagements";
+import { buildDepartureInterruptEvent } from "@/lib/simulation/engagements";
+import {
   branchHeadSequenceSchema,
   branchVersionSchema,
   rulesetVersionSchema,
@@ -43,6 +48,7 @@ import {
   simBranches,
   simCharacters,
   simCommands,
+  simEngagements,
   simEvents,
   simJourneys,
   simLinks,
@@ -646,7 +652,78 @@ export async function submitDurableMoveActor(
           throw new Error("Locked physical locus changed before its transit flip");
         }
 
-        const lastSequence = resolution.events[2].sequence;
+        // A departure breaks any open co-present scene the mover occupies:
+        // the engagement is interrupted in the same transaction (spec §18.2 —
+        // one body, one physical scene; ending claims moves no one, but
+        // leaving the zone suspends the scene).
+        const engagementRows = await tx
+          .select()
+          .from(simEngagements)
+          .where(
+            and(
+              eq(simEngagements.branchId, branch.id),
+              eq(simEngagements.channel, "co_present"),
+              inArray(simEngagements.state, [...claimHoldingEngagementStates]),
+              sql`${simEngagements.participantIds} @> ${JSON.stringify([command.payload.actorId])}::jsonb`,
+            ),
+          )
+          .orderBy(asc(simEngagements.engagementId));
+        let lastSequence = resolution.events[2].sequence;
+        for (const row of engagementRows) {
+          const engagement = engagementSchema.parse({
+            id: row.engagementId,
+            participantIds: row.participantIds,
+            channel: row.channel,
+            ...(row.locationId === null ? {} : { locationId: row.locationId }),
+            ...(row.zoneId === null ? {} : { zoneId: row.zoneId }),
+            state: row.state,
+            openedAt: row.openedAt,
+            attentionClaim: row.attentionClaim,
+            sourceCommandId: row.sourceCommandId,
+          });
+          lastSequence += 1;
+          const interruptEvent = buildDepartureInterruptEvent({
+            meta: {
+              worldId: branch.worldId,
+              branchId: branch.id,
+              rulesetVersion: branch.rulesetVersion,
+              headSequence: branch.headSequence,
+              storySecond: branch.storySecond,
+            },
+            command: {
+              id: command.id,
+              correlationId: command.correlationId,
+              submittedAtWallClock: command.submittedAtWallClock,
+            },
+            engagement,
+            sequence: lastSequence,
+            causationId: resolution.events[1].id,
+          });
+          await tx.insert(simEvents).values({
+            id: interruptEvent.id,
+            worldId: interruptEvent.worldId,
+            branchId: interruptEvent.branchId,
+            sequence: interruptEvent.sequence,
+            storySecond: interruptEvent.storySecond,
+            type: interruptEvent.type,
+            schemaVersion: interruptEvent.schemaVersion,
+            rulesetVersion: interruptEvent.rulesetVersion,
+            commandId: interruptEvent.commandId,
+            causationId: interruptEvent.causationId,
+            correlationId: interruptEvent.correlationId,
+            actorIds: interruptEvent.actorIds,
+            entityIds: interruptEvent.entityIds,
+            locationId: interruptEvent.locationId,
+            recordedAt: new Date(interruptEvent.recordedAtWallClock),
+            payload: interruptEvent.payload,
+          });
+          await tx
+            .update(simEngagements)
+            .set({ state: "interrupted", updatedSequence: interruptEvent.sequence })
+            .where(
+              and(eq(simEngagements.branchId, branch.id), eq(simEngagements.engagementId, engagement.id)),
+            );
+        }
         const advanced = await tx
           .update(simBranches)
           .set({ headSequence: lastSequence, version: branch.version + 1 })

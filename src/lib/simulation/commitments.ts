@@ -622,6 +622,10 @@ export function applyCommitmentEvent(
     case "activity_failed":
     case "activity_interrupted":
     case "activity_resumed":
+    case "engagement_opened":
+    case "engagement_ended":
+    case "engagement_interrupted":
+    case "engagement_winding_down":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
   }
