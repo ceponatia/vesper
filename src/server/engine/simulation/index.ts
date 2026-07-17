@@ -1,4 +1,20 @@
 export {
+  explainItemPlacement,
+  type ExplainOptions,
+} from "./audit-store";
+export {
+  assembleBranchState,
+  forkBranch,
+  loadBranchAncestry,
+  readBranchAncestryEvents,
+  readDurableBranchState,
+  seedProjectionForReplay,
+  type BranchAncestry,
+  type DurableBranchState,
+  type ForkBranchOptions,
+  type ReadBranchAncestryEventsOptions,
+} from "./branch-store";
+export {
   InjectedSimulationCrash,
   readDurableItemTransferBranch,
   seedDurableItemTransferBranch,
@@ -20,6 +36,7 @@ export {
   advanceBranchStoryTime,
   resolveNextDueTrigger,
   scheduleDurableTrigger,
+  submitDurableTriggerSchedule,
   type AdvanceStoryTimeOptions,
   type AdvanceStoryTimeOutcome,
   type ClaimTriggerOptions,
@@ -27,3 +44,11 @@ export {
   type ResolveTriggerOutcome,
   type ScheduleTriggerOptions,
 } from "./scheduler-store";
+export {
+  captureBranchSnapshot,
+  discardBranchSnapshots,
+  rebuildDurableBranchProjection,
+  type RebuildBranchProjectionOptions,
+  type SnapshotStoreOptions,
+} from "./snapshot-store";
+export { applyTriggerScheduledEvent } from "./trigger-projector";

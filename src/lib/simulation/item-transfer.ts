@@ -98,7 +98,8 @@ function compareStableText(left: string, right: string): number {
   return 0;
 }
 
-function sortProjection(projection: ItemTransferProjection): ItemTransferProjection {
+/** Canonical ordering shared by live assembly, replay, and hashing. */
+export function sortItemTransferProjection(projection: ItemTransferProjection): ItemTransferProjection {
   return itemTransferProjectionSchema.parse({
     ...projection,
     actors: projection.actors
@@ -251,13 +252,24 @@ export function resolveItemTransfer(
   );
 }
 
+export interface ApplyItemTransferredEventOptions {
+  /**
+   * Branches whose events this projection accepts. Defaults to the
+   * projection's own branch; ancestry replay onto a fork child passes the
+   * chain so inherited ancestor events apply (plan R4).
+   */
+  acceptBranchIds?: readonly string[];
+}
+
 /** Pure synchronous projector. Historical witness eligibility is read from the event. */
 export function applyItemTransferredEvent(
   projection: ItemTransferProjection,
   rawEvent: ItemTransferredEvent,
+  options: ApplyItemTransferredEventOptions = {},
 ): ItemTransferProjection {
   const event = itemTransferredEventSchema.parse(rawEvent);
-  if (event.branchId !== projection.branchId || event.worldId !== projection.worldId) {
+  const acceptBranchIds = options.acceptBranchIds ?? [projection.branchId];
+  if (!acceptBranchIds.includes(event.branchId) || event.worldId !== projection.worldId) {
     throw new Error("Cannot apply an item transfer from another world branch");
   }
   if (event.sequence !== projection.headSequence + 1) throw new Error("Item transfer sequence is not contiguous");
@@ -279,7 +291,7 @@ export function applyItemTransferredEvent(
       derivationVersion: "gate1-perception-v1",
     }),
   );
-  const next = sortProjection({
+  const next = sortItemTransferProjection({
     ...projection,
     version: projection.version + 1,
     headSequence: event.sequence,
@@ -298,7 +310,7 @@ export function replayItemTransferEvents(
 ): ItemTransferProjection {
   return [...events]
     .sort((left, right) => left.sequence - right.sequence)
-    .reduce((projection, event) => applyItemTransferredEvent(projection, event), sortProjection(seed));
+    .reduce((projection, event) => applyItemTransferredEvent(projection, event), sortItemTransferProjection(seed));
 }
 
 function narrativeBeat(
@@ -421,7 +433,7 @@ export function appendItemTransferNarrativeCut(
  * deliberately does not claim production durability or crash atomicity.
  */
 export function createItemTransferBranchRuntime(rawSeed: unknown): ItemTransferBranchRuntime {
-  const seed = sortProjection(itemTransferProjectionSchema.parse(rawSeed));
+  const seed = sortItemTransferProjection(itemTransferProjectionSchema.parse(rawSeed));
   assertProjectionInvariants(seed);
   let projection = seed;
   const events: ItemTransferredEvent[] = [];

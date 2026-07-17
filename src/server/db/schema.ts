@@ -17,8 +17,14 @@ import {
   vector,
 } from "drizzle-orm/pg-core";
 import type { AuthoredRelationship } from "@/contracts";
-import type { ItemTransferCommandResult, TransferItemCommand } from "@/contracts/simulation/item-transfer";
+import type {
+  SimulationCommandEnvelope,
+  SimulationCommandResultRecord,
+  SimulationSnapshot,
+} from "@/contracts/simulation/branching";
+import type { TransferItemCommand } from "@/contracts/simulation/item-transfer";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
+import { principalKinds } from "@/contracts/simulation/envelopes";
 import { newId } from "@/lib/ids";
 
 const id = () => text("id").primaryKey().$defaultFn(newId);
@@ -1345,7 +1351,14 @@ export const simWorlds = pgTable(
   (t) => [index("sim_worlds_status_idx").on(t.status)],
 );
 
-/** One serial command/event stream and one optimistic version per causal branch. */
+/**
+ * One serial command/event stream and one optimistic version per causal branch.
+ *
+ * E2.5 ancestry (spec §29.3): a fork child records its parent, fork boundary,
+ * and provenance here. A child stores only its own post-fork rows; ancestor
+ * events are read through the parent chain bounded by fork_sequence, never
+ * copied (plan R4).
+ */
 export const simBranches = pgTable(
   "sim_branches",
   {
@@ -1356,12 +1369,32 @@ export const simBranches = pgTable(
     headSequence: bigint("head_sequence", { mode: "number" }).notNull().default(0),
     version: bigint("version", { mode: "number" }).notNull().default(0),
     storySecond: bigint("story_second", { mode: "number" }).notNull().default(0),
+    /** The story clock at this branch's origin: seed time for a root, fork time for a child. */
+    originStorySecond: bigint("origin_story_second", { mode: "number" }).notNull().default(0),
+    parentBranchId: text("parent_branch_id"),
+    /** The last ancestor sequence this branch inherits; its own events start after it. */
+    forkSequence: bigint("fork_sequence", { mode: "number" }),
+    parentRulesetVersion: text("parent_ruleset_version"),
+    parentEventSchemaVersion: integer("parent_event_schema_version"),
+    forkedByPrincipalKind: text("forked_by_principal_kind", { enum: principalKinds }),
+    forkedByPrincipalId: text("forked_by_principal_id"),
+    forkReason: text("fork_reason"),
+    /** Checksum of the materialized child projection at the fork point (§29.3). */
+    inheritedSnapshotChecksum: text("inherited_snapshot_checksum"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index("sim_branches_world_idx").on(t.worldId),
+    index("sim_branches_parent_idx").on(t.parentBranchId),
     unique("sim_branches_id_world_unique").on(t.id, t.worldId),
+    // Same-world parentage; NO ACTION (not RESTRICT) so a world cascade that
+    // removes parent and child in one statement still passes.
+    foreignKey({
+      name: "sim_branches_parent_world_fk",
+      columns: [t.parentBranchId, t.worldId],
+      foreignColumns: [t.id, t.worldId],
+    }).onDelete("no action"),
     check(
       "sim_branches_head_sequence_safe",
       sql`${t.headSequence} >= 0 AND ${t.headSequence} <= 9007199254740991`,
@@ -1373,6 +1406,20 @@ export const simBranches = pgTable(
     check(
       "sim_branches_story_second_safe",
       sql`${t.storySecond} >= 0 AND ${t.storySecond} <= 9007199254740991`,
+    ),
+    check(
+      "sim_branches_origin_story_second_safe",
+      sql`${t.originStorySecond} >= 0 AND ${t.originStorySecond} <= 9007199254740991`,
+    ),
+    check(
+      "sim_branches_fork_sequence_safe",
+      sql`${t.forkSequence} IS NULL OR (${t.forkSequence} >= 0 AND ${t.forkSequence} <= 9007199254740991)`,
+    ),
+    check("sim_branches_not_own_parent", sql`${t.parentBranchId} IS NULL OR ${t.parentBranchId} <> ${t.id}`),
+    // Fork provenance is all-or-nothing: a root carries none of it, a child all of it.
+    check(
+      "sim_branches_fork_shape",
+      sql`(${t.parentBranchId} IS NULL AND ${t.forkSequence} IS NULL AND ${t.parentRulesetVersion} IS NULL AND ${t.parentEventSchemaVersion} IS NULL AND ${t.forkedByPrincipalKind} IS NULL AND ${t.forkedByPrincipalId} IS NULL AND ${t.forkReason} IS NULL AND ${t.inheritedSnapshotChecksum} IS NULL) OR (${t.parentBranchId} IS NOT NULL AND ${t.forkSequence} IS NOT NULL AND ${t.parentRulesetVersion} IS NOT NULL AND ${t.parentEventSchemaVersion} IS NOT NULL AND ${t.forkedByPrincipalKind} IS NOT NULL AND ${t.forkedByPrincipalId} IS NOT NULL AND ${t.forkReason} IS NOT NULL AND ${t.inheritedSnapshotChecksum} IS NOT NULL)`,
     ),
   ],
 );
@@ -1397,9 +1444,9 @@ export const simCommands = pgTable(
     principalKind: text("principal_kind", {
       enum: ["player", "npc_policy", "npc_deliberator", "system", "director", "storyteller", "migration"],
     }).notNull(),
-    envelope: jsonb("envelope").$type<TransferItemCommand>().notNull(),
+    envelope: jsonb("envelope").$type<SimulationCommandEnvelope>().notNull(),
     status: text("status", { enum: ["accepted", "rejected", "conflict"] }).notNull(),
-    result: jsonb("result").$type<ItemTransferCommandResult>().notNull(),
+    result: jsonb("result").$type<SimulationCommandResultRecord>().notNull(),
     submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
     completedAt: createdAt(),
   },
@@ -1753,6 +1800,51 @@ export const simTriggers = pgTable(
     check(
       "sim_triggers_payload_branch_matches",
       sql`coalesce(${t.payload}->'command'->>'branchId', '') = ${t.branchId}`,
+    ),
+  ],
+);
+
+/**
+ * Replay checkpoints (spec §10.4). A snapshot carries the full projection
+ * payload at its sequence so replay can resume there instead of walking to the
+ * root; it may be discarded at any time without changing truth, and tests must
+ * periodically rebuild from zero so a wrong snapshot cannot hide a replay
+ * defect.
+ */
+export const simSnapshots = pgTable(
+  "sim_snapshots",
+  {
+    id: text("id").primaryKey(),
+    worldId: text("world_id").notNull(),
+    branchId: text("branch_id").notNull(),
+    projectionKind: text("projection_kind").notNull(),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+    projectionSchemaVersion: integer("projection_schema_version").notNull(),
+    rulesetVersion: text("ruleset_version").notNull(),
+    checksum: text("checksum").notNull(),
+    /** Zero marks a range that starts at the non-evented world seed. */
+    sourceFirstSequence: bigint("source_first_sequence", { mode: "number" }).notNull(),
+    sourceLastSequence: bigint("source_last_sequence", { mode: "number" }).notNull(),
+    payload: jsonb("payload").$type<SimulationSnapshot["payload"]>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: "sim_snapshots_branch_world_fk",
+      columns: [t.branchId, t.worldId],
+      foreignColumns: [simBranches.id, simBranches.worldId],
+    }).onDelete("cascade"),
+    unique("sim_snapshots_branch_kind_sequence_unique").on(t.branchId, t.projectionKind, t.sequence),
+    index("sim_snapshots_branch_idx").on(t.branchId, t.projectionKind, t.sequence),
+    check(
+      "sim_snapshots_sequence_safe",
+      sql`${t.sequence} >= 0 AND ${t.sequence} <= 9007199254740991`,
+    ),
+    check("sim_snapshots_schema_version_positive", sql`${t.projectionSchemaVersion} > 0`),
+    check(
+      "sim_snapshots_source_range_safe",
+      sql`${t.sourceFirstSequence} >= 0 AND ${t.sourceFirstSequence} <= ${t.sourceLastSequence} AND ${t.sourceLastSequence} <= 9007199254740991`,
     ),
   ],
 );
