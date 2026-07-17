@@ -17,10 +17,14 @@ The implementation lives in:
   exhaustive-result schema factories;
 - `src/contracts/simulation/item-transfer.ts` — the first command/event/projection,
   observation, and NarrativeCut family;
+- `src/contracts/simulation/scheduler.ts` — the E2.4 trigger contract, derived trigger
+  identity, named deterministic draw streams, and capped retry backoff;
 - `src/lib/simulation/item-transfer.ts` — pure resolver over a minimum authority view,
   projector, replay, cut compiler, prompt formatter, and the temporary in-memory runtime;
 - `src/server/engine/simulation/item-transfer-store.ts` — the E2.2 PostgreSQL branch
   transaction and typed read/bootstrap adapter;
+- `src/server/engine/simulation/scheduler-store.ts` — the E2.4 durable trigger queue,
+  lease/claim semantics, and the bounded story-time advance seam;
 - `src/server/engine/world-engine.ts` — the adapter into the existing character-chat
   narrator.
 
@@ -100,10 +104,38 @@ The existing narrator receives the cut only through
 no additional hard transition. Rerender variants reuse the same cut ID and semantic hash
 and have no command or persistence capability.
 
+## Scheduling and story time
+
+A trigger is a durable request to evaluate something at a future story second. Nothing
+else makes it due: `advanceBranchStoryTime` moves the branch clock and drains whatever
+becomes due, in `dueStorySecond` → `stableOrder` → `id` order (spec §12.1). A trigger
+resolves through the same command transaction a player command uses, so it inherits that
+seam's idempotency, ordering, and crash atomicity rather than reimplementing them.
+
+Triggers express *when to evaluate*, never an outcome: a trigger carries a command to
+submit, and the command is still validated, and may still be rejected, on its merits. The
+trigger's own branch is authoritative for routing — a payload naming another branch is
+refused by both the contract and a database check constraint.
+
+Advance is bounded. A caller may declare `maxTriggers` and `budgetMs`; exceeding either
+persists the boundary reached and returns `catch_up_required` (spec §12.3). Triggers are
+never skipped and never approximated away.
+
 ## Deliberate limits
 
-E2.2 provides durability only for the first item-transfer family. The in-memory adapter
-remains a pure test/replay fixture; production persistence now has crash atomicity,
-cross-process branch locking, and durable command results. Branch forks, outbox consumers,
-scheduled triggers, movement, live-scene arbitration, and live-chat authority are still
-absent and remain E2.3 or later work.
+Durability covers only the first item-transfer family. The in-memory adapter remains a pure
+test/replay fixture; production persistence has crash atomicity, cross-process branch
+locking, durable command results (E2.2), asynchronous rebuildable consumers (E2.3), and a
+durable trigger queue (E2.4).
+
+Deliberately absent, with owners:
+
+- **Analytical rate integration** inside advance (spec §12.2 steps 2 and 6). No continuous
+  rate exists until Gate 5 bodies; the drain loop is the seam it will slot into.
+- **Deterministic draw integration.** `deterministicDrawUnit` ships as a tested primitive
+  with no production consumer — `transfer_item` consumes no draws. The first real use is
+  Gate 3 lateness/travel, which must record stream, index, value, and derivation version on
+  the event that consumed it.
+- **Branch forks, snapshots, and audit** are E2.5; the Gate 2 soak and verdict are E2.6.
+- **Movement, commitments, and live-scene arbitration** are Gate 3. A trigger must not set
+  location directly when they arrive.

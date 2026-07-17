@@ -62,7 +62,7 @@ leaves the snapshot intact.
 | `participant_relationships` | `session_id`, `from_participant_id` (edge owner — always an NPC), `to_participant_id`, `kind` (`feeling`/`perceived` — perceived only toward the player), `value` int, `stage` (denormalized from the stage registry, recomputed on write); unique (session, from, to, kind) |
 | `item_instances` | `session_id`, `item_id?`, `snapshot` JSONB (ItemDefinition snapshot), `name`, exactly-one placement (`holder_participant_id` + `worn` bool, `location_id`, `container_instance_id`) **enforced by CHECK constraints** (`item_instances_one_placement`; `item_instances_worn_needs_holder` — `worn` requires a holder), `position_note`, `state` JSONB (condition/cleanliness/wetness/notes). Wardrobe visibility (visible/hinted/hidden per body location) is computed by `contracts/items/visibility.ts`, never stored |
 
-### Successor simulation authority (E2.2)
+### Successor simulation authority (E2.2–E2.4)
 
 These `sim_*` tables are an isolated successor-engine authority catalog; they do not
 dual-write the deprecated session engine or current character-chat rows.
@@ -77,6 +77,14 @@ dual-write the deprecated session engine or current character-chat rows.
 | `sim_holding_containers` | typed holding kind, capacity, and actor-access facts |
 | `sim_items` | stable branch-local item identity/name |
 | `sim_item_holdings` | exactly one row per branch/item, current container, and last event sequence |
+| `sim_outbox` (E2.3) | one delivery obligation per accepted event and consumer kind; unique `(consumer_kind, branch_id, source_event_id)` makes publication idempotent |
+| `sim_consumer_checkpoints` (E2.3) | greatest contiguous sequence applied per consumer and branch; progress metadata, not authority |
+| `sim_item_transfer_feed` (E2.3) | first disposable async projection — one row per transferred-item event; never read by command validation |
+| `sim_triggers` (E2.4) | durable future-evaluation requests: due story second, immutable `stable_order` tie-break, branch-unique `uniqueness_key`, lease/attempt coordination, and the scheduler `derivation_version` that produced the terminal outcome |
+
+`sim_outbox`, `sim_consumer_checkpoints`, `sim_item_transfer_feed`, and the lease/attempt
+columns of `sim_triggers` are **disposable coordination state**. World truth is `sim_events`
+plus the synchronous typed projections; these may be rebuilt or requeued without changing it.
 
 Domain identities are supplied explicitly instead of replaced by cuid2 row identities.
 Causal bigint columns are database-checked against JavaScript's safe integer range.
@@ -114,6 +122,10 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 - Successor authority: `sim_events(branch_id, sequence)` unique,
   `sim_commands(branch_id, idempotency_key)` primary, command-ID audit lookup, and
   `sim_item_holdings(branch_id, holding_container_id)` capacity/count lookup.
+- Scheduler: `sim_triggers(state, available_at, due_story_second, stable_order)` for the
+  claim scan and `sim_triggers(branch_id, due_story_second, stable_order)` for per-branch
+  drains. `(branch_id, uniqueness_key)` makes scheduling idempotent; `(branch_id, stable_order)`
+  keeps simultaneous triggers totally ordered.
 
 ## Transactional invariants
 
@@ -121,6 +133,19 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   event append, exclusive holding update, branch compare-and-swap advance, and durable
   command result under one `FOR UPDATE OF sim_branches` transaction. The joined world row is metadata, not a sibling-branch mutex. No model, network
   callback, or wall-clock-derived simulation decision is allowed under that lock. The typed branch reader uses a read-only `REPEATABLE READ` transaction so head, projection rows, and events share one snapshot.
+- E2.4 `resolveNextDueTrigger` claims a trigger and increments its attempt count in one
+  transaction, then resolves it through that same `submitDurableItemTransfer` transaction.
+  Attempts increment at **claim** time, not at failure time: a worker that dies mid-resolution
+  never runs its own failure path, so whoever next claims an exhausted trigger retires it —
+  otherwise a crash loop reclaims forever and never reaches `maxAttempts`. Every terminal write
+  is fenced on `(id, state='processing', lease_owner=workerId)`, so a worker whose lease expired
+  cannot overwrite its successor's state.
+- A scheduler command is admitted at the branch version read **under the branch lock**
+  (`admitAtLockedVersion`), never at a version pre-read outside the transaction. A trigger's
+  idempotency key is permanent, so an optimistic conflict would be *stored under that key* and
+  replayed by every later retry — poisoning the trigger forever rather than delaying it. This
+  is safe precisely because the scheduler has no stale read to protect: it holds a lease over a
+  payload committed when the trigger was scheduled.
 - The post-turn merge commits all **world-state** writes — participant state, item instances, clock, runtime, brief, and the turn row — in **one transaction** (`engine/merge/apply.ts`). Facts (+supersedence) and the episode are written first through the memory module, each internally transactional; their embeddings degrade per [memory.md](memory.md) instead of failing the merge.
 - Fact supersedence updates `status`/`superseded_by_id`/`superseded_at` on the old row in the same transaction as the inserted replacement — the embedding lives on the row, so there is no orphaned-embedding state (a bug class in the old app).
 - Session status transitions use compare-and-swap (`WHERE status = 'ready'`) to serialize turn submission.
