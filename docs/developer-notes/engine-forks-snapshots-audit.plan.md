@@ -27,8 +27,8 @@ fork; the chat lane wiring onto it is later.
 
 ## Rulings this plan makes
 
-The owner settled the three open fork decisions on 2026-07-17. They are recorded here
-because they shape the schema and the mechanism, and undoing one later is expensive.
+The owner settled four fork decisions on 2026-07-17. They are recorded here because they
+shape the schema and the mechanism, and undoing one later is expensive.
 
 ### R1 — a fork rebuilds by replaying events, never by copying trigger rows
 
@@ -80,6 +80,30 @@ Unifying the two behind a scripted setup-event stream was considered and decline
 E2.5 and rewrites the seed path every existing test depends on. It stays a candidate for a
 later target if rebuild-validating world creation ever earns its cost.
 
+### R4 — a child references ancestor events by ancestry; it does not copy them
+
+A forked child stores only its own post-fork events. Ancestor events 1..N are read through
+the parent chain, bounded by the fork sequence — not duplicated into the child's rows. This
+follows §29.3's "queries must include branch ancestry rules and sequence bounds," which
+presumes reads walk ancestry rather than each child owning a full copy. It also keeps a fork
+cheap regardless of how deep the parent's history is.
+
+What R4 obliges:
+
+- **Every branch-scoped read walks ancestry.** Loading a child's events, projections, or
+  memory means: the child's own rows, then the parent's rows with `sequence ≤ forkSequence`,
+  recursively up the chain. A read helper must encapsulate this so call sites cannot forget
+  the bound and leak post-fork ancestor events (which belong to a sibling timeline).
+- **Rebuild-from-zero for a child** replays ancestor events 1..N through the chain, then the
+  child's own N+1.. — producing the same projection hash as the live child.
+- **Isolation is by sequence bound, not by copy** (§29.3 "never shared by mutable reference").
+  Ancestor events are immutable and read-only; the child never writes into an ancestor's rows,
+  so sharing them by reference is safe.
+
+The cost R4 accepts: reads are more complex than a flat single-branch query, and a
+pathologically deep fork chain lengthens ancestry walks. Snapshots (below) blunt the latter —
+a child's snapshot checksums its full logical range so replay need not always walk to the root.
+
 ## Prerequisite this ruling creates
 
 R1 has a hard precondition that is **not** true in the code today, and it is the first real
@@ -119,9 +143,9 @@ A `forkBranch(parentId, atSequence, principal, reason)` that:
 3. re-creates the child's pending triggers by replaying the setting events ≤ N (R1);
 4. never shares post-fork events by mutable reference (§29.3).
 
-Whether the child **copies** ancestor events 1..N or **references** them by ancestry is the
-plan's main open question (below). §29.3's "queries must include branch ancestry rules and
-sequence bounds" leans toward reference-by-ancestry.
+The child references ancestor events by ancestry rather than copying them (R4), so step 2 is
+a read-path concern, not a bulk copy: the child's row set stays empty at fork time and grows
+only as it resolves its own commands.
 
 ### Snapshots (§10.4)
 
@@ -168,8 +192,12 @@ set; no column is needed. Do not build it.)
 2. Close the outbox reclaim gap (task #9).
 3. Move trigger creation/cancellation behind an event effect (the R1 prerequisite); prove
    E2.4's scheduler suite still passes with creation flowing through events.
-4. Add ancestry columns and the fork boundary; migration.
-5. Implement `forkBranch` with event replay into the child and trigger re-creation.
+4. Add ancestry columns and the fork boundary; migration. Add the ancestry-bounded read
+   helper (R4) and route existing branch reads through it before any fork can create a child
+   that depends on it.
+5. Implement `forkBranch`: record ancestry, and re-create the child's pending triggers by
+   replaying setting events ≤ N. No bulk event copy — the child references ancestor history
+   through the R4 read helper.
 6. Add `sim_snapshots`, snapshot capture, and hash reuse.
 7. Implement projection rebuild + comparison and the rebuild-from-zero test cadence.
 8. Add causal explanation queries.
@@ -191,6 +219,8 @@ PostgreSQL:
   (R1 — the worked examples in R1/R2 become fixtures);
 - forking does not mutate the parent branch, its events, or its triggers;
 - post-fork events on the child are not visible on the parent and vice versa (§29.3);
+- an ancestry-bounded read on the child returns ancestor events with `sequence ≤ forkSequence`
+  and none after, so a sibling fork's post-fork events never leak in (R4);
 - rebuild-from-zero equals the live projection by hash;
 - rebuild-from-snapshot equals rebuild-from-zero (a snapshot cannot hide a replay defect);
 - discarding a snapshot changes no truth;
@@ -220,11 +250,8 @@ diverges from a zero rebuild means revise rather than advance.
 
 ## Open questions
 
-1. **Copy vs reference for ancestor events.** Does a child branch copy the parent's events
-   1..N into its own rows, or reference them by ancestry with sequence bounds? Copying is
-   simpler and fully isolated but costs storage per fork; referencing matches §29.3's
-   "queries must include branch ancestry rules and sequence bounds" and saves storage but
-   complicates every read. Recommendation: reference-by-ancestry, per the spec's lean —
-   settle before step 4 (it shapes the schema).
-2. **Snapshot cadence.** Every K events, on fork, on demand, or a mix? Low-stakes; pick a
+1. **Snapshot cadence.** Every K events, on fork, on demand, or a mix? Low-stakes; pick a
    simple default (e.g. on fork + on demand) and tune with data.
+
+Resolved: *copy vs reference for ancestor events* — reference-by-ancestry (owner ruling
+2026-07-17); see R4.
