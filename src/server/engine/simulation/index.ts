@@ -19,6 +19,12 @@ export {
   type CommitmentStoreOptions,
 } from "./commitment-store";
 export {
+  readDurableEngagements,
+  submitDurableEndEngagement,
+  submitDurableOpenEngagement,
+  type EngagementStoreOptions,
+} from "./engagement-store";
+export {
   assembleBranchState,
   forkBranch,
   loadBranchAncestry,

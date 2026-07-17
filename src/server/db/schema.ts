@@ -2150,6 +2150,41 @@ export const simTemporalPressures = pgTable(
   ],
 );
 
+/**
+ * E3.4 engagements (engine.spec §18.1). Attention claims are projected from
+ * these rows exactly as activity claims are — a crashed worker cannot orphan
+ * a conversation's hold on its participants.
+ */
+export const simEngagements = pgTable(
+  "sim_engagements",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    engagementId: text("engagement_id").notNull(),
+    participantIds: jsonb("participant_ids").$type<string[]>().notNull(),
+    channel: text("channel", { enum: ["co_present", "text", "voice", "video", "mixed"] }).notNull(),
+    locationId: text("location_id"),
+    zoneId: text("zone_id"),
+    state: text("state", {
+      enum: ["opening", "active", "winding_down", "ended", "interrupted"],
+    }).notNull(),
+    openedAt: bigint("opened_at", { mode: "number" }).notNull(),
+    attentionClaim: jsonb("attention_claim").$type<ActivityClaim>().notNull(),
+    sourceCommandId: text("source_command_id").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_engagements_branch_engagement_pk", columns: [t.branchId, t.engagementId] }),
+    index("sim_engagements_branch_state_idx").on(t.branchId, t.state),
+    check(
+      "sim_engagements_co_present_has_zone",
+      sql`${t.channel} <> 'co_present' OR ${t.zoneId} IS NOT NULL`,
+    ),
+  ],
+);
+
 export const simJourneys = pgTable(
   "sim_journeys",
   {

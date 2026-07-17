@@ -824,12 +824,23 @@ branch.
    acknowledgment, and the warn/negotiate/depart decision behavior are E3.4 arbiter work;
    `accepted`/`declined`/`in_progress` statuses are machine-legal but no command drives
    them yet (E3.4).
-4. **E3.4 — engagements and the live-scene arbiter.** `Engagement` (§18.1) with body and
-   attention reservation (one co-present per player — ruling 7); the eleven-step
-   reconciliation algorithm (§18.3) driving deterministic candidate → policy/deliberator →
-   commit → one NarrativeCut before narration; ArmedEffect confirmation for all §23.3
-   speech acts (ruling 9); and hidden-retryable narrator failure (ruling 8). Consumes
-   E3.1–E3.3.
+4. **E3.4 — engagements and the live-scene arbiter.** Status: **slice 1 shipped —
+   2026-07-17; slice 2 next.** Slice 1 (the engagement substrate): `Engagement`
+   (`sim_engagements`, migration 0061) with the §18.2 state machine; attention reserved
+   through the E3.2 claim arithmetic (full for co-present, partial for remote); one body,
+   one physical scene enforced at open (§11.3 — co-located at-loci, no second co-present);
+   presence-of-mind rule (a held full-attention claim blocks joining any channel — sleep
+   keeps the ruled no-wake default because delivery is not an engagement); conversations
+   and body-claiming activities mutually exclude; departures interrupt the mover's open
+   co-present scene atomically; fork/replay parity. Slice 1 boundaries: engagements open
+   straight to `active` (the `opening` handshake, `winding_down` choreography, and
+   pressure acknowledgment belong to the arbiter); interrupted scenes hold claims until
+   an explicit end (resume is arbiter work); a resumed activity's completion re-arm needs
+   its trigger uniqueness key versioned by attempt (design note for slice 2). Slice 2
+   (remaining): the eleven-step §18.3 reconciliation algorithm driving deterministic
+   candidate → policy/deliberator → commit → one generalized NarrativeCut before
+   narration; ArmedEffect confirmation for all §23.3 speech acts (ruling 9); and
+   hidden-retryable narrator failure (ruling 8). Consumes E3.1–E3.3.
 5. **E3.5 — access, privacy, consent, and the scenario corpus.** The six-layer access check
    (§14) failing closed; player-versus-NPC movement authority (§14.1–14.2); modeled trespass
    (ruling 3); private-cause redaction with in-character cover stories (ruling 13); sleep

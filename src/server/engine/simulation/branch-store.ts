@@ -21,15 +21,22 @@ import {
   itemTransferFeedProjectionSchemaVersion,
 } from "@/contracts/simulation/outbox";
 import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
-import { isActivityEvent, isCommitmentEvent, isMovementEvent } from "@/contracts/simulation/branching";
+import {
+  isActivityEvent,
+  isCommitmentEvent,
+  isEngagementEvent,
+  isMovementEvent,
+} from "@/contracts/simulation/branching";
 import {
   composeAncestryEventBounds,
   emptyActivitiesSeed,
   emptyCommitmentsSeed,
+  emptyEngagementsSeed,
   itemHoldingsAtSequence,
   replayActivitiesHistory,
   replayBranchHistory,
   replayCommitmentsHistory,
+  replayEngagementsHistory,
   replaySpaceHistory,
   simulationHash,
   spaceSeedForReplay,
@@ -44,6 +51,7 @@ import {
   simCharacters,
   simCommitments,
   simConsumerCheckpoints,
+  simEngagements,
   simTemporalPressures,
   simEvents,
   simHoldingContainers,
@@ -56,6 +64,7 @@ import {
 } from "@/server/db";
 import { activityRowInsert } from "./activity-store";
 import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
+import { engagementRowInsert } from "./engagement-store";
 import {
   insertSpaceRows,
   loadSpaceRows,
@@ -585,6 +594,23 @@ export async function forkBranch(
             pressure,
             commitmentSequenceById.get(pressure.sourceCommitmentId) ?? 0,
           ),
+        ),
+      );
+    }
+
+    // E3.4 engagements: fully evented — replay from the empty seed.
+    const childEngagements = replayEngagementsHistory({
+      seed: emptyEngagementsSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const engagementSequenceById = new Map<string, number>();
+    for (const event of inherited) {
+      if (isEngagementEvent(event)) engagementSequenceById.set(event.payload.engagementId, event.sequence);
+    }
+    if (childEngagements.engagements.length > 0) {
+      await tx.insert(simEngagements).values(
+        childEngagements.engagements.map((engagement) =>
+          engagementRowInsert(input.childBranchId, engagement, engagementSequenceById.get(engagement.id) ?? 0),
         ),
       );
     }

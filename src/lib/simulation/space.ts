@@ -725,6 +725,10 @@ export function applySpaceEvent(
     case "commitment_kept":
     case "commitment_late":
     case "commitment_missed":
+    case "engagement_opened":
+    case "engagement_ended":
+    case "engagement_interrupted":
+    case "engagement_winding_down":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }
