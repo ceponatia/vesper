@@ -1,0 +1,79 @@
+import { createHash } from "node:crypto";
+import { z } from "zod";
+import {
+  branchSequenceSchema,
+  composeSimulationId,
+  storySecondSchema,
+  triggerIdSchema,
+  worldBranchIdSchema,
+  worldIdSchema,
+} from "./identity";
+import { transferItemCommandSchema } from "./item-transfer";
+
+export const simulationTriggerStateSchema = z.enum([
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+]);
+
+export const scheduledTransferTriggerKind = "scheduled_transfer_item" as const;
+export const scheduledTransferTriggerSchemaVersion = 1 as const;
+export const schedulerDerivationVersion = "scheduler-v1" as const;
+
+export const scheduledTransferTriggerPayloadSchema = z
+  .object({ command: transferItemCommandSchema })
+  .strict();
+
+export const simulationTriggerSchema = z
+  .object({
+    id: triggerIdSchema,
+    worldId: worldIdSchema,
+    branchId: worldBranchIdSchema,
+    kind: z.literal(scheduledTransferTriggerKind),
+    schemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
+    dueStorySecond: storySecondSchema,
+    stableOrder: branchSequenceSchema,
+    uniquenessKey: z.string().min(1).max(512),
+    payload: scheduledTransferTriggerPayloadSchema,
+  })
+  .strict();
+
+export type SimulationTrigger = z.infer<typeof simulationTriggerSchema>;
+
+export function deriveTriggerId(branchId: string, uniquenessKey: string): string {
+  return triggerIdSchema.parse(composeSimulationId("trigger", [branchId, uniquenessKey]));
+}
+
+/**
+ * A named stream produces stable draws without sharing mutable RNG state.
+ * Adding a draw in one stream therefore cannot perturb any other stream.
+ */
+export function deterministicDrawUnit(input: {
+  worldSeed: string;
+  branchId: string;
+  stream: string;
+  drawIndex: number;
+}): number {
+  if (!Number.isSafeInteger(input.drawIndex) || input.drawIndex < 0) {
+    throw new RangeError("drawIndex must be a nonnegative safe integer");
+  }
+  const material = composeSimulationId("draw", [
+    input.worldSeed,
+    input.branchId,
+    input.stream,
+    String(input.drawIndex),
+  ]);
+  const bytes = createHash("sha256").update(material).digest();
+  const high = bytes.readUInt32BE(0);
+  const low = bytes.readUInt32BE(4);
+  const integer53 = high * 2 ** 21 + (low >>> 11);
+  return integer53 / 2 ** 53;
+}
+
+export function schedulerRetryDelaySeconds(attempt: number): number {
+  if (!Number.isSafeInteger(attempt) || attempt < 1) {
+    throw new RangeError("Scheduler attempt must be a positive safe integer");
+  }
+  return Math.min(900, 2 ** Math.min(attempt - 1, 9));
+}
