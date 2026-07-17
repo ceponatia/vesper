@@ -1,5 +1,6 @@
 import {
   isActivityEvent,
+  isCommitmentEvent,
   isMovementEvent,
   simulationBranchEventSchema,
   type SimulationBranchEvent,
@@ -176,7 +177,7 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
         );
       }
       projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
-    } else if (isMovementEvent(event) || isActivityEvent(event)) {
+    } else if (isMovementEvent(event) || isActivityEvent(event) || isCommitmentEvent(event)) {
       // Movement and activity events belong to their own projections
       // (replaySpaceHistory / replayActivitiesHistory). Here they advance the
       // item boundary and — for a scheduler-dispatched arrival or completion —

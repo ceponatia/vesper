@@ -71,6 +71,9 @@ jobs:
       - name: E3.2 activities and claims integration
         run: pnpm test:engine-e3-2
 
+      - name: E3.3 commitments and pressure integration
+        run: pnpm test:engine-e3-3
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

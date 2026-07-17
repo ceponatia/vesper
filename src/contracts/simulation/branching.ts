@@ -13,6 +13,19 @@ import {
   type StartActivityCommand,
   type StartActivityCommandResult,
 } from "./activities";
+import {
+  commitmentCreatedEventSchema,
+  commitmentKeptEventSchema,
+  commitmentLateEventSchema,
+  commitmentMissedEventSchema,
+  pressureRaisedEventSchema,
+  type CreateCommitmentCommand,
+  type CreateCommitmentCommandResult,
+  type RaisePressureCommand,
+  type RaisePressureCommandResult,
+  type ResolveCommitmentDeadlineCommand,
+  type ResolveCommitmentDeadlineCommandResult,
+} from "./commitments";
 import { commandPrincipalSchema, principalKindSchema } from "./envelopes";
 import {
   branchHeadSequenceSchema,
@@ -75,6 +88,11 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   activityFailedEventSchema,
   activityInterruptedEventSchema,
   activityResumedEventSchema,
+  commitmentCreatedEventSchema,
+  pressureRaisedEventSchema,
+  commitmentKeptEventSchema,
+  commitmentLateEventSchema,
+  commitmentMissedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -113,6 +131,22 @@ export function isActivityEvent(event: SimulationBranchEvent): event is Simulati
   return activityEventTypes.has(event.type);
 }
 
+/** The commitment family (E3.3). Replay treats these as commitments-projection events. */
+const commitmentEventTypeList = [
+  "commitment_created",
+  "pressure_raised",
+  "commitment_kept",
+  "commitment_late",
+  "commitment_missed",
+] as const;
+export type CommitmentEventType = (typeof commitmentEventTypeList)[number];
+export type SimulationCommitmentEvent = Extract<SimulationBranchEvent, { type: CommitmentEventType }>;
+export const commitmentEventTypes: ReadonlySet<string> = new Set(commitmentEventTypeList);
+
+export function isCommitmentEvent(event: SimulationBranchEvent): event is SimulationCommitmentEvent {
+  return commitmentEventTypes.has(event.type);
+}
+
 /** Union persisted in sim_commands; each family keeps its own result contract. */
 export type SimulationCommandEnvelope =
   | TransferItemCommand
@@ -121,7 +155,10 @@ export type SimulationCommandEnvelope =
   | ArriveJourneyCommand
   | StartActivityCommand
   | CompleteActivityCommand
-  | CancelActivityCommand;
+  | CancelActivityCommand
+  | CreateCommitmentCommand
+  | RaisePressureCommand
+  | ResolveCommitmentDeadlineCommand;
 export type SimulationCommandResultRecord =
   | ItemTransferCommandResult
   | ScheduleTriggerCommandResult
@@ -129,7 +166,10 @@ export type SimulationCommandResultRecord =
   | ArriveJourneyCommandResult
   | StartActivityCommandResult
   | CompleteActivityCommandResult
-  | CancelActivityCommandResult;
+  | CancelActivityCommandResult
+  | CreateCommitmentCommandResult
+  | RaisePressureCommandResult
+  | ResolveCommitmentDeadlineCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

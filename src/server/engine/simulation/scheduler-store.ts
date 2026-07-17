@@ -8,6 +8,9 @@ import {
   scheduleTransferTriggerCommandSchema,
   scheduleTransferTriggerCommandType,
   scheduleTriggerCommandResultSchema,
+  activityCompletionTriggerKind,
+  commitmentDeadlineTriggerKind,
+  commitmentNoticeTriggerKind,
   journeyArrivalTriggerKind,
   scheduledTransferTriggerKind,
   schedulerDerivationVersion,
@@ -28,6 +31,10 @@ import { transferItemCommandSchema } from "@/contracts/simulation/item-transfer"
 import { arriveJourneyCommandSchema } from "@/contracts/simulation/space";
 import { db, simBranches, simCommands, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { submitDurableCompleteActivity } from "./activity-store";
+import {
+  submitDurableRaisePressure,
+  submitDurableResolveCommitmentDeadline,
+} from "./commitment-store";
 import { submitDurableItemTransfer } from "./item-transfer-store";
 import { submitDurableJourneyArrival } from "./space-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
@@ -517,12 +524,22 @@ export async function resolveNextDueTrigger(
     // The trigger's idempotency key is permanent, so an optimistic conflict
     // would be stored under it and replayed by every retry. See the option's
     // contract in item-transfer-store.
-    const result =
-      trigger.kind === scheduledTransferTriggerKind
-        ? await submitDurableItemTransfer(dispatchEnvelope, { database, admitAtLockedVersion: true })
-        : trigger.kind === journeyArrivalTriggerKind
-          ? await submitDurableJourneyArrival(dispatchEnvelope, { database, admitAtLockedVersion: true })
-          : await submitDurableCompleteActivity(dispatchEnvelope, { database, admitAtLockedVersion: true });
+    const dispatchOptions = { database, admitAtLockedVersion: true };
+    const dispatch = () => {
+      switch (trigger.kind) {
+        case scheduledTransferTriggerKind:
+          return submitDurableItemTransfer(dispatchEnvelope, dispatchOptions);
+        case journeyArrivalTriggerKind:
+          return submitDurableJourneyArrival(dispatchEnvelope, dispatchOptions);
+        case activityCompletionTriggerKind:
+          return submitDurableCompleteActivity(dispatchEnvelope, dispatchOptions);
+        case commitmentNoticeTriggerKind:
+          return submitDurableRaisePressure(dispatchEnvelope, dispatchOptions);
+        case commitmentDeadlineTriggerKind:
+          return submitDurableResolveCommitmentDeadline(dispatchEnvelope, dispatchOptions);
+      }
+    };
+    const result = await dispatch();
 
     switch (result.status) {
       case "accepted": {

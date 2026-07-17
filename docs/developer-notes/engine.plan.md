@@ -808,12 +808,22 @@ branch.
    are vocabulary + appliers whose emitting path is E3.4's interruption; pause is not yet
    a command, and a resumed activity's completion re-arm is recorded as an E3.4 design
    note (the retired trigger's uniqueness key must version by attempt).
-3. **E3.3 — commitments and temporal pressure.** `Commitment` (with the ruled `flexibility`
-   dial) and `TemporalPressure` (§15); `noticeAt` / `decideBy` / `actBy` derivation from
-   route + preparation + reliability buffer; `knowledgeSourceId` gating so an actor acts
-   only on a commitment it can remember or perceive; durable pressure triggers on the E2.4
-   scheduler; and deterministic missed-obligation consequences (ruling 6). Consumes E3.1
-   routes and E3.2 activities.
+3. **E3.3 — commitments and temporal pressure.** Status: **shipped — 2026-07-17.**
+   `Commitment` with the ruled `flexibility` dial and the §15.4 status machine
+   (`sim_commitments`) plus `TemporalPressure` (`sim_temporal_pressures`), migration 0060;
+   the §15.2 derivation (noticeAt/decideBy/actBy from E3.1 route + preparation + buffer)
+   captured on the creating event; a notice trigger raising pressure with
+   flexibility-derived severity, gated on knowledge availability; a deadline trigger
+   deterministically evaluating the actor's actual locus into kept / late (inbound) /
+   missed with the basis captured (ruling 6) — never moving anyone (§3.1 inv. 5);
+   fork/replay parity. Delivery notes: the knowledge source has one live member
+   (`authored`) — Gate 4's observation/assertion/belief members tighten the gate without a
+   schema change; every E3.3 commitment names a destination zone (destinationless promises
+   join with the Gate 5 social ledger); route assumptions are captured at creation —
+   recomputation on material change, `late → kept` repair on subsequent arrival,
+   acknowledgment, and the warn/negotiate/depart decision behavior are E3.4 arbiter work;
+   `accepted`/`declined`/`in_progress` statuses are machine-legal but no command drives
+   them yet (E3.4).
 4. **E3.4 — engagements and the live-scene arbiter.** `Engagement` (§18.1) with body and
    attention reservation (one co-present per player — ruling 7); the eleven-step
    reconciliation algorithm (§18.3) driving deterministic candidate → policy/deliberator →

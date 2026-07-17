@@ -28,8 +28,8 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   **Rulings unblocked 2026-07-17** — all 10 blocking product rulings plus spec rulings 11
   and 13 resolved by the owner (plan §"Product rulings — RESOLVED 2026-07-17", normative
   record in [engine.spec.md](engine.spec.md) §39). Building in dependency order
-  **E3.1 → E3.5**; E3.1 and E3.2 shipped 2026-07-17 (see **Shipped**), so **E3.3
-  (commitments & temporal pressure)** is the current sub-target. Proves world events become
+  **E3.1 → E3.5**; E3.1–E3.3 shipped 2026-07-17 (see **Shipped**), so **E3.4
+  (engagements & the live-scene arbiter)** is the current sub-target. Proves world events become
   playable transitions, not teleports: authoritative space + travel (G3.1), typed actions
   with preconditions/claims/effects (G3.2), commitments with earliest/target/latest pressure
   that never set location directly (G3.3), conversation-as-Engagement + the live-scene
@@ -141,6 +141,22 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine commitments & temporal pressure (E3.3)** —
+  [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-17 — the third Gate 3 slice, and the one that
+  makes the spec's 4pm-shift arc real: commitments with the ruled per-commitment firmness
+  dial and the §15.4 status machine (`sim_commitments`, migration 0060), the §15.2
+  derivation captured at creation (latestDeparture = latest − route − preparation −
+  buffer, route from the E3.1 planner), a notice trigger raising `TemporalPressure`
+  (`sim_temporal_pressures`) with flexibility-derived severity — gated on the commitment's
+  knowledge source (one live `authored` member; Gate 4 tightens it to real
+  observations/beliefs without a schema change) — and a deadline trigger that
+  deterministically **evaluates** the actor's actual locus (ruling 6): at the destination →
+  kept, inbound on a journey there → late (arrival still lands afterwards), anywhere else →
+  missed, with the evaluation basis captured on the event. The schedule never sets location
+  (§3.1 inv. 5 — asserted in test). Fork/replay parity: pre-deadline forks re-arm both
+  triggers and resolve independently. 11 pure + 7 integration cases (kept/late/missed arcs
+  end-to-end); CI runs `test:engine-e3-3`. Gate 3 continues: E3.4 engagements are next.
 - **World-engine typed actions, activities & claims (E3.2)** —
   [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — the second Gate 3 slice: authored

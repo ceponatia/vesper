@@ -21,13 +21,15 @@ import {
   itemTransferFeedProjectionSchemaVersion,
 } from "@/contracts/simulation/outbox";
 import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
-import { isActivityEvent, isMovementEvent } from "@/contracts/simulation/branching";
+import { isActivityEvent, isCommitmentEvent, isMovementEvent } from "@/contracts/simulation/branching";
 import {
   composeAncestryEventBounds,
   emptyActivitiesSeed,
+  emptyCommitmentsSeed,
   itemHoldingsAtSequence,
   replayActivitiesHistory,
   replayBranchHistory,
+  replayCommitmentsHistory,
   replaySpaceHistory,
   simulationHash,
   spaceSeedForReplay,
@@ -40,7 +42,9 @@ import {
   simActivities,
   simBranches,
   simCharacters,
+  simCommitments,
   simConsumerCheckpoints,
+  simTemporalPressures,
   simEvents,
   simHoldingContainers,
   simItemHoldings,
@@ -51,6 +55,7 @@ import {
   type Db,
 } from "@/server/db";
 import { activityRowInsert } from "./activity-store";
+import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import {
   insertSpaceRows,
   loadSpaceRows,
@@ -551,6 +556,35 @@ export async function forkBranch(
       await tx.insert(simActivities).values(
         childActivities.activities.map((activity) =>
           activityRowInsert(input.childBranchId, activity, activitySequenceById.get(activity.id) ?? 0),
+        ),
+      );
+    }
+
+    // E3.3 commitments: fully evented like activities — replay from the empty
+    // seed; notice/deadline triggers re-arm or complete through the ledger.
+    const childCommitments = replayCommitmentsHistory({
+      seed: emptyCommitmentsSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const commitmentSequenceById = new Map<string, number>();
+    for (const event of inherited) {
+      if (isCommitmentEvent(event)) commitmentSequenceById.set(event.payload.commitmentId, event.sequence);
+    }
+    if (childCommitments.commitments.length > 0) {
+      await tx.insert(simCommitments).values(
+        childCommitments.commitments.map((commitment) =>
+          commitmentRowInsert(input.childBranchId, commitment, commitmentSequenceById.get(commitment.id) ?? 0),
+        ),
+      );
+    }
+    if (childCommitments.pressures.length > 0) {
+      await tx.insert(simTemporalPressures).values(
+        childCommitments.pressures.map((pressure) =>
+          pressureRowInsert(
+            input.childBranchId,
+            pressure,
+            commitmentSequenceById.get(pressure.sourceCommitmentId) ?? 0,
+          ),
         ),
       );
     }
