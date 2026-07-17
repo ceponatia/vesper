@@ -62,6 +62,9 @@ jobs:
       - name: E2.5 forks, snapshots, and audit integration
         run: pnpm test:engine-e2-5
 
+      - name: E2.6 Gate 2 soak (CI profile)
+        run: pnpm test:engine-e2-6
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v
