@@ -1794,27 +1794,63 @@ Before broad migration:
 The first three should fit in sub-day spikes. The fourth should remain deletable and
 should not acquire scheduler, body, economy, or autonomous-agent scope.
 
-## 39. Open product rulings
+## 39. Product rulings
 
-The following are intentionally not settled by architecture:
+Rulings 1–11 and 13 were **resolved by the owner on 2026-07-17** (the Gate 3 unblock
+pass). Each resolved decision is normative and MUST be stored in a versioned world-type
+rule or explicit product contract, not only in a prompt. Rulings 12 and 14 remain **open**
+and are deferred to the gate that needs them.
 
-1. ordinary dialogue duration policy;
-2. exact versus flexible shift semantics by world type;
-3. allowed transgressive actions and their product constraints;
-4. storyteller privilege availability;
-5. how proactively NPCs reveal obligations;
-6. authorship and severity of work, legal, and social consequences;
-7. player concurrency across physical engagements;
-8. visible behavior after failed narration;
-9. which speech acts use ArmedEffect;
-10. initial population, map, and catch-up performance targets;
-11. whether remote messages can wake sleeping actors under default rules;
-12. how much uncertainty route estimates expose to players;
-13. whether NPCs may intentionally lie about a private denial reason;
-14. when soft canon becomes authored canon.
-
-Each ruling must be stored in a versioned world-type rule or explicit product contract,
-not only in a prompt.
+1. **Ordinary dialogue duration** — RESOLVED: a fixed per-exchange story-time span (the
+   current-lane ~1-minute default), versioned by world type. Explicit actions (travel,
+   chores, sleep, wait) carry their own durations; dialogue itself is not content-estimated
+   and is not player-timed.
+2. **Shift/commitment firmness** — RESOLVED: per commitment, via the existing
+   `Commitment.flexibility` dial (`soft | negotiable | firm | hard`). There is no global
+   exact-versus-flexible switch; a world type sets defaults, each commitment overrides.
+3. **Transgressive actions** — RESOLVED: permitted as explicit, modeled attempts per
+   §14.3 (duration, noise, tools, lock/obstacle state, witnesses, interruption, and legal/
+   social/safety consequence). They MUST never auto-succeed and MUST never override the
+   target's agency. A world type MAY still disallow them and reject at admission with a
+   public rule reason (§14.3). **This ruling governs spatial/property transgression only;
+   interpersonal consent for touch or intimacy remains an independent action precondition
+   (§14) that no spatial outcome can grant.**
+4. **Storyteller privilege** — RESOLVED: admin principals only, and only inside an explicit
+   storyteller mode. The privileged command family (§7) is always audited; ordinary player
+   principals never receive it.
+5. **Obligation disclosure** — RESOLVED: relationship- and personality-driven. How
+   proactively an NPC reveals an obligation before leaving is an NPC-policy output, not a
+   fixed rule; a guarded actor MAY decline to explain (see ruling 13).
+6. **Missed-obligation consequences** — RESOLVED: deterministic built-in rules for the
+   first build (no model call), emitting `CommitmentLate` / `CommitmentMissed` consequence
+   events. Authored consequence tables and a bounded director are later, optional layers.
+7. **Player concurrency** — RESOLVED: one physical locus per player. A player MAY hold at
+   most one co-present Engagement; any concurrent Engagement MUST be remote (text, voice,
+   or video). The player body is reserved exactly as an NPC body is (§11.3).
+8. **Failed narration** — RESOLVED: a failed narrator turn is hidden and retryable, and the
+   committed story-time advance is NOT surfaced to the player until a render succeeds. Hard
+   state already committed for the cut is never reverted (§18.5) — only its presentation is
+   withheld.
+9. **Armed speech acts** — RESOLVED: all semantic speech acts in §23.3 (promise offered/
+   accepted, invitation, disclosure, warning, boundary, question, apology) use ArmedEffect
+   and are recorded only when the structured narrator result enacts them in meaning
+   (paraphrase counts; no literal keyword is required).
+10. **Initial performance target** — RESOLVED: small and intimate — an on-branch cast of
+    roughly 2–8 exact-LOD actors and an off-screen horizon of hours to a few days. Larger
+    populations and longer horizons are a later LOD target (Gate 6), not a first-build
+    budget.
+11. **Waking sleeping actors** — RESOLVED: by default a remote message is delivered but does
+    NOT wake a sleeping actor (§16.4); it queues unread until a legal wake cue. World types
+    MAY define emergency exceptions later.
+12. **Route-estimate uncertainty exposure** — OPEN (deferred to Gate 3 travel polish; the
+    §13.3 route result carries derivation uncertainty regardless of how much is shown).
+13. **Lying about a private denial reason** — RESOLVED: an NPC MAY give an in-character
+    cover story instead of the true private cause, consistent with personality. The true
+    cause is still redacted from narrator context, prompts, diagnostics, and embeddings
+    either way (§14.4, §34.5); the cover story is presentation, never a change to hard
+    truth.
+14. **Soft canon → authored canon promotion** — OPEN (deferred to Gate 4 knowledge/
+    narration work; §23.4).
 
 ## 40. Initial conformance checklist
 

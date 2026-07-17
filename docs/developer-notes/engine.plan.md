@@ -739,24 +739,70 @@ similarity to infer witness, truth, supersedence, or current validity.
 | TypeScript hot path becomes slow | Benchmark first; move only pure measured kernels |
 | Retakes corrupt state | Presentation rerender is state-free; alternative outcome is a branch |
 
-## Product rulings needed before Gate 3
+## Product rulings — RESOLVED 2026-07-17
 
-1. How much story time does ordinary dialogue consume: fixed, estimated, player-set, or
-   action-dependent?
-2. Are work shifts exact commitments, flexible windows, or world-type configurable?
-3. May the player attempt trespass, forced entry, coercion, or other transgressive
-   actions, and what safety/product rules constrain them?
-4. Which users or modes receive storyteller override authority?
-5. How proactively should an NPC disclose a private obligation before leaving?
-6. Who authors consequences for missed work or appointments: rules, authored tables, or
-   a bounded director?
-7. Can one player maintain multiple simultaneous physical chats, and if so how is the
-   player's own locus reserved?
-8. Is a failed narrator generation invisible and retryable, or does the committed story
-   clock remain advanced?
-9. Which kinds of dialogue acts require ArmedEffect confirmation?
-10. What population scale and maximum off-screen horizon define the first performance
-    target?
+All 10 blocking rulings (plus spec rulings 11 and 13, which Gate 3's sleep and shower
+scenarios also need) were **resolved by the owner on 2026-07-17**. The normative record
+with full wording lives in [engine.spec.md](engine.spec.md) §39. In brief:
+
+1. **Ordinary dialogue** → a fixed per-exchange story-time span (current ~1 min),
+   world-type versioned; explicit actions carry their own durations.
+2. **Shifts** → per-commitment firmness (`Commitment.flexibility`), not a global switch.
+3. **Transgression** → modeled explicit attempts that never auto-succeed or override
+   agency; a world type MAY disallow and reject at admission. Spatial only — intimate
+   consent stays an independent precondition.
+4. **Storyteller override** → admin principals in an explicit mode only; always audited.
+5. **Obligation disclosure** → relationship/personality-driven NPC-policy output.
+6. **Missed-obligation consequences** → deterministic rules for the first build (no model
+   call); authored tables / director are later layers.
+7. **Player concurrency** → one physical locus; at most one co-present Engagement, any
+   others remote.
+8. **Failed narration** → hidden and retryable; the committed advance is withheld from the
+   player until a render succeeds; hard state is never reverted.
+9. **Armed speech acts** → all §23.3 acts use ArmedEffect; recorded only when enacted.
+10. **First performance target** → 2–8 exact-LOD actors, hours-to-days off-screen horizon.
+11. **Waking sleepers** → remote messages queue unread by default; no wake.
+13. **Private-denial cover story** → allowed in-character; the true cause is still redacted.
+
+Still open: spec ruling 12 (route-estimate uncertainty exposure — Gate 3 travel polish)
+and 14 (soft-canon promotion — Gate 4). Neither blocks the Gate 3 build order below.
+
+### Gate 3 build order
+
+Like Gate 2, Gate 3 splits into dependency-ordered targets. The IDs describe order, not
+GitHub PR numbers; each stays reviewable on its own and ships to the long-lived `engine`
+branch.
+
+1. **E3.1 — authoritative space.** `sim_locations`, `sim_zones`, `sim_links`, and
+   `sim_physical_loci`; the topology and route contracts (§13); `MoveActor` plus journey
+   commands and the `movement` + `access` event families; database enforcement of one
+   active locus per actor per branch; a pure `planRoute` kernel with ordered links and
+   lower-bound durations. No commitments, activities, or engagements yet.
+2. **E3.2 — typed actions, activities, and claims.** `ActionDefinition` / `ActivityInstance`
+   (§16), exclusive and attention claims with resource costs, the activity state machine and
+   the compatibility matrix (§16.4), start/progress/completion/failure/cancellation effects,
+   and observation emissions. Consumes E3.1 loci.
+3. **E3.3 — commitments and temporal pressure.** `Commitment` (with the ruled `flexibility`
+   dial) and `TemporalPressure` (§15); `noticeAt` / `decideBy` / `actBy` derivation from
+   route + preparation + reliability buffer; `knowledgeSourceId` gating so an actor acts
+   only on a commitment it can remember or perceive; durable pressure triggers on the E2.4
+   scheduler; and deterministic missed-obligation consequences (ruling 6). Consumes E3.1
+   routes and E3.2 activities.
+4. **E3.4 — engagements and the live-scene arbiter.** `Engagement` (§18.1) with body and
+   attention reservation (one co-present per player — ruling 7); the eleven-step
+   reconciliation algorithm (§18.3) driving deterministic candidate → policy/deliberator →
+   commit → one NarrativeCut before narration; ArmedEffect confirmation for all §23.3
+   speech acts (ruling 9); and hidden-retryable narrator failure (ruling 8). Consumes
+   E3.1–E3.3.
+5. **E3.5 — access, privacy, consent, and the scenario corpus.** The six-layer access check
+   (§14) failing closed; player-versus-NPC movement authority (§14.1–14.2); modeled trespass
+   (ruling 3); private-cause redaction with in-character cover stories (ruling 13); sleep
+   no-wake delivery (ruling 11); and admin storyteller override (ruling 4). Closes the gate
+   by running the full Gate 3 scenario corpus (§"Gate 3 scenario corpus") and recording the
+   advance/revise/hold/stop verdict.
+
+E3.2 and E3.3 both consume E3.1; E3.4 consumes E3.1–E3.3; E3.5 layers access and privacy
+over all of them and runs the exit corpus.
 
 ## Graduation scenario
 

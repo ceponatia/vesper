@@ -23,30 +23,30 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing at this moment — E2.6 shipped 2026-07-17 with the owner's **advance** ruling,
-closing Gate 2. The next engine target is **Gate 3 — space, actions, schedules &
-live-scene arbitration**, which is blocked on its 10 product rulings; see **Next**
-below.)_
+- **Successor world engine — Gate 3: space, actions, schedules & live-scene arbitration** —
+  [engine.plan.md](engine.plan.md) §"Gate 3" + §"Gate 3 build order" (~15–35 dev-days).
+  **Rulings unblocked 2026-07-17** — all 10 blocking product rulings plus spec rulings 11
+  and 13 resolved by the owner (plan §"Product rulings — RESOLVED 2026-07-17", normative
+  record in [engine.spec.md](engine.spec.md) §39). Building in dependency order
+  **E3.1 → E3.5**; **E3.1 (authoritative space — locations/zones/links/loci, routes, and
+  `MoveActor`/journey events)** is the current sub-target. Proves world events become
+  playable transitions, not teleports: authoritative space + travel (G3.1), typed actions
+  with preconditions/claims/effects (G3.2), commitments with earliest/target/latest pressure
+  that never set location directly (G3.3), conversation-as-Engagement + the live-scene
+  arbiter — drain triggers → integrate state → enumerate legal outcomes → commit → compile
+  one NarrativeCut, all before narration (G3.4), and separate route/property/zone/privacy/
+  consent checks that fail closed (G3.5).
 
 ## Next (queued)
 
 **Successor world engine (`engine.plan.md`) — remaining gates.** The gated event-kernel
 track, in sequence — each gate's exit criteria gate the next. Gates 0–2 are closed
-(E2.1–E2.6 shipped; Gate 2 verdict: **advance**, 2026-07-17); **Gate 3** is the
-immediate next target, blocked on its 10 owner rulings. Full plan
+(E2.1–E2.6 shipped; Gate 2 verdict: **advance**, 2026-07-17); **Gate 3 is now in progress
+(rulings resolved 2026-07-17, building E3.1 — see Active above)**. Full plan
 [engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md). (Distinct
 build from the chat-lane [world-engine-refactor.plan.md](world-engine-refactor.plan.md)
 north-star umbrella further down.)
 
-- **Successor world engine — Gate 3: space, actions, schedules & live-scene arbitration** —
-  [engine.plan.md](engine.plan.md) §"Gate 3" (draft; ~15–35 dev-days). Proves world events
-  become playable transitions, not teleports: authoritative space + travel (G3.1), typed
-  actions with preconditions/claims/effects (G3.2), commitments with earliest/target/latest
-  pressure that never set location directly (G3.3), conversation-as-Engagement + the
-  live-scene arbiter — drain triggers → integrate state → enumerate legal outcomes → commit
-  → compile one NarrativeCut, all before narration (G3.4), and separate
-  route/property/zone/privacy/consent checks that fail closed (G3.5). **Blocked on 10 owner
-  rulings** — plan §"Product rulings needed before Gate 3".
 - **Successor world engine — Gate 4: perception, knowledge, narration & RAG** —
   [engine.plan.md](engine.plan.md) §"Gate 4" (draft; ~10–25 dev-days). Observations /
   assertions / beliefs with provenance, a typed NarrativeCut (must-enact · perceptible ·
