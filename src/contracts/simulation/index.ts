@@ -4,3 +4,4 @@ export * from "./item-transfer";
 export * from "./outbox";
 export * from "./scheduler";
 export * from "./branching";
+export * from "./space";
