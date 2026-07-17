@@ -271,6 +271,13 @@ faster than an LLM-mediated equivalent.
 
 ## Gate 2 — production identity, event kernel, and scheduler
 
+Status: **ADVANCE — closed 2026-07-17.** E2.1–E2.5 shipped in sequence; E2.6 ran the
+required proofs (21/21 checks at the full synthetic-month profile — evidence and one
+accepted caveat about schedule-time trigger templates going stale under live load in
+[engine-gate2-soak.plan.md](engine-gate2-soak.plan.md) §Verdict) and the owner ruled
+advance. This status permits Gate 3 design; its build stays blocked on the 10 product
+rulings below.
+
 Rough effort: **15–30 developer-days** after Gate 1.
 
 ### Deliverables

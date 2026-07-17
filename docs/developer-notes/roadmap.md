@@ -23,12 +23,56 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing at this moment — E2.5 shipped 2026-07-17; **E2.6 — Gate 2 soak and verdict** is
-the next engine target: the synthetic-month, partition-invariance, retry, crash,
-queue-growth, and replay-hash proofs, and the owner's advance/revise/hold/stop ruling
-before movement or live-scene work begins.)_
+_(Nothing at this moment — E2.6 shipped 2026-07-17 with the owner's **advance** ruling,
+closing Gate 2. The next engine target is **Gate 3 — space, actions, schedules &
+live-scene arbitration**, which is blocked on its 10 product rulings; see **Next**
+below.)_
 
 ## Next (queued)
+
+**Successor world engine (`engine.plan.md`) — remaining gates.** The gated event-kernel
+track, in sequence — each gate's exit criteria gate the next. Gates 0–2 are closed
+(E2.1–E2.6 shipped; Gate 2 verdict: **advance**, 2026-07-17); **Gate 3** is the
+immediate next target, blocked on its 10 owner rulings. Full plan
+[engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md). (Distinct
+build from the chat-lane [world-engine-refactor.plan.md](world-engine-refactor.plan.md)
+north-star umbrella further down.)
+
+- **Successor world engine — Gate 3: space, actions, schedules & live-scene arbitration** —
+  [engine.plan.md](engine.plan.md) §"Gate 3" (draft; ~15–35 dev-days). Proves world events
+  become playable transitions, not teleports: authoritative space + travel (G3.1), typed
+  actions with preconditions/claims/effects (G3.2), commitments with earliest/target/latest
+  pressure that never set location directly (G3.3), conversation-as-Engagement + the
+  live-scene arbiter — drain triggers → integrate state → enumerate legal outcomes → commit
+  → compile one NarrativeCut, all before narration (G3.4), and separate
+  route/property/zone/privacy/consent checks that fail closed (G3.5). **Blocked on 10 owner
+  rulings** — plan §"Product rulings needed before Gate 3".
+- **Successor world engine — Gate 4: perception, knowledge, narration & RAG** —
+  [engine.plan.md](engine.plan.md) §"Gate 4" (draft; ~10–25 dev-days). Observations /
+  assertions / beliefs with provenance, a typed NarrativeCut (must-enact · perceptible ·
+  believed · allowed · forbidden · failure-presentation), perspective eligibility resolved
+  in relational data **before** vector ranking, memory docs linked back to their
+  assertions/events, the ArmedEffect confirmation path, and a continuity auditor that flags
+  but can't mutate truth. Exit: zero cross-viewpoint leaks in the fixed corpus.
+- **Successor world engine — Gate 5: bodies, materials, households & relationships** —
+  [engine.plan.md](engine.plan.md) §"Gate 5" (draft; ~15–35 dev-days). The unified body
+  substrate with analytical drift on story time + one modifier engine (G5.1), typed material
+  life — containers/holdings/ownership/consumption/wear/money-at-LOD (G5.2), and social life
+  as ledger entries — promises/favors/debts/trust/gossip-with-provenance (G5.3). **Where
+  current-chat body learning migrates behind the successor contracts** — the meter-economy
+  and body-needs work below is meant to port through here later.
+- **Successor world engine — Gate 6: dual LOD & autonomous background life** —
+  [engine.plan.md](engine.plan.md) §"Gate 6" (draft; ~10–25 dev-days). Separate simulation
+  LOD (exact · event · aggregate · dormant) and inference LOD (no-model · small-model ·
+  deliberator · narrator) controls, plus promotion + event-driven catch-up. Exit: an
+  order-of-magnitude more off-screen actors does **not** grow model calls or per-minute work
+  linearly.
+- **Successor world engine — Gate 7: optional institutions & macro simulation** —
+  [engine.plan.md](engine.plan.md) §"Gate 7" (draft). **Explicitly post-foundation and
+  optional** — not part of the initial 60–120+ day build; admit a package (employers,
+  schools, housing, labor, markets, news, law, weather, factions…) only when a world type +
+  scenario corpus justifies it and it declares its authority, LOD, laws, budget, and disable
+  path. Listed for tracking, not committed near-term work.
 
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
@@ -97,6 +141,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine Gate 2 soak and verdict (E2.6)** —
+  [engine-gate2-soak.plan.md](engine-gate2-soak.plan.md) · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-17 — **Gate 2 closed with the owner's
+  advance ruling.** Deterministic synthetic-month harness (`runGate2Soak`): 21/21 proof
+  checks at the full profile — partition-invariant material hashes stable across runs
+  (`80421ced`), no duplicate outcomes under 79 injected transaction crashes + 66 stale
+  + 54 duplicate submissions, idempotent outbox crash-resume, rebuilds matching live on
+  every branch, queues bounded and drained, structured diagnostics throughout; direct
+  submit p95 4.1 ms. CI runs the small profile as `test:engine-e2-6`; the full month is
+  `pnpm eval:engine-gate2-soak`. One accepted caveat for Gate 3 design: schedule-time
+  trigger templates go stale under live load (457/600 fire-time rejections) —
+  re-validation belongs at fire time, as the kernel already does. Next engine target:
+  **Gate 3** (blocked on 10 owner rulings).
 - **World-engine forks, snapshots, and audit (E2.5)** —
   [engine-forks-snapshots-audit.plan.md](engine-forks-snapshots-audit.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — branch ancestry with the R4

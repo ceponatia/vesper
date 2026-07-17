@@ -51,4 +51,12 @@ export {
   type RebuildBranchProjectionOptions,
   type SnapshotStoreOptions,
 } from "./snapshot-store";
+export {
+  gate2SoakCiProfile,
+  gate2SoakFullProfile,
+  runGate2Soak,
+  type Gate2SoakProfile,
+  type Gate2SoakProofResult,
+  type Gate2SoakReport,
+} from "./soak-harness";
 export { applyTriggerScheduledEvent } from "./trigger-projector";
