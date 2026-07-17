@@ -56,6 +56,9 @@ jobs:
       - name: E2.3 outbox and rebuildable consumer integration
         run: pnpm test:engine-e2-3
 
+      - name: E2.4 durable scheduler integration
+        run: pnpm test:engine-e2-4
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

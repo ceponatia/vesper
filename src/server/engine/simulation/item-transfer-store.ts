@@ -75,6 +75,22 @@ export interface DurableItemTransferOptions {
    * cannot smuggle network, model, clock, or arbitrary work under the branch lock.
    */
   crashAt?: DurableItemTransferCrashPoint;
+  /**
+   * Admit the command at whatever version the branch holds once its lock is taken,
+   * instead of comparing against a caller-supplied expectedVersion.
+   *
+   * Optimistic version checks exist to protect a caller that read state and then
+   * acted on a stale read. A scheduler resolving a committed trigger under a lease
+   * has no such read: its payload was fixed when the trigger was scheduled. Left
+   * optimistic, a concurrent command advancing the branch would make the trigger's
+   * command conflict — and because a trigger's idempotency key is permanent, that
+   * conflict would be stored under it and replayed by every later retry, poisoning
+   * the trigger forever rather than delaying it.
+   *
+   * This never weakens serialization: the branch row lock is still held, and the
+   * admitted version is still compare-and-swapped on advance.
+   */
+  admitAtLockedVersion?: boolean;
 }
 
 export interface DurableItemTransferSeedOptions {
@@ -279,7 +295,7 @@ export async function submitDurableItemTransfer(
   const parsed = transferItemCommandSchema.safeParse(rawCommand);
   if (!parsed.success) return invalidCommandResult();
 
-  const command = parsed.data;
+  const submitted = parsed.data;
   const database = options.database ?? db();
 
   const [preLockCached] = await database
@@ -287,8 +303,8 @@ export async function submitDurableItemTransfer(
     .from(simCommands)
     .where(
       and(
-        eq(simCommands.branchId, command.branchId),
-        eq(simCommands.idempotencyKey, command.idempotencyKey),
+        eq(simCommands.branchId, submitted.branchId),
+        eq(simCommands.idempotencyKey, submitted.idempotencyKey),
       ),
     )
     .limit(1);
@@ -307,14 +323,20 @@ export async function submitDurableItemTransfer(
       })
       .from(simBranches)
       .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
-      .where(eq(simBranches.id, command.branchId))
+      .where(eq(simBranches.id, submitted.branchId))
       .limit(1)
       // The joined world row supplies status/ruleset metadata, but only the
       // branch is the sequencing mutex. Locking both rows would accidentally
       // serialize independent branches in the same world.
       .for("update", { of: simBranches });
 
-    if (!branch) return branchUnavailableResult(command);
+    if (!branch) return branchUnavailableResult(submitted);
+
+    // Resolve the admitted version only once the branch lock is held, so a
+    // locked-version admission cannot race the value it is admitted at.
+    const command: TransferItemCommand = options.admitAtLockedVersion
+      ? { ...submitted, expectedVersion: branchVersionSchema.parse(branch.version) }
+      : submitted;
 
     // The pre-lock read is only a fast path. A peer may have committed while
     // this transaction waited, so idempotency is checked again under the lock.

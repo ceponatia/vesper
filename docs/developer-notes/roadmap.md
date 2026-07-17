@@ -23,14 +23,19 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **World-engine durable branch transaction (E2.2)** —
-  [engine-durable-branch-transaction.plan.md](engine-durable-branch-transaction.plan.md)
-  (active; started 2026-07-16 after E2.1 shipped). Adds the minimum PostgreSQL authority
-  catalog and one atomic `transfer_item` path: branch row serialization, durable
-  idempotent results, immutable events, typed exclusive item holdings, and injected crash
-  proofs. It adds no scheduler, outbox worker, model call, or live-chat mutation.
+_(Nothing in flight. The next Gate 2 target is **E2.5 — forks, snapshots, and audit**,
+first in **Next** below.)_
 
 ## Next (queued)
+
+- **World-engine forks, snapshots, and audit (E2.5)** — plan not yet written; scope is
+  fixed by [engine.plan.md](engine.plan.md) §"Gate 2 build order": branch ancestry, fork
+  boundaries, checksummed snapshots, projection comparison, and causal explanation
+  queries. It consumes the stable event store (E2.2–E2.4) and is followed by **E2.6 —
+  Gate 2 soak and verdict**, which runs the synthetic-month, partition-invariance, retry,
+  crash, queue-growth, and replay-hash proofs and records the owner's advance/revise/
+  hold/stop ruling before movement or live-scene work begins. Write the E2.5 plan first,
+  per the E2.1–E2.4 precedent (one plan and one reviewable PR per target).
 
 - **Chat meter economy — the body on the story clock** —
   [chat-meter-economy.plan.md](chat-meter-economy.plan.md) ·
@@ -99,6 +104,27 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine durable scheduler and deterministic draws (E2.4)** —
+  [engine-durable-scheduler.plan.md](engine-durable-scheduler.plan.md) · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-17 — durable triggers with derived identity,
+  branch-unique scheduling, claim-time attempts, fenced leases, quarantine of exhausted
+  work, and a bounded `advanceBranchStoryTime` drain seam with `catch_up_required`. Fixed
+  four defects in the first attempt: an orphaned migration (the table was never created on
+  a real database), a backoff cap the exponent clamp made unreachable, permanent trigger
+  poisoning from an optimistic version pre-read under a permanent idempotency key, and
+  cross-branch command dispatch. Draw integration deliberately defers to Gate 3; analytical
+  rate integration to Gate 5 bodies. 13 PostgreSQL cases green from a zero-state migration.
+- **World-engine outbox and rebuildable consumers (E2.3)** —
+  [engine-outbox-rebuildable-consumers.plan.md](engine-outbox-rebuildable-consumers.plan.md)
+  · contract [engine.spec.md](engine.spec.md) — 2026-07-16 — atomic outbox publication in
+  the command transaction, lease- and sequence-safe consumption, idempotent checkpoints, a
+  disposable item-transfer feed, retry diagnostics, terminal quarantine, and
+  rebuild-from-zero hashing.
+- **World-engine durable branch transaction (E2.2)** —
+  [engine-durable-branch-transaction.plan.md](engine-durable-branch-transaction.plan.md) ·
+  contract [engine.spec.md](engine.spec.md) — 2026-07-16 — the minimum PostgreSQL authority
+  catalog and one atomic `transfer_item` path: branch row serialization, durable idempotent
+  results, immutable events, typed exclusive item holdings, and injected crash proofs.
 - **World-engine identity and causal envelopes (E2.1)** —
   [engine-identity-envelopes.plan.md](engine-identity-envelopes.plan.md) · contract
   [engine.spec.md](engine.spec.md) — 2026-07-16 — reusable branded identities, safe causal

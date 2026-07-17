@@ -16,3 +16,14 @@ export {
   type ItemTransferFeedRebuildResult,
   type ItemTransferOutboxCrashPoint,
 } from "./outbox-store";
+export {
+  advanceBranchStoryTime,
+  resolveNextDueTrigger,
+  scheduleDurableTrigger,
+  type AdvanceStoryTimeOptions,
+  type AdvanceStoryTimeOutcome,
+  type ClaimTriggerOptions,
+  type ResolveTriggerOptions,
+  type ResolveTriggerOutcome,
+  type ScheduleTriggerOptions,
+} from "./scheduler-store";
