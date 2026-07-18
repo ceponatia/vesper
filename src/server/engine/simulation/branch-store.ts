@@ -22,6 +22,7 @@ import {
 } from "@/contracts/simulation/outbox";
 import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
 import {
+  isAccessEvent,
   isActivityEvent,
   isCommitmentEvent,
   isEngagementEvent,
@@ -525,9 +526,12 @@ export async function forkBranch(
     const spaceSequenceByActor = new Map<string, number>();
     const spaceSequenceByJourney = new Map<string, number>();
     for (const event of inherited) {
-      if (!isMovementEvent(event)) continue;
-      for (const eventActorId of event.actorIds) spaceSequenceByActor.set(eventActorId, event.sequence);
-      spaceSequenceByJourney.set(event.payload.journeyId, event.sequence);
+      if (isMovementEvent(event)) {
+        for (const eventActorId of event.actorIds) spaceSequenceByActor.set(eventActorId, event.sequence);
+        spaceSequenceByJourney.set(event.payload.journeyId, event.sequence);
+      } else if (isAccessEvent(event)) {
+        for (const eventActorId of event.actorIds) spaceSequenceByActor.set(eventActorId, event.sequence);
+      }
     }
     await insertSpaceRows(
       tx,

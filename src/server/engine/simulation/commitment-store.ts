@@ -198,6 +198,29 @@ async function loadCommitment(
 }
 
 /** Create one commitment: created event + notice and deadline triggers, atomically. */
+/** The actor's derivation origin: their zone, or their journey's destination in transit. */
+async function loadActorOriginSpace(tx: SimTx, branch: LockedBranchView, actorId: string | undefined) {
+  const space = spaceProjectionFromRows(
+    {
+      worldId: branch.worldId,
+      branchId: branch.id,
+      rulesetVersion: branch.rulesetVersion,
+      version: branch.version,
+      headSequence: branch.headSequence,
+      storySecond: branch.storySecond,
+    },
+    await loadSpaceRows(tx, branch.id),
+  );
+  const locus = actorId === undefined ? undefined : space.loci.find((candidate) => candidate.actorId === actorId);
+  const originZoneId =
+    locus === undefined
+      ? undefined
+      : locus.kind === "at"
+        ? locus.zoneId
+        : space.journeys.find((journey) => journey.id === locus.journeyId)?.destinationZoneId;
+  return { space, originZoneId };
+}
+
 export async function submitDurableCreateCommitment(
   rawCommand: unknown,
   options: CommitmentStoreOptions = {},
@@ -235,25 +258,7 @@ export async function submitDurableCreateCommitment(
           and(eq(simZones.branchId, branch.id), eq(simZones.zoneId, command.payload.destinationZoneId)),
         )
         .limit(1);
-      const spaceRows = await loadSpaceRows(tx, branch.id);
-      const space = spaceProjectionFromRows(
-        {
-          worldId: branch.worldId,
-          branchId: branch.id,
-          rulesetVersion: branch.rulesetVersion,
-          version: branch.version,
-          headSequence: branch.headSequence,
-          storySecond: branch.storySecond,
-        },
-        spaceRows,
-      );
-      const locus = space.loci.find((candidate) => candidate.actorId === command.payload.actorId);
-      const originZoneId =
-        locus === undefined
-          ? undefined
-          : locus.kind === "at"
-            ? locus.zoneId
-            : space.journeys.find((journey) => journey.id === locus.journeyId)?.destinationZoneId;
+      const { space, originZoneId } = await loadActorOriginSpace(tx, branch, command.payload.actorId);
 
       const resolution = resolveCreateCommitment(
         {
@@ -319,6 +324,7 @@ export async function submitDurableRaisePressure(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command) => {
       const commitment = await loadCommitment(tx, branch.id, command.payload.commitmentId);
+      const { space, originZoneId } = await loadActorOriginSpace(tx, branch, commitment?.actorId);
       const resolution = resolveRaisePressure(
         {
           worldId: branch.worldId,
@@ -327,6 +333,8 @@ export async function submitDurableRaisePressure(
           headSequence: branch.headSequence,
           storySecond: branch.storySecond,
           ...(commitment ? { commitment } : {}),
+          ...(originZoneId ? { originZoneId } : {}),
+          topology: { locations: space.locations, zones: space.zones, links: space.links },
         },
         command,
       );

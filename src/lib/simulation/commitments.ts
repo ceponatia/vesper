@@ -316,6 +316,9 @@ export function resolveCreateCommitment(
 
 export interface RaisePressureResolutionView extends CommitmentBranchMeta {
   commitment?: Commitment;
+  /** The actor's zone at fire time (journey destination when in transit). */
+  originZoneId?: string;
+  topology: SpaceTopology;
 }
 
 interface RaiseRejection {
@@ -357,10 +360,34 @@ export function resolveRaisePressure(
     return raiseRejection("knowledge_unavailable", "They have no way to know about that obligation.");
   }
 
+  const originZoneId = view.originZoneId;
+  if (!originZoneId) throw new Error(`Actor ${commitment.actorId} has no origin zone for pressure derivation`);
+
+  // Fire-time §15.2 derivation: actBy is latestDeparture from the actor's
+  // CURRENT origin — the notice second is a natural recompute point for the
+  // route assumption. Unreachable or same-zone destinations derive as zero
+  // travel, exactly as at creation; a notice that fires past its own act-by
+  // (a too-tight window) clamps forward so ordering still holds.
+  let minimumRouteDurationSeconds = 0;
+  if (originZoneId !== commitment.destinationZoneId) {
+    const plan = planRoute(view.topology, {
+      originZoneId,
+      destinationZoneId: commitment.destinationZoneId,
+      travelMode: "walk",
+    });
+    if (plan.ok) minimumRouteDurationSeconds = plan.route.minimumDurationSeconds;
+  }
+  const derived = deriveCommitmentTimes({
+    latestArrival: commitment.window.latestArrival,
+    minimumRouteDurationSeconds,
+    preparationSeconds: commitment.preparationSeconds,
+    reliabilityBufferSeconds: commitment.reliabilityBufferSeconds,
+    noticeLeadSeconds: commitment.noticeLeadSeconds,
+  });
   const times = {
     noticeAt: view.storySecond,
-    decideBy: Math.max(view.storySecond, commitment.window.latestArrival),
-    actBy: Math.max(view.storySecond, commitment.window.latestArrival),
+    decideBy: Math.max(view.storySecond, derived.decideBy),
+    actBy: Math.max(view.storySecond, derived.actBy),
   };
   const pressureId = derivePressureId(commitment.id);
   const severity = derivePressureSeverity(commitment.flexibility);
@@ -626,6 +653,9 @@ export function applyCommitmentEvent(
     case "engagement_ended":
     case "engagement_interrupted":
     case "engagement_winding_down":
+    case "zone_entered":
+    case "storyteller_relocation":
+    case "speech_act_delivered":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
   }

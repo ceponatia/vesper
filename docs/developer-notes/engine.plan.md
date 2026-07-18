@@ -824,29 +824,56 @@ branch.
    acknowledgment, and the warn/negotiate/depart decision behavior are E3.4 arbiter work;
    `accepted`/`declined`/`in_progress` statuses are machine-legal but no command drives
    them yet (E3.4).
-4. **E3.4 — engagements and the live-scene arbiter.** Status: **slice 1 shipped —
-   2026-07-17; slice 2 next.** Slice 1 (the engagement substrate): `Engagement`
+4. **E3.4 — engagements and the live-scene arbiter.** Status: **shipped — 2026-07-18**
+   (slice 1 on 2026-07-17). Slice 1 (the engagement substrate): `Engagement`
    (`sim_engagements`, migration 0061) with the §18.2 state machine; attention reserved
    through the E3.2 claim arithmetic (full for co-present, partial for remote); one body,
    one physical scene enforced at open (§11.3 — co-located at-loci, no second co-present);
    presence-of-mind rule (a held full-attention claim blocks joining any channel — sleep
    keeps the ruled no-wake default because delivery is not an engagement); conversations
    and body-claiming activities mutually exclude; departures interrupt the mover's open
-   co-present scene atomically; fork/replay parity. Slice 1 boundaries: engagements open
-   straight to `active` (the `opening` handshake, `winding_down` choreography, and
-   pressure acknowledgment belong to the arbiter); interrupted scenes hold claims until
-   an explicit end (resume is arbiter work); a resumed activity's completion re-arm needs
-   its trigger uniqueness key versioned by attempt (design note for slice 2). Slice 2
-   (remaining): the eleven-step §18.3 reconciliation algorithm driving deterministic
-   candidate → policy/deliberator → commit → one generalized NarrativeCut before
-   narration; ArmedEffect confirmation for all §23.3 speech acts (ruling 9); and
-   hidden-retryable narrator failure (ruling 8). Consumes E3.1–E3.3.
-5. **E3.5 — access, privacy, consent, and the scenario corpus.** The six-layer access check
-   (§14) failing closed; player-versus-NPC movement authority (§14.1–14.2); modeled trespass
-   (ruling 3); private-cause redaction with in-character cover stories (ruling 13); sleep
-   no-wake delivery (ruling 11); and admin storyteller override (ruling 4). Closes the gate
-   by running the full Gate 3 scenario corpus (§"Gate 3 scenario corpus") and recording the
-   advance/revise/hold/stop verdict.
+   co-present scene atomically; fork/replay parity. Slice 2 (the deterministic turn seam):
+   `prepareEngagementTurn` runs the §18.3 spine — drain due world work through the fixed
+   turn span (ruling 1), look ahead at participant pressure through the horizon, decide
+   departures by deterministic policy (`decideDepartures` — earliest actBy per actor,
+   stay requests defer to the last moment per §15.3, player-controlled actors never
+   policy-moved), commit them as `npc_policy` move commands that interrupt the scene
+   through slice-1 machinery, and compile one immutable perspective-safe
+   `Gate3NarrativeCut` (§22 trimmed to the deterministic subset: witnessed beats only,
+   the viewpoint's OWN pressures only, forbidden teleport claims, armed effects filtered
+   to participants). Cuts are derived, not stored — a failed narrator render re-reads the
+   same cut (ruling 8; the corpus proves recompile-identity mid-journey). ArmedEffect
+   confirmation (ruling 9): `confirm_narrator_result` (system principal only) emits one
+   `speech_act_delivered` per validated enacted effect from the closed §23.3 vocabulary;
+   effects naming non-participants are dropped, replays return the cached result, id
+   reuse rejects. Slice 2 boundaries: engagements still open straight to `active`
+   (`opening` handshake and `winding_down` choreography deferred); confirm is called only
+   when ≥1 effect landed (min-1 contract — a zero-effect render records nothing);
+   persisted cut rows and the LLM deliberator join with Gate 4's narrator integration;
+   pressure acknowledgment and the resumed-activity re-arm design note remain open.
+5. **E3.5 — access, privacy, consent, and the scenario corpus.** Status: **shipped —
+   2026-07-18.** `AccessGrant` rows (`sim_access_grants`, migration 0062, with
+   `permits_trespass` on `sim_worlds`) checked fail-closed — a malformed grant row admits
+   no one (§13.1); `attempt_entry` resolves the one private last hop routes refuse
+   (§14.1: doorstep → interior by `public` | `granted` | explicit `forced` basis), with
+   witness capture at both threshold zones and the same atomic scene-interrupt as any
+   departure; forced entry requires the world's `permitsTrespass` and is refused as a
+   stated rule, never disguised physics (§14.3); denial reasons name no private cause
+   (§14.4 — redaction by omission); `storyteller_relocate_actor` is the one privileged
+   bypass (ruling 4) — storyteller principals only, audited as a distinct
+   `storyteller_relocation` event, abandoning any in-flight journey (`journey_abandoned`
+   first, arrival trigger retired). Closed the gate by running the §"Gate 3 scenario
+   corpus" (`gate3-corpus.int.test.ts`, 5 scenarios, zero model calls — gate evidence
+   2026-07-18: 2 709 pure + 351 integration tests green). The corpus caught and fixed two
+   real defects: `resolveRaisePressure` stamped `actBy = latestArrival` instead of the
+   §15.2 `latestDeparture` (now recomputed from the fire-time route, clamped forward for
+   tight windows), and the arbiter's derived move-command id stacked derived ids past the
+   256-char compact-id cap (now hash-compacted). Delivery boundaries: the interim witness
+   rule (participant / captured observer / shared location) holds until Gate 4's
+   perception engine; no command emits `journey_delayed` yet (hazards deferred); trespass
+   has no duration/noise depth yet (ruling 3's time-consuming, noisy texture joins later
+   gates); interpersonal-consent preconditions beyond privacy zones join Gate 5's social
+   layer. **Verdict pending the owner's advance/revise/hold/stop ruling.**
 
 E3.2 and E3.3 both consume E3.1; E3.4 consumes E3.1–E3.3; E3.5 layers access and privacy
 over all of them and runs the exit corpus.

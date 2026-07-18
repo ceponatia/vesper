@@ -82,6 +82,13 @@ dual-write the deprecated session engine or current character-chat rows.
 | `sim_item_transfer_feed` (E2.3) | first disposable async projection — one row per transferred-item event; never read by command validation |
 | `sim_triggers` (E2.4) | durable future-evaluation requests: due story second, immutable `stable_order` tie-break, branch-unique `uniqueness_key`, lease/attempt coordination, and the scheduler `derivation_version` that produced the terminal outcome. **Since E2.5 a trigger row is only ever created by applying a committed `trigger_scheduled` event** (`applyTriggerScheduledEvent`), live or on fork replay — never by direct insert |
 | `sim_snapshots` (E2.5) | replay checkpoints (spec §10.4): branch, projection kind, sequence, projection schema + ruleset versions, deterministic checksum, source event range, and the full projection payload so replay resumes there instead of walking to the root; unique `(branch_id, projection_kind, sequence)` |
+| `sim_locations` / `sim_zones` / `sim_links` (E3.1) | authoritative topology per branch: locations with a default access policy, zones with a privacy policy, links with travel modes, minimum duration, access policy, and state |
+| `sim_physical_loci` (E3.1) | exactly one physical locus per branch/actor (`at` a zone or `in_transit` on a link) — the one-body invariant is the primary key |
+| `sim_journeys` (E3.1) | committed travel: route link ids, departure/arrival seconds, status (`planned`/`arrived`/`abandoned`…); arrival re-validated at fire time by an E2.4 trigger |
+| `sim_action_definitions` / `sim_activities` (E3.2) | authored action vocabulary and running activity instances with the §16.3 phase machine; body/attention claims live on the activity row (no orphanable claim rows) |
+| `sim_commitments` / `sim_temporal_pressures` (E3.3) | obligations with the flexibility dial and §15.4 status machine; live pressure rows carry noticeAt/decideBy/actBy (actBy = latest departure, recomputed from the fire-time route) |
+| `sim_engagements` (E3.4) | conversations as attention reservations: participants, channel, §18.2 state, and the attention claim; one co-present scene per body enforced at open |
+| `sim_access_grants` (E3.5, migration 0062) | authored entry rights (owner/resident/key…) scoped to a location and optionally zones, with validity/revocation seconds; malformed rows fail closed — they admit no one. `sim_worlds.permits_trespass` (same migration) gates explicit forced entry per world |
 
 `sim_outbox`, `sim_consumer_checkpoints`, `sim_item_transfer_feed`, `sim_snapshots`, and the
 lease/attempt columns of `sim_triggers` are **disposable coordination state**. World truth is

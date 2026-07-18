@@ -27,11 +27,11 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   [engine.plan.md](engine.plan.md) §"Gate 3" + §"Gate 3 build order" (~15–35 dev-days).
   **Rulings unblocked 2026-07-17** — all 10 blocking product rulings plus spec rulings 11
   and 13 resolved by the owner (plan §"Product rulings — RESOLVED 2026-07-17", normative
-  record in [engine.spec.md](engine.spec.md) §39). Building in dependency order
-  **E3.1 → E3.5**; E3.1–E3.3 and E3.4's first slice (the engagement substrate) shipped
-  2026-07-17 (see **Shipped**). **Current sub-target: E3.4 slice 2 — the live-scene
-  arbiter (§18.3), NarrativeCut compilation, ArmedEffect confirmation (ruling 9), and
-  hidden-retryable narrator failure (ruling 8).** Proves world events become
+  record in [engine.spec.md](engine.spec.md) §39). Built in dependency order
+  **E3.1 → E3.5**; **all five targets shipped** (E3.1–E3.3 + E3.4 slice 1 on 2026-07-17,
+  E3.4 slice 2 + E3.5 on 2026-07-18 — see **Shipped**) and the Gate 3 scenario corpus is
+  green (5 scenarios, zero model calls). **Current sub-target: the owner's
+  advance/revise/hold/stop verdict closes the gate.** Proves world events become
   playable transitions, not teleports: authoritative space + travel (G3.1), typed actions
   with preconditions/claims/effects (G3.2), commitments with earliest/target/latest pressure
   that never set location directly (G3.3), conversation-as-Engagement + the live-scene
@@ -43,8 +43,8 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 **Successor world engine (`engine.plan.md`) — remaining gates.** The gated event-kernel
 track, in sequence — each gate's exit criteria gate the next. Gates 0–2 are closed
-(E2.1–E2.6 shipped; Gate 2 verdict: **advance**, 2026-07-17); **Gate 3 is now in progress
-(rulings resolved 2026-07-17, building E3.1 — see Active above)**. Full plan
+(E2.1–E2.6 shipped; Gate 2 verdict: **advance**, 2026-07-17); **Gate 3 is built and its
+corpus is green (E3.1–E3.5 shipped 2026-07-17/18; verdict pending — see Active above)**. Full plan
 [engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md). (Distinct
 build from the chat-lane [world-engine-refactor.plan.md](world-engine-refactor.plan.md)
 north-star umbrella further down.)
@@ -143,6 +143,18 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine live-scene arbiter + access & Gate 3 corpus (E3.4 slice 2 + E3.5)** —
+  [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
+  [engine.spec.md](engine.spec.md) — 2026-07-18 — the deterministic §18.3 turn seam
+  (`prepareEngagementTurn`: drain → pressure look-ahead → policy departures that interrupt
+  the scene → one perspective-safe `Gate3NarrativeCut`; rerender re-reads the same cut,
+  ruling 8) with `confirm_narrator_result` speech-act arming (ruling 9); layered access
+  (`sim_access_grants` + `permits_trespass`, migration 0062): fail-closed grants,
+  `attempt_entry` for the private last hop (granted/forced, witnessed, stated-rule
+  refusals, cause-free denials), audited `storyteller_relocate_actor` (ruling 4); Gate 3
+  scenario corpus green (`test:engine-e3-5`, 5 scenarios, zero model calls; 2 709 pure +
+  351 int tests) — corpus caught + fixed the E3.3 `actBy` derivation bug and an id-length
+  stacking bug. Verdict pending.
 - **World-engine engagement substrate (E3.4 slice 1)** —
   [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — conversations become world activities

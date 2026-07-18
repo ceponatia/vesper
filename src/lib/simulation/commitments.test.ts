@@ -196,36 +196,53 @@ function systemCommand(type: string, id: string, payload: Record<string, unknown
 }
 
 describe("E3.3 resolveRaisePressure", () => {
-  it("raises pressure once with flexibility-derived severity", () => {
+  function raiseView(overrides: Record<string, unknown> = {}) {
+    return {
+      worldId: "world-1",
+      branchId: "branch-1",
+      rulesetVersion: "gate3-test-v1",
+      headSequence: 3,
+      storySecond: NOW + 1_000,
+      originZoneId: "zone-home",
+      topology: topology(),
+      ...overrides,
+    };
+  }
+
+  it("raises pressure once with flexibility-derived severity and §15.2 act-by", () => {
     const commitment = acceptedCreate().commitment;
     const resolution = resolveRaisePressure(
-      {
-        worldId: "world-1",
-        branchId: "branch-1",
-        rulesetVersion: "gate3-test-v1",
-        headSequence: 3,
-        storySecond: NOW + 1_000,
-        commitment,
-      } as never,
+      raiseView({ commitment }) as never,
       systemCommand("raise_pressure", "cmd-raise-1", { commitmentId: commitment.id }) as never,
     );
     if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
     expect(resolution.event.payload.severity).toBe("urgent");
     expect(resolution.commitment.status).toBe("noticed");
+    // actBy is latestDeparture recomputed from the fire-time route, never the
+    // arrival deadline itself.
+    expect(resolution.pressure.noticeAt).toBe(NOW + 1_000);
+    expect(resolution.pressure.actBy).toBe(SHIFT_AT - WALK_AB - 300 - 120);
+    expect(resolution.pressure.decideBy).toBe(resolution.pressure.actBy);
 
     const again = resolveRaisePressure(
-      {
-        worldId: "world-1",
-        branchId: "branch-1",
-        rulesetVersion: "gate3-test-v1",
-        headSequence: 4,
-        storySecond: NOW + 1_100,
-        commitment: resolution.commitment,
-      } as never,
+      raiseView({ headSequence: 4, storySecond: NOW + 1_100, commitment: resolution.commitment }) as never,
       systemCommand("raise_pressure", "cmd-raise-2", { commitmentId: commitment.id }) as never,
     );
     expect(again.ok).toBe(false);
     if (!again.ok) expect(again.code).toBe("commitment_not_open");
+  });
+
+  it("clamps a notice that fires past its own act-by forward, preserving ordering", () => {
+    const commitment = acceptedCreate().commitment;
+    const lateSecond = SHIFT_AT - 10;
+    const resolution = resolveRaisePressure(
+      raiseView({ commitment, storySecond: lateSecond }) as never,
+      systemCommand("raise_pressure", "cmd-raise-late", { commitmentId: commitment.id }) as never,
+    );
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    expect(resolution.pressure.noticeAt).toBe(lateSecond);
+    expect(resolution.pressure.decideBy).toBe(lateSecond);
+    expect(resolution.pressure.actBy).toBe(lateSecond);
   });
 });
 
@@ -318,6 +335,8 @@ describe("E3.3 commitments replay", () => {
         headSequence: 3,
         storySecond: NOW + 1_000,
         commitment: create.commitment,
+        originZoneId: "zone-home",
+        topology: topology(),
       } as never,
       systemCommand("raise_pressure", "cmd-raise-1", { commitmentId: create.commitment.id }) as never,
     );

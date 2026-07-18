@@ -96,6 +96,8 @@ export interface DurableItemTransferSeedOptions {
   worldTypeId: string;
   worldSeed: string;
   worldStatus?: "active" | "paused" | "archived";
+  /** Ruling 3: whether this world admits explicit forced-entry attempts. */
+  permitsTrespass?: boolean;
   database?: Db;
 }
 
@@ -185,6 +187,7 @@ export async function seedDurableItemTransferBranch(
         seed: worldSeed,
         rulesetVersion: projection.rulesetVersion,
         status: options.worldStatus ?? "active",
+        permitsTrespass: options.permitsTrespass ?? false,
       })
       .onConflictDoNothing();
 
