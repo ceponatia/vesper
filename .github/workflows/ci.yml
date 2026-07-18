@@ -77,6 +77,9 @@ jobs:
       - name: E3.4 engagement substrate integration
         run: pnpm test:engine-e3-4
 
+      - name: E3.5 arbiter, access, and Gate 3 corpus integration
+        run: pnpm test:engine-e3-5
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

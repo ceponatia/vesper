@@ -435,6 +435,13 @@
       "when": 1784318830905,
       "tag": "0061_rainy_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784319961520,
+      "tag": "0062_windy_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

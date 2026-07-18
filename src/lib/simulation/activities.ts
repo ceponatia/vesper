@@ -527,6 +527,9 @@ export function applyActivityEvent(
     case "engagement_ended":
     case "engagement_interrupted":
     case "engagement_winding_down":
+    case "zone_entered":
+    case "storyteller_relocation":
+    case "speech_act_delivered":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

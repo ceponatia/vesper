@@ -1,4 +1,5 @@
 import {
+  isAccessEvent,
   isActivityEvent,
   isCommitmentEvent,
   isEngagementEvent,
@@ -182,7 +183,9 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       isMovementEvent(event) ||
       isActivityEvent(event) ||
       isCommitmentEvent(event) ||
-      isEngagementEvent(event)
+      isEngagementEvent(event) ||
+      isAccessEvent(event) ||
+      event.type === "speech_act_delivered"
     ) {
       // Movement and activity events belong to their own projections
       // (replaySpaceHistory / replayActivitiesHistory). Here they advance the

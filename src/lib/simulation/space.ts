@@ -702,6 +702,40 @@ export function applySpaceEvent(
         loci,
       });
     }
+    case "zone_entered": {
+      const zone = projection.zones.find((candidate) => candidate.id === event.payload.toZoneId);
+      if (!zone) throw new Error("Entry replay references a missing zone");
+      return sortSpaceProjection({
+        ...bumped,
+        loci: replaceLocus(
+          projection.loci,
+          physicalLocusSchema.parse({
+            kind: "at",
+            actorId: event.payload.actorId,
+            locationId: zone.locationId,
+            zoneId: zone.id,
+            since: event.storySecond,
+          }),
+        ),
+      });
+    }
+    case "storyteller_relocation": {
+      const zone = projection.zones.find((candidate) => candidate.id === event.payload.toZoneId);
+      if (!zone) throw new Error("Relocation replay references a missing zone");
+      return sortSpaceProjection({
+        ...bumped,
+        loci: replaceLocus(
+          projection.loci,
+          physicalLocusSchema.parse({
+            kind: "at",
+            actorId: event.payload.actorId,
+            locationId: zone.locationId,
+            zoneId: zone.id,
+            since: event.storySecond,
+          }),
+        ),
+      });
+    }
     case "journey_abandoned": {
       return sortSpaceProjection({
         ...bumped,
@@ -729,6 +763,7 @@ export function applySpaceEvent(
     case "engagement_ended":
     case "engagement_interrupted":
     case "engagement_winding_down":
+    case "speech_act_delivered":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }

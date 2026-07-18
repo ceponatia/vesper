@@ -653,77 +653,25 @@ export async function submitDurableMoveActor(
         }
 
         // A departure breaks any open co-present scene the mover occupies:
-        // the engagement is interrupted in the same transaction (spec §18.2 —
-        // one body, one physical scene; ending claims moves no one, but
-        // leaving the zone suspends the scene).
-        const engagementRows = await tx
-          .select()
-          .from(simEngagements)
-          .where(
-            and(
-              eq(simEngagements.branchId, branch.id),
-              eq(simEngagements.channel, "co_present"),
-              inArray(simEngagements.state, [...claimHoldingEngagementStates]),
-              sql`${simEngagements.participantIds} @> ${JSON.stringify([command.payload.actorId])}::jsonb`,
-            ),
-          )
-          .orderBy(asc(simEngagements.engagementId));
-        let lastSequence = resolution.events[2].sequence;
-        for (const row of engagementRows) {
-          const engagement = engagementSchema.parse({
-            id: row.engagementId,
-            participantIds: row.participantIds,
-            channel: row.channel,
-            ...(row.locationId === null ? {} : { locationId: row.locationId }),
-            ...(row.zoneId === null ? {} : { zoneId: row.zoneId }),
-            state: row.state,
-            openedAt: row.openedAt,
-            attentionClaim: row.attentionClaim,
-            sourceCommandId: row.sourceCommandId,
-          });
-          lastSequence += 1;
-          const interruptEvent = buildDepartureInterruptEvent({
-            meta: {
-              worldId: branch.worldId,
-              branchId: branch.id,
-              rulesetVersion: branch.rulesetVersion,
-              headSequence: branch.headSequence,
-              storySecond: branch.storySecond,
-            },
-            command: {
-              id: command.id,
-              correlationId: command.correlationId,
-              submittedAtWallClock: command.submittedAtWallClock,
-            },
-            engagement,
-            sequence: lastSequence,
-            causationId: resolution.events[1].id,
-          });
-          await tx.insert(simEvents).values({
-            id: interruptEvent.id,
-            worldId: interruptEvent.worldId,
-            branchId: interruptEvent.branchId,
-            sequence: interruptEvent.sequence,
-            storySecond: interruptEvent.storySecond,
-            type: interruptEvent.type,
-            schemaVersion: interruptEvent.schemaVersion,
-            rulesetVersion: interruptEvent.rulesetVersion,
-            commandId: interruptEvent.commandId,
-            causationId: interruptEvent.causationId,
-            correlationId: interruptEvent.correlationId,
-            actorIds: interruptEvent.actorIds,
-            entityIds: interruptEvent.entityIds,
-            locationId: interruptEvent.locationId,
-            recordedAt: new Date(interruptEvent.recordedAtWallClock),
-            payload: interruptEvent.payload,
-          });
-          await tx
-            .update(simEngagements)
-            .set({ state: "interrupted", updatedSequence: interruptEvent.sequence })
-            .where(
-              and(eq(simEngagements.branchId, branch.id), eq(simEngagements.engagementId, engagement.id)),
-            );
-        }
+        // interrupted in the same transaction (spec §18.2 — one body, one
+        // physical scene).
+        const lastSequence = await interruptCoPresentEngagementsForActor(tx, {
+          branch: {
+            worldId: branch.worldId,
+            branchId: branch.id,
+            rulesetVersion: branch.rulesetVersion,
+            headSequence: branch.headSequence,
+            storySecond: branch.storySecond,
+          },
+          command: {
+            id: command.id,
+            correlationId: command.correlationId,
+            submittedAtWallClock: command.submittedAtWallClock,
+          },
+          actorId: command.payload.actorId,
+          causationId: resolution.events[1].id,
+          startSequence: resolution.events[2].sequence,
+        });
         const advanced = await tx
           .update(simBranches)
           .set({ headSequence: lastSequence, version: branch.version + 1 })
@@ -997,4 +945,91 @@ export async function submitDurableJourneyArrival(
     });
     return commandResult;
   });
+}
+
+
+/**
+ * Interrupt every open co-present engagement an actor occupies, appending one
+ * engagement_interrupted event per scene starting after `startSequence`.
+ * Returns the last sequence written (== startSequence when none were open).
+ * Shared by ordinary departure, threshold entry, and storyteller relocation.
+ */
+export async function interruptCoPresentEngagementsForActor(
+  tx: SimTx,
+  input: {
+    branch: { worldId: string; branchId: string; rulesetVersion: string; headSequence: number; storySecond: number };
+    command: { id: string; correlationId: string; submittedAtWallClock: string };
+    actorId: string;
+    causationId: string;
+    startSequence: number;
+  },
+): Promise<number> {
+  const engagementRows = await tx
+    .select()
+    .from(simEngagements)
+    .where(
+      and(
+        eq(simEngagements.branchId, input.branch.branchId),
+        eq(simEngagements.channel, "co_present"),
+        inArray(simEngagements.state, [...claimHoldingEngagementStates]),
+        sql`${simEngagements.participantIds} @> ${JSON.stringify([input.actorId])}::jsonb`,
+      ),
+    )
+    .orderBy(asc(simEngagements.engagementId));
+  let lastSequence = input.startSequence;
+  for (const row of engagementRows) {
+    const engagement = engagementSchema.parse({
+      id: row.engagementId,
+      participantIds: row.participantIds,
+      channel: row.channel,
+      ...(row.locationId === null ? {} : { locationId: row.locationId }),
+      ...(row.zoneId === null ? {} : { zoneId: row.zoneId }),
+      state: row.state,
+      openedAt: row.openedAt,
+      attentionClaim: row.attentionClaim,
+      sourceCommandId: row.sourceCommandId,
+    });
+    lastSequence += 1;
+    const interruptEvent = buildDepartureInterruptEvent({
+      meta: {
+        worldId: input.branch.worldId,
+        branchId: input.branch.branchId,
+        rulesetVersion: input.branch.rulesetVersion,
+        headSequence: input.branch.headSequence,
+        storySecond: input.branch.storySecond,
+      },
+      command: input.command,
+      engagement,
+      sequence: lastSequence,
+      causationId: input.causationId,
+    });
+    await tx.insert(simEvents).values({
+      id: interruptEvent.id,
+      worldId: interruptEvent.worldId,
+      branchId: interruptEvent.branchId,
+      sequence: interruptEvent.sequence,
+      storySecond: interruptEvent.storySecond,
+      type: interruptEvent.type,
+      schemaVersion: interruptEvent.schemaVersion,
+      rulesetVersion: interruptEvent.rulesetVersion,
+      commandId: interruptEvent.commandId,
+      causationId: interruptEvent.causationId,
+      correlationId: interruptEvent.correlationId,
+      actorIds: interruptEvent.actorIds,
+      entityIds: interruptEvent.entityIds,
+      locationId: interruptEvent.locationId,
+      recordedAt: new Date(interruptEvent.recordedAtWallClock),
+      payload: interruptEvent.payload,
+    });
+    await tx
+      .update(simEngagements)
+      .set({ state: "interrupted", updatedSequence: interruptEvent.sequence })
+      .where(
+        and(
+          eq(simEngagements.branchId, input.branch.branchId),
+          eq(simEngagements.engagementId, engagement.id),
+        ),
+      );
+  }
+  return lastSequence;
 }

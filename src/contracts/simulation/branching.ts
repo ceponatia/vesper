@@ -36,6 +36,19 @@ import {
   type OpenEngagementCommand,
   type OpenEngagementCommandResult,
 } from "./engagements";
+import {
+  storytellerRelocationEventSchema,
+  zoneEnteredEventSchema,
+  type AttemptEntryCommand,
+  type AttemptEntryCommandResult,
+  type StorytellerRelocateActorCommand,
+  type StorytellerRelocateActorCommandResult,
+} from "./access";
+import {
+  speechActDeliveredEventSchema,
+  type ConfirmNarratorResultCommand,
+  type ConfirmNarratorResultCommandResult,
+} from "./narrative";
 import { commandPrincipalSchema, principalKindSchema } from "./envelopes";
 import {
   branchHeadSequenceSchema,
@@ -107,6 +120,9 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   engagementEndedEventSchema,
   engagementInterruptedEventSchema,
   engagementWindingDownEventSchema,
+  zoneEnteredEventSchema,
+  storytellerRelocationEventSchema,
+  speechActDeliveredEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -176,6 +192,16 @@ export function isEngagementEvent(event: SimulationBranchEvent): event is Simula
   return engagementEventTypes.has(event.type);
 }
 
+/** Access-family locus changes (E3.5): applied by the space projection. */
+const accessEventTypeList = ["zone_entered", "storyteller_relocation"] as const;
+export type AccessEventType = (typeof accessEventTypeList)[number];
+export type SimulationAccessEvent = Extract<SimulationBranchEvent, { type: AccessEventType }>;
+export const accessEventTypes: ReadonlySet<string> = new Set(accessEventTypeList);
+
+export function isAccessEvent(event: SimulationBranchEvent): event is SimulationAccessEvent {
+  return accessEventTypes.has(event.type);
+}
+
 /** Union persisted in sim_commands; each family keeps its own result contract. */
 export type SimulationCommandEnvelope =
   | TransferItemCommand
@@ -189,7 +215,10 @@ export type SimulationCommandEnvelope =
   | RaisePressureCommand
   | ResolveCommitmentDeadlineCommand
   | OpenEngagementCommand
-  | EndEngagementCommand;
+  | EndEngagementCommand
+  | AttemptEntryCommand
+  | StorytellerRelocateActorCommand
+  | ConfirmNarratorResultCommand;
 export type SimulationCommandResultRecord =
   | ItemTransferCommandResult
   | ScheduleTriggerCommandResult
@@ -202,7 +231,10 @@ export type SimulationCommandResultRecord =
   | RaisePressureCommandResult
   | ResolveCommitmentDeadlineCommandResult
   | OpenEngagementCommandResult
-  | EndEngagementCommandResult;
+  | EndEngagementCommandResult
+  | AttemptEntryCommandResult
+  | StorytellerRelocateActorCommandResult
+  | ConfirmNarratorResultCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

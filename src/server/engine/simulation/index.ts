@@ -8,6 +8,19 @@ export {
   type ActivityStoreOptions,
 } from "./activity-store";
 export {
+  seedDurableAccessGrants,
+  submitDurableAttemptEntry,
+  submitDurableStorytellerRelocation,
+  type AccessGrantSeed,
+  type AccessStoreOptions,
+} from "./access-store";
+export {
+  prepareEngagementTurn,
+  submitDurableConfirmNarratorResult,
+  type PreparedTurn,
+  type PrepareTurnInput,
+} from "./arbiter-store";
+export {
   explainItemPlacement,
   type ExplainOptions,
 } from "./audit-store";

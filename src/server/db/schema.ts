@@ -1347,6 +1347,8 @@ export const simWorlds = pgTable(
     seed: text("seed").notNull(),
     rulesetVersion: text("ruleset_version").notNull(),
     status: text("status", { enum: ["active", "paused", "archived"] }).notNull().default("active"),
+    /** Ruling 3: whether explicit forced-entry attempts are admissible here. */
+    permitsTrespass: boolean("permits_trespass").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -2182,6 +2184,34 @@ export const simEngagements = pgTable(
       "sim_engagements_co_present_has_zone",
       sql`${t.channel} <> 'co_present' OR ${t.zoneId} IS NOT NULL`,
     ),
+  ],
+);
+
+/**
+ * E3.5 access grants (engine.spec §14). Malformed rows fail closed at read
+ * time — a grant that does not parse admits no one.
+ */
+export const simAccessGrants = pgTable(
+  "sim_access_grants",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    grantId: text("grant_id").notNull(),
+    granteeActorId: text("grantee_actor_id").notNull(),
+    locationId: text("location_id").notNull(),
+    zoneIds: jsonb("zone_ids").$type<string[]>(),
+    basis: text("basis", {
+      enum: ["owner", "resident", "employee", "invitation", "key", "forced"],
+    }).notNull(),
+    validFrom: bigint("valid_from", { mode: "number" }).notNull(),
+    validUntil: bigint("valid_until", { mode: "number" }),
+    revokedAt: bigint("revoked_at", { mode: "number" }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_access_grants_branch_grant_pk", columns: [t.branchId, t.grantId] }),
+    index("sim_access_grants_branch_actor_idx").on(t.branchId, t.granteeActorId),
   ],
 );
 
