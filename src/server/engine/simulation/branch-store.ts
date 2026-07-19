@@ -38,6 +38,7 @@ import {
   replayBranchHistory,
   replayCommitmentsHistory,
   replayEngagementsHistory,
+  replayObservationsHistory,
   replaySpaceHistory,
   simulationHash,
   spaceSeedForReplay,
@@ -66,6 +67,7 @@ import {
 import { activityRowInsert } from "./activity-store";
 import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";
+import { insertReplayedObservations } from "./observation-store";
 import {
   insertSpaceRows,
   loadSpaceRows,
@@ -514,13 +516,14 @@ export async function forkBranch(
       },
       await loadSpaceRows(tx, parent.id),
     );
+    const childSpaceSeed = spaceSeedForReplay({
+      branchId: input.childBranchId,
+      current: parentSpace,
+      events: parentState.events,
+      originStorySecond: ancestry.rootOriginStorySecond,
+    });
     const childSpace = replaySpaceHistory({
-      seed: spaceSeedForReplay({
-        branchId: input.childBranchId,
-        current: parentSpace,
-        events: parentState.events,
-        originStorySecond: ancestry.rootOriginStorySecond,
-      }),
+      seed: childSpaceSeed,
       events: inherited,
     });
     const spaceSequenceByActor = new Map<string, number>();
@@ -618,6 +621,15 @@ export async function forkBranch(
         ),
       );
     }
+
+    // E4.1 observations: pure derivations of the inherited stream — replayed
+    // onto the same reverse-derived space seed the child's loci used, so the
+    // child holds exactly the observation rows its visible history explains.
+    const childObservations = replayObservationsHistory({
+      spaceSeed: childSpaceSeed,
+      events: inherited,
+    });
+    await insertReplayedObservations(tx, childObservations.observations, input.childBranchId);
 
     // Inherited delivery obligations were fulfilled on ancestor branches; the
     // child's consumer lane starts after the fork point (plan R4 — reference,

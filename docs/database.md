@@ -89,6 +89,7 @@ dual-write the deprecated session engine or current character-chat rows.
 | `sim_commitments` / `sim_temporal_pressures` (E3.3) | obligations with the flexibility dial and §15.4 status machine; live pressure rows carry noticeAt/decideBy/actBy (actBy = latest departure, recomputed from the fire-time route) |
 | `sim_engagements` (E3.4) | conversations as attention reservations: participants, channel, §18.2 state, and the attention claim; one co-present scene per body enforced at open |
 | `sim_access_grants` (E3.5, migration 0062) | authored entry rights (owner/resident/key…) scoped to a location and optionally zones, with validity/revocation seconds; malformed rows fail closed — they admit no one. `sim_worlds.permits_trespass` (same migration) gates explicit forced entry per world |
+| `sim_observations` (E4.1, migration 0063) | the §20 perception log: one row per (event, witness) with channel, evidence class, fixed-point confidence, detail tier, and derivation version. Derived deterministically from the event stream at command commit (every store's transaction ends by recording who perceived its events), so replay/fork mints identical rows; no FK to `sim_events` because a fork child holds observations for ancestor-branch events it reads by reference |
 
 `sim_outbox`, `sim_consumer_checkpoints`, `sim_item_transfer_feed`, `sim_snapshots`, and the
 lease/attempt columns of `sim_triggers` are **disposable coordination state**. World truth is

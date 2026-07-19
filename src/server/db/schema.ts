@@ -2215,6 +2215,59 @@ export const simAccessGrants = pgTable(
   ],
 );
 
+/**
+ * E4.1 observation log (engine.spec §20): one row per (event, witness),
+ * derived deterministically from the event stream — a rebuilt branch mints
+ * identical rows, which is why observation ids are derived, not random.
+ * No FK to sim_events: a forked child holds observations for ancestor-branch
+ * events it reads by reference (R4), never copies.
+ */
+export const simObservations = pgTable(
+  "sim_observations",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    observationId: text("observation_id").notNull(),
+    sourceEventId: text("source_event_id").notNull(),
+    sourceEventSequence: bigint("source_event_sequence", { mode: "number" }).notNull(),
+    witnessActorId: text("witness_actor_id").notNull(),
+    storySecond: bigint("story_second", { mode: "number" }).notNull(),
+    channel: text("channel", {
+      enum: ["embodied", "sight", "sound", "touch", "smell", "device", "social"],
+    }).notNull(),
+    evidenceClass: text("evidence_class", {
+      enum: ["direct", "sensory", "reported", "inferred"],
+    }).notNull(),
+    confidenceFixedPoint: integer("confidence_fixed_point").notNull(),
+    detailTier: integer("detail_tier").notNull(),
+    derivationVersion: text("derivation_version").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_observations_branch_observation_pk", columns: [t.branchId, t.observationId] }),
+    index("sim_observations_branch_witness_sequence_idx").on(
+      t.branchId,
+      t.witnessActorId,
+      t.sourceEventSequence,
+    ),
+    index("sim_observations_branch_event_idx").on(t.branchId, t.sourceEventId),
+    check(
+      "sim_observations_sequence_safe",
+      sql`${t.sourceEventSequence} > 0 AND ${t.sourceEventSequence} <= 9007199254740991`,
+    ),
+    check(
+      "sim_observations_story_second_safe",
+      sql`${t.storySecond} >= 0 AND ${t.storySecond} <= 9007199254740991`,
+    ),
+    check(
+      "sim_observations_confidence_range",
+      sql`${t.confidenceFixedPoint} >= 0 AND ${t.confidenceFixedPoint} <= 10000`,
+    ),
+    check("sim_observations_detail_tier_range", sql`${t.detailTier} >= 1 AND ${t.detailTier} <= 3`),
+  ],
+);
+
 export const simJourneys = pgTable(
   "sim_journeys",
   {

@@ -1,5 +1,4 @@
 import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
-import { simulationBranchEventSchema } from "@/contracts/simulation/branching";
 import { temporalPressureSchema } from "@/contracts/simulation/commitments";
 import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
 import { composeSimulationId, worldBranchIdSchema } from "@/contracts/simulation/identity";
@@ -32,6 +31,7 @@ import {
   type LockedBranchView,
 } from "./command-runner";
 import { engagementFromRow } from "./engagement-store";
+import { branchEventFromRow, loadViewpointObservations } from "./observation-store";
 import { advanceBranchStoryTime, type AdvanceStoryTimeOutcome } from "./scheduler-store";
 import { loadSpaceRows, spaceProjectionFromRows, submitDurableMoveActor } from "./space-store";
 
@@ -217,27 +217,7 @@ export async function prepareEngagementTurn(
     .from(simEvents)
     .where(and(eq(simEvents.branchId, branchId), gt(simEvents.sequence, fromSequence)))
     .orderBy(asc(simEvents.sequence));
-  const events = eventRows.map((row) =>
-    simulationBranchEventSchema.parse({
-      id: row.id,
-      worldId: row.worldId,
-      branchId: row.branchId,
-      sequence: row.sequence,
-      storySecond: row.storySecond,
-      type: row.type,
-      schemaVersion: row.schemaVersion,
-      rulesetVersion: row.rulesetVersion,
-      ...(row.derivationVersion ? { derivationVersion: row.derivationVersion } : {}),
-      ...(row.commandId ? { commandId: row.commandId } : {}),
-      ...(row.causationId ? { causationId: row.causationId } : {}),
-      correlationId: row.correlationId,
-      actorIds: row.actorIds,
-      entityIds: row.entityIds,
-      ...(row.locationId ? { locationId: row.locationId } : {}),
-      recordedAtWallClock: row.recordedAt.toISOString(),
-      payload: row.payload,
-    }),
-  );
+  const events = eventRows.map(branchEventFromRow);
   const space = spaceProjectionFromRows(
     {
       worldId: start.worldId,
@@ -260,6 +240,17 @@ export async function prepareEngagementTurn(
       ),
     )
     .orderBy(asc(simTemporalPressures.pressureId));
+  // E4.1: what the viewpoint perceived this interval comes from the committed
+  // observation log — the compiler re-decides nothing about witnessing (§20).
+  const viewpointObservations = await loadViewpointObservations(
+    {
+      branchId,
+      witnessActorId: input.viewpointActorId,
+      fromSequence,
+      throughSequence: after.headSequence,
+    },
+    { database },
+  );
 
   const cut = compileGate3Cut({
     branchVersion: after.version,
@@ -271,6 +262,7 @@ export async function prepareEngagementTurn(
     fromStorySecond,
     throughStorySecond: after.storySecond,
     space,
+    viewpointObservations,
     viewpointPressures: viewpointPressureRows.map((row) =>
       temporalPressureSchema.parse({
         id: row.pressureId,

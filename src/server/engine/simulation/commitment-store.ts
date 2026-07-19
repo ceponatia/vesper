@@ -39,6 +39,7 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
+import { hasObservationOfEvent } from "./observation-store";
 import { journeyFromRow, loadSpaceRows, locusFromRow, spaceProjectionFromRows } from "./space-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
@@ -325,6 +326,16 @@ export async function submitDurableRaisePressure(
     execute: async (tx, branch: LockedBranchView, command) => {
       const commitment = await loadCommitment(tx, branch.id, command.payload.commitmentId);
       const { space, originZoneId } = await loadActorOriginSpace(tx, branch, commitment?.actorId);
+      // E4.1 knowledge gate: an `observed` source is held only if the actor
+      // has a real observation of the named event (fails closed otherwise).
+      const observedKnowledgeHeld =
+        commitment?.knowledgeSource.kind === "observed"
+          ? await hasObservationOfEvent(tx, {
+              branchId: branch.id,
+              witnessActorId: commitment.actorId,
+              sourceEventId: commitment.knowledgeSource.sourceEventId,
+            })
+          : false;
       const resolution = resolveRaisePressure(
         {
           worldId: branch.worldId,
@@ -335,6 +346,7 @@ export async function submitDurableRaisePressure(
           ...(commitment ? { commitment } : {}),
           ...(originZoneId ? { originZoneId } : {}),
           topology: { locations: space.locations, zones: space.zones, links: space.links },
+          observedKnowledgeHeld,
         },
         command,
       );

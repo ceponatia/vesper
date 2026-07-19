@@ -25,6 +25,7 @@ import { loadBranchAncestry, readBranchAncestryEvents } from "./branch-store";
 import { readDurableCommitments, submitDurableCreateCommitment } from "./commitment-store";
 import { readDurableEngagements, submitDurableOpenEngagement } from "./engagement-store";
 import { seedDurableItemTransferBranch } from "./item-transfer-store";
+import { loadViewpointObservations } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import {
   readDurableSpaceBranch,
@@ -412,6 +413,12 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
       fromStorySecond: turn.cut.fromStorySecond,
       throughStorySecond: turn.cut.throughStorySecond,
       space,
+      viewpointObservations: await loadViewpointObservations({
+        branchId: ids.branchId,
+        witnessActorId: ids.player,
+        fromSequence: turn.cut.fromSequence,
+        throughSequence: turn.cut.throughSequence,
+      }),
       viewpointPressures: [],
       proposedArmedEffects: [apology, strayEffect],
     });

@@ -60,6 +60,13 @@ export {
   type DurableItemTransferSeedOptions,
 } from "./item-transfer-store";
 export {
+  branchEventFromRow,
+  hasObservationOfEvent,
+  insertReplayedObservations,
+  loadViewpointObservations,
+  recordCommandObservations,
+} from "./observation-store";
+export {
   consumeNextItemTransferOutbox,
   rebuildItemTransferFeed,
   type ConsumeItemTransferOutboxOptions,

@@ -7,6 +7,7 @@ import {
 import {
   commandIdSchema,
   commitmentIdSchema,
+  eventIdSchema,
   storySecondSchema,
   worldCharacterIdSchema,
   zoneIdSchema,
@@ -66,14 +67,16 @@ export const commitmentStatusTransitions: Record<CommitmentStatus, readonly Comm
 };
 
 /**
- * Why the actor may act on this commitment (spec §15.1). Pre-Gate-4 the only
- * live member is `authored` — setup the actor is deemed to know. Observation /
- * assertion / belief members join when the Gate 4 knowledge ledger exists;
- * pressure evaluation already gates on this source being available, so the
- * gate tightens without a schema change.
+ * Why the actor may act on this commitment (spec §15.1). `authored` is setup
+ * the actor is deemed to know. `observed` (E4.1) names a perceptible event —
+ * a spoken invitation, a witnessed exchange — and the notice trigger fires
+ * only if the actor holds a §20 observation of it: an obligation made where
+ * you weren't can't pressure you. Assertion/belief members join with E4.2's
+ * knowledge ledger; the gate keeps tightening without a schema change.
  */
 export const commitmentKnowledgeSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("authored") }).strict(),
+  z.object({ kind: z.literal("observed"), sourceEventId: eventIdSchema }).strict(),
 ]);
 
 export const pressureSeverities = ["background", "salient", "urgent", "hard"] as const;
