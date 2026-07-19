@@ -4,6 +4,7 @@ import { engagementSchema, type Engagement } from "@/contracts/simulation/engage
 import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
 import { temporalPressureSchema } from "@/contracts/simulation/commitments";
 import { compileGate3Cut, decideDepartures } from "./narrative";
+import { deriveCommandObservations } from "./perception";
 
 const NOW = 100_000;
 
@@ -155,16 +156,20 @@ function commitmentEvent(sequence: number): SimulationBranchEvent {
 }
 
 function compile(overrides: Record<string, unknown> = {}) {
+  const events = [departureEvent(5), commitmentEvent(6)];
   return compileGate3Cut({
     branchVersion: 4,
     engagement: fixtureEngagement(),
     viewpointActorId: "player",
-    events: [departureEvent(5), commitmentEvent(6)],
+    events,
     fromSequence: 4,
     throughSequence: 6,
     fromStorySecond: NOW,
     throughStorySecond: NOW + 400,
     space: fixtureSpace(),
+    // What the viewpoint perceived comes from the E4.1 rule table, exactly
+    // as the live turn seam feeds the compiler from the observation log.
+    viewpointObservations: deriveCommandObservations(events, fixtureSpace()),
     viewpointPressures: [],
     proposedArmedEffects: [],
     ...overrides,

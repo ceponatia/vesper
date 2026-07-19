@@ -338,6 +338,13 @@ hashes, bounded queue growth, no duplicate outcomes, and useful diagnostics.
 
 ## Gate 3 — space, action, schedules, and live-scene arbitration
 
+Status: **ADVANCE — closed 2026-07-18.** E3.1–E3.5 shipped in dependency order
+(2026-07-17/18, see §"Gate 3 build order"), the scenario corpus ran green (5 scenarios,
+zero model calls, 2 709 pure + 351 integration tests), and the owner ruled advance on
+2026-07-18. Open leftovers carried into later gates are recorded per-target in the build
+order below (interim witness rule → Gate 4; hazards/`journey_delayed`, trespass texture,
+route-uncertainty ruling 12 → travel polish; interpersonal consent → Gate 5).
+
 Rough effort: **15–35 developer-days**.
 
 This phase proves that world events become playable transitions rather than teleports.
@@ -427,6 +434,13 @@ for routine departures.
 
 ## Gate 4 — perception, knowledge, narration, and RAG
 
+Status: **ACTIVE — build started 2026-07-18** (Gate 3 closed with the owner's advance
+verdict the same day). Both Gate 4-blocking decisions were resolved by the owner on
+2026-07-18: ruling 14 (soft-canon promotion → safe documented auto-promotion; normative
+wording in [engine.spec.md](engine.spec.md) §39) and the exit scope (the deterministic
+corpus closes the gate; the live paired voice/chemistry eval rides the owner-gated spend
+list in [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs).
+
 Rough effort: **10–25 developer-days**.
 
 ### Deliverables
@@ -457,6 +471,94 @@ before top-k ranking, and every returned item carries provenance.
 - rerendering the same cut does not create new memories or events;
 - narrator failures can be retried from the same cut;
 - added context improves causal enactment without degrading median voice or chemistry.
+
+Ruled 2026-07-18: the first four (the deterministic corpus) close the gate. The fifth is
+a live paired eval and rides the owner-gated spend list — it does not hold the verdict.
+
+### Gate 4 build order
+
+Like Gates 2 and 3, Gate 4 splits into dependency-ordered targets. The IDs describe
+order, not GitHub PR numbers; each stays reviewable on its own and ships to the
+long-lived `engine` branch.
+
+1. **E4.1 — perception and observation.** Status: **shipped — 2026-07-18.** The §20
+   perception engine: typed `Observation` rows (`sim_observations`, migration 0063) —
+   channel, evidence class, fixed-point confidence, detail tier, derivation version
+   (`perception-v1`) on every row. One pure rule table (`lib/simulation/perception.ts`,
+   exhaustive over the event union so a new event kind cannot ship without a perception
+   ruling): participants perceive embodied at full detail; a zone-anchored physical event
+   is seen clearly in its zone and only heard across zones of the same location; captured
+   payload witness sets are trusted as-is (the action's noticeability profile already
+   encoded them — a private activity stays private); engagement events split by channel
+   (co-present participants embodied with location-level bystander glimpses, remote
+   participants device-only); a co-present speech act can be overheard at its location, a
+   remote one cannot; storyteller relocation grants destination-zone glimpses only —
+   never the mechanism (ruling 4); scheduler/commitment bookkeeping derives nothing.
+   Every command transaction now ends by deriving observations against the post-command
+   locus rows (the §11.1 shell hook covers all shell stores; the pre-shell space and
+   item-transfer stores got the same one-line hook), and replay grades each command's
+   events against its group-final space folded through `applySpaceEvent` — live and
+   rebuilt rows are identical by construction, proven bit-for-bit in the int suite and
+   wired into `forkBranch` (a mid-journey fork carries exactly the observations its
+   inherited history explains). The E3.5 interim witness rule is DELETED: `compileGate3Cut`
+   takes `viewpointObservations` and re-decides nothing about witnessing (corpus green
+   unchanged), and the E3.3 knowledge gate's new `observed` member fires notice only for
+   an actor holding a real observation of the named event — fails closed otherwise.
+   9 pure + 4 integration cases; CI runs `test:engine-e4-1`. Delivery notes:
+   confidence/tier constants are deliberately coarse (graded by how evidence arrived, not
+   who witnessed — impairment/lighting/distance refine under a bumped derivation
+   version); `activity_interrupted`/`activity_resumed` grade participants only until a
+   command emits them; `touch`/`smell`/`social` channels and `reported`/`inferred`
+   evidence classes are reserved vocabulary for E4.2 gossip; the legacy Gate-1
+   observed-containers mechanism still feeds `ItemTransferObservation` for the Gate 1/2
+   proofs — typed rows now derive alongside it, and folding it in is a later cleanup.
+2. **E4.2 — assertions, beliefs, disclosure, and gossip.** The §21 knowledge substrate:
+   `sim_assertions` + `sim_beliefs` (own migration) with provenance
+   (basis observations, learned-from actors), validity intervals, and the
+   contradiction/supersedence status machines; `DisclosureMade` as a causal event whose
+   listeners gain observations and belief updates, each gossip hop preserving provenance
+   through an explicit event; the E3.3 commitment knowledge source widens from its one
+   `authored` member to observation/assertion/belief members (the promised no-schema-change
+   tightening); the §21.3 relationship-evidence seam as typed evidence events + a derived
+   read (the full promises/favors/debts social ledger stays Gate 5).
+3. **E4.3 — NarrativeCut v2, narrator integration, and soft canon.** The full §22.1
+   contract replacing the Gate 3 deterministic subset: `speakerBeliefs` (E4.2),
+   `perceptibleNow` as evidence views (E4.1), `creativeLicenses`, and per-field
+   provenance refs; cut rows persisted immutable and addressable with the §22.3
+   recompile-identity hash; the §23.1 `NarratorResult` trust boundary (`parseOr`, safe
+   defaults); rerender re-reads the persisted cut and creates no events or memories;
+   narrator failure retry from the same cut (ruling 8 formalized on the persisted row);
+   the §23.2 presentation auditor — flags missing must-enact beats and forbidden claims,
+   may request rerender or a deterministic bridge, cannot mutate truth; and §23.4 soft
+   canon under ruling 14 — a bounded expiring store, proposals validated through
+   conflict/privacy/scope/duplication/world-type checks, and **auto-promotion** once a
+   key is reused across the ruled number of committed cuts, emitting an audited
+   promotion event with a demotion path; every threshold versioned per world type and
+   documented for tuning. The §19.3 deliberator admission seam joins here (bounded legal
+   candidates, deterministic fallback + timeout, recorded rationale) — exercised with a
+   stub in tests, zero live calls.
+4. **E4.4 — RAG eligibility and memory linkage.** The §24 retrieval redesign:
+   outbox-driven indexing of eligible representations (observations, active
+   assertions/beliefs, participated dialogue episodes, authorized authored lore, bounded
+   soft canon) with source id/kind, branch + sequence interval, viewpoint eligibility,
+   validity/supersedence intervals, and schema/model versions on every document;
+   the eligibility-before-similarity query pipeline (§24.1 — branch, viewpoint,
+   validity, and privacy resolved relationally before vector ranking, provenance +
+   epistemic label on every result); memory documents linked back to their source
+   assertions/events; indexing failure degrades recall with lag diagnostics, never
+   widens visibility.
+5. **E4.5 — the Gate 4 exit corpus.** Deterministic scenarios closing the gate per the
+   2026-07-18 ruling: cross-viewpoint leak sweeps (the §36.4 live-scene suite extended
+   with knowledge asymmetry — a viewpoint that did not observe or learn a fact never
+   receives it in cut, prompt, or retrieval), contradiction/retraction presentation
+   (both claims never current), rerender-creates-nothing, retry-from-the-same-cut, and
+   gossip-provenance chains. Zero model calls. The live paired voice/chemistry eval is
+   recorded as an owner-gated spend item, not a gate blocker.
+
+E4.2 consumes E4.1's observations; E4.3 consumes both; E4.4 consumes the E4.1–E4.3
+ledgers and the persisted cuts; E4.5 closes the gate. Deferred design notes carried in:
+pressure acknowledgment and the resumed-activity re-arm (E3.4 notes) slot into E4.3's
+arbiter work if scenario pressure demands them, else they carry to Gate 5.
 
 ## Gate 5 — bodies, materials, households, and relationships
 
@@ -763,9 +865,14 @@ with full wording lives in [engine.spec.md](engine.spec.md) §39. In brief:
 10. **First performance target** → 2–8 exact-LOD actors, hours-to-days off-screen horizon.
 11. **Waking sleepers** → remote messages queue unread by default; no wake.
 13. **Private-denial cover story** → allowed in-character; the true cause is still redacted.
+14. **Soft-canon promotion** → **resolved 2026-07-18 (the Gate 4 unblock pass):** a
+    **safe, documented auto-promotion** — repeatedly-reused soft canon auto-promotes
+    through the §23.4 checks with an audit event and a demotion path; every threshold is
+    a versioned world-type value documented for post-build tuning. Full wording in
+    [engine.spec.md](engine.spec.md) §39.
 
-Still open: spec ruling 12 (route-estimate uncertainty exposure — Gate 3 travel polish)
-and 14 (soft-canon promotion — Gate 4). Neither blocks the Gate 3 build order below.
+Still open: spec ruling 12 only (route-estimate uncertainty exposure — travel polish,
+no gate blocked on it).
 
 ### Gate 3 build order
 
@@ -873,7 +980,8 @@ branch.
    perception engine; no command emits `journey_delayed` yet (hazards deferred); trespass
    has no duration/noise depth yet (ruling 3's time-consuming, noisy texture joins later
    gates); interpersonal-consent preconditions beyond privacy zones join Gate 5's social
-   layer. **Verdict pending the owner's advance/revise/hold/stop ruling.**
+   layer. **Verdict: ADVANCE (owner, 2026-07-18) — Gate 3 is closed; the Gate 4 build
+   order lives in §"Gate 4" above.**
 
 E3.2 and E3.3 both consume E3.1; E3.4 consumes E3.1–E3.3; E3.5 layers access and privacy
 over all of them and runs the exit corpus.

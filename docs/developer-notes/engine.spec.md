@@ -1270,9 +1270,13 @@ smuggle physical outcomes back into narrator authority.
     };
 
 Soft canon must pass conflict, privacy, scope, duplication, and world-type checks. It may
-be rejected without regenerating prose. Repeatedly useful soft canon SHOULD be promoted
-through an explicit authored or domain contract, not allowed to become accidental hard
-state.
+be rejected without regenerating prose. Repeatedly useful soft canon is promoted through
+the ruled auto-promotion path (ruling 14, §39): reuse across the world-type's ruled
+number of committed cuts triggers an audited promotion event with full provenance and a
+demotion path; all thresholds are versioned world-type values documented for tuning, and
+a world type MAY disable auto-promotion in favor of explicit storyteller promotion. Soft
+canon never becomes accidental hard state — promotion is always an explicit, audited
+event.
 
 Post-turn extraction is limited to information deterministic code could not know before
 the response: episode compression, semantic propositions actually spoken, and permitted
@@ -1797,9 +1801,10 @@ should not acquire scheduler, body, economy, or autonomous-agent scope.
 ## 39. Product rulings
 
 Rulings 1–11 and 13 were **resolved by the owner on 2026-07-17** (the Gate 3 unblock
-pass). Each resolved decision is normative and MUST be stored in a versioned world-type
-rule or explicit product contract, not only in a prompt. Rulings 12 and 14 remain **open**
-and are deferred to the gate that needs them.
+pass); ruling 14 was **resolved on 2026-07-18** (the Gate 4 unblock pass). Each resolved
+decision is normative and MUST be stored in a versioned world-type rule or explicit
+product contract, not only in a prompt. Ruling 12 remains **open** and is deferred to
+the work that needs it.
 
 1. **Ordinary dialogue duration** — RESOLVED: a fixed per-exchange story-time span (the
    current-lane ~1-minute default), versioned by world type. Explicit actions (travel,
@@ -1849,8 +1854,17 @@ and are deferred to the gate that needs them.
     cause is still redacted from narrator context, prompts, diagnostics, and embeddings
     either way (§14.4, §34.5); the cover story is presentation, never a change to hard
     truth.
-14. **Soft canon → authored canon promotion** — OPEN (deferred to Gate 4 knowledge/
-    narration work; §23.4).
+14. **Soft canon → authored canon promotion** — RESOLVED (2026-07-18): **safe
+    auto-promotion, documented for tuning.** A soft-canon entry whose key survives the
+    §23.4 validation checks and is reused across the ruled number of distinct committed
+    cuts auto-promotes to authored/domain canon. Promotion is itself an audited event
+    (never a silent write), carries the full soft-canon provenance (source cuts,
+    confidence history), and has an explicit demotion path that retracts the promoted
+    record without touching event history. Every knob — reuse count, minimum confidence,
+    eligible scopes, expiry handling — is a versioned world-type value, and the defaults
+    plus their tuning rationale MUST be documented so the mechanism can be retuned after
+    it is built. A world type MAY disable auto-promotion entirely, falling back to
+    explicit storyteller promotion.
 
 ## 40. Initial conformance checklist
 

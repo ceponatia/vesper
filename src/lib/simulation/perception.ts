@@ -1,0 +1,349 @@
+import {
+  isAccessEvent,
+  isMovementEvent,
+  type SimulationBranchEvent,
+} from "@/contracts/simulation/branching";
+import {
+  deriveObservationId,
+  observationSchema,
+  type Observation,
+  type ObservationChannel,
+  type ObservationEvidenceClass,
+} from "@/contracts/simulation/perception";
+import type { PhysicalLocus, SpaceProjection } from "@/contracts/simulation/space";
+import { applySpaceEvent } from "./space";
+
+/**
+ * E4.1 — the pure perception engine (engine.spec §20). One deterministic rule
+ * table decides, for every committed event, who perceived it, through which
+ * channel, and how well. It replaces the interim Gate 3 witness rule
+ * (participant / captured payload set / shared location at compile time) as
+ * the single source of "who perceived this".
+ *
+ * Perception evaluates against the space state AFTER the owning command's
+ * events apply — an arrival is seen by whoever is at the destination once the
+ * traveller stands in it. Live derivation reads the post-command loci rows;
+ * replay folds the same space projection through `applySpaceEvent` and grades
+ * each command's events against its group-final state, so both paths grade
+ * against identical presence by construction.
+ */
+
+export const PERCEPTION_DERIVATION_VERSION = "perception-v1";
+
+/**
+ * Fixed-point confidence constants (10_000 = certainty). Deliberately coarse:
+ * v1 grades by how the evidence arrived, not who the witness is. Impairment,
+ * lighting, distance, and attention refine these under a bumped derivation
+ * version when a scenario needs them.
+ */
+const CONFIDENCE = {
+  direct: 10_000,
+  remoteDirect: 9_500,
+  clearWitness: 9_000,
+  glimpse: 8_000,
+  muffled: 7_000,
+} as const;
+
+interface WitnessGrade {
+  channel: ObservationChannel;
+  evidenceClass: ObservationEvidenceClass;
+  confidenceFixedPoint: number;
+  detailTier: number;
+}
+
+const DIRECT_EMBODIED: WitnessGrade = {
+  channel: "embodied",
+  evidenceClass: "direct",
+  confidenceFixedPoint: CONFIDENCE.direct,
+  detailTier: 3,
+};
+
+const REMOTE_DIRECT: WitnessGrade = {
+  channel: "device",
+  evidenceClass: "direct",
+  confidenceFixedPoint: CONFIDENCE.remoteDirect,
+  detailTier: 2,
+};
+
+const SIGHT_WITNESS: WitnessGrade = {
+  channel: "sight",
+  evidenceClass: "sensory",
+  confidenceFixedPoint: CONFIDENCE.clearWitness,
+  detailTier: 2,
+};
+
+const SIGHT_GLIMPSE: WitnessGrade = {
+  channel: "sight",
+  evidenceClass: "sensory",
+  confidenceFixedPoint: CONFIDENCE.glimpse,
+  detailTier: 1,
+};
+
+const SOUND_MUFFLED: WitnessGrade = {
+  channel: "sound",
+  evidenceClass: "sensory",
+  confidenceFixedPoint: CONFIDENCE.muffled,
+  detailTier: 1,
+};
+
+/** Higher wins when one witness earns several grades for one event. */
+function gradeRank(grade: WitnessGrade): number {
+  const evidenceRank = grade.evidenceClass === "direct" ? 100 : 0;
+  return evidenceRank + grade.detailTier * 10 + grade.confidenceFixedPoint / 10_000;
+}
+
+/**
+ * The slice of space state perception needs: who stands where, and which
+ * location each zone belongs to. A full SpaceProjection satisfies it
+ * structurally; the live hook builds it from two narrow queries instead of
+ * loading topology it never reads (and without importing the space store,
+ * which itself calls the observation recorder).
+ */
+export interface PerceptionSpaceView {
+  zones: readonly { id: string; locationId: string }[];
+  loci: readonly PhysicalLocus[];
+}
+
+interface AtOccupant {
+  actorId: string;
+  locationId: string;
+  zoneId: string;
+}
+
+function atOccupants(space: PerceptionSpaceView): AtOccupant[] {
+  return space.loci.flatMap((locus) =>
+    locus.kind === "at"
+      ? [{ actorId: locus.actorId, locationId: locus.locationId, zoneId: locus.zoneId }]
+      : [],
+  );
+}
+
+function locationOfZone(space: PerceptionSpaceView, zoneId: string): string | undefined {
+  return space.zones.find((zone) => zone.id === zoneId)?.locationId;
+}
+
+class GradeCollector {
+  private readonly grades = new Map<string, WitnessGrade>();
+
+  add(witnessActorId: string, grade: WitnessGrade): void {
+    const held = this.grades.get(witnessActorId);
+    if (!held || gradeRank(grade) > gradeRank(held)) this.grades.set(witnessActorId, grade);
+  }
+
+  toObservations(event: SimulationBranchEvent): Observation[] {
+    return [...this.grades.entries()]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([witnessActorId, grade]) =>
+        observationSchema.parse({
+          id: deriveObservationId(event.id, witnessActorId),
+          branchId: event.branchId,
+          sourceEventId: event.id,
+          sourceEventSequence: event.sequence,
+          witnessActorId,
+          storySecond: event.storySecond,
+          channel: grade.channel,
+          evidenceClass: grade.evidenceClass,
+          confidenceFixedPoint: grade.confidenceFixedPoint,
+          detailTier: grade.detailTier,
+          derivationVersion: PERCEPTION_DERIVATION_VERSION,
+        }),
+      );
+  }
+}
+
+/**
+ * Co-location grading for an event anchored to one zone: same zone sees it
+ * clearly; the rest of the same location only hears something. An unknown
+ * zone degrades to no bystander perception at all — fail closed, never wide.
+ */
+function gradeZoneBystanders(
+  collector: GradeCollector,
+  space: PerceptionSpaceView,
+  eventZoneId: string,
+  options: { sameZone?: WitnessGrade; crossZoneSound?: boolean } = {},
+): void {
+  const sameZoneGrade = options.sameZone ?? SIGHT_WITNESS;
+  const crossZoneSound = options.crossZoneSound ?? true;
+  const eventLocationId = locationOfZone(space, eventZoneId);
+  for (const occupant of atOccupants(space)) {
+    if (occupant.zoneId === eventZoneId) collector.add(occupant.actorId, sameZoneGrade);
+    else if (crossZoneSound && eventLocationId !== undefined && occupant.locationId === eventLocationId) {
+      collector.add(occupant.actorId, SOUND_MUFFLED);
+    }
+  }
+}
+
+/** Location-level bystander texture: a scene visibly starts/stops nearby. */
+function gradeLocationBystanders(
+  collector: GradeCollector,
+  space: PerceptionSpaceView,
+  locationId: string,
+  grade: WitnessGrade,
+): void {
+  for (const occupant of atOccupants(space)) {
+    if (occupant.locationId === locationId) collector.add(occupant.actorId, grade);
+  }
+}
+
+/**
+ * The v1 perception rule table. `space` is the projection AFTER the owning
+ * command's events applied. Exhaustive over the event union so a new event
+ * kind cannot ship without a perception ruling.
+ */
+export function deriveEventObservations(
+  event: SimulationBranchEvent,
+  space: PerceptionSpaceView,
+): Observation[] {
+  const collector = new GradeCollector();
+  switch (event.type) {
+    case "trigger_scheduled":
+    case "commitment_created":
+    case "pressure_raised":
+    case "commitment_kept":
+    case "commitment_late":
+    case "commitment_missed":
+      // Scheduler and commitment-ledger bookkeeping is not perceptible; an
+      // actor's knowledge of an obligation rides its commitment's `observed`
+      // knowledge source pointing at a perceptible event (§15.1, §20).
+      return [];
+    case "journey_planned":
+    case "journey_delayed":
+    case "journey_interrupted":
+    case "journey_abandoned":
+      // Private planning, or something felt mid-transit between places.
+      for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
+      break;
+    case "actor_departed": {
+      for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
+      gradeZoneBystanders(collector, space, event.payload.fromZoneId);
+      break;
+    }
+    case "actor_arrived": {
+      for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
+      gradeZoneBystanders(collector, space, event.payload.destinationZoneId);
+      break;
+    }
+    case "activity_started":
+    case "activity_completed":
+    case "activity_cancelled":
+    case "activity_failed": {
+      // The captured payload set already encodes the action's noticeability
+      // profile (§16.1) — a private activity captured no one. Trusting it
+      // keeps replay exact and keeps private causes private.
+      for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
+      for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
+      break;
+    }
+    case "activity_interrupted":
+    case "activity_resumed":
+      // No capture set exists on these yet (no command emits them — the E3.4
+      // resumption design note). Participants only until that path lands.
+      for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
+      break;
+    case "engagement_opened":
+    case "engagement_ended":
+    case "engagement_interrupted":
+    case "engagement_winding_down": {
+      const coPresent = event.locationId !== undefined;
+      for (const actorId of event.actorIds) {
+        collector.add(actorId, coPresent ? DIRECT_EMBODIED : REMOTE_DIRECT);
+      }
+      if (event.locationId !== undefined) {
+        gradeLocationBystanders(collector, space, event.locationId, SIGHT_GLIMPSE);
+      }
+      break;
+    }
+    case "zone_entered": {
+      // The threshold capture already holds both sides of the doorway,
+      // noticeability-filtered at commit (§14.1) — no blanket co-location.
+      collector.add(event.payload.actorId, DIRECT_EMBODIED);
+      for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
+      break;
+    }
+    case "storyteller_relocation": {
+      // Privileged causality: destination occupants notice someone is
+      // suddenly present — a glimpse, never the mechanism (ruling 4).
+      collector.add(event.payload.actorId, DIRECT_EMBODIED);
+      gradeZoneBystanders(collector, space, event.payload.toZoneId, {
+        sameZone: SIGHT_GLIMPSE,
+        crossZoneSound: false,
+      });
+      break;
+    }
+    case "item_transferred": {
+      for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
+      for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
+      break;
+    }
+    case "speech_act_delivered": {
+      const coPresent = event.locationId !== undefined;
+      const spoken: WitnessGrade = coPresent
+        ? { channel: "sound", evidenceClass: "direct", confidenceFixedPoint: CONFIDENCE.direct, detailTier: 3 }
+        : REMOTE_DIRECT;
+      collector.add(event.payload.actorId, spoken);
+      for (const targetId of event.payload.targetActorIds) collector.add(targetId, spoken);
+      if (event.locationId !== undefined) {
+        gradeLocationBystanders(collector, space, event.locationId, SOUND_MUFFLED);
+      }
+      break;
+    }
+  }
+  return collector.toObservations(event);
+}
+
+/**
+ * Derive every observation for one committed command, graded against the
+ * post-command space state — exactly what the live hook loads from the locus
+ * rows after the store's projection writes.
+ */
+export function deriveCommandObservations(
+  events: readonly SimulationBranchEvent[],
+  spaceAfterCommand: PerceptionSpaceView,
+): Observation[] {
+  return events.flatMap((event) => deriveEventObservations(event, spaceAfterCommand));
+}
+
+export interface ObservationsReplayInput {
+  /** The space projection just before the first replayed event (same seed the space rebuild uses). */
+  spaceSeed: SpaceProjection;
+  /** The contiguous event stream after the seed boundary, ascending. */
+  events: readonly SimulationBranchEvent[];
+}
+
+export interface ObservationsReplayResult {
+  observations: Observation[];
+  /** The folded space state after the last event — callers may reuse it. */
+  space: SpaceProjection;
+}
+
+/**
+ * Deterministic rebuild of the observation log (fork, parity, audit): fold
+ * the space projection through each command's events, then grade that
+ * command's events against its group-final state — the same presence the
+ * live hook saw. Events sharing a commandId form one group; an event with no
+ * commandId grades alone.
+ */
+export function replayObservationsHistory(input: ObservationsReplayInput): ObservationsReplayResult {
+  const events = [...input.events].sort((left, right) => left.sequence - right.sequence);
+  const observations: Observation[] = [];
+  let space = input.spaceSeed;
+  let index = 0;
+  while (index < events.length) {
+    const head = events[index];
+    if (!head) break;
+    const commandId = head.commandId;
+    let end = index + 1;
+    while (commandId !== undefined) {
+      const next = events[end];
+      if (next?.commandId !== commandId) break;
+      end += 1;
+    }
+    const group = events.slice(index, end);
+    for (const event of group) {
+      if (isMovementEvent(event) || isAccessEvent(event)) space = applySpaceEvent(space, event);
+    }
+    for (const event of group) observations.push(...deriveEventObservations(event, space));
+    index = end;
+  }
+  return { observations, space };
+}

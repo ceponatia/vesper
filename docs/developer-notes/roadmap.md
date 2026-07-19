@@ -23,39 +23,33 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Successor world engine — Gate 3: space, actions, schedules & live-scene arbitration** —
-  [engine.plan.md](engine.plan.md) §"Gate 3" + §"Gate 3 build order" (~15–35 dev-days).
-  **Rulings unblocked 2026-07-17** — all 10 blocking product rulings plus spec rulings 11
-  and 13 resolved by the owner (plan §"Product rulings — RESOLVED 2026-07-17", normative
-  record in [engine.spec.md](engine.spec.md) §39). Built in dependency order
-  **E3.1 → E3.5**; **all five targets shipped** (E3.1–E3.3 + E3.4 slice 1 on 2026-07-17,
-  E3.4 slice 2 + E3.5 on 2026-07-18 — see **Shipped**) and the Gate 3 scenario corpus is
-  green (5 scenarios, zero model calls). **Current sub-target: the owner's
-  advance/revise/hold/stop verdict closes the gate.** Proves world events become
-  playable transitions, not teleports: authoritative space + travel (G3.1), typed actions
-  with preconditions/claims/effects (G3.2), commitments with earliest/target/latest pressure
-  that never set location directly (G3.3), conversation-as-Engagement + the live-scene
-  arbiter — drain triggers → integrate state → enumerate legal outcomes → commit → compile
-  one NarrativeCut, all before narration (G3.4), and separate route/property/zone/privacy/
-  consent checks that fail closed (G3.5).
+- **Successor world engine — Gate 4: perception, knowledge, narration & RAG** —
+  [engine.plan.md](engine.plan.md) §"Gate 4" + §"Gate 4 build order" (~10–25 dev-days).
+  **Started 2026-07-18**, the day Gate 3 closed with the owner's advance verdict. Both
+  Gate 4-blocking decisions resolved by the owner 2026-07-18: **ruling 14** — soft-canon
+  promotion is a safe, documented **auto-promotion** (audited, demotable, every threshold
+  a versioned world-type value tunable post-build; normative record
+  [engine.spec.md](engine.spec.md) §39) — and **exit scope** — the deterministic corpus
+  closes the gate, the live paired voice/chemistry eval rides the owner-gated spend list.
+  Built in dependency order **E4.1 → E4.5**: typed Observations replacing the E3.5
+  interim witness rule (**E4.1 — shipped 2026-07-18**, see Shipped),
+  assertions/beliefs/disclosure/gossip with provenance and supersedence (E4.2), the full
+  persisted NarrativeCut + narrator trust boundary + presentation auditor + ruled soft
+  canon (E4.3), eligibility-before-similarity RAG with memory docs linked to their
+  sources (E4.4), and the exit corpus — zero cross-viewpoint leaks, contradiction
+  handling, rerender-creates-nothing, retry-from-cut (E4.5).
+  **Current sub-target: E4.2.**
 
 ## Next (queued)
 
 **Successor world engine (`engine.plan.md`) — remaining gates.** The gated event-kernel
-track, in sequence — each gate's exit criteria gate the next. Gates 0–2 are closed
-(E2.1–E2.6 shipped; Gate 2 verdict: **advance**, 2026-07-17); **Gate 3 is built and its
-corpus is green (E3.1–E3.5 shipped 2026-07-17/18; verdict pending — see Active above)**. Full plan
+track, in sequence — each gate's exit criteria gate the next. Gates 0–3 are closed
+(E2.1–E2.6 + E3.1–E3.5 shipped; Gate 2 verdict: **advance**, 2026-07-17; Gate 3 verdict:
+**advance**, 2026-07-18); **Gate 4 is Active above**. Full plan
 [engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md). (Distinct
 build from the chat-lane [world-engine-refactor.plan.md](world-engine-refactor.plan.md)
 north-star umbrella further down.)
 
-- **Successor world engine — Gate 4: perception, knowledge, narration & RAG** —
-  [engine.plan.md](engine.plan.md) §"Gate 4" (draft; ~10–25 dev-days). Observations /
-  assertions / beliefs with provenance, a typed NarrativeCut (must-enact · perceptible ·
-  believed · allowed · forbidden · failure-presentation), perspective eligibility resolved
-  in relational data **before** vector ranking, memory docs linked back to their
-  assertions/events, the ArmedEffect confirmation path, and a continuity auditor that flags
-  but can't mutate truth. Exit: zero cross-viewpoint leaks in the fixed corpus.
 - **Successor world engine — Gate 5: bodies, materials, households & relationships** —
   [engine.plan.md](engine.plan.md) §"Gate 5" (draft; ~15–35 dev-days). The unified body
   substrate with analytical drift on story time + one modifier engine (G5.1), typed material
@@ -143,6 +137,20 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine perception & observation (E4.1)** — [engine.plan.md](engine.plan.md)
+  §"Gate 4 build order" · contract [engine.spec.md](engine.spec.md) §20 — 2026-07-18 —
+  the first Gate 4 slice, started the day Gate 3 closed (verdict: advance; rulings 14 +
+  exit scope resolved the same day): typed `Observation` rows (`sim_observations`,
+  migration 0063) derived by one pure, exhaustive rule table — participants embodied,
+  same-zone sight, cross-zone sound, captured noticeability sets trusted (private stays
+  private), engagement events by channel, overhearable co-present speech, glimpse-only
+  storyteller relocation, bookkeeping derives nothing. Every command transaction commits
+  perception atomically with truth (shell hook + the two pre-shell stores); replay grades
+  per command against the group-final space — live/rebuilt rows identical, wired into
+  `forkBranch`. The interim witness rule is deleted (`compileGate3Cut` consumes
+  `viewpointObservations`; corpus green unchanged) and the commitment knowledge gate's
+  `observed` member fires only on real perception, failing closed. 9 pure + 4 int cases;
+  CI runs `test:engine-e4-1` (2 718 pure + 355 int green). Next: **E4.2**.
 - **World-engine live-scene arbiter + access & Gate 3 corpus (E3.4 slice 2 + E3.5)** —
   [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-18 — the deterministic §18.3 turn seam
@@ -154,7 +162,7 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
   refusals, cause-free denials), audited `storyteller_relocate_actor` (ruling 4); Gate 3
   scenario corpus green (`test:engine-e3-5`, 5 scenarios, zero model calls; 2 709 pure +
   351 int tests) — corpus caught + fixed the E3.3 `actBy` derivation bug and an id-length
-  stacking bug. Verdict pending.
+  stacking bug. **Gate 3 closed with the owner's advance verdict, 2026-07-18.**
 - **World-engine engagement substrate (E3.4 slice 1)** —
   [engine.plan.md](engine.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — conversations become world activities

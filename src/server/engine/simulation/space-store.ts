@@ -58,6 +58,7 @@ import {
   simZones,
   type Db,
 } from "@/server/db";
+import { recordCommandObservations } from "./observation-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 type DbExecutor = Db | SimTx;
@@ -672,6 +673,9 @@ export async function submitDurableMoveActor(
           causationId: resolution.events[1].id,
           startSequence: resolution.events[2].sequence,
         });
+        // E4.1: derive who perceived the departure (and any scene interrupt)
+        // against the post-command loci, inside the same transaction (§20).
+        await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
         const advanced = await tx
           .update(simBranches)
           .set({ headSequence: lastSequence, version: branch.version + 1 })
@@ -903,6 +907,10 @@ export async function submitDurableJourneyArrival(
             .returning({ actorId: simPhysicalLoci.actorId });
           if (!flipped) throw new Error("Locked physical locus changed before its arrival flip");
         }
+
+        // E4.1: the arrival is perceived by whoever stands at the destination
+        // once the traveller does — graded against the flipped loci (§20).
+        await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
 
         const advanced = await tx
           .update(simBranches)

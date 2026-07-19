@@ -10,3 +10,4 @@ export * from "./commitments";
 export * from "./engagements";
 export * from "./access";
 export * from "./narrative";
+export * from "./perception";

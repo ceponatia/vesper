@@ -319,6 +319,12 @@ export interface RaisePressureResolutionView extends CommitmentBranchMeta {
   /** The actor's zone at fire time (journey destination when in transit). */
   originZoneId?: string;
   topology: SpaceTopology;
+  /**
+   * E4.1: whether the actor holds a §20 observation of the commitment's
+   * `observed` knowledge-source event. Absent means not looked up — the gate
+   * fails closed (§3.3: a pressure is salient only if the actor can know).
+   */
+  observedKnowledgeHeld?: boolean;
 }
 
 interface RaiseRejection {
@@ -354,10 +360,17 @@ export function resolveRaisePressure(
   if (commitment.status !== "planned") {
     return raiseRejection("commitment_not_open", "That obligation is no longer awaiting notice.");
   }
-  // The one live knowledge source is authored setup; Gate 4 members tighten
-  // this gate to real observations and beliefs without a contract change.
-  if (commitment.knowledgeSource.kind !== "authored") {
-    return raiseRejection("knowledge_unavailable", "They have no way to know about that obligation.");
+  // The knowledge gate (§15.1): authored setup is deemed known; an `observed`
+  // source requires the actor to hold a real E4.1 observation of the named
+  // event. E4.2's assertion/belief members tighten further, same shape.
+  switch (commitment.knowledgeSource.kind) {
+    case "authored":
+      break;
+    case "observed":
+      if (view.observedKnowledgeHeld !== true) {
+        return raiseRejection("knowledge_unavailable", "They have no way to know about that obligation.");
+      }
+      break;
   }
 
   const originZoneId = view.originZoneId;

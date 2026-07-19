@@ -8,6 +8,7 @@ import {
   type Gate3NarrativeCut,
   type ProposedArmedEffect,
 } from "@/contracts/simulation/narrative";
+import type { Observation } from "@/contracts/simulation/perception";
 import type { SpaceProjection } from "@/contracts/simulation/space";
 import { simulationHash } from "./item-transfer";
 
@@ -153,29 +154,6 @@ function beatSummary(event: SimulationBranchEvent): string | null {
   }
 }
 
-/**
- * Interim Gate 3 witness rule (Gate 4's perception engine replaces it):
- * an event enters a viewpoint's cut when the viewpoint took part, was in a
- * captured witness set, or shares the event's location right now.
- */
-function viewpointWitnesses(
-  event: SimulationBranchEvent,
-  viewpointActorId: string,
-  viewpointLocationId: string | undefined,
-): boolean {
-  if (event.actorIds.includes(viewpointActorId as never)) return true;
-  const payload: unknown = event.payload;
-  if (
-    typeof payload === "object" &&
-    payload !== null &&
-    "observerActorIds" in payload &&
-    Array.isArray((payload as { observerActorIds: unknown }).observerActorIds)
-  ) {
-    return ((payload as { observerActorIds: string[] }).observerActorIds).includes(viewpointActorId);
-  }
-  return event.locationId !== undefined && event.locationId === viewpointLocationId;
-}
-
 export interface CompileGate3CutInput {
   branchVersion: number;
   engagement: Engagement;
@@ -187,6 +165,13 @@ export interface CompileGate3CutInput {
   fromStorySecond: number;
   throughStorySecond: number;
   space: SpaceProjection;
+  /**
+   * The viewpoint's E4.1 observations across the turn interval — the §20
+   * perception engine's verdict on what this viewpoint perceived. An event
+   * enters the cut only through an observation of it; the compiler re-decides
+   * nothing about witnessing.
+   */
+  viewpointObservations: readonly Observation[];
   /** The VIEWPOINT's own unresolved pressures only — privacy by omission. */
   viewpointPressures: readonly TemporalPressure[];
   proposedArmedEffects: readonly ProposedArmedEffect[];
@@ -205,7 +190,11 @@ export function compileGate3Cut(input: CompileGate3CutInput): Gate3NarrativeCut 
   const viewpointLocus = input.space.loci.find((locus) => locus.actorId === input.viewpointActorId);
   if (!viewpointLocus) throw new Error(`Viewpoint ${input.viewpointActorId} has no physical locus`);
   const viewpointZoneId = viewpointLocus.kind === "at" ? viewpointLocus.zoneId : undefined;
-  const viewpointLocationId = viewpointLocus.kind === "at" ? viewpointLocus.locationId : undefined;
+  const observedEventIds = new Set(
+    input.viewpointObservations
+      .filter((observation) => observation.witnessActorId === input.viewpointActorId)
+      .map((observation) => observation.sourceEventId),
+  );
 
   const currentLoci = input.space.loci
     .filter(
@@ -222,7 +211,7 @@ export function compileGate3Cut(input: CompileGate3CutInput): Gate3NarrativeCut 
 
   const mustEnact = input.events
     .filter((event) => event.sequence > input.fromSequence && event.sequence <= input.throughSequence)
-    .filter((event) => viewpointWitnesses(event, input.viewpointActorId, viewpointLocationId))
+    .filter((event) => observedEventIds.has(event.id))
     .flatMap((event) => {
       const summary = beatSummary(event);
       return summary === null

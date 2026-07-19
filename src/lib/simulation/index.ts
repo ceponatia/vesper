@@ -4,5 +4,6 @@ export * from "./commitments";
 export * from "./engagements";
 export * from "./item-transfer";
 export * from "./narrative";
+export * from "./perception";
 export * from "./replay";
 export * from "./space";

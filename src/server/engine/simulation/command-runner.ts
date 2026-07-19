@@ -7,6 +7,7 @@ import type {
 import type { PrincipalKind } from "@/contracts/simulation/envelopes";
 import { branchVersionSchema } from "@/contracts/simulation/identity";
 import { db, simBranches, simCommands, simEvents, simWorlds, type Db } from "@/server/db";
+import { recordCommandObservations } from "./observation-store";
 import type { SimTx } from "./trigger-projector";
 
 /**
@@ -140,6 +141,12 @@ export async function runSimulationCommand<
         },
         command,
       );
+    }
+
+    // E4.1: perception commits atomically with truth — derive who perceived
+    // this command's events against the post-command locus rows (§20).
+    if (commandResult.status === "accepted") {
+      await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
     }
 
     await tx.insert(simCommands).values({
