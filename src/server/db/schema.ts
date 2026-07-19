@@ -23,6 +23,7 @@ import type {
   SimulationSnapshot,
 } from "@/contracts/simulation/branching";
 import type { ActivityClaim, SimulationActionDefinition } from "@/contracts/simulation/activities";
+import type { BodyModifierOperation } from "@/contracts/simulation/bodies";
 import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
 import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
@@ -1753,6 +1754,8 @@ export const simTriggers = pgTable(
         "activity_completion_due",
         "commitment_notice_due",
         "commitment_deadline_due",
+        "body_threshold_due",
+        "body_condition_expiry_due",
       ],
     }).notNull(),
     schemaVersion: integer("schema_version").notNull(),
@@ -2541,5 +2544,113 @@ export const simJourneys = pgTable(
       sql`${t.expectedArrivalAt} >= ${t.earliestArrivalAt}`,
     ),
     check("sim_journeys_link_index_nonnegative", sql`${t.currentLinkIndex} >= 0`),
+  ],
+);
+
+/**
+ * E5.1 body meters (engine.spec §25.2). One row per actor × meter; the value
+ * is fixed-point (10 000 ≡ 1.0) and `last_integrated_at` is the last MATERIAL
+ * write — queries integrate analytically from here and never persist, which
+ * is what makes partition invariance structural.
+ */
+export const simBodyMeters = pgTable(
+  "sim_body_meters",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    actorId: text("actor_id").notNull(),
+    meterKey: text("meter_key").notNull(),
+    valueFixedPoint: integer("value_fixed_point").notNull(),
+    baselineFixedPoint: integer("baseline_fixed_point").notNull(),
+    lastIntegratedAt: bigint("last_integrated_at", { mode: "number" }).notNull(),
+    registryVersion: text("registry_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_body_meters_branch_actor_meter_pk", columns: [t.branchId, t.actorId, t.meterKey] }),
+    check(
+      "sim_body_meters_value_fixed_point_range",
+      sql`${t.valueFixedPoint} >= 0 AND ${t.valueFixedPoint} <= 10000`,
+    ),
+    check(
+      "sim_body_meters_baseline_fixed_point_range",
+      sql`${t.baselineFixedPoint} >= 0 AND ${t.baselineFixedPoint} <= 10000`,
+    ),
+    check(
+      "sim_body_meters_last_integrated_safe",
+      sql`${t.lastIntegratedAt} >= 0 AND ${t.lastIntegratedAt} <= 9007199254740991`,
+    ),
+  ],
+);
+
+/** E5.1 body conditions (engine.spec §25.1): categorical, sourced, self-expiring. */
+export const simBodyConditions = pgTable(
+  "sim_body_conditions",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    conditionId: text("condition_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    key: text("key", {
+      enum: ["asleep", "collapsed", "afterglow", "groggy", "wired", "ill"],
+    }).notNull(),
+    onsetAt: bigint("onset_at", { mode: "number" }).notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }),
+    status: text("status", { enum: ["active", "ended"] }).notNull(),
+    endBasis: text("end_basis", { enum: ["expired", "cleared"] }),
+    sourceEventId: text("source_event_id").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_body_conditions_branch_condition_pk", columns: [t.branchId, t.conditionId] }),
+    index("sim_body_conditions_branch_actor_status_idx").on(t.branchId, t.actorId, t.status),
+    check(
+      "sim_body_conditions_end_basis_matches_status",
+      sql`(${t.status} = 'ended') = (${t.endBasis} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * E5.1 body modifiers — the one §25.3 contract. Validity boundaries are
+ * integration boundaries; expiry needs no trigger because the piecewise
+ * solver already sees `valid_until`.
+ */
+export const simBodyModifiers = pgTable(
+  "sim_body_modifiers",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    modifierId: text("modifier_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    meterKey: text("meter_key").notNull(),
+    operation: jsonb("operation").$type<BodyModifierOperation>().notNull(),
+    stackingGroup: text("stacking_group").notNull(),
+    priority: integer("priority").notNull().default(0),
+    validFrom: bigint("valid_from", { mode: "number" }).notNull(),
+    validUntil: bigint("valid_until", { mode: "number" }),
+    visibility: text("visibility", { enum: ["obvious", "private"] }).notNull(),
+    conditionId: text("condition_id"),
+    sourceEventId: text("source_event_id").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_body_modifiers_branch_modifier_pk", columns: [t.branchId, t.modifierId] }),
+    foreignKey({
+      name: "sim_body_modifiers_branch_condition_fk",
+      columns: [t.branchId, t.conditionId],
+      foreignColumns: [simBodyConditions.branchId, simBodyConditions.conditionId],
+    }).onDelete("cascade"),
+    index("sim_body_modifiers_branch_actor_meter_idx").on(t.branchId, t.actorId, t.meterKey),
+    check(
+      "sim_body_modifiers_validity_order",
+      sql`${t.validUntil} IS NULL OR ${t.validUntil} > ${t.validFrom}`,
+    ),
   ],
 );

@@ -1,5 +1,6 @@
 import {
   isAccessEvent,
+  isBodyEvent,
   isSoftCanonEvent,
   isActivityEvent,
   isCommitmentEvent,
@@ -179,6 +180,17 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
           `activity_completion_due:${event.payload.command.payload.activityInstanceId}`,
           entry,
         );
+      } else if (event.payload.kind === "body_threshold_due") {
+        // Re-arms overwrite: the newest alarm for a meter is the live one.
+        retirementIndex.set(
+          `body_threshold_due:${event.payload.command.payload.actorId}:${event.payload.command.payload.meterKey}`,
+          entry,
+        );
+      } else if (event.payload.kind === "body_condition_expiry_due") {
+        retirementIndex.set(
+          `body_condition_expiry_due:${event.payload.command.payload.conditionId}`,
+          entry,
+        );
       }
       projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
     } else if (
@@ -189,6 +201,7 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       isAccessEvent(event) ||
       isKnowledgeEvent(event) ||
       isSoftCanonEvent(event) ||
+      isBodyEvent(event) ||
       event.type === "speech_act_delivered"
     ) {
       // Movement and activity events belong to their own projections
@@ -201,6 +214,23 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
         retire(`activity_completion_due:${event.payload.activityInstanceId}`, event.commandId);
       } else if (event.type === "journey_abandoned") {
         retire(`journey_arrival_due:${event.payload.journeyId}`, event.commandId);
+      } else if (
+        event.type === "body_source_applied" ||
+        event.type === "body_modifier_applied" ||
+        event.type === "body_threshold_crossed"
+      ) {
+        // Any material change to a meter's trajectory retires its pending
+        // alarm; the same command's re-arm (if any) follows as a fresh
+        // trigger_scheduled with a sequence-versioned uniqueness key.
+        retire(`body_threshold_due:${event.payload.actorId}:${event.payload.meterKey}`, event.commandId);
+      } else if (event.type === "body_condition_ended") {
+        // A condition application never retires (its owned modifiers ride
+        // their own body_modifier_applied events); its ending retires the
+        // expiry alarm and each owned modifier's meter alarm.
+        retire(`body_condition_expiry_due:${event.payload.conditionId}`, event.commandId);
+        for (const retired of event.payload.retiredModifiers) {
+          retire(`body_threshold_due:${event.payload.actorId}:${retired.meterKey}`, event.commandId);
+        }
       }
       projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
     } else {

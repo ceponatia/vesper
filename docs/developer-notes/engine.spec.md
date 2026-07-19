@@ -1801,10 +1801,11 @@ should not acquire scheduler, body, economy, or autonomous-agent scope.
 ## 39. Product rulings
 
 Rulings 1–11 and 13 were **resolved by the owner on 2026-07-17** (the Gate 3 unblock
-pass); ruling 14 was **resolved on 2026-07-18** (the Gate 4 unblock pass). Each resolved
-decision is normative and MUST be stored in a versioned world-type rule or explicit
-product contract, not only in a prompt. Ruling 12 remains **open** and is deferred to
-the work that needs it.
+pass); ruling 14 was **resolved on 2026-07-18** (the Gate 4 unblock pass); rulings 15–16
+were **resolved on 2026-07-19** (the Gate 5 opening pass). Each resolved decision is
+normative and MUST be stored in a versioned world-type rule or explicit product
+contract, not only in a prompt. Ruling 12 remains **open** and is deferred to the work
+that needs it.
 
 1. **Ordinary dialogue duration** — RESOLVED: a fixed per-exchange story-time span (the
    current-lane ~1-minute default), versioned by world type. Explicit actions (travel,
@@ -1865,6 +1866,30 @@ the work that needs it.
     plus their tuning rationale MUST be documented so the mechanism can be retuned after
     it is built. A world type MAY disable auto-promotion entirely, falling back to
     explicit storyteller promotion.
+15. **Gate 5 v1 body-meter scope** — RESOLVED (2026-07-19): **full chat parity.** The
+    G5.1 substrate instantiates the entire chat meter economy in the engine v1, not a
+    minimal proof set: energy as a stored 0–1 reserve with proportional (half-life)
+    decay and linear sleep restore, read as the bidirectional axis
+    `clamp(−1, +1, reserve − circadian pressure)` with both poles saturating (pressure
+    derived purely from the story clock against the actor's own sleep rhythm — never
+    stored); arousal regraded to body facts (graded physiological vocabulary, perception-
+    gated signs, disinhibition scoped to intimate inhibition only); the intimacy pulse
+    read with climax reset + afterglow (afterglow as a self-expiring condition); hygiene
+    as clock-keyed drain against the actor's rhythm with window-crossing self-care and no
+    blanket restore (§25.5). The normative semantics source for these ported meters is
+    `chat-meter-economy.spec.md` (rulings OQ1–OQ3 and the meter taxonomy); the engine
+    substrate expresses them in fixed-point units under §25's substrate/read law, and
+    meter membership stays registry data (satiation/hydration/desire/bladder land as
+    data edits, not schema changes).
+16. **Interpersonal consent mechanics** — RESOLVED (2026-07-19): **ledger-gated with a
+    policy escalation path.** Stated boundaries and granted permissions are typed
+    relationship-ledger entries (§21.3); intimate-action preconditions check the ledger
+    **fail-closed** — no covering entry means no permission, and a malformed entry admits
+    nothing. An escalation attempt with no covering entry routes to the NPC-policy /
+    §19.3 deliberator seam (bounded legal candidates, deterministic fallback = decline),
+    and its accept or decline lands back in the ledger as a causal entry — so consent is
+    always explainable, revocable by a later entry, and never grantable by any spatial
+    outcome (ruling 3) or narrator prose.
 
 ## 40. Initial conformance checklist
 

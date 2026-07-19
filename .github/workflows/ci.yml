@@ -95,6 +95,9 @@ jobs:
       - name: E4.5 Gate 4 exit corpus
         run: pnpm test:engine-e4-5
 
+      - name: E5.1 body substrate integration
+        run: pnpm test:engine-e5-1
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

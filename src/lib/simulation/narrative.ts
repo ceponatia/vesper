@@ -192,6 +192,19 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       return { kind: "allowed", summary: "Something meaningful already said may be referenced." };
     case "disclosure_made":
       return { kind: "allowed", summary: "Something already shared in confidence may be referenced." };
+    case "body_source_applied":
+      // Interoception (E5.1): only the subject holds this observation, so the
+      // license reaches no other viewpoint's cut.
+      return { kind: "allowed", summary: "A bodily change was felt and may be described." };
+    case "body_condition_applied":
+      return { kind: "allowed", summary: "A condition visibly came over someone here." };
+    case "body_condition_ended":
+      return { kind: "allowed", summary: "A bodily state visibly passed." };
+    case "body_threshold_crossed":
+      // Allowed, not hard: a witnessed limit may be portrayed, but a quiet
+      // crossing (hygiene sliding a band) must never force a mention. E5.2's
+      // collapse work revisits whether a witnessed collapse becomes hard.
+      return { kind: "allowed", summary: "A body visibly reached a limit and may be portrayed." };
     case "trigger_scheduled":
     case "journey_planned":
     case "commitment_created":
@@ -202,6 +215,8 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "soft_canon_recorded":
     case "soft_canon_promoted":
     case "soft_canon_demoted":
+    case "body_initialized":
+    case "body_modifier_applied":
       return null;
   }
 }

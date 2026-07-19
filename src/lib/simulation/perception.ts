@@ -226,11 +226,16 @@ export function deriveEventObservations(
     case "soft_canon_recorded":
     case "soft_canon_promoted":
     case "soft_canon_demoted":
+    case "body_initialized":
+    case "body_modifier_applied":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
       // Soft-canon records are presentation-lane audit entries (§23.4) —
-      // nothing in the world happened for anyone to witness.
+      // nothing in the world happened for anyone to witness. Body setup and
+      // modifier bookkeeping (E5.1) likewise derive nothing: the material
+      // cause of a modifier (a drink, an illness onset) is witnessed through
+      // its own causal event, never through the rate arithmetic it installs.
       return [];
     case "journey_planned":
     case "journey_delayed":
@@ -313,6 +318,23 @@ export function deriveEventObservations(
       if (event.locationId !== undefined) {
         gradeLocationBystanders(collector, space, event.locationId, SOUND_MUFFLED);
       }
+      break;
+    }
+    case "body_source_applied":
+    case "body_condition_ended":
+      // Interoception (E5.1): only the subject feels a meter move or a state
+      // pass. The physical act that caused it (a meal, a shower) is witnessed
+      // through its own activity events; E5.2's perception-gated reads are
+      // how bystanders see a body's visible signs.
+      collector.add(event.payload.actorId, DIRECT_EMBODIED);
+      break;
+    case "body_condition_applied":
+    case "body_threshold_crossed": {
+      // The subject feels it; a noticeable outcome captured co-located
+      // witnesses at commit (trusted as-is, like activity captures — a
+      // private threshold stays private).
+      collector.add(event.payload.actorId, DIRECT_EMBODIED);
+      for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
       break;
     }
     case "speech_act_delivered": {

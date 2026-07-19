@@ -6,6 +6,7 @@ export * from "./scheduler";
 export * from "./branching";
 export * from "./space";
 export * from "./activities";
+export * from "./bodies";
 export * from "./commitments";
 export * from "./engagements";
 export * from "./access";

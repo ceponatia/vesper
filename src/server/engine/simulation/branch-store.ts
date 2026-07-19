@@ -24,6 +24,7 @@ import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
 import {
   isAccessEvent,
   isActivityEvent,
+  isBodyEvent,
   isCommitmentEvent,
   isEngagementEvent,
   isMovementEvent,
@@ -31,10 +32,12 @@ import {
 import {
   composeAncestryEventBounds,
   emptyActivitiesSeed,
+  emptyBodiesSeed,
   emptyCommitmentsSeed,
   emptyEngagementsSeed,
   itemHoldingsAtSequence,
   replayActivitiesHistory,
+  replayBodiesHistory,
   replayBranchHistory,
   replayCommitmentsHistory,
   replayEngagementsHistory,
@@ -51,6 +54,9 @@ import {
   db,
   simActionDefinitions,
   simActivities,
+  simBodyConditions,
+  simBodyMeters,
+  simBodyModifiers,
   simBranches,
   simCharacters,
   simCommitments,
@@ -67,6 +73,7 @@ import {
   type Db,
 } from "@/server/db";
 import { activityRowInsert } from "./activity-store";
+import { bodyConditionRowInsert, bodyMeterRowInsert, bodyModifierRowInsert } from "./body-store";
 import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";
 import { insertReplayedKnowledge } from "./knowledge-recorder";
@@ -622,6 +629,39 @@ export async function forkBranch(
       await tx.insert(simEngagements).values(
         childEngagements.engagements.map((engagement) =>
           engagementRowInsert(input.childBranchId, engagement, engagementSequenceById.get(engagement.id) ?? 0),
+        ),
+      );
+    }
+
+    // E5.1 bodies: fully evented — replay from the empty seed. Meter values
+    // re-land on their last MATERIAL write; pending threshold and expiry
+    // alarms re-arm or complete through the shared trigger ledger above.
+    const childBodies = replayBodiesHistory({
+      seed: emptyBodiesSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const bodySequenceByActor = new Map<string, number>();
+    for (const event of inherited) {
+      if (isBodyEvent(event)) bodySequenceByActor.set(event.payload.actorId, event.sequence);
+    }
+    if (childBodies.meters.length > 0) {
+      await tx.insert(simBodyMeters).values(
+        childBodies.meters.map((meter) =>
+          bodyMeterRowInsert(input.childBranchId, meter, bodySequenceByActor.get(meter.actorId) ?? 0),
+        ),
+      );
+    }
+    if (childBodies.conditions.length > 0) {
+      await tx.insert(simBodyConditions).values(
+        childBodies.conditions.map((condition) =>
+          bodyConditionRowInsert(input.childBranchId, condition, bodySequenceByActor.get(condition.actorId) ?? 0),
+        ),
+      );
+    }
+    if (childBodies.modifiers.length > 0) {
+      await tx.insert(simBodyModifiers).values(
+        childBodies.modifiers.map((modifier) =>
+          bodyModifierRowInsert(input.childBranchId, modifier, bodySequenceByActor.get(modifier.actorId) ?? 0),
         ),
       );
     }

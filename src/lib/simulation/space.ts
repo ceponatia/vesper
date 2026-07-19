@@ -768,6 +768,12 @@ export function applySpaceEvent(
     case "soft_canon_recorded":
     case "soft_canon_promoted":
     case "soft_canon_demoted":
+    case "body_initialized":
+    case "body_source_applied":
+    case "body_modifier_applied":
+    case "body_condition_applied":
+    case "body_condition_ended":
+    case "body_threshold_crossed":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }
