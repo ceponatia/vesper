@@ -42,8 +42,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   // The conversation page renders its own header (back link, portrait, menu) — on
   // phones the global header just stacks another ~52px of chrome on top of it
   // (mobile-ux.plan.md W1). Desktop keeps the wordmark/account menu at every width,
-  // since there's room and the account menu has no other home.
-  const isChatConversation = /^\/chat\/[^/]+/.test(pathname);
+  // since there's room and the account menu has no other home. Anchored ($) to the
+  // conversation route alone: nested pages like /chat/:id/inspector render a normal
+  // PageContainer and must keep the global chrome.
+  const isChatConversation = /^\/chat\/[^/]+$/.test(pathname);
 
   // The sign-in page stands alone — no nav chrome (you're not "in" the app yet).
   if (pathname === "/sign-in") return <>{children}</>;
