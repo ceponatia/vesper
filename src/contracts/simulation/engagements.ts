@@ -182,6 +182,7 @@ export const engagementEndedEventSchema = createEventEnvelopeSchema(
 
 export const engagementInterruptReasons = [
   "participant_departed",
+  "participant_collapsed",
   "pressure",
   "hazard",
 ] as const;

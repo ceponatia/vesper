@@ -7,6 +7,7 @@ import {
 import { newId } from "@/lib/ids";
 import {
   db,
+  simActivities,
   simBodyConditions,
   simBodyMeters,
   simBodyModifiers,
@@ -24,6 +25,11 @@ import {
   submitDurableApplyBodySource,
   submitDurableInitializeActorBody,
 } from "./body-store";
+import {
+  seedDurableActionDefinitions,
+  submitDurableResumeActivity,
+  submitDurableStartActivity,
+} from "./activity-store";
 import { forkBranch } from "./branch-store";
 import { seedDurableItemTransferBranch } from "./item-transfer-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
@@ -159,7 +165,7 @@ async function pendingBodyTriggers(branchId: string) {
     .where(
       and(
         eq(simTriggers.branchId, branchId),
-        inArray(simTriggers.kind, ["body_threshold_due", "body_condition_expiry_due"]),
+        inArray(simTriggers.kind, ["body_threshold_due", "body_condition_expiry_due", "body_collapse_due"]),
       ),
     )
     .orderBy(asc(simTriggers.dueStorySecond));
@@ -463,6 +469,142 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     });
     expect(selfView.self?.intimacyPhase).toBe("afterglow");
     expect(selfView.self?.energyBand).toBe("bright");
+  });
+
+  it("runs the collapse arc: wake arms it, the drain fires it, interruption, and resume", async () => {
+    const ids = await seedBodyCase();
+    await seedRhythms(ids);
+    await seedDurableActionDefinitions({
+      branchId: ids.branchId,
+      definitions: [
+        {
+          id: `${ids.branchId}-action-vigil`,
+          version: 1,
+          controllerKinds: ["player"],
+          duration: { kind: "fixed", seconds: 200_000 },
+          preconditions: [{ kind: "at_zone_kind", zoneKind: "room" }],
+          requiredClaims: [{ kind: "body" }, { kind: "attention", weight: "full" }],
+          interruptibility: "pausable",
+          noticeability: "obvious",
+        },
+      ],
+    });
+    await submitDurableInitializeActorBody(initializeCommand(ids));
+
+    // A short nap creates REAL sleep history — the wake is what arms the
+    // collapse alarm (assumed-rhythm actors never escalate, never collapse).
+    await submitDurableApplyBodyCondition({
+      id: `cmd-nap-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 1,
+      idempotencyKey: `nap-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:05:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "apply_body_condition",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.actorId,
+        conditionKey: "asleep",
+        durationSeconds: 5_400,
+        modifiers: [],
+        observerActorIds: [],
+      },
+    });
+    const wakeAt = SEED_SECOND + 5_400;
+    await advanceBranchStoryTime(ids.branchId, wakeAt, { workerId: "w-arc-wake" });
+    const collapseAlarm = (await pendingBodyTriggers(ids.branchId)).find(
+      (trigger) => trigger.kind === "body_collapse_due" && trigger.state === "pending",
+    );
+    expect(collapseAlarm).toBeDefined();
+    if (!collapseAlarm) throw new Error("collapse alarm missing");
+    expect(collapseAlarm.dueStorySecond).toBeGreaterThan(wakeAt + 24 * 3_600);
+    expect(collapseAlarm.dueStorySecond).toBeLessThan(wakeAt + 48 * 3_600);
+
+    // She starts an open-ended vigil and never goes to bed.
+    const start = await submitDurableStartActivity({
+      id: `cmd-vigil-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 3,
+      idempotencyKey: `vigil-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:06:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "start_activity",
+      schemaVersion: 1,
+      payload: { actionDefinitionId: `${ids.branchId}-action-vigil`, actorId: ids.actorId },
+    });
+    expect(start.status).toBe("accepted");
+
+    // The drain reaches the alarm: the body gives out mid-vigil.
+    const outcome = await advanceBranchStoryTime(ids.branchId, collapseAlarm.dueStorySecond, {
+      workerId: "w-arc-collapse",
+    });
+    expect(outcome.status).toBe("advanced");
+    const [collapsedRow] = await db()
+      .select({ payload: simEvents.payload })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "body_collapsed")));
+    expect(collapsedRow?.payload).toMatchObject({ observerActorIds: [ids.witnessId] });
+
+    const afterCollapse = await readDurableBodies(ids.branchId);
+    const forcedSleep = afterCollapse.conditions.find(
+      (condition) => condition.status === "active" && condition.key === "asleep",
+    );
+    expect(forcedSleep?.expiresAtStorySecond).toBe(collapseAlarm.dueStorySecond + 28_800);
+
+    const [activityRow] = await db()
+      .select()
+      .from(simActivities)
+      .where(eq(simActivities.branchId, ids.branchId));
+    expect(activityRow?.phase).toBe("interrupted");
+    expect(activityRow?.progressFixedPoint).toBeGreaterThan(0);
+    expect(activityRow?.progressFixedPoint).toBeLessThan(1_000_000);
+    const completionAlarms = await db()
+      .select({ state: simTriggers.state })
+      .from(simTriggers)
+      .where(and(eq(simTriggers.branchId, ids.branchId), eq(simTriggers.kind, "activity_completion_due")));
+    expect(completionAlarms.every((alarm) => alarm.state === "completed")).toBe(true);
+
+    // Sleep runs its course; the wake re-arms the next collapse far out.
+    const wake2 = collapseAlarm.dueStorySecond + 28_800;
+    await advanceBranchStoryTime(ids.branchId, wake2, { workerId: "w-arc-wake2" });
+    const rearmed = (await pendingBodyTriggers(ids.branchId)).find(
+      (trigger) => trigger.kind === "body_collapse_due" && trigger.state === "pending",
+    );
+    expect(rearmed?.dueStorySecond).toBeGreaterThan(wake2 + 24 * 3_600);
+
+    // The E3.4 note lands: resume re-arms completion under a versioned key
+    // and the activity finishes through the ordinary drain.
+    const resume = await submitDurableResumeActivity({
+      id: `cmd-resume-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 6,
+      idempotencyKey: `resume-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:07:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "resume_activity",
+      schemaVersion: 1,
+      payload: { activityInstanceId: activityRow?.activityInstanceId ?? "" },
+    });
+    expect(resume.status).toBe("accepted");
+    const [resumedRow] = await db()
+      .select()
+      .from(simActivities)
+      .where(eq(simActivities.branchId, ids.branchId));
+    expect(resumedRow?.phase).toBe("active");
+    expect(resumedRow?.expectedCompleteAt).toBeGreaterThan(wake2);
+    if (!resumedRow?.expectedCompleteAt) throw new Error("resumed activity missing due");
+    const final = await advanceBranchStoryTime(ids.branchId, resumedRow.expectedCompleteAt, {
+      workerId: "w-arc-complete",
+    });
+    expect(final.status).toBe("advanced");
+    const [completedRow] = await db()
+      .select({ phase: simActivities.phase })
+      .from(simActivities)
+      .where(eq(simActivities.branchId, ids.branchId));
+    expect(completedRow?.phase).toBe("completed");
   });
 
   it("forks with bit-identical body rows and re-armed alarms on the child", async () => {

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { activityInstanceSchema } from "@/contracts/simulation/activities";
+import { engagementSchema } from "@/contracts/simulation/engagements";
 import type { TriggerScheduledEvent } from "@/contracts/simulation/scheduler";
 import {
   applyBodyConditionCommandSchema,
@@ -10,6 +12,7 @@ import {
   bodyMeterRegistryV1,
   endBodyConditionCommandSchema,
   initializeActorBodyCommandSchema,
+  resolveBodyCollapseCommandSchema,
   resolveBodyThresholdCommandSchema,
   type BodyMeterDefinition,
   type BodyMeterState,
@@ -24,6 +27,7 @@ import {
   resolveApplyBodyCondition,
   resolveApplyBodyModifier,
   resolveApplyBodySource,
+  resolveBodyCollapse,
   resolveBodyThreshold,
   resolveEndBodyCondition,
   resolveInitializeActorBody,
@@ -727,6 +731,135 @@ describe("E5.2 climax and exertion couplings (§25.4)", () => {
   });
 });
 
+describe("E5.2 slice 2b — collapse resolves into forced sleep and interruption", () => {
+  const registryEnergy = ((): BodyMeterDefinition => {
+    const definition = bodyMeterRegistryV1.find((candidate) => candidate.key === "energy");
+    if (!definition) throw new Error("registry energy missing");
+    return definition;
+  })();
+
+  function collapseView(overrides: Record<string, unknown> = {}) {
+    return {
+      ...meta,
+      storySecond: 187_200,
+      meter: meterState(registryEnergy, {
+        valueFixedPoint: 800,
+        lastIntegratedAtStorySecond: 187_200,
+      }),
+      definition: registryEnergy,
+      modifiers: [],
+      collapseContext: {
+        rhythmRows: [],
+        lastSleepEndedAtStorySecond: 187_200 - 40 * 3_600,
+      },
+      activeAsleep: false,
+      interruptibleActivities: [],
+      openEngagements: [],
+      coLocatedActorIds: ["actor-witness"],
+      ...overrides,
+    };
+  }
+
+  function collapseCommand() {
+    return parseCollapse(
+      envelope(
+        "resolve_body_collapse",
+        { actorId: ACTOR, armedAtSequence: 5 },
+        { principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] } },
+      ),
+    );
+  }
+
+  it("emits the collapse, interrupts held work, and forces the denied sleep", () => {
+    const activity = activityInstanceSchema.parse({
+      id: "activity-cooking",
+      actionDefinitionId: "action-cook",
+      actionVersion: 1,
+      actorIds: [ACTOR],
+      zoneId: "zone-kitchen",
+      phase: "active",
+      startedAt: 187_200 - 600,
+      expectedCompleteAt: 187_200 + 600,
+      progressFixedPoint: 0,
+      claims: [{ kind: "body" }],
+      sourceCommandId: "cmd-cook",
+    });
+    const engagement = engagementSchema.parse({
+      id: "engagement-chat",
+      participantIds: [ACTOR, "actor-witness"],
+      channel: "co_present",
+      locationId: "loc-home",
+      zoneId: "zone-kitchen",
+      state: "active",
+      openedAt: 186_000,
+      attentionClaim: { kind: "attention", weight: "full" },
+      sourceCommandId: "cmd-chat",
+    });
+    const resolution = resolveBodyCollapse(
+      collapseView({ interruptibleActivities: [activity], openEngagements: [engagement] }),
+      collapseCommand(),
+    );
+    if (!resolution.ok) throw new Error(`unexpected rejection ${resolution.code}`);
+    expect(resolution.events.map((event) => event.type)).toEqual([
+      "body_collapsed",
+      "activity_interrupted",
+      "engagement_interrupted",
+      "body_condition_applied",
+      "body_modifier_applied",
+      "trigger_scheduled",
+    ]);
+    const [collapsed, interrupted, sceneBreak, conditionEvent] = resolution.events;
+    expect(collapsed?.type === "body_collapsed" && collapsed.payload.observerActorIds).toEqual([
+      "actor-witness",
+    ]);
+    expect(
+      interrupted?.type === "activity_interrupted" && interrupted.payload,
+    ).toMatchObject({ reason: "collapse", progressFixedPoint: 500_000 });
+    expect(sceneBreak?.type === "engagement_interrupted" && sceneBreak.payload).toMatchObject({
+      reason: "participant_collapsed",
+    });
+    expect(
+      conditionEvent?.type === "body_condition_applied" && conditionEvent.payload,
+    ).toMatchObject({ conditionKey: "asleep", expiresAtStorySecond: 187_200 + 28_800 });
+    expect(resolution.condition.key).toBe("asleep");
+    expect(resolution.modifiers[0]?.operation).toEqual({ kind: "suspend" });
+    expect(resolution.interruptedActivityIds).toEqual(["activity-cooking"]);
+    expect(resolution.interruptedEngagementIds).toEqual(["engagement-chat"]);
+
+    // Replay parity over the body slice of the stream.
+    const folded = resolution.events
+      .filter((event) => event.type !== "trigger_scheduled")
+      .reduce(
+        (projection, event) => applyBodyEvent(projection, event),
+        sortBodiesProjection({
+          ...emptyBodiesSeed(BRANCH, meta.storySecond),
+          meters: [meterState(registryEnergy, { valueFixedPoint: 800, lastIntegratedAtStorySecond: 187_200 })],
+          headSequence: meta.headSequence,
+        }),
+      );
+    expect(folded.meters[0]?.valueFixedPoint).toBe(resolution.meter.valueFixedPoint);
+    expect(folded.conditions[0]?.key).toBe("asleep");
+    expect(folded.modifiers[0]?.operation).toEqual({ kind: "suspend" });
+  });
+
+  it("rejects stale collapses: already asleep, or the trajectory recovered", () => {
+    const asleep = resolveBodyCollapse(collapseView({ activeAsleep: true }), collapseCommand());
+    expect(asleep.ok).toBe(false);
+    if (!asleep.ok) expect(asleep.code).toBe("collapse_stale");
+    const recovered = resolveBodyCollapse(
+      collapseView({
+        meter: meterState(registryEnergy, {
+          valueFixedPoint: 9_000,
+          lastIntegratedAtStorySecond: 187_200,
+        }),
+      }),
+      collapseCommand(),
+    );
+    expect(recovered.ok).toBe(false);
+    if (!recovered.ok) expect(recovered.code).toBe("collapse_stale");
+  });
+});
+
 // --- Command parsing helpers (the stores parse at their trust boundary) ------
 
 function parseInitialize(raw: unknown) {
@@ -746,4 +879,7 @@ function parseEnd(raw: unknown) {
 }
 function parseThreshold(raw: unknown) {
   return resolveBodyThresholdCommandSchema.parse(raw);
+}
+function parseCollapse(raw: unknown) {
+  return resolveBodyCollapseCommandSchema.parse(raw);
 }

@@ -10,6 +10,8 @@ import {
   type CancelActivityCommandResult,
   type CompleteActivityCommand,
   type CompleteActivityCommandResult,
+  type ResumeActivityCommand,
+  type ResumeActivityCommandResult,
   type StartActivityCommand,
   type StartActivityCommandResult,
 } from "./activities";
@@ -37,6 +39,7 @@ import {
   type OpenEngagementCommandResult,
 } from "./engagements";
 import {
+  bodyCollapsedEventSchema,
   bodyConditionAppliedEventSchema,
   bodyConditionEndedEventSchema,
   bodyInitializedEventSchema,
@@ -53,6 +56,8 @@ import {
   type EndBodyConditionCommandResult,
   type InitializeActorBodyCommand,
   type InitializeActorBodyCommandResult,
+  type ResolveBodyCollapseCommand,
+  type ResolveBodyCollapseCommandResult,
   type ResolveBodyThresholdCommand,
   type ResolveBodyThresholdCommandResult,
 } from "./bodies";
@@ -165,6 +170,7 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   bodyConditionAppliedEventSchema,
   bodyConditionEndedEventSchema,
   bodyThresholdCrossedEventSchema,
+  bodyCollapsedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -266,6 +272,7 @@ const bodyEventTypeList = [
   "body_condition_applied",
   "body_condition_ended",
   "body_threshold_crossed",
+  "body_collapsed",
 ] as const;
 export type BodyEventType = (typeof bodyEventTypeList)[number];
 export type SimulationBodyEvent = Extract<SimulationBranchEvent, { type: BodyEventType }>;
@@ -309,7 +316,9 @@ export type SimulationCommandEnvelope =
   | ApplyBodyModifierCommand
   | ApplyBodyConditionCommand
   | EndBodyConditionCommand
-  | ResolveBodyThresholdCommand;
+  | ResolveBodyThresholdCommand
+  | ResolveBodyCollapseCommand
+  | ResumeActivityCommand;
 export type SimulationCommandResultRecord =
   | ItemTransferCommandResult
   | ScheduleTriggerCommandResult
@@ -333,7 +342,9 @@ export type SimulationCommandResultRecord =
   | ApplyBodyModifierCommandResult
   | ApplyBodyConditionCommandResult
   | EndBodyConditionCommandResult
-  | ResolveBodyThresholdCommandResult;
+  | ResolveBodyThresholdCommandResult
+  | ResolveBodyCollapseCommandResult
+  | ResumeActivityCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

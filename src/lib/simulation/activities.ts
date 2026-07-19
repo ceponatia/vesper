@@ -15,8 +15,12 @@ import {
   type ActivityInstance,
   type ActivityPhase,
   type ActivityStartedEvent,
+  activityResumedEventSchema,
+  type ActivityResumedEvent,
   type CancelActivityCommand,
   type CancelActivityRejectionCode,
+  type ResumeActivityCommand,
+  type ResumeActivityRejectionCode,
   type CompleteActivityCommand,
   type CompleteActivityRejectionCode,
   type StartActivityCommand,
@@ -55,6 +59,20 @@ export function deriveActivityId(branchId: string, commandId: string): string {
 /** The stable per-activity key the completion trigger schedules under. */
 export function activityCompletionUniquenessKey(activityInstanceId: string): string {
   return composeSimulationId("activity-completion", [activityInstanceId]);
+}
+
+/**
+ * E5.2 (the carried E3.4 note): a RESUMED completion re-arms under an
+ * attempt-versioned key, because the original key's row was retired at
+ * interruption and branch-unique keys never resurrect. Length-prefixed parts
+ * keep the un-versioned key a true prefix of every versioned one, so the
+ * cancel/complete retirement sweep catches both with one starts_with.
+ */
+export function activityCompletionResumeUniquenessKey(
+  activityInstanceId: string,
+  armedAtSequence: number,
+): string {
+  return composeSimulationId("activity-completion", [activityInstanceId, String(armedAtSequence)]);
 }
 
 /** Claims an actor currently holds: the claims of every claim-holding activity they are in. */
@@ -420,6 +438,145 @@ export function resolveCancelActivity(
 }
 
 // ---------------------------------------------------------------------------
+// ResumeActivity resolution (E5.2 — the carried E3.4 re-arm design note)
+// ---------------------------------------------------------------------------
+
+export interface ResumeActivityResolutionView extends ActivityBranchMeta {
+  activity?: ActivityInstance;
+  zoneLocationId?: string;
+}
+
+interface ResumeRejection {
+  ok: false;
+  code: ResumeActivityRejectionCode;
+  publicReason: string;
+}
+
+export interface ResumeResolution {
+  ok: true;
+  activity: ActivityInstance;
+  events: [ActivityResumedEvent, TriggerScheduledEvent];
+}
+
+function resumeRejection(code: ResumeActivityRejectionCode, publicReason: string): ResumeRejection {
+  return { ok: false, code, publicReason };
+}
+
+/**
+ * Pick an interrupted activity back up. The claims never released
+ * (interrupted is claim-holding, §16.3), so nothing re-validates them; what
+ * DOES change is the completion alarm — retired at interruption, re-armed
+ * here under an attempt-versioned uniqueness key at now + remaining, with
+ * the window rebased so progress math survives repeated interruptions.
+ */
+export function resolveResumeActivity(
+  view: ResumeActivityResolutionView,
+  command: ResumeActivityCommand,
+): ResumeRejection | ResumeResolution {
+  if (command.branchId !== view.branchId) {
+    return resumeRejection("branch_mismatch", "That world branch is unavailable.");
+  }
+  const activity = view.activity;
+  if (!activity) return resumeRejection("activity_not_found", "That activity is unknown.");
+  if (activity.phase !== "interrupted") {
+    return resumeRejection("activity_not_interrupted", "There is nothing to pick back up.");
+  }
+  const controlsParticipant = activity.actorIds.some((actorId) =>
+    command.principal.controlledActorIds.includes(actorId),
+  );
+  if (
+    command.principal.kind !== "system" &&
+    command.principal.kind !== "storyteller" &&
+    !controlsParticipant
+  ) {
+    return resumeRejection("unauthorized_actor", "You cannot resume that for them.");
+  }
+
+  const resumedAt = view.storySecond;
+  const totalSeconds =
+    activity.startedAt !== undefined && activity.expectedCompleteAt !== undefined
+      ? activity.expectedCompleteAt - activity.startedAt
+      : 0;
+  const remainingSeconds =
+    totalSeconds > 0
+      ? Math.max(
+          1,
+          Math.ceil((totalSeconds * (1_000_000 - activity.progressFixedPoint)) / 1_000_000),
+        )
+      : 1;
+  const newExpectedCompleteAt = resumedAt + remainingSeconds;
+
+  const resumedEvent = activityResumedEventSchema.parse({
+    id: composeSimulationId("event", [view.branchId, command.id, "activity-resumed"]),
+    worldId: view.worldId,
+    branchId: view.branchId,
+    sequence: view.headSequence + 1,
+    storySecond: resumedAt,
+    type: "activity_resumed",
+    schemaVersion: 1,
+    rulesetVersion: view.rulesetVersion,
+    commandId: command.id,
+    correlationId: command.correlationId,
+    actorIds: activity.actorIds,
+    entityIds: sortedUnique([activity.id, activity.zoneId, ...activity.actorIds]),
+    ...(view.zoneLocationId ? { locationId: view.zoneLocationId } : {}),
+    recordedAtWallClock: command.submittedAtWallClock,
+    payload: {
+      activityInstanceId: activity.id,
+      resumedAt,
+      newExpectedCompleteAt,
+    },
+  });
+
+  const uniquenessKey = activityCompletionResumeUniquenessKey(activity.id, resumedEvent.sequence);
+  const templateId = composeSimulationId("template", [uniquenessKey]);
+  const triggerEvent = triggerScheduledEventSchema.parse({
+    id: composeSimulationId("event", [view.branchId, command.id, "completion-trigger"]),
+    worldId: view.worldId,
+    branchId: view.branchId,
+    sequence: view.headSequence + 2,
+    storySecond: resumedAt,
+    type: "trigger_scheduled",
+    schemaVersion: 1,
+    rulesetVersion: view.rulesetVersion,
+    derivationVersion: schedulerDerivationVersion,
+    commandId: command.id,
+    causationId: resumedEvent.id,
+    correlationId: command.correlationId,
+    actorIds: activity.actorIds,
+    entityIds: [activity.id],
+    recordedAtWallClock: command.submittedAtWallClock,
+    payload: {
+      kind: activityCompletionTriggerKind,
+      triggerSchemaVersion: 1,
+      dueStorySecond: newExpectedCompleteAt,
+      priority: 0,
+      uniquenessKey,
+      command: {
+        id: templateId,
+        branchId: view.branchId,
+        expectedVersion: 0,
+        idempotencyKey: templateId,
+        principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
+        submittedAtWallClock: command.submittedAtWallClock,
+        correlationId: command.correlationId,
+        type: "complete_activity",
+        schemaVersion: 1,
+        payload: { activityInstanceId: activity.id },
+      },
+    },
+  });
+
+  const resumed = activityInstanceSchema.parse({
+    ...activity,
+    phase: "active",
+    expectedCompleteAt: newExpectedCompleteAt,
+    ...(totalSeconds > 0 ? { startedAt: newExpectedCompleteAt - totalSeconds } : {}),
+  });
+  return { ok: true, activity: resumed, events: [resumedEvent, triggerEvent] };
+}
+
+// ---------------------------------------------------------------------------
 // Activities projection: projectors and replay
 // ---------------------------------------------------------------------------
 
@@ -507,6 +664,15 @@ export function applyActivityEvent(
             ...activity,
             phase: "active",
             expectedCompleteAt: event.payload.newExpectedCompleteAt,
+            // Rebase the window so the total span is preserved: a second
+            // interruption's progress math sees one consistent [start, end].
+            ...(activity.startedAt !== undefined && activity.expectedCompleteAt !== undefined
+              ? {
+                  startedAt:
+                    event.payload.newExpectedCompleteAt -
+                    (activity.expectedCompleteAt - activity.startedAt),
+                }
+              : {}),
           }),
         ),
       });
@@ -540,6 +706,7 @@ export function applyActivityEvent(
     case "body_condition_applied":
     case "body_condition_ended":
     case "body_threshold_crossed":
+    case "body_collapsed":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

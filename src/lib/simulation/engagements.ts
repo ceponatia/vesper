@@ -13,6 +13,7 @@ import {
   type EndEngagementRejectionCode,
   type Engagement,
   type EngagementEndedEvent,
+  type EngagementInterruptReason,
   type EngagementOpenedEvent,
   type EngagementState,
   type EngagementsProjection,
@@ -299,6 +300,8 @@ export function buildDepartureInterruptEvent(input: {
   engagement: Engagement;
   sequence: number;
   causationId: string;
+  /** Defaults to the departure reason; a collapse names its own (E5.2). */
+  reason?: EngagementInterruptReason;
 }): SimulationBranchEvent {
   return engagementInterruptedEventSchema.parse({
     id: composeSimulationId("event", [input.meta.branchId, input.command.id, `interrupt-${input.engagement.id}`]),
@@ -319,7 +322,7 @@ export function buildDepartureInterruptEvent(input: {
     payload: {
       engagementId: input.engagement.id,
       interruptedAt: input.meta.storySecond,
-      reason: "participant_departed",
+      reason: input.reason ?? "participant_departed",
     },
   });
 }

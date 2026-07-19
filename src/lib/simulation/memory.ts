@@ -94,6 +94,8 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
       return "a bodily state passing";
     case "body_threshold_crossed":
       return "a body reaching a limit";
+    case "body_collapsed":
+      return "a body giving out";
     case "trigger_scheduled":
     case "commitment_created":
     case "pressure_raised":

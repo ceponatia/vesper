@@ -9,6 +9,7 @@ import {
   scheduleTransferTriggerCommandType,
   scheduleTriggerCommandResultSchema,
   activityCompletionTriggerKind,
+  bodyCollapseTriggerKind,
   bodyConditionExpiryTriggerKind,
   bodyThresholdTriggerKind,
   commitmentDeadlineTriggerKind,
@@ -33,7 +34,11 @@ import { transferItemCommandSchema } from "@/contracts/simulation/item-transfer"
 import { arriveJourneyCommandSchema } from "@/contracts/simulation/space";
 import { db, simBranches, simCommands, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { submitDurableCompleteActivity } from "./activity-store";
-import { submitDurableEndBodyCondition, submitDurableResolveBodyThreshold } from "./body-store";
+import {
+  submitDurableEndBodyCondition,
+  submitDurableResolveBodyCollapse,
+  submitDurableResolveBodyThreshold,
+} from "./body-store";
 import {
   submitDurableRaisePressure,
   submitDurableResolveCommitmentDeadline,
@@ -544,6 +549,8 @@ export async function resolveNextDueTrigger(
           return submitDurableResolveBodyThreshold(dispatchEnvelope, dispatchOptions);
         case bodyConditionExpiryTriggerKind:
           return submitDurableEndBodyCondition(dispatchEnvelope, dispatchOptions);
+        case bodyCollapseTriggerKind:
+          return submitDurableResolveBodyCollapse(dispatchEnvelope, dispatchOptions);
       }
     };
     const result = await dispatch();

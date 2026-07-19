@@ -685,6 +685,7 @@ export function applyCommitmentEvent(
     case "body_condition_applied":
     case "body_condition_ended":
     case "body_threshold_crossed":
+    case "body_collapsed":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
   }

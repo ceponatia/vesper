@@ -16,7 +16,9 @@ import {
   replayActivitiesHistory,
   resolveCancelActivity,
   resolveCompleteActivity,
+  resolveResumeActivity,
   resolveStartActivity,
+  sortActivitiesProjection,
 } from "./activities";
 
 const SEED_SECOND = 5_000;
@@ -286,6 +288,93 @@ describe("E3.2 resolveCancelActivity", () => {
     );
     expect(done.ok).toBe(false);
     if (!done.ok) expect(done.code).toBe("activity_not_cancellable");
+  });
+});
+
+describe("E5.2 resolveResumeActivity — the attempt-versioned re-arm", () => {
+  function interruptedActivity() {
+    // Started at SEED, due at SEED+1800, interrupted halfway (progress 50%).
+    return {
+      ...acceptedStart().activity,
+      phase: "interrupted" as const,
+      progressFixedPoint: 500_000,
+    };
+  }
+
+  function resumeCommand(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "cmd-resume-1",
+      branchId: "branch-1",
+      expectedVersion: 3,
+      idempotencyKey: "resume-key-1",
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+      submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+      correlationId: "corr-1",
+      type: "resume_activity",
+      schemaVersion: 1,
+      payload: { activityInstanceId: deriveActivityId("branch-1", "cmd-start-1") },
+      ...overrides,
+    };
+  }
+
+  it("resumes with remaining time, a rebased window, and a versioned alarm key", () => {
+    const resumedAt = SEED_SECOND + 4_000;
+    const resolution = resolveResumeActivity(
+      completeView({ storySecond: resumedAt, activity: interruptedActivity(), headSequence: 4 }) as never,
+      resumeCommand() as never,
+    );
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    // Half of the 1 800s total remained.
+    expect(resolution.activity.expectedCompleteAt).toBe(resumedAt + 900);
+    // The window rebases so a second interruption's progress math holds.
+    expect(resolution.activity.startedAt).toBe(resumedAt + 900 - 1_800);
+    expect(resolution.activity.phase).toBe("active");
+    const [resumedEvent, trigger] = resolution.events;
+    expect(resumedEvent.payload.newExpectedCompleteAt).toBe(resumedAt + 900);
+    // The E3.4 note landed: the re-armed key versions by attempt, and the
+    // original un-versioned key is a strict prefix of it.
+    expect(trigger.payload.uniquenessKey).toContain(String(resumedEvent.sequence));
+    expect(
+      trigger.payload.uniquenessKey.startsWith(
+        activityCompletionUniquenessKey(resolution.activity.id),
+      ),
+    ).toBe(true);
+    expect(trigger.payload.dueStorySecond).toBe(resumedAt + 900);
+
+    // The applier lands on the same rebased window (replay parity).
+    const projection = applyActivityEvent(
+      sortActivitiesProjection({
+        branchId: "branch-1",
+        headSequence: resumedEvent.sequence - 1,
+        version: 0,
+        storySecond: resumedAt,
+        activities: [interruptedActivity()],
+      }),
+      resumedEvent,
+    );
+    expect(projection.activities[0]).toMatchObject({
+      phase: "active",
+      startedAt: resolution.activity.startedAt,
+      expectedCompleteAt: resolution.activity.expectedCompleteAt,
+    });
+  });
+
+  it("rejects non-interrupted activities and non-participants", () => {
+    const active = resolveResumeActivity(
+      completeView({ storySecond: SEED_SECOND + 4_000 }) as never,
+      resumeCommand() as never,
+    );
+    expect(active.ok).toBe(false);
+    if (!active.ok) expect(active.code).toBe("activity_not_interrupted");
+
+    const stranger = resolveResumeActivity(
+      completeView({ storySecond: SEED_SECOND + 4_000, activity: interruptedActivity() }) as never,
+      resumeCommand({
+        principal: { kind: "player", principalId: "p", controlledActorIds: ["actor-9"] },
+      }) as never,
+    );
+    expect(stranger.ok).toBe(false);
+    if (!stranger.ok) expect(stranger.code).toBe("unauthorized_actor");
   });
 });
 
