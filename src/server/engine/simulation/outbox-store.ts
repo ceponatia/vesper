@@ -53,7 +53,15 @@ function positiveSafeInteger(value: number, label: string): number {
   return value;
 }
 
-function safeDiagnostic(error: unknown, claimed: { id: string; branchId: string; sourceEventId: string; firstSequence: number; attempts: number }): string {
+export interface ClaimedOutboxObligation {
+  id: string;
+  branchId: string;
+  sourceEventId: string;
+  firstSequence: number;
+  attempts: number;
+}
+
+function safeDiagnostic(error: unknown, claimed: ClaimedOutboxObligation): string {
   const name = error instanceof Error ? error.name : "UnknownError";
   const message = error instanceof Error ? error.message : "Consumer failed";
   return `outbox=${claimed.id} branch=${claimed.branchId} sequence=${claimed.firstSequence} event=${claimed.sourceEventId} attempt=${claimed.attempts} ${name}: ${message}`.slice(0, 500);
@@ -88,12 +96,14 @@ function eventFromRow(row: typeof simEvents.$inferSelect) {
  * tries to claim it, or a crash loop reclaims it forever (the outbox twin of
  * the E2.4 scheduler claim-time quarantine).
  */
-type OutboxClaimResult =
-  | { kind: "claimed"; claimed: { id: string; branchId: string; sourceEventId: string; firstSequence: number; attempts: number } }
+export type OutboxClaimResult =
+  | { kind: "claimed"; claimed: ClaimedOutboxObligation }
   | { kind: "quarantined"; outboxId: string };
 
-async function claimNext(
+/** Claim one obligation for a consumer kind — shared by every outbox lane. */
+export async function claimNextOutboxObligation(
   database: Db,
+  consumerKind: string,
   workerId: string,
   now: Date,
   leaseSeconds: number,
@@ -106,7 +116,7 @@ async function claimNext(
       .from(simOutbox)
       .where(
         and(
-          eq(simOutbox.consumerKind, itemTransferFeedConsumerKind),
+          eq(simOutbox.consumerKind, consumerKind),
           or(
             and(eq(simOutbox.state, "pending"), lte(simOutbox.availableAt, now)),
             and(eq(simOutbox.state, "processing"), sql`${simOutbox.leaseExpiresAt} <= ${now}`),
@@ -181,7 +191,14 @@ export async function consumeNextItemTransferOutbox(
   const now = options.now ? new Date(options.now) : new Date();
   if (Number.isNaN(now.getTime())) throw new RangeError("Outbox clock is invalid");
 
-  const claim = await claimNext(database, workerId, now, leaseSeconds, maxAttempts);
+  const claim = await claimNextOutboxObligation(
+    database,
+    itemTransferFeedConsumerKind,
+    workerId,
+    now,
+    leaseSeconds,
+    maxAttempts,
+  );
   if (!claim) return { status: "idle" };
   if (claim.kind === "quarantined") {
     return { status: "failed", outboxId: claim.outboxId, retryAt: null, terminal: true };
@@ -286,22 +303,35 @@ export async function consumeNextItemTransferOutbox(
       ? { status: "completed", outboxId: claimed.id, ...completed }
       : { status: "lease_lost", outboxId: claimed.id };
   } catch (error) {
-    const terminal = claimed.attempts >= maxAttempts;
-    const retryAt = terminal ? null : new Date(now.getTime() + outboxRetryDelaySeconds(claimed.attempts) * 1000);
-    const released = await database
-      .update(simOutbox)
-      .set({
-        state: terminal ? "failed" : "pending",
-        availableAt: retryAt ?? now,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        lastError: safeDiagnostic(error, claimed),
-      })
-      .where(and(eq(simOutbox.id, claimed.id), eq(simOutbox.leaseOwner, workerId)))
-      .returning({ id: simOutbox.id });
-    if (released.length === 0) return { status: "lease_lost", outboxId: claimed.id };
-    return { status: "failed", outboxId: claimed.id, retryAt, terminal };
+    const failure = await releaseFailedOutboxObligation(database, claimed, workerId, now, maxAttempts, error);
+    if (!failure.released) return { status: "lease_lost", outboxId: claimed.id };
+    return { status: "failed", outboxId: claimed.id, retryAt: failure.retryAt, terminal: failure.terminal };
   }
+}
+
+/** Release a failed claim back to the queue (or quarantine it) — shared lane logic. */
+export async function releaseFailedOutboxObligation(
+  database: Db,
+  claimed: ClaimedOutboxObligation,
+  workerId: string,
+  now: Date,
+  maxAttempts: number,
+  error: unknown,
+): Promise<{ released: boolean; retryAt: Date | null; terminal: boolean }> {
+  const terminal = claimed.attempts >= maxAttempts;
+  const retryAt = terminal ? null : new Date(now.getTime() + outboxRetryDelaySeconds(claimed.attempts) * 1000);
+  const released = await database
+    .update(simOutbox)
+    .set({
+      state: terminal ? "failed" : "pending",
+      availableAt: retryAt ?? now,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      lastError: safeDiagnostic(error, claimed),
+    })
+    .where(and(eq(simOutbox.id, claimed.id), eq(simOutbox.leaseOwner, workerId)))
+    .returning({ id: simOutbox.id });
+  return { released: released.length > 0, retryAt, terminal };
 }
 
 function projectionHash(rows: Array<typeof simItemTransferFeed.$inferSelect>): string {

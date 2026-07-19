@@ -44,6 +44,7 @@ import {
   type Db,
 } from "@/server/db";
 import { readDurableBranchState } from "./branch-store";
+import { enqueueMemoryIndexObligations } from "./memory-index-store";
 import { recordCommandObservations } from "./observation-store";
 
 const worldSeedSchema = z
@@ -552,6 +553,11 @@ export async function submitDurableItemTransfer(
         // E4.1: the transfer's captured witnesses become typed observations,
         // committed atomically with the event they perceive (§20).
         await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
+        await enqueueMemoryIndexObligations(tx, {
+          id: branch.id,
+          worldId: worldIdSchema.parse(branch.worldId),
+          headSequence: branch.headSequence,
+        });
 
         const advanced = await tx
           .update(simBranches)

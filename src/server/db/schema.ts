@@ -2458,6 +2458,58 @@ export const simSoftCanon = pgTable(
   ],
 );
 
+/**
+ * E4.4 memory documents (engine.spec §24): redacted, indexable recall
+ * representations derived from persisted source rows by the memory-index
+ * outbox consumer. Eligibility, validity, and privacy are resolved
+ * relationally at query time (§24.1) — this table never widens what any
+ * viewpoint may see; a missing or stale row only narrows recall.
+ */
+export const simMemoryDocuments = pgTable(
+  "sim_memory_documents",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    docId: text("doc_id").notNull(),
+    sourceKind: text("source_kind", {
+      enum: ["observation", "assertion", "belief", "speech_act", "soft_canon", "authored_lore"],
+    }).notNull(),
+    sourceId: text("source_id").notNull(),
+    sourceEventId: text("source_event_id"),
+    firstSequence: bigint("first_sequence", { mode: "number" }).notNull(),
+    lastSequence: bigint("last_sequence", { mode: "number" }).notNull(),
+    storySecond: bigint("story_second", { mode: "number" }).notNull(),
+    visibility: text("visibility", { enum: ["public", "actors", "belief_holders"] }).notNull(),
+    eligibleActorIds: jsonb("eligible_actor_ids").$type<string[]>().notNull(),
+    aboutEntityIds: jsonb("about_entity_ids").$type<string[]>().notNull(),
+    validFromSecond: bigint("valid_from_second", { mode: "number" }).notNull(),
+    validUntilSecond: bigint("valid_until_second", { mode: "number" }),
+    supersededAtSecond: bigint("superseded_at_second", { mode: "number" }),
+    epistemicLabel: text("epistemic_label").notNull(),
+    confidenceFixedPoint: integer("confidence_fixed_point"),
+    text: text("text").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }),
+    embeddingModel: text("embedding_model"),
+    docSchemaVersion: integer("doc_schema_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_memory_documents_branch_doc_pk", columns: [t.branchId, t.docId] }),
+    index("sim_memory_documents_branch_kind_idx").on(t.branchId, t.sourceKind),
+    index("sim_memory_documents_branch_sequence_idx").on(t.branchId, t.firstSequence),
+    check(
+      "sim_memory_documents_sequence_order",
+      sql`${t.firstSequence} >= 0 AND ${t.lastSequence} >= ${t.firstSequence}`,
+    ),
+    check(
+      "sim_memory_documents_embedding_named",
+      sql`(${t.embedding} IS NULL) = (${t.embeddingModel} IS NULL)`,
+    ),
+  ],
+);
+
 export const simJourneys = pgTable(
   "sim_journeys",
   {

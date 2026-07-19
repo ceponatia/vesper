@@ -36,6 +36,20 @@ export {
   softCanonEntryFromRow,
 } from "./soft-canon-recorder";
 export {
+  consumeNextMemoryIndexOutbox,
+  drainMemoryIndexOutbox,
+  enqueueMemoryIndexObligations,
+  memoryDocumentFromRow,
+  memoryIndexLag,
+  rebuildMemoryIndex,
+  seedAuthoredLoreDocuments,
+  type ConsumeMemoryIndexOptions,
+  type ConsumeMemoryIndexResult,
+  type MemoryEmbedder,
+  type MemoryIndexLag,
+} from "./memory-index-store";
+export { queryMemoryDocuments, type MemoryQueryOptions } from "./memory-query-store";
+export {
   submitDurableDemoteSoftCanon,
   type SoftCanonStoreOptions,
 } from "./soft-canon-store";

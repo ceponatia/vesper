@@ -58,6 +58,7 @@ import {
   simZones,
   type Db,
 } from "@/server/db";
+import { enqueueMemoryIndexObligations } from "./memory-index-store";
 import { recordCommandObservations } from "./observation-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
@@ -676,6 +677,11 @@ export async function submitDurableMoveActor(
         // E4.1: derive who perceived the departure (and any scene interrupt)
         // against the post-command loci, inside the same transaction (§20).
         await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
+        await enqueueMemoryIndexObligations(tx, {
+          id: branch.id,
+          worldId: branch.worldId,
+          headSequence: branch.headSequence,
+        });
         const advanced = await tx
           .update(simBranches)
           .set({ headSequence: lastSequence, version: branch.version + 1 })
@@ -911,6 +917,11 @@ export async function submitDurableJourneyArrival(
         // E4.1: the arrival is perceived by whoever stands at the destination
         // once the traveller does — graded against the flipped loci (§20).
         await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
+        await enqueueMemoryIndexObligations(tx, {
+          id: branch.id,
+          worldId: branch.worldId,
+          headSequence: branch.headSequence,
+        });
 
         const advanced = await tx
           .update(simBranches)

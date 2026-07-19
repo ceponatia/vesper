@@ -592,16 +592,46 @@ long-lived `engine` branch.
    scene-scope soft canon validates against engagement participants, so a scene
    entry's lifetime is its TTL rather than its engagement; persisted cuts are not
    copied by forks (presentation artifacts — a retaken scene re-prepares).
-4. **E4.4 — RAG eligibility and memory linkage.** The §24 retrieval redesign:
-   outbox-driven indexing of eligible representations (observations, active
-   assertions/beliefs, participated dialogue episodes, authorized authored lore, bounded
-   soft canon) with source id/kind, branch + sequence interval, viewpoint eligibility,
-   validity/supersedence intervals, and schema/model versions on every document;
-   the eligibility-before-similarity query pipeline (§24.1 — branch, viewpoint,
-   validity, and privacy resolved relationally before vector ranking, provenance +
-   epistemic label on every result); memory documents linked back to their source
-   assertions/events; indexing failure degrades recall with lag diagnostics, never
-   widens visibility.
+4. **E4.4 — RAG eligibility and memory linkage.** Status: **shipped — 2026-07-19.**
+   The §24 retrieval redesign. `sim_memory_documents` (migration 0066) holds REDACTED
+   recall representations — never authority — each carrying source id/kind, the
+   originating event, branch + sequence interval, an eligibility surface (`public`,
+   fixed `actors`, or `belief_holders` resolved relationally at query time), validity/
+   supersedence intervals, deterministic template text (no model), a nullable pgvector
+   embedding, and doc-schema + embedding-model versions. Indexing is outbox-driven
+   (§24.3): every accepted command enqueues one `memory_index` obligation per
+   knowledge-lane or observed event (the §11.1 shell hook, plus the same one-line hook
+   in the pre-shell space and item-transfer stores) through the generalized outbox
+   claim/release lane; the consumer projects documents from persisted source rows —
+   observation docs graded by evidence (glimpses carry no names, spoken content only
+   ever enters participant-eligible speech-act and holder-eligible belief docs),
+   assertion docs recallable only by live belief holders, soft-canon docs scoped by
+   their subjects (world/location scope public) — and re-projects rows a disclosure
+   superseded so their documents pick up supersedence. The embedding seam is injected
+   (`MemoryEmbedder`, stub-exercised, zero live calls); an embedder failure still
+   indexes text-only and shows up as `unembeddedEligible`, and outbox lag is exposed
+   through `memoryIndexLag` + on every query result (§24.3 — degrade visibly, never
+   widen). `queryMemoryDocuments` runs §24.1 steps 1–7 in order: authenticate
+   world/branch/viewpoint (a viewpoint with no locus errors), R4 ancestry bounds with
+   nearest-branch dedupe (a fork child's re-indexed copy of an ancestor doc wins),
+   relational eligibility and validity — belief/assertion/soft-canon docs re-check
+   the QUERY branch's live ledger rows, so a child that diverged recalls its own
+   truth — then structured filters, then deterministic in-app ranking (same-model
+   cosine, else token-overlap lexical, else recency; round-robin diversification
+   across source kinds) inside the eligible set only, with provenance + epistemic
+   label (`observed`/`glimpsed`/`heard_about`/`believed`/`claimed`/`witnessed_speech`/
+   `established_detail`/`authored_lore`) on every result. Authored lore ships as
+   seeded documents with explicit visibility; `rebuildMemoryIndex` reproduces the
+   derived index (lore preserved). 8 pure + 4 integration cases (privacy sweeps prove
+   a bystander recalls talking-not-content and that the right query text or embedding
+   never widens a stranger's recall); CI runs `test:engine-e4-4` (2 771 pure + 368 int
+   green). Delivery notes: dialogue episodes index per speech act — model-written
+   episode compression stays a §23.4 post-turn concern; ranking is in-app over a
+   bounded relational candidate set (SQL-side HNSW is a later optimization; no vector
+   index shipped); the Gate-2 soak's queue-depth proof and E2.3 assertions are scoped
+   to the item-transfer lane the soak pumps, since the memory lane has its own lag
+   diagnostics; principal-level auth on queries rides the server seam until a public
+   API needs more.
 5. **E4.5 — the Gate 4 exit corpus.** Deterministic scenarios closing the gate per the
    2026-07-18 ruling: cross-viewpoint leak sweeps (the §36.4 live-scene suite extended
    with knowledge asymmetry — a viewpoint that did not observe or learn a fact never
