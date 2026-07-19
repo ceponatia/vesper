@@ -52,7 +52,7 @@
     "test:engine-e4-5": "vitest run --no-file-parallelism src/server/engine/simulation/gate4-corpus.int.test.ts",
     "test:engine-e5-1": "vitest run --no-file-parallelism src/lib/simulation/bodies.test.ts src/server/engine/simulation/body-store.int.test.ts",
     "test:engine-e5-2": "vitest run --no-file-parallelism src/lib/simulation/body-reads.test.ts src/server/engine/simulation/body-store.int.test.ts",
-    "test:engine-e5-3": "vitest run --no-file-parallelism src/lib/simulation/materials.test.ts src/server/engine/simulation/material-store.int.test.ts"
+    "test:engine-e5-3": "vitest run --no-file-parallelism src/lib/simulation/materials.test.ts src/server/engine/simulation/material-store.int.test.ts src/lib/simulation/activities.test.ts src/server/engine/simulation/activity-store.int.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"

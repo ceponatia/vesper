@@ -11,6 +11,7 @@ import {
   completeActivityCommandSchema,
   startActivityCommandResultSchema,
   startActivityCommandSchema,
+  type ActionResourceCost,
   type SimulationActionDefinition,
   type ActivitiesProjection,
   type ActivityInstance,
@@ -21,7 +22,7 @@ import {
   type CompleteActivityCommandResult,
   type StartActivityCommandResult,
 } from "@/contracts/simulation/activities";
-import { worldBranchIdSchema } from "@/contracts/simulation/identity";
+import { composeSimulationId, worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
   activityCompletionUniquenessKey,
   resolveResumeActivity,
@@ -30,18 +31,56 @@ import {
   resolveCompleteActivity,
   resolveStartActivity,
 } from "@/lib/simulation/activities";
+import {
+  BODY_THRESHOLD_HORIZON_SECONDS,
+  bodyCollapseUniquenessKeyPrefix,
+  bodyThresholdUniquenessKeyPrefix,
+  selfCareAdjustmentsBetween,
+  type CollapseContext,
+  type MeterIntegrationView,
+} from "@/lib/simulation/bodies";
 import { engagementClaimsForActor } from "@/lib/simulation/engagements";
+import type { ConsumptionBodyView } from "@/lib/simulation/materials";
+import {
+  bodyConditionSchema,
+  bodyMeterRegistryByVersion,
+  bodyMeterStateSchema,
+  bodyModifierSchema,
+  bodyRegistryVersionSchema,
+  bodyRhythmRowSchema,
+  type BodyMeterState,
+} from "@/contracts/simulation/bodies";
 import {
   claimHoldingEngagementStates,
   engagementSchema,
 } from "@/contracts/simulation/engagements";
 import {
+  itemLocusSchema,
+  simulationMaterialItemSchema,
+  type ContainerAccessPolicy,
+  type ItemConsumptionEffect,
+  type ItemGoneBasis,
+  type ItemLocus,
+  type SimulationMaterialItem,
+} from "@/contracts/simulation/materials";
+import {
+  itemTransferFeedConsumerKind,
+  itemTransferFeedProjectionSchemaVersion,
+} from "@/contracts/simulation/outbox";
+import {
   db,
   simActionDefinitions,
   simActivities,
+  simBodyConditions,
+  simBodyMeters,
+  simBodyModifiers,
+  simBodyRhythms,
   simBranches,
   simCharacters,
   simEngagements,
+  simItemHoldings,
+  simItems,
+  simOutbox,
   simPhysicalLoci,
   simTriggers,
   simZones,
@@ -118,6 +157,7 @@ export function activityFromRow(row: typeof simActivities.$inferSelect): Activit
     ...(row.expectedCompleteAt === null ? {} : { expectedCompleteAt: row.expectedCompleteAt }),
     progressFixedPoint: row.progressFixedPoint,
     claims: row.claims,
+    reservedItemIds: row.reservedItemIds,
     sourceCommandId: row.sourceCommandId,
   });
 }
@@ -139,6 +179,7 @@ export function activityRowInsert(
     expectedCompleteAt: activity.expectedCompleteAt ?? null,
     progressFixedPoint: activity.progressFixedPoint,
     claims: [...activity.claims],
+    reservedItemIds: [...activity.reservedItemIds],
     sourceCommandId: activity.sourceCommandId,
     updatedSequence,
   };
@@ -229,6 +270,358 @@ async function loadCoLocatedActorIds(
   return rows.map((row) => row.actorId).filter((actorId) => !excludeActorIds.includes(actorId));
 }
 
+// ---------------------------------------------------------------------------
+// §26.5–26.6 material facts — loaded here rather than through
+// material-store.ts's whole-branch `loadMaterialResolutionView` because both
+// call sites already know exactly which items they need (the definition's
+// requested kinds at start, the activity's own reservation at completion),
+// so a scoped join keeps the load proportional instead of hydrating the
+// world. The row->locus mapping duplicates material-store.ts's
+// `itemLocusFromHoldingRow` rather than importing it: material-store.ts now
+// imports body-store.ts (for its own §26.6 consume_item body effects), and
+// body-store.ts already imports this file's `activityFromRow` — importing
+// material-store.ts here would close that into a circular module
+// (`pnpm lint:cycles`/madge), so this stays a small local copy instead.
+// ---------------------------------------------------------------------------
+
+function materialLocusFromRow(row: {
+  locusKind: "held" | "worn" | "container" | "zone" | "gone";
+  holdingActorId: string | null;
+  slotKey: string | null;
+  containerItemId: string | null;
+  zoneId: string | null;
+  goneBasis: ItemGoneBasis | null;
+}): ItemLocus {
+  switch (row.locusKind) {
+    case "held":
+      return itemLocusSchema.parse({ kind: "held", actorId: row.holdingActorId });
+    case "worn":
+      return itemLocusSchema.parse({ kind: "worn", actorId: row.holdingActorId, slotKey: row.slotKey });
+    case "container":
+      return itemLocusSchema.parse({ kind: "container", containerItemId: row.containerItemId });
+    case "zone":
+      return itemLocusSchema.parse({ kind: "zone", zoneId: row.zoneId });
+    case "gone":
+      return itemLocusSchema.parse({ kind: "gone", basis: row.goneBasis });
+  }
+}
+
+const materialItemSelection = {
+  itemId: simItems.itemId,
+  name: simItems.name,
+  materialKindKey: simItems.materialKindKey,
+  consumptionEffects: simItems.consumptionEffects,
+  ownerActorId: simItems.ownerActorId,
+  containerCapacityCount: simItems.containerCapacityCount,
+  containerAccess: simItems.containerAccess,
+  locusKind: simItemHoldings.locusKind,
+  holdingActorId: simItemHoldings.actorId,
+  slotKey: simItemHoldings.slotKey,
+  containerItemId: simItemHoldings.containerItemId,
+  zoneId: simItemHoldings.zoneId,
+  goneBasis: simItemHoldings.goneBasis,
+};
+
+interface MaterialItemRow {
+  itemId: string;
+  name: string;
+  materialKindKey: string | null;
+  consumptionEffects: ItemConsumptionEffect[] | null;
+  ownerActorId: string | null;
+  containerCapacityCount: number | null;
+  containerAccess: ContainerAccessPolicy | null;
+  locusKind: "held" | "worn" | "container" | "zone" | "gone";
+  holdingActorId: string | null;
+  slotKey: string | null;
+  containerItemId: string | null;
+  zoneId: string | null;
+  goneBasis: ItemGoneBasis | null;
+}
+
+function materialItemFromRow(row: MaterialItemRow): SimulationMaterialItem {
+  const locus = materialLocusFromRow(row);
+  return simulationMaterialItemSchema.parse({
+    id: row.itemId,
+    name: row.name,
+    ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
+    ownerActorId: row.ownerActorId,
+    ...(row.containerCapacityCount !== null && row.containerAccess !== null
+      ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
+      : {}),
+    ...(row.consumptionEffects ? { consumptionEffects: row.consumptionEffects } : {}),
+    locus,
+  });
+}
+
+/**
+ * §26.5 start-time eligibility: extant items whose `materialKindKey` matches
+ * one of the definition's requested resource costs, joined to their current
+ * holding locus. Scoped to the requested kinds — never the whole branch's
+ * item graph — so a start with no `resourceCosts` issues no query at all.
+ * Root resolution for a candidate resting in a container is out of this
+ * slice's scope: `resolveRootLocus` fails a dangling container hop closed as
+ * `cycle` (never selected), which is why start-time selection only ever
+ * reaches items directly held/worn by the actor or resting at their zone.
+ */
+async function loadMaterialItemsByKind(
+  tx: SimTx,
+  branchId: string,
+  materialKindKeys: readonly string[],
+): Promise<Map<string, SimulationMaterialItem>> {
+  const itemsById = new Map<string, SimulationMaterialItem>();
+  if (materialKindKeys.length === 0) return itemsById;
+  const rows = await tx
+    .select(materialItemSelection)
+    .from(simItems)
+    .innerJoin(
+      simItemHoldings,
+      and(eq(simItemHoldings.branchId, simItems.branchId), eq(simItemHoldings.itemId, simItems.itemId)),
+    )
+    .where(and(eq(simItems.branchId, branchId), inArray(simItems.materialKindKey, [...materialKindKeys])));
+  for (const row of rows) itemsById.set(row.itemId, materialItemFromRow(row));
+  return itemsById;
+}
+
+/**
+ * §26.5–26.6 completion-time re-validation + consumption: exactly the
+ * activity's own reserved items (bounded by its resource costs, at most
+ * 4 costs × 8 quantity) — never the whole branch.
+ */
+async function loadMaterialItemsByIds(
+  tx: SimTx,
+  branchId: string,
+  itemIds: readonly string[],
+): Promise<Map<string, SimulationMaterialItem>> {
+  const itemsById = new Map<string, SimulationMaterialItem>();
+  if (itemIds.length === 0) return itemsById;
+  const rows = await tx
+    .select(materialItemSelection)
+    .from(simItems)
+    .innerJoin(
+      simItemHoldings,
+      and(eq(simItemHoldings.branchId, simItems.branchId), eq(simItemHoldings.itemId, simItems.itemId)),
+    )
+    .where(and(eq(simItems.branchId, branchId), inArray(simItems.itemId, [...itemIds])));
+  for (const row of rows) itemsById.set(row.itemId, materialItemFromRow(row));
+  return itemsById;
+}
+
+/**
+ * Duplicates material-store.ts's exported `publishMaterialFeedObligation` for
+ * the completion-time `item_consumed` path. It cannot be imported directly:
+ * material-store.ts now imports body-store.ts (for its own §26.6 consume_item
+ * body effects), and body-store.ts already imports this file's
+ * `activityFromRow` — importing material-store.ts here would close that into
+ * a circular module (`pnpm lint:cycles`/madge). A small local copy is the
+ * lesser evil until the `activityFromRow` edge is moved off this file.
+ */
+async function publishActivityMaterialFeedObligation(
+  tx: SimTx,
+  event: { id: string; worldId: string; branchId: string; sequence: number },
+): Promise<void> {
+  await tx.insert(simOutbox).values({
+    id: composeSimulationId("outbox", [itemTransferFeedConsumerKind, event.id]),
+    worldId: event.worldId,
+    branchId: event.branchId,
+    sourceEventId: event.id,
+    firstSequence: event.sequence,
+    lastSequence: event.sequence,
+    consumerKind: itemTransferFeedConsumerKind,
+    schemaVersion: itemTransferFeedProjectionSchemaVersion,
+    payload: { sourceEventId: event.id },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// §26.6 consumption body view — a scoped, local equivalent of body-store.ts's
+// `loadActorBody`/`meterViewOf`/`collapseContextOf`/`upsertMeterRow`/
+// `retirePendingThresholdTriggers`. body-store.ts already imports
+// `activityFromRow` from this file, so importing back from body-store.ts
+// would form a circular module (caught by `pnpm lint:cycles`/madge) — this
+// file instead builds `ConsumptionBodyView` directly from the same pure-layer
+// primitives (`@/lib/simulation/bodies`, `@/contracts/simulation/bodies`)
+// body-store.ts's helpers are themselves built on.
+// ---------------------------------------------------------------------------
+
+/**
+ * Load one actor's body facts and wrap them as a §26.6 `ConsumptionBodyView`,
+ * or `undefined` when the actor has no initialized body (consumption still
+ * completes; the pure layer just emits zero trailing body events).
+ */
+async function loadConsumptionBodyView(
+  tx: SimTx,
+  branchId: string,
+  actorId: string,
+  storySecond: number,
+): Promise<ConsumptionBodyView | undefined> {
+  const meterRows = await tx
+    .select()
+    .from(simBodyMeters)
+    .where(and(eq(simBodyMeters.branchId, branchId), eq(simBodyMeters.actorId, actorId)));
+  if (meterRows.length === 0) return undefined;
+
+  const [modifierRows, rhythmRows, conditionRows] = await Promise.all([
+    tx
+      .select()
+      .from(simBodyModifiers)
+      .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.actorId, actorId))),
+    tx
+      .select()
+      .from(simBodyRhythms)
+      .where(and(eq(simBodyRhythms.branchId, branchId), eq(simBodyRhythms.actorId, actorId))),
+    tx
+      .select()
+      .from(simBodyConditions)
+      .where(and(eq(simBodyConditions.branchId, branchId), eq(simBodyConditions.actorId, actorId))),
+  ]);
+
+  const meters = meterRows.map((row) =>
+    bodyMeterStateSchema.parse({
+      actorId: row.actorId,
+      meterKey: row.meterKey,
+      valueFixedPoint: row.valueFixedPoint,
+      baselineFixedPoint: row.baselineFixedPoint,
+      lastIntegratedAtStorySecond: row.lastIntegratedAt,
+      registryVersion: row.registryVersion,
+    }),
+  );
+  const modifiers = modifierRows.map((row) =>
+    bodyModifierSchema.parse({
+      id: row.modifierId,
+      actorId: row.actorId,
+      meterKey: row.meterKey,
+      operation: row.operation,
+      stackingGroup: row.stackingGroup,
+      priority: row.priority,
+      validFromStorySecond: row.validFrom,
+      ...(row.validUntil === null ? {} : { validUntilStorySecond: row.validUntil }),
+      visibility: row.visibility,
+      ...(row.conditionId === null ? {} : { conditionId: row.conditionId }),
+      sourceEventId: row.sourceEventId,
+    }),
+  );
+  const rhythms = rhythmRows.map((row) =>
+    bodyRhythmRowSchema.parse({
+      actorId: row.actorId,
+      kind: row.kind,
+      startMinuteOfDay: row.startMinuteOfDay,
+      endMinuteOfDay: row.endMinuteOfDay,
+    }),
+  );
+  const conditions = conditionRows.map((row) =>
+    bodyConditionSchema.parse({
+      id: row.conditionId,
+      actorId: row.actorId,
+      key: row.key,
+      onsetAtStorySecond: row.onsetAt,
+      ...(row.expiresAt === null ? {} : { expiresAtStorySecond: row.expiresAt }),
+      status: row.status,
+      ...(row.endBasis === null ? {} : { endBasis: row.endBasis }),
+      ...(row.endedAt === null ? {} : { endedAtStorySecond: row.endedAt }),
+      sourceEventId: row.sourceEventId,
+    }),
+  );
+
+  const horizon = storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
+  const meterView = (meterKey: string): MeterIntegrationView | undefined => {
+    const state = meters.find((meter) => meter.meterKey === meterKey);
+    if (!state) return undefined;
+    const parsedVersion = bodyRegistryVersionSchema.safeParse(state.registryVersion);
+    if (!parsedVersion.success) return undefined;
+    const definition = bodyMeterRegistryByVersion[parsedVersion.data].find(
+      (candidate) => candidate.key === meterKey,
+    );
+    if (!definition) return undefined;
+    return {
+      definition,
+      state,
+      modifiers: modifiers.filter((modifier) => modifier.meterKey === meterKey),
+      scheduledAdjustments: selfCareAdjustmentsBetween(rhythms, meterKey, state.lastIntegratedAtStorySecond, horizon),
+    };
+  };
+
+  const lastSleepEndedAt = conditions
+    .filter(
+      (condition) =>
+        condition.key === "asleep" && condition.status === "ended" && condition.endedAtStorySecond !== undefined,
+    )
+    .reduce<number | undefined>(
+      (latest, condition) =>
+        latest === undefined || (condition.endedAtStorySecond ?? 0) > latest
+          ? condition.endedAtStorySecond
+          : latest,
+      undefined,
+    );
+  const collapseContext: CollapseContext = {
+    rhythmRows: rhythms,
+    ...(lastSleepEndedAt === undefined ? {} : { lastSleepEndedAtStorySecond: lastSleepEndedAt }),
+  };
+
+  return { bodyInitialized: true, meterView, collapseContext };
+}
+
+/** Write one meter's material boundary, mirroring body-store.ts's `upsertMeterRow`. */
+async function upsertConsumptionMeterRow(
+  tx: SimTx,
+  branchId: string,
+  meter: BodyMeterState,
+  updatedSequence: number,
+): Promise<void> {
+  const [updated] = await tx
+    .update(simBodyMeters)
+    .set({
+      valueFixedPoint: meter.valueFixedPoint,
+      baselineFixedPoint: meter.baselineFixedPoint,
+      lastIntegratedAt: meter.lastIntegratedAtStorySecond,
+      updatedSequence,
+    })
+    .where(
+      and(
+        eq(simBodyMeters.branchId, branchId),
+        eq(simBodyMeters.actorId, meter.actorId),
+        eq(simBodyMeters.meterKey, meter.meterKey),
+      ),
+    )
+    .returning({ meterKey: simBodyMeters.meterKey });
+  if (!updated) throw new Error("Locked body meter changed before its consumption update");
+}
+
+/**
+ * Retire this meter's pending alarm (and, for `energy`, the collapse alarm
+ * too) so neither can fire against the state a meal just moved past —
+ * mirroring body-store.ts's `retirePendingThresholdTriggers`, which cascades
+ * to `retirePendingCollapseTriggers` under the identical rule.
+ */
+async function retireConsumptionMeterTriggers(
+  tx: SimTx,
+  branch: LockedBranchView,
+  commandId: string,
+  submittedAtWallClock: string,
+  actorId: string,
+  meterKey: string,
+): Promise<void> {
+  const prefixes = [
+    bodyThresholdUniquenessKeyPrefix(actorId, meterKey),
+    ...(meterKey === "energy" ? [bodyCollapseUniquenessKeyPrefix(actorId)] : []),
+  ];
+  for (const prefix of prefixes) {
+    await tx
+      .update(simTriggers)
+      .set({
+        state: "completed",
+        resultCommandId: commandId,
+        completedAt: new Date(submittedAtWallClock),
+      })
+      .where(
+        and(
+          eq(simTriggers.branchId, branch.id),
+          eq(simTriggers.state, "pending"),
+          sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
+        ),
+      );
+  }
+}
+
 function rejectedResult<TCode extends string>(commandId: string, code: TCode, publicReason: string) {
   return {
     status: "rejected" as const,
@@ -310,6 +703,19 @@ export async function submitDurableStartActivity(
         ? await loadCoLocatedActorIds(tx, branch.id, zoneRow.zoneId, [command.payload.actorId])
         : [];
 
+      // §26.5: eligibility scoped to the definition's requested material
+      // kinds (a no-cost definition issues no query at all), and the live
+      // reservation index built from the claim-holding activities already
+      // loaded above for the claims check — no second query needed.
+      const materialKindKeys = definition
+        ? [...new Set(definition.resourceCosts.map((cost) => cost.materialKindKey))]
+        : [];
+      const materialItemsById = await loadMaterialItemsByKind(tx, branch.id, materialKindKeys);
+      const reservingActivityIdByItem = new Map<string, string>();
+      for (const holder of claimHolding) {
+        for (const itemId of holder.reservedItemIds) reservingActivityIdByItem.set(itemId, holder.id);
+      }
+
       const resolution = resolveStartActivity(
         {
           worldId: branch.worldId,
@@ -326,6 +732,9 @@ export async function submitDurableStartActivity(
             ...engagementClaimsForActor(openEngagements, command.payload.actorId),
           ],
           coLocatedActorIds,
+          materialItemIds: [...materialItemsById.keys()],
+          materialItemById: (itemId) => materialItemsById.get(itemId),
+          reservingActivityId: (itemId) => reservingActivityIdByItem.get(itemId) ?? null,
         },
         command,
       );
@@ -392,6 +801,24 @@ export async function submitDurableCompleteActivity(
         ? await loadCoLocatedActorIds(tx, branch.id, activity.zoneId, activity.actorIds)
         : [];
 
+      // §26.5 fire-time re-validation needs every reserved item (bounded by
+      // the activity's own reservation, never the whole branch). §26.6's
+      // trailing body effects need the consuming actor's body ONLY when the
+      // captured definition still names a consume-disposition cost — and
+      // only when that body is actually initialized (an uninitialized body
+      // still lets consumption complete, with zero body events).
+      const materialItemsById =
+        activity && activity.reservedItemIds.length > 0
+          ? await loadMaterialItemsByIds(tx, branch.id, activity.reservedItemIds)
+          : new Map<string, SimulationMaterialItem>();
+      const primaryActorId = activity?.actorIds[0];
+      const resourceCosts: readonly ActionResourceCost[] = definition?.resourceCosts ?? [];
+      const hasConsumeCosts = resourceCosts.some((cost) => cost.disposition === "consume");
+      const bodyView =
+        hasConsumeCosts && primaryActorId !== undefined
+          ? await loadConsumptionBodyView(tx, branch.id, primaryActorId, branch.storySecond)
+          : undefined;
+
       const resolution = resolveCompleteActivity(
         {
           worldId: branch.worldId,
@@ -402,38 +829,103 @@ export async function submitDurableCompleteActivity(
           ...(activity ? { activity } : {}),
           ...(zoneRow ? { zoneLocationId: zoneRow.locationId } : {}),
           ...(definition ? { noticeability: definition.noticeability } : {}),
+          resourceCosts,
+          materialItemById: (itemId) => materialItemsById.get(itemId),
+          ...(bodyView ? { bodyView } : {}),
           coLocatedActorIds,
         },
         command,
       );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
-      await appendSimulationEvent(tx, resolution.event);
-      const [updated] = await tx
-        .update(simActivities)
-        .set({
-          phase: "completed",
-          progressFixedPoint: 1_000_000,
-          updatedSequence: resolution.event.sequence,
-        })
-        .where(
-          and(
-            eq(simActivities.branchId, branch.id),
-            eq(simActivities.activityInstanceId, resolution.activity.id),
-            eq(simActivities.phase, "active"),
-          ),
-        )
-        .returning({ activityInstanceId: simActivities.activityInstanceId });
-      if (!updated) throw new Error("Locked activity changed before its completion update");
-      await advanceLockedBranch(tx, branch, resolution.event.sequence);
+      // §26.5–26.6: walk the resolved events in order, applying each one's
+      // side effect right after appending it — the collapse-store multi-
+      // write idiom (body-store.ts's `submitDurableResolveBodyCollapse`).
+      // A meter's stale alarm is retired the moment its `body_source_applied`
+      // lands, strictly before that same meter's re-arm `trigger_scheduled`
+      // (its very next entry in the array) gets applied below.
+      let meterUpdateIndex = 0;
+      let lastSequence = resolution.events[0].sequence;
+      for (const event of resolution.events) {
+        await appendSimulationEvent(tx, event);
+        lastSequence = event.sequence;
+        switch (event.type) {
+          case "activity_completed": {
+            const [updated] = await tx
+              .update(simActivities)
+              .set({
+                phase: "completed",
+                progressFixedPoint: 1_000_000,
+                updatedSequence: event.sequence,
+              })
+              .where(
+                and(
+                  eq(simActivities.branchId, branch.id),
+                  eq(simActivities.activityInstanceId, event.payload.activityInstanceId),
+                  eq(simActivities.phase, "active"),
+                ),
+              )
+              .returning({ activityInstanceId: simActivities.activityInstanceId });
+            if (!updated) throw new Error("Locked activity changed before its completion update");
+            break;
+          }
+          case "item_consumed": {
+            // The one locus this path ever writes — `gone/consumed` — so a
+            // literal patch stands in for material-store.ts's general
+            // `holdingRowFieldsForLocus` (see the circular-import note above).
+            const updatedHolding = await tx
+              .update(simItemHoldings)
+              .set({
+                locusKind: "gone",
+                actorId: null,
+                slotKey: null,
+                containerItemId: null,
+                zoneId: null,
+                goneBasis: "consumed",
+                updatedSequence: event.sequence,
+              })
+              .where(
+                and(eq(simItemHoldings.branchId, branch.id), eq(simItemHoldings.itemId, event.payload.itemId)),
+              )
+              .returning({ itemId: simItemHoldings.itemId });
+            if (updatedHolding.length !== 1) {
+              throw new Error("Locked item holding changed before its consumption update");
+            }
+            await publishActivityMaterialFeedObligation(tx, event);
+            break;
+          }
+          case "body_source_applied": {
+            const meter = resolution.meterUpdates[meterUpdateIndex];
+            meterUpdateIndex += 1;
+            if (!meter) {
+              throw new Error("Activity completion produced a body_source_applied event without a meter update");
+            }
+            await upsertConsumptionMeterRow(tx, branch.id, meter, event.sequence);
+            await retireConsumptionMeterTriggers(
+              tx,
+              branch,
+              command.id,
+              command.submittedAtWallClock,
+              event.payload.actorId,
+              event.payload.meterKey,
+            );
+            break;
+          }
+          case "trigger_scheduled": {
+            await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+            break;
+          }
+        }
+      }
+      await advanceLockedBranch(tx, branch, lastSequence);
 
       return {
         status: "accepted",
         commandId: command.id,
         branchVersion: branch.version + 1,
-        firstSequence: resolution.event.sequence,
-        lastSequence: resolution.event.sequence,
-        eventIds: [resolution.event.id],
+        firstSequence: resolution.events[0].sequence,
+        lastSequence,
+        eventIds: resolution.events.map((event) => event.id),
       };
     },
   });

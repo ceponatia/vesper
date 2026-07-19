@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  consumeItemCommandSchema,
   destroyItemCommandSchema,
   itemLocusSchema,
   itemTransferredEventSchema,
@@ -7,6 +8,7 @@ import {
   setItemOwnershipCommandSchema,
   simulationMaterialItemSchema,
   transferItemCommandSchema,
+  type ConsumeItemCommandInput,
   type DestroyItemCommandInput,
   type ItemLocus,
   type MaterialsProjection,
@@ -15,19 +17,27 @@ import {
   type SimulationMaterialItemInput,
   type TransferItemCommandInput,
 } from "@/contracts/simulation/materials";
-import { bodyInitializedEventSchema } from "@/contracts/simulation/bodies";
+import {
+  bodyInitializedEventSchema,
+  bodyMeterDefinitionSchema,
+  bodyMeterStateSchema,
+  type BodyMeterDefinition,
+} from "@/contracts/simulation/bodies";
 import { simulationHash, sortedUnique } from "./hash";
+import { applyBodyEvent, emptyBodiesSeed } from "./bodies";
 import {
   MATERIAL_CHAIN_DEPTH_CAP,
   applyMaterialEvent,
   assertMaterialsProjectionInvariants,
   materialsSeedProjection,
   replayMaterialsHistory,
+  resolveConsumeItemFromView,
   resolveDestroyItemFromView,
   resolveRootLocus,
   resolveSetItemOwnershipFromView,
   resolveTransferItemFromView,
   sortMaterialsProjection,
+  type ConsumptionBodyView,
   type MaterialResolutionView,
 } from "./materials";
 
@@ -65,11 +75,14 @@ function makeView(input: {
   items: SimulationMaterialItemInput[];
   headSequence?: number;
   storySecond?: number;
+  /** itemId -> reserving activity id (§26.5); absent items are unreserved. */
+  reservedBy?: Record<string, string>;
 }): MaterialResolutionView {
   const actors = input.actors ?? baseActors;
   const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
   const items = input.items.map((item) => simulationMaterialItemSchema.parse(item));
   const itemsById = new Map<string, SimulationMaterialItem>(items.map((item) => [item.id, item]));
+  const reservedBy = input.reservedBy ?? {};
   return {
     worldId: WORLD,
     branchId: BRANCH,
@@ -87,6 +100,7 @@ function makeView(input: {
     containerOccupantCount: (containerId) =>
       items.filter((item) => item.locus.kind === "container" && item.locus.containerItemId === containerId)
         .length,
+    reservingActivityId: (id) => reservedBy[id] ?? null,
   };
 }
 
@@ -125,6 +139,25 @@ function destroyCmd(
     principal: principal("player", ["mara"]),
     submittedAtWallClock: "2026-07-19T10:00:00.000Z",
     type: "destroy_item",
+    schemaVersion: 1,
+    correlationId: "corr-1",
+    payload,
+    ...overrides,
+  });
+}
+
+function consumeCmd(
+  payload: ConsumeItemCommandInput["payload"],
+  overrides: Partial<Omit<ConsumeItemCommandInput, "payload">> = {},
+) {
+  return consumeItemCommandSchema.parse({
+    id: "cmd-consume",
+    branchId: BRANCH,
+    expectedVersion: 0,
+    idempotencyKey: "idem-consume",
+    principal: principal("player", ["mara"]),
+    submittedAtWallClock: "2026-07-19T10:00:00.000Z",
+    type: "consume_item",
     schemaVersion: 1,
     correlationId: "corr-1",
     payload,
@@ -708,5 +741,263 @@ describe("E5.3 projector, replay, seed, and invariants", () => {
       ],
     };
     expect(() => assertMaterialsProjectionInvariants(cyclic)).toThrow(/container cycle/u);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.3 slice 2 — resource reservations and consumption (§26.5–26.6)
+// ---------------------------------------------------------------------------
+
+function hungerDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMeterDefinition {
+  return bodyMeterDefinitionSchema.parse({
+    key: "hunger",
+    class: "rate",
+    driftLaw: {
+      kind: "linear",
+      ratePerHourFixedPoint: 150,
+      target: { kind: "fixed", valueFixedPoint: 0 },
+    },
+    initialFixedPoint: 9_000,
+    baselineFixedPoint: 0,
+    thresholds: [
+      {
+        key: "starving",
+        boundaryFixedPoint: 2_500,
+        direction: "falling",
+        outcome: { kind: "event_only" },
+        noticeable: false,
+      },
+    ],
+    ...overrides,
+  });
+}
+
+function hungerBodyView(definition: BodyMeterDefinition = hungerDefinition(), storySecond = 10_000): ConsumptionBodyView {
+  const state = bodyMeterStateSchema.parse({
+    actorId: "mara",
+    meterKey: definition.key,
+    valueFixedPoint: definition.initialFixedPoint,
+    baselineFixedPoint: definition.baselineFixedPoint,
+    lastIntegratedAtStorySecond: storySecond,
+    registryVersion: "body-v1",
+  });
+  return {
+    bodyInitialized: true,
+    meterView: (meterKey) => (meterKey === definition.key ? { definition, state, modifiers: [] } : undefined),
+  };
+}
+
+function foodItem(overrides: Partial<SimulationMaterialItemInput> = {}): SimulationMaterialItemInput {
+  return {
+    id: "bread",
+    name: "a loaf of bread",
+    materialKindKey: "food",
+    locus: heldBy("mara"),
+    consumptionEffects: [
+      { meterKey: "hunger", sourceKind: "meal", operation: { kind: "set", valueFixedPoint: 9_500 } },
+    ],
+    ...overrides,
+  };
+}
+
+describe("E5.3 slice 2 — consume_item (§26.6)", () => {
+  it("rejects an item with no authored consumption effects", () => {
+    const noEffects = resolveConsumeItemFromView(
+      makeView({ items: [{ id: "rock", name: "a rock", locus: heldBy("mara") }] }),
+      consumeCmd({ actorId: "mara", itemId: "rock" }),
+    );
+    expect(noEffects).toMatchObject({ ok: false, code: "not_consumable" });
+
+    const emptyEffects = resolveConsumeItemFromView(
+      makeView({ items: [{ ...foodItem(), consumptionEffects: [] }] }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+    );
+    expect(emptyEffects).toMatchObject({ ok: false, code: "not_consumable" });
+  });
+
+  it("rejects a gone item, an unreachable item, and someone else's held item", () => {
+    const gone = resolveConsumeItemFromView(
+      makeView({ items: [{ ...foodItem(), locus: { kind: "gone", basis: "lost" } }] }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+    );
+    expect(gone).toMatchObject({ ok: false, code: "item_gone" });
+
+    const remote = resolveConsumeItemFromView(
+      makeView({ items: [{ ...foodItem(), locus: atZone(ZONE_B) }] }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+    );
+    expect(remote).toMatchObject({ ok: false, code: "root_not_colocated" });
+
+    const heldByOther = resolveConsumeItemFromView(
+      makeView({ items: [{ ...foodItem(), locus: heldBy("iris") }] }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+    );
+    expect(heldByOther).toMatchObject({ ok: false, code: "held_by_other" });
+  });
+
+  it("rejects a reserved item", () => {
+    const result = resolveConsumeItemFromView(
+      makeView({ items: [foodItem()], reservedBy: { bread: "activity-cooking" } }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+    );
+    expect(result).toMatchObject({ ok: false, code: "item_reserved" });
+  });
+
+  it("consumes: locus goes gone/consumed, one trailing body effect and its re-armed threshold, one causation chain", () => {
+    const view = makeView({ items: [foodItem()] });
+    const bodyView = hungerBodyView();
+    const result = resolveConsumeItemFromView(view, consumeCmd({ actorId: "mara", itemId: "bread" }), bodyView);
+    if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
+
+    expect(result.event.type).toBe("item_consumed");
+    expect(result.event.payload).toMatchObject({
+      actorId: "mara",
+      itemId: "bread",
+      fromLocus: heldBy("mara"),
+      againstOwnership: false,
+    });
+    expect(result.event.causationId).toBeUndefined();
+
+    // One body_source_applied (the meal) + its own threshold re-arm, both
+    // causation-chained back to the item_consumed event (never to each other
+    // transitively) — the resolveBodyCollapse precedent.
+    expect(result.bodyEvents.map((event) => event.type)).toEqual(["body_source_applied", "trigger_scheduled"]);
+    const [sourceEvent, rearmEvent] = result.bodyEvents;
+    expect(sourceEvent?.sequence).toBe(result.event.sequence + 1);
+    expect(sourceEvent?.causationId).toBe(result.event.id);
+    if (sourceEvent?.type !== "body_source_applied") throw new Error("expected body_source_applied");
+    expect(sourceEvent.payload).toMatchObject({
+      actorId: "mara",
+      meterKey: "hunger",
+      sourceKind: "meal",
+      operation: { kind: "set", valueFixedPoint: 9_500 },
+      valueAfterFixedPoint: 9_500,
+    });
+    expect(rearmEvent?.causationId).toBe(sourceEvent.id);
+    if (rearmEvent?.type !== "trigger_scheduled") throw new Error("expected trigger_scheduled");
+    // 9 500 → 2 500 at 150/h = 168 000s after the write (same law the E5.1 suite proves).
+    expect(rearmEvent.payload.dueStorySecond).toBe(10_000 + 168_000);
+
+    expect(result.meterUpdates).toHaveLength(1);
+    expect(result.meterUpdates[0]?.valueFixedPoint).toBe(9_500);
+  });
+
+  it("emits zero body events when the actor has no initialized body — worlds without bodies still eat", () => {
+    const withoutBodyView = resolveConsumeItemFromView(
+      makeView({ items: [foodItem()] }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+    );
+    if (!withoutBodyView.ok) throw new Error("expected acceptance");
+    expect(withoutBodyView.bodyEvents).toEqual([]);
+    expect(withoutBodyView.meterUpdates).toEqual([]);
+
+    const uninitialized = resolveConsumeItemFromView(
+      makeView({ items: [foodItem()] }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+      { bodyInitialized: false, meterView: () => undefined },
+    );
+    if (!uninitialized.ok) throw new Error("expected acceptance");
+    expect(uninitialized.bodyEvents).toEqual([]);
+    expect(uninitialized.meterUpdates).toEqual([]);
+  });
+
+  it("folds item_consumed into gone/consumed and enforces the source precondition on replay", () => {
+    const result = resolveConsumeItemFromView(
+      makeView({ items: [foodItem()] }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+      hungerBodyView(),
+    );
+    if (!result.ok) throw new Error("expected acceptance");
+
+    const seed = materialsSeedProjection({
+      worldId: WORLD,
+      worldTypeId: WORLD_TYPE,
+      worldSeed: "seed-consume",
+      branchId: BRANCH,
+      rulesetVersion: RULESET,
+      originStorySecond: 10_000,
+      actors: [{ id: "mara", name: "Mara" }],
+      items: [foodItem()],
+    });
+    const next = applyMaterialEvent(seed, result.event);
+    expect(next.items.find((item) => item.id === "bread")?.locus).toEqual({ kind: "gone", basis: "consumed" });
+    assertMaterialsProjectionInvariants(next);
+
+    // Re-applying the (now stale) event against its own new state is rejected —
+    // the fromLocus precondition no longer matches what the projection holds.
+    const staleReapply = { ...result.event, sequence: next.headSequence + 1 };
+    expect(() => applyMaterialEvent(next, staleReapply)).toThrow(/source precondition failed/u);
+  });
+
+  it("replays a consumption's material + body events to the same state the resolvers produced", () => {
+    const definition = hungerDefinition();
+    const result = resolveConsumeItemFromView(
+      makeView({ items: [foodItem()] }),
+      consumeCmd({ actorId: "mara", itemId: "bread" }),
+      hungerBodyView(definition),
+    );
+    if (!result.ok) throw new Error("expected acceptance");
+
+    const materialSeed = materialsSeedProjection({
+      worldId: WORLD,
+      worldTypeId: WORLD_TYPE,
+      worldSeed: "seed-consume-replay",
+      branchId: BRANCH,
+      rulesetVersion: RULESET,
+      originStorySecond: 10_000,
+      actors: [{ id: "mara", name: "Mara" }],
+      items: [foodItem()],
+    });
+    const materialAfter = applyMaterialEvent(materialSeed, result.event);
+    const materialReplayed = replayMaterialsHistory({ seed: materialSeed, events: [result.event] });
+    expect(simulationHash(materialReplayed)).toBe(
+      simulationHash(materialsProjectionSchema.parse({ ...materialAfter, version: materialSeed.version + 1 })),
+    );
+
+    // Fold the trailing body events onto a seed that already carries the
+    // hunger meter (mirroring an already-initialized body) — a partitioned,
+    // event-by-event fold lands on the exact math the resolver produced.
+    const initialMeterState = bodyMeterStateSchema.parse({
+      actorId: "mara",
+      meterKey: definition.key,
+      valueFixedPoint: definition.initialFixedPoint,
+      baselineFixedPoint: definition.baselineFixedPoint,
+      lastIntegratedAtStorySecond: 10_000,
+      registryVersion: "body-v1",
+    });
+    let bodyAfter = { ...emptyBodiesSeed(BRANCH, 10_000), meters: [initialMeterState] };
+    for (const event of result.bodyEvents) bodyAfter = applyBodyEvent(bodyAfter, event);
+    expect(bodyAfter.meters.find((meter) => meter.meterKey === "hunger")?.valueFixedPoint).toBe(9_500);
+    expect(bodyAfter.headSequence).toBe(result.bodyEvents.at(-1)?.sequence);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.3 slice 2 — reservation blocks command-driven material paths (§26.5)
+// ---------------------------------------------------------------------------
+
+describe("E5.3 slice 2 — reservation blocks transfer, destroy, and consume", () => {
+  it("rejects all three commands on a reserved item; an unreserved item is unaffected", () => {
+    const reservedView = makeView({ items: [foodItem()], reservedBy: { bread: "activity-cooking" } });
+    expect(
+      resolveTransferItemFromView(
+        reservedView,
+        transferCmd({ actorId: "mara", itemId: "bread", fromLocus: heldBy("mara"), toLocus: heldBy("iris") }),
+      ),
+    ).toMatchObject({ ok: false, code: "item_reserved" });
+    expect(
+      resolveDestroyItemFromView(reservedView, destroyCmd({ actorId: "mara", itemId: "bread", basis: "destroyed" })),
+    ).toMatchObject({ ok: false, code: "item_reserved" });
+    expect(
+      resolveConsumeItemFromView(reservedView, consumeCmd({ actorId: "mara", itemId: "bread" })),
+    ).toMatchObject({ ok: false, code: "item_reserved" });
+
+    const freeView = makeView({ items: [foodItem()] });
+    expect(
+      resolveTransferItemFromView(
+        freeView,
+        transferCmd({ actorId: "mara", itemId: "bread", fromLocus: heldBy("mara"), toLocus: heldBy("iris") }),
+      ),
+    ).toMatchObject({ ok: true });
   });
 });

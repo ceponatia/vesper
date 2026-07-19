@@ -70,12 +70,20 @@ export function itemHoldingsAtSequence(
   const undone = events
     .filter(
       (event) =>
-        (event.type === "item_transferred" || event.type === "item_destroyed") &&
+        (event.type === "item_transferred" ||
+          event.type === "item_destroyed" ||
+          event.type === "item_consumed") &&
         event.sequence > throughSequence,
     )
     .sort((left, right) => right.sequence - left.sequence);
   for (const event of undone) {
-    if (event.type !== "item_transferred" && event.type !== "item_destroyed") continue;
+    if (
+      event.type !== "item_transferred" &&
+      event.type !== "item_destroyed" &&
+      event.type !== "item_consumed"
+    ) {
+      continue;
+    }
     holdings.set(event.payload.itemId, event.payload.fromLocus);
   }
   return holdings;

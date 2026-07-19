@@ -384,7 +384,7 @@ function meterViewOf(
 }
 
 /** Retire this meter's pending alarm so it can never fire against stale state. */
-async function retirePendingThresholdTriggers(
+export async function retirePendingThresholdTriggers(
   tx: SimTx,
   branch: LockedBranchView,
   commandId: string,
@@ -464,7 +464,7 @@ function collapseContextOf(body: ActorBodyRows): CollapseContext {
 }
 
 /** Retire the actor's pending collapse alarm (any arming attempt). */
-async function retirePendingCollapseTriggers(
+export async function retirePendingCollapseTriggers(
   tx: SimTx,
   branch: LockedBranchView,
   commandId: string,
@@ -488,7 +488,7 @@ async function retirePendingCollapseTriggers(
     );
 }
 
-async function upsertMeterRow(
+export async function upsertMeterRow(
   tx: SimTx,
   branchId: string,
   meter: BodyMeterState,

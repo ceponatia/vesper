@@ -305,9 +305,10 @@ export function deriveEventObservations(
       break;
     }
     case "item_transferred":
-    case "item_destroyed": {
-      // An obvious same-zone manipulation (§26.4): the acting actor has direct
-      // evidence, and everyone sharing their zone sees it clearly. The
+    case "item_destroyed":
+    case "item_consumed": {
+      // An obvious same-zone manipulation (§26.4, §26.6): the acting actor has
+      // direct evidence, and everyone sharing their zone sees it clearly. The
       // manipulation is always at the acting actor's zone — transfer law's root
       // co-location guarantees both chains root there — so witnesses are derived
       // live from presence rather than captured on the event.

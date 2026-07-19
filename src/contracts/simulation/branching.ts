@@ -104,11 +104,14 @@ import {
   worldIdSchema,
 } from "./identity";
 import {
+  itemConsumedEventSchema,
   itemDestroyedEventSchema,
   itemLocusSchema,
   itemOwnershipSetEventSchema,
   itemTransferredEventSchema,
   materialsProjectionSchema,
+  type ConsumeItemCommand,
+  type ConsumeItemCommandResult,
   type DestroyItemCommand,
   type DestroyItemCommandResult,
   type SetItemOwnershipCommand,
@@ -142,6 +145,7 @@ import {
 export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   itemTransferredEventSchema,
   itemDestroyedEventSchema,
+  itemConsumedEventSchema,
   itemOwnershipSetEventSchema,
   triggerScheduledEventSchema,
   journeyPlannedEventSchema,
@@ -187,6 +191,7 @@ export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
 const materialEventTypeList = [
   "item_transferred",
   "item_destroyed",
+  "item_consumed",
   "item_ownership_set",
 ] as const;
 export type MaterialEventType = (typeof materialEventTypeList)[number];
@@ -318,6 +323,7 @@ export function isAccessEvent(event: SimulationBranchEvent): event is Simulation
 export type SimulationCommandEnvelope =
   | TransferItemCommand
   | DestroyItemCommand
+  | ConsumeItemCommand
   | SetItemOwnershipCommand
   | ScheduleTransferTriggerCommand
   | MoveActorCommand
@@ -346,6 +352,7 @@ export type SimulationCommandEnvelope =
 export type SimulationCommandResultRecord =
   | TransferItemCommandResult
   | DestroyItemCommandResult
+  | ConsumeItemCommandResult
   | SetItemOwnershipCommandResult
   | ScheduleTriggerCommandResult
   | MoveActorCommandResult

@@ -1,14 +1,19 @@
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import {
+  itemConsumedEventSchema,
   itemDestroyedEventSchema,
   itemOwnershipSetEventSchema,
   itemTransferredEventSchema,
   materialBranchSeedSchema,
   materialDerivationVersion,
   materialsProjectionSchema,
+  type ConsumeItemCommand,
+  type ConsumeItemRejectionCode,
   type DestroyItemCommand,
   type DestroyItemRejectionCode,
+  type ItemConsumedEvent,
+  type ItemConsumptionEffect,
   type ItemDestroyedEvent,
   type ItemLocus,
   type ItemOwnershipSetEvent,
@@ -20,6 +25,15 @@ import {
   type TransferItemCommand,
   type TransferItemRejectionCode,
 } from "@/contracts/simulation/materials";
+import type { BodyMeterState, BodySourceAppliedEvent } from "@/contracts/simulation/bodies";
+import type { TriggerScheduledEvent } from "@/contracts/simulation/scheduler";
+import {
+  applySourceToMeter,
+  type BodyBranchMeta,
+  type BodyEventCommandContext,
+  type CollapseContext,
+  type MeterIntegrationView,
+} from "./bodies";
 import { compareStableText, sortedUnique } from "./hash";
 
 /**
@@ -27,6 +41,11 @@ import { compareStableText, sortedUnique } from "./hash";
  * destroy / ownership resolvers over a lock-consistent authority view, the
  * strict-contiguity projector, replay, seed assembly, and the projection
  * invariants. No IO, no clock, no ambient randomness (engine.spec §31–32).
+ *
+ * Slice 2 (§26.5–26.6) adds `resolveConsumeItemFromView` and the shared
+ * `buildConsumptionBodyEffects` helper `lib/simulation/activities.ts`'s
+ * completion-time consumption path reuses — both drive the §25 body kernel
+ * through `applySourceToMeter` (`lib/simulation/bodies.ts`).
  */
 
 /** Bounded holding-chain walk (§26.1): at most this many container hops resolve. */
@@ -140,6 +159,13 @@ export interface MaterialResolutionView {
   itemById(itemId: string): SimulationMaterialItem | undefined;
   /** Count of items whose IMMEDIATE locus is this container (§26.2 capacity). */
   containerOccupantCount(containerItemId: string): number;
+  /**
+   * The live claim-holding-phase activity currently reserving this item
+   * (§26.5), or null. A reserved item is untouchable by every command-driven
+   * material path (transfer, destroy, consume) — only the reserving
+   * activity's own completion/interruption machinery may move it.
+   */
+  reservingActivityId(itemId: string): string | null;
 }
 
 function rootZoneId(root: RootLocus, view: MaterialResolutionView): string | null {
@@ -286,6 +312,10 @@ export function resolveTransferItemFromView(
   if (toLocus.kind === "container" && !containerAccessAllowed(view, toLocus.containerItemId, actorId)) {
     return transferReject("container_access_denied", "That container is closed to them.");
   }
+  // 10.5. reservation (§26.5) — only the reserving activity's own machinery may move it
+  if (view.reservingActivityId(itemId) !== null) {
+    return transferReject("item_reserved", "That is reserved for something else right now.");
+  }
   // 11. destination capacity (excluding the item itself when it already sits there)
   if (toLocus.kind === "container") {
     const container = view.itemById(toLocus.containerItemId);
@@ -381,6 +411,9 @@ export function resolveDestroyItemFromView(
   if (item.locus.kind === "container" && !containerAccessAllowed(view, item.locus.containerItemId, actorId)) {
     return destroyReject("container_access_denied", "That container is closed to them.");
   }
+  if (view.reservingActivityId(itemId) !== null) {
+    return destroyReject("item_reserved", "That is reserved for something else right now.");
+  }
 
   const againstOwnership = item.ownerActorId !== null && item.ownerActorId !== actorId;
   const locationId = view.actorLocationId(actorId);
@@ -403,6 +436,221 @@ export function resolveDestroyItemFromView(
     payload: { actorId, itemId, basis, fromLocus: item.locus, againstOwnership },
   });
   return { ok: true, event };
+}
+
+// ---------------------------------------------------------------------------
+// ConsumeItem resolution (§26.6 — a material event with a body effect)
+// ---------------------------------------------------------------------------
+
+/**
+ * The actor's body facts a consumption needs, supplied by the caller under
+ * the same branch lock as the material view. Absent (or `bodyInitialized:
+ * false`) means the actor has no tracked body — consumption still succeeds,
+ * with zero trailing body events (the E5.2 "empty for worlds without
+ * initialized bodies" precedent: worlds without bodies still eat).
+ */
+export interface ConsumptionBodyView {
+  bodyInitialized: boolean;
+  /** Meter integration facts for one authored effect's meterKey, or undefined if unknown. */
+  meterView(meterKey: string): MeterIntegrationView | undefined;
+  /** Consulted only for an effect whose meterKey is `"energy"`. */
+  collapseContext?: CollapseContext;
+}
+
+export interface ConsumptionBodyEffectsResult {
+  /** Trailing body_source_applied + re-arm trigger_scheduled events, authored order. */
+  events: (BodySourceAppliedEvent | TriggerScheduledEvent)[];
+  meterUpdates: BodyMeterState[];
+  /** The first unused sequence number after every returned event — chain a caller's own trailing events off this. */
+  nextSequence: number;
+}
+
+/**
+ * Build the trailing §25 body-kernel events for one item's authored
+ * `consumptionEffects`, causation-chained to the consumption event with one
+ * running sequence counter (the `resolveBodyCollapse` precedent: every
+ * trailing event chains to the SAME root cause, never to each other).
+ * Shared by `resolveConsumeItemFromView` below and
+ * `lib/simulation/activities.ts`'s completion-time consume-disposition path,
+ * so the two consumption entry points can never drift apart (§26.5–26.6).
+ */
+export function buildConsumptionBodyEffects(input: {
+  view: BodyBranchMeta;
+  command: BodyEventCommandContext;
+  actorId: string;
+  consumptionEffects: readonly ItemConsumptionEffect[];
+  /** The `item_consumed` event every trailing event causation-chains to. */
+  causationEventId: string;
+  startSequence: number;
+  bodyView?: ConsumptionBodyView;
+}): ConsumptionBodyEffectsResult {
+  if (!input.bodyView?.bodyInitialized) {
+    return { events: [], meterUpdates: [], nextSequence: input.startSequence };
+  }
+  const bodyView = input.bodyView;
+  const events: (BodySourceAppliedEvent | TriggerScheduledEvent)[] = [];
+  const meterUpdates: BodyMeterState[] = [];
+  let sequence = input.startSequence;
+  for (const [index, effect] of input.consumptionEffects.entries()) {
+    const meterView = bodyView.meterView(effect.meterKey);
+    // Defensive only: authored data always names a registered meter key.
+    if (!meterView) continue;
+    const result = applySourceToMeter({
+      view: input.view,
+      command: input.command,
+      actorId: input.actorId,
+      meterKey: effect.meterKey,
+      sourceKind: effect.sourceKind,
+      operation: effect.operation,
+      meterView,
+      collapseContext: bodyView.collapseContext,
+      sequence,
+      suffix: `item-consumed-effect-${index}`,
+      causationId: input.causationEventId,
+    });
+    events.push(result.event, ...result.rearmEvents);
+    meterUpdates.push(result.nextState);
+    sequence = result.nextSequence;
+  }
+  return { events, meterUpdates, nextSequence: sequence };
+}
+
+/**
+ * Build one `item_consumed` event (§26.6). Shared by `resolveConsumeItemFromView`
+ * below (the root event of its own transaction, no causation) and
+ * `lib/simulation/activities.ts`'s completion-time consume path (one per
+ * consumed item, causation-chained to the `activity_completed` event) — so an
+ * item's consumption is recorded identically no matter which command reached it.
+ */
+export function buildItemConsumedEvent(input: {
+  worldId: string;
+  branchId: string;
+  rulesetVersion: string;
+  storySecond: number;
+  sequence: number;
+  command: BodyEventCommandContext;
+  actorId: string;
+  itemId: string;
+  fromLocus: ItemLocus;
+  againstOwnership: boolean;
+  locationId?: string;
+  causationId?: string;
+}): ItemConsumedEvent {
+  return itemConsumedEventSchema.parse({
+    id: composeSimulationId("event", [input.branchId, input.command.id, `item-consumed-${input.itemId}`]),
+    worldId: input.worldId,
+    branchId: input.branchId,
+    sequence: input.sequence,
+    storySecond: input.storySecond,
+    type: "item_consumed",
+    schemaVersion: 1,
+    rulesetVersion: input.rulesetVersion,
+    derivationVersion: materialDerivationVersion,
+    commandId: input.command.id,
+    ...(input.causationId === undefined ? {} : { causationId: input.causationId }),
+    correlationId: input.command.correlationId,
+    actorIds: [input.actorId],
+    entityIds: sortedUnique([input.actorId, input.itemId, ...lociEntityIds(input.fromLocus)]),
+    ...(input.locationId === undefined ? {} : { locationId: input.locationId }),
+    recordedAtWallClock: input.command.submittedAtWallClock,
+    payload: {
+      actorId: input.actorId,
+      itemId: input.itemId,
+      fromLocus: input.fromLocus,
+      againstOwnership: input.againstOwnership,
+    },
+  });
+}
+
+interface ConsumeRejection {
+  ok: false;
+  code: ConsumeItemRejectionCode;
+  publicReason: string;
+}
+interface ConsumeAccepted {
+  ok: true;
+  event: ItemConsumedEvent;
+  bodyEvents: (BodySourceAppliedEvent | TriggerScheduledEvent)[];
+  meterUpdates: BodyMeterState[];
+}
+export type ConsumeItemResolution = ConsumeRejection | ConsumeAccepted;
+
+function consumeReject(code: ConsumeItemRejectionCode, publicReason: string): ConsumeRejection {
+  return { ok: false, code, publicReason };
+}
+
+/**
+ * Pure ConsumeItem resolver (§26.6): the destroy-law subset of validation
+ * (no caller-asserted source, so no staleness check) plus `not_consumable`
+ * and `item_reserved`, followed by the trailing §25 body effects built
+ * through `buildConsumptionBodyEffects`.
+ */
+export function resolveConsumeItemFromView(
+  view: MaterialResolutionView,
+  command: ConsumeItemCommand,
+  bodyView?: ConsumptionBodyView,
+): ConsumeItemResolution {
+  const { actorId, itemId } = command.payload;
+
+  if (command.branchId !== view.branchId) {
+    return consumeReject("branch_mismatch", "That world branch is unavailable.");
+  }
+  if (!view.actorById(actorId)) return consumeReject("actor_not_found", "That actor is unavailable.");
+  if (!command.principal.controlledActorIds.includes(actorId)) {
+    return consumeReject("unauthorized_actor", "You cannot direct that actor.");
+  }
+  const actorZoneId = view.actorZoneId(actorId);
+  if (actorZoneId === null) return consumeReject("actor_not_embodied", "They are not anywhere they can do that.");
+  const item = view.itemById(itemId);
+  if (!item) return consumeReject("item_not_found", "That item is unavailable.");
+  if (item.locus.kind === "gone") return consumeReject("item_gone", "That item is gone.");
+  if (!item.consumptionEffects || item.consumptionEffects.length === 0) {
+    return consumeReject("not_consumable", "That cannot be consumed.");
+  }
+
+  const root = resolveRootLocus(item.locus, view.itemById);
+  if (rootZoneId(root, view) !== actorZoneId) {
+    return consumeReject("root_not_colocated", "That item is not within reach.");
+  }
+  if (root.kind === "actor" && root.actorId !== actorId) {
+    return item.locus.kind === "worn"
+      ? consumeReject("worn_by_other", "That is worn by someone else.")
+      : consumeReject("held_by_other", "That is in someone else's keeping.");
+  }
+  if (item.locus.kind === "container" && !containerAccessAllowed(view, item.locus.containerItemId, actorId)) {
+    return consumeReject("container_access_denied", "That container is closed to them.");
+  }
+  if (view.reservingActivityId(itemId) !== null) {
+    return consumeReject("item_reserved", "That is reserved for something else right now.");
+  }
+
+  const againstOwnership = item.ownerActorId !== null && item.ownerActorId !== actorId;
+  const locationId = view.actorLocationId(actorId);
+  const event = buildItemConsumedEvent({
+    worldId: view.worldId,
+    branchId: view.branchId,
+    rulesetVersion: view.rulesetVersion,
+    storySecond: view.storySecond,
+    sequence: view.headSequence + 1,
+    command,
+    actorId,
+    itemId,
+    fromLocus: item.locus,
+    againstOwnership,
+    ...(locationId !== null ? { locationId } : {}),
+  });
+
+  const { events: bodyEvents, meterUpdates } = buildConsumptionBodyEffects({
+    view,
+    command,
+    actorId,
+    consumptionEffects: item.consumptionEffects,
+    causationEventId: event.id,
+    startSequence: event.sequence + 1,
+    bodyView,
+  });
+
+  return { ok: true, event, bodyEvents, meterUpdates };
 }
 
 // ---------------------------------------------------------------------------
@@ -552,6 +800,18 @@ export function applyMaterialEvent(
       const next = sortMaterialsProjection({
         ...bumped,
         items: withLocus(projection.items, event.payload.itemId, { kind: "gone", basis: event.payload.basis }),
+      });
+      assertMaterialsProjectionInvariants(next);
+      return next;
+    }
+    case "item_consumed": {
+      const item = findItem(projection, event.payload.itemId);
+      if (!lociEqual(item.locus, event.payload.fromLocus)) {
+        throw new Error("Item consumption replay source precondition failed");
+      }
+      const next = sortMaterialsProjection({
+        ...bumped,
+        items: withLocus(projection.items, event.payload.itemId, { kind: "gone", basis: "consumed" }),
       });
       assertMaterialsProjectionInvariants(next);
       return next;

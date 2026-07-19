@@ -1,0 +1,1 @@
+ALTER TABLE "sim_items" ADD COLUMN "consumption_effects" jsonb;

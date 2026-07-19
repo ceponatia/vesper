@@ -1,6 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { composeSimulationId } from "@/contracts/simulation/identity";
+import { claimHoldingActivityPhases } from "@/contracts/simulation/activities";
 import {
+  consumeItemCommandResultSchema,
+  consumeItemCommandSchema,
   destroyItemCommandResultSchema,
   destroyItemCommandSchema,
   itemLocusSchema,
@@ -10,6 +13,8 @@ import {
   simulationMaterialItemSchema,
   transferItemCommandResultSchema,
   transferItemCommandSchema,
+  type ConsumeItemCommand,
+  type ConsumeItemCommandResult,
   type DestroyItemCommand,
   type DestroyItemCommandResult,
   type ItemGoneBasis,
@@ -26,13 +31,26 @@ import {
 } from "@/contracts/simulation/outbox";
 import {
   materialsSeedProjection,
+  resolveConsumeItemFromView,
   resolveDestroyItemFromView,
   resolveSetItemOwnershipFromView,
   resolveTransferItemFromView,
+  type ConsumptionBodyView,
   type MaterialResolutionView,
 } from "@/lib/simulation/materials";
+import { bodyMeterRegistryByVersion, bodyRegistryVersionSchema } from "@/contracts/simulation/bodies";
+import {
+  BODY_THRESHOLD_HORIZON_SECONDS,
+  selfCareAdjustmentsBetween,
+  type MeterIntegrationView,
+} from "@/lib/simulation/bodies";
 import {
   db,
+  simActivities,
+  simBodyConditions,
+  simBodyMeters,
+  simBodyModifiers,
+  simBodyRhythms,
   simBranches,
   simCharacters,
   simItemHoldings,
@@ -48,7 +66,15 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
-import type { SimTx } from "./trigger-projector";
+import {
+  bodyConditionFromRow,
+  bodyMeterFromRow,
+  bodyModifierFromRow,
+  bodyRhythmFromRow,
+  retirePendingThresholdTriggers,
+  upsertMeterRow,
+} from "./body-store";
+import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 /**
  * E5.3 slice 1 durable material authority (engine.spec §26.1–26.4). Modeled on
@@ -246,6 +272,7 @@ export async function seedDurableMaterialBranch(
           itemId: item.id,
           name: item.name,
           materialKindKey: item.materialKindKey ?? null,
+          consumptionEffects: item.consumptionEffects ?? null,
           ownerActorId: item.ownerActorId,
           containerCapacityCount: item.container?.capacityCount ?? null,
           containerAccess: item.container?.access ?? null,
@@ -276,8 +303,18 @@ export async function seedDurableMaterialBranch(
  * scale (tests, soak) keeps this a single small join, not a growth risk;
  * `containerOccupantCount` is derived from the same holdings rows rather than
  * a second aggregate query — one lock-consistent snapshot, not two.
+ *
+ * `touchedItemIds` names the item(s) THIS command's pure resolver may check
+ * `reservingActivityId` against (always exactly the one named item, for every
+ * current command) — the reservation fact is preloaded for just those ids in
+ * one query (§26.5), not resolved per-callback, because the accessor must
+ * answer synchronously.
  */
-async function loadMaterialResolutionView(tx: SimTx, branch: LockedBranchView): Promise<MaterialResolutionView> {
+async function loadMaterialResolutionView(
+  tx: SimTx,
+  branch: LockedBranchView,
+  touchedItemIds: readonly string[],
+): Promise<MaterialResolutionView> {
   const characterRows = await tx
     .select({ characterId: simCharacters.characterId, name: simCharacters.name })
     .from(simCharacters)
@@ -300,6 +337,7 @@ async function loadMaterialResolutionView(tx: SimTx, branch: LockedBranchView): 
       itemId: simItems.itemId,
       name: simItems.name,
       materialKindKey: simItems.materialKindKey,
+      consumptionEffects: simItems.consumptionEffects,
       ownerActorId: simItems.ownerActorId,
       containerCapacityCount: simItems.containerCapacityCount,
       containerAccess: simItems.containerAccess,
@@ -332,6 +370,7 @@ async function loadMaterialResolutionView(tx: SimTx, branch: LockedBranchView): 
       id: row.itemId,
       name: row.name,
       ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
+      ...(row.consumptionEffects ? { consumptionEffects: row.consumptionEffects } : {}),
       ownerActorId: row.ownerActorId,
       ...(row.containerCapacityCount !== null && row.containerAccess !== null
         ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
@@ -341,6 +380,38 @@ async function loadMaterialResolutionView(tx: SimTx, branch: LockedBranchView): 
     itemsById.set(item.id, item);
     if (locus.kind === "container") {
       containerOccupantCounts.set(locus.containerItemId, (containerOccupantCounts.get(locus.containerItemId) ?? 0) + 1);
+    }
+  }
+
+  // §26.5: which live activity (if any) reserves each touched item. Live is
+  // every claim-holding phase (queued/preparing/active/paused/interrupted) —
+  // the same set claims themselves project from — so a reservation can never
+  // outlive the activity that holds it and never orphan.
+  const reservingActivityIdByItem = new Map<string, string>();
+  if (touchedItemIds.length > 0) {
+    const reservationRows = await tx
+      .select({
+        activityInstanceId: simActivities.activityInstanceId,
+        reservedItemIds: simActivities.reservedItemIds,
+      })
+      .from(simActivities)
+      .where(
+        and(
+          eq(simActivities.branchId, branch.id),
+          inArray(simActivities.phase, [...claimHoldingActivityPhases]),
+          or(
+            ...touchedItemIds.map(
+              (itemId) => sql`${simActivities.reservedItemIds} @> ${JSON.stringify([itemId])}::jsonb`,
+            ),
+          ),
+        ),
+      );
+    for (const row of reservationRows) {
+      for (const itemId of row.reservedItemIds) {
+        if (touchedItemIds.includes(itemId) && !reservingActivityIdByItem.has(itemId)) {
+          reservingActivityIdByItem.set(itemId, row.activityInstanceId);
+        }
+      }
     }
   }
 
@@ -362,6 +433,85 @@ async function loadMaterialResolutionView(tx: SimTx, branch: LockedBranchView): 
     },
     itemById: (itemId) => itemsById.get(itemId),
     containerOccupantCount: (containerItemId) => containerOccupantCounts.get(containerItemId) ?? 0,
+    reservingActivityId: (itemId) => reservingActivityIdByItem.get(itemId) ?? null,
+  };
+}
+
+/**
+ * Build the actor's §26.6 `ConsumptionBodyView` the same way body-store.ts
+ * loads one actor's body for its own resolvers — `loadActorBody` /
+ * `meterViewOf` / `collapseContextOf` there are private to that module, so
+ * this is the material lane's own copy of the same shape (meters, modifiers,
+ * rhythms, and the collapse context's last-real-sleep fact), reusing every
+ * row mapper body-store.ts exports rather than re-deriving them.
+ */
+async function loadConsumptionBodyView(
+  tx: SimTx,
+  branchId: string,
+  actorId: string,
+  storySecond: number,
+): Promise<ConsumptionBodyView> {
+  const [meterRows, modifierRows, rhythmRows, conditionRows] = await Promise.all([
+    tx
+      .select()
+      .from(simBodyMeters)
+      .where(and(eq(simBodyMeters.branchId, branchId), eq(simBodyMeters.actorId, actorId))),
+    tx
+      .select()
+      .from(simBodyModifiers)
+      .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.actorId, actorId))),
+    tx
+      .select()
+      .from(simBodyRhythms)
+      .where(and(eq(simBodyRhythms.branchId, branchId), eq(simBodyRhythms.actorId, actorId))),
+    tx
+      .select()
+      .from(simBodyConditions)
+      .where(and(eq(simBodyConditions.branchId, branchId), eq(simBodyConditions.actorId, actorId))),
+  ]);
+  const meters = meterRows.map(bodyMeterFromRow);
+  const modifiers = modifierRows.map(bodyModifierFromRow);
+  const rhythms = rhythmRows.map(bodyRhythmFromRow);
+  const conditions = conditionRows.map(bodyConditionFromRow);
+  const horizon = storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
+
+  const lastSleepEndedAtStorySecond = conditions
+    .filter(
+      (condition) =>
+        condition.key === "asleep" && condition.status === "ended" && condition.endedAtStorySecond !== undefined,
+    )
+    .reduce<number | undefined>(
+      (latest, condition) =>
+        latest === undefined || (condition.endedAtStorySecond ?? 0) > latest
+          ? condition.endedAtStorySecond
+          : latest,
+      undefined,
+    );
+
+  const meterView = (meterKey: string): MeterIntegrationView | undefined => {
+    const state = meters.find((meter) => meter.meterKey === meterKey);
+    if (!state) return undefined;
+    const parsedVersion = bodyRegistryVersionSchema.safeParse(state.registryVersion);
+    if (!parsedVersion.success) return undefined;
+    const definition = bodyMeterRegistryByVersion[parsedVersion.data].find(
+      (candidate) => candidate.key === meterKey,
+    );
+    if (!definition) return undefined;
+    return {
+      definition,
+      state,
+      modifiers: modifiers.filter((modifier) => modifier.meterKey === meterKey),
+      scheduledAdjustments: selfCareAdjustmentsBetween(rhythms, meterKey, state.lastIntegratedAtStorySecond, horizon),
+    };
+  };
+
+  return {
+    bodyInitialized: meters.length > 0,
+    meterView,
+    collapseContext: {
+      rhythmRows: rhythms,
+      ...(lastSleepEndedAtStorySecond === undefined ? {} : { lastSleepEndedAtStorySecond }),
+    },
   };
 }
 
@@ -380,7 +530,13 @@ async function updateItemLocus(
   if (updated.length !== 1) throw new Error("Locked item holding changed before its locus update");
 }
 
-async function publishMaterialFeedObligation(
+/**
+ * Insert one material feed delivery obligation. Exported: the sibling §26.5
+ * completion-time consume-disposition path (`activity-store.ts`) publishes
+ * the same obligation for each `item_consumed` its own transaction emits, so
+ * this is the one place that row shape is built.
+ */
+export async function publishMaterialFeedObligation(
   tx: SimTx,
   event: { id: string; worldId: string; branchId: string; sequence: number },
 ): Promise<void> {
@@ -430,7 +586,7 @@ export async function submitDurableTransferItem(
     database: options.database,
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command: TransferItemCommand) => {
-      const view = await loadMaterialResolutionView(tx, branch);
+      const view = await loadMaterialResolutionView(tx, branch, [command.payload.itemId]);
       const resolution = resolveTransferItemFromView(view, command);
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
@@ -485,7 +641,7 @@ export async function submitDurableDestroyItem(
     database: options.database,
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command: DestroyItemCommand) => {
-      const view = await loadMaterialResolutionView(tx, branch);
+      const view = await loadMaterialResolutionView(tx, branch, [command.payload.itemId]);
       const resolution = resolveDestroyItemFromView(view, command);
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
@@ -524,6 +680,108 @@ export async function submitDurableDestroyItem(
 }
 
 // ---------------------------------------------------------------------------
+// consume_item (v1) — §26.6 a material event with a body effect
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute one ConsumeItem: the `item_consumed` event, holdings update, and
+ * feed obligation exactly like destroy, PLUS — when the item carries authored
+ * `consumptionEffects` — the trailing §25 body-kernel events in the same
+ * transaction (retire-then-re-arm per meter, mirroring
+ * `submitDurableApplyBodySource`), all under one branch advance. An
+ * uninitialized (or bodiless) actor still eats: `resolveConsumeItemFromView`
+ * returns zero trailing body events and this loop simply has nothing to do.
+ */
+export async function submitDurableConsumeItem(
+  rawCommand: unknown,
+  options: MaterialSubmitOptions = {},
+): Promise<ConsumeItemCommandResult> {
+  const result = await runSimulationCommand({
+    rawCommand,
+    commandSchema: consumeItemCommandSchema,
+    resultSchema: consumeItemCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That consumption request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That consumption has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      consumeItemCommandResultSchema.parse({ status: "conflict", commandId, currentVersion, retryable: true }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: ConsumeItemCommand) => {
+      const view = await loadMaterialResolutionView(tx, branch, [command.payload.itemId]);
+      const item = view.itemById(command.payload.itemId);
+      const bodyView =
+        item?.consumptionEffects && item.consumptionEffects.length > 0
+          ? await loadConsumptionBodyView(tx, branch.id, command.payload.actorId, branch.storySecond)
+          : undefined;
+      const resolution = resolveConsumeItemFromView(view, command, bodyView);
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      const event = resolution.event;
+      await appendSimulationEvent(tx, event);
+      injectCrash(options.crashAt, "after_event_append");
+
+      await updateItemLocus(tx, branch.id, event.payload.itemId, { kind: "gone", basis: "consumed" }, event.sequence);
+      injectCrash(options.crashAt, "after_projection_update");
+
+      await publishMaterialFeedObligation(tx, event);
+      injectCrash(options.crashAt, "after_outbox_insert");
+
+      // §26.6 trailing body effects, in the order the resolver built them:
+      // each body_source_applied retires (and, for energy, collapse-retires)
+      // its own meter's pending alarm BEFORE its own trailing re-arm — never
+      // a single retirement for the whole batch, because a multi-effect item
+      // (e.g. a meal that both feeds and hydrates) touches more than one meter.
+      let meterUpdateIndex = 0;
+      for (const trailing of resolution.bodyEvents) {
+        await appendSimulationEvent(tx, trailing);
+        switch (trailing.type) {
+          case "body_source_applied": {
+            await retirePendingThresholdTriggers(
+              tx,
+              branch,
+              command.id,
+              command.submittedAtWallClock,
+              command.payload.actorId,
+              trailing.payload.meterKey,
+            );
+            const meter = resolution.meterUpdates[meterUpdateIndex];
+            meterUpdateIndex += 1;
+            if (!meter) {
+              throw new Error("Consumption produced a body_source_applied event without a matching meter update");
+            }
+            await upsertMeterRow(tx, branch.id, meter, trailing.sequence);
+            break;
+          }
+          case "trigger_scheduled": {
+            await applyTriggerScheduledEvent(tx, trailing, { branchId: branch.id, worldId: branch.worldId });
+            break;
+          }
+        }
+      }
+
+      const lastSequence = resolution.bodyEvents.at(-1)?.sequence ?? event.sequence;
+      await advanceLockedBranch(tx, branch, lastSequence);
+      injectCrash(options.crashAt, "after_branch_advance");
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: event.sequence,
+        lastSequence,
+        eventIds: [event.id, ...resolution.bodyEvents.map((trailing) => trailing.id)],
+      };
+    },
+  });
+
+  if (options.crashAt === "after_commit") throw new InjectedSimulationCrash("after_commit");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // set_item_ownership (v1) — §26.3 social, not physical
 // ---------------------------------------------------------------------------
 
@@ -551,7 +809,7 @@ export async function submitDurableSetItemOwnership(
     database: options.database,
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command: SetItemOwnershipCommand) => {
-      const view = await loadMaterialResolutionView(tx, branch);
+      const view = await loadMaterialResolutionView(tx, branch, [command.payload.itemId]);
       const resolution = resolveSetItemOwnershipFromView(view, command);
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 

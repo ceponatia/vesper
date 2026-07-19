@@ -5,6 +5,7 @@ import {
   createEventEnvelopeSchema,
   createStableStringSetSchema,
 } from "./envelopes";
+import { bodySourceOperationSchema } from "./bodies";
 import {
   branchHeadSequenceSchema,
   branchVersionSchema,
@@ -24,6 +25,12 @@ import {
  * has exactly one holding locus; containers are items; ownership is social, not
  * physical. This contract replaces the Gate 1 `transfer_item` v1 stand-in
  * (pseudo-container rows, captured witness sets) wholesale — no legacy wrappers.
+ *
+ * Slice 2 (§26.5–26.6) adds resource reservations (activities.ts) and
+ * consumption: `consume_item` and the completion path of a `consume`-
+ * disposition resource cost both emit `item_consumed`, with trailing
+ * `body_source_applied` events for the item's authored `consumptionEffects`
+ * integrated through the §25 body kernel in the same transaction.
  */
 
 /** Stamped on every material event, matching the sibling domains' convention (bodies, scheduler). */
@@ -93,6 +100,25 @@ export const itemContainerConfigSchema = z
 export type ItemContainerConfig = z.infer<typeof itemContainerConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Consumption effects (§26.6) — authored per item, applied through the §25 body kernel
+// ---------------------------------------------------------------------------
+
+/** The body-source vocabulary a meal/drink/adjustment may report through (a restricted
+ * subset of `bodySourceKinds` — exertion/climax couplings never fire off a consumption). */
+export const itemConsumptionSourceKinds = ["meal", "drink", "adjustment"] as const;
+export const itemConsumptionSourceKindSchema = z.enum(itemConsumptionSourceKinds);
+export type ItemConsumptionSourceKind = z.infer<typeof itemConsumptionSourceKindSchema>;
+
+export const itemConsumptionEffectSchema = z
+  .object({
+    meterKey: z.string().trim().min(1).max(64),
+    sourceKind: itemConsumptionSourceKindSchema,
+    operation: bodySourceOperationSchema,
+  })
+  .strict();
+export type ItemConsumptionEffect = z.infer<typeof itemConsumptionEffectSchema>;
+
+// ---------------------------------------------------------------------------
 // Material item + projection (§26)
 // ---------------------------------------------------------------------------
 
@@ -106,6 +132,8 @@ export const simulationMaterialItemSchema = z
     ownerActorId: worldCharacterIdSchema.nullable().default(null),
     /** Present iff this item is itself a container (capacity + access both set). */
     container: itemContainerConfigSchema.optional(),
+    /** Authored §26.6 body effects a consumption applies, in authored order. */
+    consumptionEffects: z.array(itemConsumptionEffectSchema).max(4).optional(),
     locus: itemLocusSchema,
   })
   .strict();
@@ -217,6 +245,7 @@ export const transferItemRejectionCodes = [
   "worn_by_other",
   "not_self_dressing",
   "container_access_denied",
+  "item_reserved",
   "destination_full",
   "container_cycle",
   "same_locus",
@@ -262,10 +291,49 @@ export const destroyItemRejectionCodes = [
   "held_by_other",
   "worn_by_other",
   "container_access_denied",
+  "item_reserved",
 ] as const;
 export const destroyItemRejectionCodeSchema = z.enum(destroyItemRejectionCodes);
 export const destroyItemCommandResultSchema = createCommandResultSchema(
   destroyItemRejectionCodeSchema,
+);
+
+// ---------------------------------------------------------------------------
+// consume_item (v1) — §26.6 consumption
+// ---------------------------------------------------------------------------
+
+const consumeItemPayloadSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    itemId: itemIdSchema,
+  })
+  .strict();
+
+export const consumeItemCommandSchema = createCommandEnvelopeSchema(
+  "consume_item",
+  1,
+  consumeItemPayloadSchema,
+);
+
+export const consumeItemRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "actor_not_found",
+  "unauthorized_actor",
+  "actor_not_embodied",
+  "item_not_found",
+  "item_gone",
+  "not_consumable",
+  "root_not_colocated",
+  "held_by_other",
+  "worn_by_other",
+  "container_access_denied",
+  "item_reserved",
+] as const;
+export const consumeItemRejectionCodeSchema = z.enum(consumeItemRejectionCodes);
+export const consumeItemCommandResultSchema = createCommandResultSchema(
+  consumeItemRejectionCodeSchema,
 );
 
 // ---------------------------------------------------------------------------
@@ -341,6 +409,28 @@ export const itemDestroyedEventSchema = createEventEnvelopeSchema(
   itemDestroyedPayloadSchema,
 ).extend({ commandId: commandIdSchema });
 
+/**
+ * `fromLocus` is the item's locus just before it went gone/consumed — the
+ * same reverse-derivation shape `item_destroyed` uses (§29's replay reads it
+ * identically). Trailing `body_source_applied` events for the item's authored
+ * `consumptionEffects` are separate events in the same transaction, causation-
+ * chained to this one (§26.6) — not part of this payload.
+ */
+const itemConsumedPayloadSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    itemId: itemIdSchema,
+    fromLocus: itemLocusSchema,
+    againstOwnership: z.boolean(),
+  })
+  .strict();
+
+export const itemConsumedEventSchema = createEventEnvelopeSchema(
+  "item_consumed",
+  1,
+  itemConsumedPayloadSchema,
+).extend({ commandId: commandIdSchema });
+
 const itemOwnershipSetPayloadSchema = z
   .object({
     itemId: itemIdSchema,
@@ -367,10 +457,15 @@ export type DestroyItemCommand = z.infer<typeof destroyItemCommandSchema>;
 export type DestroyItemCommandInput = z.input<typeof destroyItemCommandSchema>;
 export type DestroyItemRejectionCode = z.infer<typeof destroyItemRejectionCodeSchema>;
 export type DestroyItemCommandResult = z.infer<typeof destroyItemCommandResultSchema>;
+export type ConsumeItemCommand = z.infer<typeof consumeItemCommandSchema>;
+export type ConsumeItemCommandInput = z.input<typeof consumeItemCommandSchema>;
+export type ConsumeItemRejectionCode = z.infer<typeof consumeItemRejectionCodeSchema>;
+export type ConsumeItemCommandResult = z.infer<typeof consumeItemCommandResultSchema>;
 export type SetItemOwnershipCommand = z.infer<typeof setItemOwnershipCommandSchema>;
 export type SetItemOwnershipCommandInput = z.input<typeof setItemOwnershipCommandSchema>;
 export type SetItemOwnershipRejectionCode = z.infer<typeof setItemOwnershipRejectionCodeSchema>;
 export type SetItemOwnershipCommandResult = z.infer<typeof setItemOwnershipCommandResultSchema>;
 export type ItemTransferredEvent = z.infer<typeof itemTransferredEventSchema>;
 export type ItemDestroyedEvent = z.infer<typeof itemDestroyedEventSchema>;
+export type ItemConsumedEvent = z.infer<typeof itemConsumedEventSchema>;
 export type ItemOwnershipSetEvent = z.infer<typeof itemOwnershipSetEventSchema>;

@@ -179,6 +179,8 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       return { kind: "hard", summary: "An item visibly changed hands." };
     case "item_destroyed":
       return { kind: "hard", summary: "An item was visibly destroyed." };
+    case "item_consumed":
+      return { kind: "hard", summary: "Something was visibly consumed." };
     case "journey_delayed":
       return { kind: "allowed", summary: "A journey under way is running behind." };
     case "journey_interrupted":
