@@ -1,0 +1,586 @@
+import { and, eq } from "drizzle-orm";
+import { composeSimulationId } from "@/contracts/simulation/identity";
+import {
+  destroyItemCommandResultSchema,
+  destroyItemCommandSchema,
+  itemLocusSchema,
+  materialBranchSeedSchema,
+  setItemOwnershipCommandResultSchema,
+  setItemOwnershipCommandSchema,
+  simulationMaterialItemSchema,
+  transferItemCommandResultSchema,
+  transferItemCommandSchema,
+  type DestroyItemCommand,
+  type DestroyItemCommandResult,
+  type ItemGoneBasis,
+  type ItemLocus,
+  type SetItemOwnershipCommand,
+  type SetItemOwnershipCommandResult,
+  type SimulationMaterialItem,
+  type TransferItemCommand,
+  type TransferItemCommandResult,
+} from "@/contracts/simulation/materials";
+import {
+  itemTransferFeedConsumerKind,
+  itemTransferFeedProjectionSchemaVersion,
+} from "@/contracts/simulation/outbox";
+import {
+  materialsSeedProjection,
+  resolveDestroyItemFromView,
+  resolveSetItemOwnershipFromView,
+  resolveTransferItemFromView,
+  type MaterialResolutionView,
+} from "@/lib/simulation/materials";
+import {
+  db,
+  simBranches,
+  simCharacters,
+  simItemHoldings,
+  simItems,
+  simOutbox,
+  simPhysicalLoci,
+  simWorlds,
+  type Db,
+} from "@/server/db";
+import {
+  advanceLockedBranch,
+  appendSimulationEvent,
+  runSimulationCommand,
+  type LockedBranchView,
+} from "./command-runner";
+import type { SimTx } from "./trigger-projector";
+
+/**
+ * E5.3 slice 1 durable material authority (engine.spec §26.1–26.4). Modeled on
+ * body-store.ts / activity-store.ts, NOT on the Gate 1 `item-transfer-store.ts`
+ * this replaces: every command runs through the shared `runSimulationCommand`
+ * shell (§11.1) rather than a hand-rolled transaction, so observation/knowledge/
+ * soft-canon/memory folds come free instead of needing to be reimplemented here.
+ */
+
+// ---------------------------------------------------------------------------
+// Crash injection (soak-harness failpoints)
+// ---------------------------------------------------------------------------
+
+/**
+ * The pre-commit points the E2.6 soak drives crashes through on the transfer
+ * path, carried over from the Gate 1 store. `after_command_result` is dropped:
+ * the shared shell persists `sim_commands` and folds observations/knowledge/
+ * soft-canon/memory itself, after `execute` returns and outside any hook this
+ * module can reach — a store built on the shared shell cannot inject there
+ * (command-runner.ts:170 marks the spot; adding a hook is a shell-wide change,
+ * out of this slice's scope, not a per-store one).
+ */
+export type DurableMaterialCrashPoint =
+  | "after_event_append"
+  | "after_projection_update"
+  | "after_outbox_insert"
+  | "after_branch_advance"
+  | "after_commit";
+
+export class InjectedSimulationCrash extends Error {
+  constructor(readonly point: DurableMaterialCrashPoint) {
+    super(`Injected E5.3 crash at ${point}`);
+    this.name = "InjectedSimulationCrash";
+  }
+}
+
+function injectCrash(
+  configured: DurableMaterialCrashPoint | undefined,
+  point: Exclude<DurableMaterialCrashPoint, "after_commit">,
+): void {
+  if (configured === point) throw new InjectedSimulationCrash(point);
+}
+
+export interface MaterialSeedOptions {
+  database?: Db;
+}
+
+export interface MaterialSubmitOptions {
+  database?: Db;
+  crashAt?: DurableMaterialCrashPoint;
+  /**
+   * Admit the command at whatever version the branch holds once its lock is
+   * taken, instead of comparing against a caller-supplied expectedVersion —
+   * see command-runner.ts's `runSimulationCommand` doc for the trigger-replay
+   * rationale (a scheduled transfer resolves under this option).
+   */
+  admitAtLockedVersion?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Locus <-> row mapping
+// ---------------------------------------------------------------------------
+
+/** The flat `sim_item_holdings` column shape both directions convert against (§26.1). */
+export interface ItemHoldingRowFields {
+  locusKind: "held" | "worn" | "container" | "zone" | "gone";
+  actorId: string | null;
+  slotKey: string | null;
+  containerItemId: string | null;
+  zoneId: string | null;
+  goneBasis: ItemGoneBasis | null;
+}
+
+/** Reconstruct a typed locus from a holdings row; the parse re-brands and validates. */
+export function itemLocusFromHoldingRow(row: ItemHoldingRowFields): ItemLocus {
+  switch (row.locusKind) {
+    case "held":
+      return itemLocusSchema.parse({ kind: "held", actorId: row.actorId });
+    case "worn":
+      return itemLocusSchema.parse({ kind: "worn", actorId: row.actorId, slotKey: row.slotKey });
+    case "container":
+      return itemLocusSchema.parse({ kind: "container", containerItemId: row.containerItemId });
+    case "zone":
+      return itemLocusSchema.parse({ kind: "zone", zoneId: row.zoneId });
+    case "gone":
+      return itemLocusSchema.parse({ kind: "gone", basis: row.goneBasis });
+  }
+}
+
+/** The holdings-row column patch for one locus — shared by seed inserts, live updates, and fork materialization. */
+export function holdingRowFieldsForLocus(locus: ItemLocus): ItemHoldingRowFields {
+  const empty = { actorId: null, slotKey: null, containerItemId: null, zoneId: null, goneBasis: null };
+  switch (locus.kind) {
+    case "held":
+      return { ...empty, locusKind: "held", actorId: locus.actorId };
+    case "worn":
+      return { ...empty, locusKind: "worn", actorId: locus.actorId, slotKey: locus.slotKey };
+    case "container":
+      return { ...empty, locusKind: "container", containerItemId: locus.containerItemId };
+    case "zone":
+      return { ...empty, locusKind: "zone", zoneId: locus.zoneId };
+    case "gone":
+      return { ...empty, locusKind: "gone", goneBasis: locus.basis };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Seed — replaces the Gate 1 world/branch/character/item bootstrap
+// ---------------------------------------------------------------------------
+
+/**
+ * Seed one new E5.3 branch atomically from `materialBranchSeedSchema`. This is
+ * the bootstrap/test seam every other durable store's int test also boots
+ * through (world + branch + `sim_characters` rows) — a bootstrap/test seam,
+ * not a branch-fork implementation (branch-store.ts owns ancestry).
+ *
+ * Items are inserted in FK-safe order (world, branch, characters, items, then
+ * holdings) so a container item and the item it holds land in one statement
+ * batch regardless of array order. An item whose seed locus is `zone` needs
+ * that zone to already exist in `sim_zones` (a non-deferred FK) — this
+ * function does not create zones, so callers wanting a zone-resting item at
+ * seed time must call `seedDurableSpaceTopology` first; because that function
+ * in turn needs this one's characters to already exist for its physical-locus
+ * rows, the practical three-step order for "embodied actors + a zone-resting
+ * item" is: this seed (characters + non-zone items), then space topology
+ * (zones + loci), then a `transfer_item` command placing the item at a zone.
+ */
+export async function seedDurableMaterialBranch(
+  rawSeed: unknown,
+  options: MaterialSeedOptions = {},
+): Promise<void> {
+  const seed = materialBranchSeedSchema.parse(rawSeed);
+  // Asserts §26 projection invariants (unique ids, container refs, capacity,
+  // no cycles) before anything is written — the pure layer runs first.
+  materialsSeedProjection(seed);
+  const database = options.database ?? db();
+
+  await database.transaction(async (tx) => {
+    await tx
+      .insert(simWorlds)
+      .values({
+        id: seed.worldId,
+        worldTypeId: seed.worldTypeId,
+        seed: seed.worldSeed,
+        rulesetVersion: seed.rulesetVersion,
+        status: seed.worldStatus,
+        permitsTrespass: seed.permitsTrespass,
+      })
+      .onConflictDoNothing();
+
+    const [world] = await tx
+      .select({
+        worldTypeId: simWorlds.worldTypeId,
+        seed: simWorlds.seed,
+        rulesetVersion: simWorlds.rulesetVersion,
+        status: simWorlds.status,
+      })
+      .from(simWorlds)
+      .where(eq(simWorlds.id, seed.worldId))
+      .limit(1);
+    if (
+      !world ||
+      world.worldTypeId !== seed.worldTypeId ||
+      world.seed !== seed.worldSeed ||
+      world.rulesetVersion !== seed.rulesetVersion ||
+      world.status !== seed.worldStatus
+    ) {
+      throw new Error("Existing simulation world metadata does not match the branch seed");
+    }
+
+    await tx.insert(simBranches).values({
+      id: seed.branchId,
+      worldId: seed.worldId,
+      headSequence: 0,
+      version: 0,
+      storySecond: seed.originStorySecond,
+      // The seed step is not an event (plan R3), so the origin clock must be
+      // recorded here or a fork at sequence zero could never recover it.
+      originStorySecond: seed.originStorySecond,
+    });
+
+    if (seed.actors.length > 0) {
+      await tx.insert(simCharacters).values(
+        seed.actors.map((actor) => ({
+          branchId: seed.branchId,
+          characterId: actor.id,
+          name: actor.name,
+        })),
+      );
+    }
+    if (seed.items.length > 0) {
+      await tx.insert(simItems).values(
+        seed.items.map((item) => ({
+          branchId: seed.branchId,
+          itemId: item.id,
+          name: item.name,
+          materialKindKey: item.materialKindKey ?? null,
+          ownerActorId: item.ownerActorId,
+          containerCapacityCount: item.container?.capacityCount ?? null,
+          containerAccess: item.container?.access ?? null,
+        })),
+      );
+      await tx.insert(simItemHoldings).values(
+        seed.items.map((item) => ({
+          branchId: seed.branchId,
+          itemId: item.id,
+          updatedSequence: 0,
+          ...holdingRowFieldsForLocus(item.locus),
+        })),
+      );
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Authority view — lock-consistent, loaded fresh inside every command
+// ---------------------------------------------------------------------------
+
+/**
+ * Load the material authority view under the branch lock. Items and their
+ * holdings are read whole (not just the command's named item) because the
+ * pure resolver's root-locus walk and cycle check may hop through container
+ * items never named on the command — and the view's `itemById` must resolve
+ * synchronously, so there is no way to fetch a hop lazily mid-walk. Branch
+ * scale (tests, soak) keeps this a single small join, not a growth risk;
+ * `containerOccupantCount` is derived from the same holdings rows rather than
+ * a second aggregate query — one lock-consistent snapshot, not two.
+ */
+async function loadMaterialResolutionView(tx: SimTx, branch: LockedBranchView): Promise<MaterialResolutionView> {
+  const characterRows = await tx
+    .select({ characterId: simCharacters.characterId, name: simCharacters.name })
+    .from(simCharacters)
+    .where(eq(simCharacters.branchId, branch.id));
+  const actorsById = new Map(characterRows.map((row) => [row.characterId, { id: row.characterId, name: row.name }]));
+
+  const locusRows = await tx
+    .select({
+      actorId: simPhysicalLoci.actorId,
+      kind: simPhysicalLoci.kind,
+      zoneId: simPhysicalLoci.zoneId,
+      locationId: simPhysicalLoci.locationId,
+    })
+    .from(simPhysicalLoci)
+    .where(eq(simPhysicalLoci.branchId, branch.id));
+  const lociByActor = new Map(locusRows.map((row) => [row.actorId, row]));
+
+  const itemRows = await tx
+    .select({
+      itemId: simItems.itemId,
+      name: simItems.name,
+      materialKindKey: simItems.materialKindKey,
+      ownerActorId: simItems.ownerActorId,
+      containerCapacityCount: simItems.containerCapacityCount,
+      containerAccess: simItems.containerAccess,
+      locusKind: simItemHoldings.locusKind,
+      holdingActorId: simItemHoldings.actorId,
+      slotKey: simItemHoldings.slotKey,
+      containerItemId: simItemHoldings.containerItemId,
+      zoneId: simItemHoldings.zoneId,
+      goneBasis: simItemHoldings.goneBasis,
+    })
+    .from(simItems)
+    .innerJoin(
+      simItemHoldings,
+      and(eq(simItemHoldings.branchId, simItems.branchId), eq(simItemHoldings.itemId, simItems.itemId)),
+    )
+    .where(eq(simItems.branchId, branch.id));
+
+  const itemsById = new Map<string, SimulationMaterialItem>();
+  const containerOccupantCounts = new Map<string, number>();
+  for (const row of itemRows) {
+    const locus = itemLocusFromHoldingRow({
+      locusKind: row.locusKind,
+      actorId: row.holdingActorId,
+      slotKey: row.slotKey,
+      containerItemId: row.containerItemId,
+      zoneId: row.zoneId,
+      goneBasis: row.goneBasis,
+    });
+    const item = simulationMaterialItemSchema.parse({
+      id: row.itemId,
+      name: row.name,
+      ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
+      ownerActorId: row.ownerActorId,
+      ...(row.containerCapacityCount !== null && row.containerAccess !== null
+        ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
+        : {}),
+      locus,
+    });
+    itemsById.set(item.id, item);
+    if (locus.kind === "container") {
+      containerOccupantCounts.set(locus.containerItemId, (containerOccupantCounts.get(locus.containerItemId) ?? 0) + 1);
+    }
+  }
+
+  return {
+    worldId: branch.worldId,
+    branchId: branch.id,
+    rulesetVersion: branch.rulesetVersion,
+    version: branch.version,
+    headSequence: branch.headSequence,
+    storySecond: branch.storySecond,
+    actorById: (actorId) => actorsById.get(actorId),
+    actorZoneId: (actorId) => {
+      const locus = lociByActor.get(actorId);
+      return locus && locus.kind === "at" && locus.zoneId !== null ? locus.zoneId : null;
+    },
+    actorLocationId: (actorId) => {
+      const locus = lociByActor.get(actorId);
+      return locus && locus.kind === "at" && locus.locationId !== null ? locus.locationId : null;
+    },
+    itemById: (itemId) => itemsById.get(itemId),
+    containerOccupantCount: (containerItemId) => containerOccupantCounts.get(containerItemId) ?? 0,
+  };
+}
+
+async function updateItemLocus(
+  tx: SimTx,
+  branchId: string,
+  itemId: string,
+  locus: ItemLocus,
+  updatedSequence: number,
+): Promise<void> {
+  const updated = await tx
+    .update(simItemHoldings)
+    .set({ ...holdingRowFieldsForLocus(locus), updatedSequence })
+    .where(and(eq(simItemHoldings.branchId, branchId), eq(simItemHoldings.itemId, itemId)))
+    .returning({ itemId: simItemHoldings.itemId });
+  if (updated.length !== 1) throw new Error("Locked item holding changed before its locus update");
+}
+
+async function publishMaterialFeedObligation(
+  tx: SimTx,
+  event: { id: string; worldId: string; branchId: string; sequence: number },
+): Promise<void> {
+  await tx.insert(simOutbox).values({
+    id: composeSimulationId("outbox", [itemTransferFeedConsumerKind, event.id]),
+    worldId: event.worldId,
+    branchId: event.branchId,
+    sourceEventId: event.id,
+    firstSequence: event.sequence,
+    lastSequence: event.sequence,
+    consumerKind: itemTransferFeedConsumerKind,
+    schemaVersion: itemTransferFeedProjectionSchemaVersion,
+    payload: { sourceEventId: event.id },
+  });
+}
+
+function rejectedResult<TCode extends string>(commandId: string, code: TCode, publicReason: string) {
+  return {
+    status: "rejected" as const,
+    commandId,
+    code,
+    publicReason,
+    legalAlternativeCommandTypes: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// transfer_item (v2) — §26.4
+// ---------------------------------------------------------------------------
+
+/** Execute one TransferItem: event append, holdings update, and feed obligation, atomically. */
+export async function submitDurableTransferItem(
+  rawCommand: unknown,
+  options: MaterialSubmitOptions = {},
+): Promise<TransferItemCommandResult> {
+  const result = await runSimulationCommand({
+    rawCommand,
+    commandSchema: transferItemCommandSchema,
+    resultSchema: transferItemCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That action request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That action request has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      transferItemCommandResultSchema.parse({ status: "conflict", commandId, currentVersion, retryable: true }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: TransferItemCommand) => {
+      const view = await loadMaterialResolutionView(tx, branch);
+      const resolution = resolveTransferItemFromView(view, command);
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      const event = resolution.event;
+      await appendSimulationEvent(tx, event);
+      injectCrash(options.crashAt, "after_event_append");
+
+      await updateItemLocus(tx, branch.id, event.payload.itemId, event.payload.toLocus, event.sequence);
+      injectCrash(options.crashAt, "after_projection_update");
+
+      await publishMaterialFeedObligation(tx, event);
+      injectCrash(options.crashAt, "after_outbox_insert");
+
+      await advanceLockedBranch(tx, branch, event.sequence);
+      injectCrash(options.crashAt, "after_branch_advance");
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: event.sequence,
+        lastSequence: event.sequence,
+        eventIds: [event.id],
+      };
+    },
+  });
+
+  if (options.crashAt === "after_commit") throw new InjectedSimulationCrash("after_commit");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// destroy_item (v1) — §26.1 gone/terminal
+// ---------------------------------------------------------------------------
+
+/** Execute one DestroyItem: event append, terminal holdings update, and feed obligation, atomically. */
+export async function submitDurableDestroyItem(
+  rawCommand: unknown,
+  options: MaterialSubmitOptions = {},
+): Promise<DestroyItemCommandResult> {
+  const result = await runSimulationCommand({
+    rawCommand,
+    commandSchema: destroyItemCommandSchema,
+    resultSchema: destroyItemCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That destruction request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That destruction has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      destroyItemCommandResultSchema.parse({ status: "conflict", commandId, currentVersion, retryable: true }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: DestroyItemCommand) => {
+      const view = await loadMaterialResolutionView(tx, branch);
+      const resolution = resolveDestroyItemFromView(view, command);
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      const event = resolution.event;
+      await appendSimulationEvent(tx, event);
+      injectCrash(options.crashAt, "after_event_append");
+
+      await updateItemLocus(
+        tx,
+        branch.id,
+        event.payload.itemId,
+        { kind: "gone", basis: event.payload.basis },
+        event.sequence,
+      );
+      injectCrash(options.crashAt, "after_projection_update");
+
+      await publishMaterialFeedObligation(tx, event);
+      injectCrash(options.crashAt, "after_outbox_insert");
+
+      await advanceLockedBranch(tx, branch, event.sequence);
+      injectCrash(options.crashAt, "after_branch_advance");
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: event.sequence,
+        lastSequence: event.sequence,
+        eventIds: [event.id],
+      };
+    },
+  });
+
+  if (options.crashAt === "after_commit") throw new InjectedSimulationCrash("after_commit");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// set_item_ownership (v1) — §26.3 social, not physical
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute one SetItemOwnership: event append and `sim_items.owner_actor_id`
+ * update, atomically. No holdings row change (ownership never moves an item)
+ * and no feed obligation (§26.3 — nothing in the world moved for anyone to
+ * see; the material feed carries movements, not the social ledger).
+ */
+export async function submitDurableSetItemOwnership(
+  rawCommand: unknown,
+  options: MaterialSubmitOptions = {},
+): Promise<SetItemOwnershipCommandResult> {
+  const result = await runSimulationCommand({
+    rawCommand,
+    commandSchema: setItemOwnershipCommandSchema,
+    resultSchema: setItemOwnershipCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That ownership request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That ownership request has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      setItemOwnershipCommandResultSchema.parse({ status: "conflict", commandId, currentVersion, retryable: true }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: SetItemOwnershipCommand) => {
+      const view = await loadMaterialResolutionView(tx, branch);
+      const resolution = resolveSetItemOwnershipFromView(view, command);
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      const event = resolution.event;
+      await appendSimulationEvent(tx, event);
+      injectCrash(options.crashAt, "after_event_append");
+
+      const updated = await tx
+        .update(simItems)
+        .set({ ownerActorId: event.payload.newOwnerActorId })
+        .where(and(eq(simItems.branchId, branch.id), eq(simItems.itemId, event.payload.itemId)))
+        .returning({ itemId: simItems.itemId });
+      if (updated.length !== 1) throw new Error("Locked item changed before its ownership update");
+      injectCrash(options.crashAt, "after_projection_update");
+
+      await advanceLockedBranch(tx, branch, event.sequence);
+      injectCrash(options.crashAt, "after_branch_advance");
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: event.sequence,
+        lastSequence: event.sequence,
+        eventIds: [event.id],
+      };
+    },
+  });
+
+  if (options.crashAt === "after_commit") throw new InjectedSimulationCrash("after_commit");
+  return result;
+}

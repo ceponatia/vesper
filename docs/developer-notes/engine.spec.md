@@ -1397,16 +1397,105 @@ kind. Unknown text MUST remain unknown and MUST NOT cause hard body or location 
 
 ## 26. Materials, inventory, and resources
 
-Every material object has one holding locus:
+### 26.1 Holding locus
 
-- held by an actor;
-- worn in an equipment or body slot;
-- inside a container;
-- at a zone;
-- consumed, destroyed, or lost by an event.
+Every material object (item) has exactly one holding locus at any story second:
 
-Transfers validate source holding, destination capacity, access, actor capability, and
-exclusive reservation. An item cannot be in two containers.
+- **held** — carried by an actor (`actorId`);
+- **worn** — on an actor in a named slot (`actorId`, `slotKey`; free-text slot keys in
+  v1 — the chat wardrobe's slot vocabulary ports later);
+- **container** — inside a container item (`containerItemId`);
+- **zone** — resting at a zone (`zoneId`);
+- **gone** — terminal: consumed, destroyed, or lost (`basis`).
+
+One holdings row per item (the primary key) is the database-enforced "an item cannot be
+in two containers" invariant. `gone` is terminal — no transition leaves it; a
+"found again" is a new item (or a later-gate mechanic), never a resurrection.
+
+**Containers are items.** Any item MAY declare a container configuration (capacity,
+access policy). Holding chains (item in bag, bag held by actor) resolve to a **root
+locus** — an actor or a zone — with a bounded walk (depth cap 8) and cycle rejection at
+transfer time. There are no pseudo-container rows for actors or locations; actors and
+zones are referenced directly.
+
+### 26.2 Containers
+
+Container capacity is a direct-occupant count in v1 (size/weight classes are headroom,
+not schema). Access policy is fail-closed and checked on the **immediate** container at
+both ends of a transfer:
+
+- `open` — any co-located actor;
+- `holder_only` — only the actor at the chain's root;
+- `allow_list` — a named actor set.
+
+### 26.3 Ownership
+
+Ownership is distinct from holding: a nullable `ownerActorId` on the item, changed only
+by an `item_ownership_set` event (storyteller principal, or the current owner
+reassigning). v1 never physically blocks a transfer on ownership — holding law is
+physical, ownership is social. A transfer whose acting actor is not the set owner
+records `againstOwnership: true` on the event; consequences land through the E5.5
+social ledger, not through movement rejection.
+
+### 26.4 Transfer law
+
+`transfer_item` (v2) names the acting actor, the item, the asserted source locus, and
+the destination locus. Validation is fail-closed, in order: branch, actor existence and
+control, actor embodied at a zone (§13.2), item extant, asserted source matches current
+truth (staleness defense), destination well-formed, **root co-location** (the acting
+actor's zone must equal the root zone of both source and destination chains),
+person-sovereignty (a source chain rooted at another actor is rejected — no taking from
+another's person or worn slots before E5.5 consent; a destination chain rooted at a
+co-located other actor is allowed — giving), self-dressing (`worn` destination only on
+the acting actor), container access at both immediate ends, destination capacity, cycle
+rejection, and no-op rejection (same locus). Scheduled transfers re-validate all of
+this at fire time.
+
+Perception: material events derive observations through the §20 rule table (an obvious
+manipulation, same-zone sight; a worn-slot change under clothing stays v2 headroom).
+The Gate 1 `observedContainerIds` stand-in is deleted with this section's
+implementation.
+
+### 26.5 Action resource costs and reservations
+
+`SimulationActionDefinition` gains `resourceCosts`: each cost names a `materialKindKey`
+(an authored key on item rows), a quantity, and a disposition — `consume` (destroyed
+into the body/world effect at completion) or `use` (required and reserved for the
+activity's span; wear/cleanliness effects apply on completion). Starting an activity
+selects concrete items deterministically (eligible = extant, matching kind, root-located
+with the actor — held first, then at the actor's zone; lexicographic item-id
+tie-break), captures the selection on the `activity_started` event, and **reserves**
+them exclusively. Reservations are projected from live activity state exactly like
+claims (held across every claim-holding phase, released terminally, no separate store —
+no orphaned reservation is possible). A transfer, consumption, or destruction of a
+reserved item by anyone but the reserving activity's machinery is rejected
+(`item_reserved`). Completion re-validates reserved items at fire time before
+consuming.
+
+### 26.6 Consumption
+
+`consume_item` (and the completion path of a `consume`-disposition cost) emits
+`item_consumed` — the locus moves to `gone/consumed` — with trailing
+`body_source_applied` events for each of the item's authored `consumptionEffects`
+(meter key, source kind `meal`/`drink`/`adjustment`, operation), causation-chained to
+the consumption event and integrated through the §25 kernel in the same transaction
+(threshold and collapse alarms retire and re-arm exactly as any body material event).
+A meal is a material event with a body effect — one command, one atomic record.
+
+### 26.7 Item condition
+
+Wear and cleanliness are item condition meters on the §25 machinery — the same
+fixed-point kernel, registry-as-data, modifier contract, and analytical integration,
+under an item-scoped registry (`item-condition-v1`) and item-scoped tables (the body
+tables are not reused; the kernel is). v1 registry: `cleanliness` (linear law, zero
+at-rest rate; wearing applies a standard negative `rate_add` modifier for the worn
+window, so a garment fouls only while worn) and `wear` (no drift; discrete deltas from
+`use`-disposition activity completions). Threshold crossings (grimy falling, worn-out
+rising) are registry data, alarm through an `item_condition_threshold_due` trigger, and
+are witnessed by co-location with the item's root locus when marked noticeable. Raw
+item meters never enter a cut; reads are perception-gated like §25.1 layer 3.
+
+### 26.8 Fungible lots and aggregate materials (E5.4)
 
 Fungible resources MAY use lots and quantities. Quantities that represent conservation
 must use fixed-point integers and transactionally balance.

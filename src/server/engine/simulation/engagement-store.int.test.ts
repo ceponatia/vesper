@@ -1,9 +1,6 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { simulationBranchEventSchema } from "@/contracts/simulation/branching";
 import { newId } from "@/lib/ids";
 import {
@@ -20,7 +17,7 @@ import {
   submitDurableEndEngagement,
   submitDurableOpenEngagement,
 } from "./engagement-store";
-import { seedDurableItemTransferBranch } from "./item-transfer-store";
+import { seedDurableMaterialBranch } from "./material-store";
 import { readDurableSpaceBranch, seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
 
 const SEED_SECOND = 60_000;
@@ -69,21 +66,19 @@ interface SceneCase {
   napActionId: string;
 }
 
-function branchProjection(ids: SceneCase): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: SceneCase): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "e3-4-tests",
+    worldSeed: `seed-${ids.worldId}`,
     branchId: ids.branchId,
     rulesetVersion: "e3-4-test-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_SECOND,
+    originStorySecond: SEED_SECOND,
     actors: [
-      { id: ids.mara, name: "Mara", observedContainerIds: [] },
-      { id: ids.iris, name: "Iris", observedContainerIds: [] },
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
     ],
-    containers: [],
     items: [],
-    observations: [],
   });
 }
 
@@ -100,10 +95,7 @@ async function seedSceneCase(): Promise<SceneCase> {
     napActionId: `${branchId}-action-nap`,
   };
   const locHome = `${worldId}-loc-home`;
-  await seedDurableItemTransferBranch(branchProjection(ids), {
-    worldTypeId: "e3-4-tests",
-    worldSeed: `seed-${worldId}`,
-  });
+  await seedDurableMaterialBranch(branchSeed(ids));
   await seedDurableSpaceTopology({
     branchId,
     locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" }],

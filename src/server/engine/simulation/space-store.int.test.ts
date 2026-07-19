@@ -1,10 +1,7 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { simulationBranchEventSchema } from "@/contracts/simulation/branching";
-import {
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import type { SpaceTopologySeed } from "./space-store";
 import { newId } from "@/lib/ids";
 import {
@@ -14,7 +11,7 @@ import {
 } from "@/lib/simulation";
 import { db, simEvents, simJourneys, simPhysicalLoci, simTriggers, simWorlds } from "@/server/db";
 import { forkBranch } from "./branch-store";
-import { seedDurableItemTransferBranch } from "./item-transfer-store";
+import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import {
   readDurableSpaceBranch,
@@ -70,18 +67,16 @@ interface SpaceCase {
   zoneC: string;
 }
 
-function branchProjection(ids: SpaceCase): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: SpaceCase): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "e3-1-tests",
+    worldSeed: `seed-${ids.worldId}`,
     branchId: ids.branchId,
     rulesetVersion: "e3-1-test-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_SECOND,
-    actors: [{ id: ids.actorId, name: "Mara", observedContainerIds: [] }],
-    containers: [],
+    originStorySecond: SEED_SECOND,
+    actors: [{ id: ids.actorId, name: "Mara" }],
     items: [],
-    observations: [],
   });
 }
 
@@ -136,10 +131,7 @@ async function seedSpaceCase(): Promise<SpaceCase> {
     zoneB: `${branchId}-zone-b`,
     zoneC: `${branchId}-zone-c`,
   };
-  await seedDurableItemTransferBranch(branchProjection(ids), {
-    worldTypeId: "e3-1-tests",
-    worldSeed: `seed-${worldId}`,
-  });
+  await seedDurableMaterialBranch(branchSeed(ids));
   await seedDurableSpaceTopology(topologySeed(ids));
   seededWorldIds.push(worldId);
   return ids;

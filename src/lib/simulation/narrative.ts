@@ -17,7 +17,7 @@ import {
 import type { Observation } from "@/contracts/simulation/perception";
 import type { SoftCanonEntry } from "@/contracts/simulation/soft-canon";
 import type { SpaceProjection } from "@/contracts/simulation/space";
-import { simulationHash } from "./item-transfer";
+import { simulationHash } from "./hash";
 import { selectCutSoftCanon } from "./soft-canon";
 
 /**
@@ -177,6 +177,8 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       return { kind: "hard", summary: "Circumstances placed someone somewhere new." };
     case "item_transferred":
       return { kind: "hard", summary: "An item visibly changed hands." };
+    case "item_destroyed":
+      return { kind: "hard", summary: "An item was visibly destroyed." };
     case "journey_delayed":
       return { kind: "allowed", summary: "A journey under way is running behind." };
     case "journey_interrupted":
@@ -209,6 +211,10 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       // A collapse is the E5.2 answer to that open note: dramatic, physical,
       // and witnessed — prose that skips it is lying about the scene.
       return { kind: "hard", summary: "Someone's body visibly gave out — they collapsed here." };
+    case "item_ownership_set":
+      // Ownership is a social ledger entry (§26.3): nothing in the scene moved,
+      // so it never surfaces as a beat.
+      return null;
     case "trigger_scheduled":
     case "journey_planned":
     case "commitment_created":

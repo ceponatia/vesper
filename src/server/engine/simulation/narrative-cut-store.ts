@@ -4,7 +4,7 @@ import {
   narrativeCutSchema,
   type NarrativeCut,
 } from "@/contracts/simulation/narrative";
-import { simulationHash } from "@/lib/simulation/item-transfer";
+import { simulationHash } from "@/lib/simulation/hash";
 import { db, simNarrativeCuts, type Db } from "@/server/db";
 import type { SimTx } from "./trigger-projector";
 

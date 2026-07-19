@@ -1,10 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import {
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
 import { newId } from "@/lib/ids";
 import {
@@ -25,7 +22,7 @@ import { loadPersistedCut } from "./narrative-cut-store";
 import { loadBranchAncestry, readBranchAncestryEvents } from "./branch-store";
 import { readDurableCommitments, submitDurableCreateCommitment } from "./commitment-store";
 import { readDurableEngagements, submitDurableOpenEngagement } from "./engagement-store";
-import { seedDurableItemTransferBranch } from "./item-transfer-store";
+import { seedDurableMaterialBranch } from "./material-store";
 import { loadViewpointObservations } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import {
@@ -111,22 +108,21 @@ interface CorpusSeedOptions {
   irisZone?: "parlor" | "cafe";
 }
 
-function branchProjection(ids: CorpusCase): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: CorpusCase, permitsTrespass: boolean): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "gate3-corpus",
+    worldSeed: `seed-${ids.worldId}`,
+    permitsTrespass,
     branchId: ids.branchId,
     rulesetVersion: "gate3-corpus-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_SECOND,
+    originStorySecond: SEED_SECOND,
     actors: [
-      { id: ids.player, name: "Pia", observedContainerIds: [] },
-      { id: ids.mara, name: "Mara", observedContainerIds: [] },
-      { id: ids.iris, name: "Iris", observedContainerIds: [] },
+      { id: ids.player, name: "Pia" },
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
     ],
-    containers: [],
     items: [],
-    observations: [],
   });
 }
 
@@ -159,11 +155,7 @@ async function seedCorpusCase(options: CorpusSeedOptions = {}): Promise<CorpusCa
   const playerZone = options.playerZone ?? "cafe";
   const maraZone = options.maraZone ?? "cafe";
   const irisZone = options.irisZone ?? "parlor";
-  await seedDurableItemTransferBranch(branchProjection(ids), {
-    worldTypeId: "gate3-corpus",
-    worldSeed: `seed-${worldId}`,
-    permitsTrespass: options.permitsTrespass ?? false,
-  });
+  await seedDurableMaterialBranch(branchSeed(ids, options.permitsTrespass ?? false));
   await seedDurableSpaceTopology({
     branchId,
     locations: [

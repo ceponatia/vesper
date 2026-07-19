@@ -1,9 +1,6 @@
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import type { MemoryRecallResponse } from "@/contracts/simulation/memory";
 import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
 import { newId } from "@/lib/ids";
@@ -13,6 +10,8 @@ import {
   simAssertions,
   simBeliefs,
   simEvents,
+  simItemHoldings,
+  simItems,
   simMemoryDocuments,
   simNarrativeCuts,
   simObservations,
@@ -22,9 +21,9 @@ import {
 } from "@/server/db";
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
-import { seedDurableItemTransferBranch } from "./item-transfer-store";
 import { submitDurableMakeDisclosure } from "./knowledge-store";
 import { beliefFromRow } from "./knowledge-recorder";
+import { seedDurableMaterialBranch } from "./material-store";
 import { drainMemoryIndexOutbox } from "./memory-index-store";
 import { queryMemoryDocuments } from "./memory-query-store";
 import { loadPersistedCut } from "./narrative-cut-store";
@@ -98,23 +97,21 @@ interface CorpusCase {
   zonePark: string;
 }
 
-function branchProjection(ids: CorpusCase): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: CorpusCase): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "gate4-corpus",
+    worldSeed: `seed-${ids.worldId}`,
     branchId: ids.branchId,
     rulesetVersion: "gate4-corpus-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_SECOND,
+    originStorySecond: SEED_SECOND,
     actors: [
-      { id: ids.player, name: "Pia", observedContainerIds: [] },
-      { id: ids.mara, name: "Mara", observedContainerIds: [] },
-      { id: ids.iris, name: "Iris", observedContainerIds: [] },
-      { id: ids.noor, name: "Noor", observedContainerIds: [] },
+      { id: ids.player, name: "Pia" },
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+      { id: ids.noor, name: "Noor" },
     ],
-    containers: [],
     items: [],
-    observations: [],
   });
 }
 
@@ -134,10 +131,7 @@ async function seedCorpusCase(): Promise<CorpusCase> {
     zoneShop: `${branchId}-zone-shop`,
     zonePark: `${branchId}-zone-park`,
   };
-  await seedDurableItemTransferBranch(branchProjection(ids), {
-    worldTypeId: "gate4-corpus",
-    worldSeed: `seed-${worldId}`,
-  });
+  await seedDurableMaterialBranch(branchSeed(ids));
   await seedDurableSpaceTopology({
     branchId,
     locations: [
@@ -288,6 +282,12 @@ async function worldFootprint(branchId: string): Promise<Record<string, number>>
         .where(eq(simMemoryDocuments.branchId, branchId)),
     ),
     outbox: value(await db().select({ value: count() }).from(simOutbox).where(eq(simOutbox.branchId, branchId))),
+    // E5.3: the material lane's own persisted rows join the invariance
+    // surface (replacing the retired sim_holding_containers count).
+    items: value(await db().select({ value: count() }).from(simItems).where(eq(simItems.branchId, branchId))),
+    itemHoldings: value(
+      await db().select({ value: count() }).from(simItemHoldings).where(eq(simItemHoldings.branchId, branchId)),
+    ),
   };
 }
 

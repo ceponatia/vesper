@@ -67,7 +67,7 @@ export type MemoryEmbedder = (
 ) => Promise<{ model: string; vectors: number[][] }>;
 
 /**
- * The §11.1 shell hook (also called by the pre-shell space and item-transfer
+ * The §11.1 shell hook (also called by the pre-shell space and material
  * stores): enqueue one memory-index obligation per appended event that is
  * knowledge-lane or produced at least one observation. Runs inside the
  * command transaction so obligations are exactly-once with the events.

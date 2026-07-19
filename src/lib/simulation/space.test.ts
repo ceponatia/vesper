@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
-import { simulationHash } from "./item-transfer";
+import { simulationHash } from "./hash";
 import {
   applySpaceEvent,
   deriveJourneyId,

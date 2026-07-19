@@ -1,18 +1,20 @@
 import { performance } from "node:perf_hooks";
 import { and, count, eq, gt, inArray, isNull, max } from "drizzle-orm";
+import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import {
-  itemTransferProjectionSchema,
+  itemLocusSchema,
   transferItemCommandSchema,
-  type ItemTransferCommandResult,
+  type ItemLocus,
   type TransferItemCommand,
-} from "@/contracts/simulation/item-transfer";
+  type TransferItemCommandResult,
+} from "@/contracts/simulation/materials";
 import {
   deriveTriggerCommandId,
   deriveTriggerId,
   deterministicDrawUnit,
 } from "@/contracts/simulation/scheduler";
 import { itemTransferFeedConsumerKind } from "@/contracts/simulation/outbox";
-import { simulationHash } from "@/lib/simulation/item-transfer";
+import { simulationHash } from "@/lib/simulation/hash";
 import { newId } from "@/lib/ids";
 import {
   db,
@@ -26,17 +28,17 @@ import {
   type Db,
 } from "@/server/db";
 import { explainItemPlacement } from "./audit-store";
-import { forkBranch } from "./branch-store";
+import { forkBranch, readDurableBranchState } from "./branch-store";
 import {
   InjectedSimulationCrash,
-  readDurableItemTransferBranch,
-  seedDurableItemTransferBranch,
-  submitDurableItemTransfer,
-  type DurableItemTransferCrashPoint,
-} from "./item-transfer-store";
+  seedDurableMaterialBranch,
+  submitDurableTransferItem,
+  type DurableMaterialCrashPoint,
+} from "./material-store";
 import { consumeNextItemTransferOutbox, rebuildItemTransferFeed } from "./outbox-store";
 import { advanceBranchStoryTime, scheduleDurableTrigger } from "./scheduler-store";
 import { captureBranchSnapshot, rebuildDurableBranchProjection } from "./snapshot-store";
+import { seedDurableSpaceTopology } from "./space-store";
 
 /**
  * E2.6 — the Gate 2 soak. Drives a deterministic synthetic month of commands
@@ -44,6 +46,16 @@ import { captureBranchSnapshot, rebuildDurableBranchProjection } from "./snapsho
  * engine.plan.md §"Required proofs" list against what the database actually
  * recorded. docs/developer-notes/engine-gate2-soak.plan.md holds the proof
  * matrix this implements.
+ *
+ * E5.3 rework: the item lane now runs over §26's honest material model — a
+ * real zone topology, containers that are themselves items, and locus-typed
+ * transfers — rather than Gate 1's pseudo-container rows. "Place" indices
+ * unify the fixture's transfer destinations: place 0 is the shared zone
+ * (unbounded, no container config); places 1..CONTAINER_ITEM_COUNT are
+ * container items held by actor 0, the last deliberately tiny. Items seed
+ * inside containers (no seed-time zone locus — the branch does not exist yet
+ * when the seed call starts, so nothing can reference `sim_zones` before it)
+ * and the chaos run's own transfers exercise the zone locus live.
  */
 export interface Gate2SoakProfile {
   /** Seeds every named draw stream; same profile ⇒ same workload structure. */
@@ -141,12 +153,15 @@ export interface Gate2SoakReport {
 interface SoakCast {
   worldId: string;
   branchId: string;
+  locationId: string;
+  zoneId: string;
   actorIds: string[];
+  /** Container ITEMS (place indices 1..N); place 0 is the shared zone. */
   containerIds: string[];
   itemIds: string[];
   /** Capacity by container index; the last container is deliberately tiny. */
   capacities: number[];
-  /** Item index -> container index at seed time. */
+  /** Item index -> seed PLACE index (never 0 — zone-resting starts live). */
   seedHolding: number[];
 }
 
@@ -165,28 +180,32 @@ interface MaterialOutcome {
   version: number;
   headSequence: number;
   events: Array<Record<string, unknown>>;
-  holdings: Array<{ item: number; container: number }>;
+  holdings: Array<{ item: number; place: number }>;
 }
 
 const ACTOR_COUNT = 4;
-const CONTAINER_COUNT = 6;
+/** Place 0 is the zone; places 1..(PLACE_COUNT-1) are container items. */
+const PLACE_COUNT = 6;
+const CONTAINER_ITEM_COUNT = PLACE_COUNT - 1;
 const ITEM_COUNT = 8;
 const SOAK_RULESET = "e2-6-soak-v1";
 const SOAK_WORLD_TYPE = "e2-6-soak-world";
 const WALL_CLOCK = "2026-07-17T00:00:00.000Z";
-const CRASH_POINTS: readonly DurableItemTransferCrashPoint[] = [
+const CRASH_POINTS: readonly DurableMaterialCrashPoint[] = [
   "after_event_append",
   "after_projection_update",
   "after_outbox_insert",
   "after_branch_advance",
-  "after_command_result",
   "after_commit",
 ];
-/** Failpoints that fire even when the command resolves to a rejection. */
-const UNCONDITIONAL_CRASH_POINTS: readonly DurableItemTransferCrashPoint[] = [
-  "after_command_result",
-  "after_commit",
-];
+/**
+ * Failpoints that fire even when the command resolves to a rejection.
+ * `after_commit` is checked by the store's caller-facing wrapper after
+ * `runSimulationCommand` returns, so it fires regardless of outcome; every
+ * other point sits inside the shared shell's accepted-path `execute` branch
+ * and is simply never reached when the command rejects first.
+ */
+const UNCONDITIONAL_CRASH_POINTS: readonly DurableMaterialCrashPoint[] = ["after_commit"];
 /** Zero-progress catch_up_required loops tolerated before declaring a stall. */
 const MAX_STALLED_ADVANCES = 100;
 
@@ -209,6 +228,21 @@ function summarizeLatency(samples: readonly number[]): LatencySummary {
     p95Ms: percentile(sorted, 0.95),
     maxMs: sorted.at(-1) ?? 0,
   };
+}
+
+/** Place index -> the locus it names (0 is the shared zone). */
+function placeLocus(cast: SoakCast, placeIndex: number): ItemLocus {
+  if (placeIndex === 0) return itemLocusSchema.parse({ kind: "zone", zoneId: cast.zoneId });
+  return itemLocusSchema.parse({
+    kind: "container",
+    containerItemId: at(cast.containerIds, placeIndex - 1, "container place"),
+  });
+}
+
+/** Place index -> its capacity; the zone (place 0) has none. */
+function placeCapacity(cast: SoakCast, placeIndex: number): number {
+  if (placeIndex === 0) return Number.MAX_SAFE_INTEGER;
+  return at(cast.capacities, placeIndex - 1, "capacity");
 }
 
 class SoakRun {
@@ -255,66 +289,67 @@ class SoakRun {
     return {
       worldId: `${prefix}-world`,
       branchId: `${prefix}-branch`,
+      locationId: `${prefix}-loc`,
+      zoneId: `${prefix}-zone`,
       actorIds: Array.from({ length: ACTOR_COUNT }, (_, index) => `${prefix}-actor-${index}`),
-      containerIds: Array.from({ length: CONTAINER_COUNT }, (_, index) => `${prefix}-cont-${index}`),
+      containerIds: Array.from({ length: CONTAINER_ITEM_COUNT }, (_, index) => `${prefix}-cont-${index}`),
       itemIds: Array.from({ length: ITEM_COUNT }, (_, index) => `${prefix}-item-${index}`),
-      capacities: Array.from({ length: CONTAINER_COUNT }, (_, index) =>
-        index === CONTAINER_COUNT - 1 ? 1 : ITEM_COUNT,
+      capacities: Array.from({ length: CONTAINER_ITEM_COUNT }, (_, index) =>
+        index === CONTAINER_ITEM_COUNT - 1 ? 1 : ITEM_COUNT,
       ),
-      seedHolding: Array.from({ length: ITEM_COUNT }, (_, index) => index % (CONTAINER_COUNT - 2)),
+      // Place indices 1..(CONTAINER_ITEM_COUNT-1): never the tiny last
+      // container, never the zone (place 0) — zone-resting starts live.
+      seedHolding: Array.from({ length: ITEM_COUNT }, (_, index) => 1 + (index % (CONTAINER_ITEM_COUNT - 1))),
     };
   }
 
   async seedCast(cast: SoakCast): Promise<void> {
-    const sortedActors = [...cast.actorIds].sort();
-    const sortedContainers = [...cast.containerIds].sort();
-    const halfway = Math.ceil(sortedContainers.length / 2);
-    const projection = itemTransferProjectionSchema.parse({
-      worldId: cast.worldId,
-      branchId: cast.branchId,
-      rulesetVersion: SOAK_RULESET,
-      version: 0,
-      headSequence: 0,
-      storySecond: 0,
-      actors: cast.actorIds.map((id, index) => ({
-        id,
-        name: `Soak actor ${index}`,
-        // Two full observers and two partial ones keep the captured
-        // observerActorIds derivation non-trivial without changing legality.
-        observedContainerIds:
-          index < 2
-            ? sortedContainers
-            : index === 2
-              ? sortedContainers.slice(0, halfway)
-              : sortedContainers.slice(halfway),
-      })),
-      containers: cast.containerIds
-        .map((id, index) => ({
-          id,
-          kind: index === 0 ? ("location" as const) : ("container" as const),
-          name: `Soak container ${index}`,
-          capacity: at(cast.capacities, index, "capacity"),
-          accessibleToActorIds: sortedActors,
-        }))
-        .sort((left, right) => (left.id < right.id ? -1 : 1)),
-      items: cast.itemIds
-        .map((id, index) => ({
-          id,
-          name: `Soak item ${index}`,
-          holdingContainerId: at(
-            cast.containerIds,
-            at(cast.seedHolding, index, "seed holding"),
-            "container",
-          ),
-        }))
-        .sort((left, right) => (left.id < right.id ? -1 : 1)),
-      observations: [],
-    });
-    await seedDurableItemTransferBranch(projection, {
-      worldTypeId: SOAK_WORLD_TYPE,
-      worldSeed: this.profile.worldSeed,
-      database: this.database,
-    });
+    await seedDurableMaterialBranch(
+      {
+        worldId: cast.worldId,
+        worldTypeId: SOAK_WORLD_TYPE,
+        worldSeed: this.profile.worldSeed,
+        branchId: cast.branchId,
+        rulesetVersion: SOAK_RULESET,
+        originStorySecond: 0,
+        actors: cast.actorIds.map((id, index) => ({ id, name: `Soak actor ${index}` })),
+        items: [
+          // Containers are items too (§26.2): each held by its own actor
+          // (round-robin), `open` so any co-located actor may still GIVE into
+          // one — §26.4 person-sovereignty means only the holder may DRAW
+          // from their own bag, deliberately exercising `held_by_other`
+          // alongside the zone (place 0), which no actor owns.
+          ...cast.containerIds.map((id, index) => ({
+            id,
+            name: `Soak container ${index}`,
+            container: { capacityCount: at(cast.capacities, index, "capacity"), access: { kind: "open" as const } },
+            locus: { kind: "held" as const, actorId: at(cast.actorIds, index % ACTOR_COUNT, "container holder") },
+          })),
+          ...cast.itemIds.map((id, index) => ({
+            id,
+            name: `Soak item ${index}`,
+            locus: placeLocus(cast, at(cast.seedHolding, index, "seed holding")),
+          })),
+        ],
+      },
+      { database: this.database },
+    );
+    await seedDurableSpaceTopology(
+      {
+        branchId: cast.branchId,
+        locations: [{ id: cast.locationId, worldId: cast.worldId, kind: "soak", defaultAccessPolicy: "public" }],
+        zones: [{ id: cast.zoneId, locationId: cast.locationId, kind: "hall", privacyPolicy: "public" }],
+        links: [],
+        loci: cast.actorIds.map((actorId) => ({
+          kind: "at" as const,
+          actorId,
+          locationId: cast.locationId,
+          zoneId: cast.zoneId,
+          since: 0,
+        })),
+      },
+      { database: this.database },
+    );
   }
 
   buildTransferCommand(input: {
@@ -340,23 +375,23 @@ class SoakRun {
       },
       submittedAtWallClock: WALL_CLOCK,
       type: "transfer_item",
-      schemaVersion: 1,
+      schemaVersion: 2,
       correlationId: input.commandId,
       payload: {
         actorId,
         itemId: at(input.cast.itemIds, input.itemIndex, "item"),
-        fromContainerId: at(input.cast.containerIds, input.fromIndex, "container"),
-        toContainerId: at(input.cast.containerIds, input.toIndex, "container"),
+        fromLocus: placeLocus(input.cast, input.fromIndex),
+        toLocus: placeLocus(input.cast, input.toIndex),
       },
     });
   }
 
   /**
-   * Generate a trigger workload whose from-containers come from walking a
-   * mirror of the holdings in firing order (due second, then creation order —
-   * the claim ordering with equal priorities), so most transfers stay legal at
-   * fire time. Deterministic rejections (same-container draws, tiny-container
-   * overflow) are left in deliberately.
+   * Generate a trigger workload whose from-places come from walking a mirror
+   * of the holdings in firing order (due second, then creation order — the
+   * claim ordering with equal priorities), so most transfers stay legal at
+   * fire time. Deterministic rejections (same-place draws, tiny-container
+   * overflow) are left in deliberately. The zone (place 0) never overflows.
    */
   planTriggers(cast: SoakCast, streamPrefix: string, triggerCount: number): PlannedTrigger[] {
     const planned = Array.from({ length: triggerCount }, (_, index) => ({
@@ -364,7 +399,7 @@ class SoakRun {
       dueStorySecond: 1 + this.drawInt(`${streamPrefix}-due`, index, this.profile.monthStorySeconds),
       actorIndex: this.drawInt(`${streamPrefix}-actor`, index, ACTOR_COUNT),
       itemIndex: this.drawInt(`${streamPrefix}-item`, index, ITEM_COUNT),
-      toIndex: this.drawInt(`${streamPrefix}-dest`, index, CONTAINER_COUNT),
+      toIndex: this.drawInt(`${streamPrefix}-dest`, index, PLACE_COUNT),
       fromIndex: 0,
       uniquenessKey: `soak-${streamPrefix}-${index}`,
     }));
@@ -372,12 +407,13 @@ class SoakRun {
       (left, right) => left.dueStorySecond - right.dueStorySecond || left.index - right.index,
     );
     const holding = [...cast.seedHolding];
-    const load = cast.containerIds.map(
-      (_, containerIndex) => holding.filter((value) => value === containerIndex).length,
+    const load = Array.from(
+      { length: PLACE_COUNT },
+      (_, placeIndex) => holding.filter((value) => value === placeIndex).length,
     );
     for (const trigger of firingOrder) {
       trigger.fromIndex = at(holding, trigger.itemIndex, "mirror holding");
-      const capacity = at(cast.capacities, trigger.toIndex, "capacity");
+      const capacity = placeCapacity(cast, trigger.toIndex);
       const accepted =
         trigger.fromIndex !== trigger.toIndex && at(load, trigger.toIndex, "load") < capacity;
       if (accepted) {
@@ -535,31 +571,41 @@ class SoakRun {
   /**
    * The branch-identity-free view of a timeline: entity IDs map to seed
    * indices, so equal partitionings — and equal profiles across separate
-   * runs — hash identically.
+   * runs — hash identically. Only genuine items (never the container items
+   * themselves) enter the holdings hash, matching the Gate 1 fixture's shape.
    */
   async materialOutcome(cast: SoakCast, branchId: string): Promise<MaterialOutcome> {
     const actorIndex = new Map(cast.actorIds.map((id, index) => [id, index]));
-    const containerIndex = new Map(cast.containerIds.map((id, index) => [id, index]));
     const itemIndex = new Map(cast.itemIds.map((id, index) => [id, index]));
-    const state = await readDurableItemTransferBranch(branchId, this.database);
+    const placeIndex = new Map<string, number>([
+      [cast.zoneId, 0],
+      ...cast.containerIds.map((id, index): [string, number] => [id, index + 1]),
+    ]);
+    const localeIndex = (locus: ItemLocus): number => {
+      if (locus.kind === "zone") return placeIndex.get(locus.zoneId) ?? -1;
+      if (locus.kind === "container") return placeIndex.get(locus.containerItemId) ?? -1;
+      return -1;
+    };
+    const state = await readDurableBranchState(branchId, this.database);
+    const transfers = state.events.filter(
+      (event): event is Extract<SimulationBranchEvent, { type: "item_transferred" }> =>
+        event.type === "item_transferred",
+    );
     return {
       storySecond: state.projection.storySecond,
       version: state.projection.version,
       headSequence: state.projection.headSequence,
-      events: state.events.map((event) => ({
+      events: transfers.map((event) => ({
         sequence: event.sequence,
         storySecond: event.storySecond,
         actor: actorIndex.get(event.payload.actorId),
         item: itemIndex.get(event.payload.itemId),
-        from: containerIndex.get(event.payload.fromContainerId),
-        to: containerIndex.get(event.payload.toContainerId),
-        observers: event.payload.observerActorIds.map((id) => actorIndex.get(id)),
+        from: localeIndex(event.payload.fromLocus),
+        to: localeIndex(event.payload.toLocus),
       })),
       holdings: state.projection.items
-        .map((item) => ({
-          item: itemIndex.get(item.id) ?? -1,
-          container: containerIndex.get(item.holdingContainerId) ?? -1,
-        }))
+        .filter((item) => itemIndex.has(item.id))
+        .map((item) => ({ item: itemIndex.get(item.id) ?? -1, place: localeIndex(item.locus) }))
         .sort((left, right) => left.item - right.item),
     };
   }
@@ -572,8 +618,9 @@ class SoakRun {
         storySecond: simItemTransferFeed.storySecond,
         actorId: simItemTransferFeed.actorId,
         itemId: simItemTransferFeed.itemId,
-        fromContainerId: simItemTransferFeed.fromContainerId,
-        toContainerId: simItemTransferFeed.toContainerId,
+        eventKind: simItemTransferFeed.eventKind,
+        fromLocus: simItemTransferFeed.fromLocus,
+        toLocus: simItemTransferFeed.toLocus,
       })
       .from(simItemTransferFeed)
       .where(eq(simItemTransferFeed.branchId, branchId))
@@ -688,7 +735,7 @@ class SoakRun {
     this.record(
       "P5-derivation-recorded",
       pass,
-      `events missing derivationVersion: ${eventGap?.value ?? "?"}; terminal triggers missing it: ${triggerGap?.value ?? "?"} (captured observerActorIds enforced by the event schema on every read)`,
+      `events missing derivationVersion: ${eventGap?.value ?? "?"}; terminal triggers missing it: ${triggerGap?.value ?? "?"}`,
     );
   }
 
@@ -733,7 +780,7 @@ interface ChaosCounters {
   crashReplaysExactlyOnce: boolean;
 }
 
-function tallyRejection(counters: ChaosCounters, result: ItemTransferCommandResult): void {
+function tallyRejection(counters: ChaosCounters, result: TransferItemCommandResult): void {
   if (result.status !== "rejected") return;
   counters.directRejected += 1;
   counters.rejectionCodes[result.code] = (counters.rejectionCodes[result.code] ?? 0) + 1;
@@ -863,7 +910,7 @@ export async function runGate2Soak(
     crashReplaysExactlyOnce: true,
   };
   const latencies: number[] = [];
-  const acceptedEnvelopes: Array<{ command: TransferItemCommand; result: ItemTransferCommandResult }> = [];
+  const acceptedEnvelopes: Array<{ command: TransferItemCommand; result: TransferItemCommandResult }> = [];
   let version = profile.chaosTriggerCount;
   let injectedOutboxCrashes = 0;
   let outboxDelivered = 0;
@@ -877,22 +924,29 @@ export async function runGate2Soak(
 
   const liveFromIndex = async (itemId: string): Promise<number> => {
     const [row] = await database
-      .select({ holdingContainerId: simItemHoldings.holdingContainerId })
+      .select({
+        locusKind: simItemHoldings.locusKind,
+        containerItemId: simItemHoldings.containerItemId,
+        zoneId: simItemHoldings.zoneId,
+      })
       .from(simItemHoldings)
       .where(and(eq(simItemHoldings.branchId, chaosCast.branchId), eq(simItemHoldings.itemId, itemId)));
     if (!row) throw new Error(`Soak item ${itemId} lost its holding row`);
-    const index = chaosCast.containerIds.indexOf(row.holdingContainerId);
-    if (index < 0) throw new Error(`Soak item ${itemId} sits in a foreign container`);
-    return index;
+    if (row.locusKind === "zone" && row.zoneId === chaosCast.zoneId) return 0;
+    if (row.locusKind === "container" && row.containerItemId) {
+      const index = chaosCast.containerIds.indexOf(row.containerItemId);
+      if (index >= 0) return index + 1;
+    }
+    throw new Error(`Soak item ${itemId} sits in an unrecognized locus (${row.locusKind})`);
   };
 
   const submitTimed = async (
     command: TransferItemCommand,
-    crashAt?: DurableItemTransferCrashPoint,
-  ): Promise<ItemTransferCommandResult> => {
+    crashAt?: DurableMaterialCrashPoint,
+  ): Promise<TransferItemCommandResult> => {
     const startedAt = performance.now();
     try {
-      return await submitDurableItemTransfer(command, {
+      return await submitDurableTransferItem(command, {
         database,
         ...(crashAt ? { crashAt } : {}),
       });
@@ -901,7 +955,7 @@ export async function runGate2Soak(
     }
   };
 
-  const acceptResult = (command: TransferItemCommand, result: ItemTransferCommandResult): void => {
+  const acceptResult = (command: TransferItemCommand, result: TransferItemCommandResult): void => {
     if (result.status !== "accepted") return;
     counters.directAccepted += 1;
     version = result.branchVersion;
@@ -919,7 +973,7 @@ export async function runGate2Soak(
         actorIndex: run.drawInt("direct-actor", k, ACTOR_COUNT),
         itemIndex,
         fromIndex,
-        toIndex: run.drawInt("direct-dest", k, CONTAINER_COUNT),
+        toIndex: run.drawInt("direct-dest", k, PLACE_COUNT),
         commandId: `${chaosCast.branchId}-cmd-${k}`,
         idempotencyKey: `${chaosCast.branchId}-idem-${k}`,
       };

@@ -8,6 +8,7 @@ import { commandPrincipalSchema } from "@/contracts/simulation/envelopes";
 import { itemIdSchema, worldBranchIdSchema } from "@/contracts/simulation/identity";
 import { db, simCommands, simItemHoldings, simTriggers, type Db } from "@/server/db";
 import { loadBranchAncestry, readBranchAncestryEvents } from "./branch-store";
+import { itemLocusFromHoldingRow } from "./material-store";
 
 export interface ExplainOptions {
   database?: Db;
@@ -40,23 +41,36 @@ export async function explainItemPlacement(
         .limit(1);
       if (!holding) throw new Error("Item not found on this branch");
 
-      const base = {
-        branchId,
-        itemId,
-        holdingContainerId: holding.holdingContainerId,
-      };
-      if (holding.updatedSequence === 0) {
+      const locus = itemLocusFromHoldingRow(holding);
+      const base = { branchId, itemId, locus };
+
+      // `updatedSequence` is the item's last-TOUCHED sequence (a placement move
+      // or an ownership reassignment — branch-store's fork materialization
+      // stamps it from all three material event types), so the placing event is
+      // not always exactly at that sequence. Search back through the
+      // ancestry-bounded window for the latest item_transferred/item_destroyed
+      // event naming this item; an ownership-only touch leaves none, and the
+      // locus is then still explained by the (unrecorded) seed.
+      const candidates =
+        holding.updatedSequence === 0
+          ? []
+          : await readBranchAncestryEvents(tx, ancestry, {
+              throughSequence: holding.updatedSequence,
+              types: ["item_transferred", "item_destroyed"],
+            });
+      const event = candidates
+        .filter(
+          (
+            candidate,
+          ): candidate is Extract<SimulationBranchEvent, { type: "item_transferred" | "item_destroyed" }> =>
+            (candidate.type === "item_transferred" || candidate.type === "item_destroyed") &&
+            candidate.payload.itemId === itemId,
+        )
+        .at(-1);
+      if (!event) {
         // Placement predates every recorded event: it is world-seed data the
         // event stream cannot explain (plan R3's accepted limitation).
         return itemPlacementExplanationSchema.parse({ ...base, origin: "seed" });
-      }
-
-      const [event] = await readBranchAncestryEvents(tx, ancestry, {
-        atSequence: holding.updatedSequence,
-        types: ["item_transferred"],
-      });
-      if (!event || event.type !== "item_transferred" || event.payload.itemId !== itemId) {
-        throw new Error("Item placement references an event its ancestry cannot see");
       }
 
       const explainedEvent = {

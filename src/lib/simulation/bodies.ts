@@ -56,7 +56,7 @@ import {
   rhythmSelfCareEffects,
 } from "@/contracts/simulation/bodies";
 import { composeSimulationId } from "@/contracts/simulation/identity";
-import { simulationHash } from "./item-transfer";
+import { simulationHash } from "./hash";
 import { deriveCircadianPressure } from "./body-reads";
 import { buildDepartureInterruptEvent } from "./engagements";
 import {
@@ -2292,6 +2292,8 @@ export function applyBodyEvent(
         ),
       });
     case "item_transferred":
+    case "item_destroyed":
+    case "item_ownership_set":
     case "trigger_scheduled":
     case "journey_planned":
     case "actor_departed":

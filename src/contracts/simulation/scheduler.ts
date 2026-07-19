@@ -27,7 +27,7 @@ import {
   raisePressureCommandSchema,
   resolveCommitmentDeadlineCommandSchema,
 } from "./commitments";
-import { transferItemCommandSchema } from "./item-transfer";
+import { transferItemCommandSchema, type ItemLocus } from "./materials";
 import { arriveJourneyCommandSchema } from "./space";
 
 export const simulationTriggerStateSchema = z.enum([
@@ -212,6 +212,21 @@ export function deriveTriggerCommandId(triggerId: string): string {
   return commandIdSchema.parse(composeSimulationId("trigger-command", [triggerId]));
 }
 
+/** The registry ids a transfer locus references, for the scheduling envelope. */
+function transferLocusEntityIds(locus: ItemLocus): string[] {
+  switch (locus.kind) {
+    case "held":
+    case "worn":
+      return [locus.actorId];
+    case "container":
+      return [locus.containerItemId];
+    case "zone":
+      return [locus.zoneId];
+    case "gone":
+      return [];
+  }
+}
+
 /** Per-kind envelope facts for a scheduling event: who acts, what is referenced. */
 function triggerIntentEnvelopeFacts(
   intent: z.infer<typeof scheduleTriggerIntentSchema>,
@@ -222,7 +237,12 @@ function triggerIntentEnvelopeFacts(
       return {
         actorIds: [transfer.actorId],
         entityIds: [
-          ...new Set<string>([transfer.actorId, transfer.itemId, transfer.fromContainerId, transfer.toContainerId]),
+          ...new Set<string>([
+            transfer.actorId,
+            transfer.itemId,
+            ...transferLocusEntityIds(transfer.fromLocus),
+            ...transferLocusEntityIds(transfer.toLocus),
+          ]),
         ].sort(),
       };
     }

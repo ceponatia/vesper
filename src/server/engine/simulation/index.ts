@@ -84,14 +84,14 @@ export {
 } from "./branch-store";
 export {
   InjectedSimulationCrash,
-  readDurableItemTransferBranch,
-  seedDurableItemTransferBranch,
-  submitDurableItemTransfer,
-  type DurableItemTransferBranchState,
-  type DurableItemTransferCrashPoint,
-  type DurableItemTransferOptions,
-  type DurableItemTransferSeedOptions,
-} from "./item-transfer-store";
+  seedDurableMaterialBranch,
+  submitDurableDestroyItem,
+  submitDurableSetItemOwnership,
+  submitDurableTransferItem,
+  type DurableMaterialCrashPoint,
+  type MaterialSeedOptions,
+  type MaterialSubmitOptions,
+} from "./material-store";
 export {
   holdsLiveBeliefInAssertion,
   isLiveBeliefHeldBy,

@@ -228,6 +228,7 @@ export function deriveEventObservations(
     case "soft_canon_demoted":
     case "body_initialized":
     case "body_modifier_applied":
+    case "item_ownership_set":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
@@ -236,6 +237,8 @@ export function deriveEventObservations(
       // modifier bookkeeping (E5.1) likewise derive nothing: the material
       // cause of a modifier (a drink, an illness onset) is witnessed through
       // its own causal event, never through the rate arithmetic it installs.
+      // An ownership reassignment (§26.3) is a social-ledger entry — nothing in
+      // the world moved for anyone to see.
       return [];
     case "journey_planned":
     case "journey_delayed":
@@ -301,9 +304,17 @@ export function deriveEventObservations(
       });
       break;
     }
-    case "item_transferred": {
-      for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
-      for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
+    case "item_transferred":
+    case "item_destroyed": {
+      // An obvious same-zone manipulation (§26.4): the acting actor has direct
+      // evidence, and everyone sharing their zone sees it clearly. The
+      // manipulation is always at the acting actor's zone — transfer law's root
+      // co-location guarantees both chains root there — so witnesses are derived
+      // live from presence rather than captured on the event.
+      const actorId = event.payload.actorId;
+      collector.add(actorId, DIRECT_EMBODIED);
+      const actorZoneId = atOccupants(space).find((occupant) => occupant.actorId === actorId)?.zoneId;
+      if (actorZoneId !== undefined) gradeZoneBystanders(collector, space, actorZoneId);
       break;
     }
     case "disclosure_made": {
