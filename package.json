@@ -48,7 +48,8 @@
     "test:engine-e4-1": "vitest run --no-file-parallelism src/lib/simulation/perception.test.ts src/server/engine/simulation/observation-store.int.test.ts",
     "test:engine-e4-2": "vitest run --no-file-parallelism src/lib/simulation/knowledge.test.ts src/server/engine/simulation/knowledge-store.int.test.ts",
     "test:engine-e4-3": "vitest run --no-file-parallelism src/lib/simulation/narrative.test.ts src/lib/simulation/presentation.test.ts src/lib/simulation/soft-canon.test.ts src/lib/simulation/deliberation.test.ts src/server/engine/simulation/narrative-store.int.test.ts src/server/engine/simulation/gate3-corpus.int.test.ts",
-    "test:engine-e4-4": "vitest run --no-file-parallelism src/lib/simulation/memory.test.ts src/server/engine/simulation/memory-store.int.test.ts"
+    "test:engine-e4-4": "vitest run --no-file-parallelism src/lib/simulation/memory.test.ts src/server/engine/simulation/memory-store.int.test.ts",
+    "test:engine-e4-5": "vitest run --no-file-parallelism src/server/engine/simulation/gate4-corpus.int.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"

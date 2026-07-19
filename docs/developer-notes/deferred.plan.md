@@ -13,6 +13,14 @@ _Removed from the roadmap 2026-07-13 (owner ruling: manual OpenRouter-spend
 runs aren't tracked as roadmap items for now). Each is built and dry-run
 validated; run when the owner asks, then record results in the owning plan._
 
+- **Gate 4 paired voice/chemistry eval** (deferred at gate close, 2026-07-19) —
+  the fifth [engine.plan.md](engine.plan.md) §"Gate 4 exit" criterion: a live paired
+  eval showing the E4.x context (typed cuts, beliefs, licensed soft canon, memory
+  recall) improves causal enactment without degrading median voice or chemistry.
+  Per the owner's 2026-07-18 exit-scope ruling it does not hold the gate verdict —
+  the deterministic corpus closed Gate 4. Unlike the entries below, its harness is
+  **not yet built**: scoping and building the paired-prompt fixture set is part of
+  running it, when the owner schedules the spend.
 - **Enactment measurement run** —
   [finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md)
   §slice 2 / spec §5: `pnpm eval:narration` then

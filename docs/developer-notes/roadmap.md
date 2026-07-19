@@ -23,31 +23,19 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Successor world engine — Gate 4: perception, knowledge, narration & RAG** —
-  [engine.plan.md](engine.plan.md) §"Gate 4" + §"Gate 4 build order" (~10–25 dev-days).
-  **Started 2026-07-18**, the day Gate 3 closed with the owner's advance verdict. Both
-  Gate 4-blocking decisions resolved by the owner 2026-07-18: **ruling 14** — soft-canon
-  promotion is a safe, documented **auto-promotion** (audited, demotable, every threshold
-  a versioned world-type value tunable post-build; normative record
-  [engine.spec.md](engine.spec.md) §39) — and **exit scope** — the deterministic corpus
-  closes the gate, the live paired voice/chemistry eval rides the owner-gated spend list.
-  Built in dependency order **E4.1 → E4.5**: typed Observations replacing the E3.5
-  interim witness rule (**E4.1 — shipped 2026-07-18**, see Shipped),
-  assertions/beliefs/disclosure/gossip with provenance and supersedence (**E4.2 —
-  shipped 2026-07-19**, see Shipped), the full persisted NarrativeCut + narrator trust
-  boundary + presentation auditor + ruled soft canon (**E4.3 — shipped 2026-07-19**,
-  see Shipped), eligibility-before-similarity RAG with memory docs linked to their
-  sources (**E4.4 — shipped 2026-07-19**, see Shipped), and the exit corpus — zero
-  cross-viewpoint leaks, contradiction handling, rerender-creates-nothing,
-  retry-from-cut (E4.5).
-  **Current sub-target: E4.5 — the Gate 4 exit corpus.**
+_(Nothing mid-build — **Gate 4 closed 2026-07-19** with its deterministic exit corpus
+green (see Shipped); the engine track's next gate, Gate 5, waits at the top of Next
+below.)_
 
 ## Next (queued)
 
 **Successor world engine (`engine.plan.md`) — remaining gates.** The gated event-kernel
-track, in sequence — each gate's exit criteria gate the next. Gates 0–3 are closed
-(E2.1–E2.6 + E3.1–E3.5 shipped; Gate 2 verdict: **advance**, 2026-07-17; Gate 3 verdict:
-**advance**, 2026-07-18); **Gate 4 is Active above**. Full plan
+track, in sequence — each gate's exit criteria gate the next. Gates 0–4 are closed
+(E2.1–E2.6 + E3.1–E3.5 + E4.1–E4.5 shipped; Gate 2 verdict: **advance**, 2026-07-17;
+Gate 3 verdict: **advance**, 2026-07-18; Gate 4 closed **2026-07-19** by its
+deterministic exit corpus per the owner's 2026-07-18 exit-scope ruling — the live
+paired voice/chemistry eval is the one deferred human-in-the-loop check, parked in
+[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs). Full plan
 [engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md). (Distinct
 build from the chat-lane [world-engine-refactor.plan.md](world-engine-refactor.plan.md)
 north-star umbrella further down.)
@@ -139,6 +127,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine Gate 4 exit corpus (E4.5) — GATE 4 CLOSED** —
+  [engine.plan.md](engine.plan.md) §"Gate 4 exit" + §"Gate 4 build order" — 2026-07-19 —
+  four deterministic scenarios, zero model calls (`test:engine-e4-5`; 2 771 pure +
+  372 int green): cross-viewpoint leak sweep under knowledge asymmetry across cut,
+  serialized prompt input, and retrieval (querying for the secret widens nothing);
+  contradiction/retraction leaving neither claim presented as current truth;
+  rerender-creates-nothing as row-count invariance over all eight persistence
+  surfaces; retry-from-the-same-cut bit-identical; and a 3-hop gossip-provenance
+  chain (decay 9 000→8 000→7 000, route reconstructible, retraction reaches only
+  earshot). Closes Gate 4 per the 2026-07-18 exit-scope ruling; the live paired
+  voice/chemistry eval (the only human-in-the-loop check) is deferred to
+  [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs. Next gate:
+  **Gate 5** (queued in Next).
 - **World-engine RAG eligibility & memory linkage (E4.4)** —
   [engine.plan.md](engine.plan.md) §"Gate 4 build order" · contract
   [engine.spec.md](engine.spec.md) §24 — 2026-07-19 — redacted memory documents
