@@ -1,8 +1,17 @@
 # Mobile UX pass — clock visibility, privacy mode, touch/overflow defects
 
-Status: active — W1–W4 all implemented 2026-07-19 (full gate green: lint,
-cycles, typecheck, 2815 tests, jscpd); awaiting Fly deploy + on-device
-verification before shipping.
+Status: shipped — 2026-07-19. All four work packages landed via PR #17 (squash
+647b994 + Codex-review fixes: exact-route header suppression, stack-aware focus
+traps) and verified live on Fly v92 at 390×844 and 1440×900 (clock chip →
+Scenario setup → calendar edit → chip rebase; Escape closes only the top
+dialog; privacy mode on/off both surfaces; composer full-width row; editor
+overflow gone, SaveBar flush above the tab bar; typed-date field desktop-only,
+"march 3" → Sunday echo). Leftovers: the session-lane back-link open question
+below (owner call pending); the parked Inspector-new-tab and unlabeled-form-
+fields a11y sweep; and the polish bucket noted in the packages section. One
+pre-existing quirk surfaced (not introduced) by the now-visible skip landings:
+"Next morning" is a fixed +9h, so from a morning clock it lands the same
+afternoon — a candidate for a follow-up ("overnight lands at next 8am").
 
 Branch: `mobile-ux` (worktree off `engine` @ 530751f — matches the deployed build).
 
