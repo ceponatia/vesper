@@ -40,6 +40,7 @@ import {
   replayEngagementsHistory,
   replayKnowledgeHistory,
   replayObservationsHistory,
+  replaySoftCanonHistory,
   replaySpaceHistory,
   simulationHash,
   spaceSeedForReplay,
@@ -70,6 +71,7 @@ import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";
 import { insertReplayedKnowledge } from "./knowledge-recorder";
 import { insertReplayedObservations } from "./observation-store";
+import { insertReplayedSoftCanon } from "./soft-canon-recorder";
 import {
   insertSpaceRows,
   loadSpaceRows,
@@ -641,6 +643,13 @@ export async function forkBranch(
       observations: childObservations.observations,
     });
     await insertReplayedKnowledge(tx, childKnowledge, input.childBranchId);
+
+    // E4.3 soft canon: every event carries its post-fold snapshot (§6.4), so
+    // the child's bounded store rebuilds from the inherited stream alone.
+    // Persisted cuts are NOT copied — they are presentation artifacts; a
+    // retaken scene re-prepares and mints its own.
+    const childSoftCanon = replaySoftCanonHistory(inherited);
+    await insertReplayedSoftCanon(tx, childSoftCanon, input.childBranchId);
 
     // Inherited delivery obligations were fulfilled on ancestor branches; the
     // child's consumer lane starts after the fork point (plan R4 — reference,

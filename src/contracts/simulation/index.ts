@@ -11,3 +11,5 @@ export * from "./engagements";
 export * from "./access";
 export * from "./narrative";
 export * from "./perception";
+export * from "./soft-canon";
+export * from "./deliberation";

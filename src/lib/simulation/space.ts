@@ -765,6 +765,9 @@ export function applySpaceEvent(
     case "engagement_winding_down":
     case "speech_act_delivered":
     case "disclosure_made":
+    case "soft_canon_recorded":
+    case "soft_canon_promoted":
+    case "soft_canon_demoted":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }

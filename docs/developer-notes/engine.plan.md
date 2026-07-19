@@ -547,22 +547,51 @@ long-lived `engine` branch.
    to dyadic evidence entries (the persisted promises/favors/debts ledger stays Gate 5).
    13 pure + 5 integration cases; CI runs `test:engine-e4-2` (2 733 pure + 360 int
    green).
-3. **E4.3 — NarrativeCut v2, narrator integration, and soft canon.** The full §22.1
-   contract replacing the Gate 3 deterministic subset: `speakerBeliefs` (E4.2),
-   `perceptibleNow` as evidence views (E4.1), `creativeLicenses`, and per-field
-   provenance refs; cut rows persisted immutable and addressable with the §22.3
-   recompile-identity hash; the §23.1 `NarratorResult` trust boundary (`parseOr`, safe
-   defaults); rerender re-reads the persisted cut and creates no events or memories;
-   narrator failure retry from the same cut (ruling 8 formalized on the persisted row);
-   the §23.2 presentation auditor — flags missing must-enact beats and forbidden claims,
-   may request rerender or a deterministic bridge, cannot mutate truth; and §23.4 soft
-   canon under ruling 14 — a bounded expiring store, proposals validated through
-   conflict/privacy/scope/duplication/world-type checks, and **auto-promotion** once a
-   key is reused across the ruled number of committed cuts, emitting an audited
-   promotion event with a demotion path; every threshold versioned per world type and
-   documented for tuning. The §19.3 deliberator admission seam joins here (bounded legal
-   candidates, deterministic fallback + timeout, recorded rationale) — exercised with a
-   stub in tests, zero live calls.
+3. **E4.3 — NarrativeCut v2, narrator integration, and soft canon.** Status:
+   **shipped — 2026-07-19.** The full §22.1 contract replacing the Gate 3 deterministic
+   subset: `speakerBeliefs` (the viewpoint's live E4.2 beliefs joined to their
+   assertions — voiceable, possibly false), `perceptibleNow` as E4.1 evidence views
+   with event kinds, `currentActivities` (co-located claim-holding), typed
+   `forbiddenClaims` (the §22.2 code vocabulary plus contextual absent-participant
+   bans), `failurePresentations` (§14.4 public faces, caller-supplied from command
+   rejections), `creativeLicenses` (ambient/inner-monologue/small-talk plus
+   `established_detail` reuse of live soft canon), `allowedTransitions` (observed soft
+   beats — winding-down, resumptions, past speech — portrayable, never required), and
+   per-field `provenance` refs. Cut rows persist immutable in `sim_narrative_cuts`
+   (migration 0065): rerender and ruling-8 retry are `loadPersistedCut` — a pure read
+   proven to create nothing — and a same-id different-hash write throws the §22.3
+   version diagnostic (cut ids now include the story-time bounds so quiet back-to-back
+   turns never collide). §23.1 ships as `parseNarratorResult` (`parseOr`, empty-result
+   default, proposals stamped with the cut id at the boundary — a model never cites
+   itself) and the §23.2 auditor (`auditPresentation`): deterministic and structural,
+   it checks DECLARED beat/effect ids against the persisted cut, bridges ≤2 missing
+   hard beats from their neutral summaries, sends empty or beat-blind prose back for
+   rerender, and can mutate nothing. `confirm_narrator_result` v2 confirms by ID
+   against the persisted row (unknown ids ignored, unenacted effects expire, only the
+   engagement's newest cut is confirmable — older cuts reject `cut_superseded`), and
+   the E4.2 bridge is live: an enacted armed `disclosure_made` carrying typed content
+   appends a real §21 knowledge event, so narrator-spoken gossip lands in the belief
+   ledgers with full provenance (capture failure degrades to the speech act alone).
+   §23.4 soft canon ships under ruling 14: `sim_soft_canon` is a bounded expiring
+   store of §6.4 snapshot-derived rows (fork replay bit-identical, proven in the int
+   suite); proposals pass wrong-cut/confidence/value-size/subject-containment/
+   conflict/duplication/scope-bound checks (rejection is a diagnostic, never a failed
+   turn); reuse across the ruled number of distinct committed cuts (default 3)
+   auto-promotes through an audited `soft_canon_promoted` event carrying provenance
+   and the firing thresholds, and `demote_soft_canon` (storyteller-only, ruling 4)
+   retracts without touching history. Every knob is a versioned world-type value in
+   the `soft-canon.ts` registry with tuning rationale documented inline. The §19.3
+   seam ships as the pure admission/outcome kernel (`lib/simulation/deliberation`)
+   wired into `prepareEngagementTurn` for multi-candidate departures: gates checked in
+   spec order, opaque bounded candidates, injected deliberate/timeout, rationale
+   recorded on the turn, and refusal/timeout/nonsense all landing on the
+   deterministic earliest-boundary fallback — stub-exercised, zero live calls.
+   30 pure + 4 integration cases; CI runs `test:engine-e4-3` (2 763 pure + 364 int
+   green). Delivery notes: the auditor is structural (it audits declarations, not
+   semantics — model-graded forbidden-claim detection is an owner-gated spend item);
+   scene-scope soft canon validates against engagement participants, so a scene
+   entry's lifetime is its TTL rather than its engagement; persisted cuts are not
+   copied by forks (presentation artifacts — a retaken scene re-prepares).
 4. **E4.4 — RAG eligibility and memory linkage.** The §24 retrieval redesign:
    outbox-driven indexing of eligible representations (observations, active
    assertions/beliefs, participated dialogue episodes, authorized authored lore, bounded
@@ -582,9 +611,9 @@ long-lived `engine` branch.
    recorded as an owner-gated spend item, not a gate blocker.
 
 E4.2 consumes E4.1's observations; E4.3 consumes both; E4.4 consumes the E4.1–E4.3
-ledgers and the persisted cuts; E4.5 closes the gate. Deferred design notes carried in:
-pressure acknowledgment and the resumed-activity re-arm (E3.4 notes) slot into E4.3's
-arbiter work if scenario pressure demands them, else they carry to Gate 5.
+ledgers and the persisted cuts; E4.5 closes the gate. Deferred design notes: pressure
+acknowledgment and the resumed-activity re-arm (E3.4 notes) were not demanded by any
+E4.3 scenario and **carry to Gate 5** as planned.
 
 ## Gate 5 — bodies, materials, households, and relationships
 

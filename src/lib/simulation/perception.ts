@@ -223,9 +223,14 @@ export function deriveEventObservations(
     case "commitment_kept":
     case "commitment_late":
     case "commitment_missed":
+    case "soft_canon_recorded":
+    case "soft_canon_promoted":
+    case "soft_canon_demoted":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
+      // Soft-canon records are presentation-lane audit entries (§23.4) —
+      // nothing in the world happened for anyone to witness.
       return [];
     case "journey_planned":
     case "journey_delayed":

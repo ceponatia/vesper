@@ -45,7 +45,7 @@ function rejectedResult(
 }
 
 /** The speaker's strongest live belief in one assertion, if any. */
-async function loadSpeakerLiveBelief(
+export async function loadSpeakerLiveBelief(
   tx: SimTx,
   branchId: string,
   holderActorId: string,

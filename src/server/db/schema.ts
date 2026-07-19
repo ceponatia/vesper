@@ -2369,6 +2369,95 @@ export const simBeliefs = pgTable(
   ],
 );
 
+/**
+ * E4.3 persisted NarrativeCuts (engine.spec §22). A cut row is IMMUTABLE and
+ * addressable: rerender re-reads it and creates nothing; a failed narrator
+ * render retries from the same row (ruling 8); armed speech acts confirm
+ * against it by id (§23.3). There is deliberately no update path and no
+ * updated_at — recompiling the same cut id must reproduce semantic_hash or
+ * fail with a version diagnostic (§22.3).
+ */
+export const simNarrativeCuts = pgTable(
+  "sim_narrative_cuts",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    cutId: text("cut_id").notNull(),
+    engagementId: text("engagement_id").notNull(),
+    viewpointActorId: text("viewpoint_actor_id").notNull(),
+    compilerVersion: text("compiler_version").notNull(),
+    semanticHash: text("semantic_hash").notNull(),
+    branchVersion: bigint("branch_version", { mode: "number" }).notNull(),
+    fromSequence: bigint("from_sequence", { mode: "number" }).notNull(),
+    throughSequence: bigint("through_sequence", { mode: "number" }).notNull(),
+    fromStorySecond: bigint("from_story_second", { mode: "number" }).notNull(),
+    throughStorySecond: bigint("through_story_second", { mode: "number" }).notNull(),
+    /** The full parsed §22.1 cut — the row IS the render input, bit for bit. */
+    content: jsonb("content").$type<unknown>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_narrative_cuts_branch_cut_pk", columns: [t.branchId, t.cutId] }),
+    index("sim_narrative_cuts_branch_engagement_idx").on(t.branchId, t.engagementId, t.throughSequence),
+    check(
+      "sim_narrative_cuts_sequence_order",
+      sql`${t.fromSequence} >= 0 AND ${t.throughSequence} >= ${t.fromSequence}`,
+    ),
+    check(
+      "sim_narrative_cuts_story_second_order",
+      sql`${t.fromStorySecond} >= 0 AND ${t.throughStorySecond} >= ${t.fromStorySecond}`,
+    ),
+  ],
+);
+
+/**
+ * E4.3 soft canon (engine.spec §23.4, ruling 14): the bounded expiring store
+ * of narrator-established details. Rows are derived — every soft_canon_*
+ * event carries its full post-fold snapshot, so live upsert and fork replay
+ * mint identical rows. Expiry is read-time (valid_until), never a status
+ * write; promotion and demotion are audited status moves.
+ */
+export const simSoftCanon = pgTable(
+  "sim_soft_canon",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    entryId: text("entry_id").notNull(),
+    key: text("key").notNull(),
+    scope: text("scope", {
+      enum: ["scene", "relationship", "character", "location", "world"],
+    }).notNull(),
+    subjectIds: jsonb("subject_ids").$type<string[]>().notNull(),
+    value: jsonb("value").$type<unknown>().notNull(),
+    confidenceFixedPoint: integer("confidence_fixed_point").notNull(),
+    firstRecordedAt: bigint("first_recorded_at", { mode: "number" }).notNull(),
+    lastRecordedAt: bigint("last_recorded_at", { mode: "number" }).notNull(),
+    validUntil: bigint("valid_until", { mode: "number" }),
+    sourceCutIds: jsonb("source_cut_ids").$type<string[]>().notNull(),
+    status: text("status", { enum: ["active", "promoted", "demoted"] }).notNull(),
+    statusChangedAt: bigint("status_changed_at", { mode: "number" }),
+    statusCauseEventId: text("status_cause_event_id"),
+    rulesVersion: text("rules_version").notNull(),
+    derivationVersion: text("derivation_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_soft_canon_branch_entry_pk", columns: [t.branchId, t.entryId] }),
+    index("sim_soft_canon_branch_scope_status_idx").on(t.branchId, t.scope, t.status),
+    check(
+      "sim_soft_canon_confidence_range",
+      sql`${t.confidenceFixedPoint} >= 0 AND ${t.confidenceFixedPoint} <= 10000`,
+    ),
+    check(
+      "sim_soft_canon_recorded_order",
+      sql`${t.firstRecordedAt} >= 0 AND ${t.lastRecordedAt} >= ${t.firstRecordedAt}`,
+    ),
+  ],
+);
+
 export const simJourneys = pgTable(
   "sim_journeys",
   {

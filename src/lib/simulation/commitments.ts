@@ -676,6 +676,9 @@ export function applyCommitmentEvent(
     case "storyteller_relocation":
     case "speech_act_delivered":
     case "disclosure_made":
+    case "soft_canon_recorded":
+    case "soft_canon_promoted":
+    case "soft_canon_demoted":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
   }
