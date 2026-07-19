@@ -1,6 +1,7 @@
 export * from "./access";
 export * from "./activities";
 export * from "./bodies";
+export * from "./body-reads";
 export * from "./commitments";
 export * from "./deliberation";
 export * from "./engagements";

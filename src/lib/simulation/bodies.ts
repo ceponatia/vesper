@@ -29,6 +29,7 @@ import {
   type BodyModifier,
   type BodyModifierAppliedEvent,
   type BodyModifierSpec,
+  type BodyRhythmRow,
   type BodySourceAppliedEvent,
   type BodyThresholdCrossedEvent,
   type BodyThresholdDefinition,
@@ -38,6 +39,12 @@ import {
   type InitializeActorBodyRejectionCode,
   type ResolveBodyThresholdCommand,
   type ResolveBodyThresholdRejectionCode,
+  type ScheduledBodyAdjustment,
+  ENERGY_SLEEP_RESTORE_CAP_FIXED_POINT,
+  ENERGY_SLEEP_RESTORE_PER_HOUR_FIXED_POINT,
+  SECONDS_PER_DAY,
+  bodyModifierSpecSchema,
+  rhythmSelfCareEffects,
 } from "@/contracts/simulation/bodies";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import { simulationHash } from "./item-transfer";
@@ -222,32 +229,72 @@ export interface MeterIntegrationView {
   state: BodyMeterState;
   /** Every modifier row for this actor + meter, any validity. */
   modifiers: readonly BodyModifier[];
+  /**
+   * E5.2 rhythm self-care as data: absolute-second set/add jumps the
+   * integration folds as boundaries (§25.5 window crossing — deterministic
+   * clock points, so no per-day tick or trigger is ever needed). Entries at
+   * or before the last material write are already folded into the persisted
+   * value and are ignored.
+   */
+  scheduledAdjustments?: readonly ScheduledBodyAdjustment[];
 }
 
-/** Modifier validity boundaries strictly inside (from, to], ascending. */
+function compareAdjustments(left: ScheduledBodyAdjustment, right: ScheduledBodyAdjustment): number {
+  return (
+    left.atStorySecond - right.atStorySecond ||
+    compareStableText(left.operation.kind, right.operation.kind) ||
+    (left.operation.kind === "add" && right.operation.kind === "add"
+      ? left.operation.deltaFixedPoint - right.operation.deltaFixedPoint
+      : left.operation.kind === "set" && right.operation.kind === "set"
+        ? left.operation.valueFixedPoint - right.operation.valueFixedPoint
+        : 0)
+  );
+}
+
+function applyAdjustment(valueFixedPoint: number, adjustment: ScheduledBodyAdjustment): number {
+  return adjustment.operation.kind === "set"
+    ? adjustment.operation.valueFixedPoint
+    : clampMeter(valueFixedPoint + adjustment.operation.deltaFixedPoint);
+}
+
+/** Adjustments falling in (from, to], in deterministic application order. */
+function adjustmentsBetween(
+  view: MeterIntegrationView,
+  fromSecond: number,
+  toSecond: number,
+): ScheduledBodyAdjustment[] {
+  return [...(view.scheduledAdjustments ?? [])]
+    .filter((adjustment) => adjustment.atStorySecond > fromSecond && adjustment.atStorySecond <= toSecond)
+    .sort(compareAdjustments);
+}
+
+/** Piece cut points in (from, to): modifier boundaries and adjustment seconds. */
 function integrationBoundaries(
-  modifiers: readonly BodyModifier[],
+  view: MeterIntegrationView,
   fromSecond: number,
   toSecond: number,
 ): number[] {
   const boundaries = new Set<number>();
-  for (const modifier of modifiers) {
+  for (const modifier of view.modifiers) {
     for (const boundary of [modifier.validFromStorySecond, modifier.validUntilStorySecond]) {
       if (boundary !== undefined && boundary > fromSecond && boundary < toSecond) boundaries.add(boundary);
     }
+  }
+  for (const adjustment of adjustmentsBetween(view, fromSecond, toSecond)) {
+    if (adjustment.atStorySecond < toSecond) boundaries.add(adjustment.atStorySecond);
   }
   return [...boundaries].sort((left, right) => left - right);
 }
 
 /**
- * The pure, total query read: integrate piecewise across modifier boundaries
- * from the last material write. Never persists (§25.2 — that is what makes
- * partition invariance structural).
+ * The pure, total query read: integrate piecewise across modifier and
+ * self-care boundaries from the last material write. Never persists (§25.2 —
+ * that is what makes partition invariance structural).
  */
 export function integrateMeterValue(view: MeterIntegrationView, atStorySecond: number): number {
   const from = view.state.lastIntegratedAtStorySecond;
   if (atStorySecond <= from) return view.state.valueFixedPoint;
-  const cuts = integrationBoundaries(view.modifiers, from, atStorySecond);
+  const cuts = integrationBoundaries(view, from, atStorySecond);
   let value = view.state.valueFixedPoint;
   let cursor = from;
   for (const boundary of [...cuts, atStorySecond]) {
@@ -257,6 +304,9 @@ export function integrateMeterValue(view: MeterIntegrationView, atStorySecond: n
       modifiersLiveAt(view.modifiers, cursor),
     );
     value = driftStep(value, drift, boundary - cursor);
+    for (const adjustment of adjustmentsBetween(view, cursor, boundary)) {
+      if (adjustment.atStorySecond === boundary) value = applyAdjustment(value, adjustment);
+    }
     cursor = boundary;
   }
   return value;
@@ -289,28 +339,44 @@ export function solveNextThresholdCrossing(
   const armable = view.definition.thresholds.filter((threshold) => !thresholdCrossed(threshold, valueNow));
   if (armable.length === 0) return undefined;
   const end = fromStorySecond + horizonSeconds;
-  const cuts = integrationBoundaries(view.modifiers, fromStorySecond, end);
-  const pieceEnds = [...cuts, end];
+  const pieceEnds = [...integrationBoundaries(view, fromStorySecond, end), end];
 
   let best: ThresholdCrossing | undefined;
   for (const threshold of armable) {
     let pieceStart = fromStorySecond;
     for (const pieceEnd of pieceEnds) {
       if (best && pieceStart >= best.crossesAtStorySecond) break;
-      const valueAtEnd = integrateMeterValue(view, pieceEnd);
-      if (thresholdCrossed(threshold, valueAtEnd)) {
+      const valueAtStart = integrateMeterValue(view, pieceStart);
+      const candidate = ((): ThresholdCrossing | undefined => {
+        // A jump at the piece start (self-care landing on the crossed side)
+        // is itself the crossing second.
+        if (pieceStart > fromStorySecond && thresholdCrossed(threshold, valueAtStart)) {
+          return { threshold, crossesAtStorySecond: pieceStart, valueAtCrossingFixedPoint: valueAtStart };
+        }
+        // Drift-only within the piece: monotone, so a sign change at the
+        // pre-jump end pins the crossing inside; binary search it.
+        const drift = effectiveDrift(
+          view.definition,
+          view.state.baselineFixedPoint,
+          modifiersLiveAt(view.modifiers, pieceStart),
+        );
+        const preJumpEnd = driftStep(valueAtStart, drift, pieceEnd - pieceStart);
+        if (!thresholdCrossed(threshold, preJumpEnd)) return undefined;
         let low = pieceStart;
         let high = pieceEnd;
         while (low + 1 < high) {
           const mid = low + Math.floor((high - low) / 2);
-          if (thresholdCrossed(threshold, integrateMeterValue(view, mid))) high = mid;
+          if (thresholdCrossed(threshold, driftStep(valueAtStart, drift, mid - pieceStart))) high = mid;
           else low = mid;
         }
-        const candidate: ThresholdCrossing = {
-          threshold,
-          crossesAtStorySecond: high,
-          valueAtCrossingFixedPoint: integrateMeterValue(view, high),
-        };
+        // Verify against the full oracle: an adjustment landing exactly on
+        // the crossing second may preempt it (washed at the very minute the
+        // meter would have crossed) — then this piece produces no alarm.
+        const oracleValue = integrateMeterValue(view, high);
+        if (!thresholdCrossed(threshold, oracleValue)) return undefined;
+        return { threshold, crossesAtStorySecond: high, valueAtCrossingFixedPoint: oracleValue };
+      })();
+      if (candidate) {
         if (
           !best ||
           candidate.crossesAtStorySecond < best.crossesAtStorySecond ||
@@ -364,6 +430,85 @@ export function bodyThresholdUniquenessKeyPrefix(actorId: string, meterKey: stri
 
 export function bodyConditionExpiryUniquenessKey(conditionId: string): string {
   return composeSimulationId("body-condition-expiry", [conditionId]);
+}
+
+// ---------------------------------------------------------------------------
+// E5.2 — rhythm self-care and the sleep coupling (engine.spec §25.4–25.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Window-crossing self-care (§25.5): each rhythm row whose kind carries a
+ * self-care effect lands that effect at its window-END minute, every story
+ * day. A skip credits only the crossings it actually contains — landing at
+ * 6am (before a 7am wash) and landing at 8am (past it) genuinely differ, and
+ * nothing ever blanket-restores. Crossings are deterministic clock points,
+ * so they enter integration as {@link ScheduledBodyAdjustment}s — no per-day
+ * tick, no trigger, no persistence.
+ */
+export function selfCareAdjustmentsBetween(
+  rhythmRows: readonly BodyRhythmRow[],
+  meterKey: string,
+  fromSecondExclusive: number,
+  toSecondInclusive: number,
+): ScheduledBodyAdjustment[] {
+  const adjustments: ScheduledBodyAdjustment[] = [];
+  for (const row of rhythmRows) {
+    const effect = rhythmSelfCareEffects[row.kind];
+    if (!effect || effect.meterKey !== meterKey) continue;
+    const firstDay = Math.max(0, Math.floor(fromSecondExclusive / SECONDS_PER_DAY) - 1);
+    const lastDay = Math.floor(toSecondInclusive / SECONDS_PER_DAY) + 1;
+    for (let day = firstDay; day <= lastDay; day += 1) {
+      const atStorySecond = day * SECONDS_PER_DAY + row.endMinuteOfDay * 60;
+      if (atStorySecond > fromSecondExclusive && atStorySecond <= toSecondInclusive) {
+        adjustments.push({ atStorySecond, operation: effect.operation });
+      }
+    }
+  }
+  return adjustments.sort((left, right) => left.atStorySecond - right.atStorySecond);
+}
+
+/**
+ * The §25.4 sleep coupling, half one: falling asleep suspends the energy
+ * reserve's decay. Callers may pass their own energy modifier; otherwise the
+ * suspend is attached deterministically so no caller can model sleep without
+ * its body consequence.
+ */
+export function normalizeConditionModifierSpecs(
+  conditionKey: string,
+  specs: readonly BodyModifierSpec[],
+): BodyModifierSpec[] {
+  if (conditionKey !== "asleep" || specs.some((spec) => spec.meterKey === "energy")) {
+    return [...specs];
+  }
+  return [
+    ...specs,
+    bodyModifierSpecSchema.parse({
+      meterKey: "energy",
+      operation: { kind: "suspend" },
+      stackingGroup: "sleep",
+      priority: 0,
+      visibility: "obvious",
+    }),
+  ];
+}
+
+/**
+ * The §25.4 sleep coupling, half two: waking credits the reserve linearly by
+ * time actually slept (+0.09/h), capped at 0.95 — a full night from a normal
+ * bedtime refills; a full night after a bender reaches only ~0.80, so debt
+ * emerges with no debt mechanic. Linear credit composes exactly, so split
+ * sleep partitions to the same material result.
+ */
+export function deriveSleepCredit(input: {
+  sleptSeconds: number;
+  reserveAtWakeFixedPoint: number;
+}): number {
+  if (input.sleptSeconds <= 0) return 0;
+  const rawCredit = Math.floor(
+    (ENERGY_SLEEP_RESTORE_PER_HOUR_FIXED_POINT * input.sleptSeconds) / 3_600,
+  );
+  const headroom = Math.max(0, ENERGY_SLEEP_RESTORE_CAP_FIXED_POINT - input.reserveAtWakeFixedPoint);
+  return Math.min(rawCredit, headroom);
 }
 
 // ---------------------------------------------------------------------------
@@ -538,6 +683,8 @@ function rearmThresholdTrigger(input: {
 export interface InitializeActorBodyResolutionView extends BodyBranchMeta {
   actorExists: boolean;
   alreadyInitialized: boolean;
+  /** E5.2: rhythm crossings per meter so initial alarms see future self-care. */
+  selfCareAdjustmentsByMeter?: ReadonlyMap<string, readonly ScheduledBodyAdjustment[]>;
 }
 
 export interface InitializeActorBodyResolution {
@@ -601,11 +748,12 @@ export function resolveInitializeActorBody(
   for (const definition of registry) {
     const meter = meters.find((candidate) => candidate.meterKey === definition.key);
     if (!meter) continue;
+    const scheduledAdjustments = view.selfCareAdjustmentsByMeter?.get(definition.key) ?? [];
     const trigger = rearmThresholdTrigger({
       view,
       command,
       actorId: command.payload.actorId,
-      meterView: { definition, state: meter, modifiers: [] },
+      meterView: { definition, state: meter, modifiers: [], scheduledAdjustments },
       sequence: view.headSequence + 2 + triggers.length,
       causationId: initialized.id,
       armedAtSequence: initialized.sequence,
@@ -627,6 +775,8 @@ export interface BodyMeterResolutionView extends BodyBranchMeta {
   definition?: BodyMeterDefinition;
   /** Every modifier row for this actor + meter. */
   modifiers: readonly BodyModifier[];
+  /** E5.2 rhythm self-care crossings through the solve horizon. */
+  scheduledAdjustments?: readonly ScheduledBodyAdjustment[];
 }
 
 export interface ApplyBodySourceResolution {
@@ -654,6 +804,7 @@ export function resolveApplyBodySource(
     definition: view.definition,
     state: view.meter,
     modifiers: view.modifiers,
+    scheduledAdjustments: view.scheduledAdjustments ?? [],
   };
   const integrated = integrateMeterValue(meterView, view.storySecond);
   const operation = command.payload.operation;
@@ -686,7 +837,12 @@ export function resolveApplyBodySource(
     view,
     command,
     actorId: command.payload.actorId,
-    meterView: { definition: view.definition, state: nextState, modifiers: view.modifiers },
+    meterView: {
+      definition: view.definition,
+      state: nextState,
+      modifiers: view.modifiers,
+      scheduledAdjustments: view.scheduledAdjustments ?? [],
+    },
     sequence: view.headSequence + 2,
     causationId: event.id,
     armedAtSequence: event.sequence,
@@ -806,6 +962,7 @@ export function resolveApplyBodyModifier(
     definition: view.definition,
     state: view.meter,
     modifiers: view.modifiers,
+    scheduledAdjustments: view.scheduledAdjustments ?? [],
   };
   const valueAtApply = integrateMeterValue(meterView, view.storySecond);
   const modifier = modifierFromSpec({
@@ -839,6 +996,7 @@ export function resolveApplyBodyModifier(
       definition: view.definition,
       state: nextState,
       modifiers: [...view.modifiers, modifier],
+      scheduledAdjustments: view.scheduledAdjustments ?? [],
     },
     sequence: view.headSequence + 2,
     causationId: event.id,
@@ -882,7 +1040,12 @@ export function resolveApplyBodyCondition(
   if (view.activeSameKey) {
     return rejection("condition_already_active", "That state already holds.");
   }
-  for (const spec of command.payload.modifiers) {
+  // The §25.4 sleep coupling: an asleep condition always suspends energy.
+  const modifierSpecs = normalizeConditionModifierSpecs(
+    command.payload.conditionKey,
+    command.payload.modifiers,
+  );
+  for (const spec of modifierSpecs) {
     const meterView = view.meterViews.get(spec.meterKey);
     if (!meterView) return rejection("unknown_meter_key", "That body meter is unknown.");
     const specProblem = validateModifierSpec(spec, meterView.definition);
@@ -924,7 +1087,7 @@ export function resolveApplyBodyCondition(
   const modifiers: BodyModifier[] = [];
   const meters = new Map<string, BodyMeterState>();
   let nextSequence = appliedEvent.sequence + 1;
-  for (const [ordinal, spec] of command.payload.modifiers.entries()) {
+  for (const [ordinal, spec] of modifierSpecs.entries()) {
     const meterView = view.meterViews.get(spec.meterKey);
     if (!meterView) continue;
     const modifier = modifierFromSpec({
@@ -975,6 +1138,7 @@ export function resolveApplyBodyCondition(
         definition: meterView.definition,
         state: meterState,
         modifiers: [...meterView.modifiers, ...modifiers.filter((m) => m.meterKey === meterKey)],
+        scheduledAdjustments: meterView.scheduledAdjustments ?? [],
       },
       sequence: nextSequence,
       causationId: appliedEvent.id,
@@ -1022,7 +1186,7 @@ export interface EndBodyConditionResolution {
   condition: BodyCondition;
   /** Meter states persisted at the retirement boundary, keyed by meter key. */
   meters: Map<string, BodyMeterState>;
-  events: [BodyConditionEndedEvent, ...TriggerScheduledEvent[]];
+  events: [BodyConditionEndedEvent, ...(BodySourceAppliedEvent | TriggerScheduledEvent)[]];
 }
 
 export function resolveEndBodyCondition(
@@ -1068,23 +1232,58 @@ export function resolveEndBodyCondition(
     ...condition,
     status: "ended",
     endBasis: command.payload.basis,
+    endedAtStorySecond: view.storySecond,
   });
 
   // Persist each affected meter at the retirement boundary and re-solve its
-  // alarm against the post-retirement modifier set.
-  const events: [BodyConditionEndedEvent, ...TriggerScheduledEvent[]] = [endedEvent];
+  // alarm against the post-retirement modifier set. Waking from `asleep`
+  // additionally credits the energy reserve by time actually slept (§25.4 —
+  // the coupling's second half), emitted as a real sleep_credit source so the
+  // causal record explains the refill.
+  const events: [BodyConditionEndedEvent, ...(BodySourceAppliedEvent | TriggerScheduledEvent)[]] = [
+    endedEvent,
+  ];
   const meters = new Map<string, BodyMeterState>();
   const retiredIds = new Set(view.ownedModifiers.map((modifier) => modifier.id));
+  const rearms: TriggerScheduledEvent[] = [];
   let nextSequence = endedEvent.sequence + 1;
   for (const meterKey of [...new Set(view.ownedModifiers.map((m) => m.meterKey))].sort(compareStableText)) {
     const meterView = view.meterViews.get(meterKey);
     if (!meterView) continue;
     const valueAtEnd = integrateMeterValue(meterView, view.storySecond);
+    const sleepCredit =
+      condition.key === "asleep" && meterKey === "energy"
+        ? deriveSleepCredit({
+            sleptSeconds: view.storySecond - condition.onsetAtStorySecond,
+            reserveAtWakeFixedPoint: valueAtEnd,
+          })
+        : 0;
+    const valueFinal = clampMeter(valueAtEnd + sleepCredit);
+    if (sleepCredit > 0) {
+      events.push(
+        bodySourceAppliedEventSchema.parse({
+          ...eventEnvelope(view, command, nextSequence, "sleep-credit"),
+          type: "body_source_applied",
+          causationId: endedEvent.id,
+          actorIds: [command.payload.actorId],
+          entityIds: [command.payload.actorId],
+          payload: {
+            actorId: command.payload.actorId,
+            meterKey,
+            sourceKind: "sleep_credit",
+            operation: { kind: "add", deltaFixedPoint: sleepCredit },
+            valueAfterFixedPoint: valueFinal,
+            derived: capturedDerivation(meterView, view.storySecond),
+          },
+        }),
+      );
+      nextSequence += 1;
+    }
     const meterState = bodyMeterStateSchema.parse({
       ...meterView.state,
       actorId: command.payload.actorId,
       meterKey,
-      valueFixedPoint: valueAtEnd,
+      valueFixedPoint: valueFinal,
       lastIntegratedAtStorySecond: view.storySecond,
     });
     meters.set(meterKey, meterState);
@@ -1093,16 +1292,22 @@ export function resolveEndBodyCondition(
       view,
       command,
       actorId: command.payload.actorId,
-      meterView: { definition: meterView.definition, state: meterState, modifiers: survivingModifiers },
+      meterView: {
+        definition: meterView.definition,
+        state: meterState,
+        modifiers: survivingModifiers,
+        scheduledAdjustments: meterView.scheduledAdjustments ?? [],
+      },
       sequence: nextSequence,
       causationId: endedEvent.id,
       armedAtSequence: endedEvent.sequence,
     });
     if (rearm) {
-      events.push(rearm);
+      rearms.push(rearm);
       nextSequence += 1;
     }
   }
+  events.push(...rearms);
   return { ok: true, condition: ended, meters, events };
 }
 
@@ -1114,6 +1319,8 @@ export interface ResolveBodyThresholdResolutionView extends BodyBranchMeta {
   meter?: BodyMeterState;
   definition?: BodyMeterDefinition;
   modifiers: readonly BodyModifier[];
+  /** E5.2 rhythm self-care crossings through the solve horizon. */
+  scheduledAdjustments?: readonly ScheduledBodyAdjustment[];
   /** Live same-key condition already held (suppresses a duplicate onset). */
   activeOutcomeConditionKey?: boolean;
   /** Co-located witnesses, captured by the store for noticeable thresholds. */
@@ -1151,6 +1358,7 @@ export function resolveBodyThreshold(
     definition: view.definition,
     state: view.meter,
     modifiers: view.modifiers,
+    scheduledAdjustments: view.scheduledAdjustments ?? [],
   };
   const valueNow = integrateMeterValue(meterView, view.storySecond);
   if (!thresholdCrossed(threshold, valueNow)) {
@@ -1244,7 +1452,12 @@ export function resolveBodyThreshold(
     view,
     command,
     actorId: command.payload.actorId,
-    meterView: { definition: view.definition, state: nextState, modifiers: view.modifiers },
+    meterView: {
+      definition: view.definition,
+      state: nextState,
+      modifiers: view.modifiers,
+      scheduledAdjustments: view.scheduledAdjustments ?? [],
+    },
     sequence: nextSequence,
     causationId: crossedEvent.id,
     armedAtSequence: crossedEvent.sequence,
@@ -1378,6 +1591,7 @@ export function applyBodyEvent(
         ...existing,
         status: "ended",
         endBasis: event.payload.basis,
+        endedAtStorySecond: event.payload.endedAtStorySecond,
       });
       const retiredIds = new Set(event.payload.retiredModifiers.map((retired) => retired.modifierId));
       return sortBodiesProjection({

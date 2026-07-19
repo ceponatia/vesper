@@ -5,9 +5,20 @@ import {
   type ItemTransferProjection,
 } from "@/contracts/simulation/item-transfer";
 import { newId } from "@/lib/ids";
-import { db, simBodyConditions, simBodyMeters, simBodyModifiers, simEvents, simTriggers, simWorlds } from "@/server/db";
+import {
+  db,
+  simBodyConditions,
+  simBodyMeters,
+  simBodyModifiers,
+  simBodyRhythms,
+  simEvents,
+  simTriggers,
+  simWorlds,
+} from "@/server/db";
 import {
   readDurableBodies,
+  readDurableBodyReads,
+  seedDurableBodyRhythms,
   submitDurableApplyBodyCondition,
   submitDurableApplyBodySource,
   submitDurableInitializeActorBody,
@@ -107,6 +118,17 @@ async function seedBodyCase(): Promise<BodyCase> {
   });
   seededWorldIds.push(worldId);
   return ids;
+}
+
+/** 7am wake / 11pm bed plus a wash ending 7am — the reference daily life. */
+async function seedRhythms(ids: BodyCase) {
+  await seedDurableBodyRhythms({
+    branchId: ids.branchId,
+    rows: [
+      { actorId: ids.actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 },
+      { actorId: ids.actorId, kind: "wash", startMinuteOfDay: 405, endMinuteOfDay: 420 },
+    ],
+  });
 }
 
 function initializeCommand(ids: BodyCase) {
@@ -282,8 +304,84 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     expect(expiry?.state).toBe("completed");
   });
 
+  it("arms crossing-aware alarms: a daily wash suppresses the grimy alarm outright", async () => {
+    const ids = await seedBodyCase();
+    await seedRhythms(ids);
+    await submitDurableInitializeActorBody(initializeCommand(ids));
+    const triggers = await pendingBodyTriggers(ids.branchId);
+    const pending = triggers.filter((trigger) => trigger.state === "pending");
+    // Only energy's depleted alarm arms — hygiene never reaches 2 500 while
+    // the 7am wash resets it every story day (§25.5 folded into the solver).
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.uniquenessKey).toContain("depleted");
+  });
+
+  it("auto-suspends energy while asleep and credits the wake through the drain", async () => {
+    const ids = await seedBodyCase();
+    await seedRhythms(ids);
+    await submitDurableInitializeActorBody(initializeCommand(ids));
+    const nap = await submitDurableApplyBodyCondition({
+      id: `cmd-nap-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 1,
+      idempotencyKey: `nap-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:02:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "apply_body_condition",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.actorId,
+        conditionKey: "asleep",
+        durationSeconds: 5_400,
+        // No modifiers supplied: the §25.4 coupling attaches the suspend.
+        modifiers: [],
+        observerActorIds: [],
+      },
+    });
+    expect(nap.status).toBe("accepted");
+    const before = await readDurableBodies(ids.branchId);
+    expect(before.modifiers[0]).toMatchObject({
+      meterKey: "energy",
+      operation: { kind: "suspend" },
+      stackingGroup: "sleep",
+    });
+
+    const outcome = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + 5_400, { workerId: "w-wake2" });
+    expect(outcome.status).toBe("advanced");
+
+    const after = await readDurableBodies(ids.branchId);
+    // Suspended at 9 000 through the nap, then credited min(1 350, cap headroom
+    // 500) at the wake — the causal record is a real sleep_credit source event.
+    expect(after.meters.find((meter) => meter.meterKey === "energy")?.valueFixedPoint).toBe(9_500);
+    expect(after.conditions[0]).toMatchObject({
+      status: "ended",
+      endBasis: "expired",
+      endedAtStorySecond: SEED_SECOND + 5_400,
+    });
+    const [credit] = await db()
+      .select({ payload: simEvents.payload })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "body_source_applied")));
+    expect(credit?.payload).toMatchObject({
+      meterKey: "energy",
+      sourceKind: "sleep_credit",
+      operation: { kind: "add", deltaFixedPoint: 500 },
+      valueAfterFixedPoint: 9_500,
+    });
+
+    // The layer-3 read: freshly woken mid-afternoon reads bright, and the
+    // raw meters never appear in the surface.
+    const reads = await readDurableBodyReads(ids.branchId);
+    const energy = reads.energy.find((row) => row.actorId === ids.actorId);
+    expect(energy?.read.band).toBe("bright");
+    expect(energy?.read.signedFixedPoint).toBeGreaterThan(7_500);
+    expect(energy?.pressureFixedPoint).toBeGreaterThan(0);
+  });
+
   it("forks with bit-identical body rows and re-armed alarms on the child", async () => {
     const ids = await seedBodyCase();
+    await seedRhythms(ids);
     await submitDurableInitializeActorBody(initializeCommand(ids));
     const parent = await readDurableBodies(ids.branchId);
 
@@ -295,12 +393,19 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
       principal: { kind: "storyteller", principalId: "principal-1" },
       reason: "E5.1 body fork parity",
     });
-    expect(fork.pendingTriggerIds.length).toBeGreaterThanOrEqual(2);
+    expect(fork.pendingTriggerIds.length).toBeGreaterThanOrEqual(1);
 
     const child = await readDurableBodies(childBranchId);
     expect(child.meters).toEqual(parent.meters);
     expect(child.conditions).toEqual(parent.conditions);
     expect(child.modifiers).toEqual(parent.modifiers);
+
+    // E5.2: rhythm rows copy over as authored statics.
+    const childRhythms = await db()
+      .select()
+      .from(simBodyRhythms)
+      .where(eq(simBodyRhythms.branchId, childBranchId));
+    expect(childRhythms).toHaveLength(2);
 
     const [childMeterRow] = await db()
       .select({ updatedSequence: simBodyMeters.updatedSequence })

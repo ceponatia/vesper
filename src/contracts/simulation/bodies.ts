@@ -241,13 +241,19 @@ export const bodyConditionSchema = z
     expiresAtStorySecond: storySecondSchema.optional(),
     status: bodyConditionStatusSchema,
     endBasis: bodyConditionEndBasisSchema.optional(),
+    endedAtStorySecond: storySecondSchema.optional(),
     sourceEventId: eventIdSchema,
   })
   .strict()
-  .refine((condition) => (condition.status === "ended") === (condition.endBasis !== undefined), {
-    message: "End basis is present exactly when the condition has ended",
-    path: ["endBasis"],
-  });
+  .refine(
+    (condition) =>
+      (condition.status === "ended") === (condition.endBasis !== undefined) &&
+      (condition.status === "ended") === (condition.endedAtStorySecond !== undefined),
+    {
+      message: "End basis and ended second are present exactly when the condition has ended",
+      path: ["endBasis"],
+    },
+  );
 export type BodyCondition = z.infer<typeof bodyConditionSchema>;
 
 /**
@@ -309,6 +315,96 @@ export const bodyModifierSpecSchema = z
   })
   .strict();
 export type BodyModifierSpec = z.infer<typeof bodyModifierSpecSchema>;
+
+// --- Rhythm rows (engine.spec §25.5; ruling 15 — E5.2) -----------------------
+
+/**
+ * Authored branch-scoped rhythm windows — the character's own daily life as
+ * data (ported from the chat lane's `profile.schedule`). `sleep` anchors the
+ * circadian pressure curve; `wash` rows are window-crossing self-care (§25.5:
+ * a skip credits only the rows it actually crossed, never a blanket restore).
+ * `meal` joins as a data edit when satiation ports (chat-body-needs).
+ */
+export const bodyRhythmKinds = ["sleep", "wash"] as const;
+export const bodyRhythmKindSchema = z.enum(bodyRhythmKinds);
+export type BodyRhythmKind = z.infer<typeof bodyRhythmKindSchema>;
+
+export const minuteOfDaySchema = z.number().int().min(0).max(1_439);
+
+export const bodyRhythmRowSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    kind: bodyRhythmKindSchema,
+    /** Window in minutes-of-day; end < start wraps midnight (23:00 → 07:00). */
+    startMinuteOfDay: minuteOfDaySchema,
+    endMinuteOfDay: minuteOfDaySchema,
+  })
+  .strict();
+export type BodyRhythmRow = z.infer<typeof bodyRhythmRowSchema>;
+
+/** Story second 0 is midnight; minute-of-day derives by day wraparound. */
+export const SECONDS_PER_DAY = 86_400 as const;
+
+export const DEFAULT_SLEEP_WINDOW = {
+  startMinuteOfDay: 1_380,
+  endMinuteOfDay: 420,
+} as const;
+
+/** Chat parity: restore +0.09/h onto the proportional tank, capped at 0.95. */
+export const ENERGY_SLEEP_RESTORE_PER_HOUR_FIXED_POINT = 900 as const;
+export const ENERGY_SLEEP_RESTORE_CAP_FIXED_POINT = 9_500 as const;
+/** Chat registry: a wash sets hygiene to 0.95. */
+export const HYGIENE_WASH_SET_FIXED_POINT = 9_500 as const;
+
+/**
+ * The v1 circadian pressure curve (ruling 15; chat-meter-economy.spec OQ1),
+ * every knob a versioned value documented for post-build tuning. Anchors are
+ * piecewise-linear in minutes relative to the actor's own wake (W) and
+ * bedtime (B): a post-waking inertia bump decaying to the day floor, the
+ * afternoon dip, an evening low, the ramp into bedtime (the ZERO definition:
+ * at B, pressure ≈ the reserve a normal day leaves, so read = 0 IS bedtime),
+ * the ~B+5h trough peak, then the second-wind fall back to W. Pressure keeps
+ * climbing past a missed night via the escalation rate (per hour awake
+ * beyond the normal waking span), which is what makes the −1 floor land at
+ * ~40h awake with no hardcoded hour. Values reproduce the spec's verified
+ * 7am-wake / 11pm-bed table.
+ */
+export const circadianCurveV1 = {
+  version: "circadian-v1",
+  wakeInertiaFixedPoint: 3_100,
+  dayFloorFixedPoint: 500,
+  afternoonDipFixedPoint: 1_500,
+  eveningLowFixedPoint: 800,
+  rampFixedPoint: 2_000,
+  bedtimeFixedPoint: 3_500,
+  troughPeakFixedPoint: 8_900,
+  /** Minutes after wake for the day anchors: floor, dip, evening low. */
+  dayFloorOffsetMinutes: 240,
+  afternoonDipOffsetMinutes: 480,
+  eveningLowOffsetMinutes: 660,
+  /** Minutes before bed for the ramp anchor; after bed for the trough peak. */
+  rampLeadMinutes: 120,
+  troughOffsetMinutes: 300,
+  escalationPerHourFixedPoint: 312,
+} as const;
+
+/** Which meter a rhythm kind services, and how (the §25.4 coupling as data). */
+export const rhythmSelfCareEffects: Partial<
+  Record<BodyRhythmKind, { meterKey: string; operation: BodySourceOperation }>
+> = {
+  wash: { meterKey: "hygiene", operation: { kind: "set", valueFixedPoint: HYGIENE_WASH_SET_FIXED_POINT } },
+};
+
+/**
+ * An absolute-second set/add the integration folds as a boundary — how
+ * rhythm self-care enters the kernel without a per-day tick or trigger:
+ * crossings are deterministic clock points, so queries fold them purely and
+ * only material writes persist their consequences.
+ */
+export interface ScheduledBodyAdjustment {
+  atStorySecond: number;
+  operation: BodySourceOperation;
+}
 
 // --- Source vocabulary (engine.spec §25.1 layer 2) ---------------------------
 

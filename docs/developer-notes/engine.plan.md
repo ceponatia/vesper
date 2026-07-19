@@ -684,7 +684,7 @@ the same day: ruling 15 (v1 body meters = **full chat parity**, with
 semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
 preconditions + a §19.3 policy escalation path**); normative wording in
 [engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
-below; **E5.1 shipped 2026-07-19** — E5.2 is next.
+below; **E5.1 and E5.2 slice 1 shipped 2026-07-19** — E5.2 slice 2 is next.
 
 Rough effort: **15–35 developer-days**.
 
@@ -775,25 +775,37 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    stays closed-form and monotone; derived condition/modifier ids hash-compact their
    command id (the E3.5 id-stacking lesson) so the threshold→condition→expiry
    derivation chain stays inside the compact-id cap. Next: **E5.2**.
-2. **E5.2 — chat-parity resolution and perception-gated reads (ruling 15).** The ruled
-   meter set on the E5.1 substrate, semantics per
-   [chat-meter-economy.spec.md](chat-meter-economy.spec.md): energy as a 0–1 reserve
-   with proportional decay (τ ≈ 16h) and linear sleep restore (capped 0.95), read as
-   the saturating bidirectional axis `reserve − pressure` with circadian pressure a
-   pure function of the story clock against the actor's own sleep rhythm (a phase
-   driver, never stored; the zero IS bedtime, the −1 floor is where collapse hangs);
-   arousal as a load meter with personalized baseline, climax reset, and the afterglow
-   condition; the intimacy pulse read; hygiene as rate-class drain against rhythm rows
-   with window-crossing self-care credits (§25.5 — no blanket restore); sleep unified
-   across the rhythm window and the `asleep` condition. Reads are the §25.1 layer-3
-   surface: pure, total, contextual, perception-gated (energy read, graded arousal
-   signs gated on exposure/frame/proximity through the E4.1 perception vocabulary),
-   wired into the NarrativeCut so a viewpoint sees only what a witness could perceive
-   — never a raw meter. Couplings v1 (§25.4) as an explicit resolver graph: exertion →
-   hygiene/fatigue, bathing → freshness, sleep reserve × circadian → energy read.
-   Collapse at the saturated floor is a threshold outcome event that interrupts
-   activities — which lands the carried E3.4 resumed-activity completion re-arm
-   (trigger uniqueness versioned by attempt).
+2. **E5.2 — chat-parity resolution and perception-gated reads (ruling 15).** Status:
+   **slice 1 shipped — 2026-07-19; slice 2 remains.** The ruled meter set on the E5.1
+   substrate, semantics per [chat-meter-economy.spec.md](chat-meter-economy.spec.md).
+   **Slice 1 (shipped)** — the OQ1/OQ3 core: authored `sim_body_rhythms` rows
+   (migration 0068; sleep + wash windows in minutes-of-day, seeded like action
+   definitions, copied to fork children); circadian pressure as a pure function of
+   the story clock against the actor's own sleep window (`circadianCurveV1` —
+   piecewise-linear anchors relative to wake/bed with a post-normal-waking-span
+   escalation term, every knob a versioned documented value; the curve reproduces the
+   spec's verified 7am/11pm table, the zero IS bedtime, and the −1 floor lands at
+   ~40h emergently); the generalized **deficit read** seam
+   (`deriveDeficitRead`/`deriveEnergyRead`, signed and saturating, band vocabulary
+   owned by the read — energy joins mood with no registry thresholds); the §25.4
+   sleep coupling both ways (an `asleep` condition auto-attaches the energy suspend;
+   waking emits a real `sleep_credit` source — +0.09/h capped 0.95, so a full night
+   refills and a post-bender night reaches only 0.80, debt with no debt mechanic);
+   and §25.5 window-crossing self-care as **scheduled adjustments** — wash crossings
+   are deterministic clock points folded into the E5.1 piecewise integration and the
+   threshold solver (landing at 6am vs 8am genuinely differs, a daily wash can
+   suppress or preempt the grimy alarm outright, and no per-day tick or trigger
+   exists anywhere). Conditions now record `endedAtStorySecond`, and
+   `readDurableBodyReads` is the layer-3 store surface (reserve integrated purely +
+   pressure + signed read, raw meters never leaving the seam). 12 new pure + 2 new
+   int cases; CI runs `test:engine-e5-2` (2 802 pure + 379 int green). **Slice 2
+   (remaining)**: arousal regrade to
+   body facts (graded signs gated on exposure/frame/proximity through the E4.1
+   perception vocabulary), climax reset + afterglow, the intimacy pulse read, wiring
+   reads into the NarrativeCut, exertion → hygiene/fatigue couplings, and collapse at
+   the saturated read floor as a threshold outcome that interrupts activities — which
+   lands the carried E3.4 resumed-activity completion re-arm (trigger uniqueness
+   versioned by attempt).
 3. **E5.3 — material life: containers, ownership, wear, and consumption.** §26 over
    the Gate 1/2 item lane: every material object has one holding locus (held / worn in
    slot / inside container / at zone / consumed-destroyed-lost); typed containers with
