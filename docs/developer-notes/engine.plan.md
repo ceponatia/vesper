@@ -678,6 +678,14 @@ E4.3 scenario and **carry to Gate 5** as planned.
 
 ## Gate 5 — bodies, materials, households, and relationships
 
+Status: **OPEN — started 2026-07-19.** Both opening rulings were resolved by the owner
+the same day: ruling 15 (v1 body meters = **full chat parity**, with
+[chat-meter-economy.spec.md](chat-meter-economy.spec.md) OQ1–OQ3 as the normative
+semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
+preconditions + a §19.3 policy escalation path**); normative wording in
+[engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
+below; **E5.1 shipped 2026-07-19** — E5.2 is next.
+
 Rough effort: **15–35 developer-days**.
 
 ### G5.1 Unified body substrate
@@ -711,6 +719,129 @@ Add commitments and consequences across relationships:
 The engine can explain why a body, item, household, or relationship is in its current
 state from causal records, while the narrator sees only what the viewpoint can perceive
 or believe.
+
+Per the Gate 4 precedent (the 2026-07-18 exit-scope ruling), the deterministic exit
+corpus closes the gate; any live-model quality check rides the owner-gated spend list
+in [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs.
+
+### Gate 5 build order
+
+Like Gates 2–4, Gate 5 splits into dependency-ordered targets. The IDs describe order,
+not GitHub PR numbers; each stays reviewable on its own and ships to the long-lived
+`engine` branch. Leftovers carried into this gate from earlier slices: E2.4's deferred
+analytical rate integration (E5.1), E3.2's action resource costs (E5.3), E3.3's
+destinationless promises (E5.5), E3.4's pressure acknowledgment (E5.5) and
+resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent preconditions
+(E5.5, ruling 16), and E4.2's persisted §21.3 relationship ledger (E5.5).
+
+1. **E5.1 — body substrate: meters, conditions, and the modifier engine.** Status:
+   **shipped — 2026-07-19.** The §25.1–25.3 generic machinery, meter-agnostic: a
+   versioned `BodyMeterDefinition` registry (class vocabulary `reserve | load |
+   valence | rate | phase` from the chat taxonomy; analytic drift laws —
+   linear-toward-target and proportional-decay (half-life) — in fixed-point units
+   (10 000 ≡ 1.0); thresholds as registry data; the ruling-15 v1 entries: energy as a
+   proportional-decay reserve (half-life ≈ 11.1h = τ 16h·ln2), hygiene as linear
+   clock-keyed drain, arousal as a load meter decaying to a per-actor baseline),
+   `sim_body_meters` / `sim_body_conditions` / `sim_body_modifiers` (migration 0067)
+   under the one §25.3 modifier contract (operation `rate_multiplier | rate_add |
+   suspend`, stacking group + priority — highest-priority-per-group then compose —
+   valid interval, visibility, condition ownership, provenance). The pure kernel
+   (`lib/simulation/bodies.ts`) integrates analytically and piecewise across modifier
+   boundaries with **queries never persisting** — only material transitions (source
+   applications, modifier boundaries, condition onset/end, threshold crossings) write,
+   so partition invariance holds by construction; proportional decay uses a
+   deterministic fixed-point exp2 (bit-walk constants, no libm transcendentals), and
+   thresholds are solved by per-piece binary search against the kernel's own
+   integration function, so the scheduled second and the fire-time evaluation can
+   never disagree. Two new trigger kinds (`body_threshold_due`,
+   `body_condition_expiry_due`) arm through the E2.4 scheduler as trigger_scheduled
+   events, fire-time re-validated (the deferred E2.4 analytical-rate integration) and
+   retired-and-re-armed under sequence-versioned uniqueness keys on every material
+   event — the E3.4 re-arm design note answered; §6.4 derivation blocks (from-value,
+   from-second, active modifier ids, registry version) are captured on every
+   integration-bearing event. Commands: `initialize_actor_body`, `apply_body_source`,
+   `apply_body_modifier`, `apply_body_condition`, `end_body_condition` (clear and
+   trigger-dispatched expiry through one basis-carrying command),
+   `resolve_body_threshold`. Perception rulings: source/condition-end events are
+   interoception (subject-only); condition-onset and threshold events carry a trusted
+   witness capture (co-located, only when the registry marks the threshold
+   noticeable); initialization and modifier bookkeeping derive nothing. Fork/replay
+   parity end-to-end (`replayBodiesHistory` wired into `forkBranch`; pending alarms
+   re-arm on children through the shared trigger ledger). 19 pure + 5 integration
+   cases; CI runs `test:engine-e5-1` (2 790 pure + 377 int green). Delivery notes: modifier expiry needs no
+   trigger (validity boundaries are integration boundaries the solver already sees);
+   a standalone remove-modifier command is deferred until a scenario needs one;
+   `rate_add` is contract-limited to linear-law meters so every integration piece
+   stays closed-form and monotone; derived condition/modifier ids hash-compact their
+   command id (the E3.5 id-stacking lesson) so the threshold→condition→expiry
+   derivation chain stays inside the compact-id cap. Next: **E5.2**.
+2. **E5.2 — chat-parity resolution and perception-gated reads (ruling 15).** The ruled
+   meter set on the E5.1 substrate, semantics per
+   [chat-meter-economy.spec.md](chat-meter-economy.spec.md): energy as a 0–1 reserve
+   with proportional decay (τ ≈ 16h) and linear sleep restore (capped 0.95), read as
+   the saturating bidirectional axis `reserve − pressure` with circadian pressure a
+   pure function of the story clock against the actor's own sleep rhythm (a phase
+   driver, never stored; the zero IS bedtime, the −1 floor is where collapse hangs);
+   arousal as a load meter with personalized baseline, climax reset, and the afterglow
+   condition; the intimacy pulse read; hygiene as rate-class drain against rhythm rows
+   with window-crossing self-care credits (§25.5 — no blanket restore); sleep unified
+   across the rhythm window and the `asleep` condition. Reads are the §25.1 layer-3
+   surface: pure, total, contextual, perception-gated (energy read, graded arousal
+   signs gated on exposure/frame/proximity through the E4.1 perception vocabulary),
+   wired into the NarrativeCut so a viewpoint sees only what a witness could perceive
+   — never a raw meter. Couplings v1 (§25.4) as an explicit resolver graph: exertion →
+   hygiene/fatigue, bathing → freshness, sleep reserve × circadian → energy read.
+   Collapse at the saturated floor is a threshold outcome event that interrupts
+   activities — which lands the carried E3.4 resumed-activity completion re-arm
+   (trigger uniqueness versioned by attempt).
+3. **E5.3 — material life: containers, ownership, wear, and consumption.** §26 over
+   the Gate 1/2 item lane: every material object has one holding locus (held / worn in
+   slot / inside container / at zone / consumed-destroyed-lost); typed containers with
+   capacity and access; ownership distinct from holding; exclusive reservations wired
+   into E3.2 action resource costs (the carried leftover — an activity can now consume
+   and require materials); consumption events feeding E5.1 body sources (a meal is a
+   material event with a body effect); wear and cleanliness as item condition drifting
+   on use through the same modifier machinery. Transfers validate source holding,
+   destination capacity, access, capability, and reservation. Fork/replay parity and
+   rebuild-from-zero over the widened lane.
+4. **E5.4 — households, means, and money at LOD.** Household membership and shared
+   stores; fungible lots with fixed-point conserved quantities that transactionally
+   balance; a coarse means read for low-detail actors; §27.2 promotion — when an
+   explicit item becomes narratively relevant it consumes an aggregate allowance and
+   instantiates through a recorded event (never appearing solely because the narrator
+   mentioned it); replacement/restock as household routine; money as a conserved
+   fungible resource for promoted actors, means bands elsewhere.
+5. **E5.5 — the social ledger: promises, favors, debts, boundaries, and consent
+   (ruling 16).** The persisted §21.3 evidence ledger the E4.2 derived seam was built
+   to feed: typed entries for promises made/kept/missed/repaired, boundaries
+   stated/respected/violated, help, neglect, betrayal, disclosure, affection, conflict,
+   shared activities, authored priors, and explicit relationship changes — relationship
+   change is a ledger entry, never solely prose. Destinationless commitments (the
+   carried E3.3 leftover) join the commitment contract with social consequences in
+   place of location evaluation; pressure acknowledgment (the carried E3.4 note) lands
+   as a social act. Consent per ruling 16: boundary/permission entries checked
+   fail-closed as intimate-action preconditions, uncovered escalations routed through
+   the §19.3 deliberator seam (deterministic fallback = decline) with the outcome
+   landing back as a ledger entry. Trust, attraction, and resentment ship as derived
+   projection reads over the ledger; conflicts among goals, needs, roles, and
+   commitments become NPC-policy utility inputs (§19.2 widened with ledger and needs
+   terms). Fork/replay parity.
+6. **E5.6 — the Gate 5 exit corpus.** Deterministic scenarios, zero model calls, in
+   the E4.5 mold: an explain-why causal chain for each of the four surfaces (a body —
+   why she is wrecked at 2am, from missed sleep window through threshold events; an
+   item — where the last meal went, from household stock through consumption; a
+   household — stock depleted and restocked with conserved quantities balancing; a
+   relationship — promise made → missed → the ledger entries and the trust read that
+   followed); the narrator boundary swept per viewpoint (reads gated on
+   exposure/frame/proximity — hidden arousal and another actor's meters never enter a
+   cut; a close-range witness gets the perceivable sign); partition invariance for
+   body drift (one big skip bit-identical to equivalent smaller skips across material
+   thresholds); rerender-creates-nothing and retry-from-the-same-cut extended over
+   every new persistence surface; fork/replay parity sweeps. Green corpus closes the
+   gate per the exit-scope precedent.
+
+E5.2 consumes E5.1; E5.3 consumes E5.1 (consumption sources); E5.4 consumes E5.3;
+E5.5 is independent of materials but consumes E3.3/E4.2; E5.6 closes the gate.
 
 ## Gate 6 — dual LOD and autonomous background life
 
@@ -985,6 +1116,18 @@ with full wording lives in [engine.spec.md](engine.spec.md) §39. In brief:
     **safe, documented auto-promotion** — repeatedly-reused soft canon auto-promotes
     through the §23.4 checks with an audit event and a demotion path; every threshold is
     a versioned world-type value documented for post-build tuning. Full wording in
+    [engine.spec.md](engine.spec.md) §39.
+15. **Gate 5 v1 body meters** → **resolved 2026-07-19 (the Gate 5 opening pass): full
+    chat parity** — the G5.1 substrate models the entire chat meter economy in v1
+    (bidirectional energy read over reserve + derived circadian pressure, arousal
+    regraded to body facts, intimacy pulse with climax reset + afterglow, rhythm-keyed
+    hygiene), with `chat-meter-economy.spec.md` OQ1–OQ3 as the normative semantics
+    source and meter membership staying registry data. Full wording in
+    [engine.spec.md](engine.spec.md) §39.
+16. **Interpersonal consent** → **resolved 2026-07-19: ledger-gated + policy
+    escalation** — boundaries/permissions as typed §21.3 ledger entries checked
+    fail-closed as action preconditions; uncovered escalations route to the §19.3
+    deliberator (fallback = decline) and land back as ledger entries. Full wording in
     [engine.spec.md](engine.spec.md) §39.
 
 Still open: spec ruling 12 only (route-estimate uncertainty exposure — travel polish,

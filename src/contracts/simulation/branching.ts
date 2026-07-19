@@ -37,6 +37,26 @@ import {
   type OpenEngagementCommandResult,
 } from "./engagements";
 import {
+  bodyConditionAppliedEventSchema,
+  bodyConditionEndedEventSchema,
+  bodyInitializedEventSchema,
+  bodyModifierAppliedEventSchema,
+  bodySourceAppliedEventSchema,
+  bodyThresholdCrossedEventSchema,
+  type ApplyBodyConditionCommand,
+  type ApplyBodyConditionCommandResult,
+  type ApplyBodyModifierCommand,
+  type ApplyBodyModifierCommandResult,
+  type ApplyBodySourceCommand,
+  type ApplyBodySourceCommandResult,
+  type EndBodyConditionCommand,
+  type EndBodyConditionCommandResult,
+  type InitializeActorBodyCommand,
+  type InitializeActorBodyCommandResult,
+  type ResolveBodyThresholdCommand,
+  type ResolveBodyThresholdCommandResult,
+} from "./bodies";
+import {
   storytellerRelocationEventSchema,
   zoneEnteredEventSchema,
   type AttemptEntryCommand,
@@ -139,6 +159,12 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   softCanonRecordedEventSchema,
   softCanonPromotedEventSchema,
   softCanonDemotedEventSchema,
+  bodyInitializedEventSchema,
+  bodySourceAppliedEventSchema,
+  bodyModifierAppliedEventSchema,
+  bodyConditionAppliedEventSchema,
+  bodyConditionEndedEventSchema,
+  bodyThresholdCrossedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -232,6 +258,23 @@ export function isSoftCanonEvent(event: SimulationBranchEvent): event is Simulat
   return softCanonEventTypes.has(event.type);
 }
 
+/** The body family (E5.1). Replay treats these as bodies-projection events. */
+const bodyEventTypeList = [
+  "body_initialized",
+  "body_source_applied",
+  "body_modifier_applied",
+  "body_condition_applied",
+  "body_condition_ended",
+  "body_threshold_crossed",
+] as const;
+export type BodyEventType = (typeof bodyEventTypeList)[number];
+export type SimulationBodyEvent = Extract<SimulationBranchEvent, { type: BodyEventType }>;
+export const bodyEventTypes: ReadonlySet<string> = new Set(bodyEventTypeList);
+
+export function isBodyEvent(event: SimulationBranchEvent): event is SimulationBodyEvent {
+  return bodyEventTypes.has(event.type);
+}
+
 /** Access-family locus changes (E3.5): applied by the space projection. */
 const accessEventTypeList = ["zone_entered", "storyteller_relocation"] as const;
 export type AccessEventType = (typeof accessEventTypeList)[number];
@@ -260,7 +303,13 @@ export type SimulationCommandEnvelope =
   | StorytellerRelocateActorCommand
   | ConfirmNarratorResultCommand
   | MakeDisclosureCommand
-  | DemoteSoftCanonCommand;
+  | DemoteSoftCanonCommand
+  | InitializeActorBodyCommand
+  | ApplyBodySourceCommand
+  | ApplyBodyModifierCommand
+  | ApplyBodyConditionCommand
+  | EndBodyConditionCommand
+  | ResolveBodyThresholdCommand;
 export type SimulationCommandResultRecord =
   | ItemTransferCommandResult
   | ScheduleTriggerCommandResult
@@ -278,7 +327,13 @@ export type SimulationCommandResultRecord =
   | StorytellerRelocateActorCommandResult
   | ConfirmNarratorResultCommandResult
   | MakeDisclosureCommandResult
-  | DemoteSoftCanonCommandResult;
+  | DemoteSoftCanonCommandResult
+  | InitializeActorBodyCommandResult
+  | ApplyBodySourceCommandResult
+  | ApplyBodyModifierCommandResult
+  | ApplyBodyConditionCommandResult
+  | EndBodyConditionCommandResult
+  | ResolveBodyThresholdCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

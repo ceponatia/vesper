@@ -1,5 +1,6 @@
 export * from "./access";
 export * from "./activities";
+export * from "./bodies";
 export * from "./commitments";
 export * from "./deliberation";
 export * from "./engagements";

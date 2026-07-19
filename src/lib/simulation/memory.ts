@@ -86,6 +86,14 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
       return "something meaningful being said";
     case "disclosure_made":
       return "something being confided";
+    case "body_source_applied":
+      return "their body registering a change";
+    case "body_condition_applied":
+      return "a change coming over someone";
+    case "body_condition_ended":
+      return "a bodily state passing";
+    case "body_threshold_crossed":
+      return "a body reaching a limit";
     case "trigger_scheduled":
     case "commitment_created":
     case "pressure_raised":
@@ -95,6 +103,8 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "soft_canon_recorded":
     case "soft_canon_promoted":
     case "soft_canon_demoted":
+    case "body_initialized":
+    case "body_modifier_applied":
       // Bookkeeping derives no observations (§20); unreachable in practice.
       return "world bookkeeping";
   }

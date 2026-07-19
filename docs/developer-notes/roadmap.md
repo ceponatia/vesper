@@ -23,9 +23,19 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(Nothing mid-build — **Gate 4 closed 2026-07-19** with its deterministic exit corpus
-green (see Shipped); the engine track's next gate, Gate 5, waits at the top of Next
-below.)_
+- **Successor world engine — Gate 5: bodies, materials, households & relationships** —
+  [engine.plan.md](engine.plan.md) §"Gate 5" (**opened 2026-07-19**; ~15–35 dev-days).
+  Both opening rulings resolved same-day (ruling 15: v1 body meters = **full chat
+  parity**, semantics per [chat-meter-economy.spec.md](chat-meter-economy.spec.md);
+  ruling 16: interpersonal consent = ledger-gated fail-closed + §19.3 policy
+  escalation — normative wording [engine.spec.md](engine.spec.md) §39). Build order
+  E5.1–E5.6 authored: body substrate + modifier engine → chat-parity meters &
+  perception-gated reads → material life → households/means/money-at-LOD → the social
+  ledger & consent → the deterministic exit corpus. **E5.1 shipped 2026-07-19**
+  (meters/conditions/modifiers + analytic integration + threshold alarms, migration
+  0067, `test:engine-e5-1`; 2 790 pure + 377 int green); **E5.2 is next.** This is where
+  current-chat body learning migrates behind the successor contracts — the
+  meter-economy and body-needs plans in Next port through here later.
 
 ## Next (queued)
 
@@ -35,18 +45,12 @@ track, in sequence — each gate's exit criteria gate the next. Gates 0–4 are 
 Gate 3 verdict: **advance**, 2026-07-18; Gate 4 closed **2026-07-19** by its
 deterministic exit corpus per the owner's 2026-07-18 exit-scope ruling — the live
 paired voice/chemistry eval is the one deferred human-in-the-loop check, parked in
-[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs). Full plan
-[engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md). (Distinct
-build from the chat-lane [world-engine-refactor.plan.md](world-engine-refactor.plan.md)
-north-star umbrella further down.)
+[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs). **Gate 5 opened
+2026-07-19 and is in Active above.** Full plan [engine.plan.md](engine.plan.md) ·
+contract [engine.spec.md](engine.spec.md). (Distinct build from the chat-lane
+[world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star umbrella
+further down.)
 
-- **Successor world engine — Gate 5: bodies, materials, households & relationships** —
-  [engine.plan.md](engine.plan.md) §"Gate 5" (draft; ~15–35 dev-days). The unified body
-  substrate with analytical drift on story time + one modifier engine (G5.1), typed material
-  life — containers/holdings/ownership/consumption/wear/money-at-LOD (G5.2), and social life
-  as ledger entries — promises/favors/debts/trust/gossip-with-provenance (G5.3). **Where
-  current-chat body learning migrates behind the successor contracts** — the meter-economy
-  and body-needs work below is meant to port through here later.
 - **Successor world engine — Gate 6: dual LOD & autonomous background life** —
   [engine.plan.md](engine.plan.md) §"Gate 6" (draft; ~10–25 dev-days). Separate simulation
   LOD (exact · event · aggregate · dormant) and inference LOD (no-model · small-model ·
