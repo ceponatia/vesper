@@ -33,9 +33,14 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   perception-gated reads → material life → households/means/money-at-LOD → the social
   ledger & consent → the deterministic exit corpus. **E5.1 shipped 2026-07-19**
   (meters/conditions/modifiers + analytic integration + threshold alarms, migration
-  0067, `test:engine-e5-1`; 2 790 pure + 377 int green); **E5.2 is next.** This is where
-  current-chat body learning migrates behind the successor contracts — the
-  meter-economy and body-needs plans in Next port through here later.
+  0067, `test:engine-e5-1`); **E5.2 slice 1 shipped 2026-07-19** (rhythm rows +
+  circadian pressure reproducing the chat spec's verified table, the bidirectional
+  energy read, sleep suspend/credit coupling, §25.5 wash window-crossing folded into
+  integration and the alarm solver — migration 0068, `test:engine-e5-2`); **E5.2
+  slice 2 is next** (arousal signs, climax/afterglow, intimacy pulse, cut wiring,
+  collapse interrupting activities). This is where current-chat body learning
+  migrates behind the successor contracts — the meter-economy and body-needs plans in
+  Next port through here later.
 
 ## Next (queued)
 

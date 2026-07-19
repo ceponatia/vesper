@@ -1,4 +1,5 @@
 import { and, asc, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 import {
   applyBodyConditionCommandResultSchema,
   applyBodyConditionCommandSchema,
@@ -25,14 +26,20 @@ import {
   type BodyCondition,
   type BodyMeterState,
   type BodyModifier,
+  type BodyRhythmRow,
+  bodyRhythmRowSchema,
   type EndBodyConditionCommandResult,
   type InitializeActorBodyCommandResult,
   type ResolveBodyThresholdCommandResult,
 } from "@/contracts/simulation/bodies";
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
+  BODY_THRESHOLD_HORIZON_SECONDS,
   bodyConditionExpiryUniquenessKey,
   bodyThresholdUniquenessKeyPrefix,
+  integrateMeterValue,
+  normalizeConditionModifierSpecs,
+  selfCareAdjustmentsBetween,
   resolveApplyBodyCondition,
   resolveApplyBodyModifier,
   resolveApplyBodySource,
@@ -41,11 +48,13 @@ import {
   resolveInitializeActorBody,
   type MeterIntegrationView,
 } from "@/lib/simulation/bodies";
+import { deriveCircadianPressure, deriveEnergyRead, type EnergyRead } from "@/lib/simulation/body-reads";
 import {
   db,
   simBodyConditions,
   simBodyMeters,
   simBodyModifiers,
+  simBodyRhythms,
   simBranches,
   simCharacters,
   simPhysicalLoci,
@@ -112,6 +121,7 @@ export function bodyConditionFromRow(row: typeof simBodyConditions.$inferSelect)
     ...(row.expiresAt === null ? {} : { expiresAtStorySecond: row.expiresAt }),
     status: row.status,
     ...(row.endBasis === null ? {} : { endBasis: row.endBasis }),
+    ...(row.endedAt === null ? {} : { endedAtStorySecond: row.endedAt }),
     sourceEventId: row.sourceEventId,
   });
 }
@@ -130,6 +140,7 @@ export function bodyConditionRowInsert(
     expiresAt: condition.expiresAtStorySecond ?? null,
     status: condition.status,
     endBasis: condition.endBasis ?? null,
+    endedAt: condition.endedAtStorySecond ?? null,
     sourceEventId: condition.sourceEventId,
     updatedSequence,
   };
@@ -171,6 +182,61 @@ export function bodyModifierRowInsert(
     sourceEventId: modifier.sourceEventId,
     updatedSequence,
   };
+}
+
+export function bodyRhythmFromRow(row: typeof simBodyRhythms.$inferSelect): BodyRhythmRow {
+  return bodyRhythmRowSchema.parse({
+    actorId: row.actorId,
+    kind: row.kind,
+    startMinuteOfDay: row.startMinuteOfDay,
+    endMinuteOfDay: row.endMinuteOfDay,
+  });
+}
+
+export function bodyRhythmRowInsert(
+  branchId: string,
+  row: BodyRhythmRow,
+): typeof simBodyRhythms.$inferInsert {
+  return {
+    branchId,
+    actorId: row.actorId,
+    kind: row.kind,
+    startMinuteOfDay: row.startMinuteOfDay,
+    endMinuteOfDay: row.endMinuteOfDay,
+  };
+}
+
+const bodyRhythmSeedSchema = z
+  .object({
+    branchId: worldBranchIdSchema,
+    rows: z.array(bodyRhythmRowSchema).min(1),
+  })
+  .strict();
+
+export type BodyRhythmSeed = z.input<typeof bodyRhythmSeedSchema>;
+
+/**
+ * Seed or extend one branch's rhythm rows (§25.5). Rhythms are authored data
+ * read at integration time; every material event captures its derivation, so
+ * replay never needs the rows and adding them mid-history is safe — though
+ * alarms armed before a seed re-validate at fire time and may retire stale.
+ * Seed rhythms before initializing bodies to keep initial alarms exact.
+ */
+export async function seedDurableBodyRhythms(
+  rawSeed: BodyRhythmSeed,
+  options: { database?: Db } = {},
+): Promise<void> {
+  const seed = bodyRhythmSeedSchema.parse(rawSeed);
+  const database = options.database ?? db();
+  await database.transaction(async (tx) => {
+    const [branch] = await tx
+      .select({ id: simBranches.id })
+      .from(simBranches)
+      .where(eq(simBranches.id, seed.branchId))
+      .limit(1);
+    if (!branch) throw new Error("Cannot seed body rhythms onto an unavailable branch");
+    await tx.insert(simBodyRhythms).values(seed.rows.map((row) => bodyRhythmRowInsert(seed.branchId, row)));
+  });
 }
 
 /** Load the current typed bodies projection without a write lock. */
@@ -231,10 +297,11 @@ interface ActorBodyRows {
   meters: BodyMeterState[];
   conditions: BodyCondition[];
   modifiers: BodyModifier[];
+  rhythms: BodyRhythmRow[];
 }
 
 async function loadActorBody(tx: SimTx, branchId: string, actorId: string): Promise<ActorBodyRows> {
-  const [meterRows, conditionRows, modifierRows] = await Promise.all([
+  const [meterRows, conditionRows, modifierRows, rhythmRows] = await Promise.all([
     tx
       .select()
       .from(simBodyMeters)
@@ -250,16 +317,30 @@ async function loadActorBody(tx: SimTx, branchId: string, actorId: string): Prom
       .from(simBodyModifiers)
       .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.actorId, actorId)))
       .orderBy(asc(simBodyModifiers.modifierId)),
+    tx
+      .select()
+      .from(simBodyRhythms)
+      .where(and(eq(simBodyRhythms.branchId, branchId), eq(simBodyRhythms.actorId, actorId)))
+      .orderBy(asc(simBodyRhythms.kind), asc(simBodyRhythms.startMinuteOfDay)),
   ]);
   return {
     meters: meterRows.map(bodyMeterFromRow),
     conditions: conditionRows.map(bodyConditionFromRow),
     modifiers: modifierRows.map(bodyModifierFromRow),
+    rhythms: rhythmRows.map(bodyRhythmFromRow),
   };
 }
 
-/** The kernel's per-meter integration view over one actor's loaded rows. */
-function meterViewOf(body: ActorBodyRows, meterKey: string): MeterIntegrationView | undefined {
+/**
+ * The kernel's per-meter integration view over one actor's loaded rows.
+ * Rhythm self-care crossings enter as scheduled adjustments through the
+ * solve horizon, so every material integration folds the §25.5 window law.
+ */
+function meterViewOf(
+  body: ActorBodyRows,
+  meterKey: string,
+  throughStorySecond: number,
+): MeterIntegrationView | undefined {
   const state = body.meters.find((meter) => meter.meterKey === meterKey);
   if (!state) return undefined;
   const parsedVersion = bodyRegistryVersionSchema.safeParse(state.registryVersion);
@@ -272,6 +353,12 @@ function meterViewOf(body: ActorBodyRows, meterKey: string): MeterIntegrationVie
     definition,
     state,
     modifiers: body.modifiers.filter((modifier) => modifier.meterKey === meterKey),
+    scheduledAdjustments: selfCareAdjustmentsBetween(
+      body.rhythms,
+      meterKey,
+      state.lastIntegratedAtStorySecond,
+      throughStorySecond,
+    ),
   };
 }
 
@@ -409,6 +496,25 @@ export async function submitDurableInitializeActorBody(
         )
         .limit(1);
 
+      const rhythmRows = (
+        await tx
+          .select()
+          .from(simBodyRhythms)
+          .where(
+            and(eq(simBodyRhythms.branchId, branch.id), eq(simBodyRhythms.actorId, command.payload.actorId)),
+          )
+      ).map(bodyRhythmFromRow);
+      const selfCareAdjustmentsByMeter = new Map(
+        bodyMeterRegistryByVersion[command.payload.registryVersion].map((definition) => [
+          definition.key,
+          selfCareAdjustmentsBetween(
+            rhythmRows,
+            definition.key,
+            branch.storySecond,
+            branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS,
+          ),
+        ]),
+      );
       const resolution = resolveInitializeActorBody(
         {
           worldId: branch.worldId,
@@ -418,6 +524,7 @@ export async function submitDurableInitializeActorBody(
           storySecond: branch.storySecond,
           actorExists: actorRow !== undefined,
           alreadyInitialized: existingMeter !== undefined,
+          selfCareAdjustmentsByMeter,
         },
         command,
       );
@@ -472,7 +579,7 @@ export async function submitDurableApplyBodySource(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
-      const meterView = meterViewOf(body, command.payload.meterKey);
+      const meterView = meterViewOf(body, command.payload.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
       const resolution = resolveApplyBodySource(
         {
           worldId: branch.worldId,
@@ -483,6 +590,7 @@ export async function submitDurableApplyBodySource(
           bodyInitialized: body.meters.length > 0,
           ...(meterView ? { meter: meterView.state, definition: meterView.definition } : {}),
           modifiers: meterView?.modifiers ?? [],
+          scheduledAdjustments: meterView?.scheduledAdjustments ?? [],
         },
         command,
       );
@@ -543,7 +651,7 @@ export async function submitDurableApplyBodyModifier(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
-      const meterView = meterViewOf(body, command.payload.modifier.meterKey);
+      const meterView = meterViewOf(body, command.payload.modifier.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
       const resolution = resolveApplyBodyModifier(
         {
           worldId: branch.worldId,
@@ -554,6 +662,7 @@ export async function submitDurableApplyBodyModifier(
           bodyInitialized: body.meters.length > 0,
           ...(meterView ? { meter: meterView.state, definition: meterView.definition } : {}),
           modifiers: meterView?.modifiers ?? [],
+          scheduledAdjustments: meterView?.scheduledAdjustments ?? [],
         },
         command,
       );
@@ -618,8 +727,13 @@ export async function submitDurableApplyBodyCondition(
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
       const meterViews = new Map<string, MeterIntegrationView>();
-      for (const spec of command.payload.modifiers) {
-        const view = meterViewOf(body, spec.meterKey);
+      // The §25.4 sleep coupling adds an energy suspend to asleep conditions,
+      // so the energy view must load even when the caller sent no modifiers.
+      for (const spec of normalizeConditionModifierSpecs(
+        command.payload.conditionKey,
+        command.payload.modifiers,
+      )) {
+        const view = meterViewOf(body, spec.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
         if (view) meterViews.set(spec.meterKey, view);
       }
       const resolution = resolveApplyBodyCondition(
@@ -713,15 +827,18 @@ export async function submitDurableEndBodyCondition(
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
       const condition = body.conditions.find((candidate) => candidate.id === command.payload.conditionId);
+      // A condition-owned modifier whose validity closes exactly at this
+      // second (the expiry boundary itself) is still this ending's to retire
+      // — only modifiers already dead strictly before now are excluded.
       const ownedModifiers = body.modifiers.filter(
         (modifier) =>
           modifier.conditionId === command.payload.conditionId &&
           (modifier.validUntilStorySecond === undefined ||
-            modifier.validUntilStorySecond > branch.storySecond),
+            modifier.validUntilStorySecond >= branch.storySecond),
       );
       const meterViews = new Map<string, MeterIntegrationView>();
       for (const modifier of ownedModifiers) {
-        const view = meterViewOf(body, modifier.meterKey);
+        const view = meterViewOf(body, modifier.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
         if (view) meterViews.set(modifier.meterKey, view);
       }
       const resolution = resolveEndBodyCondition(
@@ -739,7 +856,7 @@ export async function submitDurableEndBodyCondition(
       );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
-      const [endedEvent, ...triggers] = resolution.events;
+      const [endedEvent, ...trailing] = resolution.events;
       await appendSimulationEvent(tx, endedEvent);
       await retirePendingExpiryTrigger(
         tx,
@@ -758,15 +875,18 @@ export async function submitDurableEndBodyCondition(
           meterKey,
         );
       }
-      for (const trigger of triggers) {
-        await appendSimulationEvent(tx, trigger);
-        await applyTriggerScheduledEvent(tx, trigger, { branchId: branch.id, worldId: branch.worldId });
+      for (const event of trailing) {
+        await appendSimulationEvent(tx, event);
+        if (event.type === "trigger_scheduled") {
+          await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+        }
       }
       const [updatedCondition] = await tx
         .update(simBodyConditions)
         .set({
           status: "ended",
           endBasis: command.payload.basis,
+          endedAt: branch.storySecond,
           updatedSequence: endedEvent.sequence,
         })
         .where(
@@ -834,7 +954,7 @@ export async function submitDurableResolveBodyThreshold(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
-      const meterView = meterViewOf(body, command.payload.meterKey);
+      const meterView = meterViewOf(body, command.payload.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
       const definition = meterView?.definition;
       const threshold = definition?.thresholds.find(
         (candidate) => candidate.key === command.payload.thresholdKey,
@@ -852,6 +972,7 @@ export async function submitDurableResolveBodyThreshold(
           storySecond: branch.storySecond,
           ...(meterView ? { meter: meterView.state, definition: meterView.definition } : {}),
           modifiers: meterView?.modifiers ?? [],
+          scheduledAdjustments: meterView?.scheduledAdjustments ?? [],
           ...(threshold?.outcome.kind === "condition_onset"
             ? {
                 activeOutcomeConditionKey: body.conditions.some(
@@ -903,4 +1024,88 @@ export async function submitDurableResolveBodyThreshold(
       };
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// E5.2 — the durable read surface (engine.spec §25.1 layer 3)
+// ---------------------------------------------------------------------------
+
+export interface DurableEnergyRead {
+  actorId: string;
+  reserveFixedPoint: number;
+  pressureFixedPoint: number;
+  read: EnergyRead;
+}
+
+/**
+ * Per-actor energy reads at the branch's current story second: reserve
+ * integrated purely (nothing persists), circadian pressure derived from the
+ * actor's own rhythm and last real sleep, the signed axis clamped at its
+ * saturating poles. Layer-3 only — the raw meters never leave this seam.
+ */
+export async function readDurableBodyReads(
+  rawBranchId: string,
+  database: Db = db(),
+): Promise<{ branchId: string; storySecond: number; energy: DurableEnergyRead[] }> {
+  const branchId = worldBranchIdSchema.parse(rawBranchId);
+  const [branch] = await database
+    .select({ storySecond: simBranches.storySecond })
+    .from(simBranches)
+    .where(eq(simBranches.id, branchId))
+    .limit(1);
+  if (!branch) throw new Error("Simulation branch not found");
+  const [meterRows, modifierRows, rhythmRows, conditionRows] = await Promise.all([
+    database
+      .select()
+      .from(simBodyMeters)
+      .where(and(eq(simBodyMeters.branchId, branchId), eq(simBodyMeters.meterKey, "energy")))
+      .orderBy(asc(simBodyMeters.actorId)),
+    database
+      .select()
+      .from(simBodyModifiers)
+      .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.meterKey, "energy"))),
+    database.select().from(simBodyRhythms).where(eq(simBodyRhythms.branchId, branchId)),
+    database
+      .select()
+      .from(simBodyConditions)
+      .where(and(eq(simBodyConditions.branchId, branchId), eq(simBodyConditions.key, "asleep"))),
+  ]);
+  const energy: DurableEnergyRead[] = [];
+  for (const meterRow of meterRows) {
+    const state = bodyMeterFromRow(meterRow);
+    const parsedVersion = bodyRegistryVersionSchema.safeParse(state.registryVersion);
+    if (!parsedVersion.success) continue;
+    const definition = bodyMeterRegistryByVersion[parsedVersion.data].find(
+      (candidate) => candidate.key === "energy",
+    );
+    if (!definition) continue;
+    const reserveFixedPoint = integrateMeterValue(
+      {
+        definition,
+        state,
+        modifiers: modifierRows
+          .filter((row) => row.actorId === state.actorId)
+          .map(bodyModifierFromRow),
+      },
+      branch.storySecond,
+    );
+    const lastSleepEndedAt = conditionRows
+      .filter((row) => row.actorId === state.actorId && row.status === "ended" && row.endedAt !== null)
+      .reduce<number | undefined>(
+        (latest, row) => (latest === undefined || (row.endedAt ?? 0) > latest ? (row.endedAt ?? 0) : latest),
+        undefined,
+      );
+    const pressureFixedPoint = deriveCircadianPressure({
+      atStorySecond: branch.storySecond,
+      rhythmRows: rhythmRows.filter((row) => row.actorId === state.actorId).map(bodyRhythmFromRow),
+      ...(lastSleepEndedAt === undefined ? {} : { lastSleepEndedAtStorySecond: lastSleepEndedAt }),
+    });
+    energy.push({
+      actorId: state.actorId,
+      reserveFixedPoint,
+      pressureFixedPoint,
+      read: deriveEnergyRead({ reserveFixedPoint, pressureFixedPoint }),
+    });
+  }
+  return { branchId, storySecond: branch.storySecond, energy };
 }

@@ -57,6 +57,7 @@ import {
   simBodyConditions,
   simBodyMeters,
   simBodyModifiers,
+  simBodyRhythms,
   simBranches,
   simCharacters,
   simCommitments,
@@ -630,6 +631,24 @@ export async function forkBranch(
         childEngagements.engagements.map((engagement) =>
           engagementRowInsert(input.childBranchId, engagement, engagementSequenceById.get(engagement.id) ?? 0),
         ),
+      );
+    }
+
+    // E5.2 rhythm rows copy over as authored statics, like action
+    // definitions — a child lives the same daily life until re-authored.
+    const parentRhythmRows = await tx
+      .select()
+      .from(simBodyRhythms)
+      .where(eq(simBodyRhythms.branchId, parent.id));
+    if (parentRhythmRows.length > 0) {
+      await tx.insert(simBodyRhythms).values(
+        parentRhythmRows.map((row) => ({
+          branchId: input.childBranchId,
+          actorId: row.actorId,
+          kind: row.kind,
+          startMinuteOfDay: row.startMinuteOfDay,
+          endMinuteOfDay: row.endMinuteOfDay,
+        })),
       );
     }
 

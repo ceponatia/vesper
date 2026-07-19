@@ -2601,6 +2601,7 @@ export const simBodyConditions = pgTable(
     expiresAt: bigint("expires_at", { mode: "number" }),
     status: text("status", { enum: ["active", "ended"] }).notNull(),
     endBasis: text("end_basis", { enum: ["expired", "cleared"] }),
+    endedAt: bigint("ended_at", { mode: "number" }),
     sourceEventId: text("source_event_id").notNull(),
     updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
     updatedAt: updatedAt(),
@@ -2611,6 +2612,35 @@ export const simBodyConditions = pgTable(
     check(
       "sim_body_conditions_end_basis_matches_status",
       sql`(${t.status} = 'ended') = (${t.endBasis} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * E5.2 rhythm rows (engine.spec §25.5) — authored branch-scoped daily
+ * windows, copied to fork children like action definitions. Sleep windows
+ * anchor the circadian curve; wash windows are window-crossing self-care.
+ */
+export const simBodyRhythms = pgTable(
+  "sim_body_rhythms",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    actorId: text("actor_id").notNull(),
+    kind: text("kind", { enum: ["sleep", "wash"] }).notNull(),
+    startMinuteOfDay: integer("start_minute_of_day").notNull(),
+    endMinuteOfDay: integer("end_minute_of_day").notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_body_rhythms_branch_actor_kind_start_pk",
+      columns: [t.branchId, t.actorId, t.kind, t.startMinuteOfDay],
+    }),
+    check(
+      "sim_body_rhythms_minutes_range",
+      sql`${t.startMinuteOfDay} >= 0 AND ${t.startMinuteOfDay} <= 1439 AND ${t.endMinuteOfDay} >= 0 AND ${t.endMinuteOfDay} <= 1439`,
     ),
   ],
 );
