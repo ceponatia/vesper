@@ -4,7 +4,7 @@ import {
   deriveCommitmentTimes,
   derivePressureSeverity,
 } from "@/contracts/simulation/commitments";
-import { simulationHash } from "./item-transfer";
+import { simulationHash } from "./hash";
 import {
   applyCommitmentEvent,
   commitmentDeadlineUniquenessKey,

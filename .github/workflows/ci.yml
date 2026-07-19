@@ -101,6 +101,9 @@ jobs:
       - name: E5.2 rhythm, circadian pressure, and energy-read integration
         run: pnpm test:engine-e5-2
 
+      - name: E5.3 honest material lane integration
+        run: pnpm test:engine-e5-3
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

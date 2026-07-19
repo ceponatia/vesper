@@ -1,11 +1,12 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { isMaterialEvent } from "@/contracts/simulation/branching";
 import {
-  itemTransferProjectionSchema,
+  materialBranchSeedSchema,
   transferItemCommandSchema,
-  type ItemTransferProjection,
+  type MaterialBranchSeed,
   type TransferItemCommand,
-} from "@/contracts/simulation/item-transfer";
+} from "@/contracts/simulation/materials";
 import {
   deriveScheduleCommandId,
   deriveTriggerCommandId,
@@ -14,12 +15,13 @@ import {
 import { newId } from "@/lib/ids";
 import { db, simBranches, simEvents, simSnapshots, simTriggers, simWorlds } from "@/server/db";
 import { explainItemPlacement } from "./audit-store";
-import { forkBranch, readBranchAncestryEvents, loadBranchAncestry } from "./branch-store";
 import {
-  readDurableItemTransferBranch,
-  seedDurableItemTransferBranch,
-  submitDurableItemTransfer,
-} from "./item-transfer-store";
+  forkBranch,
+  readBranchAncestryEvents,
+  readDurableBranchState,
+  loadBranchAncestry,
+} from "./branch-store";
+import { seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
 import { consumeNextItemTransferOutbox, rebuildItemTransferFeed } from "./outbox-store";
 import {
   advanceBranchStoryTime,
@@ -31,6 +33,7 @@ import {
   discardBranchSnapshots,
   rebuildDurableBranchProjection,
 } from "./snapshot-store";
+import { seedDurableSpaceTopology } from "./space-store";
 
 const SEED_STORY_SECOND = 57_600;
 
@@ -67,64 +70,68 @@ interface CaseIds {
   worldId: string;
   branchId: string;
   actorId: string;
+  locationId: string;
+  zoneId: string;
   sourceId: string;
   destinationId: string;
   itemIds: string[];
 }
 
 function makeIds(itemCount = 1, worldId = newId()): CaseIds {
+  const branchId = newId();
   return {
     worldId,
-    branchId: newId(),
+    branchId,
     actorId: newId(),
+    locationId: `${worldId}-loc-cafe`,
+    zoneId: `${branchId}-zone-hall`,
     sourceId: newId(),
     destinationId: newId(),
     itemIds: Array.from({ length: itemCount }, () => newId()),
   };
 }
 
-function compareStableId(left: { id: string }, right: { id: string }): number {
-  if (left.id < right.id) return -1;
-  if (left.id > right.id) return 1;
-  return 0;
-}
-
-function projection(ids: CaseIds): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: CaseIds): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "e2-5-test-world",
+    worldSeed: "8899aabbccddeeff",
     branchId: ids.branchId,
     rulesetVersion: "e2-5-test-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_STORY_SECOND,
-    actors: [
-      { id: ids.actorId, name: "Mara", observedContainerIds: [ids.sourceId, ids.destinationId].sort() },
-    ],
-    containers: [
+    originStorySecond: SEED_STORY_SECOND,
+    actors: [{ id: ids.actorId, name: "Mara" }],
+    items: [
       {
         id: ids.sourceId,
-        kind: "container",
         name: "Mara's bag",
-        capacity: 8,
-        accessibleToActorIds: [ids.actorId],
+        container: { capacityCount: 8, access: { kind: "holder_only" } },
+        locus: { kind: "held", actorId: ids.actorId },
       },
       {
         id: ids.destinationId,
-        kind: "location",
         name: "the cafe table",
-        capacity: 8,
-        accessibleToActorIds: [ids.actorId],
+        container: { capacityCount: 8, access: { kind: "holder_only" } },
+        locus: { kind: "held", actorId: ids.actorId },
       },
-    ].sort(compareStableId),
-    items: ids.itemIds
-      .map((id, index) => ({
+      ...ids.itemIds.map((id, index) => ({
         id,
         name: index === 0 ? "gold ring" : `test item ${index + 1}`,
-        holdingContainerId: ids.sourceId,
-      }))
-      .sort(compareStableId),
-    observations: [],
+        locus: { kind: "container" as const, containerItemId: ids.sourceId },
+      })),
+    ],
   });
+}
+
+function topologySeed(ids: CaseIds) {
+  return {
+    branchId: ids.branchId,
+    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "cafe", defaultAccessPolicy: "public" as const }],
+    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "hall", privacyPolicy: "public" as const }],
+    links: [],
+    loci: [
+      { kind: "at" as const, actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_STORY_SECOND },
+    ],
+  };
 }
 
 function command(
@@ -140,23 +147,21 @@ function command(
     principal: { kind: "system", principalId: newId(), controlledActorIds: [ids.actorId] },
     submittedAtWallClock: "2026-07-17T16:00:00.000Z",
     type: "transfer_item",
-    schemaVersion: 1,
+    schemaVersion: 2,
     correlationId: newId(),
     payload: {
       actorId: ids.actorId,
       itemId,
-      fromContainerId: ids.sourceId,
-      toContainerId: ids.destinationId,
+      fromLocus: { kind: "container", containerItemId: ids.sourceId },
+      toLocus: { kind: "container", containerItemId: ids.destinationId },
     },
   });
 }
 
 async function seedCase(ids: CaseIds): Promise<void> {
   if (!seededWorldIds.includes(ids.worldId)) seededWorldIds.push(ids.worldId);
-  await seedDurableItemTransferBranch(projection(ids), {
-    worldTypeId: "e2-5-test-world",
-    worldSeed: "8899aabbccddeeff",
-  });
+  await seedDurableMaterialBranch(branchSeed(ids));
+  await seedDurableSpaceTopology(topologySeed(ids));
 }
 
 function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string, itemIndex = 0) {
@@ -186,9 +191,13 @@ async function branchTriggers(branchId: string) {
   return rows.sort((left, right) => left.stableOrder - right.stableOrder);
 }
 
-async function itemHolding(branchId: string, itemId: string): Promise<string | undefined> {
-  const state = await readDurableItemTransferBranch(branchId);
-  return state.projection.items.find((item) => item.id === itemId)?.holdingContainerId;
+async function itemLocus(branchId: string, itemId: string) {
+  const state = await readDurableBranchState(branchId);
+  return state.projection.items.find((item) => item.id === itemId)?.locus;
+}
+
+function containerLocus(containerItemId: string) {
+  return { kind: "container" as const, containerItemId };
 }
 
 afterEach(async () => {
@@ -209,7 +218,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     // Mara's early alarm is set before the fork point, the late one after —
     // the plan's worked example with sequence standing in for story time.
     await scheduleAt(ids, SEED_STORY_SECOND + 3_600, "alarm-early", 0); // sequence 1
-    expect(await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { expectedVersion: 1 }))).toMatchObject({
+    expect(await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { expectedVersion: 1 }))).toMatchObject({
       status: "accepted",
       firstSequence: 2,
     });
@@ -251,9 +260,9 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
       workerId: "worker_child",
     });
     expect(advanced).toMatchObject({ status: "advanced", drained: 1 });
-    expect(await itemHolding(childId, ids.itemIds[0]!)).toBe(ids.destinationId);
+    expect(await itemLocus(childId, ids.itemIds[0]!)).toEqual(containerLocus(ids.destinationId));
     // The discarded future's alarm never existed on the child.
-    expect(await itemHolding(childId, ids.itemIds[2]!)).toBe(ids.sourceId);
+    expect(await itemLocus(childId, ids.itemIds[2]!)).toEqual(containerLocus(ids.sourceId));
 
     // The parent still owns its own future: the late alarm stays scheduled.
     const parentTriggers = await branchTriggers(ids.branchId);
@@ -283,16 +292,16 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
 
     // Replay is not a reroll: the child inherits the transfer, and nothing
     // fires again.
-    expect(await itemHolding(childId, ids.itemIds[0]!)).toBe(ids.destinationId);
+    expect(await itemLocus(childId, ids.itemIds[0]!)).toEqual(containerLocus(ids.destinationId));
     expect((await resolveNextDueTrigger(childId, { workerId: "worker_b" })).status).toBe("idle");
-    expect((await readDurableItemTransferBranch(childId)).events).toHaveLength(1);
+    expect((await readDurableBranchState(childId)).events.filter(isMaterialEvent)).toHaveLength(1);
   });
 
   it("does not mutate the parent branch, its events, or its triggers", async () => {
     const ids = makeIds(2);
     await seedCase(ids);
     await scheduleAt(ids, SEED_STORY_SECOND + 600, "alarm-kept");
-    await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { expectedVersion: 1 }));
+    await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { expectedVersion: 1 }));
 
     const before = {
       branch: await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId)),
@@ -311,7 +320,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
   it("keeps siblings and the parent causally isolated after the fork", async () => {
     const ids = makeIds(3);
     await seedCase(ids);
-    await submitDurableItemTransfer(command(ids, ids.itemIds[0]!)); // sequence 1
+    await submitDurableTransferItem(command(ids, ids.itemIds[0]!)); // sequence 1
 
     const childA = newId();
     const childB = newId();
@@ -320,28 +329,28 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
 
     // Each timeline resolves its own future at its own sequence 2.
     expect(
-      await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { branchId: childA, expectedVersion: 1 })),
+      await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { branchId: childA, expectedVersion: 1 })),
     ).toMatchObject({ status: "accepted", firstSequence: 2 });
     expect(
-      await submitDurableItemTransfer(command(ids, ids.itemIds[2]!, { branchId: childB, expectedVersion: 1 })),
+      await submitDurableTransferItem(command(ids, ids.itemIds[2]!, { branchId: childB, expectedVersion: 1 })),
     ).toMatchObject({ status: "accepted", firstSequence: 2 });
     expect(
-      await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { expectedVersion: 1 })),
+      await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { expectedVersion: 1 })),
     ).toMatchObject({ status: "accepted", firstSequence: 2 });
 
     // The parent sees only its own history.
-    const parentState = await readDurableItemTransferBranch(ids.branchId);
+    const parentState = await readDurableBranchState(ids.branchId);
     expect(parentState.events.map((event) => event.branchId)).toEqual([ids.branchId, ids.branchId]);
 
     // Child A inherits the pre-fork event and its own — never the parent's
     // post-fork same-sequence event, never a sibling's.
-    const childAState = await readDurableItemTransferBranch(childA);
+    const childAState = await readDurableBranchState(childA);
     expect(childAState.events.map((event) => [event.sequence, event.branchId])).toEqual([
       [1, ids.branchId],
       [2, childA],
     ]);
-    expect(childAState.projection.items.find((item) => item.id === ids.itemIds[2]!)?.holdingContainerId).toBe(
-      ids.sourceId,
+    expect(childAState.projection.items.find((item) => item.id === ids.itemIds[2]!)?.locus).toEqual(
+      containerLocus(ids.sourceId),
     );
 
     const childBAncestry = await loadBranchAncestry(db(), childB);
@@ -355,7 +364,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
   it("rebuilds from zero to the live projection hash on roots, children, and grandchildren", async () => {
     const ids = makeIds(3);
     await seedCase(ids);
-    await submitDurableItemTransfer(command(ids, ids.itemIds[0]!)); // sequence 1
+    await submitDurableTransferItem(command(ids, ids.itemIds[0]!)); // sequence 1
     await scheduleAt(ids, SEED_STORY_SECOND + 60, "alarm-chain", 1); // sequence 2
 
     const childId = newId();
@@ -370,7 +379,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
       principal: { kind: "player", principalId: "player_test" },
       reason: "reach-back",
     });
-    await submitDurableItemTransfer(
+    await submitDurableTransferItem(
       command(ids, ids.itemIds[2]!, { branchId: grandchildId, expectedVersion: 3 }),
     );
 
@@ -380,23 +389,23 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
       expect(rebuild.rebuiltHash).toBe(rebuild.liveHash);
     }
 
-    const grandchildState = await readDurableItemTransferBranch(grandchildId);
-    expect(grandchildState.events.map((event) => event.sequence)).toEqual([1, 3, 4]);
-    expect(grandchildState.projection.items.map((item) => item.holdingContainerId)).toEqual([
-      ids.destinationId,
-      ids.destinationId,
-      ids.destinationId,
-    ]);
+    const grandchildState = await readDurableBranchState(grandchildId);
+    expect(grandchildState.events.filter(isMaterialEvent).map((event) => event.sequence)).toEqual([1, 3, 4]);
+    // Only the three tracked items — `projection.items` also carries the two
+    // container items (source and destination) themselves under §26.2.
+    expect(
+      ids.itemIds.map((itemId) => grandchildState.projection.items.find((item) => item.id === itemId)?.locus),
+    ).toEqual([containerLocus(ids.destinationId), containerLocus(ids.destinationId), containerLocus(ids.destinationId)]);
   });
 
   it("rebuilds from a snapshot to the same truth as from zero, and discards change nothing", async () => {
     const ids = makeIds(2);
     await seedCase(ids);
-    await submitDurableItemTransfer(command(ids, ids.itemIds[0]!));
+    await submitDurableTransferItem(command(ids, ids.itemIds[0]!));
 
     const childId = newId();
     await fork(ids, 1, childId);
-    await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { branchId: childId, expectedVersion: 1 }));
+    await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { branchId: childId, expectedVersion: 1 }));
 
     const captured = await captureBranchSnapshot(childId);
     expect(captured).toMatchObject({ branchId: childId, sequence: 2 });
@@ -409,10 +418,10 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     // The snapshot replayed a shorter range than the zero rebuild.
     expect(fromSnapshot.replayedEventCount).toBeLessThan(fromZero.replayedEventCount);
 
-    const truthBefore = await readDurableItemTransferBranch(childId);
+    const truthBefore = await readDurableBranchState(childId);
     const discarded = await discardBranchSnapshots(childId);
     expect(discarded).toBeGreaterThanOrEqual(2); // fork snapshot + captured
-    expect(await readDurableItemTransferBranch(childId)).toEqual(truthBefore);
+    expect(await readDurableBranchState(childId)).toEqual(truthBefore);
     expect((await rebuildDurableBranchProjection(childId)).matches).toBe(true);
     await expect(rebuildDurableBranchProjection(childId, { source: "snapshot" })).rejects.toThrow(
       /No snapshot/u,
@@ -429,7 +438,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     const explained = await explainItemPlacement(ids.branchId, ids.itemIds[0]!);
     expect(explained).toMatchObject({
       origin: "event",
-      holdingContainerId: ids.destinationId,
+      locus: containerLocus(ids.destinationId),
       event: { sequence: 2, branchId: ids.branchId, type: "item_transferred" },
       command: { id: deriveTriggerCommandId(triggerId), branchId: ids.branchId, type: "transfer_item" },
       trigger: { id: triggerId, uniquenessKey: "alarm-explain" },
@@ -451,7 +460,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     // An item no event ever moved is seed truth (plan R3).
     expect(await explainItemPlacement(ids.branchId, ids.itemIds[1]!)).toMatchObject({
       origin: "seed",
-      holdingContainerId: ids.sourceId,
+      locus: containerLocus(ids.sourceId),
     });
   });
 
@@ -465,8 +474,8 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     await fork(ids, 2, childId);
 
     const material = async (branchId: string) => {
-      const state = await readDurableItemTransferBranch(branchId);
-      return state.events.map((event) => [event.storySecond, event.payload.itemId]);
+      const state = await readDurableBranchState(branchId);
+      return state.events.filter(isMaterialEvent).map((event) => [event.storySecond, event.payload.itemId]);
     };
     await advanceBranchStoryTime(ids.branchId, SEED_STORY_SECOND + 300, { workerId: "worker_p" });
     await advanceBranchStoryTime(childId, SEED_STORY_SECOND + 300, { workerId: "worker_c" });
@@ -481,7 +490,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
   it("starts the fork child's outbox lane after the fork point", async () => {
     const ids = makeIds(2);
     await seedCase(ids);
-    await submitDurableItemTransfer(command(ids, ids.itemIds[0]!)); // sequence 1
+    await submitDurableTransferItem(command(ids, ids.itemIds[0]!)); // sequence 1
     const now = new Date(Date.now() + 60_000);
     expect(await consumeNextItemTransferOutbox({ workerId: "worker_p", now })).toMatchObject({
       status: "completed",
@@ -491,7 +500,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     await fork(ids, 1, childId);
     // The child's own first event sits above its fork boundary; without the
     // fork-time checkpoint this delivery would fail as a sequence gap forever.
-    await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { branchId: childId, expectedVersion: 1 }));
+    await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { branchId: childId, expectedVersion: 1 }));
     expect(await consumeNextItemTransferOutbox({ workerId: "worker_c", now })).toMatchObject({
       status: "completed",
       branchId: childId,
@@ -531,7 +540,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     // a rejected trigger (sequence 4's schedule dispatches onto an item that
     // already moved) adds no event and blocks nothing.
     expect(
-      await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { expectedVersion: 2 })),
+      await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { expectedVersion: 2 })),
     ).toMatchObject({ status: "accepted", firstSequence: 3 });
     await scheduleAt(ids, SEED_STORY_SECOND, "alarm-feed-2", 1);
     expect((await resolveNextDueTrigger(ids.branchId, { workerId: "worker_a" })).status).toBe("rejected");
@@ -544,7 +553,7 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
   it("validates fork boundaries and identities", async () => {
     const ids = makeIds();
     await seedCase(ids);
-    await submitDurableItemTransfer(command(ids));
+    await submitDurableTransferItem(command(ids));
 
     await expect(fork(ids, 99)).rejects.toThrow(/head sequence/u);
     await expect(fork(ids, 1, ids.branchId)).rejects.toThrow(/fork onto itself/u);
@@ -567,9 +576,9 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
       version: 0,
       inheritedEventCount: 0,
     });
-    expect(await itemHolding(originChild, ids.itemIds[0]!)).toBe(ids.sourceId);
+    expect(await itemLocus(originChild, ids.itemIds[0]!)).toEqual(containerLocus(ids.sourceId));
     expect(
-      await submitDurableItemTransfer(command(ids, ids.itemIds[0]!, { branchId: originChild })),
+      await submitDurableTransferItem(command(ids, ids.itemIds[0]!, { branchId: originChild })),
     ).toMatchObject({ status: "accepted", firstSequence: 1 });
   });
 });

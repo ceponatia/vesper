@@ -6,7 +6,7 @@ import {
   type SimulationActionDefinition,
 } from "@/contracts/simulation/activities";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import { simulationHash } from "./item-transfer";
+import { simulationHash } from "./hash";
 import {
   activityCompletionUniquenessKey,
   applyActivityEvent,

@@ -94,7 +94,6 @@ import {
   commandIdSchema,
   composeSimulationId,
   eventIdSchema,
-  holdingContainerIdSchema,
   itemIdSchema,
   principalIdSchema,
   rulesetVersionSchema,
@@ -105,11 +104,18 @@ import {
   worldIdSchema,
 } from "./identity";
 import {
-  itemTransferProjectionSchema,
+  itemDestroyedEventSchema,
+  itemLocusSchema,
+  itemOwnershipSetEventSchema,
   itemTransferredEventSchema,
-  type ItemTransferCommandResult,
+  materialsProjectionSchema,
+  type DestroyItemCommand,
+  type DestroyItemCommandResult,
+  type SetItemOwnershipCommand,
+  type SetItemOwnershipCommandResult,
   type TransferItemCommand,
-} from "./item-transfer";
+  type TransferItemCommandResult,
+} from "./materials";
 import {
   triggerScheduledEventSchema,
   type ScheduleTransferTriggerCommand,
@@ -135,6 +141,8 @@ import {
  */
 export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   itemTransferredEventSchema,
+  itemDestroyedEventSchema,
+  itemOwnershipSetEventSchema,
   triggerScheduledEventSchema,
   journeyPlannedEventSchema,
   actorDepartedEventSchema,
@@ -174,6 +182,20 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
+
+/** The material family (E5.3). Replay folds these into the materials projection. */
+const materialEventTypeList = [
+  "item_transferred",
+  "item_destroyed",
+  "item_ownership_set",
+] as const;
+export type MaterialEventType = (typeof materialEventTypeList)[number];
+export type SimulationMaterialEvent = Extract<SimulationBranchEvent, { type: MaterialEventType }>;
+export const materialEventTypes: ReadonlySet<string> = new Set(materialEventTypeList);
+
+export function isMaterialEvent(event: SimulationBranchEvent): event is SimulationMaterialEvent {
+  return materialEventTypes.has(event.type);
+}
 
 /** The movement family (E3.1). Replay treats these as space-projection events. */
 const movementEventTypeList = [
@@ -295,6 +317,8 @@ export function isAccessEvent(event: SimulationBranchEvent): event is Simulation
 /** Union persisted in sim_commands; each family keeps its own result contract. */
 export type SimulationCommandEnvelope =
   | TransferItemCommand
+  | DestroyItemCommand
+  | SetItemOwnershipCommand
   | ScheduleTransferTriggerCommand
   | MoveActorCommand
   | ArriveJourneyCommand
@@ -320,7 +344,9 @@ export type SimulationCommandEnvelope =
   | ResolveBodyCollapseCommand
   | ResumeActivityCommand;
 export type SimulationCommandResultRecord =
-  | ItemTransferCommandResult
+  | TransferItemCommandResult
+  | DestroyItemCommandResult
+  | SetItemOwnershipCommandResult
   | ScheduleTriggerCommandResult
   | MoveActorCommandResult
   | ArriveJourneyCommandResult
@@ -406,7 +432,7 @@ export const itemTransferSnapshotProjectionKind = "item_transfer" as const;
 export const itemTransferSnapshotSchemaVersion = 1 as const;
 
 export const simulationSnapshotPayloadSchema = z
-  .object({ projection: itemTransferProjectionSchema })
+  .object({ projection: materialsProjectionSchema })
   .strict();
 
 export const simulationSnapshotSchema = z
@@ -498,7 +524,7 @@ export const itemPlacementExplanationSchema = z
   .object({
     branchId: worldBranchIdSchema,
     itemId: itemIdSchema,
-    holdingContainerId: holdingContainerIdSchema,
+    locus: itemLocusSchema,
     /** "seed" when no recorded event has moved the item on this timeline. */
     origin: z.enum(["seed", "event"]),
     event: explainedEventSchema.optional(),

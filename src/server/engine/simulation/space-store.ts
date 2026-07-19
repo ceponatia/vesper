@@ -72,7 +72,7 @@ type DbExecutor = Db | SimTx;
 
 export interface SpaceStoreOptions {
   database?: Db;
-  /** See item-transfer-store: scheduler-originated commands admit at the locked version. */
+  /** See material-store: scheduler-originated commands admit at the locked version. */
   admitAtLockedVersion?: boolean;
 }
 

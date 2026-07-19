@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import { engagementStateTransitions } from "@/contracts/simulation/engagements";
-import { simulationHash } from "./item-transfer";
+import { simulationHash } from "./hash";
 import {
   applyEngagementEvent,
   buildDepartureInterruptEvent,

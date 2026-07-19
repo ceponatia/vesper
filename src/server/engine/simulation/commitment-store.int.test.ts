@@ -1,9 +1,6 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import { deriveCommitmentId } from "@/lib/simulation";
 import { db, simTriggers, simWorlds } from "@/server/db";
@@ -12,7 +9,7 @@ import {
   readDurableCommitments,
   submitDurableCreateCommitment,
 } from "./commitment-store";
-import { seedDurableItemTransferBranch } from "./item-transfer-store";
+import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { readDurableSpaceBranch, seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
 
@@ -65,18 +62,16 @@ interface ShiftCase {
   zoneWork: string;
 }
 
-function branchProjection(ids: ShiftCase): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: ShiftCase): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "e3-3-tests",
+    worldSeed: `seed-${ids.worldId}`,
     branchId: ids.branchId,
     rulesetVersion: "e3-3-test-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_SECOND,
-    actors: [{ id: ids.actorId, name: "Mara", observedContainerIds: [] }],
-    containers: [],
+    originStorySecond: SEED_SECOND,
+    actors: [{ id: ids.actorId, name: "Mara" }],
     items: [],
-    observations: [],
   });
 }
 
@@ -91,10 +86,7 @@ async function seedShiftCase(): Promise<ShiftCase> {
     zoneWork: `${branchId}-zone-work`,
   };
   const locTown = `${worldId}-loc-town`;
-  await seedDurableItemTransferBranch(branchProjection(ids), {
-    worldTypeId: "e3-3-tests",
-    worldSeed: `seed-${worldId}`,
-  });
+  await seedDurableMaterialBranch(branchSeed(ids));
   await seedDurableSpaceTopology({
     branchId,
     locations: [{ id: locTown, worldId, kind: "town", defaultAccessPolicy: "public" }],

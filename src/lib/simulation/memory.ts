@@ -82,6 +82,8 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
       return "someone suddenly present";
     case "item_transferred":
       return "an item changing hands";
+    case "item_destroyed":
+      return "an item being destroyed";
     case "speech_act_delivered":
       return "something meaningful being said";
     case "disclosure_made":
@@ -96,6 +98,7 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
       return "a body reaching a limit";
     case "body_collapsed":
       return "a body giving out";
+    case "item_ownership_set":
     case "trigger_scheduled":
     case "commitment_created":
     case "pressure_raised":

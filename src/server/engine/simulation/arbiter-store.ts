@@ -26,8 +26,8 @@ import {
   softCanonRecordedEventSchema,
 } from "@/contracts/simulation/soft-canon";
 import { runDeliberation } from "@/lib/simulation/deliberation";
-import { simulationHash } from "@/lib/simulation/item-transfer";
 import { deriveDisclosureCapture } from "@/lib/simulation/knowledge";
+import { simulationHash } from "@/lib/simulation/hash";
 import {
   compileNarrativeCut,
   decideDepartures,

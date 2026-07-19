@@ -1,9 +1,6 @@
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { deriveAssertionId } from "@/contracts/simulation/knowledge";
 import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
 import { newId } from "@/lib/ids";
@@ -11,8 +8,8 @@ import { replayKnowledgeHistory, replayObservationsHistory } from "@/lib/simulat
 import { db, simAssertions, simBeliefs, simEvents, simWorlds } from "@/server/db";
 import { forkBranch } from "./branch-store";
 import { readDurableCommitments, submitDurableCreateCommitment } from "./commitment-store";
-import { seedDurableItemTransferBranch } from "./item-transfer-store";
 import { submitDurableMakeDisclosure } from "./knowledge-store";
+import { seedDurableMaterialBranch } from "./material-store";
 import { branchEventFromRow } from "./observation-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
@@ -72,23 +69,21 @@ interface KnowledgeCase {
   zoneShop: string;
 }
 
-function branchProjection(ids: KnowledgeCase): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: KnowledgeCase): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "e4-2-tests",
+    worldSeed: `seed-${ids.worldId}`,
     branchId: ids.branchId,
     rulesetVersion: "e4-2-test-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_SECOND,
+    originStorySecond: SEED_SECOND,
     actors: [
-      { id: ids.mara, name: "Mara", observedContainerIds: [] },
-      { id: ids.iris, name: "Iris", observedContainerIds: [] },
-      { id: ids.noor, name: "Noor", observedContainerIds: [] },
-      { id: ids.rook, name: "Rook", observedContainerIds: [] },
+      { id: ids.mara, name: "Mara" },
+      { id: ids.iris, name: "Iris" },
+      { id: ids.noor, name: "Noor" },
+      { id: ids.rook, name: "Rook" },
     ],
-    containers: [],
     items: [],
-    observations: [],
   });
 }
 
@@ -140,10 +135,7 @@ async function seedKnowledgeCase(): Promise<KnowledgeCase> {
     zoneKitchen: `${branchId}-zone-kitchen`,
     zoneShop: `${branchId}-zone-shop`,
   };
-  await seedDurableItemTransferBranch(branchProjection(ids), {
-    worldTypeId: "e4-2-tests",
-    worldSeed: `seed-${worldId}`,
-  });
+  await seedDurableMaterialBranch(branchSeed(ids));
   await seedDurableSpaceTopology(topologySeed(ids));
   seededWorldIds.push(worldId);
   return ids;

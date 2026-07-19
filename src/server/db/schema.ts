@@ -25,9 +25,12 @@ import type {
 import type { ActivityClaim, SimulationActionDefinition } from "@/contracts/simulation/activities";
 import type { BodyModifierOperation } from "@/contracts/simulation/bodies";
 import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
+import type { ContainerAccessPolicy, ItemLocus } from "@/contracts/simulation/materials";
 import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
+import { itemGoneBases } from "@/contracts/simulation/materials";
+import { itemMaterialFeedEventKinds } from "@/contracts/simulation/outbox";
 import { newId } from "@/lib/ids";
 
 const id = () => text("id").primaryKey().$defaultFn(newId);
@@ -1512,7 +1515,7 @@ export const simEvents = pgTable(
   ],
 );
 
-/** Minimum character facts needed by the E2.2 transfer authority view. */
+/** Minimum character facts needed by the simulation's actor-registry stores. */
 export const simCharacters = pgTable(
   "sim_characters",
   {
@@ -1521,7 +1524,6 @@ export const simCharacters = pgTable(
       .references(() => simBranches.id, { onDelete: "cascade" }),
     characterId: text("character_id").notNull(),
     name: text("name").notNull(),
-    observedContainerIds: jsonb("observed_container_ids").$type<string[]>().notNull().default([]),
     updatedAt: updatedAt(),
   },
   (t) => [
@@ -1529,33 +1531,13 @@ export const simCharacters = pgTable(
   ],
 );
 
-/** Typed capacity and access facts for an item holding locus. */
-export const simHoldingContainers = pgTable(
-  "sim_holding_containers",
-  {
-    branchId: text("branch_id")
-      .notNull()
-      .references(() => simBranches.id, { onDelete: "cascade" }),
-    holdingContainerId: text("holding_container_id").notNull(),
-    kind: text("kind", { enum: ["actor", "location", "container"] }).notNull(),
-    name: text("name").notNull(),
-    capacity: bigint("capacity", { mode: "number" }).notNull(),
-    accessibleToActorIds: jsonb("accessible_to_actor_ids").$type<string[]>().notNull().default([]),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    primaryKey({
-      name: "sim_holding_containers_branch_container_pk",
-      columns: [t.branchId, t.holdingContainerId],
-    }),
-    check(
-      "sim_holding_containers_capacity_safe",
-      sql`${t.capacity} >= 0 AND ${t.capacity} <= 9007199254740991`,
-    ),
-  ],
-);
-
-/** Stable item identity and display facts, separate from mutable placement. */
+/**
+ * Stable item identity and display facts, separate from mutable placement
+ * (`sim_item_holdings`). E5.3 (§26) adds the material-classification key resource
+ * costs reference (slice 2), social ownership (§26.3, distinct from holding), and
+ * an optional container declaration (§26.2) — capacity and access are both-null
+ * (not a container) or both-set, never one without the other.
+ */
 export const simItems = pgTable(
   "sim_items",
   {
@@ -1564,21 +1546,53 @@ export const simItems = pgTable(
       .references(() => simBranches.id, { onDelete: "cascade" }),
     itemId: text("item_id").notNull(),
     name: text("name").notNull(),
+    /** Authored classification key resource costs reference (§26.5, E5.3 slice 2). */
+    materialKindKey: text("material_kind_key"),
+    /** Social ownership (§26.3) — null = unowned. Changed only by item_ownership_set. */
+    ownerActorId: text("owner_actor_id"),
+    /** Present iff this item is itself a container (§26.2); paired with containerAccess. */
+    containerCapacityCount: bigint("container_capacity_count", { mode: "number" }),
+    containerAccess: jsonb("container_access").$type<ContainerAccessPolicy>(),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
-  (t) => [primaryKey({ name: "sim_items_branch_item_pk", columns: [t.branchId, t.itemId] })],
+  (t) => [
+    primaryKey({ name: "sim_items_branch_item_pk", columns: [t.branchId, t.itemId] }),
+    check(
+      "sim_items_container_capacity_safe",
+      sql`${t.containerCapacityCount} IS NULL OR (${t.containerCapacityCount} >= 0 AND ${t.containerCapacityCount} <= 9007199254740991)`,
+    ),
+    check(
+      "sim_items_container_shape",
+      sql`(${t.containerCapacityCount} IS NULL) = (${t.containerAccess} IS NULL)`,
+    ),
+  ],
 );
 
 /**
- * One row per item is the database-enforced exclusive holding invariant.
- * updated_sequence identifies the event boundary that last changed placement.
+ * One row per item is the database-enforced exclusive holding invariant (§26.1):
+ * every item has exactly one holding locus. `locusKind` discriminates which of
+ * `actorId`/`slotKey`/`containerItemId`/`zoneId`/`goneBasis` is populated — the
+ * per-kind CHECK constraints below enforce exactly one reference set per row.
+ * `gone` is terminal — no transition leaves it (§26.1). `updatedSequence`
+ * identifies the event boundary that last changed placement.
  */
 export const simItemHoldings = pgTable(
   "sim_item_holdings",
   {
     branchId: text("branch_id").notNull(),
     itemId: text("item_id").notNull(),
-    holdingContainerId: text("holding_container_id").notNull(),
+    locusKind: text("locus_kind", { enum: ["held", "worn", "container", "zone", "gone"] }).notNull(),
+    /** held/worn: the carrying/wearing actor. Null for container/zone/gone. */
+    actorId: text("actor_id"),
+    /** worn only: the free-text slot key (v1). Null otherwise. */
+    slotKey: text("slot_key"),
+    /** container only: the item this one sits inside. Null otherwise. */
+    containerItemId: text("container_item_id"),
+    /** zone only: the zone this item rests at. Null otherwise. */
+    zoneId: text("zone_id"),
+    /** gone only: the terminal disposition. Null otherwise. */
+    goneBasis: text("gone_basis", { enum: itemGoneBases }),
     updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
     updatedAt: updatedAt(),
   },
@@ -1590,17 +1604,60 @@ export const simItemHoldings = pgTable(
       foreignColumns: [simItems.branchId, simItems.itemId],
     }).onDelete("cascade"),
     foreignKey({
-      name: "sim_item_holdings_container_fk",
-      columns: [t.branchId, t.holdingContainerId],
-      foreignColumns: [simHoldingContainers.branchId, simHoldingContainers.holdingContainerId],
-      // Drizzle cannot express FK deferrability. Migration 0054 makes this
-      // DEFERRABLE INITIALLY DEFERRED so coherent branch cascades can finish,
-      // while a standalone deletion of a live holding container still fails.
+      name: "sim_item_holdings_actor_fk",
+      columns: [t.branchId, t.actorId],
+      foreignColumns: [simCharacters.branchId, simCharacters.characterId],
+      // Nullable composite FK: MATCH SIMPLE means a null actorId (container/
+      // zone/gone rows) is never checked against sim_characters. Drizzle
+      // cannot express FK deferrability — hand-edited in migration 0069 (the
+      // 0054 precedent) to DEFERRABLE INITIALLY DEFERRED, alongside the other
+      // two FKs below: a world/branch teardown cascades sim_characters and
+      // sim_item_holdings from the SAME sim_branches delete, and Postgres does
+      // not order sibling cascades against each other, so a non-deferred FK
+      // here can fire before the row it references is (about to be) gone too.
     }).onDelete("no action"),
-    index("sim_item_holdings_container_idx").on(t.branchId, t.holdingContainerId),
+    foreignKey({
+      name: "sim_item_holdings_container_item_fk",
+      columns: [t.branchId, t.containerItemId],
+      foreignColumns: [simItems.branchId, simItems.itemId],
+      // Drizzle cannot express FK deferrability. Hand-edited in migration 0069
+      // (the 0054 precedent) to DEFERRABLE INITIALLY DEFERRED — see the actor
+      // FK comment above for why a branch-cascade teardown needs this.
+    }).onDelete("no action"),
+    foreignKey({
+      name: "sim_item_holdings_zone_fk",
+      columns: [t.branchId, t.zoneId],
+      foreignColumns: [simZones.branchId, simZones.zoneId],
+      // Drizzle cannot express FK deferrability. Hand-edited in migration 0069
+      // (the 0054 precedent) to DEFERRABLE INITIALLY DEFERRED — see the actor
+      // FK comment above for why a branch-cascade teardown needs this.
+    }).onDelete("no action"),
+    index("sim_item_holdings_container_item_idx").on(t.branchId, t.containerItemId),
+    index("sim_item_holdings_actor_idx").on(t.branchId, t.actorId),
+    index("sim_item_holdings_zone_idx").on(t.branchId, t.zoneId),
     check(
       "sim_item_holdings_updated_sequence_safe",
       sql`${t.updatedSequence} >= 0 AND ${t.updatedSequence} <= 9007199254740991`,
+    ),
+    check(
+      "sim_item_holdings_held_shape",
+      sql`${t.locusKind} <> 'held' OR (${t.actorId} IS NOT NULL AND ${t.slotKey} IS NULL AND ${t.containerItemId} IS NULL AND ${t.zoneId} IS NULL AND ${t.goneBasis} IS NULL)`,
+    ),
+    check(
+      "sim_item_holdings_worn_shape",
+      sql`${t.locusKind} <> 'worn' OR (${t.actorId} IS NOT NULL AND ${t.slotKey} IS NOT NULL AND ${t.containerItemId} IS NULL AND ${t.zoneId} IS NULL AND ${t.goneBasis} IS NULL)`,
+    ),
+    check(
+      "sim_item_holdings_container_shape",
+      sql`${t.locusKind} <> 'container' OR (${t.containerItemId} IS NOT NULL AND ${t.actorId} IS NULL AND ${t.slotKey} IS NULL AND ${t.zoneId} IS NULL AND ${t.goneBasis} IS NULL)`,
+    ),
+    check(
+      "sim_item_holdings_zone_shape",
+      sql`${t.locusKind} <> 'zone' OR (${t.zoneId} IS NOT NULL AND ${t.actorId} IS NULL AND ${t.slotKey} IS NULL AND ${t.containerItemId} IS NULL AND ${t.goneBasis} IS NULL)`,
+    ),
+    check(
+      "sim_item_holdings_gone_shape",
+      sql`${t.locusKind} <> 'gone' OR (${t.goneBasis} IS NOT NULL AND ${t.actorId} IS NULL AND ${t.slotKey} IS NULL AND ${t.containerItemId} IS NULL AND ${t.zoneId} IS NULL)`,
     ),
   ],
 );
@@ -1688,7 +1745,12 @@ export const simConsumerCheckpoints = pgTable(
   ],
 );
 
-/** First disposable async projection: one stable row per transferred item event. */
+/**
+ * First disposable async projection: one stable row per material movement event
+ * (§26.4). E5.3 bumps this to schema version 2 — `eventKind` distinguishes a
+ * transfer from a destruction, and `fromLocus`/`toLocus` carry the locus-model
+ * placement (a destruction's `toLocus` is its terminal `gone` locus).
+ */
 export const simItemTransferFeed = pgTable(
   "sim_item_transfer_feed",
   {
@@ -1699,8 +1761,9 @@ export const simItemTransferFeed = pgTable(
     storySecond: bigint("story_second", { mode: "number" }).notNull(),
     actorId: text("actor_id").notNull(),
     itemId: text("item_id").notNull(),
-    fromContainerId: text("from_container_id").notNull(),
-    toContainerId: text("to_container_id").notNull(),
+    eventKind: text("event_kind", { enum: itemMaterialFeedEventKinds }).notNull(),
+    fromLocus: jsonb("from_locus").$type<ItemLocus>().notNull(),
+    toLocus: jsonb("to_locus").$type<ItemLocus>().notNull(),
     projectionSchemaVersion: integer("projection_schema_version").notNull(),
     createdAt: createdAt(),
   },

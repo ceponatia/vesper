@@ -677,6 +677,8 @@ export function applyActivityEvent(
         ),
       });
     case "item_transferred":
+    case "item_destroyed":
+    case "item_ownership_set":
     case "trigger_scheduled":
     case "journey_planned":
     case "actor_departed":

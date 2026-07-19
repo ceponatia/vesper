@@ -9,7 +9,7 @@ import {
   type SimulationSnapshot,
 } from "@/contracts/simulation/branching";
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
-import { itemTransferProjectionSchema } from "@/contracts/simulation/item-transfer";
+import { materialsProjectionSchema } from "@/contracts/simulation/materials";
 import { replayBranchHistory, simulationHash } from "@/lib/simulation";
 import { db, simSnapshots, type Db } from "@/server/db";
 import {
@@ -150,7 +150,7 @@ export async function rebuildDurableBranchProjection(
       // The story clock advances without events (spec §11.1 step 12 writes it
       // to the branch row), so the rebuilt projection stamps the live clock
       // rather than pretending events determine it.
-      const rebuilt = itemTransferProjectionSchema.parse({
+      const rebuilt = materialsProjectionSchema.parse({
         ...replay.projection,
         storySecond: state.projection.storySecond,
       });

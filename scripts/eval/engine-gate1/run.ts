@@ -1,34 +1,74 @@
 import { performance } from "node:perf_hooks";
 import {
-  itemTransferProjectionSchema,
   transferItemCommandSchema,
-  type ItemTransferProjection,
   type TransferItemCommand,
-} from "@/contracts/simulation/item-transfer";
-import { createItemTransferBranchRuntime } from "@/lib/simulation";
+} from "@/contracts/simulation/materials";
+import {
+  applyMaterialEvent,
+  materialsSeedProjection,
+  resolveTransferItemFromView,
+  type MaterialResolutionView,
+} from "@/lib/simulation";
 
 const WARMUP_RUNS = 500;
 const SAMPLE_RUNS = 4_000;
 const P95_BUDGET_MS = 5;
 
-const seed: ItemTransferProjection = itemTransferProjectionSchema.parse({
+/**
+ * The Gate 1 exit benchmark, ported to the E5.3 material lane: the whole
+ * deterministic command path (authority view -> §26.4 resolution -> event ->
+ * projection fold) must hold its p95 budget with zero model calls.
+ */
+const seed = materialsSeedProjection({
   worldId: "world_benchmark",
+  worldTypeId: "world_type_benchmark",
+  worldSeed: "benchmark-seed",
   branchId: "branch_benchmark",
   rulesetVersion: "gate1-v1",
-  version: 0,
-  headSequence: 0,
-  storySecond: 57_600,
+  originStorySecond: 57_600,
   actors: [
-    { id: "actor_mara", name: "Mara", observedContainerIds: ["bag", "table"] },
-    { id: "actor_theo", name: "Theo", observedContainerIds: ["bag", "table"] },
+    { id: "actor_mara", name: "Mara" },
+    { id: "actor_theo", name: "Theo" },
   ],
-  containers: [
-    { id: "bag", kind: "container", name: "bag", capacity: 4, accessibleToActorIds: ["actor_mara"] },
-    { id: "table", kind: "location", name: "table", capacity: 4, accessibleToActorIds: ["actor_mara"] },
+  items: [
+    {
+      id: "bag",
+      name: "bag",
+      container: { capacityCount: 4, access: { kind: "open" } },
+      locus: { kind: "held", actorId: "actor_mara" },
+    },
+    { id: "item_ring", name: "ring", locus: { kind: "container", containerItemId: "bag" } },
   ],
-  items: [{ id: "item_ring", name: "ring", holdingContainerId: "bag" }],
-  observations: [],
 });
+
+const BENCH_ZONE = "zone_benchmark";
+const BENCH_LOCATION = "location_benchmark";
+
+/** In-memory stand-in for the store's lock-consistent view: everyone in one zone. */
+function viewOf(projection: typeof seed): MaterialResolutionView {
+  const actors = new Map<string, (typeof projection.actors)[number]>(
+    projection.actors.map((actor) => [actor.id, actor]),
+  );
+  const items = new Map<string, (typeof projection.items)[number]>(
+    projection.items.map((item) => [item.id, item]),
+  );
+  return {
+    worldId: projection.worldId,
+    branchId: projection.branchId,
+    rulesetVersion: projection.rulesetVersion,
+    version: projection.version,
+    headSequence: projection.headSequence,
+    storySecond: projection.storySecond,
+    actorById: (actorId) => actors.get(actorId),
+    actorZoneId: (actorId) => (actors.has(actorId) ? BENCH_ZONE : null),
+    actorLocationId: (actorId) => (actors.has(actorId) ? BENCH_LOCATION : null),
+    itemById: (itemId) => items.get(itemId),
+    containerOccupantCount: (containerItemId) =>
+      projection.items.filter(
+        (item) => item.locus.kind === "container" && item.locus.containerItemId === containerItemId,
+      ).length,
+  };
+}
 
 function command(index: number): TransferItemCommand {
   return transferItemCommandSchema.parse({
@@ -39,23 +79,22 @@ function command(index: number): TransferItemCommand {
     principal: { kind: "npc_policy", principalId: "policy_mara", controlledActorIds: ["actor_mara"] },
     submittedAtWallClock: "2026-07-16T16:00:00.000Z",
     type: "transfer_item",
-    schemaVersion: 1,
+    schemaVersion: 2,
     correlationId: `correlation_${index}`,
     payload: {
       actorId: "actor_mara",
       itemId: "item_ring",
-      fromContainerId: "bag",
-      toContainerId: "table",
+      fromLocus: { kind: "container", containerItemId: "bag" },
+      toLocus: { kind: "zone", zoneId: BENCH_ZONE },
     },
   });
 }
 
 function runOnce(index: number): number {
   const start = performance.now();
-  const runtime = createItemTransferBranchRuntime(seed);
-  const result = runtime.submit(command(index));
-  if (result.status !== "accepted") throw new Error(`Benchmark command was ${result.status}`);
-  runtime.compileNarrativeCut("actor_theo");
+  const resolution = resolveTransferItemFromView(viewOf(seed), command(index));
+  if (!resolution.ok) throw new Error(`Benchmark command was rejected: ${resolution.code}`);
+  applyMaterialEvent(seed, resolution.event);
   return performance.now() - start;
 }
 

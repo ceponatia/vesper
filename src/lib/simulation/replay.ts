@@ -1,25 +1,18 @@
 import {
-  isAccessEvent,
-  isBodyEvent,
-  isSoftCanonEvent,
-  isActivityEvent,
-  isCommitmentEvent,
-  isEngagementEvent,
-  isKnowledgeEvent,
-  isMovementEvent,
   simulationBranchEventSchema,
   type SimulationBranchEvent,
 } from "@/contracts/simulation/branching";
 import {
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+  materialsProjectionSchema,
+  type ItemLocus,
+  type MaterialsProjection,
+} from "@/contracts/simulation/materials";
 import {
   deriveTriggerCommandId,
   deriveTriggerId,
   type TriggerScheduledEvent,
 } from "@/contracts/simulation/scheduler";
-import { applyItemTransferredEvent, sortItemTransferProjection } from "./item-transfer";
+import { applyMaterialEvent, sortMaterialsProjection } from "./materials";
 
 export interface BranchAncestryNode {
   branchId: string;
@@ -61,24 +54,29 @@ export function composeAncestryEventBounds(
 }
 
 /**
- * Reverse-derive item placements at a sequence boundary from current
- * placements and the events after it: undoing transfers newest-first leaves
- * each touched item where its earliest post-boundary transfer found it.
- * Items no event ever moved keep their current placement — that placement is
- * seed data the event stream cannot validate (plan R3).
+ * Reverse-derive item loci at a sequence boundary from current loci and the
+ * events after it: undoing each material move newest-first returns a touched
+ * item to the `fromLocus` its earliest post-boundary event captured — a
+ * transfer's source or a destruction's pre-gone locus. Items no event moved
+ * keep their current locus; that placement is seed data the event stream
+ * cannot validate (plan R3).
  */
 export function itemHoldingsAtSequence(
-  currentHoldings: ReadonlyMap<string, string>,
+  currentHoldings: ReadonlyMap<string, ItemLocus>,
   events: readonly SimulationBranchEvent[],
   throughSequence: number,
-): Map<string, string> {
+): Map<string, ItemLocus> {
   const holdings = new Map(currentHoldings);
   const undone = events
-    .filter((event) => event.type === "item_transferred" && event.sequence > throughSequence)
+    .filter(
+      (event) =>
+        (event.type === "item_transferred" || event.type === "item_destroyed") &&
+        event.sequence > throughSequence,
+    )
     .sort((left, right) => right.sequence - left.sequence);
   for (const event of undone) {
-    if (event.type !== "item_transferred") continue;
-    holdings.set(event.payload.itemId, event.payload.fromContainerId);
+    if (event.type !== "item_transferred" && event.type !== "item_destroyed") continue;
+    holdings.set(event.payload.itemId, event.payload.fromLocus);
   }
   return holdings;
 }
@@ -93,7 +91,7 @@ export interface ReplayedTriggerLedgerEntry {
 }
 
 export interface BranchReplayResult {
-  projection: ItemTransferProjection;
+  projection: MaterialsProjection;
   /** Meaningful only when replaying from the branch origin (how forks use it). */
   triggers: ReplayedTriggerLedgerEntry[];
   replayedEventCount: number;
@@ -105,7 +103,7 @@ export interface BranchReplayInput {
    * from-zero replay this is the (unvalidatable, plan R3) seed; for a resumed
    * replay it is a snapshot payload.
    */
-  seed: ItemTransferProjection;
+  seed: MaterialsProjection;
   /** The contiguous event stream after the seed boundary, any ancestry mix. */
   events: readonly SimulationBranchEvent[];
   /**
@@ -120,10 +118,13 @@ export interface BranchReplayInput {
 /**
  * Deterministic replay of one branch's logical history through the same pure
  * projectors that produced it live (plan R1). Re-applies recorded events; it
- * never re-runs decisions, so replaying is not a reroll.
+ * never re-runs decisions, so replaying is not a reroll. The materials
+ * projection folds through `applyMaterialEvent` (which mutates the material
+ * events and passes every other family through as a boundary advance), while
+ * the trigger ledger tracks scheduling, firing, and retirement in parallel.
  */
 export function replayBranchHistory(input: BranchReplayInput): BranchReplayResult {
-  const seed = sortItemTransferProjection(itemTransferProjectionSchema.parse(input.seed));
+  const seed = sortMaterialsProjection(materialsProjectionSchema.parse(input.seed));
   const chainBranchIds = [...new Set(input.chainBranchIds)];
   const events = [...input.events]
     .sort((left, right) => left.sequence - right.sequence)
@@ -194,22 +195,10 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       } else if (event.payload.kind === "body_collapse_due") {
         retirementIndex.set(`body_collapse_due:${event.payload.command.payload.actorId}`, entry);
       }
-      projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
-    } else if (
-      isMovementEvent(event) ||
-      isActivityEvent(event) ||
-      isCommitmentEvent(event) ||
-      isEngagementEvent(event) ||
-      isAccessEvent(event) ||
-      isKnowledgeEvent(event) ||
-      isSoftCanonEvent(event) ||
-      isBodyEvent(event) ||
-      event.type === "speech_act_delivered"
-    ) {
-      // Movement and activity events belong to their own projections
-      // (replaySpaceHistory / replayActivitiesHistory). Here they advance the
-      // item boundary and — for a scheduler-dispatched arrival or completion —
-      // mark the dispatching trigger as already fired.
+    } else {
+      // Every non-scheduling event may be a scheduler-dispatched firing (an
+      // arrival, a completion, a scheduled transfer). Recognizing it here marks
+      // the dispatching trigger fired instead of re-arming it on the fork child.
       const fired = event.commandId ? firingIndex.get(event.commandId) : undefined;
       if (fired) fired.firedByCommandId = event.commandId ?? null;
       if (
@@ -250,19 +239,18 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
           }
         }
       }
-      projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
-    } else {
-      const fired = event.commandId ? firingIndex.get(event.commandId) : undefined;
-      if (fired) fired.firedByCommandId = event.commandId ?? null;
-      projection = applyItemTransferredEvent(projection, event, { acceptBranchIds: chainBranchIds });
     }
+
+    // Materials fold every event: item events mutate placement, all others
+    // (trigger_scheduled included) advance the boundary without touching items.
+    projection = applyMaterialEvent(projection, event, { acceptBranchIds: chainBranchIds });
     lastSequence = event.sequence;
   }
 
   // Version counts accepted commands, not events; each command's events are
   // atomic around any seed boundary, so distinct replayed command IDs add
   // exactly the commands the seed had not counted yet.
-  const finalProjection = itemTransferProjectionSchema.parse({
+  const finalProjection = materialsProjectionSchema.parse({
     ...projection,
     headSequence: lastSequence,
     version: seed.version + commandIds.size,

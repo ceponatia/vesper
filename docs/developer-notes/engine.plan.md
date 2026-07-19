@@ -684,7 +684,8 @@ the same day: ruling 15 (v1 body meters = **full chat parity**, with
 semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
 preconditions + a §19.3 policy escalation path**); normative wording in
 [engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
-below; **E5.1 and E5.2 shipped 2026-07-19** — E5.3 (material life) is next.
+below; **E5.1 and E5.2 shipped 2026-07-19** — **E5.3 (material life) is active,
+started 2026-07-19.**
 
 Rough effort: **15–35 developer-days**.
 
@@ -839,7 +840,38 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    case (2 813 pure + 381 int green) — the int arc runs wake → arm → drain-fired
    collapse mid-vigil → interruption → forced sleep → wake re-arm → resume →
    completion through the drain.
-3. **E5.3 — material life: containers, ownership, wear, and consumption.** §26 over
+3. **E5.3 — material life: containers, ownership, wear, and consumption.** Status:
+   **active — slice 1 shipped 2026-07-19; slices 2–3 in progress.**
+   **Slice 1 (shipped) — the honest material lane.** §26.1–26.4 replace the Gate 1
+   stand-ins wholesale: typed holding loci (held / worn-in-slot / in-container /
+   at-zone / gone with a terminal basis) as the `sim_item_holdings` row itself
+   (per-kind shape CHECKs; the one-locus invariant stays the primary key;
+   migrations 0069+0070 drop `sim_holding_containers` and the Gate 1
+   `observed_container_ids` perception stand-in), containers as items (capacity +
+   fail-closed open/holder_only/allow_list access on the item row), ownership
+   distinct from holding (`item_ownership_set`; a non-owner transfer stamps
+   `againstOwnership` — social fact for the E5.5 ledger, never a physical block),
+   and the §26.4 transfer law in one pure resolver (root-locus resolution with
+   depth cap + cycle rejection, root co-location, person-sovereignty — no taking
+   from another's person; giving allowed — self-dressing, capacity, staleness
+   defense) shared by `transfer_item` v2 / `destroy_item` / scheduled transfers.
+   The lane moved onto the shared `runSimulationCommand` shell (the last store off
+   it — §20/§21/§23.4/§24 folds now run for material events; the Gate-1-local
+   NarrativeCut bridge is deleted, `beatDisposition` in the live §22 pipeline is
+   the only cut surface), material events carry `derivationVersion` (caught by the
+   Gate 2 P5 proof), and the Gate 1 exit benchmark re-runs over the new lane
+   (p95 0.031 ms, budget 5 ms, zero model calls). Fork/replay parity via
+   locus-based reverse derivation; soak + both gate corpora reworked and green.
+   28 new pure + 11 new int cases; CI runs `test:engine-e5-3` (2 831 pure +
+   376 int green — the old Gate 1 store suite retired with its store).
+   **Slice 2 (next) — resource costs, reservations, consumption** (§26.5–26.6):
+   `resourceCosts` on action definitions, deterministic reservation captured on
+   `activity_started` and projected from activity state like claims,
+   `consume_item` + completion consumption feeding E5.1 body sources ("meal" /
+   "drink" first exercised) atomically. **Slice 3 — item condition** (§26.7):
+   wear + cleanliness meters on the §25 kernel under an item-scoped registry,
+   worn-window cleanliness drift, use-deltas, `item_condition_threshold_due`.
+   Original slice charter: §26 over
    the Gate 1/2 item lane: every material object has one holding locus (held / worn in
    slot / inside container / at zone / consumed-destroyed-lost); typed containers with
    capacity and access; ownership distinct from holding; exclusive reservations wired

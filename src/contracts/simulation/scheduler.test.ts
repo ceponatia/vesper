@@ -12,7 +12,7 @@ const command = {
   branchId: "branch_1",
   expectedVersion: 0,
   type: "transfer_item" as const,
-  schemaVersion: 1 as const,
+  schemaVersion: 2 as const,
   principal: {
     kind: "system" as const,
     principalId: "principal_scheduler",
@@ -24,8 +24,8 @@ const command = {
   payload: {
     actorId: "actor_1",
     itemId: "item_1",
-    fromContainerId: "container_a",
-    toContainerId: "container_b",
+    fromLocus: { kind: "held" as const, actorId: "actor_1" },
+    toLocus: { kind: "zone" as const, zoneId: "zone_b" },
   },
 };
 

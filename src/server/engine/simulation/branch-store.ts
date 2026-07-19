@@ -10,12 +10,8 @@ import {
   type BranchForkResult,
   type SimulationBranchEvent,
 } from "@/contracts/simulation/branching";
-import { composeSimulationId, worldBranchIdSchema } from "@/contracts/simulation/identity";
-import {
-  itemTransferObservationSchema,
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+import { worldBranchIdSchema } from "@/contracts/simulation/identity";
+import { materialsProjectionSchema, type MaterialsProjection } from "@/contracts/simulation/materials";
 import {
   itemTransferFeedConsumerKind,
   itemTransferFeedProjectionSchemaVersion,
@@ -46,6 +42,7 @@ import {
   replaySoftCanonHistory,
   replaySpaceHistory,
   simulationHash,
+  sortMaterialsProjection,
   spaceSeedForReplay,
   type BranchAncestryNode,
   type BranchEventRange,
@@ -65,7 +62,6 @@ import {
   simEngagements,
   simTemporalPressures,
   simEvents,
-  simHoldingContainers,
   simItemHoldings,
   simItems,
   simSnapshots,
@@ -78,6 +74,7 @@ import { bodyConditionRowInsert, bodyMeterRowInsert, bodyModifierRowInsert } fro
 import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";
 import { insertReplayedKnowledge } from "./knowledge-recorder";
+import { holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-store";
 import { insertReplayedObservations } from "./observation-store";
 import { insertReplayedSoftCanon } from "./soft-canon-recorder";
 import {
@@ -205,16 +202,10 @@ export async function readBranchAncestryEvents(
 }
 
 export interface DurableBranchState {
-  projection: ItemTransferProjection;
+  projection: MaterialsProjection;
   /** The branch's full logical event stream, ancestry-bounded, ordered. */
   events: SimulationBranchEvent[];
   ancestry: BranchAncestry;
-}
-
-function compareStableId(left: { id: string }, right: { id: string }): number {
-  if (left.id < right.id) return -1;
-  if (left.id > right.id) return 1;
-  return 0;
 }
 
 /** Assemble the live typed projection and event stream inside a caller's transaction. */
@@ -224,7 +215,7 @@ export async function assembleBranchState(
 ): Promise<DurableBranchState> {
   const branch = ancestry.rows[0];
   if (!branch) throw new Error("Simulation branch not found");
-  const [worldRows, actorRows, containerRows, itemRows, events] = await Promise.all([
+  const [worldRows, actorRows, itemRows, events] = await Promise.all([
     tx
       .select({ rulesetVersion: simWorlds.rulesetVersion })
       .from(simWorlds)
@@ -236,15 +227,19 @@ export async function assembleBranchState(
       .where(eq(simCharacters.branchId, branch.id))
       .orderBy(asc(simCharacters.characterId)),
     tx
-      .select()
-      .from(simHoldingContainers)
-      .where(eq(simHoldingContainers.branchId, branch.id))
-      .orderBy(asc(simHoldingContainers.holdingContainerId)),
-    tx
       .select({
         itemId: simItems.itemId,
         name: simItems.name,
-        holdingContainerId: simItemHoldings.holdingContainerId,
+        materialKindKey: simItems.materialKindKey,
+        ownerActorId: simItems.ownerActorId,
+        containerCapacityCount: simItems.containerCapacityCount,
+        containerAccess: simItems.containerAccess,
+        locusKind: simItemHoldings.locusKind,
+        locusActorId: simItemHoldings.actorId,
+        slotKey: simItemHoldings.slotKey,
+        containerItemId: simItemHoldings.containerItemId,
+        zoneId: simItemHoldings.zoneId,
+        goneBasis: simItemHoldings.goneBasis,
       })
       .from(simItems)
       .innerJoin(
@@ -259,49 +254,31 @@ export async function assembleBranchState(
   const world = worldRows[0];
   if (!world) throw new Error("Simulation world not found");
 
-  const observations = events.flatMap((event) =>
-    event.type !== "item_transferred"
-      ? []
-      : event.payload.observerActorIds.map((witnessActorId) =>
-          itemTransferObservationSchema.parse({
-            id: composeSimulationId("observation", [event.id, witnessActorId]),
-            sourceEventId: event.id,
-            witnessActorId,
-            sequence: event.sequence,
-            storySecond: event.storySecond,
-            itemId: event.payload.itemId,
-            fromContainerId: event.payload.fromContainerId,
-            toContainerId: event.payload.toContainerId,
-            derivationVersion: "gate1-perception-v1",
-          }),
-        ),
-  );
-
-  const projection = itemTransferProjectionSchema.parse({
+  const projection = materialsProjectionSchema.parse({
     worldId: branch.worldId,
     branchId: branch.id,
     rulesetVersion: world.rulesetVersion,
     version: branch.version,
     headSequence: branch.headSequence,
     storySecond: branch.storySecond,
-    actors: actorRows.map((row) => ({
-      id: row.characterId,
-      name: row.name,
-      observedContainerIds: row.observedContainerIds,
-    })),
-    containers: containerRows.map((row) => ({
-      id: row.holdingContainerId,
-      kind: row.kind,
-      name: row.name,
-      capacity: row.capacity,
-      accessibleToActorIds: row.accessibleToActorIds,
-    })),
+    actors: actorRows.map((row) => ({ id: row.characterId, name: row.name })),
     items: itemRows.map((row) => ({
       id: row.itemId,
       name: row.name,
-      holdingContainerId: row.holdingContainerId,
+      ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
+      ownerActorId: row.ownerActorId,
+      ...(row.containerCapacityCount !== null && row.containerAccess !== null
+        ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
+        : {}),
+      locus: itemLocusFromHoldingRow({
+        locusKind: row.locusKind,
+        actorId: row.locusActorId,
+        slotKey: row.slotKey,
+        containerItemId: row.containerItemId,
+        zoneId: row.zoneId,
+        goneBasis: row.goneBasis,
+      }),
     })),
-    observations,
   });
 
   return { projection, events, ancestry };
@@ -330,24 +307,25 @@ export async function readDurableBranchState(
 export function seedProjectionForReplay(input: {
   branchId: string;
   state: DurableBranchState;
-}): ItemTransferProjection {
+}): MaterialsProjection {
   const { projection } = input.state;
-  const currentHoldings = new Map(projection.items.map((item) => [item.id, item.holdingContainerId]));
+  const currentHoldings = new Map(projection.items.map((item) => [item.id, item.locus]));
   const seedHoldings = itemHoldingsAtSequence(currentHoldings, input.state.events, 0);
-  return itemTransferProjectionSchema.parse({
-    worldId: projection.worldId,
-    branchId: input.branchId,
-    rulesetVersion: projection.rulesetVersion,
-    version: 0,
-    headSequence: 0,
-    storySecond: input.state.ancestry.rootOriginStorySecond,
-    actors: [...projection.actors].sort(compareStableId),
-    containers: [...projection.containers].sort(compareStableId),
-    items: [...projection.items]
-      .map((item) => ({ ...item, holdingContainerId: seedHoldings.get(item.id) ?? item.holdingContainerId }))
-      .sort(compareStableId),
-    observations: [],
-  });
+  return sortMaterialsProjection(
+    materialsProjectionSchema.parse({
+      worldId: projection.worldId,
+      branchId: input.branchId,
+      rulesetVersion: projection.rulesetVersion,
+      version: 0,
+      headSequence: 0,
+      storySecond: input.state.ancestry.rootOriginStorySecond,
+      actors: projection.actors,
+      items: projection.items.map((item) => ({
+        ...item,
+        locus: seedHoldings.get(item.id) ?? item.locus,
+      })),
+    }),
+  );
 }
 
 export interface ForkBranchOptions {
@@ -406,7 +384,7 @@ export async function forkBranch(
     const seed = seedProjectionForReplay({ branchId: input.childBranchId, state: parentState });
     const replay = replayBranchHistory({ seed, events: inherited, chainBranchIds });
     const forkStorySecond = boundaryBefore?.storySecond ?? ancestry.rootOriginStorySecond;
-    const childProjection = itemTransferProjectionSchema.parse({
+    const childProjection = materialsProjectionSchema.parse({
       ...replay.projection,
       storySecond: forkStorySecond,
     });
@@ -431,10 +409,19 @@ export async function forkBranch(
 
     // Materialize the child's typed projections from the replayed state. The
     // statics are the (non-evented) seed copies; placements and their
-    // last-changed sequences come from the replay, not the parent's rows.
+    // last-touched sequences come from the replay, not the parent's rows. A
+    // touch is any material event naming the item — a placement move
+    // (transfer/destroy) or an ownership reassignment — so `updatedSequence`
+    // always reflects the most recent thing replay knows about the item.
     const lastPlacedSequence = new Map<string, number>();
     for (const event of inherited) {
-      if (event.type === "item_transferred") lastPlacedSequence.set(event.payload.itemId, event.sequence);
+      if (
+        event.type === "item_transferred" ||
+        event.type === "item_destroyed" ||
+        event.type === "item_ownership_set"
+      ) {
+        lastPlacedSequence.set(event.payload.itemId, event.sequence);
+      }
     }
     if (childProjection.actors.length > 0) {
       await tx.insert(simCharacters).values(
@@ -442,19 +429,6 @@ export async function forkBranch(
           branchId: input.childBranchId,
           characterId: actor.id,
           name: actor.name,
-          observedContainerIds: actor.observedContainerIds,
-        })),
-      );
-    }
-    if (childProjection.containers.length > 0) {
-      await tx.insert(simHoldingContainers).values(
-        childProjection.containers.map((container) => ({
-          branchId: input.childBranchId,
-          holdingContainerId: container.id,
-          kind: container.kind,
-          name: container.name,
-          capacity: container.capacity,
-          accessibleToActorIds: container.accessibleToActorIds,
         })),
       );
     }
@@ -464,13 +438,17 @@ export async function forkBranch(
           branchId: input.childBranchId,
           itemId: item.id,
           name: item.name,
+          materialKindKey: item.materialKindKey ?? null,
+          ownerActorId: item.ownerActorId,
+          containerCapacityCount: item.container?.capacityCount ?? null,
+          containerAccess: item.container?.access ?? null,
         })),
       );
       await tx.insert(simItemHoldings).values(
         childProjection.items.map((item) => ({
           branchId: input.childBranchId,
           itemId: item.id,
-          holdingContainerId: item.holdingContainerId,
+          ...holdingRowFieldsForLocus(item.locus),
           updatedSequence: lastPlacedSequence.get(item.id) ?? 0,
         })),
       );

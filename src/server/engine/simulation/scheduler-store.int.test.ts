@@ -1,20 +1,21 @@
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
-  itemTransferProjectionSchema,
+  materialBranchSeedSchema,
   transferItemCommandSchema,
-  type ItemTransferProjection,
+  type MaterialBranchSeed,
   type TransferItemCommand,
-} from "@/contracts/simulation/item-transfer";
+} from "@/contracts/simulation/materials";
 import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
 import { newId } from "@/lib/ids";
 import { db, simBranches, simEvents, simTriggers, simWorlds } from "@/server/db";
-import { seedDurableItemTransferBranch, submitDurableItemTransfer } from "./item-transfer-store";
+import { seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
 import {
   advanceBranchStoryTime,
   resolveNextDueTrigger,
   scheduleDurableTrigger,
 } from "./scheduler-store";
+import { seedDurableSpaceTopology } from "./space-store";
 
 const SEED_STORY_SECOND = 57_600;
 
@@ -52,70 +53,74 @@ interface CaseIds {
   worldId: string;
   branchId: string;
   actorId: string;
+  locationId: string;
+  zoneId: string;
   sourceId: string;
   destinationId: string;
   itemIds: string[];
 }
 
 function makeIds(itemCount = 1, worldId = newId()): CaseIds {
+  const branchId = newId();
   return {
     worldId,
-    branchId: newId(),
+    branchId,
     actorId: newId(),
+    locationId: `${worldId}-loc-cafe`,
+    zoneId: `${branchId}-zone-hall`,
     sourceId: newId(),
     destinationId: newId(),
     itemIds: Array.from({ length: itemCount }, () => newId()),
   };
 }
 
-function compareStableId(left: { id: string }, right: { id: string }): number {
-  if (left.id < right.id) return -1;
-  if (left.id > right.id) return 1;
-  return 0;
-}
-
-function projection(ids: CaseIds): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: CaseIds): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "e2-4-test-world",
+    worldSeed: "0011223344556677",
     branchId: ids.branchId,
     rulesetVersion: "e2-4-test-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_STORY_SECOND,
-    actors: [
-      { id: ids.actorId, name: "Mara", observedContainerIds: [ids.sourceId, ids.destinationId].sort() },
-    ],
-    containers: [
+    originStorySecond: SEED_STORY_SECOND,
+    actors: [{ id: ids.actorId, name: "Mara" }],
+    items: [
       {
         id: ids.sourceId,
-        kind: "container",
         name: "Mara's bag",
-        capacity: 8,
-        accessibleToActorIds: [ids.actorId],
+        container: { capacityCount: 8, access: { kind: "holder_only" } },
+        locus: { kind: "held", actorId: ids.actorId },
       },
       {
         id: ids.destinationId,
-        kind: "location",
         name: "the cafe table",
-        capacity: 8,
-        accessibleToActorIds: [ids.actorId],
+        container: { capacityCount: 8, access: { kind: "holder_only" } },
+        locus: { kind: "held", actorId: ids.actorId },
       },
-    ].sort(compareStableId),
-    items: ids.itemIds
-      .map((id, index) => ({
+      ...ids.itemIds.map((id, index) => ({
         id,
         name: index === 0 ? "gold ring" : `test item ${index + 1}`,
-        holdingContainerId: ids.sourceId,
-      }))
-      .sort(compareStableId),
-    observations: [],
+        locus: { kind: "container" as const, containerItemId: ids.sourceId },
+      })),
+    ],
   });
+}
+
+function topologySeed(ids: CaseIds) {
+  return {
+    branchId: ids.branchId,
+    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "cafe", defaultAccessPolicy: "public" as const }],
+    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "hall", privacyPolicy: "public" as const }],
+    links: [],
+    loci: [
+      { kind: "at" as const, actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_STORY_SECOND },
+    ],
+  };
 }
 
 function command(
   ids: CaseIds,
   itemId = ids.itemIds[0]!,
-  overrides: Partial<{ branchId: string; itemId: string; toContainerId: string; expectedVersion: number }> = {},
+  overrides: Partial<{ branchId: string; expectedVersion: number }> = {},
 ): TransferItemCommand {
   return transferItemCommandSchema.parse({
     id: newId(),
@@ -125,23 +130,21 @@ function command(
     principal: { kind: "system", principalId: newId(), controlledActorIds: [ids.actorId] },
     submittedAtWallClock: "2026-07-17T16:00:00.000Z",
     type: "transfer_item",
-    schemaVersion: 1,
+    schemaVersion: 2,
     correlationId: newId(),
     payload: {
       actorId: ids.actorId,
       itemId,
-      fromContainerId: ids.sourceId,
-      toContainerId: overrides.toContainerId ?? ids.destinationId,
+      fromLocus: { kind: "container", containerItemId: ids.sourceId },
+      toLocus: { kind: "container", containerItemId: ids.destinationId },
     },
   });
 }
 
 async function seedCase(ids: CaseIds): Promise<void> {
   if (!seededWorldIds.includes(ids.worldId)) seededWorldIds.push(ids.worldId);
-  await seedDurableItemTransferBranch(projection(ids), {
-    worldTypeId: "e2-4-test-world",
-    worldSeed: "0011223344556677",
-  });
+  await seedDurableMaterialBranch(branchSeed(ids));
+  await seedDurableSpaceTopology(topologySeed(ids));
 }
 
 function scheduleAt(ids: CaseIds, dueStorySecond: number, uniquenessKey: string, itemIndex = 0) {
@@ -241,7 +244,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
 
     // The schedule command advanced the branch to version 1 (its
     // trigger_scheduled event is a committed part of history).
-    const player = await submitDurableItemTransfer(command(ids, ids.itemIds[1]!, { expectedVersion: 1 }));
+    const player = await submitDurableTransferItem(command(ids, ids.itemIds[1]!, { expectedVersion: 1 }));
     expect(player.status).toBe("accepted");
 
     const resolved = await resolveNextDueTrigger(ids.branchId, { workerId: "worker_a" });

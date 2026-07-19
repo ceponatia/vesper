@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, gt, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { itemTransferredEventSchema } from "@/contracts/simulation/item-transfer";
 import {
+  itemMaterialFeedEventKinds,
   itemTransferFeedConsumerKind,
   itemTransferFeedProjectionSchemaVersion,
   itemTransferOutboxPayloadSchema,
   outboxRetryDelaySeconds,
-  projectItemTransferredFeedRow,
+  projectMaterialFeedRow,
 } from "@/contracts/simulation/outbox";
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
@@ -67,8 +67,13 @@ function safeDiagnostic(error: unknown, claimed: ClaimedOutboxObligation): strin
   return `outbox=${claimed.id} branch=${claimed.branchId} sequence=${claimed.firstSequence} event=${claimed.sourceEventId} attempt=${claimed.attempts} ${name}: ${message}`.slice(0, 500);
 }
 
-function eventFromRow(row: typeof simEvents.$inferSelect) {
-  return itemTransferredEventSchema.parse({
+/**
+ * A raw event envelope shape for `projectMaterialFeedRow` to parse — it
+ * discriminates on `type` between `item_transferred` and `item_destroyed`
+ * itself, so this builder does not pick a schema up front.
+ */
+function eventFromRow(row: typeof simEvents.$inferSelect): unknown {
+  return {
     id: row.id,
     worldId: row.worldId,
     branchId: row.branchId,
@@ -86,7 +91,7 @@ function eventFromRow(row: typeof simEvents.$inferSelect) {
     ...(row.locationId ? { locationId: row.locationId } : {}),
     recordedAtWallClock: row.recordedAt.toISOString(),
     payload: row.payload,
-  });
+  };
 }
 
 /**
@@ -226,7 +231,7 @@ export async function consumeNextItemTransferOutbox(
         .where(and(eq(simEvents.id, work.sourceEventId), eq(simEvents.branchId, work.branchId)))
         .limit(1);
       if (!eventRow) throw new Error("Referenced committed simulation event is missing");
-      const feedRow = projectItemTransferredFeedRow(eventFromRow(eventRow));
+      const feedRow = projectMaterialFeedRow(eventFromRow(eventRow));
       if (
         feedRow.sourceSequence !== work.firstSequence ||
         feedRow.sourceSequence !== work.lastSequence
@@ -246,18 +251,18 @@ export async function consumeNextItemTransferOutbox(
         .limit(1)
         .for("update");
       const throughSequence = checkpoint?.throughSequence ?? 0;
-      // Contiguity is defined over item-transfer obligations, not raw branch
-      // sequences: other event families (e.g. trigger_scheduled) advance the
-      // branch without creating feed work, so the guard asks whether an
-      // earlier transfer event exists that has not been applied yet — never
-      // whether the sequence numbers are dense.
+      // Contiguity is defined over material-feed obligations (item_transferred
+      // AND item_destroyed — §26.4), not raw branch sequences: other event
+      // families (e.g. trigger_scheduled) advance the branch without creating
+      // feed work, so the guard asks whether an earlier material event exists
+      // that has not been applied yet — never whether sequence numbers are dense.
       const [missing] = await tx
         .select({ sequence: simEvents.sequence })
         .from(simEvents)
         .where(
           and(
             eq(simEvents.branchId, work.branchId),
-            eq(simEvents.type, "item_transferred"),
+            inArray(simEvents.type, itemMaterialFeedEventKinds),
             gt(simEvents.sequence, throughSequence),
             lt(simEvents.sequence, feedRow.sourceSequence),
           ),
@@ -343,8 +348,9 @@ function projectionHash(rows: Array<typeof simItemTransferFeed.$inferSelect>): s
     storySecond: row.storySecond,
     actorId: row.actorId,
     itemId: row.itemId,
-    fromContainerId: row.fromContainerId,
-    toContainerId: row.toContainerId,
+    eventKind: row.eventKind,
+    fromLocus: row.fromLocus,
+    toLocus: row.toLocus,
     projectionSchemaVersion: row.projectionSchemaVersion,
   }));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
@@ -374,9 +380,9 @@ export async function rebuildItemTransferFeed(
     const events = await tx
       .select()
       .from(simEvents)
-      .where(and(eq(simEvents.branchId, branchId), eq(simEvents.type, "item_transferred")))
+      .where(and(eq(simEvents.branchId, branchId), inArray(simEvents.type, itemMaterialFeedEventKinds)))
       .orderBy(asc(simEvents.sequence));
-    const projected = events.map((event) => projectItemTransferredFeedRow(eventFromRow(event)));
+    const projected = events.map((event) => projectMaterialFeedRow(eventFromRow(event)));
     if (projected.length > 0) await tx.insert(simItemTransferFeed).values(projected);
     // A fork child's obligations start after the fork point — inherited events
     // were delivered on ancestors — so its rebuilt checkpoint bases there.

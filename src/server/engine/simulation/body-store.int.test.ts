@@ -1,9 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  itemTransferProjectionSchema,
-  type ItemTransferProjection,
-} from "@/contracts/simulation/item-transfer";
+import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import {
   db,
@@ -31,7 +28,7 @@ import {
   submitDurableStartActivity,
 } from "./activity-store";
 import { forkBranch } from "./branch-store";
-import { seedDurableItemTransferBranch } from "./item-transfer-store";
+import { seedDurableMaterialBranch } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
 
@@ -80,21 +77,19 @@ interface BodyCase {
   zoneId: string;
 }
 
-function branchProjection(ids: BodyCase): ItemTransferProjection {
-  return itemTransferProjectionSchema.parse({
+function branchSeed(ids: BodyCase): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
     worldId: ids.worldId,
+    worldTypeId: "e5-1-tests",
+    worldSeed: `seed-${ids.worldId}`,
     branchId: ids.branchId,
     rulesetVersion: "e5-1-test-v1",
-    version: 0,
-    headSequence: 0,
-    storySecond: SEED_SECOND,
+    originStorySecond: SEED_SECOND,
     actors: [
-      { id: ids.actorId, name: "Mara", observedContainerIds: [] },
-      { id: ids.witnessId, name: "Iris", observedContainerIds: [] },
+      { id: ids.actorId, name: "Mara" },
+      { id: ids.witnessId, name: "Iris" },
     ],
-    containers: [],
     items: [],
-    observations: [],
   });
 }
 
@@ -109,10 +104,7 @@ async function seedBodyCase(): Promise<BodyCase> {
     zoneId: `${branchId}-zone-room`,
   };
   const locHome = `${worldId}-loc-home`;
-  await seedDurableItemTransferBranch(branchProjection(ids), {
-    worldTypeId: "e5-1-tests",
-    worldSeed: `seed-${worldId}`,
-  });
+  await seedDurableMaterialBranch(branchSeed(ids));
   await seedDurableSpaceTopology({
     branchId,
     locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "public" }],

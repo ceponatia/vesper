@@ -31,22 +31,21 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   escalation — normative wording [engine.spec.md](engine.spec.md) §39). Build order
   E5.1–E5.6 authored: body substrate + modifier engine → chat-parity meters &
   perception-gated reads → material life → households/means/money-at-LOD → the social
-  ledger & consent → the deterministic exit corpus. **E5.1 shipped 2026-07-19**
-  (meters/conditions/modifiers + analytic integration + threshold alarms, migration
-  0067, `test:engine-e5-1`); **E5.2 slice 1 shipped 2026-07-19** (rhythm rows +
-  circadian pressure reproducing the chat spec's verified table, the bidirectional
-  energy read, sleep suspend/credit coupling, §25.5 wash window-crossing folded into
-  integration and the alarm solver — migration 0068, `test:engine-e5-2`); **E5.2
-  complete 2026-07-19** with slice 2a (arousal → intimacy pulse + closed visible-sign
-  registry gated by perception tier, climax `reset_to_baseline` + self-expiring
-  afterglow, exertion → hygiene coupling, `bodilyReads` in the cut-v3 NarrativeCut —
-  raw meters structurally absent) and slice 2b (collapse at the saturated read floor:
-  wake-armed alarm, drain-fired witnessed collapse interrupting activities and
-  scenes, forced sleep through ordinary machinery, and `resume_activity` with the
-  attempt-versioned completion re-arm — the carried E3.4 note landed). **E5.3
-  (material life) is next.** This is where current-chat body learning migrates
-  behind the successor contracts — the meter-economy and body-needs plans in Next
-  port through here later.
+  ledger & consent → the deterministic exit corpus. **E5.1 and E5.2 (all three
+  slices) shipped 2026-07-19** — see Shipped below. **E5.3 (material life) is
+  active — slice 1 (the honest material lane, §26.1–26.4) shipped 2026-07-19**:
+  typed holding loci (held / worn / container / zone / gone) replacing the Gate 1
+  pseudo-container stand-ins, containers-as-items with capacity + fail-closed
+  access, ownership distinct from holding (`againstOwnership` as social fact), the
+  §26.4 transfer law, the lane migrated onto the shared command shell + live §22
+  cut + §20 perception, migrations 0069/0070, `test:engine-e5-3`. Remaining:
+  slice 2 — exclusive reservations wired into the carried E3.2
+  action-resource-cost leftover + consumption events feeding E5.1 body sources
+  (§26.5–26.6); slice 3 — wear/cleanliness as item condition through the same
+  modifier machinery (§26.7).
+  This is where current-chat body learning migrates behind the successor
+  contracts — the meter-economy and body-needs plans in Next port through here
+  later.
 
 ## Next (queued)
 
@@ -142,6 +141,42 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine chat-parity meters & perception-gated reads (E5.2, slices 1 + 2a + 2b)** —
+  [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
+  [engine.spec.md](engine.spec.md) §25 — 2026-07-19 — the ruling-15 meter set on the
+  E5.1 substrate, semantics per [chat-meter-economy.spec.md](chat-meter-economy.spec.md).
+  Slice 1: authored `sim_body_rhythms` (migration 0068), circadian pressure as a pure
+  clock function reproducing the chat spec's verified 7am/11pm table (the −1 floor
+  lands at ~40h emergently), the signed saturating bidirectional energy read, sleep
+  suspend + wake `sleep_credit` both ways, and §25.5 wash window-crossings folded
+  into the piecewise integration and the alarm solver (no per-day tick anywhere).
+  Slice 2a: arousal regraded to the OQ2 intimacy pulse (quiescent→cresting +
+  afterglow, never "low arousal"), the CLOSED visible-sign registry gated by
+  perception tier, climax `reset_to_baseline` + self-expiring afterglow, exertion →
+  hygiene coupling, and `bodilyReads` in the cut-v3 NarrativeCut — raw meters
+  structurally absent. Slice 2b: collapse at the saturated read floor — the
+  wake-armed `body_collapse_due` alarm, drain-fired witnessed collapse interrupting
+  every claim-holding activity and open scene, forced sleep through the ordinary
+  condition machinery, and `resume_activity` with the attempt-versioned completion
+  re-arm (the carried E3.4 note landed). 23 pure + 4 int cases across the slices;
+  CI runs `test:engine-e5-2` (2 813 pure + 381 int green). Next: **E5.3**.
+- **World-engine body substrate (E5.1) — GATE 5 OPENED** —
+  [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
+  [engine.spec.md](engine.spec.md) §25 — 2026-07-19 — Gate 5 opened with both
+  rulings resolved same-day (15: full chat parity; 16: ledger-gated fail-closed
+  consent) and its first slice shipped: the §25.1–25.3 meter-agnostic machinery — a
+  versioned `BodyMeterDefinition` registry (reserve/load/valence/rate/phase classes,
+  analytic linear + half-life drift laws in fixed-point units, thresholds as
+  registry data, the ruling-15 energy/hygiene/arousal entries),
+  `sim_body_meters`/`sim_body_conditions`/`sim_body_modifiers` (migration 0067)
+  under the one §25.3 modifier contract, and a pure kernel integrating analytically
+  and piecewise across modifier boundaries with queries never persisting (partition
+  invariance by construction; deterministic fixed-point exp2, thresholds solved by
+  per-piece binary search so the scheduled second and fire-time evaluation cannot
+  disagree). Two new trigger kinds arm through the E2.4 scheduler (the deferred
+  analytical-rate integration landed); six body commands; interoception vs witnessed
+  perception per ruling; fork/replay parity end-to-end. 19 pure + 5 int cases; CI
+  runs `test:engine-e5-1` (2 790 pure + 377 int green). Next: **E5.2**.
 - **World-engine Gate 4 exit corpus (E4.5) — GATE 4 CLOSED** —
   [engine.plan.md](engine.plan.md) §"Gate 4 exit" + §"Gate 4 build order" — 2026-07-19 —
   four deterministic scenarios, zero model calls (`test:engine-e4-5`; 2 771 pure +

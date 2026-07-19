@@ -30,7 +30,7 @@ import {
   worldIdSchema,
 } from "@/contracts/simulation/identity";
 import { completeActivityCommandSchema } from "@/contracts/simulation/activities";
-import { transferItemCommandSchema } from "@/contracts/simulation/item-transfer";
+import { transferItemCommandSchema } from "@/contracts/simulation/materials";
 import { arriveJourneyCommandSchema } from "@/contracts/simulation/space";
 import { db, simBranches, simCommands, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { submitDurableCompleteActivity } from "./activity-store";
@@ -43,7 +43,7 @@ import {
   submitDurableRaisePressure,
   submitDurableResolveCommitmentDeadline,
 } from "./commitment-store";
-import { submitDurableItemTransfer } from "./item-transfer-store";
+import { submitDurableTransferItem } from "./material-store";
 import { submitDurableJourneyArrival } from "./space-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
@@ -531,12 +531,12 @@ export async function resolveNextDueTrigger(
     };
     // The trigger's idempotency key is permanent, so an optimistic conflict
     // would be stored under it and replayed by every retry. See the option's
-    // contract in item-transfer-store.
+    // contract in material-store.
     const dispatchOptions = { database, admitAtLockedVersion: true };
     const dispatch = () => {
       switch (trigger.kind) {
         case scheduledTransferTriggerKind:
-          return submitDurableItemTransfer(dispatchEnvelope, dispatchOptions);
+          return submitDurableTransferItem(dispatchEnvelope, dispatchOptions);
         case journeyArrivalTriggerKind:
           return submitDurableJourneyArrival(dispatchEnvelope, dispatchOptions);
         case activityCompletionTriggerKind:
