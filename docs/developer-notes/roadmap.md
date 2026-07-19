@@ -23,14 +23,7 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Mobile UX pass — clock visibility, privacy mode, touch/overflow defects** —
-  [mobile-ux.plan.md](mobile-ux.plan.md) (**started 2026-07-19**, `mobile-ux`
-  branch). Story-clock anchor editor moves to Scenario setup with a calendar-grid
-  weekday picker + an always-visible weekday-first time chip on phones; desktop
-  privacy mode (portrait/scene imagery hidden, initial-monogram avatars);
-  autosave for the location + social-card editors; and the audited
-  touch-target/overflow defect list (chat header stack, SaveBar-under-tab-bar,
-  Dialog height cap, `size="sm"` tap floor, bubble overflow).
+_(nothing — pull the next entry from Next)_
 
 ## Next (queued)
 
@@ -100,6 +93,14 @@ production-build perf pass §5), observer / god-mode POV, monorepo split (perman
 deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
+
+- **Mobile UX pass — clock visibility, privacy mode, touch/overflow defects** —
+  [mobile-ux.plan.md](mobile-ux.plan.md) — 2026-07-19 — story-clock anchor editor
+  into Scenario setup on a calendar-grid weekday picker (+ desktop typed-date
+  field), weekday-first ambient time chip, privacy mode (monogram avatars, hidden
+  scene imagery), autosave for location/social-card editors, Dialog height cap,
+  SaveBar over the tab bar, and the audited touch/overflow defect list; PR #17,
+  verified live on Fly v92.
 
 - **Persona library — the player as a first-class library entity** —
   [persona-library.plan.md](persona-library.plan.md) — 2026-07-16 — the player graduates
