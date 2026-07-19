@@ -278,6 +278,24 @@ describe("E4.3 compileNarrativeCut", () => {
     expect(second).toEqual(first);
   });
 
+  it("embeds bodily reads actor-sorted and defaults them empty (E5.2)", () => {
+    expect(compile().bodilyReads).toEqual({ observed: [] });
+    const cut = compile({
+      bodilyReads: {
+        self: { energySignedFixedPoint: 3_450, energyBand: "steady", intimacyPhase: "quiescent" },
+        observed: [
+          { actorId: "zoe", signs: ["flushed_skin"] },
+          { actorId: "mara", signs: ["visible_fatigue"] },
+        ],
+      },
+    });
+    expect(cut.bodilyReads.self?.energyBand).toBe("steady");
+    expect(cut.bodilyReads.observed.map((entry) => entry.actorId)).toEqual(["mara", "zoe"]);
+    // Reads change the semantic hash — a rerender with different body state
+    // is a different cut, never a silent drift.
+    expect(cut.semanticHash).not.toBe(compile().semanticHash);
+  });
+
   it("routes observed soft transitions into allowedTransitions, never mustEnact", () => {
     const events = [departureEvent(5), windingDownEvent(6)];
     const cut = compile({ events, viewpointObservations: deriveCommandObservations(events, fixtureSpace()) });

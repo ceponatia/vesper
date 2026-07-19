@@ -24,6 +24,12 @@ import {
   zoneIdSchema,
 } from "./identity";
 import { activityPhaseSchema } from "./activities";
+import {
+  METER_FIXED_POINT_ONE,
+  energyReadBandSchema,
+  intimacyPhaseSchema,
+  visibleBodySignSchema,
+} from "./bodies";
 import { pressureSeveritySchema } from "./commitments";
 import {
   claimedValueSchema,
@@ -57,7 +63,7 @@ import {
  * effects expire with their cut.
  */
 
-export const CUT_COMPILER_VERSION = "cut-v2" as const;
+export const CUT_COMPILER_VERSION = "cut-v3" as const;
 
 /** The ruled §23.3 speech-act vocabulary — closed; physical outcomes cannot ride it. */
 export const speechActTypes = [
@@ -286,6 +292,44 @@ export const creativeLicenseSchema = z
 
 export type CreativeLicense = z.infer<typeof creativeLicenseSchema>;
 
+/**
+ * E5.2 — the §25.1 layer-3 body surface inside the cut. The viewpoint gets
+ * their OWN reads (interoception: the signed energy axis and the intimacy
+ * pulse); everyone else appears only as the closed visible-sign vocabulary a
+ * witness could actually perceive. Raw meters structurally cannot enter a
+ * cut — this schema has no field for them.
+ */
+export const cutBodilyReadsSchema = z
+  .object({
+    /** Absent when the viewpoint has no initialized body. */
+    self: z
+      .object({
+        energySignedFixedPoint: z
+          .number()
+          .int()
+          .min(-METER_FIXED_POINT_ONE)
+          .max(METER_FIXED_POINT_ONE),
+        energyBand: energyReadBandSchema,
+        intimacyPhase: intimacyPhaseSchema,
+      })
+      .strict()
+      .optional(),
+    /** Co-present actors with at least one perceivable sign, actor-sorted. */
+    observed: z
+      .array(
+        z
+          .object({
+            actorId: worldCharacterIdSchema,
+            signs: z.array(visibleBodySignSchema).min(1).max(8),
+          })
+          .strict(),
+      )
+      .max(16),
+  })
+  .strict();
+
+export type CutBodilyReads = z.infer<typeof cutBodilyReadsSchema>;
+
 /** Per-field provenance: which persisted records justify each cut field. */
 export const provenanceRefKinds = [
   "event",
@@ -349,6 +393,8 @@ export const narrativeCutSchema = z
     failurePresentations: z.array(publicFailurePresentationSchema),
     creativeLicenses: z.array(creativeLicenseSchema),
     armedEffects: z.array(armedEffectSchema),
+    /** Defaulted so cuts persisted before cut-v3 still parse (§22.3). */
+    bodilyReads: cutBodilyReadsSchema.default({ observed: [] }),
     provenance: z.array(provenanceRefSchema),
   })
   .strict()

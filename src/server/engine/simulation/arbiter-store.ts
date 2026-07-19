@@ -49,6 +49,7 @@ import {
   type Db,
 } from "@/server/db";
 import { activityFromRow } from "./activity-store";
+import { computeEngagementBodilyReads } from "./body-store";
 import {
   advanceLockedBranch,
   appendSimulationEvent,
@@ -397,6 +398,28 @@ export async function prepareEngagementTurn(
     .orderBy(desc(simBeliefs.believedFrom), asc(simBeliefs.beliefId))
     .limit(MAX_BELIEF_ROWS);
   const softCanon = await loadSoftCanonProjection(branchId, { database });
+  // E5.2: the layer-3 body surface — the viewpoint's own reads plus the
+  // perceivable signs of everyone sharing their zone. Empty for worlds with
+  // no initialized bodies, so pre-Gate-5 scenarios compile identical cuts.
+  const viewpointLocus = space.loci.find((locus) => locus.actorId === input.viewpointActorId);
+  const viewpointZoneId =
+    viewpointLocus && viewpointLocus.kind === "at" ? viewpointLocus.zoneId : undefined;
+  const coPresentActorIds = space.loci
+    .filter(
+      (locus) =>
+        locus.kind === "at" &&
+        viewpointZoneId !== undefined &&
+        locus.zoneId === viewpointZoneId &&
+        locus.actorId !== input.viewpointActorId,
+    )
+    .map((locus) => locus.actorId)
+    .sort();
+  const bodilyReads = await computeEngagementBodilyReads(database, {
+    branchId,
+    storySecond: after.storySecond,
+    viewpointActorId: input.viewpointActorId,
+    coPresentActorIds,
+  });
 
   const cut = compileNarrativeCut({
     branchVersion: after.version,
@@ -429,6 +452,7 @@ export async function prepareEngagementTurn(
     failurePresentations: input.failurePresentations ?? [],
     softCanonEntries: softCanon.entries,
     proposedArmedEffects: input.proposedArmedEffects ?? [],
+    bodilyReads,
   });
 
   // §22.3: the cut becomes an immutable, addressable row. Rerender and

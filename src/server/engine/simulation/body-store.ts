@@ -48,7 +48,14 @@ import {
   resolveInitializeActorBody,
   type MeterIntegrationView,
 } from "@/lib/simulation/bodies";
-import { deriveCircadianPressure, deriveEnergyRead, type EnergyRead } from "@/lib/simulation/body-reads";
+import {
+  deriveCircadianPressure,
+  deriveEnergyRead,
+  deriveIntimacyRead,
+  deriveVisibleBodySigns,
+  type EnergyRead,
+} from "@/lib/simulation/body-reads";
+import { cutBodilyReadsSchema, type CutBodilyReads } from "@/contracts/simulation/narrative";
 import {
   db,
   simBodyConditions,
@@ -68,6 +75,8 @@ import {
   type LockedBranchView,
 } from "./command-runner";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
+
+type DbExecutor = Db | SimTx;
 
 /**
  * E5.1 durable body authority. Meter rows persist only at MATERIAL boundaries
@@ -300,7 +309,7 @@ interface ActorBodyRows {
   rhythms: BodyRhythmRow[];
 }
 
-async function loadActorBody(tx: SimTx, branchId: string, actorId: string): Promise<ActorBodyRows> {
+async function loadActorBody(tx: DbExecutor, branchId: string, actorId: string): Promise<ActorBodyRows> {
   const [meterRows, conditionRows, modifierRows, rhythmRows] = await Promise.all([
     tx
       .select()
@@ -579,7 +588,14 @@ export async function submitDurableApplyBodySource(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
-      const meterView = meterViewOf(body, command.payload.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
+      const horizon = branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
+      const meterView = meterViewOf(body, command.payload.meterKey, horizon);
+      // §25.4 coupling inputs: the hygiene view for exertion-on-energy, and
+      // whether an afterglow already holds for climax-on-arousal.
+      const coupledHygiene =
+        command.payload.sourceKind === "exertion" && command.payload.meterKey === "energy"
+          ? meterViewOf(body, "hygiene", horizon)
+          : undefined;
       const resolution = resolveApplyBodySource(
         {
           worldId: branch.worldId,
@@ -591,12 +607,16 @@ export async function submitDurableApplyBodySource(
           ...(meterView ? { meter: meterView.state, definition: meterView.definition } : {}),
           modifiers: meterView?.modifiers ?? [],
           scheduledAdjustments: meterView?.scheduledAdjustments ?? [],
+          activeAfterglow: body.conditions.some(
+            (candidate) => candidate.status === "active" && candidate.key === "afterglow",
+          ),
+          ...(coupledHygiene ? { coupledHygiene } : {}),
         },
         command,
       );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
-      const [sourceEvent, ...triggers] = resolution.events;
+      const [sourceEvent, ...trailing] = resolution.events;
       await appendSimulationEvent(tx, sourceEvent);
       await retirePendingThresholdTriggers(
         tx,
@@ -606,11 +626,31 @@ export async function submitDurableApplyBodySource(
         command.payload.actorId,
         command.payload.meterKey,
       );
-      for (const trigger of triggers) {
-        await appendSimulationEvent(tx, trigger);
-        await applyTriggerScheduledEvent(tx, trigger, { branchId: branch.id, worldId: branch.worldId });
+      if (resolution.coupledMeter) {
+        await retirePendingThresholdTriggers(
+          tx,
+          branch,
+          command.id,
+          command.submittedAtWallClock,
+          command.payload.actorId,
+          resolution.coupledMeter.meterKey,
+        );
+      }
+      for (const event of trailing) {
+        await appendSimulationEvent(tx, event);
+        if (event.type === "trigger_scheduled") {
+          await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+        }
+      }
+      if (resolution.condition) {
+        await tx
+          .insert(simBodyConditions)
+          .values(bodyConditionRowInsert(branch.id, resolution.condition, sourceEvent.sequence));
       }
       await upsertMeterRow(tx, branch.id, resolution.meter, sourceEvent.sequence);
+      if (resolution.coupledMeter) {
+        await upsertMeterRow(tx, branch.id, resolution.coupledMeter, sourceEvent.sequence);
+      }
       const lastSequence = resolution.events[resolution.events.length - 1]?.sequence ?? sourceEvent.sequence;
       await advanceLockedBranch(tx, branch, lastSequence);
 
@@ -1108,4 +1148,86 @@ export async function readDurableBodyReads(
     });
   }
   return { branchId, storySecond: branch.storySecond, energy };
+}
+
+/**
+ * E5.2 — the cut's body surface (§22.1 `bodilyReads`): the viewpoint's own
+ * energy read and intimacy pulse, plus each co-present actor's perceivable
+ * signs at engaged-attention tier. Pure over loaded rows; empty when bodies
+ * are uninitialized, so pre-Gate-5 worlds compile identical cuts.
+ */
+export async function computeEngagementBodilyReads(
+  executor: DbExecutor,
+  input: {
+    branchId: string;
+    storySecond: number;
+    viewpointActorId: string;
+    coPresentActorIds: readonly string[];
+  },
+): Promise<CutBodilyReads> {
+  const actorIds = [...new Set([input.viewpointActorId, ...input.coPresentActorIds])];
+  const bodies = new Map(
+    await Promise.all(
+      actorIds.map(
+        async (actorId) => [actorId, await loadActorBody(executor, input.branchId, actorId)] as const,
+      ),
+    ),
+  );
+
+  const readOf = (actorId: string) => {
+    const body = bodies.get(actorId);
+    if (!body) return undefined;
+    const energyView = meterViewOf(body, "energy", input.storySecond);
+    if (!energyView) return undefined;
+    const reserveFixedPoint = integrateMeterValue(energyView, input.storySecond);
+    const lastSleepEndedAt = body.conditions
+      .filter(
+        (condition) =>
+          condition.key === "asleep" &&
+          condition.status === "ended" &&
+          condition.endedAtStorySecond !== undefined,
+      )
+      .reduce<number | undefined>(
+        (latest, condition) =>
+          latest === undefined || (condition.endedAtStorySecond ?? 0) > latest
+            ? condition.endedAtStorySecond
+            : latest,
+        undefined,
+      );
+    const pressureFixedPoint = deriveCircadianPressure({
+      atStorySecond: input.storySecond,
+      rhythmRows: body.rhythms,
+      ...(lastSleepEndedAt === undefined ? {} : { lastSleepEndedAtStorySecond: lastSleepEndedAt }),
+    });
+    const arousalView = meterViewOf(body, "arousal", input.storySecond);
+    return {
+      energyRead: deriveEnergyRead({ reserveFixedPoint, pressureFixedPoint }),
+      arousalFixedPoint: arousalView ? integrateMeterValue(arousalView, input.storySecond) : 0,
+      afterglowActive: body.conditions.some(
+        (condition) => condition.status === "active" && condition.key === "afterglow",
+      ),
+    };
+  };
+
+  const selfRead = readOf(input.viewpointActorId);
+  const observed: { actorId: string; signs: ReturnType<typeof deriveVisibleBodySigns> }[] = [];
+  for (const actorId of input.coPresentActorIds) {
+    if (actorId === input.viewpointActorId) continue;
+    const read = readOf(actorId);
+    if (!read) continue;
+    const signs = deriveVisibleBodySigns({ ...read, detailTier: 3 });
+    if (signs.length > 0) observed.push({ actorId, signs });
+  }
+  return cutBodilyReadsSchema.parse({
+    ...(selfRead === undefined
+      ? {}
+      : {
+          self: {
+            energySignedFixedPoint: selfRead.energyRead.signedFixedPoint,
+            energyBand: selfRead.energyRead.band,
+            intimacyPhase: deriveIntimacyRead(selfRead),
+          },
+        }),
+    observed,
+  });
 }

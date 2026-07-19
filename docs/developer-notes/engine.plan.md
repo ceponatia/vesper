@@ -684,7 +684,8 @@ the same day: ruling 15 (v1 body meters = **full chat parity**, with
 semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
 preconditions + a §19.3 policy escalation path**); normative wording in
 [engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
-below; **E5.1 and E5.2 slice 1 shipped 2026-07-19** — E5.2 slice 2 is next.
+below; **E5.1 and E5.2 slices 1 + 2a shipped 2026-07-19** — E5.2 slice 2b (collapse +
+interruption) is next.
 
 Rough effort: **15–35 developer-days**.
 
@@ -776,7 +777,7 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    command id (the E3.5 id-stacking lesson) so the threshold→condition→expiry
    derivation chain stays inside the compact-id cap. Next: **E5.2**.
 2. **E5.2 — chat-parity resolution and perception-gated reads (ruling 15).** Status:
-   **slice 1 shipped — 2026-07-19; slice 2 remains.** The ruled meter set on the E5.1
+   **slices 1 + 2a shipped — 2026-07-19; slice 2b (collapse + interruption) remains.** The ruled meter set on the E5.1
    substrate, semantics per [chat-meter-economy.spec.md](chat-meter-economy.spec.md).
    **Slice 1 (shipped)** — the OQ1/OQ3 core: authored `sim_body_rhythms` rows
    (migration 0068; sleep + wash windows in minutes-of-day, seeded like action
@@ -798,14 +799,29 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    exists anywhere). Conditions now record `endedAtStorySecond`, and
    `readDurableBodyReads` is the layer-3 store surface (reserve integrated purely +
    pressure + signed read, raw meters never leaving the seam). 12 new pure + 2 new
-   int cases; CI runs `test:engine-e5-2` (2 802 pure + 379 int green). **Slice 2
-   (remaining)**: arousal regrade to
-   body facts (graded signs gated on exposure/frame/proximity through the E4.1
-   perception vocabulary), climax reset + afterglow, the intimacy pulse read, wiring
-   reads into the NarrativeCut, exertion → hygiene/fatigue couplings, and collapse at
-   the saturated read floor as a threshold outcome that interrupts activities — which
-   lands the carried E3.4 resumed-activity completion re-arm (trigger uniqueness
-   versioned by attempt).
+   int cases; CI runs `test:engine-e5-2` (2 802 pure + 379 int green).
+   **Slice 2a (shipped — 2026-07-19)** — the intimate parity and the cut surface:
+   arousal regraded to the OQ2 physiological vocabulary (`deriveIntimacyRead` —
+   quiescent/kindled/flushed/wound-tight/cresting with afterglow as its own phase,
+   never "low arousal"); `deriveVisibleBodySigns` as the perception gate over a
+   CLOSED sign registry (tier ≤1 nothing, tier 2 skin/posture, tier 3 breath/focus —
+   contact- and exposure-gated signs have no vocabulary members at all until
+   G5.2 wear + G5.3 consent exist to gate them, so leaking them is structurally
+   impossible); the §25.4 couplings — climax (`reset_to_baseline`, a new source
+   operation) lands the actor on their per-actor baseline and installs a
+   self-expiring afterglow condition through the normal expiry machinery, and
+   exertion on energy drains hygiene at half the cost with its own causal record
+   and re-arm; and the §22.1 cut gains `bodilyReads` (compiler bumped to cut-v3,
+   field defaulted so pre-v3 rows parse): the viewpoint's OWN signed energy read +
+   intimacy phase, co-present actors only as visible signs, raw meters structurally
+   absent — computed by `computeEngagementBodilyReads` and wired into
+   `prepareEngagementTurn`, empty for worlds without initialized bodies so
+   pre-Gate-5 scenarios compile identical cuts. 5 new pure + 1 int case
+   (2 807 pure + 380 int green).
+   **Slice 2b (remaining)**: collapse at the saturated read floor as a durable
+   outcome that interrupts activities and engagements — landing the carried E3.4
+   resumed-activity completion re-arm (trigger uniqueness versioned by attempt) —
+   plus the read-floor alarm solved against the time-varying pressure curve.
 3. **E5.3 — material life: containers, ownership, wear, and consumption.** §26 over
    the Gate 1/2 item lane: every material object has one holding locus (held / worn in
    slot / inside container / at zone / consumed-destroyed-lost); typed containers with

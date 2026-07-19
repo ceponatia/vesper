@@ -378,8 +378,11 @@ describe("E5.1 resolvers and replay parity", () => {
     if (!resolution.ok) throw new Error(`unexpected rejection ${resolution.code}`);
     expect(resolution.meter.valueFixedPoint).toBe(9_500);
     expect(resolution.meter.lastIntegratedAtStorySecond).toBe(meta.storySecond);
-    const [sourceEvent, rearm] = resolution.events;
+    const [sourceEvent] = resolution.events;
     expect(sourceEvent.payload.derived.fromValueFixedPoint).toBe(9_000);
+    const rearm = resolution.events.find(
+      (event): event is TriggerScheduledEvent => event.type === "trigger_scheduled",
+    );
     // 9 500 → 2 500 at 150/h = 168 000s after the write.
     expect(rearm?.payload.dueStorySecond).toBe(meta.storySecond + 168_000);
     expect(rearm?.payload.uniquenessKey).toContain(String(sourceEvent.sequence));
@@ -607,6 +610,120 @@ describe("E5.1 resolvers and replay parity", () => {
     expect(folded.meters).toEqual(replayed.meters);
     expect(folded.conditions).toEqual(replayed.conditions);
     expect(folded.modifiers).toEqual(replayed.modifiers);
+  });
+});
+
+describe("E5.2 climax and exertion couplings (§25.4)", () => {
+  function arousalDefinition(): BodyMeterDefinition {
+    return bodyMeterDefinitionSchema.parse({
+      key: "arousal",
+      class: "load",
+      driftLaw: { kind: "linear", ratePerHourFixedPoint: 2_000, target: { kind: "baseline" } },
+      initialFixedPoint: 0,
+      baselineFixedPoint: 0,
+      thresholds: [],
+    });
+  }
+
+  it("resets arousal to its per-actor baseline and installs afterglow", () => {
+    const definition = arousalDefinition();
+    const state = meterState(definition, {
+      valueFixedPoint: 8_000,
+      baselineFixedPoint: 1_500,
+      lastIntegratedAtStorySecond: meta.storySecond,
+    });
+    const command = parseSource(
+      envelope("apply_body_source", {
+        actorId: ACTOR,
+        meterKey: "arousal",
+        sourceKind: "climax",
+        operation: { kind: "reset_to_baseline" },
+      }),
+    );
+    const resolution = resolveApplyBodySource(
+      {
+        ...meta,
+        bodyInitialized: true,
+        meter: state,
+        definition,
+        modifiers: [],
+        activeAfterglow: false,
+      },
+      command,
+    );
+    if (!resolution.ok) throw new Error(`unexpected rejection ${resolution.code}`);
+    expect(resolution.meter.valueFixedPoint).toBe(1_500);
+    expect(resolution.condition).toMatchObject({
+      key: "afterglow",
+      status: "active",
+      expiresAtStorySecond: meta.storySecond + 1_800,
+    });
+    expect(resolution.events.map((event) => event.type)).toEqual([
+      "body_source_applied",
+      "body_condition_applied",
+      "trigger_scheduled",
+    ]);
+
+    // A live afterglow suppresses a duplicate onset; the reset still lands.
+    const again = resolveApplyBodySource(
+      {
+        ...meta,
+        bodyInitialized: true,
+        meter: state,
+        definition,
+        modifiers: [],
+        activeAfterglow: true,
+      },
+      command,
+    );
+    if (!again.ok) throw new Error(`unexpected rejection ${again.code}`);
+    expect(again.condition).toBeUndefined();
+    expect(again.events.map((event) => event.type)).toEqual(["body_source_applied"]);
+  });
+
+  it("drains hygiene at half the energy cost of exertion, one causal record each", () => {
+    const energy = reserveDefinition();
+    const hygiene = linearDefinition();
+    const command = parseSource(
+      envelope("apply_body_source", {
+        actorId: ACTOR,
+        meterKey: "energy",
+        sourceKind: "exertion",
+        operation: { kind: "add", deltaFixedPoint: -1_000 },
+      }),
+    );
+    const resolution = resolveApplyBodySource(
+      {
+        ...meta,
+        bodyInitialized: true,
+        meter: meterState(energy, { lastIntegratedAtStorySecond: meta.storySecond }),
+        definition: energy,
+        modifiers: [],
+        coupledHygiene: {
+          definition: hygiene,
+          state: meterState(hygiene, { lastIntegratedAtStorySecond: meta.storySecond }),
+          modifiers: [],
+        },
+      },
+      command,
+    );
+    if (!resolution.ok) throw new Error(`unexpected rejection ${resolution.code}`);
+    expect(resolution.meter.valueFixedPoint).toBe(7_000);
+    expect(resolution.coupledMeter?.valueFixedPoint).toBe(8_500);
+    const hygieneEvent = resolution.events.find(
+      (event) => event.type === "body_source_applied" && event.payload.meterKey === "hygiene",
+    );
+    expect(hygieneEvent?.payload).toMatchObject({
+      sourceKind: "exertion",
+      operation: { kind: "add", deltaFixedPoint: -500 },
+      valueAfterFixedPoint: 8_500,
+    });
+    // The coupled meter's alarm re-solves against its post-drain trajectory.
+    const rearm = resolution.events.find(
+      (event): event is TriggerScheduledEvent =>
+        event.type === "trigger_scheduled" && event.payload.uniquenessKey.includes("grimy"),
+    );
+    expect(rearm).toBeDefined();
   });
 });
 

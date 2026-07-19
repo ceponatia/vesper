@@ -8,6 +8,7 @@ import {
   armedEffectSchema,
   CUT_COMPILER_VERSION,
   narrativeCutSchema,
+  type CutBodilyReads,
   type ForbiddenClaim,
   type NarrativeCut,
   type ProposedArmedEffect,
@@ -291,6 +292,12 @@ export interface CompileNarrativeCutInput {
   /** The branch's soft-canon entries; the compiler licenses the in-scope live ones. */
   softCanonEntries: readonly SoftCanonEntry[];
   proposedArmedEffects: readonly ProposedArmedEffect[];
+  /**
+   * E5.2 layer-3 body surface, computed by the caller from body rows: the
+   * viewpoint's own reads plus co-present actors' perceivable signs. Absent
+   * (or empty) when no participant has an initialized body.
+   */
+  bodilyReads?: CutBodilyReads;
 }
 
 /** Compile one immutable, perspective-safe §22.1 cut. Pure and rerenderable. */
@@ -531,6 +538,12 @@ export function compileNarrativeCut(input: CompileNarrativeCutInput): NarrativeC
     failurePresentations,
     creativeLicenses,
     armedEffects,
+    bodilyReads: {
+      ...(input.bodilyReads?.self === undefined ? {} : { self: input.bodilyReads.self }),
+      observed: [...(input.bodilyReads?.observed ?? [])].sort((left, right) =>
+        compareStableText(left.actorId, right.actorId),
+      ),
+    },
     provenance,
   };
 
