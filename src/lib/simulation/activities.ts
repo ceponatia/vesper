@@ -530,6 +530,7 @@ export function applyActivityEvent(
     case "zone_entered":
     case "storyteller_relocation":
     case "speech_act_delivered":
+    case "disclosure_made":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

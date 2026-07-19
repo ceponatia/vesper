@@ -33,12 +33,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   closes the gate, the live paired voice/chemistry eval rides the owner-gated spend list.
   Built in dependency order **E4.1 → E4.5**: typed Observations replacing the E3.5
   interim witness rule (**E4.1 — shipped 2026-07-18**, see Shipped),
-  assertions/beliefs/disclosure/gossip with provenance and supersedence (E4.2), the full
-  persisted NarrativeCut + narrator trust boundary + presentation auditor + ruled soft
-  canon (E4.3), eligibility-before-similarity RAG with memory docs linked to their
-  sources (E4.4), and the exit corpus — zero cross-viewpoint leaks, contradiction
-  handling, rerender-creates-nothing, retry-from-cut (E4.5).
-  **Current sub-target: E4.2.**
+  assertions/beliefs/disclosure/gossip with provenance and supersedence (**E4.2 —
+  shipped 2026-07-19**, see Shipped), the full persisted NarrativeCut + narrator trust
+  boundary + presentation auditor + ruled soft canon (E4.3),
+  eligibility-before-similarity RAG with memory docs linked to their sources (E4.4),
+  and the exit corpus — zero cross-viewpoint leaks, contradiction handling,
+  rerender-creates-nothing, retry-from-cut (E4.5).
+  **Current sub-target: E4.3.**
 
 ## Next (queued)
 
@@ -137,6 +138,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine assertions, beliefs & gossip (E4.2)** — [engine.plan.md](engine.plan.md)
+  §"Gate 4 build order" · contract [engine.spec.md](engine.spec.md) §21 — 2026-07-19 —
+  the §21 knowledge substrate: `sim_assertions` + `sim_beliefs` (migration 0064) as
+  derived ledgers with provenance and both status machines; the new `disclosure_made`
+  event (claim / relay / retraction with §6.4 captured derivation) and `make_disclosure`
+  command; listeners perceive content as the reserved `social`/`reported` class and the
+  belief fold keys off exactly that — speaker and muffled bystanders form no belief;
+  deterministic v1 gossip rules (hop decay, refresh-supersede, strictly-stronger flips
+  else doubted, cross-source conflicts contradict both, retraction rejects only for
+  those in earshot); fork replays the identical fold bit-for-bit; the E3.3 knowledge
+  gate gains fail-closed `asserted`/`believed` members; §21.3 ships as the derived
+  relationship-evidence read (persisted social ledger stays Gate 5). 13 pure + 5 int
+  cases; CI runs `test:engine-e4-2` (2 733 pure + 360 int green). Next: **E4.3**.
 - **World-engine perception & observation (E4.1)** — [engine.plan.md](engine.plan.md)
   §"Gate 4 build order" · contract [engine.spec.md](engine.spec.md) §20 — 2026-07-18 —
   the first Gate 4 slice, started the day Gate 3 closed (verdict: advance; rulings 14 +

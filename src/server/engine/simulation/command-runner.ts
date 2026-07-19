@@ -7,6 +7,7 @@ import type {
 import type { PrincipalKind } from "@/contracts/simulation/envelopes";
 import { branchVersionSchema } from "@/contracts/simulation/identity";
 import { db, simBranches, simCommands, simEvents, simWorlds, type Db } from "@/server/db";
+import { recordCommandKnowledge } from "./knowledge-recorder";
 import { recordCommandObservations } from "./observation-store";
 import type { SimTx } from "./trigger-projector";
 
@@ -144,9 +145,12 @@ export async function runSimulationCommand<
     }
 
     // E4.1: perception commits atomically with truth — derive who perceived
-    // this command's events against the post-command locus rows (§20).
+    // this command's events against the post-command locus rows (§20). Then
+    // E4.2: fold any disclosures through the knowledge ledgers against those
+    // fresh observation rows (§21) — order matters, beliefs rest on evidence.
     if (commandResult.status === "accepted") {
       await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
+      await recordCommandKnowledge(tx, { id: branch.id, headSequence: branch.headSequence });
     }
 
     await tx.insert(simCommands).values({

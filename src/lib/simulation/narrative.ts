@@ -134,6 +134,7 @@ function beatSummary(event: SimulationBranchEvent): string | null {
     case "item_transferred":
       return "An item visibly changed hands.";
     case "speech_act_delivered":
+    case "disclosure_made":
     case "trigger_scheduled":
     case "journey_planned":
     case "journey_delayed":

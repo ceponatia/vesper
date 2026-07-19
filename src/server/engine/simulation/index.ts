@@ -60,6 +60,17 @@ export {
   type DurableItemTransferSeedOptions,
 } from "./item-transfer-store";
 export {
+  holdsLiveBeliefInAssertion,
+  isLiveBeliefHeldBy,
+  submitDurableMakeDisclosure,
+  type KnowledgeStoreOptions,
+} from "./knowledge-store";
+export {
+  insertReplayedKnowledge,
+  loadKnowledgeProjection,
+  recordCommandKnowledge,
+} from "./knowledge-recorder";
+export {
   branchEventFromRow,
   hasObservationOfEvent,
   insertReplayedObservations,

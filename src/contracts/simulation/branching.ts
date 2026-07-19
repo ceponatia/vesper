@@ -49,6 +49,11 @@ import {
   type ConfirmNarratorResultCommand,
   type ConfirmNarratorResultCommandResult,
 } from "./narrative";
+import {
+  disclosureMadeEventSchema,
+  type MakeDisclosureCommand,
+  type MakeDisclosureCommandResult,
+} from "./knowledge";
 import { commandPrincipalSchema, principalKindSchema } from "./envelopes";
 import {
   branchHeadSequenceSchema,
@@ -123,6 +128,7 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   zoneEnteredEventSchema,
   storytellerRelocationEventSchema,
   speechActDeliveredEventSchema,
+  disclosureMadeEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -192,6 +198,16 @@ export function isEngagementEvent(event: SimulationBranchEvent): event is Simula
   return engagementEventTypes.has(event.type);
 }
 
+/** The knowledge family (E4.2). Replay treats these as knowledge-projection events. */
+const knowledgeEventTypeList = ["disclosure_made"] as const;
+export type KnowledgeEventType = (typeof knowledgeEventTypeList)[number];
+export type SimulationKnowledgeEvent = Extract<SimulationBranchEvent, { type: KnowledgeEventType }>;
+export const knowledgeEventTypes: ReadonlySet<string> = new Set(knowledgeEventTypeList);
+
+export function isKnowledgeEvent(event: SimulationBranchEvent): event is SimulationKnowledgeEvent {
+  return knowledgeEventTypes.has(event.type);
+}
+
 /** Access-family locus changes (E3.5): applied by the space projection. */
 const accessEventTypeList = ["zone_entered", "storyteller_relocation"] as const;
 export type AccessEventType = (typeof accessEventTypeList)[number];
@@ -218,7 +234,8 @@ export type SimulationCommandEnvelope =
   | EndEngagementCommand
   | AttemptEntryCommand
   | StorytellerRelocateActorCommand
-  | ConfirmNarratorResultCommand;
+  | ConfirmNarratorResultCommand
+  | MakeDisclosureCommand;
 export type SimulationCommandResultRecord =
   | ItemTransferCommandResult
   | ScheduleTriggerCommandResult
@@ -234,7 +251,8 @@ export type SimulationCommandResultRecord =
   | EndEngagementCommandResult
   | AttemptEntryCommandResult
   | StorytellerRelocateActorCommandResult
-  | ConfirmNarratorResultCommandResult;
+  | ConfirmNarratorResultCommandResult
+  | MakeDisclosureCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

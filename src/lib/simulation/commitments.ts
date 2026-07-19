@@ -320,11 +320,14 @@ export interface RaisePressureResolutionView extends CommitmentBranchMeta {
   originZoneId?: string;
   topology: SpaceTopology;
   /**
-   * E4.1: whether the actor holds a §20 observation of the commitment's
-   * `observed` knowledge-source event. Absent means not looked up — the gate
-   * fails closed (§3.3: a pressure is salient only if the actor can know).
+   * Whether the actor actually holds the commitment's non-authored knowledge
+   * source: a §20 observation of the named event (`observed`, E4.1), a live
+   * belief in the named assertion (`asserted`, E4.2), or the named belief row
+   * itself, live and their own (`believed`, E4.2). The store resolves the
+   * lookup per kind; absent means not looked up — the gate fails closed
+   * (§3.3: a pressure is salient only if the actor can know).
    */
-  observedKnowledgeHeld?: boolean;
+  knowledgeSourceHeld?: boolean;
 }
 
 interface RaiseRejection {
@@ -360,14 +363,17 @@ export function resolveRaisePressure(
   if (commitment.status !== "planned") {
     return raiseRejection("commitment_not_open", "That obligation is no longer awaiting notice.");
   }
-  // The knowledge gate (§15.1): authored setup is deemed known; an `observed`
-  // source requires the actor to hold a real E4.1 observation of the named
-  // event. E4.2's assertion/belief members tighten further, same shape.
+  // The knowledge gate (§15.1): authored setup is deemed known; every other
+  // source requires the actor to genuinely hold it — an E4.1 observation of
+  // the named event, or an E4.2 live belief in the named assertion or the
+  // named belief row. All of them fail closed.
   switch (commitment.knowledgeSource.kind) {
     case "authored":
       break;
     case "observed":
-      if (view.observedKnowledgeHeld !== true) {
+    case "asserted":
+    case "believed":
+      if (view.knowledgeSourceHeld !== true) {
         return raiseRejection("knowledge_unavailable", "They have no way to know about that obligation.");
       }
       break;
@@ -669,6 +675,7 @@ export function applyCommitmentEvent(
     case "zone_entered":
     case "storyteller_relocation":
     case "speech_act_delivered":
+    case "disclosure_made":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
   }

@@ -266,6 +266,71 @@ describe("E4.1 deriveEventObservations", () => {
     for (const observation of texts) expect(observation.channel).toBe("device");
   });
 
+  it("grades a disclosure: speaker direct, listeners social/reported, location-only overhearing", () => {
+    const confided = event({
+      type: "disclosure_made",
+      actorIds: ["mara", "player"],
+      locationId: "loc-cafe",
+      derivationVersion: "knowledge-v1",
+      payload: {
+        speakerActorId: "mara",
+        targetActorIds: ["player"],
+        content: {
+          kind: "claim",
+          propositionKey: "quitting_job",
+          subjectIds: ["mara"],
+          claimedValue: { quitting: true },
+        },
+        derived: {
+          assertionId: "assertion-1",
+          sourceConfidenceFixedPoint: 10_000,
+          learnedFromActorIds: ["mara"],
+        },
+      },
+    });
+    const observations = deriveEventObservations(confided, fixtureSpace());
+    expect(witnesses(observations)).toEqual(["iris", "mara", "player"]);
+    expect(observations.find((observation) => observation.witnessActorId === "mara")).toMatchObject({
+      channel: "embodied",
+      evidenceClass: "direct",
+    });
+    // The named listener holds the CONTENT — the reserved social/reported class.
+    expect(observations.find((observation) => observation.witnessActorId === "player")).toMatchObject({
+      channel: "social",
+      evidenceClass: "reported",
+      detailTier: 3,
+    });
+    // Iris hears talking through the wall, not the claim.
+    expect(observations.find((observation) => observation.witnessActorId === "iris")).toMatchObject({
+      channel: "sound",
+      evidenceClass: "sensory",
+      detailTier: 1,
+    });
+
+    const texted = event({
+      type: "disclosure_made",
+      actorIds: ["mara", "rook"],
+      derivationVersion: "knowledge-v1",
+      payload: {
+        speakerActorId: "mara",
+        targetActorIds: ["rook"],
+        content: { kind: "relay", assertionId: "assertion-1" },
+        derived: {
+          assertionId: "assertion-1",
+          sourceConfidenceFixedPoint: 9_000,
+          learnedFromActorIds: ["player", "mara"],
+        },
+      },
+    });
+    const texts = deriveEventObservations(texted, fixtureSpace());
+    expect(witnesses(texts)).toEqual(["mara", "rook"]);
+    expect(texts.find((observation) => observation.witnessActorId === "rook")).toMatchObject({
+      channel: "social",
+      evidenceClass: "reported",
+      detailTier: 2,
+    });
+  });
+
   it("gives storyteller relocation destination-zone glimpses only — no mechanism, no cross-zone sound", () => {
     const relocated = event({
       type: "storyteller_relocation",

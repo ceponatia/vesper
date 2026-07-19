@@ -512,15 +512,41 @@ long-lived `engine` branch.
    evidence classes are reserved vocabulary for E4.2 gossip; the legacy Gate-1
    observed-containers mechanism still feeds `ItemTransferObservation` for the Gate 1/2
    proofs — typed rows now derive alongside it, and folding it in is a later cleanup.
-2. **E4.2 — assertions, beliefs, disclosure, and gossip.** The §21 knowledge substrate:
-   `sim_assertions` + `sim_beliefs` (own migration) with provenance
-   (basis observations, learned-from actors), validity intervals, and the
-   contradiction/supersedence status machines; `DisclosureMade` as a causal event whose
-   listeners gain observations and belief updates, each gossip hop preserving provenance
-   through an explicit event; the E3.3 commitment knowledge source widens from its one
-   `authored` member to observation/assertion/belief members (the promised no-schema-change
-   tightening); the §21.3 relationship-evidence seam as typed evidence events + a derived
-   read (the full promises/favors/debts social ledger stays Gate 5).
+2. **E4.2 — assertions, beliefs, disclosure, and gossip.** Status: **shipped —
+   2026-07-19.** The §21 knowledge substrate: `sim_assertions` + `sim_beliefs`
+   (migration 0064) with provenance (basis observations, learned-from chains capped at
+   16 hops), validity intervals stored for E4.4, and both status machines
+   (assertion: active/contradicted/superseded/retracted; belief:
+   active/doubted/rejected/superseded) as exported transition tables. A new
+   `disclosure_made` causal event (family "knowledge", distinct from the narrator-lane
+   `speech_act_delivered` effectType — E4.3 bridges them) carries a typed content union
+   — original **claim**, **relay** (a gossip hop), **retraction** — plus a §6.4
+   captured-derivation block (assertion id, teller confidence at speaking time,
+   provenance chain), emitted by the new `make_disclosure` command (`knowledge-store`,
+   §11.1 shell; channel ruling: co-present only when speaker and every listener share a
+   location, else device and unoverhearable). Both ledgers are DERIVED like §20
+   observations: the shell's `recordCommandKnowledge` step (in `knowledge-recorder`,
+   split from the store so the shell imports acyclically) folds each disclosure through
+   the pure kernel (`lib/simulation/knowledge`) against the observation rows written
+   moments earlier, and `forkBranch` replays the identical fold — live and rebuilt rows
+   proven equal in the int suite. Perception ruling: named listeners receive content as
+   the reserved `social`/`reported` class (tier 3 co-present at 9 000, tier 2 remote at
+   8 500); the belief fold keys off exactly that class, so the speaker (direct) and
+   muffled bystanders (sensory) form no belief. v1 belief rules, coarse and tunable
+   under a bumped `knowledge-v1` derivation version: relays cost a flat 1 000; belief
+   confidence = min(how well heard, teller confidence − hop cost); re-hearing supersedes
+   and keeps the higher confidence; a contradicting claim flips a holder only with
+   strictly higher confidence, else enters doubted; cross-source conflicts contradict
+   BOTH assertions (neither presents as current truth), same-source changes supersede;
+   retraction rejects only the beliefs of listeners who heard it — everyone else keeps
+   believing; no self-beliefs (a liar asserts what they do not believe). The E3.3
+   knowledge gate widens with `asserted` (live belief in the named assertion) and
+   `believed` (the named row, live and the actor's own) members, all failing closed;
+   §21.3 ships as the typed evidence seam — `deriveRelationshipEvidence` +
+   `summarizeRelationshipDyads` map speech acts, disclosures, and completed engagements
+   to dyadic evidence entries (the persisted promises/favors/debts ledger stays Gate 5).
+   13 pure + 5 integration cases; CI runs `test:engine-e4-2` (2 733 pure + 360 int
+   green).
 3. **E4.3 — NarrativeCut v2, narrator integration, and soft canon.** The full §22.1
    contract replacing the Gate 3 deterministic subset: `speakerBeliefs` (E4.2),
    `perceptibleNow` as evidence views (E4.1), `creativeLicenses`, and per-field
