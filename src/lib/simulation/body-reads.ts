@@ -4,6 +4,9 @@ import {
   SECONDS_PER_DAY,
   circadianCurveV1,
   type BodyRhythmRow,
+  type EnergyReadBand,
+  type IntimacyPhase,
+  type VisibleBodySign,
 } from "@/contracts/simulation/bodies";
 
 /**
@@ -131,21 +134,6 @@ export function deriveDeficitRead(reserveFixedPoint: number, pressureFixedPoint:
   );
 }
 
-/**
- * Read-owned vocabulary — energy joins mood as a meter with NO registry
- * thresholds (OQ1): the bands live here, in the read, never as numbers
- * stapled to behavior instructions.
- */
-export const energyReadBands = [
-  "bright",
-  "steady",
-  "winding_down",
-  "dragging",
-  "wrecked",
-  "collapsing",
-] as const;
-export type EnergyReadBand = (typeof energyReadBands)[number];
-
 export interface EnergyRead {
   signedFixedPoint: number;
   band: EnergyReadBand;
@@ -174,4 +162,58 @@ export function deriveEnergyRead(input: {
 /** Seconds-of-day helper shared by tests and stores: minute m on story day d. */
 export function storySecondAt(day: number, minuteOfDay: number): number {
   return day * SECONDS_PER_DAY + minuteOfDay * 60;
+}
+
+// ---------------------------------------------------------------------------
+// E5.2 slice 2 — the intimacy pulse and perception-gated signs (OQ2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The intimacy pulse: arousal graded to the physiological vocabulary, with
+ * an active afterglow condition overriding the whole scale — the settled
+ * body after climax is its own phase, not "low arousal".
+ */
+export function deriveIntimacyRead(input: {
+  arousalFixedPoint: number;
+  afterglowActive: boolean;
+}): IntimacyPhase {
+  if (input.afterglowActive) return "afterglow";
+  if (input.arousalFixedPoint >= 8_500) return "cresting";
+  if (input.arousalFixedPoint >= 6_500) return "wound_tight";
+  if (input.arousalFixedPoint >= 4_500) return "flushed";
+  if (input.arousalFixedPoint >= 2_000) return "kindled";
+  return "quiescent";
+}
+
+/**
+ * What a WITNESS could perceive at conversational range (OQ2's answer to
+ * "represented in narration"): facts, never mood instructions, gated on the
+ * E4.1 detail tier — a glimpse (tier ≤ 1) reads nothing, plain sight
+ * (tier 2) reads skin and posture, clear engaged attention (tier 3) also
+ * reads breath and focus. Contact- and exposure-gated signs have no
+ * vocabulary members yet by design (G5.2/G5.3 gate them when they exist).
+ */
+export function deriveVisibleBodySigns(input: {
+  energyRead: EnergyRead;
+  arousalFixedPoint: number;
+  afterglowActive: boolean;
+  detailTier: number;
+}): VisibleBodySign[] {
+  if (input.detailTier < 2) return [];
+  const signs: VisibleBodySign[] = [];
+  if (input.energyRead.band === "wrecked" || input.energyRead.band === "collapsing") {
+    signs.push("visible_exhaustion");
+  } else if (input.energyRead.band === "dragging") {
+    signs.push("visible_fatigue");
+  }
+  if (input.afterglowActive) {
+    signs.push("afterglow_softness");
+  } else {
+    if (input.arousalFixedPoint >= 4_500) signs.push("flushed_skin");
+    if (input.detailTier >= 3) {
+      if (input.arousalFixedPoint >= 6_500) signs.push("quickened_breath");
+      if (input.arousalFixedPoint >= 8_500) signs.push("taut_attention");
+    }
+  }
+  return signs;
 }

@@ -406,6 +406,64 @@ export interface ScheduledBodyAdjustment {
   operation: BodySourceOperation;
 }
 
+// --- Read vocabulary (engine.spec §25.1 layer 3; ruling 15 — E5.2) -----------
+
+/**
+ * Read-owned band vocabulary. Energy joins mood as a meter with NO registry
+ * thresholds (OQ1): the bands live in the read layer, never as numbers
+ * stapled to behavior instructions.
+ */
+export const energyReadBands = [
+  "bright",
+  "steady",
+  "winding_down",
+  "dragging",
+  "wrecked",
+  "collapsing",
+] as const;
+export const energyReadBandSchema = z.enum(energyReadBands);
+export type EnergyReadBand = z.infer<typeof energyReadBandSchema>;
+
+/**
+ * The intimacy pulse (OQ2): arousal graded to what the body is doing —
+ * pulse, breath, skin, focus — with no directive about diction, plus the
+ * afterglow phase the climax coupling installs.
+ */
+export const intimacyPhases = [
+  "quiescent",
+  "kindled",
+  "flushed",
+  "wound_tight",
+  "cresting",
+  "afterglow",
+] as const;
+export const intimacyPhaseSchema = z.enum(intimacyPhases);
+export type IntimacyPhase = z.infer<typeof intimacyPhaseSchema>;
+
+/**
+ * The closed registry of witness-visible body signs — facts a witness could
+ * perceive at conversational range, never mood instructions. The phrasing IS
+ * the feature: narrators receive these keys, not meters. Contact- and
+ * exposure-gated signs (swelling, wetness) are deliberately absent until the
+ * G5.2 wear/exposure model and the G5.3 consent ledger exist to gate them —
+ * the vocabulary having no such member is what makes leaking it impossible.
+ */
+export const visibleBodySigns = [
+  "visible_fatigue",
+  "visible_exhaustion",
+  "flushed_skin",
+  "quickened_breath",
+  "taut_attention",
+  "afterglow_softness",
+] as const;
+export const visibleBodySignSchema = z.enum(visibleBodySigns);
+export type VisibleBodySign = z.infer<typeof visibleBodySignSchema>;
+
+/** Chat parity: afterglow follows climax, self-expiring (a tunable knob). */
+export const AFTERGLOW_DURATION_SECONDS = 1_800 as const;
+/** §25.4 exertion coupling: hygiene drains at half the energy cost. */
+export const EXERTION_HYGIENE_FRACTION_FIXED_POINT = 5_000 as const;
+
 // --- Source vocabulary (engine.spec §25.1 layer 2) ---------------------------
 
 export const bodySourceKinds = [
@@ -423,6 +481,8 @@ export type BodySourceKind = z.infer<typeof bodySourceKindSchema>;
 export const bodySourceOperationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("add"), deltaFixedPoint: meterDeltaFixedPointSchema }).strict(),
   z.object({ kind: z.literal("set"), valueFixedPoint: meterFixedPointSchema }).strict(),
+  /** The climax reset (OQ2): land on the meter's per-actor baseline, whatever it is. */
+  z.object({ kind: z.literal("reset_to_baseline") }).strict(),
 ]);
 export type BodySourceOperation = z.infer<typeof bodySourceOperationSchema>;
 

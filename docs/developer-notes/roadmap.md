@@ -37,10 +37,14 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   circadian pressure reproducing the chat spec's verified table, the bidirectional
   energy read, sleep suspend/credit coupling, §25.5 wash window-crossing folded into
   integration and the alarm solver — migration 0068, `test:engine-e5-2`); **E5.2
-  slice 2 is next** (arousal signs, climax/afterglow, intimacy pulse, cut wiring,
-  collapse interrupting activities). This is where current-chat body learning
-  migrates behind the successor contracts — the meter-economy and body-needs plans in
-  Next port through here later.
+  slice 2a shipped 2026-07-19** (arousal → intimacy pulse + closed visible-sign
+  registry gated by perception tier, climax `reset_to_baseline` + self-expiring
+  afterglow, exertion → hygiene coupling, and `bodilyReads` in the cut-v3
+  NarrativeCut — viewpoint's own reads, others only as signs, raw meters
+  structurally absent); **E5.2 slice 2b is next** (collapse at the read floor
+  interrupting activities + the E3.4 resumed-activity re-arm). This is where
+  current-chat body learning migrates behind the successor contracts — the
+  meter-economy and body-needs plans in Next port through here later.
 
 ## Next (queued)
 

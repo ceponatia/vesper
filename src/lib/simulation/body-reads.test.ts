@@ -19,6 +19,8 @@ import {
   deriveCircadianPressure,
   deriveDeficitRead,
   deriveEnergyRead,
+  deriveIntimacyRead,
+  deriveVisibleBodySigns,
   resolveSleepWindow,
   storySecondAt,
 } from "./body-reads";
@@ -200,6 +202,44 @@ describe("E5.2 circadian pressure and the bidirectional energy read", () => {
     const withHistory = pressureAt(at, storySecondAt(12, 420));
     const assumed = deriveCircadianPressure({ atStorySecond: at, rhythmRows: [SLEEP_ROW] });
     expect(assumed).toBe(withHistory);
+  });
+});
+
+describe("E5.2 intimacy pulse and visible signs (OQ2)", () => {
+  it("grades arousal to the physiological vocabulary, afterglow overriding", () => {
+    expect(deriveIntimacyRead({ arousalFixedPoint: 500, afterglowActive: false })).toBe("quiescent");
+    expect(deriveIntimacyRead({ arousalFixedPoint: 3_000, afterglowActive: false })).toBe("kindled");
+    expect(deriveIntimacyRead({ arousalFixedPoint: 5_000, afterglowActive: false })).toBe("flushed");
+    expect(deriveIntimacyRead({ arousalFixedPoint: 7_000, afterglowActive: false })).toBe("wound_tight");
+    expect(deriveIntimacyRead({ arousalFixedPoint: 9_000, afterglowActive: false })).toBe("cresting");
+    // The settled body after climax is its own phase, not "low arousal".
+    expect(deriveIntimacyRead({ arousalFixedPoint: 500, afterglowActive: true })).toBe("afterglow");
+  });
+
+  it("gates signs by detail tier: glimpse nothing, sight skin, engagement breath", () => {
+    const wired = {
+      energyRead: deriveEnergyRead({ reserveFixedPoint: 2_000, pressureFixedPoint: 8_000 }),
+      arousalFixedPoint: 9_000,
+      afterglowActive: false,
+    };
+    expect(deriveVisibleBodySigns({ ...wired, detailTier: 1 })).toEqual([]);
+    expect(deriveVisibleBodySigns({ ...wired, detailTier: 2 })).toEqual([
+      "visible_exhaustion",
+      "flushed_skin",
+    ]);
+    expect(deriveVisibleBodySigns({ ...wired, detailTier: 3 })).toEqual([
+      "visible_exhaustion",
+      "flushed_skin",
+      "quickened_breath",
+      "taut_attention",
+    ]);
+    const afterglow = deriveVisibleBodySigns({
+      energyRead: deriveEnergyRead({ reserveFixedPoint: 8_000, pressureFixedPoint: 1_000 }),
+      arousalFixedPoint: 500,
+      afterglowActive: true,
+      detailTier: 3,
+    });
+    expect(afterglow).toEqual(["afterglow_softness"]);
   });
 });
 

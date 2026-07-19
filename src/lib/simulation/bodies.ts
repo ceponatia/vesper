@@ -40,8 +40,10 @@ import {
   type ResolveBodyThresholdCommand,
   type ResolveBodyThresholdRejectionCode,
   type ScheduledBodyAdjustment,
+  AFTERGLOW_DURATION_SECONDS,
   ENERGY_SLEEP_RESTORE_CAP_FIXED_POINT,
   ENERGY_SLEEP_RESTORE_PER_HOUR_FIXED_POINT,
+  EXERTION_HYGIENE_FRACTION_FIXED_POINT,
   SECONDS_PER_DAY,
   bodyModifierSpecSchema,
   rhythmSelfCareEffects,
@@ -251,10 +253,19 @@ function compareAdjustments(left: ScheduledBodyAdjustment, right: ScheduledBodyA
   );
 }
 
-function applyAdjustment(valueFixedPoint: number, adjustment: ScheduledBodyAdjustment): number {
-  return adjustment.operation.kind === "set"
-    ? adjustment.operation.valueFixedPoint
-    : clampMeter(valueFixedPoint + adjustment.operation.deltaFixedPoint);
+function applyAdjustment(
+  valueFixedPoint: number,
+  adjustment: ScheduledBodyAdjustment,
+  baselineFixedPoint: number,
+): number {
+  switch (adjustment.operation.kind) {
+    case "set":
+      return adjustment.operation.valueFixedPoint;
+    case "add":
+      return clampMeter(valueFixedPoint + adjustment.operation.deltaFixedPoint);
+    case "reset_to_baseline":
+      return baselineFixedPoint;
+  }
 }
 
 /** Adjustments falling in (from, to], in deterministic application order. */
@@ -305,7 +316,9 @@ export function integrateMeterValue(view: MeterIntegrationView, atStorySecond: n
     );
     value = driftStep(value, drift, boundary - cursor);
     for (const adjustment of adjustmentsBetween(view, cursor, boundary)) {
-      if (adjustment.atStorySecond === boundary) value = applyAdjustment(value, adjustment);
+      if (adjustment.atStorySecond === boundary) {
+        value = applyAdjustment(value, adjustment, view.state.baselineFixedPoint);
+      }
     }
     cursor = boundary;
   }
@@ -777,12 +790,38 @@ export interface BodyMeterResolutionView extends BodyBranchMeta {
   modifiers: readonly BodyModifier[];
   /** E5.2 rhythm self-care crossings through the solve horizon. */
   scheduledAdjustments?: readonly ScheduledBodyAdjustment[];
+  /** E5.2 climax coupling: a live afterglow suppresses a duplicate onset. */
+  activeAfterglow?: boolean;
+  /** E5.2 exertion coupling: the actor's hygiene view, when it exists. */
+  coupledHygiene?: MeterIntegrationView;
 }
 
 export interface ApplyBodySourceResolution {
   ok: true;
   meter: BodyMeterState;
-  events: [BodySourceAppliedEvent, ...TriggerScheduledEvent[]];
+  /** The exertion coupling's hygiene write, when it fired (§25.4). */
+  coupledMeter?: BodyMeterState;
+  /** The climax coupling's afterglow condition, when it fired (§25.4). */
+  condition?: BodyCondition;
+  events: [
+    BodySourceAppliedEvent,
+    ...(BodySourceAppliedEvent | BodyConditionAppliedEvent | TriggerScheduledEvent)[],
+  ];
+}
+
+function sourceValueAfter(
+  operation: ApplyBodySourceCommand["payload"]["operation"],
+  integrated: number,
+  baselineFixedPoint: number,
+): number {
+  switch (operation.kind) {
+    case "set":
+      return operation.valueFixedPoint;
+    case "add":
+      return clampMeter(integrated + operation.deltaFixedPoint);
+    case "reset_to_baseline":
+      return baselineFixedPoint;
+  }
 }
 
 export function resolveApplyBodySource(
@@ -808,10 +847,7 @@ export function resolveApplyBodySource(
   };
   const integrated = integrateMeterValue(meterView, view.storySecond);
   const operation = command.payload.operation;
-  const valueAfter =
-    operation.kind === "set"
-      ? operation.valueFixedPoint
-      : clampMeter(integrated + operation.deltaFixedPoint);
+  const valueAfter = sourceValueAfter(operation, integrated, view.meter.baselineFixedPoint);
 
   const event = bodySourceAppliedEventSchema.parse({
     ...eventEnvelope(view, command, view.headSequence + 1, "body-source"),
@@ -833,6 +869,109 @@ export function resolveApplyBodySource(
     valueFixedPoint: valueAfter,
     lastIntegratedAtStorySecond: view.storySecond,
   });
+
+  const trailing: (BodySourceAppliedEvent | BodyConditionAppliedEvent | TriggerScheduledEvent)[] = [];
+  let nextSequence = event.sequence + 1;
+  let coupledMeter: BodyMeterState | undefined;
+  let condition: BodyCondition | undefined;
+
+  // §25.4 exertion coupling: working the body also costs freshness — a
+  // deterministic hygiene drain at half the energy cost, one causal record.
+  if (
+    command.payload.sourceKind === "exertion" &&
+    command.payload.meterKey === "energy" &&
+    operation.kind === "add" &&
+    operation.deltaFixedPoint < 0 &&
+    view.coupledHygiene
+  ) {
+    const hygieneView = view.coupledHygiene;
+    const hygieneDrain = Math.floor(
+      (Math.abs(operation.deltaFixedPoint) * EXERTION_HYGIENE_FRACTION_FIXED_POINT) /
+        METER_FIXED_POINT_ONE,
+    );
+    if (hygieneDrain > 0) {
+      const hygieneIntegrated = integrateMeterValue(hygieneView, view.storySecond);
+      const hygieneAfter = clampMeter(hygieneIntegrated - hygieneDrain);
+      trailing.push(
+        bodySourceAppliedEventSchema.parse({
+          ...eventEnvelope(view, command, nextSequence, "body-source-hygiene"),
+          type: "body_source_applied",
+          causationId: event.id,
+          actorIds: [command.payload.actorId],
+          entityIds: [command.payload.actorId],
+          payload: {
+            actorId: command.payload.actorId,
+            meterKey: hygieneView.definition.key,
+            sourceKind: "exertion",
+            operation: { kind: "add", deltaFixedPoint: hygieneAfter - hygieneIntegrated },
+            valueAfterFixedPoint: hygieneAfter,
+            derived: capturedDerivation(hygieneView, view.storySecond),
+          },
+        }),
+      );
+      nextSequence += 1;
+      coupledMeter = bodyMeterStateSchema.parse({
+        ...hygieneView.state,
+        valueFixedPoint: hygieneAfter,
+        lastIntegratedAtStorySecond: view.storySecond,
+      });
+    }
+  }
+
+  // §25.4 climax coupling: the reset installs afterglow as a self-expiring
+  // condition — the settled body is a state the world tracks, not prose.
+  if (
+    command.payload.sourceKind === "climax" &&
+    command.payload.meterKey === "arousal" &&
+    view.activeAfterglow !== true
+  ) {
+    const conditionId = deriveBodyConditionId(view.branchId, command.id);
+    const expiresAt = view.storySecond + AFTERGLOW_DURATION_SECONDS;
+    const conditionEvent = bodyConditionAppliedEventSchema.parse({
+      ...eventEnvelope(view, command, nextSequence, "body-condition"),
+      type: "body_condition_applied",
+      causationId: event.id,
+      actorIds: [command.payload.actorId],
+      entityIds: [conditionId],
+      payload: {
+        actorId: command.payload.actorId,
+        conditionId,
+        conditionKey: "afterglow",
+        onsetAtStorySecond: view.storySecond,
+        expiresAtStorySecond: expiresAt,
+        observerActorIds: [],
+      },
+    });
+    trailing.push(conditionEvent);
+    nextSequence += 1;
+    condition = bodyConditionSchema.parse({
+      id: conditionId,
+      actorId: command.payload.actorId,
+      key: "afterglow",
+      onsetAtStorySecond: view.storySecond,
+      expiresAtStorySecond: expiresAt,
+      status: "active",
+      sourceEventId: conditionEvent.id,
+    });
+    trailing.push(
+      buildBodyTrigger({
+        view,
+        command,
+        sequence: nextSequence,
+        causationId: conditionEvent.id,
+        actorId: command.payload.actorId,
+        suffix: "arm-condition-expiry",
+        intent: {
+          kind: bodyConditionExpiryTriggerKind,
+          dueStorySecond: expiresAt,
+          uniquenessKey: bodyConditionExpiryUniquenessKey(conditionId),
+          payload: { actorId: command.payload.actorId, conditionId, basis: "expired" },
+        },
+      }),
+    );
+    nextSequence += 1;
+  }
+
   const rearm = rearmThresholdTrigger({
     view,
     command,
@@ -843,11 +982,38 @@ export function resolveApplyBodySource(
       modifiers: view.modifiers,
       scheduledAdjustments: view.scheduledAdjustments ?? [],
     },
-    sequence: view.headSequence + 2,
+    sequence: nextSequence,
     causationId: event.id,
     armedAtSequence: event.sequence,
   });
-  return { ok: true, meter: nextState, events: rearm ? [event, rearm] : [event] };
+  if (rearm) {
+    trailing.push(rearm);
+    nextSequence += 1;
+  }
+  if (coupledMeter && view.coupledHygiene) {
+    const hygieneRearm = rearmThresholdTrigger({
+      view,
+      command,
+      actorId: command.payload.actorId,
+      meterView: {
+        definition: view.coupledHygiene.definition,
+        state: coupledMeter,
+        modifiers: view.coupledHygiene.modifiers,
+        scheduledAdjustments: view.coupledHygiene.scheduledAdjustments ?? [],
+      },
+      sequence: nextSequence,
+      causationId: event.id,
+      armedAtSequence: event.sequence,
+    });
+    if (hygieneRearm) trailing.push(hygieneRearm);
+  }
+  return {
+    ok: true,
+    meter: nextState,
+    ...(coupledMeter === undefined ? {} : { coupledMeter }),
+    ...(condition === undefined ? {} : { condition }),
+    events: [event, ...trailing],
+  };
 }
 
 // ---------------------------------------------------------------------------

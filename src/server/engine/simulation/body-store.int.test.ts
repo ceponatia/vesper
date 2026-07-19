@@ -16,6 +16,7 @@ import {
   simWorlds,
 } from "@/server/db";
 import {
+  computeEngagementBodilyReads,
   readDurableBodies,
   readDurableBodyReads,
   seedDurableBodyRhythms,
@@ -377,6 +378,91 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
     expect(energy?.read.band).toBe("bright");
     expect(energy?.read.signedFixedPoint).toBeGreaterThan(7_500);
     expect(energy?.pressureFixedPoint).toBeGreaterThan(0);
+  });
+
+  it("couples climax to afterglow and surfaces perceivable signs in the engagement read", async () => {
+    const ids = await seedBodyCase();
+    await seedRhythms(ids);
+    await submitDurableInitializeActorBody(initializeCommand(ids));
+    const arouse = await submitDurableApplyBodySource({
+      id: `cmd-arouse-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 1,
+      idempotencyKey: `arouse-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:03:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "apply_body_source",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.actorId,
+        meterKey: "arousal",
+        sourceKind: "adjustment",
+        operation: { kind: "add", deltaFixedPoint: 7_000 },
+      },
+    });
+    expect(arouse.status).toBe("accepted");
+
+    // The witness sees graded surface signs at engaged attention — never a meter.
+    const before = await computeEngagementBodilyReads(db(), {
+      branchId: ids.branchId,
+      storySecond: SEED_SECOND,
+      viewpointActorId: ids.witnessId,
+      coPresentActorIds: [ids.actorId],
+    });
+    expect(before.self).toBeUndefined();
+    expect(before.observed).toEqual([
+      { actorId: ids.actorId, signs: ["flushed_skin", "quickened_breath"] },
+    ]);
+
+    const climax = await submitDurableApplyBodySource({
+      id: `cmd-climax-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 2,
+      idempotencyKey: `climax-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:04:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "apply_body_source",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.actorId,
+        meterKey: "arousal",
+        sourceKind: "climax",
+        operation: { kind: "reset_to_baseline" },
+      },
+    });
+    expect(climax.status).toBe("accepted");
+
+    const bodies = await readDurableBodies(ids.branchId);
+    expect(bodies.meters.find((meter) => meter.meterKey === "arousal")?.valueFixedPoint).toBe(0);
+    expect(bodies.conditions[0]).toMatchObject({
+      key: "afterglow",
+      status: "active",
+      expiresAtStorySecond: SEED_SECOND + 1_800,
+    });
+    const expiry = (await pendingBodyTriggers(ids.branchId)).find(
+      (trigger) => trigger.kind === "body_condition_expiry_due" && trigger.state === "pending",
+    );
+    expect(expiry?.dueStorySecond).toBe(SEED_SECOND + 1_800);
+
+    const after = await computeEngagementBodilyReads(db(), {
+      branchId: ids.branchId,
+      storySecond: SEED_SECOND,
+      viewpointActorId: ids.witnessId,
+      coPresentActorIds: [ids.actorId],
+    });
+    expect(after.observed).toEqual([{ actorId: ids.actorId, signs: ["afterglow_softness"] }]);
+
+    // The subject's own surface: settled pulse, bright afternoon energy.
+    const selfView = await computeEngagementBodilyReads(db(), {
+      branchId: ids.branchId,
+      storySecond: SEED_SECOND,
+      viewpointActorId: ids.actorId,
+      coPresentActorIds: [ids.witnessId],
+    });
+    expect(selfView.self?.intimacyPhase).toBe("afterglow");
+    expect(selfView.self?.energyBand).toBe("bright");
   });
 
   it("forks with bit-identical body rows and re-armed alarms on the child", async () => {
