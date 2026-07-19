@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hueOf, initialsOf } from "./monogram";
+import { firstInitialOf, hueOf, initialsOf } from "./monogram";
 
 describe("initialsOf", () => {
   it("uses first and last word initials", () => {
@@ -11,6 +11,18 @@ describe("initialsOf", () => {
   it("degrades on empty or whitespace names", () => {
     expect(initialsOf("")).toBe("?");
     expect(initialsOf("   ")).toBe("?");
+  });
+});
+
+describe("firstInitialOf", () => {
+  it("uses only the first letter", () => {
+    expect(firstInitialOf("Maya Quayle")).toBe("M");
+    expect(firstInitialOf("maya")).toBe("M");
+  });
+
+  it("degrades on empty or whitespace names", () => {
+    expect(firstInitialOf("")).toBe("?");
+    expect(firstInitialOf("   ")).toBe("?");
   });
 });
 

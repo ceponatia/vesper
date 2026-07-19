@@ -238,12 +238,16 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
                       </div>
                     ) : null}
                   </div>
-                  {/* `.hover-reveal` (globals.css): hover-gated on pointer devices, always shown on touch. */}
-                  <div className="hover-reveal relative flex shrink-0 items-center gap-0.5">
+                  {/* `.hover-reveal` (globals.css): hover-gated on pointer devices, always
+                      shown on touch. `.touch-target` gives each button a ≥44px coarse-pointer
+                      tap height and the gap widens on coarse too — these float over the
+                      card's whole-row navigation Link, so a slightly-off tap must still land
+                      on the intended action instead of navigating (mobile-ux W3 task 5). */}
+                  <div className="hover-reveal relative flex shrink-0 items-center gap-0.5 pointer-coarse:gap-2">
                     <button
                       type="button"
                       onClick={() => openRename(chat)}
-                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
+                      className="touch-target inline-flex cursor-pointer items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
                     >
                       Rename
                     </button>
@@ -251,14 +255,14 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
                       type="button"
                       disabled={actingId === chat.id}
                       onClick={() => void toggleArchive(chat)}
-                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200 disabled:cursor-not-allowed disabled:text-paper-600"
+                      className="touch-target inline-flex cursor-pointer items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200 disabled:cursor-not-allowed disabled:text-paper-600"
                     >
                       {archived ? "Restore" : "Archive"}
                     </button>
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(chat)}
-                      className="cursor-pointer rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
+                      className="touch-target inline-flex cursor-pointer items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
                     >
                       Delete…
                     </button>

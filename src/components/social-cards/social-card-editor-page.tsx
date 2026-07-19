@@ -6,6 +6,7 @@ import { severityToTier, type SocialReactionCardExtras } from "@/contracts";
 import { socialCardsApi } from "@/lib/client/api";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { useAutosave } from "@/components/hooks/use-autosave";
 import { LibraryBackLink } from "@/components/library/back-link";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { SocialCardFields } from "@/components/personality/social-card-fields";
@@ -76,19 +77,20 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
     setDirty(true);
   };
 
-  const save = async () => {
-    if (!form) return;
+  const save = async (opts: { silent?: boolean } = {}): Promise<boolean> => {
+    if (!form) return false;
     const gen = editGenRef.current;
     setSaving(true);
     const result = await socialCardsApi.update(cardId, form);
     setSaving(false);
     if (result.ok) {
       if (editGenRef.current === gen) setDirty(false);
-      toast.push({ title: "Card saved", tone: "success" });
+      if (!opts.silent) toast.push({ title: "Card saved", tone: "success" });
       detail.reload({ silent: true });
-    } else {
-      toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+      return true;
     }
+    toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+    return false;
   };
 
   const remove = async () => {
@@ -101,6 +103,17 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
       setConfirmDelete(false);
     }
   };
+
+  // Autosave (mobile-ux.plan.md ruling 5 — the social-card editor missed the
+  // slice-7 rollout): silent saves on change/blur. No forge/staged-draft state
+  // here, so there's nothing to pause it for.
+  const autosave = useAutosave({
+    enabled: true,
+    dirty,
+    saving,
+    save: () => save({ silent: true }),
+    signal: form,
+  });
 
   const clone = async () => {
     setCloning(true);
@@ -138,8 +151,8 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
     return (
       <PageContainer>
         <LibraryBackLink href="/social-cards" label="Social cards" />
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="prose-display text-2xl">{form.name || "Untitled card"}</h1>
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <h1 className="prose-display min-w-0 truncate text-2xl">{form.name || "Untitled card"}</h1>
           <Button busy={cloning} onClick={clone}>
             Clone to my library
           </Button>
@@ -165,12 +178,12 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
   return (
     <PageContainer>
       <LibraryBackLink href="/social-cards" label="Social cards" />
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="prose-display text-2xl">{form.name || "Untitled card"}</h1>
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <h1 className="prose-display min-w-0 truncate text-2xl">{form.name || "Untitled card"}</h1>
         {detail.data ? <PublishToggle kind="social_card" id={cardId} visibility={detail.data.visibility} /> : null}
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4" onBlur={autosave.onBlur}>
         <Field label="Name">
           {(id) => <Input id={id} value={form.name} onChange={(e) => patch({ name: e.target.value })} />}
         </Field>

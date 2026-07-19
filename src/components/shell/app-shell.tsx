@@ -39,6 +39,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const immersive = pathname.startsWith("/sessions/") || /^\/chat\/[^/]+/.test(pathname);
   const showBottomBar = navMode === "tabs" && !immersive;
 
+  // The conversation page renders its own header (back link, portrait, menu) — on
+  // phones the global header just stacks another ~52px of chrome on top of it
+  // (mobile-ux.plan.md W1). Desktop keeps the wordmark/account menu at every width,
+  // since there's room and the account menu has no other home.
+  const isChatConversation = /^\/chat\/[^/]+/.test(pathname);
+
   // The sign-in page stands alone — no nav chrome (you're not "in" the app yet).
   if (pathname === "/sign-in") return <>{children}</>;
 
@@ -47,7 +53,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* h-13 (3.25rem) on the header itself, border included (border-box): the
           play screen sizes itself with calc(100dvh - 3.25rem) and a 1px
           mismatch puts a scrollbar on the document. Do not let this height drift. */}
-      <header className="sticky top-0 z-40 h-13 border-b border-ink-600 bg-ink-900/90 backdrop-blur">
+      <header
+        className={cx(
+          "sticky top-0 z-40 h-13 border-b border-ink-600 bg-ink-900/90 backdrop-blur",
+          isChatConversation && "hidden md:block",
+        )}
+      >
         <div className="mx-auto flex h-full max-w-7xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
           {navMode === "drawer" ? <NavDrawer navMode={navMode} onNavModeChange={setNavMode} /> : null}
           <Link href="/" className="prose-display text-lg tracking-wide text-paper-50 italic">

@@ -15,7 +15,10 @@ export interface SaveBarProps {
 /** Sticky save bar with dirty-state indication for long editors (docs/ui.md). */
 export function SaveBar({ dirty, saving, onSave, saveLabel = "Save", secondary }: SaveBarProps) {
   return (
-    <div className="sticky bottom-0 z-30 -mx-1 mt-8 rounded-t-card border-t border-ink-600 bg-ink-900/95 px-4 py-3 backdrop-blur">
+    // Offset above the mobile bottom tab bar (bottom-tab-bar.tsx: fixed, h-14, `md:hidden`)
+    // so the bar is never hidden underneath it; the calc mirrors app-shell.tsx's own
+    // `pb-[calc(3.5rem+env(safe-area-inset-bottom))]` reservation for that same bar.
+    <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 -mx-1 mt-8 rounded-t-card border-t border-ink-600 bg-ink-900/95 px-4 py-3 backdrop-blur md:bottom-0">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">{secondary}</div>
         <div className="flex items-center gap-3">

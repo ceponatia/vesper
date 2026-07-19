@@ -167,7 +167,7 @@ export function WorldForgePage() {
 
       {forging && !draft ? (
         <div className="flex flex-col gap-4">
-          <Skeleton className="h-9 w-96" />
+          <Skeleton className="h-9 w-full max-w-96" />
           <SkeletonText lines={8} />
         </div>
       ) : null}

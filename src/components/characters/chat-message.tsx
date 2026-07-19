@@ -98,6 +98,7 @@ export function MessageBubble({
   onRemember,
   onMarkMoment,
   onEnlargeAvatar,
+  privacyMode,
 }: {
   line: ChatLine;
   name: string;
@@ -121,6 +122,9 @@ export function MessageBubble({
   onMarkMoment?: (id: string) => void;
   /** Tap/click the circular avatar to enlarge the portrait (the mobile path to a full-size view). Absent ⇒ plain image. */
   onEnlargeAvatar?: () => void;
+  /** Privacy mode (mobile-ux.plan.md ruling 4): render a first-initial monogram
+   *  instead of the avatar image, and make the avatar inert — no lightbox tap. */
+  privacyMode?: boolean;
 }) {
   const isUser = line.role === "user";
   const pending = !isUser && line.content === "" && streaming;
@@ -163,7 +167,16 @@ export function MessageBubble({
   return (
     <div className={`group flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       {!isUser ? (
-        onEnlargeAvatar ? (
+        privacyMode ? (
+          // Inert — no button, no lightbox tap (mobile-ux.plan.md ruling 4): the
+          // monogram itself carries the "hidden on purpose" signal.
+          <EntityImage
+            imageId={avatarImageId}
+            name={name}
+            privacy
+            className="mt-0.5 size-8 shrink-0 rounded-full text-xs"
+          />
+        ) : onEnlargeAvatar ? (
           <button
             type="button"
             onClick={onEnlargeAvatar}
@@ -177,14 +190,14 @@ export function MessageBubble({
           <EntityImage imageId={avatarImageId} name={name} className="mt-0.5 size-8 shrink-0 rounded-full text-xs" />
         )
       ) : null}
-      <div className={`flex max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`flex min-w-0 max-w-[80%] flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
         {editing ? (
           <div className="flex w-full min-w-64 flex-col gap-1.5">
             <Textarea
               rows={2}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              className="field-sizing-content max-h-[60vh] w-full text-sm"
+              className="w-full text-sm"
               autoFocus
             />
             <div className="flex justify-end gap-1.5">
@@ -199,7 +212,7 @@ export function MessageBubble({
         ) : (
           <>
             <div
-              className={`rounded-card px-3 py-2 text-sm whitespace-pre-wrap ${
+              className={`rounded-card px-3 py-2 text-sm break-words whitespace-pre-wrap ${
                 isUser
                   ? line.narrator
                     ? "border border-ink-500 bg-ink-750 text-paper-200"
@@ -271,22 +284,25 @@ export function MessageBubble({
                 ) : null}
                 {canModify || canRerun ? (
                   // `.hover-reveal` (globals.css): hover-gated on pointer devices,
-                  // always shown on touch — the only way these reach a phone. Padded
-                  // so each is a comfortable finger target, not an 11px glyph.
-                  <div className="hover-reveal flex items-center gap-1">
+                  // always shown on touch — the only way these reach a phone.
+                  // `.touch-target` gives each button a ≥44px coarse-pointer tap
+                  // height (was ~22px) and the gap widens on coarse too, so a
+                  // slightly-off tap on these primary recovery levers still lands
+                  // (mobile-ux W3 task 2).
+                  <div className="hover-reveal flex items-center gap-1 pointer-coarse:gap-2">
                     {canModify ? (
                       <>
                         <button
                           type="button"
                           onClick={startEdit}
-                          className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
+                          className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-paper-200"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => void onDelete(line.id)}
-                          className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
+                          className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-danger-400"
                         >
                           Delete
                         </button>
@@ -297,7 +313,7 @@ export function MessageBubble({
                         type="button"
                         onClick={() => onAnotherTake(line.id)}
                         title="Regenerate this reply — earlier takes stay browsable"
-                        className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
+                        className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
                       >
                         Another take
                       </button>
@@ -307,7 +323,7 @@ export function MessageBubble({
                         type="button"
                         onClick={() => onRemember(line.content)}
                         title={`Pin this as something ${name || "the character"} always remembers`}
-                        className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
+                        className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
                       >
                         Remember
                       </button>
@@ -317,7 +333,7 @@ export function MessageBubble({
                         type="button"
                         onClick={() => onMarkMoment(line.id)}
                         title="Mark this as a milestone in the relationship"
-                        className="rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
+                        className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-[11px] text-paper-500 hover:text-accent-300"
                       >
                         Mark moment
                       </button>
@@ -328,7 +344,7 @@ export function MessageBubble({
                         onClick={() => onRerun(line.id)}
                         aria-label="Rerun from here"
                         title="Re-send this message — replaces everything after it with a fresh reply"
-                        className="rounded px-2 py-1 text-paper-500 hover:text-accent-300"
+                        className="touch-target inline-flex items-center justify-center rounded px-2 py-1 text-paper-500 hover:text-accent-300"
                       >
                         <RerunIcon className="size-3.5" />
                       </button>
