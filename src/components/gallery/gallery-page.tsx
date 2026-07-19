@@ -516,16 +516,21 @@ export function GalleryPage() {
                           </span>
                         ) : (
                           <>
+                            {/* `.hover-reveal` (globals.css): hover-gated on pointer devices,
+                                always shown on touch — the raw opacity-0 + group-hover pair
+                                these used before never appeared on phones, so favoriting had
+                                no path there (mobile-ux W3 task 7). `.touch-target` widens the
+                                coarse-pointer tap height past the size-7 (28px) glyph box. The
+                                favorite heart stays unconditionally visible once set (it's a
+                                state marker, not just a reveal-on-hover action). */}
                             <button
                               type="button"
                               onClick={() => void toggleFavorite(image)}
                               aria-label={image.favorite ? "Unfavorite image" : "Favorite image"}
                               aria-pressed={image.favorite}
                               className={cx(
-                                "absolute top-1.5 left-1.5 flex size-7 cursor-pointer items-center justify-center rounded-md border bg-ink-900/80 backdrop-blur-sm transition-opacity",
-                                image.favorite
-                                  ? "border-accent-500/60 text-accent-300"
-                                  : "border-ink-600 text-paper-300 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100",
+                                "touch-target absolute top-1.5 left-1.5 flex size-7 cursor-pointer items-center justify-center rounded-md border bg-ink-900/80 backdrop-blur-sm transition-opacity",
+                                image.favorite ? "border-accent-500/60 text-accent-300" : "hover-reveal border-ink-600 text-paper-300",
                               )}
                             >
                               {image.favorite ? "♥" : "♡"}
@@ -534,7 +539,7 @@ export function GalleryPage() {
                               type="button"
                               onClick={() => setPendingDelete({ ids: [image.id], label: "this image" })}
                               aria-label="Delete image"
-                              className="absolute top-1.5 right-1.5 flex size-7 cursor-pointer items-center justify-center rounded-md border border-ink-600 bg-ink-900/80 text-paper-300 opacity-0 backdrop-blur-sm transition-opacity hover:border-danger-500 hover:text-danger-300 group-focus-within:opacity-100 group-hover:opacity-100"
+                              className="hover-reveal touch-target absolute top-1.5 right-1.5 flex size-7 cursor-pointer items-center justify-center rounded-md border border-ink-600 bg-ink-900/80 text-paper-300 backdrop-blur-sm transition-opacity hover:border-danger-500 hover:text-danger-300"
                             >
                               ✕
                             </button>

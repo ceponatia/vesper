@@ -40,7 +40,11 @@ export function SceneMomentRow({ images, name }: { images: ImageRecord[]; name: 
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   if (!images.length) return null;
   return (
-    <div className="ml-10 flex gap-2">
+    // overflow-x-auto (matching the sibling scene strip, chat-scene-strip.tsx):
+    // 3+ fixed-width thumbnails would otherwise overflow the transcript column
+    // with no wrap or scroll (mobile-ux W3 task 8). shrink-0 keeps each thumb
+    // at its full w-36 instead of the flex row squeezing them to fit.
+    <div className="ml-10 flex gap-2 overflow-x-auto pb-1">
       {images.map((img) => {
         const selfie = img.meta.flavor === "selfie";
         const failed = img.status === "failed";
@@ -51,7 +55,7 @@ export function SceneMomentRow({ images, name }: { images: ImageRecord[]; name: 
             onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
             aria-label={failed ? "Selfie failed — enlarge for details" : selfie ? `Photo from ${name}` : "Enlarge scene moment"}
             title={selfie ? `A photo from ${name}` : undefined}
-            className={`block w-36 cursor-pointer overflow-hidden border transition-colors hover:border-accent-500/60 ${
+            className={`block w-36 shrink-0 cursor-pointer overflow-hidden border transition-colors hover:border-accent-500/60 ${
               selfie ? "rounded-2xl border-accent-500/40" : "rounded-card border-ink-600"
             }`}
           >

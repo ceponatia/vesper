@@ -308,9 +308,9 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     const profile = detail.data.profile;
     return (
       <PageContainer>
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="prose-display text-2xl">{detail.data.name || "Untitled character"}</h1>
-          <div className="flex items-center gap-3">
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <h1 className="prose-display min-w-0 truncate text-2xl">{detail.data.name || "Untitled character"}</h1>
+          <div className="flex flex-wrap items-center gap-3">
             <Button onClick={() => router.push(`/chat?new=${characterId}`)}>Chat</Button>
             <Button variant="primary" busy={cloning} onClick={() => void clone()}>
               Duplicate to my library
@@ -339,9 +339,9 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
 
   return (
     <PageContainer>
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="prose-display text-2xl">{draft.name || "Untitled character"}</h1>
-        <div className="flex items-center gap-3">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <h1 className="prose-display min-w-0 truncate text-2xl">{draft.name || "Untitled character"}</h1>
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             onClick={() => void forgeFill()}
             busy={forging}

@@ -264,8 +264,8 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
     return (
       <PageContainer>
         <LibraryBackLink href="/items" label="Items" />
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="prose-display text-2xl">{form.name || "Untitled item"}</h1>
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <h1 className="prose-display min-w-0 truncate text-2xl">{form.name || "Untitled item"}</h1>
           <Button busy={cloning} onClick={() => void clone()}>
             Clone to my library
           </Button>
@@ -297,9 +297,9 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   return (
     <PageContainer>
       <LibraryBackLink href="/items" label="Items" />
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="prose-display text-2xl">{form.name || "Untitled item"}</h1>
-        <div className="flex items-center gap-3">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <h1 className="prose-display min-w-0 truncate text-2xl">{form.name || "Untitled item"}</h1>
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             onClick={() => void draftFromDescription()}
             busy={drafting}
