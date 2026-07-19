@@ -27,9 +27,10 @@ import {
 /**
  * How the evidence reached the witness. `embodied` is first-person
  * participation in a physical event; `device` is a remote channel (text,
- * voice, video); `social` is secondhand relay. `touch`/`smell`/`social` are
- * legal vocabulary ahead of their first deriver (E4.2 gossip uses `social`)
- * so adding them later is a rule change, not a contract change.
+ * voice, video); `social` is knowledge arriving through another person —
+ * E4.2 disclosures grade their listeners with it. `touch`/`smell` remain
+ * legal vocabulary ahead of their first deriver, so adding them later is a
+ * rule change, not a contract change.
  */
 export const observationChannels = [
   "embodied",
@@ -45,8 +46,9 @@ export type ObservationChannel = z.infer<typeof observationChannelSchema>;
 
 /**
  * What kind of evidence the witness holds. `direct` = party to the event;
- * `sensory` = perceived it happening; `reported`/`inferred` are E4.2's
- * assertion/belief members, reserved now so the vocabulary never migrates.
+ * `sensory` = perceived it happening; `reported` = received as testimony —
+ * the E4.2 belief fold forms beliefs from exactly this class; `inferred`
+ * stays reserved ahead of its first deriver.
  */
 export const observationEvidenceClasses = ["direct", "sensory", "reported", "inferred"] as const;
 export const observationEvidenceClassSchema = z.enum(observationEvidenceClasses);
