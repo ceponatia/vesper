@@ -434,12 +434,15 @@ for routine departures.
 
 ## Gate 4 — perception, knowledge, narration, and RAG
 
-Status: **ACTIVE — build started 2026-07-18** (Gate 3 closed with the owner's advance
-verdict the same day). Both Gate 4-blocking decisions were resolved by the owner on
-2026-07-18: ruling 14 (soft-canon promotion → safe documented auto-promotion; normative
-wording in [engine.spec.md](engine.spec.md) §39) and the exit scope (the deterministic
-corpus closes the gate; the live paired voice/chemistry eval rides the owner-gated spend
-list in [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs).
+Status: **CLOSED — 2026-07-19.** E4.1–E4.5 shipped in dependency order (2026-07-18/19,
+see §"Gate 4 build order") and the deterministic exit corpus ran green (4 scenarios,
+zero model calls, 2 771 pure + 372 integration tests) — which closes the gate per the
+owner's 2026-07-18 exit-scope ruling. The one non-deterministic criterion (the live
+paired voice/chemistry eval — the only human-in-the-loop check) is deferred to
+[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs and does not hold the
+verdict. Both Gate 4-blocking decisions were resolved by the owner on 2026-07-18:
+ruling 14 (soft-canon promotion → safe documented auto-promotion; normative wording in
+[engine.spec.md](engine.spec.md) §39) and that exit scope.
 
 Rough effort: **10–25 developer-days**.
 
@@ -466,14 +469,26 @@ before top-k ranking, and every returned item carries provenance.
 
 ### Gate 4 exit
 
-- deterministic tests show zero cross-viewpoint leaks;
-- contradictions and retractions do not leave both claims presented as current truth;
-- rerendering the same cut does not create new memories or events;
-- narrator failures can be retried from the same cut;
-- added context improves causal enactment without degrading median voice or chemistry.
+- deterministic tests show zero cross-viewpoint leaks — **PROVEN** (E4.5 corpus EXIT 1:
+  cut + serialized prompt input + retrieval swept per viewpoint under knowledge
+  asymmetry, similarity cannot widen);
+- contradictions and retractions do not leave both claims presented as current truth —
+  **PROVEN** (EXIT 2: cross-source contradiction excludes both assertions from recall,
+  stances stay labeled with doubt, retraction narrows relationally);
+- rerendering the same cut does not create new memories or events — **PROVEN** (EXIT 3:
+  full row-count invariance across events, cuts, observations, knowledge, soft canon,
+  memory documents, and outbox);
+- narrator failures can be retried from the same cut — **PROVEN** (EXIT 3/4:
+  `loadPersistedCut` re-reads bit-identical after a failed render, and only explicit
+  idempotent confirmation commits);
+- added context improves causal enactment without degrading median voice or chemistry —
+  **DEFERRED** (live paired eval; owner-gated spend, see below).
 
 Ruled 2026-07-18: the first four (the deterministic corpus) close the gate. The fifth is
 a live paired eval and rides the owner-gated spend list — it does not hold the verdict.
+The corpus also proves gossip-provenance chains end-to-end (3 hops, per-hop confidence
+decay, "who told whom" reconstructible from belief → event → captured chain, retraction
+reaching only earshot).
 
 ### Gate 4 build order
 
@@ -632,13 +647,29 @@ long-lived `engine` branch.
    to the item-transfer lane the soak pumps, since the memory lane has its own lag
    diagnostics; principal-level auth on queries rides the server seam until a public
    API needs more.
-5. **E4.5 — the Gate 4 exit corpus.** Deterministic scenarios closing the gate per the
-   2026-07-18 ruling: cross-viewpoint leak sweeps (the §36.4 live-scene suite extended
-   with knowledge asymmetry — a viewpoint that did not observe or learn a fact never
-   receives it in cut, prompt, or retrieval), contradiction/retraction presentation
-   (both claims never current), rerender-creates-nothing, retry-from-the-same-cut, and
-   gossip-provenance chains. Zero model calls. The live paired voice/chemistry eval is
-   recorded as an owner-gated spend item, not a gate blocker.
+5. **E4.5 — the Gate 4 exit corpus.** Status: **shipped — 2026-07-19; the corpus is
+   green and Gate 4 is CLOSED** (per the 2026-07-18 exit-scope ruling). Four
+   deterministic scenarios (`gate4-corpus.int.test.ts`, zero model calls, CI runs
+   `test:engine-e4-5`): **EXIT 1** — cross-viewpoint leak sweep with knowledge
+   asymmetry over a four-actor world (confidant, speaker, same-location bystander,
+   remote outsider): the secret appears in the knowers' cuts and recall, never in a
+   non-knower's cut (the serialized cut being the narrator's prompt input), and
+   directly querying for the secret widens nothing; **EXIT 2** — cross-source
+   contradiction contradicts both assertions (neither recallable as current truth,
+   the holder's stances labeled with the weaker marked doubted) and retraction
+   removes claim and belief relationally, leaving exactly the surviving doubted
+   stance in the next cut; **EXIT 3** — rerender-creates-nothing proven as full
+   row-count invariance across all eight persistence surfaces while re-reading the
+   persisted cut, parsing a narrator reply, and auditing it; **EXIT 4** — retry-from-
+   the-same-cut re-reads bit-identical after a simulated render failure, with commit
+   only through the idempotent confirmation; plus the gossip-provenance sweep — a
+   3-hop chain (co-present → co-present cross-zone → device cross-location) decaying
+   9 000 → 8 000 → 7 000, the route reconstructible from belief → hop event →
+   captured §6.4 chain, recall voicing "heard through A then B then C", and a
+   retraction reaching only its earshot while downstream believers keep the old
+   story. The fifth exit criterion (live paired voice/chemistry eval) is the only
+   human-in-the-loop item and is deferred to
+   [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs.
 
 E4.2 consumes E4.1's observations; E4.3 consumes both; E4.4 consumes the E4.1–E4.3
 ledgers and the persisted cuts; E4.5 closes the gate. Deferred design notes: pressure
