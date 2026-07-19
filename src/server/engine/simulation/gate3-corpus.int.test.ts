@@ -8,7 +8,7 @@ import {
 import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
 import { newId } from "@/lib/ids";
 import {
-  compileGate3Cut,
+  compileNarrativeCut,
   deriveCommitmentId,
   deriveEngagementId,
   journeyArrivalUniquenessKey,
@@ -21,6 +21,7 @@ import {
 } from "./access-store";
 import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
+import { loadPersistedCut } from "./narrative-cut-store";
 import { loadBranchAncestry, readBranchAncestryEvents } from "./branch-store";
 import { readDurableCommitments, submitDurableCreateCommitment } from "./commitment-store";
 import { readDurableEngagements, submitDurableOpenEngagement } from "./engagement-store";
@@ -285,7 +286,7 @@ function command(
     submittedAtWallClock: "2026-07-18T12:00:00.000Z",
     correlationId: `corr-${ids.branchId}`,
     type,
-    schemaVersion: 1,
+    schemaVersion: type === "confirm_narrator_result" ? 2 : 1,
     payload,
   };
 }
@@ -395,7 +396,7 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
     expect(maraPressures).toHaveLength(1);
     expect(maraPressures[0]?.noticeAt).toBe(NOTICE_AT);
     expect(serialized).not.toContain(maraPressures[0]?.id ?? "pressure-missing");
-    expect(turn.cut.forbiddenClaims.join(" ")).toContain("committed movement");
+    expect(turn.cut.forbiddenClaims.map((claim) => claim.claim).join(" ")).toContain("committed movement");
     // Only the proposed effect naming scene participants was armed.
     expect(turn.cut.armedEffects.map((effect) => effect.effectType)).toEqual(["apology_delivered"]);
 
@@ -403,7 +404,7 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
     // recompiling from re-read durable state reproduces id and hash exactly.
     const engagement = engagements.engagements[0];
     if (!engagement) throw new Error("Engagement vanished");
-    const reread = compileGate3Cut({
+    const reread = compileNarrativeCut({
       branchVersion: space.version,
       engagement,
       viewpointActorId: ids.player,
@@ -413,24 +414,32 @@ describe.runIf(ready)("Gate 3 scenario corpus", () => {
       fromStorySecond: turn.cut.fromStorySecond,
       throughStorySecond: turn.cut.throughStorySecond,
       space,
+      activities: [],
       viewpointObservations: await loadViewpointObservations({
         branchId: ids.branchId,
         witnessActorId: ids.player,
         fromSequence: turn.cut.fromSequence,
         throughSequence: turn.cut.throughSequence,
       }),
+      viewpointBeliefs: [],
       viewpointPressures: [],
+      failurePresentations: [],
+      softCanonEntries: [],
       proposedArmedEffects: [apology, strayEffect],
     });
     expect(reread).toEqual(turn.cut);
+    // §22.3 on the durable row: the persisted cut re-reads bit-identical.
+    expect(await loadPersistedCut(ids.branchId, turn.cut.id)).toEqual(turn.cut);
     expect(space.headSequence).toBe(turn.cut.throughSequence);
 
-    // Ruling 9: confirmation records only delivered speech acts; the effect
-    // naming a non-participant is dropped rather than trusted.
+    // Ruling 9 / §23.3: confirmation names armed-effect IDS, revalidated
+    // against the persisted cut — an id the cut never armed is ignored.
+    const apologyEffectId = turn.cut.armedEffects[0]?.id ?? "armed-missing";
     const confirmCommand = command(ids, "confirm", "confirm_narrator_result", principalFor("system", []), {
       engagementId: chatEngagementId(ids),
       cutId: turn.cut.id,
-      enactedEffects: [apology, strayEffect],
+      enactedArmedEffectIds: [apologyEffectId, "armed-invented-by-the-model"],
+      softCanonProposals: [],
     });
     const confirmed = await submitDurableConfirmNarratorResult(confirmCommand, admit);
     expect(confirmed.status).toBe("accepted");

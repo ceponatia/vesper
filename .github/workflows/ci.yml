@@ -86,6 +86,9 @@ jobs:
       - name: E4.2 assertions, beliefs, and gossip integration
         run: pnpm test:engine-e4-2
 
+      - name: E4.3 narrative cuts, narrator boundary, and soft canon integration
+        run: pnpm test:engine-e4-3
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

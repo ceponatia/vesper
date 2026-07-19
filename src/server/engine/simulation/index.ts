@@ -18,8 +18,27 @@ export {
   prepareEngagementTurn,
   submitDurableConfirmNarratorResult,
   type PreparedTurn,
+  type PrepareTurnDeliberation,
   type PrepareTurnInput,
+  type TurnDeliberationRecord,
 } from "./arbiter-store";
+export {
+  NarrativeCutVersionError,
+  latestCutIdForEngagement,
+  loadPersistedCut,
+  persistNarrativeCut,
+  readPersistedCutRow,
+} from "./narrative-cut-store";
+export {
+  insertReplayedSoftCanon,
+  loadSoftCanonProjection,
+  recordCommandSoftCanon,
+  softCanonEntryFromRow,
+} from "./soft-canon-recorder";
+export {
+  submitDurableDemoteSoftCanon,
+  type SoftCanonStoreOptions,
+} from "./soft-canon-store";
 export {
   explainItemPlacement,
   type ExplainOptions,

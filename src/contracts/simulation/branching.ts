@@ -54,6 +54,13 @@ import {
   type MakeDisclosureCommand,
   type MakeDisclosureCommandResult,
 } from "./knowledge";
+import {
+  softCanonDemotedEventSchema,
+  softCanonPromotedEventSchema,
+  softCanonRecordedEventSchema,
+  type DemoteSoftCanonCommand,
+  type DemoteSoftCanonCommandResult,
+} from "./soft-canon";
 import { commandPrincipalSchema, principalKindSchema } from "./envelopes";
 import {
   branchHeadSequenceSchema,
@@ -129,6 +136,9 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   storytellerRelocationEventSchema,
   speechActDeliveredEventSchema,
   disclosureMadeEventSchema,
+  softCanonRecordedEventSchema,
+  softCanonPromotedEventSchema,
+  softCanonDemotedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -208,6 +218,20 @@ export function isKnowledgeEvent(event: SimulationBranchEvent): event is Simulat
   return knowledgeEventTypes.has(event.type);
 }
 
+/** The soft-canon family (E4.3). Replay treats these as soft-canon-projection events. */
+const softCanonEventTypeList = [
+  "soft_canon_recorded",
+  "soft_canon_promoted",
+  "soft_canon_demoted",
+] as const;
+export type SoftCanonEventType = (typeof softCanonEventTypeList)[number];
+export type SimulationSoftCanonEvent = Extract<SimulationBranchEvent, { type: SoftCanonEventType }>;
+export const softCanonEventTypes: ReadonlySet<string> = new Set(softCanonEventTypeList);
+
+export function isSoftCanonEvent(event: SimulationBranchEvent): event is SimulationSoftCanonEvent {
+  return softCanonEventTypes.has(event.type);
+}
+
 /** Access-family locus changes (E3.5): applied by the space projection. */
 const accessEventTypeList = ["zone_entered", "storyteller_relocation"] as const;
 export type AccessEventType = (typeof accessEventTypeList)[number];
@@ -235,7 +259,8 @@ export type SimulationCommandEnvelope =
   | AttemptEntryCommand
   | StorytellerRelocateActorCommand
   | ConfirmNarratorResultCommand
-  | MakeDisclosureCommand;
+  | MakeDisclosureCommand
+  | DemoteSoftCanonCommand;
 export type SimulationCommandResultRecord =
   | ItemTransferCommandResult
   | ScheduleTriggerCommandResult
@@ -252,7 +277,8 @@ export type SimulationCommandResultRecord =
   | AttemptEntryCommandResult
   | StorytellerRelocateActorCommandResult
   | ConfirmNarratorResultCommandResult
-  | MakeDisclosureCommandResult;
+  | MakeDisclosureCommandResult
+  | DemoteSoftCanonCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

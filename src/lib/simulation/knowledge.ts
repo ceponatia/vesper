@@ -15,6 +15,7 @@ import {
   type AssertionStatus,
   type Belief,
   type BeliefStatus,
+  type DisclosureContent,
   type DisclosureMadeEvent,
   type MakeDisclosureCommand,
   type MakeDisclosureRejectionCode,
@@ -155,6 +156,99 @@ function disclosureRejection(
   return { ok: false, code, publicReason };
 }
 
+/** The slice of the authority view the §6.4 capture computation reads. */
+export interface DisclosureCaptureView {
+  referencedAssertion?: Assertion;
+  speakerBelief?: Belief;
+}
+
+export type DisclosureCaptureResult =
+  | {
+      ok: true;
+      derived: {
+        assertionId: string;
+        sourceConfidenceFixedPoint: number;
+        learnedFromActorIds: string[];
+      };
+    }
+  | DisclosureRejection;
+
+/**
+ * The §6.4 capture: freeze everything the belief fold will need — assertion
+ * identity, the teller's confidence at this moment, and the provenance chain
+ * listeners record (always ending with this speaker). Shared between the
+ * `make_disclosure` command and E4.3's armed-disclosure bridge, so a
+ * narrator-spoken disclosure and a command-spoken one derive identically.
+ */
+export function deriveDisclosureCapture(
+  view: DisclosureCaptureView,
+  speakerActorId: string,
+  content: DisclosureContent,
+  eventId: string,
+): DisclosureCaptureResult {
+  switch (content.kind) {
+    case "claim":
+      return {
+        ok: true,
+        derived: {
+          assertionId: deriveAssertionId(eventId),
+          sourceConfidenceFixedPoint: FULL_CONFIDENCE,
+          learnedFromActorIds: [speakerActorId],
+        },
+      };
+    case "relay": {
+      const assertion = view.referencedAssertion;
+      if (!assertion || assertion.id !== content.assertionId) {
+        return disclosureRejection("assertion_not_found", "Nobody has claimed that here.");
+      }
+      if (assertion.sourceActorId === speakerActorId) {
+        // The original claimant retelling their own claim — firsthand again.
+        return {
+          ok: true,
+          derived: {
+            assertionId: assertion.id,
+            sourceConfidenceFixedPoint: FULL_CONFIDENCE,
+            learnedFromActorIds: [speakerActorId],
+          },
+        };
+      }
+      const belief = view.speakerBelief;
+      const beliefIsLive = belief?.status === "active" || belief?.status === "doubted";
+      if (!belief || belief.assertionId !== assertion.id || !beliefIsLive) {
+        return disclosureRejection("relay_unbelieved", "They have nothing to pass on about that.");
+      }
+      return {
+        ok: true,
+        derived: {
+          assertionId: assertion.id,
+          sourceConfidenceFixedPoint: belief.confidenceFixedPoint,
+          learnedFromActorIds: truncateProvenanceChain([...belief.learnedFromActorIds, speakerActorId]),
+        },
+      };
+    }
+    case "retraction": {
+      const assertion = view.referencedAssertion;
+      if (!assertion || assertion.id !== content.assertionId) {
+        return disclosureRejection("assertion_not_found", "Nobody has claimed that here.");
+      }
+      if (assertion.sourceActorId !== speakerActorId) {
+        return disclosureRejection("retraction_unauthorized", "Only the one who said it can take it back.");
+      }
+      if (assertion.status === "retracted") {
+        return disclosureRejection("assertion_already_retracted", "That claim is already withdrawn.");
+      }
+      return {
+        ok: true,
+        derived: {
+          assertionId: assertion.id,
+          sourceConfidenceFixedPoint: FULL_CONFIDENCE,
+          learnedFromActorIds: [speakerActorId],
+        },
+      };
+    }
+  }
+}
+
 /**
  * Pure MakeDisclosure resolver over a lock-consistent authority view. The
  * derived payload block freezes everything the belief fold will need (§6.4):
@@ -186,54 +280,9 @@ export function resolveMakeDisclosure(
   const content = command.payload.content;
   const speakerActorId = command.payload.speakerActorId;
 
-  let assertionId: string;
-  let sourceConfidenceFixedPoint: number;
-  let learnedFromActorIds: string[];
-  switch (content.kind) {
-    case "claim": {
-      assertionId = deriveAssertionId(eventId);
-      sourceConfidenceFixedPoint = FULL_CONFIDENCE;
-      learnedFromActorIds = [speakerActorId];
-      break;
-    }
-    case "relay": {
-      const assertion = view.referencedAssertion;
-      if (!assertion || assertion.id !== content.assertionId) {
-        return disclosureRejection("assertion_not_found", "Nobody has claimed that here.");
-      }
-      if (assertion.sourceActorId === speakerActorId) {
-        // The original claimant retelling their own claim — firsthand again.
-        sourceConfidenceFixedPoint = FULL_CONFIDENCE;
-        learnedFromActorIds = [speakerActorId];
-      } else {
-        const belief = view.speakerBelief;
-        const beliefIsLive = belief?.status === "active" || belief?.status === "doubted";
-        if (!belief || belief.assertionId !== assertion.id || !beliefIsLive) {
-          return disclosureRejection("relay_unbelieved", "They have nothing to pass on about that.");
-        }
-        sourceConfidenceFixedPoint = belief.confidenceFixedPoint;
-        learnedFromActorIds = truncateProvenanceChain([...belief.learnedFromActorIds, speakerActorId]);
-      }
-      assertionId = assertion.id;
-      break;
-    }
-    case "retraction": {
-      const assertion = view.referencedAssertion;
-      if (!assertion || assertion.id !== content.assertionId) {
-        return disclosureRejection("assertion_not_found", "Nobody has claimed that here.");
-      }
-      if (assertion.sourceActorId !== speakerActorId) {
-        return disclosureRejection("retraction_unauthorized", "Only the one who said it can take it back.");
-      }
-      if (assertion.status === "retracted") {
-        return disclosureRejection("assertion_already_retracted", "That claim is already withdrawn.");
-      }
-      assertionId = assertion.id;
-      sourceConfidenceFixedPoint = FULL_CONFIDENCE;
-      learnedFromActorIds = [speakerActorId];
-      break;
-    }
-  }
+  const capture = deriveDisclosureCapture(view, speakerActorId, content, eventId);
+  if (!capture.ok) return capture;
+  const { assertionId, sourceConfidenceFixedPoint, learnedFromActorIds } = capture.derived;
 
   // Channel ruling: co-present only when the speaker stands somewhere and
   // every named listener is in that location — anything else delivers by

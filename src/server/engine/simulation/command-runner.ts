@@ -9,6 +9,7 @@ import { branchVersionSchema } from "@/contracts/simulation/identity";
 import { db, simBranches, simCommands, simEvents, simWorlds, type Db } from "@/server/db";
 import { recordCommandKnowledge } from "./knowledge-recorder";
 import { recordCommandObservations } from "./observation-store";
+import { recordCommandSoftCanon } from "./soft-canon-recorder";
 import type { SimTx } from "./trigger-projector";
 
 /**
@@ -35,6 +36,7 @@ interface RunnableCommand {
 export interface LockedBranchView {
   id: string;
   worldId: string;
+  worldTypeId: string;
   headSequence: number;
   version: number;
   storySecond: number;
@@ -86,6 +88,7 @@ export async function runSimulationCommand<
       .select({
         id: simBranches.id,
         worldId: simBranches.worldId,
+        worldTypeId: simWorlds.worldTypeId,
         headSequence: simBranches.headSequence,
         version: simBranches.version,
         storySecond: simBranches.storySecond,
@@ -135,6 +138,7 @@ export async function runSimulationCommand<
         {
           id: branch.id,
           worldId: branch.worldId,
+          worldTypeId: branch.worldTypeId,
           headSequence: branch.headSequence,
           version: branch.version,
           storySecond: branch.storySecond,
@@ -148,9 +152,11 @@ export async function runSimulationCommand<
     // this command's events against the post-command locus rows (§20). Then
     // E4.2: fold any disclosures through the knowledge ledgers against those
     // fresh observation rows (§21) — order matters, beliefs rest on evidence.
+    // Finally E4.3: fold soft-canon snapshots into the bounded store (§23.4).
     if (commandResult.status === "accepted") {
       await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
       await recordCommandKnowledge(tx, { id: branch.id, headSequence: branch.headSequence });
+      await recordCommandSoftCanon(tx, { id: branch.id, headSequence: branch.headSequence });
     }
 
     await tx.insert(simCommands).values({

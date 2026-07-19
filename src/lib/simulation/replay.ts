@@ -1,5 +1,6 @@
 import {
   isAccessEvent,
+  isSoftCanonEvent,
   isActivityEvent,
   isCommitmentEvent,
   isEngagementEvent,
@@ -187,6 +188,7 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       isEngagementEvent(event) ||
       isAccessEvent(event) ||
       isKnowledgeEvent(event) ||
+      isSoftCanonEvent(event) ||
       event.type === "speech_act_delivered"
     ) {
       // Movement and activity events belong to their own projections

@@ -1,21 +1,45 @@
-import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { temporalPressureSchema } from "@/contracts/simulation/commitments";
+import type { DeliberationOutcome, DeliberatorRequest, InferenceLod } from "@/contracts/simulation/deliberation";
 import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
 import { composeSimulationId, worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
+  KNOWLEDGE_DERIVATION_VERSION,
+  disclosureMadeEventSchema,
+  type Assertion,
+  type Belief,
+} from "@/contracts/simulation/knowledge";
+import {
   confirmNarratorResultCommandResultSchema,
   confirmNarratorResultCommandSchema,
-  proposedArmedEffectSchema,
+  narrativeCutSchema,
   speechActDeliveredEventSchema,
   type ConfirmNarratorResultCommandResult,
-  type Gate3NarrativeCut,
+  type NarrativeCut,
   type ProposedArmedEffect,
-  type SpeechActDeliveredEvent,
+  type PublicFailurePresentation,
 } from "@/contracts/simulation/narrative";
+import {
+  SOFT_CANON_DERIVATION_VERSION,
+  resolveSoftCanonRules,
+  softCanonPromotedEventSchema,
+  softCanonRecordedEventSchema,
+} from "@/contracts/simulation/soft-canon";
+import { runDeliberation } from "@/lib/simulation/deliberation";
 import { simulationHash } from "@/lib/simulation/item-transfer";
-import { compileGate3Cut, decideDepartures, type PolicyDeparture } from "@/lib/simulation/narrative";
+import { deriveDisclosureCapture } from "@/lib/simulation/knowledge";
+import {
+  compileNarrativeCut,
+  decideDepartures,
+  departureCandidates,
+  type PolicyDeparture,
+} from "@/lib/simulation/narrative";
+import { resolveSoftCanonProposals } from "@/lib/simulation/soft-canon";
 import {
   db,
+  simActivities,
+  simAssertions,
+  simBeliefs,
   simBranches,
   simCommitments,
   simEngagements,
@@ -24,6 +48,7 @@ import {
   simWorlds,
   type Db,
 } from "@/server/db";
+import { activityFromRow } from "./activity-store";
 import {
   advanceLockedBranch,
   appendSimulationEvent,
@@ -31,19 +56,53 @@ import {
   type LockedBranchView,
 } from "./command-runner";
 import { engagementFromRow } from "./engagement-store";
+import { assertionFromRow, beliefFromRow } from "./knowledge-recorder";
+import { loadSpeakerLiveBelief } from "./knowledge-store";
+import { latestCutIdForEngagement, persistNarrativeCut, readPersistedCutRow } from "./narrative-cut-store";
 import { branchEventFromRow, loadViewpointObservations } from "./observation-store";
 import { advanceBranchStoryTime, type AdvanceStoryTimeOutcome } from "./scheduler-store";
+import { loadSoftCanonProjection } from "./soft-canon-recorder";
 import { loadSpaceRows, spaceProjectionFromRows, submitDurableMoveActor } from "./space-store";
 
 /**
- * E3.4 slice 2 — the deterministic live-scene turn seam (engine.spec §18.3):
- * drain due world work through the turn span, look ahead at participant
- * pressure, let deterministic policy commit departures (which interrupt the
- * scene atomically through the E3.4 slice-1 machinery), and compile one
- * immutable, perspective-safe NarrativeCut. No model call anywhere; a failed
- * narrator render re-reads the same cut (ruling 8) because cuts derive purely
- * from committed events — there is no state to roll back.
+ * E4.3 — the live-scene turn seam (engine.spec §18.3, §22–23): drain due
+ * world work through the turn span, let deterministic policy (with an
+ * optional §19.3-admitted deliberator) commit departures, compile one full
+ * §22.1 cut, and persist it immutable. Confirmation validates the narrator's
+ * declared enactments against the PERSISTED cut row — the model result is
+ * never trusted for content, only for selection (§23.3, ruling 9).
  */
+
+const MAX_BELIEF_ROWS = 64;
+
+function compareStableText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function sortedUnique(values: readonly string[]): string[] {
+  return [...new Set(values)].sort(compareStableText);
+}
+
+export interface PrepareTurnDeliberation {
+  /** The acting NPC's inference LOD — admission refuses below deliberator. */
+  inferenceLod: InferenceLod;
+  scoreGapThresholdFixedPoint: number;
+  modelBudgetRemaining: number;
+  /** The injected model seam — a stub in every test, zero live calls shipped. */
+  deliberate: (request: DeliberatorRequest) => Promise<unknown>;
+  /** Settles when the caller's deadline passes; absent means no deadline. */
+  timeout?: Promise<unknown>;
+  /** Bounded, caller-redacted evidence lines shown to the model. */
+  evidence?: readonly string[];
+}
+
+export interface TurnDeliberationRecord {
+  actorId: string;
+  candidatePressureIds: string[];
+  outcome: DeliberationOutcome;
+}
 
 export interface PrepareTurnInput {
   branchId: string;
@@ -58,14 +117,26 @@ export interface PrepareTurnInput {
   /** Actors policy must never move (player agency). Defaults to the viewpoint. */
   playerActorIds?: readonly string[];
   proposedArmedEffects?: readonly ProposedArmedEffect[];
+  /** §14.4 public faces of this turn's rejected commands, supplied by the caller. */
+  failurePresentations?: readonly PublicFailurePresentation[];
+  /**
+   * The §19.3 deliberator admission seam: consulted only when one policy
+   * actor holds several in-horizon departure candidates. Absent, the
+   * deterministic policy stands alone — behavior is bit-identical.
+   */
+  deliberation?: PrepareTurnDeliberation;
   workerId: string;
 }
 
 export interface PreparedTurn {
-  cut: Gate3NarrativeCut;
+  cut: NarrativeCut;
   advance: AdvanceStoryTimeOutcome;
   /** Policy departures attempted this turn, with each command's outcome. */
   departures: (PolicyDeparture & { result: string })[];
+  /** §19.3 deliberations run this turn, rationale recorded, fallback-safe. */
+  deliberations: TurnDeliberationRecord[];
+  /** False when this exact cut id + hash was already persisted (§22.3). */
+  cutCreated: boolean;
 }
 
 export async function prepareEngagementTurn(
@@ -137,7 +208,7 @@ export async function prepareEngagementTurn(
     commitmentRows.map((row) => [row.commitmentId, row.destinationZoneId]),
   );
   const playerActorIds = input.playerActorIds ?? [input.viewpointActorId];
-  const departures = decideDepartures({
+  const policyInput = {
     pressures: pressureRows.flatMap((row) => {
       const destinationZoneId = destinationByCommitment.get(row.sourceCommitmentId);
       if (!destinationZoneId) return [];
@@ -164,7 +235,55 @@ export async function prepareEngagementTurn(
     policyControlledActorIds: engagement.participantIds.filter(
       (participantId) => !playerActorIds.includes(participantId),
     ),
-  });
+  };
+  const departures = decideDepartures(policyInput);
+
+  // §19.3: when one actor legally could answer several pressures, an admitted
+  // deliberator may pick among them — never outside them. Refusal, timeout,
+  // and nonsense all land on the deterministic head-of-queue choice.
+  const deliberations: TurnDeliberationRecord[] = [];
+  if (input.deliberation) {
+    const candidates = departureCandidates(policyInput);
+    const actorIds = sortedUnique(candidates.map((pressure) => pressure.actorId));
+    for (const actorId of actorIds) {
+      const actorCandidates = candidates.filter((pressure) => pressure.actorId === actorId);
+      if (actorCandidates.length < 2) continue;
+      const horizonEnd = advance.storySecond + (input.horizonSeconds ?? 600);
+      const scored = actorCandidates.map((pressure) => ({
+        id: pressure.id,
+        deterministicScoreFixedPoint: Math.max(
+          -1_000_000,
+          Math.min(1_000_000, horizonEnd - pressure.actBy),
+        ),
+      }));
+      const outcome = await runDeliberation({
+        admissionInput: {
+          actorId,
+          inferenceLod: input.deliberation.inferenceLod,
+          candidates: scored,
+          scoreGapThresholdFixedPoint: input.deliberation.scoreGapThresholdFixedPoint,
+          consequential: true,
+          modelBudgetRemaining: input.deliberation.modelBudgetRemaining,
+          hasDeterministicFallback: true,
+        },
+        evidence: input.deliberation.evidence ?? [],
+        deliberate: input.deliberation.deliberate,
+        ...(input.deliberation.timeout === undefined ? {} : { timeout: input.deliberation.timeout }),
+      });
+      deliberations.push({
+        actorId,
+        candidatePressureIds: scored.map((candidate) => candidate.id),
+        outcome,
+      });
+      const chosen = actorCandidates.find((pressure) => pressure.id === outcome.chosenCandidateId);
+      const departure = departures.find((candidate) => candidate.actorId === actorId);
+      if (chosen && departure) {
+        departure.commitmentId = chosen.sourceCommitmentId;
+        departure.destinationZoneId = chosen.destinationZoneId;
+        departure.actBy = chosen.actBy;
+      }
+    }
+  }
 
   // §18.3 step 7: commit. A departure interrupts this very scene atomically
   // (slice 1), so the cut compiled below already shows the interruption.
@@ -251,8 +370,35 @@ export async function prepareEngagementTurn(
     },
     { database },
   );
+  const activityRows = await database
+    .select()
+    .from(simActivities)
+    .where(eq(simActivities.branchId, branchId))
+    .orderBy(asc(simActivities.activityInstanceId));
+  // E4.2: the viewpoint's own live beliefs, joined to what each one claims —
+  // the speaker may voice them even when they are wrong (§21, §22.1).
+  const beliefRows = await database
+    .select({ belief: simBeliefs, assertion: simAssertions })
+    .from(simBeliefs)
+    .innerJoin(
+      simAssertions,
+      and(
+        eq(simAssertions.branchId, simBeliefs.branchId),
+        eq(simAssertions.assertionId, simBeliefs.assertionId),
+      ),
+    )
+    .where(
+      and(
+        eq(simBeliefs.branchId, branchId),
+        eq(simBeliefs.holderActorId, input.viewpointActorId),
+        inArray(simBeliefs.status, ["active", "doubted"]),
+      ),
+    )
+    .orderBy(desc(simBeliefs.believedFrom), asc(simBeliefs.beliefId))
+    .limit(MAX_BELIEF_ROWS);
+  const softCanon = await loadSoftCanonProjection(branchId, { database });
 
-  const cut = compileGate3Cut({
+  const cut = compileNarrativeCut({
     branchVersion: after.version,
     engagement,
     viewpointActorId: input.viewpointActorId,
@@ -262,7 +408,12 @@ export async function prepareEngagementTurn(
     fromStorySecond,
     throughStorySecond: after.storySecond,
     space,
+    activities: activityRows.map(activityFromRow),
     viewpointObservations,
+    viewpointBeliefs: beliefRows.map((row) => ({
+      belief: beliefFromRow(row.belief),
+      assertion: assertionFromRow(row.assertion),
+    })),
     viewpointPressures: viewpointPressureRows.map((row) =>
       temporalPressureSchema.parse({
         id: row.pressureId,
@@ -275,10 +426,16 @@ export async function prepareEngagementTurn(
         ...(row.acknowledgedAt === null ? {} : { acknowledgedAt: row.acknowledgedAt }),
       }),
     ),
+    failurePresentations: input.failurePresentations ?? [],
+    softCanonEntries: softCanon.entries,
     proposedArmedEffects: input.proposedArmedEffects ?? [],
   });
 
-  return { cut, advance, departures: attempted };
+  // §22.3: the cut becomes an immutable, addressable row. Rerender and
+  // narrator-failure retry (ruling 8) re-read it via `loadPersistedCut`.
+  const { created } = await persistNarrativeCut(cut, { database });
+
+  return { cut, advance, departures: attempted, deliberations, cutCreated: created };
 }
 
 function rejectedResult<TCode extends string>(commandId: string, code: TCode, publicReason: string) {
@@ -292,11 +449,12 @@ function rejectedResult<TCode extends string>(commandId: string, code: TCode, pu
 }
 
 /**
- * Confirm which armed speech acts the rendered prose actually delivered
- * (ruling 9): one speech_act_delivered event per validated enacted effect.
- * Idempotent per cut through the command idempotency key; effects naming
- * non-participants are dropped rather than trusted (§23.3 — the narrator
- * result crosses a trust boundary).
+ * Confirm one narrator render against its PERSISTED cut (§23.3, ruling 9):
+ * the payload names armed-effect ids and soft-canon proposals; every enacted
+ * id is revalidated against the cut row, unknown ids are ignored, unenacted
+ * effects expire, and the E4.2 bridge turns an enacted armed disclosure into
+ * a real §21 `disclosure_made` event. Only the newest cut of an engagement is
+ * confirmable — an older cut's effects have expired with it.
  */
 export async function submitDurableConfirmNarratorResult(
   rawCommand: unknown,
@@ -338,57 +496,228 @@ export async function submitDurableConfirmNarratorResult(
         return rejectedResult(command.id, "engagement_not_found", "That conversation is unknown.");
       }
       const engagement = engagementFromRow(engagementRow);
-      const valid = command.payload.enactedEffects.filter(
-        (effect) =>
-          proposedArmedEffectSchema.safeParse(effect).success &&
-          engagement.participantIds.includes(effect.actorId as never) &&
-          effect.targetActorIds.every((target) => engagement.participantIds.includes(target as never)),
-      );
-      if (valid.length === 0) {
-        return rejectedResult(command.id, "invalid_command", "No enacted effect named scene participants.");
+
+      const cutRow = await readPersistedCutRow(tx, branch.id, command.payload.cutId);
+      if (!cutRow || cutRow.engagementId !== engagement.id) {
+        return rejectedResult(command.id, "cut_not_found", "That moment of the scene is unknown.");
+      }
+      const parsedCut = narrativeCutSchema.safeParse(cutRow.content);
+      if (!parsedCut.success) {
+        return rejectedResult(
+          command.id,
+          "cut_incompatible",
+          "That moment cannot be read by this engine version.",
+        );
+      }
+      const cut = parsedCut.data;
+      const latestCutId = await latestCutIdForEngagement(tx, branch.id, engagement.id);
+      if (latestCutId !== cut.id) {
+        return rejectedResult(command.id, "cut_superseded", "That moment of the scene has passed.");
+      }
+
+      // §23.3: selection only. Unknown ids are dropped, order comes from the
+      // cut, and every payload field below is quoted from the persisted row.
+      const enactedIdSet = new Set(command.payload.enactedArmedEffectIds);
+      const enactedEffects = cut.armedEffects.filter((effect) => enactedIdSet.has(effect.id));
+
+      const softCanonProjection = await loadSoftCanonProjection(branch.id, { database: tx });
+      const rules = resolveSoftCanonRules(branch.worldTypeId);
+      const resolution = resolveSoftCanonProposals({
+        branchId: branch.id,
+        cutId: cut.id,
+        participantActorIds: [...engagement.participantIds],
+        zoneIds: sortedUnique(cut.currentLoci.flatMap((locus) => (locus.zoneId ? [locus.zoneId] : []))),
+        proposals: command.payload.softCanonProposals,
+        entries: softCanonProjection.entries,
+        rules,
+        storySecond: branch.storySecond,
+      });
+
+      if (enactedEffects.length === 0 && resolution.accepted.length === 0) {
+        return rejectedResult(command.id, "nothing_to_record", "Nothing in that render survived validation.");
       }
 
       let sequence = branch.headSequence;
-      const eventIds: SpeechActDeliveredEvent["id"][] = [];
-      for (const effect of valid) {
-        sequence += 1;
-        const event = speechActDeliveredEventSchema.parse({
-          id: composeSimulationId("event", [branch.id, command.id, `speech-${eventIds.length + 1}`]),
-          worldId: branch.worldId,
-          branchId: branch.id,
-          sequence,
-          storySecond: branch.storySecond,
-          type: "speech_act_delivered",
-          schemaVersion: 1,
-          rulesetVersion: branch.rulesetVersion,
-          commandId: command.id,
-          correlationId: command.correlationId,
-          actorIds: [effect.actorId],
-          entityIds: [...new Set([effect.actorId, ...effect.targetActorIds, engagement.id])].sort(),
-          ...(engagement.locationId ? { locationId: engagement.locationId } : {}),
-          recordedAtWallClock: command.submittedAtWallClock,
-          payload: {
-            cutId: command.payload.cutId,
-            engagementId: engagement.id,
-            effectType: effect.effectType,
-            actorId: effect.actorId,
-            targetActorIds: [...effect.targetActorIds].sort(),
-            detail: effect.detail,
-          },
-        });
+      const eventIds: string[] = [];
+      const append = async (event: Parameters<typeof appendSimulationEvent>[1]): Promise<void> => {
         await appendSimulationEvent(tx, event);
         eventIds.push(event.id);
+      };
+
+      for (const effect of enactedEffects) {
+        sequence += 1;
+        await append(
+          speechActDeliveredEventSchema.parse({
+            id: composeSimulationId("event", [branch.id, command.id, `speech-${eventIds.length + 1}`]),
+            worldId: branch.worldId,
+            branchId: branch.id,
+            sequence,
+            storySecond: branch.storySecond,
+            type: "speech_act_delivered",
+            schemaVersion: 1,
+            rulesetVersion: branch.rulesetVersion,
+            commandId: command.id,
+            correlationId: command.correlationId,
+            actorIds: [effect.actorId],
+            entityIds: sortedUnique([effect.actorId, ...effect.targetActorIds, engagement.id]),
+            ...(engagement.locationId ? { locationId: engagement.locationId } : {}),
+            recordedAtWallClock: command.submittedAtWallClock,
+            payload: {
+              cutId: cut.id,
+              engagementId: engagement.id,
+              effectType: effect.effectType,
+              actorId: effect.actorId,
+              targetActorIds: [...effect.targetActorIds].sort(compareStableText),
+              detail: effect.detail,
+            },
+          }),
+        );
+
+        // The E4.2 bridge: an enacted armed disclosure becomes a real §21
+        // knowledge event, folded into beliefs by the shell's recorder. A
+        // capture failure (stale relay, foreign retraction) degrades to the
+        // speech act alone — the render already happened, truth stays safe.
+        if (effect.disclosureContent !== undefined) {
+          const content = effect.disclosureContent;
+          let referencedAssertion: Assertion | undefined;
+          let speakerBelief: Belief | undefined;
+          if (content.kind !== "claim") {
+            const [assertionRow] = await tx
+              .select()
+              .from(simAssertions)
+              .where(
+                and(eq(simAssertions.branchId, branch.id), eq(simAssertions.assertionId, content.assertionId)),
+              )
+              .limit(1);
+            referencedAssertion = assertionRow ? assertionFromRow(assertionRow) : undefined;
+            if (content.kind === "relay" && referencedAssertion) {
+              speakerBelief = await loadSpeakerLiveBelief(tx, branch.id, effect.actorId, referencedAssertion.id);
+            }
+          }
+          const disclosureEventId = composeSimulationId("event", [
+            branch.id,
+            command.id,
+            `disclosure-${eventIds.length + 1}`,
+          ]);
+          const capture = deriveDisclosureCapture(
+            {
+              ...(referencedAssertion ? { referencedAssertion } : {}),
+              ...(speakerBelief ? { speakerBelief } : {}),
+            },
+            effect.actorId,
+            content,
+            disclosureEventId,
+          );
+          if (capture.ok) {
+            sequence += 1;
+            const subjectEntityIds = content.kind === "claim" ? content.subjectIds : [];
+            await append(
+              disclosureMadeEventSchema.parse({
+                id: disclosureEventId,
+                worldId: branch.worldId,
+                branchId: branch.id,
+                sequence,
+                storySecond: branch.storySecond,
+                type: "disclosure_made",
+                schemaVersion: 1,
+                rulesetVersion: branch.rulesetVersion,
+                derivationVersion: KNOWLEDGE_DERIVATION_VERSION,
+                commandId: command.id,
+                correlationId: command.correlationId,
+                actorIds: sortedUnique([effect.actorId, ...effect.targetActorIds]),
+                entityIds: sortedUnique([capture.derived.assertionId, ...subjectEntityIds]),
+                ...(engagement.locationId ? { locationId: engagement.locationId } : {}),
+                recordedAtWallClock: command.submittedAtWallClock,
+                payload: {
+                  speakerActorId: effect.actorId,
+                  targetActorIds: sortedUnique([...effect.targetActorIds]),
+                  content,
+                  derived: capture.derived,
+                },
+              }),
+            );
+          }
+        }
       }
+
+      // §23.4: accepted proposals become audited records; a threshold-crossing
+      // reuse appends the ruled promotion event right behind its record.
+      for (const accepted of resolution.accepted) {
+        sequence += 1;
+        await append(
+          softCanonRecordedEventSchema.parse({
+            id: composeSimulationId("event", [branch.id, command.id, `canon-${eventIds.length + 1}`]),
+            worldId: branch.worldId,
+            branchId: branch.id,
+            sequence,
+            storySecond: branch.storySecond,
+            type: "soft_canon_recorded",
+            schemaVersion: 1,
+            rulesetVersion: branch.rulesetVersion,
+            derivationVersion: SOFT_CANON_DERIVATION_VERSION,
+            commandId: command.id,
+            correlationId: command.correlationId,
+            actorIds: [],
+            entityIds: sortedUnique([...accepted.entry.subjectIds]),
+            recordedAtWallClock: command.submittedAtWallClock,
+            payload: {
+              proposal: accepted.proposal,
+              derived: { entry: accepted.entry, reused: accepted.reused },
+            },
+          }),
+        );
+        if (accepted.promoted) {
+          sequence += 1;
+          const promotedEventId = composeSimulationId("event", [
+            branch.id,
+            command.id,
+            `canon-promoted-${eventIds.length + 1}`,
+          ]);
+          await append(
+            softCanonPromotedEventSchema.parse({
+              id: promotedEventId,
+              worldId: branch.worldId,
+              branchId: branch.id,
+              sequence,
+              storySecond: branch.storySecond,
+              type: "soft_canon_promoted",
+              schemaVersion: 1,
+              rulesetVersion: branch.rulesetVersion,
+              derivationVersion: SOFT_CANON_DERIVATION_VERSION,
+              commandId: command.id,
+              correlationId: command.correlationId,
+              actorIds: [],
+              entityIds: sortedUnique([...accepted.entry.subjectIds]),
+              recordedAtWallClock: command.submittedAtWallClock,
+              payload: {
+                entry: {
+                  ...accepted.entry,
+                  status: "promoted",
+                  statusChangedAt: branch.storySecond,
+                  statusCauseEventId: promotedEventId,
+                },
+                reuseCutCount: accepted.reuseCutCount,
+                thresholds: {
+                  rulesVersion: rules.version,
+                  promotionReuseCutCount: rules.promotionReuseCutCount,
+                  promotionMinimumConfidenceFixedPoint: rules.promotionMinimumConfidenceFixedPoint,
+                },
+              },
+            }),
+          );
+        }
+      }
+
       await advanceLockedBranch(tx, branch, sequence);
 
-      return {
+      return confirmNarratorResultCommandResultSchema.parse({
         status: "accepted",
         commandId: command.id,
         branchVersion: branch.version + 1,
         firstSequence: branch.headSequence + 1,
         lastSequence: sequence,
         eventIds,
-      };
+      });
     },
   });
 }
