@@ -182,6 +182,9 @@ afterAll(async () => {
   await globalThis.__vesperPool?.end();
 });
 
+const feedOutbox = (branchId: string) =>
+  and(eq(simOutbox.branchId, branchId), eq(simOutbox.consumerKind, "item_transfer_feed"));
+
 describe("E2.2 durable item-transfer branch transaction", () => {
   it("atomically persists one result, event, branch advance, and typed holding", async (test) => {
     if (!ready) return test.skip();
@@ -389,12 +392,12 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
 
     const denied = command(ids, ids.itemIds[0], { controlledActorIds: [ids.observerId] });
     expect(await submitDurableItemTransfer(denied)).toMatchObject({ status: "rejected" });
-    expect(await db().select().from(simOutbox).where(eq(simOutbox.branchId, ids.branchId))).toEqual([]);
+    expect(await db().select().from(simOutbox).where(feedOutbox(ids.branchId))).toEqual([]);
 
     const accepted = command(ids);
     expect(await submitDurableItemTransfer(accepted)).toMatchObject({ status: "accepted" });
     expect(await submitDurableItemTransfer(accepted)).toMatchObject({ status: "accepted" });
-    const rows = await db().select().from(simOutbox).where(eq(simOutbox.branchId, ids.branchId));
+    const rows = await db().select().from(simOutbox).where(feedOutbox(ids.branchId));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       consumerKind: "item_transfer_feed",
@@ -421,7 +424,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toEqual([]);
     expect(await db().select().from(simConsumerCheckpoints).where(eq(simConsumerCheckpoints.branchId, ids.branchId))).toEqual([]);
 
-    const [work] = await db().select().from(simOutbox).where(eq(simOutbox.branchId, ids.branchId));
+    const [work] = await db().select().from(simOutbox).where(feedOutbox(ids.branchId));
     if (!work) throw new Error("Expected retryable outbox work");
     expect(work).toMatchObject({ state: "pending", attempts: 1, leaseOwner: null });
     expect(work.lastError).toContain(`outbox=${work.id}`);
@@ -450,7 +453,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     await db()
       .update(simOutbox)
       .set({ state: "pending", availableAt: now, completedAt: null })
-      .where(eq(simOutbox.branchId, ids.branchId));
+      .where(feedOutbox(ids.branchId));
     expect(await consumeNextItemTransferOutbox({ workerId: "worker_b", now })).toMatchObject({
       status: "completed",
       throughSequence: 1,
@@ -490,7 +493,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
         leaseOwner: "slow_worker",
         leaseExpiresAt: new Date(now.getTime() + 30_000),
       })
-      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 1)));
+      .where(and(feedOutbox(ids.branchId), eq(simOutbox.firstSequence, 1)));
 
     expect(await consumeNextItemTransferOutbox({ workerId: "impatient_worker", now })).toEqual({
       status: "idle",
@@ -498,7 +501,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     const [later] = await db()
       .select()
       .from(simOutbox)
-      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 2)));
+      .where(and(feedOutbox(ids.branchId), eq(simOutbox.firstSequence, 2)));
     expect(later).toMatchObject({ state: "pending", attempts: 0, lastError: null });
   });
 
@@ -541,7 +544,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
         leaseOwner: "dead_worker",
         leaseExpiresAt: new Date(now.getTime() - 1_000),
       })
-      .where(eq(simOutbox.branchId, ids.branchId));
+      .where(feedOutbox(ids.branchId));
 
     expect(await consumeNextItemTransferOutbox({ workerId: "recovery_worker", now })).toMatchObject({
       status: "completed",
@@ -574,13 +577,13 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
         leaseOwner: "dead_worker",
         leaseExpiresAt: new Date(now.getTime() - 1_000),
       })
-      .where(eq(simOutbox.branchId, ids.branchId));
+      .where(feedOutbox(ids.branchId));
 
     const result = await consumeNextItemTransferOutbox({ workerId: "worker_after_crash", now, maxAttempts: 3 });
     expect(result).toMatchObject({ status: "failed", terminal: true, retryAt: null });
     expect(await db().select().from(simItemTransferFeed).where(eq(simItemTransferFeed.branchId, ids.branchId))).toEqual([]);
 
-    const [row] = await db().select().from(simOutbox).where(eq(simOutbox.branchId, ids.branchId));
+    const [row] = await db().select().from(simOutbox).where(feedOutbox(ids.branchId));
     expect(row).toMatchObject({ state: "failed", attempts: 3, leaseOwner: null });
     expect(row?.lastError).toContain("exhausted");
 
@@ -600,7 +603,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     await db()
       .update(simOutbox)
       .set({ state: "completed", completedAt: new Date() })
-      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 1)));
+      .where(and(feedOutbox(ids.branchId), eq(simOutbox.firstSequence, 1)));
 
     const result = await consumeNextItemTransferOutbox({
       workerId: "gap_worker",
@@ -613,7 +616,7 @@ describe("E2.3 transactional outbox and rebuildable item-transfer feed", () => {
     const [poison] = await db()
       .select()
       .from(simOutbox)
-      .where(and(eq(simOutbox.branchId, ids.branchId), eq(simOutbox.firstSequence, 2)));
+      .where(and(feedOutbox(ids.branchId), eq(simOutbox.firstSequence, 2)));
     expect(poison).toMatchObject({ state: "failed", attempts: 1 });
     expect(poison?.lastError).toContain("Consumer sequence gap");
   });

@@ -37,9 +37,10 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   shipped 2026-07-19**, see Shipped), the full persisted NarrativeCut + narrator trust
   boundary + presentation auditor + ruled soft canon (**E4.3 — shipped 2026-07-19**,
   see Shipped), eligibility-before-similarity RAG with memory docs linked to their
-  sources (E4.4), and the exit corpus — zero cross-viewpoint leaks, contradiction
-  handling, rerender-creates-nothing, retry-from-cut (E4.5).
-  **Current sub-target: E4.4.**
+  sources (**E4.4 — shipped 2026-07-19**, see Shipped), and the exit corpus — zero
+  cross-viewpoint leaks, contradiction handling, rerender-creates-nothing,
+  retry-from-cut (E4.5).
+  **Current sub-target: E4.5 — the Gate 4 exit corpus.**
 
 ## Next (queued)
 
@@ -138,6 +139,19 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine RAG eligibility & memory linkage (E4.4)** —
+  [engine.plan.md](engine.plan.md) §"Gate 4 build order" · contract
+  [engine.spec.md](engine.spec.md) §24 — 2026-07-19 — redacted memory documents
+  (`sim_memory_documents`, migration 0066) with source links, sequence intervals,
+  eligibility surfaces, validity/supersedence, and schema/model versions; outbox-driven
+  indexing through a generalized claim/release lane with visible lag and an injected
+  embedding seam that degrades to text-only recall; the §24.1 pipeline resolves branch
+  ancestry (nearest-branch dedupe), viewpoint eligibility (fixed actors or live-belief
+  joins), and per-kind relational validity against the query branch's ledgers before
+  any similarity ranking — so retraction, demotion, and fork divergence narrow recall
+  and no query text or embedding ever widens it; provenance + epistemic label on every
+  result; authored lore seeded with explicit visibility. 8 pure + 4 int cases; CI runs
+  `test:engine-e4-4` (2 771 pure + 368 int green). Next: **E4.5**.
 - **World-engine NarrativeCut v2, narrator boundary & soft canon (E4.3)** —
   [engine.plan.md](engine.plan.md) §"Gate 4 build order" · contract
   [engine.spec.md](engine.spec.md) §22–23 — 2026-07-19 — the full §22.1 cut

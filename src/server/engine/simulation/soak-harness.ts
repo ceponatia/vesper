@@ -11,6 +11,7 @@ import {
   deriveTriggerId,
   deterministicDrawUnit,
 } from "@/contracts/simulation/scheduler";
+import { itemTransferFeedConsumerKind } from "@/contracts/simulation/outbox";
 import { simulationHash } from "@/lib/simulation/item-transfer";
 import { newId } from "@/lib/ids";
 import {
@@ -492,11 +493,15 @@ class SoakRun {
   }
 
   async openQueueDepths(branchIds: readonly string[]): Promise<{ outbox: number; triggers: number }> {
+    // Depth is measured on the lane this soak pumps. The E4.4 memory-index
+    // lane shares the table but has its own consumer and its own lag
+    // diagnostics (§24.3) — unpumped here, it would read as false growth.
     const [outboxRow] = await this.database
       .select({ value: count() })
       .from(simOutbox)
       .where(
         and(
+          eq(simOutbox.consumerKind, itemTransferFeedConsumerKind),
           inArray(simOutbox.branchId, [...branchIds]),
           inArray(simOutbox.state, ["pending", "processing"]),
         ),

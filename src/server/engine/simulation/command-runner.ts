@@ -8,6 +8,7 @@ import type { PrincipalKind } from "@/contracts/simulation/envelopes";
 import { branchVersionSchema } from "@/contracts/simulation/identity";
 import { db, simBranches, simCommands, simEvents, simWorlds, type Db } from "@/server/db";
 import { recordCommandKnowledge } from "./knowledge-recorder";
+import { enqueueMemoryIndexObligations } from "./memory-index-store";
 import { recordCommandObservations } from "./observation-store";
 import { recordCommandSoftCanon } from "./soft-canon-recorder";
 import type { SimTx } from "./trigger-projector";
@@ -152,11 +153,18 @@ export async function runSimulationCommand<
     // this command's events against the post-command locus rows (§20). Then
     // E4.2: fold any disclosures through the knowledge ledgers against those
     // fresh observation rows (§21) — order matters, beliefs rest on evidence.
-    // Finally E4.3: fold soft-canon snapshots into the bounded store (§23.4).
+    // E4.3: fold soft-canon snapshots into the bounded store (§23.4). Last,
+    // E4.4: enqueue memory-index obligations for the appended events (§24.3)
+    // — indexing itself runs later, off the outbox, never under this lock.
     if (commandResult.status === "accepted") {
       await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
       await recordCommandKnowledge(tx, { id: branch.id, headSequence: branch.headSequence });
       await recordCommandSoftCanon(tx, { id: branch.id, headSequence: branch.headSequence });
+      await enqueueMemoryIndexObligations(tx, {
+        id: branch.id,
+        worldId: branch.worldId,
+        headSequence: branch.headSequence,
+      });
     }
 
     await tx.insert(simCommands).values({
