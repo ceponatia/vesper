@@ -69,8 +69,9 @@ function safeDiagnostic(error: unknown, claimed: ClaimedOutboxObligation): strin
 
 /**
  * A raw event envelope shape for `projectMaterialFeedRow` to parse — it
- * discriminates on `type` between `item_transferred` and `item_destroyed`
- * itself, so this builder does not pick a schema up front.
+ * discriminates on `type` among `item_transferred`, `item_destroyed`, and
+ * (E5.3 slice 2, §26.6) `item_consumed` itself, so this builder does not pick
+ * a schema up front.
  */
 function eventFromRow(row: typeof simEvents.$inferSelect): unknown {
   return {

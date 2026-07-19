@@ -84,6 +84,8 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
       return "an item changing hands";
     case "item_destroyed":
       return "an item being destroyed";
+    case "item_consumed":
+      return "an item being consumed";
     case "speech_act_delivered":
       return "something meaningful being said";
     case "disclosure_made":

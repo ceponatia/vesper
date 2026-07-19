@@ -9,14 +9,15 @@ import {
   worldIdSchema,
 } from "./identity";
 import {
+  itemConsumedEventSchema,
   itemDestroyedEventSchema,
   itemLocusSchema,
   itemTransferredEventSchema,
 } from "./materials";
 
 export const itemTransferFeedConsumerKind = "item_transfer_feed" as const;
-/** Bumped for E5.3: the feed carries loci, not container ids, and item_destroyed. */
-export const itemTransferFeedProjectionSchemaVersion = 2 as const;
+/** Bumped for E5.3 slice 2: the feed also carries item_consumed. */
+export const itemTransferFeedProjectionSchemaVersion = 3 as const;
 
 export const simulationOutboxStateSchema = z.enum([
   "pending",
@@ -29,8 +30,12 @@ export const itemTransferOutboxPayloadSchema = z
   .object({ sourceEventId: eventIdSchema })
   .strict();
 
-/** The material events the feed publishes one row per (§26.4). */
-export const itemMaterialFeedEventKinds = ["item_transferred", "item_destroyed"] as const;
+/** The material events the feed publishes one row per (§26.4, §26.6). */
+export const itemMaterialFeedEventKinds = [
+  "item_transferred",
+  "item_destroyed",
+  "item_consumed",
+] as const;
 export const itemMaterialFeedEventKindSchema = z.enum(itemMaterialFeedEventKinds);
 
 export const itemTransferFeedRowSchema = z
@@ -56,19 +61,22 @@ export type ItemTransferFeedRow = z.infer<typeof itemTransferFeedRowSchema>;
 const materialFeedEventSchema = z.discriminatedUnion("type", [
   itemTransferredEventSchema,
   itemDestroyedEventSchema,
+  itemConsumedEventSchema,
 ]);
 
 /**
  * Pure projector shared by live delivery and rebuild-from-zero. It publishes one
  * feed row per material movement — a transfer carries its destination locus, a
- * destruction the terminal `gone` locus it moved to.
+ * destruction or consumption the terminal `gone` locus it moved to.
  */
 export function projectMaterialFeedRow(rawEvent: unknown): ItemTransferFeedRow {
   const event = materialFeedEventSchema.parse(rawEvent);
   const toLocus =
     event.type === "item_transferred"
       ? event.payload.toLocus
-      : ({ kind: "gone", basis: event.payload.basis } as const);
+      : event.type === "item_destroyed"
+        ? ({ kind: "gone", basis: event.payload.basis } as const)
+        : ({ kind: "gone", basis: "consumed" } as const);
   return itemTransferFeedRowSchema.parse({
     consumerKind: itemTransferFeedConsumerKind,
     projectionSchemaVersion: itemTransferFeedProjectionSchemaVersion,

@@ -1,9 +1,11 @@
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
+  consumeItemCommandSchema,
   destroyItemCommandSchema,
   setItemOwnershipCommandSchema,
   transferItemCommandSchema,
+  type ConsumeItemCommand,
   type DestroyItemCommand,
   type ItemLocusInput,
   type SetItemOwnershipCommand,
@@ -12,15 +14,20 @@ import {
 import { newId } from "@/lib/ids";
 import {
   db,
+  simBodyMeters,
   simEvents,
   simItemHoldings,
   simItems,
   simItemTransferFeed,
   simObservations,
+  simTriggers,
   simWorlds,
 } from "@/server/db";
+import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
+import { submitDurableInitializeActorBody } from "./body-store";
 import {
   seedDurableMaterialBranch,
+  submitDurableConsumeItem,
   submitDurableDestroyItem,
   submitDurableSetItemOwnership,
   submitDurableTransferItem,
@@ -539,5 +546,303 @@ describe("E5.3 durable material branch transaction", () => {
     expect(witnessIds).toContain(ids.actorId);
     expect(witnessIds).toContain(ids.otherId);
     expect(witnessIds).not.toContain(ids.remoteId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.3 slice 2 — consume_item (§26.6)
+// ---------------------------------------------------------------------------
+
+interface ConsumeCase {
+  worldId: string;
+  branchId: string;
+  locationId: string;
+  zoneId: string;
+  actorId: string;
+  /** held by actorId; carries a real energy-restoring consumption effect. */
+  mealId: string;
+  /** held by actorId; a second, independent consumable (for the conflict case). */
+  waterId: string;
+  /** held by actorId; carries no consumptionEffects at all. */
+  rockId: string;
+}
+
+function makeConsumeIds(): ConsumeCase {
+  const worldId = newId();
+  const branchId = newId();
+  return {
+    worldId,
+    branchId,
+    locationId: `${worldId}-loc-kitchen`,
+    zoneId: `${branchId}-zone-kitchen`,
+    actorId: newId(),
+    mealId: newId(),
+    waterId: newId(),
+    rockId: newId(),
+  };
+}
+
+async function seedConsumeCase(ids: ConsumeCase): Promise<void> {
+  seededWorldIds.push(ids.worldId);
+  await seedDurableMaterialBranch({
+    worldId: ids.worldId,
+    worldTypeId: "e5-3-test-world",
+    worldSeed: `seed-${ids.worldId}`,
+    branchId: ids.branchId,
+    rulesetVersion: "e5-3-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [{ id: ids.actorId, name: "Mara" }],
+    items: [
+      {
+        id: ids.mealId,
+        name: "a bowl of stew",
+        materialKindKey: "food",
+        ownerActorId: null,
+        consumptionEffects: [
+          { meterKey: "energy", sourceKind: "meal", operation: { kind: "set", valueFixedPoint: 9_999 } },
+        ],
+        locus: { kind: "held", actorId: ids.actorId },
+      },
+      {
+        id: ids.waterId,
+        name: "a canteen of water",
+        materialKindKey: "drink",
+        ownerActorId: null,
+        consumptionEffects: [
+          { meterKey: "hygiene", sourceKind: "drink", operation: { kind: "set", valueFixedPoint: 9_500 } },
+        ],
+        locus: { kind: "held", actorId: ids.actorId },
+      },
+      { id: ids.rockId, name: "a plain rock", ownerActorId: null, locus: { kind: "held", actorId: ids.actorId } },
+    ],
+  });
+  await seedDurableSpaceTopology({
+    branchId: ids.branchId,
+    locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" }],
+    zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "room", privacyPolicy: "private" }],
+    links: [],
+    loci: [{ kind: "at", actorId: ids.actorId, locationId: ids.locationId, zoneId: ids.zoneId, since: SEED_SECOND }],
+  });
+}
+
+function consumeCommand(
+  ids: ConsumeCase,
+  overrides: Partial<{
+    id: string;
+    idempotencyKey: string;
+    expectedVersion: number;
+    actorId: string;
+    itemId: string;
+  }> = {},
+): ConsumeItemCommand {
+  return consumeItemCommandSchema.parse({
+    id: overrides.id ?? newId(),
+    branchId: ids.branchId,
+    expectedVersion: overrides.expectedVersion ?? 0,
+    idempotencyKey: overrides.idempotencyKey ?? newId(),
+    principal: {
+      kind: "npc_policy",
+      principalId: newId(),
+      controlledActorIds: [overrides.actorId ?? ids.actorId],
+    },
+    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    type: "consume_item",
+    schemaVersion: 1,
+    correlationId: newId(),
+    payload: {
+      actorId: overrides.actorId ?? ids.actorId,
+      itemId: overrides.itemId ?? ids.mealId,
+    },
+  });
+}
+
+function initializeBodyCommand(ids: ConsumeCase) {
+  return {
+    id: `cmd-init-${ids.branchId}`,
+    branchId: ids.branchId,
+    expectedVersion: 0,
+    idempotencyKey: `init-key-${ids.branchId}`,
+    principal: { kind: "storyteller", principalId: "principal-1", controlledActorIds: [] },
+    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    correlationId: `corr-${ids.branchId}`,
+    type: "initialize_actor_body",
+    schemaVersion: 1,
+    payload: { actorId: ids.actorId, registryVersion: "body-v1", baselineOverrides: {} },
+  };
+}
+
+async function pendingDepletedTriggers(branchId: string) {
+  return db()
+    .select({ uniquenessKey: simTriggers.uniquenessKey, state: simTriggers.state })
+    .from(simTriggers)
+    .where(and(eq(simTriggers.branchId, branchId), eq(simTriggers.kind, "body_threshold_due")))
+    .then((rows) => rows.filter((row) => row.uniquenessKey.includes("depleted")));
+}
+
+describe("E5.3 slice 2 — consume_item (§26.6)", () => {
+  it("consumes a held meal: holdings go gone/consumed, the body meter moves, the stale alarm retires and a fresh one arms, and the feed carries item_consumed", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConsumeIds();
+    await seedConsumeCase(ids);
+    const initialized = await submitDurableInitializeActorBody(initializeBodyCommand(ids));
+    expect(initialized.status).toBe("accepted");
+
+    const beforeConsume = await pendingDepletedTriggers(ids.branchId);
+    expect(beforeConsume.map((row) => row.state)).toEqual(["pending"]);
+
+    const command = consumeCommand(ids, { itemId: ids.mealId, expectedVersion: 1 });
+    const result = await submitDurableConsumeItem(command);
+    expect(result).toMatchObject({ status: "accepted", branchVersion: 2 });
+    if (result.status !== "accepted") throw new Error("expected acceptance");
+    // item_consumed + body_source_applied + its threshold re-arm.
+    expect(result.eventIds).toHaveLength(3);
+
+    expect(await readHolding(ids.branchId, ids.mealId)).toMatchObject({
+      locusKind: "gone",
+      goneBasis: "consumed",
+    });
+
+    const [consumedEvent] = await db()
+      .select()
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "item_consumed")));
+    expect(consumedEvent).toMatchObject({ type: "item_consumed" });
+
+    const [sourceEvent] = await db()
+      .select()
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "body_source_applied")));
+    expect(sourceEvent).toMatchObject({ causationId: consumedEvent?.id });
+    expect(sourceEvent?.payload).toMatchObject({
+      actorId: ids.actorId,
+      meterKey: "energy",
+      sourceKind: "meal",
+      operation: { kind: "set", valueFixedPoint: 9_999 },
+      valueAfterFixedPoint: 9_999,
+    });
+
+    const [meterRow] = await db()
+      .select()
+      .from(simBodyMeters)
+      .where(and(eq(simBodyMeters.branchId, ids.branchId), eq(simBodyMeters.meterKey, "energy")));
+    expect(meterRow).toMatchObject({ valueFixedPoint: 9_999 });
+
+    const afterConsume = await pendingDepletedTriggers(ids.branchId);
+    expect(afterConsume.map((row) => row.state).sort()).toEqual(["completed", "pending"]);
+
+    const consumedOutbox = await consumeNextItemTransferOutbox({ workerId: "test-worker" });
+    expect(consumedOutbox).toMatchObject({ status: "completed" });
+    const [feedRow] = await db()
+      .select()
+      .from(simItemTransferFeed)
+      .where(and(eq(simItemTransferFeed.branchId, ids.branchId), eq(simItemTransferFeed.itemId, ids.mealId)));
+    expect(feedRow).toMatchObject({
+      eventKind: "item_consumed",
+      actorId: ids.actorId,
+      itemId: ids.mealId,
+      toLocus: { kind: "gone", basis: "consumed" },
+    });
+  });
+
+  it("consumes without an initialized body: succeeds with zero body events", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConsumeIds();
+    await seedConsumeCase(ids);
+
+    const result = await submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.mealId }));
+    expect(result).toMatchObject({ status: "accepted", branchVersion: 1 });
+    if (result.status !== "accepted") throw new Error("expected acceptance");
+    expect(result.eventIds).toHaveLength(1);
+
+    const events = await db().select().from(simEvents).where(eq(simEvents.branchId, ids.branchId));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "item_consumed" });
+    expect(await readHolding(ids.branchId, ids.mealId)).toMatchObject({
+      locusKind: "gone",
+      goneBasis: "consumed",
+    });
+  });
+
+  it("rejects an item without authored consumption effects", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConsumeIds();
+    await seedConsumeCase(ids);
+
+    const result = await submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.rockId }));
+    expect(result).toMatchObject({ status: "rejected", code: "not_consumable" });
+    expect(await readHolding(ids.branchId, ids.rockId)).toMatchObject({
+      locusKind: "held",
+      actorId: ids.actorId,
+    });
+  });
+
+  it("replays an idempotent resubmission as the cached result without a second event", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConsumeIds();
+    await seedConsumeCase(ids);
+    const command = consumeCommand(ids, { itemId: ids.mealId });
+
+    const first = await submitDurableConsumeItem(command);
+    expect(first).toMatchObject({ status: "accepted" });
+    const replay = await submitDurableConsumeItem(command);
+    expect(replay).toEqual(first);
+
+    const events = await db().select().from(simEvents).where(eq(simEvents.branchId, ids.branchId));
+    expect(events).toHaveLength(1);
+  });
+
+  it("serializes concurrent same-version submissions to one acceptance and one conflict", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConsumeIds();
+    await seedConsumeCase(ids);
+
+    const [outcomeA, outcomeB] = await Promise.all([
+      submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.mealId })),
+      submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.waterId })),
+    ]);
+    expect([outcomeA.status, outcomeB.status].sort()).toEqual(["accepted", "conflict"]);
+
+    const events = await db().select().from(simEvents).where(eq(simEvents.branchId, ids.branchId));
+    expect(events).toHaveLength(1);
+  });
+
+  // The end-to-end §26.5 leg: a start-time reservation held by a live
+  // activity must block a bystander's consume_item with item_reserved.
+  it("rejects consuming an item a live activity has reserved", async (test) => {
+    if (!ready) return test.skip();
+    const ids = makeConsumeIds();
+    await seedConsumeCase(ids);
+    await seedDurableActionDefinitions({
+      branchId: ids.branchId,
+      definitions: [
+        {
+          id: "cook-with-food",
+          version: 1,
+          controllerKinds: ["npc_policy"],
+          duration: { kind: "fixed", seconds: 600 },
+          preconditions: [],
+          requiredClaims: [],
+          interruptibility: "free",
+          noticeability: "private",
+          resourceCosts: [{ materialKindKey: "food", quantity: 1, disposition: "use" }],
+        },
+      ],
+    });
+    const started = await submitDurableStartActivity({
+      id: newId(),
+      branchId: ids.branchId,
+      expectedVersion: 0,
+      idempotencyKey: newId(),
+      principal: { kind: "npc_policy", principalId: newId(), controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+      correlationId: newId(),
+      type: "start_activity",
+      schemaVersion: 1,
+      payload: { actionDefinitionId: "cook-with-food", actorId: ids.actorId },
+    });
+    expect(started).toMatchObject({ status: "accepted" });
+
+    const result = await submitDurableConsumeItem(consumeCommand(ids, { itemId: ids.mealId, expectedVersion: 1 }));
+    expect(result).toMatchObject({ status: "rejected", code: "item_reserved" });
   });
 });

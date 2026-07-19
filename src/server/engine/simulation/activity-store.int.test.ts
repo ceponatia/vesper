@@ -1,7 +1,8 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import { itemTransferFeedConsumerKind } from "@/contracts/simulation/outbox";
 import { newId } from "@/lib/ids";
 import {
   activityCompletionUniquenessKey,
@@ -11,15 +12,32 @@ import {
   simulationHash,
 } from "@/lib/simulation";
 import { simulationBranchEventSchema } from "@/contracts/simulation/branching";
-import { db, simEvents, simTriggers, simWorlds } from "@/server/db";
+import { bodyThresholdUniquenessKeyPrefix } from "@/lib/simulation/bodies";
+import {
+  db,
+  simActivities,
+  simBodyMeters,
+  simBranches,
+  simEvents,
+  simItemHoldings,
+  simOutbox,
+  simTriggers,
+  simWorlds,
+} from "@/server/db";
 import {
   readDurableActivities,
   seedDurableActionDefinitions,
   submitDurableCancelActivity,
+  submitDurableResumeActivity,
   submitDurableStartActivity,
 } from "./activity-store";
+import {
+  seedDurableBodyRhythms,
+  submitDurableApplyBodyCondition,
+  submitDurableInitializeActorBody,
+} from "./body-store";
 import { forkBranch } from "./branch-store";
-import { seedDurableMaterialBranch } from "./material-store";
+import { seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 import { readDurableSpaceBranch, seedDurableSpaceTopology, submitDurableMoveActor } from "./space-store";
 
@@ -397,5 +415,440 @@ describe.runIf(ready)("E3.2 durable activity authority", () => {
     // Space state stayed coherent alongside: the actor never moved.
     const space = await readDurableSpaceBranch(ids.branchId);
     expect(space.loci.find((locus) => locus.actorId === ids.actorId)?.kind).toBe("at");
+  });
+});
+
+// -----------------------------------------------------------------------
+// E5.3 slice 2 (§26.5–26.6) — resource-cost reservation at start and
+// consume-disposition consumption at completion.
+// -----------------------------------------------------------------------
+
+/**
+ * Long enough that the collapse-interruption test's alarm (armed ~24–48h
+ * after wake, the same window body-store.int.test.ts's vigil test proves
+ * out) fires mid-meal rather than after it — short enough that every other
+ * test's drain-to-completion stays a single plain arithmetic offset.
+ */
+const MEAL_SECONDS = 200_000;
+const MEAL_ENERGY_DELTA = 2_000;
+
+interface ConsumptionCase {
+  worldId: string;
+  branchId: string;
+  actorId: string;
+  witnessId: string;
+  zoneA: string;
+  mealItemId: string;
+  eatActionId: string;
+  eatFeastActionId: string;
+}
+
+function consumptionBranchSeed(ids: ConsumptionCase, includeMeal: boolean): MaterialBranchSeed {
+  return materialBranchSeedSchema.parse({
+    worldId: ids.worldId,
+    worldTypeId: "e5-3-slice2-tests",
+    worldSeed: `seed-${ids.worldId}`,
+    branchId: ids.branchId,
+    rulesetVersion: "e5-3-slice2-test-v1",
+    originStorySecond: SEED_SECOND,
+    actors: [
+      { id: ids.actorId, name: "Mara" },
+      { id: ids.witnessId, name: "Iris" },
+    ],
+    items: includeMeal
+      ? [
+          {
+            id: ids.mealItemId,
+            name: "Rice bowl",
+            materialKindKey: "meal",
+            consumptionEffects: [
+              {
+                meterKey: "energy",
+                sourceKind: "meal",
+                operation: { kind: "add", deltaFixedPoint: MEAL_ENERGY_DELTA },
+              },
+            ],
+            locus: { kind: "held", actorId: ids.actorId },
+          },
+        ]
+      : [],
+  });
+}
+
+async function seedConsumptionCase(options: { includeMeal?: boolean } = {}): Promise<ConsumptionCase> {
+  const worldId = newId();
+  const branchId = newId();
+  const ids: ConsumptionCase = {
+    worldId,
+    branchId,
+    actorId: newId(),
+    witnessId: newId(),
+    zoneA: `${branchId}-zone-a`,
+    mealItemId: `${branchId}-item-meal`,
+    eatActionId: `${branchId}-action-eat`,
+    eatFeastActionId: `${branchId}-action-eat-feast`,
+  };
+  const locHome = `${worldId}-loc-home`;
+  await seedDurableMaterialBranch(consumptionBranchSeed(ids, options.includeMeal ?? true));
+  await seedDurableSpaceTopology({
+    branchId,
+    locations: [{ id: locHome, worldId, kind: "home", defaultAccessPolicy: "private" }],
+    zones: [{ id: ids.zoneA, locationId: locHome, kind: "room", privacyPolicy: "private" }],
+    links: [],
+    loci: [
+      { kind: "at", actorId: ids.actorId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
+      { kind: "at", actorId: ids.witnessId, locationId: locHome, zoneId: ids.zoneA, since: SEED_SECOND },
+    ],
+  });
+  await seedDurableActionDefinitions({
+    branchId,
+    definitions: [
+      {
+        id: ids.eatActionId,
+        version: 1,
+        controllerKinds: ["player", "npc_policy"],
+        duration: { kind: "fixed", seconds: MEAL_SECONDS },
+        preconditions: [{ kind: "at_zone_kind", zoneKind: "room" }],
+        requiredClaims: [{ kind: "body" }, { kind: "attention", weight: "full" }],
+        interruptibility: "pausable",
+        noticeability: "obvious",
+        resourceCosts: [{ materialKindKey: "meal", quantity: 1, disposition: "consume" }],
+      },
+      {
+        id: ids.eatFeastActionId,
+        version: 1,
+        controllerKinds: ["player", "npc_policy"],
+        duration: { kind: "fixed", seconds: MEAL_SECONDS },
+        preconditions: [{ kind: "at_zone_kind", zoneKind: "room" }],
+        requiredClaims: [{ kind: "body" }, { kind: "attention", weight: "full" }],
+        interruptibility: "pausable",
+        noticeability: "obvious",
+        resourceCosts: [{ materialKindKey: "meal", quantity: 2, disposition: "consume" }],
+      },
+    ],
+  });
+  seededWorldIds.push(worldId);
+  return ids;
+}
+
+function startEatCommand(ids: ConsumptionCase, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `cmd-eat-${ids.branchId}`,
+    branchId: ids.branchId,
+    expectedVersion: 0,
+    idempotencyKey: `eat-key-${ids.branchId}`,
+    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+    submittedAtWallClock: "2026-07-19T18:00:00.000Z",
+    correlationId: `corr-${ids.branchId}`,
+    type: "start_activity",
+    schemaVersion: 1,
+    payload: { actionDefinitionId: ids.eatActionId, actorId: ids.actorId },
+    ...overrides,
+  };
+}
+
+function transferMealCommand(ids: ConsumptionCase, expectedVersion: number, suffix: string) {
+  return {
+    id: `cmd-${suffix}-${ids.branchId}`,
+    branchId: ids.branchId,
+    expectedVersion,
+    idempotencyKey: `${suffix}-key-${ids.branchId}`,
+    principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+    submittedAtWallClock: "2026-07-19T18:05:00.000Z",
+    correlationId: `corr-${ids.branchId}`,
+    type: "transfer_item",
+    schemaVersion: 2,
+    payload: {
+      actorId: ids.actorId,
+      itemId: ids.mealItemId,
+      fromLocus: { kind: "held", actorId: ids.actorId },
+      toLocus: { kind: "zone", zoneId: ids.zoneA },
+    },
+  };
+}
+
+function initializeBodyCommand(ids: ConsumptionCase, expectedVersion: number) {
+  return {
+    id: `cmd-init-${ids.branchId}`,
+    branchId: ids.branchId,
+    expectedVersion,
+    idempotencyKey: `init-key-${ids.branchId}`,
+    principal: { kind: "storyteller", principalId: "principal-1", controlledActorIds: [] },
+    submittedAtWallClock: "2026-07-19T18:00:30.000Z",
+    correlationId: `corr-${ids.branchId}`,
+    type: "initialize_actor_body",
+    schemaVersion: 1,
+    payload: { actorId: ids.actorId, registryVersion: "body-v1", baselineOverrides: {} },
+  };
+}
+
+async function currentBranchVersion(branchId: string): Promise<number> {
+  const [row] = await db().select({ version: simBranches.version }).from(simBranches).where(eq(simBranches.id, branchId)).limit(1);
+  if (!row) throw new Error("branch missing for version lookup");
+  return row.version;
+}
+
+describe.runIf(ready)("E5.3 slice 2 — activity resource reservations and consumption", () => {
+  it("reserves the held meal deterministically and persists reservedItemIds", async () => {
+    const ids = await seedConsumptionCase();
+    const result = await submitDurableStartActivity(startEatCommand(ids));
+    expect(result.status).toBe("accepted");
+
+    const projection = await readDurableActivities(ids.branchId);
+    expect(projection.activities[0]?.reservedItemIds).toEqual([ids.mealItemId]);
+
+    const [startedRow] = await db()
+      .select()
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "activity_started")));
+    const startedPayload = z.object({ reservedItemIds: z.array(z.string()) }).loose().parse(startedRow?.payload);
+    expect(startedPayload.reservedItemIds).toEqual([ids.mealItemId]);
+  });
+
+  it("rejects start with material_unavailable when the resource cost cannot be met", async () => {
+    const ids = await seedConsumptionCase();
+    const result = await submitDurableStartActivity(
+      startEatCommand(ids, {
+        id: `cmd-feast-${ids.branchId}`,
+        idempotencyKey: `feast-key-${ids.branchId}`,
+        payload: { actionDefinitionId: ids.eatFeastActionId, actorId: ids.actorId },
+      }),
+    );
+    expect(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.code).toBe("material_unavailable");
+  });
+
+  it("rejects a transfer of the reserved item while the activity holds it", async () => {
+    const ids = await seedConsumptionCase();
+    const start = await submitDurableStartActivity(startEatCommand(ids));
+    expect(start.status).toBe("accepted");
+
+    const transfer = await submitDurableTransferItem(transferMealCommand(ids, 1, "transfer-blocked"));
+    expect(transfer.status).toBe("rejected");
+    if (transfer.status === "rejected") expect(transfer.code).toBe("item_reserved");
+  });
+
+  it("cancellation releases the reservation — a transfer then succeeds", async () => {
+    const ids = await seedConsumptionCase();
+    await submitDurableStartActivity(startEatCommand(ids));
+    const activityId = deriveActivityId(ids.branchId, `cmd-eat-${ids.branchId}`);
+
+    const cancel = await submitDurableCancelActivity({
+      id: `cmd-cancel-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 1,
+      idempotencyKey: `cancel-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T18:10:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "cancel_activity",
+      schemaVersion: 1,
+      payload: { activityInstanceId: activityId, reason: "actor_choice" },
+    });
+    expect(cancel.status).toBe("accepted");
+
+    const transfer = await submitDurableTransferItem(transferMealCommand(ids, 2, "transfer-after-cancel"));
+    expect(transfer.status).toBe("accepted");
+  });
+
+  it("completes through the drain: consumes the meal, applies the body effect, retires and re-arms the energy alarm, publishes the feed row", async () => {
+    const ids = await seedConsumptionCase();
+    const init = await submitDurableInitializeActorBody(initializeBodyCommand(ids, 0));
+    expect(init.status).toBe("accepted");
+
+    const energyThresholdPrefix = bodyThresholdUniquenessKeyPrefix(ids.actorId, "energy");
+    const beforeTriggers = await db()
+      .select({ id: simTriggers.id, state: simTriggers.state })
+      .from(simTriggers)
+      .where(
+        and(
+          eq(simTriggers.branchId, ids.branchId),
+          sql`starts_with(${simTriggers.uniquenessKey}, ${energyThresholdPrefix})`,
+        ),
+      );
+    expect(beforeTriggers.some((row) => row.state === "pending")).toBe(true);
+    const staleTriggerIds = beforeTriggers.map((row) => row.id);
+
+    const start = await submitDurableStartActivity({ ...startEatCommand(ids), expectedVersion: 1 });
+    expect(start.status).toBe("accepted");
+    const dueSecond = SEED_SECOND + MEAL_SECONDS;
+
+    const outcome = await advanceBranchStoryTime(ids.branchId, dueSecond + 10, { workerId: "w-eat-complete" });
+    expect(outcome.status).toBe("advanced");
+
+    const projection = await readDurableActivities(ids.branchId);
+    expect(projection.activities[0]?.phase).toBe("completed");
+
+    const [holdingRow] = await db()
+      .select()
+      .from(simItemHoldings)
+      .where(and(eq(simItemHoldings.branchId, ids.branchId), eq(simItemHoldings.itemId, ids.mealItemId)));
+    expect(holdingRow?.locusKind).toBe("gone");
+    expect(holdingRow?.goneBasis).toBe("consumed");
+
+    const eventRows = await db()
+      .select()
+      .from(simEvents)
+      .where(eq(simEvents.branchId, ids.branchId))
+      .orderBy(asc(simEvents.sequence));
+    const consumedEvent = eventRows.find((row) => row.type === "item_consumed");
+    expect(consumedEvent).toBeDefined();
+    const sourceEvent = eventRows.find((row) => row.type === "body_source_applied");
+    expect(sourceEvent).toBeDefined();
+    const sourcePayload = z
+      .object({ meterKey: z.string(), valueAfterFixedPoint: z.number() })
+      .loose()
+      .parse(sourceEvent?.payload);
+    expect(sourcePayload.meterKey).toBe("energy");
+    // Causation-chained to the item_consumed event, not to the completion (§26.6).
+    expect(sourceEvent?.causationId).toBe(consumedEvent?.id);
+
+    const [meterRow] = await db()
+      .select()
+      .from(simBodyMeters)
+      .where(
+        and(
+          eq(simBodyMeters.branchId, ids.branchId),
+          eq(simBodyMeters.actorId, ids.actorId),
+          eq(simBodyMeters.meterKey, "energy"),
+        ),
+      );
+    expect(meterRow?.lastIntegratedAt).toBe(dueSecond);
+    expect(meterRow?.valueFixedPoint).toBe(sourcePayload.valueAfterFixedPoint);
+
+    const afterTriggers = await db()
+      .select({ id: simTriggers.id, state: simTriggers.state })
+      .from(simTriggers)
+      .where(
+        and(
+          eq(simTriggers.branchId, ids.branchId),
+          sql`starts_with(${simTriggers.uniquenessKey}, ${energyThresholdPrefix})`,
+        ),
+      );
+    expect(afterTriggers.filter((row) => staleTriggerIds.includes(row.id)).every((row) => row.state === "completed")).toBe(
+      true,
+    );
+    expect(afterTriggers.some((row) => row.state === "pending")).toBe(true);
+
+    const [feedRow] = await db()
+      .select()
+      .from(simOutbox)
+      .where(
+        and(
+          eq(simOutbox.branchId, ids.branchId),
+          eq(simOutbox.consumerKind, itemTransferFeedConsumerKind),
+          eq(simOutbox.sourceEventId, consumedEvent?.id ?? ""),
+        ),
+      );
+    expect(feedRow).toBeDefined();
+  });
+
+  it("keeps the reservation through an interruption and consumes normally after resume", async () => {
+    const ids = await seedConsumptionCase();
+    await seedDurableBodyRhythms({
+      branchId: ids.branchId,
+      rows: [
+        { actorId: ids.actorId, kind: "sleep", startMinuteOfDay: 1_380, endMinuteOfDay: 420 },
+        { actorId: ids.actorId, kind: "wash", startMinuteOfDay: 405, endMinuteOfDay: 420 },
+      ],
+    });
+    await submitDurableInitializeActorBody(initializeBodyCommand(ids, 0));
+
+    // A short nap creates real sleep history — the wake is what arms the
+    // collapse alarm this test uses to force a mid-meal interruption
+    // (mirrors body-store.int.test.ts's collapse-arc test).
+    await submitDurableApplyBodyCondition({
+      id: `cmd-nap-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: await currentBranchVersion(ids.branchId),
+      idempotencyKey: `nap-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T18:01:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "apply_body_condition",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.actorId,
+        conditionKey: "asleep",
+        durationSeconds: 5_400,
+        modifiers: [],
+        observerActorIds: [],
+      },
+    });
+    const wakeAt = SEED_SECOND + 5_400;
+    await advanceBranchStoryTime(ids.branchId, wakeAt, { workerId: "w-eat-wake" });
+
+    const [collapseAlarm] = await db()
+      .select({ dueStorySecond: simTriggers.dueStorySecond })
+      .from(simTriggers)
+      .where(
+        and(
+          eq(simTriggers.branchId, ids.branchId),
+          eq(simTriggers.kind, "body_collapse_due"),
+          eq(simTriggers.state, "pending"),
+        ),
+      );
+    expect(collapseAlarm).toBeDefined();
+    if (!collapseAlarm) throw new Error("collapse alarm missing");
+
+    const start = await submitDurableStartActivity({
+      ...startEatCommand(ids),
+      expectedVersion: await currentBranchVersion(ids.branchId),
+    });
+    expect(start.status).toBe("accepted");
+    const activityId = deriveActivityId(ids.branchId, `cmd-eat-${ids.branchId}`);
+
+    // The collapse fires mid-meal. Reservations are phase-derived like claims
+    // (§26.5) — held across every claim-holding phase including interrupted.
+    const collapseOutcome = await advanceBranchStoryTime(ids.branchId, collapseAlarm.dueStorySecond, {
+      workerId: "w-eat-collapse",
+    });
+    expect(collapseOutcome.status).toBe("advanced");
+
+    const [interruptedRow] = await db().select().from(simActivities).where(eq(simActivities.branchId, ids.branchId));
+    expect(interruptedRow?.phase).toBe("interrupted");
+    expect(interruptedRow?.reservedItemIds).toEqual([ids.mealItemId]);
+
+    const blockedTransfer = await submitDurableTransferItem(
+      transferMealCommand(ids, await currentBranchVersion(ids.branchId), "transfer-while-interrupted"),
+    );
+    expect(blockedTransfer.status).toBe("rejected");
+    if (blockedTransfer.status === "rejected") expect(blockedTransfer.code).toBe("item_reserved");
+
+    // Sleep runs its course; resume picks the meal back up with the same
+    // reservation, then finishes it normally.
+    const wake2 = collapseAlarm.dueStorySecond + 28_800;
+    await advanceBranchStoryTime(ids.branchId, wake2, { workerId: "w-eat-wake2" });
+
+    const resume = await submitDurableResumeActivity({
+      id: `cmd-resume-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: await currentBranchVersion(ids.branchId),
+      idempotencyKey: `resume-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T18:20:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "resume_activity",
+      schemaVersion: 1,
+      payload: { activityInstanceId: activityId },
+    });
+    expect(resume.status).toBe("accepted");
+
+    const [resumedRow] = await db().select().from(simActivities).where(eq(simActivities.branchId, ids.branchId));
+    expect(resumedRow?.phase).toBe("active");
+    expect(resumedRow?.reservedItemIds).toEqual([ids.mealItemId]);
+
+    const finishOutcome = await advanceBranchStoryTime(ids.branchId, (resumedRow?.expectedCompleteAt ?? 0) + 10, {
+      workerId: "w-eat-finish",
+    });
+    expect(finishOutcome.status).toBe("advanced");
+
+    const finalProjection = await readDurableActivities(ids.branchId);
+    expect(finalProjection.activities[0]?.phase).toBe("completed");
+    const [finalHolding] = await db()
+      .select()
+      .from(simItemHoldings)
+      .where(and(eq(simItemHoldings.branchId, ids.branchId), eq(simItemHoldings.itemId, ids.mealItemId)));
+    expect(finalHolding?.goneBasis).toBe("consumed");
   });
 });

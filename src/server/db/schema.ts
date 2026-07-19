@@ -25,7 +25,7 @@ import type {
 import type { ActivityClaim, SimulationActionDefinition } from "@/contracts/simulation/activities";
 import type { BodyModifierOperation } from "@/contracts/simulation/bodies";
 import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
-import type { ContainerAccessPolicy, ItemLocus } from "@/contracts/simulation/materials";
+import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/contracts/simulation/materials";
 import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
@@ -1548,6 +1548,8 @@ export const simItems = pgTable(
     name: text("name").notNull(),
     /** Authored classification key resource costs reference (§26.5, E5.3 slice 2). */
     materialKindKey: text("material_kind_key"),
+    /** Authored §26.6 body effects a consumption applies, in authored order. Null = not consumable. */
+    consumptionEffects: jsonb("consumption_effects").$type<ItemConsumptionEffect[]>(),
     /** Social ownership (§26.3) — null = unowned. Changed only by item_ownership_set. */
     ownerActorId: text("owner_actor_id"),
     /** Present iff this item is itself a container (§26.2); paired with containerAccess. */
@@ -2108,6 +2110,8 @@ export const simActivities = pgTable(
     expectedCompleteAt: bigint("expected_complete_at", { mode: "number" }),
     progressFixedPoint: integer("progress_fixed_point").notNull().default(0),
     claims: jsonb("claims").$type<ActivityClaim[]>().notNull(),
+    /** §26.5: items reserved at start, held across every claim-holding phase. */
+    reservedItemIds: jsonb("reserved_item_ids").$type<string[]>().notNull().default([]),
     sourceCommandId: text("source_command_id").notNull(),
     updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
     updatedAt: updatedAt(),

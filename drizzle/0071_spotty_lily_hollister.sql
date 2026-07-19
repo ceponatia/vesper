@@ -1,0 +1,1 @@
+ALTER TABLE "sim_activities" ADD COLUMN "reserved_item_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

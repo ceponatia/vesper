@@ -67,6 +67,7 @@ function viewOf(projection: typeof seed): MaterialResolutionView {
       projection.items.filter(
         (item) => item.locus.kind === "container" && item.locus.containerItemId === containerItemId,
       ).length,
+    reservingActivityId: () => null,
   };
 }
 

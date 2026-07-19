@@ -10,6 +10,7 @@ import {
   actionDefinitionIdSchema,
   activityInstanceIdSchema,
   commandIdSchema,
+  itemIdSchema,
   storySecondSchema,
   worldCharacterIdSchema,
   zoneIdSchema,
@@ -26,6 +27,12 @@ import {
  * compatibility matrix (conversation-while-cooking) joins with E3.4
  * engagements — in this slice every body-claiming activity is stationary and
  * blocks departure outright.
+ *
+ * E5.3 slice 2 (§26.5–26.6) makes good on the resource-cost boundary: an
+ * action definition may name `resourceCosts`, start selects and reserves
+ * concrete items deterministically, and completion consumes the
+ * `consume`-disposition ones through the same body-effect path `consume_item`
+ * uses (`materials.ts`'s `buildConsumptionBodyEffects`).
  */
 
 // --- Claims (engine.spec §16.2) --------------------------------------------
@@ -94,6 +101,21 @@ export const interruptibilitySchema = z.enum(interruptibilities);
 export const activityNoticeabilities = ["obvious", "private"] as const;
 export const activityNoticeabilitySchema = z.enum(activityNoticeabilities);
 
+/**
+ * A named, quantified material requirement (§26.5). `consume` destroys the
+ * selected items into their body/world effect at completion; `use` only
+ * requires and reserves them for the activity's span — they release, unspent,
+ * at every terminal phase (wear/cleanliness effects are slice 3).
+ */
+export const actionResourceCostSchema = z
+  .object({
+    materialKindKey: z.string().trim().min(1).max(64),
+    quantity: z.number().int().min(1).max(8),
+    disposition: z.enum(["consume", "use"]),
+  })
+  .strict();
+export type ActionResourceCost = z.infer<typeof actionResourceCostSchema>;
+
 export const simulationActionDefinitionSchema = z
   .object({
     id: actionDefinitionIdSchema,
@@ -105,6 +127,8 @@ export const simulationActionDefinitionSchema = z
     requiredClaims: z.array(activityClaimSchema),
     interruptibility: interruptibilitySchema,
     noticeability: activityNoticeabilitySchema,
+    /** §26.5: materials reserved atomically at start, spent or released at completion. */
+    resourceCosts: z.array(actionResourceCostSchema).max(4).default([]),
   })
   .strict();
 
@@ -152,6 +176,10 @@ export const claimHoldingActivityPhases: readonly ActivityPhase[] = [
 export const progressFixedPointSchema = z.number().int().min(0).max(1_000_000);
 
 const activityActorIdsSchema = createStableStringSetSchema(worldCharacterIdSchema, "Activity actor IDs");
+const activityReservedItemIdsSchema = createStableStringSetSchema(
+  itemIdSchema,
+  "Activity reserved item IDs",
+);
 
 export const activityInstanceSchema = z
   .object({
@@ -166,6 +194,8 @@ export const activityInstanceSchema = z
     expectedCompleteAt: storySecondSchema.optional(),
     progressFixedPoint: progressFixedPointSchema,
     claims: z.array(activityClaimSchema),
+    /** §26.5: items reserved at start, held across every claim-holding phase. */
+    reservedItemIds: activityReservedItemIdsSchema.default([]),
     sourceCommandId: commandIdSchema,
   })
   .strict();
@@ -198,6 +228,7 @@ export const startActivityRejectionCodes = [
   "actor_in_transit",
   "precondition_failed",
   "claim_conflict",
+  "material_unavailable",
 ] as const;
 export const startActivityRejectionCodeSchema = z.enum(startActivityRejectionCodes);
 export const startActivityCommandResultSchema = createCommandResultSchema(
@@ -277,6 +308,8 @@ const activityStartedPayloadSchema = z
     claims: z.array(activityClaimSchema),
     /** Captured derived value: replay does not recompute historical eligibility. */
     observerActorIds: witnessActorIdsSchema,
+    /** §26.5: the deterministic item selection, captured immutable at start. */
+    reservedItemIds: activityReservedItemIdsSchema,
   })
   .strict();
 
@@ -291,6 +324,8 @@ const activityCompletedPayloadSchema = z
     activityInstanceId: activityInstanceIdSchema,
     completedAt: storySecondSchema,
     observerActorIds: witnessActorIdsSchema,
+    /** §26.6: the `consume`-disposition reserved items spent at completion. */
+    consumedItemIds: activityReservedItemIdsSchema.default([]),
   })
   .strict();
 

@@ -33,6 +33,8 @@ import {
   type BodyModifierSpec,
   type BodyRhythmRow,
   type BodySourceAppliedEvent,
+  type BodySourceKind,
+  type BodySourceOperation,
   type BodyThresholdCrossedEvent,
   type BodyThresholdDefinition,
   type EndBodyConditionCommand,
@@ -538,12 +540,25 @@ export function deriveSleepCredit(input: {
 // Shared resolver plumbing
 // ---------------------------------------------------------------------------
 
-interface BodyBranchMeta {
+export interface BodyBranchMeta {
   worldId: string;
   branchId: string;
   rulesetVersion: string;
   headSequence: number;
   storySecond: number;
+}
+
+/**
+ * The minimal command shape body event construction needs — narrower than the
+ * closed `BodyCommand` union below so a non-body resolver (E5.3 §26.6
+ * consumption, §26.5 completion-time consume costs) can drive the same
+ * event-building helpers without becoming a body command. Every `BodyCommand`
+ * member already structurally satisfies this.
+ */
+export interface BodyEventCommandContext {
+  id: string;
+  correlationId: string;
+  submittedAtWallClock: string;
 }
 
 interface BodyRejection<TCode extends string> {
@@ -577,7 +592,12 @@ function actorControlledBy(command: BodyCommand, actorId: string): boolean {
   return true;
 }
 
-function eventEnvelope(view: BodyBranchMeta, command: BodyCommand, sequence: number, suffix: string) {
+function eventEnvelope(
+  view: BodyBranchMeta,
+  command: BodyEventCommandContext,
+  sequence: number,
+  suffix: string,
+) {
   return {
     id: composeSimulationId("event", [view.branchId, command.id, suffix]),
     worldId: view.worldId,
@@ -606,7 +626,7 @@ function capturedDerivation(view: MeterIntegrationView, atStorySecond: number) {
 
 function buildBodyTrigger(input: {
   view: BodyBranchMeta;
-  command: BodyCommand;
+  command: BodyEventCommandContext;
   sequence: number;
   causationId: string;
   actorId: string;
@@ -672,7 +692,7 @@ function buildBodyTrigger(input: {
 /** Re-solve one meter's alarm after a material write at `view.storySecond`. */
 function rearmThresholdTrigger(input: {
   view: BodyBranchMeta;
-  command: BodyCommand;
+  command: BodyEventCommandContext;
   actorId: string;
   meterView: MeterIntegrationView;
   sequence: number;
@@ -845,6 +865,136 @@ function sourceValueAfter(
   }
 }
 
+/**
+ * The single-meter source-application core (§25.1 layer 2): integrate to now,
+ * apply the operation, build the `body_source_applied` event with its
+ * captured derivation, and the meter's next state. `resolveApplyBodySource`
+ * and the exported `applySourceToMeter` below both build on this — kept
+ * private and rearm-free because `resolveApplyBodySource`'s exertion/climax
+ * couplings (§25.4) must land BETWEEN this event and its own rearm calls, an
+ * interleaving `applySourceToMeter`'s bundled rearm has no reason to support.
+ */
+function buildSourceAppliedEvent(args: {
+  view: BodyBranchMeta;
+  command: BodyEventCommandContext;
+  actorId: string;
+  meterKey: string;
+  sourceKind: BodySourceKind;
+  operation: BodySourceOperation;
+  meterView: MeterIntegrationView;
+  sequence: number;
+  suffix: string;
+  causationId?: string;
+}): { event: BodySourceAppliedEvent; nextState: BodyMeterState } {
+  const integrated = integrateMeterValue(args.meterView, args.view.storySecond);
+  const valueAfter = sourceValueAfter(
+    args.operation,
+    integrated,
+    args.meterView.state.baselineFixedPoint,
+  );
+
+  const event = bodySourceAppliedEventSchema.parse({
+    ...eventEnvelope(args.view, args.command, args.sequence, args.suffix),
+    type: "body_source_applied",
+    ...(args.causationId === undefined ? {} : { causationId: args.causationId }),
+    actorIds: [args.actorId],
+    entityIds: [args.actorId],
+    payload: {
+      actorId: args.actorId,
+      meterKey: args.meterKey,
+      sourceKind: args.sourceKind,
+      operation: args.operation,
+      valueAfterFixedPoint: valueAfter,
+      derived: capturedDerivation(args.meterView, args.view.storySecond),
+    },
+  });
+
+  const nextState = bodyMeterStateSchema.parse({
+    ...args.meterView.state,
+    valueFixedPoint: valueAfter,
+    lastIntegratedAtStorySecond: args.view.storySecond,
+  });
+
+  return { event, nextState };
+}
+
+export interface ApplySourceToMeterArgs {
+  view: BodyBranchMeta;
+  command: BodyEventCommandContext;
+  actorId: string;
+  meterKey: string;
+  sourceKind: BodySourceKind;
+  operation: BodySourceOperation;
+  meterView: MeterIntegrationView;
+  /** Consulted only when `meterKey` is `"energy"` — omit where no collapse alarm applies. */
+  collapseContext?: CollapseContext;
+  sequence: number;
+  suffix: string;
+  causationId?: string;
+}
+
+export interface ApplySourceToMeterResult {
+  event: BodySourceAppliedEvent;
+  nextState: BodyMeterState;
+  /** Threshold re-arm, then (when `meterKey` is `"energy"`) the collapse re-arm. */
+  rearmEvents: TriggerScheduledEvent[];
+  /** The first unused sequence number after `event` and every `rearmEvents` entry. */
+  nextSequence: number;
+}
+
+/**
+ * The exported single-meter source-application helper (§25.1 layer 2, §26.6):
+ * the core above, bundled with its threshold/collapse re-arm in one call —
+ * exactly what a non-body resolver needs to write a meter and retire+re-arm
+ * its alarms atomically (§26.6 consumption, §26.5 completion-time consume
+ * costs). Consumption sources never carry the §25.4 exertion/climax couplings
+ * (their sourceKind is meal/drink/adjustment), so bundling here is safe.
+ */
+export function applySourceToMeter(args: ApplySourceToMeterArgs): ApplySourceToMeterResult {
+  const { event, nextState } = buildSourceAppliedEvent(args);
+  const rearmEvents: TriggerScheduledEvent[] = [];
+  let nextSequence = event.sequence + 1;
+
+  const nextMeterView: MeterIntegrationView = {
+    definition: args.meterView.definition,
+    state: nextState,
+    modifiers: args.meterView.modifiers,
+    scheduledAdjustments: args.meterView.scheduledAdjustments ?? [],
+  };
+
+  const rearm = rearmThresholdTrigger({
+    view: args.view,
+    command: args.command,
+    actorId: args.actorId,
+    meterView: nextMeterView,
+    sequence: nextSequence,
+    causationId: event.id,
+    armedAtSequence: event.sequence,
+  });
+  if (rearm) {
+    rearmEvents.push(rearm);
+    nextSequence += 1;
+  }
+  if (args.meterKey === "energy") {
+    const collapseRearm = rearmCollapseTrigger({
+      view: args.view,
+      command: args.command,
+      actorId: args.actorId,
+      energyView: nextMeterView,
+      context: args.collapseContext,
+      sequence: nextSequence,
+      causationId: event.id,
+      armedAtSequence: event.sequence,
+    });
+    if (collapseRearm) {
+      rearmEvents.push(collapseRearm);
+      nextSequence += 1;
+    }
+  }
+
+  return { event, nextState, rearmEvents, nextSequence };
+}
+
 export function resolveApplyBodySource(
   view: BodyMeterResolutionView,
   command: ApplyBodySourceCommand,
@@ -860,35 +1010,22 @@ export function resolveApplyBodySource(
     return rejection("unauthorized_actor", "You cannot act on that body.");
   }
 
-  const meterView: MeterIntegrationView = {
-    definition: view.definition,
-    state: view.meter,
-    modifiers: view.modifiers,
-    scheduledAdjustments: view.scheduledAdjustments ?? [],
-  };
-  const integrated = integrateMeterValue(meterView, view.storySecond);
   const operation = command.payload.operation;
-  const valueAfter = sourceValueAfter(operation, integrated, view.meter.baselineFixedPoint);
-
-  const event = bodySourceAppliedEventSchema.parse({
-    ...eventEnvelope(view, command, view.headSequence + 1, "body-source"),
-    type: "body_source_applied",
-    actorIds: [command.payload.actorId],
-    entityIds: [command.payload.actorId],
-    payload: {
-      actorId: command.payload.actorId,
-      meterKey: command.payload.meterKey,
-      sourceKind: command.payload.sourceKind,
-      operation,
-      valueAfterFixedPoint: valueAfter,
-      derived: capturedDerivation(meterView, view.storySecond),
+  const { event, nextState } = buildSourceAppliedEvent({
+    view,
+    command,
+    actorId: command.payload.actorId,
+    meterKey: command.payload.meterKey,
+    sourceKind: command.payload.sourceKind,
+    operation,
+    meterView: {
+      definition: view.definition,
+      state: view.meter,
+      modifiers: view.modifiers,
+      scheduledAdjustments: view.scheduledAdjustments ?? [],
     },
-  });
-
-  const nextState = bodyMeterStateSchema.parse({
-    ...view.meter,
-    valueFixedPoint: valueAfter,
-    lastIntegratedAtStorySecond: view.storySecond,
+    sequence: view.headSequence + 1,
+    suffix: "body-source",
   });
 
   const trailing: (BodySourceAppliedEvent | BodyConditionAppliedEvent | TriggerScheduledEvent)[] = [];
@@ -1873,7 +2010,7 @@ export function bodyCollapseUniquenessKeyPrefix(actorId: string): string {
 /** Re-solve one actor's collapse alarm after an energy or sleep material event. */
 function rearmCollapseTrigger(input: {
   view: BodyBranchMeta;
-  command: BodyCommand;
+  command: BodyEventCommandContext;
   actorId: string;
   energyView: MeterIntegrationView;
   context: CollapseContext | undefined;
@@ -2293,6 +2430,7 @@ export function applyBodyEvent(
       });
     case "item_transferred":
     case "item_destroyed":
+    case "item_consumed":
     case "item_ownership_set":
     case "trigger_scheduled":
     case "journey_planned":

@@ -498,6 +498,20 @@
       "when": 1784495018843,
       "tag": "0070_chunky_micromax",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1784500124350,
+      "tag": "0071_spotty_lily_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1784500480784,
+      "tag": "0072_even_star_brand",
+      "breakpoints": true
     }
   ]
 }

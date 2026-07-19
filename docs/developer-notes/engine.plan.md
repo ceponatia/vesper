@@ -841,7 +841,7 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    collapse mid-vigil → interruption → forced sleep → wake re-arm → resume →
    completion through the drain.
 3. **E5.3 — material life: containers, ownership, wear, and consumption.** Status:
-   **active — slice 1 shipped 2026-07-19; slices 2–3 in progress.**
+   **active — slices 1–2 shipped 2026-07-19; slice 3 in progress.**
    **Slice 1 (shipped) — the honest material lane.** §26.1–26.4 replace the Gate 1
    stand-ins wholesale: typed holding loci (held / worn-in-slot / in-container /
    at-zone / gone with a terminal basis) as the `sim_item_holdings` row itself
@@ -864,11 +864,30 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    locus-based reverse derivation; soak + both gate corpora reworked and green.
    28 new pure + 11 new int cases; CI runs `test:engine-e5-3` (2 831 pure +
    376 int green — the old Gate 1 store suite retired with its store).
-   **Slice 2 (next) — resource costs, reservations, consumption** (§26.5–26.6):
-   `resourceCosts` on action definitions, deterministic reservation captured on
-   `activity_started` and projected from activity state like claims,
-   `consume_item` + completion consumption feeding E5.1 body sources ("meal" /
-   "drink" first exercised) atomically. **Slice 3 — item condition** (§26.7):
+   **Slice 2 (shipped — 2026-07-19) — resource costs, reservations, consumption**
+   (§26.5–26.6, the carried E3.2 leftover landed): `resourceCosts` on the action
+   definition (materialKindKey × quantity × consume|use), deterministic
+   reservation at start (eligible = matching-kind extant items rooted with the
+   starting actor or their zone, held-first then lexicographic; shortfall rejects
+   `material_unavailable`; the pick captured on `activity_started` and the
+   instance — migration 0071), reservations projected from live activity state
+   exactly like claims (phase-derived, released terminally, interruption/resume
+   keep them, no separate store), `item_reserved` rejections on
+   transfer/destroy/consume via one jsonb-containment reservation scan,
+   `consume_item` + the completion consume path both emitting `item_consumed` +
+   causation-chained `body_source_applied` trains through a shared §25 kernel
+   helper (`applySourceToMeter` extracted with `resolveApplyBodySource`
+   byte-identical; meal/drink source kinds first exercised; migration 0072
+   persists authored `consumptionEffects`; body-less worlds consume with zero
+   body events), completion re-validating reserved items at fire time, alarms
+   retiring/re-arming as on any body material event, and the feed at v3 carrying
+   consumed rows. Delivery note: a pre-existing `body-store → activity-store`
+   import edge means activity-store builds its own consumption-body-view/feed
+   helpers rather than importing them (commented in-code; moving `activityFromRow`
+   out of activity-store would let the three stores share one implementation —
+   a candidate cleanup for E5.6). 25 new pure + 12 new int cases across the two
+   suites; `test:engine-e5-3` now spans both lanes (2 853 pure + 388 int green).
+   **Slice 3 — item condition** (§26.7):
    wear + cleanliness meters on the §25 kernel under an item-scoped registry,
    worn-window cleanliness drift, use-deltas, `item_condition_threshold_due`.
    Original slice charter: §26 over

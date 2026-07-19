@@ -7,6 +7,7 @@ import {
   activityPhaseTransitions,
   activityStartedEventSchema,
   claimHoldingActivityPhases,
+  type ActionResourceCost,
   type SimulationActionDefinition,
   type ActivitiesProjection,
   type ActivityCancelledEvent,
@@ -28,6 +29,8 @@ import {
 } from "@/contracts/simulation/activities";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import { composeSimulationId } from "@/contracts/simulation/identity";
+import type { BodyMeterState, BodySourceAppliedEvent } from "@/contracts/simulation/bodies";
+import type { ItemConsumedEvent, SimulationMaterialItem } from "@/contracts/simulation/materials";
 import {
   activityCompletionTriggerKind,
   schedulerDerivationVersion,
@@ -35,11 +38,22 @@ import {
   type TriggerScheduledEvent,
 } from "@/contracts/simulation/scheduler";
 import type { PhysicalLocus } from "@/contracts/simulation/space";
+import {
+  buildConsumptionBodyEffects,
+  buildItemConsumedEvent,
+  resolveRootLocus,
+  type ConsumptionBodyView,
+} from "./materials";
 
 /**
  * E3.2 pure activity kernel: start/complete/cancel resolution, claim
  * arithmetic over the activity set, and the projectors replay uses. No IO, no
  * clock, no ambient randomness (engine.spec §31–32).
+ *
+ * E5.3 slice 2 (§26.5–26.6) adds resource-cost reservation at start and
+ * consume-disposition consumption at completion, both reusing `materials.ts`'s
+ * root-locus walk and `buildConsumptionBodyEffects` so the two consumption
+ * entry points (`consume_item` and completion) share one code path.
  */
 
 function compareStableText(left: string, right: string): number {
@@ -122,6 +136,17 @@ export interface StartActivityResolutionView extends ActivityBranchMeta {
   heldClaims: readonly ActivityClaim[];
   /** Actors whose locus is the same zone, excluding the acting actor. */
   coLocatedActorIds: readonly string[];
+  /**
+   * §26.5 resource-cost eligibility: every extant item id potentially in play
+   * for this start (the store may narrow to the definition's requested
+   * material kinds, or hand over the whole branch — the resolver still
+   * filters by kind, reservation, and root). Unused when the definition has
+   * no `resourceCosts`.
+   */
+  materialItemIds?: readonly string[];
+  materialItemById?(itemId: string): SimulationMaterialItem | undefined;
+  /** The live activity reserving one item, or null (mirrors `MaterialResolutionView`). */
+  reservingActivityId?(itemId: string): string | null;
 }
 
 interface StartRejection {
@@ -138,6 +163,46 @@ export interface StartResolution {
 
 function startRejection(code: StartActivityRejectionCode, publicReason: string): StartRejection {
   return { ok: false, code, publicReason };
+}
+
+/**
+ * Deterministic §26.5 selection for one resource cost: eligible items are
+ * extant, matching `materialKindKey`, not already reserved (by this cost's
+ * own prior picks or any live activity), and root-locate at either the
+ * starting actor (held/worn, or a container chain rooted there) or the
+ * actor's own zone. Actor-rooted items sort before zone-rooted ones;
+ * lexicographic item id breaks ties within each group. A shortfall is
+ * reported, never partially satisfied.
+ */
+function selectResourceItems(input: {
+  cost: ActionResourceCost;
+  candidateIds: readonly string[];
+  itemById: (itemId: string) => SimulationMaterialItem | undefined;
+  reservingActivityId: (itemId: string) => string | null;
+  actorId: string;
+  zoneId: string;
+  alreadySelected: ReadonlySet<string>;
+}): { ok: true; selected: string[] } | { ok: false } {
+  const actorRooted: string[] = [];
+  const zoneRooted: string[] = [];
+  for (const itemId of input.candidateIds) {
+    if (input.alreadySelected.has(itemId)) continue;
+    const item = input.itemById(itemId);
+    if (!item || item.locus.kind === "gone") continue;
+    if (item.materialKindKey !== input.cost.materialKindKey) continue;
+    if (input.reservingActivityId(itemId) !== null) continue;
+    const root = resolveRootLocus(item.locus, input.itemById);
+    if (root.kind === "actor" && root.actorId === input.actorId) {
+      actorRooted.push(itemId);
+    } else if (root.kind === "zone" && root.zoneId === input.zoneId) {
+      zoneRooted.push(itemId);
+    }
+  }
+  actorRooted.sort(compareStableText);
+  zoneRooted.sort(compareStableText);
+  const ordered = [...actorRooted, ...zoneRooted];
+  if (ordered.length < input.cost.quantity) return { ok: false };
+  return { ok: true, selected: ordered.slice(0, input.cost.quantity) };
 }
 
 /** Pure StartActivity resolver over a lock-consistent authority view. */
@@ -175,6 +240,31 @@ export function resolveStartActivity(
     return startRejection("claim_conflict", "They are already occupied.");
   }
 
+  // §26.5: select and reserve concrete items for every resource cost.
+  const materialItemIds = view.materialItemIds ?? [];
+  const materialItemById = view.materialItemById ?? (() => undefined);
+  const reservingActivityId = view.reservingActivityId ?? (() => null);
+  const selectedItemIds = new Set<string>();
+  for (const cost of definition.resourceCosts) {
+    const selection = selectResourceItems({
+      cost,
+      candidateIds: materialItemIds,
+      itemById: materialItemById,
+      reservingActivityId,
+      actorId: command.payload.actorId,
+      zoneId: zone.id,
+      alreadySelected: selectedItemIds,
+    });
+    if (!selection.ok) {
+      return startRejection(
+        "material_unavailable",
+        `There is not enough ${cost.materialKindKey} within reach.`,
+      );
+    }
+    for (const itemId of selection.selected) selectedItemIds.add(itemId);
+  }
+  const reservedItemIds = [...selectedItemIds].sort(compareStableText);
+
   const activityId = deriveActivityId(view.branchId, command.id);
   const actorId = command.payload.actorId;
   const startedAt = view.storySecond;
@@ -208,6 +298,7 @@ export function resolveStartActivity(
       expectedCompleteAt,
       claims: definition.requiredClaims,
       observerActorIds,
+      reservedItemIds,
     },
   });
 
@@ -260,6 +351,7 @@ export function resolveStartActivity(
     expectedCompleteAt,
     progressFixedPoint: 0,
     claims: definition.requiredClaims,
+    reservedItemIds,
     sourceCommandId: command.id,
   });
 
@@ -277,6 +369,12 @@ export interface CompleteActivityResolutionView extends ActivityBranchMeta {
   /** Actors whose locus is the activity's zone at completion time. */
   coLocatedActorIds: readonly string[];
   noticeability?: SimulationActionDefinition["noticeability"];
+  /** §26.5–26.6: the captured action's resource costs, threaded from its definition. */
+  resourceCosts?: readonly ActionResourceCost[];
+  /** Raw item lookup for fire-time re-validation + consumption. Unused when `resourceCosts` is empty. */
+  materialItemById?(itemId: string): SimulationMaterialItem | undefined;
+  /** The consuming actor's body facts for the §26.6 trailing effects; absent → zero body events. */
+  bodyView?: ConsumptionBodyView;
 }
 
 interface CompleteRejection {
@@ -288,14 +386,21 @@ interface CompleteRejection {
 export interface CompleteResolution {
   ok: true;
   activity: ActivityInstance;
-  event: ActivityCompletedEvent;
+  events: [ActivityCompletedEvent, ...(ItemConsumedEvent | BodySourceAppliedEvent | TriggerScheduledEvent)[]];
+  /** The §26.6 body meters written by consumed items' authored effects, if any. */
+  meterUpdates: BodyMeterState[];
 }
 
 function completeRejection(code: CompleteActivityRejectionCode, publicReason: string): CompleteRejection {
   return { ok: false, code, publicReason };
 }
 
-/** Pure fire-time completion resolver. Re-validates rather than trusting the schedule. */
+/**
+ * Pure fire-time completion resolver. Re-validates rather than trusting the
+ * schedule, and — §26.5–26.6 — re-validates every reserved item before
+ * spending the `consume`-disposition ones: no legal command path can move a
+ * reserved item, so a violation here is corruption, not a rejection.
+ */
 export function resolveCompleteActivity(
   view: CompleteActivityResolutionView,
   command: CompleteActivityCommand,
@@ -323,6 +428,55 @@ export function resolveCompleteActivity(
       ? sortedUnique([...view.coLocatedActorIds, ...activity.actorIds])
       : [...activity.actorIds];
 
+  // §26.5 fire-time re-validation: every reserved item must still be legally
+  // in the activity's grasp. No legal command path can move a reserved item
+  // (transfer/destroy/consume all reject item_reserved), so any failure here
+  // is an engine invariant violation, not a rejection.
+  const primaryActorId: string | undefined = activity.actorIds[0];
+  const materialItemById = view.materialItemById ?? (() => undefined);
+  const reservedItems = new Map<string, SimulationMaterialItem>();
+  for (const itemId of activity.reservedItemIds) {
+    const item = materialItemById(itemId);
+    if (!item || item.locus.kind === "gone") {
+      throw new Error(`Reserved item ${itemId} is missing or gone at completion of activity ${activity.id}`);
+    }
+    const root = resolveRootLocus(item.locus, materialItemById);
+    const rootOk =
+      (root.kind === "actor" && primaryActorId !== undefined && root.actorId === primaryActorId) ||
+      (root.kind === "zone" && root.zoneId === activity.zoneId);
+    if (!rootOk) {
+      throw new Error(`Reserved item ${itemId} no longer root-locates with activity ${activity.id}`);
+    }
+    reservedItems.set(itemId, item);
+  }
+
+  // §26.6: match consume-disposition costs to reserved items by
+  // materialKindKey, deterministically (lexicographic item id).
+  const consumeCosts = [...(view.resourceCosts ?? [])]
+    .filter((cost) => cost.disposition === "consume")
+    .sort((a, b) => compareStableText(a.materialKindKey, b.materialKindKey));
+  const reservedIdsSorted = [...activity.reservedItemIds].sort(compareStableText);
+  const claimed = new Set<string>();
+  const consumedIds: string[] = [];
+  for (const cost of consumeCosts) {
+    let taken = 0;
+    for (const itemId of reservedIdsSorted) {
+      if (taken >= cost.quantity) break;
+      if (claimed.has(itemId)) continue;
+      const item = reservedItems.get(itemId);
+      if (!item || item.materialKindKey !== cost.materialKindKey) continue;
+      claimed.add(itemId);
+      consumedIds.push(itemId);
+      taken += 1;
+    }
+    if (taken < cost.quantity) {
+      throw new Error(
+        `Activity ${activity.id} completed without enough reserved ${cost.materialKindKey} to consume`,
+      );
+    }
+  }
+  consumedIds.sort(compareStableText);
+
   const event = activityCompletedEventSchema.parse({
     id: composeSimulationId("event", [view.branchId, command.id, "activity-completed"]),
     worldId: view.worldId,
@@ -342,8 +496,52 @@ export function resolveCompleteActivity(
       activityInstanceId: activity.id,
       completedAt,
       observerActorIds,
+      consumedItemIds: consumedIds,
     },
   });
+
+  // One item_consumed per consumed item, each followed by its own §26.6
+  // trailing body effects — causation-chained to THIS event, one running
+  // sequence counter (the resolveBodyCollapse precedent).
+  const trailing: (ItemConsumedEvent | BodySourceAppliedEvent | TriggerScheduledEvent)[] = [];
+  const meterUpdates: BodyMeterState[] = [];
+  let nextSequence = event.sequence + 1;
+  if (primaryActorId !== undefined) {
+    for (const itemId of consumedIds) {
+      const item = reservedItems.get(itemId);
+      if (!item) throw new Error(`Consumed item ${itemId} vanished from the material view mid-resolution`);
+      const againstOwnership = item.ownerActorId !== null && item.ownerActorId !== primaryActorId;
+      const consumedEvent = buildItemConsumedEvent({
+        worldId: view.worldId,
+        branchId: view.branchId,
+        rulesetVersion: view.rulesetVersion,
+        storySecond: view.storySecond,
+        sequence: nextSequence,
+        command,
+        actorId: primaryActorId,
+        itemId,
+        fromLocus: item.locus,
+        againstOwnership,
+        causationId: event.id,
+        ...(view.zoneLocationId ? { locationId: view.zoneLocationId } : {}),
+      });
+      trailing.push(consumedEvent);
+      nextSequence = consumedEvent.sequence + 1;
+
+      const bodyResult = buildConsumptionBodyEffects({
+        view,
+        command,
+        actorId: primaryActorId,
+        consumptionEffects: item.consumptionEffects ?? [],
+        causationEventId: consumedEvent.id,
+        startSequence: nextSequence,
+        bodyView: view.bodyView,
+      });
+      trailing.push(...bodyResult.events);
+      meterUpdates.push(...bodyResult.meterUpdates);
+      nextSequence = bodyResult.nextSequence;
+    }
+  }
 
   const completed = activityInstanceSchema.parse({
     ...activity,
@@ -351,7 +549,7 @@ export function resolveCompleteActivity(
     progressFixedPoint: 1_000_000,
   });
 
-  return { ok: true, activity: completed, event };
+  return { ok: true, activity: completed, events: [event, ...trailing], meterUpdates };
 }
 
 // ---------------------------------------------------------------------------
@@ -620,6 +818,7 @@ export function applyActivityEvent(
         expectedCompleteAt: event.payload.expectedCompleteAt,
         progressFixedPoint: 0,
         claims: event.payload.claims,
+        reservedItemIds: event.payload.reservedItemIds,
         sourceCommandId: event.commandId,
       });
       return sortActivitiesProjection({ ...bumped, activities: [...projection.activities, activity] });
@@ -678,6 +877,7 @@ export function applyActivityEvent(
       });
     case "item_transferred":
     case "item_destroyed":
+    case "item_consumed":
     case "item_ownership_set":
     case "trigger_scheduled":
     case "journey_planned":

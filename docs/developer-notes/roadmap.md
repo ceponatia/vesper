@@ -33,16 +33,20 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   perception-gated reads → material life → households/means/money-at-LOD → the social
   ledger & consent → the deterministic exit corpus. **E5.1 and E5.2 (all three
   slices) shipped 2026-07-19** — see Shipped below. **E5.3 (material life) is
-  active — slice 1 (the honest material lane, §26.1–26.4) shipped 2026-07-19**:
-  typed holding loci (held / worn / container / zone / gone) replacing the Gate 1
-  pseudo-container stand-ins, containers-as-items with capacity + fail-closed
-  access, ownership distinct from holding (`againstOwnership` as social fact), the
-  §26.4 transfer law, the lane migrated onto the shared command shell + live §22
-  cut + §20 perception, migrations 0069/0070, `test:engine-e5-3`. Remaining:
-  slice 2 — exclusive reservations wired into the carried E3.2
-  action-resource-cost leftover + consumption events feeding E5.1 body sources
-  (§26.5–26.6); slice 3 — wear/cleanliness as item condition through the same
-  modifier machinery (§26.7).
+  active — slices 1–2 shipped 2026-07-19.** Slice 1 (the honest material lane,
+  §26.1–26.4): typed holding loci (held / worn / container / zone / gone)
+  replacing the Gate 1 pseudo-container stand-ins, containers-as-items with
+  capacity + fail-closed access, ownership distinct from holding
+  (`againstOwnership` as social fact), the §26.4 transfer law, the lane migrated
+  onto the shared command shell + live §22 cut + §20 perception, migrations
+  0069/0070. Slice 2 (§26.5–26.6, the carried E3.2 resource-cost leftover):
+  `resourceCosts` on action definitions, deterministic held-first reservations
+  captured on `activity_started` and projected from activity state like claims,
+  `item_reserved` enforcement on every material command, and `consume_item` +
+  completion consumption emitting causation-chained body-source trains through
+  the §25 kernel (meal/drink first exercised; migrations 0071/0072;
+  `test:engine-e5-3`, 2 853 pure + 388 int green). Remaining: slice 3 —
+  wear/cleanliness as item condition through the same modifier machinery (§26.7).
   This is where current-chat body learning migrates behind the successor
   contracts — the meter-economy and body-needs plans in Next port through here
   later.

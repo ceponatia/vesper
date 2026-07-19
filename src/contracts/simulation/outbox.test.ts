@@ -51,11 +51,33 @@ const destroyEvent = {
   },
 };
 
+const consumeEvent = {
+  id: "event_consume_1",
+  worldId: "world_1",
+  branchId: "branch_1",
+  sequence: 9,
+  storySecond: 57_602,
+  type: "item_consumed" as const,
+  schemaVersion: 1 as const,
+  rulesetVersion: "ruleset-v1",
+  commandId: "command_3",
+  correlationId: "correlation_1",
+  actorIds: ["actor_1"],
+  entityIds: ["actor_1", "item_1"],
+  recordedAtWallClock: "2026-07-16T16:00:02.000Z",
+  payload: {
+    actorId: "actor_1",
+    itemId: "item_1",
+    fromLocus: { kind: "held" as const, actorId: "actor_1" },
+    againstOwnership: false,
+  },
+};
+
 describe("E5.3 outbox contracts", () => {
   it("projects a transfer into a stable non-authoritative feed row carrying loci", () => {
     expect(projectMaterialFeedRow(transferEvent)).toEqual({
       consumerKind: "item_transfer_feed",
-      projectionSchemaVersion: 2,
+      projectionSchemaVersion: 3,
       worldId: "world_1",
       branchId: "branch_1",
       sourceEventId: "event_transfer_1",
@@ -77,6 +99,16 @@ describe("E5.3 outbox contracts", () => {
       itemId: "item_1",
       fromLocus: { kind: "held", actorId: "actor_1" },
       toLocus: { kind: "gone", basis: "destroyed" },
+    });
+  });
+
+  it("projects a consumption with a terminal gone/consumed destination locus (§26.6)", () => {
+    expect(projectMaterialFeedRow(consumeEvent)).toMatchObject({
+      eventKind: "item_consumed",
+      actorId: "actor_1",
+      itemId: "item_1",
+      fromLocus: { kind: "held", actorId: "actor_1" },
+      toLocus: { kind: "gone", basis: "consumed" },
     });
   });
 
