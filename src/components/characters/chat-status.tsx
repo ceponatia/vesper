@@ -3,6 +3,8 @@
 import { useState } from "react";
 import {
   CHAT_ACTIONS,
+  chatGameTime,
+  formatChatTime,
   meterDefinitions,
   meterStateCue,
   MOOD_BRIGHT_MIN,
@@ -87,8 +89,11 @@ export function outfitSummary(outfit: string): string {
 }
 
 /**
- * The status strip above the composer: a regard-band chip (heart) + meter
- * pips, shown only when off-baseline so casual chats stay clean
+ * The status strip above the composer: an **ambient story-time chip**
+ * (mobile-ux.plan.md ruling 3 — weekday-first, "Fri · 2:10pm", always visible
+ * so the player can't silently disagree with the narrator about what day it
+ * is; tap opens Scenario setup), a regard-band chip (heart) + meter pips,
+ * shown only when off-baseline so casual chats stay clean
  * (character-chat-state.spec.md §7), plus a read-only **outfit chip**
  * (ux-improvements slice 3 — wardrobe finally visible during play): compact
  * garment summary, tap to expand to the full phrase, hidden when the outfit
@@ -96,14 +101,23 @@ export function outfitSummary(outfit: string): string {
  * refetched per send — a pre-first-exchange snapshot is the server's
  * seed-on-read, which already carries the authored Starting Relationship.
  */
-export function StatusStrip({ state }: { state: ChatStateSnapshot }) {
+export function StatusStrip({ state, onOpenScenario }: { state: ChatStateSnapshot; onOpenScenario: () => void }) {
   const pips = meterPips(state.meters);
   const [outfitOpen, setOutfitOpen] = useState(false);
   // The rendered garment phrase (structured worn items + overlay); falls back to the
   // free-text outfit for legacy/ad-hoc chats (chat-wardrobe-parity).
   const outfit = (state.outfitLabel || state.outfit).trim();
+  const time = chatGameTime(state.clockMinutes, state.calendarStart);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onOpenScenario}
+        title={`${time.weekday} — story time (tap to open Scenario setup)`}
+        className="touch-target inline-flex shrink-0 items-center gap-1 rounded-full border border-ink-500 px-2 py-0.5 text-[11px] leading-4 whitespace-nowrap text-paper-300 transition-colors hover:border-accent-500/50 hover:text-paper-100"
+      >
+        {time.weekday.slice(0, 3)} <span aria-hidden>·</span> {formatChatTime(time)}
+      </button>
       <MoodChip emotion={state.emotion} className="text-xs" />
       <Tag tone="accent" title={`Regard ${state.regard} · Familiarity ${state.familiarity}`}>
         <span aria-hidden>♥</span> {state.regardBand.label}

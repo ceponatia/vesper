@@ -219,7 +219,10 @@ function StateToolsForm({
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between gap-3">
+      {/* flex-wrap: label + range + value totals ~347px, wider than the ~318px
+          dialog column at a 390px viewport — the range+value pair drops to its
+          own line instead of overflowing (mobile-ux W3 task 4). */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Regard</span>
         <div className="flex items-center gap-2">
           <input
@@ -237,7 +240,7 @@ function StateToolsForm({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Familiarity</span>
         <div className="flex items-center gap-2">
           <input
@@ -309,7 +312,7 @@ function StateToolsForm({
         {meterDefinitions.map((def) => {
           const value = meters[def.id] ?? def.initial;
           return (
-            <div key={def.id} className="flex items-center justify-between gap-3">
+            <div key={def.id} className="flex flex-wrap items-center justify-between gap-3">
               <label className="text-sm text-paper-300">{def.label}</label>
               <div className="flex items-center gap-2">
                 <input

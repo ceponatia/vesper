@@ -23,6 +23,7 @@ export function ChatRosterPanel({
   archived,
   onChanged,
   onOpenSheet,
+  privacyMode,
 }: {
   chatId: string;
   roster: ChatRosterMember[];
@@ -31,6 +32,10 @@ export function ChatRosterPanel({
   onChanged: () => void;
   /** Open THIS member's character sheet (followups ruling 13). */
   onOpenSheet?: (member: ChatRosterMember) => void;
+  /** Privacy mode (mobile-ux.plan.md ruling 4): monogram instead of the avatar
+   *  image — the sheet the tap opens carries no portrait, so the tap itself
+   *  stays live. */
+  privacyMode?: boolean;
 }) {
   const toast = useToast();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -96,7 +101,12 @@ export function ChatRosterPanel({
             title={onOpenSheet ? `Open ${member.name}'s sheet` : undefined}
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left disabled:cursor-default"
           >
-            <EntityImage imageId={member.avatarImageId} name={member.name} className="size-7 shrink-0 rounded-full text-[9px]" />
+            <EntityImage
+              imageId={member.avatarImageId}
+              name={member.name}
+              privacy={privacyMode}
+              className="size-7 shrink-0 rounded-full text-[9px]"
+            />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm text-paper-200 group-hover:text-paper-50">{member.name}</span>
               {member.outfit.trim() ? (

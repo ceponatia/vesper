@@ -23,7 +23,14 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-_(nothing — pull the next entry from Next)_
+- **Mobile UX pass — clock visibility, privacy mode, touch/overflow defects** —
+  [mobile-ux.plan.md](mobile-ux.plan.md) (**started 2026-07-19**, `mobile-ux`
+  branch). Story-clock anchor editor moves to Scenario setup with a calendar-grid
+  weekday picker + an always-visible weekday-first time chip on phones; desktop
+  privacy mode (portrait/scene imagery hidden, initial-monogram avatars);
+  autosave for the location + social-card editors; and the audited
+  touch-target/overflow defect list (chat header stack, SaveBar-under-tab-bar,
+  Dialog height cap, `size="sm"` tap floor, bubble overflow).
 
 ## Next (queued)
 

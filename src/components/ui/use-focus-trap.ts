@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { FOCUSABLE_SELECTOR, resolveTabTarget } from "./focus-trap";
+
+/**
+ * Open traps, in the order they opened. Only the topmost (last) trap responds
+ * to Escape/Tab: with stacked layers (the calendar dialog over Scenario setup,
+ * a Sheet's picker over a Dialog) every open trap listens on `document`, so
+ * without this gate one Escape closes every layer at once and the lower
+ * layer's Tab handler moves focus before the top one re-resolves it.
+ */
+const trapStack: symbol[] = [];
 
 /**
  * Modal focus-trap behaviour shared by Dialog and Sheet (docs/ui.md — small
@@ -14,6 +23,18 @@ export function useFocusTrap(
   onClose: () => void,
   panelRef: RefObject<HTMLElement | null>,
 ): void {
+  // A stable per-instance identity for the stack. Registration lives in its own
+  // effect keyed only on `open`, so parent re-renders (inline `onClose` churn —
+  // see below) can't pop-and-repush it and scramble the layer order.
+  const [trapToken] = useState(() => Symbol("focus-trap"));
+  useEffect(() => {
+    if (!open) return;
+    trapStack.push(trapToken);
+    return () => {
+      const at = trapStack.indexOf(trapToken);
+      if (at >= 0) trapStack.splice(at, 1);
+    };
+  }, [open, trapToken]);
   // Focus-on-open lives in its own effect keyed only on `open`: callers pass
   // inline `onClose` functions, so an effect that both depends on `onClose` and
   // calls focus() re-runs on every parent render and yanks focus out of
@@ -28,6 +49,7 @@ export function useFocusTrap(
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      if (trapStack[trapStack.length - 1] !== trapToken) return;
       if (e.key === "Escape") {
         onClose();
         return;
@@ -48,5 +70,5 @@ export function useFocusTrap(
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose, panelRef]);
+  }, [open, onClose, panelRef, trapToken]);
 }
