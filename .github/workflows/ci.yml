@@ -83,6 +83,9 @@ jobs:
       - name: E4.1 perception and observation integration
         run: pnpm test:engine-e4-1
 
+      - name: E4.2 assertions, beliefs, and gossip integration
+        run: pnpm test:engine-e4-2
+
       - name: Stop successor-engine database
         if: always()
         run: docker compose down -v

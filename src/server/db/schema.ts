@@ -2268,6 +2268,107 @@ export const simObservations = pgTable(
   ],
 );
 
+/**
+ * E4.2 assertions (engine.spec §21.1): claims made on a branch — possibly
+ * false; canon truth stays in sim_events. Rows are derived deterministically
+ * from disclosure events (ids embed the originating event), so a rebuilt
+ * branch mints identical rows. No FK to sim_events for the same reason as
+ * sim_observations: a forked child references ancestor events, never copies.
+ */
+export const simAssertions = pgTable(
+  "sim_assertions",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    assertionId: text("assertion_id").notNull(),
+    propositionKey: text("proposition_key").notNull(),
+    subjectIds: jsonb("subject_ids").$type<string[]>().notNull(),
+    claimedValue: jsonb("claimed_value").$type<unknown>().notNull(),
+    sourceActorId: text("source_actor_id"),
+    sourceEventId: text("source_event_id"),
+    sourceEventSequence: bigint("source_event_sequence", { mode: "number" }),
+    assertedAt: bigint("asserted_at", { mode: "number" }).notNull(),
+    validFrom: bigint("valid_from", { mode: "number" }),
+    validUntil: bigint("valid_until", { mode: "number" }),
+    status: text("status", {
+      enum: ["active", "contradicted", "superseded", "retracted"],
+    }).notNull(),
+    statusChangedAt: bigint("status_changed_at", { mode: "number" }),
+    statusCauseEventId: text("status_cause_event_id"),
+    derivationVersion: text("derivation_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_assertions_branch_assertion_pk", columns: [t.branchId, t.assertionId] }),
+    index("sim_assertions_branch_proposition_idx").on(t.branchId, t.propositionKey),
+    index("sim_assertions_branch_source_event_idx").on(t.branchId, t.sourceEventId),
+    check(
+      "sim_assertions_asserted_at_safe",
+      sql`${t.assertedAt} >= 0 AND ${t.assertedAt} <= 9007199254740991`,
+    ),
+    check(
+      "sim_assertions_validity_order",
+      sql`${t.validFrom} IS NULL OR ${t.validUntil} IS NULL OR ${t.validFrom} <= ${t.validUntil}`,
+    ),
+  ],
+);
+
+/**
+ * E4.2 beliefs (engine.spec §21.2): one actor's held stance toward an
+ * assertion, with provenance — the observations it rests on and the chain of
+ * tellers it travelled through. Superseded rows keep their history; the
+ * active row is the holder's current stance.
+ */
+export const simBeliefs = pgTable(
+  "sim_beliefs",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    beliefId: text("belief_id").notNull(),
+    holderActorId: text("holder_actor_id").notNull(),
+    assertionId: text("assertion_id").notNull(),
+    confidenceFixedPoint: integer("confidence_fixed_point").notNull(),
+    basisObservationIds: jsonb("basis_observation_ids").$type<string[]>().notNull(),
+    learnedFromActorIds: jsonb("learned_from_actor_ids").$type<string[]>().notNull(),
+    believedFrom: bigint("believed_from", { mode: "number" }).notNull(),
+    believedUntil: bigint("believed_until", { mode: "number" }),
+    status: text("status", {
+      enum: ["active", "doubted", "rejected", "superseded"],
+    }).notNull(),
+    statusCauseEventId: text("status_cause_event_id"),
+    sourceEventId: text("source_event_id").notNull(),
+    sourceEventSequence: bigint("source_event_sequence", { mode: "number" }).notNull(),
+    derivationVersion: text("derivation_version").notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_beliefs_branch_belief_pk", columns: [t.branchId, t.beliefId] }),
+    foreignKey({
+      name: "sim_beliefs_branch_assertion_fk",
+      columns: [t.branchId, t.assertionId],
+      foreignColumns: [simAssertions.branchId, simAssertions.assertionId],
+    }).onDelete("cascade"),
+    index("sim_beliefs_branch_holder_status_idx").on(t.branchId, t.holderActorId, t.status),
+    index("sim_beliefs_branch_assertion_idx").on(t.branchId, t.assertionId),
+    check(
+      "sim_beliefs_confidence_range",
+      sql`${t.confidenceFixedPoint} >= 0 AND ${t.confidenceFixedPoint} <= 10000`,
+    ),
+    check(
+      "sim_beliefs_sequence_safe",
+      sql`${t.sourceEventSequence} > 0 AND ${t.sourceEventSequence} <= 9007199254740991`,
+    ),
+    check(
+      "sim_beliefs_interval_order",
+      sql`${t.believedUntil} IS NULL OR ${t.believedFrom} <= ${t.believedUntil}`,
+    ),
+  ],
+);
+
 export const simJourneys = pgTable(
   "sim_journeys",
   {

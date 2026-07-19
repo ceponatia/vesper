@@ -3,6 +3,7 @@ import {
   isActivityEvent,
   isCommitmentEvent,
   isEngagementEvent,
+  isKnowledgeEvent,
   isMovementEvent,
   simulationBranchEventSchema,
   type SimulationBranchEvent,
@@ -185,6 +186,7 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       isCommitmentEvent(event) ||
       isEngagementEvent(event) ||
       isAccessEvent(event) ||
+      isKnowledgeEvent(event) ||
       event.type === "speech_act_delivered"
     ) {
       // Movement and activity events belong to their own projections

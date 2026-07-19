@@ -38,6 +38,7 @@ import {
   replayBranchHistory,
   replayCommitmentsHistory,
   replayEngagementsHistory,
+  replayKnowledgeHistory,
   replayObservationsHistory,
   replaySpaceHistory,
   simulationHash,
@@ -67,6 +68,7 @@ import {
 import { activityRowInsert } from "./activity-store";
 import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";
+import { insertReplayedKnowledge } from "./knowledge-recorder";
 import { insertReplayedObservations } from "./observation-store";
 import {
   insertSpaceRows,
@@ -630,6 +632,15 @@ export async function forkBranch(
       events: inherited,
     });
     await insertReplayedObservations(tx, childObservations.observations, input.childBranchId);
+
+    // E4.2 knowledge: fold the inherited disclosures through the pure kernel
+    // against the observations just replayed — the child holds exactly the
+    // assertion and belief rows its visible history explains.
+    const childKnowledge = replayKnowledgeHistory({
+      events: inherited,
+      observations: childObservations.observations,
+    });
+    await insertReplayedKnowledge(tx, childKnowledge, input.childBranchId);
 
     // Inherited delivery obligations were fulfilled on ancestor branches; the
     // child's consumer lane starts after the fork point (plan R4 — reference,

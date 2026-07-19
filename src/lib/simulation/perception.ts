@@ -40,6 +40,7 @@ const CONFIDENCE = {
   direct: 10_000,
   remoteDirect: 9_500,
   clearWitness: 9_000,
+  remoteReported: 8_500,
   glimpse: 8_000,
   muffled: 7_000,
 } as const;
@@ -84,6 +85,26 @@ const SOUND_MUFFLED: WitnessGrade = {
   evidenceClass: "sensory",
   confidenceFixedPoint: CONFIDENCE.muffled,
   detailTier: 1,
+};
+
+/**
+ * E4.2: how a disclosure's listener holds its content — knowledge that
+ * arrived through another person (`social`/`reported`), graded by delivery.
+ * The belief fold keys off exactly this evidence class: a muffled bystander
+ * (sound/sensory above) heard talking, not content, and forms no belief.
+ */
+const SOCIAL_REPORTED_CO_PRESENT: WitnessGrade = {
+  channel: "social",
+  evidenceClass: "reported",
+  confidenceFixedPoint: CONFIDENCE.clearWitness,
+  detailTier: 3,
+};
+
+const SOCIAL_REPORTED_REMOTE: WitnessGrade = {
+  channel: "social",
+  evidenceClass: "reported",
+  confidenceFixedPoint: CONFIDENCE.remoteReported,
+  detailTier: 2,
 };
 
 /** Higher wins when one witness earns several grades for one event. */
@@ -273,6 +294,20 @@ export function deriveEventObservations(
     case "item_transferred": {
       for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
       for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
+      break;
+    }
+    case "disclosure_made": {
+      // E4.2 gossip: the speaker knows what they said; each named listener
+      // receives the content as reported testimony; a co-present disclosure
+      // can be overheard at its location as sound only, a remote one cannot
+      // (mirrors the speech-act ruling below).
+      const coPresent = event.locationId !== undefined;
+      collector.add(event.payload.speakerActorId, coPresent ? DIRECT_EMBODIED : REMOTE_DIRECT);
+      const reported = coPresent ? SOCIAL_REPORTED_CO_PRESENT : SOCIAL_REPORTED_REMOTE;
+      for (const targetId of event.payload.targetActorIds) collector.add(targetId, reported);
+      if (event.locationId !== undefined) {
+        gradeLocationBystanders(collector, space, event.locationId, SOUND_MUFFLED);
+      }
       break;
     }
     case "speech_act_delivered": {

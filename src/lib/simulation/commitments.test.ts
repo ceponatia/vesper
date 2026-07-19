@@ -232,6 +232,28 @@ describe("E3.3 resolveRaisePressure", () => {
     if (!again.ok) expect(again.code).toBe("commitment_not_open");
   });
 
+  it("fails the E4.2 knowledge gate closed for asserted and believed sources", () => {
+    const base = acceptedCreate().commitment;
+    for (const knowledgeSource of [
+      { kind: "asserted", assertionId: "assertion-1" },
+      { kind: "believed", beliefId: "belief-1" },
+    ]) {
+      const commitment = { ...base, knowledgeSource };
+      const blocked = resolveRaisePressure(
+        raiseView({ commitment }) as never,
+        systemCommand("raise_pressure", "cmd-raise-k1", { commitmentId: base.id }) as never,
+      );
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) expect(blocked.code).toBe("knowledge_unavailable");
+
+      const held = resolveRaisePressure(
+        raiseView({ commitment, knowledgeSourceHeld: true }) as never,
+        systemCommand("raise_pressure", "cmd-raise-k2", { commitmentId: base.id }) as never,
+      );
+      expect(held.ok).toBe(true);
+    }
+  });
+
   it("clamps a notice that fires past its own act-by forward, preserving ordering", () => {
     const commitment = acceptedCreate().commitment;
     const lateSecond = SHIFT_AT - 10;

@@ -3,6 +3,7 @@ export * from "./activities";
 export * from "./commitments";
 export * from "./engagements";
 export * from "./item-transfer";
+export * from "./knowledge";
 export * from "./narrative";
 export * from "./perception";
 export * from "./replay";

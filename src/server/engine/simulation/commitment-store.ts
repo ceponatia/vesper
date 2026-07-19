@@ -39,6 +39,7 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
+import { holdsLiveBeliefInAssertion, isLiveBeliefHeldBy } from "./knowledge-store";
 import { hasObservationOfEvent } from "./observation-store";
 import { journeyFromRow, loadSpaceRows, locusFromRow, spaceProjectionFromRows } from "./space-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
@@ -326,16 +327,37 @@ export async function submitDurableRaisePressure(
     execute: async (tx, branch: LockedBranchView, command) => {
       const commitment = await loadCommitment(tx, branch.id, command.payload.commitmentId);
       const { space, originZoneId } = await loadActorOriginSpace(tx, branch, commitment?.actorId);
-      // E4.1 knowledge gate: an `observed` source is held only if the actor
-      // has a real observation of the named event (fails closed otherwise).
-      const observedKnowledgeHeld =
-        commitment?.knowledgeSource.kind === "observed"
-          ? await hasObservationOfEvent(tx, {
+      // The §15.1 knowledge gate, resolved per source kind: an E4.1
+      // observation of the named event, or an E4.2 live belief in the named
+      // assertion / the named belief row. Fails closed on every miss.
+      let knowledgeSourceHeld = false;
+      if (commitment) {
+        switch (commitment.knowledgeSource.kind) {
+          case "authored":
+            break;
+          case "observed":
+            knowledgeSourceHeld = await hasObservationOfEvent(tx, {
               branchId: branch.id,
               witnessActorId: commitment.actorId,
               sourceEventId: commitment.knowledgeSource.sourceEventId,
-            })
-          : false;
+            });
+            break;
+          case "asserted":
+            knowledgeSourceHeld = await holdsLiveBeliefInAssertion(tx, {
+              branchId: branch.id,
+              holderActorId: commitment.actorId,
+              assertionId: commitment.knowledgeSource.assertionId,
+            });
+            break;
+          case "believed":
+            knowledgeSourceHeld = await isLiveBeliefHeldBy(tx, {
+              branchId: branch.id,
+              beliefId: commitment.knowledgeSource.beliefId,
+              holderActorId: commitment.actorId,
+            });
+            break;
+        }
+      }
       const resolution = resolveRaisePressure(
         {
           worldId: branch.worldId,
@@ -346,7 +368,7 @@ export async function submitDurableRaisePressure(
           ...(commitment ? { commitment } : {}),
           ...(originZoneId ? { originZoneId } : {}),
           topology: { locations: space.locations, zones: space.zones, links: space.links },
-          observedKnowledgeHeld,
+          knowledgeSourceHeld,
         },
         command,
       );

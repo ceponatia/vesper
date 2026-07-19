@@ -764,6 +764,7 @@ export function applySpaceEvent(
     case "engagement_interrupted":
     case "engagement_winding_down":
     case "speech_act_delivered":
+    case "disclosure_made":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }

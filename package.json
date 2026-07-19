@@ -45,7 +45,8 @@
     "test:engine-e3-3": "vitest run --no-file-parallelism src/lib/simulation/commitments.test.ts src/server/engine/simulation/commitment-store.int.test.ts",
     "test:engine-e3-4": "vitest run --no-file-parallelism src/lib/simulation/engagements.test.ts src/server/engine/simulation/engagement-store.int.test.ts",
     "test:engine-e3-5": "vitest run --no-file-parallelism src/lib/simulation/narrative.test.ts src/server/engine/simulation/gate3-corpus.int.test.ts",
-    "test:engine-e4-1": "vitest run --no-file-parallelism src/lib/simulation/perception.test.ts src/server/engine/simulation/observation-store.int.test.ts"
+    "test:engine-e4-1": "vitest run --no-file-parallelism src/lib/simulation/perception.test.ts src/server/engine/simulation/observation-store.int.test.ts",
+    "test:engine-e4-2": "vitest run --no-file-parallelism src/lib/simulation/knowledge.test.ts src/server/engine/simulation/knowledge-store.int.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"

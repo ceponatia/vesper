@@ -5,6 +5,8 @@ import {
   createEventEnvelopeSchema,
 } from "./envelopes";
 import {
+  assertionIdSchema,
+  beliefIdSchema,
   commandIdSchema,
   commitmentIdSchema,
   eventIdSchema,
@@ -71,12 +73,17 @@ export const commitmentStatusTransitions: Record<CommitmentStatus, readonly Comm
  * the actor is deemed to know. `observed` (E4.1) names a perceptible event —
  * a spoken invitation, a witnessed exchange — and the notice trigger fires
  * only if the actor holds a §20 observation of it: an obligation made where
- * you weren't can't pressure you. Assertion/belief members join with E4.2's
- * knowledge ledger; the gate keeps tightening without a schema change.
+ * you weren't can't pressure you. `asserted` and `believed` (E4.2) route
+ * through the §21 knowledge ledger — the promised no-schema-change
+ * tightening: `asserted` names a claim and requires the actor to hold a live
+ * (active or doubted) belief in it; `believed` names the exact belief row and
+ * requires it live. All non-authored members fail closed.
  */
 export const commitmentKnowledgeSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("authored") }).strict(),
   z.object({ kind: z.literal("observed"), sourceEventId: eventIdSchema }).strict(),
+  z.object({ kind: z.literal("asserted"), assertionId: assertionIdSchema }).strict(),
+  z.object({ kind: z.literal("believed"), beliefId: beliefIdSchema }).strict(),
 ]);
 
 export const pressureSeverities = ["background", "salient", "urgent", "hard"] as const;
