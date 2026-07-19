@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   applyBodyConditionCommandResultSchema,
@@ -17,6 +17,8 @@ import {
   endBodyConditionCommandSchema,
   initializeActorBodyCommandResultSchema,
   initializeActorBodyCommandSchema,
+  resolveBodyCollapseCommandResultSchema,
+  resolveBodyCollapseCommandSchema,
   resolveBodyThresholdCommandResultSchema,
   resolveBodyThresholdCommandSchema,
   type ApplyBodyConditionCommandResult,
@@ -30,13 +32,17 @@ import {
   bodyRhythmRowSchema,
   type EndBodyConditionCommandResult,
   type InitializeActorBodyCommandResult,
+  type ResolveBodyCollapseCommandResult,
   type ResolveBodyThresholdCommandResult,
 } from "@/contracts/simulation/bodies";
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
+  bodyCollapseUniquenessKeyPrefix,
   bodyConditionExpiryUniquenessKey,
   bodyThresholdUniquenessKeyPrefix,
+  resolveBodyCollapse,
+  type CollapseContext,
   integrateMeterValue,
   normalizeConditionModifierSpecs,
   selfCareAdjustmentsBetween,
@@ -56,14 +62,19 @@ import {
   type EnergyRead,
 } from "@/lib/simulation/body-reads";
 import { cutBodilyReadsSchema, type CutBodilyReads } from "@/contracts/simulation/narrative";
+import { claimHoldingActivityPhases } from "@/contracts/simulation/activities";
+import { activityCompletionUniquenessKey } from "@/lib/simulation/activities";
+import { claimHoldingEngagementStates, engagementSchema } from "@/contracts/simulation/engagements";
 import {
   db,
+  simActivities,
   simBodyConditions,
   simBodyMeters,
   simBodyModifiers,
   simBodyRhythms,
   simBranches,
   simCharacters,
+  simEngagements,
   simPhysicalLoci,
   simTriggers,
   type Db,
@@ -74,6 +85,7 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
+import { activityFromRow } from "./activity-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 type DbExecutor = Db | SimTx;
@@ -395,6 +407,11 @@ async function retirePendingThresholdTriggers(
         sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
       ),
     );
+  // Any material energy change also invalidates the actor's collapse alarm
+  // (E5.2) — the same command re-arms the live one, mirroring replay.
+  if (meterKey === "energy") {
+    await retirePendingCollapseTriggers(tx, branch, commandId, submittedAtWallClock, actorId);
+  }
 }
 
 async function retirePendingExpiryTrigger(
@@ -416,6 +433,57 @@ async function retirePendingExpiryTrigger(
         eq(simTriggers.branchId, branch.id),
         eq(simTriggers.uniquenessKey, bodyConditionExpiryUniquenessKey(conditionId)),
         eq(simTriggers.state, "pending"),
+      ),
+    );
+}
+
+/** The most recent second the actor actually finished sleeping, if any. */
+function lastSleepEndedAtOf(conditions: readonly BodyCondition[]): number | undefined {
+  return conditions
+    .filter(
+      (condition) =>
+        condition.key === "asleep" &&
+        condition.status === "ended" &&
+        condition.endedAtStorySecond !== undefined,
+    )
+    .reduce<number | undefined>(
+      (latest, condition) =>
+        latest === undefined || (condition.endedAtStorySecond ?? 0) > latest
+          ? condition.endedAtStorySecond
+          : latest,
+      undefined,
+    );
+}
+
+function collapseContextOf(body: ActorBodyRows): CollapseContext {
+  const lastSleepEndedAt = lastSleepEndedAtOf(body.conditions);
+  return {
+    rhythmRows: body.rhythms,
+    ...(lastSleepEndedAt === undefined ? {} : { lastSleepEndedAtStorySecond: lastSleepEndedAt }),
+  };
+}
+
+/** Retire the actor's pending collapse alarm (any arming attempt). */
+async function retirePendingCollapseTriggers(
+  tx: SimTx,
+  branch: LockedBranchView,
+  commandId: string,
+  submittedAtWallClock: string,
+  actorId: string,
+): Promise<void> {
+  const prefix = bodyCollapseUniquenessKeyPrefix(actorId);
+  await tx
+    .update(simTriggers)
+    .set({
+      state: "completed",
+      resultCommandId: commandId,
+      completedAt: new Date(submittedAtWallClock),
+    })
+    .where(
+      and(
+        eq(simTriggers.branchId, branch.id),
+        eq(simTriggers.state, "pending"),
+        sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
       ),
     );
 }
@@ -611,6 +679,7 @@ export async function submitDurableApplyBodySource(
             (candidate) => candidate.status === "active" && candidate.key === "afterglow",
           ),
           ...(coupledHygiene ? { coupledHygiene } : {}),
+          collapseContext: collapseContextOf(body),
         },
         command,
       );
@@ -703,6 +772,7 @@ export async function submitDurableApplyBodyModifier(
           ...(meterView ? { meter: meterView.state, definition: meterView.definition } : {}),
           modifiers: meterView?.modifiers ?? [],
           scheduledAdjustments: meterView?.scheduledAdjustments ?? [],
+          collapseContext: collapseContextOf(body),
         },
         command,
       );
@@ -788,6 +858,7 @@ export async function submitDurableApplyBodyCondition(
             (condition) => condition.status === "active" && condition.key === command.payload.conditionKey,
           ),
           meterViews,
+          collapseContext: collapseContextOf(body),
         },
         command,
       );
@@ -891,6 +962,7 @@ export async function submitDurableEndBodyCondition(
           ...(condition ? { condition } : {}),
           ownedModifiers,
           meterViews,
+          collapseContext: collapseContextOf(body),
         },
         command,
       );
@@ -1024,6 +1096,7 @@ export async function submitDurableResolveBodyThreshold(
               }
             : {}),
           coLocatedActorIds,
+          collapseContext: collapseContextOf(body),
         },
         command,
       );
@@ -1180,20 +1253,7 @@ export async function computeEngagementBodilyReads(
     const energyView = meterViewOf(body, "energy", input.storySecond);
     if (!energyView) return undefined;
     const reserveFixedPoint = integrateMeterValue(energyView, input.storySecond);
-    const lastSleepEndedAt = body.conditions
-      .filter(
-        (condition) =>
-          condition.key === "asleep" &&
-          condition.status === "ended" &&
-          condition.endedAtStorySecond !== undefined,
-      )
-      .reduce<number | undefined>(
-        (latest, condition) =>
-          latest === undefined || (condition.endedAtStorySecond ?? 0) > latest
-            ? condition.endedAtStorySecond
-            : latest,
-        undefined,
-      );
+    const lastSleepEndedAt = lastSleepEndedAtOf(body.conditions);
     const pressureFixedPoint = deriveCircadianPressure({
       atStorySecond: input.storySecond,
       rhythmRows: body.rhythms,
@@ -1229,5 +1289,177 @@ export async function computeEngagementBodilyReads(
           },
         }),
     observed,
+  });
+}
+
+/** Resolve one due collapse (trigger-dispatched; the read floor re-validated). */
+export async function submitDurableResolveBodyCollapse(
+  rawCommand: unknown,
+  options: BodyStoreOptions = {},
+): Promise<ResolveBodyCollapseCommandResult> {
+  return runSimulationCommand({
+    rawCommand,
+    commandSchema: resolveBodyCollapseCommandSchema,
+    resultSchema: resolveBodyCollapseCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That body request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That collapse has already been resolved."),
+    conflictResult: (commandId, currentVersion) =>
+      resolveBodyCollapseCommandResultSchema.parse({
+        status: "conflict",
+        commandId,
+        currentVersion,
+        retryable: true,
+      }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command) => {
+      const body = await loadActorBody(tx, branch.id, command.payload.actorId);
+      const meterView = meterViewOf(body, "energy", branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
+      const coLocatedActorIds = await loadCoLocatedActorIds(tx, branch.id, command.payload.actorId);
+      const activityRows = await tx
+        .select()
+        .from(simActivities)
+        .where(
+          and(
+            eq(simActivities.branchId, branch.id),
+            inArray(simActivities.phase, [...claimHoldingActivityPhases]),
+            sql`${simActivities.actorIds} @> ${JSON.stringify([command.payload.actorId])}::jsonb`,
+          ),
+        )
+        .orderBy(asc(simActivities.activityInstanceId));
+      const engagementRows = await tx
+        .select()
+        .from(simEngagements)
+        .where(
+          and(
+            eq(simEngagements.branchId, branch.id),
+            eq(simEngagements.channel, "co_present"),
+            inArray(simEngagements.state, [...claimHoldingEngagementStates]),
+            sql`${simEngagements.participantIds} @> ${JSON.stringify([command.payload.actorId])}::jsonb`,
+          ),
+        )
+        .orderBy(asc(simEngagements.engagementId));
+
+      const resolution = resolveBodyCollapse(
+        {
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: branch.headSequence,
+          storySecond: branch.storySecond,
+          ...(meterView ? { meter: meterView.state, definition: meterView.definition } : {}),
+          modifiers: meterView?.modifiers ?? [],
+          scheduledAdjustments: meterView?.scheduledAdjustments ?? [],
+          collapseContext: collapseContextOf(body),
+          activeAsleep: body.conditions.some(
+            (condition) => condition.status === "active" && condition.key === "asleep",
+          ),
+          interruptibleActivities: activityRows
+            .map(activityFromRow)
+            .filter((activity) => activity.phase !== "interrupted"),
+          openEngagements: engagementRows.map((row) =>
+            engagementSchema.parse({
+              id: row.engagementId,
+              participantIds: row.participantIds,
+              channel: row.channel,
+              ...(row.locationId === null ? {} : { locationId: row.locationId }),
+              ...(row.zoneId === null ? {} : { zoneId: row.zoneId }),
+              state: row.state,
+              openedAt: row.openedAt,
+              attentionClaim: row.attentionClaim,
+              sourceCommandId: row.sourceCommandId,
+            }),
+          ),
+          coLocatedActorIds,
+        },
+        command,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      // The energy retirement also sweeps the collapse alarm itself.
+      await retirePendingThresholdTriggers(
+        tx,
+        branch,
+        command.id,
+        command.submittedAtWallClock,
+        command.payload.actorId,
+        "energy",
+      );
+      for (const event of resolution.events) {
+        await appendSimulationEvent(tx, event);
+        if (event.type === "trigger_scheduled") {
+          await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+        }
+      }
+      const firstSequence = resolution.events[0]?.sequence ?? branch.headSequence + 1;
+      await tx
+        .insert(simBodyConditions)
+        .values(bodyConditionRowInsert(branch.id, resolution.condition, firstSequence));
+      await tx
+        .insert(simBodyModifiers)
+        .values(
+          resolution.modifiers.map((modifier) => bodyModifierRowInsert(branch.id, modifier, firstSequence)),
+        );
+      await upsertMeterRow(tx, branch.id, resolution.meter, firstSequence);
+
+      // Interrupt every held activity: phase + captured progress, and the
+      // pending completion alarm retired (prefix: resumed keys included).
+      for (const event of resolution.events) {
+        if (event.type === "activity_interrupted") {
+          await tx
+            .update(simActivities)
+            .set({
+              phase: "interrupted",
+              progressFixedPoint: event.payload.progressFixedPoint,
+              updatedSequence: event.sequence,
+            })
+            .where(
+              and(
+                eq(simActivities.branchId, branch.id),
+                eq(simActivities.activityInstanceId, event.payload.activityInstanceId),
+              ),
+            );
+          await tx
+            .update(simTriggers)
+            .set({
+              state: "completed",
+              resultCommandId: command.id,
+              completedAt: new Date(command.submittedAtWallClock),
+            })
+            .where(
+              and(
+                eq(simTriggers.branchId, branch.id),
+                eq(simTriggers.state, "pending"),
+                sql`starts_with(${simTriggers.uniquenessKey}, ${activityCompletionUniquenessKey(event.payload.activityInstanceId)})`,
+              ),
+            );
+        } else if (event.type === "engagement_interrupted") {
+          await tx
+            .update(simEngagements)
+            .set({ state: "interrupted", updatedSequence: event.sequence })
+            .where(
+              and(
+                eq(simEngagements.branchId, branch.id),
+                eq(simEngagements.engagementId, event.payload.engagementId),
+              ),
+            );
+        }
+      }
+
+      const lastSequence = resolution.events[resolution.events.length - 1]?.sequence ?? firstSequence;
+      await advanceLockedBranch(tx, branch, lastSequence);
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence,
+        lastSequence,
+        eventIds: resolution.events.map((event) => event.id),
+      };
+    },
   });
 }

@@ -203,9 +203,12 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       return { kind: "allowed", summary: "A bodily state visibly passed." };
     case "body_threshold_crossed":
       // Allowed, not hard: a witnessed limit may be portrayed, but a quiet
-      // crossing (hygiene sliding a band) must never force a mention. E5.2's
-      // collapse work revisits whether a witnessed collapse becomes hard.
+      // crossing (hygiene sliding a band) must never force a mention.
       return { kind: "allowed", summary: "A body visibly reached a limit and may be portrayed." };
+    case "body_collapsed":
+      // A collapse is the E5.2 answer to that open note: dramatic, physical,
+      // and witnessed — prose that skips it is lying about the scene.
+      return { kind: "hard", summary: "Someone's body visibly gave out — they collapsed here." };
     case "trigger_scheduled":
     case "journey_planned":
     case "commitment_created":

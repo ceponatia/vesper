@@ -463,6 +463,10 @@ export type VisibleBodySign = z.infer<typeof visibleBodySignSchema>;
 export const AFTERGLOW_DURATION_SECONDS = 1_800 as const;
 /** §25.4 exertion coupling: hygiene drains at half the energy cost. */
 export const EXERTION_HYGIENE_FRACTION_FIXED_POINT = 5_000 as const;
+/** Collapse is forced sleep: how long the body takes what it was denied. */
+export const COLLAPSE_SLEEP_SECONDS = 28_800 as const;
+/** How far ahead the collapse alarm solves; re-solved on every material event. */
+export const COLLAPSE_SOLVE_HORIZON_SECONDS = 604_800 as const;
 
 // --- Source vocabulary (engine.spec §25.1 layer 2) ---------------------------
 
@@ -682,6 +686,34 @@ export const resolveBodyThresholdCommandResultSchema = createCommandResultSchema
   resolveBodyThresholdRejectionCodeSchema,
 );
 
+const resolveBodyCollapsePayloadSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    /** Versions the trigger's uniqueness key: each re-arm is a distinct alarm. */
+    armedAtSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict();
+
+/** Dispatched by the collapse alarm; system-only, re-validated at fire time. */
+export const resolveBodyCollapseCommandSchema = createCommandEnvelopeSchema(
+  "resolve_body_collapse",
+  1,
+  resolveBodyCollapsePayloadSchema,
+);
+
+export const resolveBodyCollapseRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "body_not_initialized",
+  "collapse_stale",
+  "unauthorized_principal",
+] as const;
+export const resolveBodyCollapseRejectionCodeSchema = z.enum(resolveBodyCollapseRejectionCodes);
+export const resolveBodyCollapseCommandResultSchema = createCommandResultSchema(
+  resolveBodyCollapseRejectionCodeSchema,
+);
+
 // --- Body event family (engine.spec §9.2) ------------------------------------
 
 const bodyInitializedPayloadSchema = z
@@ -793,6 +825,24 @@ export const bodyConditionEndedEventSchema = createEventEnvelopeSchema(
   bodyConditionEndedPayloadSchema,
 );
 
+const bodyCollapsedPayloadSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    reserveFixedPoint: meterFixedPointSchema,
+    pressureFixedPoint: z.number().int().min(0).max(100_000),
+    /** The saturated read at the moment the body gave out. */
+    readSignedFixedPoint: z.number().int().min(-METER_FIXED_POINT_ONE).max(METER_FIXED_POINT_ONE),
+    observerActorIds: observerActorIdsSchema,
+    derived: integrationDerivationSchema,
+  })
+  .strict();
+
+export const bodyCollapsedEventSchema = createEventEnvelopeSchema(
+  "body_collapsed",
+  1,
+  bodyCollapsedPayloadSchema,
+);
+
 const bodyThresholdCrossedPayloadSchema = z
   .object({
     actorId: worldCharacterIdSchema,
@@ -844,6 +894,10 @@ export type ApplyBodyConditionCommandResult = z.infer<typeof applyBodyConditionC
 export type EndBodyConditionCommand = z.infer<typeof endBodyConditionCommandSchema>;
 export type EndBodyConditionRejectionCode = z.infer<typeof endBodyConditionRejectionCodeSchema>;
 export type EndBodyConditionCommandResult = z.infer<typeof endBodyConditionCommandResultSchema>;
+export type ResolveBodyCollapseCommand = z.infer<typeof resolveBodyCollapseCommandSchema>;
+export type ResolveBodyCollapseRejectionCode = z.infer<typeof resolveBodyCollapseRejectionCodeSchema>;
+export type ResolveBodyCollapseCommandResult = z.infer<typeof resolveBodyCollapseCommandResultSchema>;
+export type BodyCollapsedEvent = z.infer<typeof bodyCollapsedEventSchema>;
 export type ResolveBodyThresholdCommand = z.infer<typeof resolveBodyThresholdCommandSchema>;
 export type ResolveBodyThresholdRejectionCode = z.infer<typeof resolveBodyThresholdRejectionCodeSchema>;
 export type ResolveBodyThresholdCommandResult = z.infer<typeof resolveBodyThresholdCommandResultSchema>;

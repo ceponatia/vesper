@@ -333,7 +333,7 @@ export const activityFailedEventSchema = createEventEnvelopeSchema(
   activityFailedPayloadSchema,
 );
 
-export const activityInterruptReasons = ["engagement", "pressure", "hazard"] as const;
+export const activityInterruptReasons = ["engagement", "pressure", "hazard", "collapse"] as const;
 export const activityInterruptReasonSchema = z.enum(activityInterruptReasons);
 
 const activityInterruptedPayloadSchema = z
@@ -365,6 +365,37 @@ export const activityResumedEventSchema = createEventEnvelopeSchema(
   1,
   activityResumedPayloadSchema,
 );
+
+// --- ResumeActivity (E5.2 — the carried E3.4 re-arm design note) --------------
+
+const resumeActivityPayloadSchema = z
+  .object({
+    activityInstanceId: activityInstanceIdSchema,
+  })
+  .strict();
+
+export const resumeActivityCommandSchema = createCommandEnvelopeSchema(
+  "resume_activity",
+  1,
+  resumeActivityPayloadSchema,
+);
+
+export const resumeActivityRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "activity_not_found",
+  "activity_not_interrupted",
+  "unauthorized_actor",
+] as const;
+export const resumeActivityRejectionCodeSchema = z.enum(resumeActivityRejectionCodes);
+export const resumeActivityCommandResultSchema = createCommandResultSchema(
+  resumeActivityRejectionCodeSchema,
+);
+
+export type ResumeActivityCommand = z.infer<typeof resumeActivityCommandSchema>;
+export type ResumeActivityRejectionCode = z.infer<typeof resumeActivityRejectionCodeSchema>;
+export type ResumeActivityCommandResult = z.infer<typeof resumeActivityCommandResultSchema>;
 
 // --- Activities projection ---------------------------------------------------
 

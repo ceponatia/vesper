@@ -684,8 +684,7 @@ the same day: ruling 15 (v1 body meters = **full chat parity**, with
 semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
 preconditions + a §19.3 policy escalation path**); normative wording in
 [engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
-below; **E5.1 and E5.2 slices 1 + 2a shipped 2026-07-19** — E5.2 slice 2b (collapse +
-interruption) is next.
+below; **E5.1 and E5.2 shipped 2026-07-19** — E5.3 (material life) is next.
 
 Rough effort: **15–35 developer-days**.
 
@@ -777,7 +776,7 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    command id (the E3.5 id-stacking lesson) so the threshold→condition→expiry
    derivation chain stays inside the compact-id cap. Next: **E5.2**.
 2. **E5.2 — chat-parity resolution and perception-gated reads (ruling 15).** Status:
-   **slices 1 + 2a shipped — 2026-07-19; slice 2b (collapse + interruption) remains.** The ruled meter set on the E5.1
+   **shipped — 2026-07-19 (slices 1, 2a, 2b).** The ruled meter set on the E5.1
    substrate, semantics per [chat-meter-economy.spec.md](chat-meter-economy.spec.md).
    **Slice 1 (shipped)** — the OQ1/OQ3 core: authored `sim_body_rhythms` rows
    (migration 0068; sleep + wash windows in minutes-of-day, seeded like action
@@ -818,10 +817,28 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    `prepareEngagementTurn`, empty for worlds without initialized bodies so
    pre-Gate-5 scenarios compile identical cuts. 5 new pure + 1 int case
    (2 807 pure + 380 int green).
-   **Slice 2b (remaining)**: collapse at the saturated read floor as a durable
-   outcome that interrupts activities and engagements — landing the carried E3.4
-   resumed-activity completion re-arm (trigger uniqueness versioned by attempt) —
-   plus the read-floor alarm solved against the time-varying pressure curve.
+   **Slice 2b (shipped — 2026-07-19)** — collapse at the saturated read floor, the
+   OQ1 −1 pole made durable: `solveCollapseCrossing` scans the read (reserve minus
+   the time-varying anchors + escalation pressure) at minute resolution with
+   second-level refinement, so the ~40h crossing stays emergent and exact at the
+   armed second; the `body_collapse_due` alarm **arms only at a real wake**
+   (assumed-rhythm actors never escalate, so background casts arm nothing), retires
+   on any energy material event or sleep onset, and re-arms with fresh history on
+   every wake. `resolve_body_collapse` re-validates the floor at fire time and
+   commits, atomically: the witnessed `body_collapsed` event (a HARD narrative
+   beat), interruption of every claim-holding activity (`activity_interrupted`,
+   reason `collapse`, progress captured) and open co-present engagement
+   (`participant_collapsed`), and the denied sleep forced as a self-expiring asleep
+   condition through the ordinary machinery — so the wake credit, the re-arms, and
+   the next collapse alarm all follow from existing law. The carried E3.4 note
+   lands: `resume_activity` re-arms completion under an **attempt-versioned
+   uniqueness key** (the un-versioned key is a strict prefix, so cancel/complete
+   retirement sweeps both), computes remaining time from captured progress, and
+   rebases the activity window so repeated interruptions stay consistent; replay
+   recognizes interruption-retirement and the versioned re-arm. 6 new pure + 1 int
+   case (2 813 pure + 381 int green) — the int arc runs wake → arm → drain-fired
+   collapse mid-vigil → interruption → forced sleep → wake re-arm → resume →
+   completion through the drain.
 3. **E5.3 — material life: containers, ownership, wear, and consumption.** §26 over
    the Gate 1/2 item lane: every material object has one holding locus (held / worn in
    slot / inside container / at zone / consumed-destroyed-lost); typed containers with

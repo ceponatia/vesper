@@ -15,12 +15,16 @@ import {
   type ActivitiesProjection,
   type ActivityInstance,
   type CancelActivityCommandResult,
+  resumeActivityCommandSchema,
+  resumeActivityCommandResultSchema,
+  type ResumeActivityCommandResult,
   type CompleteActivityCommandResult,
   type StartActivityCommandResult,
 } from "@/contracts/simulation/activities";
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
   activityCompletionUniquenessKey,
+  resolveResumeActivity,
   heldClaimsForActor,
   resolveCancelActivity,
   resolveCompleteActivity,
@@ -510,6 +514,8 @@ export async function submitDurableCancelActivity(
 
       // Retire the pending completion trigger in the same transaction (spec
       // §11.1 step 10) so it can never fire against the cancelled activity.
+      // Prefix-matched: a resumed activity's alarm carries an attempt-
+      // versioned key the un-versioned key is a strict prefix of (E5.2).
       await tx
         .update(simTriggers)
         .set({
@@ -520,8 +526,8 @@ export async function submitDurableCancelActivity(
         .where(
           and(
             eq(simTriggers.branchId, branch.id),
-            eq(simTriggers.uniquenessKey, activityCompletionUniquenessKey(resolution.activity.id)),
             eq(simTriggers.state, "pending"),
+            sql`starts_with(${simTriggers.uniquenessKey}, ${activityCompletionUniquenessKey(resolution.activity.id)})`,
           ),
         );
       await advanceLockedBranch(tx, branch, resolution.event.sequence);
@@ -533,6 +539,92 @@ export async function submitDurableCancelActivity(
         firstSequence: resolution.event.sequence,
         lastSequence: resolution.event.sequence,
         eventIds: [resolution.event.id],
+      };
+    },
+  });
+}
+
+/** Pick an interrupted activity back up (E5.2 — the E3.4 re-arm note landed). */
+export async function submitDurableResumeActivity(
+  rawCommand: unknown,
+  options: ActivityStoreOptions = {},
+): Promise<ResumeActivityCommandResult> {
+  return runSimulationCommand({
+    rawCommand,
+    commandSchema: resumeActivityCommandSchema,
+    resultSchema: resumeActivityCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That resumption request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That resumption has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      resumeActivityCommandResultSchema.parse({ status: "conflict", commandId, currentVersion, retryable: true }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command) => {
+      const [activityRow] = await tx
+        .select()
+        .from(simActivities)
+        .where(
+          and(
+            eq(simActivities.branchId, branch.id),
+            eq(simActivities.activityInstanceId, command.payload.activityInstanceId),
+          ),
+        )
+        .limit(1);
+      const activity = activityRow ? activityFromRow(activityRow) : undefined;
+      const [zoneRow] = activity
+        ? await tx
+            .select({ locationId: simZones.locationId })
+            .from(simZones)
+            .where(and(eq(simZones.branchId, branch.id), eq(simZones.zoneId, activity.zoneId)))
+            .limit(1)
+        : [];
+
+      const resolution = resolveResumeActivity(
+        {
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: branch.headSequence,
+          storySecond: branch.storySecond,
+          ...(activity ? { activity } : {}),
+          ...(zoneRow ? { zoneLocationId: zoneRow.locationId } : {}),
+        },
+        command,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      const [resumedEvent, triggerEvent] = resolution.events;
+      await appendSimulationEvent(tx, resumedEvent);
+      await appendSimulationEvent(tx, triggerEvent);
+      await applyTriggerScheduledEvent(tx, triggerEvent, { branchId: branch.id, worldId: branch.worldId });
+      const [updated] = await tx
+        .update(simActivities)
+        .set({
+          phase: "active",
+          expectedCompleteAt: resolution.activity.expectedCompleteAt ?? null,
+          startedAt: resolution.activity.startedAt ?? null,
+          updatedSequence: triggerEvent.sequence,
+        })
+        .where(
+          and(
+            eq(simActivities.branchId, branch.id),
+            eq(simActivities.activityInstanceId, resolution.activity.id),
+          ),
+        )
+        .returning({ activityInstanceId: simActivities.activityInstanceId });
+      if (!updated) throw new Error("Locked activity changed before its resumption update");
+      await advanceLockedBranch(tx, branch, triggerEvent.sequence);
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: resumedEvent.sequence,
+        lastSequence: triggerEvent.sequence,
+        eventIds: [resumedEvent.id, triggerEvent.id],
       };
     },
   });

@@ -1756,6 +1756,7 @@ export const simTriggers = pgTable(
         "commitment_deadline_due",
         "body_threshold_due",
         "body_condition_expiry_due",
+        "body_collapse_due",
       ],
     }).notNull(),
     schemaVersion: integer("schema_version").notNull(),

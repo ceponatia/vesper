@@ -329,7 +329,8 @@ export function deriveEventObservations(
       collector.add(event.payload.actorId, DIRECT_EMBODIED);
       break;
     case "body_condition_applied":
-    case "body_threshold_crossed": {
+    case "body_threshold_crossed":
+    case "body_collapsed": {
       // The subject feels it; a noticeable outcome captured co-located
       // witnesses at commit (trusted as-is, like activity captures — a
       // private threshold stays private).

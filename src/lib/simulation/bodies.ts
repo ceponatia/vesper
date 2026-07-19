@@ -1,4 +1,6 @@
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
+import { activityInterruptedEventSchema, type ActivityInstance } from "@/contracts/simulation/activities";
+import type { Engagement } from "@/contracts/simulation/engagements";
 import {
   METER_FIXED_POINT_ONE,
   bodiesProjectionSchema,
@@ -40,7 +42,12 @@ import {
   type ResolveBodyThresholdCommand,
   type ResolveBodyThresholdRejectionCode,
   type ScheduledBodyAdjustment,
+  type ResolveBodyCollapseCommand,
+  type ResolveBodyCollapseRejectionCode,
   AFTERGLOW_DURATION_SECONDS,
+  COLLAPSE_SLEEP_SECONDS,
+  COLLAPSE_SOLVE_HORIZON_SECONDS,
+  bodyCollapsedEventSchema,
   ENERGY_SLEEP_RESTORE_CAP_FIXED_POINT,
   ENERGY_SLEEP_RESTORE_PER_HOUR_FIXED_POINT,
   EXERTION_HYGIENE_FRACTION_FIXED_POINT,
@@ -50,7 +57,10 @@ import {
 } from "@/contracts/simulation/bodies";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import { simulationHash } from "./item-transfer";
+import { deriveCircadianPressure } from "./body-reads";
+import { buildDepartureInterruptEvent } from "./engagements";
 import {
+  bodyCollapseTriggerKind,
   bodyConditionExpiryTriggerKind,
   bodyThresholdTriggerKind,
   schedulerDerivationVersion,
@@ -552,7 +562,8 @@ type BodyCommand =
   | ApplyBodyModifierCommand
   | ApplyBodyConditionCommand
   | EndBodyConditionCommand
-  | ResolveBodyThresholdCommand;
+  | ResolveBodyThresholdCommand
+  | ResolveBodyCollapseCommand;
 
 function actorControlledBy(command: BodyCommand, actorId: string): boolean {
   const principal = command.principal;
@@ -612,13 +623,21 @@ function buildBodyTrigger(input: {
         dueStorySecond: number;
         uniquenessKey: string;
         payload: { actorId: string; conditionId: string; basis: "expired" };
+      }
+    | {
+        kind: typeof bodyCollapseTriggerKind;
+        dueStorySecond: number;
+        uniquenessKey: string;
+        payload: { actorId: string; armedAtSequence: number };
       };
 }): TriggerScheduledEvent {
   const templateId = composeSimulationId("template", [input.intent.uniquenessKey]);
   const command =
     input.intent.kind === bodyThresholdTriggerKind
       ? { type: "resolve_body_threshold" as const, payload: input.intent.payload }
-      : { type: "end_body_condition" as const, payload: input.intent.payload };
+      : input.intent.kind === bodyConditionExpiryTriggerKind
+        ? { type: "end_body_condition" as const, payload: input.intent.payload }
+        : { type: "resolve_body_collapse" as const, payload: input.intent.payload };
   return triggerScheduledEventSchema.parse({
     ...eventEnvelope(input.view, input.command, input.sequence, input.suffix),
     type: "trigger_scheduled",
@@ -626,9 +645,9 @@ function buildBodyTrigger(input: {
     causationId: input.causationId,
     actorIds: [input.actorId],
     entityIds:
-      input.intent.kind === bodyThresholdTriggerKind
-        ? [input.intent.payload.actorId]
-        : [input.intent.payload.conditionId],
+      input.intent.kind === bodyConditionExpiryTriggerKind
+        ? [input.intent.payload.conditionId]
+        : [input.intent.payload.actorId],
     payload: {
       kind: input.intent.kind,
       triggerSchemaVersion: 1,
@@ -794,6 +813,8 @@ export interface BodyMeterResolutionView extends BodyBranchMeta {
   activeAfterglow?: boolean;
   /** E5.2 exertion coupling: the actor's hygiene view, when it exists. */
   coupledHygiene?: MeterIntegrationView;
+  /** E5.2 collapse: pressure context for the read-floor alarm re-solve. */
+  collapseContext?: CollapseContext;
 }
 
 export interface ApplyBodySourceResolution {
@@ -990,6 +1011,27 @@ export function resolveApplyBodySource(
     trailing.push(rearm);
     nextSequence += 1;
   }
+  if (command.payload.meterKey === "energy") {
+    const collapseRearm = rearmCollapseTrigger({
+      view,
+      command,
+      actorId: command.payload.actorId,
+      energyView: {
+        definition: view.definition,
+        state: nextState,
+        modifiers: view.modifiers,
+        scheduledAdjustments: view.scheduledAdjustments ?? [],
+      },
+      context: view.collapseContext,
+      sequence: nextSequence,
+      causationId: event.id,
+      armedAtSequence: event.sequence,
+    });
+    if (collapseRearm) {
+      trailing.push(collapseRearm);
+      nextSequence += 1;
+    }
+  }
   if (coupledMeter && view.coupledHygiene) {
     const hygieneRearm = rearmThresholdTrigger({
       view,
@@ -1154,6 +1196,8 @@ export function resolveApplyBodyModifier(
     valueFixedPoint: valueAtApply,
     lastIntegratedAtStorySecond: view.storySecond,
   });
+  const trailing: TriggerScheduledEvent[] = [];
+  let nextSequence = view.headSequence + 2;
   const rearm = rearmThresholdTrigger({
     view,
     command,
@@ -1164,11 +1208,33 @@ export function resolveApplyBodyModifier(
       modifiers: [...view.modifiers, modifier],
       scheduledAdjustments: view.scheduledAdjustments ?? [],
     },
-    sequence: view.headSequence + 2,
+    sequence: nextSequence,
     causationId: event.id,
     armedAtSequence: event.sequence,
   });
-  return { ok: true, meter: nextState, modifier, events: rearm ? [event, rearm] : [event] };
+  if (rearm) {
+    trailing.push(rearm);
+    nextSequence += 1;
+  }
+  if (command.payload.modifier.meterKey === "energy") {
+    const collapseRearm = rearmCollapseTrigger({
+      view,
+      command,
+      actorId: command.payload.actorId,
+      energyView: {
+        definition: view.definition,
+        state: nextState,
+        modifiers: [...view.modifiers, modifier],
+        scheduledAdjustments: view.scheduledAdjustments ?? [],
+      },
+      context: view.collapseContext,
+      sequence: nextSequence,
+      causationId: event.id,
+      armedAtSequence: event.sequence,
+    });
+    if (collapseRearm) trailing.push(collapseRearm);
+  }
+  return { ok: true, meter: nextState, modifier, events: [event, ...trailing] };
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,6 +1247,8 @@ export interface ApplyBodyConditionResolutionView extends BodyBranchMeta {
   activeSameKey: boolean;
   /** Meter views for every meter named by the owned modifier specs. */
   meterViews: ReadonlyMap<string, MeterIntegrationView>;
+  /** E5.2 collapse: pressure context for the read-floor alarm re-solve. */
+  collapseContext?: CollapseContext;
 }
 
 export interface ApplyBodyConditionResolution {
@@ -1332,6 +1400,30 @@ export function resolveApplyBodyCondition(
         },
       }),
     );
+    nextSequence += 1;
+  }
+  // Sleep onset only RETIRES the collapse alarm (she made it to bed; the
+  // wake re-arms with fresh history). Other energy-touching conditions
+  // re-solve it against their modified trajectory.
+  const energyState = meters.get("energy");
+  const energyView = view.meterViews.get("energy");
+  if (command.payload.conditionKey !== "asleep" && energyState && energyView) {
+    const collapseRearm = rearmCollapseTrigger({
+      view,
+      command,
+      actorId: command.payload.actorId,
+      energyView: {
+        definition: energyView.definition,
+        state: energyState,
+        modifiers: [...energyView.modifiers, ...modifiers.filter((m) => m.meterKey === "energy")],
+        scheduledAdjustments: energyView.scheduledAdjustments ?? [],
+      },
+      context: view.collapseContext,
+      sequence: nextSequence,
+      causationId: appliedEvent.id,
+      armedAtSequence: appliedEvent.sequence,
+    });
+    if (collapseRearm) trailing.push(collapseRearm);
   }
   return { ok: true, condition, modifiers, meters, events: [appliedEvent, ...trailing] };
 }
@@ -1345,6 +1437,8 @@ export interface EndBodyConditionResolutionView extends BodyBranchMeta {
   /** Live modifiers owned by the condition, with their meter views. */
   ownedModifiers: readonly BodyModifier[];
   meterViews: ReadonlyMap<string, MeterIntegrationView>;
+  /** E5.2 collapse: pressure context for the read-floor alarm re-solve. */
+  collapseContext?: CollapseContext;
 }
 
 export interface EndBodyConditionResolution {
@@ -1472,6 +1566,35 @@ export function resolveEndBodyCondition(
       rearms.push(rearm);
       nextSequence += 1;
     }
+    if (meterKey === "energy") {
+      // Waking resets the sleep-history anchor: escalation restarts from
+      // this very second, and the next collapse solves ~a full span out.
+      const effectiveContext: CollapseContext | undefined =
+        view.collapseContext === undefined
+          ? undefined
+          : condition.key === "asleep"
+            ? { ...view.collapseContext, lastSleepEndedAtStorySecond: view.storySecond }
+            : view.collapseContext;
+      const collapseRearm = rearmCollapseTrigger({
+        view,
+        command,
+        actorId: command.payload.actorId,
+        energyView: {
+          definition: meterView.definition,
+          state: meterState,
+          modifiers: survivingModifiers,
+          scheduledAdjustments: meterView.scheduledAdjustments ?? [],
+        },
+        context: effectiveContext,
+        sequence: nextSequence,
+        causationId: endedEvent.id,
+        armedAtSequence: endedEvent.sequence,
+      });
+      if (collapseRearm) {
+        rearms.push(collapseRearm);
+        nextSequence += 1;
+      }
+    }
   }
   events.push(...rearms);
   return { ok: true, condition: ended, meters, events };
@@ -1491,6 +1614,8 @@ export interface ResolveBodyThresholdResolutionView extends BodyBranchMeta {
   activeOutcomeConditionKey?: boolean;
   /** Co-located witnesses, captured by the store for noticeable thresholds. */
   coLocatedActorIds: readonly string[];
+  /** E5.2 collapse: pressure context for the read-floor alarm re-solve. */
+  collapseContext?: CollapseContext;
 }
 
 export interface ResolveBodyThresholdResolution {
@@ -1628,12 +1753,374 @@ export function resolveBodyThreshold(
     causationId: crossedEvent.id,
     armedAtSequence: crossedEvent.sequence,
   });
-  if (rearm) trailing.push(rearm);
+  if (rearm) {
+    trailing.push(rearm);
+    nextSequence += 1;
+  }
+  if (command.payload.meterKey === "energy") {
+    const collapseRearm = rearmCollapseTrigger({
+      view,
+      command,
+      actorId: command.payload.actorId,
+      energyView: {
+        definition: view.definition,
+        state: nextState,
+        modifiers: view.modifiers,
+        scheduledAdjustments: view.scheduledAdjustments ?? [],
+      },
+      context: view.collapseContext,
+      sequence: nextSequence,
+      causationId: crossedEvent.id,
+      armedAtSequence: crossedEvent.sequence,
+    });
+    if (collapseRearm) trailing.push(collapseRearm);
+  }
   return {
     ok: true,
     meter: nextState,
     ...(condition === undefined ? {} : { condition }),
     events: [crossedEvent, ...trailing],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// E5.2 slice 2b — collapse at the saturated read floor (OQ1's −1 pole)
+// ---------------------------------------------------------------------------
+
+export interface CollapseContext {
+  rhythmRows: readonly BodyRhythmRow[];
+  /**
+   * When the actor last actually finished sleeping. Absent means no real
+   * sleep history exists — the pressure curve then assumes the rhythm was
+   * followed, escalation never accrues, and collapse is unreachable, so
+   * alarms arm only for actors whose wakefulness the engine has witnessed.
+   */
+  lastSleepEndedAtStorySecond?: number;
+}
+
+export interface CollapseCrossing {
+  crossesAtStorySecond: number;
+  reserveFixedPoint: number;
+  pressureFixedPoint: number;
+}
+
+function collapseReadAt(
+  energyView: MeterIntegrationView,
+  context: CollapseContext,
+  atStorySecond: number,
+): { reserveFixedPoint: number; pressureFixedPoint: number; collapsed: boolean } {
+  const reserveFixedPoint = integrateMeterValue(energyView, atStorySecond);
+  const pressureFixedPoint = deriveCircadianPressure({
+    atStorySecond,
+    rhythmRows: context.rhythmRows,
+    ...(context.lastSleepEndedAtStorySecond === undefined
+      ? {}
+      : { lastSleepEndedAtStorySecond: context.lastSleepEndedAtStorySecond }),
+  });
+  return {
+    reserveFixedPoint,
+    pressureFixedPoint,
+    collapsed: reserveFixedPoint - pressureFixedPoint <= -METER_FIXED_POINT_ONE,
+  };
+}
+
+/**
+ * The first second the energy read saturates its floor: reserve(t) −
+ * pressure(t) ≤ −1. Pressure is time-varying (anchors + escalation), so this
+ * scans at minute resolution and refines the found minute to its first
+ * crossed second — conservative by under a minute at worst, exact at the
+ * armed second, and always re-validated at fire time. Emergent: with the
+ * reference rhythm this lands near 40 hours awake, from no hardcoded hour.
+ */
+export function solveCollapseCrossing(input: {
+  energyView: MeterIntegrationView;
+  context: CollapseContext;
+  fromStorySecond: number;
+  horizonSeconds?: number;
+}): CollapseCrossing | undefined {
+  if (input.context.lastSleepEndedAtStorySecond === undefined) return undefined;
+  const horizon = input.horizonSeconds ?? COLLAPSE_SOLVE_HORIZON_SECONDS;
+  const end = input.fromStorySecond + horizon;
+  let previous = input.fromStorySecond;
+  for (let at = input.fromStorySecond; at <= end; at += 60) {
+    const sample = collapseReadAt(input.energyView, input.context, at);
+    if (sample.collapsed) {
+      for (let second = at === input.fromStorySecond ? at : previous + 1; second <= at; second += 1) {
+        const exact = collapseReadAt(input.energyView, input.context, second);
+        if (exact.collapsed) {
+          return {
+            crossesAtStorySecond: second,
+            reserveFixedPoint: exact.reserveFixedPoint,
+            pressureFixedPoint: exact.pressureFixedPoint,
+          };
+        }
+      }
+    }
+    previous = at;
+  }
+  return undefined;
+}
+
+export function bodyCollapseUniquenessKey(actorId: string, armedAtSequence: number): string {
+  return composeSimulationId("body-collapse", [actorId, String(armedAtSequence)]);
+}
+
+/** Prefix matching every armed collapse alarm for one actor. */
+export function bodyCollapseUniquenessKeyPrefix(actorId: string): string {
+  return `${composeSimulationId("body-collapse", [actorId])}:`;
+}
+
+/** Re-solve one actor's collapse alarm after an energy or sleep material event. */
+function rearmCollapseTrigger(input: {
+  view: BodyBranchMeta;
+  command: BodyCommand;
+  actorId: string;
+  energyView: MeterIntegrationView;
+  context: CollapseContext | undefined;
+  sequence: number;
+  causationId: string;
+  armedAtSequence: number;
+}): TriggerScheduledEvent | undefined {
+  if (!input.context) return undefined;
+  const crossing = solveCollapseCrossing({
+    energyView: input.energyView,
+    context: input.context,
+    fromStorySecond: input.view.storySecond,
+  });
+  if (!crossing) return undefined;
+  return buildBodyTrigger({
+    view: input.view,
+    command: input.command,
+    sequence: input.sequence,
+    causationId: input.causationId,
+    actorId: input.actorId,
+    suffix: "arm-collapse",
+    intent: {
+      kind: bodyCollapseTriggerKind,
+      dueStorySecond: crossing.crossesAtStorySecond,
+      uniquenessKey: bodyCollapseUniquenessKey(input.actorId, input.armedAtSequence),
+      payload: { actorId: input.actorId, armedAtSequence: input.armedAtSequence },
+    },
+  });
+}
+
+export interface ResolveBodyCollapseResolutionView extends BodyBranchMeta {
+  meter?: BodyMeterState;
+  definition?: BodyMeterDefinition;
+  modifiers: readonly BodyModifier[];
+  scheduledAdjustments?: readonly ScheduledBodyAdjustment[];
+  collapseContext?: CollapseContext;
+  /** A live asleep condition means the body already got what it demanded. */
+  activeAsleep: boolean;
+  /** The actor's claim-holding activities, to interrupt (sorted by store). */
+  interruptibleActivities: readonly ActivityInstance[];
+  /** The actor's open co-present engagements, to interrupt. */
+  openEngagements: readonly Engagement[];
+  coLocatedActorIds: readonly string[];
+}
+
+export interface ResolveBodyCollapseResolution {
+  ok: true;
+  meter: BodyMeterState;
+  condition: BodyCondition;
+  modifiers: BodyModifier[];
+  interruptedActivityIds: string[];
+  interruptedEngagementIds: string[];
+  events: SimulationBranchEvent[];
+}
+
+export function resolveBodyCollapse(
+  view: ResolveBodyCollapseResolutionView,
+  command: ResolveBodyCollapseCommand,
+): BodyRejection<ResolveBodyCollapseRejectionCode> | ResolveBodyCollapseResolution {
+  if (command.branchId !== view.branchId) {
+    return rejection("branch_mismatch", "That world branch is unavailable.");
+  }
+  if (command.principal.kind !== "system") {
+    return rejection("unauthorized_principal", "Bodies give out on the world's clock only.");
+  }
+  if (!view.meter || !view.definition) {
+    return rejection("body_not_initialized", "That body is not tracked.");
+  }
+  if (view.activeAsleep || !view.collapseContext) {
+    return rejection("collapse_stale", "That body already found sleep.");
+  }
+  const energyView: MeterIntegrationView = {
+    definition: view.definition,
+    state: view.meter,
+    modifiers: view.modifiers,
+    scheduledAdjustments: view.scheduledAdjustments ?? [],
+  };
+  const now = collapseReadAt(energyView, view.collapseContext, view.storySecond);
+  if (!now.collapsed) {
+    // A material event moved the trajectory after arming; its own commit
+    // retired this alarm's replay entry and re-armed the live one.
+    return rejection("collapse_stale", "That body is no longer at its limit.");
+  }
+
+  const observerActorIds = [...new Set(view.coLocatedActorIds)].sort(compareStableText);
+  const events: SimulationBranchEvent[] = [];
+  let nextSequence = view.headSequence + 1;
+
+  const collapsedEvent = bodyCollapsedEventSchema.parse({
+    ...eventEnvelope(view, command, nextSequence, "body-collapsed"),
+    type: "body_collapsed",
+    actorIds: [command.payload.actorId],
+    entityIds: [command.payload.actorId],
+    payload: {
+      actorId: command.payload.actorId,
+      reserveFixedPoint: now.reserveFixedPoint,
+      pressureFixedPoint: now.pressureFixedPoint,
+      readSignedFixedPoint: Math.max(
+        -METER_FIXED_POINT_ONE,
+        Math.min(METER_FIXED_POINT_ONE, now.reserveFixedPoint - now.pressureFixedPoint),
+      ),
+      observerActorIds,
+      derived: capturedDerivation(energyView, view.storySecond),
+    },
+  });
+  events.push(collapsedEvent);
+  nextSequence += 1;
+
+  // The world does not pause for a body: every held activity and open scene
+  // breaks in the same transaction (§18.2 — one body, one physical scene).
+  const interruptedActivityIds: string[] = [];
+  for (const activity of [...view.interruptibleActivities].sort((a, b) => compareStableText(a.id, b.id))) {
+    const total =
+      activity.startedAt !== undefined && activity.expectedCompleteAt !== undefined
+        ? activity.expectedCompleteAt - activity.startedAt
+        : 0;
+    const elapsed = activity.startedAt !== undefined ? view.storySecond - activity.startedAt : 0;
+    const progressFixedPoint =
+      total > 0 ? Math.max(0, Math.min(1_000_000, Math.floor((elapsed * 1_000_000) / total))) : activity.progressFixedPoint;
+    events.push(
+      activityInterruptedEventSchema.parse({
+        ...eventEnvelope(view, command, nextSequence, `interrupt-activity-${activity.id}`),
+        type: "activity_interrupted",
+        causationId: collapsedEvent.id,
+        actorIds: activity.actorIds,
+        entityIds: [...new Set<string>([activity.id, ...activity.actorIds])].sort(compareStableText),
+        payload: {
+          activityInstanceId: activity.id,
+          interruptedAt: view.storySecond,
+          reason: "collapse",
+          progressFixedPoint,
+        },
+      }),
+    );
+    interruptedActivityIds.push(activity.id);
+    nextSequence += 1;
+  }
+
+  const interruptedEngagementIds: string[] = [];
+  for (const engagement of [...view.openEngagements].sort((a, b) => compareStableText(a.id, b.id))) {
+    events.push(
+      buildDepartureInterruptEvent({
+        meta: {
+          worldId: view.worldId,
+          branchId: view.branchId,
+          rulesetVersion: view.rulesetVersion,
+          headSequence: nextSequence - 1,
+          storySecond: view.storySecond,
+        },
+        command,
+        engagement,
+        sequence: nextSequence,
+        causationId: collapsedEvent.id,
+        reason: "participant_collapsed",
+      }),
+    );
+    interruptedEngagementIds.push(engagement.id);
+    nextSequence += 1;
+  }
+
+  // Collapse IS forced sleep: the asleep condition with its energy suspend,
+  // self-expiring after the sleep the body was denied.
+  const conditionId = deriveBodyConditionId(view.branchId, command.id);
+  const expiresAt = view.storySecond + COLLAPSE_SLEEP_SECONDS;
+  const conditionEvent = bodyConditionAppliedEventSchema.parse({
+    ...eventEnvelope(view, command, nextSequence, "body-condition"),
+    type: "body_condition_applied",
+    causationId: collapsedEvent.id,
+    actorIds: [command.payload.actorId],
+    entityIds: [conditionId],
+    payload: {
+      actorId: command.payload.actorId,
+      conditionId,
+      conditionKey: "asleep",
+      onsetAtStorySecond: view.storySecond,
+      expiresAtStorySecond: expiresAt,
+      observerActorIds,
+    },
+  });
+  events.push(conditionEvent);
+  nextSequence += 1;
+  const condition = bodyConditionSchema.parse({
+    id: conditionId,
+    actorId: command.payload.actorId,
+    key: "asleep",
+    onsetAtStorySecond: view.storySecond,
+    expiresAtStorySecond: expiresAt,
+    status: "active",
+    sourceEventId: conditionEvent.id,
+  });
+
+  const [suspendSpec] = normalizeConditionModifierSpecs("asleep", []);
+  if (!suspendSpec) throw new Error("Collapse normalization produced no suspend spec");
+  const suspendModifier = modifierFromSpec({
+    spec: suspendSpec,
+    modifierId: deriveBodyModifierId(view.branchId, command.id, 0),
+    actorId: command.payload.actorId,
+    fromStorySecond: view.storySecond,
+    sourceEventId: conditionEvent.id,
+    conditionId,
+    conditionExpiresAt: expiresAt,
+  });
+  events.push(
+    buildModifierAppliedEvent({
+      view,
+      command,
+      sequence: nextSequence,
+      suffix: "body-modifier-0",
+      actorId: command.payload.actorId,
+      modifier: suspendModifier,
+      meterView: energyView,
+      valueAtApply: now.reserveFixedPoint,
+      causationId: conditionEvent.id,
+    }),
+  );
+  nextSequence += 1;
+
+  events.push(
+    buildBodyTrigger({
+      view,
+      command,
+      sequence: nextSequence,
+      causationId: conditionEvent.id,
+      actorId: command.payload.actorId,
+      suffix: "arm-condition-expiry",
+      intent: {
+        kind: bodyConditionExpiryTriggerKind,
+        dueStorySecond: expiresAt,
+        uniquenessKey: bodyConditionExpiryUniquenessKey(conditionId),
+        payload: { actorId: command.payload.actorId, conditionId, basis: "expired" },
+      },
+    }),
+  );
+
+  const meter = bodyMeterStateSchema.parse({
+    ...view.meter,
+    valueFixedPoint: now.reserveFixedPoint,
+    lastIntegratedAtStorySecond: view.storySecond,
+  });
+  return {
+    ok: true,
+    meter,
+    condition,
+    modifiers: [suspendModifier],
+    interruptedActivityIds,
+    interruptedEngagementIds,
+    events,
   };
 }
 
@@ -1787,6 +2274,20 @@ export function applyBodyEvent(
           event.payload.meterKey,
           event.type,
           event.payload.valueAtCrossingFixedPoint,
+          event.storySecond,
+        ),
+      });
+    case "body_collapsed":
+      // The read gave out; the reserve persists at its integrated value and
+      // the forced sleep rides the condition/modifier events that follow.
+      return sortBodiesProjection({
+        ...bumped,
+        meters: replaceMeter(
+          projection.meters,
+          event.payload.actorId,
+          "energy",
+          event.type,
+          event.payload.reserveFixedPoint,
           event.storySecond,
         ),
       });

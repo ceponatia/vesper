@@ -191,6 +191,8 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
           `body_condition_expiry_due:${event.payload.command.payload.conditionId}`,
           entry,
         );
+      } else if (event.payload.kind === "body_collapse_due") {
+        retirementIndex.set(`body_collapse_due:${event.payload.command.payload.actorId}`, entry);
       }
       projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });
     } else if (
@@ -210,7 +212,13 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       // mark the dispatching trigger as already fired.
       const fired = event.commandId ? firingIndex.get(event.commandId) : undefined;
       if (fired) fired.firedByCommandId = event.commandId ?? null;
-      if (event.type === "activity_cancelled" || event.type === "activity_failed") {
+      if (
+        event.type === "activity_cancelled" ||
+        event.type === "activity_failed" ||
+        event.type === "activity_interrupted"
+      ) {
+        // Interruption retires the pending completion too (E5.2): a resumed
+        // activity re-arms under an attempt-versioned key.
         retire(`activity_completion_due:${event.payload.activityInstanceId}`, event.commandId);
       } else if (event.type === "journey_abandoned") {
         retire(`journey_arrival_due:${event.payload.journeyId}`, event.commandId);
@@ -221,8 +229,15 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
       ) {
         // Any material change to a meter's trajectory retires its pending
         // alarm; the same command's re-arm (if any) follows as a fresh
-        // trigger_scheduled with a sequence-versioned uniqueness key.
+        // trigger_scheduled with a sequence-versioned uniqueness key. Energy
+        // material events also retire the actor's collapse alarm (E5.2).
         retire(`body_threshold_due:${event.payload.actorId}:${event.payload.meterKey}`, event.commandId);
+        if (event.payload.meterKey === "energy") {
+          retire(`body_collapse_due:${event.payload.actorId}`, event.commandId);
+        }
+      } else if (event.type === "body_collapsed") {
+        retire(`body_threshold_due:${event.payload.actorId}:energy`, event.commandId);
+        retire(`body_collapse_due:${event.payload.actorId}`, event.commandId);
       } else if (event.type === "body_condition_ended") {
         // A condition application never retires (its owned modifiers ride
         // their own body_modifier_applied events); its ending retires the
@@ -230,6 +245,9 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
         retire(`body_condition_expiry_due:${event.payload.conditionId}`, event.commandId);
         for (const retired of event.payload.retiredModifiers) {
           retire(`body_threshold_due:${event.payload.actorId}:${retired.meterKey}`, event.commandId);
+          if (retired.meterKey === "energy") {
+            retire(`body_collapse_due:${event.payload.actorId}`, event.commandId);
+          }
         }
       }
       projection = itemTransferProjectionSchema.parse({ ...projection, headSequence: event.sequence });

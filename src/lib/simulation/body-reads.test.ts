@@ -11,6 +11,7 @@ import {
   deriveSleepCredit,
   integrateMeterValue,
   selfCareAdjustmentsBetween,
+  solveCollapseCrossing,
   solveNextThresholdCrossing,
   type MeterIntegrationView,
 } from "./bodies";
@@ -202,6 +203,36 @@ describe("E5.2 circadian pressure and the bidirectional energy read", () => {
     const withHistory = pressureAt(at, storySecondAt(12, 420));
     const assumed = deriveCircadianPressure({ atStorySecond: at, rhythmRows: [SLEEP_ROW] });
     expect(assumed).toBe(withHistory);
+  });
+});
+
+describe("E5.2 collapse solving — the saturated floor (slice 2b)", () => {
+  it("finds the emergent ~40h crossing for an actor with real sleep history", () => {
+    const view = energyViewAtWake();
+    const crossing = solveCollapseCrossing({
+      energyView: view,
+      context: { rhythmRows: [SLEEP_ROW], lastSleepEndedAtStorySecond: WAKE },
+      fromStorySecond: WAKE,
+    });
+    expect(crossing).toBeDefined();
+    // Emergent from reserve decay meeting escalated pressure — no hardcoded
+    // hour anywhere. 39h awake is not yet crossed; ~40h is.
+    expect(crossing?.crossesAtStorySecond).toBeGreaterThan(WAKE + 39 * 3_600);
+    expect(crossing?.crossesAtStorySecond).toBeLessThan(WAKE + 41 * 3_600);
+    if (crossing) {
+      expect(crossing.reserveFixedPoint - crossing.pressureFixedPoint).toBeLessThanOrEqual(-10_000);
+    }
+  });
+
+  it("never collapses an actor with no witnessed sleep history", () => {
+    // The assumed-rhythm fallback keeps escalation at zero forever, so
+    // rhythm-following background actors arm no alarms at all.
+    const crossing = solveCollapseCrossing({
+      energyView: energyViewAtWake(),
+      context: { rhythmRows: [SLEEP_ROW] },
+      fromStorySecond: WAKE,
+    });
+    expect(crossing).toBeUndefined();
   });
 });
 

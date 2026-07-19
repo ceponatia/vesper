@@ -20,6 +20,7 @@ import {
 import { completeActivityCommandSchema } from "./activities";
 import {
   endBodyConditionCommandSchema,
+  resolveBodyCollapseCommandSchema,
   resolveBodyThresholdCommandSchema,
 } from "./bodies";
 import {
@@ -43,6 +44,7 @@ export const commitmentNoticeTriggerKind = "commitment_notice_due" as const;
 export const commitmentDeadlineTriggerKind = "commitment_deadline_due" as const;
 export const bodyThresholdTriggerKind = "body_threshold_due" as const;
 export const bodyConditionExpiryTriggerKind = "body_condition_expiry_due" as const;
+export const bodyCollapseTriggerKind = "body_collapse_due" as const;
 export const simulationTriggerKinds = [
   scheduledTransferTriggerKind,
   journeyArrivalTriggerKind,
@@ -51,6 +53,7 @@ export const simulationTriggerKinds = [
   commitmentDeadlineTriggerKind,
   bodyThresholdTriggerKind,
   bodyConditionExpiryTriggerKind,
+  bodyCollapseTriggerKind,
 ] as const;
 export const scheduledTransferTriggerSchemaVersion = 1 as const;
 export const schedulerDerivationVersion = "scheduler-v1" as const;
@@ -97,6 +100,7 @@ export const simulationTriggerSchema = z
     createTriggerRowSchema(commitmentDeadlineTriggerKind, resolveCommitmentDeadlineCommandSchema),
     createTriggerRowSchema(bodyThresholdTriggerKind, resolveBodyThresholdCommandSchema),
     createTriggerRowSchema(bodyConditionExpiryTriggerKind, endBodyConditionCommandSchema),
+    createTriggerRowSchema(bodyCollapseTriggerKind, resolveBodyCollapseCommandSchema),
   ])
   // A trigger on one branch must never carry a command aimed at another. The
   // command envelope has no worldId, so branch equality is the whole check;
@@ -156,6 +160,7 @@ const scheduleTriggerIntentSchema = z.discriminatedUnion("kind", [
   createTriggerIntentSchema(commitmentDeadlineTriggerKind, resolveCommitmentDeadlineCommandSchema),
   createTriggerIntentSchema(bodyThresholdTriggerKind, resolveBodyThresholdCommandSchema),
   createTriggerIntentSchema(bodyConditionExpiryTriggerKind, endBodyConditionCommandSchema),
+  createTriggerIntentSchema(bodyCollapseTriggerKind, resolveBodyCollapseCommandSchema),
 ]);
 
 export const scheduleTransferTriggerCommandSchema = createCommandEnvelopeSchema(
@@ -232,7 +237,8 @@ function triggerIntentEnvelopeFacts(
     case commitmentDeadlineTriggerKind:
       return { actorIds: [], entityIds: [intent.command.payload.commitmentId] };
     case bodyThresholdTriggerKind:
-      // The meter row owns its state; the scheduling envelope names the actor.
+    case bodyCollapseTriggerKind:
+      // The meter rows own their state; the scheduling envelope names the actor.
       return { actorIds: [], entityIds: [intent.command.payload.actorId] };
     case bodyConditionExpiryTriggerKind:
       return { actorIds: [], entityIds: [intent.command.payload.conditionId] };
