@@ -164,6 +164,14 @@ import {
   type ScheduleTriggerCommandResult,
 } from "./scheduler";
 import {
+  relationshipChangeRecordedEventSchema,
+  relationshipEntryAuthoredEventSchema,
+  type RecordRelationshipChangeCommand,
+  type RecordRelationshipChangeCommandResult,
+  type RecordRelationshipEntryCommand,
+  type RecordRelationshipEntryCommandResult,
+} from "./social";
+import {
   actorArrivedEventSchema,
   actorDepartedEventSchema,
   journeyAbandonedEventSchema,
@@ -237,6 +245,8 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   itemInstantiatedFromPromotionEventSchema,
   householdRestockFulfilledEventSchema,
   householdRestockDeferredEventSchema,
+  relationshipEntryAuthoredEventSchema,
+  relationshipChangeRecordedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -422,6 +432,24 @@ export function isHouseholdEvent(event: SimulationBranchEvent): event is Simulat
   return householdEventTypes.has(event.type);
 }
 
+/**
+ * The relationship-ledger family (E5.5, engine.spec §21.3–21.4). Slice 1
+ * ships `relationship_entry_authored` (derived-and-authored ledger entries)
+ * and `relationship_change_recorded`; `consent_escalation_resolved` joins
+ * this family in Slice 3.
+ */
+const relationshipEventTypeList = [
+  "relationship_entry_authored",
+  "relationship_change_recorded",
+] as const;
+export type RelationshipEventType = (typeof relationshipEventTypeList)[number];
+export type SimulationRelationshipEvent = Extract<SimulationBranchEvent, { type: RelationshipEventType }>;
+export const relationshipEventTypes: ReadonlySet<string> = new Set(relationshipEventTypeList);
+
+export function isRelationshipEvent(event: SimulationBranchEvent): event is SimulationRelationshipEvent {
+  return relationshipEventTypes.has(event.type);
+}
+
 /** Access-family locus changes (E3.5): applied by the space projection. */
 const accessEventTypeList = ["zone_entered", "storyteller_relocation"] as const;
 export type AccessEventType = (typeof accessEventTypeList)[number];
@@ -471,7 +499,9 @@ export type SimulationCommandEnvelope =
   | SetMeansBandCommand
   | ConfigureRestockRoutineCommand
   | PromoteItemFromStockCommand
-  | RunHouseholdRestockCommand;
+  | RunHouseholdRestockCommand
+  | RecordRelationshipEntryCommand
+  | RecordRelationshipChangeCommand;
 export type SimulationCommandResultRecord =
   | TransferItemCommandResult
   | DestroyItemCommandResult
@@ -510,7 +540,9 @@ export type SimulationCommandResultRecord =
   | SetMeansBandCommandResult
   | ConfigureRestockRoutineCommandResult
   | PromoteItemFromStockCommandResult
-  | RunHouseholdRestockCommandResult;
+  | RunHouseholdRestockCommandResult
+  | RecordRelationshipEntryCommandResult
+  | RecordRelationshipChangeCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

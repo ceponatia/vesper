@@ -47,6 +47,7 @@ import {
   replayItemConditionHistory,
   replayKnowledgeHistory,
   replayObservationsHistory,
+  replaySocialLedgerHistory,
   replaySoftCanonHistory,
   replaySpaceHistory,
   simulationHash,
@@ -98,6 +99,7 @@ import {
 import { insertReplayedKnowledge } from "./knowledge-recorder";
 import { holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-store";
 import { insertReplayedObservations } from "./observation-store";
+import { insertReplayedSocialLedger } from "./social-recorder";
 import { insertReplayedSoftCanon } from "./soft-canon-recorder";
 import {
   insertSpaceRows,
@@ -879,6 +881,17 @@ export async function forkBranch(
       observations: childObservations.observations,
     });
     await insertReplayedKnowledge(tx, childKnowledge, input.childBranchId);
+
+    // E5.5 relationship ledger: a derived-and-persisted projection with no
+    // incremental state machine (§6) — a full rebuild re-derives from the
+    // inherited stream alone, the SAME fold the incremental recorder calls.
+    // `commitmentById` is a stub in Slice 1: no commitment-sourced entries
+    // exist yet (see `lib/simulation/social.ts`'s header doc).
+    const childSocialLedger = replaySocialLedgerHistory({
+      events: inherited,
+      commitmentById: () => undefined,
+    });
+    await insertReplayedSocialLedger(tx, childSocialLedger, input.childBranchId);
 
     // E4.3 soft canon: every event carries its post-fold snapshot (§6.4), so
     // the child's bounded store rebuilds from the inherited stream alone.

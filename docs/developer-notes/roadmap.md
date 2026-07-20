@@ -33,15 +33,13 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   perception-gated reads → material life → households/means/money-at-LOD → the social
   ledger & consent → the deterministic exit corpus. **E5.1–E5.3 shipped 2026-07-19;
   E5.4 (both slices) shipped 2026-07-20** — see Shipped below.
-  **E5.5 (the social ledger & consent, ruling 16) is next in-gate** — blueprint
-  drafted and adversarially reviewed 2026-07-20: the persisted §21.3 evidence
-  ledger (closed typed entry vocabulary, explicit derived-vs-authored split per
-  kind), destinationless commitments (the carried E3.3 leftover), pressure
-  acknowledgment as a social act (E3.4), the fail-closed consent gate as an
-  activity precondition with the §19.3 deliberator escalation pinned to a
-  deterministic decline fallback, and trust/attraction/resentment as derived
-  fixed-point banded reads. Then E5.6 (the deterministic exit corpus) closes
-  the gate.
+  **E5.5 (the social ledger & consent, ruling 16) is in-gate now — slice 1 (the
+  ledger substrate) shipped 2026-07-20**; remaining: slice 2 (the fail-closed
+  `consent_covered` activity precondition, destinationless commitments — the
+  carried E3.3 leftover — repair, `fulfill_commitment`) and slice 3 (the §19.3
+  deliberator escalation pinned to a deterministic decline fallback, pressure
+  acknowledgment as a social act — the carried E3.4 note, full-corpus parity).
+  Then E5.6 (the deterministic exit corpus) closes the gate.
   This is where current-chat body learning migrates behind the successor
   contracts — the meter-economy and body-needs plans in Next port through here
   later.
@@ -140,6 +138,22 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine social ledger substrate (E5.5, slice 1)** —
+  [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
+  [engine.spec.md](engine.spec.md) §21.3–§21.4 (authored this work, whole-feature) —
+  2026-07-20 — the persisted relationship ledger the E4.2 derived seam was built to
+  feed (that seam now deleted): `sim_relationship_ledger` (migration 0076) under a
+  closed versioned entry-kind vocabulary with an explicit derived-vs-authored
+  split — speech acts (incl. new `permission_granted`/`permission_withdrawn` with
+  required `consentScopeKey`), disclosures, shared scenes, authored priors, and
+  `record_relationship_change` (change is a ledger entry, never prose); ledger rows
+  commit atomically inside the command transaction; trust/attraction/resentment as
+  fixed-point half-life-decayed banded reads; `resolveConsentCoverage` ready for the
+  slice-2 gate; fork parity. Caught in-slice: both cut compile and arbiter arming
+  dropped `consentScopeKey` (the §21.4 gate would have been unreachable); review
+  confirmed + fixed an entry-id tier overflow that could have broken future forks.
+  100 cases (`test:engine-e5-5`); 3 005 pure green, E5.4 unbroken. Slices 2–3
+  remain in Active. Next: **E5.5 slice 2**.
 - **World-engine households, means, and money at LOD (E5.4, slices 1–2)** —
   [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §26.8–§26.11 (authored this work) — 2026-07-20 —

@@ -533,6 +533,13 @@
       "when": 1784549051963,
       "tag": "0075_overjoyed_hellcat",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1784554793206,
+      "tag": "0076_youthful_the_anarchist",
+      "breakpoints": true
     }
   ]
 }

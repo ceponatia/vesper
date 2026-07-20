@@ -16,5 +16,6 @@ export * from "./narrative";
 export * from "./perception";
 export * from "./presentation";
 export * from "./replay";
+export * from "./social";
 export * from "./soft-canon";
 export * from "./space";

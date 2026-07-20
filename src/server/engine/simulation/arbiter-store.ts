@@ -593,6 +593,15 @@ export async function submitDurableConfirmNarratorResult(
               actorId: effect.actorId,
               targetActorIds: [...effect.targetActorIds].sort(compareStableText),
               detail: effect.detail,
+              // E5.5 (§21.3, §21.4): a consent-scoped enacted effect
+              // (boundary_expressed/permission_granted/permission_withdrawn)
+              // must carry its scopeKey into the real event, or
+              // `speechActDeliveredPayloadSchema`'s
+              // `consentScopeKeyRequiredOnConsentEffects` refine rejects it —
+              // this was dropped here entirely (Stage A/B defect, found and
+              // fixed in Stage C alongside the matching drop in
+              // `compileNarrativeCut`).
+              ...(effect.consentScopeKey === undefined ? {} : { consentScopeKey: effect.consentScopeKey }),
             },
           }),
         );

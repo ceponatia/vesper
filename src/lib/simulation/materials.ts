@@ -837,6 +837,8 @@ export function applyMaterialEvent(
     case "household_restock_routine_configured":
     case "household_restock_fulfilled":
     case "household_restock_deferred":
+    case "relationship_entry_authored":
+    case "relationship_change_recorded":
       // Non-material families advance the boundary without touching items.
       return materialsProjectionSchema.parse(bumped);
   }

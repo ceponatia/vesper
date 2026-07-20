@@ -42,6 +42,15 @@ export const householdIdSchema = compactSimulationIdSchema.brand<"HouseholdId">(
 export const actionDefinitionIdSchema = compactSimulationIdSchema.brand<"ActionDefinitionId">();
 export const activityInstanceIdSchema = compactSimulationIdSchema.brand<"ActivityInstanceId">();
 export const commitmentIdSchema = compactSimulationIdSchema.brand<"CommitmentId">();
+/**
+ * `observationIdentitySchema` tier (2048), not the `compactSimulationIdSchema`
+ * default: this id composes a `sourceEventId` (itself up to 1024 chars) plus
+ * `kind`/`fromActorId`/`toActorId`, the same sourceEventId-composing shape
+ * `assertionIdSchema`/`beliefIdSchema`/`softCanonEntryIdSchema` use the wide
+ * tier for below — 256 chars leaves no headroom once a realistic
+ * (non-cuid2-short) sourceEventId is composed in.
+ */
+export const relationshipLedgerEntryIdSchema = observationIdentitySchema.brand<"RelationshipLedgerEntryId">();
 export const journeyIdSchema = compactSimulationIdSchema.brand<"JourneyId">();
 export const engagementIdSchema = compactSimulationIdSchema.brand<"EngagementId">();
 export const bodyConditionIdSchema = compactSimulationIdSchema.brand<"BodyConditionId">();
@@ -93,6 +102,7 @@ export type HouseholdId = z.infer<typeof householdIdSchema>;
 export type ActionDefinitionId = z.infer<typeof actionDefinitionIdSchema>;
 export type ActivityInstanceId = z.infer<typeof activityInstanceIdSchema>;
 export type CommitmentId = z.infer<typeof commitmentIdSchema>;
+export type RelationshipLedgerEntryId = z.infer<typeof relationshipLedgerEntryIdSchema>;
 export type JourneyId = z.infer<typeof journeyIdSchema>;
 export type EngagementId = z.infer<typeof engagementIdSchema>;
 export type BodyConditionId = z.infer<typeof bodyConditionIdSchema>;

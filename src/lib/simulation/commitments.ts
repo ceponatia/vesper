@@ -704,6 +704,8 @@ export function applyCommitmentEvent(
     case "item_instantiated_from_promotion":
     case "household_restock_fulfilled":
     case "household_restock_deferred":
+    case "relationship_entry_authored":
+    case "relationship_change_recorded":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
   }
