@@ -133,14 +133,24 @@ import {
 import {
   householdCreatedEventSchema,
   householdMembershipSetEventSchema,
+  householdRestockDeferredEventSchema,
+  householdRestockFulfilledEventSchema,
+  householdRestockRoutineConfiguredEventSchema,
+  itemInstantiatedFromPromotionEventSchema,
   materialLotAdjustedEventSchema,
   materialLotInitializedEventSchema,
   materialLotTransferredEventSchema,
   meansBandSetEventSchema,
   type AdjustMaterialLotCommand,
   type AdjustMaterialLotCommandResult,
+  type ConfigureRestockRoutineCommand,
+  type ConfigureRestockRoutineCommandResult,
   type CreateHouseholdCommand,
   type CreateHouseholdCommandResult,
+  type PromoteItemFromStockCommand,
+  type PromoteItemFromStockCommandResult,
+  type RunHouseholdRestockCommand,
+  type RunHouseholdRestockCommandResult,
   type SetHouseholdMembershipCommand,
   type SetHouseholdMembershipCommandResult,
   type SetMeansBandCommand,
@@ -223,6 +233,10 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   materialLotAdjustedEventSchema,
   materialLotTransferredEventSchema,
   meansBandSetEventSchema,
+  householdRestockRoutineConfiguredEventSchema,
+  itemInstantiatedFromPromotionEventSchema,
+  householdRestockFulfilledEventSchema,
+  householdRestockDeferredEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -376,12 +390,17 @@ export function isItemConditionEvent(
 }
 
 /**
- * The household family (E5.4 slice 1, engine.spec §26.8–26.10): households,
- * membership, fungible material lots, and means bands. All four row kinds
- * fold from ONE projection (`HouseholdsProjection`), so unlike bodies/item-
- * condition this single list spans several store-layer tables — fork replay
- * still scans `inherited` per row kind (a lot touch names a locus, not a
- * single scalar id), not through this predicate alone.
+ * The household family (E5.4, engine.spec §26.8–26.11): households,
+ * membership, fungible material lots, means bands, restock routines, and
+ * promotion. All row kinds fold from ONE projection (`HouseholdsProjection`),
+ * so unlike bodies/item-condition this single list spans several store-layer
+ * tables — fork replay still scans `inherited` per row kind (a lot touch
+ * names a locus, not a single scalar id), not through this predicate alone.
+ * `item_instantiated_from_promotion` is the one member also handled by
+ * `lib/simulation/materials.ts` (it creates a `sim_items` row) — it is still
+ * listed here because the households projection itself does not fold it
+ * (promotion mutates lots via its own `material_lot_adjusted` companion
+ * event, already covered above).
  */
 const householdEventTypeList = [
   "household_created",
@@ -390,6 +409,10 @@ const householdEventTypeList = [
   "material_lot_adjusted",
   "material_lot_transferred",
   "means_band_set",
+  "household_restock_routine_configured",
+  "item_instantiated_from_promotion",
+  "household_restock_fulfilled",
+  "household_restock_deferred",
 ] as const;
 export type HouseholdEventType = (typeof householdEventTypeList)[number];
 export type SimulationHouseholdEvent = Extract<SimulationBranchEvent, { type: HouseholdEventType }>;
@@ -445,7 +468,10 @@ export type SimulationCommandEnvelope =
   | SetHouseholdMembershipCommand
   | AdjustMaterialLotCommand
   | TransferLotQuantityCommand
-  | SetMeansBandCommand;
+  | SetMeansBandCommand
+  | ConfigureRestockRoutineCommand
+  | PromoteItemFromStockCommand
+  | RunHouseholdRestockCommand;
 export type SimulationCommandResultRecord =
   | TransferItemCommandResult
   | DestroyItemCommandResult
@@ -481,7 +507,10 @@ export type SimulationCommandResultRecord =
   | SetHouseholdMembershipCommandResult
   | AdjustMaterialLotCommandResult
   | TransferLotQuantityCommandResult
-  | SetMeansBandCommandResult;
+  | SetMeansBandCommandResult
+  | ConfigureRestockRoutineCommandResult
+  | PromoteItemFromStockCommandResult
+  | RunHouseholdRestockCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

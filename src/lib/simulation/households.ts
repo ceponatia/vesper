@@ -1,11 +1,18 @@
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import {
+  RESERVED_CURRENCY_MATERIAL_KIND,
+  compareMeansBands,
   householdCreatedEventSchema,
   householdMembershipSchema,
   householdMembershipSetEventSchema,
+  householdRestockDeferredEventSchema,
+  householdRestockFulfilledEventSchema,
+  householdRestockRoutineConfiguredEventSchema,
+  householdRestockRoutineSchema,
   householdsDerivationVersion,
   householdsProjectionSchema,
+  itemInstantiatedFromPromotionEventSchema,
   materialKindRegistryV1,
   materialKindRegistryVersion,
   materialLotAdjustedEventSchema,
@@ -18,12 +25,20 @@ import {
   simulationHouseholdSchema,
   type AdjustMaterialLotCommand,
   type AdjustMaterialLotRejectionCode,
+  type ConfigureRestockRoutineCommand,
+  type ConfigureRestockRoutineRejectionCode,
   type CreateHouseholdCommand,
   type CreateHouseholdRejectionCode,
   type HouseholdCreatedEvent,
   type HouseholdMembership,
   type HouseholdMembershipSetEvent,
+  type HouseholdRestockDeferredEvent,
+  type HouseholdRestockDeferredReason,
+  type HouseholdRestockFulfilledEvent,
+  type HouseholdRestockRoutine,
+  type HouseholdRestockRoutineConfiguredEvent,
   type HouseholdsProjection,
+  type ItemInstantiatedFromPromotionEvent,
   type LotLocus,
   type MaterialKindDefinition,
   type MaterialKindRegistryVersion,
@@ -36,6 +51,11 @@ import {
   type MeansBandState,
   type MeansRead,
   type MeansSubject,
+  type PromoteItemFromStockCommand,
+  type PromoteItemFromStockRejectionCode,
+  type PromotionSampledDetail,
+  type RunHouseholdRestockCommand,
+  type RunHouseholdRestockRejectionCode,
   type SetHouseholdMembershipCommand,
   type SetHouseholdMembershipRejectionCode,
   type SetMeansBandCommand,
@@ -44,6 +64,13 @@ import {
   type TransferLotQuantityCommand,
   type TransferLotQuantityRejectionCode,
 } from "@/contracts/simulation/households";
+import {
+  deterministicDrawUnit,
+  householdRestockTriggerKind,
+  schedulerDerivationVersion,
+  triggerScheduledEventSchema,
+  type TriggerScheduledEvent,
+} from "@/contracts/simulation/scheduler";
 import { compareStableText, sortedUnique } from "./hash";
 
 /**
@@ -676,6 +703,551 @@ export function resolveSetMeansBandFromView(
 }
 
 // ---------------------------------------------------------------------------
+// Household restock alarm identity (§26.11) — mirrors
+// `itemConditionThresholdUniquenessKey`/`Prefix`: versioned by `armedAtSequence`
+// so a re-arm is a distinct alarm and the prefix retires every arming attempt
+// for one (householdId, materialKindKey) regardless of its version.
+// ---------------------------------------------------------------------------
+
+export function householdRestockUniquenessKey(
+  householdId: string,
+  materialKindKey: string,
+  armedAtSequence: number,
+): string {
+  return composeSimulationId("household-restock", [householdId, materialKindKey, String(armedAtSequence)]);
+}
+
+export function householdRestockUniquenessKeyPrefix(householdId: string, materialKindKey: string): string {
+  return `${composeSimulationId("household-restock", [householdId, materialKindKey])}:`;
+}
+
+/**
+ * Arm (or re-arm) one household+kind's restock alarm, due at `view.storySecond
+ * + cadenceSeconds` — a fixed cadence, not a solved crossing (§9 open decision
+ * 6: restock is discrete-scheduled, not continuous-integrated, so there is no
+ * trajectory to solve against, unlike `rearmThresholdTrigger`/
+ * `rearmItemConditionThresholdTrigger`).
+ */
+function buildHouseholdRestockTrigger(input: {
+  view: HouseholdsBranchMeta;
+  command: HouseholdEventCommandContext;
+  householdId: string;
+  materialKindKey: string;
+  cadenceSeconds: number;
+  sequence: number;
+  causationId: string;
+  armedAtSequence: number;
+}): TriggerScheduledEvent {
+  const uniquenessKey = householdRestockUniquenessKey(
+    input.householdId,
+    input.materialKindKey,
+    input.armedAtSequence,
+  );
+  const templateId = composeSimulationId("template", [uniquenessKey]);
+  return triggerScheduledEventSchema.parse({
+    ...eventEnvelope(input.view, input.command, input.sequence, "arm-household-restock"),
+    type: "trigger_scheduled",
+    derivationVersion: schedulerDerivationVersion,
+    causationId: input.causationId,
+    actorIds: [],
+    entityIds: [input.householdId],
+    payload: {
+      kind: householdRestockTriggerKind,
+      triggerSchemaVersion: 1,
+      dueStorySecond: input.view.storySecond + input.cadenceSeconds,
+      priority: 0,
+      uniquenessKey,
+      command: {
+        id: templateId,
+        branchId: input.view.branchId,
+        expectedVersion: 0,
+        idempotencyKey: templateId,
+        principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
+        submittedAtWallClock: input.command.submittedAtWallClock,
+        correlationId: input.command.correlationId,
+        schemaVersion: 1,
+        type: "run_household_restock",
+        payload: {
+          householdId: input.householdId,
+          materialKindKey: input.materialKindKey,
+          armedAtSequence: input.armedAtSequence,
+        },
+      },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// configure_restock_routine (§26.11)
+// ---------------------------------------------------------------------------
+
+export interface ConfigureRestockRoutineResolutionView extends HouseholdsBranchMeta {
+  householdExists: boolean;
+}
+
+export type ConfigureRestockRoutineResolution =
+  | HouseholdRejection<ConfigureRestockRoutineRejectionCode>
+  | { ok: true; events: [HouseholdRestockRoutineConfiguredEvent, ...TriggerScheduledEvent[]] };
+
+/**
+ * The command payload IS the routine (mirrors `set_household_membership`
+ * reusing `householdMembershipSchema`) — configuring always upserts the row
+ * wholesale. Arming is unconditional-retire-then-arm-if-active at the STORE
+ * layer (the pure resolver only ever builds a fresh arm; it never retires —
+ * retirement touches durable trigger rows, which this file never sees).
+ */
+export function resolveConfigureRestockRoutineFromView(
+  view: ConfigureRestockRoutineResolutionView,
+  command: ConfigureRestockRoutineCommand,
+): ConfigureRestockRoutineResolution {
+  if (command.branchId !== view.branchId) {
+    return rejection("branch_mismatch", "That world branch is unavailable.");
+  }
+  if (!isPrivilegedPrincipal(command.principal.kind)) {
+    return rejection("unauthorized_principal", "Only the storyteller can configure a restock routine.");
+  }
+  if (!view.householdExists) return rejection("household_not_found", "That household is unavailable.");
+
+  const configuredEvent = householdRestockRoutineConfiguredEventSchema.parse({
+    ...eventEnvelope(view, command, view.headSequence + 1, "household-restock-routine-configured"),
+    type: "household_restock_routine_configured",
+    actorIds: [],
+    entityIds: sortedUnique([command.payload.householdId]),
+    payload: {
+      householdId: command.payload.householdId,
+      materialKindKey: command.payload.materialKindKey,
+      targetQuantityRaw: command.payload.targetQuantityRaw,
+      lowWaterThresholdRaw: command.payload.lowWaterThresholdRaw,
+      cadenceSeconds: command.payload.cadenceSeconds,
+      funding: command.payload.funding,
+      active: command.payload.active,
+    },
+  });
+
+  const events: [HouseholdRestockRoutineConfiguredEvent, ...TriggerScheduledEvent[]] = [configuredEvent];
+  if (command.payload.active) {
+    events.push(
+      buildHouseholdRestockTrigger({
+        view,
+        command,
+        householdId: command.payload.householdId,
+        materialKindKey: command.payload.materialKindKey,
+        cadenceSeconds: command.payload.cadenceSeconds,
+        sequence: configuredEvent.sequence + 1,
+        causationId: configuredEvent.id,
+        armedAtSequence: configuredEvent.sequence,
+      }),
+    );
+  }
+  return { ok: true, events };
+}
+
+// ---------------------------------------------------------------------------
+// promote_item_from_stock (§26.10 / §27.2) — the only path an aggregate fact
+// becomes an explicit `sim_items` row
+// ---------------------------------------------------------------------------
+
+export interface PromoteItemFromStockResolutionView extends HouseholdsResolutionView, HouseholdsBranchMeta {
+  actorById(actorId: string): { id: string; name: string } | undefined;
+  /** The funding lot's current state — the store has already lazily initialized it. */
+  fundingLot: MaterialLotState;
+  /**
+   * Authored per-`materialKindKey` display-name pool (§26.10 step 3); an empty
+   * array means no pool. No pool is authored yet anywhere in the codebase as
+   * of E5.4 slice 2 — the store's implementation returns `[]` unconditionally
+   * today, so a caller that omits `item.name` MUST supply it explicitly until
+   * a pool registry exists (a future data edit, per the registry-as-data
+   * convention — no schema change).
+   */
+  namePool(materialKindKey: string): readonly string[];
+  worldSeed: string;
+}
+
+export type PromoteItemFromStockResolution =
+  | HouseholdRejection<PromoteItemFromStockRejectionCode>
+  | {
+      ok: true;
+      lotAdjustedEvent: MaterialLotAdjustedEvent;
+      itemEvent: ItemInstantiatedFromPromotionEvent;
+      nextFundingLot: MaterialLotState;
+    };
+
+/** Pure resolver, mirroring `resolveTransferLotQuantityFromView`'s numbered validation order (§26.10/§27.2). */
+export function resolvePromoteItemFromStockFromView(
+  view: PromoteItemFromStockResolutionView,
+  command: PromoteItemFromStockCommand,
+): PromoteItemFromStockResolution {
+  const { actorId, funding, item } = command.payload;
+
+  // 1. branch
+  if (command.branchId !== view.branchId) {
+    return rejection("branch_mismatch", "That world branch is unavailable.");
+  }
+  // 2. actor existence + control (storyteller bypasses controlledActorIds)
+  if (!view.actorById(actorId)) return rejection("actor_not_found", "That actor is unavailable.");
+  const isStoryteller = command.principal.kind === "storyteller";
+  if (!isStoryteller && !command.principal.controlledActorIds.includes(actorId)) {
+    return rejection("unauthorized_actor", "You cannot direct that actor.");
+  }
+  // 3. actor embodied at a zone (§13.2)
+  const actorZoneId = view.actorZoneId(actorId);
+  if (actorZoneId === null) return rejection("actor_not_embodied", "They are not anywhere they can do that.");
+
+  // 4. §26.8 access on the funding locus only (an actor-locus source needs no
+  // co-location check for its own holder — `checkLotLocusAccess` already
+  // encodes that).
+  const fundingLocus = funding.kind === "stock" ? funding.sourceLocus : funding.currencyLocus;
+  const access = checkLotLocusAccess(view, fundingLocus, actorId, actorZoneId);
+  if (!access.ok) {
+    return rejection(
+      access.code,
+      access.code === "household_access_denied"
+        ? "That household's stores are closed to them."
+        : "That stock is not within reach.",
+    );
+  }
+
+  // 5. funding kind well-formedness. `stock` draws N whole units of the SAME
+  // materialKindKey the item declares — an item with no declared kind has no
+  // stock lot to identify. `purchase` always debits the reserved currency
+  // kind, so it is well-formed by construction.
+  let sourceMaterialKindKey: string;
+  let cost: number;
+  if (funding.kind === "stock") {
+    if (item.materialKindKey === undefined) {
+      return rejection("invalid_funding_kind", "That item has no stock kind to draw from.");
+    }
+    sourceMaterialKindKey = item.materialKindKey;
+    cost = funding.quantityRaw;
+  } else {
+    sourceMaterialKindKey = RESERVED_CURRENCY_MATERIAL_KIND;
+    cost = funding.unitPriceRaw * funding.quantityRaw;
+  }
+
+  // 6. sufficient funding balance
+  const delta = applyLotDelta(view.fundingLot, -cost);
+  if (!delta.ok) return rejection("insufficient_balance", "There is not enough there to cover that.");
+
+  // Sample any detail the command did not supply (§26.10 step 3) — the stream
+  // identity and drawn result are captured on the event so replay never
+  // resamples.
+  let sampledName: string | undefined;
+  let sampledDetail: PromotionSampledDetail | undefined;
+  if (item.name === undefined) {
+    const stream = composeSimulationId("promotion-detail", [command.id, "item-name"]);
+    const pool = item.materialKindKey === undefined ? [] : view.namePool(item.materialKindKey);
+    const draw = deterministicDrawUnit({
+      worldSeed: view.worldSeed,
+      branchId: view.branchId,
+      stream,
+      drawIndex: 0,
+    });
+    sampledName = pool.length > 0 ? pool[Math.floor(draw * pool.length)] : undefined;
+    sampledDetail = {
+      stream,
+      drawIndex: 0,
+      ...(sampledName === undefined ? {} : { sampledName }),
+      registryVersion: materialKindRegistryVersion,
+    };
+  }
+  // Invariant 3.2.4 / §26.10 step 5: the caller, never the narrator, supplies
+  // any narratively-established name. An unauthored pool plus an omitted name
+  // is a foreseeable runtime state (no pool is authored anywhere yet), so it
+  // is a structured rejection rather than a thrown exception — resilience.md:
+  // diagnostics over exceptions, degraded defaults over failed turns.
+  const finalName = item.name ?? sampledName;
+  if (finalName === undefined) {
+    return rejection("name_required", "That item needs a name — none was given and none could be sampled.");
+  }
+
+  const lotAdjustedEvent = materialLotAdjustedEventSchema.parse({
+    ...eventEnvelope(view, command, view.headSequence + 1, "material-lot-adjusted"),
+    type: "material_lot_adjusted",
+    actorIds: [actorId],
+    entityIds: sortedUnique([actorId, ...lotLocusEntityIds(fundingLocus)]),
+    payload: {
+      locus: fundingLocus,
+      materialKindKey: sourceMaterialKindKey,
+      deltaRaw: -cost,
+      resultingQuantityRaw: delta.resultingQuantityRaw,
+      quantityKind: view.fundingLot.quantityKind,
+      reason: "promotion_cost",
+    },
+  });
+
+  // A one-level derivation from already-bounded ids (branchId + commandId +
+  // one literal) — no hash compaction needed (the E3.5 lesson applies only to
+  // chained/growing derivations, e.g. `deriveBodyConditionId`).
+  const itemId = composeSimulationId("item", [view.branchId, command.id, "promoted"]);
+  const itemEvent = itemInstantiatedFromPromotionEventSchema.parse({
+    ...eventEnvelope(view, command, view.headSequence + 2, "item-instantiated-from-promotion"),
+    type: "item_instantiated_from_promotion",
+    causationId: lotAdjustedEvent.id,
+    actorIds: [actorId],
+    entityIds: sortedUnique([actorId, itemId, ...lotLocusEntityIds(fundingLocus)]),
+    payload: {
+      item: {
+        id: itemId,
+        name: finalName,
+        ...(item.materialKindKey === undefined ? {} : { materialKindKey: item.materialKindKey }),
+        ownerActorId: item.ownerActorId,
+        ...(item.container === undefined ? {} : { container: item.container }),
+        ...(item.consumptionEffects === undefined ? {} : { consumptionEffects: item.consumptionEffects }),
+        conditionTracked: item.conditionTracked,
+        locus: { kind: "held", actorId },
+      },
+      sourceLocus: fundingLocus,
+      sourceMaterialKindKey,
+      ...(sampledDetail === undefined ? {} : { sampledDetail }),
+    },
+  });
+
+  return {
+    ok: true,
+    lotAdjustedEvent,
+    itemEvent,
+    nextFundingLot: materialLotStateSchema.parse({ ...view.fundingLot, quantityRaw: delta.resultingQuantityRaw }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// run_household_restock (§26.11) — trigger-dispatched, system principal only
+// ---------------------------------------------------------------------------
+
+export interface RunHouseholdRestockResolutionView extends HouseholdsBranchMeta {
+  /** Undefined if no routine is configured for (householdId, materialKindKey). */
+  routine?: HouseholdRestockRoutine;
+  /**
+   * Whether the alarm THIS command's own `command.payload.armedAtSequence`
+   * names has not been retired by a later reconfigure (§5.8's staleness
+   * defense) — the durable stand-in for "the routine's current arming",
+   * since routines carry no arming column of their own. `false` fails closed
+   * as stale rather than acting on a superseded arming.
+   */
+  armingIsLive: boolean;
+  /** The stock lot's current state — undefined means uninitialized (zero, §26.9). */
+  stockLot?: MaterialLotState;
+  /** `lot` funding only: the currency lot's current state — undefined means uninitialized (zero). */
+  currencyLot?: MaterialLotState;
+  /** `means_band_envelope` funding only: the household's own means read. */
+  householdMeansRead?: MeansRead;
+}
+
+export type RunHouseholdRestockResolution =
+  | HouseholdRejection<RunHouseholdRestockRejectionCode>
+  | {
+      ok: true;
+      events: (
+        | MaterialLotAdjustedEvent
+        | HouseholdRestockFulfilledEvent
+        | HouseholdRestockDeferredEvent
+        | TriggerScheduledEvent
+      )[];
+      nextStockLot?: MaterialLotState;
+      /** The sequence of the specific event that produced `nextStockLot` — set iff it is. */
+      stockLotUpdatedAtSequence?: number;
+      nextCurrencyLot?: MaterialLotState;
+      /** The sequence of the specific event that produced `nextCurrencyLot` — set iff it is. */
+      currencyLotUpdatedAtSequence?: number;
+    };
+
+/**
+ * Fire-time re-validation (mirrors `resolveBodyThreshold`/
+ * `resolveItemConditionThreshold`'s re-validate-then-act shape) — always
+ * re-arms the next cycle regardless of outcome (§26.11).
+ */
+export function resolveRunHouseholdRestockFromView(
+  view: RunHouseholdRestockResolutionView,
+  command: RunHouseholdRestockCommand,
+): RunHouseholdRestockResolution {
+  if (command.branchId !== view.branchId) {
+    return rejection("branch_mismatch", "That world branch is unavailable.");
+  }
+  if (command.principal.kind !== "system") {
+    return rejection("unauthorized_principal", "Restock resolves on the world's clock only.");
+  }
+  const routine = view.routine;
+  if (!routine || !routine.active) return rejection("routine_not_found", "That restock routine is unavailable.");
+  if (!view.armingIsLive) {
+    return rejection("threshold_stale", "That restock cycle is no longer current.");
+  }
+
+  const { householdId, materialKindKey } = command.payload;
+  const householdLocus: LotLocus = { kind: "household", householdId };
+  const currentQuantityRaw = view.stockLot?.quantityRaw ?? 0;
+  const quantityKind = view.stockLot?.quantityKind ?? resolveQuantityKind(materialKindKey);
+  const stockRegistryVersion = view.stockLot?.registryVersion ?? materialKindRegistryVersion;
+
+  const events: (
+    | MaterialLotAdjustedEvent
+    | HouseholdRestockFulfilledEvent
+    | HouseholdRestockDeferredEvent
+    | TriggerScheduledEvent
+  )[] = [];
+  let nextStockLot: MaterialLotState | undefined;
+  let stockLotUpdatedAtSequence: number | undefined;
+  let nextCurrencyLot: MaterialLotState | undefined;
+  let currencyLotUpdatedAtSequence: number | undefined;
+  let sequence = view.headSequence + 1;
+
+  const pushDeferred = (reason: HouseholdRestockDeferredReason): HouseholdRestockDeferredEvent => {
+    const event = householdRestockDeferredEventSchema.parse({
+      ...eventEnvelope(view, command, sequence, "household-restock-deferred"),
+      type: "household_restock_deferred",
+      actorIds: [],
+      entityIds: sortedUnique([householdId]),
+      payload: { householdId, materialKindKey, reason },
+    });
+    events.push(event);
+    sequence += 1;
+    return event;
+  };
+
+  const pushFulfilled = (resultingQuantityRaw: number): HouseholdRestockFulfilledEvent => {
+    const event = householdRestockFulfilledEventSchema.parse({
+      ...eventEnvelope(view, command, sequence, "household-restock-fulfilled"),
+      type: "household_restock_fulfilled",
+      actorIds: [],
+      entityIds: sortedUnique([householdId]),
+      payload: { householdId, materialKindKey, resultingQuantityRaw },
+    });
+    events.push(event);
+    sequence += 1;
+    return event;
+  };
+
+  let terminalEvent: HouseholdRestockFulfilledEvent | HouseholdRestockDeferredEvent;
+
+  if (currentQuantityRaw >= routine.targetQuantityRaw) {
+    terminalEvent = pushDeferred("already_stocked");
+  } else if (routine.funding.kind === "lot") {
+    const neededRaw = routine.targetQuantityRaw - currentQuantityRaw;
+    const cost = routine.funding.unitPriceRaw * neededRaw;
+    const currencyBalance = view.currencyLot?.quantityRaw ?? 0;
+    if (currencyBalance < cost) {
+      terminalEvent = pushDeferred("insufficient_funds");
+    } else {
+      const currencyQuantityKind =
+        view.currencyLot?.quantityKind ?? resolveQuantityKind(RESERVED_CURRENCY_MATERIAL_KIND);
+      const currencyLocus = routine.funding.currencyLocus;
+      const debitEvent = materialLotAdjustedEventSchema.parse({
+        ...eventEnvelope(view, command, sequence, "household-restock-debit"),
+        type: "material_lot_adjusted",
+        actorIds: [],
+        entityIds: sortedUnique(lotLocusEntityIds(currencyLocus)),
+        payload: {
+          locus: currencyLocus,
+          materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+          deltaRaw: -cost,
+          resultingQuantityRaw: currencyBalance - cost,
+          quantityKind: currencyQuantityKind,
+          reason: "restock_purchase",
+        },
+      });
+      events.push(debitEvent);
+      sequence += 1;
+      nextCurrencyLot = materialLotStateSchema.parse({
+        locus: currencyLocus,
+        materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+        quantityKind: currencyQuantityKind,
+        quantityRaw: currencyBalance - cost,
+        registryVersion: view.currencyLot?.registryVersion ?? materialKindRegistryVersion,
+      });
+      currencyLotUpdatedAtSequence = debitEvent.sequence;
+
+      const creditEvent = materialLotAdjustedEventSchema.parse({
+        ...eventEnvelope(view, command, sequence, "household-restock-credit"),
+        type: "material_lot_adjusted",
+        causationId: debitEvent.id,
+        actorIds: [],
+        entityIds: sortedUnique(lotLocusEntityIds(householdLocus)),
+        payload: {
+          locus: householdLocus,
+          materialKindKey,
+          deltaRaw: neededRaw,
+          resultingQuantityRaw: routine.targetQuantityRaw,
+          quantityKind,
+          reason: "restock_purchase",
+        },
+      });
+      events.push(creditEvent);
+      sequence += 1;
+      nextStockLot = materialLotStateSchema.parse({
+        locus: householdLocus,
+        materialKindKey,
+        quantityKind,
+        quantityRaw: routine.targetQuantityRaw,
+        registryVersion: stockRegistryVersion,
+      });
+      stockLotUpdatedAtSequence = creditEvent.sequence;
+
+      terminalEvent = pushFulfilled(routine.targetQuantityRaw);
+    }
+  } else {
+    // means_band_envelope: fail closed unless the household's OWN means read
+    // is band-tracked and at least at the routine's minimum band — a
+    // lot-tracked or unknown read has no band to compare, so it cannot be
+    // verified sufficient (§26.10's structural precedence: this branch never
+    // consults a lot even if one happens to exist for this subject).
+    const read = view.householdMeansRead ?? { kind: "unknown" };
+    const sufficient =
+      read.kind === "band_tracked" && compareMeansBands(read.bandKey, routine.funding.minimumBandKey) >= 0;
+    if (!sufficient) {
+      terminalEvent = pushDeferred("insufficient_funds");
+    } else {
+      const creditEvent = materialLotAdjustedEventSchema.parse({
+        ...eventEnvelope(view, command, sequence, "household-restock-credit"),
+        type: "material_lot_adjusted",
+        actorIds: [],
+        entityIds: sortedUnique(lotLocusEntityIds(householdLocus)),
+        payload: {
+          locus: householdLocus,
+          materialKindKey,
+          deltaRaw: routine.targetQuantityRaw - currentQuantityRaw,
+          resultingQuantityRaw: routine.targetQuantityRaw,
+          quantityKind,
+          reason: "restock_topup_unconserved",
+        },
+      });
+      events.push(creditEvent);
+      sequence += 1;
+      nextStockLot = materialLotStateSchema.parse({
+        locus: householdLocus,
+        materialKindKey,
+        quantityKind,
+        quantityRaw: routine.targetQuantityRaw,
+        registryVersion: stockRegistryVersion,
+      });
+      stockLotUpdatedAtSequence = creditEvent.sequence;
+
+      terminalEvent = pushFulfilled(routine.targetQuantityRaw);
+    }
+  }
+
+  // Re-arm the next cycle regardless of outcome (§26.11) — a deferred cycle
+  // keeps trying.
+  events.push(
+    buildHouseholdRestockTrigger({
+      view,
+      command,
+      householdId,
+      materialKindKey,
+      cadenceSeconds: routine.cadenceSeconds,
+      sequence,
+      causationId: terminalEvent.id,
+      armedAtSequence: terminalEvent.sequence,
+    }),
+  );
+
+  return {
+    ok: true,
+    events,
+    ...(nextStockLot ? { nextStockLot, stockLotUpdatedAtSequence } : {}),
+    ...(nextCurrencyLot ? { nextCurrencyLot, currencyLotUpdatedAtSequence } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Projection: canonical order, projector, replay, seed
 // ---------------------------------------------------------------------------
 
@@ -700,6 +1272,13 @@ function compareMeansBandRows(left: MeansBandState, right: MeansBandState): numb
   return compareStableText(deriveMeansSubjectRowKey(left.subject), deriveMeansSubjectRowKey(right.subject));
 }
 
+function compareRestockRoutines(left: HouseholdRestockRoutine, right: HouseholdRestockRoutine): number {
+  return (
+    compareStableText(left.householdId, right.householdId) ||
+    compareStableText(left.materialKindKey, right.materialKindKey)
+  );
+}
+
 /** Canonical ordering shared by live assembly, replay, and hashing. */
 export function sortHouseholdsProjection(projection: HouseholdsProjection): HouseholdsProjection {
   return householdsProjectionSchema.parse({
@@ -708,6 +1287,7 @@ export function sortHouseholdsProjection(projection: HouseholdsProjection): Hous
     memberships: [...projection.memberships].sort(compareMemberships),
     lots: [...projection.lots].sort(compareLots),
     meansBands: [...projection.meansBands].sort(compareMeansBandRows),
+    restockRoutines: [...projection.restockRoutines].sort(compareRestockRoutines),
   });
 }
 
@@ -717,8 +1297,9 @@ function findLotIndex(lots: readonly MaterialLotState[], locus: LotLocus, materi
 }
 
 /**
- * Pure synchronous projector for the household event family. It folds the six
- * slice-1 event types and passes every other branch event through as a bare
+ * Pure synchronous projector for the household event family. It folds seven
+ * event types into real state (the six slice-1 rows plus slice-2's restock
+ * routine upsert) and passes every other branch event through as a bare
  * boundary advance — the exhaustive passthrough keeps TS exhaustiveness
  * holding so a new event type cannot ship without a ruling.
  */
@@ -820,6 +1401,37 @@ export function applyHouseholdEvent(
           : projection.meansBands.map((candidate, index) => (index === existingIndex ? band : candidate));
       return sortHouseholdsProjection({ ...bumped, meansBands });
     }
+    case "household_restock_routine_configured": {
+      // `configure_restock_routine` always upserts the row wholesale — the
+      // event payload IS the routine (mirrors `means_band_set` above).
+      const routine = householdRestockRoutineSchema.parse({
+        householdId: event.payload.householdId,
+        materialKindKey: event.payload.materialKindKey,
+        targetQuantityRaw: event.payload.targetQuantityRaw,
+        lowWaterThresholdRaw: event.payload.lowWaterThresholdRaw,
+        cadenceSeconds: event.payload.cadenceSeconds,
+        funding: event.payload.funding,
+        active: event.payload.active,
+      });
+      const existingIndex = projection.restockRoutines.findIndex(
+        (candidate) =>
+          candidate.householdId === routine.householdId && candidate.materialKindKey === routine.materialKindKey,
+      );
+      const restockRoutines =
+        existingIndex === -1
+          ? [...projection.restockRoutines, routine]
+          : projection.restockRoutines.map((candidate, index) => (index === existingIndex ? routine : candidate));
+      return sortHouseholdsProjection({ ...bumped, restockRoutines });
+    }
+    // A promotion mutates lots through its own causally-chained
+    // `material_lot_adjusted` companion event (already folded above); the
+    // promotion/restock-outcome events themselves carry no lot/routine state
+    // of their own for THIS projection to fold — households.ts's job here is
+    // only to advance the boundary (materials.ts folds the new item itself).
+    case "item_instantiated_from_promotion":
+    case "household_restock_fulfilled":
+    case "household_restock_deferred":
+      return householdsProjectionSchema.parse(bumped);
     case "item_transferred":
     case "item_destroyed":
     case "item_consumed":
@@ -905,5 +1517,6 @@ export function emptyHouseholdsSeed(branchId: string, originStorySecond: number)
     memberships: [],
     lots: [],
     meansBands: [],
+    restockRoutines: [],
   });
 }

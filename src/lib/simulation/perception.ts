@@ -238,6 +238,9 @@ export function deriveEventObservations(
     case "material_lot_initialized":
     case "material_lot_adjusted":
     case "means_band_set":
+    case "household_restock_routine_configured":
+    case "household_restock_fulfilled":
+    case "household_restock_deferred":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
@@ -256,7 +259,12 @@ export function deriveEventObservations(
       // adjustment (§26.8–26.9) are likewise off-screen authoring acts — a
       // conserved transfer (below) is the one lot event with a physical actor
       // to witness. A means band (§26.10) is a coarse authored fact about a
-      // subject's means, not a witnessed event.
+      // subject's means, not a witnessed event. A restock routine's
+      // authoring, and its off-screen scheduled outcome — fulfilled or
+      // deferred — are the household's own bookkeeping cycle (§26.11), not a
+      // witnessed act (the top-up itself lands through its own
+      // `material_lot_adjusted` event, which carries no acting actor to
+      // witness it either).
       return [];
     case "journey_planned":
     case "journey_delayed":
@@ -336,6 +344,20 @@ export function deriveEventObservations(
       collector.add(actorId, DIRECT_EMBODIED);
       const actorZoneId = atOccupants(space).find((occupant) => occupant.actorId === actorId)?.zoneId;
       if (actorZoneId !== undefined) gradeZoneBystanders(collector, space, actorZoneId);
+      break;
+    }
+    case "item_instantiated_from_promotion": {
+      // Same shape as item_transferred above (§26.10/§27.2): an obvious
+      // same-zone manipulation by the acting actor. The payload has no
+      // top-level actorId (unlike a transfer) — the acting actor is the
+      // event's own actorIds entry instead (v1 always places the promoted
+      // item held by that actor).
+      const actorId = event.actorIds[0];
+      if (actorId !== undefined) {
+        collector.add(actorId, DIRECT_EMBODIED);
+        const actorZoneId = atOccupants(space).find((occupant) => occupant.actorId === actorId)?.zoneId;
+        if (actorZoneId !== undefined) gradeZoneBystanders(collector, space, actorZoneId);
+      }
       break;
     }
     case "disclosure_made": {

@@ -31,15 +31,17 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   escalation — normative wording [engine.spec.md](engine.spec.md) §39). Build order
   E5.1–E5.6 authored: body substrate + modifier engine → chat-parity meters &
   perception-gated reads → material life → households/means/money-at-LOD → the social
-  ledger & consent → the deterministic exit corpus. **E5.1 and E5.2 (all three
-  slices) and E5.3 (all three slices) shipped 2026-07-19** — see Shipped below.
-  **E5.4 (households, means, and money at LOD) is next in-gate**: household
-  membership and shared stores, fungible lots with fixed-point conserved
-  quantities that transactionally balance, a coarse means read for low-detail
-  actors, §27.2 promotion (an explicit item consumes an aggregate allowance and
-  instantiates through a recorded event), replacement/restock as household
-  routine. Then E5.5 (the social ledger & consent, ruling 16) and E5.6 (the
-  deterministic exit corpus) close the gate.
+  ledger & consent → the deterministic exit corpus. **E5.1–E5.3 shipped 2026-07-19;
+  E5.4 (both slices) shipped 2026-07-20** — see Shipped below.
+  **E5.5 (the social ledger & consent, ruling 16) is next in-gate** — blueprint
+  drafted and adversarially reviewed 2026-07-20: the persisted §21.3 evidence
+  ledger (closed typed entry vocabulary, explicit derived-vs-authored split per
+  kind), destinationless commitments (the carried E3.3 leftover), pressure
+  acknowledgment as a social act (E3.4), the fail-closed consent gate as an
+  activity precondition with the §19.3 deliberator escalation pinned to a
+  deterministic decline fallback, and trust/attraction/resentment as derived
+  fixed-point banded reads. Then E5.6 (the deterministic exit corpus) closes
+  the gate.
   This is where current-chat body learning migrates behind the successor
   contracts — the meter-economy and body-needs plans in Next port through here
   later.
@@ -138,6 +140,23 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine households, means, and money at LOD (E5.4, slices 1–2)** —
+  [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
+  [engine.spec.md](engine.spec.md) §26.8–§26.11 (authored this work) — 2026-07-20 —
+  households as first-class evented entities with fail-closed shared-store access;
+  fungible lots with fixed-point conserved quantities (same-kind transfers conserve
+  by construction, cross-kind exchanges are causally-linked adjustment pairs, the
+  means-band restock top-up is the one sanctioned unconserved credit); means bands
+  with structural lot-over-band precedence and an explicit `unknown` degraded
+  default; §27.2 promotion — an explicit item exists only through
+  `promote_item_from_stock`'s recorded, deterministically-sampled,
+  allowance-consuming event train; restock as fixed-cadence household routine
+  through the E2.4 scheduler with fire-time re-validation; money as the reserved
+  fixed-point `currency` kind for promoted actors. Migrations 0074/0075.
+  Adversarial three-lens review confirmed and fixed 3 major findings (incl. a
+  real trigger claim/dispatch race — `processing` rows now retire on reconfigure).
+  53 new pure + 16 new int cases; CI runs `test:engine-e5-4` (2 927 pure +
+  414 int green). Next: **E5.5**.
 - **World-engine material life (E5.3, slices 1–3)** — [engine.plan.md](engine.plan.md)
   §"Gate 5 build order" · contract [engine.spec.md](engine.spec.md) §26 (expanded
   this work) — 2026-07-19 — §26 over the Gate 1/2 item lane, replacing the stand-ins

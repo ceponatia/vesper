@@ -1,33 +1,47 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { simulationBranchEventSchema, type SimulationBranchEvent } from "@/contracts/simulation/branching";
 import {
   RESERVED_CURRENCY_MATERIAL_KIND,
   adjustMaterialLotCommandSchema,
+  configureRestockRoutineCommandSchema,
   createHouseholdCommandSchema,
   householdMembershipSchema,
+  householdRestockRoutineSchema,
   lotLocusSchema,
   materialLotStateSchema,
   meansBandStateSchema,
   meansSubjectSchema,
+  promoteItemFromStockCommandSchema,
+  promotedItemInputSchema,
+  runHouseholdRestockCommandSchema,
   setHouseholdMembershipCommandSchema,
   setMeansBandCommandSchema,
   simulationHouseholdSchema,
   transferLotQuantityCommandSchema,
   type AdjustMaterialLotCommand,
+  type ConfigureRestockRoutineCommand,
   type CreateHouseholdCommand,
   type HouseholdMembership,
+  type HouseholdRestockRoutine,
   type LotLocus,
   type MaterialLotState,
   type MeansBandKey,
   type MeansBandState,
   type MeansSubject,
+  type PromoteItemFromStockCommand,
+  type PromotionFunding,
+  type RunHouseholdRestockCommand,
   type SetHouseholdMembershipCommand,
   type SetMeansBandCommand,
   type SimulationHousehold,
   type TransferLotQuantityCommand,
 } from "@/contracts/simulation/households";
-import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
+import {
+  materialBranchSeedSchema,
+  transferItemCommandSchema,
+  type MaterialBranchSeed,
+} from "@/contracts/simulation/materials";
 import { newId } from "@/lib/ids";
 import {
   deriveMaterialLotRowKey,
@@ -43,20 +57,28 @@ import {
   simBranches,
   simEvents,
   simHouseholdMembers,
+  simHouseholdRestockRoutines,
   simHouseholds,
+  simItemHoldings,
+  simItems,
   simMaterialLots,
   simMeansBands,
+  simTriggers,
   simWorlds,
 } from "@/server/db";
 import { forkBranch } from "./branch-store";
 import {
   submitDurableAdjustMaterialLot,
+  submitDurableConfigureRestockRoutine,
   submitDurableCreateHousehold,
+  submitDurablePromoteItemFromStock,
+  submitDurableRunHouseholdRestock,
   submitDurableSetHouseholdMembership,
   submitDurableSetMeansBand,
   submitDurableTransferLotQuantity,
 } from "./household-store";
-import { seedDurableMaterialBranch } from "./material-store";
+import { InjectedSimulationCrash, seedDurableMaterialBranch, submitDurableTransferItem } from "./material-store";
+import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
 
 /**
@@ -317,6 +339,98 @@ function setMeansBandCmd(input: {
   });
 }
 
+function configureRestockCmd(input: {
+  branchId: string;
+  householdId: string;
+  materialKindKey: string;
+  targetQuantityRaw: number;
+  lowWaterThresholdRaw: number;
+  cadenceSeconds: number;
+  funding: HouseholdRestockRoutine["funding"];
+  active: boolean;
+  expectedVersion: number;
+  id?: string;
+  idempotencyKey?: string;
+}): ConfigureRestockRoutineCommand {
+  return configureRestockRoutineCommandSchema.parse({
+    id: input.id ?? newId(),
+    branchId: input.branchId,
+    expectedVersion: input.expectedVersion,
+    idempotencyKey: input.idempotencyKey ?? newId(),
+    principal: gmPrincipal,
+    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    correlationId: newId(),
+    type: "configure_restock_routine",
+    schemaVersion: 1,
+    payload: {
+      householdId: input.householdId,
+      materialKindKey: input.materialKindKey,
+      targetQuantityRaw: input.targetQuantityRaw,
+      lowWaterThresholdRaw: input.lowWaterThresholdRaw,
+      cadenceSeconds: input.cadenceSeconds,
+      funding: input.funding,
+      active: input.active,
+    },
+  });
+}
+
+function runHouseholdRestockCmd(input: {
+  branchId: string;
+  householdId: string;
+  materialKindKey: string;
+  armedAtSequence: number;
+  id?: string;
+  idempotencyKey?: string;
+}): RunHouseholdRestockCommand {
+  return runHouseholdRestockCommandSchema.parse({
+    id: input.id ?? newId(),
+    branchId: input.branchId,
+    // Overridden to the locked branch's own version by `admitAtLockedVersion`
+    // (mirrors the scheduler's own dispatch, scheduler-store.ts) — this test
+    // calls the durable submit function directly rather than through the
+    // scheduler, so the value here is never actually checked.
+    expectedVersion: 0,
+    idempotencyKey: input.idempotencyKey ?? newId(),
+    principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
+    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    correlationId: newId(),
+    type: "run_household_restock",
+    schemaVersion: 1,
+    payload: {
+      householdId: input.householdId,
+      materialKindKey: input.materialKindKey,
+      armedAtSequence: input.armedAtSequence,
+    },
+  });
+}
+
+function promoteItemCmd(input: {
+  branchId: string;
+  actorId: string;
+  funding: PromotionFunding;
+  item: { name?: string; materialKindKey?: string };
+  expectedVersion: number;
+  id?: string;
+  idempotencyKey?: string;
+}): PromoteItemFromStockCommand {
+  return promoteItemFromStockCommandSchema.parse({
+    id: input.id ?? newId(),
+    branchId: input.branchId,
+    expectedVersion: input.expectedVersion,
+    idempotencyKey: input.idempotencyKey ?? newId(),
+    principal: { kind: "player", principalId: "player-1", controlledActorIds: [input.actorId] },
+    submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+    correlationId: newId(),
+    type: "promote_item_from_stock",
+    schemaVersion: 1,
+    payload: {
+      actorId: input.actorId,
+      funding: input.funding,
+      item: promotedItemInputSchema.parse(input.item),
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Row -> domain-shape mappers (local test copies of household-store.ts's
 // private FromRow functions — that file exports only the insert direction,
@@ -378,6 +492,18 @@ function bandFromDbRow(row: typeof simMeansBands.$inferSelect): MeansBandState {
     bandKey: row.bandKey,
     registryVersion: row.registryVersion,
     setAtStorySecond: row.setAtStorySecond,
+  });
+}
+
+function routineFromDbRow(row: typeof simHouseholdRestockRoutines.$inferSelect): HouseholdRestockRoutine {
+  return householdRestockRoutineSchema.parse({
+    householdId: row.householdId,
+    materialKindKey: row.materialKindKey,
+    targetQuantityRaw: row.targetQuantityRaw,
+    lowWaterThresholdRaw: row.lowWaterThresholdRaw,
+    cadenceSeconds: row.cadenceSeconds,
+    funding: row.funding,
+    active: row.active,
   });
 }
 
@@ -868,6 +994,836 @@ describe.runIf(ready)("E5.4 slice 1 durable households/lots/means substrate", ()
       memberships: liveMembers.map(membershipFromDbRow),
       lots: liveLots.map(lotFromDbRow),
       meansBands: liveBands.map(bandFromDbRow),
+      restockRoutines: [],
+    });
+
+    const events = await readBranchEvents(ids.branchId);
+    const rebuilt = replayHouseholdsHistory({ seed: emptyHouseholdsSeed(ids.branchId, SEED_SECOND), events });
+
+    expect(simulationHash(live)).toBe(simulationHash(rebuilt));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.4 slice 2 — promotion, restock routine, crash recovery, fork parity
+// ---------------------------------------------------------------------------
+
+async function latestEventPayload(branchId: string, type: string): Promise<unknown> {
+  const [row] = await db()
+    .select({ payload: simEvents.payload })
+    .from(simEvents)
+    .where(and(eq(simEvents.branchId, branchId), eq(simEvents.type, type)))
+    .orderBy(desc(simEvents.sequence))
+    .limit(1);
+  return row?.payload;
+}
+
+async function pendingRestockTriggers(branchId: string) {
+  return db()
+    .select({ state: simTriggers.state, dueStorySecond: simTriggers.dueStorySecond })
+    .from(simTriggers)
+    .where(and(eq(simTriggers.branchId, branchId), eq(simTriggers.kind, "household_restock_due")))
+    .orderBy(asc(simTriggers.dueStorySecond));
+}
+
+describe.runIf(ready)("E5.4 slice 2 promotion, restock routine, crash recovery, and fork parity", () => {
+  it("promotes an item via stock funding end to end: debits the household lot, creates sim_items + sim_item_holdings, and the item is immediately usable through transfer_item", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    const householdId = newId();
+    await submitDurableCreateHousehold(
+      createHouseholdCmd({
+        branchId: ids.branchId,
+        householdId,
+        name: "Household",
+        residenceZoneIds: [ids.zoneHome],
+        stockAccessPolicy: { kind: "members_only" },
+        expectedVersion: 0,
+      }),
+    );
+    await submitDurableSetHouseholdMembership(
+      setMembershipCmd({
+        branchId: ids.branchId,
+        householdId,
+        actorId: ids.mara,
+        role: "resident",
+        status: "active",
+        expectedVersion: 1,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: "bread",
+        deltaRaw: 10,
+        expectedVersion: 2,
+      }),
+    );
+
+    const promote = await submitDurablePromoteItemFromStock(
+      promoteItemCmd({
+        branchId: ids.branchId,
+        actorId: ids.mara,
+        funding: { kind: "stock", sourceLocus: householdLocus(householdId), quantityRaw: 1 },
+        item: { name: "Fresh Loaf", materialKindKey: "bread" },
+        expectedVersion: 3,
+      }),
+    );
+    expect(promote.status).toBe("accepted");
+
+    const promotedPayload = (await latestEventPayload(ids.branchId, "item_instantiated_from_promotion")) as {
+      item: { id: string };
+    };
+    const itemId = promotedPayload.item.id;
+
+    const [itemRow] = await db().select().from(simItems).where(and(eq(simItems.branchId, ids.branchId), eq(simItems.itemId, itemId)));
+    expect(itemRow).toMatchObject({ name: "Fresh Loaf", materialKindKey: "bread" });
+    const [holdingRow] = await db()
+      .select()
+      .from(simItemHoldings)
+      .where(and(eq(simItemHoldings.branchId, ids.branchId), eq(simItemHoldings.itemId, itemId)));
+    expect(holdingRow).toMatchObject({ locusKind: "held", actorId: ids.mara });
+
+    const householdLot = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
+    expect(householdLot?.quantityRaw).toBe(9);
+
+    // Immediately usable through the EXISTING transfer_item command — proves
+    // the cross-domain event train didn't produce a second-class item.
+    const transfer = await submitDurableTransferItem(
+      transferItemCommandSchema.parse({
+        id: newId(),
+        branchId: ids.branchId,
+        expectedVersion: 4,
+        idempotencyKey: newId(),
+        principal: { kind: "player", principalId: "player-1", controlledActorIds: [ids.mara] },
+        submittedAtWallClock: "2026-07-19T12:00:00.000Z",
+        type: "transfer_item",
+        schemaVersion: 2,
+        correlationId: newId(),
+        payload: {
+          actorId: ids.mara,
+          itemId,
+          fromLocus: { kind: "held", actorId: ids.mara },
+          toLocus: { kind: "zone", zoneId: ids.zoneHome },
+        },
+      }),
+    );
+    expect(transfer.status).toBe("accepted");
+  });
+
+  it("promotes an item via purchase funding end to end, debiting the reserved currency lot by unitPriceRaw x quantityRaw", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    const householdId = newId();
+    await submitDurableCreateHousehold(
+      createHouseholdCmd({
+        branchId: ids.branchId,
+        householdId,
+        name: "Household",
+        residenceZoneIds: [ids.zoneHome],
+        stockAccessPolicy: { kind: "members_only" },
+        expectedVersion: 0,
+      }),
+    );
+    await submitDurableSetHouseholdMembership(
+      setMembershipCmd({
+        branchId: ids.branchId,
+        householdId,
+        actorId: ids.mara,
+        role: "resident",
+        status: "active",
+        expectedVersion: 1,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+        deltaRaw: 50_000,
+        expectedVersion: 2,
+      }),
+    );
+
+    const promote = await submitDurablePromoteItemFromStock(
+      promoteItemCmd({
+        branchId: ids.branchId,
+        actorId: ids.mara,
+        funding: { kind: "purchase", currencyLocus: householdLocus(householdId), unitPriceRaw: 1_000, quantityRaw: 3 },
+        item: { name: "Brass Compass" },
+        expectedVersion: 3,
+      }),
+    );
+    expect(promote.status).toBe("accepted");
+
+    const currencyLot = await loadLotRow(ids.branchId, householdLocus(householdId), RESERVED_CURRENCY_MATERIAL_KIND);
+    expect(currencyLot?.quantityRaw).toBe(50_000 - 3_000);
+
+    const promotedPayload = (await latestEventPayload(ids.branchId, "item_instantiated_from_promotion")) as {
+      item: { id: string; name: string };
+    };
+    expect(promotedPayload.item.name).toBe("Brass Compass");
+  });
+
+  it("recovers atomically from an injected crash at each promotion checkpoint, never double-debiting via the same idempotency key", async () => {
+    const crashPoints = ["after_event_append", "after_projection_update", "after_branch_advance", "after_commit"] as const;
+    for (const crashAt of crashPoints) {
+      const ids = makeIds();
+      await seedCase(ids);
+      const householdId = newId();
+      await submitDurableCreateHousehold(
+        createHouseholdCmd({
+          branchId: ids.branchId,
+          householdId,
+          name: "Household",
+          residenceZoneIds: [ids.zoneHome],
+          stockAccessPolicy: { kind: "members_only" },
+          expectedVersion: 0,
+        }),
+      );
+      await submitDurableSetHouseholdMembership(
+        setMembershipCmd({
+          branchId: ids.branchId,
+          householdId,
+          actorId: ids.mara,
+          role: "resident",
+          status: "active",
+          expectedVersion: 1,
+        }),
+      );
+      await submitDurableAdjustMaterialLot(
+        adjustLotCmd({
+          branchId: ids.branchId,
+          locus: householdLocus(householdId),
+          materialKindKey: "bread",
+          deltaRaw: 10,
+          expectedVersion: 2,
+        }),
+      );
+
+      const command = promoteItemCmd({
+        branchId: ids.branchId,
+        actorId: ids.mara,
+        funding: { kind: "stock", sourceLocus: householdLocus(householdId), quantityRaw: 1 },
+        item: { name: "Crash Loaf", materialKindKey: "bread" },
+        expectedVersion: 3,
+      });
+
+      let threw: unknown;
+      try {
+        await submitDurablePromoteItemFromStock(command, { crashAt });
+      } catch (error) {
+        threw = error;
+      }
+      expect(threw).toBeInstanceOf(InjectedSimulationCrash);
+
+      const lotAfterCrash = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
+      const itemsAfterCrash = await db().select().from(simItems).where(eq(simItems.branchId, ids.branchId));
+      if (crashAt === "after_commit") {
+        // The transaction already committed before the injected throw fired.
+        expect(lotAfterCrash?.quantityRaw).toBe(9);
+        expect(itemsAfterCrash).toHaveLength(1);
+      } else {
+        // The whole transaction rolled back atomically — nothing landed.
+        expect(lotAfterCrash?.quantityRaw).toBe(10);
+        expect(itemsAfterCrash).toHaveLength(0);
+      }
+
+      // Retry the SAME command (same id + idempotencyKey) with no crash —
+      // must recover to exactly one debit and one item, never double-applying.
+      const retry = await submitDurablePromoteItemFromStock(command);
+      expect(retry.status).toBe("accepted");
+
+      const lotAfterRetry = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
+      const itemsAfterRetry = await db().select().from(simItems).where(eq(simItems.branchId, ids.branchId));
+      expect(lotAfterRetry?.quantityRaw).toBe(9);
+      expect(itemsAfterRetry).toHaveLength(1);
+    }
+  });
+
+  it("drains configure_restock_routine -> run_household_restock through the scheduler, tops up stock, and re-arms; a second depletion+drain cycle fires the re-armed alarm", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    const householdId = newId();
+    await submitDurableCreateHousehold(
+      createHouseholdCmd({
+        branchId: ids.branchId,
+        householdId,
+        name: "Household",
+        residenceZoneIds: [ids.zoneHome],
+        stockAccessPolicy: { kind: "members_only" },
+        expectedVersion: 0,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+        deltaRaw: 100_000,
+        expectedVersion: 1,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: "bread",
+        deltaRaw: 5,
+        expectedVersion: 2,
+      }),
+    );
+
+    const configure = await submitDurableConfigureRestockRoutine(
+      configureRestockCmd({
+        branchId: ids.branchId,
+        householdId,
+        materialKindKey: "bread",
+        targetQuantityRaw: 20,
+        lowWaterThresholdRaw: 5,
+        cadenceSeconds: 3_600,
+        funding: { kind: "lot", currencyLocus: householdLocus(householdId), unitPriceRaw: 10 },
+        active: true,
+        expectedVersion: 3,
+      }),
+    );
+    expect(configure.status).toBe("accepted");
+
+    const [armed] = (await pendingRestockTriggers(ids.branchId)).filter((t) => t.state === "pending");
+    if (!armed) throw new Error("expected an armed restock trigger");
+
+    const drain1 = await advanceBranchStoryTime(ids.branchId, armed.dueStorySecond, { workerId: "w-restock-1" });
+    expect(drain1.status).toBe("advanced");
+
+    const lotAfterFirst = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
+    expect(lotAfterFirst?.quantityRaw).toBe(20);
+    const currencyAfterFirst = await loadLotRow(ids.branchId, householdLocus(householdId), RESERVED_CURRENCY_MATERIAL_KIND);
+    expect(currencyAfterFirst?.quantityRaw).toBe(100_000 - 10 * 15);
+
+    const fulfilledEvents1 = await db()
+      .select({ type: simEvents.type })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "household_restock_fulfilled")));
+    expect(fulfilledEvents1).toHaveLength(1);
+
+    const [rearmed] = (await pendingRestockTriggers(ids.branchId)).filter((t) => t.state === "pending");
+    if (!rearmed) throw new Error("expected a re-armed trigger");
+    expect(rearmed.dueStorySecond).toBe(armed.dueStorySecond + 3_600);
+
+    const [branchAfterFirst] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
+    if (!branchAfterFirst) throw new Error("branch missing");
+    const deplete = await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: "bread",
+        deltaRaw: -15,
+        expectedVersion: branchAfterFirst.version,
+      }),
+    );
+    expect(deplete.status).toBe("accepted");
+
+    const drain2 = await advanceBranchStoryTime(ids.branchId, rearmed.dueStorySecond, { workerId: "w-restock-2" });
+    expect(drain2.status).toBe("advanced");
+
+    const lotAfterSecond = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
+    expect(lotAfterSecond?.quantityRaw).toBe(20);
+
+    const fulfilledEvents2 = await db()
+      .select({ type: simEvents.type })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "household_restock_fulfilled")));
+    expect(fulfilledEvents2).toHaveLength(2);
+  });
+
+  it("retires a stale restock alarm on reconfigure mid-flight, and only the fresh arm fires (never double-fires)", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    const householdId = newId();
+    await submitDurableCreateHousehold(
+      createHouseholdCmd({
+        branchId: ids.branchId,
+        householdId,
+        name: "Household",
+        residenceZoneIds: [ids.zoneHome],
+        stockAccessPolicy: { kind: "members_only" },
+        expectedVersion: 0,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+        deltaRaw: 100_000,
+        expectedVersion: 1,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: "bread",
+        deltaRaw: 5,
+        expectedVersion: 2,
+      }),
+    );
+
+    await submitDurableConfigureRestockRoutine(
+      configureRestockCmd({
+        branchId: ids.branchId,
+        householdId,
+        materialKindKey: "bread",
+        targetQuantityRaw: 20,
+        lowWaterThresholdRaw: 5,
+        cadenceSeconds: 3_600,
+        funding: { kind: "lot", currencyLocus: householdLocus(householdId), unitPriceRaw: 10 },
+        active: true,
+        expectedVersion: 3,
+      }),
+    );
+
+    // Reconfigure BEFORE the first arm fires — retires the stale alarm
+    // unconditionally and arms a fresh one under a new armedAtSequence.
+    const configure2 = await submitDurableConfigureRestockRoutine(
+      configureRestockCmd({
+        branchId: ids.branchId,
+        householdId,
+        materialKindKey: "bread",
+        targetQuantityRaw: 30,
+        lowWaterThresholdRaw: 5,
+        cadenceSeconds: 3_600,
+        funding: { kind: "lot", currencyLocus: householdLocus(householdId), unitPriceRaw: 10 },
+        active: true,
+        expectedVersion: 4,
+      }),
+    );
+    expect(configure2.status).toBe("accepted");
+
+    const triggers = await pendingRestockTriggers(ids.branchId);
+    expect(triggers.map((t) => t.state).sort()).toEqual(["completed", "pending"]);
+    const pending = triggers.find((t) => t.state === "pending");
+    if (!pending) throw new Error("expected a fresh pending arm");
+
+    const drain = await advanceBranchStoryTime(ids.branchId, pending.dueStorySecond, { workerId: "w-stale" });
+    expect(drain.status).toBe("advanced");
+
+    // The FRESH configuration's target (30), not the stale one's (20), fired.
+    const lotAfter = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
+    expect(lotAfter?.quantityRaw).toBe(30);
+
+    const fulfilledEvents = await db()
+      .select({ type: simEvents.type })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "household_restock_fulfilled")));
+    expect(fulfilledEvents).toHaveLength(1);
+  });
+
+  it("retires a restock alarm a scheduler worker has already CLAIMED (processing, not pending) when a reconfigure lands in the claim/dispatch gap, so the stale dispatch fails closed instead of double-arming", async () => {
+    // Reproduces the claim/dispatch race: `claimDueTrigger` (scheduler-store.ts)
+    // commits a SEPARATE, earlier transaction that flips a due trigger to
+    // `processing` before `dispatch()` opens the transaction that actually
+    // resolves it. A `configure_restock_routine` landing in that gap must
+    // still retire the claimed row — this test manually reproduces the claim
+    // (a direct row update, mirroring the scheduler-store.int.test.ts
+    // "reclaiming a crashed worker's expired lease" idiom) and asserts the
+    // reconfigure retires it too, and that dispatching the stale claim
+    // afterward rejects `threshold_stale` rather than fulfilling under the
+    // superseded routine and re-arming a second live trigger.
+    const ids = makeIds();
+    await seedCase(ids);
+    const householdId = newId();
+    await submitDurableCreateHousehold(
+      createHouseholdCmd({
+        branchId: ids.branchId,
+        householdId,
+        name: "Household",
+        residenceZoneIds: [ids.zoneHome],
+        stockAccessPolicy: { kind: "members_only" },
+        expectedVersion: 0,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+        deltaRaw: 100_000,
+        expectedVersion: 1,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: "bread",
+        deltaRaw: 5,
+        expectedVersion: 2,
+      }),
+    );
+
+    const configure1 = await submitDurableConfigureRestockRoutine(
+      configureRestockCmd({
+        branchId: ids.branchId,
+        householdId,
+        materialKindKey: "bread",
+        targetQuantityRaw: 20,
+        lowWaterThresholdRaw: 5,
+        cadenceSeconds: 3_600,
+        funding: { kind: "lot", currencyLocus: householdLocus(householdId), unitPriceRaw: 10 },
+        active: true,
+        expectedVersion: 3,
+      }),
+    );
+    expect(configure1.status).toBe("accepted");
+    if (configure1.status !== "accepted") return;
+    const armedAtSequence1 = configure1.firstSequence;
+
+    const [armedTrigger] = await pendingRestockTriggers(ids.branchId);
+    expect(armedTrigger?.state).toBe("pending");
+
+    // Simulate a scheduler worker's `claimDueTrigger` having already claimed
+    // this trigger into `processing` — committed in its own transaction,
+    // strictly before `dispatch()` opens the one below.
+    await db()
+      .update(simTriggers)
+      .set({ state: "processing", leaseOwner: "w-claimed", leaseExpiresAt: new Date(Date.now() + 30_000) })
+      .where(and(eq(simTriggers.branchId, ids.branchId), eq(simTriggers.kind, "household_restock_due")));
+
+    // The reconfigure lands in the claim/dispatch gap.
+    const configure2 = await submitDurableConfigureRestockRoutine(
+      configureRestockCmd({
+        branchId: ids.branchId,
+        householdId,
+        materialKindKey: "bread",
+        targetQuantityRaw: 30,
+        lowWaterThresholdRaw: 5,
+        cadenceSeconds: 3_600,
+        funding: { kind: "lot", currencyLocus: householdLocus(householdId), unitPriceRaw: 10 },
+        active: true,
+        expectedVersion: 4,
+      }),
+    );
+    expect(configure2.status).toBe("accepted");
+
+    // The claimed (processing) row is retired too, not just pending rows.
+    const triggersAfterReconfigure = await db()
+      .select({ state: simTriggers.state })
+      .from(simTriggers)
+      .where(and(eq(simTriggers.branchId, ids.branchId), eq(simTriggers.kind, "household_restock_due")));
+    expect(triggersAfterReconfigure.map((t) => t.state).sort()).toEqual(["completed", "pending"]);
+
+    // `dispatch()` now opens its transaction for the stale claim: it fails
+    // closed to `threshold_stale` instead of fulfilling under the
+    // reconfigured routine and re-arming a second live trigger.
+    const staleDispatch = await submitDurableRunHouseholdRestock(
+      runHouseholdRestockCmd({
+        branchId: ids.branchId,
+        householdId,
+        materialKindKey: "bread",
+        armedAtSequence: armedAtSequence1,
+      }),
+      { admitAtLockedVersion: true },
+    );
+    expect(staleDispatch).toMatchObject({ status: "rejected", code: "threshold_stale" });
+
+    // Exactly one live trigger remains — the fresh arm from the reconfigure —
+    // never two.
+    const triggersAfterStaleDispatch = await pendingRestockTriggers(ids.branchId);
+    expect(triggersAfterStaleDispatch.filter((t) => t.state === "pending")).toHaveLength(1);
+
+    const fulfilledEventsAfterStaleDispatch = await db()
+      .select({ type: simEvents.type })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "household_restock_fulfilled")));
+    expect(fulfilledEventsAfterStaleDispatch).toHaveLength(0);
+  });
+
+  it("forks mid-pending-restock: the child's alarm re-arms and fires independently of the (still-pending) parent's", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    const householdId = newId();
+    await submitDurableCreateHousehold(
+      createHouseholdCmd({
+        branchId: ids.branchId,
+        householdId,
+        name: "Household",
+        residenceZoneIds: [ids.zoneHome],
+        stockAccessPolicy: { kind: "members_only" },
+        expectedVersion: 0,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+        deltaRaw: 100_000,
+        expectedVersion: 1,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: "bread",
+        deltaRaw: 5,
+        expectedVersion: 2,
+      }),
+    );
+    await submitDurableConfigureRestockRoutine(
+      configureRestockCmd({
+        branchId: ids.branchId,
+        householdId,
+        materialKindKey: "bread",
+        targetQuantityRaw: 20,
+        lowWaterThresholdRaw: 5,
+        cadenceSeconds: 3_600,
+        funding: { kind: "lot", currencyLocus: householdLocus(householdId), unitPriceRaw: 10 },
+        active: true,
+        expectedVersion: 3,
+      }),
+    );
+
+    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
+    if (!parentBranchRow) throw new Error("parent branch missing");
+    const childBranchId = newId();
+    seededBranchIds.push(childBranchId);
+    await forkBranch({
+      parentBranchId: ids.branchId,
+      childBranchId,
+      atSequence: parentBranchRow.headSequence,
+      principal: { kind: "storyteller", principalId: "gm-1" },
+      reason: "E5.4 slice 2 fork mid-pending-restock",
+    });
+
+    const [childTrigger] = await pendingRestockTriggers(childBranchId);
+    expect(childTrigger).toMatchObject({ state: "pending" });
+    if (!childTrigger) throw new Error("expected the child to inherit a pending restock alarm");
+
+    const drainChild = await advanceBranchStoryTime(childBranchId, childTrigger.dueStorySecond, {
+      workerId: "w-fork-child",
+    });
+    expect(drainChild.status).toBe("advanced");
+
+    const childLot = await loadLotRow(childBranchId, householdLocus(householdId), "bread");
+    expect(childLot?.quantityRaw).toBe(20);
+
+    // The parent's own alarm is untouched — still pending, its stock unchanged.
+    const [parentTrigger] = await pendingRestockTriggers(ids.branchId);
+    expect(parentTrigger?.state).toBe("pending");
+    const parentLot = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
+    expect(parentLot?.quantityRaw).toBe(5);
+  });
+
+  it("forks before vs. at/after a promotion: the pre-promotion child has no row for the promoted item; the post-promotion child has it with the correct updatedSequence", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    const householdId = newId();
+    await submitDurableCreateHousehold(
+      createHouseholdCmd({
+        branchId: ids.branchId,
+        householdId,
+        name: "Household",
+        residenceZoneIds: [ids.zoneHome],
+        stockAccessPolicy: { kind: "members_only" },
+        expectedVersion: 0,
+      }),
+    );
+    await submitDurableSetHouseholdMembership(
+      setMembershipCmd({
+        branchId: ids.branchId,
+        householdId,
+        actorId: ids.mara,
+        role: "resident",
+        status: "active",
+        expectedVersion: 1,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: "bread",
+        deltaRaw: 10,
+        expectedVersion: 2,
+      }),
+    );
+
+    const [preBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
+    if (!preBranchRow) throw new Error("branch missing");
+    const childBeforeId = newId();
+    seededBranchIds.push(childBeforeId);
+    await forkBranch({
+      parentBranchId: ids.branchId,
+      childBranchId: childBeforeId,
+      atSequence: preBranchRow.headSequence,
+      principal: { kind: "storyteller", principalId: "gm-1" },
+      reason: "pre-promotion fork",
+    });
+
+    const promote = await submitDurablePromoteItemFromStock(
+      promoteItemCmd({
+        branchId: ids.branchId,
+        actorId: ids.mara,
+        funding: { kind: "stock", sourceLocus: householdLocus(householdId), quantityRaw: 1 },
+        item: { name: "Fork Loaf", materialKindKey: "bread" },
+        expectedVersion: 3,
+      }),
+    );
+    expect(promote.status).toBe("accepted");
+
+    const [promotedEventRow] = await db()
+      .select({ payload: simEvents.payload, sequence: simEvents.sequence })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "item_instantiated_from_promotion")))
+      .orderBy(desc(simEvents.sequence))
+      .limit(1);
+    if (!promotedEventRow) throw new Error("expected a promotion event");
+    const itemId = (promotedEventRow.payload as { item: { id: string } }).item.id;
+
+    const [postBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
+    if (!postBranchRow) throw new Error("branch missing");
+    const childAfterId = newId();
+    seededBranchIds.push(childAfterId);
+    await forkBranch({
+      parentBranchId: ids.branchId,
+      childBranchId: childAfterId,
+      atSequence: postBranchRow.headSequence,
+      principal: { kind: "storyteller", principalId: "gm-1" },
+      reason: "post-promotion fork",
+    });
+
+    const [childBeforeItem] = await db()
+      .select()
+      .from(simItems)
+      .where(and(eq(simItems.branchId, childBeforeId), eq(simItems.itemId, itemId)));
+    expect(childBeforeItem).toBeUndefined();
+    const [childBeforeHolding] = await db()
+      .select()
+      .from(simItemHoldings)
+      .where(and(eq(simItemHoldings.branchId, childBeforeId), eq(simItemHoldings.itemId, itemId)));
+    expect(childBeforeHolding).toBeUndefined();
+
+    const [childAfterItem] = await db()
+      .select()
+      .from(simItems)
+      .where(and(eq(simItems.branchId, childAfterId), eq(simItems.itemId, itemId)));
+    expect(childAfterItem).toMatchObject({ name: "Fork Loaf" });
+    const [childAfterHolding] = await db()
+      .select()
+      .from(simItemHoldings)
+      .where(and(eq(simItemHoldings.branchId, childAfterId), eq(simItemHoldings.itemId, itemId)));
+    expect(childAfterHolding).toMatchObject({ updatedSequence: promotedEventRow.sequence });
+  });
+
+  it("rebuilds the households projection from zero to the live hash across a scenario touching every slice-1+2 command", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+    const householdId = newId();
+
+    await submitDurableCreateHousehold(
+      createHouseholdCmd({
+        branchId: ids.branchId,
+        householdId,
+        name: "Household",
+        residenceZoneIds: [ids.zoneHome],
+        stockAccessPolicy: { kind: "members_only" },
+        expectedVersion: 0,
+      }),
+    );
+    await submitDurableSetHouseholdMembership(
+      setMembershipCmd({
+        branchId: ids.branchId,
+        householdId,
+        actorId: ids.mara,
+        role: "resident",
+        status: "active",
+        expectedVersion: 1,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: "bread",
+        deltaRaw: 10,
+        expectedVersion: 2,
+      }),
+    );
+    await submitDurableAdjustMaterialLot(
+      adjustLotCmd({
+        branchId: ids.branchId,
+        locus: householdLocus(householdId),
+        materialKindKey: RESERVED_CURRENCY_MATERIAL_KIND,
+        deltaRaw: 100_000,
+        expectedVersion: 3,
+      }),
+    );
+    await submitDurableTransferLotQuantity(
+      transferLotCmd({
+        branchId: ids.branchId,
+        actorId: ids.mara,
+        fromLocus: householdLocus(householdId),
+        toLocus: actorLocus(ids.mara),
+        materialKindKey: "bread",
+        quantityRaw: 2,
+        expectedVersion: 4,
+      }),
+    );
+    const subject: MeansSubject = meansSubjectSchema.parse({ kind: "household", householdId });
+    await submitDurableSetMeansBand(
+      setMeansBandCmd({ branchId: ids.branchId, subject, bandKey: "comfortable", expectedVersion: 5 }),
+    );
+    await submitDurableConfigureRestockRoutine(
+      configureRestockCmd({
+        branchId: ids.branchId,
+        householdId,
+        materialKindKey: "bread",
+        targetQuantityRaw: 20,
+        lowWaterThresholdRaw: 5,
+        cadenceSeconds: 3_600,
+        funding: { kind: "lot", currencyLocus: householdLocus(householdId), unitPriceRaw: 10 },
+        active: true,
+        expectedVersion: 6,
+      }),
+    );
+    await submitDurablePromoteItemFromStock(
+      promoteItemCmd({
+        branchId: ids.branchId,
+        actorId: ids.mara,
+        funding: { kind: "stock", sourceLocus: householdLocus(householdId), quantityRaw: 1 },
+        item: { name: "Full Catalog Loaf", materialKindKey: "bread" },
+        expectedVersion: 7,
+      }),
+    );
+
+    const [armed] = (await pendingRestockTriggers(ids.branchId)).filter((t) => t.state === "pending");
+    if (!armed) throw new Error("expected an armed restock trigger");
+    const drain = await advanceBranchStoryTime(ids.branchId, armed.dueStorySecond, { workerId: "w-full-catalog" });
+    expect(drain.status).toBe("advanced");
+
+    const [branchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
+    if (!branchRow) throw new Error("branch missing");
+
+    const [liveHouseholds, liveMembers, liveLots, liveBands, liveRoutines] = await Promise.all([
+      db().select().from(simHouseholds).where(eq(simHouseholds.branchId, ids.branchId)),
+      db().select().from(simHouseholdMembers).where(eq(simHouseholdMembers.branchId, ids.branchId)),
+      db().select().from(simMaterialLots).where(eq(simMaterialLots.branchId, ids.branchId)),
+      db().select().from(simMeansBands).where(eq(simMeansBands.branchId, ids.branchId)),
+      db().select().from(simHouseholdRestockRoutines).where(eq(simHouseholdRestockRoutines.branchId, ids.branchId)),
+    ]);
+    const live = sortHouseholdsProjection({
+      branchId: ids.branchId,
+      headSequence: branchRow.headSequence,
+      version: branchRow.version,
+      storySecond: branchRow.storySecond,
+      households: liveHouseholds.map(householdFromDbRow),
+      memberships: liveMembers.map(membershipFromDbRow),
+      lots: liveLots.map(lotFromDbRow),
+      meansBands: liveBands.map(bandFromDbRow),
+      restockRoutines: liveRoutines.map(routineFromDbRow),
     });
 
     const events = await readBranchEvents(ids.branchId);

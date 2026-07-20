@@ -1,14 +1,22 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
+  RESERVED_CURRENCY_MATERIAL_KIND,
   adjustMaterialLotCommandResultSchema,
   adjustMaterialLotCommandSchema,
+  configureRestockRoutineCommandResultSchema,
+  configureRestockRoutineCommandSchema,
   createHouseholdCommandResultSchema,
   createHouseholdCommandSchema,
   householdMembershipSchema,
+  householdRestockRoutineSchema,
   lotLocusSchema,
   materialLotStateSchema,
   meansBandStateSchema,
   meansSubjectSchema,
+  promoteItemFromStockCommandResultSchema,
+  promoteItemFromStockCommandSchema,
+  runHouseholdRestockCommandResultSchema,
+  runHouseholdRestockCommandSchema,
   setHouseholdMembershipCommandResultSchema,
   setHouseholdMembershipCommandSchema,
   setMeansBandCommandResultSchema,
@@ -18,14 +26,22 @@ import {
   transferLotQuantityCommandSchema,
   type AdjustMaterialLotCommand,
   type AdjustMaterialLotCommandResult,
+  type ConfigureRestockRoutineCommand,
+  type ConfigureRestockRoutineCommandResult,
   type CreateHouseholdCommand,
   type CreateHouseholdCommandResult,
   type HouseholdMembership,
+  type HouseholdRestockRoutine,
   type LotLocus,
   type MaterialLotInitializedEvent,
   type MaterialLotState,
   type MeansBandState,
+  type MeansRead,
   type MeansSubject,
+  type PromoteItemFromStockCommand,
+  type PromoteItemFromStockCommandResult,
+  type RunHouseholdRestockCommand,
+  type RunHouseholdRestockCommandResult,
   type SetHouseholdMembershipCommand,
   type SetHouseholdMembershipCommandResult,
   type SetMeansBandCommand,
@@ -38,9 +54,15 @@ import {
   buildMaterialLotInitializedEvent,
   deriveMaterialLotRowKey,
   deriveMeansSubjectRowKey,
+  deriveMeansRead,
+  householdRestockUniquenessKey,
+  householdRestockUniquenessKeyPrefix,
   initializeLot,
   resolveAdjustMaterialLotFromView,
+  resolveConfigureRestockRoutineFromView,
   resolveCreateHouseholdFromView,
+  resolvePromoteItemFromStockFromView,
+  resolveRunHouseholdRestockFromView,
   resolveSetHouseholdMembershipFromView,
   resolveSetMeansBandFromView,
   resolveTransferLotQuantityFromView,
@@ -49,10 +71,15 @@ import {
 import {
   simCharacters,
   simHouseholdMembers,
+  simHouseholdRestockRoutines,
   simHouseholds,
+  simItemHoldings,
+  simItems,
   simMaterialLots,
   simMeansBands,
   simPhysicalLoci,
+  simTriggers,
+  simWorlds,
   simZones,
   type Db,
 } from "@/server/db";
@@ -62,8 +89,8 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
-import { InjectedSimulationCrash } from "./material-store";
-import type { SimTx } from "./trigger-projector";
+import { holdingRowFieldsForLocus, InjectedSimulationCrash } from "./material-store";
+import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 /**
  * E5.4 slice 1 durable households/lots/means authority (engine.spec
@@ -280,6 +307,38 @@ export function meansBandRowInsert(
   };
 }
 
+function householdRestockRoutineFromRow(
+  row: typeof simHouseholdRestockRoutines.$inferSelect,
+): HouseholdRestockRoutine {
+  return householdRestockRoutineSchema.parse({
+    householdId: row.householdId,
+    materialKindKey: row.materialKindKey,
+    targetQuantityRaw: row.targetQuantityRaw,
+    lowWaterThresholdRaw: row.lowWaterThresholdRaw,
+    cadenceSeconds: row.cadenceSeconds,
+    funding: row.funding,
+    active: row.active,
+  });
+}
+
+export function householdRestockRoutineRowInsert(
+  branchId: string,
+  routine: HouseholdRestockRoutine,
+  updatedSequence: number,
+): typeof simHouseholdRestockRoutines.$inferInsert {
+  return {
+    branchId,
+    householdId: routine.householdId,
+    materialKindKey: routine.materialKindKey,
+    targetQuantityRaw: routine.targetQuantityRaw,
+    lowWaterThresholdRaw: routine.lowWaterThresholdRaw,
+    cadenceSeconds: routine.cadenceSeconds,
+    funding: routine.funding,
+    active: routine.active,
+    updatedSequence,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Authority view — lock-consistent, loaded fresh inside every command
 // ---------------------------------------------------------------------------
@@ -459,6 +518,96 @@ async function updateLotQuantity(
     .returning({ lotKey: simMaterialLots.lotKey });
   if (updated.length !== 1) throw new Error("Locked material lot changed before its quantity update");
 }
+
+// ---------------------------------------------------------------------------
+// Household restock alarm plumbing (§26.11) — mirrors
+// `retirePendingThresholdTriggers` (body-store.ts).
+// ---------------------------------------------------------------------------
+
+/**
+ * Retire every non-terminal `household_restock_due` alarm for this
+ * (householdId, materialKindKey) — both `pending` rows AND rows a scheduler
+ * worker has already claimed into `processing` but not yet dispatched.
+ *
+ * That second half matters: `claimDueTrigger` (scheduler-store.ts) claims a
+ * due trigger into `processing` and COMMITS in its own transaction before
+ * `dispatch()` opens the separate, later transaction that actually resolves
+ * it. Because every command transaction locks `sim_branches` FOR UPDATE
+ * (command-runner.ts), this reconfigure and that dispatch can never overlap
+ * in wall-clock time — one fully commits before the other's transaction
+ * begins — but a reconfigure landing in exactly that claim/dispatch gap must
+ * still invalidate the claimed row, or `isRestockArmingLive` (which reads
+ * this row's state, not the routine's) would see a live, non-retired
+ * `processing` row and let the stale cycle proceed under the new routine,
+ * then unconditionally re-arm a second live trigger alongside the one this
+ * reconfigure just armed. Retiring `processing` rows here closes that gap:
+ * the stale dispatch's `isRestockArmingLive` check now correctly reads
+ * `completed` and fails closed to `threshold_stale` (§5.8) instead of
+ * double-arming. The scheduler's own post-dispatch completion write is
+ * fenced on `state = 'processing'` (scheduler-store.ts), so it simply no-ops
+ * to `lease_lost` when it finds this row already retired — no crash, no
+ * double write.
+ */
+async function retirePendingRestockTriggers(
+  tx: SimTx,
+  branch: LockedBranchView,
+  commandId: string,
+  submittedAtWallClock: string,
+  householdId: string,
+  materialKindKey: string,
+): Promise<void> {
+  const prefix = householdRestockUniquenessKeyPrefix(householdId, materialKindKey);
+  await tx
+    .update(simTriggers)
+    .set({
+      state: "completed",
+      resultCommandId: commandId,
+      completedAt: new Date(submittedAtWallClock),
+    })
+    .where(
+      and(
+        eq(simTriggers.branchId, branch.id),
+        inArray(simTriggers.state, ["pending", "processing"]),
+        sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
+      ),
+    );
+}
+
+/**
+ * Whether THIS command's own `armedAtSequence` names an alarm row that has
+ * not been retired by a later reconfigure (§5.8's staleness defense) — the
+ * durable stand-in for "the routine's current arming", since routines carry
+ * no arming column of their own. Deliberately NOT a `state = 'pending'`
+ * filter: at dispatch time the scheduler has already claimed this exact row
+ * into `processing` (see `resolveNextDueTrigger`), so "pending" would never
+ * match the live, in-flight arming — only a row a reconfigure's unconditional
+ * retirement already flipped to `completed` (or `failed`) counts as stale.
+ */
+async function isRestockArmingLive(
+  tx: SimTx,
+  branchId: string,
+  householdId: string,
+  materialKindKey: string,
+  armedAtSequence: number,
+): Promise<boolean> {
+  const uniquenessKey = householdRestockUniquenessKey(householdId, materialKindKey, armedAtSequence);
+  const [row] = await tx
+    .select({ state: simTriggers.state })
+    .from(simTriggers)
+    .where(and(eq(simTriggers.branchId, branchId), eq(simTriggers.uniquenessKey, uniquenessKey)))
+    .limit(1);
+  return row !== undefined && row.state !== "completed" && row.state !== "failed";
+}
+
+/**
+ * A stock kind key never actually consulted: `promote_item_from_stock`'s
+ * resolver rejects `invalid_funding_kind` before reading the lazily-loaded
+ * lot whenever `stock` funding names an item with no declared
+ * `materialKindKey` — this placeholder only satisfies `loadOrInitializeLot`'s
+ * non-empty-key requirement for that dead lookup; no row under this key is
+ * ever committed (a rejected command never calls `commitLotInit`).
+ */
+const PROMOTION_STOCK_KIND_PLACEHOLDER = "unspecified";
 
 // ---------------------------------------------------------------------------
 // create_household (§26.8)
@@ -887,6 +1036,408 @@ export async function submitDurableSetMeansBand(
         firstSequence: event.sequence,
         lastSequence: event.sequence,
         eventIds: [event.id],
+      };
+    },
+  });
+
+  if (options.crashAt === "after_commit") throw new InjectedSimulationCrash("after_commit");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// configure_restock_routine (§26.11)
+// ---------------------------------------------------------------------------
+
+export async function submitDurableConfigureRestockRoutine(
+  rawCommand: unknown,
+  options: HouseholdSubmitOptions = {},
+): Promise<ConfigureRestockRoutineCommandResult> {
+  const result = await runSimulationCommand({
+    rawCommand,
+    commandSchema: configureRestockRoutineCommandSchema,
+    resultSchema: configureRestockRoutineCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That restock routine request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(
+        commandId,
+        "duplicate_command_id",
+        "That restock routine request has already been submitted.",
+      ),
+    conflictResult: (commandId, currentVersion) =>
+      configureRestockRoutineCommandResultSchema.parse({
+        status: "conflict",
+        commandId,
+        currentVersion,
+        retryable: true,
+      }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: ConfigureRestockRoutineCommand) => {
+      const context = await loadHouseholdsAuthorityContext(tx, branch.id);
+      const resolution = resolveConfigureRestockRoutineFromView(
+        {
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: branch.headSequence,
+          storySecond: branch.storySecond,
+          householdExists: context.householdsById.has(command.payload.householdId),
+        },
+        command,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      // Unconditionally retire any pending alarm for this (householdId,
+      // materialKindKey) BEFORE arming a fresh one (§5.6) — a reconfigure
+      // always invalidates whether or not a fresh arm follows.
+      await retirePendingRestockTriggers(
+        tx,
+        branch,
+        command.id,
+        command.submittedAtWallClock,
+        command.payload.householdId,
+        command.payload.materialKindKey,
+      );
+
+      const [configuredEvent, ...triggerEvents] = resolution.events;
+      await appendSimulationEvent(tx, configuredEvent);
+      for (const triggerEvent of triggerEvents) {
+        await appendSimulationEvent(tx, triggerEvent);
+        await applyTriggerScheduledEvent(tx, triggerEvent, { branchId: branch.id, worldId: branch.worldId });
+      }
+      injectCrash(options.crashAt, "after_event_append");
+
+      const routine: HouseholdRestockRoutine = {
+        householdId: configuredEvent.payload.householdId,
+        materialKindKey: configuredEvent.payload.materialKindKey,
+        targetQuantityRaw: configuredEvent.payload.targetQuantityRaw,
+        lowWaterThresholdRaw: configuredEvent.payload.lowWaterThresholdRaw,
+        cadenceSeconds: configuredEvent.payload.cadenceSeconds,
+        funding: configuredEvent.payload.funding,
+        active: configuredEvent.payload.active,
+      };
+      await tx
+        .insert(simHouseholdRestockRoutines)
+        .values(householdRestockRoutineRowInsert(branch.id, routine, configuredEvent.sequence))
+        .onConflictDoUpdate({
+          target: [
+            simHouseholdRestockRoutines.branchId,
+            simHouseholdRestockRoutines.householdId,
+            simHouseholdRestockRoutines.materialKindKey,
+          ],
+          set: {
+            targetQuantityRaw: routine.targetQuantityRaw,
+            lowWaterThresholdRaw: routine.lowWaterThresholdRaw,
+            cadenceSeconds: routine.cadenceSeconds,
+            funding: routine.funding,
+            active: routine.active,
+            updatedSequence: configuredEvent.sequence,
+          },
+        });
+      injectCrash(options.crashAt, "after_projection_update");
+
+      const lastSequence = resolution.events[resolution.events.length - 1]?.sequence ?? configuredEvent.sequence;
+      await advanceLockedBranch(tx, branch, lastSequence);
+      injectCrash(options.crashAt, "after_branch_advance");
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: configuredEvent.sequence,
+        lastSequence,
+        eventIds: resolution.events.map((event) => event.id),
+      };
+    },
+  });
+
+  if (options.crashAt === "after_commit") throw new InjectedSimulationCrash("after_commit");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// promote_item_from_stock (§26.10 / §27.2) — the only path an aggregate fact
+// becomes an explicit `sim_items` row
+// ---------------------------------------------------------------------------
+
+export async function submitDurablePromoteItemFromStock(
+  rawCommand: unknown,
+  options: HouseholdSubmitOptions = {},
+): Promise<PromoteItemFromStockCommandResult> {
+  const result = await runSimulationCommand({
+    rawCommand,
+    commandSchema: promoteItemFromStockCommandSchema,
+    resultSchema: promoteItemFromStockCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That promotion request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That promotion request has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      promoteItemFromStockCommandResultSchema.parse({
+        status: "conflict",
+        commandId,
+        currentVersion,
+        retryable: true,
+      }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: PromoteItemFromStockCommand) => {
+      const context = await loadHouseholdsAuthorityContext(tx, branch.id);
+      const [worldRow] = await tx
+        .select({ seed: simWorlds.seed })
+        .from(simWorlds)
+        .where(eq(simWorlds.id, branch.worldId))
+        .limit(1);
+      if (!worldRow) throw new Error("Locked simulation branch references a missing world");
+
+      const { funding, item } = command.payload;
+      const fundingLocus = funding.kind === "stock" ? funding.sourceLocus : funding.currencyLocus;
+      const fundingMaterialKindKey =
+        funding.kind === "stock"
+          ? (item.materialKindKey ?? PROMOTION_STOCK_KIND_PLACEHOLDER)
+          : RESERVED_CURRENCY_MATERIAL_KIND;
+      const lazy = await loadOrInitializeLot(
+        tx,
+        branch,
+        command,
+        fundingLocus,
+        fundingMaterialKindKey,
+        branch.headSequence,
+      );
+
+      const resolution = resolvePromoteItemFromStockFromView(
+        {
+          ...buildHouseholdsResolutionView(context),
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: lazy.headSequence,
+          storySecond: branch.storySecond,
+          actorById: (actorId) => context.actorsById.get(actorId),
+          fundingLot: lazy.lot,
+          // No name pool is authored anywhere yet (E5.4 slice 2) — a caller
+          // that omits `item.name` must supply it explicitly until one is.
+          namePool: () => [],
+          worldSeed: worldRow.seed,
+        },
+        command,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      await commitLotInit(tx, branch, lazy.initEvent);
+
+      await appendSimulationEvent(tx, resolution.lotAdjustedEvent);
+      await appendSimulationEvent(tx, resolution.itemEvent);
+      injectCrash(options.crashAt, "after_event_append");
+
+      await updateLotQuantity(
+        tx,
+        branch.id,
+        fundingLocus,
+        resolution.lotAdjustedEvent.payload.materialKindKey,
+        resolution.nextFundingLot.quantityRaw,
+        resolution.lotAdjustedEvent.sequence,
+      );
+
+      const newItem = resolution.itemEvent.payload.item;
+      await tx.insert(simItems).values({
+        branchId: branch.id,
+        itemId: newItem.id,
+        name: newItem.name,
+        materialKindKey: newItem.materialKindKey ?? null,
+        consumptionEffects: newItem.consumptionEffects ?? null,
+        ownerActorId: newItem.ownerActorId,
+        containerCapacityCount: newItem.container?.capacityCount ?? null,
+        containerAccess: newItem.container?.access ?? null,
+        conditionTracked: newItem.conditionTracked,
+      });
+      await tx.insert(simItemHoldings).values({
+        branchId: branch.id,
+        itemId: newItem.id,
+        updatedSequence: resolution.itemEvent.sequence,
+        ...holdingRowFieldsForLocus(newItem.locus),
+      });
+      injectCrash(options.crashAt, "after_projection_update");
+
+      const lastSequence = resolution.itemEvent.sequence;
+      await advanceLockedBranch(tx, branch, lastSequence);
+      injectCrash(options.crashAt, "after_branch_advance");
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: lazy.initEvent?.sequence ?? resolution.lotAdjustedEvent.sequence,
+        lastSequence,
+        eventIds: [
+          ...(lazy.initEvent ? [lazy.initEvent.id] : []),
+          resolution.lotAdjustedEvent.id,
+          resolution.itemEvent.id,
+        ],
+      };
+    },
+  });
+
+  if (options.crashAt === "after_commit") throw new InjectedSimulationCrash("after_commit");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// run_household_restock (§26.11) — trigger-dispatched, system principal only
+// ---------------------------------------------------------------------------
+
+export async function submitDurableRunHouseholdRestock(
+  rawCommand: unknown,
+  options: HouseholdSubmitOptions = {},
+): Promise<RunHouseholdRestockCommandResult> {
+  const result = await runSimulationCommand({
+    rawCommand,
+    commandSchema: runHouseholdRestockCommandSchema,
+    resultSchema: runHouseholdRestockCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That restock cycle is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That restock cycle has already run."),
+    conflictResult: (commandId, currentVersion) =>
+      runHouseholdRestockCommandResultSchema.parse({
+        status: "conflict",
+        commandId,
+        currentVersion,
+        retryable: true,
+      }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command: RunHouseholdRestockCommand) => {
+      const { householdId, materialKindKey } = command.payload;
+      const householdLocus: LotLocus = { kind: "household", householdId };
+
+      const [routineRow] = await tx
+        .select()
+        .from(simHouseholdRestockRoutines)
+        .where(
+          and(
+            eq(simHouseholdRestockRoutines.branchId, branch.id),
+            eq(simHouseholdRestockRoutines.householdId, householdId),
+            eq(simHouseholdRestockRoutines.materialKindKey, materialKindKey),
+          ),
+        )
+        .limit(1);
+      const routine = routineRow ? householdRestockRoutineFromRow(routineRow) : undefined;
+
+      const armingIsLive = await isRestockArmingLive(
+        tx,
+        branch.id,
+        householdId,
+        materialKindKey,
+        command.payload.armedAtSequence,
+      );
+
+      // The stock lot may be untouched on this household+kind's first cycle —
+      // lazy-init it up front, mirroring adjust_material_lot/
+      // transfer_lot_quantity, so a fulfilled outcome always has a real row
+      // to update.
+      const stockLazy = await loadOrInitializeLot(
+        tx,
+        branch,
+        command,
+        householdLocus,
+        materialKindKey,
+        branch.headSequence,
+      );
+
+      // The currency lot (`lot` funding only) is read-only here: whenever
+      // this command has anything to fund, the cost is strictly positive, so
+      // a missing row (balance treated as zero) always resolves
+      // insufficient_funds — no lazy init, and no write ever targets it when
+      // absent.
+      const currencyLot =
+        routine?.funding.kind === "lot"
+          ? await loadMaterialLotRow(tx, branch.id, routine.funding.currencyLocus, RESERVED_CURRENCY_MATERIAL_KIND)
+          : undefined;
+
+      const householdMeansSubject: MeansSubject = { kind: "household", householdId };
+      let householdMeansRead: MeansRead | undefined;
+      if (routine?.funding.kind === "means_band_envelope") {
+        const householdCurrencyLot = await loadMaterialLotRow(
+          tx,
+          branch.id,
+          householdLocus,
+          RESERVED_CURRENCY_MATERIAL_KIND,
+        );
+        const householdBand = await loadMeansBandRow(tx, branch.id, deriveMeansSubjectRowKey(householdMeansSubject));
+        householdMeansRead = deriveMeansRead(householdMeansSubject, {
+          currencyLot: () => householdCurrencyLot,
+          band: () => householdBand,
+        });
+      }
+
+      const resolution = resolveRunHouseholdRestockFromView(
+        {
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: stockLazy.headSequence,
+          storySecond: branch.storySecond,
+          routine,
+          armingIsLive,
+          stockLot: stockLazy.lot,
+          currencyLot,
+          householdMeansRead,
+        },
+        command,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      await commitLotInit(tx, branch, stockLazy.initEvent);
+
+      for (const event of resolution.events) {
+        await appendSimulationEvent(tx, event);
+        if (event.type === "trigger_scheduled") {
+          await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
+        }
+      }
+      injectCrash(options.crashAt, "after_event_append");
+
+      if (resolution.nextStockLot && resolution.stockLotUpdatedAtSequence !== undefined) {
+        await updateLotQuantity(
+          tx,
+          branch.id,
+          resolution.nextStockLot.locus,
+          resolution.nextStockLot.materialKindKey,
+          resolution.nextStockLot.quantityRaw,
+          resolution.stockLotUpdatedAtSequence,
+        );
+      }
+      if (resolution.nextCurrencyLot && resolution.currencyLotUpdatedAtSequence !== undefined) {
+        await updateLotQuantity(
+          tx,
+          branch.id,
+          resolution.nextCurrencyLot.locus,
+          resolution.nextCurrencyLot.materialKindKey,
+          resolution.nextCurrencyLot.quantityRaw,
+          resolution.currencyLotUpdatedAtSequence,
+        );
+      }
+      injectCrash(options.crashAt, "after_projection_update");
+
+      const lastSequence = resolution.events[resolution.events.length - 1]?.sequence ?? stockLazy.headSequence;
+      await advanceLockedBranch(tx, branch, lastSequence);
+      injectCrash(options.crashAt, "after_branch_advance");
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: stockLazy.initEvent?.sequence ?? resolution.events[0]?.sequence ?? lastSequence,
+        lastSequence,
+        eventIds: [
+          ...(stockLazy.initEvent ? [stockLazy.initEvent.id] : []),
+          ...resolution.events.map((event) => event.id),
+        ],
       };
     },
   });

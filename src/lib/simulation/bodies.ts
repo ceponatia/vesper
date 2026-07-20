@@ -2477,6 +2477,10 @@ export function applyBodyEvent(
     case "material_lot_adjusted":
     case "material_lot_transferred":
     case "means_band_set":
+    case "household_restock_routine_configured":
+    case "item_instantiated_from_promotion":
+    case "household_restock_fulfilled":
+    case "household_restock_deferred":
       // Non-body families advance the boundary without touching this projection.
       return bodiesProjectionSchema.parse(bumped);
   }

@@ -71,6 +71,7 @@ import {
   simTemporalPressures,
   simEvents,
   simHouseholdMembers,
+  simHouseholdRestockRoutines,
   simHouseholds,
   simItemConditionMeters,
   simItemConditionModifiers,
@@ -89,6 +90,7 @@ import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";
 import {
   householdMemberRowInsert,
+  householdRestockRoutineRowInsert,
   householdRowInsert,
   materialLotRowInsert,
   meansBandRowInsert,
@@ -326,13 +328,28 @@ export async function readDurableBranchState(
  * seed step itself is not an event (plan R3): statics are immutable copies,
  * and each item's origin is where its earliest recorded transfer found it.
  * The child identity is stamped so replayed state belongs to the reader.
+ *
+ * E5.4 slice 2: an item created mid-branch by `item_instantiated_from_promotion`
+ * did NOT exist at sequence 0 — reverse-deriving it into the origin seed would
+ * carry it into every child, including one forked BEFORE the promotion, where
+ * `applyMaterialEvent`'s double-instantiation guard would then throw the
+ * moment forward replay reached that event. Excluding promoted items from the
+ * seed is safe: a fork AT OR AFTER the promotion still gets the item, because
+ * its instantiating event is then part of `inherited` and
+ * `replayBranchHistory`'s forward fold re-adds it through the same new case.
  */
 export function seedProjectionForReplay(input: {
   branchId: string;
   state: DurableBranchState;
 }): MaterialsProjection {
   const { projection } = input.state;
-  const currentHoldings = new Map(projection.items.map((item) => [item.id, item.locus]));
+  const promotedItemIds = new Set(
+    input.state.events
+      .filter((event) => event.type === "item_instantiated_from_promotion")
+      .map((event) => event.payload.item.id),
+  );
+  const preExistingItems = projection.items.filter((item) => !promotedItemIds.has(item.id));
+  const currentHoldings = new Map(preExistingItems.map((item) => [item.id, item.locus]));
   const seedHoldings = itemHoldingsAtSequence(currentHoldings, input.state.events, 0);
   return sortMaterialsProjection(
     materialsProjectionSchema.parse({
@@ -343,7 +360,7 @@ export function seedProjectionForReplay(input: {
       headSequence: 0,
       storySecond: input.state.ancestry.rootOriginStorySecond,
       actors: projection.actors,
-      items: projection.items.map((item) => ({
+      items: preExistingItems.map((item) => ({
         ...item,
         locus: seedHoldings.get(item.id) ?? item.locus,
       })),
@@ -444,6 +461,10 @@ export async function forkBranch(
         event.type === "item_ownership_set"
       ) {
         lastPlacedSequence.set(event.payload.itemId, event.sequence);
+      } else if (event.type === "item_instantiated_from_promotion") {
+        // A promoted item's FIRST appearance IS its instantiation — without
+        // this, its child holdings row would wrongly default to sequence 0.
+        lastPlacedSequence.set(event.payload.item.id, event.sequence);
       }
     }
     if (childProjection.actors.length > 0) {
@@ -726,13 +747,13 @@ export async function forkBranch(
       );
     }
 
-    // E5.4 slice 1 households (§26.8–26.10): fully evented, its own
-    // projection — replay from the empty seed, exactly like bodies/item
-    // condition. Membership/lot/means-band rows land on their last MATERIAL
+    // E5.4 households (§26.8–26.11): fully evented, its own projection —
+    // replay from the empty seed, exactly like bodies/item condition.
+    // Membership/lot/means-band/routine rows land on their last MATERIAL
     // write; a lazily-initialized lot a later command never touched again
-    // keeps its own init sequence. No trigger kind exists yet in this slice
-    // (that's `household_restock_due`, slice 2), so nothing here rides the
-    // shared trigger ledger.
+    // keeps its own init sequence. `household_restock_due` alarms ride the
+    // SAME shared trigger ledger every other domain's alarms use (built once,
+    // above) — nothing household-specific happens for them here.
     const childHouseholds = replayHouseholdsHistory({
       seed: emptyHouseholdsSeed(input.childBranchId, ancestry.rootOriginStorySecond),
       events: inherited,
@@ -740,6 +761,7 @@ export async function forkBranch(
     const membershipSequenceByKey = new Map<string, number>();
     const lotSequenceByKey = new Map<string, number>();
     const meansBandSequenceByKey = new Map<string, number>();
+    const restockRoutineSequenceByKey = new Map<string, number>();
     for (const event of inherited) {
       if (!isHouseholdEvent(event)) continue;
       switch (event.type) {
@@ -773,6 +795,20 @@ export async function forkBranch(
           break;
         case "means_band_set":
           meansBandSequenceByKey.set(deriveMeansSubjectRowKey(event.payload.subject), event.sequence);
+          break;
+        case "household_restock_routine_configured":
+          restockRoutineSequenceByKey.set(
+            `${event.payload.householdId}:${event.payload.materialKindKey}`,
+            event.sequence,
+          );
+          break;
+        case "item_instantiated_from_promotion":
+        case "household_restock_fulfilled":
+        case "household_restock_deferred":
+          // Promotion touches only the materials projection (handled by the
+          // item-holdings block above); a restock outcome mutates lots only
+          // through its own causally-linked `material_lot_adjusted`
+          // companion event, already recorded by that case.
           break;
       }
     }
@@ -810,6 +846,17 @@ export async function forkBranch(
             input.childBranchId,
             band,
             meansBandSequenceByKey.get(deriveMeansSubjectRowKey(band.subject)) ?? 0,
+          ),
+        ),
+      );
+    }
+    if (childHouseholds.restockRoutines.length > 0) {
+      await tx.insert(simHouseholdRestockRoutines).values(
+        childHouseholds.restockRoutines.map((routine) =>
+          householdRestockRoutineRowInsert(
+            input.childBranchId,
+            routine,
+            restockRoutineSequenceByKey.get(`${routine.householdId}:${routine.materialKindKey}`) ?? 0,
           ),
         ),
       );

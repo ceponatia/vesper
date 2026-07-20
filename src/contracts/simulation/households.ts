@@ -12,17 +12,16 @@ import {
   worldCharacterIdSchema,
   zoneIdSchema,
 } from "./identity";
+import { simulationMaterialItemSchema } from "./materials";
 
 /**
- * E5.4 slice 1 — households, fungible lots, conservation, and means bands
- * (engine.spec §26.8–26.10). Households are first-class branch-scoped
- * entities; fungible material lots are branch-scoped accounts with
- * fixed-point/count conserved quantities; means bands are a coarse read for
- * low-detail subjects. Promotion (§27.2) and the household restock routine
- * (§26.11) are slice 2 — their commands, events, and the `promotion_cost` /
- * `restock_purchase` / `restock_topup_unconserved` lot-adjustment reasons do
- * not exist yet (mirrors how E5.3 slice 1's `destroyItemBases` excluded
- * `consumed` until slice 2 landed).
+ * E5.4 — households, means, and money at LOD (engine.spec §26.8–26.11).
+ * Households are first-class branch-scoped entities; fungible material lots
+ * are branch-scoped accounts with fixed-point/count conserved quantities;
+ * means bands are a coarse read for low-detail subjects; promotion (§27.2) is
+ * the ONLY path an aggregate fact becomes an explicit `sim_items` row; the
+ * household restock routine (§26.11) is a scheduler-armed, self-reconfiguring
+ * replenishment cycle.
  */
 
 export const householdsDerivationVersion = "households-v1" as const;
@@ -206,6 +205,75 @@ export const meansReadSchema = z.discriminatedUnion("kind", [
 export type MeansRead = z.infer<typeof meansReadSchema>;
 
 // ---------------------------------------------------------------------------
+// Restock routine (§26.11) — authored per-household-per-kind, registry-as-data ROWS
+// ---------------------------------------------------------------------------
+
+export const restockFundingSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("lot"),
+      currencyLocus: lotLocusSchema,
+      unitPriceRaw: z.number().int().positive(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("means_band_envelope"), minimumBandKey: meansBandKeySchema }).strict(),
+]);
+export type RestockFunding = z.infer<typeof restockFundingSchema>;
+
+export const householdRestockRoutineSchema = z
+  .object({
+    householdId: householdIdSchema,
+    materialKindKey: z.string().trim().min(1).max(64),
+    targetQuantityRaw: quantityRawSchema,
+    lowWaterThresholdRaw: quantityRawSchema,
+    cadenceSeconds: z.number().int().positive().max(31_536_000), // capped at one year
+    funding: restockFundingSchema,
+    active: z.boolean(),
+  })
+  .strict()
+  .refine((routine) => routine.lowWaterThresholdRaw <= routine.targetQuantityRaw, {
+    message: "lowWaterThresholdRaw must not exceed targetQuantityRaw",
+    path: ["lowWaterThresholdRaw"],
+  });
+export type HouseholdRestockRoutine = z.infer<typeof householdRestockRoutineSchema>;
+
+// ---------------------------------------------------------------------------
+// Promotion funding (§26.10 / §27.2)
+// ---------------------------------------------------------------------------
+
+export const promotionFundingSchema = z.discriminatedUnion("kind", [
+  z
+    .object({ kind: z.literal("stock"), sourceLocus: lotLocusSchema, quantityRaw: z.number().int().positive() })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("purchase"),
+      currencyLocus: lotLocusSchema,
+      unitPriceRaw: z.number().int().positive(),
+      quantityRaw: z.number().int().positive(),
+    })
+    .strict(),
+]);
+export type PromotionFunding = z.infer<typeof promotionFundingSchema>;
+
+/** The command-supplied item shape, minus `id` and `locus` (both engine-assigned). */
+export const promotedItemInputSchema = simulationMaterialItemSchema.omit({ id: true, locus: true }).extend({
+  name: z.string().trim().min(1).optional(), // omit to sample from the name pool
+});
+export type PromotedItemInput = z.infer<typeof promotedItemInputSchema>;
+
+/** §6.3/§6.4 derivation capture — replay reads the recorded draw, never resamples. */
+export const promotionSampledDetailSchema = z
+  .object({
+    stream: z.string().min(1).max(512),
+    drawIndex: z.number().int().nonnegative(),
+    sampledName: z.string().trim().min(1).optional(),
+    registryVersion: z.string().min(1).max(64),
+  })
+  .strict();
+export type PromotionSampledDetail = z.infer<typeof promotionSampledDetailSchema>;
+
+// ---------------------------------------------------------------------------
 // Projection (mirrors `materialsProjectionSchema` / `itemConditionsProjectionSchema`)
 // ---------------------------------------------------------------------------
 
@@ -219,6 +287,7 @@ export const householdsProjectionSchema = z
     memberships: z.array(householdMembershipSchema),
     lots: z.array(materialLotStateSchema),
     meansBands: z.array(meansBandStateSchema),
+    restockRoutines: z.array(householdRestockRoutineSchema),
   })
   .strict();
 export type HouseholdsProjection = z.infer<typeof householdsProjectionSchema>;
@@ -284,12 +353,19 @@ export const setHouseholdMembershipCommandResultSchema = createCommandResultSche
 // ---------------------------------------------------------------------------
 
 /**
- * Slice 1 only ever produces `authoring` (a privileged storyteller/system
- * injection). Slice 2 widens this to `promotion_cost` | `restock_purchase` |
- * `restock_topup_unconserved` — mirrors `destroyItemBases` excluding
- * `consumed` until E5.3 slice 2 landed the consume path.
+ * `authoring` is a privileged storyteller/system injection (slice 1).
+ * `promotion_cost` debits a promotion's funding lot; `restock_purchase`
+ * debits/credits a `lot`-funded restock cycle's two causally-linked
+ * adjustments; `restock_topup_unconserved` credits a `means_band_envelope`-
+ * funded restock cycle's single, deliberately non-conserved top-up (slice 2,
+ * §26.11).
  */
-export const materialLotAdjustReasons = ["authoring"] as const;
+export const materialLotAdjustReasons = [
+  "authoring",
+  "promotion_cost",
+  "restock_purchase",
+  "restock_topup_unconserved",
+] as const;
 export const materialLotAdjustReasonSchema = z.enum(materialLotAdjustReasons);
 export type MaterialLotAdjustReason = z.infer<typeof materialLotAdjustReasonSchema>;
 
@@ -388,6 +464,99 @@ export const setMeansBandRejectionCodeSchema = z.enum(setMeansBandRejectionCodes
 export const setMeansBandCommandResultSchema = createCommandResultSchema(setMeansBandRejectionCodeSchema);
 
 // ---------------------------------------------------------------------------
+// configure_restock_routine (§26.11)
+// ---------------------------------------------------------------------------
+
+export const configureRestockRoutineCommandSchema = createCommandEnvelopeSchema(
+  "configure_restock_routine",
+  1,
+  householdRestockRoutineSchema,
+);
+
+export const configureRestockRoutineRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "unauthorized_principal",
+  "household_not_found",
+] as const;
+export const configureRestockRoutineRejectionCodeSchema = z.enum(configureRestockRoutineRejectionCodes);
+export const configureRestockRoutineCommandResultSchema = createCommandResultSchema(
+  configureRestockRoutineRejectionCodeSchema,
+);
+
+// ---------------------------------------------------------------------------
+// promote_item_from_stock (§26.10 / §27.2) — the only path an aggregate fact
+// becomes an explicit `sim_items` row
+// ---------------------------------------------------------------------------
+
+const promoteItemFromStockPayloadSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    funding: promotionFundingSchema,
+    item: promotedItemInputSchema,
+  })
+  .strict();
+
+export const promoteItemFromStockCommandSchema = createCommandEnvelopeSchema(
+  "promote_item_from_stock",
+  1,
+  promoteItemFromStockPayloadSchema,
+);
+
+export const promoteItemFromStockRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "actor_not_found",
+  "unauthorized_actor",
+  "actor_not_embodied",
+  "root_not_colocated",
+  "household_access_denied",
+  "invalid_funding_kind",
+  "insufficient_balance",
+  "name_required",
+] as const;
+export const promoteItemFromStockRejectionCodeSchema = z.enum(promoteItemFromStockRejectionCodes);
+export const promoteItemFromStockCommandResultSchema = createCommandResultSchema(
+  promoteItemFromStockRejectionCodeSchema,
+);
+
+// ---------------------------------------------------------------------------
+// run_household_restock (§26.11) — trigger-dispatched, system principal only
+// ---------------------------------------------------------------------------
+
+const runHouseholdRestockPayloadSchema = z
+  .object({
+    householdId: householdIdSchema,
+    materialKindKey: z.string().trim().min(1).max(64),
+    /** The routine's arming sequence at the moment this alarm was scheduled —
+     * mirrors `resolveBodyThresholdCommandSchema`'s `armedAtSequence` staleness
+     * defense. */
+    armedAtSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict();
+
+export const runHouseholdRestockCommandSchema = createCommandEnvelopeSchema(
+  "run_household_restock",
+  1,
+  runHouseholdRestockPayloadSchema,
+);
+
+export const runHouseholdRestockRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "unauthorized_principal",
+  "routine_not_found",
+  "threshold_stale",
+] as const;
+export const runHouseholdRestockRejectionCodeSchema = z.enum(runHouseholdRestockRejectionCodes);
+export const runHouseholdRestockCommandResultSchema = createCommandResultSchema(
+  runHouseholdRestockRejectionCodeSchema,
+);
+
+// ---------------------------------------------------------------------------
 // Household event family (§9.2, §26.8–26.9)
 // ---------------------------------------------------------------------------
 
@@ -478,6 +647,65 @@ export const meansBandSetEventSchema = createEventEnvelopeSchema(
   meansBandSetPayloadSchema,
 ).extend({ commandId: commandIdSchema });
 
+/** `configure_restock_routine` always upserts the row wholesale — the event
+ * payload IS the routine (mirrors `household_membership_set` reusing
+ * `householdMembershipSchema`). */
+export const householdRestockRoutineConfiguredEventSchema = createEventEnvelopeSchema(
+  "household_restock_routine_configured",
+  1,
+  householdRestockRoutineSchema,
+).extend({ commandId: commandIdSchema });
+
+const itemInstantiatedFromPromotionPayloadSchema = z
+  .object({
+    item: simulationMaterialItemSchema,
+    sourceLocus: lotLocusSchema,
+    sourceMaterialKindKey: z.string().trim().min(1).max(64),
+    /** Absent when the caller supplied an explicit `item.name` (§27.2 step 5). */
+    sampledDetail: promotionSampledDetailSchema.optional(),
+  })
+  .strict();
+
+/** Trailing (mirrors `itemConditionModifierAppliedEventSchema`): causation-chained to the
+ * `material_lot_adjusted` debit that funded this promotion — no `.extend`. */
+export const itemInstantiatedFromPromotionEventSchema = createEventEnvelopeSchema(
+  "item_instantiated_from_promotion",
+  1,
+  itemInstantiatedFromPromotionPayloadSchema,
+);
+
+const householdRestockFulfilledPayloadSchema = z
+  .object({
+    householdId: householdIdSchema,
+    materialKindKey: z.string().trim().min(1).max(64),
+    resultingQuantityRaw: quantityRawSchema,
+  })
+  .strict();
+
+export const householdRestockFulfilledEventSchema = createEventEnvelopeSchema(
+  "household_restock_fulfilled",
+  1,
+  householdRestockFulfilledPayloadSchema,
+).extend({ commandId: commandIdSchema });
+
+export const householdRestockDeferredReasons = ["already_stocked", "insufficient_funds"] as const;
+export const householdRestockDeferredReasonSchema = z.enum(householdRestockDeferredReasons);
+export type HouseholdRestockDeferredReason = z.infer<typeof householdRestockDeferredReasonSchema>;
+
+const householdRestockDeferredPayloadSchema = z
+  .object({
+    householdId: householdIdSchema,
+    materialKindKey: z.string().trim().min(1).max(64),
+    reason: householdRestockDeferredReasonSchema,
+  })
+  .strict();
+
+export const householdRestockDeferredEventSchema = createEventEnvelopeSchema(
+  "household_restock_deferred",
+  1,
+  householdRestockDeferredPayloadSchema,
+).extend({ commandId: commandIdSchema });
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -507,9 +735,28 @@ export type SetMeansBandCommandInput = z.input<typeof setMeansBandCommandSchema>
 export type SetMeansBandRejectionCode = z.infer<typeof setMeansBandRejectionCodeSchema>;
 export type SetMeansBandCommandResult = z.infer<typeof setMeansBandCommandResultSchema>;
 
+export type ConfigureRestockRoutineCommand = z.infer<typeof configureRestockRoutineCommandSchema>;
+export type ConfigureRestockRoutineCommandInput = z.input<typeof configureRestockRoutineCommandSchema>;
+export type ConfigureRestockRoutineRejectionCode = z.infer<typeof configureRestockRoutineRejectionCodeSchema>;
+export type ConfigureRestockRoutineCommandResult = z.infer<typeof configureRestockRoutineCommandResultSchema>;
+
+export type PromoteItemFromStockCommand = z.infer<typeof promoteItemFromStockCommandSchema>;
+export type PromoteItemFromStockCommandInput = z.input<typeof promoteItemFromStockCommandSchema>;
+export type PromoteItemFromStockRejectionCode = z.infer<typeof promoteItemFromStockRejectionCodeSchema>;
+export type PromoteItemFromStockCommandResult = z.infer<typeof promoteItemFromStockCommandResultSchema>;
+
+export type RunHouseholdRestockCommand = z.infer<typeof runHouseholdRestockCommandSchema>;
+export type RunHouseholdRestockCommandInput = z.input<typeof runHouseholdRestockCommandSchema>;
+export type RunHouseholdRestockRejectionCode = z.infer<typeof runHouseholdRestockRejectionCodeSchema>;
+export type RunHouseholdRestockCommandResult = z.infer<typeof runHouseholdRestockCommandResultSchema>;
+
 export type HouseholdCreatedEvent = z.infer<typeof householdCreatedEventSchema>;
 export type HouseholdMembershipSetEvent = z.infer<typeof householdMembershipSetEventSchema>;
 export type MaterialLotInitializedEvent = z.infer<typeof materialLotInitializedEventSchema>;
 export type MaterialLotAdjustedEvent = z.infer<typeof materialLotAdjustedEventSchema>;
 export type MaterialLotTransferredEvent = z.infer<typeof materialLotTransferredEventSchema>;
 export type MeansBandSetEvent = z.infer<typeof meansBandSetEventSchema>;
+export type HouseholdRestockRoutineConfiguredEvent = z.infer<typeof householdRestockRoutineConfiguredEventSchema>;
+export type ItemInstantiatedFromPromotionEvent = z.infer<typeof itemInstantiatedFromPromotionEventSchema>;
+export type HouseholdRestockFulfilledEvent = z.infer<typeof householdRestockFulfilledEventSchema>;
+export type HouseholdRestockDeferredEvent = z.infer<typeof householdRestockDeferredEventSchema>;

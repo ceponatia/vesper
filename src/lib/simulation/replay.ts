@@ -208,6 +208,12 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
           `item_condition_threshold_due:${event.payload.command.payload.itemId}:${event.payload.command.payload.meterKey}`,
           entry,
         );
+      } else if (event.payload.kind === "household_restock_due") {
+        // Re-arms overwrite: the newest alarm for a household+kind is the live one.
+        retirementIndex.set(
+          `household_restock_due:${event.payload.command.payload.householdId}:${event.payload.command.payload.materialKindKey}`,
+          entry,
+        );
       }
     } else {
       // Every non-scheduling event may be a scheduler-dispatched firing (an
@@ -270,6 +276,23 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
             retire(`body_collapse_due:${event.payload.actorId}`, event.commandId);
           }
         }
+      } else if (
+        event.type === "household_restock_fulfilled" ||
+        event.type === "household_restock_deferred"
+      ) {
+        // Regardless of outcome, run_household_restock always re-arms the
+        // next cycle as its own fresh trigger_scheduled — recognized by the
+        // branch above, which re-registers this same retirement key.
+        retire(`household_restock_due:${event.payload.householdId}:${event.payload.materialKindKey}`, event.commandId);
+      } else if (event.type === "household_restock_routine_configured") {
+        // Reconfiguring unconditionally retires any stale pending alarm
+        // (§5.6's store-layer idiom mirrored here for replay parity) — a
+        // reconfigure that also re-arms emits its OWN fresh trigger_scheduled,
+        // recognized by the branch above.
+        retire(
+          `household_restock_due:${event.payload.householdId}:${event.payload.materialKindKey}`,
+          event.commandId,
+        );
       }
     }
 

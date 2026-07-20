@@ -244,10 +244,15 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "material_lot_initialized":
     case "material_lot_adjusted":
     case "means_band_set":
-      // Household/lot/means bookkeeping (§26.8–26.10): a household founding, a
+    case "household_restock_routine_configured":
+    case "item_instantiated_from_promotion":
+    case "household_restock_fulfilled":
+    case "household_restock_deferred":
+      // Household/lot/means bookkeeping (§26.8–26.11): a household founding, a
       // membership change, a lazy lot init, a privileged authoring adjustment,
-      // or a coarse means-band setting are all social-ledger/authoring facts —
-      // nothing in the scene moved for a beat to portray (mirrors
+      // a coarse means-band setting, a restock routine's authoring, an
+      // off-screen promotion/restock outcome — all social-ledger/authoring
+      // facts, nothing in the scene moved for a beat to portray (mirrors
       // item_ownership_set).
       return null;
     case "material_lot_transferred":

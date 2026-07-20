@@ -27,6 +27,7 @@ import {
   raisePressureCommandSchema,
   resolveCommitmentDeadlineCommandSchema,
 } from "./commitments";
+import { runHouseholdRestockCommandSchema } from "./households";
 import { resolveItemConditionThresholdCommandSchema } from "./material-condition";
 import { transferItemCommandSchema, type ItemLocus } from "./materials";
 import { arriveJourneyCommandSchema } from "./space";
@@ -47,6 +48,7 @@ export const bodyThresholdTriggerKind = "body_threshold_due" as const;
 export const bodyConditionExpiryTriggerKind = "body_condition_expiry_due" as const;
 export const bodyCollapseTriggerKind = "body_collapse_due" as const;
 export const itemConditionThresholdTriggerKind = "item_condition_threshold_due" as const;
+export const householdRestockTriggerKind = "household_restock_due" as const;
 export const simulationTriggerKinds = [
   scheduledTransferTriggerKind,
   journeyArrivalTriggerKind,
@@ -57,6 +59,7 @@ export const simulationTriggerKinds = [
   bodyConditionExpiryTriggerKind,
   bodyCollapseTriggerKind,
   itemConditionThresholdTriggerKind,
+  householdRestockTriggerKind,
 ] as const;
 export const scheduledTransferTriggerSchemaVersion = 1 as const;
 export const schedulerDerivationVersion = "scheduler-v1" as const;
@@ -105,6 +108,7 @@ export const simulationTriggerSchema = z
     createTriggerRowSchema(bodyConditionExpiryTriggerKind, endBodyConditionCommandSchema),
     createTriggerRowSchema(bodyCollapseTriggerKind, resolveBodyCollapseCommandSchema),
     createTriggerRowSchema(itemConditionThresholdTriggerKind, resolveItemConditionThresholdCommandSchema),
+    createTriggerRowSchema(householdRestockTriggerKind, runHouseholdRestockCommandSchema),
   ])
   // A trigger on one branch must never carry a command aimed at another. The
   // command envelope has no worldId, so branch equality is the whole check;
@@ -166,6 +170,7 @@ const scheduleTriggerIntentSchema = z.discriminatedUnion("kind", [
   createTriggerIntentSchema(bodyConditionExpiryTriggerKind, endBodyConditionCommandSchema),
   createTriggerIntentSchema(bodyCollapseTriggerKind, resolveBodyCollapseCommandSchema),
   createTriggerIntentSchema(itemConditionThresholdTriggerKind, resolveItemConditionThresholdCommandSchema),
+  createTriggerIntentSchema(householdRestockTriggerKind, runHouseholdRestockCommandSchema),
 ]);
 
 export const scheduleTransferTriggerCommandSchema = createCommandEnvelopeSchema(
@@ -270,6 +275,9 @@ function triggerIntentEnvelopeFacts(
     case itemConditionThresholdTriggerKind:
       // The item's meter rows own their state; no actor is a party to this alarm.
       return { actorIds: [], entityIds: [intent.command.payload.itemId] };
+    case householdRestockTriggerKind:
+      // The routine row owns its own state; the scheduling envelope names the household.
+      return { actorIds: [], entityIds: [intent.command.payload.householdId] };
   }
 }
 
