@@ -121,6 +121,20 @@ export {
   recordCommandKnowledge,
 } from "./knowledge-recorder";
 export {
+  RELATIONSHIP_LEDGER_SOURCE_EVENT_TYPES,
+  insertReplayedSocialLedger,
+  loadRelationshipLedgerProjection,
+  recordCommandRelationshipLedger,
+  relationshipLedgerEntryFromRow,
+  relationshipLedgerEntryRowInsert,
+} from "./social-recorder";
+export {
+  submitDurableRecordRelationshipChange,
+  submitDurableRecordRelationshipEntry,
+  type DurableRelationshipCrashPoint,
+  type RelationshipSubmitOptions,
+} from "./social-store";
+export {
   branchEventFromRow,
   hasObservationOfEvent,
   insertReplayedObservations,

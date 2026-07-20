@@ -37,6 +37,7 @@ import {
   MAX_LEARNED_FROM_CHAIN,
   propositionKeySchema,
 } from "./knowledge";
+import { consentScopeKeySchema } from "./social";
 import {
   observationChannelSchema,
   observationConfidenceSchema,
@@ -75,9 +76,21 @@ export const speechActTypes = [
   "boundary_expressed",
   "question_asked",
   "apology_delivered",
+  "permission_granted", // E5.5, ruling 16
+  "permission_withdrawn", // E5.5, ruling 16
 ] as const;
 export const speechActTypeSchema = z.enum(speechActTypes);
 export type SpeechActType = z.infer<typeof speechActTypeSchema>;
+
+/** Speech-act types the E5.5 §21.3 fold turns into a consent-scoped ledger
+ * entry (`boundary_stated`/`permission_granted`/`permission_withdrawn`) — a
+ * speech act's free-text `detail` carries no structured scope, so these three
+ * need `consentScopeKey` to name what boundary or permission it concerns. */
+const CONSENT_SCOPED_SPEECH_ACT_TYPES: readonly SpeechActType[] = [
+  "boundary_expressed",
+  "permission_granted",
+  "permission_withdrawn",
+];
 
 const armedEffectFields = {
   effectType: speechActTypeSchema,
@@ -92,6 +105,9 @@ const armedEffectFields = {
    * narrator enters the belief ledgers with full provenance.
    */
   disclosureContent: disclosureContentSchema.optional(),
+  /** E5.5 (§21.3, §21.4): required exactly on the three consent-scoped
+   * effect types above — names the scope the boundary or permission covers. */
+  consentScopeKey: consentScopeKeySchema.optional(),
 };
 
 function disclosureContentOnlyOnDisclosures(effect: {
@@ -99,6 +115,14 @@ function disclosureContentOnlyOnDisclosures(effect: {
   disclosureContent?: unknown;
 }): boolean {
   return effect.disclosureContent === undefined || effect.effectType === "disclosure_made";
+}
+
+function consentScopeKeyRequiredOnConsentEffects(effect: {
+  effectType: SpeechActType;
+  consentScopeKey?: unknown;
+}): boolean {
+  const requiresScope = CONSENT_SCOPED_SPEECH_ACT_TYPES.includes(effect.effectType);
+  return requiresScope ? effect.consentScopeKey !== undefined : effect.consentScopeKey === undefined;
 }
 
 export const armedEffectSchema = z
@@ -113,6 +137,10 @@ export const armedEffectSchema = z
   .refine(disclosureContentOnlyOnDisclosures, {
     message: "Only a disclosure_made effect may carry disclosure content",
     path: ["disclosureContent"],
+  })
+  .refine(consentScopeKeyRequiredOnConsentEffects, {
+    message: "consentScopeKey is required on boundary/permission effects and illegal elsewhere",
+    path: ["consentScopeKey"],
   });
 
 export type ArmedEffect = z.infer<typeof armedEffectSchema>;
@@ -124,6 +152,10 @@ export const proposedArmedEffectSchema = z
   .refine(disclosureContentOnlyOnDisclosures, {
     message: "Only a disclosure_made effect may carry disclosure content",
     path: ["disclosureContent"],
+  })
+  .refine(consentScopeKeyRequiredOnConsentEffects, {
+    message: "consentScopeKey is required on boundary/permission effects and illegal elsewhere",
+    path: ["consentScopeKey"],
   });
 
 export type ProposedArmedEffect = z.infer<typeof proposedArmedEffectSchema>;
@@ -501,8 +533,14 @@ const speechActDeliveredPayloadSchema = z
     actorId: worldCharacterIdSchema,
     targetActorIds: z.array(worldCharacterIdSchema).min(1),
     detail: z.string().trim().min(1).max(500),
+    /** E5.5 (§21.3, §21.4) — see `armedEffectFields`'s doc comment above. */
+    consentScopeKey: consentScopeKeySchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(consentScopeKeyRequiredOnConsentEffects, {
+    message: "consentScopeKey is required on boundary/permission effects and illegal elsewhere",
+    path: ["consentScopeKey"],
+  });
 
 /**
  * One delivered semantic speech act. Gate 5's social ledger derives promises

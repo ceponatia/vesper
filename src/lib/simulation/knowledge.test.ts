@@ -10,11 +10,9 @@ import {
 import type { Observation } from "@/contracts/simulation/perception";
 import {
   applyDisclosureEvent,
-  deriveRelationshipEvidence,
   emptyKnowledgeState,
   replayKnowledgeHistory,
   resolveMakeDisclosure,
-  summarizeRelationshipDyads,
   RELAY_CONFIDENCE_PENALTY,
   type KnowledgeState,
 } from "./knowledge";
@@ -526,83 +524,5 @@ describe("E4.2 applyDisclosureEvent", () => {
     expect(replayed.beliefs).toEqual(
       [...state.beliefs.values()].sort((left, right) => (left.id < right.id ? -1 : 1)),
     );
-  });
-});
-
-describe("E4.2 relationship evidence (§21.3)", () => {
-  it("derives typed dyadic evidence from speech acts, disclosures, and shared scenes", () => {
-    const claim = acceptedEvent({
-      commandId: "cmd-claim-14",
-      speakerActorId: "ana",
-      targetActorIds: ["ben"],
-      content: quitClaim,
-      headSequence: 10,
-      speakerLocationId: "loc-cafe",
-      targetsCoPresent: true,
-    });
-    const speech = {
-      id: "event-speech-12",
-      worldId: "world-1",
-      branchId: "branch-1",
-      sequence: 12,
-      storySecond: NOW + 60,
-      type: "speech_act_delivered",
-      schemaVersion: 1,
-      rulesetVersion: "e4-2-test-v1",
-      commandId: "cmd-speech-1",
-      correlationId: "corr-1",
-      actorIds: ["ana"],
-      entityIds: [],
-      locationId: "loc-cafe",
-      recordedAtWallClock: "2026-07-19T12:00:00.000Z",
-      payload: {
-        cutId: "cut-1",
-        engagementId: "engagement-1",
-        effectType: "promise_offered",
-        actorId: "ana",
-        targetActorIds: ["ben"],
-        detail: "I'll cover your shift on Sunday.",
-      },
-    } as never as SimulationBranchEvent;
-    const question = {
-      ...(speech as unknown as Record<string, unknown>),
-      id: "event-speech-13",
-      sequence: 13,
-      payload: {
-        cutId: "cut-1",
-        engagementId: "engagement-1",
-        effectType: "question_asked",
-        actorId: "ben",
-        targetActorIds: ["ana"],
-        detail: "Really?",
-      },
-    } as never as SimulationBranchEvent;
-    const sceneEnd = {
-      ...(speech as unknown as Record<string, unknown>),
-      id: "event-scene-14",
-      sequence: 14,
-      storySecond: NOW + 120,
-      type: "engagement_ended",
-      actorIds: ["ana", "ben"],
-      payload: { engagementId: "engagement-1", endedAt: NOW + 120, reason: "participant_choice" },
-    } as never as SimulationBranchEvent;
-
-    const entries = deriveRelationshipEvidence([sceneEnd, claim as SimulationBranchEvent, speech, question]);
-    expect(entries.map((entry) => entry.kind)).toEqual([
-      "confidence_shared",
-      "promise_made",
-      "shared_scene",
-    ]);
-    expect(entries[0]).toMatchObject({ fromActorId: "ana", toActorId: "ben", sequence: 11 });
-
-    const dyads = summarizeRelationshipDyads(entries);
-    expect(dyads).toHaveLength(1);
-    expect(dyads[0]).toMatchObject({
-      actorIds: ["ana", "ben"],
-      counts: { confidence_shared: 1, promise_made: 1, shared_scene: 1 },
-      entryCount: 3,
-      firstStorySecond: NOW,
-      lastStorySecond: NOW + 120,
-    });
   });
 });

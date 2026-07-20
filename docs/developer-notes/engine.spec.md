@@ -355,11 +355,21 @@ The first event catalog SHOULD include:
 | material | ItemTransferred, ItemConsumed, ResourceReserved, ResourceReleased, ItemDamaged |
 | body | BodyThresholdCrossed, ConditionAcquired, ConditionChanged, ConditionResolved, BodySourceApplied |
 | knowledge | ObservationRecorded, AssertionMade, DisclosureMade, BeliefUpdated, AssertionContradicted, AssertionSuperseded |
-| relationship | RelationshipEvidenceRecorded, PromiseOffered, PromiseAccepted, BoundaryExpressed, FavorIncurred |
+| relationship | RelationshipEntryAuthored, RelationshipChangeRecorded, ConsentEscalationResolved |
 | privileged | StorytellerRelocation, StorytellerRetcon, MigrationApplied |
 
 Names may change, but distinct causal concepts MUST NOT be collapsed into a generic
 StateChanged event.
+
+The `relationship` family (§9.2's table) gains concrete event names:
+`RelationshipEntryAuthored`, `RelationshipChangeRecorded`, `ConsentEscalationResolved`
+— `RelationshipEvidenceRecorded` (the placeholder name) is retired; every ledger
+entry's causing event is one of these three OR a pre-existing event from another
+family (`speech_act_delivered`, `disclosure_made`, `commitment_kept`,
+`commitment_missed`, `commitment_created`, `engagement_ended`, `activity_started`).
+`PromiseOffered`/`PromiseAccepted`/`BoundaryExpressed`/`FavorIncurred` (the table's
+other placeholders) map to the closed §21.3 kind vocabulary, not to distinct events —
+they derive from `speech_act_delivered`.
 
 ### 9.3 Trigger versus event
 
@@ -753,6 +763,18 @@ calendar entry is not automatically NPC memory. It must reference an eligible au
 memory, observation, assertion, or belief. When pressure is evaluated, that source must
 still be available to the actor or a new cue must be perceived.
 
+A commitment's `destinationZoneId` is OPTIONAL. A destinationless commitment carries no
+spatial obligation — its `latestArrival` deadline still fires, but the deadline
+evaluator (§15.4) has no locus to check, so it can only ever resolve `kept` (via an
+explicit `fulfill_commitment` act before the deadline, E5.5 §7.4) or `missed` (deadline
+reached with no fulfillment) — never `late`, a concept requiring travel. A
+destinationless promise MAY optionally name `promisedToActorId`, the counterpart the
+obligation runs toward; when present, `kept`/`missed`/a subsequent `repaired`
+commitment each produce a directional §21.3 ledger entry. A commitment absent
+`promisedToActorId` (a shift, an appointment with no interpersonal stake, a solo
+routine) produces no ledger entry — the ledger records evidence between actors, never
+a fact about one actor alone.
+
 ### 15.2 Pressure
 
     type TemporalPressure = {
@@ -816,6 +838,12 @@ pressure MUST not be repeated every turn unless its severity or assumptions chan
 History is not rewritten when a commitment is repaired. Create a new commitment or
 explicit remediation event.
 
+A `missed` commitment MAY be repaired by creating a NEW commitment whose
+`repairsCommitmentId` names it. The repair target MUST belong to the same actor, share
+the new commitment's `kind`, and itself be `missed`. History is not rewritten (§15.4's
+existing rule) — the original stays `missed` forever; the repair is new evidence, not a
+correction.
+
 ## 16. Actions and activities
 
 ### 16.1 Action definition
@@ -840,6 +868,14 @@ explicit remediation event.
 Aliases and labels belong to language interpretation. They do not define legality.
 requiredTier or similar authored fields MUST be enforced or removed; inert contract
 fields are not acceptable.
+
+`ConsentRequirement` (§16.1's `ActionDefinition` field, previously inert) is realized
+as the `consent_covered` action precondition (E3.2's typed, ENFORCED precondition
+vocabulary, §16.1's "inert authored field is not acceptable" rule): an action
+definition names a `ConsentScopeKey`; `start_activity`'s payload MAY name a
+`targetActorId` (the second party the gated action concerns); starting a
+`consent_covered` action with no covering §21.4 entry rejects `consent_required`,
+fail-closed, before any claim or resource is reserved.
 
 ### 16.2 Activity instance
 
@@ -1051,6 +1087,15 @@ Routine policy SHOULD score legal candidates from versioned factors such as:
 The score breakdown MAY be retained as an audit explanation. It MUST NOT contain or claim
 to expose a model's private chain of thought.
 
+Deterministic utility's "relationship and promise evidence" factor (§19.2's existing
+list) is concretized for the consent-escalation candidate scores (E5.5 §19.3 call
+site, §4.7) as a versioned, fixed-point function of the target's directional
+trust/attraction/resentment read (§21.3) toward the escalating actor, plus a fixed base
+reluctance constant — net-neutral relationship evidence still defaults toward decline.
+This is the first live consumer of ledger-derived terms in §19.2; widening the general
+NPC routine-policy scorer to consume the same terms is a later slice (§9's open
+decision 6).
+
 ### 19.3 Deliberator admission
 
 An LLM deliberator MAY run only if:
@@ -1136,18 +1181,96 @@ An assertion may be false. canon false is not a belief model.
 Gossip is DisclosureMade plus the listener's observation and belief update. Each hop
 preserves provenance and may alter confidence or content through an explicit event.
 
-### 21.3 Relationship ledger
+### 21.3 Relationship ledger (E5.5)
 
-Relationship state SHOULD be derived from typed evidence:
+Relationship state MUST be derived from a persisted, typed evidence ledger — a
+branch-scoped, append-only sequence of `RelationshipLedgerEntry` rows, each directional
+(`fromActorId` toward `toActorId`, always two distinct actors), each carrying its own
+causal provenance. The closed entry-kind vocabulary (versioned, registry-as-data —
+extending it is a data edit, per the project's registry convention):
 
-- promises made, kept, missed, or repaired;
-- boundaries stated, respected, or violated;
-- help, neglect, betrayal, disclosure, affection, conflict;
-- shared activities and observed conduct;
-- authored priors and explicit relationship changes.
+- `promise_made`, `promise_accepted`, `promise_kept`, `promise_missed`,
+  `promise_repaired`;
+- `boundary_stated`, `boundary_respected`, `boundary_violated`;
+- `permission_granted`, `permission_withdrawn`, `consent_declined`;
+- `warning_given`, `invitation_extended`, `apology_offered`, `confidence_shared`;
+- `help_given`, `neglect_shown`, `betrayal`, `affection_shown`, `conflict`;
+- `shared_scene`;
+- `authored_prior`;
+- `relationship_change_recorded`.
 
-The current relationship read may be a projection. The evidence ledger is the causal
-record. Prose summaries may help narration but cannot be the only source.
+Every entry carries a `provenance`: `derived` (folded automatically from an event
+already in the branch's causal history — a speech act delivered, a commitment resolved,
+an engagement ended, a gated action started) or `authored` (an explicit privileged
+command, §7, for facts the live mechanics do not yet organically produce). An entry's
+`sourceEventId`, `sequence`, and `storySecond` are always the causing event's — an
+entry is never backdated or forward-dated independent of its cause, EXCEPT
+`authored_prior`, whose whole purpose is backfilling a `storySecond` before the
+branch's own history (§6.4: the authoring command still names a real causing event —
+itself — the entry's `storySecond` is simply free to predate it).
+
+Prose summaries MAY help narration but MUST NOT be the only source: any relationship
+read the narrator, an NPC's utility function, or an audit surfaces MUST trace to ledger
+entries. The current relationship read (trust, attraction, resentment) is a derived
+PROJECTION over the ledger, computed at read time, never itself persisted (mirrors
+§25's meter-read law: only material transitions write, reads recompute). A dyad's read
+is directional: "how much X trusts Y" sums only entries where `fromActorId = Y,
+toActorId = X` — evidence of Y's conduct toward X — under a per-axis analytic decay
+(§6.4's derivation rule: the decay law and its constants are versioned, fixed-point,
+and story-clock-keyed, never wall-clock or floating point).
+
+Relationship state change (e.g. "became partners," "broke up") is ITSELF a ledger entry
+(`relationship_change_recorded`) — never inferable solely from narrator prose, and
+never solely a side effect of the numeric trust/attraction/resentment read crossing a
+threshold. It carries a free-text `changeKey` (an authored, world-type-defined
+vocabulary) and MUST be an explicit act.
+
+### 21.4 Consent (E5.5, ruling 16)
+
+Interpersonal consent for touch, closeness, or intimacy (§14's layer 5) is
+ledger-gated, never spatially or narratively implied (ruling 3: "This ruling governs
+spatial/property transgression only; interpersonal consent for touch or intimacy
+remains an independent action precondition"). An authored `ConsentScopeKey` (a closed,
+versioned, world-type vocabulary — e.g. `closeness`, `kiss`, `touch_intimate`,
+`undress`, `sex`) names the class of action a boundary or permission covers.
+
+**Coverage.** For an actor A attempting a `consent_covered`-gated action toward actor
+B under scope S, the gate reads the ledger for the MOST RECENT entry (by sequence)
+among `{boundary_stated, permission_granted, permission_withdrawn}` where
+`fromActorId = B, toActorId = A, payload.scopeKey = S`. Coverage exists — the action is
+permitted — if and only if that most-recent entry's kind is `permission_granted`. No
+covering entry, a `boundary_stated` or `permission_withdrawn` as the most recent entry,
+or a malformed/unparseable entry (which never enters the ledger in the first place —
+defense in depth, not a live failure mode) all resolve to NO coverage. **This check is
+fail-closed by construction: absence of evidence is absence of permission.** A later
+entry always supersedes an earlier one — permission is revocable at any time by a
+`permission_withdrawn` entry, and a withdrawal takes effect for every scope-matching
+attempt from that entry's sequence forward.
+
+**Escalation.** An attempt with no covering entry does NOT auto-fail silently when the
+attempting actor explicitly escalates (a distinct command, §7.6, from the gated action
+itself — the gated action always rejects synchronously and fail-closed; escalation is a
+deliberate follow-up, never automatic). Escalation routes through the §19.3 deliberator
+seam: exactly two legal candidates (`grant`, `decline`), admission gated on the SAME
+five criteria as any other deliberator call (target's inference LOD, score-gap
+threshold, consequential — always true here, model budget, deterministic fallback —
+always available here). **The deterministic fallback is always `decline`** — refusal,
+timeout, an unparseable response, or an inadmissible LOD all resolve to decline, never
+to grant. Escalation toward a PLAYER-controlled target is illegal — a player's own
+consent is never modeled or decided by policy; it can only be given through the
+player's own explicit act (a spoken permission-granting speech act, §23.3). The
+escalation's accept or decline outcome lands back in the ledger as a causal entry
+(`permission_granted` or `consent_declined`) — so consent is always explainable and
+auditable, and a subsequent attempt of the same gated action re-reads the (now
+possibly covering) ledger fresh; escalation never itself performs the gated action.
+
+**Never bypassable.** No spatial outcome (ruling 3), no narrator prose (§22.1's
+perspective-safe-by-omission rule; §23.1's forbidden-claims list), and no world-type
+configuration may grant coverage outside this mechanism. A `boundary_violated` entry —
+the ledger's only vocabulary for a consent breach — MUST NOT be producible by any live
+command path; it exists solely for `authored` backfill (pre-branch history, storyteller
+retcon) per §7.5, because the fail-closed gate makes a live violation structurally
+unreachable.
 
 ## 22. NarrativeCut
 

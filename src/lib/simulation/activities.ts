@@ -990,6 +990,8 @@ export function applyActivityEvent(
     case "item_instantiated_from_promotion":
     case "household_restock_fulfilled":
     case "household_restock_deferred":
+    case "relationship_entry_authored":
+    case "relationship_change_recorded":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

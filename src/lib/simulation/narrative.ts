@@ -248,12 +248,16 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "item_instantiated_from_promotion":
     case "household_restock_fulfilled":
     case "household_restock_deferred":
+    case "relationship_entry_authored":
+    case "relationship_change_recorded":
       // Household/lot/means bookkeeping (§26.8–26.11): a household founding, a
       // membership change, a lazy lot init, a privileged authoring adjustment,
       // a coarse means-band setting, a restock routine's authoring, an
       // off-screen promotion/restock outcome — all social-ledger/authoring
       // facts, nothing in the scene moved for a beat to portray (mirrors
-      // item_ownership_set).
+      // item_ownership_set). A relationship-ledger entry — authored or
+      // derived — is the same shape of off-screen authoring/bookkeeping fact
+      // (§21.3): nothing in the scene moved for a beat to portray.
       return null;
     case "material_lot_transferred":
       // An actor-driven, co-located stock movement (§26.9) — visibly witnessed
@@ -521,6 +525,15 @@ export function compileNarrativeCut(input: CompileNarrativeCutInput): NarrativeC
         ...(effect.disclosureContent === undefined
           ? {}
           : { disclosureContent: effect.disclosureContent }),
+        // E5.5 (§21.3, §21.4): a consent-scoped proposed effect
+        // (boundary_expressed/permission_granted/permission_withdrawn) must
+        // carry its scopeKey through to the armed effect, or
+        // `armedEffectSchema`'s `consentScopeKeyRequiredOnConsentEffects`
+        // refine rejects it outright — this field was dropped here entirely
+        // (Stage A/B defect, found and fixed in Stage C: no consent-scoped
+        // speech act could ever be armed through the real turn-preparation
+        // path, only via direct event injection in tests).
+        ...(effect.consentScopeKey === undefined ? {} : { consentScopeKey: effect.consentScopeKey }),
       }),
     )
     .sort((left, right) => compareStableText(left.id, right.id));

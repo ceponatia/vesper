@@ -408,6 +408,22 @@ describe("E4.3 compileNarrativeCut", () => {
     expect(cut.armedEffects[0]?.disclosureContent?.kind).toBe("claim");
   });
 
+  it("threads a proposed consent-scoped effect's consentScopeKey through to the armed effect (E5.5 §21.3–21.4 — a Stage A/B regression: this field was dropped entirely, so no boundary/permission speech act could ever be armed)", () => {
+    const cut = compile({
+      proposedArmedEffects: [
+        {
+          effectType: "boundary_expressed",
+          actorId: "mara",
+          targetActorIds: ["player"],
+          detail: "Mara says she's fine with closeness but nothing more tonight.",
+          consentScopeKey: "closeness",
+        },
+      ],
+    });
+    expect(cut.armedEffects).toHaveLength(1);
+    expect(cut.armedEffects[0]).toMatchObject({ effectType: "boundary_expressed", consentScopeKey: "closeness" });
+  });
+
   it("keeps the viewpoint's own pressures and drops resolved ones", () => {
     const cut = compile({
       viewpointPressures: [

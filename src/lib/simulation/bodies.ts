@@ -91,7 +91,10 @@ function compareStableText(left: string, right: string): number {
 // Deterministic fixed-point 2^(-x) (engine.spec §32 — no libm transcendentals)
 // ---------------------------------------------------------------------------
 
-const EXP2_SCALE = 1_000_000;
+// Exported — E5.5's social.ts reuses this scale constant directly for its own
+// decay-combination formula, rather than duplicating the literal (which would
+// silently drift if this fixed-point scale is ever retuned).
+export const EXP2_SCALE = 1_000_000;
 const EXP2_FRACTION_BITS = 20;
 /** c[i] = round(2^(-1/2^(i+1)) · EXP2_SCALE), so multiplying the constants for
  * a fraction's set bits composes 2^(-fraction) in pure integer math. */
@@ -2481,6 +2484,8 @@ export function applyBodyEvent(
     case "item_instantiated_from_promotion":
     case "household_restock_fulfilled":
     case "household_restock_deferred":
+    case "relationship_entry_authored":
+    case "relationship_change_recorded":
       // Non-body families advance the boundary without touching this projection.
       return bodiesProjectionSchema.parse(bumped);
   }

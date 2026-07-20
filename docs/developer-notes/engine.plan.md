@@ -972,7 +972,42 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    for E5.6. 18 new pure + 9 new int cases. Final E5.4 totals: 2 927 pure +
    414 int green; CI runs `test:engine-e5-4` (121 cases across four suites).
 5. **E5.5 — the social ledger: promises, favors, debts, boundaries, and consent
-   (ruling 16).** The persisted §21.3 evidence ledger the E4.2 derived seam was built
+   (ruling 16).** Status: **slice 1 shipped — 2026-07-20; slices 2–3 next.**
+   **Slice 1 (shipped) — the ledger substrate: derived entries, authored entries,
+   reads.** The whole-feature spec landed first (§21.3 replaced wholesale, new
+   §21.4 consent, §15.1/§15.4/§16.1/§19.2/§9.2 amendments — the E5.3/E5.4
+   one-spec-edit precedent). `sim_relationship_ledger` (migration 0076) under a
+   closed, versioned entry-kind vocabulary with an explicit derived-vs-authored
+   split: speech acts (including the two new `permission_granted` /
+   `permission_withdrawn` types with `consentScopeKey` required exactly on
+   consent effects), disclosures (retraction split), `engagement_ended`
+   shared-scene fan-out, authored priors/help/betrayal/etc. via
+   `record_relationship_entry`, and explicit `record_relationship_change` —
+   relationship change is a ledger entry, never prose. The pure kernel
+   (`lib/simulation/social.ts`): hash-stable entry ids, the fold over all
+   slice-1 source events, `deriveRelationshipRead` (fixed-point half-life
+   decay, banded trust/attraction/resentment with one-directional resentment
+   bands, diagnostics for missing authored-prior weights, explicit empty-ledger
+   degraded default), and `resolveConsentCoverage` (pure; unconsumed until the
+   slice-2 gate). `social-recorder.ts` commits ledger rows atomically inside
+   the command transaction (wired into the shared runner); the superseded E4.2
+   derived seam (`deriveRelationshipEvidence`/`summarizeRelationshipDyads`) is
+   DELETED both layers, call sites migrated. Fork parity via
+   `replaySocialLedgerHistory`. Testing found and fixed a real cross-domain
+   Stage A/B defect: `compileNarrativeCut` AND the arbiter's
+   `confirm_narrator_result` arming both dropped `consentScopeKey`, so no
+   boundary/permission speech act could ever arm — the §21.4 gate would have
+   been unreachable. Adversarial review confirmed 1 major (entry-id composition
+   could legally exceed its 256-char id tier, breaking future forks): fixed by
+   widening to the 2048 tier per the `assertionId` precedent, with the
+   worst-case legal composition proven bounded (~1 606 chars) and a regression
+   test at schema maxima. 100 cases in `test:engine-e5-5` (77 pure + int);
+   full suite 3 005 pure + `test:engine-e5-4` unbroken at 121.
+   Remaining: **slice 2** (the consent gate: `consent_covered` preconditions,
+   activity wiring, destinationless commitments + repair + `fulfill_commitment`)
+   and **slice 3** (the §19.3 escalation with pinned decline fallback, pressure
+   acknowledgment, the full corpus).
+   Original charter: The persisted §21.3 evidence ledger the E4.2 derived seam was built
    to feed: typed entries for promises made/kept/missed/repaired, boundaries
    stated/respected/violated, help, neglect, betrayal, disclosure, affection, conflict,
    shared activities, authored priors, and explicit relationship changes — relationship

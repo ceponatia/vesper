@@ -10,6 +10,7 @@ import { db, simBranches, simCommands, simEvents, simWorlds, type Db } from "@/s
 import { recordCommandKnowledge } from "./knowledge-recorder";
 import { enqueueMemoryIndexObligations } from "./memory-index-store";
 import { recordCommandObservations } from "./observation-store";
+import { recordCommandRelationshipLedger } from "./social-recorder";
 import { recordCommandSoftCanon } from "./soft-canon-recorder";
 import type { SimTx } from "./trigger-projector";
 
@@ -153,12 +154,16 @@ export async function runSimulationCommand<
     // this command's events against the post-command locus rows (§20). Then
     // E4.2: fold any disclosures through the knowledge ledgers against those
     // fresh observation rows (§21) — order matters, beliefs rest on evidence.
-    // E4.3: fold soft-canon snapshots into the bounded store (§23.4). Last,
-    // E4.4: enqueue memory-index obligations for the appended events (§24.3)
-    // — indexing itself runs later, off the outbox, never under this lock.
+    // E5.5: fold relationship-ledger entries (§21.3) — after knowledge, before
+    // soft canon, so a newly-recorded entry is visible to memory-index
+    // eligibility in the same transaction. E4.3: fold soft-canon snapshots
+    // into the bounded store (§23.4). Last, E4.4: enqueue memory-index
+    // obligations for the appended events (§24.3) — indexing itself runs
+    // later, off the outbox, never under this lock.
     if (commandResult.status === "accepted") {
       await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
       await recordCommandKnowledge(tx, { id: branch.id, headSequence: branch.headSequence });
+      await recordCommandRelationshipLedger(tx, { id: branch.id, headSequence: branch.headSequence });
       await recordCommandSoftCanon(tx, { id: branch.id, headSequence: branch.headSequence });
       await enqueueMemoryIndexObligations(tx, {
         id: branch.id,

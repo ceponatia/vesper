@@ -28,6 +28,7 @@ import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitmen
 import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/contracts/simulation/materials";
 import type { SimulationTrigger } from "@/contracts/simulation/scheduler";
 import type { HouseholdStockAccessPolicy, RestockFunding } from "@/contracts/simulation/households";
+import type { RelationshipLedgerPayload } from "@/contracts/simulation/social";
 import { sceneReferenceSources, sceneVisualReferenceKinds } from "@/contracts";
 import { principalKinds } from "@/contracts/simulation/envelopes";
 import { itemGoneBases } from "@/contracts/simulation/materials";
@@ -38,6 +39,7 @@ import {
   materialQuantityKinds,
   meansBandKeys,
 } from "@/contracts/simulation/households";
+import { relationshipLedgerKinds, relationshipLedgerProvenances } from "@/contracts/simulation/social";
 import { newId } from "@/lib/ids";
 
 const id = () => text("id").primaryKey().$defaultFn(newId);
@@ -3115,5 +3117,49 @@ export const simHouseholdRestockRoutines = pgTable(
       sql`${t.lowWaterThresholdRaw} <= ${t.targetQuantityRaw}`,
     ),
     check("sim_household_restock_routines_cadence_positive", sql`${t.cadenceSeconds} > 0`),
+  ],
+);
+
+/**
+ * E5.5 relationship ledger (engine.spec §21.3). Append-only — no update path
+ * except the derived-vs-authored distinction and payload are fixed at insert.
+ * `entry_id` is derived (never caller identity) but IS the natural PK
+ * (unlike E5.4's lots/means-bands, an entry has no discriminated-nullable-
+ * column locus problem — `from_actor_id`/`to_actor_id` are always populated).
+ */
+export const simRelationshipLedger = pgTable(
+  "sim_relationship_ledger",
+  {
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => simBranches.id, { onDelete: "cascade" }),
+    entryId: text("entry_id").notNull(),
+    kind: text("kind", { enum: relationshipLedgerKinds }).notNull(),
+    fromActorId: text("from_actor_id").notNull(),
+    toActorId: text("to_actor_id").notNull(),
+    provenance: text("provenance", { enum: relationshipLedgerProvenances }).notNull(),
+    payload: jsonb("payload").$type<RelationshipLedgerPayload>().notNull(),
+    detail: text("detail"),
+    sourceEventId: text("source_event_id").notNull(),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+    storySecond: bigint("story_second", { mode: "number" }).notNull(),
+    derivationVersion: text("derivation_version").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ name: "sim_relationship_ledger_branch_entry_pk", columns: [t.branchId, t.entryId] }),
+    foreignKey({
+      name: "sim_relationship_ledger_from_actor_fk",
+      columns: [t.branchId, t.fromActorId],
+      foreignColumns: [simCharacters.branchId, simCharacters.characterId],
+    }).onDelete("no action"),
+    foreignKey({
+      name: "sim_relationship_ledger_to_actor_fk",
+      columns: [t.branchId, t.toActorId],
+      foreignColumns: [simCharacters.branchId, simCharacters.characterId],
+    }).onDelete("no action"),
+    index("sim_relationship_ledger_branch_dyad_idx").on(t.branchId, t.fromActorId, t.toActorId),
+    index("sim_relationship_ledger_branch_kind_idx").on(t.branchId, t.kind),
+    check("sim_relationship_ledger_distinct_actors", sql`${t.fromActorId} <> ${t.toActorId}`),
   ],
 );

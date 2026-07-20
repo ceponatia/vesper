@@ -9,8 +9,6 @@ import {
   disclosureMadeEventSchema,
   KNOWLEDGE_DERIVATION_VERSION,
   MAX_LEARNED_FROM_CHAIN,
-  relationshipEvidenceEntrySchema,
-  relationshipDyadSummarySchema,
   type Assertion,
   type AssertionStatus,
   type Belief,
@@ -19,12 +17,8 @@ import {
   type DisclosureMadeEvent,
   type MakeDisclosureCommand,
   type MakeDisclosureRejectionCode,
-  type RelationshipDyadSummary,
-  type RelationshipEvidenceEntry,
-  type RelationshipEvidenceKind,
 } from "@/contracts/simulation/knowledge";
 import { composeSimulationId } from "@/contracts/simulation/identity";
-import type { SpeechActType } from "@/contracts/simulation/narrative";
 import type { Observation } from "@/contracts/simulation/perception";
 
 /**
@@ -623,126 +617,4 @@ export function replayKnowledgeHistory(input: KnowledgeReplayInput): KnowledgeRe
     assertions: [...state.assertions.values()].sort((left, right) => compareStableText(left.id, right.id)),
     beliefs: [...state.beliefs.values()].sort((left, right) => compareStableText(left.id, right.id)),
   };
-}
-
-// ---------------------------------------------------------------------------
-// Relationship evidence seam (engine.spec §21.3)
-// ---------------------------------------------------------------------------
-
-/** Exhaustive speech-act → evidence mapping; null marks acts that carry none. */
-function speechActEvidenceKind(effectType: SpeechActType): RelationshipEvidenceKind | null {
-  switch (effectType) {
-    case "promise_offered":
-      return "promise_made";
-    case "promise_accepted":
-      return "promise_accepted";
-    case "boundary_expressed":
-      return "boundary_stated";
-    case "warning_communicated":
-      return "warning_given";
-    case "invitation_spoken":
-      return "invitation_extended";
-    case "apology_delivered":
-      return "apology_offered";
-    case "disclosure_made":
-      return "confidence_shared";
-    case "question_asked":
-      return null;
-  }
-}
-
-/**
- * The §21.3 derived read: typed relationship evidence from events already in
- * the stream — speech acts, typed disclosures, and completed shared scenes.
- * No persistence and no scoring; Gate 5's social ledger replaces this read
- * with promises/favors/debts as first-class rows. Until then relationship
- * state is derivable from causal records, never only prose.
- */
-export function deriveRelationshipEvidence(
-  events: readonly SimulationBranchEvent[],
-): RelationshipEvidenceEntry[] {
-  const entries: RelationshipEvidenceEntry[] = [];
-  const push = (
-    kind: RelationshipEvidenceKind,
-    fromActorId: string,
-    toActorId: string,
-    event: SimulationBranchEvent,
-  ): void => {
-    if (fromActorId === toActorId) return;
-    entries.push(
-      relationshipEvidenceEntrySchema.parse({
-        kind,
-        fromActorId,
-        toActorId,
-        sourceEventId: event.id,
-        sequence: event.sequence,
-        storySecond: event.storySecond,
-      }),
-    );
-  };
-
-  // An if-chain, not a switch: most event families carry no relationship
-  // evidence, and a new family should default to "none" without a ruling.
-  const ordered = [...events].sort((left, right) => left.sequence - right.sequence);
-  for (const event of ordered) {
-    if (event.type === "speech_act_delivered") {
-      const kind = speechActEvidenceKind(event.payload.effectType);
-      if (kind === null) continue;
-      for (const targetId of event.payload.targetActorIds) {
-        push(kind, event.payload.actorId, targetId, event);
-      }
-    } else if (event.type === "disclosure_made") {
-      if (event.payload.content.kind === "retraction") continue;
-      for (const targetId of event.payload.targetActorIds) {
-        push("confidence_shared", event.payload.speakerActorId, targetId, event);
-      }
-    } else if (event.type === "engagement_ended") {
-      // A completed shared scene is evidence for every participant pair.
-      const participants = sortedUnique(event.actorIds);
-      for (let i = 0; i < participants.length; i += 1) {
-        for (let j = i + 1; j < participants.length; j += 1) {
-          const left = participants[i];
-          const right = participants[j];
-          if (left !== undefined && right !== undefined) push("shared_scene", left, right, event);
-        }
-      }
-    }
-  }
-  return entries;
-}
-
-/** Aggregate evidence into unordered dyads — the current relationship read. */
-export function summarizeRelationshipDyads(
-  entries: readonly RelationshipEvidenceEntry[],
-): RelationshipDyadSummary[] {
-  const byDyad = new Map<string, { pair: [string, string]; entries: RelationshipEvidenceEntry[] }>();
-  for (const entry of entries) {
-    const pair: [string, string] =
-      compareStableText(entry.fromActorId, entry.toActorId) < 0
-        ? [entry.fromActorId, entry.toActorId]
-        : [entry.toActorId, entry.fromActorId];
-    const key = pair.join(" ");
-    const bucket = byDyad.get(key) ?? { pair, entries: [] };
-    bucket.entries.push(entry);
-    byDyad.set(key, bucket);
-  }
-  return [...byDyad.entries()]
-    .sort(([left], [right]) => compareStableText(left, right))
-    .map(([, dyad]) => {
-      const counts: Partial<Record<RelationshipEvidenceKind, number>> = {};
-      let firstStorySecond = Number.MAX_SAFE_INTEGER;
-      let lastStorySecond = 0;
-      for (const entry of dyad.entries) {
-        counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
-        firstStorySecond = Math.min(firstStorySecond, entry.storySecond);
-        lastStorySecond = Math.max(lastStorySecond, entry.storySecond);
-      }
-      return relationshipDyadSummarySchema.parse({
-        actorIds: dyad.pair,
-        counts,
-        firstStorySecond,
-        lastStorySecond,
-        entryCount: dyad.entries.length,
-      });
-    });
 }

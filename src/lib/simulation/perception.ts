@@ -241,6 +241,8 @@ export function deriveEventObservations(
     case "household_restock_routine_configured":
     case "household_restock_fulfilled":
     case "household_restock_deferred":
+    case "relationship_entry_authored":
+    case "relationship_change_recorded":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
@@ -264,7 +266,12 @@ export function deriveEventObservations(
       // deferred — are the household's own bookkeeping cycle (§26.11), not a
       // witnessed act (the top-up itself lands through its own
       // `material_lot_adjusted` event, which carries no acting actor to
-      // witness it either).
+      // witness it either). A relationship-ledger entry (§21.3, E5.5) —
+      // authored or derived, and a relationship-change marker alike — is an
+      // out-of-band ledger write, not a perceptible in-world event: an
+      // actor's live perception of the underlying fact (a promise spoken, a
+      // scene shared) already rides that fact's own causal event; the ledger
+      // entry it produces is audit bookkeeping, mirrors `body_initialized`.
       return [];
     case "journey_planned":
     case "journey_delayed":

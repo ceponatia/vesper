@@ -137,6 +137,13 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
       return "a household's stores being restocked";
     case "household_restock_deferred":
       return "a household's restock falling through";
+    case "relationship_entry_authored":
+      // Narratively meaningful (§21.3): a promise, boundary, favor, or other
+      // ledger-worthy relationship fact — memory-eligible, mirrors
+      // `item_instantiated_from_promotion`.
+      return "something between them being marked";
+    case "relationship_change_recorded":
+      return "the shape of a relationship shifting";
   }
 }
 
