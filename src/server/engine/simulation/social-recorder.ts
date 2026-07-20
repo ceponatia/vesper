@@ -74,11 +74,14 @@ export function relationshipLedgerEntryRowInsert(
 /**
  * Every event type the fold reads — kept as one exported const so this
  * recorder's WHERE clause and `deriveRelationshipLedgerEntries`'s if-chain
- * can never silently drift. E5.5 slice 2 widens this to the full slice-2
+ * can never silently drift. E5.5 slice 2 widened this to the full slice-2
  * subset (§5.7): `commitment_kept`/`commitment_missed`/`commitment_created`
  * now carry the `promisedToActorId`/`repairsCommitmentId` fields the fold
- * needs, and `activity_started` now carries `consentGrant`.
- * `consent_escalation_resolved`/`pressure_acknowledged` join in Slice 3.
+ * needs, and `activity_started` now carries `consentGrant`. Slice 3 (§5.7)
+ * adds `consent_escalation_resolved` — the escalation outcome lands as a
+ * ledger entry either way (ruling 16). `pressure_acknowledged` is
+ * DELIBERATELY excluded — it produces no ledger entry (§1.7): acknowledgment
+ * is a pure engagement/commitment cross-domain fact, never ledger evidence.
  */
 export const RELATIONSHIP_LEDGER_SOURCE_EVENT_TYPES = [
   "speech_act_delivered",
@@ -90,6 +93,7 @@ export const RELATIONSHIP_LEDGER_SOURCE_EVENT_TYPES = [
   "activity_started",
   "relationship_entry_authored",
   "relationship_change_recorded",
+  "consent_escalation_resolved",
 ] as const;
 
 /**

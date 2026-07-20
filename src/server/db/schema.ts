@@ -2236,6 +2236,10 @@ export const simTemporalPressures = pgTable(
     actBy: bigint("act_by", { mode: "number" }).notNull(),
     severity: text("severity", { enum: ["background", "salient", "urgent", "hard"] }).notNull(),
     acknowledgedAt: bigint("acknowledged_at", { mode: "number" }),
+    /** E5.5 slice 3: severity captured at acknowledgment time. */
+    acknowledgedSeverity: text("acknowledged_severity", {
+      enum: ["background", "salient", "urgent", "hard"],
+    }),
     resolvedAt: bigint("resolved_at", { mode: "number" }),
     updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
     updatedAt: updatedAt(),
@@ -2273,6 +2277,8 @@ export const simEngagements = pgTable(
     }).notNull(),
     openedAt: bigint("opened_at", { mode: "number" }).notNull(),
     attentionClaim: jsonb("attention_claim").$type<ActivityClaim>().notNull(),
+    /** E5.5 slice 3: temporal-pressure ids acknowledged within this engagement. */
+    acknowledgedPressureIds: jsonb("acknowledged_pressure_ids").$type<string[]>().notNull().default([]),
     sourceCommandId: text("source_command_id").notNull(),
     updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
     updatedAt: updatedAt(),

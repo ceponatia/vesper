@@ -8,12 +8,14 @@ import {
   commitmentKeptEventSchema,
   commitmentMissedEventSchema,
 } from "@/contracts/simulation/commitments";
+import { deliberationOutcomeSchema } from "@/contracts/simulation/deliberation";
 import { KNOWLEDGE_DERIVATION_VERSION, disclosureMadeEventSchema, type disclosureContentSchema } from "@/contracts/simulation/knowledge";
 import { engagementEndedEventSchema } from "@/contracts/simulation/engagements";
 import { speechActDeliveredEventSchema, speechActTypes, type SpeechActType } from "@/contracts/simulation/narrative";
 import {
   attractionBandKeys,
   authoredRelationshipLedgerKinds,
+  consentEscalationResolvedEventSchema,
   relationshipChangeRecordedEventSchema,
   relationshipEntryAuthoredEventSchema,
   relationshipLedgerEntrySchema,
@@ -35,6 +37,7 @@ import {
   ATTRACTION_BAND_THRESHOLDS,
   RESENTMENT_BAND_THRESHOLDS,
   TRUST_BAND_THRESHOLDS,
+  deriveConsentEscalationCandidates,
   deriveRelationshipLedgerEntries,
   deriveRelationshipLedgerEntryId,
   deriveRelationshipRead,
@@ -351,6 +354,52 @@ function activityStartedEvent(
       observerActorIds: [actorId],
       reservedItemIds: [],
       ...(overrides.consentGrant === undefined ? {} : { consentGrant: overrides.consentGrant }),
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// E5.5 slice 3 event builder — consent_escalation_resolved
+// ---------------------------------------------------------------------------
+
+function consentEscalationResolvedEvent(
+  overrides: {
+    actorId?: string;
+    targetActorId?: string;
+    scopeKey?: ConsentScopeKey;
+    granted?: boolean;
+    sequence?: number;
+    storySecond?: number;
+  } = {},
+) {
+  const actorId = overrides.actorId ?? ACTOR_A;
+  const targetActorId = overrides.targetActorId ?? ACTOR_B;
+  const granted = overrides.granted ?? false;
+  return consentEscalationResolvedEventSchema.parse({
+    id: `event-escalation-${overrides.sequence ?? 1}`,
+    worldId: WORLD,
+    branchId: BRANCH,
+    sequence: overrides.sequence ?? 1,
+    storySecond: overrides.storySecond ?? 1_000,
+    rulesetVersion: RULESET,
+    correlationId: "corr-1",
+    actorIds: sortedUnique([actorId, targetActorId]),
+    entityIds: sortedUnique([actorId, targetActorId]),
+    recordedAtWallClock: WALL_CLOCK,
+    commandId: "cmd-escalation",
+    type: "consent_escalation_resolved",
+    schemaVersion: 1,
+    payload: {
+      actorId,
+      targetActorId,
+      scopeKey: overrides.scopeKey ?? "kiss",
+      granted,
+      outcome: deliberationOutcomeSchema.parse({
+        chosenCandidateId: granted ? "grant" : "decline",
+        usedFallback: !granted,
+        admissionReasonCode: granted ? "admitted" : "no_model_budget",
+        diagnostics: [],
+      }),
     },
   });
 }
@@ -703,6 +752,30 @@ describe("deriveRelationshipLedgerEntries — relationship_change_recorded", () 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.kind).toBe("relationship_change_recorded");
     expect(entries[0]?.payload).toEqual({ kind: "change", changeKey: "became_partners" });
+  });
+});
+
+describe("deriveRelationshipLedgerEntries — consent_escalation_resolved", () => {
+  it("a grant folds as permission_granted, directional target → actor", () => {
+    const entries = fold([consentEscalationResolvedEvent({ actorId: ACTOR_A, targetActorId: ACTOR_B, granted: true, scopeKey: "kiss" })]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "permission_granted",
+      fromActorId: ACTOR_B,
+      toActorId: ACTOR_A,
+      payload: { kind: "consent", scopeKey: "kiss" },
+    });
+  });
+
+  it("a decline (ruling 16's fallback) folds as consent_declined, same direction", () => {
+    const entries = fold([consentEscalationResolvedEvent({ actorId: ACTOR_A, targetActorId: ACTOR_B, granted: false, scopeKey: "sex" })]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "consent_declined",
+      fromActorId: ACTOR_B,
+      toActorId: ACTOR_A,
+      payload: { kind: "consent", scopeKey: "sex" },
+    });
   });
 });
 
@@ -1155,5 +1228,56 @@ describe("replaySocialLedgerHistory — fork/replay parity", () => {
 
     expect(chunked.map((entry) => entry.id).sort()).toEqual(fullFold.map((entry) => entry.id).sort());
     expect(chunked).toHaveLength(fullFold.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveConsentEscalationCandidates (§4.7) — the bounded [grant, decline]
+// pair the §19.3 deliberator seam chooses between.
+// ---------------------------------------------------------------------------
+
+describe("deriveConsentEscalationCandidates", () => {
+  const NEUTRAL_READ = { trustFixedPoint: 0, attractionFixedPoint: 0, resentmentFixedPoint: 0 };
+
+  it("a net-neutral read scores grant below decline by exactly the base-reluctance constant", () => {
+    const [grant, decline] = deriveConsentEscalationCandidates(NEUTRAL_READ);
+    expect(grant.id).toBe("grant");
+    expect(decline.id).toBe("decline");
+    expect(decline.deterministicScoreFixedPoint).toBe(0);
+    expect(grant.deterministicScoreFixedPoint).toBeLessThan(decline.deterministicScoreFixedPoint);
+    expect(grant.deterministicScoreFixedPoint).toBe(-500); // BASE_CONSENT_RELUCTANCE_FIXED_POINT
+  });
+
+  it("strongly positive trust+attraction outscores the base reluctance, so grant beats decline", () => {
+    const [grant, decline] = deriveConsentEscalationCandidates({
+      trustFixedPoint: 2_000,
+      attractionFixedPoint: 1_000,
+      resentmentFixedPoint: 0,
+    });
+    expect(grant.deterministicScoreFixedPoint).toBeGreaterThan(decline.deterministicScoreFixedPoint);
+  });
+
+  it("high resentment never lets grant outscore decline even with high trust/attraction", () => {
+    const [grant, decline] = deriveConsentEscalationCandidates({
+      trustFixedPoint: 2_000,
+      attractionFixedPoint: 1_000,
+      resentmentFixedPoint: 10_000,
+    });
+    expect(grant.deterministicScoreFixedPoint).toBeLessThan(decline.deterministicScoreFixedPoint);
+  });
+
+  it("clamps grant's score to the same safe-integer band deterministicScoreFixedPoint uses", () => {
+    const [grant] = deriveConsentEscalationCandidates({
+      trustFixedPoint: 5_000_000,
+      attractionFixedPoint: 5_000_000,
+      resentmentFixedPoint: 0,
+    });
+    expect(grant.deterministicScoreFixedPoint).toBe(1_000_000);
+    const [lowGrant] = deriveConsentEscalationCandidates({
+      trustFixedPoint: -5_000_000,
+      attractionFixedPoint: 0,
+      resentmentFixedPoint: 5_000_000,
+    });
+    expect(lowGrant.deterministicScoreFixedPoint).toBe(-1_000_000);
   });
 });

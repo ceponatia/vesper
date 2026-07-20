@@ -1,4 +1,5 @@
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
+import type { DeliberationCandidate } from "@/contracts/simulation/deliberation";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import type { SpeechActType } from "@/contracts/simulation/narrative";
 import {
@@ -37,12 +38,15 @@ import { sortedUnique } from "./hash";
  *
  * Slice 1 folded `speech_act_delivered`, `disclosure_made`, `engagement_ended`,
  * `relationship_entry_authored`, and `relationship_change_recorded`. Slice 2
- * (§4.2, §10) adds the `activity_started`/`consentGrant` arm and the
+ * (§4.2, §10) added the `activity_started`/`consentGrant` arm and the
  * `commitment_kept`/`commitment_missed`/`commitment_created` arms — all three
- * now real, `commitmentById` genuinely wired by every caller
- * (`social-recorder.ts`'s incremental recorder and `branch-store.ts`'s fork
- * replay both resolve it from a real commitments load, never a stub).
- * `consent_escalation_resolved` doesn't exist as an event type until Slice 3.
+ * real, `commitmentById` genuinely wired by every caller (`social-recorder.ts`'s
+ * incremental recorder and `branch-store.ts`'s fork replay both resolve it
+ * from a real commitments load, never a stub). Slice 3 (§4.7, §5.6) closes
+ * the loop: `deriveConsentEscalationCandidates` scores the bounded
+ * grant/decline pair the §19.3 deliberator seam chooses between, and the
+ * `consent_escalation_resolved` fold arm below lands the outcome back in the
+ * ledger either way (ruling 16).
  */
 
 // ---------------------------------------------------------------------------
@@ -250,11 +254,26 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
         { kind: "change", changeKey: event.payload.changeKey },
         { detail: event.payload.detail },
       );
+    } else if (event.type === "consent_escalation_resolved") {
+      // §4.2/ruling 16: the outcome lands as ledger evidence either way — a
+      // grant folds as `permission_granted`, a decline as `consent_declined`.
+      // Directional per every other consent-scoped entry: `fromActorId` is
+      // the party whose consent was decided (the target), `toActorId` is the
+      // one who asked (the actor) — matching `boundary_stated`/
+      // `permission_granted`'s own "who granted/denied" direction.
+      const kind = event.payload.granted ? "permission_granted" : "consent_declined";
+      pushEntry(entries, event, kind, event.payload.targetActorId, event.payload.actorId, {
+        kind: "consent",
+        scopeKey: event.payload.scopeKey,
+      });
     }
     // Every other event family (movement, materials, bodies, commitments,
-    // access, ...) carries no relationship evidence in Slice 1 and defaults
-    // to "none" without a ruling — see this file's header doc for the
-    // commitment/activity/escalation arms specifically.
+    // access, pressure_acknowledged, ...) carries no relationship evidence
+    // and defaults to "none" without a ruling — see this file's header doc
+    // for the commitment/activity/escalation arms specifically.
+    // `pressure_acknowledged` in particular is deliberately excluded (§1.7):
+    // acknowledgment is a pure engagement/commitment cross-domain fact, never
+    // ledger evidence.
   }
   return entries;
 }
@@ -431,6 +450,42 @@ export function resolveConsentCoverage(input: {
     .filter((entry) => entry.payload.kind === "consent" && entry.payload.scopeKey === input.scopeKey)
     .sort((left, right) => right.sequence - left.sequence); // most recent first
   return relevant[0]?.kind === "permission_granted";
+}
+
+// ---------------------------------------------------------------------------
+// Consent-escalation utility (§4.7, §19.2) — the bounded legal candidate set
+// the §19.3 deliberator seam chooses between. Scoped ONLY to this call site
+// — a general §19.2 routine-policy scorer is explicitly deferred (§11 open
+// decision 6).
+// ---------------------------------------------------------------------------
+
+/** Versioned, tunable — net-neutral evidence still leans decline. */
+const BASE_CONSENT_RELUCTANCE_FIXED_POINT = 500;
+
+/**
+ * The two-candidate `[grant, decline]` pair `attempt_consent_escalation`
+ * admits into the deliberator seam (§5.6). `grant`'s score is the target's
+ * read of the actor — trust plus attraction, minus resentment, minus the
+ * base reluctance constant — clamped to the same safe-integer band every
+ * `deterministicScoreFixedPoint` uses; `decline` is a fixed zero. A
+ * net-neutral read (zero trust/attraction/resentment) therefore always
+ * scores `grant` below `decline`, by exactly the reluctance constant —
+ * consent defaults to reluctant, not indifferent.
+ */
+export function deriveConsentEscalationCandidates(
+  read: Pick<RelationshipRead, "trustFixedPoint" | "attractionFixedPoint" | "resentmentFixedPoint">,
+): [DeliberationCandidate, DeliberationCandidate] {
+  const grantScore = Math.max(
+    -1_000_000,
+    Math.min(
+      1_000_000,
+      read.trustFixedPoint + read.attractionFixedPoint - read.resentmentFixedPoint - BASE_CONSENT_RELUCTANCE_FIXED_POINT,
+    ),
+  );
+  return [
+    { id: "grant", deterministicScoreFixedPoint: grantScore },
+    { id: "decline", deterministicScoreFixedPoint: 0 },
+  ];
 }
 
 // ---------------------------------------------------------------------------

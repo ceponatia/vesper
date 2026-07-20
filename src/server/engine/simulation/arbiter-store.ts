@@ -56,7 +56,7 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
-import { engagementFromRow } from "./engagement-store";
+import { engagementFromRow, submitDurableAcknowledgePressure } from "./engagement-store";
 import { assertionFromRow, beliefFromRow } from "./knowledge-recorder";
 import { loadSpeakerLiveBelief } from "./knowledge-store";
 import { latestCutIdForEngagement, persistNarrativeCut, readPersistedCutRow } from "./narrative-cut-store";
@@ -136,6 +136,11 @@ export interface PreparedTurn {
   departures: (PolicyDeparture & { result: string })[];
   /** §19.3 deliberations run this turn, rationale recorded, fallback-safe. */
   deliberations: TurnDeliberationRecord[];
+  /** §15.3/§11 decision 5 (E5.5 slice 3): every open pressure belonging to a
+   * scene participant who did NOT depart this turn, marked "looked at" —
+   * `already_acknowledged` is an expected, harmless outcome on a repeat turn
+   * at unchanged severity. */
+  acknowledgments: { actorId: string; pressureId: string; result: string }[];
   /** False when this exact cut id + hash was already persisted (§22.3). */
   cutCreated: boolean;
 }
@@ -224,6 +229,7 @@ export async function prepareEngagementTurn(
             actBy: row.actBy,
             severity: row.severity,
             ...(row.acknowledgedAt === null ? {} : { acknowledgedAt: row.acknowledgedAt }),
+            ...(row.acknowledgedSeverity === null ? {} : { acknowledgedSeverity: row.acknowledgedSeverity }),
             ...(row.resolvedAt === null ? {} : { resolvedAt: row.resolvedAt }),
           }),
           destinationZoneId,
@@ -447,6 +453,7 @@ export async function prepareEngagementTurn(
         actBy: row.actBy,
         severity: row.severity,
         ...(row.acknowledgedAt === null ? {} : { acknowledgedAt: row.acknowledgedAt }),
+        ...(row.acknowledgedSeverity === null ? {} : { acknowledgedSeverity: row.acknowledgedSeverity }),
       }),
     ),
     failurePresentations: input.failurePresentations ?? [],
@@ -459,7 +466,65 @@ export async function prepareEngagementTurn(
   // narrator-failure retry (ruling 8) re-read it via `loadPersistedCut`.
   const { created } = await persistNarrativeCut(cut, { database });
 
-  return { cut, advance, departures: attempted, deliberations, cutCreated: created };
+  // E5.5 slice 3 (§15.3, §11 decision 5 REVISED): mark every open pressure
+  // belonging to a scene participant "looked at" this turn, UNLESS that
+  // actor's own departure was accepted (their pressure resolves via the
+  // departure's own commitment machinery, not acknowledgment). Sourced from
+  // `pressureRows` — the PRE-`destinationByCommitment`-filter load above —
+  // deliberately NOT `policyInput.pressures`, which silently drops every
+  // destinationless-commitment pressure entirely (that filter is legitimate
+  // for `decideDepartures`/`departureCandidates` themselves, which need
+  // somewhere to walk to; conflating "policy-visible for departure" with
+  // "policy-visible for acknowledgment" would silently defeat acknowledgment
+  // for exactly the destinationless commitments this slice adds).
+  //
+  // Placement: AFTER the cut is compiled and persisted, not before. A
+  // pressure this turn is narratively surfacing should still show up in
+  // THIS turn's own cut — acknowledging it now only suppresses it starting
+  // the NEXT turn's cut (§9.4's filter compares live severity against the
+  // captured acknowledgedSeverity at read time). Acknowledging before
+  // compilation would silently swallow a pressure from the very turn that
+  // raised it.
+  const acknowledgments: PreparedTurn["acknowledgments"] = [];
+  const departedActorIds = new Set(
+    attempted.filter((departure) => departure.result === "accepted").map((departure) => departure.actorId),
+  );
+  for (const pressureRow of pressureRows) {
+    if (departedActorIds.has(pressureRow.actorId)) continue;
+    // Hashed the same way as the departure commandId above — pressure ids
+    // nest a commitment id which nests a branch+command id, so concatenation
+    // risks the 256-char compact-id cap.
+    const commandId = composeSimulationId("arbiter-ack", [
+      branchId,
+      simulationHash({
+        engagementId: input.engagementId,
+        pressureId: pressureRow.pressureId,
+        storySecond: advance.storySecond,
+      }),
+    ]);
+    const result = await submitDurableAcknowledgePressure(
+      {
+        id: commandId,
+        branchId,
+        expectedVersion: 0,
+        idempotencyKey: commandId,
+        principal: { kind: "system", principalId: "sim-arbiter", controlledActorIds: [] },
+        submittedAtWallClock: new Date().toISOString(),
+        correlationId: input.engagementId,
+        type: "acknowledge_pressure",
+        schemaVersion: 1,
+        payload: { engagementId: input.engagementId, pressureId: pressureRow.pressureId },
+      },
+      { database, admitAtLockedVersion: true },
+    );
+    acknowledgments.push({
+      actorId: pressureRow.actorId,
+      pressureId: pressureRow.pressureId,
+      result: result.status === "rejected" ? result.code : result.status,
+    });
+  }
+
+  return { cut, advance, departures: attempted, deliberations, acknowledgments, cutCreated: created };
 }
 
 function rejectedResult<TCode extends string>(commandId: string, code: TCode, publicReason: string) {

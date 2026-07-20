@@ -33,12 +33,15 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   perception-gated reads → material life → households/means/money-at-LOD → the social
   ledger & consent → the deterministic exit corpus. **E5.1–E5.3 shipped 2026-07-19;
   E5.4 (both slices) shipped 2026-07-20** — see Shipped below.
-  **E5.5 (the social ledger & consent, ruling 16) is in-gate now — slices 1–2
-  (the ledger substrate; the fail-closed consent gate + destinationless
-  commitments) shipped 2026-07-20**; remaining: slice 3 (the §19.3 deliberator
-  escalation pinned to a deterministic decline fallback, pressure
-  acknowledgment as a social act — the carried E3.4 note, full-corpus parity).
-  Then E5.6 (the deterministic exit corpus) closes the gate.
+  **E5.5 (the social ledger & consent, ruling 16) shipped 2026-07-20 (all three
+  slices)** — every carried Gate-5 leftover for it landed (E3.3 destinationless
+  promises, E3.4 pressure acknowledgment, E4.2 persisted §21.3 ledger, E3.5
+  consent preconditions). **E5.6 (the deterministic exit corpus) is next
+  in-gate and closes the gate**: explain-why causal chains for all four
+  surfaces (body, item, household, relationship), the narrator-boundary sweep,
+  partition invariance across material thresholds, rerender/retry invariance
+  over every new persistence surface, fork/replay sweeps — plus the noted
+  pending-only trigger-retirement audit from E5.4.
   This is where current-chat body learning migrates behind the successor
   contracts — the meter-economy and body-needs plans in Next port through here
   later.
@@ -137,6 +140,21 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine consent escalation & pressure acknowledgment (E5.5, slice 3 — E5.5
+  COMPLETE)** — [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
+  [engine.spec.md](engine.spec.md) §19.3/§21.4 — 2026-07-20 — the ruling-16
+  escalation path: `attempt_consent_escalation` through the §19.3 deliberator seam,
+  two-phase after the review's critical find (model call moved OUT of the
+  branch-row lock; pre-lock deliberation + locked authoritative re-check + retry
+  dedupe that never re-spends model budget), decline pinned across all five
+  fallback paths, player-controlled targets hard-rejected pre-deliberation, both
+  outcomes landing as ledger entries; `acknowledge_pressure` as a social act with
+  the cut's acknowledgment-aware pressure filter (migration 0078); fork-parity
+  under-stamp fixed; an Opus verification pass proved the critical restructure
+  sound and caught two more (dropped diagnostics now persisted; false doc comment).
+  Zero live model calls anywhere in tests. `test:engine-e5-5` at 223; 3 048 pure +
+  443 int green. E5.5 closes with all four carried leftovers landed. Next:
+  **E5.6**, which closes Gate 5.
 - **World-engine consent gate & destinationless commitments (E5.5, slice 2)** —
   [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §21.4/§15.1/§15.4/§16.1 — 2026-07-20 — ruling 16

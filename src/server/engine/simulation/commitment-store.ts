@@ -129,6 +129,7 @@ export function pressureRowInsert(
     actBy: pressure.actBy,
     severity: pressure.severity,
     acknowledgedAt: pressure.acknowledgedAt ?? null,
+    acknowledgedSeverity: pressure.acknowledgedSeverity ?? null,
     resolvedAt: pressure.resolvedAt ?? null,
     updatedSequence,
   };
@@ -178,6 +179,7 @@ export async function readDurableCommitments(
         actBy: row.actBy,
         severity: row.severity,
         ...(row.acknowledgedAt === null ? {} : { acknowledgedAt: row.acknowledgedAt }),
+        ...(row.acknowledgedSeverity === null ? {} : { acknowledgedSeverity: row.acknowledgedSeverity }),
         ...(row.resolvedAt === null ? {} : { resolvedAt: row.resolvedAt }),
       }),
     ),

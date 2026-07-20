@@ -872,8 +872,26 @@ export function applyCommitmentEvent(
     case "household_restock_deferred":
     case "relationship_entry_authored":
     case "relationship_change_recorded":
+    case "consent_escalation_resolved":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
+    case "pressure_acknowledged": {
+      // §4.6: the cross-domain real case — stamps the matching pressure's
+      // `acknowledgedAt`/`acknowledgedSeverity` from the event payload. The
+      // sibling real case in `engagements.ts` appends the same event's
+      // `pressureId` to `Engagement.acknowledgedPressureIds` — one event, two
+      // domain projectors, each picking its own slice (§4.6).
+      const pressures = projection.pressures.map((pressure) =>
+        pressure.id === event.payload.pressureId
+          ? temporalPressureSchema.parse({
+              ...pressure,
+              acknowledgedAt: event.payload.acknowledgedAt,
+              acknowledgedSeverity: event.payload.acknowledgedSeverity,
+            })
+          : pressure,
+      );
+      return sortCommitmentsProjection({ ...bumped, pressures });
+    }
   }
 }
 

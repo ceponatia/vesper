@@ -66,6 +66,7 @@ export {
 } from "./commitment-store";
 export {
   readDurableEngagements,
+  submitDurableAcknowledgePressure,
   submitDurableEndEngagement,
   submitDurableOpenEngagement,
   type EngagementStoreOptions,
@@ -129,8 +130,10 @@ export {
   relationshipLedgerEntryRowInsert,
 } from "./social-recorder";
 export {
+  submitDurableAttemptConsentEscalation,
   submitDurableRecordRelationshipChange,
   submitDurableRecordRelationshipEntry,
+  type AttemptConsentEscalationSubmitOptions,
   type DurableRelationshipCrashPoint,
   type RelationshipSubmitOptions,
 } from "./social-store";

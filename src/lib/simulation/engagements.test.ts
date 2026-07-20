@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import { engagementStateTransitions } from "@/contracts/simulation/engagements";
+import { engagementStateTransitions, pressureAcknowledgedEventSchema } from "@/contracts/simulation/engagements";
 import { simulationHash } from "./hash";
 import {
   applyEngagementEvent,
@@ -264,5 +264,52 @@ describe("E3.4 engagements replay", () => {
   it("keeps the §18.2 transition table total with ended terminal", () => {
     expect(engagementStateTransitions.ended).toEqual([]);
     expect(engagementStateTransitions.interrupted).toContain("active");
+  });
+});
+
+describe("E5.5 slice 3 — pressure_acknowledged real fold case", () => {
+  function ackEvent(engagementId: string, pressureId: string, sequence: number) {
+    return pressureAcknowledgedEventSchema.parse({
+      id: `event-ack-${pressureId}-${sequence}`,
+      worldId: "world-1",
+      branchId: "branch-1",
+      sequence,
+      storySecond: NOW + 100,
+      rulesetVersion: "gate3-test-v1",
+      correlationId: "corr-1",
+      actorIds: ["actor-1"],
+      entityIds: [],
+      recordedAtWallClock: "2026-07-17T12:05:00.000Z",
+      commandId: "cmd-ack",
+      type: "pressure_acknowledged",
+      schemaVersion: 1,
+      payload: {
+        engagementId,
+        pressureId,
+        actorId: "actor-1",
+        acknowledgedAt: NOW + 100,
+        acknowledgedSeverity: "salient",
+      },
+    });
+  }
+
+  it("appends the pressure id to Engagement.acknowledgedPressureIds", () => {
+    const open = acceptedOpen();
+    const folded = applyEngagementEvent(
+      applyEngagementEvent(emptyEngagementsSeed("branch-1", NOW), open.event),
+      ackEvent(open.engagement.id, "pressure-a", 2) as SimulationBranchEvent,
+    );
+    expect(folded.engagements[0]?.acknowledgedPressureIds).toEqual(["pressure-a"]);
+  });
+
+  it("is idempotent under a duplicate append (sortedUnique never produces a duplicate array entry)", () => {
+    const open = acceptedOpen();
+    let projection = applyEngagementEvent(emptyEngagementsSeed("branch-1", NOW), open.event);
+    projection = applyEngagementEvent(projection, ackEvent(open.engagement.id, "pressure-a", 2) as SimulationBranchEvent);
+    projection = applyEngagementEvent(
+      projection,
+      ackEvent(open.engagement.id, "pressure-a", 3) as SimulationBranchEvent,
+    );
+    expect(projection.engagements[0]?.acknowledgedPressureIds).toEqual(["pressure-a"]);
   });
 });

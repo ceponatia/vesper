@@ -3,7 +3,9 @@ import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import {
   deriveCommitmentTimes,
   derivePressureSeverity,
+  temporalPressureSchema,
 } from "@/contracts/simulation/commitments";
+import { pressureAcknowledgedEventSchema } from "@/contracts/simulation/engagements";
 import { simulationHash } from "./hash";
 import {
   applyCommitmentEvent,
@@ -631,6 +633,67 @@ describe("E5.5 slice 2 — resolveFulfillCommitment", () => {
     const resolution = resolveFulfillCommitment(fulfillView() as never, fulfillCommand() as never);
     expect(resolution.ok).toBe(false);
     if (!resolution.ok) expect(resolution.code).toBe("commitment_not_found");
+  });
+});
+
+describe("E5.5 slice 3 — pressure_acknowledged real fold case", () => {
+  function ackEvent(pressureId: string, overrides: { sequence?: number; acknowledgedSeverity?: string } = {}) {
+    return pressureAcknowledgedEventSchema.parse({
+      id: `event-ack-${pressureId}-${overrides.sequence ?? 1}`,
+      worldId: "world-1",
+      branchId: "branch-1",
+      sequence: overrides.sequence ?? 1,
+      storySecond: NOW + 100,
+      rulesetVersion: "gate3-test-v1",
+      correlationId: "corr-1",
+      actorIds: ["actor-1"],
+      entityIds: [],
+      recordedAtWallClock: "2026-07-20T12:00:00.000Z",
+      commandId: "cmd-ack",
+      type: "pressure_acknowledged",
+      schemaVersion: 1,
+      payload: {
+        engagementId: "engagement-1",
+        pressureId,
+        actorId: "actor-1",
+        acknowledgedAt: NOW + 100,
+        acknowledgedSeverity: overrides.acknowledgedSeverity ?? "salient",
+      },
+    });
+  }
+
+  it("stamps the matching pressure's acknowledgedAt/acknowledgedSeverity, leaving a different pressure untouched", () => {
+    const seed = {
+      ...emptyCommitmentsSeed("branch-1", NOW),
+      pressures: [
+        temporalPressureSchema.parse({
+          id: "pressure-a",
+          actorId: "actor-1",
+          sourceCommitmentId: "commitment-a",
+          noticeAt: NOW,
+          decideBy: NOW + 500,
+          actBy: NOW + 900,
+          severity: "salient",
+        }),
+        temporalPressureSchema.parse({
+          id: "pressure-b",
+          actorId: "actor-1",
+          sourceCommitmentId: "commitment-b",
+          noticeAt: NOW,
+          decideBy: NOW + 500,
+          actBy: NOW + 900,
+          severity: "urgent",
+        }),
+      ],
+    };
+
+    const folded = applyCommitmentEvent(seed, ackEvent("pressure-a") as SimulationBranchEvent);
+    const a = folded.pressures.find((pressure) => pressure.id === "pressure-a");
+    const b = folded.pressures.find((pressure) => pressure.id === "pressure-b");
+    expect(a?.acknowledgedAt).toBe(NOW + 100);
+    expect(a?.acknowledgedSeverity).toBe("salient");
+    expect(b?.acknowledgedAt).toBeUndefined();
+    expect(b?.acknowledgedSeverity).toBeUndefined();
   });
 });
 

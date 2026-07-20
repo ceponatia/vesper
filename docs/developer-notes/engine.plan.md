@@ -684,8 +684,8 @@ the same day: ruling 15 (v1 body meters = **full chat parity**, with
 semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
 preconditions + a §19.3 policy escalation path**); normative wording in
 [engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
-below; **E5.1, E5.2, and E5.3 shipped 2026-07-19; E5.4 shipped 2026-07-20** —
-**E5.5 (the social ledger and consent, ruling 16) is next.**
+below; **E5.1, E5.2, and E5.3 shipped 2026-07-19; E5.4 and E5.5 shipped
+2026-07-20** — **E5.6 (the deterministic exit corpus) closes the gate.**
 
 Rough effort: **15–35 developer-days**.
 
@@ -972,7 +972,10 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    for E5.6. 18 new pure + 9 new int cases. Final E5.4 totals: 2 927 pure +
    414 int green; CI runs `test:engine-e5-4` (121 cases across four suites).
 5. **E5.5 — the social ledger: promises, favors, debts, boundaries, and consent
-   (ruling 16).** Status: **slices 1–2 shipped — 2026-07-20; slice 3 next.**
+   (ruling 16).** Status: **shipped — 2026-07-20 (slices 1–3).** All four carried
+   Gate-5 leftovers for this slice landed: E3.3's destinationless promises,
+   E3.4's pressure acknowledgment, E4.2's persisted §21.3 ledger, and E3.5's
+   ruling-16 consent preconditions.
    **Slice 1 (shipped) — the ledger substrate: derived entries, authored entries,
    reads.** The whole-feature spec landed first (§21.3 replaced wholesale, new
    §21.4 consent, §15.1/§15.4/§16.1/§19.2/§9.2 amendments — the E5.3/E5.4
@@ -1027,8 +1030,37 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    FK). Adversarial review confirmed 2 findings (1 critical, 1 major), both
    fixed as above. `test:engine-e5-5` 100 → 195; full suite 3 038 pure;
    `test:engine-e5-4` (121) and `test:engine-e5-3` (117) unbroken.
-   Remaining: **slice 3** (the §19.3 escalation with the pinned decline
-   fallback, pressure acknowledgment as a social act, full-corpus parity).
+   **Slice 3 (shipped — 2026-07-20) — consent escalation, pressure
+   acknowledgment, full-corpus parity.** `attempt_consent_escalation` through
+   the §19.3 deliberator seam, restructured two-phase after the review's
+   CRITICAL find (the first cut awaited the model call inside the branch-row
+   lock, violating the command-runner's own documented invariant): pre-lock
+   deliberation (unlocked dyad-ledger read, an idempotency dedupe so a retry
+   never re-spends model budget) and a locked authoritative re-check feeding
+   the pre-computed outcome into the event — the `prepareEngagementTurn`
+   precedent. Decline is pinned unconditionally across all five fallback
+   paths (not-admitted / refusal / timeout / unparseable / unknown-id),
+   regression-tested per path with a grant-scores-higher stub; a
+   player-controlled target hard-rejects before any deliberation (asserted
+   `deliberate()` called zero times); the versioned
+   `CONSENT_ESCALATION_SCORE_GAP_THRESHOLD_FIXED_POINT` gates admission; both
+   grant AND decline land as ledger entries. `acknowledge_pressure` as a
+   social act: `acknowledgedSeverity` on pressures + `acknowledgedPressureIds`
+   on engagements (migration 0078, nullable ALTERs), the cut's
+   acknowledgment-aware filter (suppressed at unchanged severity, re-surfaced
+   on escalation past it), and the arbiter emitting from the pre-filter
+   pressure load so destinationless-commitment pressures are acknowledgeable.
+   Fork parity: the review's major find (pressure `updatedSequence`
+   under-stamped when the last touch was an acknowledgment) fixed with a
+   max-merge of the two per-id sequence maps; full-corpus fork-hash parity
+   across every E5.5 event type. A follow-on **Opus verification pass** on the
+   critical restructure proved the defensive throw unreachable path-by-path,
+   confirmed dedupe/concurrency safety, and caught two more: the relationship
+   read's data-integrity diagnostics were silently dropped (now merged into
+   the persisted outcome) and a false unlocked-call doc comment (reverted);
+   the `admitAtLockedVersion` staleness caveat is documented on the option.
+   `test:engine-e5-5` 195 → 223; 3 048 pure + 443 int green; E5.4/E5.3 suites
+   unbroken.
    Original charter: The persisted §21.3 evidence ledger the E4.2 derived seam was built
    to feed: typed entries for promises made/kept/missed/repaired, boundaries
    stated/respected/violated, help, neglect, betrayal, disclosure, affection, conflict,

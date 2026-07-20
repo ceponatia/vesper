@@ -33,6 +33,9 @@ import {
   engagementInterruptedEventSchema,
   engagementOpenedEventSchema,
   engagementWindingDownEventSchema,
+  pressureAcknowledgedEventSchema,
+  type AcknowledgePressureCommand,
+  type AcknowledgePressureCommandResult,
   type EndEngagementCommand,
   type EndEngagementCommandResult,
   type OpenEngagementCommand,
@@ -164,8 +167,11 @@ import {
   type ScheduleTriggerCommandResult,
 } from "./scheduler";
 import {
+  consentEscalationResolvedEventSchema,
   relationshipChangeRecordedEventSchema,
   relationshipEntryAuthoredEventSchema,
+  type AttemptConsentEscalationCommand,
+  type AttemptConsentEscalationCommandResult,
   type RecordRelationshipChangeCommand,
   type RecordRelationshipChangeCommandResult,
   type RecordRelationshipEntryCommand,
@@ -247,6 +253,8 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   householdRestockDeferredEventSchema,
   relationshipEntryAuthoredEventSchema,
   relationshipChangeRecordedEventSchema,
+  consentEscalationResolvedEventSchema,
+  pressureAcknowledgedEventSchema,
 ]);
 
 export type SimulationBranchEvent = z.infer<typeof simulationBranchEventSchema>;
@@ -316,12 +324,28 @@ export function isCommitmentEvent(event: SimulationBranchEvent): event is Simula
   return commitmentEventTypes.has(event.type);
 }
 
-/** The engagement family (E3.4). Replay treats these as engagements-projection events. */
+/**
+ * The engagement family (E3.4). Replay treats these as engagements-projection
+ * events. `pressure_acknowledged` (E5.5 slice 3) joined this list on
+ * verification, not by construction — Stage A of E5.5 slice 3 flagged its
+ * absence as an open store-layer question (does fork parity for a forked
+ * engagement's `updatedSequence` need this membership?); verified yes:
+ * `branch-store.ts`'s `forkBranch` stamps each forked engagement row's
+ * `updatedSequence` from the LATEST event in this list touching that
+ * engagement id, and `pressure_acknowledged` genuinely changes engagement
+ * state (`acknowledgedPressureIds`, §4.6) — omitting it would silently
+ * under-stamp `updatedSequence` whenever acknowledgment is the most recent
+ * touch, the same "last touched" bookkeeping `audit-store.ts` already relies
+ * on for items. `isEngagementEvent`/`SimulationEngagementEvent` have exactly
+ * one real consumer (`branch-store.ts`'s fork materialization) as of this
+ * writing, so widening this list has no other blast radius.
+ */
 const engagementEventTypeList = [
   "engagement_opened",
   "engagement_ended",
   "engagement_interrupted",
   "engagement_winding_down",
+  "pressure_acknowledged",
 ] as const;
 export type EngagementEventType = (typeof engagementEventTypeList)[number];
 export type SimulationEngagementEvent = Extract<SimulationBranchEvent, { type: EngagementEventType }>;
@@ -433,14 +457,20 @@ export function isHouseholdEvent(event: SimulationBranchEvent): event is Simulat
 }
 
 /**
- * The relationship-ledger family (E5.5, engine.spec §21.3–21.4). Slice 1
- * ships `relationship_entry_authored` (derived-and-authored ledger entries)
- * and `relationship_change_recorded`; `consent_escalation_resolved` joins
- * this family in Slice 3.
+ * The relationship-ledger family (E5.5, engine.spec §21.3–21.4):
+ * `relationship_entry_authored`/`relationship_change_recorded` (derived-and-
+ * authored ledger entries, Slice 1) and `consent_escalation_resolved`
+ * (Slice 3 — its accept/decline outcome folds into a `permission_granted`/
+ * `consent_declined` ledger entry same as any other consent-scoped write).
+ * `pressure_acknowledged` (also Slice 3) is deliberately NOT a member of this
+ * family — acknowledgment produces no ledger entry at all (§1.7): it is a
+ * pure engagements/commitments cross-domain fact, folded by those two
+ * projections directly (§4.6), never by the relationship ledger.
  */
 const relationshipEventTypeList = [
   "relationship_entry_authored",
   "relationship_change_recorded",
+  "consent_escalation_resolved",
 ] as const;
 export type RelationshipEventType = (typeof relationshipEventTypeList)[number];
 export type SimulationRelationshipEvent = Extract<SimulationBranchEvent, { type: RelationshipEventType }>;
@@ -501,7 +531,9 @@ export type SimulationCommandEnvelope =
   | PromoteItemFromStockCommand
   | RunHouseholdRestockCommand
   | RecordRelationshipEntryCommand
-  | RecordRelationshipChangeCommand;
+  | RecordRelationshipChangeCommand
+  | AttemptConsentEscalationCommand
+  | AcknowledgePressureCommand;
 export type SimulationCommandResultRecord =
   | TransferItemCommandResult
   | DestroyItemCommandResult
@@ -542,7 +574,9 @@ export type SimulationCommandResultRecord =
   | PromoteItemFromStockCommandResult
   | RunHouseholdRestockCommandResult
   | RecordRelationshipEntryCommandResult
-  | RecordRelationshipChangeCommandResult;
+  | RecordRelationshipChangeCommandResult
+  | AttemptConsentEscalationCommandResult
+  | AcknowledgePressureCommandResult;
 
 // ---------------------------------------------------------------------------
 // Branch fork (spec §29.3)

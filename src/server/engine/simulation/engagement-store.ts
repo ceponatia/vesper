@@ -1,5 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
+  acknowledgePressureCommandResultSchema,
+  acknowledgePressureCommandSchema,
   endEngagementCommandResultSchema,
   endEngagementCommandSchema,
   engagementSchema,
@@ -7,24 +9,29 @@ import {
   openEngagementCommandResultSchema,
   openEngagementCommandSchema,
   claimHoldingEngagementStates,
+  type AcknowledgePressureCommandResult,
   type EndEngagementCommandResult,
   type Engagement,
   type EngagementsProjection,
   type OpenEngagementCommandResult,
 } from "@/contracts/simulation/engagements";
+import { temporalPressureSchema } from "@/contracts/simulation/commitments";
 import { worldBranchIdSchema } from "@/contracts/simulation/identity";
 import { heldClaimsForActor } from "@/lib/simulation/activities";
 import {
   engagementClaimsForActor,
+  resolveAcknowledgePressure,
   resolveEndEngagement,
   resolveOpenEngagement,
 } from "@/lib/simulation/engagements";
+import { sortedUnique } from "@/lib/simulation/hash";
 import { loadClaimHoldingActivities } from "./activity-store";
 import {
   db,
   simBranches,
   simCharacters,
   simEngagements,
+  simTemporalPressures,
   type Db,
 } from "@/server/db";
 import {
@@ -56,6 +63,10 @@ export function engagementFromRow(row: typeof simEngagements.$inferSelect): Enga
     state: row.state,
     openedAt: row.openedAt,
     attentionClaim: row.attentionClaim,
+    // E5.5 slice 3: round-trip the acknowledged-pressure set — without this
+    // the schema's `.default([])` would silently mask every stored
+    // acknowledgment on every read (found while wiring §4.6's real fold).
+    acknowledgedPressureIds: [...row.acknowledgedPressureIds].sort(),
     sourceCommandId: row.sourceCommandId,
   });
 }
@@ -75,6 +86,7 @@ export function engagementRowInsert(
     state: engagement.state,
     openedAt: engagement.openedAt,
     attentionClaim: engagement.attentionClaim,
+    acknowledgedPressureIds: [...engagement.acknowledgedPressureIds],
     sourceCommandId: engagement.sourceCommandId,
     updatedSequence,
   };
@@ -297,6 +309,138 @@ export async function submitDurableEndEngagement(
         )
         .returning({ engagementId: simEngagements.engagementId });
       if (!updated) throw new Error("Locked engagement changed before its end update");
+      await advanceLockedBranch(tx, branch, resolution.event.sequence);
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: resolution.event.sequence,
+        lastSequence: resolution.event.sequence,
+        eventIds: [resolution.event.id],
+      };
+    },
+  });
+}
+
+/**
+ * E5.5 slice 3 (§15.3, §18.1, §4.6): mark a live temporal pressure "looked at
+ * and not resolved" by an open engagement's participant. The event's two
+ * domain projectors — `Engagement.acknowledgedPressureIds`
+ * (`lib/simulation/engagements.ts`) and `TemporalPressure.acknowledgedAt`/
+ * `acknowledgedSeverity` (`lib/simulation/commitments.ts`) — each fold their
+ * own slice of the one event; this store therefore writes BOTH rows here
+ * (`sim_engagements` and `sim_temporal_pressures`), mirroring how
+ * `commitment-store.ts`'s deadline/fulfillment resolvers already touch two
+ * tables (`sim_commitments` + `sim_temporal_pressures`) from one event.
+ */
+export async function submitDurableAcknowledgePressure(
+  rawCommand: unknown,
+  options: EngagementStoreOptions = {},
+): Promise<AcknowledgePressureCommandResult> {
+  return runSimulationCommand({
+    rawCommand,
+    commandSchema: acknowledgePressureCommandSchema,
+    resultSchema: acknowledgePressureCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That acknowledgment is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That acknowledgment has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      acknowledgePressureCommandResultSchema.parse({
+        status: "conflict",
+        commandId,
+        currentVersion,
+        retryable: true,
+      }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command) => {
+      const [engagementRow] = await tx
+        .select()
+        .from(simEngagements)
+        .where(
+          and(
+            eq(simEngagements.branchId, branch.id),
+            eq(simEngagements.engagementId, command.payload.engagementId),
+          ),
+        )
+        .limit(1);
+      const engagement = engagementRow ? engagementFromRow(engagementRow) : undefined;
+
+      const [pressureRow] = await tx
+        .select()
+        .from(simTemporalPressures)
+        .where(
+          and(
+            eq(simTemporalPressures.branchId, branch.id),
+            eq(simTemporalPressures.pressureId, command.payload.pressureId),
+          ),
+        )
+        .limit(1);
+      const pressure = pressureRow
+        ? temporalPressureSchema.parse({
+            id: pressureRow.pressureId,
+            actorId: pressureRow.actorId,
+            sourceCommitmentId: pressureRow.sourceCommitmentId,
+            noticeAt: pressureRow.noticeAt,
+            decideBy: pressureRow.decideBy,
+            actBy: pressureRow.actBy,
+            severity: pressureRow.severity,
+            ...(pressureRow.acknowledgedAt === null ? {} : { acknowledgedAt: pressureRow.acknowledgedAt }),
+            ...(pressureRow.acknowledgedSeverity === null
+              ? {}
+              : { acknowledgedSeverity: pressureRow.acknowledgedSeverity }),
+            ...(pressureRow.resolvedAt === null ? {} : { resolvedAt: pressureRow.resolvedAt }),
+          })
+        : undefined;
+
+      const resolution = resolveAcknowledgePressure(
+        {
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: branch.headSequence,
+          storySecond: branch.storySecond,
+          ...(engagement ? { engagement } : {}),
+          ...(pressure ? { pressure } : {}),
+        },
+        command,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+      // `resolveAcknowledgePressure` only reaches `ok: true` when both loads
+      // resolved (§ above) — narrow for the two writes below.
+      if (!engagement || !pressure) {
+        throw new Error("Acknowledge-pressure resolved accepted without its loaded rows");
+      }
+
+      await appendSimulationEvent(tx, resolution.event);
+      await tx
+        .update(simTemporalPressures)
+        .set({
+          acknowledgedAt: resolution.event.payload.acknowledgedAt,
+          acknowledgedSeverity: resolution.event.payload.acknowledgedSeverity,
+          updatedSequence: resolution.event.sequence,
+        })
+        .where(
+          and(
+            eq(simTemporalPressures.branchId, branch.id),
+            eq(simTemporalPressures.pressureId, pressure.id),
+          ),
+        );
+      await tx
+        .update(simEngagements)
+        .set({
+          acknowledgedPressureIds: sortedUnique([...engagement.acknowledgedPressureIds, pressure.id]),
+          updatedSequence: resolution.event.sequence,
+        })
+        .where(
+          and(
+            eq(simEngagements.branchId, branch.id),
+            eq(simEngagements.engagementId, engagement.id),
+          ),
+        );
       await advanceLockedBranch(tx, branch, resolution.event.sequence);
 
       return {

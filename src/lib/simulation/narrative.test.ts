@@ -452,4 +452,45 @@ describe("E4.3 compileNarrativeCut", () => {
       { commitmentId: "commit-player", severity: "salient", actBy: NOW + 900 },
     ]);
   });
+
+  it("E5.5 slice 3 (§9.4): an acknowledged pressure at unchanged severity is excluded, but a severity change since acknowledgment re-surfaces it", () => {
+    const cut = compile({
+      viewpointPressures: [
+        temporalPressureSchema.parse({
+          id: "pressure-acked-same",
+          actorId: "player",
+          sourceCommitmentId: "commit-acked-same",
+          noticeAt: NOW,
+          decideBy: NOW + 900,
+          actBy: NOW + 900,
+          severity: "salient",
+          acknowledgedAt: NOW,
+          acknowledgedSeverity: "salient",
+        }),
+        temporalPressureSchema.parse({
+          id: "pressure-acked-escalated",
+          actorId: "player",
+          sourceCommitmentId: "commit-acked-escalated",
+          noticeAt: NOW,
+          decideBy: NOW + 900,
+          actBy: NOW + 900,
+          severity: "urgent",
+          acknowledgedAt: NOW,
+          acknowledgedSeverity: "salient",
+        }),
+        temporalPressureSchema.parse({
+          id: "pressure-unacked",
+          actorId: "player",
+          sourceCommitmentId: "commit-unacked",
+          noticeAt: NOW,
+          decideBy: NOW + 900,
+          actBy: NOW + 900,
+          severity: "background",
+        }),
+      ],
+    });
+    expect(cut.relevantPressures.map((pressure) => pressure.commitmentId).sort()).toEqual(
+      ["commit-acked-escalated", "commit-unacked"].sort(),
+    );
+  });
 });

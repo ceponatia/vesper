@@ -1479,6 +1479,8 @@ export function applyHouseholdEvent(
     case "item_condition_threshold_crossed":
     case "relationship_entry_authored":
     case "relationship_change_recorded":
+    case "consent_escalation_resolved":
+    case "pressure_acknowledged":
       // Non-household families advance the boundary without touching this projection.
       return householdsProjectionSchema.parse(bumped);
   }
