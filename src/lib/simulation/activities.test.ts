@@ -417,7 +417,7 @@ describe("E3.2 resolveCompleteActivity", () => {
     expect(resolution.activity.progressFixedPoint).toBe(1_000_000);
   });
 
-  it("re-validates at fire time and treats early firing as corruption", () => {
+  it("re-validates at fire time and fails a premature fire closed", () => {
     const cancelled = { ...acceptedStart().activity, phase: "cancelled" as const };
     const stale = resolveCompleteActivity(completeView({ activity: cancelled }) as never, completeCommand() as never);
     expect(stale.ok).toBe(false);
@@ -430,9 +430,16 @@ describe("E3.2 resolveCompleteActivity", () => {
     expect(player.ok).toBe(false);
     if (!player.ok) expect(player.code).toBe("unauthorized_principal");
 
-    expect(() =>
-      resolveCompleteActivity(completeView({ storySecond: SEED_SECOND + 1_799 }) as never, completeCommand() as never),
-    ).toThrow(/before its due/u);
+    // A premature fire fails closed rather than throwing: the claim/dispatch
+    // race body-store.ts's collapse interrupt can land in (a stale, still-
+    // `processing` completion alarm outliving a resume that pushed the due
+    // second out) makes this reachable in production, not just corruption.
+    const premature = resolveCompleteActivity(
+      completeView({ storySecond: SEED_SECOND + 1_799 }) as never,
+      completeCommand() as never,
+    );
+    expect(premature.ok).toBe(false);
+    if (!premature.ok) expect(premature.code).toBe("completion_not_due");
   });
 });
 

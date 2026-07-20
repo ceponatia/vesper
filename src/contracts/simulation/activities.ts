@@ -294,6 +294,7 @@ export const completeActivityRejectionCodes = [
   "activity_not_found",
   "activity_not_active",
   "unauthorized_principal",
+  "completion_not_due",
 ] as const;
 export const completeActivityRejectionCodeSchema = z.enum(completeActivityRejectionCodes);
 export const completeActivityCommandResultSchema = createCommandResultSchema(

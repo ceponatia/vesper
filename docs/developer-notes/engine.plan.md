@@ -678,14 +678,17 @@ E4.3 scenario and **carry to Gate 5** as planned.
 
 ## Gate 5 — bodies, materials, households, and relationships
 
-Status: **OPEN — started 2026-07-19.** Both opening rulings were resolved by the owner
-the same day: ruling 15 (v1 body meters = **full chat parity**, with
+Status: **CLOSED — 2026-07-20** (opened 2026-07-19; both opening rulings resolved by
+the owner the same day: ruling 15 — v1 body meters = **full chat parity**, with
 [chat-meter-economy.spec.md](chat-meter-economy.spec.md) OQ1–OQ3 as the normative
-semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
-preconditions + a §19.3 policy escalation path**); normative wording in
-[engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
-below; **E5.1, E5.2, and E5.3 shipped 2026-07-19; E5.4 and E5.5 shipped
-2026-07-20** — **E5.6 (the deterministic exit corpus) closes the gate.**
+semantics source; ruling 16 — interpersonal consent = **ledger-gated fail-closed
+preconditions + a §19.3 policy escalation path**; normative wording in
+[engine.spec.md](engine.spec.md) §39). The build order lives in §"Gate 5 build order"
+below; **E5.1–E5.3 shipped 2026-07-19; E5.4, E5.5, and E5.6 shipped 2026-07-20 —
+the green deterministic exit corpus closes the gate per the Gate 4 exit-scope
+precedent** (any live-model quality check rides
+[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs). Opening Gate 6
+is an owner call, as every gate opening has been.
 
 Rough effort: **15–35 developer-days**.
 
@@ -1075,19 +1078,47 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    projection reads over the ledger; conflicts among goals, needs, roles, and
    commitments become NPC-policy utility inputs (§19.2 widened with ledger and needs
    terms). Fork/replay parity.
-6. **E5.6 — the Gate 5 exit corpus.** Deterministic scenarios, zero model calls, in
-   the E4.5 mold: an explain-why causal chain for each of the four surfaces (a body —
-   why she is wrecked at 2am, from missed sleep window through threshold events; an
-   item — where the last meal went, from household stock through consumption; a
-   household — stock depleted and restocked with conserved quantities balancing; a
-   relationship — promise made → missed → the ledger entries and the trust read that
-   followed); the narrator boundary swept per viewpoint (reads gated on
-   exposure/frame/proximity — hidden arousal and another actor's meters never enter a
-   cut; a close-range witness gets the perceivable sign); partition invariance for
-   body drift (one big skip bit-identical to equivalent smaller skips across material
-   thresholds); rerender-creates-nothing and retry-from-the-same-cut extended over
-   every new persistence surface; fork/replay parity sweeps. Green corpus closes the
-   gate per the exit-scope precedent.
+6. **E5.6 — the Gate 5 exit corpus.** Status: **shipped — 2026-07-20. GATE 5
+   CLOSED.** Two deliverables, both Opus-built per the owner's 2026-07-20 model
+   ruling.
+   **The carried trigger-retirement audit** (the E5.4 follow-up): all ten trigger
+   kinds traced against the scheduler's real claim/dispatch transaction
+   boundaries. Nine proven immune with recorded per-kind reasons (fresh-state
+   re-derivation + self-sweeping dispatches for the threshold kinds; one-shot arms
+   with terminal statuses for expiry/notice/deadline/arrival/transfer; no
+   reconfigure command existing at all for the commitment/journey kinds). ONE
+   real gap confirmed: `activity_completion_due` at the collapse-interrupt site —
+   the only kind whose guard can legally cycle back (`active → interrupted →
+   active` via `resume_activity`), where a completion trigger claimed into
+   `processing` just before a collapse survived the pending-only sweep and later
+   hit a raw invariant throw on the resumed activity. Fixed both halves: the
+   throw became the structured `completion_not_due` rejection (fail-closed,
+   phase/time-based) and the collapse-interrupt retirement widened to
+   `pending`+`processing` per the household precedent; the regression test was
+   falsified against the unfixed code (stash → fail → restore → pass).
+   `cancel_activity`'s own pending-only miss is recorded harmless (`cancelled`
+   is terminal; the stale claim hits `activity_not_active` cleanly).
+   **The exit corpus** — `gate5-corpus.int.test.ts` (10 scenarios, zero model
+   calls, every arc through real commands): the four explain-why causal chains
+   (wake→escalation→collapse walked hop-by-hop through §6.4 derivations with the
+   read recomputed against the persisted beat; stock→promotion→held→consumed→
+   body-source with lot conservation summed from events; the means-band
+   unconserved top-up vs the causation-linked cross-kind purchase pair across two
+   restock cycles; promise missed→ledger→trust drop→repair→recovery with every
+   sourceEventId resolvable); the per-viewpoint narrator-boundary sweep (raw
+   meters structurally absent, exact sign vocabulary in deterministic order,
+   exact self-view fixed-point values); partition invariance across material
+   thresholds over a 22-table row-count footprint; rerender/retry invariance
+   over every E5.1–E5.5 persistence surface; and adversarial-boundary fork
+   sweeps (mid-armed-restock, mid-worn-window, pre/post promotion,
+   post-acknowledgment, plus the E5.3-noted instant-crossing case). Adversarial
+   review confirmed 1 major — the footprint sweep was silently missing
+   `sim_body_rhythms`, exactly the false-confidence class the lens targeted —
+   fixed with a fork-parity comparison added; two advisory assertions tightened
+   to exact values. Known limits recorded: post-fork rhythm reconfiguration is
+   unexercised (no mutation command exists yet), and one self-view literal is
+   pinned to the scenario's seed constants. CI runs `test:engine-e5-6` (10);
+   final Gate 5 totals 3 048 pure + 454 int green across all suites.
 
 E5.2 consumes E5.1; E5.3 consumes E5.1 (consumption sources); E5.4 consumes E5.3;
 E5.5 is independent of materials but consumes E3.3/E4.2; E5.6 closes the gate.

@@ -1413,7 +1413,21 @@ export async function submitDurableResolveBodyCollapse(
       await upsertMeterRow(tx, branch.id, resolution.meter, firstSequence);
 
       // Interrupt every held activity: phase + captured progress, and the
-      // pending completion alarm retired (prefix: resumed keys included).
+      // completion alarm retired (prefix: resumed keys included) — both
+      // `pending` rows AND rows a scheduler worker has already claimed into
+      // `processing` but not yet dispatched. That second half matters the
+      // same way it does for `retirePendingRestockTriggers`
+      // (household-store.ts): a completion alarm claimed just before this
+      // collapse commits would otherwise survive as `processing`, and a
+      // later resume (legal once `phase` reads `interrupted`, exactly what
+      // this write produces) flips the activity back to `active` with a
+      // LATER `expectedCompleteAt` — reactivating `resolveCompleteActivity`'s
+      // `phase !== "active"` guard's blind spot. Its own fire-time
+      // `completion_not_due` re-validation fails that stale dispatch closed
+      // regardless, but retiring the claimed row here keeps the trigger
+      // ledger honest (one live completion alarm, never two) and lets the
+      // scheduler's own fenced completion write no-op to `lease_lost`
+      // instead of burning an attempt on a certain rejection.
       for (const event of resolution.events) {
         if (event.type === "activity_interrupted") {
           await tx
@@ -1439,7 +1453,7 @@ export async function submitDurableResolveBodyCollapse(
             .where(
               and(
                 eq(simTriggers.branchId, branch.id),
-                eq(simTriggers.state, "pending"),
+                inArray(simTriggers.state, ["pending", "processing"]),
                 sql`starts_with(${simTriggers.uniquenessKey}, ${activityCompletionUniquenessKey(event.payload.activityInstanceId)})`,
               ),
             );
