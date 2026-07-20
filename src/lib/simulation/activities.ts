@@ -1032,6 +1032,8 @@ export function applyActivityEvent(
     case "household_restock_deferred":
     case "relationship_entry_authored":
     case "relationship_change_recorded":
+    case "consent_escalation_resolved":
+    case "pressure_acknowledged":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

@@ -124,8 +124,11 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "material_lot_adjusted":
     case "means_band_set":
     case "household_restock_routine_configured":
+    case "pressure_acknowledged":
       // Bookkeeping derives no observations (§20); unreachable in practice
-      // (mirrors `body_initialized`/`item_ownership_set`).
+      // (mirrors `body_initialized`/`item_ownership_set`). Pressure
+      // acknowledgment (E5.5 slice 3) is pure turn bookkeeping, not
+      // memory-eligible — mirrors `body_initialized`.
       return "world bookkeeping";
     case "material_lot_transferred":
       return "stock changing hands";
@@ -144,6 +147,11 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
       return "something between them being marked";
     case "relationship_change_recorded":
       return "the shape of a relationship shifting";
+    case "consent_escalation_resolved":
+      // Narratively meaningful (E5.5 slice 3, ruling 16): whether consent was
+      // granted or declined is significant relationship evidence —
+      // memory-eligible, mirrors `relationship_entry_authored`.
+      return "a boundary being tested and answered";
   }
 }
 

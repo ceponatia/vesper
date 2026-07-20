@@ -250,6 +250,8 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "household_restock_deferred":
     case "relationship_entry_authored":
     case "relationship_change_recorded":
+    case "consent_escalation_resolved":
+    case "pressure_acknowledged":
       // Household/lot/means bookkeeping (§26.8–26.11): a household founding, a
       // membership change, a lazy lot init, a privileged authoring adjustment,
       // a coarse means-band setting, a restock routine's authoring, an
@@ -257,7 +259,11 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       // facts, nothing in the scene moved for a beat to portray (mirrors
       // item_ownership_set). A relationship-ledger entry — authored or
       // derived — is the same shape of off-screen authoring/bookkeeping fact
-      // (§21.3): nothing in the scene moved for a beat to portray.
+      // (§21.3): nothing in the scene moved for a beat to portray. A consent
+      // escalation's grant/decline is a private negotiation outcome (§8) —
+      // the underlying speech act, if any, is its own beat; the resolution
+      // itself is not narrated as a fresh scene event. Pressure acknowledgment
+      // is pure turn bookkeeping (§8), mirrors trigger_scheduled.
       return null;
     case "material_lot_transferred":
       // An actor-driven, co-located stock movement (§26.9) — visibly witnessed
@@ -540,6 +546,13 @@ export function compileNarrativeCut(input: CompileNarrativeCutInput): NarrativeC
 
   const relevantPressures = input.viewpointPressures
     .filter((pressure) => pressure.resolvedAt === undefined)
+    // §9.4 (E5.5 slice 3): a pressure "looked at and not resolved" (§15.3)
+    // stops re-entering the cut at the severity it was acknowledged at — but
+    // any live severity change since (compared against the captured
+    // `acknowledgedSeverity`, not mere presence of `acknowledgedAt`)
+    // re-surfaces it, since the acknowledging read no longer covers the
+    // pressure's current stakes.
+    .filter((pressure) => pressure.acknowledgedAt === undefined || pressure.acknowledgedSeverity !== pressure.severity)
     .map((pressure) => ({
       commitmentId: pressure.sourceCommitmentId,
       severity: pressure.severity,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { deliberationOutcomeSchema } from "./deliberation";
 import {
   createCommandEnvelopeSchema,
   createCommandResultSchema,
@@ -31,12 +32,12 @@ import {
  * deterministic fallback of decline, and the outcome lands back here as a
  * ledger entry either way.
  *
- * Slice 1 (E5.5 slice 1) ships the ledger substrate — derived and authored
- * entries, and the trust/attraction/resentment reads. The consent gate
- * (`consent_covered` precondition wiring), destinationless commitments, and
- * escalation (`attempt_consent_escalation`) are later slices; the
- * `consentScopeKeys` vocabulary below is defined now but unconsumed until
- * then.
+ * Slice 1 shipped the ledger substrate — derived and authored entries, and
+ * the trust/attraction/resentment reads. Slice 2 wired the consent gate
+ * (`consent_covered` precondition) and destinationless commitments. Slice 3
+ * (this file's `attempt_consent_escalation`/`consent_escalation_resolved`)
+ * closes the loop: an uncovered attempt routes through the §19.3 deliberator
+ * seam and the outcome lands back in the ledger either way.
  */
 
 export const socialDerivationVersion = "social-v1" as const;
@@ -269,8 +270,8 @@ export const relationshipReadSchema = z
 export type RelationshipRead = z.infer<typeof relationshipReadSchema>;
 
 // ---------------------------------------------------------------------------
-// Commands (§7) — Slice 1: authored entries and relationship-change marking.
-// `attempt_consent_escalation` (§7.6) ships in Slice 3.
+// Commands (§7): authored entries, relationship-change marking, and (Slice 3)
+// consent escalation.
 // ---------------------------------------------------------------------------
 
 const recordRelationshipEntryPayloadSchema = z
@@ -359,10 +360,55 @@ export const recordRelationshipChangeCommandResultSchema = createCommandResultSc
   recordRelationshipChangeRejectionCodeSchema,
 );
 
+/**
+ * §19.2/§19.3's admission-gap policy constant for the consent-escalation
+ * call site (§4.7/§5.6) — every escalation applies the same admission-gap
+ * policy, so this is product tuning, not per-call business logic. Versioned
+ * and tunable; `400` is the blueprint's recommended starting value pending
+ * playtest.
+ */
+export const CONSENT_ESCALATION_SCORE_GAP_THRESHOLD_FIXED_POINT = 400;
+
+const attemptConsentEscalationPayloadSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    targetActorId: worldCharacterIdSchema,
+    scopeKey: consentScopeKeySchema,
+  })
+  .strict()
+  .refine((p) => p.actorId !== p.targetActorId, { message: "Two distinct actors required", path: ["targetActorId"] });
+
+export const attemptConsentEscalationCommandSchema = createCommandEnvelopeSchema(
+  "attempt_consent_escalation",
+  1,
+  attemptConsentEscalationPayloadSchema,
+);
+/**
+ * `unauthorized_actor` also covers a structural caller failure the store
+ * layer (not this schema) is responsible for: ruling 16 §11 open decision 3
+ * requires every caller to pass `playerControlledActorIds` explicitly (no
+ * silent default) — a caller that omits it is treated as a hard
+ * `unauthorized_actor`-class rejection, never a silent "assume NPC" default.
+ */
+export const attemptConsentEscalationRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "actor_not_found",
+  "target_not_found",
+  "unauthorized_actor",
+  "target_is_player_controlled",
+  "actors_not_co_located",
+] as const;
+export const attemptConsentEscalationRejectionCodeSchema = z.enum(attemptConsentEscalationRejectionCodes);
+export const attemptConsentEscalationCommandResultSchema = createCommandResultSchema(
+  attemptConsentEscalationRejectionCodeSchema,
+);
+
 // ---------------------------------------------------------------------------
-// Events (§9.2) — Slice 1: `relationship_entry_authored` and
-// `relationship_change_recorded`. `consent_escalation_resolved` ships in
-// Slice 3 alongside `attempt_consent_escalation`.
+// Events (§9.2): `relationship_entry_authored` and
+// `relationship_change_recorded` (Slice 1), `consent_escalation_resolved`
+// (Slice 3, alongside `attempt_consent_escalation`).
 // ---------------------------------------------------------------------------
 
 // Exported (not file-local like the other payload schemas above) — a future
@@ -415,6 +461,23 @@ export const relationshipChangeRecordedEventSchema = createEventEnvelopeSchema(
   relationshipChangeRecordedPayloadSchema,
 ).extend({ commandId: commandIdSchema });
 
+const consentEscalationResolvedPayloadSchema = z
+  .object({
+    actorId: worldCharacterIdSchema,
+    targetActorId: worldCharacterIdSchema,
+    scopeKey: consentScopeKeySchema,
+    granted: z.boolean(),
+    /** The full §19.3 outcome, captured for audit — never re-derived on replay. */
+    outcome: deliberationOutcomeSchema,
+  })
+  .strict();
+
+export const consentEscalationResolvedEventSchema = createEventEnvelopeSchema(
+  "consent_escalation_resolved",
+  1,
+  consentEscalationResolvedPayloadSchema,
+).extend({ commandId: commandIdSchema });
+
 // --- Types --------------------------------------------------------------------
 
 export type RecordRelationshipEntryCommand = z.infer<typeof recordRelationshipEntryCommandSchema>;
@@ -425,3 +488,7 @@ export type RecordRelationshipChangeRejectionCode = z.infer<typeof recordRelatio
 export type RecordRelationshipChangeCommandResult = z.infer<typeof recordRelationshipChangeCommandResultSchema>;
 export type RelationshipEntryAuthoredEvent = z.infer<typeof relationshipEntryAuthoredEventSchema>;
 export type RelationshipChangeRecordedEvent = z.infer<typeof relationshipChangeRecordedEventSchema>;
+export type AttemptConsentEscalationCommand = z.infer<typeof attemptConsentEscalationCommandSchema>;
+export type AttemptConsentEscalationRejectionCode = z.infer<typeof attemptConsentEscalationRejectionCodeSchema>;
+export type AttemptConsentEscalationCommandResult = z.infer<typeof attemptConsentEscalationCommandResultSchema>;
+export type ConsentEscalationResolvedEvent = z.infer<typeof consentEscalationResolvedEventSchema>;

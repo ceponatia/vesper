@@ -243,6 +243,7 @@ export function deriveEventObservations(
     case "household_restock_deferred":
     case "relationship_entry_authored":
     case "relationship_change_recorded":
+    case "pressure_acknowledged":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
@@ -272,6 +273,8 @@ export function deriveEventObservations(
       // actor's live perception of the underlying fact (a promise spoken, a
       // scene shared) already rides that fact's own causal event; the ledger
       // entry it produces is audit bookkeeping, mirrors `body_initialized`.
+      // Pressure acknowledgment (E5.5 slice 3) is internal scheduling/turn
+      // bookkeeping — mirrors `trigger_scheduled`'s no-observation treatment.
       return [];
     case "journey_planned":
     case "journey_delayed":
@@ -415,6 +418,16 @@ export function deriveEventObservations(
       if (event.locationId !== undefined) {
         gradeLocationBystanders(collector, space, event.locationId, SOUND_MUFFLED);
       }
+      break;
+    }
+    case "consent_escalation_resolved": {
+      // §8/§21.4: participant-only — the two named actors both witness the
+      // outcome interoceptively. This is inherently a private negotiation
+      // between the two parties, never surfaced to a co-located crowd even
+      // if a shared engagement surrounds them (mirrors disclosure_made's
+      // speaker+listener pattern, not a bystander-crowd witness set).
+      collector.add(event.payload.actorId, DIRECT_EMBODIED);
+      collector.add(event.payload.targetActorId, DIRECT_EMBODIED);
       break;
     }
   }

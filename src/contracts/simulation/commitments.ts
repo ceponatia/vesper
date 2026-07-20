@@ -161,6 +161,10 @@ export const temporalPressureSchema = z
     actBy: storySecondSchema,
     severity: pressureSeveritySchema,
     acknowledgedAt: storySecondSchema.optional(),
+    /** E5.5 slice 3 (§18.1): the severity captured at acknowledgment time —
+     * the cut's acknowledgment-aware pressure filter compares this against
+     * the pressure's live `severity` to decide whether it re-surfaces. */
+    acknowledgedSeverity: pressureSeveritySchema.optional(),
     resolvedAt: storySecondSchema.optional(),
   })
   .strict()

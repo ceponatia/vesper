@@ -1,0 +1,2 @@
+ALTER TABLE "sim_engagements" ADD COLUMN "acknowledged_pressure_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "sim_temporal_pressures" ADD COLUMN "acknowledged_severity" text;

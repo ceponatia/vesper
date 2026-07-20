@@ -620,8 +620,22 @@ export async function forkBranch(
       events: inherited,
     });
     const commitmentSequenceById = new Map<string, number>();
+    // `pressure_acknowledged` (E5.5 slice 3) carries no `commitmentId` — it is
+    // deliberately absent from `commitmentEventTypeList` (its payload shape is
+    // structurally incompatible) — so a pressure row's "last touch" can't be
+    // read off `commitmentSequenceById` alone: a pressure most recently
+    // touched by an acknowledgment would otherwise be under-stamped with its
+    // source commitment's older sequence. Track acknowledgments separately,
+    // keyed by pressure id (mirrors the engagement-side fix a few lines below
+    // — `engagementEventTypeList` gained `pressure_acknowledged` because its
+    // payload DOES carry `engagementId`), and take the max of the two when
+    // stamping `updatedSequence`.
+    const pressureAcknowledgedSequenceById = new Map<string, number>();
     for (const event of inherited) {
       if (isCommitmentEvent(event)) commitmentSequenceById.set(event.payload.commitmentId, event.sequence);
+      if (event.type === "pressure_acknowledged") {
+        pressureAcknowledgedSequenceById.set(event.payload.pressureId, event.sequence);
+      }
     }
     if (childCommitments.commitments.length > 0) {
       await tx.insert(simCommitments).values(
@@ -636,7 +650,10 @@ export async function forkBranch(
           pressureRowInsert(
             input.childBranchId,
             pressure,
-            commitmentSequenceById.get(pressure.sourceCommitmentId) ?? 0,
+            Math.max(
+              commitmentSequenceById.get(pressure.sourceCommitmentId) ?? 0,
+              pressureAcknowledgedSequenceById.get(pressure.id) ?? 0,
+            ),
           ),
         ),
       );

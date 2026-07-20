@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { activityClaimSchema } from "./activities";
+import { pressureSeveritySchema } from "./commitments";
 import {
   createCommandEnvelopeSchema,
   createCommandResultSchema,
@@ -66,6 +67,13 @@ export const engagementSchema = z
     openedAt: storySecondSchema,
     /** The per-participant attention claim this engagement holds while open. */
     attentionClaim: activityClaimSchema,
+    /** E5.5 slice 3 (§18.1): temporal-pressure ids acknowledged within this
+     * engagement — a pressure "looked at and not resolved" this turn, per
+     * §15.3, so it stops nagging until severity or assumptions change. */
+    acknowledgedPressureIds: createStableStringSetSchema(
+      z.string().min(1).max(1_024),
+      "Acknowledged pressure IDs",
+    ).default([]),
     sourceCommandId: commandIdSchema,
   })
   .strict()
@@ -148,6 +156,36 @@ export const endEngagementCommandResultSchema = createCommandResultSchema(
   endEngagementRejectionCodeSchema,
 );
 
+/** E5.5 slice 3 (§18.1, §15.3): mark a live temporal pressure "looked at" by
+ * an engagement's participant without resolving it. */
+const acknowledgePressurePayloadSchema = z
+  .object({
+    engagementId: engagementIdSchema,
+    pressureId: z.string().min(1).max(1_024),
+  })
+  .strict();
+
+export const acknowledgePressureCommandSchema = createCommandEnvelopeSchema(
+  "acknowledge_pressure",
+  1,
+  acknowledgePressurePayloadSchema,
+);
+export const acknowledgePressureRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "engagement_not_found",
+  "engagement_not_open",
+  "pressure_not_found",
+  "pressure_not_relevant",
+  "unauthorized_principal",
+  "already_acknowledged",
+] as const;
+export const acknowledgePressureRejectionCodeSchema = z.enum(acknowledgePressureRejectionCodes);
+export const acknowledgePressureCommandResultSchema = createCommandResultSchema(
+  acknowledgePressureRejectionCodeSchema,
+);
+
 // --- Engagement event family (engine.spec §9.2) ------------------------------
 
 const engagementOpenedPayloadSchema = z
@@ -216,6 +254,29 @@ export const engagementWindingDownEventSchema = createEventEnvelopeSchema(
   engagementWindingDownPayloadSchema,
 );
 
+/** E5.5 slice 3 (§15.3, §18.1): a pressure was looked at and not resolved —
+ * the engagement's `acknowledgedPressureIds` and the pressure's own
+ * `acknowledgedAt`/`acknowledgedSeverity` (`contracts/simulation/commitments.ts`)
+ * both fold from this one event (§4.6 — two domain projectors, one cause). */
+const pressureAcknowledgedPayloadSchema = z
+  .object({
+    engagementId: engagementIdSchema,
+    pressureId: z.string().min(1).max(1_024),
+    actorId: worldCharacterIdSchema,
+    acknowledgedAt: storySecondSchema,
+    /** Captured §6.4 value — the narrative cut's acknowledgment-aware
+     * pressure filter compares a live pressure's CURRENT severity against
+     * this captured value, not merely presence/absence of acknowledgment. */
+    acknowledgedSeverity: pressureSeveritySchema,
+  })
+  .strict();
+
+export const pressureAcknowledgedEventSchema = createEventEnvelopeSchema(
+  "pressure_acknowledged",
+  1,
+  pressureAcknowledgedPayloadSchema,
+).extend({ commandId: commandIdSchema });
+
 // --- Engagements projection ---------------------------------------------------
 
 export const engagementsProjectionSchema = z
@@ -245,3 +306,7 @@ export type EngagementEndedEvent = z.infer<typeof engagementEndedEventSchema>;
 export type EngagementInterruptedEvent = z.infer<typeof engagementInterruptedEventSchema>;
 export type EngagementInterruptReason = z.infer<typeof engagementInterruptReasonSchema>;
 export type EngagementWindingDownEvent = z.infer<typeof engagementWindingDownEventSchema>;
+export type AcknowledgePressureCommand = z.infer<typeof acknowledgePressureCommandSchema>;
+export type AcknowledgePressureRejectionCode = z.infer<typeof acknowledgePressureRejectionCodeSchema>;
+export type AcknowledgePressureCommandResult = z.infer<typeof acknowledgePressureCommandResultSchema>;
+export type PressureAcknowledgedEvent = z.infer<typeof pressureAcknowledgedEventSchema>;

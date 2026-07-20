@@ -1,5 +1,6 @@
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
 import type { ActivityClaim } from "@/contracts/simulation/activities";
+import type { TemporalPressure } from "@/contracts/simulation/commitments";
 import {
   claimHoldingEngagementStates,
   engagementAttentionClaim,
@@ -9,6 +10,9 @@ import {
   engagementSchema,
   engagementStateTransitions,
   engagementsProjectionSchema,
+  pressureAcknowledgedEventSchema,
+  type AcknowledgePressureCommand,
+  type AcknowledgePressureRejectionCode,
   type EndEngagementCommand,
   type EndEngagementRejectionCode,
   type Engagement,
@@ -19,6 +23,7 @@ import {
   type EngagementsProjection,
   type OpenEngagementCommand,
   type OpenEngagementRejectionCode,
+  type PressureAcknowledgedEvent,
 } from "@/contracts/simulation/engagements";
 import { composeSimulationId } from "@/contracts/simulation/identity";
 import type { PhysicalLocus } from "@/contracts/simulation/space";
@@ -293,6 +298,106 @@ export function resolveEndEngagement(
   return { ok: true, engagement: ended, event };
 }
 
+// ---------------------------------------------------------------------------
+// AcknowledgePressure resolution (§15.3, §18.1, E5.5 slice 3)
+// ---------------------------------------------------------------------------
+
+export interface AcknowledgePressureResolutionView extends EngagementBranchMeta {
+  engagement?: Engagement;
+  /** The pressure row named by the command, loaded narrowly by the store —
+   * `undefined` when no such pressure exists on this branch. */
+  pressure?: TemporalPressure;
+}
+
+interface AcknowledgePressureRejection {
+  ok: false;
+  code: AcknowledgePressureRejectionCode;
+  publicReason: string;
+}
+
+export interface AcknowledgePressureResolution {
+  ok: true;
+  event: PressureAcknowledgedEvent;
+}
+
+function acknowledgePressureRejection(
+  code: AcknowledgePressureRejectionCode,
+  publicReason: string,
+): AcknowledgePressureRejection {
+  return { ok: false, code, publicReason };
+}
+
+/**
+ * Mark a live temporal pressure "looked at and not resolved" (§15.3) by one
+ * of an open engagement's participants. Mechanical, arbiter-driven — like
+ * `confirm_narrator_result`, this resolves off the turn machinery rather
+ * than any single participant's own agency, so only a `system` principal is
+ * authorized (deviation-flagged design choice: the blueprint names the
+ * rejection `unauthorized_principal`, not `unauthorized_actor`, which reads
+ * as the same "mechanical, not player-attributable" shape as
+ * `confirm_narrator_result`'s existing system-only check).
+ */
+export function resolveAcknowledgePressure(
+  view: AcknowledgePressureResolutionView,
+  command: AcknowledgePressureCommand,
+): AcknowledgePressureRejection | AcknowledgePressureResolution {
+  if (command.branchId !== view.branchId) {
+    return acknowledgePressureRejection("branch_mismatch", "That world branch is unavailable.");
+  }
+  const engagement = view.engagement;
+  if (!engagement) return acknowledgePressureRejection("engagement_not_found", "That conversation is unknown.");
+  if (!claimHoldingEngagementStates.includes(engagement.state)) {
+    return acknowledgePressureRejection("engagement_not_open", "That conversation is not open.");
+  }
+  if (command.principal.kind !== "system") {
+    return acknowledgePressureRejection("unauthorized_principal", "That cannot be acknowledged directly.");
+  }
+  const pressure = view.pressure;
+  if (!pressure) return acknowledgePressureRejection("pressure_not_found", "That pressure is unknown.");
+  if (pressure.resolvedAt !== undefined || !engagement.participantIds.includes(pressure.actorId as never)) {
+    return acknowledgePressureRejection(
+      "pressure_not_relevant",
+      "That pressure has nothing to do with this conversation.",
+    );
+  }
+  // §9.4: re-acknowledging at the SAME severity is a no-op rejection; a
+  // severity change since the last acknowledgment is new evidence and is
+  // legally re-acknowledgeable (mirrors `compileNarrativeCut`'s own
+  // acknowledgedSeverity-vs-severity comparison, narrative.ts §9.4).
+  if (pressure.acknowledgedAt !== undefined && pressure.acknowledgedSeverity === pressure.severity) {
+    return acknowledgePressureRejection("already_acknowledged", "That has already been acknowledged.");
+  }
+
+  const event = pressureAcknowledgedEventSchema.parse({
+    id: composeSimulationId("event", [view.branchId, command.id, "pressure-acknowledged"]),
+    worldId: view.worldId,
+    branchId: view.branchId,
+    sequence: view.headSequence + 1,
+    storySecond: view.storySecond,
+    type: "pressure_acknowledged",
+    schemaVersion: 1,
+    rulesetVersion: view.rulesetVersion,
+    commandId: command.id,
+    correlationId: command.correlationId,
+    actorIds: [pressure.actorId],
+    // `pressure.id` is deliberately OMITTED here — like `pressure_raised`'s
+    // own entityIds (commitments.ts), a pressure id nests a commitment id
+    // which itself nests a branch+command id, and can exceed the 256-char
+    // compact-id cap `simulationEntityIdSchema` enforces.
+    entityIds: sortedUnique([engagement.id, pressure.actorId]),
+    ...(engagement.locationId ? { locationId: engagement.locationId } : {}),
+    recordedAtWallClock: command.submittedAtWallClock,
+    payload: {
+      engagementId: engagement.id,
+      pressureId: pressure.id,
+      actorId: pressure.actorId,
+      acknowledgedAt: view.storySecond,
+      acknowledgedSeverity: pressure.severity,
+    },
+  });
+  return { ok: true, event };
+}
+
 /** The interruption event a departure emits for each open co-present scene it breaks. */
 export function buildDepartureInterruptEvent(input: {
   meta: EngagementBranchMeta;
@@ -389,6 +494,24 @@ export function applyEngagementEvent(
     return sortEngagementsProjection({
       ...bumped,
       engagements: updateEngagement(projection, event.payload.engagementId, event.type, "winding_down"),
+    });
+  }
+  if (event.type === "pressure_acknowledged") {
+    // §4.6: the sibling real case to `commitments.ts`'s — appends this
+    // event's `pressureId` to the matching engagement's
+    // `acknowledgedPressureIds`. `sortedUnique` makes a duplicate append
+    // (a defensive replay-safety property, not a live failure mode — each
+    // event folds once) idempotent.
+    return sortEngagementsProjection({
+      ...bumped,
+      engagements: projection.engagements.map((engagement) =>
+        engagement.id === event.payload.engagementId
+          ? engagementSchema.parse({
+              ...engagement,
+              acknowledgedPressureIds: sortedUnique([...engagement.acknowledgedPressureIds, event.payload.pressureId]),
+            })
+          : engagement,
+      ),
     });
   }
   // Non-engagement families advance the boundary without touching this projection.
