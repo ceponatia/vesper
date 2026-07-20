@@ -93,6 +93,19 @@ export {
   type MaterialSubmitOptions,
 } from "./material-store";
 export {
+  householdMemberRowInsert,
+  householdRowInsert,
+  materialLotRowInsert,
+  meansBandRowInsert,
+  submitDurableAdjustMaterialLot,
+  submitDurableCreateHousehold,
+  submitDurableSetHouseholdMembership,
+  submitDurableSetMeansBand,
+  submitDurableTransferLotQuantity,
+  type DurableHouseholdCrashPoint,
+  type HouseholdSubmitOptions,
+} from "./household-store";
+export {
   holdsLiveBeliefInAssertion,
   isLiveBeliefHeldBy,
   submitDurableMakeDisclosure,

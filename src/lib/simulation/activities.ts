@@ -980,6 +980,12 @@ export function applyActivityEvent(
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
     case "item_condition_threshold_crossed":
+    case "household_created":
+    case "household_membership_set":
+    case "material_lot_initialized":
+    case "material_lot_adjusted":
+    case "material_lot_transferred":
+    case "means_band_set":
       // Non-activity families advance the boundary without touching activities.
       return activitiesProjectionSchema.parse(bumped);
   }

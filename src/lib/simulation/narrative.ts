@@ -239,6 +239,21 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
       return null;
+    case "household_created":
+    case "household_membership_set":
+    case "material_lot_initialized":
+    case "material_lot_adjusted":
+    case "means_band_set":
+      // Household/lot/means bookkeeping (§26.8–26.10): a household founding, a
+      // membership change, a lazy lot init, a privileged authoring adjustment,
+      // or a coarse means-band setting are all social-ledger/authoring facts —
+      // nothing in the scene moved for a beat to portray (mirrors
+      // item_ownership_set).
+      return null;
+    case "material_lot_transferred":
+      // An actor-driven, co-located stock movement (§26.9) — visibly witnessed
+      // the same way an item changes hands (mirrors item_transferred).
+      return { kind: "hard", summary: "Stock visibly changed hands." };
   }
 }
 

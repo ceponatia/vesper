@@ -46,7 +46,6 @@ import {
   resolveRootLocus,
   rootZoneId,
   type MaterialResolutionView,
-  type RootLocus,
 } from "./material-locus";
 
 export {
@@ -813,6 +812,12 @@ export function applyMaterialEvent(
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
     case "item_condition_threshold_crossed":
+    case "household_created":
+    case "household_membership_set":
+    case "material_lot_initialized":
+    case "material_lot_adjusted":
+    case "material_lot_transferred":
+    case "means_band_set":
       // Non-material families advance the boundary without touching items.
       return materialsProjectionSchema.parse(bumped);
   }

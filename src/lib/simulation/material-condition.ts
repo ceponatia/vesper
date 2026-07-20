@@ -1091,6 +1091,12 @@ export function applyItemConditionEvent(
     case "body_condition_ended":
     case "body_threshold_crossed":
     case "body_collapsed":
+    case "household_created":
+    case "household_membership_set":
+    case "material_lot_initialized":
+    case "material_lot_adjusted":
+    case "material_lot_transferred":
+    case "means_band_set":
       // Non-item-condition families advance the boundary without touching this projection.
       return itemConditionsProjectionSchema.parse(bumped);
   }

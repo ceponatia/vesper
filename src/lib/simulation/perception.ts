@@ -233,6 +233,11 @@ export function deriveEventObservations(
     case "item_condition_source_applied":
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
+    case "household_created":
+    case "household_membership_set":
+    case "material_lot_initialized":
+    case "material_lot_adjusted":
+    case "means_band_set":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
@@ -246,7 +251,12 @@ export function deriveEventObservations(
       // modifier bookkeeping exactly — the worn-window modifier's cause (a
       // transfer donning/doffing the item) is witnessed through its own
       // item_transferred event; a clean/adjustment source is interoception with
-      // no subject to feel it (an item is not a witness of itself).
+      // no subject to feel it (an item is not a witness of itself). Household
+      // founding/membership, a lazy lot init, and a privileged authoring
+      // adjustment (§26.8–26.9) are likewise off-screen authoring acts — a
+      // conserved transfer (below) is the one lot event with a physical actor
+      // to witness. A means band (§26.10) is a coarse authored fact about a
+      // subject's means, not a witnessed event.
       return [];
     case "journey_planned":
     case "journey_delayed":
@@ -314,12 +324,14 @@ export function deriveEventObservations(
     }
     case "item_transferred":
     case "item_destroyed":
-    case "item_consumed": {
-      // An obvious same-zone manipulation (§26.4, §26.6): the acting actor has
-      // direct evidence, and everyone sharing their zone sees it clearly. The
-      // manipulation is always at the acting actor's zone — transfer law's root
-      // co-location guarantees both chains root there — so witnesses are derived
-      // live from presence rather than captured on the event.
+    case "item_consumed":
+    case "material_lot_transferred": {
+      // An obvious same-zone manipulation (§26.4, §26.6, §26.9): the acting
+      // actor has direct evidence, and everyone sharing their zone sees it
+      // clearly. The manipulation is always at the acting actor's zone —
+      // transfer law's root co-location guarantees both chains root there
+      // (§26.8's access check is the lot-locus equivalent) — so witnesses are
+      // derived live from presence rather than captured on the event.
       const actorId = event.payload.actorId;
       collector.add(actorId, DIRECT_EMBODIED);
       const actorZoneId = atOccupants(space).find((occupant) => occupant.actorId === actorId)?.zoneId;
