@@ -1109,29 +1109,61 @@ The background-life controller concretizes §19.1–19.2 for actors at `event`
 simulation LOD (§27.4). A `routine_policy_due` alarm arms when an actor with a
 tracked body enters `event` LOD (and re-arms on every resolution — sequence-
 versioned uniqueness keys, unconditional retirement on any LOD assignment), due
-at the actor's own rhythm boundary. It dispatches `run_routine_policy` (system
-principal only), which re-validates fail-closed at fire time (LOD still `event`,
-body tracked, not asleep — else the structured `routine_stale`) and resolves
+at the actor's next routine boundary: the sleep window's start or any authored
+`meal` rhythm window's start, whichever comes first (one boundary law shared by
+the arm and every re-arm). It dispatches `run_routine_policy` (system principal
+only), which re-validates fail-closed at fire time (LOD still `event`, body
+tracked, not asleep — else the structured `routine_stale`) and resolves
 deterministically: the §19.3 deliberator is never consulted; routine choices are
 the §28 no-model tier by definition.
 
-The v1 candidate set is closed — `begin_sleep` and the ever-legal fallback
-`hold`. Legality gates (§19.1): claim-holding activities and live engagements
-make sleep illegal, with the gate name captured on the decision event. Scoring
-(§19.2, versioned fixed-point weights): sleep scores by the actor's own
-circadian pressure; hold scores 10 000 when an unresolved pressure's actBy falls
-inside the would-be sleep — above the entire periodic circadian range, so a live
-obligation outranks routine bedtime, while escalation past ~21h of sleep debt
-eventually outranks the obligation, emergently. Ties keep `hold`.
+The candidate set is closed — `begin_sleep`, `eat_meal` (slice 2), and the
+ever-legal fallback `hold`; the vocabulary order is the tie order (a later
+candidate must strictly outscore the running winner, so every tie falls back
+toward `hold`). A candidate is DUE only inside its own rhythm window
+(half-open, wrapping midnight) and scores 0 outside it — a midday boundary can
+never turn a hold into a nap off the daytime circadian floor; forced daytime
+sleep belongs to the §25.4 collapse law alone. Legality gates (§19.1):
+claim-holding activities and live engagements make both non-hold candidates
+illegal, and `eat_meal` additionally requires an eligible item — §26.5
+selection adapted to meals: extant, carrying at least one authored
+`meal`-source consumption effect, unowned or the actor's own (routine never
+eats against ownership), unreserved, outside inaccessible containers
+(fail-closed §26.2), rooted at the actor or the actor's zone; actor-rooted
+before zone-rooted, lexicographic item-id tie-break — else illegal
+`no_eligible_item`. Every gate name is captured on the decision event.
+
+Scoring (§19.2, versioned fixed-point weights, `routine-policy-v2`): sleep
+scores the actor's own circadian pressure minus a 10 000 obligation penalty
+when an unresolved pressure's actBy falls inside the would-be sleep — the
+penalty sits above the entire periodic circadian range, so a live obligation
+outranks routine bedtime while escalation past ~21h of sleep debt eventually
+outranks it, emergently. (v1 scored the same weight on `hold`; v2 moved it
+onto sleep so an evening obligation cannot starve an instant midday meal — the
+sleep-vs-hold boundary is unchanged, and persisted v1 decisions remain
+parseable via the versioned weights list.) `eat_meal` scores 6 000 inside a
+meal window — above the 3 500 bedtime anchor where authored windows overlap,
+below ~8h-overdue escalated sleep — and eating is instantaneous (§26.6), so no
+obligation penalty applies to it.
 
 The decision persists as `routine_policy_resolved` (every scored candidate, the
-chosen id, the admitting LOD — a §6.4 capture; not perceptible, not a beat, not
-memory-eligible). A chosen sleep commits atomically through the identical asleep
-train collapse uses (§25.4 — condition, energy suspend, self-expiry at the
-scheduled wake), so waking, the sleep credit, and every downstream re-arm follow
-from existing law; a hold re-arms the next bedtime and the skipped night
-self-heals a day later. Wash stays §25.5 window-crossing law; meals join the
-candidate set in a later slice.
+chosen id, the admitting LOD, and the chosen sleep's condition or the chosen
+meal's item — a §6.4 capture; not perceptible, not a beat, not
+memory-eligible). A chosen sleep commits atomically through the identical
+asleep train collapse uses (§25.4 — condition, energy suspend, self-expiry at
+the scheduled wake), so waking, the sleep credit, and every downstream re-arm
+follow from existing law. A chosen meal commits atomically through the
+identical §26.6 consumption train `consume_item` records — `item_consumed`
+causation-chained to the decision, the item's authored body effects through
+the shared builders, the material feed obligation, per-meter threshold
+retire-and-re-arm — so a routine meal and a commanded meal are
+indistinguishable in the record. A hold (or an eat) re-arms the next boundary
+and a skipped window self-heals at the following one. Wash stays §25.5
+window-crossing law — meal rhythm windows deliberately have NO crossing
+credit; background eating is always real consumption of a real item. Feeding
+from aggregate household stock (no concrete item) is the §27 aggregate lane's
+concern (E6.3); the §21.3 ledger terms in the general scorer remain §9's open
+decision 6.
 
 ### 19.3 Deliberator admission
 

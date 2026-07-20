@@ -323,9 +323,15 @@ export type BodyModifierSpec = z.infer<typeof bodyModifierSpecSchema>;
  * data (ported from the chat lane's `profile.schedule`). `sleep` anchors the
  * circadian pressure curve; `wash` rows are window-crossing self-care (§25.5:
  * a skip credits only the rows it actually crossed, never a blanket restore).
- * `meal` joins as a data edit when satiation ports (chat-body-needs).
+ * `meal` rows (E6.2) are routine-controller boundaries: an event-LOD actor's
+ * alarm fires at the window start and eating happens as REAL §26.6 item
+ * consumption — deliberately never a crossing credit, which is why
+ * {@link rhythmSelfCareEffects} has no meal entry (§25.5: crossings MUST NOT
+ * blanket-restore meals). A satiation meter joins the registry later
+ * (chat-body-needs); until then a meal's body effect is whatever the consumed
+ * item authored.
  */
-export const bodyRhythmKinds = ["sleep", "wash"] as const;
+export const bodyRhythmKinds = ["sleep", "wash", "meal"] as const;
 export const bodyRhythmKindSchema = z.enum(bodyRhythmKinds);
 export type BodyRhythmKind = z.infer<typeof bodyRhythmKindSchema>;
 

@@ -359,7 +359,12 @@ export async function seedDurableMaterialBranch(
  * one query (§26.5), not resolved per-callback, because the accessor must
  * answer synchronously.
  */
-async function loadMaterialResolutionView(
+/**
+ * Load the §26 authority view under the branch lock. Exported for the E6.2
+ * routine controller (`routine-store.ts`), whose `eat_meal` candidate runs
+ * the same §26.5 selection + §26.6 consumption law over this exact view.
+ */
+export async function loadMaterialResolutionView(
   tx: SimTx,
   branch: LockedBranchView,
   touchedItemIds: readonly string[],
@@ -761,9 +766,10 @@ async function applyDurableItemConditionTrailingEvent(
  * `meterViewOf` / `collapseContextOf` there are private to that module, so
  * this is the material lane's own copy of the same shape (meters, modifiers,
  * rhythms, and the collapse context's last-real-sleep fact), reusing every
- * row mapper body-store.ts exports rather than re-deriving them.
+ * row mapper body-store.ts exports rather than re-deriving them. Exported
+ * for the E6.2 routine controller's `eat_meal` consumption train.
  */
-async function loadConsumptionBodyView(
+export async function loadConsumptionBodyView(
   tx: SimTx,
   branchId: string,
   actorId: string,
@@ -833,7 +839,8 @@ async function loadConsumptionBodyView(
   };
 }
 
-async function updateItemLocus(
+/** Exported for the E6.2 routine controller's `eat_meal` consumption train. */
+export async function updateItemLocus(
   tx: SimTx,
   branchId: string,
   itemId: string,
