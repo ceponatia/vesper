@@ -23,40 +23,24 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
 
 ## Active (building now)
 
-- **Successor world engine — Gate 5: bodies, materials, households & relationships** —
-  [engine.plan.md](engine.plan.md) §"Gate 5" (**opened 2026-07-19**; ~15–35 dev-days).
-  Both opening rulings resolved same-day (ruling 15: v1 body meters = **full chat
-  parity**, semantics per [chat-meter-economy.spec.md](chat-meter-economy.spec.md);
-  ruling 16: interpersonal consent = ledger-gated fail-closed + §19.3 policy
-  escalation — normative wording [engine.spec.md](engine.spec.md) §39). Build order
-  E5.1–E5.6 authored: body substrate + modifier engine → chat-parity meters &
-  perception-gated reads → material life → households/means/money-at-LOD → the social
-  ledger & consent → the deterministic exit corpus. **E5.1–E5.3 shipped 2026-07-19;
-  E5.4 (both slices) shipped 2026-07-20** — see Shipped below.
-  **E5.5 (the social ledger & consent, ruling 16) shipped 2026-07-20 (all three
-  slices)** — every carried Gate-5 leftover for it landed (E3.3 destinationless
-  promises, E3.4 pressure acknowledgment, E4.2 persisted §21.3 ledger, E3.5
-  consent preconditions). **E5.6 (the deterministic exit corpus) is next
-  in-gate and closes the gate**: explain-why causal chains for all four
-  surfaces (body, item, household, relationship), the narrator-boundary sweep,
-  partition invariance across material thresholds, rerender/retry invariance
-  over every new persistence surface, fork/replay sweeps — plus the noted
-  pending-only trigger-retirement audit from E5.4.
-  This is where current-chat body learning migrates behind the successor
-  contracts — the meter-economy and body-needs plans in Next port through here
-  later.
+_(Empty — **Gate 5 closed 2026-07-20**, see Shipped below. The next move is the
+owner's: open Gate 6 (top of Next), or pick other queued work. Every gate opening
+so far has been an explicit owner go.)_
 
 ## Next (queued)
 
 **Successor world engine (`engine.plan.md`) — remaining gates.** The gated event-kernel
-track, in sequence — each gate's exit criteria gate the next. Gates 0–4 are closed
-(E2.1–E2.6 + E3.1–E3.5 + E4.1–E4.5 shipped; Gate 2 verdict: **advance**, 2026-07-17;
-Gate 3 verdict: **advance**, 2026-07-18; Gate 4 closed **2026-07-19** by its
-deterministic exit corpus per the owner's 2026-07-18 exit-scope ruling — the live
-paired voice/chemistry eval is the one deferred human-in-the-loop check, parked in
-[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs). **Gate 5 opened
-2026-07-19 and is in Active above.** Full plan [engine.plan.md](engine.plan.md) ·
-contract [engine.spec.md](engine.spec.md). (Distinct build from the chat-lane
+track, in sequence — each gate's exit criteria gate the next. Gates 0–5 are closed
+(E2.1–E2.6 + E3.1–E3.5 + E4.1–E4.5 + E5.1–E5.6 shipped; Gate 2 verdict: **advance**,
+2026-07-17; Gate 3 verdict: **advance**, 2026-07-18; Gates 4 and 5 closed
+**2026-07-19** and **2026-07-20** by their deterministic exit corpora per the
+owner's 2026-07-18 exit-scope ruling — live-model quality checks are the deferred
+human-in-the-loop items, parked in [deferred.plan.md](deferred.plan.md)
+§Owner-gated live eval runs). **Gate 6 is the next gate; opening it is an owner
+call.** Gate 5's contracts are also where the chat-lane meter-economy and
+body-needs plans (below) eventually port through. Full plan
+[engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md).
+(Distinct build from the chat-lane
 [world-engine-refactor.plan.md](world-engine-refactor.plan.md) north-star umbrella
 further down.)
 
@@ -140,6 +124,26 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine Gate 5 exit corpus + trigger-retirement audit (E5.6) — GATE 5
+  CLOSED** — [engine.plan.md](engine.plan.md) §"Gate 5 build order" — 2026-07-20 —
+  ten deterministic scenarios, zero model calls (`test:engine-e5-6`): four
+  explain-why causal chains walked hop-by-hop through §6.4 derivations (body
+  wake→escalation→collapse; stock→promotion→consumption→body-source with lot
+  conservation summed from events; the one sanctioned unconserved means-band
+  top-up vs the causation-linked purchase pair; promise missed→ledger→trust
+  drop→repair→recovery), the per-viewpoint narrator-boundary sweep (raw meters
+  structurally absent, exact sign vocabulary and self-view values), partition
+  invariance across material thresholds over a 22-table footprint, rerender/retry
+  row-count invariance over every E5.1–E5.5 surface, and adversarial-boundary
+  fork sweeps. Plus the carried E5.4 audit: all ten trigger kinds traced against
+  the scheduler's claim/dispatch boundaries — nine immune with recorded reasons,
+  one real gap fixed (`activity_completion_due` at the collapse-interrupt site:
+  raw throw → structured `completion_not_due` + retirement widened to
+  `pending`+`processing`; regression test falsified against the unfixed code).
+  Opus-built per the owner's model ruling; review caught the footprint sweep
+  silently missing `sim_body_rhythms`. Final Gate 5 totals: 3 048 pure + 454 int
+  green. **Gate 5 closed per the exit-scope precedent; Gate 6 opening is the
+  owner's call.**
 - **World-engine consent escalation & pressure acknowledgment (E5.5, slice 3 — E5.5
   COMPLETE)** — [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §19.3/§21.4 — 2026-07-20 — the ruling-16

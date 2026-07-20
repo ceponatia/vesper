@@ -472,10 +472,23 @@ export function resolveCompleteActivity(
   if (activity.phase !== "active") {
     return completeRejection("activity_not_active", "That activity is no longer underway.");
   }
+  // A legitimate race, not corruption: a completion trigger claimed into
+  // `processing` by a scheduler worker can still be sitting in the
+  // claim/dispatch gap when an interrupt-then-resume cycle lands on the SAME
+  // activity. `resume` pushes `expectedCompleteAt` out and flips `phase`
+  // back to `active`, exactly the state this function otherwise treats as
+  // live — the `phase !== "active"` guard above cannot see the difference
+  // between "genuinely active" and "active again after the schedule it was
+  // claimed under was superseded". body-store.ts's collapse interrupt
+  // widens its retirement sweep to catch that claimed row too (the
+  // household restock precedent), but this re-validation is the defense
+  // that holds even if some future interrupt site forgets to. Rather than
+  // trust the schedule, fail closed: the resumed activity truly has not run
+  // its course yet, so this is `completion_not_due`, not an invariant
+  // violation. The fresh, correctly-versioned completion trigger the resume
+  // armed is what actually fires later.
   if (activity.expectedCompleteAt !== undefined && view.storySecond < activity.expectedCompleteAt) {
-    throw new Error(
-      `Completion for ${activity.id} fired at ${view.storySecond}, before its due ${activity.expectedCompleteAt}`,
-    );
+    return completeRejection("completion_not_due", "That activity has not run its course.");
   }
 
   const completedAt = view.storySecond;

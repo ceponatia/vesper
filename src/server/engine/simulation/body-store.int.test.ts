@@ -24,6 +24,7 @@ import {
 } from "./body-store";
 import {
   seedDurableActionDefinitions,
+  submitDurableCompleteActivity,
   submitDurableResumeActivity,
   submitDurableStartActivity,
 } from "./activity-store";
@@ -597,6 +598,181 @@ describe.runIf(ready)("E5.1 durable body substrate", () => {
       .from(simActivities)
       .where(eq(simActivities.branchId, ids.branchId));
     expect(completedRow?.phase).toBe("completed");
+  });
+
+  it("retires a vigil's completion alarm a scheduler worker has already CLAIMED (processing, not pending) when the collapse interrupt lands in the claim/dispatch gap, so the stale dispatch fails closed instead of re-completing under the pre-interruption schedule", async () => {
+    // Reproduces the E5.4 restock race one level up the trigger taxonomy:
+    // `claimDueTrigger` (scheduler-store.ts) commits a SEPARATE, earlier
+    // transaction that flips a due trigger to `processing` before `dispatch()`
+    // opens the transaction that actually resolves it. A `resolve_body_collapse`
+    // landing in that gap for an activity's completion alarm must still retire
+    // the claimed row — this test manually reproduces the claim (a direct row
+    // update, mirroring household-store.int.test.ts's idiom) and asserts the
+    // collapse interrupt retires it too, that a subsequent resume leaves
+    // exactly one live completion alarm, and that dispatching the stale claim
+    // afterward rejects `completion_not_due` rather than completing the
+    // activity under the superseded (pre-interruption) schedule.
+    const ids = await seedBodyCase();
+    await seedRhythms(ids);
+    await seedDurableActionDefinitions({
+      branchId: ids.branchId,
+      definitions: [
+        {
+          id: `${ids.branchId}-action-vigil-race`,
+          version: 1,
+          controllerKinds: ["player"],
+          duration: { kind: "fixed", seconds: 200_000 },
+          preconditions: [{ kind: "at_zone_kind", zoneKind: "room" }],
+          requiredClaims: [{ kind: "body" }, { kind: "attention", weight: "full" }],
+          interruptibility: "pausable",
+          noticeability: "obvious",
+        },
+      ],
+    });
+    await submitDurableInitializeActorBody(initializeCommand(ids));
+
+    // A short nap creates REAL sleep history — the wake is what arms the
+    // collapse alarm.
+    await submitDurableApplyBodyCondition({
+      id: `cmd-race-nap-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 1,
+      idempotencyKey: `race-nap-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:05:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "apply_body_condition",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.actorId,
+        conditionKey: "asleep",
+        durationSeconds: 5_400,
+        modifiers: [],
+        observerActorIds: [],
+      },
+    });
+    const wakeAt = SEED_SECOND + 5_400;
+    await advanceBranchStoryTime(ids.branchId, wakeAt, { workerId: "w-race-wake" });
+    const collapseAlarm = (await pendingBodyTriggers(ids.branchId)).find(
+      (trigger) => trigger.kind === "body_collapse_due" && trigger.state === "pending",
+    );
+    if (!collapseAlarm) throw new Error("collapse alarm missing");
+
+    // She starts an open-ended vigil and never goes to bed.
+    const start = await submitDurableStartActivity({
+      id: `cmd-vigil-race-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 3,
+      idempotencyKey: `vigil-race-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:06:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "start_activity",
+      schemaVersion: 1,
+      payload: { actionDefinitionId: `${ids.branchId}-action-vigil-race`, actorId: ids.actorId },
+    });
+    expect(start.status).toBe("accepted");
+
+    const [vigilRow] = await db().select().from(simActivities).where(eq(simActivities.branchId, ids.branchId));
+    if (!vigilRow) throw new Error("vigil activity missing");
+
+    // Simulate a scheduler worker's `claimDueTrigger` having already claimed
+    // the vigil's own completion alarm into `processing` — committed in its
+    // own transaction, strictly before the collapse interrupt (and its later
+    // dispatch) below.
+    await db()
+      .update(simTriggers)
+      .set({ state: "processing", leaseOwner: "w-claimed", leaseExpiresAt: new Date(Date.now() + 30_000) })
+      .where(and(eq(simTriggers.branchId, ids.branchId), eq(simTriggers.kind, "activity_completion_due")));
+
+    // The collapse interrupt lands in the claim/dispatch gap.
+    const outcome = await advanceBranchStoryTime(ids.branchId, collapseAlarm.dueStorySecond, {
+      workerId: "w-race-collapse",
+    });
+    expect(outcome.status).toBe("advanced");
+
+    const [interruptedRow] = await db()
+      .select()
+      .from(simActivities)
+      .where(eq(simActivities.branchId, ids.branchId));
+    expect(interruptedRow?.phase).toBe("interrupted");
+
+    // The claimed (processing) completion alarm is retired too, not just
+    // pending rows.
+    const completionAlarmsAfterCollapse = await db()
+      .select({ state: simTriggers.state })
+      .from(simTriggers)
+      .where(and(eq(simTriggers.branchId, ids.branchId), eq(simTriggers.kind, "activity_completion_due")));
+    expect(completionAlarmsAfterCollapse.every((alarm) => alarm.state === "completed")).toBe(true);
+
+    // Sleep runs its course; resume re-arms completion under a fresh,
+    // attempt-versioned key with a LATER due second.
+    const wake2 = collapseAlarm.dueStorySecond + 28_800;
+    await advanceBranchStoryTime(ids.branchId, wake2, { workerId: "w-race-wake2" });
+    const resume = await submitDurableResumeActivity({
+      id: `cmd-resume-race-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion: 6,
+      idempotencyKey: `resume-race-key-${ids.branchId}`,
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: [ids.actorId] },
+      submittedAtWallClock: "2026-07-19T12:07:00.000Z",
+      correlationId: `corr-${ids.branchId}`,
+      type: "resume_activity",
+      schemaVersion: 1,
+      payload: { activityInstanceId: vigilRow.activityInstanceId },
+    });
+    expect(resume.status).toBe("accepted");
+
+    // Exactly one live completion alarm remains — the fresh resumed arm —
+    // never two.
+    const completionAlarmsAfterResume = await db()
+      .select({ state: simTriggers.state })
+      .from(simTriggers)
+      .where(and(eq(simTriggers.branchId, ids.branchId), eq(simTriggers.kind, "activity_completion_due")));
+    expect(completionAlarmsAfterResume.filter((alarm) => alarm.state === "pending")).toHaveLength(1);
+
+    // `dispatch()` now opens its transaction for the stale claim: it fails
+    // closed to `completion_not_due` instead of completing the activity under
+    // the superseded (pre-interruption) schedule.
+    const staleDispatch = await submitDurableCompleteActivity(
+      {
+        id: `cmd-stale-complete-${ids.branchId}`,
+        branchId: ids.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `stale-complete-key-${ids.branchId}`,
+        principal: { kind: "system", principalId: "sim-scheduler", controlledActorIds: [] },
+        submittedAtWallClock: "2026-07-19T12:08:00.000Z",
+        correlationId: `corr-${ids.branchId}`,
+        type: "complete_activity",
+        schemaVersion: 1,
+        payload: { activityInstanceId: vigilRow.activityInstanceId },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(staleDispatch).toMatchObject({ status: "rejected", code: "completion_not_due" });
+
+    // No double completion: the activity finishes exactly once, through the
+    // ordinary drain to its NEW resumed due second.
+    const [resumedRow] = await db()
+      .select()
+      .from(simActivities)
+      .where(eq(simActivities.branchId, ids.branchId));
+    if (!resumedRow?.expectedCompleteAt) throw new Error("resumed activity missing due");
+    const final = await advanceBranchStoryTime(ids.branchId, resumedRow.expectedCompleteAt, {
+      workerId: "w-race-complete",
+    });
+    expect(final.status).toBe("advanced");
+    const [completedRow] = await db()
+      .select({ phase: simActivities.phase })
+      .from(simActivities)
+      .where(eq(simActivities.branchId, ids.branchId));
+    expect(completedRow?.phase).toBe("completed");
+
+    const completedEvents = await db()
+      .select({ type: simEvents.type })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "activity_completed")));
+    expect(completedEvents).toHaveLength(1);
   });
 
   it("forks with bit-identical body rows and re-armed alarms on the child", async () => {

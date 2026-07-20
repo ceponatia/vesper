@@ -54,7 +54,8 @@
     "test:engine-e5-2": "vitest run --no-file-parallelism src/lib/simulation/body-reads.test.ts src/server/engine/simulation/body-store.int.test.ts",
     "test:engine-e5-3": "vitest run --no-file-parallelism src/lib/simulation/materials.test.ts src/server/engine/simulation/material-store.int.test.ts src/lib/simulation/activities.test.ts src/server/engine/simulation/activity-store.int.test.ts",
     "test:engine-e5-4": "vitest run --no-file-parallelism src/lib/simulation/households.test.ts src/server/engine/simulation/household-store.int.test.ts src/lib/simulation/materials.test.ts src/server/engine/simulation/branch-store.int.test.ts",
-    "test:engine-e5-5": "vitest run --no-file-parallelism src/lib/simulation/social.test.ts src/lib/simulation/commitments.test.ts src/lib/simulation/engagements.test.ts src/lib/simulation/activities.test.ts src/lib/simulation/narrative.test.ts src/server/engine/simulation/social-store.int.test.ts src/server/engine/simulation/commitment-store.int.test.ts"
+    "test:engine-e5-5": "vitest run --no-file-parallelism src/lib/simulation/social.test.ts src/lib/simulation/commitments.test.ts src/lib/simulation/engagements.test.ts src/lib/simulation/activities.test.ts src/lib/simulation/narrative.test.ts src/server/engine/simulation/social-store.int.test.ts src/server/engine/simulation/commitment-store.int.test.ts",
+    "test:engine-e5-6": "vitest run --no-file-parallelism src/server/engine/simulation/gate5-corpus.int.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": "eslint --max-warnings 0"
