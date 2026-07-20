@@ -95,7 +95,7 @@ function runOnce(index: number): number {
   const start = performance.now();
   const resolution = resolveTransferItemFromView(viewOf(seed), command(index));
   if (!resolution.ok) throw new Error(`Benchmark command was rejected: ${resolution.code}`);
-  applyMaterialEvent(seed, resolution.event);
+  for (const event of resolution.events) applyMaterialEvent(seed, event);
   return performance.now() - start;
 }
 

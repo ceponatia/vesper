@@ -100,6 +100,8 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
       return "a body reaching a limit";
     case "body_collapsed":
       return "a body giving out";
+    case "item_condition_threshold_crossed":
+      return "an item's condition reaching a limit";
     case "item_ownership_set":
     case "trigger_scheduled":
     case "commitment_created":
@@ -112,6 +114,10 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "soft_canon_demoted":
     case "body_initialized":
     case "body_modifier_applied":
+    case "item_condition_initialized":
+    case "item_condition_source_applied":
+    case "item_condition_modifier_applied":
+    case "item_condition_modifier_ended":
       // Bookkeeping derives no observations (§20); unreachable in practice.
       return "world bookkeeping";
   }

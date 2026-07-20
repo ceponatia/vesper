@@ -22,8 +22,14 @@ import {
   bodyMeterStateSchema,
   type BodyMeterDefinition,
 } from "@/contracts/simulation/bodies";
+import {
+  itemConditionMeterStateSchema,
+  itemConditionRegistryV1,
+  itemConditionRegistryVersion,
+} from "@/contracts/simulation/material-condition";
 import { simulationHash } from "./hash";
 import { applyBodyEvent, emptyBodiesSeed } from "./bodies";
+import type { ItemConditionView } from "./material-condition";
 import {
   applyMaterialEvent,
   materialsSeedProjection,
@@ -128,7 +134,7 @@ function materialLookup(
 }
 
 function cost(overrides: Partial<ActionResourceCost> = {}): ActionResourceCost {
-  return { materialKindKey: "herb", quantity: 1, disposition: "consume", ...overrides };
+  return { materialKindKey: "herb", quantity: 1, disposition: "consume", useConditionDeltas: [], ...overrides };
 }
 
 function hungerDefinition(overrides: Partial<BodyMeterDefinition> = {}): BodyMeterDefinition {
@@ -800,6 +806,147 @@ describe("E5.3 slice 2 — resolveCompleteActivity consumption (§26.6)", () => 
     let bodies = { ...emptyBodiesSeed("branch-1", SEED_SECOND), meters: [initialMeterState] };
     for (const event of fullStream) bodies = applyBodyEvent(bodies, event);
     expect(bodies.meters.find((meter) => meter.meterKey === "hunger")?.valueFixedPoint).toBe(9_500);
+  });
+});
+
+describe("E5.3 slice 3 — resolveCompleteActivity use-condition deltas (§26.7)", () => {
+  function conditionView(itemId: string, wearValue = 0): ItemConditionView {
+    return {
+      itemId,
+      registryVersion: itemConditionRegistryVersion,
+      meters: itemConditionRegistryV1.map((meterDefinition) =>
+        itemConditionMeterStateSchema.parse({
+          itemId,
+          meterKey: meterDefinition.key,
+          valueFixedPoint: meterDefinition.key === "wear" ? wearValue : meterDefinition.initialFixedPoint,
+          baselineFixedPoint: meterDefinition.baselineFixedPoint,
+          lastIntegratedAtStorySecond: SEED_SECOND,
+          registryVersion: itemConditionRegistryVersion,
+        }),
+      ),
+      modifiers: [],
+    };
+  }
+
+  it("applies use-condition deltas to a tracked use-disposition item, joining the train after consumption events", () => {
+    const consumable = materialItem({
+      id: "herb-a",
+      locus: heldBy("actor-1"),
+      consumptionEffects: [
+        { meterKey: "hunger", sourceKind: "meal", operation: { kind: "set", valueFixedPoint: 9_500 } },
+      ],
+    });
+    const tool = materialItem({
+      id: "tool-a",
+      materialKindKey: "tool",
+      conditionTracked: true,
+      locus: heldBy("actor-1"),
+    });
+    const consumeCost = cost({ quantity: 1 });
+    const useCost = cost({
+      materialKindKey: "tool",
+      quantity: 1,
+      disposition: "use",
+      useConditionDeltas: [{ meterKey: "wear", deltaFixedPoint: 500 }],
+    });
+    const started = acceptedStartWithCost([consumeCost, useCost], [consumable, tool]);
+    const bodyDefinition = hungerDefinition();
+    const completedAt = SEED_SECOND + 1_800;
+
+    const resolution = resolveCompleteActivity(
+      completeView({
+        activity: started.activity,
+        resourceCosts: [consumeCost, useCost],
+        materialItemById: (itemId: string) =>
+          itemId === "herb-a" ? consumable : itemId === "tool-a" ? tool : undefined,
+        bodyView: hungerBodyView(bodyDefinition, "actor-1", completedAt),
+        itemConditionViewByItemId: (itemId: string) => (itemId === "tool-a" ? conditionView("tool-a") : undefined),
+      }) as never,
+      completeCommand() as never,
+    );
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    const [completedEvent, itemConsumedEvent, hungerSource, useSource, ...rest] = resolution.events;
+    expect(completedEvent.payload.consumedItemIds).toEqual(["herb-a"]);
+    expect(itemConsumedEvent?.type).toBe("item_consumed");
+    expect(hungerSource?.type).toBe("body_source_applied");
+    expect(useSource?.type).toBe("item_condition_source_applied");
+    if (useSource?.type !== "item_condition_source_applied") {
+      throw new Error("expected item_condition_source_applied");
+    }
+    expect(useSource.payload).toMatchObject({
+      itemId: "tool-a",
+      meterKey: "wear",
+      sourceKind: "use",
+      valueAfterFixedPoint: 500,
+    });
+    expect(useSource.causationId).toBe(completedEvent.id);
+    expect(rest).toEqual([]);
+    expect(resolution.meterUpdates).toHaveLength(1);
+
+    const sequences = resolution.events.map((event) => event.sequence);
+    expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
+    expect(new Set(sequences).size).toBe(sequences.length);
+  });
+
+  it("skips untracked use-disposition items entirely", () => {
+    const plain = materialItem({ id: "tool-b", materialKindKey: "tool", locus: heldBy("actor-1") });
+    const useCost = cost({
+      materialKindKey: "tool",
+      quantity: 1,
+      disposition: "use",
+      useConditionDeltas: [{ meterKey: "wear", deltaFixedPoint: 500 }],
+    });
+    const started = acceptedStartWithCost([useCost], [plain]);
+    const resolution = resolveCompleteActivity(
+      completeView({
+        activity: started.activity,
+        resourceCosts: [useCost],
+        materialItemById: () => plain,
+        itemConditionViewByItemId: () => conditionView("tool-b"),
+      }) as never,
+      completeCommand() as never,
+    );
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    // `plain` never set conditionTracked (defaults false) — no use-delta events.
+    expect(resolution.events).toHaveLength(1);
+  });
+
+  it("a delta that instantly crosses worn_out emits the threshold-crossed event, causation-chained to the source write", () => {
+    const wornTool = materialItem({
+      id: "tool-c",
+      materialKindKey: "tool",
+      conditionTracked: true,
+      locus: heldBy("actor-1"),
+    });
+    const useCost = cost({
+      materialKindKey: "tool",
+      quantity: 1,
+      disposition: "use",
+      useConditionDeltas: [{ meterKey: "wear", deltaFixedPoint: 6_000 }],
+    });
+    const started = acceptedStartWithCost([useCost], [wornTool]);
+    const resolution = resolveCompleteActivity(
+      completeView({
+        activity: started.activity,
+        resourceCosts: [useCost],
+        materialItemById: () => wornTool,
+        itemConditionViewByItemId: () => conditionView("tool-c", 3_000),
+        coLocatedActorIds: ["actor-2"],
+      }) as never,
+      completeCommand() as never,
+    );
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    const [, useSource, crossed] = resolution.events;
+    expect(useSource?.type).toBe("item_condition_source_applied");
+    expect(crossed?.type).toBe("item_condition_threshold_crossed");
+    if (crossed?.type !== "item_condition_threshold_crossed") throw new Error("expected threshold crossed");
+    expect(crossed.payload).toMatchObject({
+      itemId: "tool-c",
+      meterKey: "wear",
+      thresholdKey: "worn_out",
+      valueFixedPoint: 9_000,
+    });
+    expect(crossed.causationId).toBe(useSource?.id);
   });
 });
 

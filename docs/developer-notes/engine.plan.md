@@ -684,8 +684,8 @@ the same day: ruling 15 (v1 body meters = **full chat parity**, with
 semantics source) and ruling 16 (interpersonal consent = **ledger-gated fail-closed
 preconditions + a §19.3 policy escalation path**); normative wording in
 [engine.spec.md](engine.spec.md) §39. The build order lives in §"Gate 5 build order"
-below; **E5.1 and E5.2 shipped 2026-07-19** — **E5.3 (material life) is active,
-started 2026-07-19.**
+below; **E5.1, E5.2, and E5.3 shipped 2026-07-19** — **E5.4 (households, means,
+and money at LOD) is next.**
 
 Rough effort: **15–35 developer-days**.
 
@@ -841,7 +841,7 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    collapse mid-vigil → interruption → forced sleep → wake re-arm → resume →
    completion through the drain.
 3. **E5.3 — material life: containers, ownership, wear, and consumption.** Status:
-   **active — slices 1–2 shipped 2026-07-19; slice 3 in progress.**
+   **shipped — 2026-07-19 (slices 1–3).**
    **Slice 1 (shipped) — the honest material lane.** §26.1–26.4 replace the Gate 1
    stand-ins wholesale: typed holding loci (held / worn-in-slot / in-container /
    at-zone / gone with a terminal basis) as the `sim_item_holdings` row itself
@@ -887,9 +887,30 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    out of activity-store would let the three stores share one implementation —
    a candidate cleanup for E5.6). 25 new pure + 12 new int cases across the two
    suites; `test:engine-e5-3` now spans both lanes (2 853 pure + 388 int green).
-   **Slice 3 — item condition** (§26.7):
-   wear + cleanliness meters on the §25 kernel under an item-scoped registry,
-   worn-window cleanliness drift, use-deltas, `item_condition_threshold_due`.
+   **Slice 3 (shipped — 2026-07-19) — item condition** (§26.7): wear + cleanliness
+   as item meters on the §25 kernel under an item-scoped registry
+   (`item-condition-v1`; bodies' `integrateMeterValue`/`solveNextThresholdCrossing`
+   reused verbatim — subject-agnostic by design; delivery note: the authored
+   cleanliness parameters were re-derived to target-0/+250-per-hour because the
+   drafted target-10000 form was analytically inert). `conditionTracked` items
+   lazily initialize meters on first touch; donning applies the worn-window
+   cleanliness modifier and doffing ends it (transfer resolution now returns an
+   event train, and a doffed item's stale alarm retires unconditionally);
+   `use`-disposition costs apply authored `useConditionDeltas` at completion;
+   `apply_item_condition_source` (clean/adjust) validates under the material
+   source law; driftless wear crosses thresholds via synchronous instant-crossing
+   detection (no alarm is solvable for a none-law meter — asserted in test);
+   `item_condition_threshold_due` alarms are solved at the exact second,
+   fire-time re-validated, and witnessed via root-locus co-location (grimy /
+   worn-out are hard beats). `sim_item_condition_meters` /
+   `sim_item_condition_modifiers` + `sim_items.condition_tracked` (migration
+   0073, deferrable FK per the 0069 precedent); fork/replay parity — a child
+   forked mid-worn-window carries meters, the live modifier, and a re-armed
+   alarm that fires independently. New lib module `material-locus.ts` breaks a
+   genuine materials↔condition import cycle. Follow-up noted: an int test for an
+   instant crossing driven through `apply_item_condition_source` (the pure path
+   is covered). 21 new pure + 10 new int cases; final E5.3 totals: 2 874 pure +
+   398 int green, Gate 1 benchmark p95 0.028 ms.
    Original slice charter: §26 over
    the Gate 1/2 item lane: every material object has one holding locus (held / worn in
    slot / inside container / at zone / consumed-destroyed-lost); typed containers with

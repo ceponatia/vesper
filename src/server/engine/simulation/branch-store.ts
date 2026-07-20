@@ -23,6 +23,7 @@ import {
   isBodyEvent,
   isCommitmentEvent,
   isEngagementEvent,
+  isItemConditionEvent,
   isMovementEvent,
 } from "@/contracts/simulation/branching";
 import {
@@ -31,12 +32,14 @@ import {
   emptyBodiesSeed,
   emptyCommitmentsSeed,
   emptyEngagementsSeed,
+  emptyItemConditionSeed,
   itemHoldingsAtSequence,
   replayActivitiesHistory,
   replayBodiesHistory,
   replayBranchHistory,
   replayCommitmentsHistory,
   replayEngagementsHistory,
+  replayItemConditionHistory,
   replayKnowledgeHistory,
   replayObservationsHistory,
   replaySoftCanonHistory,
@@ -62,6 +65,8 @@ import {
   simEngagements,
   simTemporalPressures,
   simEvents,
+  simItemConditionMeters,
+  simItemConditionModifiers,
   simItemHoldings,
   simItems,
   simSnapshots,
@@ -69,7 +74,7 @@ import {
   simWorlds,
   type Db,
 } from "@/server/db";
-import { activityRowInsert } from "./activity-store";
+import { activityRowInsert, itemConditionMeterRowInsert, itemConditionModifierRowInsert } from "./activity-store";
 import { bodyConditionRowInsert, bodyMeterRowInsert, bodyModifierRowInsert } from "./body-store";
 import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";
@@ -234,6 +239,7 @@ export async function assembleBranchState(
         ownerActorId: simItems.ownerActorId,
         containerCapacityCount: simItems.containerCapacityCount,
         containerAccess: simItems.containerAccess,
+        conditionTracked: simItems.conditionTracked,
         locusKind: simItemHoldings.locusKind,
         locusActorId: simItemHoldings.actorId,
         slotKey: simItemHoldings.slotKey,
@@ -270,6 +276,8 @@ export async function assembleBranchState(
       ...(row.containerCapacityCount !== null && row.containerAccess !== null
         ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
         : {}),
+      /** §26.7: whether this item carries item-condition (wear/cleanliness) meters. */
+      conditionTracked: row.conditionTracked,
       locus: itemLocusFromHoldingRow({
         locusKind: row.locusKind,
         actorId: row.locusActorId,
@@ -442,6 +450,7 @@ export async function forkBranch(
           ownerActorId: item.ownerActorId,
           containerCapacityCount: item.container?.capacityCount ?? null,
           containerAccess: item.container?.access ?? null,
+          conditionTracked: item.conditionTracked,
         })),
       );
       await tx.insert(simItemHoldings).values(
@@ -659,6 +668,45 @@ export async function forkBranch(
       await tx.insert(simBodyModifiers).values(
         childBodies.modifiers.map((modifier) =>
           bodyModifierRowInsert(input.childBranchId, modifier, bodySequenceByActor.get(modifier.actorId) ?? 0),
+        ),
+      );
+    }
+
+    // E5.3 slice 3 item condition (§26.7): fully evented, its own projection
+    // — replay from the empty seed, exactly like bodies. Meter values re-land
+    // on their last MATERIAL write; pending `item_condition_threshold_due`
+    // alarms re-arm or complete through the SAME shared trigger ledger above
+    // (`replay.triggers`/`applyTriggerScheduledEvent` key off the trigger-kind
+    // union generically — nothing here special-cases item-condition triggers,
+    // and `lib/simulation/replay.ts` already tracks this kind's retirement
+    // alongside body thresholds, so a child's pending alarm re-arms for free).
+    const childItemConditions = replayItemConditionHistory({
+      seed: emptyItemConditionSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const itemConditionSequenceByItem = new Map<string, number>();
+    for (const event of inherited) {
+      if (isItemConditionEvent(event)) itemConditionSequenceByItem.set(event.payload.itemId, event.sequence);
+    }
+    if (childItemConditions.meters.length > 0) {
+      await tx.insert(simItemConditionMeters).values(
+        childItemConditions.meters.map((meter) =>
+          itemConditionMeterRowInsert(
+            input.childBranchId,
+            meter,
+            itemConditionSequenceByItem.get(meter.itemId) ?? 0,
+          ),
+        ),
+      );
+    }
+    if (childItemConditions.modifiers.length > 0) {
+      await tx.insert(simItemConditionModifiers).values(
+        childItemConditions.modifiers.map((modifier) =>
+          itemConditionModifierRowInsert(
+            input.childBranchId,
+            modifier,
+            itemConditionSequenceByItem.get(modifier.itemId) ?? 0,
+          ),
         ),
       );
     }

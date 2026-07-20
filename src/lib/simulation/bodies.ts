@@ -148,8 +148,12 @@ function driftTarget(definition: BodyMeterDefinition, baselineFixedPoint: number
   return law.target.kind === "baseline" ? baselineFixedPoint : law.target.valueFixedPoint;
 }
 
-/** Modifiers live in [validFrom, validUntil): stacked per group, then composed. */
-function modifiersLiveAt(modifiers: readonly BodyModifier[], second: number): BodyModifier[] {
+/**
+ * Modifiers live in [validFrom, validUntil): stacked per group, then composed.
+ * Exported: purely structural (validity/stacking/priority/id), no actorId
+ * touched — E5.3 slice 3's item-condition kernel reuses it as-is.
+ */
+export function modifiersLiveAt(modifiers: readonly BodyModifier[], second: number): BodyModifier[] {
   const live = modifiers.filter(
     (modifier) =>
       modifier.validFromStorySecond <= second &&
@@ -343,7 +347,8 @@ export interface ThresholdCrossing {
   valueAtCrossingFixedPoint: number;
 }
 
-function thresholdCrossed(threshold: BodyThresholdDefinition, valueFixedPoint: number): boolean {
+/** Subject-agnostic (definition + a number only) — reused as-is by item condition. */
+export function thresholdCrossed(threshold: BodyThresholdDefinition, valueFixedPoint: number): boolean {
   return threshold.direction === "falling"
     ? valueFixedPoint <= threshold.boundaryFixedPoint
     : valueFixedPoint >= threshold.boundaryFixedPoint;
@@ -2461,6 +2466,11 @@ export function applyBodyEvent(
     case "soft_canon_recorded":
     case "soft_canon_promoted":
     case "soft_canon_demoted":
+    case "item_condition_initialized":
+    case "item_condition_source_applied":
+    case "item_condition_modifier_applied":
+    case "item_condition_modifier_ended":
+    case "item_condition_threshold_crossed":
       // Non-body families advance the boundary without touching this projection.
       return bodiesProjectionSchema.parse(bumped);
   }

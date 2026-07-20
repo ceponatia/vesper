@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { isMaterialEvent } from "@/contracts/simulation/branching";
 import {
@@ -13,7 +13,16 @@ import {
   deriveTriggerId,
 } from "@/contracts/simulation/scheduler";
 import { newId } from "@/lib/ids";
-import { db, simBranches, simEvents, simSnapshots, simTriggers, simWorlds } from "@/server/db";
+import {
+  db,
+  simBranches,
+  simEvents,
+  simItemConditionMeters,
+  simItemConditionModifiers,
+  simSnapshots,
+  simTriggers,
+  simWorlds,
+} from "@/server/db";
 import { explainItemPlacement } from "./audit-store";
 import {
   forkBranch,
@@ -580,5 +589,143 @@ describe.skipIf(!ready)("E2.5 forks, snapshots, and audit", () => {
     expect(
       await submitDurableTransferItem(command(ids, ids.itemIds[0]!, { branchId: originChild })),
     ).toMatchObject({ status: "accepted", firstSequence: 1 });
+  });
+});
+
+describe.skipIf(!ready)("E5.3 slice 3 — item condition fork/replay parity (§26.7)", () => {
+  it("forks mid-worn-window: the child carries the meter + live modifier rows and a re-armed pending alarm, and its own drain fires the crossing independently", async () => {
+    const worldId = newId();
+    const branchId = newId();
+    const actorId = newId();
+    const garmentId = newId();
+    const locationId = `${worldId}-loc-home`;
+    const zoneId = `${branchId}-zone-room`;
+    seededWorldIds.push(worldId);
+
+    await seedDurableMaterialBranch(
+      materialBranchSeedSchema.parse({
+        worldId,
+        worldTypeId: "e5-3-slice3-fork-tests",
+        worldSeed: "8899aabbccddeeff",
+        branchId,
+        rulesetVersion: "e5-3-slice3-fork-test-v1",
+        originStorySecond: SEED_STORY_SECOND,
+        actors: [{ id: actorId, name: "Mara" }],
+        items: [
+          {
+            id: garmentId,
+            name: "Linen shirt",
+            conditionTracked: true,
+            locus: { kind: "held", actorId },
+          },
+        ],
+      }),
+    );
+    await seedDurableSpaceTopology({
+      branchId,
+      locations: [{ id: locationId, worldId, kind: "home", defaultAccessPolicy: "private" as const }],
+      zones: [{ id: zoneId, locationId, kind: "room", privacyPolicy: "private" as const }],
+      links: [],
+      loci: [{ kind: "at" as const, actorId, locationId, zoneId, since: SEED_STORY_SECOND }],
+    });
+
+    // Don the garment: the worn-window transition (`buildWornWindowTransition`
+    // in lib/simulation/material-condition.ts, wired at transfer time by
+    // material-store.ts) lazily initializes the item's condition state, then
+    // applies cleanliness's rate_add modifier for the worn window and arms
+    // its "grimy" threshold.
+    const don = await submitDurableTransferItem(
+      transferItemCommandSchema.parse({
+        id: newId(),
+        branchId,
+        expectedVersion: 0,
+        idempotencyKey: newId(),
+        principal: { kind: "player", principalId: "principal-1", controlledActorIds: [actorId] },
+        submittedAtWallClock: "2026-07-19T21:00:00.000Z",
+        type: "transfer_item",
+        schemaVersion: 2,
+        correlationId: newId(),
+        payload: {
+          actorId,
+          itemId: garmentId,
+          fromLocus: { kind: "held", actorId },
+          toLocus: { kind: "worn", actorId, slotKey: "torso" },
+        },
+      }),
+    );
+    if (don.status !== "accepted") throw new Error(`expected the don transfer to be accepted, got ${don.status}`);
+
+    const [modifierRow] = await db()
+      .select()
+      .from(simItemConditionModifiers)
+      .where(
+        and(eq(simItemConditionModifiers.branchId, branchId), eq(simItemConditionModifiers.itemId, garmentId)),
+      );
+    expect(modifierRow).toBeDefined();
+    expect(modifierRow?.validUntil).toBeNull();
+
+    const [pendingAlarm] = await db()
+      .select()
+      .from(simTriggers)
+      .where(
+        and(
+          eq(simTriggers.branchId, branchId),
+          eq(simTriggers.kind, "item_condition_threshold_due"),
+          eq(simTriggers.state, "pending"),
+        ),
+      );
+    if (!pendingAlarm) throw new Error("expected a pending grimy alarm before forking");
+
+    const childId = newId();
+    const forkResult = await forkBranch({
+      parentBranchId: branchId,
+      childBranchId: childId,
+      atSequence: don.lastSequence,
+      principal: { kind: "player", principalId: "principal-1" },
+      reason: "mid-worn-window retake",
+    });
+    expect(forkResult.pendingTriggerIds).toHaveLength(1);
+
+    const childMeterRows = await db()
+      .select()
+      .from(simItemConditionMeters)
+      .where(and(eq(simItemConditionMeters.branchId, childId), eq(simItemConditionMeters.itemId, garmentId)));
+    expect(childMeterRows.map((row) => row.meterKey).sort()).toEqual(["cleanliness", "wear"]);
+
+    const [childModifierRow] = await db()
+      .select()
+      .from(simItemConditionModifiers)
+      .where(and(eq(simItemConditionModifiers.branchId, childId), eq(simItemConditionModifiers.itemId, garmentId)));
+    expect(childModifierRow).toBeDefined();
+    expect(childModifierRow?.validUntil).toBeNull();
+
+    const [childAlarm] = await db()
+      .select()
+      .from(simTriggers)
+      .where(
+        and(
+          eq(simTriggers.branchId, childId),
+          eq(simTriggers.kind, "item_condition_threshold_due"),
+          eq(simTriggers.state, "pending"),
+        ),
+      );
+    expect(childAlarm).toBeDefined();
+    expect(childAlarm?.dueStorySecond).toBe(pendingAlarm.dueStorySecond);
+
+    // The child's own drain fires the grimy crossing independently — fork
+    // did not consume or share the alarm with the parent.
+    const outcome = await advanceBranchStoryTime(childId, pendingAlarm.dueStorySecond, {
+      workerId: "w-child-grimy",
+    });
+    expect(outcome).toMatchObject({ status: "advanced", drained: 1 });
+
+    const childEvents = await db().select().from(simEvents).where(eq(simEvents.branchId, childId));
+    expect(childEvents.some((row) => row.type === "item_condition_threshold_crossed")).toBe(true);
+
+    const [parentAlarmAfter] = await db()
+      .select({ state: simTriggers.state })
+      .from(simTriggers)
+      .where(eq(simTriggers.id, pendingAlarm.id));
+    expect(parentAlarmAfter?.state).toBe("pending");
   });
 });

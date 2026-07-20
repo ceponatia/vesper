@@ -778,6 +778,11 @@ export function applySpaceEvent(
     case "body_condition_ended":
     case "body_threshold_crossed":
     case "body_collapsed":
+    case "item_condition_initialized":
+    case "item_condition_source_applied":
+    case "item_condition_modifier_applied":
+    case "item_condition_modifier_ended":
+    case "item_condition_threshold_crossed":
       // Non-movement families advance the boundary without touching space.
       return spaceProjectionSchema.parse(bumped);
   }

@@ -7,6 +7,8 @@ export * from "./deliberation";
 export * from "./engagements";
 export * from "./hash";
 export * from "./knowledge";
+export * from "./material-condition";
+export * from "./material-locus";
 export * from "./materials";
 export * from "./memory";
 export * from "./narrative";

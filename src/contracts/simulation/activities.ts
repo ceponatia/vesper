@@ -15,6 +15,7 @@ import {
   worldCharacterIdSchema,
   zoneIdSchema,
 } from "./identity";
+import { meterDeltaFixedPointSchema } from "./bodies";
 
 /**
  * E3.2 — typed actions, activities, and claims (engine.spec §16, plan §"Gate 3
@@ -107,11 +108,22 @@ export const activityNoticeabilitySchema = z.enum(activityNoticeabilities);
  * requires and reserves them for the activity's span — they release, unspent,
  * at every terminal phase (wear/cleanliness effects are slice 3).
  */
+/** §26.7: a wear/cleanliness delta a `use`-disposition cost applies at completion. */
+export const useConditionDeltaSchema = z
+  .object({
+    meterKey: z.string().trim().min(1).max(64),
+    deltaFixedPoint: meterDeltaFixedPointSchema,
+  })
+  .strict();
+export type UseConditionDelta = z.infer<typeof useConditionDeltaSchema>;
+
 export const actionResourceCostSchema = z
   .object({
     materialKindKey: z.string().trim().min(1).max(64),
     quantity: z.number().int().min(1).max(8),
     disposition: z.enum(["consume", "use"]),
+    /** §26.7: applied to each `use`-disposition reserved TRACKED item at completion. */
+    useConditionDeltas: z.array(useConditionDeltaSchema).max(2).default([]),
   })
   .strict();
 export type ActionResourceCost = z.infer<typeof actionResourceCostSchema>;

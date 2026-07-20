@@ -32,21 +32,14 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   E5.1–E5.6 authored: body substrate + modifier engine → chat-parity meters &
   perception-gated reads → material life → households/means/money-at-LOD → the social
   ledger & consent → the deterministic exit corpus. **E5.1 and E5.2 (all three
-  slices) shipped 2026-07-19** — see Shipped below. **E5.3 (material life) is
-  active — slices 1–2 shipped 2026-07-19.** Slice 1 (the honest material lane,
-  §26.1–26.4): typed holding loci (held / worn / container / zone / gone)
-  replacing the Gate 1 pseudo-container stand-ins, containers-as-items with
-  capacity + fail-closed access, ownership distinct from holding
-  (`againstOwnership` as social fact), the §26.4 transfer law, the lane migrated
-  onto the shared command shell + live §22 cut + §20 perception, migrations
-  0069/0070. Slice 2 (§26.5–26.6, the carried E3.2 resource-cost leftover):
-  `resourceCosts` on action definitions, deterministic held-first reservations
-  captured on `activity_started` and projected from activity state like claims,
-  `item_reserved` enforcement on every material command, and `consume_item` +
-  completion consumption emitting causation-chained body-source trains through
-  the §25 kernel (meal/drink first exercised; migrations 0071/0072;
-  `test:engine-e5-3`, 2 853 pure + 388 int green). Remaining: slice 3 —
-  wear/cleanliness as item condition through the same modifier machinery (§26.7).
+  slices) and E5.3 (all three slices) shipped 2026-07-19** — see Shipped below.
+  **E5.4 (households, means, and money at LOD) is next in-gate**: household
+  membership and shared stores, fungible lots with fixed-point conserved
+  quantities that transactionally balance, a coarse means read for low-detail
+  actors, §27.2 promotion (an explicit item consumes an aggregate allowance and
+  instantiates through a recorded event), replacement/restock as household
+  routine. Then E5.5 (the social ledger & consent, ruling 16) and E5.6 (the
+  deterministic exit corpus) close the gate.
   This is where current-chat body learning migrates behind the successor
   contracts — the meter-economy and body-needs plans in Next port through here
   later.
@@ -145,6 +138,27 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine material life (E5.3, slices 1–3)** — [engine.plan.md](engine.plan.md)
+  §"Gate 5 build order" · contract [engine.spec.md](engine.spec.md) §26 (expanded
+  this work) — 2026-07-19 — §26 over the Gate 1/2 item lane, replacing the stand-ins
+  wholesale. Slice 1, the honest material lane: typed holding loci (held / worn /
+  container / zone / gone) as the holdings row itself, containers-as-items with
+  capacity + fail-closed access, ownership distinct from holding (`againstOwnership`
+  as social fact for the E5.5 ledger), the §26.4 transfer law in one pure resolver,
+  the lane migrated onto the shared command shell + §20 perception + the live §22
+  cut (Gate-1 bridge and `observed_container_ids` deleted), migrations 0069/0070.
+  Slice 2, the carried E3.2 leftover: `resourceCosts` on action definitions,
+  deterministic held-first reservations captured on `activity_started` and projected
+  from activity state like claims, `item_reserved` on every material command, and
+  `consume_item` + completion consumption emitting causation-chained body-source
+  trains through the §25 kernel — a meal is a material event with a body effect
+  (migrations 0071/0072). Slice 3, item condition: wear + cleanliness meters on the
+  §25 kernel under `item-condition-v1`, worn-window cleanliness drift via a standard
+  modifier, use-deltas at completion, instant crossings for driftless wear, the
+  `item_condition_threshold_due` alarm, witnessed grimy/worn-out beats, fork/replay
+  parity (migration 0073). 74 new pure + 33 new int cases across the slices; CI runs
+  `test:engine-e5-3` (2 874 pure + 398 int green; Gate 1 benchmark re-passing at
+  p95 0.028 ms over the new lane). Next: **E5.4**.
 - **World-engine chat-parity meters & perception-gated reads (E5.2, slices 1 + 2a + 2b)** —
   [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §25 — 2026-07-19 — the ruling-15 meter set on the
