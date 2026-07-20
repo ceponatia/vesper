@@ -314,14 +314,15 @@ function rejectedResult<TCode extends string>(commandId: string, code: TCode, pu
   };
 }
 
-interface ActorBodyRows {
+export interface ActorBodyRows {
   meters: BodyMeterState[];
   conditions: BodyCondition[];
   modifiers: BodyModifier[];
   rhythms: BodyRhythmRow[];
 }
 
-async function loadActorBody(tx: DbExecutor, branchId: string, actorId: string): Promise<ActorBodyRows> {
+/** Exported for the E6.2 routine controller (routine-store.ts). */
+export async function loadActorBody(tx: DbExecutor, branchId: string, actorId: string): Promise<ActorBodyRows> {
   const [meterRows, conditionRows, modifierRows, rhythmRows] = await Promise.all([
     tx
       .select()
@@ -357,7 +358,7 @@ async function loadActorBody(tx: DbExecutor, branchId: string, actorId: string):
  * Rhythm self-care crossings enter as scheduled adjustments through the
  * solve horizon, so every material integration folds the §25.5 window law.
  */
-function meterViewOf(
+export function meterViewOf(
   body: ActorBodyRows,
   meterKey: string,
   throughStorySecond: number,

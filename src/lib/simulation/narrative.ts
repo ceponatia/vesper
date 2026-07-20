@@ -268,6 +268,10 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       // no scene fact exists to portray.
       return null;
     case "actor_lod_assigned":
+    case "routine_policy_resolved":
+      // The routine decision (E6.2) is engine bookkeeping; its chosen
+      // outcome's own events (a condition onset, later an activity) are the
+      // portrayable beats, exactly as with collapse.
       return null;
     case "material_lot_transferred":
       // An actor-driven, co-located stock movement (§26.9) — visibly witnessed

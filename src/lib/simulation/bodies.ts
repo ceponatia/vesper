@@ -1228,7 +1228,7 @@ function validateModifierSpec(
 
 function buildModifierAppliedEvent(input: {
   view: BodyBranchMeta;
-  command: BodyCommand;
+  command: BodyEventCommandContext;
   sequence: number;
   suffix: string;
   actorId: string;
@@ -1290,6 +1290,108 @@ function modifierFromSpec(input: {
     ...(input.conditionId === undefined ? {} : { conditionId: input.conditionId }),
     sourceEventId: input.sourceEventId,
   });
+}
+
+export interface SleepConditionTrain {
+  condition: BodyCondition;
+  suspendModifier: BodyModifier;
+  /** condition-applied + modifier-applied + expiry trigger, causation-chained. */
+  events: SimulationBranchEvent[];
+  nextSequence: number;
+}
+
+/**
+ * The asleep condition with its energy suspend and self-expiry alarm, as one
+ * causation-chained event train (§25.4). Extracted from `resolveBodyCollapse`
+ * so forced sleep (collapse) and chosen sleep (the E6.2 routine controller)
+ * commit the identical machinery — the applySourceToMeter precedent.
+ */
+export function buildSleepConditionTrain(input: {
+  view: BodyBranchMeta;
+  command: BodyEventCommandContext;
+  sequence: number;
+  causationId: string;
+  actorId: string;
+  expiresAtStorySecond: number;
+  observerActorIds: readonly string[];
+  energyView: MeterIntegrationView;
+  valueAtApply: number;
+}): SleepConditionTrain {
+  const events: SimulationBranchEvent[] = [];
+  let nextSequence = input.sequence;
+  const conditionId = deriveBodyConditionId(input.view.branchId, input.command.id);
+  const conditionEvent = bodyConditionAppliedEventSchema.parse({
+    ...eventEnvelope(input.view, input.command, nextSequence, "body-condition"),
+    type: "body_condition_applied",
+    causationId: input.causationId,
+    actorIds: [input.actorId],
+    entityIds: [conditionId],
+    payload: {
+      actorId: input.actorId,
+      conditionId,
+      conditionKey: "asleep",
+      onsetAtStorySecond: input.view.storySecond,
+      expiresAtStorySecond: input.expiresAtStorySecond,
+      observerActorIds: [...input.observerActorIds],
+    },
+  });
+  events.push(conditionEvent);
+  nextSequence += 1;
+  const condition = bodyConditionSchema.parse({
+    id: conditionId,
+    actorId: input.actorId,
+    key: "asleep",
+    onsetAtStorySecond: input.view.storySecond,
+    expiresAtStorySecond: input.expiresAtStorySecond,
+    status: "active",
+    sourceEventId: conditionEvent.id,
+  });
+
+  const [suspendSpec] = normalizeConditionModifierSpecs("asleep", []);
+  if (!suspendSpec) throw new Error("Sleep normalization produced no suspend spec");
+  const suspendModifier = modifierFromSpec({
+    spec: suspendSpec,
+    modifierId: deriveBodyModifierId(input.view.branchId, input.command.id, 0),
+    actorId: input.actorId,
+    fromStorySecond: input.view.storySecond,
+    sourceEventId: conditionEvent.id,
+    conditionId,
+    conditionExpiresAt: input.expiresAtStorySecond,
+  });
+  events.push(
+    buildModifierAppliedEvent({
+      view: input.view,
+      command: input.command,
+      sequence: nextSequence,
+      suffix: "body-modifier-0",
+      actorId: input.actorId,
+      modifier: suspendModifier,
+      meterView: input.energyView,
+      valueAtApply: input.valueAtApply,
+      causationId: conditionEvent.id,
+    }),
+  );
+  nextSequence += 1;
+
+  events.push(
+    buildBodyTrigger({
+      view: input.view,
+      command: input.command,
+      sequence: nextSequence,
+      causationId: conditionEvent.id,
+      actorId: input.actorId,
+      suffix: "arm-condition-expiry",
+      intent: {
+        kind: bodyConditionExpiryTriggerKind,
+        dueStorySecond: input.expiresAtStorySecond,
+        uniquenessKey: bodyConditionExpiryUniquenessKey(conditionId),
+        payload: { actorId: input.actorId, conditionId, basis: "expired" },
+      },
+    }),
+  );
+  nextSequence += 1;
+
+  return { condition, suspendModifier, events, nextSequence };
 }
 
 export function resolveApplyBodyModifier(
@@ -2181,77 +2283,21 @@ export function resolveBodyCollapse(
 
   // Collapse IS forced sleep: the asleep condition with its energy suspend,
   // self-expiring after the sleep the body was denied.
-  const conditionId = deriveBodyConditionId(view.branchId, command.id);
-  const expiresAt = view.storySecond + COLLAPSE_SLEEP_SECONDS;
-  const conditionEvent = bodyConditionAppliedEventSchema.parse({
-    ...eventEnvelope(view, command, nextSequence, "body-condition"),
-    type: "body_condition_applied",
+  const sleepTrain = buildSleepConditionTrain({
+    view,
+    command,
+    sequence: nextSequence,
     causationId: collapsedEvent.id,
-    actorIds: [command.payload.actorId],
-    entityIds: [conditionId],
-    payload: {
-      actorId: command.payload.actorId,
-      conditionId,
-      conditionKey: "asleep",
-      onsetAtStorySecond: view.storySecond,
-      expiresAtStorySecond: expiresAt,
-      observerActorIds,
-    },
-  });
-  events.push(conditionEvent);
-  nextSequence += 1;
-  const condition = bodyConditionSchema.parse({
-    id: conditionId,
     actorId: command.payload.actorId,
-    key: "asleep",
-    onsetAtStorySecond: view.storySecond,
-    expiresAtStorySecond: expiresAt,
-    status: "active",
-    sourceEventId: conditionEvent.id,
+    expiresAtStorySecond: view.storySecond + COLLAPSE_SLEEP_SECONDS,
+    observerActorIds,
+    energyView,
+    valueAtApply: now.reserveFixedPoint,
   });
-
-  const [suspendSpec] = normalizeConditionModifierSpecs("asleep", []);
-  if (!suspendSpec) throw new Error("Collapse normalization produced no suspend spec");
-  const suspendModifier = modifierFromSpec({
-    spec: suspendSpec,
-    modifierId: deriveBodyModifierId(view.branchId, command.id, 0),
-    actorId: command.payload.actorId,
-    fromStorySecond: view.storySecond,
-    sourceEventId: conditionEvent.id,
-    conditionId,
-    conditionExpiresAt: expiresAt,
-  });
-  events.push(
-    buildModifierAppliedEvent({
-      view,
-      command,
-      sequence: nextSequence,
-      suffix: "body-modifier-0",
-      actorId: command.payload.actorId,
-      modifier: suspendModifier,
-      meterView: energyView,
-      valueAtApply: now.reserveFixedPoint,
-      causationId: conditionEvent.id,
-    }),
-  );
-  nextSequence += 1;
-
-  events.push(
-    buildBodyTrigger({
-      view,
-      command,
-      sequence: nextSequence,
-      causationId: conditionEvent.id,
-      actorId: command.payload.actorId,
-      suffix: "arm-condition-expiry",
-      intent: {
-        kind: bodyConditionExpiryTriggerKind,
-        dueStorySecond: expiresAt,
-        uniquenessKey: bodyConditionExpiryUniquenessKey(conditionId),
-        payload: { actorId: command.payload.actorId, conditionId, basis: "expired" },
-      },
-    }),
-  );
+  events.push(...sleepTrain.events);
+  nextSequence = sleepTrain.nextSequence;
+  const condition = sleepTrain.condition;
+  const suspendModifier = sleepTrain.suspendModifier;
 
   const meter = bodyMeterStateSchema.parse({
     ...view.meter,
@@ -2489,6 +2535,7 @@ export function applyBodyEvent(
     case "consent_escalation_resolved":
     case "pressure_acknowledged":
     case "actor_lod_assigned":
+    case "routine_policy_resolved":
       // Non-body families advance the boundary without touching this projection.
       return bodiesProjectionSchema.parse(bumped);
   }

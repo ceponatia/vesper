@@ -8,15 +8,17 @@ import {
   actorLodStateSchema,
   composeSimulationId,
   isSimulationLodDemotion,
-  type ActorLodAssignedEvent,
   type ActorLodRead,
   type ActorLodRegistryVersion,
   type ActorLodsProjection,
   type ActorLodState,
   type AssignActorLodCommand,
   type AssignActorLodRejectionCode,
+  type BodyRhythmRow,
   type SimulationBranchEvent,
 } from "@/contracts/simulation";
+import { resolveSleepWindow } from "./body-reads";
+import { buildRoutinePolicyTrigger, nextBedtimeSecond } from "./routine";
 
 /**
  * E6.1 — the pure actor-LOD kernel (engine.spec §27–§28): the effective read
@@ -100,11 +102,21 @@ export interface AssignActorLodResolutionView {
   actorExists: boolean;
   current: ActorLodState | undefined;
   guards: AssignActorLodGuardCounts;
+  /** E6.2: whether the actor's body is tracked — arming requires one. */
+  bodyInitialized: boolean;
+  /** E6.2: the actor's rhythm rows; the sleep window defaults when absent. */
+  rhythmRows: readonly BodyRhythmRow[];
 }
 
 export type AssignActorLodResolution =
   | ActorLodRejection
-  | { ok: true; event: ActorLodAssignedEvent; state: ActorLodState };
+  | {
+      ok: true;
+      /** actor_lod_assigned first; an E6.2 routine-alarm arm follows when the
+       * new simulation LOD is `event` and the body is tracked. */
+      events: SimulationBranchEvent[];
+      state: ActorLodState;
+    };
 
 /**
  * Guards run in fixed order (claims → pressure → engagement) and only when the
@@ -176,7 +188,27 @@ export function resolveAssignActorLodFromView(
       registryVersion: effective.registryVersion,
     },
   });
-  return { ok: true, event, state };
+
+  // E6.2: entering (or staying at) `event` simulation LOD arms the actor's
+  // routine alarm at their next bedtime — the store retires any prior arming
+  // unconditionally first (the restock-reconfigure idiom), so exactly one
+  // alarm is ever live. Actors without a tracked body arm nothing (mirrors
+  // the assumed-rhythm rule: background casts stay row-free and work-free).
+  const events: SimulationBranchEvent[] = [event];
+  if (state.simulationLod === "event" && view.bodyInitialized) {
+    events.push(
+      buildRoutinePolicyTrigger({
+        view,
+        command,
+        sequence: event.sequence + 1,
+        causationId: event.id,
+        actorId: command.payload.actorId,
+        suffix: "arm-routine-policy",
+        dueStorySecond: nextBedtimeSecond(resolveSleepWindow(view.rhythmRows), view.storySecond),
+      }),
+    );
+  }
+  return { ok: true, events, state };
 }
 
 // ---------------------------------------------------------------------------

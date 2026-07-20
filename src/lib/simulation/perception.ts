@@ -245,6 +245,7 @@ export function deriveEventObservations(
     case "relationship_change_recorded":
     case "pressure_acknowledged":
     case "actor_lod_assigned":
+    case "routine_policy_resolved":
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
       // knowledge source pointing at a perceptible event (§15.1, §20).
@@ -277,7 +278,9 @@ export function deriveEventObservations(
       // Pressure acknowledgment (E5.5 slice 3) is internal scheduling/turn
       // bookkeeping — mirrors `trigger_scheduled`'s no-observation treatment.
       // An actor-LOD assignment (E6.1, §27–28) is an engine performance
-      // dial, not a world event — LOD bookkeeping derives nothing.
+      // dial, not a world event — LOD bookkeeping derives nothing. A routine
+      // decision (E6.2, §19.2) is the same: the chosen outcome's own events
+      // (condition onset, threshold) carry their own perception rulings.
       return [];
     case "journey_planned":
     case "journey_delayed":

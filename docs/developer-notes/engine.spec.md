@@ -1103,6 +1103,36 @@ This is the first live consumer of ledger-derived terms in §19.2; widening the 
 NPC routine-policy scorer to consume the same terms is a later slice (§9's open
 decision 6).
 
+### 19.2.1 The v1 routine controller (E6.2)
+
+The background-life controller concretizes §19.1–19.2 for actors at `event`
+simulation LOD (§27.4). A `routine_policy_due` alarm arms when an actor with a
+tracked body enters `event` LOD (and re-arms on every resolution — sequence-
+versioned uniqueness keys, unconditional retirement on any LOD assignment), due
+at the actor's own rhythm boundary. It dispatches `run_routine_policy` (system
+principal only), which re-validates fail-closed at fire time (LOD still `event`,
+body tracked, not asleep — else the structured `routine_stale`) and resolves
+deterministically: the §19.3 deliberator is never consulted; routine choices are
+the §28 no-model tier by definition.
+
+The v1 candidate set is closed — `begin_sleep` and the ever-legal fallback
+`hold`. Legality gates (§19.1): claim-holding activities and live engagements
+make sleep illegal, with the gate name captured on the decision event. Scoring
+(§19.2, versioned fixed-point weights): sleep scores by the actor's own
+circadian pressure; hold scores 10 000 when an unresolved pressure's actBy falls
+inside the would-be sleep — above the entire periodic circadian range, so a live
+obligation outranks routine bedtime, while escalation past ~21h of sleep debt
+eventually outranks the obligation, emergently. Ties keep `hold`.
+
+The decision persists as `routine_policy_resolved` (every scored candidate, the
+chosen id, the admitting LOD — a §6.4 capture; not perceptible, not a beat, not
+memory-eligible). A chosen sleep commits atomically through the identical asleep
+train collapse uses (§25.4 — condition, energy suspend, self-expiry at the
+scheduled wake), so waking, the sleep credit, and every downstream re-arm follow
+from existing law; a hold re-arms the next bedtime and the skipped night
+self-heals a day later. Wash stays §25.5 window-crossing law; meals join the
+candidate set in a later slice.
+
 ### 19.3 Deliberator admission
 
 An LLM deliberator MAY run only if:

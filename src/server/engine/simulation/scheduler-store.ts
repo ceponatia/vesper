@@ -17,6 +17,7 @@ import {
   householdRestockTriggerKind,
   itemConditionThresholdTriggerKind,
   journeyArrivalTriggerKind,
+  routinePolicyTriggerKind,
   scheduledTransferTriggerKind,
   schedulerDerivationVersion,
   schedulerRetryDelaySeconds,
@@ -47,6 +48,7 @@ import {
 } from "./commitment-store";
 import { submitDurableRunHouseholdRestock } from "./household-store";
 import { submitDurableResolveItemConditionThreshold, submitDurableTransferItem } from "./material-store";
+import { submitDurableRunRoutinePolicy } from "./routine-store";
 import { submitDurableJourneyArrival } from "./space-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
@@ -558,6 +560,8 @@ export async function resolveNextDueTrigger(
           return submitDurableResolveItemConditionThreshold(dispatchEnvelope, dispatchOptions);
         case householdRestockTriggerKind:
           return submitDurableRunHouseholdRestock(dispatchEnvelope, dispatchOptions);
+        case routinePolicyTriggerKind:
+          return submitDurableRunRoutinePolicy(dispatchEnvelope, dispatchOptions);
       }
     };
     const result = await dispatch();

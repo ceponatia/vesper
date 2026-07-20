@@ -874,6 +874,7 @@ export function applyCommitmentEvent(
     case "relationship_change_recorded":
     case "consent_escalation_resolved":
     case "actor_lod_assigned":
+    case "routine_policy_resolved":
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
     case "pressure_acknowledged": {
