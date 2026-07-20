@@ -16,6 +16,7 @@ import {
   zoneIdSchema,
 } from "./identity";
 import { meterDeltaFixedPointSchema } from "./bodies";
+import { consentScopeKeySchema } from "./social";
 
 /**
  * E3.2 — typed actions, activities, and claims (engine.spec §16, plan §"Gate 3
@@ -85,9 +86,15 @@ export const durationRuleSchema = z.discriminatedUnion("kind", [
  * (spec §16.1). Every E3.2 activity already requires an at-locus universally
  * (graded in-transit compatibility is E3.4's), so the vocabulary starts with
  * zone-kind placement alone and grows per scenario need.
+ *
+ * E5.5 slice 2 (§16.1, ruling 16) adds `consent_covered`: a `ConsentScopeKey`
+ * naming the class of touch/closeness/intimacy the action concerns. Coverage
+ * is checked against the §21.4 relationship ledger — fail-closed, before any
+ * claim or resource is reserved.
  */
 export const actionPreconditionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("at_zone_kind"), zoneKind: z.string().trim().min(1) }).strict(),
+  z.object({ kind: z.literal("consent_covered"), scopeKey: consentScopeKeySchema }).strict(),
 ]);
 
 export const interruptibilities = ["free", "pausable", "abort_only", "locked"] as const;
@@ -142,7 +149,16 @@ export const simulationActionDefinitionSchema = z
     /** §26.5: materials reserved atomically at start, spent or released at completion. */
     resourceCosts: z.array(actionResourceCostSchema).max(4).default([]),
   })
-  .strict();
+  .strict()
+  .refine(
+    (definition) =>
+      definition.preconditions.filter((precondition) => precondition.kind === "consent_covered").length <= 1,
+    {
+      message:
+        "An action definition may declare at most one consent_covered precondition — the store/resolver resolve a single consentCovered boolean for the whole start, not a per-scope map (E5.5 slice 2).",
+      path: ["preconditions"],
+    },
+  );
 
 export type SimulationActionDefinition = z.infer<typeof simulationActionDefinitionSchema>;
 
@@ -220,8 +236,14 @@ const startActivityPayloadSchema = z
   .object({
     actionDefinitionId: actionDefinitionIdSchema,
     actorId: worldCharacterIdSchema,
+    /** E5.5 slice 2: the second party a `consent_covered` precondition concerns. */
+    targetActorId: worldCharacterIdSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((p) => p.targetActorId === undefined || p.targetActorId !== p.actorId, {
+    message: "targetActorId must differ from actorId",
+    path: ["targetActorId"],
+  });
 
 export const startActivityCommandSchema = createCommandEnvelopeSchema(
   "start_activity",
@@ -241,6 +263,11 @@ export const startActivityRejectionCodes = [
   "precondition_failed",
   "claim_conflict",
   "material_unavailable",
+  /** E5.5 slice 2: a `consent_covered` precondition with no `targetActorId` supplied. */
+  "target_actor_required",
+  "target_not_co_located",
+  /** E5.5 slice 2: fail-closed — no covering §21.4 ledger entry. */
+  "consent_required",
 ] as const;
 export const startActivityRejectionCodeSchema = z.enum(startActivityRejectionCodes);
 export const startActivityCommandResultSchema = createCommandResultSchema(
@@ -322,6 +349,19 @@ const activityStartedPayloadSchema = z
     observerActorIds: witnessActorIdsSchema,
     /** §26.5: the deterministic item selection, captured immutable at start. */
     reservedItemIds: activityReservedItemIdsSchema,
+    /**
+     * E5.5 slice 2: present only when a `consent_covered` precondition was
+     * checked and passed — the social ledger derives a `boundary_respected`
+     * entry from this capture.
+     */
+    consentGrant: z
+      .object({
+        granterActorId: worldCharacterIdSchema,
+        granteeActorId: worldCharacterIdSchema,
+        scopeKey: consentScopeKeySchema,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

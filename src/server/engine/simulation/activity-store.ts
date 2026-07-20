@@ -84,6 +84,8 @@ import {
   itemTransferFeedProjectionSchemaVersion,
 } from "@/contracts/simulation/outbox";
 import { itemConditionThresholdTriggerKind } from "@/contracts/simulation/scheduler";
+import { resolveConsentCoverage } from "@/lib/simulation/social";
+import type { RelationshipLedgerEntry } from "@/contracts/simulation/social";
 import {
   db,
   simActionDefinitions,
@@ -101,6 +103,7 @@ import {
   simItems,
   simOutbox,
   simPhysicalLoci,
+  simRelationshipLedger,
   simTriggers,
   simZones,
   type Db,
@@ -111,6 +114,7 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
+import { relationshipLedgerEntryFromRow } from "./social-recorder";
 import { locusFromRow } from "./space-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
@@ -287,6 +291,31 @@ async function loadCoLocatedActorIds(
       ),
     );
   return rows.map((row) => row.actorId).filter((actorId) => !excludeActorIds.includes(actorId));
+}
+
+/**
+ * E5.5 slice 2 (§5.8, §21.4): the (target → actor) directional ledger slice
+ * a `consent_covered` precondition reads — narrowed to the three
+ * consent-relevant kinds at the SQL layer, never the whole ledger.
+ */
+async function loadConsentDyadLedgerEntries(
+  tx: SimTx,
+  branchId: string,
+  granterActorId: string,
+  granteeActorId: string,
+): Promise<RelationshipLedgerEntry[]> {
+  const rows = await tx
+    .select()
+    .from(simRelationshipLedger)
+    .where(
+      and(
+        eq(simRelationshipLedger.branchId, branchId),
+        eq(simRelationshipLedger.fromActorId, granterActorId),
+        eq(simRelationshipLedger.toActorId, granteeActorId),
+        inArray(simRelationshipLedger.kind, ["boundary_stated", "permission_granted", "permission_withdrawn"]),
+      ),
+    );
+  return rows.map(relationshipLedgerEntryFromRow);
 }
 
 // ---------------------------------------------------------------------------
@@ -967,6 +996,33 @@ export async function submitDurableStartActivity(
         ? await loadCoLocatedActorIds(tx, branch.id, zoneRow.zoneId, [command.payload.actorId])
         : [];
 
+      // E5.5 slice 2 (§5.8): the consent-coverage pre-check — resolved here,
+      // BEFORE `resolveStartActivity`, into a plain boolean the pure resolver
+      // consumes (mirrors `heldClaims`/`coLocatedActorIds` already being
+      // pre-resolved facts, not live queries). Only queried when the
+      // definition actually gates on `consent_covered` AND a target was
+      // named — an untargeted or unrelated start issues no ledger query.
+      // `.find()` is safe here because `simulationActionDefinitionSchema`
+      // rejects any definition with more than one `consent_covered`
+      // precondition at load time — one scope per action, by construction.
+      const consentPrecondition = definition?.preconditions.find(
+        (precondition) => precondition.kind === "consent_covered",
+      );
+      const consentCovered =
+        consentPrecondition && command.payload.targetActorId !== undefined
+          ? resolveConsentCoverage({
+              entries: await loadConsentDyadLedgerEntries(
+                tx,
+                branch.id,
+                command.payload.targetActorId,
+                command.payload.actorId,
+              ),
+              granterActorId: command.payload.targetActorId,
+              granteeActorId: command.payload.actorId,
+              scopeKey: consentPrecondition.scopeKey,
+            })
+          : false;
+
       // §26.5: eligibility scoped to the definition's requested material
       // kinds (a no-cost definition issues no query at all), and the live
       // reservation index built from the claim-holding activities already
@@ -996,6 +1052,7 @@ export async function submitDurableStartActivity(
             ...engagementClaimsForActor(openEngagements, command.payload.actorId),
           ],
           coLocatedActorIds,
+          consentCovered,
           materialItemIds: [...materialItemsById.keys()],
           materialItemById: (itemId) => materialItemsById.get(itemId),
           reservingActivityId: (itemId) => reservingActivityIdByItem.get(itemId) ?? null,

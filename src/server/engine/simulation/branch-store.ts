@@ -885,11 +885,18 @@ export async function forkBranch(
     // E5.5 relationship ledger: a derived-and-persisted projection with no
     // incremental state machine (§6) — a full rebuild re-derives from the
     // inherited stream alone, the SAME fold the incremental recorder calls.
-    // `commitmentById` is a stub in Slice 1: no commitment-sourced entries
-    // exist yet (see `lib/simulation/social.ts`'s header doc).
+    // `commitmentById` resolves from `childCommitments`, the commitments
+    // projection already rebuilt earlier in this fork (line ~618) — a pure
+    // in-memory lookup, no extra query.
+    const childCommitmentById = new Map<string, { kind: string; promisedToActorId?: string }>(
+      childCommitments.commitments.map((commitment) => [
+        commitment.id,
+        { kind: commitment.kind, ...(commitment.promisedToActorId === undefined ? {} : { promisedToActorId: commitment.promisedToActorId }) },
+      ]),
+    );
     const childSocialLedger = replaySocialLedgerHistory({
       events: inherited,
-      commitmentById: () => undefined,
+      commitmentById: (commitmentId) => childCommitmentById.get(commitmentId),
     });
     await insertReplayedSocialLedger(tx, childSocialLedger, input.childBranchId);
 

@@ -142,6 +142,15 @@ export interface StartActivityResolutionView extends ActivityBranchMeta {
   /** Actors whose locus is the same zone, excluding the acting actor. */
   coLocatedActorIds: readonly string[];
   /**
+   * E5.5 slice 2 (§21.4, ruling 16): whether the target has granted §21.4
+   * consent coverage for this action's `consent_covered` scope — pre-resolved
+   * by the store from the (target → actor) directional ledger slice, exactly
+   * like `heldClaims`/`coLocatedActorIds` are already pre-resolved facts
+   * rather than live queries. Unused when the definition has no
+   * `consent_covered` precondition.
+   */
+  consentCovered?: boolean;
+  /**
    * §26.5 resource-cost eligibility: every extant item id potentially in play
    * for this start (the store may narrow to the definition's requested
    * material kinds, or hand over the whole branch — the resolver still
@@ -240,6 +249,18 @@ export function resolveStartActivity(
     if (precondition.kind === "at_zone_kind" && zone.kind !== precondition.zoneKind) {
       return startRejection("precondition_failed", "This is not the place for that.");
     }
+    if (precondition.kind === "consent_covered") {
+      const targetActorId = command.payload.targetActorId;
+      if (targetActorId === undefined) {
+        return startRejection("target_actor_required", "This needs someone else's say-so.");
+      }
+      if (!view.coLocatedActorIds.includes(targetActorId)) {
+        return startRejection("target_not_co_located", "They are not here for that.");
+      }
+      if (!view.consentCovered) {
+        return startRejection("consent_required", "That has not been agreed to.");
+      }
+    }
   }
   if (activityClaimsConflict(view.heldClaims, definition.requiredClaims)) {
     return startRejection("claim_conflict", "They are already occupied.");
@@ -279,6 +300,24 @@ export function resolveStartActivity(
       ? sortedUnique([...view.coLocatedActorIds, actorId])
       : [actorId];
 
+  // E5.5 slice 2: capture the consent grant that let this start pass — the
+  // precondition loop above already guaranteed `targetActorId` is defined and
+  // coverage held whenever a `consent_covered` precondition is present.
+  // `.find()` is safe because `simulationActionDefinitionSchema` rejects any
+  // definition with more than one `consent_covered` precondition — one scope
+  // per action, by construction.
+  const consentPrecondition = definition.preconditions.find(
+    (precondition) => precondition.kind === "consent_covered",
+  );
+  const consentGrant =
+    consentPrecondition && command.payload.targetActorId !== undefined
+      ? {
+          granterActorId: command.payload.targetActorId,
+          granteeActorId: actorId,
+          scopeKey: consentPrecondition.scopeKey,
+        }
+      : undefined;
+
   const startedEvent = activityStartedEventSchema.parse({
     id: composeSimulationId("event", [view.branchId, command.id, "activity-started"]),
     worldId: view.worldId,
@@ -304,6 +343,7 @@ export function resolveStartActivity(
       claims: definition.requiredClaims,
       observerActorIds,
       reservedItemIds,
+      ...(consentGrant ? { consentGrant } : {}),
     },
   });
 

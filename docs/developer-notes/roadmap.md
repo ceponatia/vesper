@@ -33,11 +33,10 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   perception-gated reads → material life → households/means/money-at-LOD → the social
   ledger & consent → the deterministic exit corpus. **E5.1–E5.3 shipped 2026-07-19;
   E5.4 (both slices) shipped 2026-07-20** — see Shipped below.
-  **E5.5 (the social ledger & consent, ruling 16) is in-gate now — slice 1 (the
-  ledger substrate) shipped 2026-07-20**; remaining: slice 2 (the fail-closed
-  `consent_covered` activity precondition, destinationless commitments — the
-  carried E3.3 leftover — repair, `fulfill_commitment`) and slice 3 (the §19.3
-  deliberator escalation pinned to a deterministic decline fallback, pressure
+  **E5.5 (the social ledger & consent, ruling 16) is in-gate now — slices 1–2
+  (the ledger substrate; the fail-closed consent gate + destinationless
+  commitments) shipped 2026-07-20**; remaining: slice 3 (the §19.3 deliberator
+  escalation pinned to a deterministic decline fallback, pressure
   acknowledgment as a social act — the carried E3.4 note, full-corpus parity).
   Then E5.6 (the deterministic exit corpus) closes the gate.
   This is where current-chat body learning migrates behind the successor
@@ -138,6 +137,20 @@ deferred), and companion-role-as-romance-eligibility (park, don't build).
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **World-engine consent gate & destinationless commitments (E5.5, slice 2)** —
+  [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
+  [engine.spec.md](engine.spec.md) §21.4/§15.1/§15.4/§16.1 — 2026-07-20 — ruling 16
+  becomes enforceable: `consent_covered` as a fail-closed action-definition
+  precondition (schema-constrained to one scope per definition, §16.1) evaluated
+  inside the start transaction over the dyad's ledger slice, `consentGrant`
+  captured only on permission-entry coverage and fed back into the ledger;
+  destinationless commitments land the carried E3.3 leftover — optional
+  destination, `promisedToActorId` (self-promise = structured rejection),
+  §15.4 repair chains, `fulfill_commitment` with `self_reported` basis,
+  location-free deadlines. Migration 0077. Review confirmed + fixed 1 critical
+  (self-promise raw-ZodError crash) + 1 major (compound-scope gate checked only
+  the first scope). `test:engine-e5-5` at 195; 3 038 pure, E5.4/E5.3 suites
+  unbroken. Next: **E5.5 slice 3**.
 - **World-engine social ledger substrate (E5.5, slice 1)** —
   [engine.plan.md](engine.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §21.3–§21.4 (authored this work, whole-feature) —

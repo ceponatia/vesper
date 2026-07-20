@@ -972,7 +972,7 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    for E5.6. 18 new pure + 9 new int cases. Final E5.4 totals: 2 927 pure +
    414 int green; CI runs `test:engine-e5-4` (121 cases across four suites).
 5. **E5.5 — the social ledger: promises, favors, debts, boundaries, and consent
-   (ruling 16).** Status: **slice 1 shipped — 2026-07-20; slices 2–3 next.**
+   (ruling 16).** Status: **slices 1–2 shipped — 2026-07-20; slice 3 next.**
    **Slice 1 (shipped) — the ledger substrate: derived entries, authored entries,
    reads.** The whole-feature spec landed first (§21.3 replaced wholesale, new
    §21.4 consent, §15.1/§15.4/§16.1/§19.2/§9.2 amendments — the E5.3/E5.4
@@ -1003,10 +1003,32 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    worst-case legal composition proven bounded (~1 606 chars) and a regression
    test at schema maxima. 100 cases in `test:engine-e5-5` (77 pure + int);
    full suite 3 005 pure + `test:engine-e5-4` unbroken at 121.
-   Remaining: **slice 2** (the consent gate: `consent_covered` preconditions,
-   activity wiring, destinationless commitments + repair + `fulfill_commitment`)
-   and **slice 3** (the §19.3 escalation with pinned decline fallback, pressure
-   acknowledgment, the full corpus).
+   **Slice 2 (shipped — 2026-07-20) — the consent gate: preconditions, activity
+   wiring, destinationless commitments.** `consent_covered` as an enforced
+   action-definition precondition — schema-constrained to at most ONE per
+   definition (the compound-scope gap a reviewer proved would silently check
+   only the first scope; constraint made normative in §16.1), `targetActorId`
+   + three rejection codes, the gate evaluated fail-closed inside the start
+   transaction (`resolveConsentCoverage` over the dyad's ledger slice — no
+   TOCTOU window past the branch lock), and `consentGrant` captured on
+   `activity_started` only when coverage came from a permission entry, feeding
+   the ledger's grant-consumption fold arm. Destinationless commitments
+   (the carried E3.3 leftover lands): `destinationZoneId` optional under the
+   §15.1 guards, `promisedToActorId` (a self-promise is a structured
+   `promised_to_self` rejection — the review's critical find: it previously
+   crashed with a raw ZodError, the exact E5.4 `name_required` lesson),
+   `repairsCommitmentId` under §15.4 validation (same actor, same kind, target
+   status `missed`), `fulfill_commitment` with the `self_reported` evaluation
+   basis (destination-bearing commitments reject `commitment_has_destination`),
+   and destinationless deadlines falling through to `missed` with no location
+   evaluation. Social fold arms for activity/commitment sources;
+   `commitmentById` wired for real in fork replay; recorder widened; migration
+   0077 (nullable ALTERs on `sim_commitments` + the self-referential repair
+   FK). Adversarial review confirmed 2 findings (1 critical, 1 major), both
+   fixed as above. `test:engine-e5-5` 100 → 195; full suite 3 038 pure;
+   `test:engine-e5-4` (121) and `test:engine-e5-3` (117) unbroken.
+   Remaining: **slice 3** (the §19.3 escalation with the pinned decline
+   fallback, pressure acknowledgment as a social act, full-corpus parity).
    Original charter: The persisted §21.3 evidence ledger the E4.2 derived seam was built
    to feed: typed entries for promises made/kept/missed/repaired, boundaries
    stated/respected/violated, help, neglect, betrayal, disclosure, affection, conflict,

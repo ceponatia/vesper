@@ -540,6 +540,13 @@
       "when": 1784554793206,
       "tag": "0076_youthful_the_anarchist",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1784559629066,
+      "tag": "0077_watery_shocker",
+      "breakpoints": true
     }
   ]
 }
