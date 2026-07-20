@@ -63,6 +63,15 @@ _(nothing — pull the next entry from Next)_
   names the seams the queued plans keep circling: the salience bus (nobody owns
   `buildInitiativeCue`'s budget), meter law by class, `SceneFrame`, and LOD as a way to
   ration the _settle_ — which is what actually scales with roster size, not the sim.
+- **Spatially controlled scene images — pose, depth, and character identity** —
+  [spatial-scene-images.plan.md](spatial-scene-images.plan.md) (draft; planned
+  2026-07-20 from the owner's exploration of procedural OpenPose/depth and
+  consistent character rendering). Chat-first, detached image pipeline: one
+  validated 3D spatial frame produces pose/depth/segmentation controls;
+  Qwen/ComfyUI establishes structure, identity packs and masked repair preserve
+  characters, and the same frame can later feed narrator reachability and motion.
+  Graduates the self-hosted ComfyUI follow-up; Gate 0 is a measured
+  workflow/license/cost spike.
 - **RAG improvements** — [RAG-improvements.plan.md](RAG-improvements.plan.md)
   (draft; seven retrieval ideas under evaluation — the least-settled item here).
 - **At-rest encryption — user chat content unreadable on Neon** —
