@@ -4,6 +4,8 @@ import {
   commitmentsProjectionSchema,
   createCommitmentCommandResultSchema,
   createCommitmentCommandSchema,
+  fulfillCommitmentCommandResultSchema,
+  fulfillCommitmentCommandSchema,
   raisePressureCommandResultSchema,
   raisePressureCommandSchema,
   resolveCommitmentDeadlineCommandResultSchema,
@@ -12,6 +14,7 @@ import {
   type Commitment,
   type CommitmentsProjection,
   type CreateCommitmentCommandResult,
+  type FulfillCommitmentCommandResult,
   type RaisePressureCommandResult,
   type ResolveCommitmentDeadlineCommandResult,
   type TemporalPressure,
@@ -20,6 +23,7 @@ import { worldBranchIdSchema } from "@/contracts/simulation/identity";
 import {
   resolveCommitmentDeadline,
   resolveCreateCommitment,
+  resolveFulfillCommitment,
   resolveRaisePressure,
 } from "@/lib/simulation/commitments";
 import {
@@ -61,7 +65,9 @@ export function commitmentFromRow(row: typeof simCommitments.$inferSelect): Comm
     id: row.commitmentId,
     actorId: row.actorId,
     kind: row.kind,
-    destinationZoneId: row.destinationZoneId,
+    ...(row.destinationZoneId === null ? {} : { destinationZoneId: row.destinationZoneId }),
+    ...(row.promisedToActorId === null ? {} : { promisedToActorId: row.promisedToActorId }),
+    ...(row.repairsCommitmentId === null ? {} : { repairsCommitmentId: row.repairsCommitmentId }),
     window: {
       ...(row.earliestArrival === null ? {} : { earliestArrival: row.earliestArrival }),
       ...(row.targetArrival === null ? {} : { targetArrival: row.targetArrival }),
@@ -89,7 +95,9 @@ export function commitmentRowInsert(
     commitmentId: commitment.id,
     actorId: commitment.actorId,
     kind: commitment.kind,
-    destinationZoneId: commitment.destinationZoneId,
+    destinationZoneId: commitment.destinationZoneId ?? null,
+    promisedToActorId: commitment.promisedToActorId ?? null,
+    repairsCommitmentId: commitment.repairsCommitmentId ?? null,
     earliestArrival: commitment.window.earliestArrival ?? null,
     targetArrival: commitment.window.targetArrival ?? null,
     latestArrival: commitment.window.latestArrival,
@@ -253,14 +261,44 @@ export async function submitDurableCreateCommitment(
           and(eq(simCharacters.branchId, branch.id), eq(simCharacters.characterId, command.payload.actorId)),
         )
         .limit(1);
-      const [destinationRow] = await tx
-        .select({ zoneId: simZones.zoneId })
-        .from(simZones)
-        .where(
-          and(eq(simZones.branchId, branch.id), eq(simZones.zoneId, command.payload.destinationZoneId)),
-        )
-        .limit(1);
+      // E5.5 slice 2: a destinationless commitment names no destination to look up —
+      // the query only runs when one was supplied (mechanical guard for the now-optional
+      // payload field; the "only check when named" acceptance semantics are slice 2's
+      // resolver work, not this loader's).
+      const [destinationRow] =
+        command.payload.destinationZoneId === undefined
+          ? []
+          : await tx
+              .select({ zoneId: simZones.zoneId })
+              .from(simZones)
+              .where(
+                and(
+                  eq(simZones.branchId, branch.id),
+                  eq(simZones.zoneId, command.payload.destinationZoneId),
+                ),
+              )
+              .limit(1);
       const { space, originZoneId } = await loadActorOriginSpace(tx, branch, command.payload.actorId);
+
+      // E5.5 slice 2: both loads are conditional on the payload naming them —
+      // no cost when a commitment names neither a repair nor a promise target.
+      const repairTargetRow =
+        command.payload.repairsCommitmentId === undefined
+          ? undefined
+          : await loadCommitment(tx, branch.id, command.payload.repairsCommitmentId);
+      const [promisedToActorRow] =
+        command.payload.promisedToActorId === undefined
+          ? []
+          : await tx
+              .select({ characterId: simCharacters.characterId })
+              .from(simCharacters)
+              .where(
+                and(
+                  eq(simCharacters.branchId, branch.id),
+                  eq(simCharacters.characterId, command.payload.promisedToActorId),
+                ),
+              )
+              .limit(1);
 
       const resolution = resolveCreateCommitment(
         {
@@ -273,6 +311,18 @@ export async function submitDurableCreateCommitment(
           ...(originZoneId ? { originZoneId } : {}),
           destinationZoneExists: destinationRow !== undefined,
           topology: { locations: space.locations, zones: space.zones, links: space.links },
+          ...(repairTargetRow
+            ? {
+                repairTarget: {
+                  actorId: repairTargetRow.actorId,
+                  kind: repairTargetRow.kind,
+                  status: repairTargetRow.status,
+                },
+              }
+            : {}),
+          ...(command.payload.promisedToActorId === undefined
+            ? {}
+            : { promisedToActorExists: promisedToActorRow !== undefined }),
         },
         command,
       );
@@ -462,6 +512,85 @@ export async function submitDurableResolveCommitmentDeadline(
         )
         .returning({ commitmentId: simCommitments.commitmentId });
       if (!updated) throw new Error("Locked commitment changed before its deadline update");
+      await tx
+        .update(simTemporalPressures)
+        .set({ resolvedAt: branch.storySecond, updatedSequence: resolution.event.sequence })
+        .where(
+          and(
+            eq(simTemporalPressures.branchId, branch.id),
+            eq(simTemporalPressures.sourceCommitmentId, resolution.commitment.id),
+          ),
+        );
+      await advanceLockedBranch(tx, branch, resolution.event.sequence);
+
+      return {
+        status: "accepted",
+        commandId: command.id,
+        branchVersion: branch.version + 1,
+        firstSequence: resolution.event.sequence,
+        lastSequence: resolution.event.sequence,
+        eventIds: [resolution.event.id],
+      };
+    },
+  });
+}
+
+/**
+ * E5.5 slice 2 (§15.1, §7.4): fulfill a destinationless commitment via an
+ * explicit self-report. The social ledger recorder (§5.7) picks up the
+ * resulting `commitment_kept` event on its own pass — this store needs no
+ * direct social awareness.
+ */
+export async function submitDurableFulfillCommitment(
+  rawCommand: unknown,
+  options: CommitmentStoreOptions = {},
+): Promise<FulfillCommitmentCommandResult> {
+  return runSimulationCommand({
+    rawCommand,
+    commandSchema: fulfillCommitmentCommandSchema,
+    resultSchema: fulfillCommitmentCommandResultSchema,
+    invalidResult: () => rejectedResult("invalid", "invalid_command", "That fulfillment request is invalid."),
+    branchUnavailableResult: (commandId) =>
+      rejectedResult(commandId, "branch_mismatch", "That world branch is unavailable."),
+    duplicateCommandIdResult: (commandId) =>
+      rejectedResult(commandId, "duplicate_command_id", "That fulfillment has already been submitted."),
+    conflictResult: (commandId, currentVersion) =>
+      fulfillCommitmentCommandResultSchema.parse({
+        status: "conflict",
+        commandId,
+        currentVersion,
+        retryable: true,
+      }),
+    database: options.database,
+    admitAtLockedVersion: options.admitAtLockedVersion,
+    execute: async (tx, branch: LockedBranchView, command) => {
+      const commitment = await loadCommitment(tx, branch.id, command.payload.commitmentId);
+
+      const resolution = resolveFulfillCommitment(
+        {
+          worldId: branch.worldId,
+          branchId: branch.id,
+          rulesetVersion: branch.rulesetVersion,
+          headSequence: branch.headSequence,
+          storySecond: branch.storySecond,
+          ...(commitment ? { commitment } : {}),
+        },
+        command,
+      );
+      if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
+
+      await appendSimulationEvent(tx, resolution.event);
+      const [updated] = await tx
+        .update(simCommitments)
+        .set({ status: "kept", updatedSequence: resolution.event.sequence })
+        .where(
+          and(
+            eq(simCommitments.branchId, branch.id),
+            eq(simCommitments.commitmentId, resolution.commitment.id),
+          ),
+        )
+        .returning({ commitmentId: simCommitments.commitmentId });
+      if (!updated) throw new Error("Locked commitment changed before its fulfillment update");
       await tx
         .update(simTemporalPressures)
         .set({ resolvedAt: branch.storySecond, updatedSequence: resolution.event.sequence })

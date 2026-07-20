@@ -2167,7 +2167,12 @@ export const simCommitments = pgTable(
     commitmentId: text("commitment_id").notNull(),
     actorId: text("actor_id").notNull(),
     kind: text("kind", { enum: ["shift", "appointment", "promise", "reservation", "routine"] }).notNull(),
-    destinationZoneId: text("destination_zone_id").notNull(),
+    /** Nullable (E5.5 slice 2): a destinationless commitment carries no spatial obligation. */
+    destinationZoneId: text("destination_zone_id"),
+    /** E5.5 slice 2: the counterpart a promise runs toward. */
+    promisedToActorId: text("promised_to_actor_id"),
+    /** E5.5 slice 2: the `missed` commitment this one repairs (self-referential). */
+    repairsCommitmentId: text("repairs_commitment_id"),
     earliestArrival: bigint("earliest_arrival", { mode: "number" }),
     targetArrival: bigint("target_arrival", { mode: "number" }),
     latestArrival: bigint("latest_arrival", { mode: "number" }).notNull(),
@@ -2202,6 +2207,12 @@ export const simCommitments = pgTable(
       columns: [t.branchId, t.destinationZoneId],
       foreignColumns: [simZones.branchId, simZones.zoneId],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "sim_commitments_repairs_commitment_fk",
+      columns: [t.branchId, t.repairsCommitmentId],
+      foreignColumns: [t.branchId, t.commitmentId],
+      // Self-referential — DEFERRABLE INITIALLY DEFERRED hand-edit, 0069/0076 precedent.
+    }).onDelete("no action"),
     index("sim_commitments_branch_status_idx").on(t.branchId, t.status),
     check(
       "sim_commitments_latest_arrival_safe",

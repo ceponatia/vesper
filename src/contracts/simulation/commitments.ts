@@ -28,8 +28,15 @@ import { gate3RouteVersionSchema } from "./space";
  * negotiate, depart via NPC policy) is E3.4's arbiter; `late → kept` repair
  * on a subsequent arrival is recorded in-table but its evaluator lands with
  * E3.4 arrival integration; acknowledgment (§15.3) is an E3.4 engagement
- * concern. Every E3.3 commitment names a destination zone — destinationless
- * promises join when the social ledger (Gate 5) gives keeping them a meaning.
+ * concern.
+ *
+ * E5.5 slice 2 (§15.1, §15.4) makes `destinationZoneId` optional — a
+ * destinationless commitment carries no spatial obligation and can only ever
+ * resolve `kept` (via `fulfill_commitment`) or `missed`, never `late`. An
+ * optional `promisedToActorId` names the counterpart a promise runs toward
+ * (the social ledger's directional evidence target); an optional
+ * `repairsCommitmentId` links a new commitment to the `missed` one it repairs
+ * (§15.4: history is not rewritten — the original stays `missed` forever).
  */
 
 // --- Vocabulary (engine.spec §15.1, ruling 2) -------------------------------
@@ -116,7 +123,12 @@ export const commitmentSchema = z
     id: commitmentIdSchema,
     actorId: worldCharacterIdSchema,
     kind: commitmentKindSchema,
-    destinationZoneId: zoneIdSchema,
+    /** Optional (E5.5 slice 2): a destinationless commitment carries no spatial obligation. */
+    destinationZoneId: zoneIdSchema.optional(),
+    /** E5.5 slice 2: the counterpart a promise runs toward — the social ledger's directional target. */
+    promisedToActorId: worldCharacterIdSchema.optional(),
+    /** E5.5 slice 2: the `missed` commitment this one repairs (§15.4 — history is not rewritten). */
+    repairsCommitmentId: commitmentIdSchema.optional(),
     window: commitmentWindowSchema,
     expectedDurationSeconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
     priority: z.number().int().min(0).max(9_999),
@@ -128,7 +140,11 @@ export const commitmentSchema = z
     knowledgeSource: commitmentKnowledgeSourceSchema,
     sourceCommandId: commandIdSchema,
   })
-  .strict();
+  .strict()
+  .refine((c) => c.promisedToActorId === undefined || c.promisedToActorId !== c.actorId, {
+    message: "promisedToActorId must differ from actorId",
+    path: ["promisedToActorId"],
+  });
 
 export type Commitment = z.infer<typeof commitmentSchema>;
 export type CommitmentKnowledgeSource = z.infer<typeof commitmentKnowledgeSourceSchema>;
@@ -195,7 +211,9 @@ const createCommitmentPayloadSchema = z
   .object({
     actorId: worldCharacterIdSchema,
     kind: commitmentKindSchema,
-    destinationZoneId: zoneIdSchema,
+    destinationZoneId: zoneIdSchema.optional(),
+    promisedToActorId: worldCharacterIdSchema.optional(),
+    repairsCommitmentId: commitmentIdSchema.optional(),
     window: commitmentWindowSchema,
     expectedDurationSeconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
     priority: z.number().int().min(0).max(9_999).default(0),
@@ -221,6 +239,10 @@ export const createCommitmentRejectionCodes = [
   "unauthorized_actor",
   "destination_not_found",
   "window_in_past",
+  "repair_target_not_found",
+  "repair_target_not_repairable",
+  "promised_to_actor_not_found",
+  "promised_to_self",
 ] as const;
 export const createCommitmentRejectionCodeSchema = z.enum(createCommitmentRejectionCodes);
 export const createCommitmentCommandResultSchema = createCommandResultSchema(
@@ -280,6 +302,39 @@ export const resolveCommitmentDeadlineCommandResultSchema = createCommandResultS
   resolveDeadlineRejectionCodeSchema,
 );
 
+const fulfillCommitmentPayloadSchema = z
+  .object({
+    commitmentId: commitmentIdSchema,
+  })
+  .strict();
+
+/**
+ * E5.5 slice 2 (§15.1, §7.4): the destinationless analogue of the deadline
+ * evaluator — an explicit self-report that keeps a commitment with no locus
+ * to check. Rejects `commitment_has_destination` for a spatial commitment
+ * (those resolve only through `resolve_commitment_deadline`).
+ */
+export const fulfillCommitmentCommandSchema = createCommandEnvelopeSchema(
+  "fulfill_commitment",
+  1,
+  fulfillCommitmentPayloadSchema,
+);
+
+export const fulfillCommitmentRejectionCodes = [
+  "invalid_command",
+  "duplicate_command_id",
+  "branch_mismatch",
+  "commitment_not_found",
+  "commitment_not_open",
+  "commitment_has_destination",
+  "unauthorized_actor",
+  "deadline_passed",
+] as const;
+export const fulfillCommitmentRejectionCodeSchema = z.enum(fulfillCommitmentRejectionCodes);
+export const fulfillCommitmentCommandResultSchema = createCommandResultSchema(
+  fulfillCommitmentRejectionCodeSchema,
+);
+
 // --- Commitment event family (engine.spec §9.2) ------------------------------
 
 const commitmentCreatedPayloadSchema = z
@@ -287,7 +342,9 @@ const commitmentCreatedPayloadSchema = z
     commitmentId: commitmentIdSchema,
     actorId: worldCharacterIdSchema,
     kind: commitmentKindSchema,
-    destinationZoneId: zoneIdSchema,
+    destinationZoneId: zoneIdSchema.optional(),
+    promisedToActorId: worldCharacterIdSchema.optional(),
+    repairsCommitmentId: commitmentIdSchema.optional(),
     window: commitmentWindowSchema,
     expectedDurationSeconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
     priority: z.number().int().min(0).max(9_999),
@@ -352,6 +409,8 @@ const commitmentOutcomePayloadSchema = z
         })
         .strict(),
       z.object({ basis: z.literal("absent") }).strict(),
+      /** E5.5 slice 2: a destinationless commitment kept via `fulfill_commitment`. */
+      z.object({ basis: z.literal("self_reported"), sourceCommandId: commandIdSchema }).strict(),
     ]),
   })
   .strict();
@@ -406,6 +465,9 @@ export type ResolveDeadlineRejectionCode = z.infer<typeof resolveDeadlineRejecti
 export type ResolveCommitmentDeadlineCommandResult = z.infer<
   typeof resolveCommitmentDeadlineCommandResultSchema
 >;
+export type FulfillCommitmentCommand = z.infer<typeof fulfillCommitmentCommandSchema>;
+export type FulfillCommitmentRejectionCode = z.infer<typeof fulfillCommitmentRejectionCodeSchema>;
+export type FulfillCommitmentCommandResult = z.infer<typeof fulfillCommitmentCommandResultSchema>;
 export type CommitmentCreatedEvent = z.infer<typeof commitmentCreatedEventSchema>;
 export type PressureRaisedEvent = z.infer<typeof pressureRaisedEventSchema>;
 export type CommitmentKeptEvent = z.infer<typeof commitmentKeptEventSchema>;

@@ -30,29 +30,19 @@ import { EXP2_SCALE, exp2NegativeFixedPoint } from "./bodies";
 import { sortedUnique } from "./hash";
 
 /**
- * E5.5 slice 1 — the pure social-ledger kernel (engine.spec §21.3–21.4): the
+ * E5.5 — the pure social-ledger kernel (engine.spec §21.3–21.4): the
  * derived-and-authored ledger fold, the trust/attraction/resentment read, and
- * the (as-yet uncalled) consent-coverage gate. No IO, no clock, no ambient
- * randomness (engine.spec §31–32).
+ * the consent-coverage gate. No IO, no clock, no ambient randomness (engine.spec
+ * §31–32).
  *
- * Slice 1 folds `speech_act_delivered`, `disclosure_made`, `engagement_ended`,
- * `relationship_entry_authored`, and `relationship_change_recorded` only —
- * the same subset `social-recorder.ts`'s `RELATIONSHIP_LEDGER_SOURCE_EVENT_TYPES`
- * narrows to. `activity_started`'s `consentGrant` arm and the
- * `commitment_kept`/`commitment_missed`/`commitment_created` arms are NOT
- * implemented yet: their required fields (`consentGrant`, `promisedToActorId`,
- * `repairsCommitmentId`) are Slice 2 additions to `activities.ts`/
- * `commitments.ts` that do not exist on Slice 1's event payload types, so
- * referencing them here would not compile — this is a real constraint the
- * blueprint's own §10 Slice-1 file list undersold (it says "all mappings
- * EXCEPT `activity_started`'s `consentGrant` arm and the
- * `consent_escalation_resolved` arm", which misses that the commitment arms
- * are equally unbuildable yet). `consent_escalation_resolved` doesn't exist
- * as an event type until Slice 3. `DeriveLedgerEntriesInput.commitmentById`
- * is kept in the signature now regardless, so Slice 2 is an additive
- * if-chain branch, not a breaking signature change — the fork-wiring stub in
- * `branch-store.ts` already passes `() => undefined` for exactly this
- * reason (§6, §10).
+ * Slice 1 folded `speech_act_delivered`, `disclosure_made`, `engagement_ended`,
+ * `relationship_entry_authored`, and `relationship_change_recorded`. Slice 2
+ * (§4.2, §10) adds the `activity_started`/`consentGrant` arm and the
+ * `commitment_kept`/`commitment_missed`/`commitment_created` arms — all three
+ * now real, `commitmentById` genuinely wired by every caller
+ * (`social-recorder.ts`'s incremental recorder and `branch-store.ts`'s fork
+ * replay both resolve it from a real commitments load, never a stub).
+ * `consent_escalation_resolved` doesn't exist as an event type until Slice 3.
  */
 
 // ---------------------------------------------------------------------------
@@ -100,7 +90,7 @@ export interface DeriveLedgerEntriesInput {
   events: readonly SimulationBranchEvent[];
   /** Commitment rows resolved for `commitment_kept`/`commitment_missed`/
    * `commitment_created` events — narrowly loaded by the store (§5.7), never
-   * the whole projection. UNUSED in Slice 1 (see this file's header doc). */
+   * the whole projection. */
   commitmentById: (commitmentId: string) => { kind: string; promisedToActorId?: string } | undefined;
 }
 
@@ -208,6 +198,39 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
           }
         }
       }
+    } else if (event.type === "commitment_kept" || event.type === "commitment_missed") {
+      // E5.5 slice 2 (§15.1 amendment): only a `promise` naming a
+      // `promisedToActorId` produces evidence — a shift/appointment/routine
+      // has no interpersonal stake, and the ledger records evidence between
+      // actors, never a fact about one actor alone.
+      const commitment = input.commitmentById(event.payload.commitmentId);
+      if (commitment && commitment.kind === "promise" && commitment.promisedToActorId !== undefined) {
+        const kind = event.type === "commitment_kept" ? "promise_kept" : "promise_missed";
+        pushEntry(entries, event, kind, event.payload.actorId, commitment.promisedToActorId, {
+          kind: "commitment",
+          commitmentId: event.payload.commitmentId,
+        });
+      }
+    } else if (event.type === "commitment_created") {
+      // §15.4: a repair is new evidence, not a correction — only fires when
+      // this NEW commitment both repairs a prior one AND itself names a
+      // `promisedToActorId` (the same interpersonal-stake gate as above).
+      if (event.payload.repairsCommitmentId !== undefined && event.payload.promisedToActorId !== undefined) {
+        pushEntry(entries, event, "promise_repaired", event.payload.actorId, event.payload.promisedToActorId, {
+          kind: "commitment",
+          commitmentId: event.payload.commitmentId,
+        });
+      }
+    } else if (event.type === "activity_started") {
+      // §21.4: a `consent_covered` precondition that passed is itself
+      // evidence the target respected their own prior boundary/permission.
+      if (event.payload.consentGrant) {
+        const { granterActorId, granteeActorId, scopeKey } = event.payload.consentGrant;
+        pushEntry(entries, event, "boundary_respected", granterActorId, granteeActorId, {
+          kind: "consent",
+          scopeKey,
+        });
+      }
     } else if (event.type === "relationship_entry_authored") {
       const { kind: entryKind, scopeKey } = event.payload;
       const payload: RelationshipLedgerPayload =
@@ -241,8 +264,10 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
  * projection with no incremental state machine to replay — a full rebuild
  * re-derives from scratch, so "replay the whole branch" and "fold this
  * command's new events" are literally the same function at different input
- * sizes. `commitmentById` is a stub returning `undefined` in Slice 1 (no
- * commitment-sourced entries exist yet).
+ * sizes. `commitmentById` MUST be resolved from a real commitments load by
+ * every caller (`branch-store.ts`'s fork replay resolves it from the
+ * already-rebuilt child commitments projection, §6) — never a stub, now that
+ * the commitment-sourced arms are real (§4.2).
  */
 export function replaySocialLedgerHistory(input: DeriveLedgerEntriesInput): RelationshipLedgerEntry[] {
   return deriveRelationshipLedgerEntries(input);

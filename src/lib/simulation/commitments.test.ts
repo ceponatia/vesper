@@ -14,6 +14,7 @@ import {
   replayCommitmentsHistory,
   resolveCommitmentDeadline,
   resolveCreateCommitment,
+  resolveFulfillCommitment,
   resolveRaisePressure,
 } from "./commitments";
 import type { SpaceTopology } from "./space";
@@ -172,11 +173,43 @@ describe("E3.3 resolveCreateCommitment", () => {
     expect(nowhere.ok).toBe(false);
     if (!nowhere.ok) expect(nowhere.code).toBe("destination_not_found");
   });
+
+  it("E5.5 slice 2: a destinationless commitment succeeds, never checks destination_not_found, derives zero route duration, and its entityIds omit the absent destination", () => {
+    const resolution = resolveCreateCommitment(
+      createView({ destinationZoneExists: false, promisedToActorExists: true }) as never, // proves destination existence is never consulted
+      createCommand({}, { kind: "promise", destinationZoneId: undefined, promisedToActorId: "actor-2" }) as never,
+    );
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    const [created] = resolution.events;
+    expect(created.payload.derived.minimumRouteDurationSeconds).toBe(0);
+    expect("destinationZoneId" in created.payload).toBe(false);
+    const commitmentId = deriveCommitmentId("branch-1", "cmd-commit-1");
+    expect(created.entityIds).toEqual(["actor-1", commitmentId].sort());
+    expect(resolution.commitment.destinationZoneId).toBeUndefined();
+  });
 });
 
 function acceptedCreate() {
   const resolution = resolveCreateCommitment(createView() as never, createCommand() as never);
   if (!resolution.ok) throw new Error("fixture create must resolve");
+  return resolution;
+}
+
+/** A destinationless promise fixture (E5.5 slice 2), naming `promisedToActorId: "actor-2"`. */
+function acceptedDestinationlessCreate(overrides: {
+  commandOverrides?: Record<string, unknown>;
+  payloadOverrides?: Record<string, unknown>;
+} = {}) {
+  const resolution = resolveCreateCommitment(
+    createView({ destinationZoneExists: false, promisedToActorExists: true }) as never,
+    createCommand(overrides.commandOverrides ?? {}, {
+      kind: "promise",
+      destinationZoneId: undefined,
+      promisedToActorId: "actor-2",
+      ...overrides.payloadOverrides,
+    }) as never,
+  );
+  if (!resolution.ok) throw new Error(`fixture destinationless create must resolve, got ${resolution.code}`);
   return resolution;
 }
 
@@ -343,6 +376,261 @@ describe("E3.3 resolveCommitmentDeadline", () => {
     expect(() =>
       resolveCommitmentDeadline(deadlineView({ storySecond: SHIFT_AT - 1 }) as never, command() as never),
     ).toThrow(/before its window/u);
+  });
+});
+
+describe("E5.5 slice 2 — resolveCommitmentDeadline over a destinationless commitment", () => {
+  const destinationlessCommand = () =>
+    systemCommand("resolve_commitment_deadline", "cmd-deadline-destless", {
+      commitmentId: deriveCommitmentId("branch-1", "cmd-commit-1"),
+    });
+
+  it("always resolves missed — present, in-transit-with-an-active-journey, and absent all fall through the same way, and entityIds omit the absent destination", () => {
+    const commitment = acceptedDestinationlessCreate().commitment;
+    const loci: Array<{ actorLocus: Record<string, unknown>; actorJourney?: Record<string, unknown> }> = [
+      { actorLocus: { kind: "at", actorId: "actor-1", locationId: "loc-1", zoneId: "zone-home", since: NOW } },
+      // "at" a zone that WOULD have been the destination under a spatial commitment — still no destination to match.
+      { actorLocus: { kind: "at", actorId: "actor-1", locationId: "loc-1", zoneId: "zone-work", since: NOW } },
+      {
+        actorLocus: {
+          kind: "in_transit",
+          actorId: "actor-1",
+          journeyId: "journey-1",
+          linkId: "link-hw",
+          enteredAt: SHIFT_AT - 100,
+          earliestExitAt: SHIFT_AT + 500,
+        },
+        actorJourney: {
+          id: "journey-1",
+          actorIds: ["actor-1"],
+          originZoneId: "zone-home",
+          destinationZoneId: "zone-work",
+          routeLinkIds: ["link-hw"],
+          travelMode: "walk",
+          departedAt: SHIFT_AT - 100,
+          earliestArrivalAt: SHIFT_AT + 500,
+          expectedArrivalAt: SHIFT_AT + 500,
+          status: "active",
+          currentLinkIndex: 0,
+          routeDerivationVersion: "gate3-route-v1",
+        },
+      },
+    ];
+    for (const { actorLocus, actorJourney } of loci) {
+      const resolution = resolveCommitmentDeadline(
+        {
+          worldId: "world-1",
+          branchId: "branch-1",
+          rulesetVersion: "gate3-test-v1",
+          headSequence: 4,
+          storySecond: SHIFT_AT,
+          commitment,
+          actorLocus,
+          ...(actorJourney ? { actorJourney } : {}),
+        } as never,
+        destinationlessCommand() as never,
+      );
+      if (!resolution.ok) throw new Error(`expected resolution, got rejection ${resolution.code}`);
+      expect(resolution.outcome).toBe("missed");
+      expect(resolution.event.payload.evaluation).toEqual({ basis: "absent" });
+      expect(resolution.event.entityIds).toEqual(["actor-1", commitment.id].sort());
+    }
+  });
+});
+
+describe("E5.5 slice 2 — repair chain validation", () => {
+  it("end to end: A (promise) misses, then B repairs it with a matching promisedToActorId → accepted and linked", () => {
+    const createA = resolveCreateCommitment(
+      createView({ destinationZoneExists: false, promisedToActorExists: true }) as never,
+      createCommand({ id: "cmd-promise-a", idempotencyKey: "promise-a-key" }, {
+        kind: "promise",
+        destinationZoneId: undefined,
+        promisedToActorId: "actor-2",
+      }) as never,
+    );
+    if (!createA.ok) throw new Error("fixture A create must resolve");
+    const missedA = resolveCommitmentDeadline(
+      {
+        worldId: "world-1",
+        branchId: "branch-1",
+        rulesetVersion: "gate3-test-v1",
+        headSequence: 4,
+        storySecond: SHIFT_AT,
+        commitment: createA.commitment,
+        actorLocus: { kind: "at", actorId: "actor-1", locationId: "loc-1", zoneId: "zone-home", since: NOW },
+      } as never,
+      systemCommand("resolve_commitment_deadline", "cmd-deadline-a", { commitmentId: createA.commitment.id }) as never,
+    );
+    if (!missedA.ok) throw new Error("fixture A miss must resolve");
+    expect(missedA.outcome).toBe("missed");
+
+    const createB = resolveCreateCommitment(
+      createView({
+        destinationZoneExists: false,
+        repairTarget: { actorId: missedA.commitment.actorId, kind: missedA.commitment.kind, status: missedA.commitment.status },
+        promisedToActorExists: true,
+      }) as never,
+      createCommand({ id: "cmd-promise-b", idempotencyKey: "promise-b-key" }, {
+        kind: "promise",
+        destinationZoneId: undefined,
+        promisedToActorId: "actor-2",
+        repairsCommitmentId: missedA.commitment.id,
+      }) as never,
+    );
+    if (!createB.ok) throw new Error(`expected acceptance, got ${createB.code}`);
+    expect(createB.commitment.repairsCommitmentId).toBe(missedA.commitment.id);
+    expect(createB.events[0].payload.repairsCommitmentId).toBe(missedA.commitment.id);
+  });
+
+  it("rejects repair_target_not_found when the view resolves no repair target", () => {
+    const resolution = resolveCreateCommitment(
+      createView({ destinationZoneExists: false }) as never,
+      createCommand({}, {
+        kind: "promise",
+        destinationZoneId: undefined,
+        promisedToActorId: "actor-2",
+        repairsCommitmentId: "commitment-does-not-exist",
+      }) as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("repair_target_not_found");
+  });
+
+  it("rejects repair_target_not_repairable for a mismatched actor (someone else's missed commitment)", () => {
+    const view = createView({
+      destinationZoneExists: false,
+      repairTarget: { actorId: "actor-9", kind: "promise", status: "missed" },
+    });
+    const resolution = resolveCreateCommitment(
+      view as never,
+      createCommand({}, { kind: "promise", destinationZoneId: undefined, repairsCommitmentId: "commitment-old-1" }) as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("repair_target_not_repairable");
+  });
+
+  it("rejects repair_target_not_repairable for a mismatched kind", () => {
+    const view = createView({
+      destinationZoneExists: false,
+      repairTarget: { actorId: "actor-1", kind: "shift", status: "missed" },
+    });
+    const resolution = resolveCreateCommitment(
+      view as never,
+      createCommand({}, { kind: "promise", destinationZoneId: undefined, repairsCommitmentId: "commitment-old-1" }) as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("repair_target_not_repairable");
+  });
+
+  it("rejects repair_target_not_repairable for a non-missed status", () => {
+    const view = createView({
+      destinationZoneExists: false,
+      repairTarget: { actorId: "actor-1", kind: "promise", status: "planned" },
+    });
+    const resolution = resolveCreateCommitment(
+      view as never,
+      createCommand({}, { kind: "promise", destinationZoneId: undefined, repairsCommitmentId: "commitment-old-1" }) as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("repair_target_not_repairable");
+  });
+
+  it("rejects promised_to_actor_not_found when promisedToActorId is named but unresolved", () => {
+    const view = createView({ destinationZoneExists: false, promisedToActorExists: false });
+    const resolution = resolveCreateCommitment(
+      view as never,
+      createCommand({}, { kind: "promise", destinationZoneId: undefined, promisedToActorId: "actor-ghost" }) as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("promised_to_actor_not_found");
+  });
+
+  it("rejects promised_to_self as a structured rejection instead of throwing — a self-promise is schema-legal at the command layer but commitmentSchema's refine forbids it", () => {
+    // promisedToActorExists: true because the actor's own row obviously exists — the
+    // bug this guards against is exactly that "exists" check passing for a self-id.
+    const view = createView({ destinationZoneExists: false, promisedToActorExists: true });
+    const resolution = resolveCreateCommitment(
+      view as never,
+      createCommand({}, { kind: "promise", destinationZoneId: undefined, promisedToActorId: "actor-1" }) as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("promised_to_self");
+  });
+});
+
+describe("E5.5 slice 2 — resolveFulfillCommitment", () => {
+  function fulfillView(overrides: Record<string, unknown> = {}) {
+    return {
+      worldId: "world-1",
+      branchId: "branch-1",
+      rulesetVersion: "gate3-test-v1",
+      headSequence: 4,
+      storySecond: NOW + 100,
+      ...overrides,
+    };
+  }
+  function fulfillCommand(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "cmd-fulfill-1",
+      branchId: "branch-1",
+      expectedVersion: 1,
+      idempotencyKey: "fulfill-key-1",
+      principal: { kind: "player", principalId: "principal-1", controlledActorIds: ["actor-1"] },
+      submittedAtWallClock: "2026-07-17T13:00:00.000Z",
+      correlationId: "corr-1",
+      type: "fulfill_commitment",
+      schemaVersion: 1,
+      payload: { commitmentId: deriveCommitmentId("branch-1", "cmd-commit-1") },
+      ...overrides,
+    };
+  }
+
+  it("keeps a destinationless open commitment before its deadline, with a self_reported evaluation naming the fulfilling command", () => {
+    const commitment = acceptedDestinationlessCreate().commitment;
+    const resolution = resolveFulfillCommitment(fulfillView({ commitment }) as never, fulfillCommand() as never);
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    expect(resolution.commitment.status).toBe("kept");
+    expect(resolution.event.payload.evaluation).toEqual({ basis: "self_reported", sourceCommandId: "cmd-fulfill-1" });
+  });
+
+  it("rejects commitment_has_destination for a commitment naming a destinationZoneId", () => {
+    const commitment = acceptedCreate().commitment; // spatial: destinationZoneId "zone-work"
+    const resolution = resolveFulfillCommitment(fulfillView({ commitment }) as never, fulfillCommand() as never);
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("commitment_has_destination");
+  });
+
+  it("rejects commitment_not_open for an already-resolved commitment", () => {
+    const commitment = { ...acceptedDestinationlessCreate().commitment, status: "kept" as const };
+    const resolution = resolveFulfillCommitment(fulfillView({ commitment }) as never, fulfillCommand() as never);
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("commitment_not_open");
+  });
+
+  it("rejects deadline_passed once the window's latestArrival has elapsed", () => {
+    const commitment = acceptedDestinationlessCreate().commitment;
+    const resolution = resolveFulfillCommitment(
+      fulfillView({ commitment, storySecond: commitment.window.latestArrival + 1 }) as never,
+      fulfillCommand() as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("deadline_passed");
+  });
+
+  it("rejects unauthorized_actor for a player not controlling the committed actor", () => {
+    const commitment = acceptedDestinationlessCreate().commitment;
+    const resolution = resolveFulfillCommitment(
+      fulfillView({ commitment }) as never,
+      fulfillCommand({ principal: { kind: "player", principalId: "p2", controlledActorIds: ["actor-9"] } }) as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("unauthorized_actor");
+  });
+
+  it("rejects commitment_not_found when the view resolves no commitment", () => {
+    const resolution = resolveFulfillCommitment(fulfillView() as never, fulfillCommand() as never);
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("commitment_not_found");
   });
 });
 

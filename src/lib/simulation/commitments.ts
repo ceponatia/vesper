@@ -20,6 +20,8 @@ import {
   type CommitmentsProjection,
   type CreateCommitmentCommand,
   type CreateCommitmentRejectionCode,
+  type FulfillCommitmentCommand,
+  type FulfillCommitmentRejectionCode,
   type PressureRaisedEvent,
   type RaisePressureCommand,
   type RaisePressureRejectionCode,
@@ -108,6 +110,15 @@ export interface CreateCommitmentResolutionView extends CommitmentBranchMeta {
   originZoneId?: string;
   destinationZoneExists: boolean;
   topology: SpaceTopology;
+  /**
+   * E5.5 slice 2 (§15.4): the `repairsCommitmentId` referent, loaded only
+   * when the payload names one — a `missed` commitment of the same actor and
+   * kind. Absent (not just `undefined`-shaped) means "no such commitment,"
+   * which is exactly `repair_target_not_found`'s trigger.
+   */
+  repairTarget?: { actorId: string; kind: string; status: string };
+  /** E5.5 slice 2: whether `promisedToActorId` (when named) resolves to a real actor. */
+  promisedToActorExists?: boolean;
 }
 
 interface CreateRejection {
@@ -195,11 +206,40 @@ export function resolveCreateCommitment(
   ) {
     return createRejection("unauthorized_actor", "You cannot commit that actor.");
   }
-  if (!view.destinationZoneExists) {
+  // E5.5 slice 2 (§15.1): a destinationless commitment names no destination
+  // to look up — only check existence when one was actually supplied.
+  if (command.payload.destinationZoneId !== undefined && !view.destinationZoneExists) {
     return createRejection("destination_not_found", "That destination is unknown.");
   }
   if (command.payload.window.latestArrival <= view.storySecond) {
     return createRejection("window_in_past", "That obligation is already over.");
+  }
+  // E5.5 slice 2 (§15.4): a repair must reference a real, same-actor,
+  // same-kind, `missed` commitment — history is not rewritten, so this only
+  // ever links a NEW commitment to the old one it repairs, never edits it.
+  if (command.payload.repairsCommitmentId !== undefined) {
+    const target = view.repairTarget;
+    if (!target) return createRejection("repair_target_not_found", "There is nothing to repair.");
+    if (
+      target.actorId !== command.payload.actorId ||
+      target.kind !== command.payload.kind ||
+      target.status !== "missed"
+    ) {
+      return createRejection("repair_target_not_repairable", "That obligation cannot be repaired this way.");
+    }
+  }
+  if (command.payload.promisedToActorId !== undefined) {
+    // E5.5 slice 2: a self-promise is schema-legal at the command layer (the
+    // actor obviously exists) but `commitmentSchema` refines it out below —
+    // reject it here as a structured rejection instead of letting that
+    // refine throw a raw ZodError past this resolver's rejection chain
+    // (docs/resilience.md: structured rejections over exceptions).
+    if (command.payload.promisedToActorId === command.payload.actorId) {
+      return createRejection("promised_to_self", "You cannot promise something to yourself.");
+    }
+    if (!view.promisedToActorExists) {
+      return createRejection("promised_to_actor_not_found", "That person is unavailable.");
+    }
   }
   const originZoneId = view.originZoneId;
   if (!originZoneId) throw new Error(`Actor ${command.payload.actorId} has no origin zone for derivation`);
@@ -208,7 +248,10 @@ export function resolveCreateCommitment(
   // destinations derive as zero travel — conservative, and recomputation on
   // material change is E3.4's concern.
   let minimumRouteDurationSeconds = 0;
-  if (originZoneId !== command.payload.destinationZoneId) {
+  if (
+    command.payload.destinationZoneId !== undefined &&
+    originZoneId !== command.payload.destinationZoneId
+  ) {
     const plan = planRoute(view.topology, {
       originZoneId,
       destinationZoneId: command.payload.destinationZoneId,
@@ -239,13 +282,25 @@ export function resolveCreateCommitment(
     commandId: command.id,
     correlationId: command.correlationId,
     actorIds: [command.payload.actorId],
-    entityIds: sortedUnique([command.payload.actorId, commitmentId, command.payload.destinationZoneId]),
+    entityIds: sortedUnique([
+      command.payload.actorId,
+      commitmentId,
+      ...(command.payload.destinationZoneId === undefined ? [] : [command.payload.destinationZoneId]),
+    ]),
     recordedAtWallClock: command.submittedAtWallClock,
     payload: {
       commitmentId,
       actorId: command.payload.actorId,
       kind: command.payload.kind,
-      destinationZoneId: command.payload.destinationZoneId,
+      ...(command.payload.destinationZoneId === undefined
+        ? {}
+        : { destinationZoneId: command.payload.destinationZoneId }),
+      ...(command.payload.promisedToActorId === undefined
+        ? {}
+        : { promisedToActorId: command.payload.promisedToActorId }),
+      ...(command.payload.repairsCommitmentId === undefined
+        ? {}
+        : { repairsCommitmentId: command.payload.repairsCommitmentId }),
       window: command.payload.window,
       ...(command.payload.expectedDurationSeconds === undefined
         ? {}
@@ -292,7 +347,15 @@ export function resolveCreateCommitment(
     id: commitmentId,
     actorId: command.payload.actorId,
     kind: command.payload.kind,
-    destinationZoneId: command.payload.destinationZoneId,
+    ...(command.payload.destinationZoneId === undefined
+      ? {}
+      : { destinationZoneId: command.payload.destinationZoneId }),
+    ...(command.payload.promisedToActorId === undefined
+      ? {}
+      : { promisedToActorId: command.payload.promisedToActorId }),
+    ...(command.payload.repairsCommitmentId === undefined
+      ? {}
+      : { repairsCommitmentId: command.payload.repairsCommitmentId }),
     window: command.payload.window,
     ...(command.payload.expectedDurationSeconds === undefined
       ? {}
@@ -388,7 +451,7 @@ export function resolveRaisePressure(
   // travel, exactly as at creation; a notice that fires past its own act-by
   // (a too-tight window) clamps forward so ordering still holds.
   let minimumRouteDurationSeconds = 0;
-  if (originZoneId !== commitment.destinationZoneId) {
+  if (commitment.destinationZoneId !== undefined && originZoneId !== commitment.destinationZoneId) {
     const plan = planRoute(view.topology, {
       originZoneId,
       destinationZoneId: commitment.destinationZoneId,
@@ -546,7 +609,11 @@ export function resolveCommitmentDeadline(
     commandId: command.id,
     correlationId: command.correlationId,
     actorIds: [commitment.actorId],
-    entityIds: sortedUnique([commitment.actorId, commitment.id, commitment.destinationZoneId]),
+    entityIds: sortedUnique([
+      commitment.actorId,
+      commitment.id,
+      ...(commitment.destinationZoneId === undefined ? [] : [commitment.destinationZoneId]),
+    ]),
     recordedAtWallClock: command.submittedAtWallClock,
     payload: {
       commitmentId: commitment.id,
@@ -559,6 +626,97 @@ export function resolveCommitmentDeadline(
   assertCommitmentTransition(commitment.status, outcome, commitment.id);
   const resolved = commitmentSchema.parse({ ...commitment, status: outcome });
   return { ok: true, commitment: resolved, outcome, event };
+}
+
+// ---------------------------------------------------------------------------
+// FulfillCommitment resolution (§15.1 amendment, §7.4) — the destinationless
+// analogue of the deadline evaluator: an explicit self-report keeps a
+// commitment with no locus to check.
+// ---------------------------------------------------------------------------
+
+export interface FulfillCommitmentResolutionView extends CommitmentBranchMeta {
+  commitment?: Commitment;
+}
+
+interface FulfillRejection {
+  ok: false;
+  code: FulfillCommitmentRejectionCode;
+  publicReason: string;
+}
+
+export interface FulfillCommitmentResolution {
+  ok: true;
+  commitment: Commitment;
+  event: CommitmentKeptEvent;
+}
+
+function fulfillRejection(code: FulfillCommitmentRejectionCode, publicReason: string): FulfillRejection {
+  return { ok: false, code, publicReason };
+}
+
+/**
+ * A destinationless commitment (§15.1 amendment) carries no spatial
+ * obligation, so its deadline trigger has no locus to evaluate — it can only
+ * ever resolve `kept` through this explicit self-report, or `missed` when the
+ * deadline passes with no report (`resolveCommitmentDeadline`'s existing
+ * `absent` fallthrough, unchanged). A commitment that DOES name a
+ * `destinationZoneId` rejects here — those resolve only through
+ * `resolve_commitment_deadline`'s at-destination/en-route/absent evaluation.
+ */
+export function resolveFulfillCommitment(
+  view: FulfillCommitmentResolutionView,
+  command: FulfillCommitmentCommand,
+): FulfillRejection | FulfillCommitmentResolution {
+  if (command.branchId !== view.branchId) {
+    return fulfillRejection("branch_mismatch", "That world branch is unavailable.");
+  }
+  const commitment = view.commitment;
+  if (!commitment) return fulfillRejection("commitment_not_found", "That obligation is unknown.");
+  if (!openCommitmentStatuses.includes(commitment.status)) {
+    return fulfillRejection("commitment_not_open", "That obligation has already resolved.");
+  }
+  if (commitment.destinationZoneId !== undefined) {
+    return fulfillRejection(
+      "commitment_has_destination",
+      "That obligation resolves by arrival, not by report.",
+    );
+  }
+  if (
+    command.principal.kind !== "system" &&
+    command.principal.kind !== "storyteller" &&
+    !command.principal.controlledActorIds.includes(commitment.actorId)
+  ) {
+    return fulfillRejection("unauthorized_actor", "You cannot report that for them.");
+  }
+  if (view.storySecond > commitment.window.latestArrival) {
+    return fulfillRejection("deadline_passed", "That obligation's window has already closed.");
+  }
+
+  const event = commitmentKeptEventSchema.parse({
+    id: composeSimulationId("event", [view.branchId, command.id, "commitment-kept"]),
+    worldId: view.worldId,
+    branchId: view.branchId,
+    sequence: view.headSequence + 1,
+    storySecond: view.storySecond,
+    type: "commitment_kept",
+    schemaVersion: 1,
+    rulesetVersion: view.rulesetVersion,
+    commandId: command.id,
+    correlationId: command.correlationId,
+    actorIds: [commitment.actorId],
+    entityIds: sortedUnique([commitment.actorId, commitment.id]),
+    recordedAtWallClock: command.submittedAtWallClock,
+    payload: {
+      commitmentId: commitment.id,
+      actorId: commitment.actorId,
+      resolvedAt: view.storySecond,
+      evaluation: { basis: "self_reported", sourceCommandId: command.id },
+    },
+  });
+
+  assertCommitmentTransition(commitment.status, "kept", commitment.id);
+  const resolved = commitmentSchema.parse({ ...commitment, status: "kept" });
+  return { ok: true, commitment: resolved, event };
 }
 
 // ---------------------------------------------------------------------------
@@ -611,7 +769,15 @@ export function applyCommitmentEvent(
         id: event.payload.commitmentId,
         actorId: event.payload.actorId,
         kind: event.payload.kind,
-        destinationZoneId: event.payload.destinationZoneId,
+        ...(event.payload.destinationZoneId === undefined
+          ? {}
+          : { destinationZoneId: event.payload.destinationZoneId }),
+        ...(event.payload.promisedToActorId === undefined
+          ? {}
+          : { promisedToActorId: event.payload.promisedToActorId }),
+        ...(event.payload.repairsCommitmentId === undefined
+          ? {}
+          : { repairsCommitmentId: event.payload.repairsCommitmentId }),
         window: event.payload.window,
         ...(event.payload.expectedDurationSeconds === undefined
           ? {}

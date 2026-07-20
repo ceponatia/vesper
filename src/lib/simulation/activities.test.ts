@@ -276,6 +276,84 @@ describe("E3.2 resolveStartActivity", () => {
   });
 });
 
+describe("E5.5 slice 2 — resolveStartActivity's consent_covered precondition", () => {
+  function consentDefinition(overrides: Partial<SimulationActionDefinition> = {}) {
+    return definition({ preconditions: [{ kind: "consent_covered", scopeKey: "kiss" }], ...overrides });
+  }
+
+  function consentCommand(overrides: Record<string, unknown> = {}) {
+    return startCommand({
+      payload: { actionDefinitionId: "action-nap", actorId: "actor-1", targetActorId: "actor-2", ...overrides },
+    });
+  }
+
+  it("no targetActorId → target_actor_required", () => {
+    const resolution = resolveStartActivity(
+      startView({ definition: consentDefinition() }) as never,
+      startCommand() as never, // default payload carries no targetActorId
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("target_actor_required");
+  });
+
+  it("target not co-located → target_not_co_located", () => {
+    const resolution = resolveStartActivity(
+      startView({ definition: consentDefinition(), coLocatedActorIds: [] }) as never,
+      consentCommand() as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("target_not_co_located");
+  });
+
+  it("view.consentCovered = false → consent_required (fail-closed)", () => {
+    const resolution = resolveStartActivity(
+      startView({ definition: consentDefinition(), consentCovered: false }) as never,
+      consentCommand() as never,
+    );
+    expect(resolution.ok).toBe(false);
+    if (!resolution.ok) expect(resolution.code).toBe("consent_required");
+  });
+
+  it("view.consentCovered = true → accepted, and activity_started captures the exact granter/grantee/scopeKey triple", () => {
+    const resolution = resolveStartActivity(
+      startView({ definition: consentDefinition(), consentCovered: true }) as never,
+      consentCommand() as never,
+    );
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    const [started] = resolution.events;
+    expect(started.payload.consentGrant).toEqual({
+      granterActorId: "actor-2",
+      granteeActorId: "actor-1",
+      scopeKey: "kiss",
+    });
+  });
+
+  it("an unrelated action with no consent_covered precondition is never gated — no targetActorId needed, no consentGrant captured", () => {
+    const resolution = resolveStartActivity(startView() as never, startCommand() as never);
+    if (!resolution.ok) throw new Error(`expected acceptance, got ${resolution.code}`);
+    const [started] = resolution.events;
+    expect(started.payload.consentGrant).toBeUndefined();
+  });
+
+  it("a definition with two distinct-scope consent_covered preconditions is rejected at the schema boundary — the store/resolver only ever resolve one scope per action", () => {
+    expect(() =>
+      simulationActionDefinitionSchema.parse({
+        id: "action-nap",
+        version: 1,
+        controllerKinds: ["player", "npc_policy"],
+        duration: { kind: "fixed", seconds: 1_800 },
+        preconditions: [
+          { kind: "consent_covered", scopeKey: "touch_intimate" },
+          { kind: "consent_covered", scopeKey: "undress" },
+        ],
+        requiredClaims: [],
+        interruptibility: "pausable",
+        noticeability: "obvious",
+      }),
+    ).toThrow(/at most one consent_covered/);
+  });
+});
+
 function acceptedStart() {
   const resolution = resolveStartActivity(startView() as never, startCommand() as never);
   if (!resolution.ok) throw new Error("fixture start must resolve");

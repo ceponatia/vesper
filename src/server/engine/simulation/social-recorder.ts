@@ -1,7 +1,8 @@
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { relationshipLedgerEntrySchema, type RelationshipLedgerEntry } from "@/contracts/simulation/social";
 import { deriveRelationshipLedgerEntries } from "@/lib/simulation/social";
-import { db, simEvents, simRelationshipLedger, type Db } from "@/server/db";
+import { sortedUnique } from "@/lib/simulation/hash";
+import { db, simCommitments, simEvents, simRelationshipLedger, type Db } from "@/server/db";
 import { branchEventFromRow } from "./observation-store";
 import type { SimTx } from "./trigger-projector";
 
@@ -71,18 +72,22 @@ export function relationshipLedgerEntryRowInsert(
 }
 
 /**
- * Every event type the Slice-1 fold reads — kept as one exported const so
- * this recorder's WHERE clause and `deriveRelationshipLedgerEntries`'s
- * if-chain can never silently drift. Narrower than the blueprint's full §5.7
- * list (which also names `commitment_kept`/`commitment_missed`/
- * `commitment_created`) — those three events don't yet carry the
- * `promisedToActorId`/`repairsCommitmentId` fields Slice 2 adds, so the fold
- * has no arm for them yet (see `lib/simulation/social.ts`'s header doc).
+ * Every event type the fold reads — kept as one exported const so this
+ * recorder's WHERE clause and `deriveRelationshipLedgerEntries`'s if-chain
+ * can never silently drift. E5.5 slice 2 widens this to the full slice-2
+ * subset (§5.7): `commitment_kept`/`commitment_missed`/`commitment_created`
+ * now carry the `promisedToActorId`/`repairsCommitmentId` fields the fold
+ * needs, and `activity_started` now carries `consentGrant`.
+ * `consent_escalation_resolved`/`pressure_acknowledged` join in Slice 3.
  */
 export const RELATIONSHIP_LEDGER_SOURCE_EVENT_TYPES = [
   "speech_act_delivered",
   "disclosure_made",
+  "commitment_kept",
+  "commitment_missed",
+  "commitment_created",
   "engagement_ended",
+  "activity_started",
   "relationship_entry_authored",
   "relationship_change_recorded",
 ] as const;
@@ -112,10 +117,36 @@ export async function recordCommandRelationshipLedger(
   if (eventRows.length === 0) return 0;
 
   const events = eventRows.map(branchEventFromRow);
-  // No commitment-sourced arm exists in Slice 1's fold (see this file's
-  // source-event-type doc comment) — the stub is never invoked, but the
-  // signature stays stable across slices.
-  const entries = deriveRelationshipLedgerEntries({ events, commitmentById: () => undefined });
+
+  // Only commitment_kept/commitment_missed need a commitment lookup — the
+  // fold's `commitment_created` (repair) arm reads `promisedToActorId`
+  // directly off that event's own payload (§4.2), so no lookup is needed for
+  // it — narrower than the blueprint's literal §5.7 draft, which loaded a
+  // commitment_created row too despite the fold never consuming it.
+  const commitmentIds = sortedUnique(
+    events.flatMap((event) =>
+      event.type === "commitment_kept" || event.type === "commitment_missed" ? [event.payload.commitmentId] : [],
+    ),
+  );
+  const commitmentRows = commitmentIds.length
+    ? await tx
+        .select({
+          commitmentId: simCommitments.commitmentId,
+          kind: simCommitments.kind,
+          promisedToActorId: simCommitments.promisedToActorId,
+        })
+        .from(simCommitments)
+        .where(and(eq(simCommitments.branchId, branch.id), inArray(simCommitments.commitmentId, commitmentIds)))
+    : [];
+  const commitmentById = new Map(commitmentRows.map((row) => [row.commitmentId, row]));
+
+  const entries = deriveRelationshipLedgerEntries({
+    events,
+    commitmentById: (commitmentId) => {
+      const row = commitmentById.get(commitmentId);
+      return row ? { kind: row.kind, ...(row.promisedToActorId === null ? {} : { promisedToActorId: row.promisedToActorId }) } : undefined;
+    },
+  });
   if (entries.length === 0) return 0;
 
   await tx.insert(simRelationshipLedger).values(entries.map((entry) => relationshipLedgerEntryRowInsert(branch.id, entry)));

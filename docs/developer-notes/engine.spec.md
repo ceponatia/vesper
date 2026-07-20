@@ -773,7 +773,10 @@ obligation runs toward; when present, `kept`/`missed`/a subsequent `repaired`
 commitment each produce a directional §21.3 ledger entry. A commitment absent
 `promisedToActorId` (a shift, an appointment with no interpersonal stake, a solo
 routine) produces no ledger entry — the ledger records evidence between actors, never
-a fact about one actor alone.
+a fact about one actor alone. `promisedToActorId` MUST differ from the commitment's own
+`actorId` — a self-promise is rejected `promised_to_self` at `create_commitment`
+resolution, a structured rejection rather than a crash (`commitmentSchema`'s refine
+codifies the same constraint at the type level).
 
 ### 15.2 Pressure
 
@@ -875,7 +878,11 @@ vocabulary, §16.1's "inert authored field is not acceptable" rule): an action
 definition names a `ConsentScopeKey`; `start_activity`'s payload MAY name a
 `targetActorId` (the second party the gated action concerns); starting a
 `consent_covered` action with no covering §21.4 entry rejects `consent_required`,
-fail-closed, before any claim or resource is reserved.
+fail-closed, before any claim or resource is reserved. An action definition MAY declare at most ONE
+`consent_covered` precondition — the store resolves a single `consentCovered`
+boolean per start (mirroring `heldClaims`/`coLocatedActorIds`), not a per-scope map, so
+`simulationActionDefinitionSchema` rejects a definition authored with two or more,
+rather than silently reusing the first scope's coverage for every later one.
 
 ### 16.2 Activity instance
 

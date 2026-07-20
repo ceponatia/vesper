@@ -1,21 +1,31 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { materialBranchSeedSchema, type MaterialBranchSeed } from "@/contracts/simulation/materials";
 import { proposedArmedEffectSchema, type ProposedArmedEffect } from "@/contracts/simulation/narrative";
 import {
   recordRelationshipChangeCommandSchema,
   recordRelationshipEntryCommandSchema,
+  relationshipLedgerWeightRegistryV1,
   type RecordRelationshipChangeCommand,
   type RecordRelationshipEntryCommand,
 } from "@/contracts/simulation/social";
 import { newId } from "@/lib/ids";
-import { deriveEngagementId, replaySocialLedgerHistory, simulationHash } from "@/lib/simulation";
+import {
+  deriveCommitmentId,
+  deriveEngagementId,
+  deriveRelationshipRead,
+  replaySocialLedgerHistory,
+  simulationHash,
+} from "@/lib/simulation";
 import { db, simBranches, simEvents, simRelationshipLedger, simWorlds } from "@/server/db";
+import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
 import { prepareEngagementTurn, submitDurableConfirmNarratorResult } from "./arbiter-store";
 import { forkBranch } from "./branch-store";
+import { submitDurableCreateCommitment, submitDurableFulfillCommitment } from "./commitment-store";
 import { submitDurableOpenEngagement } from "./engagement-store";
 import { InjectedSimulationCrash, seedDurableMaterialBranch } from "./material-store";
 import { branchEventFromRow } from "./observation-store";
+import { advanceBranchStoryTime } from "./scheduler-store";
 import { loadRelationshipLedgerProjection } from "./social-recorder";
 import { submitDurableRecordRelationshipChange, submitDurableRecordRelationshipEntry } from "./social-store";
 import { seedDurableSpaceTopology } from "./space-store";
@@ -532,5 +542,333 @@ describe.runIf(ready)("E5.5 slice 1 durable relationship-ledger substrate", () =
     const liveProjection = await loadRelationshipLedgerProjection(ids.branchId);
     const byId = (entries: typeof rebuilt) => [...entries].sort((a, b) => a.id.localeCompare(b.id));
     expect(simulationHash(byId(liveProjection))).toBe(simulationHash(byId(rebuilt)));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.5 slice 2 — the consent gate, destinationless commitments, and repair
+// chains, wired end to end through the durable stores. Mirrors slice 1's
+// harness shape above: one describe.runIf(ready) block, cross-domain command
+// sequences, ledger assertions against the SAME transaction a command wrote.
+// ---------------------------------------------------------------------------
+
+describe.runIf(ready)("E5.5 slice 2 durable consent gate, destinationless commitments, and repair chains", () => {
+  it("consent_covered blocks a start until a permission_granted speech act covers it, captures consentGrant, records boundary_respected, and a withdrawal blocks it again (most-recent-wins)", async () => {
+    const ids = await seedCase();
+    const kissActionId = `${ids.branchId}-action-kiss`;
+    await seedDurableActionDefinitions({
+      branchId: ids.branchId,
+      definitions: [
+        {
+          id: kissActionId,
+          version: 1,
+          controllerKinds: ["player", "npc_policy"],
+          duration: { kind: "fixed", seconds: 60 },
+          preconditions: [{ kind: "consent_covered", scopeKey: "kiss" }],
+          requiredClaims: [],
+          interruptibility: "pausable",
+          noticeability: "obvious",
+        },
+      ],
+    });
+
+    const startKiss = (suffix: string) =>
+      submitDurableStartActivity(
+        {
+          id: `cmd-${suffix}-${ids.branchId}`,
+          branchId: ids.branchId,
+          expectedVersion: 0,
+          idempotencyKey: `${suffix}-key-${ids.branchId}`,
+          principal: playerPrincipal(ids.ana),
+          submittedAtWallClock: "2026-07-20T12:00:00.000Z",
+          correlationId: newId(),
+          type: "start_activity",
+          schemaVersion: 1,
+          payload: { actionDefinitionId: kissActionId, actorId: ids.ana, targetActorId: ids.ben },
+        },
+        { admitAtLockedVersion: true },
+      );
+
+    const beforeConsent = await startKiss("kiss-before");
+    expect(beforeConsent).toMatchObject({ status: "rejected", code: "consent_required" });
+
+    // A single open engagement hosts both exchanges below — opening a SECOND
+    // engagement between the same two participants would reject
+    // participant_already_engaged, since the first is never closed.
+    const opened = await submitDurableOpenEngagement(
+      {
+        id: `cmd-open-consent-${ids.branchId}`,
+        branchId: ids.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `open-consent-key-${ids.branchId}`,
+        principal: playerPrincipal(ids.ben),
+        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
+        correlationId: newId(),
+        type: "open_engagement",
+        schemaVersion: 1,
+        payload: { participantIds: [ids.ana, ids.ben].sort(), channel: "co_present" },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(opened.status).toBe("accepted");
+    const engagementId = deriveEngagementId(ids.branchId, `cmd-open-consent-${ids.branchId}`);
+
+    async function speakConsent(effectType: "permission_granted" | "permission_withdrawn", suffix: string) {
+      const turn = await prepareEngagementTurn({
+        branchId: ids.branchId,
+        engagementId,
+        viewpointActorId: ids.ben,
+        spanSeconds: 300,
+        horizonSeconds: 900,
+        workerId: `w-${suffix}`,
+        proposedArmedEffects: [
+          armedEffect({
+            effectType,
+            actorId: ids.ben,
+            targetActorIds: [ids.ana],
+            detail: `Ben ${effectType === "permission_granted" ? "consents to" : "withdraws consent for"} a kiss.`,
+            consentScopeKey: "kiss",
+          }),
+        ],
+      });
+      const confirmed = await submitDurableConfirmNarratorResult(
+        {
+          id: `cmd-confirm-${suffix}-${ids.branchId}`,
+          branchId: ids.branchId,
+          expectedVersion: 0,
+          idempotencyKey: `confirm-${suffix}-key-${ids.branchId}`,
+          principal: { kind: "system", principalId: "system-1", controlledActorIds: [] },
+          submittedAtWallClock: "2026-07-20T12:00:00.000Z",
+          correlationId: newId(),
+          type: "confirm_narrator_result",
+          schemaVersion: 2,
+          payload: {
+            engagementId,
+            cutId: turn.cut.id,
+            enactedArmedEffectIds: turn.cut.armedEffects.map((effect) => effect.id),
+            softCanonProposals: [],
+          },
+        },
+        { admitAtLockedVersion: true },
+      );
+      expect(confirmed.status).toBe("accepted");
+    }
+
+    await speakConsent("permission_granted", "grant");
+    const afterGrant = await startKiss("kiss-after-grant");
+    expect(afterGrant.status).toBe("accepted");
+    if (afterGrant.status !== "accepted") return;
+    const [startedRow] = await db()
+      .select()
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), eq(simEvents.type, "activity_started")))
+      .orderBy(asc(simEvents.sequence));
+    expect(startedRow?.payload).toMatchObject({
+      consentGrant: { granterActorId: ids.ben, granteeActorId: ids.ana, scopeKey: "kiss" },
+    });
+
+    const projectionAfterGrant = await loadRelationshipLedgerProjection(ids.branchId);
+    expect(
+      projectionAfterGrant.some(
+        (entry) => entry.kind === "boundary_respected" && entry.fromActorId === ids.ben && entry.toActorId === ids.ana,
+      ),
+    ).toBe(true);
+
+    await speakConsent("permission_withdrawn", "withdraw");
+    const afterWithdraw = await startKiss("kiss-after-withdraw");
+    expect(afterWithdraw).toMatchObject({ status: "rejected", code: "consent_required" });
+  });
+
+  it("fulfill_commitment on a destinationless promise records commitment_kept AND a promise_kept ledger row in the same transaction, moving trust", async () => {
+    const ids = await seedCase();
+    const create = await submitDurableCreateCommitment(
+      {
+        id: `cmd-promise-${ids.branchId}`,
+        branchId: ids.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `promise-key-${ids.branchId}`,
+        principal: playerPrincipal(ids.ana),
+        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
+        correlationId: newId(),
+        type: "create_commitment",
+        schemaVersion: 1,
+        payload: {
+          actorId: ids.ana,
+          kind: "promise",
+          promisedToActorId: ids.ben,
+          window: { latestArrival: SEED_SECOND + 2_000 },
+          priority: 0,
+          flexibility: "soft",
+          preparationSeconds: 0,
+          reliabilityBufferSeconds: 0,
+          noticeLeadSeconds: 0,
+          knowledgeSource: { kind: "authored" },
+        },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(create.status).toBe("accepted");
+    const commitmentId = deriveCommitmentId(ids.branchId, `cmd-promise-${ids.branchId}`);
+
+    const fulfilled = await submitDurableFulfillCommitment(
+      {
+        id: `cmd-fulfill-${ids.branchId}`,
+        branchId: ids.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `fulfill-key-${ids.branchId}`,
+        principal: playerPrincipal(ids.ana),
+        submittedAtWallClock: "2026-07-20T12:05:00.000Z",
+        correlationId: newId(),
+        type: "fulfill_commitment",
+        schemaVersion: 1,
+        payload: { commitmentId },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(fulfilled.status).toBe("accepted");
+
+    const projection = await loadRelationshipLedgerProjection(ids.branchId);
+    const kept = projection.find((entry) => entry.kind === "promise_kept");
+    expect(kept).toMatchObject({
+      fromActorId: ids.ana,
+      toActorId: ids.ben,
+      payload: { kind: "commitment", commitmentId },
+    });
+
+    // Trust movement: Ben's read of Ana rises by exactly the promise_kept registry weight.
+    if (!kept) throw new Error("expected a promise_kept ledger entry");
+    const read = deriveRelationshipRead({
+      entries: [kept],
+      subjectActorId: ids.ben,
+      aboutActorId: ids.ana,
+      atStorySecond: kept.storySecond,
+    });
+    expect(read.trustFixedPoint).toBe(relationshipLedgerWeightRegistryV1.promise_kept.trustFixedPoint);
+    expect(read.trustFixedPoint).toBeGreaterThan(0);
+  });
+
+  it("a repair chain end to end: A misses, B repairs it → a promise_repaired ledger row lands alongside B's creation", async () => {
+    const ids = await seedCase();
+    const promiseCommand = (suffix: string, expectedVersion: number, payloadOverrides: Record<string, unknown> = {}) => ({
+      id: `cmd-${suffix}-${ids.branchId}`,
+      branchId: ids.branchId,
+      expectedVersion,
+      idempotencyKey: `${suffix}-key-${ids.branchId}`,
+      principal: playerPrincipal(ids.ana),
+      submittedAtWallClock: "2026-07-20T12:00:00.000Z",
+      correlationId: newId(),
+      type: "create_commitment",
+      schemaVersion: 1,
+      payload: {
+        actorId: ids.ana,
+        kind: "promise",
+        promisedToActorId: ids.ben,
+        window: { latestArrival: SEED_SECOND + 100 },
+        priority: 0,
+        flexibility: "soft",
+        preparationSeconds: 0,
+        reliabilityBufferSeconds: 0,
+        noticeLeadSeconds: 0,
+        knowledgeSource: { kind: "authored" },
+        ...payloadOverrides,
+      },
+    });
+
+    const createA = await submitDurableCreateCommitment(promiseCommand("promise-a", 0), { admitAtLockedVersion: true });
+    expect(createA.status).toBe("accepted");
+    const commitmentAId = deriveCommitmentId(ids.branchId, `cmd-promise-a-${ids.branchId}`);
+
+    const missResult = await advanceBranchStoryTime(ids.branchId, SEED_SECOND + 200, { workerId: "w-repair-miss" });
+    expect(missResult.status).toBe("advanced");
+
+    const createB = await submitDurableCreateCommitment(
+      promiseCommand("promise-b", 0, {
+        repairsCommitmentId: commitmentAId,
+        window: { latestArrival: SEED_SECOND + 2_000 }, // A's window has already elapsed by now
+      }),
+      { admitAtLockedVersion: true },
+    );
+    expect(createB.status).toBe("accepted");
+
+    const projection = await loadRelationshipLedgerProjection(ids.branchId);
+    const repaired = projection.find((entry) => entry.kind === "promise_repaired");
+    expect(repaired).toMatchObject({ fromActorId: ids.ana, toActorId: ids.ben });
+  });
+
+  it("forks mid-ledger across the widened event shapes (commitment_kept, activity_started/consentGrant): child ledger rows exactly match a replaySocialLedgerHistory rebuild", async () => {
+    const ids = await seedCase();
+
+    const create = await submitDurableCreateCommitment(
+      {
+        id: `cmd-promise-fork-${ids.branchId}`,
+        branchId: ids.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `promise-fork-key-${ids.branchId}`,
+        principal: playerPrincipal(ids.ana),
+        submittedAtWallClock: "2026-07-20T12:00:00.000Z",
+        correlationId: newId(),
+        type: "create_commitment",
+        schemaVersion: 1,
+        payload: {
+          actorId: ids.ana,
+          kind: "promise",
+          promisedToActorId: ids.ben,
+          window: { latestArrival: SEED_SECOND + 2_000 },
+          priority: 0,
+          flexibility: "soft",
+          preparationSeconds: 0,
+          reliabilityBufferSeconds: 0,
+          noticeLeadSeconds: 0,
+          knowledgeSource: { kind: "authored" },
+        },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(create.status).toBe("accepted");
+    const commitmentId = deriveCommitmentId(ids.branchId, `cmd-promise-fork-${ids.branchId}`);
+    const fulfilled = await submitDurableFulfillCommitment(
+      {
+        id: `cmd-fulfill-fork-${ids.branchId}`,
+        branchId: ids.branchId,
+        expectedVersion: 0,
+        idempotencyKey: `fulfill-fork-key-${ids.branchId}`,
+        principal: playerPrincipal(ids.ana),
+        submittedAtWallClock: "2026-07-20T12:05:00.000Z",
+        correlationId: newId(),
+        type: "fulfill_commitment",
+        schemaVersion: 1,
+        payload: { commitmentId },
+      },
+      { admitAtLockedVersion: true },
+    );
+    expect(fulfilled.status).toBe("accepted");
+
+    const [parentBranchRow] = await db().select().from(simBranches).where(eq(simBranches.id, ids.branchId));
+    if (!parentBranchRow) throw new Error("parent branch row missing");
+
+    const childBranchId = newId();
+    await forkBranch({
+      parentBranchId: ids.branchId,
+      childBranchId,
+      atSequence: parentBranchRow.headSequence,
+      principal: { kind: "storyteller", principalId: "gm-1" },
+      reason: "E5.5 slice 2 fork parity over the widened event shapes",
+    });
+
+    const parentEventRows = await db()
+      .select()
+      .from(simEvents)
+      .where(eq(simEvents.branchId, ids.branchId))
+      .orderBy(asc(simEvents.sequence));
+    const parentEvents = parentEventRows.map(branchEventFromRow);
+    const commitmentById = (id: string) => (id === commitmentId ? { kind: "promise", promisedToActorId: ids.ben } : undefined);
+
+    const expected = replaySocialLedgerHistory({ events: parentEvents, commitmentById });
+    const childProjection = await loadRelationshipLedgerProjection(childBranchId);
+    expect(childProjection.some((entry) => entry.kind === "promise_kept")).toBe(true);
+
+    const byId = (entries: typeof expected) =>
+      [...entries].map((entry) => ({ ...entry, branchId: childBranchId })).sort((a, b) => a.id.localeCompare(b.id));
+    expect(simulationHash(byId(childProjection))).toBe(simulationHash(byId(expected)));
   });
 });

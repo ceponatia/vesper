@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { zoneEnteredEventSchema } from "@/contracts/simulation/access";
+import { activityStartedEventSchema } from "@/contracts/simulation/activities";
 import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
+import {
+  commitmentCreatedEventSchema,
+  commitmentKeptEventSchema,
+  commitmentMissedEventSchema,
+} from "@/contracts/simulation/commitments";
 import { KNOWLEDGE_DERIVATION_VERSION, disclosureMadeEventSchema, type disclosureContentSchema } from "@/contracts/simulation/knowledge";
 import { engagementEndedEventSchema } from "@/contracts/simulation/engagements";
 import { speechActDeliveredEventSchema, speechActTypes, type SpeechActType } from "@/contracts/simulation/narrative";
@@ -229,6 +235,126 @@ function relationshipChangeRecordedEvent(
   });
 }
 
+// ---------------------------------------------------------------------------
+// E5.5 slice 2 event builders — commitment_created/_kept/_missed, activity_started
+// ---------------------------------------------------------------------------
+
+function commitmentCreatedEvent(overrides: {
+  commitmentId?: string;
+  actorId?: string;
+  promisedToActorId?: string;
+  repairsCommitmentId?: string;
+  sequence?: number;
+  storySecond?: number;
+} = {}) {
+  const storySecond = overrides.storySecond ?? 1_000;
+  const actorId = overrides.actorId ?? ACTOR_A;
+  return commitmentCreatedEventSchema.parse({
+    id: `event-commitment-created-${overrides.sequence ?? 1}`,
+    worldId: WORLD,
+    branchId: BRANCH,
+    sequence: overrides.sequence ?? 1,
+    storySecond,
+    rulesetVersion: RULESET,
+    derivationVersion: "gate3-route-v1",
+    correlationId: "corr-1",
+    actorIds: [actorId],
+    entityIds: [],
+    recordedAtWallClock: WALL_CLOCK,
+    commandId: "cmd-commitment",
+    type: "commitment_created",
+    schemaVersion: 1,
+    payload: {
+      commitmentId: overrides.commitmentId ?? "commitment-1",
+      actorId,
+      kind: "promise",
+      ...(overrides.promisedToActorId === undefined ? {} : { promisedToActorId: overrides.promisedToActorId }),
+      ...(overrides.repairsCommitmentId === undefined ? {} : { repairsCommitmentId: overrides.repairsCommitmentId }),
+      window: { latestArrival: storySecond + 10_000 },
+      priority: 0,
+      flexibility: "soft",
+      preparationSeconds: 0,
+      reliabilityBufferSeconds: 0,
+      noticeLeadSeconds: 0,
+      knowledgeSource: { kind: "authored" },
+      derived: { latestDeparture: storySecond, noticeAt: storySecond, decideBy: storySecond, actBy: storySecond, minimumRouteDurationSeconds: 0 },
+    },
+  });
+}
+
+function commitmentOutcomeEvent(
+  schema: typeof commitmentKeptEventSchema | typeof commitmentMissedEventSchema,
+  type: "commitment_kept" | "commitment_missed",
+  overrides: { commitmentId?: string; actorId?: string; sequence?: number; storySecond?: number } = {},
+) {
+  const actorId = overrides.actorId ?? ACTOR_A;
+  return schema.parse({
+    id: `event-${type}-${overrides.sequence ?? 1}`,
+    worldId: WORLD,
+    branchId: BRANCH,
+    sequence: overrides.sequence ?? 1,
+    storySecond: overrides.storySecond ?? 1_000,
+    rulesetVersion: RULESET,
+    correlationId: "corr-1",
+    actorIds: [actorId],
+    entityIds: [],
+    recordedAtWallClock: WALL_CLOCK,
+    commandId: "cmd-commitment-outcome",
+    type,
+    schemaVersion: 1,
+    payload: {
+      commitmentId: overrides.commitmentId ?? "commitment-1",
+      actorId,
+      resolvedAt: overrides.storySecond ?? 1_000,
+      evaluation: { basis: "self_reported", sourceCommandId: "cmd-fulfill" },
+    },
+  });
+}
+
+const commitmentKeptEvent = (overrides: { commitmentId?: string; actorId?: string; sequence?: number; storySecond?: number } = {}) =>
+  commitmentOutcomeEvent(commitmentKeptEventSchema, "commitment_kept", overrides);
+const commitmentMissedEvent = (overrides: { commitmentId?: string; actorId?: string; sequence?: number; storySecond?: number } = {}) =>
+  commitmentOutcomeEvent(commitmentMissedEventSchema, "commitment_missed", overrides);
+
+function activityStartedEvent(
+  overrides: {
+    consentGrant?: { granterActorId: string; granteeActorId: string; scopeKey: ConsentScopeKey };
+    actorId?: string;
+    sequence?: number;
+    storySecond?: number;
+  } = {},
+) {
+  const actorId = overrides.actorId ?? ACTOR_A;
+  const storySecond = overrides.storySecond ?? 1_000;
+  return activityStartedEventSchema.parse({
+    id: `event-activity-started-${overrides.sequence ?? 1}`,
+    worldId: WORLD,
+    branchId: BRANCH,
+    sequence: overrides.sequence ?? 1,
+    storySecond,
+    rulesetVersion: RULESET,
+    correlationId: "corr-1",
+    actorIds: [actorId],
+    entityIds: [],
+    recordedAtWallClock: WALL_CLOCK,
+    commandId: "cmd-activity",
+    type: "activity_started",
+    schemaVersion: 1,
+    payload: {
+      activityInstanceId: "activity-1",
+      actionDefinitionId: "action-1",
+      actionVersion: 1,
+      zoneId: "zone-a",
+      startedAt: storySecond,
+      expectedCompleteAt: storySecond + 100,
+      claims: [],
+      observerActorIds: [actorId],
+      reservedItemIds: [],
+      ...(overrides.consentGrant === undefined ? {} : { consentGrant: overrides.consentGrant }),
+    },
+  });
+}
+
 function unrelatedEvent(sequence = 1) {
   return zoneEnteredEventSchema.parse({
     id: `event-zone-entered-${sequence}`,
@@ -446,6 +572,98 @@ describe("deriveRelationshipLedgerEntries — engagement_ended", () => {
     const entries = fold([engagementEndedEvent([ACTOR_A, ACTOR_B, ACTOR_C, ACTOR_D])]);
     expect(entries).toHaveLength(6);
     expect(new Set(entries.map((entry) => entry.id)).size).toBe(6);
+  });
+});
+
+describe("deriveRelationshipLedgerEntries — commitment_kept / commitment_missed", () => {
+  const promiseWithTarget: DeriveLedgerEntriesInput["commitmentById"] = (id) =>
+    id === "commitment-promise" ? { kind: "promise", promisedToActorId: ACTOR_B } : undefined;
+
+  it("a kept promise naming a promisedToActorId → promise_kept, actor → promisedTo", () => {
+    const event = commitmentKeptEvent({ commitmentId: "commitment-promise", actorId: ACTOR_A });
+    const entries = deriveRelationshipLedgerEntries({ events: [event], commitmentById: promiseWithTarget });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "promise_kept",
+      fromActorId: ACTOR_A,
+      toActorId: ACTOR_B,
+      payload: { kind: "commitment", commitmentId: "commitment-promise" },
+    });
+  });
+
+  it("a missed promise naming a promisedToActorId → promise_missed", () => {
+    const event = commitmentMissedEvent({ commitmentId: "commitment-promise", actorId: ACTOR_A });
+    const entries = deriveRelationshipLedgerEntries({ events: [event], commitmentById: promiseWithTarget });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe("promise_missed");
+  });
+
+  it("a kept/missed non-promise commitment (no interpersonal stake) produces no entry", () => {
+    const shift: DeriveLedgerEntriesInput["commitmentById"] = (id) => (id === "commitment-shift" ? { kind: "shift" } : undefined);
+    const kept = commitmentKeptEvent({ commitmentId: "commitment-shift" });
+    const missed = commitmentMissedEvent({ commitmentId: "commitment-shift" });
+    expect(deriveRelationshipLedgerEntries({ events: [kept], commitmentById: shift })).toHaveLength(0);
+    expect(deriveRelationshipLedgerEntries({ events: [missed], commitmentById: shift })).toHaveLength(0);
+  });
+
+  it("a kept promise with no promisedToActorId produces no entry", () => {
+    const solo: DeriveLedgerEntriesInput["commitmentById"] = (id) => (id === "commitment-solo" ? { kind: "promise" } : undefined);
+    const event = commitmentKeptEvent({ commitmentId: "commitment-solo" });
+    expect(deriveRelationshipLedgerEntries({ events: [event], commitmentById: solo })).toHaveLength(0);
+  });
+
+  it("an unresolvable commitment id (commitmentById returns undefined) produces no entry", () => {
+    const event = commitmentKeptEvent({ commitmentId: "commitment-unknown" });
+    expect(fold([event])).toHaveLength(0);
+  });
+});
+
+describe("deriveRelationshipLedgerEntries — commitment_created (repair)", () => {
+  it("repairsCommitmentId + promisedToActorId (both set) → promise_repaired, actor → promisedTo", () => {
+    const event = commitmentCreatedEvent({
+      commitmentId: "commitment-new",
+      actorId: ACTOR_A,
+      repairsCommitmentId: "commitment-old",
+      promisedToActorId: ACTOR_B,
+    });
+    const entries = fold([event]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "promise_repaired",
+      fromActorId: ACTOR_A,
+      toActorId: ACTOR_B,
+      payload: { kind: "commitment", commitmentId: "commitment-new" },
+    });
+  });
+
+  it("repairsCommitmentId with no promisedToActorId produces no entry", () => {
+    const event = commitmentCreatedEvent({ repairsCommitmentId: "commitment-old" });
+    expect(fold([event])).toHaveLength(0);
+  });
+
+  it("promisedToActorId with no repairsCommitmentId (a plain new promise, not a repair) produces no entry", () => {
+    const event = commitmentCreatedEvent({ promisedToActorId: ACTOR_B });
+    expect(fold([event])).toHaveLength(0);
+  });
+});
+
+describe("deriveRelationshipLedgerEntries — activity_started (consentGrant)", () => {
+  it("a captured consentGrant → boundary_respected, granter → grantee, consent payload", () => {
+    const event = activityStartedEvent({
+      consentGrant: { granterActorId: ACTOR_B, granteeActorId: ACTOR_A, scopeKey: "kiss" },
+    });
+    const entries = fold([event]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "boundary_respected",
+      fromActorId: ACTOR_B,
+      toActorId: ACTOR_A,
+      payload: { kind: "consent", scopeKey: "kiss" },
+    });
+  });
+
+  it("no consentGrant (an ungated activity) produces no entry", () => {
+    expect(fold([activityStartedEvent()])).toHaveLength(0);
   });
 });
 
@@ -843,6 +1061,33 @@ describe("deriveRelationshipRead", () => {
     });
     expect(read.trustFixedPoint).toBe(0);
     expect(read.diagnostics).toContain("authored_prior_missing_weight:prior-missing");
+  });
+});
+
+describe("deriveRelationshipRead — commitment kept/missed read interaction", () => {
+  const promiseWithTarget: DeriveLedgerEntriesInput["commitmentById"] = (id) =>
+    id === "commitment-1" ? { kind: "promise", promisedToActorId: ACTOR_B } : undefined;
+
+  it("a kept promise raises trust by exactly the registry weight", () => {
+    const entries = deriveRelationshipLedgerEntries({
+      events: [commitmentKeptEvent({ commitmentId: "commitment-1", actorId: ACTOR_A, storySecond: 1_000 })],
+      commitmentById: promiseWithTarget,
+    });
+    const read = deriveRelationshipRead({ entries, subjectActorId: ACTOR_B, aboutActorId: ACTOR_A, atStorySecond: 1_000 });
+    expect(read.trustFixedPoint).toBe(relationshipLedgerWeightRegistryV1.promise_kept.trustFixedPoint);
+    expect(read.trustFixedPoint).toBeGreaterThan(0);
+  });
+
+  it("a missed promise lowers trust and raises resentment by exactly the registry weights", () => {
+    const entries = deriveRelationshipLedgerEntries({
+      events: [commitmentMissedEvent({ commitmentId: "commitment-1", actorId: ACTOR_A, storySecond: 1_000 })],
+      commitmentById: promiseWithTarget,
+    });
+    const read = deriveRelationshipRead({ entries, subjectActorId: ACTOR_B, aboutActorId: ACTOR_A, atStorySecond: 1_000 });
+    expect(read.trustFixedPoint).toBe(relationshipLedgerWeightRegistryV1.promise_missed.trustFixedPoint);
+    expect(read.trustFixedPoint).toBeLessThan(0);
+    expect(read.resentmentFixedPoint).toBe(relationshipLedgerWeightRegistryV1.promise_missed.resentmentFixedPoint);
+    expect(read.resentmentFixedPoint).toBeGreaterThan(0);
   });
 });
 
